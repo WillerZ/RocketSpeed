@@ -13,9 +13,12 @@
  */
 #pragma once
 
-#include "rocketspeed/include/Status.h"
+#include <vector>
+#include <functional>
 
-namespace facebook { namespace rocketspeed {
+#include "include/Status.h"
+
+namespace rocketspeed {
 
 /**
  * Each Topic is a string
@@ -44,10 +47,10 @@ class ResultStatus {
 /**
  *  Type of callback that is called when a message arrives
  *
- *  @param data.status OK if this message is received successfully
- *  @param data.seqno Sequence Number of message
- *  @param data.name Name of topic
- *  @param data.payload  The message data itself.
+ *  @param status OK if this message is received successfully
+ *  @param seqno Sequence Number of message
+ *  @param name Name of topic
+ *  @param payload  The message data itself.
  */
 class MessageReceived {
  public:
@@ -56,7 +59,39 @@ class MessageReceived {
   Topic name;
   std::string payload;
 };
+
 typedef std::function<void(std::vector<MessageReceived>& data)> ReceiveCallback;
 
+/**
+ * An object of the form scheme://host:port/path
+ */
+typedef std::string URL;
 
-}}
+/**
+ *  A Configuration that specifies how a client can describe a RocketSpeed Cloud.
+ *
+ *  @param url The name of the RocketSpeed Cloud Service
+ */
+class Configuration {
+ public:
+  URL url; 
+};
+
+enum Retention : char {
+  OneHour = 0x01,         // keep messages for 1 hour
+  OneDay = 0x02,          // keep messages for 1 day
+  OneWeek = 0x03,         // keep messages for 1 week
+};
+
+/**
+ * These are the options associated with a Topic
+ *
+ *  @param retention The amount of time a message would remain in RocketSpeed
+ */
+class TopicOptions {
+ public:
+  Retention retention;
+};
+
+
+}

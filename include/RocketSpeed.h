@@ -1,20 +1,15 @@
-/**
- * @file
- * @version 1.0
- *
- * @section LICENSE
- *
- * Copyright Facebook 2014
- *
- * @section DESCRIPTION
- *
- * This file defines the various data structures needed to access
- * the RocketSpeed pub-sub service.
- */
+// Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree. An additional grant
+// of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
-#include "rocketspeed/include/Status.h"
-#include "rocketspeed/include/Types.h"
+#include <vector>
+
+#include "include/Slice.h"
+#include "include/Status.h"
+#include "include/Types.h"
 
 /**
  * This is the RocketSpeed interface. The interface is partitioned
@@ -23,7 +18,7 @@
  * messages from a topic.
  */
 
-namespace facebook { namespace rocketspeed {
+namespace rocketspeed {
 
 class ProducerHandle;
 class ConsumerHandle;
@@ -128,7 +123,7 @@ class Consumer {
                                  const TopicOptions& options,
                                  const std::vector<ReceiveCallback>& callbacks,
                                  std::vector<ConsumerHandle*>* handles);
-}
+};
 
 
 /**
@@ -142,3 +137,5 @@ class ConsumerHandle {
    */
    virtual ~ConsumerHandle();
 };
+
+}

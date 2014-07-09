@@ -1,21 +1,13 @@
-/**
- * @file
- * @version 1.0
- *
- * @section LICENSE
- *
- * Copyright Facebook 2014
- *
- * @section DESCRIPTION
- *
- * This file defines the various return codes returned by methods
- * in the RocketSpeed library interface.
- */
+// Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree. An additional grant
+// of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
 #include <string>
 
-namespace facebook { namespace rocketspeed {
+namespace rocketspeed {
 
 class Status {
  public:
@@ -107,4 +99,4 @@ class Status {
   }
 };
 
-}} // namespace
+} // namespace
