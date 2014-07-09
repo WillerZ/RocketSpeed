@@ -1,5 +1,5 @@
 #!/bin/bash
-#A shell script for Jenknis to run valgrind on rocksdb tests
+#A shell script for Jenknis to run valgrind on rocketspeed tests
 #Returns 0 on success when there are no failed tests 
 
 VALGRIND_DIR=build_tools/VALGRIND_LOGS

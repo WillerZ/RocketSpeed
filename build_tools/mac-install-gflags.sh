@@ -3,7 +3,7 @@
 
 set -e
 
-DIR=`mktemp -d /tmp/rocksdb_gflags_XXXX`
+DIR=`mktemp -d /tmp/rocketspeed_gflags_XXXX`
 
 cd $DIR
 wget https://gflags.googlecode.com/files/gflags-2.0.tar.gz

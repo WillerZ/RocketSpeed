@@ -23,7 +23,7 @@
 #       -DLZ4                       if the LZ4 library is present
 #       -DNUMA                      if the NUMA library is present
 #
-# Using gflags in rocksdb:
+# Using gflags in rocketspeed:
 # Our project depends on gflags, which requires users to take some extra steps
 # before they can compile the whole repository:
 #   1. Install gflags. You may download it from here:

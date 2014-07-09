@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Set environment variables so that we can compile rocksdb using
+# Set environment variables so that we can compile rocketspeed using
 # fbcode settings.  It uses the latest g++ compiler and also
 # uses jemalloc
 
