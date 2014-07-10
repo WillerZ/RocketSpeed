@@ -17,8 +17,8 @@
 #
 # The PLATFORM_CCFLAGS and PLATFORM_CXXFLAGS might include the following:
 #
-#       -DLEVELDB_PLATFORM_POSIX if cstdatomic is present
-#       -DLEVELDB_PLATFORM_NOATOMIC if it is not
+#       -DROCKETSPEED_PLATFORM_POSIX if cstdatomic is present
+#       -DROCKETSPEED_PLATFORM_NOATOMIC if it is not
 #       -DSNAPPY                    if the Snappy library is present
 #       -DLZ4                       if the LZ4 library is present
 #       -DNUMA                      if the NUMA library is present
@@ -42,7 +42,7 @@ fi
 # we depend on C++11
 PLATFORM_CXXFLAGS="-std=c++11"
 # we currently depend on POSIX platform
-COMMON_FLAGS="-DROCKSDB_PLATFORM_POSIX"
+COMMON_FLAGS="-DROCKETSPEED_PLATFORM_POSIX"
 
 # Default to fbcode gcc on internal fb machines
 if [ -d /mnt/gvfs/third-party -a -z "$CXX" ]; then
@@ -147,7 +147,7 @@ case "$TARGET_OS" in
         ;;
     OS_ANDROID_CROSSCOMPILE)
         PLATFORM=OS_ANDROID
-	COMMON_FLAGS="$COMMON_FLAGS -fno-builtin-memcmp -D_REENTRANT -DOS_ANDROID -DLEVELDB_PLATFORM_POSIX"
+	COMMON_FLAGS="$COMMON_FLAGS -fno-builtin-memcmp -D_REENTRANT -DOS_ANDROID -DROCKETSPEED_PLATFORM_POSIX"
 	PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS "  # All pthread features are in the Android C library
         # PORT_FILES=port/android/android.cc
         CROSS_COMPILE=true

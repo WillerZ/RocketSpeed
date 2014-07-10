@@ -15,34 +15,34 @@ class Status {
   Status() : code_(Code::kOk), state_("") { }
 
   /// Return a success status.
-  static Status ok() { return Status(); }
+  static Status OK() { return Status(); }
 
   /// Return error status of an appropriate type.
-  static Status notFound(const std::string& msg, const std::string& msg2 = "") {
+  static Status NotFound(const std::string& msg, const std::string& msg2 = "") {
     return Status(Code::kNotFound, msg, msg2);
   }
   /// Fast path for not found without malloc;
-  static Status notFound() {
+  static Status NotFound() {
     return Status(Code::kNotFound);
   }
-  static Status notSupported(const std::string msg,
+  static Status NotSupported(const std::string msg,
                              const std::string msg2 = "") {
     return Status(Code::kNotSupported, msg, msg2);
   }
-  static Status invalidArgument(const std::string msg,
+  static Status InvalidArgument(const std::string msg,
                                 const std::string msg2 = "") {
     return Status(Code::kInvalidArgument, msg, msg2);
   }
-  static Status ioError(const std::string msg,
+  static Status IOError(const std::string msg,
                         const std::string msg2 = "") {
     return Status(Code::kIOError, msg, msg2);
   }
-  static Status notInitialized() {
+  static Status NotInitialized() {
     return Status(Code::kNotInitialized);
   }
 
   /// Returns true iff the status indicates success.
-  bool isOk() const { return code_ == Code::kOk; }
+  bool ok() const { return code_ == Code::kOk; }
 
   /// Returns true iff the status indicates a NotFound error.
   bool isNotFound() const { return code_ == Code::kNotFound; }
