@@ -75,7 +75,7 @@ PROGRAMS = pilot copilot controltower $(TOOLS)
 # The library name is configurable since we are maintaining libraries of both
 # debug/release mode.
 ifeq ($(LIBNAME),)
-        LIBNAME=librockespeed
+        LIBNAME=librocketspeed
 endif
 LIBRARY = ${LIBNAME}.a
 
