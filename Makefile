@@ -149,6 +149,7 @@ controltower:
 
 # run all unit tests
 check: $(TESTS)
+	for t in $(TESTS); do echo "***** Running $$t"; ./$$t || exit 1; done
 
 # test unexpected crashing of pilots, copilots and controltowers
 crash_test: 
