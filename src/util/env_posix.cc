@@ -1395,23 +1395,6 @@ class PosixEnv : public Env {
     return dummy;
   }
 
-  EnvOptions OptimizeForLogWrite(const EnvOptions& env_options) const {
-    EnvOptions optimized = env_options;
-    optimized.use_mmap_writes = false;
-    // TODO(icanadi) it's faster if fallocate_with_keep_size is false, but it
-    // breaks TransactionLogIteratorStallAtLastRecord unit test. Fix the unit
-    // test and make this false
-    optimized.fallocate_with_keep_size = true;
-    return optimized;
-  }
-
-  EnvOptions OptimizeForManifestWrite(const EnvOptions& env_options) const {
-    EnvOptions optimized = env_options;
-    optimized.use_mmap_writes = false;
-    optimized.fallocate_with_keep_size = true;
-    return optimized;
-  }
-
  private:
   bool checkedDiskForMmap_;
   bool forceMmapOff; // do we override Env options?

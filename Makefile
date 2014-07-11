@@ -58,16 +58,20 @@ LDFLAGS += $(PLATFORM_LDFLAGS)
 LIBOBJECTS = $(SOURCES:.cc=.o)
 LIBOBJECTS += $(SOURCESCPP:.cpp=.o)
 
-TESTUTIL = ./util/testutil.o
-TESTHARNESS = ./util/testharness.o $(TESTUTIL)
-BENCHHARNESS = ./util/benchharness.o
+TESTUTIL = ./src/util/testutil.o
+TESTHARNESS = ./src/util/testharness.o $(TESTUTIL)
+BENCHHARNESS = ./src/util/benchharness.o
 VALGRIND_ERROR = 2
 VALGRIND_DIR = build_tools/VALGRIND_LOGS
 VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 VALGRIND_OPTS = --error-exitcode=$(VALGRIND_ERROR) --leak-check=full
 
-TESTS =
-
+TESTS = \
+	autovector_test \
+	arena_test \
+	coding_test \
+	env_test
+	
 TOOLS = 
 
 PROGRAMS = pilot copilot controltower $(TOOLS)
@@ -184,6 +188,18 @@ tags:
 
 format:
 	build_tools/format-diff.sh
+
+coding_test: src/util/coding_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/coding_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+arena_test: src/util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+autovector_test: src/util/autovector_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/autovector_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+env_test: src/util/env_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/env_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

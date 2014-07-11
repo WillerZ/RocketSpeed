@@ -34,10 +34,11 @@ using std::unique_ptr;
 using std::shared_ptr;
 
 // Options while opening a file to read/write
-struct EnvOptions {
+class EnvOptions {
+ public:
 
   // construct with default Options
-  EnvOptions();
+  EnvOptions(){}
 
   // If true, then allow caching of data in environment buffers
   bool use_os_buffer = true;
@@ -256,16 +257,6 @@ class Env {
 
   // Generates a unique id that can be used to identify a db
   virtual std::string GenerateUniqueId();
-
-  // OptimizeForLogWrite will create a new EnvOptions object that is a copy of
-  // the EnvOptions in the parameters, but is optimized for writing log files.
-  // Default implementation returns the copy of the same object.
-  virtual EnvOptions OptimizeForLogWrite(const EnvOptions& env_options) const;
-  // OptimizeForManifestWrite will create a new EnvOptions object that is a copy
-  // of the EnvOptions in the parameters, but is optimized for writing manifest
-  // files. Default implementation returns the copy of the same object.
-  virtual EnvOptions OptimizeForManifestWrite(const EnvOptions& env_options)
-      const;
 
  private:
   // No copying allowed

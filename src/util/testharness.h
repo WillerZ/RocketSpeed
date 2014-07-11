@@ -136,7 +136,7 @@ class TCONCAT(_Test_, name) : public base {                             \
     }                                                                   \
 };                                                                      \
 bool TCONCAT(_Test_ignored_, name) =                                    \
-  ::rocketspeed::test::RegisterTest(
+  ::rocketspeed::test::RegisterTest(                                    \
     #base, #name, &TCONCAT(_Test_, name)::_RunIt);                      \
 void TCONCAT(_Test_, name)::_Run()
 

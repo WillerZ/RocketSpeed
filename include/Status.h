@@ -45,23 +45,23 @@ class Status {
   bool ok() const { return code_ == Code::kOk; }
 
   /// Returns true iff the status indicates a NotFound error.
-  bool isNotFound() const { return code_ == Code::kNotFound; }
+  bool IsNotFound() const { return code_ == Code::kNotFound; }
 
   /// Returns true iff the status indicates a NotSupported error.
-  bool isNotSupported() const { return code_ == Code::kNotSupported; }
+  bool IsNotSupported() const { return code_ == Code::kNotSupported; }
 
   /// Returns true iff the status indicates an InvalidArgument error.
-  bool isInvalidArgument() const { return code_ == Code::kInvalidArgument; }
+  bool IsInvalidArgument() const { return code_ == Code::kInvalidArgument; }
 
   /// Returns true iff the status indicates an IOError error.
-  bool isIOError() const { return code_ == Code::kIOError; }
+  bool IsIOError() const { return code_ == Code::kIOError; }
 
   /// Returns true iff the status indicates Not initialized
-  bool isNotInitialized() const { return code_ == Code::kNotInitialized; }
+  bool IsNotInitialized() const { return code_ == Code::kNotInitialized; }
 
   /// Return a string representation of this status suitable for printing.
   /// Returns the string "OK" for success.
-  std::string toString() const {
+  std::string ToString() const {
     switch (code_) {
       case Code::kOk:
         return "OK";

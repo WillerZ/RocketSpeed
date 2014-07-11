@@ -101,7 +101,7 @@ case "$TARGET_OS" in
         ;;
     IOS)
         PLATFORM=IOS
-        COMMON_FLAGS="$COMMON_FLAGS -DOS_MACOSX -DIOS_CROSS_COMPILE -DROCKSDB_LITE"
+        COMMON_FLAGS="$COMMON_FLAGS -DOS_MACOSX -DIOS_CROSS_COMPILE -DROCKETSPEED_LITE"
         PLATFORM_SHARED_EXT=dylib
         PLATFORM_SHARED_LDFLAGS="-dynamiclib -install_name "
         CROSS_COMPILE=true
@@ -161,7 +161,7 @@ if test -z "$DO_NOT_RUN_BUILD_DETECT_VERSION"; then
   "$PWD/build_tools/build_detect_version"
 fi
 
-# We want to make a list of all cc files within util, db, table, and helpers
+# We want to make a list of all cc files within util, and helpers
 # except for the test and benchmark files. By default, find will output a list
 # of all files matching either rule, so we need to append -print to make the
 # prune take effect.
@@ -190,7 +190,7 @@ else
       int main() {}
 EOF
     if [ "$?" = 0 ]; then
-        COMMON_FLAGS="$COMMON_FLAGS -DROCKSDB_ATOMIC_PRESENT"
+        COMMON_FLAGS="$COMMON_FLAGS -DROCKETSPEED_ATOMIC_PRESENT"
     fi
 
     # Test whether fallocate is available
@@ -202,7 +202,7 @@ EOF
       }
 EOF
     if [ "$?" = 0 ]; then
-        COMMON_FLAGS="$COMMON_FLAGS -DROCKSDB_FALLOCATE_PRESENT"
+        COMMON_FLAGS="$COMMON_FLAGS -DROCKETSPEED_FALLOCATE_PRESENT"
     fi
 
     # Test whether Snappy library is installed
