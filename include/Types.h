@@ -60,8 +60,6 @@ class MessageReceived {
   std::string payload;
 };
 
-typedef std::function<void(std::vector<MessageReceived>& data)> ReceiveCallback;
-
 /**
  * An object of the form scheme://host:port/path
  */

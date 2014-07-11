@@ -28,15 +28,24 @@ class ConsumerHandle;
  * or multiple topics.
  */
 class Producer {
+ public:
   /**
-   * Opens a Producer. This can create connections to the service
-   * provider, validate credentials, etc.
+   * Opens a Producer. This can create connections to the Cloud Service
+   * Provider, validate credentials, etc.
    *
    * @param config  The configuration of this service provider
    * @return on success returns OK(), otherwise errorcode
    */
   static Status Open(const Configuration& config,
                      Producer** producer);
+
+
+  /**
+   * Closes this Producer's connection to the Cloud Service Provider.
+   * After deletion, publishing from a ProducerHandle opened from this producer
+   * will fail with an errorcode.
+   */
+  virtual ~Producer();
 
   /**
    * Creates or opens a Topic. New messages can be sent by
@@ -71,33 +80,43 @@ class Producer {
  * single topic
  */
 class ProducerHandle {
+ public:
   /**
    * Publishes a new message to the Topic. The return parameter indicates
    * whether the publish was successful, and if so it returns the
    * messageid and sequenceId of this message.
    */
-   virtual ResultStatus publish(const Slice& data);
+  virtual ResultStatus publish(const Slice& data);
 
-   virtual ~ProducerHandle();
+  virtual ~ProducerHandle();
 };
 
 /**
  * A Consumer object is used to consume messages from multiple topics
  */
 class Consumer {
+ public:
   /**
-   * Opens a Consumer. This can create connections to the service
-   * provider, validate credentials, etc.
+   * Opens a Consumer. This can create connections to the Cloud Service
+   * Provider, validate credentials, etc.
    *
    * @param config  The configuration of this service provider
    * @return on success returns OK(), otherwise errorcode
    */
   static Status Open(const Configuration& config,
                      ConsumerHandle** consumer);
+
+  /**
+   * Closes this Consumer's connection to the Cloud Service Provider.
+   * All ConsumerHandles created through this Consumer will continue to be
+   * accessible, but will no longer receive any messages.
+   */
+  virtual ~Consumer();
+
   /**
    * Opens a Topic for reading. The Topic should already exist.
-   * The callback is invoked for all arriving messages for
-   * this topic.
+   * Messages arriving for this topic will be added to the mailbox,
+   * accessible through the ConsumerHandle.
    *
    * @param name Name of this topic to be opened
    * @param options  Quality of service for this Topic
@@ -105,7 +124,6 @@ class Consumer {
    */
   virtual Status ListenTopic(const Topic& name,
                              const TopicOptions& options,
-                             const ReceiveCallback& callback,
                              ConsumerHandle** handle);
 
   /**
@@ -121,21 +139,39 @@ class Consumer {
    */
   virtual std::vector<Status> ListenTopics(std::vector<Topic>& names,
                                  const TopicOptions& options,
-                                 const std::vector<ReceiveCallback>& callbacks,
                                  std::vector<ConsumerHandle*>* handles);
 };
 
 
 /**
  * The ConsumerHandle is used to listen to new messages to a
- * single topic
+ * single topic.
  */
 class ConsumerHandle {
+ public:
   /**
    * Deleting this handle means that messages for the corresponding
    * topic are not interesting to this producer any more.
    */
-   virtual ~ConsumerHandle();
+  virtual ~ConsumerHandle();
+
+  /**
+   * Waits for a valid message to arrive. This call will block until a message
+   * is received.
+   *
+   * @return the received message.
+   */
+  virtual MessageReceived receive();
+
+  /**
+   * Checks for an available message and returns immediately. If a message is
+   * available then the returned message will have OK() as its status, and the
+   * message contents. If no message is available, the status will be NotFound()
+   * and the message contents will be empty.
+   *
+   * @return the received message.
+   */
+  virtual MessageReceived peek();
 };
 
-}
+}  // namespace rocketspeed
