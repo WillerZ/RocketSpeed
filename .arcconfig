@@ -6,5 +6,7 @@
     "linters"
   ],
   "lint.engine" : "FacebookFbcodeLintEngine",
-  "lint.engine.single.linter" : "FbcodeCppLinter"
+  "lint.engine.single.linter" : "FbcodeCppLinter",
+  "git.default-relative-commit" : "HEAD^",
+  "arc.feature.start.default" : "origin/master"
 }
