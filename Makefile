@@ -70,7 +70,8 @@ TESTS = \
 	autovector_test \
 	arena_test \
 	coding_test \
-	env_test
+	env_test \
+	consistent_hash_test
 	
 TOOLS = 
 
@@ -201,6 +202,9 @@ autovector_test: src/util/autovector_test.o $(LIBOBJECTS) $(TESTHARNESS)
 
 env_test: src/util/env_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/env_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+consistent_hash_test: src/util/tests/consistent_hash_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/tests/consistent_hash_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test
