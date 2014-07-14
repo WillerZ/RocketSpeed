@@ -23,6 +23,7 @@ src/util/build_version.cc
 build_tools/VALGRIND_LOGS/
 coverage/COVERAGE_REPORT
 .gdbhistory
+.gdb_history
 .phutil_module_cache
 tags
 

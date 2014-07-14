@@ -165,7 +165,7 @@ fi
 # except for the test and benchmark files. By default, find will output a list
 # of all files matching either rule, so we need to append -print to make the
 # prune take effect.
-DIRS="src/util src/pilot src/copilot src/controltower src/client"
+DIRS="src/util src/pilot src/copilot src/controltower src/client src/messages"
 
 set -f # temporarily disable globbing so that our patterns arent expanded
 PRUNE_TEST="-name *test*.cc -prune"
