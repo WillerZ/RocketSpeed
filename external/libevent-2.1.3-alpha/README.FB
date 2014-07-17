@@ -1,0 +1,1 @@
+This the libevent code. The header files to include are in the ./include directory andthe compiled library are in ./lib.
