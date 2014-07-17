@@ -72,7 +72,8 @@ TESTS = \
 	coding_test \
 	env_test \
 	consistent_hash_test \
-        messages_test
+  messages_test \
+  simple_storage_test
 	
 TOOLS = 
 
@@ -209,6 +210,9 @@ consistent_hash_test: src/util/tests/consistent_hash_test.o $(LIBOBJECTS) $(TEST
 
 messages_test: src/messages/messages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/messages/messages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+simple_storage_test: src/util/tests/simple_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/tests/simple_storage_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

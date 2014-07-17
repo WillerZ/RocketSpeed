@@ -50,7 +50,7 @@ class LogStorage {
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status Append(LogID id,
-                        const Slice& data);
+                        const Slice& data) = 0;
 
   /**
    * Trims all messages from the log that are older than age.
@@ -60,7 +60,7 @@ class LogStorage {
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status Trim(LogID id,
-                      std::chrono::microseconds age);
+                      std::chrono::microseconds age) = 0;
 
   /**
    * Creates a group of LogReaders that will execute in parallel.
@@ -72,7 +72,7 @@ class LogStorage {
    */
   virtual Status CreateReaders(unsigned int maxLogsPerReader,
                                unsigned int parallelism,
-                               std::vector<LogReader*>* readers);
+                               std::vector<LogReader*>* readers) = 0;
 };
 
 /**
@@ -94,7 +94,7 @@ class LogReader {
    * Closes the log reader and deregisters itself from any selectors that it
    * is registered with.
    */
-  virtual ~LogReader();
+  virtual ~LogReader() {}
 
   /**
    * Opens a new log for reading.
@@ -109,8 +109,8 @@ class LogReader {
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status Open(LogID id,
-                      SequenceNumber startPoint,
-                      SequenceNumber endPoint);
+                      SequenceNumber startPoint = kBeginningOfTimeSeqno,
+                      SequenceNumber endPoint = kEndOfTimeSeqno) = 0;
 
   /**
    * Stops reading from a log. Subsequent calls to Read will not return records
@@ -119,7 +119,7 @@ class LogReader {
    * @param id ID number of the log to stop reading from.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status Close(LogID id);
+  virtual Status Close(LogID id) = 0;
 
   /**
    * Reads records from all logs opened by this reader.
@@ -141,7 +141,7 @@ class LogReader {
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status Read(std::vector<LogRecord>* records,
-                      size_t maxRecords);
+                      size_t maxRecords) = 0;
 };
 
 /**
@@ -152,14 +152,6 @@ class LogReader {
  */
 class LogSelector {
  public:
-  /**
-   * Creates a LogSelector.
-   *
-   * @param selector Outputs the created LogSelector.
-   * @return on success returns OK(), otherwise errorcode.
-   */
-  static Status Create(LogSelector** selector);
-
   /**
    * Closes the selector and deregisters all registered LogReaders.
    */
@@ -172,7 +164,7 @@ class LogSelector {
    * @param reader The LogReader to register.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status Register(LogReader* reader);
+  virtual Status Register(LogReader* reader) = 0;
 
   /**
    * Deregisters a LogReader with this selector.
@@ -180,7 +172,7 @@ class LogSelector {
    * @param reader The LogReader to deregister.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status Deregister(LogReader* reader);
+  virtual Status Deregister(LogReader* reader) = 0;
 
   /**
    * Blocks until one or more of the registered LogReaders has data, then writes
@@ -190,12 +182,17 @@ class LogSelector {
    * If no data is available after the timeout period, Select will return
    * NotFound().
    *
+   * The returned LogReaders are guaranteed to have at least one record
+   * available. However, if Close(logID) is called on one of the returned
+   * readers before calling Read then this may cause records to not be available
+   * on that reader.
+   *
    * @param selected output parameter for the selected LogReader.
    * @param timeout maximum time to wait for data.
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status Select(std::vector<LogReader*>* selected,
-                        std::chrono::microseconds timeout);
+                        std::chrono::microseconds timeout) = 0;
 };
 
 }  // namespace rocketspeed
