@@ -72,8 +72,9 @@ TESTS = \
 	coding_test \
 	env_test \
 	consistent_hash_test \
-  messages_test \
-  simple_storage_test
+	messages_test \
+	simple_storage_test \
+	auto_roll_logger_test
 	
 TOOLS = 
 
@@ -147,8 +148,9 @@ pilot:
 # compile only the copilot
 copilot:
 
-# compile only the ontroltower
-controltower:
+# compile only the controltower
+controltower: src/controltower/main.o $(LIBOBJECTS)
+	$(CXX) src/controltower/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # run all unit tests
 check: $(TESTS)
@@ -213,6 +215,9 @@ messages_test: src/messages/messages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 
 simple_storage_test: src/util/tests/simple_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/simple_storage_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+auto_roll_logger_test: src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

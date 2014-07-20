@@ -6,15 +6,11 @@
 
 #include <inttypes.h>
 #include <sys/types.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <gflags/gflags.h>
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
@@ -22,6 +18,7 @@
 #include "include/Env.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
+#include "src/util/auto_roll_logger.h"
 #include "src/controltower/options.h"
 
 namespace rocketspeed {

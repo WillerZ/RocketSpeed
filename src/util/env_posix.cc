@@ -1308,7 +1308,6 @@ class PosixEnv : public Env {
 
   virtual uint64_t NowMicros() {
     struct timeval tv;
-    // TODO(kailiu) MAC DON'T HAVE THIS
     gettimeofday(&tv, nullptr);
     return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
   }
@@ -1352,20 +1351,20 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
-  virtual Status GetAbsolutePath(const std::string& db_path,
-      std::string* output_path) {
-    if (db_path.find('/') == 0) {
-      *output_path = db_path;
-      return Status::OK();
-    }
-
+  virtual Status GetWorkingDirectory(std::string* output_path) {
     char the_path[256];
     char* ret = getcwd(the_path, 256);
     if (ret == nullptr) {
       return Status::IOError(strerror(errno));
     }
-
     *output_path = ret;
+    return Status::OK();
+  }
+
+  virtual Status ChangeWorkingDirectory(const std::string& path) {
+    if (chdir(path.c_str())) {
+      return Status::IOError(strerror(errno));
+    }
     return Status::OK();
   }
 

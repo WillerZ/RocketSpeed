@@ -395,8 +395,6 @@ TEST(EnvPosixTest, DecreaseNumBgThreads) {
 // The following function act as the replacement of test::TmpDir() that may be
 // customized by user to be on a storage that doesn't work with GetUniqueId().
 //
-// TODO(kailiu) This function still assumes /tmp/<test-dir> reside in regular
-// storage system.
 namespace {
 bool IsSingleVarint(const std::string& s) {
   Slice slice(s);

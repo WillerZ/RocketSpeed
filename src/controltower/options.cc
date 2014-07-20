@@ -9,7 +9,10 @@ namespace rocketspeed {
 ControlTowerOptions::ControlTowerOptions()
   : env(Env::Default()),
     info_log(nullptr),
-    info_log_level(INFO_LEVEL) {
+    info_log_level(INFO_LEVEL),
+    log_dir(""),
+    max_log_file_size(0),
+    log_file_time_to_roll(0) {
 }
 
 }  // namespace rocketspeed

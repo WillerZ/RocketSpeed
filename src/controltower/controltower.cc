@@ -70,11 +70,12 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
   ControlTowerOptions result = src;
 
   if (result.info_log == nullptr) {
-    Status s;
-    /*** XXX
-    Status s = CreateLoggerFromOptions(dbname, result.db_log_dir, src.env,
-                                       result, &result.info_log);
-    ***/
+    Status s = CreateLoggerFromOptions(src.env,
+                                       result.log_dir,
+                                       result.log_file_time_to_roll,
+                                       result.max_log_file_size,
+                                       result.info_log_level,
+                                       &result.info_log);
     if (!s.ok()) {
       // No place suitable for logging
      result.info_log = nullptr;

@@ -7,7 +7,6 @@
 // where enough posix functionality is available.
 
 #pragma once
-#include <algorithm>
 #include <stdio.h>
 #include <sys/time.h>
 #include <time.h>
@@ -16,8 +15,10 @@
 #ifdef OS_LINUX
 #include <linux/falloc.h>
 #endif
-#include "include/Env.h"
+#include <algorithm>
 #include <atomic>
+#include <cassert>
+#include "include/Env.h"
 
 namespace rocketspeed {
 

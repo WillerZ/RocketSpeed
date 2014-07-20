@@ -18,6 +18,13 @@ build_config.mk
 *.d-e
 *.o-*
 *.swp
+LOG*
+
+# ignore the binary named controltower but do not ignore the control
+# tower source directory
+/controltower
+/pilot
+/copilot
 
 src/util/build_version.cc
 build_tools/VALGRIND_LOGS/

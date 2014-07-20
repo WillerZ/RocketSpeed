@@ -243,9 +243,11 @@ class Env {
   // Get the number of seconds since the Epoch, 1970-01-01 00:00:00 (UTC).
   virtual Status GetCurrentTime(int64_t* unix_time) = 0;
 
-  // Get full directory name for this db.
-  virtual Status GetAbsolutePath(const std::string& db_path,
-      std::string* output_path) = 0;
+  // Get full name of current working directory
+  virtual Status GetWorkingDirectory(std::string* output_path) = 0;
+
+  // Set name of current working directory
+  virtual Status ChangeWorkingDirectory(const std::string& path) = 0;
 
   // The number of background worker threads of a specific thread pool
   // for this environment. 'LOW' is the default pool.
@@ -742,9 +744,11 @@ class EnvWrapper : public Env {
   Status GetCurrentTime(int64_t* unix_time) {
     return target_->GetCurrentTime(unix_time);
   }
-  Status GetAbsolutePath(const std::string& db_path,
-      std::string* output_path) {
-    return target_->GetAbsolutePath(db_path, output_path);
+  Status GetWorkingDirectory(std::string* output_path) {
+    return target_->GetWorkingDirectory(output_path);
+  }
+  Status ChangeWorkingDirectory(const std::string& path) {
+    return target_->ChangeWorkingDirectory(path);
   }
   void SetBackgroundThreads(int num, Priority pri) {
     return target_->SetBackgroundThreads(num, pri);
