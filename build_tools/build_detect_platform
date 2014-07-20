@@ -77,7 +77,13 @@ if test -z "$TARGET_OS"; then
     TARGET_OS=`uname -s`
 fi
 
-COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS}"
+# Detect location of libevent
+if test -z "$EVENTDIR"; then
+    EVENTDIR="external/libevent"
+    PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -L$EVENTDIR/lib"
+fi
+
+COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS} -I${EVENTDIR}/include"
 CROSS_COMPILE=
 PLATFORM_CCFLAGS=
 PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS ${CXXFLAGS}"
@@ -112,7 +118,7 @@ case "$TARGET_OS" in
         if [ -z "$USE_CLANG" ]; then
             COMMON_FLAGS="$COMMON_FLAGS -fno-builtin-memcmp"
         fi
-        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lpthread -lrt"
+        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lpthread -lrt -levent_core"
         # PORT_FILES=port/linux/linux_specific.cc
         ;;
     SunOS)
@@ -170,8 +176,9 @@ DIRS="src/util src/pilot src/copilot src/controltower src/client src/messages"
 set -f # temporarily disable globbing so that our patterns arent expanded
 PRUNE_TEST="-name *test*.cc -prune"
 PRUNE_BENCH="-name *bench*.cc -prune"
-PORTABLE_FILES=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o -name '*.cc' -print | sort | tr "\n" " "`
-PORTABLE_CPP=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o -name '*.cpp' -print | sort | tr "\n" " "`
+PRUNE_MAIN="-name main.cc -prune"
+PORTABLE_FILES=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cc' -print | sort | tr "\n" " "`
+PORTABLE_CPP=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cpp' -print | sort | tr "\n" " "`
 set +f # re-enable globbing
 
 # The sources consist of the portable files, plus the platform-specific port

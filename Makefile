@@ -184,8 +184,8 @@ valgrind_check: all $(PROGRAMS) $(TESTS)
 clean:
 	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(MEMENVLIBRARY) build_config.mk
 	-rm -rf ios-x86/* ios-arm/*
-	-find . -name "*.[od]" -exec rm {} \;
-	-find . -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
+	-find src -name "*.[od]" -exec rm {} \;
+	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
 tags:
 	ctags * -R
 	cscope -b `find . -name '*.cc'` `find . -name '*.h'`
