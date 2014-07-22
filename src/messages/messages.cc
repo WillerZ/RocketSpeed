@@ -23,8 +23,11 @@
  */
 namespace rocketspeed {
 
-MessageData::MessageData(const Slice& topic_name, const Slice& payload):
+MessageData::MessageData(TenantID tenantID,
+                         const Slice& topic_name,
+                         const Slice& payload):
   type_(mData),
+  tenantid_(tenantID),
   seqno_(0),
   topic_name_(topic_name),
   payload_(payload) {
@@ -36,7 +39,7 @@ MessageData::MessageData(const Slice& topic_name, const Slice& payload):
   }
 }
 
-MessageData::MessageData() : MessageData(Slice(), Slice()) {}
+MessageData::MessageData() : MessageData(Tenant::Invalid, Slice(), Slice()) {}
 
 MessageData::~MessageData() {
 }
@@ -45,6 +48,7 @@ Slice MessageData::Serialize() {
   serialize_buffer__.clear();
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   serialize_buffer__.append((const char *)&version__, sizeof(version__));
+  PutVarint32(&serialize_buffer__, tenantid_);
   PutVarint64(&serialize_buffer__, seqno_);
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
@@ -68,6 +72,10 @@ Status MessageData::DeSerialize(Slice* in) {
   // If we do not support this version, then return error
   if (version__ > ROCKETSPEED_CURRENT_MSG_VERSION) {
     return Status::NotSupported("Bad Message Version");
+  }
+
+  if (!GetVarint32(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
   }
 
   // extract sequence number of message
@@ -95,10 +103,12 @@ Status MessageData::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-MessageMetadata::MessageMetadata(const SequenceNumber seqno,
+MessageMetadata::MessageMetadata(TenantID tenantID,
+  const SequenceNumber seqno,
   const HostId& hostid,
   const std::vector<TopicPair>& topics):
   type_(mMetadata),
+  tenantid_(tenantID),
   seqno_(seqno),
   hostid_(hostid),
   topics_(topics) {
@@ -107,6 +117,7 @@ MessageMetadata::MessageMetadata(const SequenceNumber seqno,
 
 MessageMetadata::MessageMetadata() :
   type_(mMetadata),
+  tenantid_(Tenant::Invalid),
   seqno_(0) {
   version__ = ROCKETSPEED_CURRENT_MSG_VERSION;
 }
@@ -120,6 +131,7 @@ Slice MessageMetadata::Serialize() {
   // Type and Version
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   serialize_buffer__.append((const char *)&version__, sizeof(version__));
+  PutVarint32(&serialize_buffer__, tenantid_);
   PutVarint64(&serialize_buffer__, seqno_);
 
   // HostId
@@ -150,6 +162,11 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   // If we do not support this version, then return error
   if (version__ > ROCKETSPEED_CURRENT_MSG_VERSION) {
     return Status::NotSupported("Bad Message Version");
+  }
+
+  // extrant tenant ID
+  if (!GetVarint32(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
   }
 
   // extract sequence number of message

@@ -11,6 +11,20 @@ namespace rocketspeed {
 
 class Coding { };
 
+TEST(Coding, Fixed16) {
+  std::string s;
+  for (uint32_t v = 0; v < (1 << 16); v++) {
+    PutFixed16(&s, static_cast<uint16_t>(v));
+  }
+
+  const char* p = s.data();
+  for (uint32_t v = 0; v < (1 << 16); v++) {
+    uint16_t actual = DecodeFixed16(p);
+    ASSERT_EQ(static_cast<uint16_t>(v), actual);
+    p += sizeof(uint16_t);
+  }
+}
+
 TEST(Coding, Fixed32) {
   std::string s;
   for (uint32_t v = 0; v < 100000; v++) {

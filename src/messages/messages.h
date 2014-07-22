@@ -101,7 +101,7 @@ class MessageData : public  Serializer {
    * @param topic_name name of the topic
    * @param payload The user defined message contents
    */
-  MessageData(const Slice& topic_name, const Slice& payload);
+  MessageData(TenantID tenantID, const Slice& topic_name, const Slice& payload);
 
   /*
    * default constructor
@@ -128,6 +128,11 @@ class MessageData : public  Serializer {
    */
   Slice GetPayload() { return payload_; }
 
+  /**
+   * @return The tenant ID.
+   */
+  TenantID GetTenantID() const { return tenantid_; }
+
   /*
    * Inherited from Serializer
    */
@@ -136,6 +141,7 @@ class MessageData : public  Serializer {
 
  private:
   MessageType type_;         // type of this message: mData
+  TenantID tenantid_;        // unique id for tenant
   SequenceNumber seqno_;     // sequence number of message
   MsgId msgid_;              // globally unique id for message
   Slice topic_name_;         // name of topic
@@ -153,7 +159,8 @@ class MessageMetadata : public Serializer {
    * @param hostid The identifier of the client
    * @param topics The list of topics to subscribe-to/unsubscribe-from
    */
-  MessageMetadata(const SequenceNumber seqno,
+  MessageMetadata(TenantID tenantID,
+                  const SequenceNumber seqno,
                   const HostId& hostid,
                   const std::vector<TopicPair>& topics);
 
@@ -182,6 +189,11 @@ class MessageMetadata : public Serializer {
    */
   const HostId& GetHostId() { return hostid_; }
 
+  /**
+   * @return The tenant ID.
+   */
+  TenantID GetTenantID() const { return tenantid_; }
+
   /*
    * Inherited from Serializer
    */
@@ -190,6 +202,8 @@ class MessageMetadata : public Serializer {
 
  private:
   MessageType type_;         // type of this message: mMetadata
+
+  TenantID tenantid_;        // unique id for tenant
 
   // The sequence number is filled up by the client at message creation time.
   SequenceNumber seqno_;     // sequence number of message

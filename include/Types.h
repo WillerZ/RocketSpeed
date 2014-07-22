@@ -66,13 +66,39 @@ class MessageReceived {
 typedef std::string URL;
 
 /**
+ * A unique ID for this RocketSpeed tenant. Each tenant will have a Service
+ * Level Agreement with the RocketSpeed system used to limit the impact any one
+ * tenant can have on the system as a whole. If a tenant exceeds their agreed
+ * resource usage then their experience may be throttled.
+ */
+typedef uint32_t TenantID;
+
+enum Tenant : TenantID {
+  /**
+   * The invalid tenant ID should never be used. It is here to catch cases
+   * when the client fails to set the tenant ID.
+   */
+  Invalid = 0,
+
+  /**
+   * The GuestTenant ID may be used by applications during development. The
+   * guest tenant has a small amount of resources allocated to it, which should
+   * be suitable for lightweight development. This should not be used in
+   * production.
+   */
+  Guest = 1,
+};
+
+/**
  *  A Configuration that specifies how a client can describe a RocketSpeed Cloud.
  *
  *  @param url The name of the RocketSpeed Cloud Service
+ *  @param tenancyID A unique ID for this service.
  */
 class Configuration {
  public:
-  URL url; 
+  URL url;
+  TenantID tenantID;
 };
 
 enum Retention : char {

@@ -18,7 +18,7 @@ TEST(Messaging, Data) {
   Slice payload1("Payload1");
 
   // create a message
-  MessageData data1(name1, payload1);
+  MessageData data1(Tenant::Guest, name1, payload1);
 
   // serialize the message
   Slice original = data1.Serialize();
@@ -30,8 +30,8 @@ TEST(Messaging, Data) {
   // verify that the new message is the same as original
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
+  ASSERT_EQ(data2.GetTenantID(), Tenant::Guest);
 }
-
 TEST(Messaging, Metadata) {
   SequenceNumber seqno = 100;
   int port = 200;
@@ -48,7 +48,7 @@ TEST(Messaging, Metadata) {
   }
 
   // create a message
-  MessageMetadata meta1(seqno, hostid, topics);
+  MessageMetadata meta1(Tenant::Guest, seqno, hostid, topics);
 
   // serialize the message
   Slice original = meta1.Serialize();
@@ -61,6 +61,7 @@ TEST(Messaging, Metadata) {
   ASSERT_EQ(seqno, data2.GetSequenceNumber());
   ASSERT_EQ(mymachine, data2.GetHostId().hostname);
   ASSERT_EQ(port, data2.GetHostId().port);
+  ASSERT_EQ(Tenant::Guest, data2.GetTenantID());
 
   // verify that the new message is the same as original
   std::vector<TopicPair> nt = data2.GetTopicInfo();
