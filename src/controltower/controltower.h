@@ -14,6 +14,7 @@
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
+#include <event2/thread.h>
 #include <event2/util.h>
 #include "include/Env.h"
 #include "src/util/logging.h"
@@ -49,6 +50,7 @@ class ControlTower {
   static void readcb(struct bufferevent *bev, void *ctx);
   static void errorcb(struct bufferevent *bev, short error, void *ctx);
   static void do_accept(evutil_socket_t listener, short event, void *arg);
+  static void dump_libevent_cb(int severity, const char* msg);
 
  public:
   // A new instance of a Control Tower

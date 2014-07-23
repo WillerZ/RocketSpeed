@@ -78,7 +78,7 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
                                        &result.info_log);
     if (!s.ok()) {
       // No place suitable for logging
-     result.info_log = nullptr;
+      result.info_log = nullptr;
     }
   }
   return result;
@@ -142,7 +142,7 @@ ControlTower::Run(void) {
 
   struct event* listener_event = ld_event_new(
                                 base_, listener, EV_READ|EV_PERSIST,
-                                do_accept, reinterpret_cast<void*>(this));
+                                this->do_accept, reinterpret_cast<void*>(this));
   /* check it */
   rv = ld_event_add(listener_event, nullptr);
   if (rv != 0) {
