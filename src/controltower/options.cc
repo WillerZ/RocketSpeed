@@ -8,6 +8,7 @@ namespace rocketspeed {
 
 ControlTowerOptions::ControlTowerOptions()
   : env(Env::Default()),
+    port_number(80500),
     info_log(nullptr),
     info_log_level(INFO_LEVEL),
     log_dir(""),

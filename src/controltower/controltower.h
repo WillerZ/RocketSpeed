@@ -17,6 +17,8 @@
 #include <event2/thread.h>
 #include <event2/util.h>
 #include "include/Env.h"
+#include "src/messages/serializer.h"
+#include "src/messages/messages.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/auto_roll_logger.h"
@@ -36,6 +38,9 @@ class ControlTower {
   // The configuration of this rocketspeed instance
   Configuration conf_;
 
+  // Is the ControlTower all setup and running?
+  bool running_;
+
   // The event loop base.
   struct event_base *base_;
 
@@ -47,9 +52,11 @@ class ControlTower {
   ControlTowerOptions SanitizeOptions(const ControlTowerOptions& src);
 
   // callbacks needed by libevent
-  static void readcb(struct bufferevent *bev, void *ctx);
+  static void readhdr(struct bufferevent *bev, void *ctx);
+  static void readmsg(struct bufferevent *bev, void *ctx);
   static void errorcb(struct bufferevent *bev, short error, void *ctx);
   static void do_accept(evutil_socket_t listener, short event, void *arg);
+  static void do_startevent(evutil_socket_t listener, short event, void *arg);
   static void dump_libevent_cb(int severity, const char* msg);
 
  public:
@@ -58,8 +65,13 @@ class ControlTower {
                                   const Configuration& conf,
                                   ControlTower** ct);
 
+  virtual ~ControlTower();
+
   // Start this instance of the Control Tower
   void Run(void);
+
+  // Is the ControlTower up and running?
+  bool IsRunning() { return running_; }
 
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}

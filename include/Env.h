@@ -29,6 +29,7 @@ class Slice;
 class WritableFile;
 class RandomRWFile;
 class Directory;
+class Connection;
 
 using std::unique_ptr;
 using std::shared_ptr;
@@ -260,6 +261,13 @@ class Env {
   // Generates a unique id that can be used to identify a db
   virtual std::string GenerateUniqueId();
 
+  // Create a brand new Connection to the remote server.
+  // The returned Connection object is not-thread safe.
+  virtual Status NewConnection(const std::string& hostname,
+                               int port,
+                               unique_ptr<Connection>* result,
+                               const EnvOptions& options) const
+                               = 0;
  private:
   // No copying allowed
   Env(const Env&);
@@ -606,6 +614,20 @@ class FileLock {
   void operator=(const FileLock&);
 };
 
+// Identifies a connection to a remote server
+class Connection {
+ public:
+  Connection() {}
+
+  // Create a connection to the specified hostname and port
+  Connection(const std::string& hostname, int port);
+
+  // Write the data to the connection
+  virtual Status Send(const Slice& data) = 0;
+
+  virtual ~Connection() {}
+};
+
 extern void LogFlush(const shared_ptr<Logger>& info_log);
 
 extern void Log(const InfoLogLevel log_level,
@@ -755,6 +777,12 @@ class EnvWrapper : public Env {
   }
   std::string TimeToString(uint64_t time) {
     return target_->TimeToString(time);
+  }
+  Status NewConnection(const std::string& f,
+                       const int p,
+                       unique_ptr<Connection>* r,
+                       const EnvOptions& options) const {
+    return target_->NewConnection(f, p, r, options);
   }
 
  private:

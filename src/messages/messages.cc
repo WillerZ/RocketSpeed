@@ -23,15 +23,61 @@
  */
 namespace rocketspeed {
 
+/**
+ * Given a serialized header, convert it to a real object
+ */
+MessageHeader::MessageHeader(Slice* in) {
+  assert(in->size() >= GetSize());
+  memcpy(&version_, in->data(), sizeof(version_));  // extract version
+  in->remove_prefix(sizeof(version_));
+  assert(version_ <= ROCKETSPEED_CURRENT_MSG_VERSION);
+  GetFixed32(in, &msgsize_);                       // extract msg size
+}
+
+ /**
+  * Creates a Message of the appropriate subtype by looking at the
+  * MessageType. Returns nullptr on error. It is the responsibility
+  * of the caller to own this memory object.
+  **/
+Message* Message::CreateNewInstance(Slice* in) {
+  MessageData* msg1 = nullptr;
+  MessageMetadata* msg2 = nullptr;
+  MessageType mtype;
+
+  // make a temporary copy of the input slice
+  Slice tmp(*in);
+  assert(in->size() >= MessageHeader::GetSize());
+
+  // remove msg header
+  tmp.remove_prefix(MessageHeader::GetSize());
+
+  // extract msg type
+  memcpy(&mtype, in->data(), sizeof(mtype));
+
+  switch (mtype) {
+    case mData:
+      msg1 = new MessageData();
+      msg1->DeSerialize(in);
+      return msg1;
+    case mMetadata:
+      msg2 = new MessageMetadata();
+      msg2->DeSerialize(in);
+      return msg2;
+    default:
+      break;
+  }
+  return nullptr;
+}
+
 MessageData::MessageData(TenantID tenantID,
                          const Slice& topic_name,
                          const Slice& payload):
-  type_(mData),
-  tenantid_(tenantID),
-  seqno_(0),
   topic_name_(topic_name),
   payload_(payload) {
-  version__ =  ROCKETSPEED_CURRENT_MSG_VERSION;
+  msghdr_.version_ =  ROCKETSPEED_CURRENT_MSG_VERSION;
+  type_ = mData;
+  tenantid_ = tenantID;
+  seqno_ = 0;
 
   // TODO(dhruba) 1 : generate GUID here
   for (unsigned int i = 0; i < sizeof(msgid_); i++) {
@@ -44,35 +90,52 @@ MessageData::MessageData() : MessageData(Tenant::Invalid, Slice(), Slice()) {}
 MessageData::~MessageData() {
 }
 
-Slice MessageData::Serialize() {
+Slice MessageData::Serialize() const {
+  msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
+  serialize_buffer__.append((const char *)&msghdr_.version_,
+                            sizeof(msghdr_.version_));
+  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
-  serialize_buffer__.append((const char *)&version__, sizeof(version__));
   PutVarint32(&serialize_buffer__, tenantid_);
   PutVarint64(&serialize_buffer__, seqno_);
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
   PutLengthPrefixedSlice(&serialize_buffer__, topic_name_);
   PutLengthPrefixedSlice(&serialize_buffer__, payload_);
+
+  // compute the size of this message
+  msghdr_.msgsize_ = serialize_buffer__.size();
+  std::string mlength;
+  PutFixed32(&mlength, msghdr_.msgsize_);
+  assert(mlength.size() == sizeof(msghdr_.msgsize_));
+
+  // Update the 4byte-msg size starting from the 2nd byte
+  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
   return Slice(serialize_buffer__);
 }
 
 Status MessageData::DeSerialize(Slice* in) {
   const unsigned int len = in->size();
-  if (len < sizeof(version__) + sizeof(type_)) {
+  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
+      sizeof(type_)) {
     return Status::InvalidArgument("Bad Message Version/Type");
   }
-
-  // extract type and version of message
-  memcpy(&type_, in->data(), sizeof(type_));
-  in->remove_prefix(sizeof(type_));
-  memcpy(&version__, in->data(), sizeof(version__));
-  in->remove_prefix(sizeof(version__));
+  // extract msg version
+  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
+  in->remove_prefix(sizeof(msghdr_.version_));
 
   // If we do not support this version, then return error
-  if (version__ > ROCKETSPEED_CURRENT_MSG_VERSION) {
+  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
     return Status::NotSupported("Bad Message Version");
   }
+  // extract msg size
+  if (!GetFixed32(in, &msghdr_.msgsize_)) {
+    return Status::InvalidArgument("Bad msg size");
+  }
+  // extract type
+  memcpy(&type_, in->data(), sizeof(type_));
+  in->remove_prefix(sizeof(type_));
 
   if (!GetVarint32(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
@@ -107,30 +170,35 @@ MessageMetadata::MessageMetadata(TenantID tenantID,
   const SequenceNumber seqno,
   const HostId& hostid,
   const std::vector<TopicPair>& topics):
-  type_(mMetadata),
-  tenantid_(tenantID),
-  seqno_(seqno),
   hostid_(hostid),
   topics_(topics) {
-  version__ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  type_ = mMetadata;
+  tenantid_ = tenantID;
+  seqno_ = seqno;
 }
 
-MessageMetadata::MessageMetadata() :
-  type_(mMetadata),
-  tenantid_(Tenant::Invalid),
-  seqno_(0) {
-  version__ = ROCKETSPEED_CURRENT_MSG_VERSION;
+MessageMetadata::MessageMetadata() {
+  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  type_ = mMetadata;
+  tenantid_ = Tenant::Invalid;
+  seqno_ = 0;
 }
 
 MessageMetadata::~MessageMetadata() {
 }
 
-Slice MessageMetadata::Serialize() {
+Slice MessageMetadata::Serialize() const {
+  msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
 
-  // Type and Version
+  // version and msg size
+  serialize_buffer__.append((const char *)&msghdr_.version_,
+                            sizeof(msghdr_.version_));
+  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+
+  // Type, tenantId and seqno
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
-  serialize_buffer__.append((const char *)&version__, sizeof(version__));
   PutVarint32(&serialize_buffer__, tenantid_);
   PutVarint64(&serialize_buffer__, seqno_);
 
@@ -145,24 +213,39 @@ Slice MessageMetadata::Serialize() {
     serialize_buffer__.append((const char *)&p.topic_type,
                               sizeof(p.topic_type));
   }
+  // compute msg size
+  msghdr_.msgsize_ = serialize_buffer__.size();
+  std::string mlength;
+  PutFixed32(&mlength, msghdr_.msgsize_);
+  assert(mlength.size() == sizeof(msghdr_.msgsize_));
+
+  // Update the 4-bye msg size starting from the 1 byte
+  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
   return Slice(serialize_buffer__);
 }
 
 Status MessageMetadata::DeSerialize(Slice* in) {
-  if (in->size() < sizeof(version__) + sizeof(type_)) {
+  if (in->size() < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
+      sizeof(type_)) {
     return Status::InvalidArgument("Bad Message Version/Type");
   }
-
-  // extract type and version of message
-  memcpy(&type_, in->data(), sizeof(type_));
-  in->remove_prefix(sizeof(type_));
-  memcpy(&version__, in->data(), sizeof(version__));
-  in->remove_prefix(sizeof(version__));
+  // extract version
+  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
+  in->remove_prefix(sizeof(msghdr_.version_));
 
   // If we do not support this version, then return error
-  if (version__ > ROCKETSPEED_CURRENT_MSG_VERSION) {
+  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
     return Status::NotSupported("Bad Message Version");
   }
+
+  // extract msg size
+  if (!GetFixed32(in, &msghdr_.msgsize_)) {
+    return Status::InvalidArgument("Bad msg size");
+  }
+
+  // extract type
+  memcpy(&type_, in->data(), sizeof(type_));
+  in->remove_prefix(sizeof(type_));
 
   // extrant tenant ID
   if (!GetVarint32(in, &tenantid_)) {

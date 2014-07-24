@@ -11,6 +11,34 @@
 
 namespace rocketspeed {
 
+class MessageHeader {
+ public:
+  /**
+   * The Serializer and DeSerialier can use the 'version' field to determine
+   * how best to serialize/deserialize the object
+   */
+  char version_;
+
+  /**
+   *  The total size of data + header of this message
+   */
+  uint32_t msgsize_;
+
+  /**
+   * Returns the serialized size of the message header
+   */
+  static unsigned int GetSize() {
+    return (sizeof(version_) + sizeof(msgsize_));
+  }
+
+  MessageHeader() {}
+
+  /**
+   * Given a serialized header, convert it to a real object
+   */
+  explicit MessageHeader(Slice* in);
+};
+
 class Serializer {
  public:
   /**
@@ -20,7 +48,7 @@ class Serializer {
    * @return Returns the serialized version of this object
    *
    */
-  virtual Slice Serialize() = 0;
+  virtual Slice Serialize() const = 0;
 
   /**
    * Deserializes an object. Populates the current object with the
@@ -36,11 +64,13 @@ class Serializer {
 
  protected:
   /**
-   * The Serializer and DeSerialier can use the 'version' field to determine
-   * how best to serialize/deserialize the object
+   * The Message Header
    */
-  char version__;
-  std::string serialize_buffer__;
+  mutable MessageHeader msghdr_;
+
+  // This buffer is here to avoid malloc/free of tmp space at
+  // every serialization/deserialization
+  mutable std::string serialize_buffer__;
 };
 
 }  // namespace rocketspeed

@@ -21,6 +21,9 @@ struct ControlTowerOptions {
   // Default: TODO(dhruba) 1234
   Configuration* conf;
 
+  // The port number for this service
+  int port_number;
+
   // If non-null, then server info logs are written to this object.
   // If null, then server info logs are written to log_dir.
   // This allows multiple instances of the server to log to the

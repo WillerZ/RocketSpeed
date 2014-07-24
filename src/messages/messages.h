@@ -45,7 +45,6 @@ class MsgId {
 
 /*
  * A host:port pair that uniquely identifies a machine.
- * TODO: investigate what is needed to support IPV6.
  */
 class HostId {
  public:
@@ -60,7 +59,7 @@ class HostId {
 };
 
 /*
- * The metadata
+ * The metadata messages can be of two subtypes
  */
 enum MetadataType : char {
   mSubscribe = 0x01,               // subscribe
@@ -83,6 +82,51 @@ class TopicPair {
   TopicPair() {}
 };
 
+/**
+ * This is a superclass of all RocketSpeed messages.
+ * All RocketSpeed messages have a type, a sequence number,
+ * a tenant-id and a msgid.
+ * The type identifies the functionality of the message,
+ * the TenantId is used to implement fair sharing of resources
+ * among multiple users of the system.
+ * The sequence number is used to delivery messages in order.
+ * The msgid is used to remove duplicates messages.
+ */
+class Message : public Serializer {
+ public:
+  /**
+   * @return The message Tupe
+   */
+  MessageType GetMessageType() { return type_; }
+  /**
+   * @return The tenant ID.
+   */
+  TenantID GetTenantID() const { return tenantid_; }
+  /**
+   * @return The message Sequence Number.
+   */
+  SequenceNumber GetSequenceNumber() { return seqno_; }
+
+  /*
+   * Creates a Message of the appropriate subtype by looking at the
+   * MessageType. Returns nullptr on error. It is the responsibility
+   * of the caller to own this memory object.
+   */
+  static Message* CreateNewInstance(Slice* in);
+
+  /*
+   * Inherited from Serializer
+   */
+  virtual Slice Serialize() const = 0;
+  virtual Status DeSerialize(Slice* in) = 0;
+
+ protected:
+  MessageType type_;         // type of this message
+  TenantID tenantid_;        // unique id for tenant
+  SequenceNumber seqno_;     // sequence number of message
+};
+
+
 /*********************************************************/
 /**    Message definitions start here                  ***/
 /*********************************************************/
@@ -91,7 +135,7 @@ class TopicPair {
  * This is a data message.
  * The payload is the user-data in the message.
  */
-class MessageData : public  Serializer {
+class MessageData : public Message {
  public:
   /**
    * Creates a message by specifying its contents. It is the responsibility of
@@ -114,11 +158,6 @@ class MessageData : public  Serializer {
   virtual ~MessageData();
 
   /**
-   * @return The message Sequence Number.
-   */
-  SequenceNumber GetSequenceNumber() { return seqno_; }
-
-  /**
    * @return The Topic Name
    */
   Slice GetTopicName() { return topic_name_; }
@@ -128,21 +167,15 @@ class MessageData : public  Serializer {
    */
   Slice GetPayload() { return payload_; }
 
-  /**
-   * @return The tenant ID.
-   */
-  TenantID GetTenantID() const { return tenantid_; }
 
   /*
    * Inherited from Serializer
    */
-  virtual Slice Serialize();
+  virtual Slice Serialize() const;
   virtual Status DeSerialize(Slice* in);
 
  private:
-  MessageType type_;         // type of this message: mData
-  TenantID tenantid_;        // unique id for tenant
-  SequenceNumber seqno_;     // sequence number of message
+  // type of this message: mData
   MsgId msgid_;              // globally unique id for message
   Slice topic_name_;         // name of topic
   Slice payload_;            // user data of message
@@ -151,7 +184,7 @@ class MessageData : public  Serializer {
 /*
  * This is a subscribe/unsubscribe message.
  */
-class MessageMetadata : public Serializer {
+class MessageMetadata : public Message {
  public:
   /**
    * Creates a message by specifying its contents.
@@ -175,11 +208,6 @@ class MessageMetadata : public Serializer {
   virtual ~MessageMetadata();
 
   /**
-   * @return The message Sequence Number.
-   */
-  SequenceNumber GetSequenceNumber() { return seqno_; }
-
-  /**
    * @return Information about all topics
    */
   const std::vector<TopicPair>& GetTopicInfo() { return topics_; }
@@ -189,25 +217,13 @@ class MessageMetadata : public Serializer {
    */
   const HostId& GetHostId() { return hostid_; }
 
-  /**
-   * @return The tenant ID.
-   */
-  TenantID GetTenantID() const { return tenantid_; }
-
   /*
    * Inherited from Serializer
    */
-  virtual Slice Serialize();
+  virtual Slice Serialize() const;
   virtual Status DeSerialize(Slice* in);
 
  private:
-  MessageType type_;         // type of this message: mMetadata
-
-  TenantID tenantid_;        // unique id for tenant
-
-  // The sequence number is filled up by the client at message creation time.
-  SequenceNumber seqno_;     // sequence number of message
-
   HostId hostid_;             // unique identifier for a client
 
   // The List of topics to subscribe-to/unsubscribe-from

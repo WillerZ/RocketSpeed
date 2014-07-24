@@ -7,7 +7,6 @@
 #include <set>
 #include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +25,10 @@
 #include <linux/fs.h>
 #include <fcntl.h>
 #endif
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <signal.h>
 #include <algorithm>
 #include "include/Env.h"
@@ -998,6 +1001,28 @@ class PosixFileLock : public FileLock {
   std::string filename;
 };
 
+//
+// A class to encapsulate Connection parameters to a machine
+//
+class PosixConnection: public Connection {
+ private:
+  int sockfd_;
+
+ public:
+  explicit PosixConnection(int sockfd): sockfd_(sockfd) {
+  }
+  virtual ~PosixConnection() { close(sockfd_); }
+
+  // Send the data to the remote machine
+  virtual Status Send(const Slice& data) {
+    size_t count = write(sockfd_, (const void *)data.data(), data.size());
+    if (count == data.size()) {
+      return Status::OK();
+    }
+    return Status::IOError("Incomplete send of data");
+  }
+};
+
 
 namespace {
 void PthreadCall(const char* label, int result) {
@@ -1392,6 +1417,47 @@ class PosixEnv : public Env {
              t.tm_min,
              t.tm_sec);
     return dummy;
+  }
+
+  virtual Status NewConnection(const std::string& hostname,
+                               const int port,
+                               unique_ptr<Connection>* result,
+                               const EnvOptions& options) const {
+    struct addrinfo hints, *servinfo, *p;
+    int rv;
+    std::string port_string(std::to_string(port));
+    int sockfd;
+
+    // handle both IP{V4 and IPV6 addresses.
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ((rv = getaddrinfo(hostname.c_str(), port_string.c_str(),
+                          &hints, &servinfo)) != 0) {
+        return Status::IOError("getaddrinfo: " + hostname +
+                               ":" + port_string);
+    }
+    // loop through all the results and connect to the first we can
+    for (p = servinfo; p != nullptr; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype,
+                p->ai_protocol)) == -1) {
+            continue;
+        }
+
+        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sockfd);
+            continue;
+        }
+        break;
+    }
+    if (p == nullptr) {
+        return Status::IOError("failed to connect: " + hostname +
+                               ":" + port_string);
+    }
+    freeaddrinfo(servinfo);
+    result->reset(new PosixConnection(sockfd));
+    return Status::OK();
   }
 
  private:

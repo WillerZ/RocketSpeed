@@ -82,7 +82,7 @@ std::string InfoLogFileName(
 std::string OldInfoLogFileName(const std::string& dir, uint64_t ts) {
   char buf[50];
   snprintf(buf, sizeof(buf), "%llu", static_cast<unsigned long long>(ts));
-  return dir + "/LOG.old" + buf;
+  return dir + "/LOG.old." + buf;
 }
 
 Status CreateLoggerFromOptions(
