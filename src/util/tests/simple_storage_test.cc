@@ -20,10 +20,6 @@ namespace rocketspeed {
 class SimpleStorageTest { };
 
 TEST(SimpleStorageTest, AppendingAndReading) {
-  /*std::mutex m;
-  { std::lock_guard<std::mutex> l(m); }
-  { std::lock_guard<std::mutex> l(m); }*/
-
   SimpleLogStorage storage;
   ASSERT_TRUE(storage.Append(42, "Rocket").ok());
   ASSERT_TRUE(storage.Append(100, "Test 1").ok());
