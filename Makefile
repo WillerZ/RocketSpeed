@@ -75,9 +75,10 @@ TESTS = \
 	messages_test \
 	simple_storage_test \
 	auto_roll_logger_test \
-        controlmessages_test
-	
-TOOLS = 
+  controlmessages_test \
+  log_router_test
+
+TOOLS =
 
 PROGRAMS = pilot copilot controltower $(TOOLS)
 
@@ -158,7 +159,7 @@ check: $(TESTS)
 	for t in $(TESTS); do echo "***** Running $$t"; ./$$t || exit 1; done
 
 # test unexpected crashing of pilots, copilots and controltowers
-crash_test: 
+crash_test:
 
 asan_check:
 	$(MAKE) clean
@@ -222,6 +223,9 @@ auto_roll_logger_test: src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARN
 
 controlmessages_test: src/controltower/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/controltower/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+log_router_test: src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test
