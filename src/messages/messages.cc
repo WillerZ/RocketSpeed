@@ -39,7 +39,8 @@ MessageHeader::MessageHeader(Slice* in) {
   * MessageType. Returns nullptr on error. It is the responsibility
   * of the caller to own this memory object.
   **/
-Message* Message::CreateNewInstance(Slice* in) {
+std::unique_ptr<Message>
+Message::CreateNewInstance(Slice* in) {
   MessageData* msg1 = nullptr;
   MessageMetadata* msg2 = nullptr;
   MessageType mtype;
@@ -58,11 +59,11 @@ Message* Message::CreateNewInstance(Slice* in) {
     case mData:
       msg1 = new MessageData();
       msg1->DeSerialize(in);
-      return msg1;
+      return std::unique_ptr<Message>(msg1);
     case mMetadata:
       msg2 = new MessageMetadata();
       msg2->DeSerialize(in);
-      return msg2;
+      return std::unique_ptr<Message>(msg2);
     default:
       break;
   }

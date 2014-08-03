@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
@@ -112,7 +113,7 @@ class Message : public Serializer {
    * MessageType. Returns nullptr on error. It is the responsibility
    * of the caller to own this memory object.
    */
-  static Message* CreateNewInstance(Slice* in);
+  static std::unique_ptr<Message> CreateNewInstance(Slice* in);
 
   /*
    * Inherited from Serializer
