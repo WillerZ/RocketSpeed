@@ -73,7 +73,7 @@ CFLAGS+=" $LIBGCC_INCLUDE $GLIBC_INCLUDE"
 CFLAGS+=" -DROCKETSPEED_PLATFORM_POSIX -DROCKETSPEED_ATOMIC_PRESENT -DROCKETSPEED_FALLOCATE_PRESENT"
 CFLAGS+=" -DSNAPPY -DGFLAGS=google -DZLIB -DBZIP2 -DLZ4 -DNUMA"
 
-EXEC_LDFLAGS="-Wl,--dynamic-linker,/usr/local/fbcode/gcc-4.8.1-glibc-2.17/lib/ld.so"
+EXEC_LDFLAGS=" -Wl,--dynamic-linker,/usr/local/fbcode/gcc-4.8.1-glibc-2.17/lib/ld.so"
 EXEC_LDFLAGS+=" -Wl,--no-whole-archive $TOOLCHAIN_LIB_BASE/libunwind/libunwind-1.0.1/675d945/lib/libunwind.a"
 EXEC_LDFLAGS+=" $HDFSLIB $SNAPPY_LIBS $ZLIB_LIBS $BZIP_LIBS $LZ4_LIBS $GFLAGS_LIBS $NUMA_LIB"
 

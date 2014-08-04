@@ -40,6 +40,17 @@ class Status {
   static Status NotInitialized() {
     return Status(Code::kNotInitialized);
   }
+  static Status InternalError(const std::string msg,
+                              const std::string msg2 = "") {
+    return Status(Code::kInternal, msg, msg2);
+  }
+  static Status Unauthorized(const std::string msg,
+                             const std::string msg2 = "") {
+    return Status(Code::kInternal, msg, msg2);
+  }
+  static Status TimedOut() {
+    return Status(Code::kTimedOut);
+  }
 
   /// Returns true iff the status indicates success.
   bool ok() const { return code_ == Code::kOk; }
@@ -59,24 +70,40 @@ class Status {
   /// Returns true iff the status indicates Not initialized
   bool IsNotInitialized() const { return code_ == Code::kNotInitialized; }
 
+  /// Returns true iff the status indicates an internal error.
+  bool IsInternal() const { return code_ == Code::kInternal; }
+
+  /// Returns true iff the status indicates an unauthorized access.
+  bool IsUnauthorized() const { return code_ == Code::kUnauthorized; }
+
+  /// Returns true iff the status indicates a time out.
+  bool IsTimedOut() const { return code_ == Code::kTimedOut; }
+
   /// Return a string representation of this status suitable for printing.
   /// Returns the string "OK" for success.
   std::string ToString() const {
+    int code = static_cast<int>(code_);
     switch (code_) {
       case Code::kOk:
         return "OK";
       case Code::kNotFound:
-        return "NotFound: " + std::to_string((int)code_);
+        return "NotFound: " + std::to_string(code);
       case Code::kNotSupported:
-        return "Not implemented: " + std::to_string((int)code_);
+        return "Not implemented: " + std::to_string(code);
       case Code::kInvalidArgument:
-        return "Invalid argument: " + std::to_string((int)code_);
+        return "Invalid argument: " + std::to_string(code);
       case Code::kIOError:
-        return "IO error: " + std::to_string((int)code_);
+        return "IO error: " + std::to_string(code);
       case Code::kNotInitialized:
-        return "Not initialized: " + std::to_string((int)code_);
+        return "Not initialized: " + std::to_string(code);
+      case Code::kInternal:
+        return "Internal error: " + std::to_string(code);
+      case Code::kUnauthorized:
+        return "Unauthorized: " + std::to_string(code);
+      case Code::kTimedOut:
+        return "Timed out: " + std::to_string(code);
       default:
-        return "Unknown code " + std::to_string((int)code_);
+        return "Unknown code " + std::to_string(code);
     }
   }
 
@@ -88,6 +115,9 @@ class Status {
     kInvalidArgument = 3,
     kIOError = 4,
     kNotInitialized = 5,
+    kInternal = 6,
+    kUnauthorized = 7,
+    kTimedOut = 8,
   };
 
   Code code_;

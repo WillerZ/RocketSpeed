@@ -83,7 +83,7 @@ if test -z "$EVENTDIR"; then
     PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -L$EVENTDIR/lib"
 fi
 
-COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS} -I${EVENTDIR}/include"
+COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS} -I${EVENTDIR}/include -Iexternal"
 CROSS_COMPILE=
 PLATFORM_CCFLAGS=
 PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS ${CXXFLAGS}"
@@ -171,13 +171,18 @@ fi
 # except for the test and benchmark files. By default, find will output a list
 # of all files matching either rule, so we need to append -print to make the
 # prune take effect.
-DIRS="src/util src/pilot src/copilot src/controltower src/client src/messages"
+DIRS="src/util src/pilot src/copilot src/controltower src/client src/messages src/logdevice"
 
 set -f # temporarily disable globbing so that our patterns arent expanded
 PRUNE_TEST="-name *test*.cc -prune"
 PRUNE_BENCH="-name *bench*.cc -prune"
 PRUNE_MAIN="-name main.cc -prune"
-PORTABLE_FILES=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cc' -print | sort | tr "\n" " "`
+
+if test -z "$USE_LOGDEVICE"; then
+  PRUNE_LOGDEVICE="-o -wholename src/util/logdevice.cc -prune"
+fi
+
+PORTABLE_FILES=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN $PRUNE_LOGDEVICE -o -name '*.cc' -print | sort | tr "\n" " "`
 PORTABLE_CPP=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cpp' -print | sort | tr "\n" " "`
 set +f # re-enable globbing
 
