@@ -76,7 +76,8 @@ TESTS = \
 	simple_storage_test \
 	auto_roll_logger_test \
   controlmessages_test \
-  log_router_test
+  log_router_test \
+  control_tower_router_test
 
 TOOLS =
 
@@ -226,6 +227,9 @@ controlmessages_test: src/controltower/controlmessages_test.o $(LIBOBJECTS) $(TE
 
 log_router_test: src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+control_tower_router_test: src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test
