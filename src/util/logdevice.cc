@@ -104,6 +104,14 @@ Status LogDeviceStorage::Create(
   return Status::OK();
 }
 
+Status LogDeviceStorage::Create(
+  std::shared_ptr<facebook::logdevice::Client> client,
+  Env* env,
+  LogDeviceStorage** storage) {
+  *storage = new LogDeviceStorage(client, env);
+  return Status::OK();
+}
+
 LogDeviceStorage::LogDeviceStorage(
   std::shared_ptr<facebook::logdevice::Client> client,
   Env* env)
@@ -365,7 +373,13 @@ Status LogDeviceSelector::Select(std::vector<LogReader*>* selected,
     return Status::InvalidArgument("Must provide selected pointer.");
   }
 
-  // Wait for a reader to say we have data.
+  // Lambda for convenience.
+  auto hasData = [](const LogDeviceReader* reader) {
+    return reader->HasData();
+  };
+
+  // If no readers have data, wait for a reader to notify us.
+  if (std::none_of(readers_.begin(), readers_.end(), hasData))
   {
     std::unique_lock<std::mutex> lock(mutex_);
     monitor_.wait_for(lock, timeout);
@@ -376,12 +390,11 @@ Status LogDeviceSelector::Select(std::vector<LogReader*>* selected,
   //  2) timeout occurred
   //  3) "spurious wakeup"
   // In all cases, we'll just check for data on all readers.
+  selected->clear();
   std::copy_if(readers_.begin(),
                readers_.end(),
                std::back_inserter(*selected),
-               [](const LogDeviceReader* reader) {
-                 return reader->HasData();
-               });
+               hasData);
 
   if (selected->empty()) {
     // If selected is empty then we must have timed out, or had a spurious

@@ -60,6 +60,20 @@ class LogDeviceStorage : public LogStorage {
     Env* env,
     LogDeviceStorage** storage);
 
+  /**
+   * Constructs a LogDeviceStorage using a previously created Client object.
+   *
+   * @param client Previously created client object.
+   * @param storage output parameter to store the constructed LogDeviceStorage
+   *        object.
+   * @param env Env object for platform specific operations.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  static Status Create(
+    std::shared_ptr<facebook::logdevice::Client> client,
+    Env* env,
+    LogDeviceStorage** storage);
+
   ~LogDeviceStorage() final {}
 
   Status Append(LogID id,

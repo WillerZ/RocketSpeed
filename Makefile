@@ -78,6 +78,7 @@ TESTS = \
   controlmessages_test \
   log_router_test \
   control_tower_router_test \
+  mock_logdevice_test \
   logdevice_storage_test
 
 TOOLS =
@@ -232,9 +233,12 @@ log_router_test: src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
 control_tower_router_test: src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
-logdevice_storage_test: src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS)
+mock_logdevice_test: src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS)
 	-rm logdevice_*.log # clear existing log files
 	$(CXX) src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+logdevice_storage_test: src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test
