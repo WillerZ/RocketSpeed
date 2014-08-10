@@ -224,8 +224,8 @@ simple_storage_test: src/util/tests/simple_storage_test.o $(LIBOBJECTS) $(TESTHA
 auto_roll_logger_test: src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
-controlmessages_test: src/controltower/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) src/controltower/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+controlmessages_test: src/controltower/test/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/controltower/test/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 log_router_test: src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)

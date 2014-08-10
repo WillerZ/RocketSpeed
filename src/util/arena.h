@@ -33,7 +33,7 @@ class Arena {
   static const size_t kMaxBlockSize;
 
   explicit Arena(size_t block_size = kMinBlockSize);
-  ~Arena();
+  virtual ~Arena();
 
   char* Allocate(size_t bytes);
 

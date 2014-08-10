@@ -58,10 +58,30 @@
 // For non linux platform, the following macros are used only as place
 // holder.
 #ifndef OS_LINUX
+
+#ifdef POSIX_FADV_NORMAL
+#undef POSIX_FADV_NORMAL
+#endif
 #define POSIX_FADV_NORMAL 0 /* [MC1] no further special treatment */
+
+#ifdef POSIX_FADV_RANDOM
+#undef POSIX_FADV_RANDOM
+#endif
 #define POSIX_FADV_RANDOM 1 /* [MC1] expect random page refs */
+
+#ifdef POSIX_FADV_SEQUENTIAL
+#undef POSIX_FADV_SEQUENTIAL
+#endif
 #define POSIX_FADV_SEQUENTIAL 2 /* [MC1] expect sequential page refs */
+
+#ifdef POSIX_FADV_WILLNEED
+#undef POSIX_FADV_WILLNEED
+#endif
 #define POSIX_FADV_WILLNEED 3 /* [MC1] will need these pages */
+
+#ifdef POSIX_FADV_DONTNEED
+#undef POSIX_FADV_DONTNEED
+#endif
 #define POSIX_FADV_DONTNEED 4 /* [MC1] dont need these pages */
 #endif
 
