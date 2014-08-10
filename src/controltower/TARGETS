@@ -1,0 +1,45 @@
+# create the control tower binary
+cpp_binary(
+    name = 'control_tower',
+    srcs = [
+        'main.cc',
+    ],
+    preprocessor_flags = [ 
+	'-Irocketspeed/github/include',
+	'-Irocketspeed/github',
+	'-DROCKETSPEED_PLATFORM_POSIX=1',
+	'-DOS_LINUX=1',
+	'-DGFLAGS=google',
+    ],
+    deps = [
+        ':control_tower_library',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+    ],
+    compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
+)
+
+# create a library for all classes needed for control tower
+cpp_library(
+    name = 'control_tower_library',
+    srcs = [
+        'controltower.cc',
+        'controltower_client.cc',
+        'options.cc',
+    ],
+    preprocessor_flags = [ 
+	'-Irocketspeed/github/include',
+	'-Irocketspeed/github',
+	'-DROCKETSPEED_PLATFORM_POSIX=1',
+	'-DOS_LINUX=1',
+	'-DGFLAGS=google',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+    ],
+    compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
+)
+

@@ -1,0 +1,20 @@
+#
+# Link unit test with fbcode/logdevice
+#
+cpp_binary(
+    name = 'logdevice_storage_test',
+    srcs = [
+        'test.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+        '@/logdevice/lib',
+    ],
+)
+

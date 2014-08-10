@@ -1,0 +1,14 @@
+cpp_library(
+    name = 'port',
+    srcs = [
+        'port_posix.cc',
+        'stack_trace.cc',
+    ],
+    preprocessor_flags = [ 
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+	'-DROCKETSPEED_PLATFORM_POSIX=1',
+	'-DOS_LINUX=1',
+    ],  
+    warp = False,
+)
