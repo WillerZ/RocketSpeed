@@ -51,7 +51,7 @@
   output buffer is drained below the write low watermark, which is 0 by
   default.
 
-  If multiple bases are in use, ld_bufferld_event_base_set() must be called before
+  If multiple bases are in use, ld_bufferevent_base_set() must be called before
   enabling the bufferevent for the first time.
 
   @deprecated This function is deprecated because it uses the current
@@ -70,9 +70,9 @@
 	 (readcb, writecb, and errorcb)
   @return a pointer to a newly allocated bufferevent struct, or NULL if an
 	  error occurred
-  @see ld_bufferld_event_base_set(), ld_bufferld_event_free()
+  @see ld_bufferevent_base_set(), ld_bufferevent_free()
   */
-struct bufferevent *ld_bufferld_event_new(evutil_socket_t fd,
+struct bufferevent *ld_bufferevent_new(evutil_socket_t fd,
     evbuffercb readcb, evbuffercb writecb, everrorcb errorcb, void *cbarg);
 
 

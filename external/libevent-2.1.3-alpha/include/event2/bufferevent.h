@@ -179,7 +179,7 @@ enum bufferevent_options {
   @param options Zero or more BEV_OPT_* flags
   @return a pointer to a newly allocated bufferevent struct, or NULL if an
 	  error occurred
-  @see ld_bufferld_event_free()
+  @see ld_bufferevent_free()
   */
 struct bufferevent *ld_bufferevent_socket_new(struct event_base *base, evutil_socket_t fd, int options);
 
@@ -250,17 +250,17 @@ int ld_bufferevent_socket_get_dns_error(struct bufferevent *bev);
   NOTE that only socket bufferevents support this function.
 
   @param base an event_base returned by ld_event_init()
-  @param bufev a bufferevent struct returned by ld_bufferld_event_new()
+  @param bufev a bufferevent struct returned by ld_bufferevent_new()
      or ld_bufferevent_socket_new()
   @return 0 if successful, or -1 if an error occurred
-  @see ld_bufferld_event_new()
+  @see ld_bufferevent_new()
  */
-int ld_bufferld_event_base_set(struct event_base *base, struct bufferevent *bufev);
+int ld_bufferevent_base_set(struct event_base *base, struct bufferevent *bufev);
 
 /**
    Return the event_base used by a bufferevent
 */
-struct event_base *ld_bufferld_event_get_base(struct bufferevent *bev);
+struct event_base *ld_bufferevent_get_base(struct bufferevent *bev);
 
 /**
   Assign a priority to a bufferevent.
@@ -271,14 +271,14 @@ struct event_base *ld_bufferld_event_get_base(struct bufferevent *bev);
   @param pri the priority to be assigned
   @return 0 if successful, or -1 if an error occurred
   */
-int ld_bufferld_event_priority_set(struct bufferevent *bufev, int pri);
+int ld_bufferevent_priority_set(struct bufferevent *bufev, int pri);
 
 /**
    Return the priority of a bufferevent.
 
    Only supported for socket bufferevents
  */
-int ld_bufferld_event_get_priority(const struct bufferevent *bufev);
+int ld_bufferevent_get_priority(const struct bufferevent *bufev);
 
 /**
   Deallocate the storage associated with a bufferevent structure.
@@ -288,7 +288,7 @@ int ld_bufferld_event_get_priority(const struct bufferevent *bufev);
 
   @param bufev the bufferevent structure to be freed.
   */
-void ld_bufferld_event_free(struct bufferevent *bufev);
+void ld_bufferevent_free(struct bufferevent *bufev);
 
 
 /**
@@ -303,7 +303,7 @@ void ld_bufferld_event_free(struct bufferevent *bufev);
 	 descriptor
   @param cbarg an argument that will be supplied to each of the callbacks
 	 (readcb, writecb, and errorcb)
-  @see ld_bufferld_event_new()
+  @see ld_bufferevent_new()
   */
 void ld_bufferevent_setcb(struct bufferevent *bufev,
     bufferevent_data_cb readcb, bufferevent_data_cb writecb,

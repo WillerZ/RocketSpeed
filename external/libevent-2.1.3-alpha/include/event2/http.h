@@ -444,7 +444,7 @@ enum evhttp_request_kind { EVHTTP_REQUEST, EVHTTP_RESPONSE };
  * @param port the port to connect to
  * @return an evhttp_connection object that can be used for making requests
  */
-struct evhttp_connection *evhttp_connection_base_ld_bufferld_event_new(
+struct evhttp_connection *evhttp_connection_base_ld_bufferevent_new(
 	struct event_base *base, struct evdns_base *dnsbase, struct bufferevent* bev, const char *address, unsigned short port);
 
 /**

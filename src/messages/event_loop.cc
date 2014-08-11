@@ -79,7 +79,7 @@ EventLoop::errorcb(struct bufferevent *bev, short error, void *ctx) {
       /* must be a timeout event handle, handle it */
       /* ... */
   }
-  ld_bufferld_event_free(bev);
+  ld_bufferevent_free(bev);
 }
 
 //
