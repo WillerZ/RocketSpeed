@@ -10,6 +10,7 @@
 #include "logdevice/include/AsyncReader.h"
 #include "logdevice/include/Client.h"
 #include "logdevice/include/ClientSettings.h"
+#include "src/logdevice/Common.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
@@ -28,6 +29,9 @@ facebook::logdevice::Payload payload(std::string s) {
 }
 
 std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
+  // Clean up any existing logs to isolate the tests.
+  Env::Default()->DeleteDirRecursive(facebook::logdevice::MOCK_LOG_DIR);
+
   std::unique_ptr<facebook::logdevice::ClientSettings> settings(
     facebook::logdevice::ClientSettings::create());
   return facebook::logdevice::Client::create(

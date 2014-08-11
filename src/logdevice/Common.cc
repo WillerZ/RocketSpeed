@@ -14,6 +14,8 @@
 
 namespace facebook { namespace logdevice {
 
+std::string MOCK_LOG_DIR = "_mock_logdevice_logs";
+
 __thread E err = E::OK;
 
 // We don't use errorStrings, so don't care about the contents, but we

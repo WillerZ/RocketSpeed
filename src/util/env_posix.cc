@@ -3,10 +3,9 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
-#include <deque>
-#include <set>
 #include <dirent.h>
 #include <errno.h>
+#include <ftw.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +30,8 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <algorithm>
+#include <deque>
+#include <set>
 #include "include/Env.h"
 #include "include/Slice.h"
 #include "src/port/port.h"
@@ -1244,6 +1245,22 @@ class PosixEnv : public Env {
     }
     return result;
   };
+
+  // Callback needed for DeleteDirRecursive
+  static int unlink_cb(const char *fpath,
+                       const struct stat *sb,
+                       int typeflag,
+                       struct FTW *ftwbuf) {
+    return remove(fpath);
+  }
+
+  virtual Status DeleteDirRecursive(const std::string& name) {
+    Status result;
+    if (nftw(name.c_str(), unlink_cb, 64, FTW_DEPTH | FTW_PHYS) != 0) {
+      result = IOError(name, errno);
+    }
+    return result;
+  }
 
   virtual Status GetFileSize(const std::string& fname, uint64_t* size) {
     Status s;

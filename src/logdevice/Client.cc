@@ -43,6 +43,10 @@ std::shared_ptr<Client> Client::create(
   impl->env_ = rocketspeed::Env::Default();
   impl->settings_ = std::move(settings);
   impl->timeout_ = timeout;
+
+  // Make sure log directory exists
+  impl->env_->CreateDirIfMissing(MOCK_LOG_DIR);
+
   return std::shared_ptr<Client>(impl);
 }
 

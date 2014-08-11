@@ -146,8 +146,11 @@ class Env {
   // Creating.
   virtual Status CreateDirIfMissing(const std::string& dirname) = 0;
 
-  // Delete the specified directory.
+  // Delete the specified empty directory.
   virtual Status DeleteDir(const std::string& dirname) = 0;
+
+  // Delete the specified directory and all its contents.
+  virtual Status DeleteDirRecursive(const std::string& dirname) = 0;
 
   // Store the size of fname in *file_size.
   virtual Status GetFileSize(const std::string& fname, uint64_t* file_size) = 0;

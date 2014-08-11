@@ -234,7 +234,6 @@ control_tower_router_test: src/util/tests/control_tower_router_test.o $(LIBOBJEC
 	$(CXX) src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 mock_logdevice_test: src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS)
-	-rm logdevice_*.log # clear existing log files
 	$(CXX) src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 logdevice_storage_test: src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS)
