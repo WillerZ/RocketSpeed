@@ -19,7 +19,7 @@ build_config.mk
 *.o-*
 *.swp
 LOG*
-logdevice_*.log
+_mock_logdevice_logs/*
 
 # ignore the binary named controltower but do not ignore the control
 # tower source directory

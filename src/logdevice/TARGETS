@@ -28,9 +28,13 @@ cpp_binary(
     preprocessor_flags = [
         '-Irocketspeed/github/include',
         '-Irocketspeed/github',
+        '-DUSE_LOGDEVICE',
     ],
     deps = [
-        '@/rocketspeed/github/src/logdevice',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+        '@/logdevice/lib',
+        '@/logdevice/test/utils',
     ],
 )
-

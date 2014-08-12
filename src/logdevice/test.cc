@@ -10,7 +10,11 @@
 #include "logdevice/include/AsyncReader.h"
 #include "logdevice/include/Client.h"
 #include "logdevice/include/ClientSettings.h"
-#include "src/logdevice/Common.h"
+#ifdef USE_LOGDEVICE
+# include "logdevice/test/utils/IntegrationTestUtils.h"
+#else
+# include "src/logdevice/Common.h"
+#endif
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
@@ -28,6 +32,21 @@ facebook::logdevice::Payload payload(std::string s) {
   return facebook::logdevice::Payload(s.c_str(), s.size() + 1);
 }
 
+#ifdef USE_LOGDEVICE
+
+std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
+  // Make the cluster static so that it stays alive for the whole test.
+  static auto cluster =
+    facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(5);
+  auto client = cluster->createClient();
+  lsn_t now_lsn = client->appendSync(logid_t(1), payload(""));
+  ASSERT_NE(now_lsn, LSN_INVALID);
+  ASSERT_EQ(client->trim(logid_t(1), now_lsn), 0);
+  return client;
+}
+
+#else
+
 std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
   // Clean up any existing logs to isolate the tests.
   Env::Default()->DeleteDirRecursive(facebook::logdevice::MOCK_LOG_DIR);
@@ -42,11 +61,13 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
     std::move(settings));
 }
 
+#endif  // USE_LOGDEVICE
+
 TEST(MockLogDeviceTest, Basic) {
   auto client = MakeTestClient();
 
   // Write a bunch of messages to a single log.
-  logid_t logid(0);
+  logid_t logid(1);
   lsn_t lsn[6];
   ASSERT_NE(lsn[0] = client->appendSync(logid, payload("test0")), LSN_INVALID);
   ASSERT_NE(lsn[1] = client->appendSync(logid, payload("test1")), LSN_INVALID);
@@ -162,7 +183,7 @@ TEST(MockLogDeviceTest, Trim) {
   // Write a bunch of messages to a single log.
   // Wait for 10ms in between otherwise mutliple records will have the same
   // timestamp and the test will fail.
-  logid_t logid(2);
+  logid_t logid(1);
   lsn_t lsn[4];
   ASSERT_NE(lsn[0] = client->appendSync(logid, payload("test0")), LSN_INVALID);
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -173,7 +194,7 @@ TEST(MockLogDeviceTest, Trim) {
   ASSERT_NE(lsn[3] = client->appendSync(logid, payload("test3")), LSN_INVALID);
 
   // Trim away the first two messages.
-  client->trim(logid, lsn[2]);
+  client->trim(logid, lsn[1]);
 
   auto reader = client->createAsyncReader();
 
@@ -195,31 +216,31 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
   auto client = MakeTestClient();
 
   // Write a bunch of messages to a single log.
-  logid_t logid(3);
+  logid_t logid(1);
 
   // Create two readers from that log.
   std::atomic<int> count1{0};
   std::atomic<lsn_t> lsn1{LSN_OLDEST};  // last LSN read
   auto reader1 = client->createAsyncReader();
-  reader1->startReading(logid, LSN_OLDEST, LSN_MAX);
   reader1->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
     ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec.payload.data)),
               "test" + std::to_string(count1));
     ++count1;
     lsn1 = rec.attrs.lsn;
   });
+  reader1->startReading(logid, LSN_OLDEST, LSN_MAX);
 
 
   std::atomic<int> count2{0};
   std::atomic<lsn_t> lsn2{LSN_OLDEST};
   auto reader2 = client->createAsyncReader();
-  reader2->startReading(logid, LSN_OLDEST, LSN_MAX);
   reader2->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
     ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec.payload.data)),
               "test" + std::to_string(count2));
     ++count2;
     lsn2 = rec.attrs.lsn;
   });
+  reader2->startReading(logid, LSN_OLDEST, LSN_MAX);
 
   // Write 1000 messages to the log while occasionally waiting.
   const int numMessages = 1000;

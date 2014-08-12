@@ -135,7 +135,7 @@ int Client::trim(logid_t logid, lsn_t lsn) noexcept {
   {
     LogFile file(logid, true);
     while (file.Next()) {
-      if (file.GetLSN() >= lsn) {
+      if (file.GetLSN() > lsn) {
         // File offset will be at end of header here, so rewind a little.
         assert(file.GetOffset() >= sizeof(RecordHeader));
         offset = file.GetOffset() - sizeof(RecordHeader);
@@ -203,11 +203,15 @@ lsn_t Client::findTimeSync(logid_t logid,
   LogFile file(logid, true);
   while (file.Next()) {
     if (file.GetTimestamp() >= timestamp) {
-      *status_out = E::OK;
+      if (status_out) {
+        *status_out = E::OK;
+      }
       return file.GetLSN();
     }
   }
-  *status_out = E::NOTFOUND;
+  if (status_out) {
+    *status_out = E::NOTFOUND;
+  }
   return LSN_INVALID;
 }
 

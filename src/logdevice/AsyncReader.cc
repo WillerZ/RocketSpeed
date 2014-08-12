@@ -84,6 +84,7 @@ void AsyncReader::setGapCallback(std::function<void(const GapRecord&)> cb) {
 }
 
 int AsyncReader::startReading(logid_t log_id, lsn_t from, lsn_t until) {
+  assert(impl()->data_cb_);  // must set CB before starting to read
   std::lock_guard<std::mutex> lock(impl()->mutex_);
   impl()->logs_[log_id] = AsyncReaderImpl::Log{from, until, 0};
   return 0;
