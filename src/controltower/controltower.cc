@@ -45,7 +45,12 @@ ControlTower::ControlTower(const ControlTowerOptions& options,
   options_(SanitizeOptions(options)),
   conf_(conf),
   callbacks_(InitializeCallbacks()),
-  msg_loop_(options_.port_number, options_.info_log, callbacks_) {
+  msg_loop_(options_.env,
+            options_.env_options,
+            HostId(options_.hostname, options_.port_number),
+            options_.info_log,
+            static_cast<ApplicationCallbackContext>(this),
+            callbacks_) {
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
       "Created a new Control Tower");
 }
@@ -66,14 +71,18 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
 
 // A static callback method to process MessageData
 void
-ControlTower::ProcessData(std::unique_ptr<Message> msg) {
-  fprintf(stdout, "Received data message\n");
+ControlTower::ProcessData(const ApplicationCallbackContext ctx,
+                          std::unique_ptr<Message> msg) {
+  ControlTower* ct = static_cast<ControlTower*>(ctx);
+  fprintf(stdout, "Received data message %d\n", ct->IsRunning());
 }
 
 // A static callback method to process MessageMetadata
 void
-ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
-  fprintf(stdout, "Received metadata message\n");
+ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
+                              std::unique_ptr<Message> msg) {
+  ControlTower* ct = static_cast<ControlTower*>(ctx);
+  fprintf(stdout, "Received metadata message %d\n", ct->IsRunning());
 }
 
 

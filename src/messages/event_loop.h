@@ -58,7 +58,7 @@ class EventLoop {
   void Run(void);
 
   // Is the EventLoop up and running?
-  bool IsRunning() { return running_; }
+  bool IsRunning() const { return running_; }
 
  private:
   // the port nuber of
@@ -78,6 +78,9 @@ class EventLoop {
 
   // The callback context
   EventCallbackContext event_callback_context_;
+
+  // The listener socket
+  evutil_socket_t listener_;
 
   // callbacks needed by libevent
   static void readhdr(struct bufferevent *bev, void *ctx);

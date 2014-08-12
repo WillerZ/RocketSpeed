@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
+#include <unistd.h>
 #include <string>
 #include "include/Env.h"
 #include "include/Types.h"
@@ -17,9 +18,15 @@ struct ControlTowerOptions {
   // Default: Env::Default()
   Env* env;
 
+  // The options for the environment
+  EnvOptions env_options;
+
   // The configuration of this rocketspeed instance
   // Default: TODO(dhruba) 1234
   Configuration* conf;
+
+  // The machine name that identifies this control tower
+  std::string hostname;
 
   // The port number for this service
   int port_number;
@@ -35,8 +42,9 @@ struct ControlTowerOptions {
   // Default: INFO_LEVEL
   InfoLogLevel info_log_level;
 
-  // The relative path name from the control tower's current working dir
-  // where info logs are stored
+  // If log_dir has the default value, then log files are created in the
+  // current working directory. If log_dir not is not the default value,
+  // then logs are created in the specified directory.
   // Default: "" (store logs in current working directory)
   std::string log_dir;
 

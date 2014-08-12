@@ -17,9 +17,10 @@ namespace rocketspeed {
  */
 void
 EventLoop::readhdr(struct bufferevent *bev, void *arg) {
+  EventLoop* obj = static_cast<EventLoop *>(arg);
   // Verify that we have at least the msg header available for reading.
   struct evbuffer *input = ld_bufferevent_get_input(bev);
-  size_t available = ld_evbuffer_get_length(input);
+  size_t available __attribute__((unused)) = ld_evbuffer_get_length(input);
   assert(available >= MessageHeader::GetSize());
 
   // Peek at the header.
@@ -28,6 +29,10 @@ EventLoop::readhdr(struct bufferevent *bev, void *arg) {
                                      MessageHeader::GetSize());
   Slice sl(mem, MessageHeader::GetSize());
   MessageHeader hdr(&sl);
+
+  Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
+      "received msghdr, waiting for msg size %d", hdr.msgsize_);
+  obj->info_log_->Flush();
 
   // set up a new callback to read the entire message
   ld_bufferevent_setcb(bev, readmsg, nullptr,
@@ -45,7 +50,7 @@ EventLoop::readmsg(struct bufferevent *bev, void *arg) {
 
   // Verify that we have at least the msg header available for reading.
   struct evbuffer *input = ld_bufferevent_get_input(bev);
-  size_t available = ld_evbuffer_get_length(input);
+  size_t available __attribute__((unused)) = ld_evbuffer_get_length(input);
   assert(available >= MessageHeader::GetSize());
 
   // Peek at the header.
@@ -114,11 +119,13 @@ EventLoop::do_accept(evutil_socket_t listener, short event, void *arg) {
       return;
     }
     // Set up an event to read the msg header first.
-    ld_bufferevent_setcb(bev, readhdr, nullptr,
+    ld_bufferevent_setcb(bev, readmsg, nullptr,  // XXX
                          errorcb, arg);
     ld_bufferevent_setwatermark(bev, EV_READ, MessageHeader::GetSize(),
                                 1024L*1024L);
     ld_bufferevent_enable(bev, EV_READ|EV_WRITE);
+    Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
+        "accept successful on socket %d", fd);
   }
 }
 
@@ -132,7 +139,6 @@ EventLoop::Run(void) {
   if (!base_) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
       "Failed to create an event base for an EventLoop thread");
-    // err = E::NOMEM;
     info_log_->Flush();
     return;
   }
@@ -173,6 +179,7 @@ EventLoop::Run(void) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "bind() failed. errno=%d ", errno);
     info_log_->Flush();
+    ::close(listener);
     return;
   }
 
@@ -180,6 +187,7 @@ EventLoop::Run(void) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
       "listen() failed. errno=%d ", errno);
     info_log_->Flush();
+    ::close(listener);
     return;
   }
 
@@ -192,6 +200,7 @@ EventLoop::Run(void) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "Failed to create event for accepting new connections");
     info_log_->Flush();
+    ::close(listener);
     return;
   }
 
@@ -202,6 +211,7 @@ EventLoop::Run(void) {
         "Failed to add 'request pipe is readable' event to event base");
     ld_event_free(listener_event);
     info_log_->Flush();
+    ::close(listener);
     return;
   }
 
@@ -217,6 +227,8 @@ EventLoop::Run(void) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "Failed to create first startup event");
     info_log_->Flush();
+    ld_event_free(listener_event);
+    ::close(listener);
     return;
   }
   rv = ld_event_add(startup_event, &zero_seconds);
@@ -226,8 +238,10 @@ EventLoop::Run(void) {
     ld_event_free(listener_event);
     ld_event_free(startup_event);
     info_log_->Flush();
+    ::close(listener);
     return;
   }
+  listener_ = listener;
   Log(InfoLogLevel::INFO_LEVEL, info_log_,
       "Starting EventLoop at port %d", port_number_);
   info_log_->Flush();
@@ -245,9 +259,10 @@ EventLoop::EventLoop(int port_number,
   base_(nullptr),
   info_log_(info_log),
   event_callback_(event_callback),
-  event_callback_context_(nullptr) {
+  event_callback_context_(nullptr),
+  listener_(0) {
   Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "Created a new Event Loop");
+      "Created a new Event Loop at port %d", port_number);
 }
 
 EventLoop::~EventLoop() {
@@ -259,6 +274,9 @@ EventLoop::~EventLoop() {
           "Unable to shutdown event dispach loop");
     }
     assert(!ld_event_base_got_exit(base_));
+    close(listener_);
   }
+  Log(InfoLogLevel::INFO_LEVEL, info_log_,
+      "Stopped EventLoop at port %d", port_number_);
 }
 }  // namespace rocketspeed

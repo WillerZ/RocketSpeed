@@ -93,9 +93,12 @@ Status CreateLoggerFromOptions(
     InfoLogLevel log_level,
     std::shared_ptr<Logger>* logger) {
 
-  std::string db_absolute_path;
-  env->GetWorkingDirectory(&db_absolute_path);
-  std::string dir = db_absolute_path + "/" + log_dir;
+  std::string dir;
+  if (log_dir.size() == 0) {
+    env->GetWorkingDirectory(&dir);
+  } else {
+    dir = log_dir;
+  }
   std::string fname = dir + "/LOG";
 
   env->CreateDirIfMissing(dir);  // In case it does not exist

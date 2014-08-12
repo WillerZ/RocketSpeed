@@ -13,69 +13,96 @@
 #include <vector>
 
 #include "src/util/testharness.h"
-#include "src/include/controltower_client.h"
 #include "src/controltower/controltower.h"
+#include "src/messages/msg_client.h"
 
 namespace rocketspeed {
 
-class ControlMessages {
+class ControlTowerTest;
+
+namespace {
+// A static variable that is used to initialize the
+// libevent library settings at the start of the
+// first unit test. If you set it to true, then you
+// will see the entire libevent debug messages along
+// with the test output.
+static bool debug_libevent = false;
+
+// A static variable that points to the current test
+static ControlTowerTest* singleton;
+}  //  namespace
+
+class ControlTowerTest {
  public:
   // Create a new instance of the control tower
-  ControlMessages():
-    env_(Env::Default()), ct_(nullptr), started_(false) {
+  ControlTowerTest():
+    env_(Env::Default()), ct_(nullptr),
+    started_(false), num_ping_responses_(0) {
+    // set control tower to log information to test dir
+    ctoptions_.log_dir = test::TmpDir() + "/controltower";
+
     char myname[1024];
-    st_ = ControlTower::CreateNewInstance(options_, conf_, &ct_);
+    st_ = ControlTower::CreateNewInstance(ctoptions_, conf_, &ct_);
 
     // what is my machine name?
     ASSERT_EQ(gethostname(&myname[0], sizeof(myname)), 0);
     hostname_.assign(myname);
 
     // enable all kinds of libevent debugging
-    ld_event_enable_debug_logging(EVENT_DBG_ALL);
-    ld_event_set_log_callback(dump_libevent_cb);
-    ld_event_enable_debug_mode();
+    if (debug_libevent) {
+      ld_event_enable_debug_logging(EVENT_DBG_ALL);
+      ld_event_set_log_callback(dump_libevent_cb);
+      ld_event_enable_debug_mode();
+      debug_libevent = false;
+    }
+    singleton = this;
   }
 
-  virtual ~ControlMessages() {
-    // deleting the ControlTower shuts down the event disptach loop.
+  // deleting the ControlTower shuts down the event disptach loop.
+  virtual ~ControlTowerTest() {
     delete ct_;
+    ct_ = nullptr;
     env_->WaitForJoin();  // This is good hygine
+    singleton = nullptr;
   }
 
-  // Setup dispatch thread and ensure that it is running.
-  Status ControlTowerRun() {
-    // If there was an error in instantiating the ControlTower earlier.
-    // then return error immediately.
-    if (!st_.ok()) {
-      return st_;
-    }
+  std::string GetHostName() {
+    return hostname_;
+  }
 
-    // If the control tower has not already been started, then start it
-    if (!started_) {
-      env_->StartThread(ControlMessages::ControlTowerStart, ct_);
-    }
-    started_ = true;
-
-    // Wait till the background thread has setup the dispatch loop
-    while (!ct_->IsRunning()) {
-      env_->SleepForMicroseconds(1000);
-    }
-    return Status::OK();
+  // Returns the logger that logs into the LOG file
+  std::shared_ptr<Logger> GetLogger() {
+    return ct_->GetOptions().info_log;
   }
 
  protected:
   Env* env_;
+  EnvOptions env_options_;
   ControlTower* ct_;
   bool started_;
-  ControlTowerOptions options_;
+  ControlTowerOptions ctoptions_;
   Configuration conf_;
   Status st_;
   std::string hostname_;
+  int num_ping_responses_;
 
   // A static method that is the entry point of a background thread
   static void ControlTowerStart(void* arg) {
     ControlTower* ct = reinterpret_cast<ControlTower*>(arg);
     ct->Run();
+  }
+
+  // A static method that is the entry point of a background MsgLoop
+  static void MsgLoopStart(void* arg) {
+    MsgLoop* loop = reinterpret_cast<MsgLoop*>(arg);
+    loop->Run();
+  }
+
+  // A static method to process a ping message
+  static void processPing(const ApplicationCallbackContext arg,
+                          std::unique_ptr<Message> msg) {
+    ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
+    singleton->num_ping_responses_++;
   }
 
   // Dumps libevent info messages to stdout
@@ -91,15 +118,100 @@ class ControlMessages {
     }
     printf("[%s] %s\n", s, msg);
   }
+
+  // Setup dispatch thread and ensure that it is running.
+  Status ControlTowerRun() {
+    // If there was an error in instantiating the ControlTower earlier.
+    // then return error immediately.
+    if (!st_.ok()) {
+      return st_;
+    }
+
+    // If the control tower has not already been started, then start it
+    if (!started_) {
+      env_->StartThread(ControlTowerTest::ControlTowerStart, ct_);
+    }
+    started_ = true;
+
+    // Wait till the background thread has setup the dispatch loop
+    while (!ct_->IsRunning()) {
+      env_->SleepForMicroseconds(1000);
+    }
+    return Status::OK();
+  }
+
+  // If the number of ping responses have reached the expected value,
+  // then return true, otherwise return false.
+  bool CheckPingResponse(int expected) {
+    int retry = 100000;
+    while (retry-- > 0 &&
+           num_ping_responses_ != expected) {
+      env_->SleepForMicroseconds(1000);
+    }
+    if (num_ping_responses_ == expected) {
+      return true;
+    }
+    return false;
+  }
+
+  Status ControlTowerStop() {
+    delete ct_;
+    ct_ = nullptr;
+    return Status::OK();
+  }
 };
 
-
-TEST(ControlMessages, Subscribe) {
+//
+// Send a ping message and receive a ping response back from
+// the control tower
+TEST(ControlTowerTest, Ping) {
   SequenceNumber seqno = 100;
-  ControlTowerOptions ct_options;
+  HostId controltower(hostname_, ctoptions_.port_number);
+  HostId clientId(hostname_, ctoptions_.port_number+1);
+
+  // create a ControlTower (if not already created)
+  ASSERT_EQ(ControlTowerRun().ok(), true);
+
+  // create a message
+  MessagePing pingmsg(Tenant::Guest, seqno,
+                      MessagePing::PingType::Request,
+                      clientId);
+
+  // Define a callback to process the Ping response at the client
+  std::map<MessageType, MsgCallbackType> client_callback;
+  client_callback[MessageType::mPing] = MsgCallbackType(processPing);
+
+  // create a client to communicate with the ControlTower
+  MsgLoop* loop = new MsgLoop(env_, env_options_, clientId,
+                              GetLogger(),
+                              static_cast<ApplicationCallbackContext>(this),
+                              client_callback);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, loop);
+  while (!loop->IsRunning()) {
+    env_->SleepForMicroseconds(1000);
+  }
+
+  // send message to control tower
+  ASSERT_EQ(loop->GetClient().Send(controltower, &pingmsg).ok() ||
+            (delete loop, ControlTowerStop(), false), true);
+
+  // verify that the ping response was received by the client
+  ASSERT_EQ(CheckPingResponse(1) ||
+            (delete loop, ControlTowerStop(), false), true);
+
+  // free up resources
+  delete loop;
+}
+
+TEST(ControlTowerTest, Subscribe) {
+  SequenceNumber seqno = 100;
   std::vector<TopicPair> topics;
   int num_topics = 5;
-  HostId hostid(hostname_, options_.port_number);
+  HostId controltower(hostname_, ctoptions_.port_number);
+  HostId clientId(hostname_, ctoptions_.port_number+1);
+
+  // create a ControlTower (if not already created)
+  ASSERT_EQ(ControlTowerRun().ok(), true);
 
   // create a few topics
   for (int i = 0; i < num_topics; i++)  {
@@ -107,24 +219,29 @@ TEST(ControlMessages, Subscribe) {
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
     topics.push_back(TopicPair(std::to_string(i), type));
   }
-  //
   // create a message
-  MessageMetadata meta1(Tenant::Guest, seqno, hostid, topics);
+  MessageMetadata meta1(Tenant::Guest, seqno, clientId, topics);
 
-  // create a ControlTower (if not already created)
-  ASSERT_EQ(ControlTowerRun().ok(), true);
+  // Define a callback to process the Ping response at the client
+  std::map<MessageType, MsgCallbackType> client_callback;
+  // TODO(dhruba) 1111 : fill up client callback
 
   // create a client to communicate with the ControlTower
-  ControlTowerClient* client = nullptr;
-  Status s1 = ControlTowerClient::CreateNewInstance(*env_, conf_,
-                hostname_, options_.port_number, nullptr, &client);
-  ASSERT_EQ(s1.ok(), true);
+  MsgLoop* loop = new MsgLoop(env_, env_options_, clientId,
+                              GetLogger(),
+                              static_cast<ApplicationCallbackContext>(this),
+                              client_callback);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, loop);
+  while (!loop->IsRunning()) {
+    env_->SleepForMicroseconds(1000);
+  }
 
   // send message to control tower
-  ASSERT_EQ(client->Send(meta1).ok(), true);
+  ASSERT_EQ(loop->GetClient().Send(controltower, &meta1).ok() ||
+            (delete loop, ControlTowerStop(), false), true);
 
   // free up resources
-  delete client;
+  delete loop;
 }
 }  // namespace rocketspeed
 

@@ -41,6 +41,7 @@ MessageHeader::MessageHeader(Slice* in) {
   **/
 std::unique_ptr<Message>
 Message::CreateNewInstance(Slice* in) {
+  MessagePing* msg0 = nullptr;
   MessageData* msg1 = nullptr;
   MessageMetadata* msg2 = nullptr;
   MessageType mtype;
@@ -56,6 +57,10 @@ Message::CreateNewInstance(Slice* in) {
   memcpy(&mtype, in->data(), sizeof(mtype));
 
   switch (mtype) {
+    case mPing:
+      msg0 = new MessagePing();
+      msg0->DeSerialize(in);
+      return std::unique_ptr<Message>(msg0);
     case mData:
       msg1 = new MessageData();
       msg1->DeSerialize(in);
@@ -68,6 +73,86 @@ Message::CreateNewInstance(Slice* in) {
       break;
   }
   return nullptr;
+}
+
+Slice MessagePing::Serialize() const {
+  // serialize common header
+  msghdr_.msgsize_ = 0;
+  serialize_buffer__.clear();
+  serialize_buffer__.append((const char *)&msghdr_.version_,
+                            sizeof(msghdr_.version_));
+  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutVarint32(&serialize_buffer__, tenantid_);
+  PutVarint64(&serialize_buffer__, seqno_);
+
+  // serialize message specific contents
+  serialize_buffer__.append((const char *)&pingtype_, sizeof(type_));
+  //  origin
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
+  PutVarint64(&serialize_buffer__, origin_.port);
+
+  // compute the size of this message
+  msghdr_.msgsize_ = serialize_buffer__.size();
+  std::string mlength;
+  PutFixed32(&mlength, msghdr_.msgsize_);
+  assert(mlength.size() == sizeof(msghdr_.msgsize_));
+
+  // Update the 4byte-msg size starting from the 2nd byte
+  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+  return Slice(serialize_buffer__);
+}
+
+Status MessagePing::DeSerialize(Slice* in) {
+  const unsigned int len = in->size();
+  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
+      sizeof(type_)) {
+    return Status::InvalidArgument("Bad Message Version/Type");
+  }
+  // extract msg version
+  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
+  in->remove_prefix(sizeof(msghdr_.version_));
+
+  // If we do not support this version, then return error
+  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
+    return Status::NotSupported("Bad Message Version");
+  }
+  // extract msg size
+  if (!GetFixed32(in, &msghdr_.msgsize_)) {
+    return Status::InvalidArgument("Bad msg size");
+  }
+  // extract type
+  memcpy(&type_, in->data(), sizeof(type_));
+  in->remove_prefix(sizeof(type_));
+
+  if (!GetVarint32(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
+  }
+
+  // extract sequence number of message
+  if (!GetVarint64(in, &seqno_)) {
+    return Status::InvalidArgument("Bad Sequence Number");
+  }
+
+  // extract ping type
+  void* p = static_cast<void *>(&pingtype_);
+  memcpy(p, in->data(), sizeof(pingtype_));
+  in->remove_prefix(sizeof(pingtype_));
+
+  // extract origin
+  HostId* host = static_cast<HostId*>(&origin_);
+  Slice sl;
+  if (!GetLengthPrefixedSlice(in, &sl)) {
+    return Status::InvalidArgument("Bad HostName");
+  }
+  host->hostname.clear();
+  host->hostname.append(sl.data(), sl.size());
+
+  // extract port number
+  if (!GetVarint64(in, &host->port)) {
+    return Status::InvalidArgument("Bad Port Number");
+  }
+  return Status::OK();
 }
 
 MessageData::MessageData(TenantID tenantID,
@@ -92,6 +177,7 @@ MessageData::~MessageData() {
 }
 
 Slice MessageData::Serialize() const {
+  // serialize common header
   msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
   serialize_buffer__.append((const char *)&msghdr_.version_,
@@ -100,6 +186,8 @@ Slice MessageData::Serialize() const {
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutVarint32(&serialize_buffer__, tenantid_);
   PutVarint64(&serialize_buffer__, seqno_);
+
+  // serialize message specific contents
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
   PutLengthPrefixedSlice(&serialize_buffer__, topic_name_);
@@ -190,6 +278,7 @@ MessageMetadata::~MessageMetadata() {
 }
 
 Slice MessageMetadata::Serialize() const {
+  // serialize common header
   msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
 
@@ -202,6 +291,8 @@ Slice MessageMetadata::Serialize() const {
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutVarint32(&serialize_buffer__, tenantid_);
   PutVarint64(&serialize_buffer__, seqno_);
+
+  // Now serialize message specific data
 
   // HostId
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(hostid_.hostname));

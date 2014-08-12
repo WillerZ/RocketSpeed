@@ -67,8 +67,10 @@ class ControlTower {
   ControlTowerOptions SanitizeOptions(const ControlTowerOptions& src);
 
   // callbacks to process incoming messages
-  static void ProcessData(std::unique_ptr<Message> msg);
-  static void ProcessMetadata(std::unique_ptr<Message> msg);
+  static void ProcessData(ApplicationCallbackContext ctx,
+                          std::unique_ptr<Message> msg);
+  static void ProcessMetadata(ApplicationCallbackContext ctx,
+                              std::unique_ptr<Message> msg);
   static std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };
 

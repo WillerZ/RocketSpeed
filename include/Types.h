@@ -87,6 +87,11 @@ enum Tenant : TenantID {
    * production.
    */
   Guest = 1,
+
+  /**
+   * TenantIds 2-100 are reserved for system usage. Real users should be
+   * assigned ids larger than 100
+   */
 };
 
 /**

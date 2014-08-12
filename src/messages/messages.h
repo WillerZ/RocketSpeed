@@ -30,8 +30,10 @@ namespace rocketspeed {
  * The message types. The first byte of a message indicates the message type.
  */
 enum MessageType : char {
-  mData = 0x01,               // user data
-  mMetadata = 0x02            // subscription information
+  NotInitialized = 0,         // not initialized yet
+  mPing = 0x01,               // ping data
+  mData = 0x02,               // user data
+  mMetadata = 0x03            // subscription information
 };
 
 /*
@@ -57,12 +59,23 @@ class HostId {
     port(p) {
   }
   HostId() {}
+
+  bool operator<(const HostId& rhs) const {
+    if (port < rhs.port) {
+      return true;
+    } else if (port > rhs.port) {
+      return false;
+    } else {
+      return hostname < rhs.hostname;
+    }
+  }
 };
 
 /*
  * The metadata messages can be of two subtypes
  */
 enum MetadataType : char {
+  mNotinitialized = 0x00,          // message is not yet initialized
   mSubscribe = 0x01,               // subscribe
   mUnSubscribe = 0x02              // unsubscribe
 };
@@ -98,7 +111,7 @@ class Message : public Serializer {
   /**
    * @return The message Tupe
    */
-  MessageType GetMessageType() { return type_; }
+  MessageType GetMessageType() const { return type_; }
   /**
    * @return The tenant ID.
    */
@@ -106,7 +119,7 @@ class Message : public Serializer {
   /**
    * @return The message Sequence Number.
    */
-  SequenceNumber GetSequenceNumber() { return seqno_; }
+  SequenceNumber GetSequenceNumber() const { return seqno_; }
 
   /*
    * Creates a Message of the appropriate subtype by looking at the
@@ -122,6 +135,12 @@ class Message : public Serializer {
   virtual Status DeSerialize(Slice* in) = 0;
 
  protected:
+  Message(MessageType type, TenantID tenantid, SequenceNumber seqno) :
+          type_(type), tenantid_(tenantid), seqno_(seqno) {
+    msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  }
+  Message() : Message(MessageType::NotInitialized, 0, 0) {}
+
   MessageType type_;         // type of this message
   TenantID tenantid_;        // unique id for tenant
   SequenceNumber seqno_;     // sequence number of message
@@ -131,6 +150,46 @@ class Message : public Serializer {
 /*********************************************************/
 /**    Message definitions start here                  ***/
 /*********************************************************/
+/*
+ * This is a ping message
+ */
+class MessagePing : public Message {
+ public:
+  // Two types of ping messages
+  enum PingType : char {
+    NotInitialized = 0x00,        // message not yet initialized
+    Request = 0x01,               // ping request
+    Response = 0x02               // ping response
+  };
+
+  MessagePing() : pingtype_(PingType::NotInitialized) {}
+
+  MessagePing(TenantID tenantid, SequenceNumber seqno,
+              PingType pingtype, const HostId& origin) :
+              Message(MessageType::mPing, tenantid, seqno),
+              pingtype_(pingtype), origin_(origin) {}
+
+  PingType GetPingType() const {
+    return pingtype_;
+  }
+
+  void SetPingType(PingType type) {
+    pingtype_ = type;
+  }
+
+  const HostId& GetOrigin() const {
+    return origin_;
+  }
+  /*
+   * Inherited from Serializer
+   */
+  virtual Slice Serialize() const;
+  virtual Status DeSerialize(Slice* in);
+
+ protected:
+  PingType pingtype_;
+  HostId origin_;
+};
 
 /*
  * This is a data message.
@@ -161,13 +220,12 @@ class MessageData : public Message {
   /**
    * @return The Topic Name
    */
-  Slice GetTopicName() { return topic_name_; }
+  Slice GetTopicName() const { return topic_name_; }
 
   /**
    * @return The Message payload
    */
-  Slice GetPayload() { return payload_; }
-
+  Slice GetPayload() const { return payload_; }
 
   /*
    * Inherited from Serializer
@@ -211,12 +269,12 @@ class MessageMetadata : public Message {
   /**
    * @return Information about all topics
    */
-  const std::vector<TopicPair>& GetTopicInfo() { return topics_; }
+  const std::vector<TopicPair>& GetTopicInfo() const { return topics_; }
 
   /**
    * @return The Hostid
    */
-  const HostId& GetHostId() { return hostid_; }
+  const HostId& GetHostId() const { return hostid_; }
 
   /*
    * Inherited from Serializer
