@@ -25,7 +25,6 @@ cpp_library(
     name = 'control_tower_library',
     srcs = [
         'controltower.cc',
-        'controltower_client.cc',
         'options.cc',
     ],
     preprocessor_flags = [ 

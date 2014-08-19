@@ -4,6 +4,7 @@ cpp_library(
         'event_loop.cc',
         'messages.cc',
         'msg_loop.cc',
+        'msg_client.cc',
     ],
     preprocessor_flags = [ 
         '-Irocketspeed/github/include',
