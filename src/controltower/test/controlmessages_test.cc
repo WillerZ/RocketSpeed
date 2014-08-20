@@ -26,10 +26,13 @@ namespace {
 // first unit test. If you set it to true, then you
 // will see the entire libevent debug messages along
 // with the test output.
-static bool debug_libevent = false;
+static bool debug_libevent = true;
 
 // A static variable that points to the current test
 static ControlTowerTest* singleton;
+
+static std::shared_ptr<Logger> info_log;
+
 }  //  namespace
 
 class ControlTowerTest {
@@ -47,6 +50,8 @@ class ControlTowerTest {
     // what is my machine name?
     ASSERT_EQ(gethostname(&myname[0], sizeof(myname)), 0);
     hostname_.assign(myname);
+
+    info_log = GetLogger();
 
     // enable all kinds of libevent debugging
     if (debug_libevent) {
@@ -79,6 +84,7 @@ class ControlTowerTest {
   Env* env_;
   EnvOptions env_options_;
   ControlTower* ct_;
+  std::shared_ptr<Logger> info_log_;
   bool started_;
   ControlTowerOptions ctoptions_;
   Configuration conf_;
@@ -110,13 +116,15 @@ class ControlTowerTest {
   dump_libevent_cb(int severity, const char* msg) {
     const char* s;
     switch (severity) {
-      case _EVENT_LOG_DEBUG: s = "dbg"; break;
-      case _EVENT_LOG_MSG:   s = "msg";   break;
-      case _EVENT_LOG_WARN:  s = "wrn";  break;
-      case _EVENT_LOG_ERR:   s = "err"; break;
-      default:               s = "?";     break; /* never reached */
+      case _EVENT_LOG_DEBUG: s = "libev:dbg"; break;
+      case _EVENT_LOG_MSG:   s = "libev:msg"; break;
+      case _EVENT_LOG_WARN:  s = "libev:wrn"; break;
+      case _EVENT_LOG_ERR:   s = "libev:err"; break;
+      default:               s = "libev:???"; break; /* never reached */
     }
-    printf("[%s] %s\n", s, msg);
+    Log(InfoLogLevel::INFO_LEVEL, info_log,
+        "[%s] %s\n", s, msg);
+    info_log->Flush();
   }
 
   // Setup dispatch thread and ensure that it is running.

@@ -31,14 +31,13 @@ EventLoop::readhdr(struct bufferevent *bev, void *arg) {
   MessageHeader hdr(&sl);
 
   Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
-      "received msghdr, waiting for msg size %d", hdr.msgsize_);
+      "received msghdr of size %d, msg size %d",  available, hdr.msgsize_);
   obj->info_log_->Flush();
+  assert(ld_evbuffer_get_length(input) == available);
 
   // set up a new callback to read the entire message
-  ld_bufferevent_setcb(bev, readmsg, nullptr,
-                       errorcb, arg);
-  ld_bufferevent_setwatermark(bev, EV_READ, hdr.msgsize_,
-                              1024L*1024L);
+  ld_bufferevent_setcb(bev, EventLoop::readmsg, nullptr, errorcb, arg);
+  ld_bufferevent_setwatermark(bev, EV_READ, hdr.msgsize_, hdr.msgsize_);
 }
 
 /**
@@ -52,6 +51,10 @@ EventLoop::readmsg(struct bufferevent *bev, void *arg) {
   struct evbuffer *input = ld_bufferevent_get_input(bev);
   size_t available __attribute__((unused)) = ld_evbuffer_get_length(input);
   assert(available >= MessageHeader::GetSize());
+
+  Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
+      "received readmsg of size %d", available);
+  obj->info_log_->Flush();
 
   // Peek at the header.
   const char* mem = (const char*)ld_evbuffer_pullup(input,
@@ -70,10 +73,18 @@ EventLoop::readmsg(struct bufferevent *bev, void *arg) {
   // Invoke the callback. It is the responsibility of the
   // callback to delete this message.
   obj->event_callback_(obj->event_callback_context_, std::move(msg));
+
+  // Set up the callback event to read the msg header first.
+  ld_bufferevent_setcb(bev, EventLoop::readhdr, nullptr, errorcb, arg);
+  ld_bufferevent_setwatermark(bev, EV_READ, MessageHeader::GetSize(),
+                              MessageHeader::GetSize());
 }
 
 void
 EventLoop::errorcb(struct bufferevent *bev, short error, void *ctx) {
+  EventLoop* obj = static_cast<EventLoop *>(ctx);
+  Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
+      "bufferevent errorcb callback invoked, error = %d", error);
   if (error & BEV_EVENT_EOF) {
       /* connection has been closed, do any clean up here */
       /* ... */
@@ -119,11 +130,17 @@ EventLoop::do_accept(evutil_socket_t listener, short event, void *arg) {
       return;
     }
     // Set up an event to read the msg header first.
-    ld_bufferevent_setcb(bev, readmsg, nullptr,  // XXX
+    ld_bufferevent_setcb(bev, EventLoop::readhdr, nullptr,
                          errorcb, arg);
     ld_bufferevent_setwatermark(bev, EV_READ, MessageHeader::GetSize(),
-                                1024L*1024L);
-    ld_bufferevent_enable(bev, EV_READ|EV_WRITE);
+                                MessageHeader::GetSize());
+    if (ld_bufferevent_enable(bev, EV_READ|EV_WRITE)) {
+      Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
+          "accept on socket %dmsghdr, error in enabling event errno=%d\n",
+           fd, errno);
+      close(fd);
+      return;
+    }
     Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
         "accept successful on socket %d", fd);
   }
@@ -278,5 +295,6 @@ EventLoop::~EventLoop() {
   }
   Log(InfoLogLevel::INFO_LEVEL, info_log_,
       "Stopped EventLoop at port %d", port_number_);
+  info_log_->Flush();
 }
 }  // namespace rocketspeed
