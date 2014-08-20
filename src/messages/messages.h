@@ -245,6 +245,12 @@ class MessageData : public Message {
  */
 class MessageMetadata : public Message {
  public:
+  // Two types of metadata messages
+  enum MetaType : char {
+    NotInitialized = 0x00,        // message not yet initialized
+    Request = 0x01,               // request
+    Response = 0x02               // request processed ack
+  };
   /**
    * Creates a message by specifying its contents.
    * @param seqno The client-supplied sequence number of this metadata msg
@@ -253,7 +259,8 @@ class MessageMetadata : public Message {
    */
   MessageMetadata(TenantID tenantID,
                   const SequenceNumber seqno,
-                  const HostId& hostid,
+                  const MetaType metatype,
+                  const HostId& origin,
                   const std::vector<TopicPair>& topics);
 
   /*
@@ -267,14 +274,28 @@ class MessageMetadata : public Message {
   virtual ~MessageMetadata();
 
   /**
+   * Is it a request or a response?
+   */
+  MetaType GetMetaType() const {
+    return metatype_;
+  }
+
+  /**
+   * Set the metatype response/request
+   */
+  void SetMetaType(MetaType metatype) {
+    metatype_ = metatype;
+  }
+
+  /**
    * @return Information about all topics
    */
   const std::vector<TopicPair>& GetTopicInfo() const { return topics_; }
 
   /**
-   * @return The Hostid
+   * @return The Hostid of the origininator of this request
    */
-  const HostId& GetHostId() const { return hostid_; }
+  const HostId& GetOrigin() const { return origin_; }
 
   /*
    * Inherited from Serializer
@@ -283,7 +304,8 @@ class MessageMetadata : public Message {
   virtual Status DeSerialize(Slice* in);
 
  private:
-  HostId hostid_;             // unique identifier for a client
+  MetaType metatype_;         // request or response
+  HostId origin_;             // unique identifier for a client
 
   // The List of topics to subscribe-to/unsubscribe-from
   std::vector<TopicPair> topics_;

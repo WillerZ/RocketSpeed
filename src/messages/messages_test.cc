@@ -48,7 +48,9 @@ TEST(Messaging, Metadata) {
   }
 
   // create a message
-  MessageMetadata meta1(Tenant::Guest, seqno, hostid, topics);
+  MessageMetadata meta1(Tenant::Guest, seqno,
+                        MessageMetadata::MetaType::Request,
+                        hostid, topics);
 
   // serialize the message
   Slice original = meta1.Serialize();
@@ -59,8 +61,8 @@ TEST(Messaging, Metadata) {
 
   // verify that the new message is the same as original
   ASSERT_EQ(seqno, data2.GetSequenceNumber());
-  ASSERT_EQ(mymachine, data2.GetHostId().hostname);
-  ASSERT_EQ(port, data2.GetHostId().port);
+  ASSERT_EQ(mymachine, data2.GetOrigin().hostname);
+  ASSERT_EQ(port, data2.GetOrigin().port);
   ASSERT_EQ(Tenant::Guest, data2.GetTenantID());
 
   // verify that the new message is the same as original

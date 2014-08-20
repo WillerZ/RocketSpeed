@@ -82,9 +82,32 @@ void
 ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
                               std::unique_ptr<Message> msg) {
   ControlTower* ct = static_cast<ControlTower*>(ctx);
-  fprintf(stdout, "Received metadata message %d\n", ct->IsRunning());
-}
 
+  // get the request message
+  MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
+  if (request->GetMetaType() != MessageMetadata::MetaType::Request) {
+    Log(InfoLogLevel::WARN_LEVEL, ct->options_.info_log,
+        "MessageMetadata with bad type %d received, ignoring...",
+        request->GetMetaType());
+  }
+  const HostId origin = request->GetOrigin();
+
+  // change it to a response ack message
+  request->SetMetaType(MessageMetadata::MetaType::Response);
+
+  // send reponse back to client
+  Status st = ct->msg_loop_.GetClient().Send(origin, std::move(msg));
+  if (!st.ok()) {
+    Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
+        "Unable to send Metadata response to %s:%d",
+        origin.hostname.c_str(), origin.port);
+  } else {
+    Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
+        "Send Metadata response to %s:%d",
+        origin.hostname.c_str(), origin.port);
+  }
+  ct->options_.info_log->Flush();
+}
 
 // A static method to initialize the callback map
 std::map<MessageType, MsgCallbackType>

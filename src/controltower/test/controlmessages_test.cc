@@ -40,7 +40,9 @@ class ControlTowerTest {
   // Create a new instance of the control tower
   ControlTowerTest():
     env_(Env::Default()), ct_(nullptr),
-    started_(false), num_ping_responses_(0) {
+    started_(false),
+    num_ping_responses_(0),
+    num_subscribe_responses_(0) {
     // set control tower to log information to test dir
     ctoptions_.log_dir = test::TmpDir() + "/controltower";
 
@@ -91,6 +93,7 @@ class ControlTowerTest {
   Status st_;
   std::string hostname_;
   int num_ping_responses_;
+  int num_subscribe_responses_;
 
   // A static method that is the entry point of a background thread
   static void ControlTowerStart(void* arg) {
@@ -108,7 +111,18 @@ class ControlTowerTest {
   static void processPing(const ApplicationCallbackContext arg,
                           std::unique_ptr<Message> msg) {
     ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
+    MessagePing* m = static_cast<MessagePing*>(msg.get());
+    ASSERT_EQ(m->GetPingType(), MessagePing::PingType::Response);
     singleton->num_ping_responses_++;
+  }
+
+  // A static method to process a subscribe response message
+  static void processMetadata(const ApplicationCallbackContext arg,
+                              std::unique_ptr<Message> msg) {
+    ASSERT_EQ(msg->GetMessageType(), MessageType::mMetadata);
+    MessageMetadata* m = static_cast<MessageMetadata*>(msg.get());
+    ASSERT_EQ(m->GetMetaType(), MessageMetadata::MetaType::Response);
+    singleton->num_subscribe_responses_++;
   }
 
   // Dumps libevent info messages to stdout
@@ -151,12 +165,26 @@ class ControlTowerTest {
   // If the number of ping responses have reached the expected value,
   // then return true, otherwise return false.
   bool CheckPingResponse(int expected) {
-    int retry = 100000;
+    int retry = 10000;
     while (retry-- > 0 &&
            num_ping_responses_ != expected) {
       env_->SleepForMicroseconds(1000);
     }
     if (num_ping_responses_ == expected) {
+      return true;
+    }
+    return false;
+  }
+
+  // If the number of subscribe responses have reached the expected value,
+  // then return true, otherwise return false.
+  bool CheckSubscribeResponse(int expected) {
+    int retry = 10000;
+    while (retry-- > 0 &&
+           num_subscribe_responses_ != expected) {
+      env_->SleepForMicroseconds(1000);
+    }
+    if (num_subscribe_responses_ == expected) {
       return true;
     }
     return false;
@@ -228,11 +256,13 @@ TEST(ControlTowerTest, Subscribe) {
     topics.push_back(TopicPair(std::to_string(i), type));
   }
   // create a message
-  MessageMetadata meta1(Tenant::Guest, seqno, clientId, topics);
+  MessageMetadata meta1(Tenant::Guest, seqno,
+                        MessageMetadata::MetaType::Request,
+                        clientId, topics);
 
-  // Define a callback to process the Ping response at the client
+  // Define a callback to process the subscribe response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
-  // TODO(dhruba) 1111 : fill up client callback
+  client_callback[MessageType::mMetadata] = MsgCallbackType(processMetadata);
 
   // create a client to communicate with the ControlTower
   MsgLoop* loop = new MsgLoop(env_, env_options_, clientId,
@@ -247,6 +277,9 @@ TEST(ControlTowerTest, Subscribe) {
   // send message to control tower
   ASSERT_EQ(loop->GetClient().Send(controltower, &meta1).ok() ||
             (delete loop, ControlTowerStop(), false), true);
+
+  // verify that the subscribe response was received by the client
+  ASSERT_EQ(CheckSubscribeResponse(1), true);
 
   // free up resources
   delete loop;

@@ -32,7 +32,7 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
   if (iter != msgloop->msg_callbacks_.end()) {
     MsgCallbackType cb = iter->second;
 
-    // special hanlding of ping message
+    // special handling of ping message
     if (type == mPing) {
       cb(static_cast<ApplicationCallbackContext>(msgloop), std::move(msg));
     } else {

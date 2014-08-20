@@ -257,9 +257,11 @@ Status MessageData::DeSerialize(Slice* in) {
 
 MessageMetadata::MessageMetadata(TenantID tenantID,
   const SequenceNumber seqno,
-  const HostId& hostid,
+  const MetaType metatype,
+  const HostId& origin,
   const std::vector<TopicPair>& topics):
-  hostid_(hostid),
+  metatype_(metatype),
+  origin_(origin),
   topics_(topics) {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mMetadata;
@@ -272,6 +274,7 @@ MessageMetadata::MessageMetadata() {
   type_ = mMetadata;
   tenantid_ = Tenant::Invalid;
   seqno_ = 0;
+  metatype_ = MetaType::NotInitialized;
 }
 
 MessageMetadata::~MessageMetadata() {
@@ -293,10 +296,10 @@ Slice MessageMetadata::Serialize() const {
   PutVarint64(&serialize_buffer__, seqno_);
 
   // Now serialize message specific data
-
-  // HostId
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(hostid_.hostname));
-  PutVarint64(&serialize_buffer__, hostid_.port);
+  serialize_buffer__.append((const char *)&metatype_, sizeof(metatype_));
+  //  origin
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
+  PutVarint64(&serialize_buffer__, origin_.port);
 
   // Topics and metadata state
   PutVarint32(&serialize_buffer__, topics_.size());
@@ -349,16 +352,21 @@ Status MessageMetadata::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad Sequence Number");
   }
 
+  // extract metadata type
+  void* p = static_cast<void *>(&metatype_);
+  memcpy(p, in->data(), sizeof(metatype_));
+  in->remove_prefix(sizeof(metatype_));
+
   // extract host id
   Slice sl;
   if (!GetLengthPrefixedSlice(in, &sl)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  hostid_.hostname.clear();
-  hostid_.hostname.append(sl.data(), sl.size());
+  origin_.hostname.clear();
+  origin_.hostname.append(sl.data(), sl.size());
 
   // extract port number
-  if (!GetVarint64(in, &hostid_.port)) {
+  if (!GetVarint64(in, &origin_.port)) {
     return Status::InvalidArgument("Bad Port Number");
   }
 
