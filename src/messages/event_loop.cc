@@ -67,12 +67,19 @@ EventLoop::readmsg(struct bufferevent *bev, void *arg) {
   const char* data = (const char*)ld_evbuffer_pullup(input, hdr.msgsize_);
 
   // Convert the serialized string to a message object
+  assert(available >= hdr.msgsize_);
   Slice tmpsl(data, hdr.msgsize_);
   std::unique_ptr<Message> msg = Message::CreateNewInstance(&tmpsl);
 
   // Invoke the callback. It is the responsibility of the
   // callback to delete this message.
   obj->event_callback_(obj->event_callback_context_, std::move(msg));
+
+  // drain the processed message from the event buffer
+  if (!ld_evbuffer_drain(input, hdr.msgsize_)) {
+    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
+        "unable to drain msg of size %d from event buffer", hdr.msgsize_);
+  }
 
   // Set up the callback event to read the msg header first.
   ld_bufferevent_setcb(bev, EventLoop::readhdr, nullptr, errorcb, arg);
