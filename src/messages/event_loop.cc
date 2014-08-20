@@ -76,7 +76,7 @@ EventLoop::readmsg(struct bufferevent *bev, void *arg) {
   obj->event_callback_(obj->event_callback_context_, std::move(msg));
 
   // drain the processed message from the event buffer
-  if (!ld_evbuffer_drain(input, hdr.msgsize_)) {
+  if (ld_evbuffer_drain(input, hdr.msgsize_)) {
     Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
         "unable to drain msg of size %d from event buffer", hdr.msgsize_);
   }

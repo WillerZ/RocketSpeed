@@ -202,6 +202,7 @@ class ControlTowerTest {
 // the control tower
 TEST(ControlTowerTest, Ping) {
   SequenceNumber seqno = 100;
+  int num_msgs = 100;
   HostId controltower(hostname_, ctoptions_.port_number);
   HostId clientId(hostname_, ctoptions_.port_number+1);
 
@@ -227,12 +228,22 @@ TEST(ControlTowerTest, Ping) {
     env_->SleepForMicroseconds(1000);
   }
 
-  // send message to control tower
+  // send one ping message to control tower
   ASSERT_EQ(loop->GetClient().Send(controltower, &pingmsg).ok() ||
             (delete loop, ControlTowerStop(), false), true);
 
   // verify that the ping response was received by the client
   ASSERT_EQ(CheckPingResponse(1) ||
+            (delete loop, ControlTowerStop(), false), true);
+
+  // now send multiple ping messages to server back-to-back
+  for (int i = 0; i < num_msgs; i++) {
+    ASSERT_EQ(loop->GetClient().Send(controltower, &pingmsg).ok() ||
+              (delete loop, ControlTowerStop(), false), true);
+  }
+
+  // check that all 100 responses were received
+  ASSERT_EQ(CheckPingResponse(1+num_msgs) ||
             (delete loop, ControlTowerStop(), false), true);
 
   // free up resources
