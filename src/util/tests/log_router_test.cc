@@ -72,7 +72,7 @@ TEST(LogRouterTest, LogDistribution) {
     Retention retention = static_cast<Retention>(i % Retention::Total + 1);
     LogID logID;
     ASSERT_TRUE(router.GetLogID(topic, retention, &logID).ok());
-    topicCount[logID]++;
+    topicCount[logID - 1]++;  // LogIDs start at 1, not 0.
   }
 
   // Find the minimum and maximum topics per log.

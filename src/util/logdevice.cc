@@ -75,6 +75,7 @@ Status LogDeviceStorage::Create(
   std::unique_ptr<facebook::logdevice::ClientSettings>&& settings,
   Env* env,
   LogDeviceStorage** storage) {
+#ifdef USE_LOGDEVICE
   // Basic validation of parameters before sending to LogDevice.
   if (cluster_name.empty()) {
     return Status::InvalidArgument("cluster_name must not be empty.");
@@ -82,6 +83,7 @@ Status LogDeviceStorage::Create(
   if (config_url.empty()) {
     return Status::InvalidArgument("config_url must not be empty.");
   }
+#endif
   if (storage == nullptr) {
     return Status::InvalidArgument("Must provide the storage pointer.");
   }

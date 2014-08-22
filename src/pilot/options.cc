@@ -2,14 +2,14 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
-#include "src/controltower/options.h"
+#include "src/pilot/options.h"
+#include <unistd.h>
 
 namespace rocketspeed {
 
-ControlTowerOptions::ControlTowerOptions()
+PilotOptions::PilotOptions()
   : env(Env::Default()),
-    hostname(""),
-    port_number(58500),
+    port_number(58600),
     info_log(nullptr),
     info_log_level(INFO_LEVEL),
     log_dir(""),
@@ -17,7 +17,7 @@ ControlTowerOptions::ControlTowerOptions()
     log_file_time_to_roll(0) {
   char myname[1024];
   gethostname(&myname[0], sizeof(myname));
-  hostname.assign(myname);
+  pilotname.assign(myname);
 }
 
 }  // namespace rocketspeed

@@ -76,6 +76,7 @@ TESTS = \
 	simple_storage_test \
 	auto_roll_logger_test \
   controlmessages_test \
+  pilotmessages_test \
   log_router_test \
   control_tower_router_test \
   mock_logdevice_test \
@@ -148,7 +149,8 @@ coverage:
 	find . -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
 
 # compile only the pilot
-pilot:
+pilot: src/pilot/main.o $(LIBOBJECTS)
+	$(CXX) src/pilot/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the copilot
 copilot:
@@ -226,6 +228,9 @@ auto_roll_logger_test: src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARN
 
 controlmessages_test: src/controltower/test/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/controltower/test/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+pilotmessages_test: src/pilot/test/pilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/pilot/test/pilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 log_router_test: src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)

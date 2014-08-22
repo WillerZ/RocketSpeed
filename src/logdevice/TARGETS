@@ -34,7 +34,5 @@ cpp_binary(
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/messages',
-        '@/logdevice/lib',
-        '@/logdevice/test/utils',
     ],
 )

@@ -1,0 +1,21 @@
+# unit tests for pilot
+cpp_unittest(
+    name = 'pilotmessages_test',
+    srcs = [
+        'pilotmessages_test.cc',
+    ],
+    type = 'gtest',
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DUSE_LOGDEVICE',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/pilot:pilot_library',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+        '@/logdevice/lib',
+    ],
+    compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
+)
