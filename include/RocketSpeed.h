@@ -86,13 +86,15 @@ class ProducerHandle {
    * whether the publish was successful, and if so it returns the
    * messageid and sequenceId of this message.
    */
-  virtual ResultStatus publish(const Slice& data);
+  virtual ResultStatus Publish(const Slice& data);
 
   virtual ~ProducerHandle();
 };
 
 /**
- * A Consumer object is used to consume messages from multiple topics
+ * A Consumer object is used to consume messages from multiple topics.
+ *
+ * Consumer is completely thread-safe.
  */
 class Consumer {
  public:
@@ -104,7 +106,7 @@ class Consumer {
    * @return on success returns OK(), otherwise errorcode
    */
   static Status Open(const Configuration& config,
-                     ConsumerHandle** consumer);
+                     Consumer** consumer);
 
   /**
    * Closes this Consumer's connection to the Cloud Service Provider.
@@ -118,8 +120,12 @@ class Consumer {
    * Messages arriving for this topic will be added to the mailbox,
    * accessible through the ConsumerHandle.
    *
+   * If a ConsumerHandle is already listening on the Topic then an
+   * InvalidArgument status is returned.
+   *
    * @param name Name of this topic to be opened
-   * @param options  Quality of service for this Topic
+   * @param options Quality of service for this Topic
+   * @param handle Output parameter for returned ConsumerHandle
    * @return on success returns OK(), otherwise errorcode
    */
   virtual Status ListenTopic(const Topic& name,
@@ -127,25 +133,29 @@ class Consumer {
                              ConsumerHandle** handle);
 
   /**
-   * Opens the specified Topics. Each Topic is
-   * associated with the handle. It is possible that some
-   * topic were opened successfuly while some others failed.
-   * ConsumerHandles are returned only for those topics
-   * that were opened successfully.
+   * Opens the specified Topics and returns a ConsumerHandle that listens
+   * to those topics. A vector of statuses is returned as some subscriptions
+   * may have failed. The ConsumerHandle only listens on successfully
+   * subscribed topics.
+   *
+   * If a ConsumerHandle is already listening on any Topic then an
+   * InvalidArgument status is returned for that topic.
    *
    * @param names Names of the topics to be opened
-   * @param options  Quality of service for this Topic
-   * @return on success returns OK(), otherwise errorcode
+   * @param options Quality of service for this Topic
+   * @param handle Output parameter for returned ConsumerHandle
+   * @return for each topic, on success returns OK(), otherwise errorcode
    */
   virtual std::vector<Status> ListenTopics(std::vector<Topic>& names,
-                                 const TopicOptions& options,
-                                 std::vector<ConsumerHandle*>* handles);
+                                           const TopicOptions& options,
+                                           ConsumerHandle** handle);
 };
 
 
 /**
- * The ConsumerHandle is used to listen to new messages to a
- * single topic.
+ * The ConsumerHandle is used to listen to new messages to one
+ * or more topics. ConsumerHandle must only be used from one thread, but does
+ * not need be the same thread it was created on.
  */
 class ConsumerHandle {
  public:
@@ -161,7 +171,7 @@ class ConsumerHandle {
    *
    * @return the received message.
    */
-  virtual MessageReceived receive();
+  virtual MessageReceived Receive();
 
   /**
    * Checks for an available message and returns immediately. If a message is
@@ -171,7 +181,7 @@ class ConsumerHandle {
    *
    * @return the received message.
    */
-  virtual MessageReceived peek();
+  virtual MessageReceived Peek();
 };
 
 }  // namespace rocketspeed
