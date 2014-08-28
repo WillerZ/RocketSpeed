@@ -54,7 +54,7 @@ Message::CreateNewInstance(Slice* in) {
   tmp.remove_prefix(MessageHeader::GetSize());
 
   // extract msg type
-  memcpy(&mtype, in->data(), sizeof(mtype));
+  memcpy(&mtype, tmp.data(), sizeof(mtype));
 
   switch (mtype) {
     case mPing:

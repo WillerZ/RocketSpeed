@@ -106,13 +106,6 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
       static_cast<uint64_t>(logid));
     return;
   }
-
-  // Debug message.
-  fprintf(stdout,
-          "Pilot::ProcessData '%s' %u bytes to log %lu\n",
-          topicName.c_str(),
-          static_cast<unsigned int>(payload.size()),
-          static_cast<uint64_t>(logid));
 }
 
 // A static method to initialize the callback map

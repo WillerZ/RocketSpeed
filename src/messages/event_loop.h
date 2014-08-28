@@ -14,8 +14,10 @@
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
+#include <event2/listener.h>
 #include <event2/thread.h>
 #include <event2/util.h>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include "include/Env.h"
@@ -65,7 +67,7 @@ class EventLoop {
   int port_number_;
 
   // Is the EventLoop all setup and running?
-  bool running_;
+  std::atomic<bool> running_;
 
   // The event loop base.
   struct event_base *base_;
@@ -79,15 +81,22 @@ class EventLoop {
   // The callback context
   EventCallbackContext event_callback_context_;
 
-  // The listener socket
-  evutil_socket_t listener_;
+  // The connection listener
+  evconnlistener* listener_ = nullptr;
+
+  // Shutdown event
+  struct event* shutdown_event_ = nullptr;
 
   // callbacks needed by libevent
   static void readhdr(struct bufferevent *bev, void *ctx);
   static void readmsg(struct bufferevent *bev, void *ctx);
   static void errorcb(struct bufferevent *bev, short error, void *ctx);
-  static void do_accept(evutil_socket_t listener, short event, void *arg);
+  static void do_accept(struct evconnlistener *listener,
+    evutil_socket_t fd, struct sockaddr *address, int socklen,
+    void *arg);
+  static void accept_error_cb(struct evconnlistener *listener, void *arg);
   static void do_startevent(evutil_socket_t listener, short event, void *arg);
+  static void do_shutdown(evutil_socket_t listener, short event, void *arg);
   static void dump_libevent_cb(int severity, const char* msg);
 };
 
