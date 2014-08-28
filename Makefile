@@ -80,7 +80,8 @@ TESTS = \
   log_router_test \
   control_tower_router_test \
   mock_logdevice_test \
-  logdevice_storage_test
+  logdevice_storage_test \
+  hostmap_test
 
 TOOLS =
 
@@ -243,6 +244,9 @@ mock_logdevice_test: src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS)
 
 logdevice_storage_test: src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+hostmap_test: src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

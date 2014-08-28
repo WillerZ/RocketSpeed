@@ -47,31 +47,6 @@ class MsgId {
 };
 
 /*
- * A host:port pair that uniquely identifies a machine.
- */
-class HostId {
- public:
-  std::string hostname;      // name of a machine
-  uint64_t    port;          // name of port to connect to
-
-  HostId(std::string s, uint64_t p) :
-    hostname(s),
-    port(p) {
-  }
-  HostId() {}
-
-  bool operator<(const HostId& rhs) const {
-    if (port < rhs.port) {
-      return true;
-    } else if (port > rhs.port) {
-      return false;
-    } else {
-      return hostname < rhs.hostname;
-    }
-  }
-};
-
-/*
  * The metadata messages can be of two subtypes
  */
 enum MetadataType : char {
