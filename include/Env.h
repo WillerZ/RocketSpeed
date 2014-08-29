@@ -192,6 +192,9 @@ class Env {
     IO_TOTAL = 2
   };
 
+  // An identifier for a thread.
+  typedef uint64_t ThreadId;
+
   // Arrange to run "(*function)(arg)" once in a background thread, in
   // the thread pool specified by pri. By default, jobs go to the 'LOW'
   // priority thread pool.
@@ -207,12 +210,17 @@ class Env {
 
   // Start a new thread, invoking "function(arg)" within the new thread.
   // When "function(arg)" returns, the thread will be destroyed.
-  virtual void StartThread(void (*function)(void* arg), void* arg) = 0;
+  // Returns an identifier for the thread that is created.
+  virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
+                               std::string thread_name = "") = 0;
+
+  // Waits for the specified thread to exit
+  virtual void WaitForJoin(ThreadId tid) = 0;
 
   // Wait for all threads started by StartThread to terminate.
-  virtual void WaitForJoin() {}
+  virtual void WaitForJoin()  = 0;
 
-  // Get thread pool queue length for specific thrad pool.
+  // Get thread pool queue length for specific thread pool.
   virtual unsigned int GetThreadPoolQueueLen(Priority pri = LOW) const {
     return 0;
   }
@@ -271,6 +279,11 @@ class Env {
                                unique_ptr<Connection>* result,
                                const EnvOptions& options) const
                                = 0;
+  // Number of CPUs on this machine
+  virtual unsigned int GetNumberOfCpus() {
+    return 1;
+  }
+
  private:
   // No copying allowed
   Env(const Env&);
@@ -743,10 +756,12 @@ class EnvWrapper : public Env {
   void Schedule(void (*f)(void*), void* a, Priority pri) {
     return target_->Schedule(f, a, pri);
   }
-  void StartThread(void (*f)(void*), void* a) {
-    return target_->StartThread(f, a);
+  ThreadId StartThread(void (*f)(void*), void* a, std::string n) {
+    return target_->StartThread(f, a, n);
   }
   void WaitForJoin() { return target_->WaitForJoin(); }
+  void WaitForJoin(ThreadId tid) { return target_->WaitForJoin(tid); }
+
   virtual unsigned int GetThreadPoolQueueLen(Priority pri = LOW) const {
     return target_->GetThreadPoolQueueLen(pri);
   }

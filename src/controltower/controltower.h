@@ -4,28 +4,12 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
-#include <inttypes.h>
-#include <sys/types.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <event2/event.h>
-#include <event2/buffer.h>
-#include <event2/bufferevent.h>
-#include <event2/thread.h>
-#include <event2/util.h>
 #include <memory>
 #include <map>
-#include "include/Env.h"
-#include "src/messages/serializer.h"
-#include "src/messages/messages.h"
+#include <vector>
 #include "src/messages/msg_loop.h"
-#include "src/util/logging.h"
-#include "src/util/log_buffer.h"
-#include "src/util/auto_roll_logger.h"
 #include "src/controltower/options.h"
+#include "src/controltower/controlroom.h"
 
 namespace rocketspeed {
 
@@ -46,6 +30,9 @@ class ControlTower {
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}
 
+  // Returns a client that pools connections to other MsgLoops
+  MsgClient& GetClient() { return msg_loop_.GetClient(); }
+
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;
@@ -56,7 +43,15 @@ class ControlTower {
   // Message specific callbacks stored here
   const std::map<MessageType, MsgCallbackType> callbacks_;
 
+  // A control tower has multiple ControlRooms.
+  // Each Room handles its own set of topics. Each room has its own
+  // room number. Each room also has its own MsgLoop.
+  std::vector<unique_ptr<ControlRoom>> rooms_;
+
   // The message loop base.
+  // This is used to receive subscribe/unsubscribe/data messages
+  // from other processes. The MsgLoop should be the last field of
+  // ControlTower so that it gets destructed first.
   MsgLoop msg_loop_;
 
   // private Constructor

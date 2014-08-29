@@ -7,6 +7,11 @@
 
 #include "src/controltower/controltower.h"
 #include <map>
+#include <thread>
+#include <vector>
+#include "src/util/logging.h"
+#include "src/util/log_buffer.h"
+#include "src/util/xxhash.h"
 
 namespace rocketspeed {
 
@@ -34,6 +39,21 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
 
 void
 ControlTower::Run(void) {
+  // Start background threads for Room msg loops
+  for (unsigned int i = 0; i < options_.number_of_rooms; i++) {
+    ControlRoom* room = rooms_[i].get();
+    options_.env->StartThread(ControlRoom::Run, room,
+                  "rooms-" + std::to_string(room->GetRoomId().port));
+  }
+  // wait for all the Rooms to be ready to process events
+  for (unsigned int i = 0; i < options_.number_of_rooms; i++) {
+    while (!rooms_[i].get()->IsRunning()) {
+      std::this_thread::yield();
+    }
+  }
+  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+      "Starting a new Control Tower with %d rooms",
+      options_.number_of_rooms);
   msg_loop_.Run();
 }
 
@@ -51,8 +71,15 @@ ControlTower::ControlTower(const ControlTowerOptions& options,
             options_.info_log,
             static_cast<ApplicationCallbackContext>(this),
             callbacks_) {
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-      "Created a new Control Tower");
+  //
+  // Create the ControlRooms. The port numbers for the rooms
+  // are adjacent to the port number of the ControlTower.
+  for (unsigned int i = 0; i < options_.number_of_rooms; i++) {
+    unique_ptr<ControlRoom> newroom(new ControlRoom(options_, this, i,
+                                    options_.port_number + i + 1));
+    rooms_.push_back(std::move(newroom));
+  }
+  options_.info_log->Flush();
 }
 
 ControlTower::~ControlTower() {
@@ -78,6 +105,7 @@ ControlTower::ProcessData(const ApplicationCallbackContext ctx,
 }
 
 // A static callback method to process MessageMetadata
+// The message is forwarded to the appropriate ControlRoom
 void
 ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
                               std::unique_ptr<Message> msg) {
@@ -90,23 +118,38 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
         "MessageMetadata with bad type %d received, ignoring...",
         request->GetMetaType());
   }
-  const HostId origin = request->GetOrigin();
 
-  // change it to a response ack message
-  request->SetMetaType(MessageMetadata::MetaType::Response);
+  // Process each topic
+  for (unsigned int i = 0; i < request->GetTopicInfo().size(); i++) {
+    // Copy out only the ith topic into a new message.
+    TopicPair topic = request->GetTopicInfo()[i];
+    MessageMetadata newmsg(request->GetTenantID(),
+                           request->GetSequenceNumber(),
+                           request->GetMetaType(),
+                           request->GetOrigin(),
+                           std::vector<TopicPair> {topic});
 
-  // send reponse back to client
-  Status st = ct->msg_loop_.GetClient().Send(origin, std::move(msg));
-  if (!st.ok()) {
-    Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
-        "Unable to send Metadata response to %s:%d",
-        origin.hostname.c_str(), origin.port);
-  } else {
-    Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
-        "Send Metadata response to %s:%d",
-        origin.hostname.c_str(), origin.port);
+    // calculate the destination room number
+    unsigned int hash = XXH32(topic.topic_name.c_str(),
+                              topic.topic_name.size(), 0);
+    int room_number = hash % ct->options_.number_of_rooms;
+
+    // forward message to the destination room
+    ControlRoom* room = ct->rooms_[room_number].get();
+    Status st =  room->Forward(&newmsg);
+    if (!st.ok()) {
+      Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
+          "Unable to forward Metadata msg to %s:%d %s",
+          room->GetRoomId().hostname.c_str(),
+          room->GetRoomId().port,
+          st.ToString().c_str());
+    } else {
+      Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
+          "Forwarded Metadata to %s:%d",
+          room->GetRoomId().hostname.c_str(),
+          room->GetRoomId().port);
+    }
   }
-  ct->options_.info_log->Flush();
 }
 
 // A static method to initialize the callback map
@@ -120,4 +163,5 @@ ControlTower::InitializeCallbacks() {
   // return the updated map
   return cb;
 }
+
 }  // namespace rocketspeed

@@ -61,6 +61,13 @@ struct ControlTowerOptions {
   // Default: 0 (disabled)
   size_t log_file_time_to_roll;
 
+  // The number of rooms in the Control Tower. Each room serves
+  // a subset of all the topics served by this Tower. This is a
+  // easy way to partition all the topics into parallelizable
+  // processing units.
+  // Default: number of cpus on the machine
+  unsigned int number_of_rooms;
+
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
 };

@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <string>
 #include "include/Env.h"
 
 namespace rocketspeed {
@@ -28,6 +29,7 @@ class PosixLogger : public Logger {
  private:
   FILE* file_;
   uint64_t (*gettid_)();  // Return the thread id for the current thread
+  std::string (*gettname_)();  // Return the thread name for the current thread
   std::atomic_size_t log_size_;
   int fd_;
   const static uint64_t flush_every_seconds_ = 5;
@@ -35,11 +37,13 @@ class PosixLogger : public Logger {
   Env* env_;
   bool flush_pending_;
  public:
-  PosixLogger(FILE* f, uint64_t (*gettid)(), Env* env,
+  PosixLogger(FILE* f, uint64_t (*gettid)(), std::string (*gettname)(),
+              Env* env,
               const InfoLogLevel log_level = InfoLogLevel::ERROR_LEVEL)
       : Logger(log_level),
         file_(f),
         gettid_(gettid),
+        gettname_(gettname),
         log_size_(0),
         fd_(fileno(f)),
         last_flush_micros_(0),
@@ -57,6 +61,7 @@ class PosixLogger : public Logger {
   }
   virtual void Logv(const char* format, va_list ap) {
     const uint64_t thread_id = (*gettid_)();
+    const char* name = (*gettname_)().c_str();
 
     // We try twice: the first time with a fixed-size stack allocated buffer,
     // and the second time with a much larger dynamically allocated buffer.
@@ -80,15 +85,15 @@ class PosixLogger : public Logger {
       struct tm t;
       localtime_r(&seconds, &t);
       p += snprintf(p, limit - p,
-                    "%04d/%02d/%02d-%02d:%02d:%02d.%06d %llx ",
-                    t.tm_year + 1900,
+                    "%02d/%02d-%02d:%02d:%02d.%06d %llx %.11s ",
                     t.tm_mon + 1,
                     t.tm_mday,
                     t.tm_hour,
                     t.tm_min,
                     t.tm_sec,
                     static_cast<int>(now_tv.tv_usec),
-                    static_cast<long long unsigned int>(thread_id));
+                    static_cast<long long unsigned int>(thread_id),
+                    name);
 
       // Print the message
       if (p < limit) {

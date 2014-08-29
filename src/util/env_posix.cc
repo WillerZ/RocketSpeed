@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <deque>
 #include <set>
+#include <thread>
 #include "include/Env.h"
 #include "include/Slice.h"
 #include "src/port/port.h"
@@ -1323,9 +1324,12 @@ class PosixEnv : public Env {
 
   virtual void Schedule(void (*function)(void*), void* arg, Priority pri = LOW);
 
-  virtual void StartThread(void (*function)(void* arg), void* arg);
+  virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
+                               std::string thread_name);
 
   virtual void WaitForJoin();
+
+  virtual void WaitForJoin(ThreadId tid);
 
   virtual unsigned int GetThreadPoolQueueLen(Priority pri = LOW) const override;
 
@@ -1354,6 +1358,16 @@ class PosixEnv : public Env {
     return gettid(tid);
   }
 
+  static std::string gettname() {
+    char name[64];
+    // this can be optimized by keeping a local hashmap
+    if (pthread_getname_np(pthread_self(), name, sizeof(name)) == 0) {
+      name[sizeof(name)-1] = 0;
+      return std::string(name);
+    }
+    return "";
+  }
+
   virtual Status NewLogger(const std::string& fname,
                            shared_ptr<Logger>* result) {
     FILE* f = fopen(fname.c_str(), "w");
@@ -1363,7 +1377,8 @@ class PosixEnv : public Env {
     } else {
       int fd = fileno(f);
       SetFD_CLOEXEC(fd, nullptr);
-      result->reset(new PosixLogger(f, &PosixEnv::gettid, this));
+      result->reset(new PosixLogger(f, &PosixEnv::gettid,
+                                    &PosixEnv::gettname, this));
       return Status::OK();
     }
   }
@@ -1495,6 +1510,11 @@ class PosixEnv : public Env {
     freeaddrinfo(servinfo);
     result->reset(new PosixConnection(sockfd));
     return Status::OK();
+  }
+
+  // number of CPUs on the system
+  virtual unsigned int GetNumberOfCpus() {
+    return std::thread::hardware_concurrency();
   }
 
  private:
@@ -1751,6 +1771,7 @@ struct StartThreadState {
   void* arg;
 };
 }
+
 static void* StartThreadWrapper(void* arg) {
   StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
   state->user_function(state->arg);
@@ -1758,7 +1779,8 @@ static void* StartThreadWrapper(void* arg) {
   return nullptr;
 }
 
-void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
+Env::ThreadId PosixEnv::StartThread(void (*function)(void* arg),
+  void* arg, std::string thread_name) {
   pthread_t t;
   StartThreadState* state = new StartThreadState;
   state->user_function = function;
@@ -1768,6 +1790,16 @@ void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
+
+  // set name of thread if supported
+#if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2, 12)
+  {
+    pthread_setname_np(t, thread_name.c_str());
+  }
+#endif
+#endif
+  return (Env::ThreadId)t;
 }
 
 void PosixEnv::WaitForJoin() {
@@ -1775,6 +1807,10 @@ void PosixEnv::WaitForJoin() {
     pthread_join(tid, nullptr);
   }
   threads_to_join_.clear();
+}
+
+void PosixEnv::WaitForJoin(Env::ThreadId tid) {
+  pthread_join((pthread_t)tid, nullptr);
 }
 
 }  // namespace

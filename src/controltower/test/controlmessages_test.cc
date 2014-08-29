@@ -26,7 +26,7 @@ namespace {
 // first unit test. If you set it to true, then you
 // will see the entire libevent debug messages along
 // with the test output.
-static bool debug_libevent = true;
+static bool debug_libevent = false;
 
 // A static variable that points to the current test
 static ControlTowerTest* singleton;
@@ -45,6 +45,7 @@ class ControlTowerTest {
     num_subscribe_responses_(0) {
     // set control tower to log information to test dir
     ctoptions_.log_dir = test::TmpDir() + "/controltower";
+    ctoptions_.number_of_rooms = 2;
 
     char myname[1024];
     st_ = ControlTower::CreateNewInstance(ctoptions_, conf_, &ct_);
@@ -151,7 +152,9 @@ class ControlTowerTest {
 
     // If the control tower has not already been started, then start it
     if (!started_) {
-      env_->StartThread(ControlTowerTest::ControlTowerStart, ct_);
+      env_->StartThread(ControlTowerTest::ControlTowerStart, ct_,
+                        "tower-" +
+                        std::to_string(ct_->GetOptions().port_number));
     }
     started_ = true;
 
@@ -204,7 +207,7 @@ TEST(ControlTowerTest, Ping) {
   SequenceNumber seqno = 100;
   int num_msgs = 100;
   HostId controltower(hostname_, ctoptions_.port_number);
-  HostId clientId(hostname_, ctoptions_.port_number+1);
+  HostId clientId(hostname_, ctoptions_.port_number-1);
 
   // create a ControlTower (if not already created)
   ASSERT_EQ(ControlTowerRun().ok(), true);
@@ -223,7 +226,8 @@ TEST(ControlTowerTest, Ping) {
                               GetLogger(),
                               static_cast<ApplicationCallbackContext>(this),
                               client_callback);
-  env_->StartThread(ControlTowerTest::MsgLoopStart, loop);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, loop,
+                    "testc-" + std::to_string(clientId.port));
   while (!loop->IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
@@ -255,7 +259,7 @@ TEST(ControlTowerTest, Subscribe) {
   std::vector<TopicPair> topics;
   int num_topics = 5;
   HostId controltower(hostname_, ctoptions_.port_number);
-  HostId clientId(hostname_, ctoptions_.port_number+1);
+  HostId clientId(hostname_, ctoptions_.port_number-1);
 
   // create a ControlTower (if not already created)
   ASSERT_EQ(ControlTowerRun().ok(), true);
@@ -280,7 +284,8 @@ TEST(ControlTowerTest, Subscribe) {
                               GetLogger(),
                               static_cast<ApplicationCallbackContext>(this),
                               client_callback);
-  env_->StartThread(ControlTowerTest::MsgLoopStart, loop);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, loop,
+                    "testc-" + std::to_string(clientId.port));
   while (!loop->IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
@@ -290,7 +295,8 @@ TEST(ControlTowerTest, Subscribe) {
             (delete loop, ControlTowerStop(), false), true);
 
   // verify that the subscribe response was received by the client
-  ASSERT_EQ(CheckSubscribeResponse(1), true);
+  ASSERT_EQ(CheckSubscribeResponse(num_topics) ||
+           (delete loop, ControlTowerStop(), false), true);
 
   // free up resources
   delete loop;
