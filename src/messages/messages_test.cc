@@ -32,6 +32,7 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetTenantID(), Tenant::Guest);
 }
+
 TEST(Messaging, Metadata) {
   SequenceNumber seqno = 100;
   int port = 200;
@@ -72,6 +73,28 @@ TEST(Messaging, Metadata) {
     ASSERT_EQ(nt[i].topic_name, topics[i].topic_name);
     ASSERT_EQ(nt[i].topic_type, topics[i].topic_type);
   }
+}
+
+TEST(Messaging, DataAck) {
+  // create a message
+  std::vector<MessageDataAck::Ack> acks(10);
+  char value = 0;
+  for (auto& ack : acks) {
+    for (size_t i = 0; i < sizeof(acks[0].msgid.messageId); ++i) {
+      ack.msgid.messageId[i] = value++;
+    }
+  }
+  MessageDataAck ack1(acks);
+
+  // serialize the message
+  Slice original = ack1.Serialize();
+
+  // un-serialize to a new message
+  MessageDataAck ack2;
+  ack2.DeSerialize(&original);
+
+  // verify that the new message is the same as original
+  ASSERT_TRUE(ack1.GetAcks() == ack2.GetAcks());
 }
 
 }  // namespace rocketspeed

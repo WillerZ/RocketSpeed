@@ -395,4 +395,101 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
+MessageDataAck::MessageDataAck(const std::vector<Ack>& acks)
+: acks_(acks) {
+  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  type_ = mDataAck;
+}
+
+MessageDataAck::MessageDataAck()
+: MessageDataAck(std::vector<Ack>()) {
+}
+
+MessageDataAck::~MessageDataAck() {
+}
+
+const std::vector<MessageDataAck::Ack>& MessageDataAck::GetAcks() const {
+  return acks_;
+}
+
+Slice MessageDataAck::Serialize() const {
+  // serialize common header
+  msghdr_.msgsize_ = 0;
+  serialize_buffer__.clear();
+  serialize_buffer__.append((const char *)&msghdr_.version_,
+                            sizeof(msghdr_.version_));
+  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+
+  // serialize message specific contents
+  PutVarint32(&serialize_buffer__, acks_.size());
+  for (const Ack& ack : acks_) {
+    serialize_buffer__.append((const char*)&ack.status, sizeof(ack.status));
+    serialize_buffer__.append((const char*)&ack.msgid, sizeof(ack.msgid));
+  }
+
+  // compute the size of this message
+  msghdr_.msgsize_ = serialize_buffer__.size();
+  std::string mlength;
+  PutFixed32(&mlength, msghdr_.msgsize_);
+  assert(mlength.size() == sizeof(msghdr_.msgsize_));
+
+  // Update the 4byte-msg size starting from the 2nd byte
+  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+  return Slice(serialize_buffer__);
+}
+
+Status MessageDataAck::DeSerialize(Slice* in) {
+  const unsigned int len = in->size();
+  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
+      sizeof(type_)) {
+    return Status::InvalidArgument("Bad Message Version/Type");
+  }
+  // extract msg version
+  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
+  in->remove_prefix(sizeof(msghdr_.version_));
+
+  // If we do not support this version, then return error
+  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
+    return Status::NotSupported("Bad Message Version");
+  }
+  // extract msg size
+  if (!GetFixed32(in, &msghdr_.msgsize_)) {
+    return Status::InvalidArgument("Bad msg size");
+  }
+  // extract type
+  memcpy(&type_, in->data(), sizeof(type_));
+  in->remove_prefix(sizeof(type_));
+
+  // extract number of acks
+  uint32_t num_acks;
+  if (!GetVarint32(in, &num_acks)) {
+    return Status::InvalidArgument("Bad Number Of Acks");
+  }
+
+  // extract each ack
+  for (unsigned i = 0; i < num_acks; i++) {
+    Ack ack;
+
+    // extract status
+    if (in->empty()) {
+      return Status::InvalidArgument("Bad Ack Status");
+    }
+    ack.status = static_cast<AckStatus>((*in)[0]);
+    in->remove_prefix(1);
+
+    // extract msgid
+    if (in->size() < sizeof(ack.msgid)) {
+      return Status::InvalidArgument("Bad Ack MsgId");
+    }
+    memcpy(&ack.msgid, in->data(), sizeof(ack.msgid));
+    in->remove_prefix(sizeof(ack.msgid));
+
+    acks_.push_back(ack);
+  }
+
+  return Status::OK();
+}
+
+
 }  // namespace rocketspeed

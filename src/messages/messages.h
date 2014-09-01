@@ -33,7 +33,8 @@ enum MessageType : char {
   NotInitialized = 0,         // not initialized yet
   mPing = 0x01,               // ping data
   mData = 0x02,               // user data
-  mMetadata = 0x03            // subscription information
+  mMetadata = 0x03,           // subscription information
+  mDataAck = 0x04,            // ack for user data
 };
 
 /*
@@ -44,6 +45,10 @@ enum MessageType : char {
 class MsgId {
  public:
   char messageId[16];
+
+  bool operator==(const MsgId& rhs) const {
+    return memcmp(messageId, rhs.messageId, sizeof(messageId)) == 0;
+  }
 };
 
 /*
@@ -284,6 +289,65 @@ class MessageMetadata : public Message {
 
   // The List of topics to subscribe-to/unsubscribe-from
   std::vector<TopicPair> topics_;
+};
+
+/*
+ * This is a data ack message.
+ * The ack is sent back to the producer after a publish.
+ */
+class MessageDataAck : public Message {
+ public:
+  /**
+   * Result of the publish.
+   */
+  enum AckStatus : char {
+    Success = 0x00,
+    Failure = 0x01,
+  };
+
+  /**
+   * Individual message ack.
+   */
+  struct Ack {
+    AckStatus status;
+    MsgId msgid;
+
+    bool operator==(const Ack& rhs) const {
+      return status == rhs.status && msgid == rhs.msgid;
+    }
+  };
+
+  /**
+   * Creates a message by specifying the message acks.
+   *
+   * @param msgid The MsgIds of the messages that have been ack'd
+   */
+  explicit MessageDataAck(const std::vector<Ack>& acks);
+
+  /**
+   * default constructor
+   */
+  MessageDataAck();
+
+  /**
+   * This message is not needed any more
+   */
+  virtual ~MessageDataAck();
+
+  /**
+   * @return The message IDs
+   */
+  const std::vector<Ack>& GetAcks() const;
+
+  /*
+   * Inherited from Serializer
+   */
+  virtual Slice Serialize() const;
+  virtual Status DeSerialize(Slice* in);
+
+ private:
+  // type of this message: mDataAck
+  std::vector<Ack> acks_;  // message acks
 };
 
 }  // namespace rocketspeed
