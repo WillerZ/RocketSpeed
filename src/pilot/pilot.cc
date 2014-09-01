@@ -6,6 +6,7 @@
 #include "src/pilot/pilot.h"
 #include <map>
 #include <string>
+#include <vector>
 
 namespace rocketspeed {
 
@@ -95,6 +96,9 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
     Log(InfoLogLevel::WARN_LEVEL, pilot->options_.info_log,
       "Failed to route topic '%s' with retention %d to a log",
       topicName.c_str(), static_cast<int>(retention));
+    pilot->SendAck(msgData->GetOrigin(),
+                   msgData->GetMessageId(),
+                   MessageDataAck::AckStatus::Failure);
     return;
   }
 
@@ -104,7 +108,33 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
     Log(InfoLogLevel::WARN_LEVEL, pilot->options_.info_log,
       "Failed to append to log ID %lu",
       static_cast<uint64_t>(logid));
+    pilot->SendAck(msgData->GetOrigin(),
+                   msgData->GetMessageId(),
+                   MessageDataAck::AckStatus::Failure);
     return;
+  }
+
+  pilot->SendAck(msgData->GetOrigin(),
+                 msgData->GetMessageId(),
+                 MessageDataAck::AckStatus::Success);
+}
+
+void Pilot::SendAck(const HostId& host,
+                    const MsgId& msgid,
+                    MessageDataAck::AckStatus status) {
+  MessageDataAck::Ack ack;
+  ack.status = status;
+  ack.msgid = msgid;
+
+  std::vector<MessageDataAck::Ack> acks = { ack };
+  MessageDataAck msg(acks);
+
+  Status st = msg_loop_.GetClient().Send(host, &msg);
+  if (!st.ok()) {
+    // TODO(pja) 1 : Should retry later.
+    Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
+      "Failed to send ack to %s",
+      host.hostname.c_str());
   }
 }
 

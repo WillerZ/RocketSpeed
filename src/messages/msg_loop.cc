@@ -19,6 +19,8 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
                        std::unique_ptr<Message> msg) {
   // find the MsgLoop that we are working for
   MsgLoop* msgloop = static_cast<MsgLoop*> (ctx);
+  assert(msgloop);
+  assert(msg);
 
   // what message have we received?
   MessageType type = msg->GetMessageType();

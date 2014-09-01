@@ -11,6 +11,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "src/util/coding.h"
+#include "src/util/xxhash.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are
@@ -44,6 +45,7 @@ Message::CreateNewInstance(Slice* in) {
   MessagePing* msg0 = nullptr;
   MessageData* msg1 = nullptr;
   MessageMetadata* msg2 = nullptr;
+  MessageDataAck* msg3 = nullptr;
   MessageType mtype;
 
   // make a temporary copy of the input slice
@@ -69,6 +71,10 @@ Message::CreateNewInstance(Slice* in) {
       msg2 = new MessageMetadata();
       msg2->DeSerialize(in);
       return std::unique_ptr<Message>(msg2);
+    case mDataAck:
+      msg3 = new MessageDataAck();
+      msg3->DeSerialize(in);
+      return std::unique_ptr<Message>(msg3);
     default:
       break;
   }
@@ -156,8 +162,10 @@ Status MessagePing::DeSerialize(Slice* in) {
 }
 
 MessageData::MessageData(TenantID tenantID,
+                         const HostId& origin,
                          const Slice& topic_name,
                          const Slice& payload):
+  origin_(origin),
   topic_name_(topic_name),
   payload_(payload) {
   msghdr_.version_ =  ROCKETSPEED_CURRENT_MSG_VERSION;
@@ -165,13 +173,34 @@ MessageData::MessageData(TenantID tenantID,
   tenantid_ = tenantID;
   seqno_ = 0;
 
-  // TODO(dhruba) 1 : generate GUID here
-  for (unsigned int i = 0; i < sizeof(msgid_); i++) {
-    msgid_.messageId[i] = i;
+  // TODO(dhruba) 1 : generate better/faster GUID here
+  union {
+    MsgId msgid;
+    struct {
+      uint32_t a;
+      uint32_t b;
+      uint32_t c;
+      uint32_t d;
+    };
+  } u;
+  static std::atomic<uint32_t> seed(0);
+  static std::atomic<uint32_t> counter(static_cast<uint32_t>(time(NULL)));
+  u.a = XXH32(static_cast<const void*>(origin.hostname.c_str()),
+              static_cast<int>(origin.hostname.size()), seed);
+  u.b = XXH32(static_cast<const void*>(topic_name.data()),
+              static_cast<int>(topic_name.size()), seed);
+  u.c = XXH32(static_cast<const void*>(payload_.data()),
+              static_cast<int>(payload_.size()), seed);
+  u.d = counter.load();
+  if (++seed == 0) {  // cycle seed to change hash each time.
+    ++counter;  // cycle when seed loops back so that msgid doesn't repeat.
   }
+  msgid_ = u.msgid;
 }
 
-MessageData::MessageData() : MessageData(Tenant::Invalid, Slice(), Slice()) {}
+MessageData::MessageData():
+  MessageData(Tenant::Invalid, HostId(), Slice(), Slice()) {
+}
 
 MessageData::~MessageData() {
 }
@@ -190,6 +219,11 @@ Slice MessageData::Serialize() const {
   // serialize message specific contents
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
+
+    //  origin
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
+  PutVarint64(&serialize_buffer__, origin_.port);
+
   PutLengthPrefixedSlice(&serialize_buffer__, topic_name_);
   PutLengthPrefixedSlice(&serialize_buffer__, payload_);
 
@@ -242,6 +276,20 @@ Status MessageData::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad Message Id");
   }
   memcpy(&msgid_, idSlice.data(), sizeof(msgid_));
+
+  // extract origin
+  HostId* host = static_cast<HostId*>(&origin_);
+  Slice sl;
+  if (!GetLengthPrefixedSlice(in, &sl)) {
+    return Status::InvalidArgument("Bad HostName");
+  }
+  host->hostname.clear();
+  host->hostname.append(sl.data(), sl.size());
+
+    // extract port number
+  if (!GetVarint64(in, &origin_.port)) {
+    return Status::InvalidArgument("Bad Port Number");
+  }
 
   // extract message topic
   if (!GetLengthPrefixedSlice(in, &topic_name_)) {

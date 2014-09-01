@@ -46,6 +46,10 @@ class MsgId {
  public:
   char messageId[16];
 
+  bool operator<(const MsgId& rhs) const {
+    return memcmp(messageId, rhs.messageId, sizeof(messageId)) < 0;
+  }
+
   bool operator==(const MsgId& rhs) const {
     return memcmp(messageId, rhs.messageId, sizeof(messageId)) == 0;
   }
@@ -185,7 +189,10 @@ class MessageData : public Message {
    * @param topic_name name of the topic
    * @param payload The user defined message contents
    */
-  MessageData(TenantID tenantID, const Slice& topic_name, const Slice& payload);
+  MessageData(TenantID tenantID,
+              const HostId& origin,
+              const Slice& topic_name,
+              const Slice& payload);
 
   /*
    * default constructor
@@ -196,6 +203,16 @@ class MessageData : public Message {
    * This message is not needed any more
    */
   virtual ~MessageData();
+
+  /**
+   * @return The Message ID.
+   */
+  const MsgId& GetMessageId() const { return msgid_; }
+
+  /**
+   * @return The Origin host.
+   */
+  const HostId& GetOrigin() const { return origin_; }
 
   /**
    * @return The Topic Name
@@ -216,6 +233,7 @@ class MessageData : public Message {
  private:
   // type of this message: mData
   MsgId msgid_;              // globally unique id for message
+  HostId origin_;            // host that sent the data
   Slice topic_name_;         // name of topic
   Slice payload_;            // user data of message
 };

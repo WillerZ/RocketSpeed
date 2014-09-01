@@ -10,6 +10,7 @@
 #include <event2/thread.h>
 #include <event2/util.h>
 #include <chrono>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -93,6 +94,8 @@ class PilotTest {
   Configuration conf_;
   Status st_;
   std::string hostname_;
+  std::set<MsgId> sent_msgs_;
+  std::set<MsgId> acked_msgs_;
 
   // A static method that is the entry point of a background thread
   static void PilotStart(void* arg) {
@@ -104,6 +107,16 @@ class PilotTest {
   static void MsgLoopStart(void* arg) {
     MsgLoop* loop = reinterpret_cast<MsgLoop*>(arg);
     loop->Run();
+  }
+
+  static void ProcessDataAck(ApplicationCallbackContext ctx,
+                             std::unique_ptr<Message> msg) {
+    PilotTest* self = static_cast<PilotTest*>(ctx);
+    const MessageDataAck* acks = static_cast<const MessageDataAck*>(msg.get());
+    for (const auto& ack : acks->GetAcks()) {
+      ASSERT_EQ(ack.status, MessageDataAck::AckStatus::Success);
+      self->acked_msgs_.insert(ack.msgid);  // mark msgid as ack'd
+    }
   }
 
   // Dumps libevent info messages to stdout
@@ -125,9 +138,11 @@ TEST(PilotTest, Publish) {
   // create a Pilot (if not already created)
   ASSERT_EQ(PilotRun().ok(), true);
 
-  // create a client to communicate with the ControlTower
+  // create a client to communicate with the Pilot
   HostId clientId(hostname_, options_.port_number + 1);
   std::map<MessageType, MsgCallbackType> client_callback;
+  client_callback[MessageType::mDataAck] = MsgCallbackType(ProcessDataAck);
+
   MsgLoop loop(env_,
                env_options_,
                clientId,
@@ -144,11 +159,15 @@ TEST(PilotTest, Publish) {
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test";
-    MessageData msg(Tenant::Guest, Slice(topic), Slice(payload));
+    MessageData msg(Tenant::Guest, clientId, Slice(topic), Slice(payload));
     ASSERT_EQ(loop.GetClient().Send(pilot, &msg).ok(), true);
+    sent_msgs_.insert(msg.GetMessageId());
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  // Ensure all messages were ack'd
+  ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 }
 
 }  // namespace rocketspeed

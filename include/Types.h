@@ -150,5 +150,9 @@ class HostId {
       return hostname < rhs.hostname;
     }
   }
+
+  bool operator==(const HostId& rhs) const {
+    return port == rhs.port && hostname == rhs.hostname;
+  }
 };
 }
