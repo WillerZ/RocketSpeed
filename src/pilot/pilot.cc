@@ -90,12 +90,11 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
   LogID logid;
   std::string topicName = msgData->GetTopicName().ToString();
   Slice payload = msgData->GetPayload();
-  Retention retention = Retention::OneHour;
-  if (!pilot->log_router_.GetLogID(topicName, retention, &logid).ok()) {
+  if (!pilot->log_router_.GetLogID(topicName, &logid).ok()) {
     // Failed to route topic to log ID.
     Log(InfoLogLevel::WARN_LEVEL, pilot->options_.info_log,
-      "Failed to route topic '%s' with retention %d to a log",
-      topicName.c_str(), static_cast<int>(retention));
+      "Failed to route topic '%s' to a log",
+      topicName.c_str());
     pilot->SendAck(msgData->GetOrigin(),
                    msgData->GetMessageId(),
                    MessageDataAck::AckStatus::Failure);

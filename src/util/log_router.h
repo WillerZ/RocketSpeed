@@ -27,23 +27,18 @@ class LogRouter {
    * LogRouter instances created with identical parameters. Otherwise, topics
    * will not map to the same logs for different instances.
    *
-   * The number of logs will be rounded down to a multiple of Retention::Total,
-   * so that there are an equal number of logs for each retention class.
-   *
    * @param numLogs The maximum number of different log IDs to use.
    */
   explicit LogRouter(uint64_t numLogs);
 
   /**
-   * Gets the Log ID where a topic's messages are to be stored. Topics with
-   * differing retentions will never map to the same log.
+   * Gets the Log ID where a topic's messages are to be stored.
    *
    * @param topic A topic to lookup.
-   * @param retention The retention of the topic.
    * @param out Where to place the resulting Log ID.
    * @return on success OK(), otherwise errorcode.
    */
-  Status GetLogID(const Topic& topic, Retention retention, LogID* out) const;
+  Status GetLogID(const Topic& topic, LogID* out) const;
 
  private:
   /**
@@ -52,16 +47,6 @@ class LogRouter {
    * number of buckets changes.
    */
   static uint64_t JumpConsistentHash(uint64_t key, uint64_t buckets);
-
-  /**
-   * Maps a Retention ID to a 0-based bucket index.
-   *
-   * @param retention A valid rention ID.
-   * @return A 0-based bucket index for this retention config.
-   */
-  static inline int RetentionBucket(Retention retention) {
-    return static_cast<int>(retention) - 1;
-  }
 
   uint64_t _numLogs;
 };

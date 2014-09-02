@@ -27,11 +27,10 @@ TEST(LogRouterTest, ConsistencyTest) {
   int numChanged = 0;
   for (int i = 0; i < 1000000; ++i) {
     Topic topic = std::to_string(i);
-    Retention retention = static_cast<Retention>(i % Retention::Total + 1);
     LogID logID1;
     LogID logID2;
-    ASSERT_TRUE(router1.GetLogID(topic, retention, &logID1).ok());
-    ASSERT_TRUE(router2.GetLogID(topic, retention, &logID2).ok());
+    ASSERT_TRUE(router1.GetLogID(topic, &logID1).ok());
+    ASSERT_TRUE(router2.GetLogID(topic, &logID2).ok());
     if (logID1 != logID2) {
       ++numChanged;
     }
@@ -40,23 +39,6 @@ TEST(LogRouterTest, ConsistencyTest) {
   // Ideally ~5% should change, but allow for up to 2-8% margin of error.
   ASSERT_LT(numChanged, numLogs * 8 / 100);
   ASSERT_GT(numChanged, numLogs * 2 / 100);
-}
-
-TEST(LogRouterTest, RetentionPartitioning) {
-  // Test that topics with different retentions go to different logs
-  int numLogs = 1000;
-  LogRouter router(numLogs);
-  std::map<LogID, std::set<Retention>> logRetentions;
-
-  // Count number of changed for 1 million topics.
-  for (int i = 0; i < 1000000; ++i) {
-    Topic topic = std::to_string(i);
-    Retention retention = static_cast<Retention>(i % Retention::Total + 1);
-    LogID logID;
-    ASSERT_TRUE(router.GetLogID(topic, retention, &logID).ok());
-    logRetentions[logID].insert(retention);
-    ASSERT_EQ(logRetentions[logID].size(), 1);  // 1 retention per log
-  }
 }
 
 TEST(LogRouterTest, LogDistribution) {
@@ -69,9 +51,8 @@ TEST(LogRouterTest, LogDistribution) {
   int numTopics = 1000000;
   for (int i = 0; i < numTopics; ++i) {
     Topic topic = std::to_string(i);
-    Retention retention = static_cast<Retention>(i % Retention::Total + 1);
     LogID logID;
-    ASSERT_TRUE(router.GetLogID(topic, retention, &logID).ok());
+    ASSERT_TRUE(router.GetLogID(topic, &logID).ok());
     topicCount[logID - 1]++;  // LogIDs start at 1, not 0.
   }
 

@@ -112,9 +112,6 @@ enum Retention : char {
   OneDay = 0x02,          // keep messages for 1 day
   OneWeek = 0x03,         // keep messages for 1 week
   Total = 3,              // number of retention classes
-
-  // WARNING: modifying the number of retention classes will completely change
-  // the topic -> log mapping
 };
 
 /**

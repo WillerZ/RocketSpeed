@@ -15,7 +15,6 @@ LogRouter::LogRouter(uint64_t numLogs)
 }
 
 Status LogRouter::GetLogID(const Topic& topic,
-                           Retention retention,
                            LogID* out) const {
   // Hash the topic name
   // Using MurmurHash instead of std::hash because std::hash is implementation
@@ -23,12 +22,8 @@ Status LogRouter::GetLogID(const Topic& topic,
   MurmurHash2<std::string> hasher;
   size_t hash = hasher(topic);
 
-  // Find an initial Log ID for this topic hash key.
-  uint64_t result = JumpConsistentHash(hash, _numLogs);
-
-  // set result % Retention::Total to the retention bucket of this topic.
-  // + 1 because logid_t(0) is invalid
-  *out = result - (result % Retention::Total) + RetentionBucket(retention) + 1;
+  // Find the Log ID for this topic hash key.
+  *out = JumpConsistentHash(hash, _numLogs) + 1;
 
   return Status::OK();
 }
