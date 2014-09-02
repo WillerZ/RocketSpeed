@@ -82,18 +82,11 @@ MsgClient::GetConnection(const HostId& host) {
     return nullptr;
   }
 
-  e->entry_lock.Lock();  // lock new entry
-  MsgClient::Entry* entry = e.get();
-
   // Try to insert it back into the cache.
   // If insertion is successful, then there is nothing more to do
-  st = insert(host, std::move(e));
-  if (st.ok()) {
-    return entry;
-  }
+  insert(host, std::move(e));
 
-  // insertion was not successful because a racing thread might have
-  // already inserted this entry. Do another lookup.
+  // Do another lookup.
   return lookup(host);
 }
 
