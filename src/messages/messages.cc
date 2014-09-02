@@ -164,10 +164,12 @@ Status MessagePing::DeSerialize(Slice* in) {
 MessageData::MessageData(TenantID tenantID,
                          const HostId& origin,
                          const Slice& topic_name,
-                         const Slice& payload):
+                         const Slice& payload,
+                         Retention retention):
   origin_(origin),
   topic_name_(topic_name),
-  payload_(payload) {
+  payload_(payload),
+  retention_(retention) {
   msghdr_.version_ =  ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mData;
   tenantid_ = tenantID;
@@ -220,11 +222,21 @@ Slice MessageData::Serialize() const {
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
 
-    //  origin
+  // origin
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
   PutVarint64(&serialize_buffer__, origin_.port);
 
   PutLengthPrefixedSlice(&serialize_buffer__, topic_name_);
+
+  // miscellaneous flags
+  uint16_t flags = 0;
+  switch (retention_) {
+    case Retention::OneHour: flags |= 0x0; break;
+    case Retention::OneDay: flags |= 0x1; break;
+    case Retention::OneWeek: flags |= 0x2; break;
+  }
+  PutFixed16(&serialize_buffer__, flags);
+
   PutLengthPrefixedSlice(&serialize_buffer__, payload_);
 
   // compute the size of this message
@@ -294,6 +306,19 @@ Status MessageData::DeSerialize(Slice* in) {
   // extract message topic
   if (!GetLengthPrefixedSlice(in, &topic_name_)) {
     return Status::InvalidArgument("Bad Message Topic name");
+  }
+
+  // miscellaneous flags
+  uint16_t flags;
+  if (!GetFixed16(in, &flags)) {
+    return Status::InvalidArgument("Bad flags");
+  }
+  switch (flags & 0x3) {
+    case 0x0: retention_ = Retention::OneHour; break;
+    case 0x1: retention_ = Retention::OneDay; break;
+    case 0x2: retention_ = Retention::OneWeek; break;
+    default:
+      return Status::InvalidArgument("Bad flags");
   }
 
   // extract message payload

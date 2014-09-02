@@ -192,7 +192,8 @@ class MessageData : public Message {
   MessageData(TenantID tenantID,
               const HostId& origin,
               const Slice& topic_name,
-              const Slice& payload);
+              const Slice& payload,
+              Retention retention = Retention::OneWeek);
 
   /*
    * default constructor
@@ -224,6 +225,11 @@ class MessageData : public Message {
    */
   Slice GetPayload() const { return payload_; }
 
+  /**
+   * @return The retention of this message.
+   */
+  Retention GetRetention() const { return retention_; }
+
   /*
    * Inherited from Serializer
    */
@@ -236,6 +242,7 @@ class MessageData : public Message {
   HostId origin_;            // host that sent the data
   Slice topic_name_;         // name of topic
   Slice payload_;            // user data of message
+  Retention retention_;      // message retention
 };
 
 /*

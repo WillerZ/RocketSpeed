@@ -19,7 +19,7 @@ TEST(Messaging, Data) {
   HostId host1("host.id", 1234);
 
   // create a message
-  MessageData data1(Tenant::Guest, host1, name1, payload1);
+  MessageData data1(Tenant::Guest, host1, name1, payload1, Retention::OneDay);
 
   // serialize the message
   Slice original = data1.Serialize();
@@ -33,6 +33,7 @@ TEST(Messaging, Data) {
   ASSERT_TRUE(data2.GetOrigin() == host1);
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
+  ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
   ASSERT_EQ(data2.GetTenantID(), Tenant::Guest);
 }
 
