@@ -68,6 +68,10 @@ struct ControlTowerOptions {
   // Default: number of cpus on the machine
   unsigned int number_of_rooms;
 
+  // Number of log IDs to use.
+  // Warning: this should be picked up from Configuration
+  uint64_t log_count;
+
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
 };

@@ -70,7 +70,7 @@ enum MetadataType : char {
  */
 class TopicPair {
  public:
-  std::string topic_name;
+  Topic topic_name;
   MetadataType topic_type;
 
   TopicPair(std::string name, MetadataType type) :

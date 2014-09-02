@@ -8,6 +8,7 @@
 #include <map>
 #include <vector>
 #include "src/messages/msg_loop.h"
+#include "src/util/log_router.h"
 #include "src/controltower/options.h"
 #include "src/controltower/controlroom.h"
 
@@ -47,6 +48,9 @@ class ControlTower {
   // Each Room handles its own set of topics. Each room has its own
   // room number. Each room also has its own MsgLoop.
   std::vector<unique_ptr<ControlRoom>> rooms_;
+
+  // Maps a topic to a log
+  const LogRouter log_router_;
 
   // The message loop base.
   // This is used to receive subscribe/unsubscribe/data messages

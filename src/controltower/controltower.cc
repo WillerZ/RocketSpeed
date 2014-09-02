@@ -11,7 +11,7 @@
 #include <vector>
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
-#include "src/util/xxhash.h"
+#include "src/util/storage.h"
 
 namespace rocketspeed {
 
@@ -65,6 +65,7 @@ ControlTower::ControlTower(const ControlTowerOptions& options,
   options_(SanitizeOptions(options)),
   conf_(conf),
   callbacks_(InitializeCallbacks()),
+  log_router_(options.log_count),
   msg_loop_(options_.env,
             options_.env_options,
             HostId(options_.hostname, options_.port_number),
@@ -121,22 +122,29 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
 
   // Process each topic
   for (unsigned int i = 0; i < request->GetTopicInfo().size(); i++) {
-    // Copy out only the ith topic into a new message.
+    // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
+    LogID logid;
+    Status st = ct->log_router_.GetLogID(topic.topic_name, &logid);
+    if (!st.ok()) {
+      Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
+          "Unable to map msg to logid %s", st.ToString().c_str());
+      continue;
+    }
+    // calculate the destination room number
+    int room_number = logid % ct->options_.number_of_rooms;
+
+    // Copy out only the ith topic into a new message.
     MessageMetadata newmsg(request->GetTenantID(),
                            request->GetSequenceNumber(),
                            request->GetMetaType(),
                            request->GetOrigin(),
                            std::vector<TopicPair> {topic});
 
-    // calculate the destination room number
-    unsigned int hash = XXH32(topic.topic_name.c_str(),
-                              topic.topic_name.size(), 0);
-    int room_number = hash % ct->options_.number_of_rooms;
 
     // forward message to the destination room
     ControlRoom* room = ct->rooms_[room_number].get();
-    Status st =  room->Forward(&newmsg);
+    st =  room->Forward(&newmsg);
     if (!st.ok()) {
       Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
           "Unable to forward Metadata msg to %s:%d %s",
