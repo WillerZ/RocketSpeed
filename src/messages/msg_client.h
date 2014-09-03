@@ -62,6 +62,9 @@ class MsgClient {
   // Otherwise return null.
   Entry* lookup(const HostId& remote);
 
+  // Removes an entry from the cache, e.g. if the connection closed.
+  void remove(const HostId& remote);
+
   // Release the lock on an entry that was earlier
   // retrieved via a call to lookup()
   void release(Entry* entry);

@@ -91,7 +91,7 @@ class PilotTest {
   Pilot* pilot_;
   bool started_;
   PilotOptions options_;
-  Configuration conf_;
+  Configuration* conf_ = nullptr;
   Status st_;
   std::string hostname_;
   std::set<MsgId> sent_msgs_;

@@ -562,6 +562,7 @@ enum InfoLogLevel : unsigned char {
   WARN_LEVEL,
   ERROR_LEVEL,
   FATAL_LEVEL,
+  NONE_LEVEL,
   NUM_INFO_LOG_LEVELS,
 };
 
@@ -616,6 +617,15 @@ class Logger {
   Logger(const Logger&);
   void operator=(const Logger&);
   InfoLogLevel log_level_;
+};
+
+// "Blackhole" logger implementation - doesn't log anything.
+// Used when a Logger object is needed, but no logging is desired.
+class NullLogger : public Logger {
+ public:
+  NullLogger() : Logger(NONE_LEVEL) {}
+  virtual void Logv(const char* format, va_list ap) {}
+  virtual void SetInfoLogLevel(const InfoLogLevel log_level) {}
 };
 
 

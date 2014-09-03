@@ -83,7 +83,8 @@ TESTS = \
   logdevice_storage_test \
   hostmap_test
 
-TOOLS =
+TOOLS = \
+	producer
 
 PROGRAMS = pilot copilot controltower $(TOOLS)
 
@@ -160,6 +161,10 @@ copilot:
 controltower: src/controltower/main.o $(LIBOBJECTS)
 	$(CXX) src/controltower/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
+# compile only the producer tool
+producer: src/tools/producer/main.o $(LIBOBJECTS)
+	$(CXX) src/tools/producer/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
 # run all unit tests
 check: $(TESTS)
 	for t in $(TESTS); do echo "***** Running $$t"; ./$$t || exit 1; done
@@ -196,6 +201,7 @@ clean:
 	-rm -rf ios-x86/* ios-arm/*
 	-find src -name "*.[od]" -exec rm {} \;
 	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
+
 tags:
 	ctags * -R
 	cscope -b `find . -name '*.cc'` `find . -name '*.h'`

@@ -1,0 +1,24 @@
+# create the pilot binary
+cpp_binary(
+    name = 'producer',
+    srcs = [
+        'configuration.cc',
+        'main.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DGFLAGS=google',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/client:client_library',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+    ],
+    compiler_flags = [
+        "-Ilogdevice/external/libevent-2.1.3-alpha/include"
+    ],
+)

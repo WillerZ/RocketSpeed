@@ -38,7 +38,7 @@ void Pilot::Run() {
  * Private constructor for a Pilot
  */
 Pilot::Pilot(PilotOptions options,
-             const Configuration& conf):
+             const Configuration* conf):
   options_(SanitizeOptions(std::move(options))),
   conf_(conf),
   callbacks_(InitializeCallbacks()),
@@ -62,7 +62,7 @@ Pilot::~Pilot() {
  * This is a static method to create a Pilot
  */
 Status Pilot::CreateNewInstance(PilotOptions options,
-                                const Configuration& conf,
+                                const Configuration* conf,
                                 Pilot** pilot) {
   *pilot = new Pilot(std::move(options), conf);
 

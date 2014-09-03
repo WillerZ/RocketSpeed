@@ -22,7 +22,7 @@ class Pilot {
  public:
   // A new instance of a Pilot
   static Status CreateNewInstance(PilotOptions options,
-                                  const Configuration& conf,
+                                  const Configuration* conf,
                                   Pilot** pilot);
   virtual ~Pilot();
 
@@ -40,7 +40,7 @@ class Pilot {
   PilotOptions options_;
 
   // The configuration of this rocketspeed instance
-  Configuration conf_;
+  const Configuration* conf_;
 
   // Message specific callbacks stored here
   const std::map<MessageType, MsgCallbackType> callbacks_;
@@ -56,7 +56,7 @@ class Pilot {
 
   // private Constructor
   Pilot(PilotOptions options,
-        const Configuration& conf);
+        const Configuration* conf);
 
   // Sanitize input options if necessary
   PilotOptions SanitizeOptions(PilotOptions options);

@@ -90,7 +90,7 @@ class ControlTowerTest {
   std::shared_ptr<Logger> info_log_;
   bool started_;
   ControlTowerOptions ctoptions_;
-  Configuration conf_;
+  Configuration* conf_ = nullptr;
   Status st_;
   std::string hostname_;
   int num_ping_responses_;

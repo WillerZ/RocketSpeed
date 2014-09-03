@@ -25,7 +25,6 @@ cpp_library(
     name = 'pilot_library',
     srcs = [
         'pilot.cc',
-        'pilot_client.cc',
         'options.cc',
     ],
     preprocessor_flags = [

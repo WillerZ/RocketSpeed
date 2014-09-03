@@ -14,6 +14,7 @@ int main() {
 #else
 
 #include <gflags/gflags.h>
+#include <signal.h>
 #include "include/Types.h"
 #include "src/pilot/options.h"
 #include "src/pilot/pilot.h"
@@ -24,7 +25,7 @@ using GFLAGS::RegisterFlagValidator;
 using GFLAGS::SetUsageMessage;
 
 DEFINE_int32(num_threads, 16, "number of threads");
-DEFINE_int32(port_number, 60001, "port number");
+DEFINE_int32(port_number, 58600, "port number");
 DEFINE_int32(log_count, 1, "number of logs");
 DEFINE_bool(libevent_debug, false, "Debugging libevent");
 
@@ -49,7 +50,10 @@ int main(int argc, char** argv) {
                   " [OPTIONS]...");
   ParseCommandLineFlags(&argc, &argv, true);
 
-  rocketspeed::Configuration conf;
+  // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
+  signal(SIGPIPE, SIG_IGN);
+
+  rocketspeed::Configuration* conf = nullptr;
   rocketspeed::PilotOptions options;
 
   // Create Log Device interface

@@ -14,6 +14,7 @@ int main() {
 #else
 
 #include <gflags/gflags.h>
+#include <signal.h>
 #include <iostream>
 #include "include/Types.h"
 #include "src/controltower/options.h"
@@ -48,7 +49,10 @@ int main(int argc, char** argv) {
                   " [OPTIONS]...");
   ParseCommandLineFlags(&argc, &argv, true);
 
-  rocketspeed::Configuration conf;
+  // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
+  signal(SIGPIPE, SIG_IGN);
+
+  rocketspeed::Configuration* conf = nullptr;
   rocketspeed::ControlTowerOptions options;
 
   // Create global options and configs from command line

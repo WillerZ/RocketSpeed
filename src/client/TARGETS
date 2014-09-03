@@ -1,0 +1,21 @@
+cpp_library(
+    name = 'client_library',
+    srcs = [
+        'producer.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+    ],
+    compiler_flags = [
+        "-Ilogdevice/external/libevent-2.1.3-alpha/include"
+    ],
+    warp = False,
+)

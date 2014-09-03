@@ -13,9 +13,8 @@
  */
 #pragma once
 
-#include <vector>
-#include <functional>
 #include <string>
+#include <vector>
 
 #include "include/Status.h"
 
@@ -41,8 +40,10 @@ class ResultStatus {
   Status status;
   SequenceNumber seqno;
 
-  ResultStatus(): seqno(0) {
-  };
+  ResultStatus(Status status, SequenceNumber seqno)
+  : status(status)
+  , seqno(seqno) {
+  }
 };
 
 /**
@@ -82,7 +83,7 @@ enum Tenant : TenantID {
   Invalid = 0,
 
   /**
-   * The GuestTenant ID may be used by applications during development. The
+   * The Guest Tenant ID may be used by applications during development. The
    * guest tenant has a small amount of resources allocated to it, which should
    * be suitable for lightweight development. This should not be used in
    * production.
@@ -96,35 +97,6 @@ enum Tenant : TenantID {
 };
 
 /**
- *  A Configuration that specifies how a client can describe a RocketSpeed Cloud.
- *
- *  @param url The name of the RocketSpeed Cloud Service
- *  @param tenancyID A unique ID for this service.
- */
-class Configuration {
- public:
-  URL url;
-  TenantID tenantID;
-};
-
-enum Retention : char {
-  OneHour = 0x01,         // keep messages for 1 hour
-  OneDay = 0x02,          // keep messages for 1 day
-  OneWeek = 0x03,         // keep messages for 1 week
-  Total = 3,              // number of retention classes
-};
-
-/**
- * These are the options associated with a Topic
- *
- *  @param retention The amount of time a message would remain in RocketSpeed
- */
-class TopicOptions {
- public:
-  Retention retention;
-};
-
-/*
  * A host:port pair that uniquely identifies a machine.
  */
 class HostId {
@@ -152,4 +124,50 @@ class HostId {
     return port == rhs.port && hostname == rhs.hostname;
   }
 };
+
+/**
+ * A Configuration that specifies how a client can describe a RocketSpeed Cloud.
+ *
+ * @param url The name of the RocketSpeed Cloud Service
+ * @param tenancyID A unique ID for this service.
+ */
+class Configuration {
+ public:
+  /**
+   * Creates a Configuration object for a set of pilots and tenant ID.
+   *
+   * @param pilots Pilot hostnames.
+   * @param tenant_id Client tenant ID.
+   * @return A new Configuration with the specified options.
+   */
+  static Configuration* Create(const std::vector<HostId>& pilots,
+                               TenantID tenant_id,
+                               int local_port);
+
+  virtual ~Configuration() {}
+
+  virtual const std::vector<HostId>& GetPilotHostIds() const = 0;
+
+  virtual TenantID GetTenantID() const = 0;
+
+  virtual int GetLocalPort() const = 0;
+};
+
+enum Retention : char {
+  OneHour = 0x01,         // keep messages for 1 hour
+  OneDay = 0x02,          // keep messages for 1 day
+  OneWeek = 0x03,         // keep messages for 1 week
+  Total = 3,              // number of retention classes
+};
+
+/**
+ * These are the options associated with a Topic
+ *
+ *  @param retention The amount of time a message would remain in RocketSpeed
+ */
+class TopicOptions {
+ public:
+  Retention retention;
+};
+
 }

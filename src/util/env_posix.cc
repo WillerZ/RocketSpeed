@@ -1037,8 +1037,8 @@ class PosixConnection: public Connection {
 
   // Send the data to the remote machine
   virtual Status Send(const Slice& data) {
-    size_t count = write(sockfd_, (const void *)data.data(), data.size());
-    if (count == data.size()) {
+    ssize_t count = write(sockfd_, (const void *)data.data(), data.size());
+    if (count == static_cast<ssize_t>(data.size())) {
       return Status::OK();
     }
     return Status::IOError("Incomplete send of data");
@@ -1496,6 +1496,9 @@ class PosixEnv : public Env {
                 p->ai_protocol)) == -1) {
             continue;
         }
+
+        int one = 1;
+        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);

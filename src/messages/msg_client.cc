@@ -8,7 +8,6 @@
 #include "src/messages/msg_client.h"
 #include <utility>
 
-
 namespace rocketspeed {
 /**
  * Private constructor for a MsgClient
@@ -39,6 +38,26 @@ MsgClient::lookup(const HostId& host) {
   // lock this entry
   e->entry_lock.Lock();
   return e;
+}
+
+// remove an entry from the connection cache if it exists
+void
+MsgClient::remove(const HostId& host) {
+  MutexLock lock(&cache_lock_);
+  auto iter = connections_cache_.find(host);
+  if (iter != connections_cache_.end()) {
+    // Lock the entry so that other threads cannot use it.
+    iter->second.get()->entry_lock.Lock();
+
+    // Move it out of the map so we can unlock the mutex after removing it.
+    std::unique_ptr<Entry> e = std::move(iter->second);
+
+    // Remove (the now null) entry from map.
+    connections_cache_.erase(host);
+
+    // And unlock.
+    e->entry_lock.Unlock();
+  }
 }
 
 // release the lock on an entry previously acquired via lookup
@@ -92,12 +111,27 @@ MsgClient::GetConnection(const HostId& host) {
 
 Status
 MsgClient::Send(const HostId& host, Message* msg) {
-  MsgClient::Entry* entry = GetConnection(host);
-  if (entry == nullptr) {
-    return Status::IOError("Unable to connect to host ", host.hostname);
-  }
-  Status st =  entry->connection->Send(msg->Serialize());
-  release(entry);
+  // We retry once because the first attempt may have failed due to having
+  // a stale connection in the cache. In that case, we remove the connection
+  // and retry.
+  int retries = 1;
+  Status st;
+  do {
+    MsgClient::Entry* entry = GetConnection(host);
+    if (entry == nullptr) {
+      st = Status::IOError("Unable to connect to host ", host.hostname);
+      continue;
+    }
+    st = entry->connection->Send(msg->Serialize());
+    release(entry);
+
+    if (!st.ok()) {
+      // Send failed, remove the connection.
+      // This closes the fd, and GetConnection will re-open.
+      remove(host);
+    }
+  } while (!st.ok() && retries--);
+
   if (st.ok()) {
     Log(InfoLogLevel::INFO_LEVEL, info_log_,
         "MsgClient sent msg ok");
@@ -111,20 +145,6 @@ MsgClient::Send(const HostId& host, Message* msg) {
 
 Status
 MsgClient::Send(const HostId& host, unique_ptr<Message> msg) {
-  MsgClient::Entry* entry = GetConnection(host);
-  if (entry == nullptr) {
-    return Status::IOError("Unable to connect to host ", host.hostname);
-  }
-  Status st =  entry->connection->Send(msg->Serialize());
-  release(entry);
-  if (st.ok()) {
-    Log(InfoLogLevel::INFO_LEVEL, info_log_,
-        "MsgClient sent msg ok");
-  } else {
-    Log(InfoLogLevel::INFO_LEVEL, info_log_,
-        "MsgClient sent msg fail");
-  }
-  info_log_->Flush();
-  return st;
+  return Send(host, msg.get());
 }
 }  // namespace rocketspeed

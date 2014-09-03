@@ -61,7 +61,7 @@ ControlTower::Run(void) {
  * Private constructor for a Control Tower
  */
 ControlTower::ControlTower(const ControlTowerOptions& options,
-                           const Configuration& conf):
+                           const Configuration* conf):
   options_(SanitizeOptions(options)),
   conf_(conf),
   callbacks_(InitializeCallbacks()),
@@ -91,7 +91,7 @@ ControlTower::~ControlTower() {
  */
 Status
 ControlTower::CreateNewInstance(const ControlTowerOptions& options,
-                                const Configuration& conf,
+                                const Configuration* conf,
                                 ControlTower** ct) {
   *ct = new ControlTower(options, conf);
   return Status::OK();

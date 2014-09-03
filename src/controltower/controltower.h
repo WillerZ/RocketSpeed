@@ -18,7 +18,7 @@ class ControlTower {
  public:
   // A new instance of a Control Tower
   static Status CreateNewInstance(const ControlTowerOptions& options,
-                                  const Configuration& conf,
+                                  const Configuration* conf,
                                   ControlTower** ct);
   virtual ~ControlTower();
 
@@ -39,7 +39,7 @@ class ControlTower {
   ControlTowerOptions options_;
 
   // The configuration of this rocketspeed instance
-  Configuration conf_;
+  const Configuration* conf_;
 
   // Message specific callbacks stored here
   const std::map<MessageType, MsgCallbackType> callbacks_;
@@ -60,7 +60,7 @@ class ControlTower {
 
   // private Constructor
   ControlTower(const ControlTowerOptions& options,
-               const Configuration& conf);
+               const Configuration* conf);
 
   // Sanitize input options if necessary
   ControlTowerOptions SanitizeOptions(const ControlTowerOptions& src);
