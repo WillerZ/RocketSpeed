@@ -136,7 +136,7 @@ ResultStatus ProducerImpl::Publish(const Topic& name,
                       options.retention);
 
   int retries = 4;
-  int seconds = 1;
+  int64_t timeout_us = 1000000;  // 1 second
   do {
     // Attempt to (re)send.
     Status status = msg_loop_->GetClient().Send(pilot_host_id_, &message);
@@ -144,17 +144,28 @@ ResultStatus ProducerImpl::Publish(const Topic& name,
       return ResultStatus(status, 0);
     }
 
+    // Lambda for convenience.
+    auto time_now = []() {
+      return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    };
+
     // Wait for ack message.
     MutexLock lock(&ack_mutex_);
-    uint64_t now = time(NULL) * 1000000;
-    ack_cv_.TimedWait(now + seconds * 1000000);
+    auto deadline = time_now() + timeout_us;
+    do {
+      ack_cv_.TimedWait(deadline);
 
-    // Check for ack in acked_msgs_.
-    if (acked_msgs_.erase(message.GetMessageId())) {
-      return ResultStatus(Status::OK(), 0);
-    }
+      // Check for ack in acked_msgs_.
+      if (acked_msgs_.erase(message.GetMessageId())) {
+        return ResultStatus(Status::OK(), 0);
+      }
 
-    seconds *= 2;  // exponential backoff.
+      // If we aren't past the deadline then it was a spurious wakeup,
+      // so wait again.
+    } while (deadline > time_now());
+
+    timeout_us *= 2;  // exponential backoff.
   } while (retries--);
 
   return ResultStatus(Status::TimedOut(), 0);

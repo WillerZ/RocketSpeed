@@ -7,6 +7,7 @@
 #include <gflags/gflags.h>
 #include <signal.h>
 #include <unistd.h>
+#include <future>
 #include <random>
 #include <string>
 #include <thread>
@@ -22,13 +23,21 @@ DEFINE_int32(port, 58800, "first port number of producer");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_int64(num_topics, 1000000000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
-DEFINE_int64(logging, true, "enable/disable logging");
+DEFINE_bool(logging, true, "enable/disable logging");
+DEFINE_bool(report, true, "report results to stdout");
 
 std::shared_ptr<rocketspeed::Logger> info_log;
 
+struct Result {
+  bool succeeded;
+  std::chrono::milliseconds time;
+};
+
+static const Result failed = { false, };
+
 namespace rocketspeed {
 
-void ProducerWorker(int64_t num_messages, int port) {
+Result ProducerWorker(int64_t num_messages, int port) {
   // Configuration for RocketSpeed.
   HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
   Configuration* config = Configuration::Create(std::vector<HostId>{ pilot },
@@ -41,7 +50,7 @@ void ProducerWorker(int64_t num_messages, int port) {
     Log(InfoLogLevel::WARN_LEVEL, info_log,
         "[port %d] Failed to connect to RocketSpeed", port);
     info_log->Flush();
-    return;
+    return failed;
   }
 
   // Random number generator.
@@ -60,7 +69,14 @@ void ProducerWorker(int64_t num_messages, int port) {
       "[port %d] Starting message loop", port);
   info_log->Flush();
 
+  auto start = std::chrono::high_resolution_clock::now();
   for (int64_t i = 0; i < num_messages; ++i) {
+    // Start the clock after the first message is sent, since the
+    // connection may be cold and skew the overall throughput.
+    if (i == 1) {
+      start = std::chrono::high_resolution_clock::now();
+    }
+
     // Create random topic name
     char topic_name[64];
     snprintf(topic_name, sizeof(topic_name), "benchmark.%lu", distr(rng));
@@ -88,14 +104,19 @@ void ProducerWorker(int64_t num_messages, int port) {
         i, rs.status.ToString().c_str());
       info_log->Flush();
       delete producer;
-      return;
+      return failed;
     }
   }
+  auto end = std::chrono::high_resolution_clock::now();
 
   Log(InfoLogLevel::INFO_LEVEL, info_log,
       "[port %d] Successfully sent all messages", port);
   info_log->Flush();
   delete producer;
+
+  return Result {
+    true,
+    std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
 }
 
 }  // namespace rocketspeed
@@ -154,20 +175,53 @@ int main(int argc, char** argv) {
 
   // Create producer threads.
   // Distribute total number of messages among them.
-  std::vector<std::thread> threads;
+  std::vector<std::future<Result>> futures;
   int64_t total_messages = FLAGS_num_messages;
   for (int32_t remaining = FLAGS_num_threads; remaining; --remaining) {
     int64_t num_messages = total_messages / remaining;
     int port = FLAGS_port + (FLAGS_num_threads - remaining);
-    threads.emplace_back(&rocketspeed::ProducerWorker, num_messages, port);
+    futures.emplace_back(std::async(std::launch::async,
+                                    &rocketspeed::ProducerWorker,
+                                    num_messages,
+                                    port));
     total_messages -= num_messages;
   }
   assert(total_messages == 0);
 
   // Join all the threads to finish production.
-  for (auto& t : threads) {
-    t.join();
+  int ret = 0;
+  std::chrono::milliseconds total_time(0);
+  std::vector<Result> results;
+  for (int i = 0; i < static_cast<int>(futures.size()); ++i) {
+    Result result = futures[i].get();
+    results.emplace_back(result);
+
+    if (FLAGS_report) {
+      if (result.succeeded) {
+        total_time += result.time;
+      } else {
+        printf("Thread %d failed to send all messages\n", i);
+      }
+    }
+
+    if (!result.succeeded) {
+      ret = 1;
+    }
   }
 
-  return 0;
+  if (ret == 0 && FLAGS_report) {
+    uint32_t total_ms = static_cast<uint32_t>(total_time.count());
+    uint32_t msg_per_sec = 1000 *
+                           FLAGS_num_threads *
+                           FLAGS_num_messages /
+                           total_ms;
+    uint32_t bytes_per_sec = 1000 *
+                             FLAGS_num_messages *
+                             FLAGS_message_size /
+                             total_ms;
+    printf("%u messages/s\n", msg_per_sec);
+    printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
+  }
+
+  return ret;
 }
