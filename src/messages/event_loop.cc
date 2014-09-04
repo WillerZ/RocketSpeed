@@ -104,7 +104,6 @@ EventLoop::errorcb(struct bufferevent *bev, short error, void *ctx) {
     ld_bufferevent_free(bev);
   } else if (error & BEV_EVENT_ERROR) {
     ld_bufferevent_free(bev);
-    ld_event_base_loopexit(obj->base_, NULL);
     /* check errno to see what error occurred */
   } else if (error & BEV_EVENT_TIMEOUT) {
     /* must be a timeout event handle, handle it */
