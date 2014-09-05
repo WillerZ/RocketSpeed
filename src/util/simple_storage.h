@@ -42,7 +42,12 @@ class SimpleLogStorage : public LogStorage {
   virtual Status CreateReaders(unsigned int maxLogsPerReader,
                                unsigned int parallelism,
                                std::vector<LogReader*>* readers);
-
+  Status CreateAsyncReaders(unsigned int maxLogsPerReader,
+                            unsigned int parallelism,
+                            std::function<void(const LogRecord&)> callback,
+                            std::vector<AsyncLogReader*>* readers) {
+    return Status::NotSupported("Not for production usage.");
+  }
  private:
   friend class SimpleLogReader;
 

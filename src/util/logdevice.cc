@@ -410,4 +410,81 @@ void LogDeviceSelector::Notify() {
   monitor_.notify_one();
 }
 
+Status
+LogDeviceStorage::CreateAsyncReaders(unsigned int maxLogsPerReader,
+                                     unsigned int parallelism,
+                                     std::function<void(const LogRecord&)> cb,
+                                     std::vector<AsyncLogReader*>* readers) {
+  // Validate
+  if (!readers) {
+    return Status::InvalidArgument("readers must not be null.");
+  }
+
+  // Construct all the readers.
+  readers->reserve(parallelism);
+  while (parallelism--) {
+    auto reader = new AsyncLogDeviceReader(this,
+                                           maxLogsPerReader,
+                                           cb,
+                                           client_->createAsyncReader());
+    readers->push_back(reader);
+  }
+
+  return Status::OK();
+}
+
+AsyncLogDeviceReader::AsyncLogDeviceReader(
+  LogDeviceStorage* storage,
+  unsigned int maxLogs,
+  std::function<void(const LogRecord&)> callback,
+  std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
+: storage_(*storage)
+, maxLogs_(maxLogs)
+, reader_(std::move(reader)) {
+  // Setup LogDevice AsyncReader callbacks
+  reader_->setRecordCallback(
+    [this, callback] (const facebook::logdevice::DataRecord& data) {
+      // Convert DataRecord to our LogRecord format.
+      const LogRecord record(
+              static_cast<LogID>(static_cast<int64_t>(data.logid)),
+              Slice((const char*)data.payload.data, data.payload.size),
+              data.attrs.lsn,
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::milliseconds(data.attrs.timestamp)));
+
+      callback(record);
+    });
+}
+
+AsyncLogDeviceReader::~AsyncLogDeviceReader() {
+}
+
+Status AsyncLogDeviceReader::Open(LogID id,
+                                  SequenceNumber startPoint,
+                                  SequenceNumber endPoint) {
+  // Handle beginning/end magic values.
+  if (startPoint == SequencePoint::kBeginningOfTimeSeqno) {
+    startPoint = facebook::logdevice::LSN_OLDEST;
+  }
+  if (endPoint == SequencePoint::kEndOfTimeSeqno) {
+    endPoint = facebook::logdevice::LSN_MAX;
+  }
+
+  // Start reading from the log.
+  if (reader_->startReading(facebook::logdevice::logid_t(id),
+                            startPoint,
+                            endPoint)) {
+    return LogDeviceErrorToStatus(facebook::logdevice::err);
+  }
+  return Status::OK();
+}
+
+Status AsyncLogDeviceReader::Close(LogID id) {
+  // Simple forward to LogDevice
+  if (reader_->stopReading(facebook::logdevice::logid_t(id))) {
+    return LogDeviceErrorToStatus(facebook::logdevice::err);
+  }
+  return Status::OK();
+}
+
 }  // namespace rocketspeed

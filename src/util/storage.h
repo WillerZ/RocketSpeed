@@ -22,7 +22,22 @@ enum SequencePoint : SequenceNumber {
   kEndOfTimeSeqno = std::numeric_limits<SequenceNumber>::max()
 };
 
+/**
+ * Raw log record entry.
+ */
+struct LogRecord {
+  LogID logID;                          // log that this record came from
+  Slice payload;                        // raw record data
+  SequenceNumber sequenceNumber = 0;    // sequence number of record
+  std::chrono::microseconds timestamp;  // record timestamp
+  LogRecord(LogID l, Slice p, SequenceNumber s, std::chrono::microseconds t) :
+    logID(l), payload(p), sequenceNumber(s), timestamp(t) {
+  }
+  LogRecord() {}
+};
+
 class LogReader;
+class AsyncLogReader;
 class LogSelector;
 
 /**
@@ -73,16 +88,21 @@ class LogStorage {
   virtual Status CreateReaders(unsigned int maxLogsPerReader,
                                unsigned int parallelism,
                                std::vector<LogReader*>* readers) = 0;
-};
 
-/**
- * Raw log record entry.
- */
-struct LogRecord {
-  LogID logID;                          // log that this record came from
-  Slice payload;                        // raw record data
-  SequenceNumber sequenceNumber = 0;    // sequence number of record
-  std::chrono::microseconds timestamp;  // record timestamp
+  /**
+   * Creates a group of AsyncLogReaders that will execute in parallel.
+   *
+   * @param maxLogsPerReader maximum number of logs per reader.
+   * @param parallelism number of parallel readers to create.
+   * @param callback a callback that will be called on an
+   *        unspecified thread when a record is read.
+   * @param readers output buffer for the AsyncLogReaders.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  virtual Status CreateAsyncReaders(unsigned int maxLogsPerReader,
+                                unsigned int parallelism,
+                                std::function<void(const LogRecord&)> callback,
+                                std::vector<AsyncLogReader*>* readers) = 0;
 };
 
 /**
@@ -142,6 +162,40 @@ class LogReader {
    */
   virtual Status Read(std::vector<LogRecord>* records,
                       size_t maxRecords) = 0;
+};
+
+/**
+ * Async Interface for reading from one or more logs.
+ */
+class AsyncLogReader {
+ public:
+  /**
+   * Closes the log reader
+   */
+  virtual ~AsyncLogReader() {}
+  /**
+   * Opens a new log for reading.
+   *
+   * To read from the beginning of a log, supply kBeginningOfTimeSeqno as the
+   * startPoint. To read to the end of a log, supply kEndOfTimeSeqno as the
+   * endPoint.
+   *
+   * @param id ID number of the log to start reading.
+   * @param startPoint sequence number of record to start reading from.
+   * @param endPoint sequence number of record to stop reading at.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  virtual Status Open(LogID id,
+                      SequenceNumber startPoint = kBeginningOfTimeSeqno,
+                      SequenceNumber endPoint = kEndOfTimeSeqno) = 0;
+
+  /**
+   * Stops reading from a log.
+   *
+   * @param id ID number of the log to stop reading from.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  virtual Status Close(LogID id) = 0;
 };
 
 /**

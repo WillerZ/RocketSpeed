@@ -86,6 +86,10 @@ class LogDeviceStorage : public LogStorage {
                        unsigned int parallelism,
                        std::vector<LogReader*>* readers) final;
 
+  Status CreateAsyncReaders(unsigned int maxLogsPerReader,
+                            unsigned int parallelism,
+                            std::function<void(const LogRecord&)> callback,
+                            std::vector<AsyncLogReader*>* readers);
  private:
   LogDeviceStorage(std::shared_ptr<facebook::logdevice::Client> client,
                    Env* env);
@@ -128,6 +132,31 @@ class LogDeviceReader : public LogReader {
   std::vector<std::unique_ptr<char[]>> buffers_;
   std::vector<LogRecord> pending_;
   LogDeviceSelector* selector_ = nullptr;
+};
+
+/**
+ * Async Log Reader interface backed by LogDevice.
+ */
+class AsyncLogDeviceReader : public AsyncLogReader {
+ public:
+  AsyncLogDeviceReader(LogDeviceStorage* storage,
+                       unsigned int maxLogs,
+                       std::function<void(const LogRecord&)> callback,
+                       std::unique_ptr
+                        <facebook::logdevice::AsyncReader>&& reader);
+
+  ~AsyncLogDeviceReader() final;
+
+  Status Open(LogID id,
+              SequenceNumber startPoint,
+              SequenceNumber endPoint) final;
+
+  Status Close(LogID id) final;
+
+ private:
+  LogDeviceStorage& storage_;
+  const unsigned int maxLogs_ = 0;
+  std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
 };
 
 /**
