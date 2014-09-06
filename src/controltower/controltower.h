@@ -11,6 +11,7 @@
 #include "src/util/log_router.h"
 #include "src/controltower/options.h"
 #include "src/controltower/controlroom.h"
+#include "src/controltower/tailer.h"
 
 namespace rocketspeed {
 
@@ -44,13 +45,16 @@ class ControlTower {
   // Message specific callbacks stored here
   const std::map<MessageType, MsgCallbackType> callbacks_;
 
+  // Maps a topic to a log
+  const LogRouter log_router_;
+
   // A control tower has multiple ControlRooms.
   // Each Room handles its own set of topics. Each room has its own
   // room number. Each room also has its own MsgLoop.
   std::vector<unique_ptr<ControlRoom>> rooms_;
 
-  // Maps a topic to a log
-  const LogRouter log_router_;
+  // The Tailer to feed in data from LogStorage to Rooms
+  unique_ptr<Tailer> tailer_;
 
   // The message loop base.
   // This is used to receive subscribe/unsubscribe/data messages

@@ -45,8 +45,12 @@ class ControlTowerTest {
     num_subscribe_responses_(0) {
     // set control tower to log information to test dir
     ctoptions_.log_dir = test::TmpDir() + "/controltower";
-    // ctoptions_.number_of_rooms = 2;
 
+    // create dummy configuration to keep everybody happy
+    conf_ = Configuration::Create(std::vector<HostId>{ },
+                                  Tenant(2),
+                                  0,
+                                  "", "", "");
     char myname[1024];
     st_ = ControlTower::CreateNewInstance(ctoptions_, conf_, &ct_);
 

@@ -39,18 +39,6 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
 
 void
 ControlTower::Run(void) {
-  // Start background threads for Room msg loops
-  for (unsigned int i = 0; i < options_.number_of_rooms; i++) {
-    ControlRoom* room = rooms_[i].get();
-    options_.env->StartThread(ControlRoom::Run, room,
-                  "rooms-" + std::to_string(room->GetRoomId().port));
-  }
-  // wait for all the Rooms to be ready to process events
-  for (unsigned int i = 0; i < options_.number_of_rooms; i++) {
-    while (!rooms_[i].get()->IsRunning()) {
-      std::this_thread::yield();
-    }
-  }
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
       "Starting a new Control Tower with %d rooms",
       options_.number_of_rooms);
@@ -80,6 +68,9 @@ ControlTower::ControlTower(const ControlTowerOptions& options,
                                     options_.port_number + i + 1));
     rooms_.push_back(std::move(newroom));
   }
+  // The tailer can be created only after all the ControlRooms
+  // are up and running.
+
   options_.info_log->Flush();
 }
 
@@ -94,6 +85,31 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
                                 const Configuration* conf,
                                 ControlTower** ct) {
   *ct = new ControlTower(options, conf);
+
+  // Start background threads for Room msg loops
+  const ControlTowerOptions opt = (*ct)->GetOptions();
+  unsigned int numrooms = opt.number_of_rooms;
+  for (unsigned int i = 0; i < numrooms; i++) {
+    ControlRoom* room = (*ct)->rooms_[i].get();
+    opt.env->StartThread(ControlRoom::Run, room,
+                  "rooms-" + std::to_string(room->GetRoomId().port));
+  }
+  // Wait for all the Rooms to be ready to process events
+  for (unsigned int i = 0; i < numrooms; i++) {
+    while (!(*ct)->rooms_[i].get()->IsRunning()) {
+      std::this_thread::yield();
+    }
+  }
+
+  // Start the LogTailer
+  Tailer* tailer;
+  Status st = Tailer::CreateNewInstance(conf, opt.env,
+                                        (*ct)->rooms_, &tailer);
+  if (!st.ok()) {
+    delete ct;
+    return st;
+  }
+  (*ct)->tailer_.reset(tailer);
   return Status::OK();
 }
 

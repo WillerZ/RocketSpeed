@@ -42,7 +42,8 @@ Result ProducerWorker(int64_t num_messages, int port) {
   HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
   Configuration* config = Configuration::Create(std::vector<HostId>{ pilot },
                                                 Tenant(2),
-                                                port);
+                                                port,
+                                                "", "", "");
 
   // Create RocketSpeed Producer.
   Producer* producer = nullptr;

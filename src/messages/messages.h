@@ -105,6 +105,11 @@ class Message : public Serializer {
    */
   SequenceNumber GetSequenceNumber() const { return seqno_; }
 
+  /**
+   * @Sets the Sequence Number.
+   */
+  void SetSequenceNumber(SequenceNumber n) { seqno_ = n; }
+
   /*
    * Creates a Message of the appropriate subtype by looking at the
    * MessageType. Returns nullptr on error. It is the responsibility

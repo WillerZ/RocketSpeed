@@ -19,10 +19,16 @@ class ManualConfiguration : public Configuration {
  public:
   ManualConfiguration(const std::vector<HostId>& pilots,
                       TenantID tenant_id,
-                      int local_port)
+                      int local_port,
+                      std::string storage_name,
+                      std::string storage_url,
+                      std::string storage_credentials)
   : pilots_(pilots)
   , tenant_id_(tenant_id)
-  , local_port_(local_port) {
+  , local_port_(local_port)
+  , storage_name_(storage_name)
+  , storage_url_(storage_url)
+  , storage_credentials_(storage_credentials) {
   }
 
   virtual ~ManualConfiguration() {
@@ -40,18 +46,38 @@ class ManualConfiguration : public Configuration {
     return local_port_;
   }
 
+  virtual std::string GetStorageName() const {
+    return storage_name_;
+  }
+
+  virtual std::string GetStorageUrl() const {
+    return storage_url_;
+  }
+  virtual std::string GetStorageCredentials() const {
+    return storage_credentials_;
+  }
+
  private:
   std::vector<HostId> pilots_;
   TenantID tenant_id_;
   int local_port_;
+  std::string storage_name_;
+  std::string storage_url_;
+  std::string storage_credentials_;
 };
 
 Configuration* Configuration::Create(const std::vector<HostId>& pilots,
                                      TenantID tenant_id,
-                                     int local_port) {
+                                     int local_port,
+                                     std::string storage_name,
+                                     std::string storage_url,
+                                     std::string storage_credentials) {
   return new ManualConfiguration(pilots,
                                  tenant_id,
-                                 local_port);
+                                 local_port,
+                                 storage_name,
+                                 storage_url,
+                                 storage_credentials);
 }
 
 }  // namespace rocketspeed
