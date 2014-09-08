@@ -39,11 +39,9 @@ class SimpleLogStorage : public LogStorage {
   virtual Status Trim(LogID id,
                       std::chrono::microseconds age);
 
-  virtual Status CreateReaders(unsigned int maxLogsPerReader,
-                               unsigned int parallelism,
+  virtual Status CreateReaders(unsigned int parallelism,
                                std::vector<LogReader*>* readers);
-  Status CreateAsyncReaders(unsigned int maxLogsPerReader,
-                            unsigned int parallelism,
+  Status CreateAsyncReaders(unsigned int parallelism,
                             std::function<void(const LogRecord&)> callback,
                             std::vector<AsyncLogReader*>* readers) {
     return Status::NotSupported("Not for production usage.");
@@ -87,8 +85,7 @@ class SimpleLogStorage : public LogStorage {
  */
 class SimpleLogReader : public LogReader {
  public:
-  SimpleLogReader(SimpleLogStorage* storage,
-                  unsigned int maxLogs);
+  SimpleLogReader(SimpleLogStorage* storage);
 
   virtual ~SimpleLogReader();
 
@@ -128,7 +125,6 @@ class SimpleLogReader : public LogReader {
   void GetRecords(size_t maxRecords);
 
   SimpleLogStorage* storage_;    // Storage to read from
-  unsigned int maxLogs_;         // Maximum open logs
   SimpleLogSelector* selector_;  // Selector currently registered to
 
   // Sequence number ranges for each open log.

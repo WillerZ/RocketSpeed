@@ -172,8 +172,7 @@ Status LogDeviceStorage::Trim(LogID id,
   return Status::OK();
 }
 
-Status LogDeviceStorage::CreateReaders(unsigned int maxLogsPerReader,
-                                       unsigned int parallelism,
+Status LogDeviceStorage::CreateReaders(unsigned int parallelism,
                                        std::vector<LogReader*>* readers) {
   // Validate
   if (!readers) {
@@ -184,7 +183,6 @@ Status LogDeviceStorage::CreateReaders(unsigned int maxLogsPerReader,
   readers->reserve(parallelism);
   while (parallelism--) {
     auto reader = new LogDeviceReader(this,
-                                      maxLogsPerReader,
                                       client_->createAsyncReader());
     readers->push_back(reader);
   }
@@ -194,10 +192,8 @@ Status LogDeviceStorage::CreateReaders(unsigned int maxLogsPerReader,
 
 LogDeviceReader::LogDeviceReader(
   LogDeviceStorage* storage,
-  unsigned int maxLogs,
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
 : storage_(*storage)
-, maxLogs_(maxLogs)
 , reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
   reader_->setRecordCallback(
@@ -411,8 +407,7 @@ void LogDeviceSelector::Notify() {
 }
 
 Status
-LogDeviceStorage::CreateAsyncReaders(unsigned int maxLogsPerReader,
-                                     unsigned int parallelism,
+LogDeviceStorage::CreateAsyncReaders(unsigned int parallelism,
                                      std::function<void(const LogRecord&)> cb,
                                      std::vector<AsyncLogReader*>* readers) {
   // Validate
@@ -424,7 +419,6 @@ LogDeviceStorage::CreateAsyncReaders(unsigned int maxLogsPerReader,
   readers->reserve(parallelism);
   while (parallelism--) {
     auto reader = new AsyncLogDeviceReader(this,
-                                           maxLogsPerReader,
                                            cb,
                                            client_->createAsyncReader());
     readers->push_back(reader);
@@ -435,11 +429,9 @@ LogDeviceStorage::CreateAsyncReaders(unsigned int maxLogsPerReader,
 
 AsyncLogDeviceReader::AsyncLogDeviceReader(
   LogDeviceStorage* storage,
-  unsigned int maxLogs,
   std::function<void(const LogRecord&)> callback,
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
 : storage_(*storage)
-, maxLogs_(maxLogs)
 , reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
   reader_->setRecordCallback(

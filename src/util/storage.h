@@ -80,27 +80,23 @@ class LogStorage {
   /**
    * Creates a group of LogReaders that will execute in parallel.
    *
-   * @param maxLogsPerReader maximum number of logs per reader.
    * @param parallelism number of parallel readers to create.
    * @param readers output buffer for the LogReaders.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status CreateReaders(unsigned int maxLogsPerReader,
-                               unsigned int parallelism,
+  virtual Status CreateReaders(unsigned int parallelism,
                                std::vector<LogReader*>* readers) = 0;
 
   /**
    * Creates a group of AsyncLogReaders that will execute in parallel.
    *
-   * @param maxLogsPerReader maximum number of logs per reader.
    * @param parallelism number of parallel readers to create.
    * @param callback a callback that will be called on an
    *        unspecified thread when a record is read.
    * @param readers output buffer for the AsyncLogReaders.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status CreateAsyncReaders(unsigned int maxLogsPerReader,
-                                unsigned int parallelism,
+  virtual Status CreateAsyncReaders(unsigned int parallelism,
                                 std::function<void(const LogRecord&)> callback,
                                 std::vector<AsyncLogReader*>* readers) = 0;
 };

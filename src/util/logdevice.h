@@ -82,12 +82,10 @@ class LogDeviceStorage : public LogStorage {
   Status Trim(LogID id,
               std::chrono::microseconds age) final;
 
-  Status CreateReaders(unsigned int maxLogsPerReader,
-                       unsigned int parallelism,
+  Status CreateReaders(unsigned int parallelism,
                        std::vector<LogReader*>* readers) final;
 
-  Status CreateAsyncReaders(unsigned int maxLogsPerReader,
-                            unsigned int parallelism,
+  Status CreateAsyncReaders(unsigned int parallelism,
                             std::function<void(const LogRecord&)> callback,
                             std::vector<AsyncLogReader*>* readers);
  private:
@@ -104,7 +102,6 @@ class LogDeviceStorage : public LogStorage {
 class LogDeviceReader : public LogReader {
  public:
   LogDeviceReader(LogDeviceStorage* storage,
-                  unsigned int maxLogs,
                   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader);
 
   ~LogDeviceReader() final;
@@ -126,7 +123,6 @@ class LogDeviceReader : public LogReader {
   void SetSelector(LogDeviceSelector* selector);
 
   LogDeviceStorage& storage_;
-  const unsigned int maxLogs_ = 0;
   std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
   mutable std::mutex mutex_;
   std::vector<std::unique_ptr<char[]>> buffers_;
@@ -140,7 +136,6 @@ class LogDeviceReader : public LogReader {
 class AsyncLogDeviceReader : public AsyncLogReader {
  public:
   AsyncLogDeviceReader(LogDeviceStorage* storage,
-                       unsigned int maxLogs,
                        std::function<void(const LogRecord&)> callback,
                        std::unique_ptr
                         <facebook::logdevice::AsyncReader>&& reader);
@@ -155,7 +150,6 @@ class AsyncLogDeviceReader : public AsyncLogReader {
 
  private:
   LogDeviceStorage& storage_;
-  const unsigned int maxLogs_ = 0;
   std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
 };
 

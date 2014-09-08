@@ -49,8 +49,7 @@ Status SimpleLogStorage::Trim(LogID id, std::chrono::microseconds age) {
   return Status::OK();
 }
 
-Status SimpleLogStorage::CreateReaders(unsigned int maxLogsPerReader,
-                                       unsigned int parallelism,
+Status SimpleLogStorage::CreateReaders(unsigned int parallelism,
                                        std::vector<LogReader*>* readers) {
   if (!readers) {
     return Status::InvalidArgument("readers cannot be null");
@@ -58,15 +57,13 @@ Status SimpleLogStorage::CreateReaders(unsigned int maxLogsPerReader,
   // Construct a number of readers (number = parallelism).
   readers->clear();
   while (parallelism--) {
-    readers->push_back(new SimpleLogReader(this, maxLogsPerReader));
+    readers->push_back(new SimpleLogReader(this));
   }
   return Status::OK();
 }
 
-SimpleLogReader::SimpleLogReader(SimpleLogStorage* storage,
-                                 unsigned int maxLogs)
+SimpleLogReader::SimpleLogReader(SimpleLogStorage* storage)
 : storage_(storage)
-, maxLogs_(maxLogs)
 , selector_(nullptr) {
 }
 

@@ -26,7 +26,7 @@ TEST(SimpleStorageTest, AppendingAndReading) {
   ASSERT_TRUE(storage.Append(42, "Speed").ok());
 
   std::vector<LogReader*> readers;
-  ASSERT_TRUE(storage.CreateReaders(1, 2, &readers).ok());
+  ASSERT_TRUE(storage.CreateReaders(2, &readers).ok());
   ASSERT_EQ(readers.size(), 2);
   ASSERT_NE(readers[0], static_cast<LogReader*>(nullptr));
   ASSERT_NE(readers[1], static_cast<LogReader*>(nullptr));
@@ -97,7 +97,7 @@ TEST(SimpleStorageTest, SelectorBasic) {
   SimpleLogStorage storage;
   std::vector<LogReader*> readers;
   const int numLogs = 10;
-  storage.CreateReaders(1, numLogs, &readers);
+  storage.CreateReaders(numLogs, &readers);
 
   SimpleLogSelector selector;
   for (int i = 0; i < numLogs; ++i) {
@@ -132,7 +132,7 @@ TEST(SimpleStorageTest, SelectorParallel) {
   SimpleLogStorage storage;
   std::vector<LogReader*> readers;
   const int numLogs = 10;
-  storage.CreateReaders(1, numLogs, &readers);
+  storage.CreateReaders(numLogs, &readers);
 
   // Create selector, register all readers, and open the readers on one log each
   SimpleLogSelector selector;
@@ -194,7 +194,7 @@ TEST(SimpleStorageTest, SelectorParallel) {
 TEST(SimpleStorageTest, SelectCloseRead) {
   SimpleLogStorage storage;
   std::vector<LogReader*> readers;
-  storage.CreateReaders(1, 1, &readers);
+  storage.CreateReaders(1, &readers);
   readers[0]->Open(42);
 
   SimpleLogSelector selector;

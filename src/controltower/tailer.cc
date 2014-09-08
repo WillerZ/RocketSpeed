@@ -42,8 +42,7 @@ Status Tailer::Initialize() {
   };
   // create logdevice reader
   std::vector<AsyncLogReader*> handle;
-  Status st = storage_.get()->CreateAsyncReaders(0,  // maxlog not needed
-                                                 1,  // one reader
+  Status st = storage_.get()->CreateAsyncReaders(1,  // one reader
                                                  callback,
                                                  &handle);
   if (!st.ok()) {

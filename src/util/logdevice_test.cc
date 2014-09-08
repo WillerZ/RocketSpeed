@@ -38,7 +38,7 @@ TEST(LogDeviceStorageTest, AppendingAndReading) {
   ASSERT_TRUE(storage->Append(1001, "Speed").ok());
 
   std::vector<LogReader*> readers;
-  ASSERT_TRUE(storage->CreateReaders(1, 2, &readers).ok());
+  ASSERT_TRUE(storage->CreateReaders(2, &readers).ok());
   ASSERT_EQ(readers.size(), 2);
   ASSERT_NE(readers[0], static_cast<LogReader*>(nullptr));
   ASSERT_NE(readers[1], static_cast<LogReader*>(nullptr));
@@ -115,7 +115,7 @@ TEST(LogDeviceStorageTest, SelectorBasic) {
 
   std::vector<LogReader*> readers;
   const int numLogs = 10;
-  storage->CreateReaders(1, numLogs, &readers);
+  storage->CreateReaders(numLogs, &readers);
 
   LogDeviceSelector selector;
   for (int i = 0; i < numLogs; ++i) {
@@ -152,7 +152,7 @@ TEST(LogDeviceStorageTest, SelectorParallel) {
 
   std::vector<LogReader*> readers;
   const int numLogs = 10;
-  storage->CreateReaders(1, numLogs, &readers);
+  storage->CreateReaders(numLogs, &readers);
 
   // Create selector, register all readers, and open the readers on one log each
   LogDeviceSelector selector;
@@ -217,7 +217,7 @@ TEST(LogDeviceStorageTest, SelectCloseRead) {
   LogDeviceStorage::Create(MakeTestClient(), Env::Default(), &storage);
 
   std::vector<LogReader*> readers;
-  storage->CreateReaders(1, 1, &readers);
+  storage->CreateReaders(1, &readers);
   readers[0]->Open(4001);
 
   LogDeviceSelector selector;
