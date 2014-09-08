@@ -18,7 +18,7 @@ int main() {
 #include <iostream>
 #include "include/Types.h"
 #include "src/controltower/options.h"
-#include "src/controltower/controltower.h"
+#include "src/controltower/tower.h"
 
 using GFLAGS::ParseCommandLineFlags;
 using GFLAGS::RegisterFlagValidator;

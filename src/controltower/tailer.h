@@ -9,7 +9,7 @@
 #include "./Status.h"
 #include "src/util/storage.h"
 #include "src/util/logdevice.h"
-#include "src/controltower/controlroom.h"
+#include "src/controltower/room.h"
 
 namespace rocketspeed {
 

@@ -10,7 +10,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/util/log_router.h"
 #include "src/controltower/options.h"
-#include "src/controltower/controlroom.h"
+#include "src/controltower/room.h"
 #include "src/controltower/tailer.h"
 
 namespace rocketspeed {

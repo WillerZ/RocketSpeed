@@ -5,7 +5,7 @@
 //
 #define __STDC_FORMAT_MACROS
 
-#include "src/controltower/controltower.h"
+#include "src/controltower/tower.h"
 #include <map>
 #include <thread>
 #include <vector>

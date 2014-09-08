@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "src/util/testharness.h"
-#include "src/controltower/controltower.h"
+#include "src/controltower/tower.h"
 #include "src/messages/msg_client.h"
 
 namespace rocketspeed {

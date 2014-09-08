@@ -3,9 +3,9 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
-#include "src/controltower/controlroom.h"
+#include "src/controltower/room.h"
 #include <map>
-#include "src/controltower/controltower.h"
+#include "src/controltower/tower.h"
 
 namespace rocketspeed {
 
