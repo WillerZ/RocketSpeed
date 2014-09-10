@@ -19,7 +19,7 @@
 DEFINE_int32(num_threads, 16, "number of threads");
 DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
-DEFINE_int32(port, 58800, "first port number of producer");
+DEFINE_int32(port, 58800, "port number of producer");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_int64(num_topics, 1000000000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
@@ -37,23 +37,7 @@ static const Result failed = { false, };
 
 namespace rocketspeed {
 
-Result ProducerWorker(int64_t num_messages, int port) {
-  // Configuration for RocketSpeed.
-  HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
-  Configuration* config = Configuration::Create(std::vector<HostId>{ pilot },
-                                                Tenant(2),
-                                                port,
-                                                "", "", "");
-
-  // Create RocketSpeed Producer.
-  Producer* producer = nullptr;
-  if (!Producer::Open(config, &producer).ok()) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log,
-        "[port %d] Failed to connect to RocketSpeed", port);
-    info_log->Flush();
-    return failed;
-  }
-
+Result ProducerWorker(int64_t num_messages, Producer* producer) {
   // Random number generator.
   std::mt19937_64 rng;
   std::uniform_int_distribution<uint64_t> distr(0, FLAGS_num_topics - 1);
@@ -66,8 +50,7 @@ Result ProducerWorker(int64_t num_messages, int port) {
   }
   Slice payload(data.data(), data.size());
 
-  Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "[port %d] Starting message loop", port);
+  Log(InfoLogLevel::INFO_LEVEL, info_log, "Starting message loop");
   info_log->Flush();
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -111,9 +94,8 @@ Result ProducerWorker(int64_t num_messages, int port) {
   auto end = std::chrono::high_resolution_clock::now();
 
   Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "[port %d] Successfully sent all messages", port);
+      "Successfully sent all messages");
   info_log->Flush();
-  delete producer;
 
   return Result {
     true,
@@ -174,17 +156,34 @@ int main(int argc, char** argv) {
     info_log = std::make_shared<rocketspeed::NullLogger>();
   }
 
+  // Configuration for RocketSpeed.
+  rocketspeed::HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
+  std::unique_ptr<rocketspeed::Configuration> config(
+    rocketspeed::Configuration::Create(
+      std::vector<rocketspeed::HostId>{ pilot },
+      rocketspeed::Tenant(2),
+      FLAGS_port,
+      "", "", ""));
+
+  // Create RocketSpeed Producer.
+  rocketspeed::Producer* producer = nullptr;
+  if (!rocketspeed::Producer::Open(config.get(), &producer).ok()) {
+    Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
+        "Failed to connect to RocketSpeed");
+    info_log->Flush();
+    return 1;
+  }
+
   // Create producer threads.
   // Distribute total number of messages among them.
   std::vector<std::future<Result>> futures;
   int64_t total_messages = FLAGS_num_messages;
   for (int32_t remaining = FLAGS_num_threads; remaining; --remaining) {
     int64_t num_messages = total_messages / remaining;
-    int port = FLAGS_port + (FLAGS_num_threads - remaining);
     futures.emplace_back(std::async(std::launch::async,
                                     &rocketspeed::ProducerWorker,
                                     num_messages,
-                                    port));
+                                    producer));
     total_messages -= num_messages;
   }
   assert(total_messages == 0);
@@ -224,5 +223,6 @@ int main(int argc, char** argv) {
     printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
   }
 
+  delete producer;
   return ret;
 }
