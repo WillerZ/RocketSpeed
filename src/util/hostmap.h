@@ -31,6 +31,10 @@ class HostMap {
   // exist, then returns -1
   HostNumber Lookup(const HostId& hostid);
 
+  // Looks up a host given its HostNumber. If the host does
+  // not exist, then return nullptr;
+  HostId* Lookup(HostNumber num);
+
  private:
   // size of the store
   unsigned int number_buckets_;

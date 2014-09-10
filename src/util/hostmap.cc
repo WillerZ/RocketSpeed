@@ -4,6 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/util/hostmap.h"
+#include <assert.h>
 #include <map>
 #include "src/util/mutexlock.h"
 #include "src/util/xxhash.h"
@@ -98,6 +99,16 @@ HostMap::Lookup(const HostId& hostid) {
     }
   }
   return -1;                 // not found
+}
+
+//
+// Returns the host for a specified HostNumber.
+//
+HostId*
+HostMap::Lookup(HostNumber number) {
+  assert(number >= 0 && (unsigned int)number < number_buckets_);
+  HostId* one = static_cast<HostId*>(hostlist_[number].Acquire_Load());
+  return  one;
 }
 
 }  // namespace rocketspeed
