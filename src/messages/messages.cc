@@ -377,6 +377,7 @@ Slice MessageMetadata::Serialize() const {
   // Topics and metadata state
   PutVarint32(&serialize_buffer__, topics_.size());
   for (TopicPair p : topics_) {
+    PutVarint64(&serialize_buffer__, p.seqno);
     PutLengthPrefixedSlice(&serialize_buffer__, Slice(p.topic_name));
     serialize_buffer__.append((const char *)&p.topic_type,
                               sizeof(p.topic_type));
@@ -452,6 +453,11 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   // extract each topic
   for (unsigned i = 0; i < num_topics; i++) {
     TopicPair p;
+
+    // extract start seqno for this topic subscription
+    if (!GetVarint64(in, &p.seqno)) {
+      return Status::InvalidArgument("Bad Message Payload: seqno");
+    }
 
     // extract one topic name
     if (!GetLengthPrefixedSlice(in, &sl)) {

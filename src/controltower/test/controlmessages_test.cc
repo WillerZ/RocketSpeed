@@ -272,7 +272,7 @@ TEST(ControlTowerTest, Subscribe) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    topics.push_back(TopicPair(std::to_string(i), type));
+    topics.push_back(TopicPair(4, std::to_string(i), type));
   }
   // create a message
   MessageMetadata meta1(Tenant::Guest, seqno,

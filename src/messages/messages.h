@@ -66,14 +66,23 @@ enum MetadataType : char {
 
 /*
  * A topic:bool pair to indicate whether to subscribe or unsubscribe
- * from the specified topic
+ * from the specified topic.
+ * If topic_type == mSubscribe, then seqno indicates the starting
+ * sequence number from which (inclusive) this subscriber is
+ * requesting data from. A seqno of 0 indicates that the subscriber
+ * is interested in receiving data starting from any point in time.
+ * A seqno of 1 indicates that the subscriber is interested in
+ * receiving all the data associated with this topic.
+ * If topic_type == mSubscribe, then seqno is not defined.
  */
 class TopicPair {
  public:
+  SequenceNumber seqno;  // the starting sequence number for this subscription
   Topic topic_name;
   MetadataType topic_type;
 
-  TopicPair(std::string name, MetadataType type) :
+  TopicPair(SequenceNumber s, std::string name, MetadataType type) :
+    seqno(s),
     topic_name(name),
     topic_type(type) {
   }

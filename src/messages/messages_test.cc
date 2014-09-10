@@ -49,7 +49,7 @@ TEST(Messaging, Metadata) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    topics.push_back(TopicPair(std::to_string(i), type));
+    topics.push_back(TopicPair(3, std::to_string(i), type));
   }
 
   // create a message
