@@ -74,6 +74,12 @@ struct ControlTowerOptions {
   // Warning: this should be picked up from Configuration
   std::pair<LogID, LogID> log_range;
 
+  // The maximum number of hosts that a machine can cannot to. This
+  // is used to optimize the mapping from a HostName to a simple
+  // integer called the HostNumber
+  // Default: 10K
+  unsigned int max_number_of_hosts;
+
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
 };

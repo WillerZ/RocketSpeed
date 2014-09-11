@@ -29,11 +29,12 @@ class Tailer {
 
   // Opens the specified log at specified position
   // This call is not thread-safe.
-  Status StartReading(LogID logid, SequenceNumber start, unsigned int roomid);
+  Status StartReading(LogID logid, SequenceNumber start,
+                      unsigned int roomid) const;
 
   // No more records from this log anymore
   // This call is not thread-safe.
-  Status StopReading(LogID logid, unsigned int roomid);
+  Status StopReading(LogID logid, unsigned int roomid) const;
 
   virtual ~Tailer();
 

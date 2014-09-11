@@ -14,7 +14,6 @@
 #include "src/util/storage.h"
 
 namespace rocketspeed {
-
 /**
  * Sanitize user-specified options
  */
@@ -54,27 +53,22 @@ ControlTower::ControlTower(const ControlTowerOptions& options,
   conf_(conf),
   callbacks_(InitializeCallbacks()),
   log_router_(options.log_range.first, options.log_range.second),
+  hostmap_(options.max_number_of_hosts),
   msg_loop_(options_.env,
             options_.env_options,
             HostId(options_.hostname, options_.port_number),
             options_.info_log,
             static_cast<ApplicationCallbackContext>(this),
             callbacks_) {
-  //
-  // Create the ControlRooms. The port numbers for the rooms
-  // are adjacent to the port number of the ControlTower.
-  for (unsigned int i = 0; i < options_.number_of_rooms; i++) {
-    unique_ptr<ControlRoom> newroom(new ControlRoom(options_, this, i,
-                                    options_.port_number + i + 1));
-    rooms_.push_back(std::move(newroom));
-  }
-  // The tailer can be created only after all the ControlRooms
-  // are up and running.
-
-  options_.info_log->Flush();
+  // The rooms and that tailers are not initialized here.
+  // The reason being that those initializations could fail and
+  // return error Status.
 }
 
 ControlTower::~ControlTower() {
+  // The ControlRooms use the msg_loop.MsgClient to send messages.
+  // Shutdown all the ControlRooms before shutting down msg_loop.
+  rooms_.clear();
 }
 
 /**
@@ -85,9 +79,28 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
                                 const Configuration* conf,
                                 ControlTower** ct) {
   *ct = new ControlTower(options, conf);
+  const ControlTowerOptions opt = (*ct)->GetOptions();
+
+  // Start the LogTailer first.
+  Tailer* tailer;
+  Status st = Tailer::CreateNewInstance(conf, opt.env,
+                                        (*ct)->rooms_, &tailer);
+  if (!st.ok()) {
+    delete *ct;
+    return st;
+  }
+  (*ct)->tailer_.reset(tailer);
+
+  // The ControlRooms keep a pointer to the Tailer, so create
+  // these after the Tailer is created. The port numbers for
+  // the rooms are adjacent to the port number of the ControlTower.
+  for (unsigned int i = 0; i < opt.number_of_rooms; i++) {
+    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, *ct, i,
+                                    opt.port_number + i + 1));
+    (*ct)->rooms_.push_back(std::move(newroom));
+  }
 
   // Start background threads for Room msg loops
-  const ControlTowerOptions opt = (*ct)->GetOptions();
   unsigned int numrooms = opt.number_of_rooms;
   for (unsigned int i = 0; i < numrooms; i++) {
     ControlRoom* room = (*ct)->rooms_[i].get();
@@ -100,16 +113,6 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
       std::this_thread::yield();
     }
   }
-
-  // Start the LogTailer
-  Tailer* tailer;
-  Status st = Tailer::CreateNewInstance(conf, opt.env,
-                                        (*ct)->rooms_, &tailer);
-  if (!st.ok()) {
-    delete ct;
-    return st;
-  }
-  (*ct)->tailer_.reset(tailer);
   return Status::OK();
 }
 
@@ -151,16 +154,17 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
     int room_number = logid % ct->options_.number_of_rooms;
 
     // Copy out only the ith topic into a new message.
-    MessageMetadata newmsg(request->GetTenantID(),
-                           request->GetSequenceNumber(),
-                           request->GetMetaType(),
-                           request->GetOrigin(),
-                           std::vector<TopicPair> {topic});
-
+    MessageMetadata* newmsg = new MessageMetadata(
+                           request->GetTenantID(),
+                            request->GetSequenceNumber(),
+                            request->GetMetaType(),
+                            request->GetOrigin(),
+                            std::vector<TopicPair> {topic});
+    std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to the destination room
     ControlRoom* room = ct->rooms_[room_number].get();
-    st =  room->Forward(&newmsg);
+    st =  room->Forward(std::move(newmessage), logid);
     if (!st.ok()) {
       Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
           "Unable to forward Metadata msg to %s:%d %s",

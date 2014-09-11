@@ -141,12 +141,14 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
   if (received == -1) {
     Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
         "Reading from command pipe failed. errno=%d", errno);
+    obj->info_log_->Flush();
     return;
   } else if (received < static_cast<ssize_t>(sizeof(data))) {
     // Partial read from the pipe. This may happen if the write call is
     // interrupted by a signal.
     Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
         "Partial read from command pipe.");
+    obj->info_log_->Flush();
     return;
   }
 
@@ -359,6 +361,7 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
   if (command_pipe_fds_[1] == 0) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
       "Trying to write to closed command pipe.", errno);
+    info_log_->Flush();
     return Status::InternalError("pipe closed");
   }
 
@@ -388,6 +391,7 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
     // Some internal error happened.
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
       "Error writing command to event loop, errno=%d", errno);
+    info_log_->Flush();
     return Status::InternalError("write returned error");
   } else {
     // Partial write. This is bad; only part of the pointer has been written

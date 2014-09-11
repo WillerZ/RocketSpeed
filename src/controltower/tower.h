@@ -35,6 +35,15 @@ class ControlTower {
   // Returns a client that pools connections to other MsgLoops
   MsgClient& GetClient() { return msg_loop_.GetClient(); }
 
+  // Returns the HostId to HostNumber mapping
+  HostMap& GetHostMap() { return hostmap_; }
+
+  // Returns the logic to map a topic name to a logid
+  const LogRouter& GetLogRouter() { return log_router_; }
+
+  // The Storage Reader
+  const Tailer* GetTailer() const { return tailer_.get(); }
+
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;
@@ -47,6 +56,9 @@ class ControlTower {
 
   // Maps a topic to a log
   const LogRouter log_router_;
+
+  // Maps a HostId to a HostNumber.
+  HostMap hostmap_;
 
   // A control tower has multiple ControlRooms.
   // Each Room handles its own set of topics. Each room has its own

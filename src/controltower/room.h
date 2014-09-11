@@ -8,7 +8,9 @@
 #include <map>
 #include "include/Env.h"
 #include "src/messages/msg_loop.h"
+#include "src/util/storage.h"
 #include "src/controltower/options.h"
+#include "src/controltower/topic.h"
 
 namespace rocketspeed {
 
@@ -25,7 +27,7 @@ class ControlRoom {
  public:
   ControlRoom(const ControlTowerOptions& options,
               ControlTower* control_tower,
-              int room_number,
+              unsigned int room_number,
               int port_number);
   virtual ~ControlRoom();
 
@@ -33,20 +35,44 @@ class ControlRoom {
   static void Run(void* arg);
 
   // Is the ControlRoom up and running?
-  bool IsRunning() const { return room_loop_.IsRunning(); }
+  bool IsRunning() const { return room_loop_->IsRunning(); }
 
   // The Room Identifier
   const HostId& GetRoomId() const { return room_id_; }
 
+  // The Room Number [0...n)
+  unsigned int GetRoomNumber() const { return room_number_; }
+
   // Forwards a message to this Room
-  Status Forward(Message* msg);
+  Status Forward(std::unique_ptr<Message> msg, LogID logid);
+
+  // The Commands sent to the ControlRoom.
+  // The ControlTower sends subscribe/unsubscribe messages to ControlRoom.
+  // The Tailer sends data messages to ControlRoom.
+  class RoomCommand : public Command {
+   public:
+    RoomCommand(std::unique_ptr<Message> message, LogID logid):
+      message_(std::move(message)),
+      logid_(logid) {
+    }
+    virtual CommandType GetType() const {
+      return CommandType::mMessage;  // This is not used XXX
+    }
+    virtual std::unique_ptr<Message> GetMessage() {
+      return std::move(message_);
+    }
+    virtual const LogID GetLogId() const { return logid_; }
+   private:
+    std::unique_ptr<Message> message_;
+    LogID logid_;
+  };
 
  private:
   // I am part of this control tower
   ControlTower* control_tower_;
 
   // My room number
-  int room_number_;
+  unsigned int room_number_;
 
   // The HostId of this msg loop
   HostId room_id_;
@@ -54,17 +80,17 @@ class ControlRoom {
   // Message specific callbacks stored here
   const std::map<MessageType, MsgCallbackType> callbacks_;
 
+  // Subscription information per topic
+  TopicManager topic_map_;
+
   // The message loop base.
   // This is used to receive subscribe/unsubscribe/data messages
   // from the ControlTower.
-  MsgLoop room_loop_;
+  MsgLoop* room_loop_;
 
   // callbacks to process incoming messages
-  static void ProcessData(ApplicationCallbackContext ctx,
-                          std::unique_ptr<Message> msg);
-  static void ProcessMetadata(ApplicationCallbackContext ctx,
-                              std::unique_ptr<Message> msg);
-  static std::map<MessageType, MsgCallbackType> InitializeCallbacks();
+  void ProcessMetadata(std::unique_ptr<Message> msg, LogID logid);
+  void ProcessData(std::unique_ptr<Message> msg, LogID logid);
 };
 
 }  // namespace rocketspeed

@@ -45,6 +45,7 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
     // then this msg will be droped silently.
     Log(InfoLogLevel::INFO_LEVEL, msgloop->info_log_,
         "No registered msg callback for msg type %d", type);
+    msgloop->info_log_->Flush();
     assert(0);
   }
 }
@@ -86,6 +87,7 @@ void MsgLoop::Stop() {
   event_loop_.Stop();
   Log(InfoLogLevel::INFO_LEVEL, info_log_,
     "Stopped a Message Loop at port %d", hostid_.port);
+  info_log_->Flush();
 }
 
 MsgLoop::~MsgLoop() {
