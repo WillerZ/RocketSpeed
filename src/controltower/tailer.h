@@ -16,6 +16,8 @@ namespace rocketspeed {
 //
 // A Tailer reads specified logs from Storage and delivers data to the
 // specified ControlRooms.
+// Each ControlRoom has its own Reader so that a ControlRoom does not have
+// to sychronize access to a Reader, thereby avoiding any kind of locking.
 //
 class Tailer {
  public:
@@ -27,11 +29,11 @@ class Tailer {
 
   // Opens the specified log at specified position
   // This call is not thread-safe.
-  Status StartReading(LogID logid, SequenceNumber start);
+  Status StartReading(LogID logid, SequenceNumber start, unsigned int roomid);
 
   // No more records from this log anymore
   // This call is not thread-safe.
-  Status StopReading(LogID logid);
+  Status StopReading(LogID logid, unsigned int roomid);
 
   virtual ~Tailer();
 
@@ -45,7 +47,9 @@ class Tailer {
 
   // The Storage device
   const unique_ptr<LogStorage> storage_;
-  unique_ptr<AsyncLogReader> reader_;
+
+  // One reader per ControlRoom
+  std::vector<unique_ptr<AsyncLogReader>> reader_;
 
   // initialize the Tailer first before using it
   Status Initialize();

@@ -11,15 +11,14 @@ namespace rocketspeed {
 Tailer::Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
                LogStorage* storage) :
   rooms_(rooms),
-  storage_(storage),
-  reader_(nullptr) {
+  storage_(storage) {
 }
 
 Tailer::~Tailer() {
 }
 
 Status Tailer::Initialize() {
-  if (reader_ != nullptr) {
+  if (reader_.size() != 0) {
     return Status::OK();  // already initialized, nothing more to do
   }
   // define a lambda for callback
@@ -40,16 +39,20 @@ Status Tailer::Initialize() {
     st = room->Forward(&newmsg);
     assert(st.ok());
   };
-  // create logdevice reader
+  // create logdevice reader. There is one reader per ControlRoom.
   std::vector<AsyncLogReader*> handle;
-  Status st = storage_.get()->CreateAsyncReaders(1,  // one reader
+  Status st = storage_.get()->CreateAsyncReaders(rooms_.size(),
                                                  callback,
                                                  &handle);
   if (!st.ok()) {
     return st;
   }
-  assert(handle.size() == 1);
-  reader_.reset(handle[0]);
+  assert(handle.size() == rooms_.size());
+
+  // store all the Readers
+  for (unsigned int i = 0; i < handle.size(); i++) {
+    reader_.emplace_back(handle[i]);
+  }
   return Status::OK();
 }
 
@@ -89,19 +92,22 @@ Tailer::CreateNewInstance(const Configuration* conf,
 
 // start reading from this log
 Status
-Tailer::StartReading(LogID logid, SequenceNumber start) {
-  if (reader_.get() == nullptr) {
+Tailer::StartReading(LogID logid, SequenceNumber start,
+                     unsigned int room_id) {
+  if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
-  return reader_->Open(logid, start);
+  AsyncLogReader* r = reader_[room_id].get();
+  return r->Open(logid, start);
 }
 
 // start reading from this log
 Status
-Tailer::StopReading(LogID logid) {
-  if (reader_.get() == nullptr) {
+Tailer::StopReading(LogID logid, unsigned int room_id) {
+  if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
-  return reader_->Close(logid);
+  AsyncLogReader* r = reader_[room_id].get();
+  return r->Close(logid);
 }
 }  // namespace rocketspeed
