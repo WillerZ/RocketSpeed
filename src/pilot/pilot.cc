@@ -49,7 +49,7 @@ Pilot::Pilot(PilotOptions options,
             static_cast<ApplicationCallbackContext>(this),
             callbacks_),
   log_storage_(std::move(options_.log_storage)),
-  log_router_(options_.log_count) {
+  log_router_(options_.log_range.first, options_.log_range.second) {
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
       "Created a new Pilot");
   options_.info_log->Flush();

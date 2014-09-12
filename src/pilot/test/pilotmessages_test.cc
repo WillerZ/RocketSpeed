@@ -38,7 +38,7 @@ class PilotTest {
       std::move(clientSettings),
       rocketspeed::Env::Default(),
       &storage);
-    options_.log_count = 1;
+    options_.log_range = std::pair<LogID, LogID>(1, 1);
     options_.log_storage = std::unique_ptr<rocketspeed::LogStorage>(storage);
     st_ = Pilot::CreateNewInstance(std::move(options_), conf_, &pilot_);
 

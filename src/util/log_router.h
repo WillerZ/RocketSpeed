@@ -27,9 +27,10 @@ class LogRouter {
    * LogRouter instances created with identical parameters. Otherwise, topics
    * will not map to the same logs for different instances.
    *
-   * @param numLogs The maximum number of different log IDs to use.
+   * @param first The first log ID to map to (inclusive).
+   * @param last The last log ID to map to (inclusive).
    */
-  explicit LogRouter(uint64_t numLogs);
+  explicit LogRouter(LogID first, LogID last);
 
   /**
    * Gets the Log ID where a topic's messages are to be stored.
@@ -48,7 +49,8 @@ class LogRouter {
    */
   static uint64_t JumpConsistentHash(uint64_t key, uint64_t buckets);
 
-  uint64_t _numLogs;
+  LogID first_;
+  uint64_t count_;
 };
 
 }  // namespace rocketspeed

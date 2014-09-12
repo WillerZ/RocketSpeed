@@ -7,6 +7,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <utility>
 #include "include/Env.h"
 #include "include/Types.h"
 #include "src/util/storage.h"
@@ -64,9 +65,9 @@ struct PilotOptions {
   // Log storage interface.
   std::unique_ptr<LogStorage> log_storage;
 
-  // Number of log IDs to use.
-  // Warning: changing this number will change the mapping of topics to logs.
-  uint64_t log_count = 0;
+  // Range of log IDs to use.
+  // Warning: changing this range will change the mapping of topics to logs.
+  std::pair<LogID, LogID> log_range;
 
   // Create PilotOptions with default values for all fields
   PilotOptions();

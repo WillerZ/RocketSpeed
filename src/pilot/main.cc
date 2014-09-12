@@ -26,7 +26,7 @@ using GFLAGS::SetUsageMessage;
 
 DEFINE_int32(num_threads, 16, "number of threads");
 DEFINE_int32(port_number, 58600, "port number");
-DEFINE_int32(log_count, 1, "number of logs");
+DEFINE_string(logs, "1..100000", "range of logs");
 DEFINE_bool(libevent_debug, false, "Debugging libevent");
 
 /*
@@ -73,8 +73,15 @@ int main(int argc, char** argv) {
   }
 
   options.port_number = FLAGS_port_number;
-  options.log_count = FLAGS_log_count;
   options.log_storage = std::unique_ptr<rocketspeed::LogStorage>(storage);
+
+  // Parse and validate log range.
+  int ret = sscanf(FLAGS_logs.c_str(), "%lu..%lu",
+    &options.log_range.first, &options.log_range.second);
+  if (ret != 2) {
+    printf("Error: log_range option must be in the form of \"a..b\"");
+    return 1;
+  }
 
   // Create global options and configs from command line
   if (FLAGS_libevent_debug) {

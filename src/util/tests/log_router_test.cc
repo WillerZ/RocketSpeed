@@ -20,8 +20,8 @@ class LogRouterTest { };
 TEST(LogRouterTest, ConsistencyTest) {
   // Test that topic mapping changes minimally when increasing number of logs.
   int numLogs = 1000000;
-  LogRouter router1(numLogs);
-  LogRouter router2(numLogs * 105 / 100);  // 5% more
+  LogRouter router1(1, numLogs);
+  LogRouter router2(1, numLogs * 105 / 100);  // 5% more
 
   // Count number of changed for 1 million topics.
   int numChanged = 0;
@@ -44,7 +44,7 @@ TEST(LogRouterTest, ConsistencyTest) {
 TEST(LogRouterTest, LogDistribution) {
   // Test that topics are well distributed among logs
   int numLogs = 1000 * static_cast<int>(Retention::Total);
-  LogRouter router(numLogs);
+  LogRouter router(1, numLogs);
   std::vector<int> topicCount(numLogs, 0);
 
   // Count number of changed for 1 million topics.

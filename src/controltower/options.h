@@ -6,8 +6,10 @@
 
 #include <unistd.h>
 #include <string>
+#include <utility>
 #include "include/Env.h"
 #include "include/Types.h"
+#include "src/util/storage.h"
 
 namespace rocketspeed {
 
@@ -68,9 +70,9 @@ struct ControlTowerOptions {
   // Default: number of cpus on the machine
   unsigned int number_of_rooms;
 
-  // Number of log IDs to use.
+  // Range of log IDs to use.
   // Warning: this should be picked up from Configuration
-  uint64_t log_count;
+  std::pair<LogID, LogID> log_range;
 
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();

@@ -9,9 +9,10 @@
 
 namespace rocketspeed {
 
-LogRouter::LogRouter(uint64_t numLogs)
-: _numLogs(numLogs - numLogs % Retention::Total) {
-  assert(numLogs > 0);
+LogRouter::LogRouter(LogID first, LogID last)
+: first_(first)
+, count_(last - first + 1) {
+  assert(last >= first);
 }
 
 Status LogRouter::GetLogID(const Topic& topic,
@@ -23,7 +24,7 @@ Status LogRouter::GetLogID(const Topic& topic,
   size_t hash = hasher(topic);
 
   // Find the Log ID for this topic hash key.
-  *out = JumpConsistentHash(hash, _numLogs) + 1;
+  *out = JumpConsistentHash(hash, count_) + first_;
 
   return Status::OK();
 }
