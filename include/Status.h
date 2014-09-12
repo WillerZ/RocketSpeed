@@ -87,21 +87,21 @@ class Status {
       case Code::kOk:
         return "OK";
       case Code::kNotFound:
-        return "NotFound: " + std::to_string(code);
+        return "NotFound: " + state_;
       case Code::kNotSupported:
-        return "Not implemented: " + std::to_string(code);
+        return "Not implemented: " + state_;
       case Code::kInvalidArgument:
-        return "Invalid argument: " + std::to_string(code);
+        return "Invalid argument: " + state_;
       case Code::kIOError:
-        return "IO error: " + std::to_string(code);
+        return "IO error: " + state_;
       case Code::kNotInitialized:
-        return "Not initialized: " + std::to_string(code);
+        return "Not initialized: " + state_;
       case Code::kInternal:
-        return "Internal error: " + std::to_string(code);
+        return "Internal error: " + state_;
       case Code::kUnauthorized:
-        return "Unauthorized: " + std::to_string(code);
+        return "Unauthorized: " + state_;
       case Code::kTimedOut:
-        return "Timed out: " + std::to_string(code);
+        return "Timed out: " + state_;
       default:
         return "Unknown code " + std::to_string(code);
     }

@@ -4,20 +4,9 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
-#include <inttypes.h>
-#include <sys/types.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <event2/event.h>
-#include <event2/buffer.h>
-#include <event2/bufferevent.h>
-#include <event2/thread.h>
-#include <event2/util.h>
 #include <map>
 #include "include/Env.h"
+#include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/messages/event_loop.h"
@@ -46,7 +35,8 @@ class MsgLoop {
           const HostId& hostid,
           const std::shared_ptr<Logger>& info_log,
           const ApplicationCallbackContext application_context,
-          const std::map<MessageType, MsgCallbackType>& callbacks);
+          const std::map<MessageType, MsgCallbackType>& callbacks,
+          CommandCallbackType command_callback = nullptr);
 
   virtual ~MsgLoop();
 
@@ -56,8 +46,17 @@ class MsgLoop {
   // Is the MsgLoop up and running?
   bool IsRunning() const { return event_loop_.IsRunning(); }
 
+  // Stop the message loop.
+  void Stop();
+
   // returns a client that is used to send messages to remote hosts
   MsgClient& GetClient() { return client_; }
+
+  // Send a command to the event loop for processing.
+  // This call is thread-safe.
+  Status SendCommand(Command* command) {
+    return event_loop_.SendCommand(command);
+  }
 
  private:
   // The Environment

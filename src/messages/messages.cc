@@ -177,7 +177,7 @@ MessageData::MessageData(TenantID tenantID,
 
   // TODO(dhruba) 1 : generate better/faster GUID here
   union {
-    MsgId msgid;
+    char msgid[16];
     struct {
       uint32_t a;
       uint32_t b;
@@ -197,7 +197,7 @@ MessageData::MessageData(TenantID tenantID,
   if (++seed == 0) {  // cycle seed to change hash each time.
     ++counter;  // cycle when seed loops back so that msgid doesn't repeat.
   }
-  msgid_ = u.msgid;
+  msgid_ = MsgId(u.msgid);
 }
 
 MessageData::MessageData():

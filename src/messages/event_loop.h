@@ -21,6 +21,7 @@
 #include <functional>
 #include <memory>
 #include "include/Env.h"
+#include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/util/logging.h"
@@ -32,6 +33,7 @@ namespace rocketspeed {
 typedef void* EventCallbackContext;
 typedef std::function<void(EventCallbackContext, std::unique_ptr<Message> msg)>
                                             EventCallbackType;
+typedef std::function<void(Command*)> CommandCallbackType;
 
 class EventLoop {
  public:
@@ -43,7 +45,8 @@ class EventLoop {
    */
   EventLoop(int port,
             const std::shared_ptr<Logger>& info_log,
-            EventCallbackType callback);
+            EventCallbackType event_callback,
+            CommandCallbackType command_callback = nullptr);
 
   virtual ~EventLoop();
 
@@ -62,6 +65,13 @@ class EventLoop {
   // Is the EventLoop up and running?
   bool IsRunning() const { return running_; }
 
+  // Stop the event loop.
+  void Stop();
+
+  // Send a command to the event loop for processing.
+  // This call is thread-safe.
+  Status SendCommand(Command* command);
+
  private:
   // the port nuber of
   int port_number_;
@@ -75,8 +85,9 @@ class EventLoop {
   // debug message go here
   const std::shared_ptr<Logger> info_log_;
 
-  // The callback
+  // The callbacks
   EventCallbackType event_callback_;
+  CommandCallbackType command_callback_;
 
   // The callback context
   EventCallbackContext event_callback_context_;
@@ -86,6 +97,10 @@ class EventLoop {
 
   // Shutdown event
   struct event* shutdown_event_ = nullptr;
+
+  // Command pipe and event
+  int command_pipe_fds_[2];  // read, write
+  struct event* command_pipe_event_ = nullptr;
 
   // callbacks needed by libevent
   static void readhdr(struct bufferevent *bev, void *ctx);
@@ -97,6 +112,7 @@ class EventLoop {
   static void accept_error_cb(struct evconnlistener *listener, void *arg);
   static void do_startevent(evutil_socket_t listener, short event, void *arg);
   static void do_shutdown(evutil_socket_t listener, short event, void *arg);
+  static void do_command(evutil_socket_t listener, short event, void *arg);
   static void dump_libevent_cb(int severity, const char* msg);
 };
 

@@ -15,7 +15,6 @@
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
-#include "src/util/mutexlock.h"
 
 namespace rocketspeed {
 
@@ -27,13 +26,14 @@ class ProducerImpl : public Producer {
  public:
   virtual ~ProducerImpl();
 
-  virtual ResultStatus Publish(const Topic& name,
-                               const TopicOptions& options,
-                               const Slice& data);
+  virtual PublishStatus Publish(const Topic& name,
+                                const TopicOptions& options,
+                                const Slice& data);
 
   ProducerImpl(const HostId& pilot_host_id,
                TenantID tenant_id,
-               int port);
+               int port,
+               PublishCallback callback);
 
  private:
   // Callback for MessageDataAck message.
@@ -50,19 +50,19 @@ class ProducerImpl : public Producer {
   TenantID tenant_id_;
 
   // Incoming message loop object.
-  std::unique_ptr<MsgLoop> msg_loop_ = nullptr;
+  MsgLoop* msg_loop_ = nullptr;
   std::thread msg_loop_thread_;
 
-  // Mutex and condition variable for ack synchronization
-  port::Mutex ack_mutex_;
-  port::CondVar ack_cv_;
+  // Messages sent, awaiting ack.
+  std::set<MsgId> messages_sent_;
 
-  // Set of messages that we've received acks for.
-  std::set<MsgId> acked_msgs_;
+  // Ack callback.
+  PublishCallback callback_;
 };
 
 // Implementation of Producer::Open from RocketSpeed.h
 Status Producer::Open(const Configuration* config,
+                      PublishCallback callback,
                       Producer** producer) {
   // Validate arguments.
   if (config == nullptr) {
@@ -79,16 +79,18 @@ Status Producer::Open(const Configuration* config,
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
   *producer = new ProducerImpl(config->GetPilotHostIds().front(),
                                config->GetTenantID(),
-                               config->GetLocalPort());
+                               config->GetLocalPort(),
+                               callback);
   return Status::OK();
 }
 
 ProducerImpl::ProducerImpl(const HostId& pilot_host_id,
                            TenantID tenant_id,
-                           int port)
+                           int port,
+                           PublishCallback callback)
 : pilot_host_id_(pilot_host_id)
 , tenant_id_(tenant_id)
-, ack_cv_(&ack_mutex_) {
+, callback_(callback) {
   // Initialise host_id_.
   char myname[1024];
   if (gethostname(&myname[0], sizeof(myname))) {
@@ -100,13 +102,24 @@ ProducerImpl::ProducerImpl(const HostId& pilot_host_id,
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDataAck] = MsgCallbackType(ProcessDataAck);
 
+  CommandCallbackType command_callback = [this](Command* command) {
+    assert(command);
+    assert(command->GetType() == CommandType::mMessage);
+    auto message = static_cast<MessageCommand*>(command);
+    msg_loop_->GetClient().Send(pilot_host_id_, message->GetMessage());
+
+    MessageData* msg_data = static_cast<MessageData*>(message->GetMessage());
+    messages_sent_.insert(msg_data->GetMessageId());
+  };
+
   // Construct message loop.
-  msg_loop_.reset(new MsgLoop(Env::Default(),
-                              EnvOptions(),
-                              host_id_,
-                              std::make_shared<NullLogger>(),  // no logging
-                              static_cast<ApplicationCallbackContext>(this),
-                              callbacks));
+  msg_loop_ = new MsgLoop(Env::Default(),
+                          EnvOptions(),
+                          host_id_,
+                          std::make_shared<NullLogger>(),  // no logging
+                          static_cast<ApplicationCallbackContext>(this),
+                          callbacks,
+                          command_callback);
 
   msg_loop_thread_ = std::thread([this] () {
     msg_loop_->Run();
@@ -118,57 +131,33 @@ ProducerImpl::ProducerImpl(const HostId& pilot_host_id,
 }
 
 ProducerImpl::~ProducerImpl() {
-  // Set msg_loop_ to null to stop the event loop.
-  msg_loop_.reset(nullptr);
+  // Delete the message loop.
+  // This stops the event loop, which may block.
+  delete msg_loop_;
 
   // Wait for thread to join.
   msg_loop_thread_.join();
 }
 
-ResultStatus ProducerImpl::Publish(const Topic& name,
-                                   const TopicOptions& options,
-                                   const Slice& data) {
+PublishStatus ProducerImpl::Publish(const Topic& name,
+                                    const TopicOptions& options,
+                                    const Slice& data) {
   // Construct message.
-  MessageData message(tenant_id_,
-                      host_id_,
-                      Slice(name),
-                      data,
-                      options.retention);
+  MessageData* message = new MessageData(tenant_id_,
+                                         host_id_,
+                                         Slice(name),
+                                         data,
+                                         options.retention);
 
-  int retries = 4;
-  int64_t timeout_us = 1000000;  // 1 second
-  do {
-    // Attempt to (re)send.
-    Status status = msg_loop_->GetClient().Send(pilot_host_id_, &message);
-    if (!status.ok()) {
-      return ResultStatus(status, 0);
-    }
+  // Send to event loop for processing (the loop will free it).
+  Status status = msg_loop_->SendCommand(new MessageCommand(message));
 
-    // Lambda for convenience.
-    auto time_now = []() {
-      return std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    };
-
-    // Wait for ack message.
-    MutexLock lock(&ack_mutex_);
-    auto deadline = time_now() + timeout_us;
-    do {
-      ack_cv_.TimedWait(deadline);
-
-      // Check for ack in acked_msgs_.
-      if (acked_msgs_.erase(message.GetMessageId())) {
-        return ResultStatus(Status::OK(), 0);
-      }
-
-      // If we aren't past the deadline then it was a spurious wakeup,
-      // so wait again.
-    } while (deadline > time_now());
-
-    timeout_us *= 2;  // exponential backoff.
-  } while (retries--);
-
-  return ResultStatus(Status::TimedOut(), 0);
+  // Return status with the generated message ID (if successful).
+  if (!status.ok()) {
+    return PublishStatus(status, MsgId());
+  } else {
+    return PublishStatus(status, message->GetMessageId());
+  }
 }
 
 void ProducerImpl::ProcessDataAck(const ApplicationCallbackContext arg,
@@ -178,17 +167,22 @@ void ProducerImpl::ProcessDataAck(const ApplicationCallbackContext arg,
 
   // Lock the ack mutex and add msg to the acked_msgs_ set for each
   // successful ack.
-  MutexLock lock(&self->ack_mutex_);
   for (const auto& ack : ackMsg->GetAcks()) {
-    if (ack.status == MessageDataAck::AckStatus::Success) {
-      self->acked_msgs_.insert(ack.msgid);
-    } else {
-      // Failure ack. We treat this the same as no ack for now.
+    if (self->messages_sent_.erase(ack.msgid)) {
+      ResultStatus rs;
+      rs.msgid = ack.msgid;
+      if (ack.status == MessageDataAck::AckStatus::Success) {
+        rs.status = Status::OK();
+        // TODO(pja) 1: get seqno
+      } else {
+        rs.status = Status::IOError("publish failed");
+      }
+
+      if (self->callback_) {
+        self->callback_(rs);
+      }
     }
   }
-
-  // App will be waiting inside Publish for the ack, notify now.
-  self->ack_cv_.Signal();
 }
 
 }  // namespace rocketspeed

@@ -111,6 +111,16 @@ MsgClient::GetConnection(const HostId& host) {
 
 Status
 MsgClient::Send(const HostId& host, Message* msg) {
+  return Send(host, msg->Serialize());
+}
+
+Status
+MsgClient::Send(const HostId& host, unique_ptr<Message> msg) {
+  return Send(host, msg.get());
+}
+
+Status
+MsgClient::Send(const HostId& host, Slice msg) {
   // We retry once because the first attempt may have failed due to having
   // a stale connection in the cache. In that case, we remove the connection
   // and retry.
@@ -122,7 +132,7 @@ MsgClient::Send(const HostId& host, Message* msg) {
       st = Status::IOError("Unable to connect to host ", host.hostname);
       continue;
     }
-    st = entry->connection->Send(msg->Serialize());
+    st = entry->connection->Send(msg);
     release(entry);
 
     if (!st.ok()) {
@@ -143,8 +153,4 @@ MsgClient::Send(const HostId& host, Message* msg) {
   return st;
 }
 
-Status
-MsgClient::Send(const HostId& host, unique_ptr<Message> msg) {
-  return Send(host, msg.get());
-}
 }  // namespace rocketspeed

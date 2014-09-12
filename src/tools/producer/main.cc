@@ -80,18 +80,20 @@ Result ProducerWorker(int64_t num_messages, Producer* producer) {
     }
 
     // Send the message
-    ResultStatus rs = producer->Publish(topic_name, topic_options, payload);
+    PublishStatus ps = producer->Publish(topic_name, topic_options, payload);
 
-    if (!rs.status.ok()) {
+    if (!ps.status.ok()) {
       Log(InfoLogLevel::WARN_LEVEL, info_log,
         "Failed to send message number %lu (%s)",
-        i, rs.status.ToString().c_str());
+        i, ps.status.ToString().c_str());
       info_log->Flush();
-      delete producer;
       return failed;
     }
   }
   auto end = std::chrono::high_resolution_clock::now();
+
+  // Wait for acks.
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 
   Log(InfoLogLevel::INFO_LEVEL, info_log,
       "Successfully sent all messages");
@@ -165,9 +167,15 @@ int main(int argc, char** argv) {
       FLAGS_port,
       "", "", ""));
 
+  // Create callback for publish acks.
+  int64_t messages_received = 0;
+  auto callback = [&messages_received] (rocketspeed::ResultStatus rs) {
+    ++messages_received;
+  };
+
   // Create RocketSpeed Producer.
   rocketspeed::Producer* producer = nullptr;
-  if (!rocketspeed::Producer::Open(config.get(), &producer).ok()) {
+  if (!rocketspeed::Producer::Open(config.get(), callback, &producer).ok()) {
     Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
         "Failed to connect to RocketSpeed");
     info_log->Flush();
@@ -219,6 +227,8 @@ int main(int argc, char** argv) {
                              FLAGS_num_messages *
                              FLAGS_message_size /
                              total_ms;
+    printf("%ld messages sent\n", FLAGS_num_messages);
+    printf("%ld messages acked\n", messages_received);
     printf("%u messages/s\n", msg_per_sec);
     printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
   }

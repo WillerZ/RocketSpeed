@@ -38,24 +38,6 @@ enum MessageType : char {
 };
 
 /*
- * The unique identifier of a message. This is globally unique in the entire
- * RocketSpeed ecosystem. A producer typically generates this id by calculating
- * a MD5/SHA signature of the message payload.
- */
-class MsgId {
- public:
-  char messageId[16];
-
-  bool operator<(const MsgId& rhs) const {
-    return memcmp(messageId, rhs.messageId, sizeof(messageId)) < 0;
-  }
-
-  bool operator==(const MsgId& rhs) const {
-    return memcmp(messageId, rhs.messageId, sizeof(messageId)) == 0;
-  }
-};
-
-/*
  * The metadata messages can be of two subtypes
  */
 enum MetadataType : char {

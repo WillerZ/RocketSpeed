@@ -13,6 +13,7 @@
  */
 #pragma once
 
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -33,17 +34,51 @@ typedef std::string Topic;
 typedef uint64_t SequenceNumber;
 
 /**
+ * The unique identifier of a message. This is globally unique in the entire
+ * RocketSpeed ecosystem. A producer typically generates this id by calculating
+ * a MD5/SHA signature of the message payload.
+ */
+class MsgId {
+ public:
+  char messageId[16] {};
+
+  MsgId() {}
+
+  explicit MsgId(char msgid[16]) {
+    memcpy(messageId, msgid, 16);
+  }
+
+  bool operator<(const MsgId& rhs) const {
+    return memcmp(messageId, rhs.messageId, sizeof(messageId)) < 0;
+  }
+
+  bool operator==(const MsgId& rhs) const {
+    return memcmp(messageId, rhs.messageId, sizeof(messageId)) == 0;
+  }
+};
+
+/**
  * This is the status returned when a new message is published.
+ */
+class PublishStatus {
+ public:
+  Status status;
+  MsgId msgid;
+
+  PublishStatus(Status status, MsgId msgid)
+  : status(status)
+  , msgid(msgid) {
+  }
+};
+
+/**
+ * This is the status returned when a published message is acknowledged.
  */
 class ResultStatus {
  public:
   Status status;
+  MsgId msgid;
   SequenceNumber seqno;
-
-  ResultStatus(Status status, SequenceNumber seqno)
-  : status(status)
-  , seqno(seqno) {
-  }
 };
 
 /**

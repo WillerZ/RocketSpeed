@@ -35,9 +35,11 @@ class MsgClient {
 
   // Send a message to the destination. The first version is
   // used for messages allocated on the stack while the second
-  // version is used for message allocated on the stack.
+  // version is used for message allocated on the heap.
+  // The third version is used for pre-serialized messages.
   Status Send(const HostId& destination, Message* msg);
   Status Send(const HostId& destination, unique_ptr<Message> msg);
+  Status Send(const HostId& destination, Slice msg);
 
   // Each entry in the connection cache has two things. The first is the
   // connection object that is connected to the specified HostId. The

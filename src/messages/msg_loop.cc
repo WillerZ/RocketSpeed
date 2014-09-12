@@ -57,14 +57,15 @@ MsgLoop::MsgLoop(const Env* env,
                  const HostId& hostid,
                  const std::shared_ptr<Logger>& info_log,
                  const ApplicationCallbackContext application_context,
-                 const std::map<MessageType, MsgCallbackType>& callbacks):
+                 const std::map<MessageType, MsgCallbackType>& callbacks,
+                 CommandCallbackType command_callback):
   env_(env),
   env_options_(env_options),
   hostid_(hostid),
   info_log_(info_log),
   application_context_(application_context),
   msg_callbacks_(SanitizeCallbacks(callbacks)),
-  event_loop_(hostid.port, info_log, EventCallback),
+  event_loop_(hostid.port, info_log, EventCallback, command_callback),
   client_(env, env_options, info_log) {
   // set the Event callback context
   event_loop_.SetEventCallbackContext(this);
@@ -81,9 +82,14 @@ void MsgLoop::Run() {
   event_loop_.Run();
 }
 
-MsgLoop::~MsgLoop() {
+void MsgLoop::Stop() {
+  event_loop_.Stop();
   Log(InfoLogLevel::INFO_LEVEL, info_log_,
-      "Stopped a Message Loop at port %d", hostid_.port);
+    "Stopped a Message Loop at port %d", hostid_.port);
+}
+
+MsgLoop::~MsgLoop() {
+  Stop();
 }
 
 //

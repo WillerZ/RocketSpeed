@@ -6,6 +6,7 @@
 #define __STDC_FORMAT_MACROS
 
 #include "src/messages/event_loop.h"
+#include <limits.h>
 #include <sys/eventfd.h>
 #include <thread>
 #include "src/messages/serializer.h"
@@ -126,6 +127,39 @@ EventLoop::do_shutdown(evutil_socket_t listener, short event, void *arg) {
 }
 
 void
+EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
+  EventLoop* obj = static_cast<EventLoop *>(arg);
+
+  // Posix guarantees that writes occur atomically below a certain size, so
+  // if this callback occurs then the whole command should have been written.
+  // No need for buffer events.
+  Command* command;
+  ssize_t received = read(obj->command_pipe_fds_[0],
+                          reinterpret_cast<void*>(&command),
+                          sizeof(command));
+
+  // Check for read errors.
+  if (received == -1) {
+    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
+        "Reading from command pipe failed. errno=%d", errno);
+    return;
+  } else if (received < static_cast<ssize_t>(sizeof(command))) {
+    // Partial read from the pipe. This may happen if the write call is
+    // interrupted by a signal.
+    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
+        "Partial read from command pipe.");
+    return;
+  }
+
+  // Make sure we have a callback.
+  if (obj->command_callback_) {
+    obj->command_callback_(command);
+  }
+
+  delete command;
+}
+
+void
 EventLoop::do_accept(struct evconnlistener *listener,
     evutil_socket_t fd, struct sockaddr *address, int socklen,
     void *arg) {
@@ -217,8 +251,6 @@ EventLoop::Run(void) {
   if (rv != 0) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "Failed to add startup event to event base");
-    ld_event_free(startup_event);
-    startup_event = nullptr;
     info_log_->Flush();
     return;
   }
@@ -237,7 +269,6 @@ EventLoop::Run(void) {
   if (shutdown_event_ == nullptr) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "Failed to create shutdown event");
-    ld_event_free(startup_event);
     info_log_->Flush();
     return;
   }
@@ -245,8 +276,35 @@ EventLoop::Run(void) {
   if (rv != 0) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "Failed to add shutdown event to event base");
-    ld_event_free(startup_event);
-    ld_event_free(shutdown_event_);
+    info_log_->Flush();
+    return;
+  }
+
+  // This is a pipe that other threads can write to for asynchronous
+  // processing on the event thread.
+  if (pipe(command_pipe_fds_)) {
+    Log(InfoLogLevel::WARN_LEVEL, info_log_,
+        "Failed to create command pipe.");
+    info_log_->Flush();
+    return;
+  }
+
+  command_pipe_event_ = ld_event_new(
+    base_,
+    command_pipe_fds_[0],
+    EV_PERSIST|EV_READ,
+    this->do_command,
+    reinterpret_cast<void*>(this));
+  if (command_pipe_event_ == nullptr) {
+    Log(InfoLogLevel::WARN_LEVEL, info_log_,
+        "Failed to create command pipe event");
+    info_log_->Flush();
+    return;
+  }
+  rv = ld_event_add(command_pipe_event_, nullptr);
+  if (rv != 0) {
+    Log(InfoLogLevel::WARN_LEVEL, info_log_,
+        "Failed to add command event to event base");
     info_log_->Flush();
     return;
   }
@@ -256,31 +314,13 @@ EventLoop::Run(void) {
   info_log_->Flush();
 
   // Start the event loop.
-  // This will not exit until the EventLoop destructor runs, or some error
+  // This will not exit until Stop is called, or some error
   // happens within libevent.
   ld_event_base_dispatch(base_);
   running_ = false;
 }
 
-/**
- * Constructor for a Message Loop
- */
-EventLoop::EventLoop(int port_number,
-                     const std::shared_ptr<Logger>& info_log,
-                     EventCallbackType event_callback) :
-  port_number_(port_number),
-  running_(false),
-  base_(nullptr),
-  info_log_(info_log),
-  event_callback_(event_callback),
-  event_callback_context_(nullptr),
-  listener_(nullptr) {
-  Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "Created a new Event Loop at port %d", port_number);
-}
-
-EventLoop::~EventLoop() {
-  // stop dispatch loop
+void EventLoop::Stop() {
   if (base_ != nullptr) {
     int shutdown_fd = ld_event_get_fd(shutdown_event_);
     if (running_) {
@@ -296,18 +336,100 @@ EventLoop::~EventLoop() {
       while (running_) {
         std::this_thread::yield();
       }
-    }
 
-    // Shutdown everything
-    if (listener_) {
-      ld_evconnlistener_free(listener_);
+      // Shutdown everything
+      if (listener_) {
+        ld_evconnlistener_free(listener_);
+      }
+      ld_event_base_free(base_);
+      close(shutdown_fd);
+      close(command_pipe_fds_[0]);
+      close(command_pipe_fds_[1]);
     }
-    ld_event_base_free(base_);
-    close(shutdown_fd);
-  }
-  Log(InfoLogLevel::INFO_LEVEL, info_log_,
+    Log(InfoLogLevel::INFO_LEVEL, info_log_,
       "Stopped EventLoop at port %d", port_number_);
-  info_log_->Flush();
+    info_log_->Flush();
+    base_ = nullptr;
+  }
+}
+
+Status EventLoop::SendCommand(Command* command) {
+  // Check the pipe hasn't been closed due to partial write (see below).
+  if (command_pipe_fds_[1] == 0) {
+    Log(InfoLogLevel::WARN_LEVEL, info_log_,
+      "Trying to write to closed command pipe.", errno);
+    delete command;
+    return Status::InternalError("pipe closed");
+  }
+
+  // Write the command *pointer* to the pipe.
+  //
+  // Even though this may be written to by multiple threads, no synchronization
+  // is needed because Posix guarantees that writes of sizes <= PIPE_BUF are
+  // atomic.
+  //
+  // Sanity check:
+  static_assert(sizeof(command) <= PIPE_BUF,
+                "PIPE_BUF too small for atomic writes, need locks");
+
+  // Note: this write could block if the pipe is full, so care needs to be taken
+  // to ensure that the event loop processing can keep up with the threads
+  // writing to the pipe if blocking is undesirable.
+  ssize_t written = write(command_pipe_fds_[1],
+                          reinterpret_cast<const void*>(&command),
+                          sizeof(command));
+
+  if (written == sizeof(command)) {
+    // No errors, return success.
+    return Status::OK();
+  } else if (written == -1) {
+    // Some internal error happened.
+    Log(InfoLogLevel::WARN_LEVEL, info_log_,
+      "Error writing command to event loop, errno=%d", errno);
+    delete command;
+    return Status::InternalError("write returned error");
+  } else {
+    // Partial write. This is bad; only part of the pointer has been written
+    // to the pipe. This should never happen, but if it does we need to close
+    // the pipe so no more data is written to it.
+    Log(InfoLogLevel::WARN_LEVEL, info_log_,
+      "Partial write of command to event loop, written=%d", written);
+
+    // Close the pipe.
+    close(command_pipe_fds_[0]);
+    close(command_pipe_fds_[1]);
+    command_pipe_fds_[0] = 0;
+    command_pipe_fds_[1] = 0;
+    char err_msg[64];
+    snprintf(err_msg, sizeof(err_msg), "partial write, %d/%d bytes",
+      static_cast<int>(written), static_cast<int>(sizeof(command)));
+    delete command;
+    return Status::InternalError(err_msg);
+  }
+}
+
+/**
+ * Constructor for a Message Loop
+ */
+EventLoop::EventLoop(int port_number,
+                     const std::shared_ptr<Logger>& info_log,
+                     EventCallbackType event_callback,
+                     CommandCallbackType command_callback) :
+  port_number_(port_number),
+  running_(false),
+  base_(nullptr),
+  info_log_(info_log),
+  event_callback_(event_callback),
+  command_callback_(command_callback),
+  event_callback_context_(nullptr),
+  listener_(nullptr) {
+  Log(InfoLogLevel::INFO_LEVEL, info_log,
+      "Created a new Event Loop at port %d", port_number);
+}
+
+EventLoop::~EventLoop() {
+  // stop dispatch loop
+  Stop();
 }
 
 }  // namespace rocketspeed

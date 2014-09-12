@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <functional>
 #include <vector>
 
 #include "include/Slice.h"
@@ -23,6 +24,8 @@ namespace rocketspeed {
 class ProducerHandle;
 class ConsumerHandle;
 
+typedef std::function<void(ResultStatus)> PublishCallback;
+
 /*
  * The Producer is used to produce messages for a single topic
  * or multiple topics.
@@ -33,10 +36,14 @@ class Producer {
    * Opens a Producer. This can create connections to the Cloud Service
    * Provider, validate credentials, etc.
    *
-   * @param config  The configuration of this service provider
+   * @param config The configuration of this service provider
+   * @param callback Callback for when a message is acknowledged. This will
+   *                 always be called from the same thread.
+   * @param producer Output parameter for constructred producer.
    * @return on success returns OK(), otherwise errorcode
    */
   static Status Open(const Configuration* config,
+                     PublishCallback callback,
                      Producer** producer);
 
   /**
@@ -45,18 +52,17 @@ class Producer {
   virtual ~Producer();
 
   /**
-   * Publishes a new message to the Topic. The return parameter indicates
-   * whether the publish was successful, and if so it returns the
-   * messageid and sequenceId of this message.
+   * Asynchronously publishes a new message to the Topic. The return parameter
+   * indicates whether the publish was successfully enqueued.
    *
    * @param name Name of this topic to be opened
    * @param options Quality of service for this Topic
    * @param data Payload of message
-   * @return the result of the
+   * @return the status and message ID of the published message.
    */
-  virtual ResultStatus Publish(const Topic& name,
-                               const TopicOptions& options,
-                               const Slice& data) = 0;
+  virtual PublishStatus Publish(const Topic& name,
+                                const TopicOptions& options,
+                                const Slice& data) = 0;
 
  protected:
   Producer() {}
