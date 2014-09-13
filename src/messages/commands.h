@@ -5,6 +5,9 @@
 //
 #pragma once
 
+#include <memory>
+#include <string>
+#include "include/Types.h"
 #include "src/messages/messages.h"
 
 namespace rocketspeed {
@@ -38,20 +41,34 @@ class Command {
 class MessageCommand : public Command {
  public:
   // Construct from message.
-  explicit MessageCommand(Message* message);
+  MessageCommand(const MsgId& msgid,
+                 const HostId& recipient,
+                 const Message& message);
 
   // Get the type of this command.
   virtual CommandType GetType() const {
     return CommandType::mMessage;
   }
 
-  // Get the Message object stored in this Command.
-  Message* GetMessage() {
-    return message_.get();
+  // Get the message ID.
+  const MsgId& GetMessageId() const {
+    return msgid_;
+  }
+
+  // Get the intended recipient of the message.
+  const HostId& GetRecipient() const {
+    return recipient_;
+  }
+
+  // Get the serialized message data stored in this Command.
+  Slice GetMessage() {
+    return Slice(message_);
   }
 
  private:
-  std::unique_ptr<Message> message_;
+  MsgId msgid_;
+  HostId recipient_;
+  std::string message_;
 };
 
 }  // namespace rocketspeed

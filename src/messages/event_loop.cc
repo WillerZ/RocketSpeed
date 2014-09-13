@@ -133,17 +133,17 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
   // Posix guarantees that writes occur atomically below a certain size, so
   // if this callback occurs then the whole command should have been written.
   // No need for buffer events.
-  Command* command;
+  Command* data;
   ssize_t received = read(obj->command_pipe_fds_[0],
-                          reinterpret_cast<void*>(&command),
-                          sizeof(command));
+                          reinterpret_cast<void*>(&data),
+                          sizeof(data));
 
   // Check for read errors.
   if (received == -1) {
     Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
         "Reading from command pipe failed. errno=%d", errno);
     return;
-  } else if (received < static_cast<ssize_t>(sizeof(command))) {
+  } else if (received < static_cast<ssize_t>(sizeof(data))) {
     // Partial read from the pipe. This may happen if the write call is
     // interrupted by a signal.
     Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
@@ -151,12 +151,14 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
     return;
   }
 
+  // Take ownership of the command.
+  std::unique_ptr<Command> command(data);
+
   // Make sure we have a callback.
   if (obj->command_callback_) {
-    obj->command_callback_(command);
+    // Pass ownership to the callback (it can decide whether or not to delete).
+    obj->command_callback_(std::move(command));
   }
-
-  delete command;
 }
 
 void
@@ -353,12 +355,11 @@ void EventLoop::Stop() {
   }
 }
 
-Status EventLoop::SendCommand(Command* command) {
+Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
   // Check the pipe hasn't been closed due to partial write (see below).
   if (command_pipe_fds_[1] == 0) {
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
       "Trying to write to closed command pipe.", errno);
-    delete command;
     return Status::InternalError("pipe closed");
   }
 
@@ -369,24 +370,25 @@ Status EventLoop::SendCommand(Command* command) {
   // atomic.
   //
   // Sanity check:
-  static_assert(sizeof(command) <= PIPE_BUF,
+  Command* data = command.get();
+  static_assert(sizeof(data) <= PIPE_BUF,
                 "PIPE_BUF too small for atomic writes, need locks");
 
   // Note: this write could block if the pipe is full, so care needs to be taken
   // to ensure that the event loop processing can keep up with the threads
   // writing to the pipe if blocking is undesirable.
   ssize_t written = write(command_pipe_fds_[1],
-                          reinterpret_cast<const void*>(&command),
-                          sizeof(command));
+                          reinterpret_cast<const void*>(&data),
+                          sizeof(data));
 
-  if (written == sizeof(command)) {
-    // No errors, return success.
+  if (written == sizeof(data)) {
+    // Command was successfully written, so release the pointer.
+    command.release();
     return Status::OK();
   } else if (written == -1) {
     // Some internal error happened.
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
       "Error writing command to event loop, errno=%d", errno);
-    delete command;
     return Status::InternalError("write returned error");
   } else {
     // Partial write. This is bad; only part of the pointer has been written
@@ -403,7 +405,6 @@ Status EventLoop::SendCommand(Command* command) {
     char err_msg[64];
     snprintf(err_msg, sizeof(err_msg), "partial write, %d/%d bytes",
       static_cast<int>(written), static_cast<int>(sizeof(command)));
-    delete command;
     return Status::InternalError(err_msg);
   }
 }

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include "include/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
@@ -54,8 +55,8 @@ class MsgLoop {
 
   // Send a command to the event loop for processing.
   // This call is thread-safe.
-  Status SendCommand(Command* command) {
-    return event_loop_.SendCommand(command);
+  Status SendCommand(std::unique_ptr<Command> command) {
+    return event_loop_.SendCommand(std::move(command));
   }
 
  private:

@@ -161,6 +161,9 @@ Status MessagePing::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
+static std::atomic<uint32_t> msgid_seed(static_cast<uint32_t>(time(NULL)));
+static std::atomic<uint32_t> msgid_counter(0);
+
 MessageData::MessageData(TenantID tenantID,
                          const HostId& origin,
                          const Slice& topic_name,
@@ -185,17 +188,16 @@ MessageData::MessageData(TenantID tenantID,
       uint32_t d;
     };
   } u;
-  static std::atomic<uint32_t> seed(0);
-  static std::atomic<uint32_t> counter(static_cast<uint32_t>(time(NULL)));
+
   u.a = XXH32(static_cast<const void*>(origin.hostname.c_str()),
-              static_cast<int>(origin.hostname.size()), seed);
+              static_cast<int>(origin.hostname.size()), msgid_seed);
   u.b = XXH32(static_cast<const void*>(topic_name.data()),
-              static_cast<int>(topic_name.size()), seed);
+              static_cast<int>(topic_name.size()), msgid_seed);
   u.c = XXH32(static_cast<const void*>(payload_.data()),
-              static_cast<int>(payload_.size()), seed);
-  u.d = counter.load();
-  if (++seed == 0) {  // cycle seed to change hash each time.
-    ++counter;  // cycle when seed loops back so that msgid doesn't repeat.
+              static_cast<int>(payload_.size()), msgid_seed);
+  u.d = msgid_counter++;
+  if (u.d == uint32_t(-1)) {
+    ++msgid_seed;
   }
   msgid_ = MsgId(u.msgid);
 }

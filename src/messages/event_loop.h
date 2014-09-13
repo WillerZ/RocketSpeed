@@ -33,7 +33,7 @@ namespace rocketspeed {
 typedef void* EventCallbackContext;
 typedef std::function<void(EventCallbackContext, std::unique_ptr<Message> msg)>
                                             EventCallbackType;
-typedef std::function<void(Command*)> CommandCallbackType;
+typedef std::function<void(std::unique_ptr<Command>)> CommandCallbackType;
 
 class EventLoop {
  public:
@@ -70,7 +70,7 @@ class EventLoop {
 
   // Send a command to the event loop for processing.
   // This call is thread-safe.
-  Status SendCommand(Command* command);
+  Status SendCommand(std::unique_ptr<Command> command);
 
  private:
   // the port nuber of

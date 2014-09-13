@@ -7,8 +7,12 @@
 
 namespace rocketspeed {
 
-MessageCommand::MessageCommand(Message* message)
-: message_(message) {
+MessageCommand::MessageCommand(const MsgId& msgid,
+                               const HostId& recipient,
+                               const Message& message)
+: msgid_(msgid)
+, recipient_(recipient)
+, message_(message.Serialize().ToString()) {
 }
 
 }  // namespace rocketspeed

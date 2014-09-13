@@ -102,14 +102,27 @@ ProducerImpl::ProducerImpl(const HostId& pilot_host_id,
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDataAck] = MsgCallbackType(ProcessDataAck);
 
-  CommandCallbackType command_callback = [this](Command* command) {
+  auto command_callback = [this] (std::unique_ptr<Command> command) {
     assert(command);
-    assert(command->GetType() == CommandType::mMessage);
-    auto message = static_cast<MessageCommand*>(command);
-    msg_loop_->GetClient().Send(pilot_host_id_, message->GetMessage());
 
-    MessageData* msg_data = static_cast<MessageData*>(message->GetMessage());
-    messages_sent_.insert(msg_data->GetMessageId());
+    switch (command->GetType()) {
+      case CommandType::mMessage: {
+        auto message = static_cast<MessageCommand*>(command.get());
+        bool added = messages_sent_.insert(message->GetMessageId()).second;
+        if (added) {
+          msg_loop_->GetClient().Send(message->GetRecipient(),
+                                      message->GetMessage());
+        } else {
+          // This means we have already sent a message with this ID, which
+          // means two separate messages have been given the same ID.
+        }
+
+        break;
+      }
+
+      default:
+        break;
+    }
   };
 
   // Construct message loop.
@@ -143,21 +156,25 @@ PublishStatus ProducerImpl::Publish(const Topic& name,
                                     const TopicOptions& options,
                                     const Slice& data) {
   // Construct message.
-  MessageData* message = new MessageData(tenant_id_,
-                                         host_id_,
-                                         Slice(name),
-                                         data,
-                                         options.retention);
+  MessageData message(tenant_id_,
+                      host_id_,
+                      Slice(name),
+                      data,
+                      options.retention);
+
+  // Take note of message ID before we move into the command.
+  const MsgId msgid = message.GetMessageId();
+
+  // Construct command.
+  std::unique_ptr<Command> command(new MessageCommand(msgid,
+                                                      pilot_host_id_,
+                                                      message));
 
   // Send to event loop for processing (the loop will free it).
-  Status status = msg_loop_->SendCommand(new MessageCommand(message));
+  Status status = msg_loop_->SendCommand(std::move(command));
 
-  // Return status with the generated message ID (if successful).
-  if (!status.ok()) {
-    return PublishStatus(status, MsgId());
-  } else {
-    return PublishStatus(status, message->GetMessageId());
-  }
+  // Return status with the generated message ID.
+  return PublishStatus(status, msgid);
 }
 
 void ProducerImpl::ProcessDataAck(const ApplicationCallbackContext arg,
@@ -165,8 +182,8 @@ void ProducerImpl::ProcessDataAck(const ApplicationCallbackContext arg,
   ProducerImpl* self = static_cast<ProducerImpl*>(arg);
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
-  // Lock the ack mutex and add msg to the acked_msgs_ set for each
-  // successful ack.
+  // For each ack'd message, if it was waiting for an ack then remove it
+  // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
     if (self->messages_sent_.erase(ack.msgid)) {
       ResultStatus rs;
@@ -181,6 +198,10 @@ void ProducerImpl::ProcessDataAck(const ApplicationCallbackContext arg,
       if (self->callback_) {
         self->callback_(rs);
       }
+    } else {
+      // We've received an ack for a message that has already been acked
+      // (or was never sent). This is possible if a message was sent twice
+      // before the first ack arrived, so just ignore.
     }
   }
 }
