@@ -10,7 +10,6 @@
 #include <sys/eventfd.h>
 #include <thread>
 #include "src/messages/serializer.h"
-#include "src/messages/messages.h"
 
 namespace rocketspeed {
 
