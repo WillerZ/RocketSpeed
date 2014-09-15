@@ -23,6 +23,7 @@ DEFINE_int32(port, 58800, "port number of producer");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_int64(num_topics, 1000000000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
+DEFINE_int64(message_rate, 100000, "messages to send per second");
 DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
 
@@ -52,6 +53,12 @@ Result ProducerWorker(int64_t num_messages, Producer* producer) {
 
   Log(InfoLogLevel::INFO_LEVEL, info_log, "Starting message loop");
   info_log->Flush();
+
+  // Calculate message rate for this worker.
+  int64_t rate = FLAGS_message_rate / FLAGS_num_threads;
+
+  // Number of messages we should have sent in 10ms
+  int64_t rate_check = std::max<int64_t>(1, rate / 100);
 
   auto start = std::chrono::high_resolution_clock::now();
   for (int64_t i = 0; i < num_messages; ++i) {
@@ -88,6 +95,22 @@ Result ProducerWorker(int64_t num_messages, Producer* producer) {
         i, ps.status.ToString().c_str());
       info_log->Flush();
       return failed;
+    }
+
+    if ((i + 1) % rate_check == 0) {
+      // Check if we are sending messages too fast, and if so, sleep.
+      int64_t have_sent = i;
+
+      // Time since we started sending messages.
+      auto expired = std::chrono::high_resolution_clock::now() - start;
+
+      // Time that should have expired if we were sending at the desired rate.
+      auto expected = std::chrono::microseconds(1000000 * have_sent / rate);
+
+      // If we are ahead of schedule then sleep for the difference.
+      if (expected > expired) {
+        std::this_thread::sleep_for(expected - expired);
+      }
     }
   }
   auto end = std::chrono::high_resolution_clock::now();
