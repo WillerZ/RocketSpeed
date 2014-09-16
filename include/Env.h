@@ -276,6 +276,7 @@ class Env {
   // The returned Connection object is not-thread safe.
   virtual Status NewConnection(const std::string& hostname,
                                int port,
+                               bool blocking,
                                unique_ptr<Connection>* result,
                                const EnvOptions& options) const
                                = 0;
@@ -808,9 +809,10 @@ class EnvWrapper : public Env {
   }
   Status NewConnection(const std::string& f,
                        const int p,
+                       bool blocking,
                        unique_ptr<Connection>* r,
                        const EnvOptions& options) const {
-    return target_->NewConnection(f, p, r, options);
+    return target_->NewConnection(f, p, blocking, r, options);
   }
 
  private:

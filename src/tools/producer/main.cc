@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 #include "include/RocketSpeed.h"
+#include "src/port/port_posix.h"
 #include "src/messages/messages.h"
 #include "src/util/auto_roll_logger.h"
 
@@ -23,7 +24,8 @@ DEFINE_int32(port, 58800, "port number of producer");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_int64(num_topics, 1000000000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
-DEFINE_int64(message_rate, 100000, "messages to send per second");
+DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
+DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
 
@@ -31,7 +33,6 @@ std::shared_ptr<rocketspeed::Logger> info_log;
 
 struct Result {
   bool succeeded;
-  std::chrono::milliseconds time;
 };
 
 static const Result failed = { false, };
@@ -60,14 +61,8 @@ Result ProducerWorker(int64_t num_messages, Producer* producer) {
   // Number of messages we should have sent in 10ms
   int64_t rate_check = std::max<int64_t>(1, rate / 100);
 
-  auto start = std::chrono::high_resolution_clock::now();
+  auto start = std::chrono::steady_clock::now();
   for (int64_t i = 0; i < num_messages; ++i) {
-    // Start the clock after the first message is sent, since the
-    // connection may be cold and skew the overall throughput.
-    if (i == 1) {
-      start = std::chrono::high_resolution_clock::now();
-    }
-
     // Create random topic name
     char topic_name[64];
     snprintf(topic_name, sizeof(topic_name), "benchmark.%lu", distr(rng));
@@ -97,12 +92,13 @@ Result ProducerWorker(int64_t num_messages, Producer* producer) {
       return failed;
     }
 
-    if ((i + 1) % rate_check == 0) {
+    if (FLAGS_message_rate != 0 &&
+        (i + 1) % rate_check == 0) {
       // Check if we are sending messages too fast, and if so, sleep.
       int64_t have_sent = i;
 
       // Time since we started sending messages.
-      auto expired = std::chrono::high_resolution_clock::now() - start;
+      auto expired = std::chrono::steady_clock::now() - start;
 
       // Time that should have expired if we were sending at the desired rate.
       auto expected = std::chrono::microseconds(1000000 * have_sent / rate);
@@ -113,18 +109,8 @@ Result ProducerWorker(int64_t num_messages, Producer* producer) {
       }
     }
   }
-  auto end = std::chrono::high_resolution_clock::now();
 
-  // Wait for acks.
-  std::this_thread::sleep_for(std::chrono::seconds(3));
-
-  Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "Successfully sent all messages");
-  info_log->Flush();
-
-  return Result {
-    true,
-    std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
+  return Result { true };
 }
 
 }  // namespace rocketspeed
@@ -190,10 +176,30 @@ int main(int argc, char** argv) {
       FLAGS_port,
       "", "", ""));
 
+  // Start/end time for benchmark.
+  std::chrono::time_point<std::chrono::steady_clock> start, end;
+
+  // Semaphore to signal when all messages have been ack'd
+  rocketspeed::port::Semaphore all_messages_received;
+
+  // Time last message was received.
+  std::chrono::time_point<std::chrono::steady_clock> last_message;
+
   // Create callback for publish acks.
   int64_t messages_received = 0;
-  auto callback = [&messages_received] (rocketspeed::ResultStatus rs) {
+  auto callback = [&] (rocketspeed::ResultStatus rs) {
     ++messages_received;
+
+    if (FLAGS_await_ack) {
+      // This may be the last ack we receive, so set end to the time now.
+      end = std::chrono::steady_clock::now();
+      last_message = std::chrono::steady_clock::now();
+
+      // If we've received all messages, let the main thread know to finish up.
+      if (messages_received == FLAGS_num_messages) {
+        all_messages_received.Post();
+      }
+    }
   };
 
   // Create RocketSpeed Producer.
@@ -204,6 +210,9 @@ int main(int argc, char** argv) {
     info_log->Flush();
     return 1;
   }
+
+  // Start the clock.
+  start = std::chrono::steady_clock::now();
 
   // Create producer threads.
   // Distribute total number of messages among them.
@@ -221,29 +230,40 @@ int main(int argc, char** argv) {
 
   // Join all the threads to finish production.
   int ret = 0;
-  std::chrono::milliseconds total_time(0);
-  std::vector<Result> results;
   for (int i = 0; i < static_cast<int>(futures.size()); ++i) {
     Result result = futures[i].get();
-    results.emplace_back(result);
-
-    if (FLAGS_report) {
-      if (result.succeeded) {
-        total_time += result.time;
-      } else {
+    if (!result.succeeded) {
+      if (FLAGS_report) {
         printf("Thread %d failed to send all messages\n", i);
       }
-    }
-
-    if (!result.succeeded) {
       ret = 1;
     }
   }
 
+  if (FLAGS_await_ack) {
+    // Wait for the all_messages_received semaphore to be posted.
+    // Keep waiting as long as a message was received in the last second.
+    auto timeout = std::chrono::seconds(1);
+    do {
+      all_messages_received.TimedWait(timeout);
+    } while (messages_received != FLAGS_num_messages &&
+             std::chrono::steady_clock::now() - last_message < timeout);
+  } else {
+    end = std::chrono::steady_clock::now();
+  }
+
+  // Calculate total time.
+  auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+    end - start);
+
   if (ret == 0 && FLAGS_report) {
     uint32_t total_ms = static_cast<uint32_t>(total_time.count());
+    if (total_ms == 0) {
+      // To avoid divide-by-zero on near-instant benchmarks.
+      total_ms = 1;
+    }
+
     uint32_t msg_per_sec = 1000 *
-                           FLAGS_num_threads *
                            FLAGS_num_messages /
                            total_ms;
     uint32_t bytes_per_sec = 1000 *

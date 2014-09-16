@@ -1473,6 +1473,7 @@ class PosixEnv : public Env {
 
   virtual Status NewConnection(const std::string& hostname,
                                const int port,
+                               bool blocking,
                                unique_ptr<Connection>* result,
                                const EnvOptions& options) const {
     struct addrinfo hints, *servinfo, *p;
@@ -1504,6 +1505,15 @@ class PosixEnv : public Env {
             close(sockfd);
             continue;
         }
+
+        if (!blocking) {
+          auto flags = fcntl(sockfd, F_GETFL, 0);
+          if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK)) {
+            close(sockfd);
+            continue;
+          }
+        }
+
         break;
     }
     if (p == nullptr) {

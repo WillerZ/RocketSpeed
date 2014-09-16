@@ -46,9 +46,13 @@
 #include <lz4hc.h>
 #endif
 
+#include <assert.h>
+#include <semaphore.h>
 #include <stdint.h>
-#include <string>
 #include <string.h>
+#include <chrono>
+#include <memory>
+#include <string>
 #include "src/port/atomic_pointer.h"
 
 #ifndef PLATFORM_IS_LITTLE_ENDIAN
@@ -138,6 +142,109 @@ class CondVar {
  private:
   pthread_cond_t cv_;
   Mutex* mu_;
+};
+
+/**
+ * Wrapper around POSIX semaphores.  Features:
+ *
+ * (1) RAII semantics.
+ * (2) Waiting methods swallow EINTR.
+ * (3) Internally dynamically allocates the raw sem_t to work around a glibc
+ * bug.  A common pattern where one thread does wait+destroy while another
+ * posts is not safe because the post can unblock the waiter+destroyer and
+ * then try to access sem_t data again.  Details:
+ * https://sourceware.org/bugzilla/show_bug.cgi?id=12674
+ */
+
+namespace detail {
+// Internal wrapper that we can use with an std::shared_ptr
+struct RawSemaphore {
+  explicit RawSemaphore(unsigned initial_value) {
+    sem_init(&sem_, 0, initial_value);
+  }
+  ~RawSemaphore() {
+    sem_destroy(&sem_);
+  }
+  sem_t sem_;
+};
+}  // namespace detail
+
+class Semaphore {
+ public:
+  explicit Semaphore(unsigned int initial_value = 0) :
+      sem_(std::make_shared<detail::RawSemaphore>(initial_value)) { }
+
+  void Wait() {
+    int rv;
+
+    do {
+      rv = sem_wait(rawsem());
+      assert(rv == 0 || errno == EINTR);
+    } while (rv != 0);
+  }
+
+  /**
+   * @return 0 on success, -1 if semaphore could not
+   *         be decremented before @param deadline.
+   */
+  bool TimedWait(std::chrono::system_clock::time_point deadline) {
+    int rv;
+    std::chrono::milliseconds deadline_ms {
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             deadline.time_since_epoch())
+    };
+    struct timespec abs_timeout { deadline_ms.count() / 1000,
+                                  deadline_ms.count() % 1000 * 1000000 };
+    for (;;) {
+      rv = sem_timedwait(rawsem(), &abs_timeout);
+      if (rv == 0) {
+        return true;
+      }
+
+      switch (errno) {
+      case ETIMEDOUT:
+        break;
+      case EINTR:
+        continue;
+      default:
+        assert(false);
+      }
+      return false;
+    }
+  }
+
+  bool TimedWait(std::chrono::milliseconds timeout) {
+    return TimedWait(std::chrono::system_clock::now() + timeout);
+  }
+
+  void Post() {
+    // This is the critical part of working around glibc #12674.  post() pins
+    // the sem_t to ensure it continues to exist until the post completes.
+    std::shared_ptr<detail::RawSemaphore> pin(sem_);
+    sem_post(rawsem());
+    // NOTE: `this' is no longer safe to use here because waiter may have
+    // destroyed it
+  }
+
+  int Value() {
+    int val;
+    int rv __attribute__((__unused__)) = sem_getvalue(rawsem(), &val);
+    assert(rv == 0);
+    return val;
+  }
+
+  // Not copyable but movable
+  Semaphore(const Semaphore &other) = delete;
+  Semaphore& operator=(const Semaphore &other) = delete;
+  Semaphore(Semaphore &&other) = default;
+  Semaphore& operator=(Semaphore &&other) = default;
+
+ private:
+  std::shared_ptr<detail::RawSemaphore> sem_;
+
+  sem_t* rawsem() const {
+    return &(sem_->sem_);
+  }
 };
 
 typedef pthread_once_t OnceType;

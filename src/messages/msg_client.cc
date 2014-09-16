@@ -94,7 +94,7 @@ MsgClient::GetConnection(const HostId& host) {
 
   // create and initialize new entry
   unique_ptr<MsgClient::Entry> e(new MsgClient::Entry());
-  Status st =  env_->NewConnection(host.hostname, host.port,
+  Status st =  env_->NewConnection(host.hostname, host.port, false,
                                    &e->connection,
                                    env_options_);
   if (!st.ok()) {
