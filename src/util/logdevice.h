@@ -79,6 +79,10 @@ class LogDeviceStorage : public LogStorage {
   Status Append(LogID id,
                 const Slice& data) final;
 
+  Status AppendAsync(LogID id,
+                     const Slice& data,
+                     AppendCallback callback) final;
+
   Status Trim(LogID id,
               std::chrono::microseconds age) final;
 

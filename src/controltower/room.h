@@ -55,9 +55,6 @@ class ControlRoom {
       message_(std::move(message)),
       logid_(logid) {
     }
-    virtual CommandType GetType() const {
-      return CommandType::mMessage;  // This is not used XXX
-    }
     virtual std::unique_ptr<Message> GetMessage() {
       return std::move(message_);
     }

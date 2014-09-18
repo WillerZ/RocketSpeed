@@ -210,29 +210,32 @@ EventLoop::Run(void) {
     return;
   }
 
-  struct sockaddr_in sin;
-  sin.sin_family = AF_INET;
-  sin.sin_addr.s_addr = 0;
-  sin.sin_port = htons(port_number_);
+  // Port number <= 0 indicates that there is no accept loop.
+  if (port_number_ > 0) {
+    struct sockaddr_in sin;
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = 0;
+    sin.sin_port = htons(port_number_);
 
-  // Create libevent connection listener.
-  listener_ = ld_evconnlistener_new_bind(
-    base_,
-    &EventLoop::do_accept,
-    reinterpret_cast<void*>(this),
-    LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE,
-    -1,  // backlog
-    reinterpret_cast<struct sockaddr*>(&sin),
-    sizeof(sin));
+    // Create libevent connection listener.
+    listener_ = ld_evconnlistener_new_bind(
+      base_,
+      &EventLoop::do_accept,
+      reinterpret_cast<void*>(this),
+      LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE,
+      -1,  // backlog
+      reinterpret_cast<struct sockaddr*>(&sin),
+      sizeof(sin));
 
-  if (listener_ == nullptr) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to create connection listener");
-    info_log_->Flush();
-    return;
+    if (listener_ == nullptr) {
+      Log(InfoLogLevel::WARN_LEVEL, info_log_,
+          "Failed to create connection listener");
+      info_log_->Flush();
+      return;
+    }
+
+    ld_evconnlistener_set_error_cb(listener_, &EventLoop::accept_error_cb);
   }
-
-  ld_evconnlistener_set_error_cb(listener_, &EventLoop::accept_error_cb);
 
   // Create a non-persistent event that will run as soon as the dispatch
   // loop is run. This is the first event to ever run on the dispatch loop.

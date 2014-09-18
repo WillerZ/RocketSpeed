@@ -31,6 +31,16 @@ Status SimpleLogStorage::Append(LogID id, const Slice& data) {
   return Status::OK();
 }
 
+Status SimpleLogStorage::AppendAsync(LogID id,
+                                     const Slice& data,
+                                     AppendCallback callback) {
+  // Not at all asynchronous!
+  // There's no easy way to do this unfortunately without creating a thread
+  // for every request. For SimpleLogStorage, this is just going to be blocking.
+  callback(Append(id, data));
+  return Status::OK();
+}
+
 Status SimpleLogStorage::Trim(LogID id, std::chrono::microseconds age) {
   std::lock_guard<std::mutex> locker(mutex_);
   auto logIt = logs_.find(id);

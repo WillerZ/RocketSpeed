@@ -4,12 +4,12 @@ cpp_binary(
     srcs = [
         'main.cc',
     ],
-    preprocessor_flags = [ 
-	'-Irocketspeed/github/include',
-	'-Irocketspeed/github',
-	'-DROCKETSPEED_PLATFORM_POSIX=1',
-	'-DOS_LINUX=1',
-	'-DGFLAGS=google',
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DGFLAGS=google',
     ],
     deps = [
         ':control_tower_library',
@@ -24,15 +24,18 @@ cpp_binary(
 cpp_library(
     name = 'control_tower_library',
     srcs = [
-        'controltower.cc',
         'options.cc',
+        'room.cc',
+        'tailer.cc',
+        'topic.cc',
+        'tower.cc',
     ],
-    preprocessor_flags = [ 
-	'-Irocketspeed/github/include',
-	'-Irocketspeed/github',
-	'-DROCKETSPEED_PLATFORM_POSIX=1',
-	'-DOS_LINUX=1',
-	'-DGFLAGS=google',
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DGFLAGS=google',
     ],
     deps = [
         '@/rocketspeed/github/src/port',

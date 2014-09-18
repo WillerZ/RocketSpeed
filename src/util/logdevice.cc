@@ -143,6 +143,38 @@ Status LogDeviceStorage::Append(LogID id,
   return Status::OK();
 }
 
+Status LogDeviceStorage::AppendAsync(LogID id,
+                                     const Slice& data,
+                                     AppendCallback callback) {
+  // Check data isn't over the LogDevice maximum payload size.
+  const size_t maxSize = facebook::logdevice::Payload::maxSize();
+  if (data.size() >= maxSize) {
+    return Status::InvalidArgument("Payload is over LogDevice limit of 1MB.");
+  }
+
+  // Create a logdevice compatible callback.
+  // TODO(pja) : This might allocate once converted to an std::function
+  auto logdevice_callback =
+    [callback] (facebook::logdevice::Status st,
+                const facebook::logdevice::DataRecord& r) {
+    callback(LogDeviceErrorToStatus(st));
+  };
+
+  // Asynchronously append the data.
+  facebook::logdevice::Payload payload(
+    reinterpret_cast<const void*>(data.data()),
+    data.size());
+  int result = client_->append(facebook::logdevice::logid_t(id),
+                               payload,
+                               logdevice_callback);
+
+  // Check for errors
+  if (result != 0) {
+    return LogDeviceErrorToStatus(facebook::logdevice::err);
+  }
+  return Status::OK();
+}
+
 Status LogDeviceStorage::Trim(LogID id,
                               std::chrono::microseconds age) {
   // Compute the time in milliseconds using current time subtract age.

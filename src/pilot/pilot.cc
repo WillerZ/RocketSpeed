@@ -6,7 +6,9 @@
 #include "src/pilot/pilot.h"
 #include <map>
 #include <string>
+#include <thread>
 #include <vector>
+#include "src/util/memory.h"
 
 namespace rocketspeed {
 
@@ -31,6 +33,21 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
 }
 
 void Pilot::Run() {
+  // Start worker threads.
+  for (auto& worker : workers_) {
+    worker_threads_.emplace_back(
+      [] (PilotWorker* worker) { worker->Run(); },
+      worker.get());
+  }
+
+  // Wait for them to start.
+  for (const auto& worker : workers_) {
+    while (!worker->IsRunning()) {
+      std::this_thread::yield();
+    }
+  }
+
+  // Start our message loop now.
   msg_loop_.Run();
 }
 
@@ -50,12 +67,29 @@ Pilot::Pilot(PilotOptions options,
             callbacks_),
   log_storage_(std::move(options_.log_storage)),
   log_router_(options_.log_range.first, options_.log_range.second) {
+  // Create workers.
+  for (uint32_t i = 0; i < options_.num_workers_; ++i) {
+    workers_.emplace_back(new PilotWorker(options_, log_storage_.get()));
+  }
+
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
       "Created a new Pilot");
   options_.info_log->Flush();
 }
 
 Pilot::~Pilot() {
+  // Stop the main Pilot loop.
+  msg_loop_.Stop();
+
+  // Stop all the workers.
+  for (auto& worker : workers_) {
+    worker->Stop();
+  }
+
+  // Join their threads.
+  for (auto& worker_thread : worker_threads_) {
+    worker_thread.join();
+  }
 }
 
 /**
@@ -86,55 +120,17 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
   assert(msg->GetMessageType() == MessageType::mData);
 
   // Route topic to log ID.
-  MessageData const* msgData = static_cast<MessageData const*>(msg.get());
+  auto msg_data = unique_static_cast<MessageData>(std::move(msg));
   LogID logid;
-  std::string topicName = msgData->GetTopicName().ToString();
-  Slice payload = msgData->GetPayload();
-  if (!pilot->log_router_.GetLogID(topicName, &logid).ok()) {
-    // Failed to route topic to log ID.
-    Log(InfoLogLevel::WARN_LEVEL, pilot->options_.info_log,
-      "Failed to route topic '%s' to a log",
-      topicName.c_str());
-    pilot->SendAck(msgData->GetOrigin(),
-                   msgData->GetMessageId(),
-                   MessageDataAck::AckStatus::Failure);
+  std::string topic_name = msg_data->GetTopicName().ToString();
+  if (!pilot->log_router_.GetLogID(topic_name, &logid).ok()) {
+    assert(false);  // GetLogID should never fail.
     return;
   }
 
-  // Append to log storage.
-  auto status = pilot->log_storage_->Append(logid, payload);
-  if (!status.ok()) {
-    Log(InfoLogLevel::WARN_LEVEL, pilot->options_.info_log,
-      "Failed to append to log ID %lu",
-      static_cast<uint64_t>(logid));
-    pilot->SendAck(msgData->GetOrigin(),
-                   msgData->GetMessageId(),
-                   MessageDataAck::AckStatus::Failure);
-    return;
-  }
-
-  pilot->SendAck(msgData->GetOrigin(),
-                 msgData->GetMessageId(),
-                 MessageDataAck::AckStatus::Success);
-}
-
-void Pilot::SendAck(const HostId& host,
-                    const MsgId& msgid,
-                    MessageDataAck::AckStatus status) {
-  MessageDataAck::Ack ack;
-  ack.status = status;
-  ack.msgid = msgid;
-
-  std::vector<MessageDataAck::Ack> acks = { ack };
-  MessageDataAck msg(acks);
-
-  Status st = msg_loop_.GetClient().Send(host, &msg);
-  if (!st.ok()) {
-    // TODO(pja) 1 : Should retry later.
-    Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
-      "Failed to send ack to %s",
-      host.hostname.c_str());
-  }
+  // Forward to worker.
+  size_t worker_id = logid % pilot->workers_.size();
+  pilot->workers_[worker_id]->Forward(logid, std::move(msg_data));
 }
 
 // A static method to initialize the callback map

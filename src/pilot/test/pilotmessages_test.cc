@@ -48,9 +48,13 @@ class PilotTest {
     hostname_.assign(myname);
 
     // enable all kinds of libevent debugging
-    ld_event_enable_debug_logging(EVENT_DBG_ALL);
-    ld_event_set_log_callback(dump_libevent_cb);
-    ld_event_enable_debug_mode();
+    // not enabling debugging by default since it isn't threadsafe in our
+    // version of libevent (we compile it without threading support).
+    if (false) {
+      ld_event_enable_debug_logging(EVENT_DBG_ALL);
+      ld_event_set_log_callback(dump_libevent_cb);
+      ld_event_enable_debug_mode();
+    }
   }
 
   virtual ~PilotTest() {

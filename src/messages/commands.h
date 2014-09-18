@@ -13,13 +13,6 @@
 namespace rocketspeed {
 
 /**
- * Enumeration of command types.
- */
-enum class CommandType {
-  mMessage
-};
-
-/**
  * Interface class for sending messages from any thread to the event loop
  * for processing on the event loop thread.
  */
@@ -30,9 +23,6 @@ class Command {
 
   // Default destructor.
   virtual ~Command() {}
-
-  // Get the type of this command.
-  virtual CommandType GetType() const = 0;
 };
 
 /**
@@ -44,11 +34,6 @@ class MessageCommand : public Command {
   MessageCommand(const MsgId& msgid,
                  const HostId& recipient,
                  const Message& message);
-
-  // Get the type of this command.
-  virtual CommandType GetType() const {
-    return CommandType::mMessage;
-  }
 
   // Get the message ID.
   const MsgId& GetMessageId() const {

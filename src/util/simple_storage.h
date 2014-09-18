@@ -36,6 +36,10 @@ class SimpleLogStorage : public LogStorage {
   virtual Status Append(LogID id,
                         const Slice& data);
 
+  virtual Status AppendAsync(LogID id,
+                             const Slice& data,
+                             AppendCallback callback);
+
   virtual Status Trim(LogID id,
                       std::chrono::microseconds age);
 

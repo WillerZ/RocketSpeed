@@ -241,6 +241,9 @@ int main(int argc, char** argv) {
   }
 
   if (FLAGS_await_ack) {
+    printf("Messages sent, awaiting acks...");
+    fflush(stdout);
+
     // Wait for the all_messages_received semaphore to be posted.
     // Keep waiting as long as a message was received in the last second.
     auto timeout = std::chrono::seconds(1);
@@ -248,6 +251,7 @@ int main(int argc, char** argv) {
       all_messages_received.TimedWait(timeout);
     } while (messages_received != FLAGS_num_messages &&
              std::chrono::steady_clock::now() - last_message < timeout);
+    printf(" done\n");
   } else {
     end = std::chrono::steady_clock::now();
   }

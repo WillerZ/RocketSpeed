@@ -104,24 +104,14 @@ ProducerImpl::ProducerImpl(const HostId& pilot_host_id,
 
   auto command_callback = [this] (std::unique_ptr<Command> command) {
     assert(command);
-
-    switch (command->GetType()) {
-      case CommandType::mMessage: {
-        auto message = static_cast<MessageCommand*>(command.get());
-        bool added = messages_sent_.insert(message->GetMessageId()).second;
-        if (added) {
-          msg_loop_->GetClient().Send(message->GetRecipient(),
-                                      message->GetMessage());
-        } else {
-          // This means we have already sent a message with this ID, which
-          // means two separate messages have been given the same ID.
-        }
-
-        break;
-      }
-
-      default:
-        break;
+    auto message = static_cast<MessageCommand*>(command.get());
+    bool added = messages_sent_.insert(message->GetMessageId()).second;
+    if (added) {
+      msg_loop_->GetClient().Send(message->GetRecipient(),
+                                  message->GetMessage());
+    } else {
+      // This means we have already sent a message with this ID, which
+      // means two separate messages have been given the same ID.
     }
   };
 

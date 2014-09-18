@@ -36,6 +36,11 @@ struct LogRecord {
   LogRecord() {}
 };
 
+/**
+ * Callback for asynchronous append requests.
+ */
+typedef std::function<void(Status)> AppendCallback;
+
 class LogReader;
 class AsyncLogReader;
 class LogSelector;
@@ -58,7 +63,7 @@ class LogStorage {
   virtual ~LogStorage() {}
 
   /**
-   * Appends data to a log.
+   * Appends data to a log. This call will block until the append is processed.
    *
    * @param id ID number of the log to write to.
    * @param data the data to write.
@@ -66,6 +71,25 @@ class LogStorage {
    */
   virtual Status Append(LogID id,
                         const Slice& data) = 0;
+
+  /**
+   * Appends data to a log asynchronously. The call will return immediately,
+   * with the return value indicating if the asynchronous request was made.
+   * If AppendAsync returns success then at some point in the future the
+   * callback will be called with a Status indicating if the append was
+   * successfully written to the storage.
+   *
+   * Important: the data slice must remain valid and unmodified until the
+   * callback is called.
+   *
+   * @param id ID number of the log to write to.
+   * @param data the data to write.
+   * @param callback Callback to process the append request.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  virtual Status AppendAsync(LogID id,
+                             const Slice& data,
+                             AppendCallback callback) = 0;
 
   /**
    * Trims all messages from the log that are older than age.

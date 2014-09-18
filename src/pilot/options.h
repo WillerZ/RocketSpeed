@@ -69,6 +69,9 @@ struct PilotOptions {
   // Warning: changing this range will change the mapping of topics to logs.
   std::pair<LogID, LogID> log_range;
 
+  // Number of worker loops for the pilot.
+  uint32_t num_workers_;
+
   // Create PilotOptions with default values for all fields
   PilotOptions();
 };

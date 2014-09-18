@@ -108,7 +108,15 @@ lsn_t Client::appendSync(logid_t logid, const Payload& payload) noexcept {
 int Client::append(logid_t logid,
                    const Payload& payload,
                    append_callback_t cb) noexcept {
-  assert(false);  // not implemented
+  // Synchronous for now.
+  // TODO(pja) 1 : Create some sort of event loop to for async handling.
+  lsn_t lsn = appendSync(logid, payload);
+  DataRecord record(logid, payload, lsn);
+  if (lsn == LSN_INVALID) {
+    cb(E::FAILED, record);
+  } else {
+    cb(E::OK, record);
+  }
   return 0;
 }
 

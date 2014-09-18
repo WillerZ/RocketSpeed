@@ -212,6 +212,43 @@ TEST(SimpleStorageTest, SelectCloseRead) {
   ASSERT_EQ(records.size(), 0);  // should be no records read
 }
 
+TEST(SimpleStorageTest, AsyncAppendingAndReading) {
+  SimpleLogStorage storage;
+
+  // Simple callback
+  std::atomic<int> recv{ 0 };
+  auto callback = [&recv] (Status st) {
+    ASSERT_TRUE(st.ok());
+    ++recv;
+  };
+
+  ASSERT_TRUE(storage.AppendAsync(42, "Rocket", callback).ok());
+  ASSERT_TRUE(storage.AppendAsync(100, "Test 1", callback).ok());
+  ASSERT_TRUE(storage.AppendAsync(42, "Speed", callback).ok());
+
+  std::vector<LogReader*> readers;
+  ASSERT_TRUE(storage.CreateReaders(2, &readers).ok());
+  ASSERT_EQ(readers.size(), 2);
+  ASSERT_NE(readers[0], static_cast<LogReader*>(nullptr));
+  ASSERT_NE(readers[1], static_cast<LogReader*>(nullptr));
+
+  ASSERT_TRUE(readers[0]->Open(42).ok());
+  ASSERT_TRUE(readers[1]->Open(100).ok());
+
+  // Appends were async, so wait a little for them to finish.
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+  ASSERT_EQ(recv.load(), 3);
+
+  std::vector<LogRecord> records;
+  ASSERT_TRUE(readers[0]->Read(&records, 10).ok());
+  ASSERT_EQ(records.size(), 2);
+  ASSERT_EQ(records[0].logID, 42);
+  ASSERT_EQ(records[0].payload.compare("Rocket"), 0);
+  ASSERT_EQ(records[1].logID, 42);
+  ASSERT_EQ(records[1].payload.compare("Speed"), 0);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

@@ -38,7 +38,8 @@ class EventLoop {
  public:
   /*
    * Create an EventLoop at the specified port.
-   * @param port The port on which the EventLoop is running
+   * @param port The port on which the EventLoop is running.
+   *             Set to <= 0 to have no accept loop.
    * @param info_log Write informational messages to this log
    * @param callback The callback method that is invoked for every msg received
    */

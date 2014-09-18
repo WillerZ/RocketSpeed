@@ -6,6 +6,8 @@
 
 #include <memory>
 #include <map>
+#include <thread>
+#include <vector>
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
@@ -15,6 +17,7 @@
 #include "src/util/log_router.h"
 #include "src/util/storage.h"
 #include "src/pilot/options.h"
+#include "src/pilot/worker.h"
 
 namespace rocketspeed {
 
@@ -53,6 +56,10 @@ class Pilot {
 
   // Log router for mapping topic names to logs.
   LogRouter log_router_;
+
+  // Worker objects and threads, these have their own message loops.
+  std::vector<std::unique_ptr<PilotWorker>> workers_;
+  std::vector<std::thread> worker_threads_;
 
   // private Constructor
   Pilot(PilotOptions options,
