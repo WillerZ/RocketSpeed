@@ -27,6 +27,9 @@ using GFLAGS::SetUsageMessage;
 DEFINE_int32(num_threads, 16, "number of threads");
 DEFINE_int32(port_number, 60000, "port number");
 DEFINE_bool(libevent_debug, false, "Debugging libevent");
+DEFINE_string(storage_url,
+              "configerator:logdevice/rocketspeed.logdevice.primary.conf",
+              "Storage service url");
 
 /*
  * Dumps libevent info messages to stdout
@@ -60,6 +63,11 @@ int main(int argc, char** argv) {
     ld_event_enable_debug_logging(EVENT_DBG_ALL);
     ld_event_set_log_callback(dump_libevent_cb);
     ld_event_enable_debug_mode();
+  }
+
+  // location of storage service
+  if (!FLAGS_storage_url.empty()) {
+    options.storage_url = FLAGS_storage_url;
   }
 
   // create an instance of the ControlTower

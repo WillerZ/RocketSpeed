@@ -9,8 +9,10 @@
 namespace rocketspeed {
 
 Tailer::Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
+               const URL& storage_url,
                LogStorage* storage) :
   rooms_(rooms),
+  storage_url_(storage_url),
   storage_(storage) {
 }
 
@@ -59,28 +61,28 @@ Status Tailer::Initialize() {
 
 // Create a new instance of the LogStorage
 Status
-Tailer::CreateNewInstance(const Configuration* conf,
-                          Env* env,
+Tailer::CreateNewInstance(Env* env,
                           const std::vector<unique_ptr<ControlRoom>>& rooms,
+                          const URL& storage_url,
                           Tailer** tailer) {
   // create logdevice client
   std::unique_ptr<facebook::logdevice::ClientSettings> settings(
     facebook::logdevice::ClientSettings::create());
   std::shared_ptr<facebook::logdevice::Client> client =
     facebook::logdevice::Client::create(
-                         conf->GetStorageName(),
-                         conf->GetStorageUrl(),
-                         conf->GetStorageCredentials(),
+                         "rocketspeed.logdevice.primary",  // storage name
+                         storage_url,
+                         "",                               // credentials
                          std::chrono::milliseconds(1000),
                          std::move(settings));
 
   // created logdevice reader
   LogDeviceStorage* store;
-  Status st = LogDeviceStorage::Create(client, env,  &store);
+  Status st = LogDeviceStorage::Create(client, env, &store);
   if (!st.ok()) {
     return st;
   }
-  *tailer = new Tailer(rooms, store);
+  *tailer = new Tailer(rooms, storage_url, store);
 
   // Initialize the tailer
   st = (*tailer)->Initialize();

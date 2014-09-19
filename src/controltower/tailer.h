@@ -7,6 +7,7 @@
 #include <vector>
 #include "./Env.h"
 #include "./Status.h"
+#include "./Types.h"
 #include "src/util/storage.h"
 #include "src/util/logdevice.h"
 #include "src/controltower/room.h"
@@ -22,9 +23,10 @@ namespace rocketspeed {
 class Tailer {
  public:
   // create a Tailer
-  static Status CreateNewInstance(const Configuration* conf,
+  static Status CreateNewInstance(
                            Env* env,
                            const std::vector<unique_ptr<ControlRoom>>& rooms,
+                           const URL& storage_url,
                            Tailer** tailer);
 
   // Opens the specified log at specified position
@@ -41,10 +43,14 @@ class Tailer {
  private:
   // private constructor
   Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
+         const URL& storage_url,
          LogStorage* storage);
 
   // A pointer to all the rooms
   const std::vector<unique_ptr<ControlRoom>>& rooms_;
+
+  // definition of the storage
+  const URL storage_url_;
 
   // The Storage device
   const unique_ptr<LogStorage> storage_;

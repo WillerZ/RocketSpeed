@@ -173,8 +173,7 @@ int main(int argc, char** argv) {
     rocketspeed::Configuration::Create(
       std::vector<rocketspeed::HostId>{ pilot },
       rocketspeed::Tenant(2),
-      FLAGS_port,
-      "", "", ""));
+      FLAGS_port));
 
   // Start/end time for benchmark.
   std::chrono::time_point<std::chrono::steady_clock> start, end;

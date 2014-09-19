@@ -177,10 +177,7 @@ class Configuration {
    */
   static Configuration* Create(const std::vector<HostId>& pilots,
                                TenantID tenant_id,
-                               int local_port,
-                               std::string storage_name,
-                               std::string storage_url,
-                               std::string storage_credentials);
+                               int local_port);
 
   virtual ~Configuration() {}
 
@@ -198,21 +195,6 @@ class Configuration {
    * The port on the client on incoming messages are received
    */
   virtual int GetLocalPort() const = 0;
-
-  /**
-   * The Name of the Storage device
-   */
-  virtual std::string GetStorageName() const = 0;
-
-  /**
-   * The Url of the Storage device
-   */
-  virtual std::string GetStorageUrl() const = 0;
-
-  /**
-   * The credentials used for storage
-   */
-  virtual std::string GetStorageCredentials() const = 0;
 };
 
 enum Retention : char {

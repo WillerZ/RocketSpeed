@@ -83,8 +83,8 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
 
   // Start the LogTailer first.
   Tailer* tailer;
-  Status st = Tailer::CreateNewInstance(conf, opt.env,
-                                        (*ct)->rooms_, &tailer);
+  Status st = Tailer::CreateNewInstance(opt.env, (*ct)->rooms_,
+                                        options.storage_url, &tailer);
   if (!st.ok()) {
     delete *ct;
     return st;

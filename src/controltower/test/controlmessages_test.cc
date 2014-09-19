@@ -49,8 +49,7 @@ class ControlTowerTest {
     // create dummy configuration to keep everybody happy
     conf_ = Configuration::Create(std::vector<HostId>{ },
                                   Tenant(2),
-                                  0,
-                                  "", "", "");
+                                  0);
     char myname[1024];
     st_ = ControlTower::CreateNewInstance(ctoptions_, conf_, &ct_);
 

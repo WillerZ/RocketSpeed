@@ -37,6 +37,10 @@ TopicManager::AddSubscriber(const Topic& topic, SequenceNumber start,
                  std::pair<Topic, std::unique_ptr<TopicList>>
                  (topic, std::move(list)));
     assert(ret.second);  // inserted successfully
+    if (!ret.second) {
+      return Status::InternalError("TopicManager::AddSubscriber "
+                                   "Unable to add subscriber.");
+    }
   } else {
     // There are some pre-existing subscriptions for this topic.
     // Insert new subscriber.
