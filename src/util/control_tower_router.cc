@@ -7,26 +7,37 @@
 
 namespace rocketspeed {
 
-ControlTowerRouter::ControlTowerRouter(const std::vector<URL>& control_towers,
-                                       unsigned int replicas)
-: replication_(replicas) {
-  for (const URL& url : control_towers) {
-    mapping_.Add(url, replicas);
+ControlTowerRouter::ControlTowerRouter(
+  const std::vector<HostId>& control_towers,
+  unsigned int replicas)
+: host_ids_(control_towers.begin(), control_towers.end())
+, replication_(replicas) {
+  for (const HostId& host_id : host_ids_) {
+    mapping_.Add(&host_id, replicas);
   }
 }
 
-Status ControlTowerRouter::GetControlTower(LogID logID, URL* out) const {
+Status ControlTowerRouter::GetControlTower(LogID logID,
+                                           const HostId** out) const {
   *out = mapping_.Get(logID);
   return Status::OK();
 }
 
-Status ControlTowerRouter::AddControlTower(const URL& url) {
-  mapping_.Add(url, replication_);
+Status ControlTowerRouter::AddControlTower(const HostId& host_id) {
+  auto result = host_ids_.insert(host_id);
+  if (!result.second) {
+    return Status::InvalidArgument("HostId already in router");
+  }
+  mapping_.Add(&*result.first, replication_);
   return Status::OK();
 }
 
-Status ControlTowerRouter::RemoveControlTower(const URL& url) {
-  mapping_.Remove(url);
+Status ControlTowerRouter::RemoveControlTower(const HostId& host_id) {
+  auto iter = host_ids_.find(host_id);
+  if (iter == host_ids_.end()) {
+    return Status::InvalidArgument("HostId not in router");
+  }
+  mapping_.Remove(&*iter);
   return Status::OK();
 }
 

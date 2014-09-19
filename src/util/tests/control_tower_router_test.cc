@@ -15,10 +15,10 @@ namespace rocketspeed {
 
 class ControlTowerRouterTest { };
 
-std::vector<URL> MakeControlTowers(int num) {
-  std::vector<URL> control_towers;
+std::vector<HostId> MakeControlTowers(int num) {
+  std::vector<HostId> control_towers;
   for (int i = 0; i < num; ++i) {
-    control_towers.push_back(std::to_string(i));
+    control_towers.emplace_back(std::to_string(i), i);
   }
   return control_towers;
 }
@@ -33,11 +33,11 @@ TEST(ControlTowerRouterTest, ConsistencyTest) {
   int numChanged = 0;
   int numLogs = 1000000;
   for (int i = 0; i < numLogs; ++i) {
-    URL url1;
-    URL url2;
-    ASSERT_TRUE(router1.GetControlTower(i, &url1).ok());
-    ASSERT_TRUE(router2.GetControlTower(i, &url2).ok());
-    if (url1 != url2) {
+    const HostId* host1;
+    const HostId* host2;
+    ASSERT_TRUE(router1.GetControlTower(i, &host1).ok());
+    ASSERT_TRUE(router2.GetControlTower(i, &host2).ok());
+    if (!(*host1 == *host2)) {
       ++numChanged;
     }
   }
@@ -56,9 +56,9 @@ TEST(ControlTowerRouterTest, LogDistribution) {
   // Count number of changed for 1 million logs.
   int numLogs = 1000000;
   for (int i = 0; i < numLogs; ++i) {
-    URL url;
-    ASSERT_TRUE(router.GetControlTower(i, &url).ok());
-    logCount[std::stoi(url)]++;
+    const HostId* host;
+    ASSERT_TRUE(router.GetControlTower(i, &host).ok());
+    logCount[host->port]++;
   }
 
   // Find the minimum and maximum logs per control tower.

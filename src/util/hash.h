@@ -14,8 +14,20 @@ namespace rocketspeed {
  * 64-bit MurmurHash2 implementation. MurmurHash2 is a fast, non-cryptographic
  * hash function with excellent key distribution.
  */
-template <typename T>
+template <typename... T>
 struct MurmurHash2;
+
+// Hash combining for multiple objects.
+template <typename T, typename... Ts>
+struct MurmurHash2<T, Ts...> {
+  inline size_t operator()(const T& x, const Ts&... xs) {
+    // Based on boost::hash_combine
+    // http://www.boost.org/doc/libs/1_56_0/boost/functional/hash/hash.hpp
+    size_t hash = MurmurHash2<Ts...>()(xs...);
+    hash ^= MurmurHash2<T>()(x) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    return hash;
+  }
+};
 
 template <>
 struct MurmurHash2<size_t> {

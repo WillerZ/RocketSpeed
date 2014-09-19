@@ -5,9 +5,12 @@
 
 #pragma once
 
+#include <set>
+#include <string>
 #include <vector>
 #include "include/Types.h"
 #include "src/util/consistent_hash.h"
+#include "src/util/hash.h"
 #include "src/util/storage.h"
 
 namespace rocketspeed {
@@ -29,36 +32,48 @@ class ControlTowerRouter {
    * @param replicas Number of hash ring replicas (higher means better
    *        distribution, but more memory usage)
    */
-  explicit ControlTowerRouter(const std::vector<URL>& control_towers,
+  explicit ControlTowerRouter(const std::vector<HostId>& control_towers,
                               unsigned int replicas);
 
   /**
-   * Gets the URL of the control tower ring that is tailing this log.
+   * Gets the host ID of the control tower ring that is tailing this log.
    *
    * @param logID The ID of the log to lookup.
-   * @param out Where to place the resulting control tower ring URL.
+   * @param out Where to place the resulting control tower ring host ID.
    * @return on success OK(), otherwise errorcode.
    */
-  Status GetControlTower(LogID logID, URL* out) const;
+  Status GetControlTower(LogID logID, HostId const** out) const;
 
   /**
    * Adds a control tower from the mapping.
    *
-   * @param url The URL of the control tower to add.
+   * @param url The host ID of the control tower to add.
    * @return on success OK(), otherwise errorcode.
    */
-  Status AddControlTower(const URL& url);
+  Status AddControlTower(const HostId& host_id);
 
   /**
    * Removes a control tower from the mapping.
    *
-   * @param url The URL of the control tower to remove.
+   * @param url The host ID of the control tower to remove.
    * @return on success OK(), otherwise errorcode.
    */
-  Status RemoveControlTower(const URL& url);
+  Status RemoveControlTower(const HostId& host_id);
 
  private:
-  ConsistentHash<LogID, URL> mapping_;
+  struct HostIdHash {
+    size_t operator()(const HostId* host_id) const {
+      return MurmurHash2<std::string, size_t>()(
+        host_id->hostname,
+        static_cast<size_t>(host_id->port));
+    }
+  };
+
+  std::set<HostId> host_ids_;
+  ConsistentHash<LogID,
+                 const HostId*,
+                 MurmurHash2<LogID>,
+                 HostIdHash> mapping_;
   unsigned int replication_;
 };
 
