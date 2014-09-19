@@ -90,7 +90,6 @@ Slice MessagePing::Serialize() const {
   PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutVarint32(&serialize_buffer__, tenantid_);
-  PutVarint64(&serialize_buffer__, seqno_);
 
   // serialize message specific contents
   serialize_buffer__.append((const char *)&pingtype_, sizeof(type_));
@@ -133,11 +132,6 @@ Status MessagePing::DeSerialize(Slice* in) {
 
   if (!GetVarint32(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
-  }
-
-  // extract sequence number of message
-  if (!GetVarint64(in, &seqno_)) {
-    return Status::InvalidArgument("Bad Sequence Number");
   }
 
   // extract ping type
@@ -331,7 +325,6 @@ Status MessageData::DeSerialize(Slice* in) {
 }
 
 MessageMetadata::MessageMetadata(TenantID tenantID,
-  const SequenceNumber seqno,
   const MetaType metatype,
   const HostId& origin,
   const std::vector<TopicPair>& topics):
@@ -341,14 +334,12 @@ MessageMetadata::MessageMetadata(TenantID tenantID,
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mMetadata;
   tenantid_ = tenantID;
-  seqno_ = seqno;
 }
 
 MessageMetadata::MessageMetadata() {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mMetadata;
   tenantid_ = Tenant::Invalid;
-  seqno_ = 0;
   metatype_ = MetaType::NotInitialized;
 }
 
@@ -368,7 +359,6 @@ Slice MessageMetadata::Serialize() const {
   // Type, tenantId and seqno
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutVarint32(&serialize_buffer__, tenantid_);
-  PutVarint64(&serialize_buffer__, seqno_);
 
   // Now serialize message specific data
   serialize_buffer__.append((const char *)&metatype_, sizeof(metatype_));
@@ -421,11 +411,6 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   // extrant tenant ID
   if (!GetVarint32(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
-  }
-
-  // extract sequence number of message
-  if (!GetVarint64(in, &seqno_)) {
-    return Status::InvalidArgument("Bad Sequence Number");
   }
 
   // extract metadata type

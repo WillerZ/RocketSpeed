@@ -208,7 +208,6 @@ class ControlTowerTest {
 // Send a ping message and receive a ping response back from
 // the control tower
 TEST(ControlTowerTest, Ping) {
-  SequenceNumber seqno = 100;
   int num_msgs = 100;
   HostId controltower(hostname_, ctoptions_.port_number);
   HostId clientId(hostname_, ctoptions_.port_number-1);
@@ -217,7 +216,7 @@ TEST(ControlTowerTest, Ping) {
   ASSERT_EQ(ControlTowerRun().ok(), true);
 
   // create a message
-  MessagePing pingmsg(Tenant::Guest, seqno,
+  MessagePing pingmsg(Tenant::Guest,
                       MessagePing::PingType::Request,
                       clientId);
 
@@ -259,7 +258,6 @@ TEST(ControlTowerTest, Ping) {
 }
 
 TEST(ControlTowerTest, Subscribe) {
-  SequenceNumber seqno = 100;
   std::vector<TopicPair> topics;
   int num_topics = 5;
   HostId controltower(hostname_, ctoptions_.port_number);
@@ -272,10 +270,10 @@ TEST(ControlTowerTest, Subscribe) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    topics.push_back(TopicPair(4, std::to_string(i), type));
+    topics.push_back(TopicPair(4 + i, std::to_string(i), type));
   }
   // create a message
-  MessageMetadata meta1(Tenant::Guest, seqno,
+  MessageMetadata meta1(Tenant::Guest,
                         MessageMetadata::MetaType::Request,
                         clientId, topics);
 

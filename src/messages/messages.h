@@ -91,15 +91,6 @@ class Message : public Serializer {
    * @return The tenant ID.
    */
   TenantID GetTenantID() const { return tenantid_; }
-  /**
-   * @return The message Sequence Number.
-   */
-  SequenceNumber GetSequenceNumber() const { return seqno_; }
-
-  /**
-   * @Sets the Sequence Number.
-   */
-  void SetSequenceNumber(SequenceNumber n) { seqno_ = n; }
 
   /*
    * Creates a Message of the appropriate subtype by looking at the
@@ -115,15 +106,14 @@ class Message : public Serializer {
   virtual Status DeSerialize(Slice* in) = 0;
 
  protected:
-  Message(MessageType type, TenantID tenantid, SequenceNumber seqno) :
-          type_(type), tenantid_(tenantid), seqno_(seqno) {
+  Message(MessageType type, TenantID tenantid) :
+          type_(type), tenantid_(tenantid) {
     msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   }
-  Message() : Message(MessageType::NotInitialized, 0, 0) {}
+  Message() : Message(MessageType::NotInitialized, 0) {}
 
   MessageType type_;         // type of this message
   TenantID tenantid_;        // unique id for tenant
-  SequenceNumber seqno_;     // sequence number of message
 };
 
 
@@ -144,9 +134,10 @@ class MessagePing : public Message {
 
   MessagePing() : pingtype_(PingType::NotInitialized) {}
 
-  MessagePing(TenantID tenantid, SequenceNumber seqno,
-              PingType pingtype, const HostId& origin) :
-              Message(MessageType::mPing, tenantid, seqno),
+  MessagePing(TenantID tenantid,
+              PingType pingtype,
+              const HostId& origin) :
+              Message(MessageType::mPing, tenantid),
               pingtype_(pingtype), origin_(origin) {}
 
   PingType GetPingType() const {
@@ -202,6 +193,16 @@ class MessageData : public Message {
   virtual ~MessageData();
 
   /**
+   * @return The message Sequence Number.
+   */
+  SequenceNumber GetSequenceNumber() const { return seqno_; }
+
+  /**
+   * @Sets the Sequence Number.
+   */
+  void SetSequenceNumber(SequenceNumber n) { seqno_ = n; }
+
+  /**
    * @return The Message ID.
    */
   const MsgId& GetMessageId() const { return msgid_; }
@@ -234,6 +235,7 @@ class MessageData : public Message {
 
  private:
   // type of this message: mData
+  SequenceNumber seqno_;     // sequence number of message
   MsgId msgid_;              // globally unique id for message
   HostId origin_;            // host that sent the data
   Slice topic_name_;         // name of topic
@@ -259,7 +261,6 @@ class MessageMetadata : public Message {
    * @param topics The list of topics to subscribe-to/unsubscribe-from
    */
   MessageMetadata(TenantID tenantID,
-                  const SequenceNumber seqno,
                   const MetaType metatype,
                   const HostId& origin,
                   const std::vector<TopicPair>& topics);

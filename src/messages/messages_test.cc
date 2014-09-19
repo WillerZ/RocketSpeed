@@ -38,7 +38,6 @@ TEST(Messaging, Data) {
 }
 
 TEST(Messaging, Metadata) {
-  SequenceNumber seqno = 100;
   int port = 200;
   std::string mymachine = "machine.com";
   HostId hostid(mymachine, port);
@@ -49,11 +48,11 @@ TEST(Messaging, Metadata) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    topics.push_back(TopicPair(3, std::to_string(i), type));
+    topics.push_back(TopicPair(3 + i, std::to_string(i), type));
   }
 
   // create a message
-  MessageMetadata meta1(Tenant::Guest, seqno,
+  MessageMetadata meta1(Tenant::Guest,
                         MessageMetadata::MetaType::Request,
                         hostid, topics);
 
@@ -65,7 +64,6 @@ TEST(Messaging, Metadata) {
   data2.DeSerialize(&original);
 
   // verify that the new message is the same as original
-  ASSERT_EQ(seqno, data2.GetSequenceNumber());
   ASSERT_EQ(mymachine, data2.GetOrigin().hostname);
   ASSERT_EQ(port, data2.GetOrigin().port);
   ASSERT_EQ(Tenant::Guest, data2.GetTenantID());
@@ -74,6 +72,7 @@ TEST(Messaging, Metadata) {
   std::vector<TopicPair> nt = data2.GetTopicInfo();
   ASSERT_EQ(nt.size(), topics.size());
   for (unsigned int i = 0; i < topics.size(); i++) {
+    ASSERT_EQ(nt[i].seqno, topics[i].seqno);
     ASSERT_EQ(nt[i].topic_name, topics[i].topic_name);
     ASSERT_EQ(nt[i].topic_type, topics[i].topic_type);
   }

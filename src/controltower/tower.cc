@@ -155,8 +155,7 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
 
     // Copy out only the ith topic into a new message.
     MessageMetadata* newmsg = new MessageMetadata(
-                           request->GetTenantID(),
-                            request->GetSequenceNumber(),
+                            request->GetTenantID(),
                             request->GetMetaType(),
                             request->GetOrigin(),
                             std::vector<TopicPair> {topic});
