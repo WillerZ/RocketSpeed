@@ -89,7 +89,7 @@ class SimpleLogStorage : public LogStorage {
  */
 class SimpleLogReader : public LogReader {
  public:
-  SimpleLogReader(SimpleLogStorage* storage);
+  explicit SimpleLogReader(SimpleLogStorage* storage);
 
   virtual ~SimpleLogReader();
 

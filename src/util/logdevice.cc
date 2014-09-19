@@ -153,7 +153,7 @@ Status LogDeviceStorage::AppendAsync(LogID id,
   }
 
   // Create a logdevice compatible callback.
-  // TODO(pja) : This might allocate once converted to an std::function
+  // TODO(pja) 1 : This might allocate once converted to an std::function
   auto logdevice_callback =
     [callback] (facebook::logdevice::Status st,
                 const facebook::logdevice::DataRecord& r) {

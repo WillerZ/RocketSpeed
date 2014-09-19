@@ -1,16 +1,17 @@
 <?php
 
 class FbcodeCppLinter extends ArcanistLinter {
-  const CPPLINT      = "/home/engshare/tools/cpplint";
+  const CPPLINT      = "/home/engshare/tools/flint";
   const LINT_ERROR   = 1;
   const LINT_WARNING = 2;
+  const LINT_ADVICE  = 3;
   const C_FLAG = "--c_mode=true";
   private $rawLintOutput = array();
 
   public function willLintPaths(array $paths) {
     $futures = array();
     $ret_value = 0;
-    $last_line = system("which cpplint", $ret_value);
+    $last_line = system("which flint", $ret_value);
     $CPP_LINT = false;
     if ($ret_value == 0) {
       $CPP_LINT = $last_line;
@@ -56,12 +57,14 @@ class FbcodeCppLinter extends ArcanistLinter {
   public function getLintSeverityMap() {
     return array(
       self::LINT_WARNING => ArcanistLintSeverity::SEVERITY_WARNING,
+      self::LINT_ADVICE  => ArcanistLintSeverity::SEVERITY_ADVICE,
       self::LINT_ERROR   => ArcanistLintSeverity::SEVERITY_ERROR
     );
   }
 
   public function getLintNameMap() {
     return array(
+      self::LINT_ADVICE   => "CppLint Advice",
       self::LINT_WARNING => "CppLint Warning",
       self::LINT_ERROR   => "CppLint Error"
     );
@@ -73,15 +76,19 @@ class FbcodeCppLinter extends ArcanistLinter {
     $msgs = array();
     $current = null;
     foreach (explode("\n", $output) as $line) {
-      if (preg_match('/[^:]*\((\d+)\):(.*)$/', $line, $matches)) {
+      if (preg_match('/.*?:(\d+):(.*)/', $line, $matches)) {
         if ($current) {
           $msgs[] = $current;
         }
         $line = $matches[1];
         $text = $matches[2];
-        $sev  = preg_match('/.*Warning.*/', $text)
-                  ? self::LINT_WARNING
-                  : self::LINT_ERROR;
+        if (preg_match('/.*Warning.*/', $text)) {
+          $sev = self::LINT_WARNING;
+        } else if (preg_match('/.*Advice.*/', $text)) {
+          $sev = self::LINT_ADVICE;
+        } else {
+          $sev = self::LINT_ERROR;
+        }
         $current = array('line'     => $line,
                          'msg'      => $text,
                          'severity' => $sev);
