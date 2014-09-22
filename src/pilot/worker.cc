@@ -90,8 +90,12 @@ void PilotWorker::CommandCallback(std::unique_ptr<Command> command) {
   // Asynchronously append to log storage.
   LogID logid = cmd->GetLogID();
   auto status = storage_->AppendAsync(logid,
-                                      msg_raw->GetPayload(),
+                                      msg_raw->SerializeStorage(),
                                       append_callback);
+  // TODO(pja) 1: Technically there is no need to re-serialize the message.
+  // If we keep the wire-serialized form that we received the message in then
+  // the SerializeLogStorage slice is just a sub-slice of that format.
+  // This is an optimization though, so it can wait.
 
   if (!status.ok()) {
     // Append call failed, log and send failure ack.

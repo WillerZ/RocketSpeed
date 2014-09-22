@@ -233,7 +233,23 @@ class MessageData : public Message {
   virtual Slice Serialize() const;
   virtual Status DeSerialize(Slice* in);
 
+  /**
+   * @param clear_buffer Set to true to serialize to the start of the buffer.
+   * @return Serializes the message into the log storage format.
+   */
+  Slice SerializeStorage() const;
+
+  /**
+   * @return Deserializes the message from the log storage format.
+   *         Only the tenant ID, topic_name, and payload are deserialized.
+   *         The seqno_ and origin_ are not deserialized. Sequence number is
+   *         stored by the log storage, and origin_ is not stored at all.
+   */
+  Status DeSerializeStorage(Slice* in);
+
  private:
+  void SerializeInternal() const;
+
   // type of this message: mData
   SequenceNumber seqno_;     // sequence number of message
   MsgId msgid_;              // globally unique id for message

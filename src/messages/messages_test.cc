@@ -37,6 +37,30 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetTenantID(), Tenant::Guest);
 }
 
+TEST(Messaging, DataLogStorage) {
+  Slice name1("Topic1");
+  Slice payload1("Payload1");
+  HostId host1("host.id", 1234);
+
+  // create a message
+  MessageData data1(Tenant::Guest, host1, name1, payload1, Retention::OneDay);
+
+  // serialize the message
+  Slice original = data1.SerializeStorage();
+
+  // un-serialize to a new message
+  MessageData data2;
+  data2.DeSerializeStorage(&original);
+
+  // verify that the new message is the same as original
+  ASSERT_TRUE(data2.GetMessageId() == data1.GetMessageId());
+  // ASSERT_TRUE(data2.GetOrigin() == host1);  Not encoded into log storage
+  ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
+  ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
+  ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
+  ASSERT_EQ(data2.GetTenantID(), Tenant::Guest);
+}
+
 TEST(Messaging, Metadata) {
   int port = 200;
   std::string mymachine = "machine.com";

@@ -89,7 +89,7 @@ Slice MessagePing::Serialize() const {
                             sizeof(msghdr_.version_));
   PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
-  PutVarint32(&serialize_buffer__, tenantid_);
+  PutFixed16(&serialize_buffer__, tenantid_);
 
   // serialize message specific contents
   serialize_buffer__.append((const char *)&pingtype_, sizeof(type_));
@@ -130,7 +130,7 @@ Status MessagePing::DeSerialize(Slice* in) {
   memcpy(&type_, in->data(), sizeof(type_));
   in->remove_prefix(sizeof(type_));
 
-  if (!GetVarint32(in, &tenantid_)) {
+  if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
   }
 
@@ -211,29 +211,14 @@ Slice MessageData::Serialize() const {
                             sizeof(msghdr_.version_));
   PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
-  PutVarint32(&serialize_buffer__, tenantid_);
   PutVarint64(&serialize_buffer__, seqno_);
-
-  // serialize message specific contents
-  PutLengthPrefixedSlice(&serialize_buffer__,
-                         Slice((const char*)&msgid_, sizeof(msgid_)));
 
   // origin
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
   PutVarint64(&serialize_buffer__, origin_.port);
 
-  PutLengthPrefixedSlice(&serialize_buffer__, topic_name_);
-
-  // miscellaneous flags
-  uint16_t flags = 0;
-  switch (retention_) {
-    case Retention::OneHour: flags |= 0x0; break;
-    case Retention::OneDay: flags |= 0x1; break;
-    case Retention::OneWeek: flags |= 0x2; break;
-  }
-  PutFixed16(&serialize_buffer__, flags);
-
-  PutLengthPrefixedSlice(&serialize_buffer__, payload_);
+  // The rest of the message is what goes into log storage.
+  SerializeInternal();
 
   // compute the size of this message
   msghdr_.msgsize_ = serialize_buffer__.size();
@@ -268,22 +253,10 @@ Status MessageData::DeSerialize(Slice* in) {
   memcpy(&type_, in->data(), sizeof(type_));
   in->remove_prefix(sizeof(type_));
 
-  if (!GetVarint32(in, &tenantid_)) {
-    return Status::InvalidArgument("Bad tenant ID");
-  }
-
   // extract sequence number of message
   if (!GetVarint64(in, &seqno_)) {
     return Status::InvalidArgument("Bad Sequence Number");
   }
-
-  // extract message id
-  Slice idSlice;
-  if (!GetLengthPrefixedSlice(in, &idSlice) ||
-      idSlice.size() < sizeof(msgid_)) {
-    return Status::InvalidArgument("Bad Message Id");
-  }
-  memcpy(&msgid_, idSlice.data(), sizeof(msgid_));
 
   // extract origin
   HostId* host = static_cast<HostId*>(&origin_);
@@ -297,6 +270,41 @@ Status MessageData::DeSerialize(Slice* in) {
     // extract port number
   if (!GetVarint64(in, &origin_.port)) {
     return Status::InvalidArgument("Bad Port Number");
+  }
+
+  // The rest of the message is what goes into log storage.
+  return DeSerializeStorage(in);
+}
+
+Slice MessageData::SerializeStorage() const {
+  // If we are serializing as part of Serialize then don't restart buffer.
+  serialize_buffer__.clear();
+  SerializeInternal();
+  return Slice(serialize_buffer__);
+}
+
+void MessageData::SerializeInternal() const {
+  PutFixed16(&serialize_buffer__, tenantid_);
+  PutLengthPrefixedSlice(&serialize_buffer__, topic_name_);
+  // miscellaneous flags
+  uint16_t flags = 0;
+  switch (retention_) {
+    case Retention::OneHour: flags |= 0x0; break;
+    case Retention::OneDay: flags |= 0x1; break;
+    case Retention::OneWeek: flags |= 0x2; break;
+  }
+  PutFixed16(&serialize_buffer__, flags);
+
+  PutLengthPrefixedSlice(&serialize_buffer__,
+                         Slice((const char*)&msgid_, sizeof(msgid_)));
+
+  serialize_buffer__.append(payload_.data(), payload_.size());
+}
+
+Status MessageData::DeSerializeStorage(Slice* in) {
+  // extract tenant ID
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
   }
 
   // extract message topic
@@ -317,12 +325,19 @@ Status MessageData::DeSerialize(Slice* in) {
       return Status::InvalidArgument("Bad flags");
   }
 
-  // extract message payload
-  if (!GetLengthPrefixedSlice(in, &payload_)) {
-    return Status::InvalidArgument("Bad Message Payload");
+  // extract message id
+  Slice idSlice;
+  if (!GetLengthPrefixedSlice(in, &idSlice) ||
+      idSlice.size() < sizeof(msgid_)) {
+    return Status::InvalidArgument("Bad Message Id");
   }
+  memcpy(&msgid_, idSlice.data(), sizeof(msgid_));
+
+  // extract payload (the rest of the message)
+  payload_ = *in;
   return Status::OK();
 }
+
 
 MessageMetadata::MessageMetadata(TenantID tenantID,
   const MetaType metatype,
@@ -358,7 +373,7 @@ Slice MessageMetadata::Serialize() const {
 
   // Type, tenantId and seqno
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
-  PutVarint32(&serialize_buffer__, tenantid_);
+  PutFixed16(&serialize_buffer__, tenantid_);
 
   // Now serialize message specific data
   serialize_buffer__.append((const char *)&metatype_, sizeof(metatype_));
@@ -409,7 +424,7 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   in->remove_prefix(sizeof(type_));
 
   // extrant tenant ID
-  if (!GetVarint32(in, &tenantid_)) {
+  if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
   }
 

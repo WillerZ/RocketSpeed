@@ -108,7 +108,7 @@ typedef std::string URL;
  * tenant can have on the system as a whole. If a tenant exceeds their agreed
  * resource usage then their experience may be throttled.
  */
-typedef uint32_t TenantID;
+typedef uint16_t TenantID;
 
 enum Tenant : TenantID {
   /**
