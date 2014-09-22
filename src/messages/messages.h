@@ -52,10 +52,10 @@ enum MetadataType : char {
  * If topic_type == mSubscribe, then seqno indicates the starting
  * sequence number from which (inclusive) this subscriber is
  * requesting data from. A seqno of 0 indicates that the subscriber
- * is interested in receiving data starting from any point in time.
+ * is interested in receiving data starting now.
  * A seqno of 1 indicates that the subscriber is interested in
  * receiving all the data associated with this topic.
- * If topic_type == mSubscribe, then seqno is not defined.
+ * If topic_type == mUnSubscribe, then seqno is not defined.
  */
 class TopicPair {
  public:
