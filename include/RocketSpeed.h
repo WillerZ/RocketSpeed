@@ -21,35 +21,34 @@
 
 namespace rocketspeed {
 
-class ProducerHandle;
 class ConsumerHandle;
 
 typedef std::function<void(ResultStatus)> PublishCallback;
 
 /*
- * The Producer is used to produce messages for a single topic
+ * The Client is used to produce and consumer messages for a single topic
  * or multiple topics.
  */
-class Producer {
+class Client {
  public:
   /**
-   * Opens a Producer. This can create connections to the Cloud Service
+   * Opens a Client. This can create connections to the Cloud Service
    * Provider, validate credentials, etc.
    *
    * @param config The configuration of this service provider
-   * @param callback Callback for when a message is acknowledged. This will
-   *                 always be called from the same thread.
-   * @param producer Output parameter for constructred producer.
+   * @param publish_callback Callback for when a sent-message is acknowledged.
+   * @param receive_callback Callback for when a message is received.
+   * @param client Output parameter for constructred client.
    * @return on success returns OK(), otherwise errorcode
    */
   static Status Open(const Configuration* config,
-                     PublishCallback callback,
-                     Producer** producer);
+                     PublishCallback publish_callback,
+                     Client** client);
 
   /**
-   * Closes this Producer's connection to the Cloud Service Provider.
+   * Closes this Client's connection to the Cloud Service Provider.
    */
-  virtual ~Producer();
+  virtual ~Client();
 
   /**
    * Asynchronously publishes a new message to the Topic. The return parameter
@@ -64,36 +63,8 @@ class Producer {
                                 const TopicOptions& options,
                                 const Slice& data) = 0;
 
- protected:
-  Producer() {}
-};
-
-/**
- * A Consumer object is used to consume messages from multiple topics.
- *
- * Consumer is completely thread-safe.
- */
-class Consumer {
- public:
   /**
-   * Opens a Consumer. This can create connections to the Cloud Service
-   * Provider, validate credentials, etc.
-   *
-   * @param config  The configuration of this service provider
-   * @return on success returns OK(), otherwise errorcode
-   */
-  static Status Open(const Configuration& config,
-                     Consumer** consumer);
-
-  /**
-   * Closes this Consumer's connection to the Cloud Service Provider.
-   * All ConsumerHandles created through this Consumer will continue to be
-   * accessible, but will no longer receive any messages.
-   */
-  virtual ~Consumer();
-
-  /**
-   * Opens a Topic for reading. The Topic should already exist.
+   * Opens a Topic for reading.
    * Messages arriving for this topic will be added to the mailbox,
    * accessible through the ConsumerHandle.
    *
@@ -107,7 +78,7 @@ class Consumer {
    */
   virtual Status ListenTopic(const Topic& name,
                              const TopicOptions& options,
-                             ConsumerHandle** handle);
+                             ConsumerHandle** handle) = 0;
 
   /**
    * Opens the specified Topics and returns a ConsumerHandle that listens
@@ -125,14 +96,12 @@ class Consumer {
    */
   virtual std::vector<Status> ListenTopics(std::vector<Topic>& names,
                                            const TopicOptions& options,
-                                           ConsumerHandle** handle);
+                                           ConsumerHandle** handle) = 0;
 };
-
 
 /**
  * The ConsumerHandle is used to listen to new messages to one
- * or more topics. ConsumerHandle must only be used from one thread, but does
- * not need be the same thread it was created on.
+ * or more topics. This class is not thread-safe.
  */
 class ConsumerHandle {
  public:

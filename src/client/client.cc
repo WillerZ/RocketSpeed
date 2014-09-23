@@ -18,19 +18,25 @@
 
 namespace rocketspeed {
 
-Producer::~Producer() {
+Client::~Client() {
 }
 
-// Internal implementation of the Producer API.
-class ProducerImpl : public Producer {
+// Internal implementation of the Client API.
+class ClientImpl : public Client {
  public:
-  virtual ~ProducerImpl();
+  virtual ~ClientImpl();
 
   virtual PublishStatus Publish(const Topic& name,
                                 const TopicOptions& options,
                                 const Slice& data);
+  virtual Status ListenTopic(const Topic& name,
+                             const TopicOptions& options,
+                             ConsumerHandle** handle);
+  virtual std::vector<Status> ListenTopics(std::vector<Topic>& names,
+                                           const TopicOptions& options,
+                                           ConsumerHandle** handle);
 
-  ProducerImpl(const HostId& pilot_host_id,
+  ClientImpl(const HostId& pilot_host_id,
                TenantID tenant_id,
                int port,
                PublishCallback callback);
@@ -60,10 +66,10 @@ class ProducerImpl : public Producer {
   PublishCallback callback_;
 };
 
-// Implementation of Producer::Open from RocketSpeed.h
-Status Producer::Open(const Configuration* config,
+// Implementation of Client::Open from RocketSpeed.h
+Status Client::Open(const Configuration* config,
                       PublishCallback callback,
-                      Producer** producer) {
+                      Client** producer) {
   // Validate arguments.
   if (config == nullptr) {
     return Status::InvalidArgument("config must not be null.");
@@ -75,16 +81,16 @@ Status Producer::Open(const Configuration* config,
     return Status::InvalidArgument("Must have at least one pilot.");
   }
 
-  // Construct new Producer client.
+  // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
-  *producer = new ProducerImpl(config->GetPilotHostIds().front(),
+  *producer = new ClientImpl(config->GetPilotHostIds().front(),
                                config->GetTenantID(),
                                config->GetLocalPort(),
                                callback);
   return Status::OK();
 }
 
-ProducerImpl::ProducerImpl(const HostId& pilot_host_id,
+ClientImpl::ClientImpl(const HostId& pilot_host_id,
                            TenantID tenant_id,
                            int port,
                            PublishCallback callback)
@@ -133,7 +139,7 @@ ProducerImpl::ProducerImpl(const HostId& pilot_host_id,
   }
 }
 
-ProducerImpl::~ProducerImpl() {
+ClientImpl::~ClientImpl() {
   // Delete the message loop.
   // This stops the event loop, which may block.
   delete msg_loop_;
@@ -142,7 +148,7 @@ ProducerImpl::~ProducerImpl() {
   msg_loop_thread_.join();
 }
 
-PublishStatus ProducerImpl::Publish(const Topic& name,
+PublishStatus ClientImpl::Publish(const Topic& name,
                                     const TopicOptions& options,
                                     const Slice& data) {
   // Construct message.
@@ -167,9 +173,22 @@ PublishStatus ProducerImpl::Publish(const Topic& name,
   return PublishStatus(status, msgid);
 }
 
-void ProducerImpl::ProcessDataAck(const ApplicationCallbackContext arg,
+Status ClientImpl::ListenTopic(const Topic& name,
+                   const TopicOptions& options,
+                   ConsumerHandle** handle) {
+  return Status::OK();
+}
+
+std::vector<Status> ClientImpl::ListenTopics(
+                       std::vector<Topic>& names,
+                       const TopicOptions& options,
+                       ConsumerHandle** handle) {
+  return std::vector<Status>();
+}
+
+void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
                                   std::unique_ptr<Message> msg) {
-  ProducerImpl* self = static_cast<ProducerImpl*>(arg);
+  ClientImpl* self = static_cast<ClientImpl*>(arg);
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
   // For each ack'd message, if it was waiting for an ack then remove it

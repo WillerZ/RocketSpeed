@@ -39,7 +39,7 @@ static const Result failed = { false, };
 
 namespace rocketspeed {
 
-Result ProducerWorker(int64_t num_messages, Producer* producer) {
+Result ProducerWorker(int64_t num_messages, Client* producer) {
   // Random number generator.
   std::mt19937_64 rng;
   std::uniform_int_distribution<uint64_t> distr(0, FLAGS_num_topics - 1);
@@ -201,9 +201,9 @@ int main(int argc, char** argv) {
     }
   };
 
-  // Create RocketSpeed Producer.
-  rocketspeed::Producer* producer = nullptr;
-  if (!rocketspeed::Producer::Open(config.get(), callback, &producer).ok()) {
+  // Create RocketSpeed Client.
+  rocketspeed::Client* producer = nullptr;
+  if (!rocketspeed::Client::Open(config.get(), callback, &producer).ok()) {
     Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
         "Failed to connect to RocketSpeed");
     info_log->Flush();
