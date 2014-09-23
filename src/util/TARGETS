@@ -36,3 +36,19 @@ cpp_library(
     compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
     warp = False,
 )
+
+cpp_benchmark(
+  name = 'consistent_hash_bench',
+  srcs = [ 'consistent_hash_bench.cc' ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DUSE_LOGDEVICE',
+    ],
+  deps = [ '@/folly',
+           '@/folly:benchmark',
+           '@/common/init:init', ],
+  args = [ ],
+)

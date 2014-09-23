@@ -13,6 +13,28 @@
 #include <utility>
 #include "src/util/hash.h"
 
+
+// If this is not defined, std::multimap is used
+//#define CONSISTENT_HASH_USE_VECTOR
+
+////////////////////////////////////////////////////////////////////////////
+// Going with multimap for performance reasons - multimap seems to perform
+// slightly better for all sizes. See benchmark:
+//
+// =========================================================================
+//    consistent_hash_bench               vector iters/s    multimap iters/s
+// =========================================================================
+//  ConsistentHashGet(10)                          3.98M               5.64M
+//  ConsistentHashGet(20)                          3.50M               4.62M
+//  ConsistentHashGet(50)                          2.98M               3.64M
+//  ConsistentHashGet(100)                         2.72M               3.34M
+//  ConsistentHashGet(200)                         2.49M               3.05M
+//  ConsistentHashGet(500)                         2.28M               2.73M
+//  ConsistentHashGet(1000)                        2.13M               2.41M
+//  ConsistentHashGet(2000)                        1.96M               2.16M
+// =========================================================================
+////////////////////////////////////////////////////////////////////////////
+
 namespace rocketspeed {
 
 /**
@@ -100,15 +122,33 @@ class ConsistentHash {
    */
   double SlotRatio(const Slot& slot) const;
 
+  /**
+   * Clears the structure
+   */
+  void Clear();
+
  private:
-  // Hashing ring. Using a multimap here as multiple slots could have hash
-  // collisions, and we don't want to override slots if that happens as it
-  // would break the removal semantics.
+  // Hashing ring. Using a vector/multimap here as multiple slots could have
+  // hash collisions, and we don't want to override slots if that happens as
+  // it would break the removal semantics.
   // e.g.
   // Add(X); // hash(X) == 42
   // Add(Y); // hash(Y) == 42 -- overrides X
   // Remove(Y); // now we have no slots, but should still have the X slot!
+#ifdef CONSISTENT_HASH_USE_VECTOR
+  std::vector<std::pair<size_t, Slot>> ring_;
+
+  // helper function to compare 1st element of a pair only.
+  // Using a function is faster than the default comparator, and faster
+  // than a lambda comparator
+  static bool Compare1st(const std::pair<size_t, Slot>& p,
+                const size_t& c) {
+    return p.first < c;
+  }
+#else
   std::multimap<size_t, Slot> ring_;
+#endif
+
   KeyHash keyHash_;    // Hash function for keys
   SlotHash slotHash_;  // Hash function for slots
   size_t slotCount_;   // Number of unique slots
@@ -129,7 +169,12 @@ void ConsistentHash<Key, Slot, KeyHash, SlotHash>::Add(
     unsigned int replicas) {
   size_t hash = slotHash_(slot);
   while (replicas--) {
+#ifdef CONSISTENT_HASH_USE_VECTOR
+    std::pair<size_t, Slot> p(hash, slot);
+    ring_.insert(std::lower_bound(ring_.begin(), ring_.end(), p), p);
+#else
     ring_.insert(std::make_pair(hash, slot));
+#endif
     hash = MurmurHash2<size_t>()(hash);
   }
   ++slotCount_;
@@ -143,7 +188,11 @@ void ConsistentHash<Key, Slot, KeyHash, SlotHash>::Remove(
   for (;;) {
     // Might be multiple slots on the same hash value.
     // Need to find the one that maps to 'slot'.
+#ifdef CONSISTENT_HASH_USE_VECTOR
+    auto range = std::equal_range(ring_.begin(), ring_.end(), hash);
+#else
     auto range = ring_.equal_range(hash);
+#endif
     bool found = false;
     for (auto it = range.first; it != range.second; ) {
       if (it->second == slot) {
@@ -170,7 +219,11 @@ const Slot& ConsistentHash<Key, Slot, KeyHash, SlotHash>::Get(
     const Key& key) const {
   assert(!ring_.empty());
   size_t hash = keyHash_(key);
+#ifdef CONSISTENT_HASH_USE_VECTOR
+  auto it = std::lower_bound(ring_.begin(), ring_.end(), hash, Compare1st);
+#else
   auto it = ring_.lower_bound(hash);
+#endif
   if (it == ring_.end()) {
     it = ring_.begin();  // Wrap back to first node.
   }
@@ -210,6 +263,12 @@ double ConsistentHash<Key, Slot, KeyHash, SlotHash>::SlotRatio(
   } else {
     return static_cast<double>(count) / pow(2.0, sizeof(size_t) * 8);
   }
+}
+
+template <class Key, class Slot, class KeyHash, class SlotHash>
+void ConsistentHash<Key, Slot, KeyHash, SlotHash>::Clear() {
+  ring_.clear();
+  slotCount_ = 0;
 }
 
 }  // namespace rocketspeed
