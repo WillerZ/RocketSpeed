@@ -25,35 +25,4 @@ class Command {
   virtual ~Command() {}
 };
 
-/**
- * Command containing a pre-serialized message.
- */
-class MessageCommand : public Command {
- public:
-  // Construct from message.
-  MessageCommand(const MsgId& msgid,
-                 const HostId& recipient,
-                 const Message& message);
-
-  // Get the message ID.
-  const MsgId& GetMessageId() const {
-    return msgid_;
-  }
-
-  // Get the intended recipient of the message.
-  const HostId& GetRecipient() const {
-    return recipient_;
-  }
-
-  // Get the serialized message data stored in this Command.
-  Slice GetMessage() {
-    return Slice(message_);
-  }
-
- private:
-  MsgId msgid_;
-  HostId recipient_;
-  std::string message_;
-};
-
 }  // namespace rocketspeed

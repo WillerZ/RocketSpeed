@@ -203,7 +203,9 @@ int main(int argc, char** argv) {
 
   // Create RocketSpeed Client.
   rocketspeed::Client* producer = nullptr;
-  if (!rocketspeed::Client::Open(config.get(), callback, &producer).ok()) {
+  if (!rocketspeed::Client::Open(config.get(), callback,
+                                 nullptr, nullptr,
+                                 &producer).ok()) {
     Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
         "Failed to connect to RocketSpeed");
     info_log->Flush();

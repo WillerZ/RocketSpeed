@@ -7,14 +7,16 @@
 #include <memory>
 #include <set>
 #include <thread>
+#include <unordered_map>
 #include "include/RocketSpeed.h"
 #include "include/Env.h"
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
+#include "client_commands.h"
+#include "message_received.h"
 
 namespace rocketspeed {
 
@@ -29,22 +31,28 @@ class ClientImpl : public Client {
   virtual PublishStatus Publish(const Topic& name,
                                 const TopicOptions& options,
                                 const Slice& data);
-  virtual Status ListenTopic(const Topic& name,
-                             const TopicOptions& options,
-                             ConsumerHandle** handle);
-  virtual std::vector<Status> ListenTopics(std::vector<Topic>& names,
-                                           const TopicOptions& options,
-                                           ConsumerHandle** handle);
+  virtual void ListenTopics(std::vector<SubscriptionPair>& names,
+                            const TopicOptions& options);
 
   ClientImpl(const HostId& pilot_host_id,
                TenantID tenant_id,
                int port,
-               PublishCallback callback);
+               PublishCallback publish_callback,
+               SubscribeCallback subscription_callback,
+               MessageReceivedCallback receive_callback);
 
  private:
+  // Callback for a Data message
+  static void ProcessData(const ApplicationCallbackContext arg,
+                          std::unique_ptr<Message> msg);
+
   // Callback for MessageDataAck message.
   static void ProcessDataAck(const ApplicationCallbackContext arg,
                              std::unique_ptr<Message> msg);
+
+  // Callback for MessageMetadata message.
+  static void ProcessMetadata(const ApplicationCallbackContext arg,
+                              std::unique_ptr<Message> msg);
 
   // HostId of this machine, i.e. the one the producer is running on.
   HostId host_id_;
@@ -62,13 +70,25 @@ class ClientImpl : public Client {
   // Messages sent, awaiting ack.
   std::set<MsgId> messages_sent_;
 
-  // Ack callback.
-  PublishCallback callback_;
+  // callback for incoming data message
+  PublishCallback publish_callback_;
+
+  // callback for incoming ack message for a subscription/unsubscription
+  SubscribeCallback subscription_callback_;
+
+  // callback for incoming data messages
+  MessageReceivedCallback receive_callback_;
+
+  // Map a subscribed topic name to the last sequence number
+  // received for this topic.
+  std::unordered_map<Topic, SequenceNumber>  topic_map_;
 };
 
 // Implementation of Client::Open from RocketSpeed.h
 Status Client::Open(const Configuration* config,
-                      PublishCallback callback,
+                      PublishCallback publish_callback,
+                      SubscribeCallback subscription_callback,
+                      MessageReceivedCallback receive_callback,
                       Client** producer) {
   // Validate arguments.
   if (config == nullptr) {
@@ -86,17 +106,23 @@ Status Client::Open(const Configuration* config,
   *producer = new ClientImpl(config->GetPilotHostIds().front(),
                                config->GetTenantID(),
                                config->GetLocalPort(),
-                               callback);
+                               publish_callback,
+                               subscription_callback,
+                               receive_callback);
   return Status::OK();
 }
 
 ClientImpl::ClientImpl(const HostId& pilot_host_id,
                            TenantID tenant_id,
                            int port,
-                           PublishCallback callback)
+                           PublishCallback publish_callback,
+                           SubscribeCallback subscription_callback,
+                           MessageReceivedCallback receive_callback)
 : pilot_host_id_(pilot_host_id)
 , tenant_id_(tenant_id)
-, callback_(callback) {
+, publish_callback_(publish_callback)
+, subscription_callback_(subscription_callback)
+, receive_callback_(receive_callback) {
   // Initialise host_id_.
   char myname[1024];
   if (gethostname(&myname[0], sizeof(myname))) {
@@ -106,18 +132,28 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
+  callbacks[MessageType::mData] = MsgCallbackType(ProcessData);
   callbacks[MessageType::mDataAck] = MsgCallbackType(ProcessDataAck);
+  callbacks[MessageType::mMetadata] = MsgCallbackType(ProcessMetadata);
 
   auto command_callback = [this] (std::unique_ptr<Command> command) {
     assert(command);
-    auto message = static_cast<MessageCommand*>(command.get());
-    bool added = messages_sent_.insert(message->GetMessageId()).second;
-    if (added) {
-      msg_loop_->GetClient().Send(message->GetRecipient(),
-                                  message->GetMessage());
-    } else {
-      // This means we have already sent a message with this ID, which
-      // means two separate messages have been given the same ID.
+    auto cmd = static_cast<ClientCommand*>(command.get());
+
+    if (cmd->GetType() == ClientCommand::Type::Data) {
+      // Send a data message to destination
+      bool added = messages_sent_.insert(cmd->GetMessageId()).second;
+      if (added) {
+        msg_loop_->GetClient().Send(cmd->GetRecipient(),
+                                    cmd->GetMessage());
+      } else {
+        // This means we have already sent a message with this ID, which
+        // means two separate messages have been given the same ID.
+      }
+    } else if (cmd->GetType() == ClientCommand::Type::MetaData) {
+      // Send a metadata message to destination
+      msg_loop_->GetClient().Send(cmd->GetRecipient(),
+                                  cmd->GetMessage());
     }
   };
 
@@ -162,9 +198,9 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   const MsgId msgid = message.GetMessageId();
 
   // Construct command.
-  std::unique_ptr<Command> command(new MessageCommand(msgid,
-                                                      pilot_host_id_,
-                                                      message));
+  std::unique_ptr<Command> command(new ClientCommand(msgid,
+                                                     pilot_host_id_,
+                                                     message));
 
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command));
@@ -173,19 +209,71 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   return PublishStatus(status, msgid);
 }
 
-Status ClientImpl::ListenTopic(const Topic& name,
-                   const TopicOptions& options,
-                   ConsumerHandle** handle) {
-  return Status::OK();
+// Subscribe to a specific topics.
+void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
+                              const TopicOptions& options) {
+  std::vector<TopicPair> list;
+
+  // Construct subscription list
+  for (const auto& elem : names) {
+    list.push_back(TopicPair(elem.seqno, elem.topic_name,
+                             MetadataType::mSubscribe));
+  }
+  // Construct message.
+  MessageMetadata message(tenant_id_,
+                          MessageMetadata::MetaType::Request,
+                          host_id_,
+                          list);
+  // Construct command.
+  std::unique_ptr<Command> command(new ClientCommand(pilot_host_id_,
+                                                     message));
+  // Send to event loop for processing (the loop will free it).
+  Status status = msg_loop_->SendCommand(std::move(command));
+
+  // If there was any error, invoke callback with appropriate status
+  if (!status.ok()) {
+    SubscriptionStatus error_msg;
+    error_msg.status = status;
+    subscription_callback_(error_msg);
+  }
 }
 
-std::vector<Status> ClientImpl::ListenTopics(
-                       std::vector<Topic>& names,
-                       const TopicOptions& options,
-                       ConsumerHandle** handle) {
-  return std::vector<Status>();
+/*
+** Process a received data message and deliver it to application.
+*/
+void ClientImpl::ProcessData(const ApplicationCallbackContext arg,
+                             std::unique_ptr<Message> msg) {
+  ClientImpl* self = static_cast<ClientImpl*>(arg);
+  const MessageData* data = static_cast<const MessageData*>(msg.get());
+
+  // extract topic name from message
+  std::string name = data->GetTopicName().ToString();
+
+  // verify that we are subscribed to this topic
+  std::unordered_map<Topic, SequenceNumber>::iterator iter =
+                                        self->topic_map_.find(name);
+  // No active subscription to this topic, ignore message
+  if (iter == self->topic_map_.end()) {
+    return;
+  }
+  SequenceNumber last_msg_received = iter->second;
+
+  // Old message, ignore it
+  if (data->GetSequenceNumber() < last_msg_received) {
+    return;
+  }
+  // update last seqno received for this topic
+  iter->second = data->GetSequenceNumber();
+
+  // Create message wrapper for client (do not copy payload)
+  unique_ptr<MessageReceivedClient> newmsg(
+                                     new MessageReceivedClient(std::move(msg)));
+
+  // deliver message to application
+  self->receive_callback_(std::move(newmsg));
 }
 
+// Process the Ack message for a Data Message
 void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
                                   std::unique_ptr<Message> msg) {
   ClientImpl* self = static_cast<ClientImpl*>(arg);
@@ -204,8 +292,8 @@ void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
         rs.status = Status::IOError("publish failed");
       }
 
-      if (self->callback_) {
-        self->callback_(rs);
+      if (self->publish_callback_) {
+        self->publish_callback_(rs);
       }
     } else {
       // We've received an ack for a message that has already been acked
@@ -213,6 +301,36 @@ void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
       // before the first ack arrived, so just ignore.
     }
   }
+}
+
+// Process Metadata response messages arriving from the Cloud.
+void ClientImpl::ProcessMetadata(const ApplicationCallbackContext arg,
+                                 std::unique_ptr<Message> msg) {
+  SubscriptionStatus ret;
+  ClientImpl* self = static_cast<ClientImpl*>(arg);
+  const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());
+
+  // The client should receive only responses to subscribe/unsubscribe.
+  assert(meta->GetMetaType() == MessageMetadata::MetaType::Response);
+  std::vector<TopicPair> pairs = meta->GetTopicInfo();
+
+  // This is the response ack of a subscription request sent earlier
+
+  for (const auto& elem : pairs) {
+    // record confirmed subscriptions
+    self->topic_map_[elem.topic_name] = elem.seqno;
+
+    // invoke application-registered callback
+    if (self->subscription_callback_) {
+      ret.status = Status::OK();
+      ret.seqno = elem.seqno;  // start seqno of this subscription
+      ret.subscribed = true;   // subscribed to this topic
+      self->subscription_callback_(ret);
+    }
+  }
+}
+
+MessageReceivedClient::~MessageReceivedClient() {
 }
 
 }  // namespace rocketspeed

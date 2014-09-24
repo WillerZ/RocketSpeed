@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "include/Status.h"
+#include "include/Slice.h"
 
 namespace rocketspeed {
 
@@ -32,6 +33,28 @@ typedef std::string Topic;
  * a message produced earlier.
  */
 typedef uint64_t SequenceNumber;
+
+/*
+ *  A topic:bool pair to indicate whether to subscribe or unsubscribe
+ *  from the specified topic.
+ *  Messages after the specified sequence number will be delivered to
+ *  the client.
+ *  A seqno of 0 indicates that the subscriber is interested in
+ *  receiving whatever data is available via this topic.
+ *  A seqno of 1 indicates that the subscriber is interested in
+ *  receiving all the data that was published to this topic.
+ **/
+class SubscriptionPair {
+ public:
+  SequenceNumber seqno;  // the starting sequence number for this subscription
+  Topic topic_name;
+
+  SubscriptionPair(SequenceNumber s, std::string name) :
+    seqno(s),
+    topic_name(name) {
+  }
+  SubscriptionPair() {}
+};
 
 /**
  * The unique identifier of a message. This is globally unique in the entire
@@ -82,19 +105,32 @@ class ResultStatus {
 };
 
 /**
- *  Type of callback that is called when a message arrives
- *
- *  @param status OK if this message is received successfully
- *  @param seqno Sequence Number of message
- *  @param name Name of topic
- *  @param payload  The message data itself.
+ * This is the status returned when a subscription/unsubscription
+ * message is acknowledged and confirmed by the Cloud Service.
+ */
+class SubscriptionStatus {
+ public:
+  SubscriptionStatus() : seqno(0), subscribed(false) {}
+  Status status;
+  SequenceNumber seqno;  // the start seqno of a subscription
+  bool   subscribed;     // true for subscription, false for unsubscription
+};
+
+/**
+ *  Message received on subscribed topics
  */
 class MessageReceived {
  public:
-  Status status;
-  SequenceNumber seqno;
-  Topic name;
-  std::string payload;
+  // The sequence number of this message
+  virtual SequenceNumber GetSequenceNumber() = 0;
+
+  // The Topic name
+  virtual const Slice GetTopicName() = 0;
+
+  // The contents of the message
+  virtual const Slice GetContents() = 0;
+
+  virtual ~MessageReceived()  {}
 };
 
 /**
