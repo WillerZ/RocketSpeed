@@ -208,12 +208,16 @@ class Configuration {
    * Creates a Configuration object for a set of pilots and tenant ID.
    *
    * @param pilots Pilot hostnames.
+   * @param copilots Copilot hostnames.
    * @param tenant_id Client tenant ID.
+   * @param client_port The port on the client for receiving
+   *                    incoming messages
    * @return A new Configuration with the specified options.
    */
   static Configuration* Create(const std::vector<HostId>& pilots,
+                               const std::vector<HostId>& copilots,
                                TenantID tenant_id,
-                               int local_port);
+                               int client_port);
 
   virtual ~Configuration() {}
 
@@ -223,6 +227,11 @@ class Configuration {
   virtual const std::vector<HostId>& GetPilotHostIds() const = 0;
 
   /**
+   * The list of CoPilot endpoints
+   */
+  virtual const std::vector<HostId>& GetCopilotHostIds() const = 0;
+
+  /**
    * The Tenant associated with this configuration
    */
   virtual TenantID GetTenantID() const = 0;
@@ -230,7 +239,7 @@ class Configuration {
   /**
    * The port on the client on incoming messages are received
    */
-  virtual int GetLocalPort() const = 0;
+  virtual int GetClientPort() const = 0;
 };
 
 enum Retention : char {

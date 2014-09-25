@@ -105,7 +105,7 @@ Status Client::Open(const Configuration* config,
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
   *producer = new ClientImpl(config->GetPilotHostIds().front(),
                                config->GetTenantID(),
-                               config->GetLocalPort(),
+                               config->GetClientPort(),
                                publish_callback,
                                subscription_callback,
                                receive_callback);

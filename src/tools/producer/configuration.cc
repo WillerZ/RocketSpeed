@@ -18,9 +18,11 @@ namespace rocketspeed {
 class ManualConfiguration : public Configuration {
  public:
   ManualConfiguration(const std::vector<HostId>& pilots,
+                      const std::vector<HostId>& copilots,
                       TenantID tenant_id,
                       int local_port)
   : pilots_(pilots)
+  , copilots_(copilots)
   , tenant_id_(tenant_id)
   , local_port_(local_port) {
   }
@@ -32,24 +34,31 @@ class ManualConfiguration : public Configuration {
     return pilots_;
   }
 
+  virtual const std::vector<HostId>& GetCopilotHostIds() const {
+    return copilots_;
+  }
+
   virtual TenantID GetTenantID() const {
     return tenant_id_;
   }
 
-  virtual int GetLocalPort() const {
+  virtual int GetClientPort() const {
     return local_port_;
   }
 
  private:
   std::vector<HostId> pilots_;
+  std::vector<HostId> copilots_;
   TenantID tenant_id_;
   int local_port_;
 };
 
 Configuration* Configuration::Create(const std::vector<HostId>& pilots,
+                                     const std::vector<HostId>& copilots,
                                      TenantID tenant_id,
                                      int local_port) {
   return new ManualConfiguration(pilots,
+                                 copilots,
                                  tenant_id,
                                  local_port);
 }
