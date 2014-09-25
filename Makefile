@@ -199,6 +199,7 @@ valgrind_check: all $(PROGRAMS) $(TESTS)
 clean:
 	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(MEMENVLIBRARY) build_config.mk
 	-rm -rf ios-x86/* ios-arm/*
+	-rm -rf _mock_logdevice_logs
 	-find src -name "*.[od]" -exec rm {} \;
 	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
 
