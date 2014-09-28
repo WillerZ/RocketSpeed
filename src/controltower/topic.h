@@ -15,10 +15,12 @@ namespace rocketspeed {
 
 class Tailer;
 typedef std::unordered_set<HostNumber> TopicList;
+typedef std::string NamespaceTopic;  // namespaceid + topicname
 
 //
 // The Topic Manager maintains information between topics
-// and its subscribers.
+// and its subscribers. The topic name is actually
+// the NamespaceId concatenated with the user-specified topic name.
 //
 class TopicManager {
  public:
@@ -30,22 +32,23 @@ class TopicManager {
   virtual ~TopicManager();
 
   // Add a new subscriber to the topic.
-  Status AddSubscriber(const Topic& topic, SequenceNumber start, LogID logid,
+  Status AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
+                       LogID logid,
                        HostNumber subscriber, unsigned int roomnum);
 
   // Remove an existing subscriber for a topic
-  Status RemoveSubscriber(const Topic& topic, LogID logid,
+  Status RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
                           HostNumber subscriber, unsigned int roomnum);
 
   // Sets the seqno last read from log
   void SetLastRead(LogID logid, SequenceNumber seqno);
 
   // Returns the list of subscribers for a specific topic
-  TopicList* GetSubscribers(const Topic& topic_name);
+  TopicList* GetSubscribers(const NamespaceTopic& topic_name);
 
  private:
   // Map a topic name to a list of TopicEntries.
-  std::unordered_map<Topic, std::unique_ptr<TopicList>>  topic_map_;
+  std::unordered_map<NamespaceTopic, std::unique_ptr<TopicList>>  topic_map_;
 
   // Map of logid to the last seqno already read from the storage
   std::unordered_map<LogID, SequenceNumber> last_read_;

@@ -160,10 +160,12 @@ TEST(PilotTest, Publish) {
 
   // send messages to pilot
   HostId pilot(hostname_, options_.port_number);
+  NamespaceID nsid = 101;
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test";
-    MessageData msg(Tenant::Guest, clientId, Slice(topic), Slice(payload));
+    MessageData msg(Tenant::GuestTenant, clientId, Slice(topic), nsid,
+                    Slice(payload));
     ASSERT_EQ(loop.GetClient().Send(pilot, &msg).ok(), true);
     sent_msgs_.insert(msg.GetMessageId());
   }

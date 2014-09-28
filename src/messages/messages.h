@@ -61,11 +61,14 @@ class TopicPair {
  public:
   SequenceNumber seqno;  // the starting sequence number for this subscription
   Topic topic_name;
+  NamespaceID namespace_id;
   MetadataType topic_type;
 
-  TopicPair(SequenceNumber s, std::string name, MetadataType type) :
+  TopicPair(SequenceNumber s, std::string name, MetadataType type,
+            NamespaceID namespaceId) :
     seqno(s),
     topic_name(name),
+    namespace_id(namespaceId),
     topic_type(type) {
   }
   TopicPair() {}
@@ -179,6 +182,7 @@ class MessageData : public Message {
   MessageData(TenantID tenantID,
               const HostId& origin,
               const Slice& topic_name,
+              const NamespaceID namespace_id,
               const Slice& payload,
               Retention retention = Retention::OneWeek);
 
@@ -216,6 +220,11 @@ class MessageData : public Message {
    * @return The Topic Name
    */
   Slice GetTopicName() const { return topic_name_; }
+
+  /**
+   * @return The namespace of this topic
+   */
+  NamespaceID GetNamespaceId() const { return namespaceid_; }
 
   /**
    * @return The Message payload
@@ -257,6 +266,7 @@ class MessageData : public Message {
   Slice topic_name_;         // name of topic
   Slice payload_;            // user data of message
   Retention retention_;      // message retention
+  NamespaceID namespaceid_;  // message namespace
 };
 
 /*

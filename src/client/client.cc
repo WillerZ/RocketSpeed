@@ -29,6 +29,7 @@ class ClientImpl : public Client {
   virtual ~ClientImpl();
 
   virtual PublishStatus Publish(const Topic& name,
+                                const NamespaceID namespaceId,
                                 const TopicOptions& options,
                                 const Slice& data);
   virtual void ListenTopics(std::vector<SubscriptionPair>& names,
@@ -96,6 +97,9 @@ Status Client::Open(const Configuration* config,
   }
   if (producer == nullptr) {
     return Status::InvalidArgument("producer must not be null.");
+  }
+  if (config->GetTenantID() <= 100) {
+    return Status::InvalidArgument("TenantId must be greater than 100.");
   }
   if (config->GetPilotHostIds().empty()) {
     return Status::InvalidArgument("Must have at least one pilot.");
@@ -185,12 +189,19 @@ ClientImpl::~ClientImpl() {
 }
 
 PublishStatus ClientImpl::Publish(const Topic& name,
-                                    const TopicOptions& options,
-                                    const Slice& data) {
+                                  const NamespaceID namespaceId,
+                                  const TopicOptions& options,
+                                  const Slice& data) {
+  if (namespaceId <= 100) {       // Namespace <= 100 are reserved
+    return PublishStatus(Status::InvalidArgument(
+                         "NamespaceID must be greater than 100."),
+                         MsgId());
+  }
   // Construct message.
   MessageData message(tenant_id_,
                       host_id_,
                       Slice(name),
+                      namespaceId,
                       data,
                       options.retention);
 
@@ -217,7 +228,7 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
   // Construct subscription list
   for (const auto& elem : names) {
     list.push_back(TopicPair(elem.seqno, elem.topic_name,
-                             MetadataType::mSubscribe));
+                             MetadataType::mSubscribe, elem.namespace_id));
   }
   // Construct message.
   MessageMetadata message(tenant_id_,

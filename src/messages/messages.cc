@@ -161,12 +161,14 @@ static std::atomic<uint32_t> msgid_counter(0);
 MessageData::MessageData(TenantID tenantID,
                          const HostId& origin,
                          const Slice& topic_name,
+                         const NamespaceID namespace_id,
                          const Slice& payload,
                          Retention retention):
   origin_(origin),
   topic_name_(topic_name),
   payload_(payload),
-  retention_(retention) {
+  retention_(retention),
+  namespaceid_(namespace_id) {
   msghdr_.version_ =  ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mData;
   tenantid_ = tenantID;
@@ -197,7 +199,8 @@ MessageData::MessageData(TenantID tenantID,
 }
 
 MessageData::MessageData():
-  MessageData(Tenant::Invalid, HostId(), Slice(), Slice()) {
+  MessageData(Tenant::InvalidTenant, HostId(), Slice(),
+              Namespace::InvalidNamespace, Slice()) {
 }
 
 MessageData::~MessageData() {
@@ -294,6 +297,7 @@ void MessageData::SerializeInternal() const {
     case Retention::OneWeek: flags |= 0x2; break;
   }
   PutFixed16(&serialize_buffer__, flags);
+  PutFixed16(&serialize_buffer__, namespaceid_);
 
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
@@ -323,6 +327,10 @@ Status MessageData::DeSerializeStorage(Slice* in) {
     case 0x2: retention_ = Retention::OneWeek; break;
     default:
       return Status::InvalidArgument("Bad flags");
+  }
+  // namespace id
+  if (!GetFixed16(in, &namespaceid_)) {
+    return Status::InvalidArgument("Bad namespace id");
   }
 
   // extract message id
@@ -354,7 +362,7 @@ MessageMetadata::MessageMetadata(TenantID tenantID,
 MessageMetadata::MessageMetadata() {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mMetadata;
-  tenantid_ = Tenant::Invalid;
+  tenantid_ = Tenant::InvalidTenant;
   metatype_ = MetaType::NotInitialized;
 }
 
@@ -386,6 +394,7 @@ Slice MessageMetadata::Serialize() const {
   for (TopicPair p : topics_) {
     PutVarint64(&serialize_buffer__, p.seqno);
     PutLengthPrefixedSlice(&serialize_buffer__, Slice(p.topic_name));
+    PutFixed16(&serialize_buffer__, p.namespace_id);
     serialize_buffer__.append((const char *)&p.topic_type,
                               sizeof(p.topic_type));
   }
@@ -466,6 +475,11 @@ Status MessageMetadata::DeSerialize(Slice* in) {
       return Status::InvalidArgument("Bad Message Payload");
     }
     p.topic_name.append(sl.data(), sl.size());
+
+    // extract namespaceid
+    if (!GetFixed16(in, &p.namespace_id)) {
+      return Status::InvalidArgument("Bad Namespace id");
+    }
 
     // extract one topic type
     memcpy(&p.topic_type, in->data(), sizeof(p.topic_type));

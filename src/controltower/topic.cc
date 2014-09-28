@@ -21,10 +21,10 @@ TopicManager::~TopicManager() {
 // start sequence number from where to start the subscription is
 // specified by the caller.
 Status
-TopicManager::AddSubscriber(const Topic& topic, SequenceNumber start,
+TopicManager::AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
                             LogID logid, HostNumber subscriber,
                             unsigned int roomnum) {
-  std::unordered_map<Topic, unique_ptr<TopicList>>::iterator iter =
+  std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
                                       topic_map_.find(topic);
   // This is the first time we are receiving any subscription
   // request for this topic
@@ -34,7 +34,7 @@ TopicManager::AddSubscriber(const Topic& topic, SequenceNumber start,
     ll->insert(subscriber);
 
     auto ret = topic_map_.insert(
-                 std::pair<Topic, std::unique_ptr<TopicList>>
+                 std::pair<NamespaceTopic, std::unique_ptr<TopicList>>
                  (topic, std::move(list)));
     assert(ret.second);  // inserted successfully
     if (!ret.second) {
@@ -54,11 +54,11 @@ TopicManager::AddSubscriber(const Topic& topic, SequenceNumber start,
 
 // remove a subscriber to the topic
 Status
-TopicManager::RemoveSubscriber(const Topic& topic, LogID logid,
+TopicManager::RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
                                HostNumber subscriber,
                                unsigned int roomnum) {
   // find list of subscribers for this topic
-  std::unordered_map<Topic, unique_ptr<TopicList>>::iterator iter =
+  std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
                                       topic_map_.find(topic);
   if (iter != topic_map_.end()) {
     // remove this subscriber from list
@@ -97,8 +97,8 @@ TopicManager::SetLastRead(LogID logid, SequenceNumber seqno) {
 // Returns the list of subscribers for a specified topic.
 // Returns null if there are no subscribers.
 TopicList*
-TopicManager::GetSubscribers(const Topic& topic) {
-  std::unordered_map<Topic, unique_ptr<TopicList>>::iterator iter =
+TopicManager::GetSubscribers(const NamespaceTopic& topic) {
+  std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
                                       topic_map_.find(topic);
   if (iter != topic_map_.end()) {
     return iter->second.get();

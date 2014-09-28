@@ -74,6 +74,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
     // Create random topic name
     char topic_name[64];
     snprintf(topic_name, sizeof(topic_name), "benchmark.%lu", distr(rng));
+    NamespaceID namespace_id = 100 + i % 100;
 
     // Random topic options
     TopicOptions topic_options;
@@ -90,7 +91,8 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
     }
 
     // Send the message
-    PublishStatus ps = producer->Publish(topic_name, topic_options, payload);
+    PublishStatus ps = producer->Publish(topic_name, namespace_id,
+                                         topic_options, payload);
 
     if (!ps.status.ok()) {
       Log(InfoLogLevel::WARN_LEVEL, info_log,

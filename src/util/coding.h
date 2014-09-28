@@ -15,6 +15,7 @@
 #include <string>
 #include "src/port/port.h"
 #include "include/Slice.h"
+#include "include/Types.h"
 
 namespace rocketspeed {
 
@@ -345,4 +346,15 @@ inline uint64_t BitStreamGetInt(const Slice* src, size_t offset,
   return BitStreamGetInt(src->data(), src->size(), offset, bits);
 }
 
+// helper methods to serialize and de-serialize a namespace id
+// to a 2 byte string.
+inline void PutNamespaceId(std::string* dst, NamespaceID id) {
+  assert(sizeof(id) == sizeof(uint16_t));
+  PutFixed16(dst, id);
+}
+
+inline bool GetNamespaceId(Slice* input, NamespaceID* value) {
+  assert(sizeof(*value) == sizeof(uint16_t));
+  return GetFixed16(input, value);
+}
 }  // namespace rocketspeed

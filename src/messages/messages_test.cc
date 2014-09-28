@@ -17,9 +17,11 @@ TEST(Messaging, Data) {
   Slice name1("Topic1");
   Slice payload1("Payload1");
   HostId host1("host.id", 1234);
+  NamespaceID nsid1 = 200;
 
   // create a message
-  MessageData data1(Tenant::Guest, host1, name1, payload1, Retention::OneDay);
+  MessageData data1(Tenant::GuestTenant, host1, name1, nsid1, payload1,
+                    Retention::OneDay);
 
   // serialize the message
   Slice original = data1.Serialize();
@@ -34,16 +36,19 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
-  ASSERT_EQ(data2.GetTenantID(), Tenant::Guest);
+  ASSERT_EQ(data2.GetTenantID(), Tenant::GuestTenant);
+  ASSERT_EQ(data2.GetNamespaceId(), nsid1);
 }
 
 TEST(Messaging, DataLogStorage) {
   Slice name1("Topic1");
   Slice payload1("Payload1");
   HostId host1("host.id", 1234);
+  NamespaceID nsid1 = 300;
 
   // create a message
-  MessageData data1(Tenant::Guest, host1, name1, payload1, Retention::OneDay);
+  MessageData data1(Tenant::GuestTenant, host1, name1, nsid1, payload1,
+                    Retention::OneDay);
 
   // serialize the message
   Slice original = data1.SerializeStorage();
@@ -58,7 +63,8 @@ TEST(Messaging, DataLogStorage) {
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
-  ASSERT_EQ(data2.GetTenantID(), Tenant::Guest);
+  ASSERT_EQ(data2.GetTenantID(), Tenant::GuestTenant);
+  ASSERT_EQ(data2.GetNamespaceId(), nsid1);
 }
 
 TEST(Messaging, Metadata) {
@@ -72,11 +78,11 @@ TEST(Messaging, Metadata) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    topics.push_back(TopicPair(3 + i, std::to_string(i), type));
+    topics.push_back(TopicPair(3 + i, std::to_string(i), type, 200 + i));
   }
 
   // create a message
-  MessageMetadata meta1(Tenant::Guest,
+  MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         hostid, topics);
 
@@ -90,7 +96,7 @@ TEST(Messaging, Metadata) {
   // verify that the new message is the same as original
   ASSERT_EQ(mymachine, data2.GetOrigin().hostname);
   ASSERT_EQ(port, data2.GetOrigin().port);
-  ASSERT_EQ(Tenant::Guest, data2.GetTenantID());
+  ASSERT_EQ(Tenant::GuestTenant, data2.GetTenantID());
 
   // verify that the new message is the same as original
   std::vector<TopicPair> nt = data2.GetTopicInfo();
@@ -99,6 +105,7 @@ TEST(Messaging, Metadata) {
     ASSERT_EQ(nt[i].seqno, topics[i].seqno);
     ASSERT_EQ(nt[i].topic_name, topics[i].topic_name);
     ASSERT_EQ(nt[i].topic_type, topics[i].topic_type);
+    ASSERT_EQ(nt[i].namespace_id, topics[i].namespace_id);
   }
 }
 

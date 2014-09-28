@@ -216,7 +216,7 @@ TEST(ControlTowerTest, Ping) {
   ASSERT_EQ(ControlTowerRun().ok(), true);
 
   // create a message
-  MessagePing pingmsg(Tenant::Guest,
+  MessagePing pingmsg(Tenant::GuestTenant,
                       MessagePing::PingType::Request,
                       clientId);
 
@@ -270,10 +270,10 @@ TEST(ControlTowerTest, Subscribe) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    topics.push_back(TopicPair(4 + i, std::to_string(i), type));
+    topics.push_back(TopicPair(4 + i, std::to_string(i), type, 101 + i));
   }
   // create a message
-  MessageMetadata meta1(Tenant::Guest,
+  MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         clientId, topics);
 

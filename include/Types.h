@@ -34,28 +34,6 @@ typedef std::string Topic;
  */
 typedef uint64_t SequenceNumber;
 
-/*
- *  A topic:bool pair to indicate whether to subscribe or unsubscribe
- *  from the specified topic.
- *  Messages after the specified sequence number will be delivered to
- *  the client.
- *  A seqno of 0 indicates that the subscriber is interested in
- *  receiving whatever data is available via this topic.
- *  A seqno of 1 indicates that the subscriber is interested in
- *  receiving all the data that was published to this topic.
- **/
-class SubscriptionPair {
- public:
-  SequenceNumber seqno;  // the starting sequence number for this subscription
-  Topic topic_name;
-
-  SubscriptionPair(SequenceNumber s, std::string name) :
-    seqno(s),
-    topic_name(name) {
-  }
-  SubscriptionPair() {}
-};
-
 /**
  * The unique identifier of a message. This is globally unique in the entire
  * RocketSpeed ecosystem. A producer typically generates this id by calculating
@@ -151,7 +129,7 @@ enum Tenant : TenantID {
    * The invalid tenant ID should never be used. It is here to catch cases
    * when the client fails to set the tenant ID.
    */
-  Invalid = 0,
+  InvalidTenant = 0,
 
   /**
    * The Guest Tenant ID may be used by applications during development. The
@@ -159,11 +137,37 @@ enum Tenant : TenantID {
    * be suitable for lightweight development. This should not be used in
    * production.
    */
-  Guest = 1,
+  GuestTenant = 1,
 
   /**
    * TenantIds 2-100 are reserved for system usage. Real users should be
    * assigned ids larger than 100
+   */
+};
+
+/**
+ * A unique ID for this RocketSpeed namespace. Each namespace can have its own
+ * set of topic names. Namespaces are a way to partition the set of topics in
+ * a single instance of RocketSpeed.
+ * A Tenant can access topics from any number of namespaces.
+ */
+typedef uint16_t NamespaceID;
+
+enum Namespace : NamespaceID {
+  /**
+   * The invalid namespaceID should never be used. It is here to catch cases
+   * when the client fails to set the tenant ID.
+   */
+  InvalidNamespace = 0,
+
+  /**
+   * The Guest Namespace ID may be used by applications during development.
+   */
+  GuestNamespace = 1,
+
+  /**
+   * NamespaceIds 2-100 are reserved for system usage. Real users should be
+   * using namespaces larger than 100
    */
 };
 
@@ -194,6 +198,31 @@ class HostId {
   bool operator==(const HostId& rhs) const {
     return port == rhs.port && hostname == rhs.hostname;
   }
+};
+
+/*
+ *  A topic:bool pair to indicate whether to subscribe or unsubscribe
+ *  from the specified topic.
+ *  Messages after the specified sequence number will be delivered to
+ *  the client.
+ *  A seqno of 0 indicates that the subscriber is interested in
+ *  receiving whatever data is available via this topic.
+ *  A seqno of 1 indicates that the subscriber is interested in
+ *  receiving all the data that was published to this topic.
+ **/
+class SubscriptionPair {
+ public:
+  SequenceNumber seqno;  // the starting sequence number for this subscription
+  Topic topic_name;
+  NamespaceID namespace_id;
+
+  SubscriptionPair(SequenceNumber s, std::string name,
+                   NamespaceID namespaceId) :
+    seqno(s),
+    topic_name(name),
+    namespace_id(namespaceId) {
+  }
+  SubscriptionPair() {}
 };
 
 /**

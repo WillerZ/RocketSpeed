@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "src/util/coding.h"
 #include "src/controltower/tower.h"
 
 namespace rocketspeed {
@@ -98,13 +99,18 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   assert((ct->GetLogRouter().GetLogID(topic[0].topic_name, &checkid)).ok() &&
          (logid == checkid));
 
+  // Prefix the namespace id to the topic name
+  NamespaceTopic topic_name;
+  PutNamespaceId(&topic_name, topic[0].namespace_id);
+  topic_name.append(topic[0].topic_name);
+
   // Remember this subscription request
   if (topic[0].topic_type == MetadataType::mSubscribe) {
-    topic_map_.AddSubscriber(topic[0].topic_name,
+    topic_map_.AddSubscriber(topic_name,
                              topic[0].seqno,
                              logid, hostnum, room_number_);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
-    topic_map_.RemoveSubscriber(topic[0].topic_name,
+    topic_map_.RemoveSubscriber(topic_name,
                                 logid, hostnum, room_number_);
   }
 
@@ -131,9 +137,13 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
   ControlTower* ct = control_tower_;
   Status st;
 
-  // get the request message and the topic name
+  // get the request message
   MessageData* request = static_cast<MessageData*>(msg.get());
-  std::string topic_name = request->GetTopicName().ToString();
+
+  // Prefix the namespace id to the topic name
+  NamespaceTopic topic_name;
+  PutNamespaceId(&topic_name, request->GetNamespaceId());
+  topic_name.append(request->GetTopicName().ToString());
 
   // map the topic to a list of subscribers
   TopicList* list = topic_map_.GetSubscribers(topic_name);
