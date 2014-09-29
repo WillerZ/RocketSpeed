@@ -180,10 +180,10 @@ TEST(CopilotTest, Publish) {
   for (int i = 0; i < 100; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i % 50);
     auto type = i < 50 ? MetadataType::mSubscribe : MetadataType::mUnSubscribe;
-    MessageMetadata msg(Tenant::Guest,
+    MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         client_id,
-                        { TopicPair(0, topic, type) });
+                        { TopicPair(0, topic, type, 101 + i) });
     ASSERT_EQ(loop.GetClient().Send(copilot, &msg).ok(), true);
     sent_msgs_.insert(topic);
   }

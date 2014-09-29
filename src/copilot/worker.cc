@@ -301,7 +301,8 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
                                GetHostId(),
                                { TopicPair(request.seqno,
                                            request.topic_name,
-                                           MetadataType::mUnSubscribe) });
+                                           MetadataType::mUnSubscribe,
+                                           request.namespace_id) });
         Status status = msg_client_->Send(*recipient, &ct_msg);
         if (!status.ok()) {
           Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
@@ -319,7 +320,8 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
                                GetHostId(),
                                { TopicPair(earliest_other_seqno,
                                            request.topic_name,
-                                           MetadataType::mSubscribe) });
+                                           MetadataType::mSubscribe,
+                                           request.namespace_id) });
         Status status = msg_client_->Send(*recipient, &ct_msg);
         if (!status.ok()) {
           Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
