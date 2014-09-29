@@ -196,7 +196,7 @@ int DoConsume(Client* consumer,
   topics.resize(batch_size);
 
   // create all subscriptions from seqno 0
-  SubscriptionPair pair(0, "");
+  SubscriptionPair pair(0, "", 101);
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     // TODO(dhruba) 1234 make the topic names be the same as the producer
     pair.topic_name.assign(std::to_string(i));
