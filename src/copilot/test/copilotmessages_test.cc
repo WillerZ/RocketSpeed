@@ -33,6 +33,8 @@ class CopilotTest {
     // Create ControlTower
     ControlTowerOptions ct_options;
     ct_options.log_range = std::pair<LogID, LogID>(1, 1);
+    ct_options.storage_url =
+      "configerator:logdevice/rocketspeed.logdevice.primary.conf";
     Status st = ControlTower::CreateNewInstance(ct_options, conf_, &ct_);
     ASSERT_TRUE(ct_ != nullptr);
     ASSERT_TRUE(st.ok());

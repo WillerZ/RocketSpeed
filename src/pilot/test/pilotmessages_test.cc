@@ -30,17 +30,23 @@ class PilotTest {
     LogDeviceStorage* storage = nullptr;
     std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
       facebook::logdevice::ClientSettings::create());
-    rocketspeed::LogDeviceStorage::Create(
-      "",
-      "",
-      "",
-      std::chrono::milliseconds(5000),
-      std::move(clientSettings),
-      rocketspeed::Env::Default(),
-      &storage);
+    st_ = rocketspeed::LogDeviceStorage::Create(
+            "rocketspeed.logdevice.primary",  // storage name
+            "configerator:logdevice/rocketspeed.logdevice.primary.conf",
+            "",
+            std::chrono::milliseconds(10000),
+            std::move(clientSettings),
+            rocketspeed::Env::Default(),
+            &storage);
+    if (!st_.ok()) {
+      return;
+    }
     options_.log_range = std::pair<LogID, LogID>(1, 1);
     options_.log_storage = std::unique_ptr<rocketspeed::LogStorage>(storage);
     st_ = Pilot::CreateNewInstance(std::move(options_), conf_, &pilot_);
+    if (!st_.ok()) {
+      return;
+    }
 
     // what is my machine name?
     char myname[1024];
