@@ -96,7 +96,7 @@ class ConsistentHash {
   void Remove(const Slot& slot);
 
   /**
-   * Gets the slot that key is mapped to.
+   * Gets the slot that key is mapped to. The structure must not be empty.
    *
    * @param key The key to get the mapping for.
    * @return slot The slot that the key is mapped to.
@@ -123,9 +123,16 @@ class ConsistentHash {
   double SlotRatio(const Slot& slot) const;
 
   /**
-   * Clears the structure
+   * Clears the structure.
    */
   void Clear();
+
+  /**
+   * Test if structure is empty.
+   */
+  bool Empty() const {
+    return ring_.empty();
+  }
 
  private:
   // Hashing ring. Using a vector/multimap here as multiple slots could have

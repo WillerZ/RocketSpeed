@@ -76,6 +76,7 @@ TESTS = \
 	simple_storage_test \
 	auto_roll_logger_test \
   controlmessages_test \
+  copilotmessages_test \
   pilotmessages_test \
   log_router_test \
   control_tower_router_test \
@@ -155,7 +156,8 @@ pilot: src/pilot/main.o $(LIBOBJECTS)
 	$(CXX) src/pilot/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the copilot
-copilot:
+copilot: src/copilot/main.o $(LIBOBJECTS)
+	$(CXX) src/copilot/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the controltower
 controltower: src/controltower/main.o $(LIBOBJECTS)
@@ -236,6 +238,9 @@ auto_roll_logger_test: src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARN
 
 controlmessages_test: src/controltower/test/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/controltower/test/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+copilotmessages_test: src/copilot/test/copilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/copilot/test/copilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 pilotmessages_test: src/pilot/test/pilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/pilot/test/pilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)

@@ -229,7 +229,7 @@ EventLoop::Run(void) {
 
     if (listener_ == nullptr) {
       Log(InfoLogLevel::WARN_LEVEL, info_log_,
-          "Failed to create connection listener");
+          "Failed to create connection listener on port %d", port_number_);
       info_log_->Flush();
       return;
     }

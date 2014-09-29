@@ -43,7 +43,7 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
   } else {
     // If the user has not registered a message of this type,
     // then this msg will be droped silently.
-    Log(InfoLogLevel::INFO_LEVEL, msgloop->info_log_,
+    Log(InfoLogLevel::WARN_LEVEL, msgloop->info_log_,
         "No registered msg callback for msg type %d", type);
     msgloop->info_log_->Flush();
     assert(0);

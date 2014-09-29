@@ -325,6 +325,13 @@ class MessageMetadata : public Message {
    */
   const HostId& GetOrigin() const { return origin_; }
 
+  /**
+   * Set the origin host ID.
+   */
+  void SetOrigin(const HostId& host_id) {
+    origin_ = host_id;
+  }
+
   /*
    * Inherited from Serializer
    */

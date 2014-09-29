@@ -53,6 +53,9 @@ class MsgLoop {
   // returns a client that is used to send messages to remote hosts
   MsgClient& GetClient() { return client_; }
 
+  // Get the host ID of this message loop.
+  const HostId& GetHostId() const { return hostid_; }
+
   // Send a command to the event loop for processing.
   // This call is thread-safe.
   Status SendCommand(std::unique_ptr<Command> command) {

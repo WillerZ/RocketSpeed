@@ -19,8 +19,12 @@ ControlTowerRouter::ControlTowerRouter(
 
 Status ControlTowerRouter::GetControlTower(LogID logID,
                                            const HostId** out) const {
-  *out = mapping_.Get(logID);
-  return Status::OK();
+  if (!mapping_.Empty()) {
+    *out = mapping_.Get(logID);
+    return Status::OK();
+  }
+  *out = nullptr;
+  return Status::NotFound();
 }
 
 Status ControlTowerRouter::AddControlTower(const HostId& host_id) {

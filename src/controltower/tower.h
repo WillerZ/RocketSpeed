@@ -44,6 +44,9 @@ class ControlTower {
   // The Storage Reader
   const Tailer* GetTailer() const { return tailer_.get(); }
 
+  // Get HostID
+  const HostId& GetHostId() const { return msg_loop_.GetHostId(); }
+
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;
