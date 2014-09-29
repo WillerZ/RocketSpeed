@@ -1,7 +1,6 @@
 cpp_library(
     name = 'messages',
     srcs = [
-        'commands.cc',
         'event_loop.cc',
         'messages.cc',
         'msg_loop.cc',

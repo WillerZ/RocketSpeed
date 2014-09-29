@@ -29,11 +29,6 @@ class CopilotTest {
   // Create a new instance of the copilot
   CopilotTest():
     env_(Env::Default()), copilot_(nullptr), started_(false) {
-    // Setup conf
-    conf_ = Configuration::Create(std::vector<HostId>{ },
-                                  std::vector<HostId>{ },
-                                  Tenant(2),
-                                  0);
 
     // Create ControlTower
     ControlTowerOptions ct_options;

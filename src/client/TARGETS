@@ -1,7 +1,7 @@
 cpp_library(
     name = 'client_library',
     srcs = [
-        'producer.cc',
+        'client.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',

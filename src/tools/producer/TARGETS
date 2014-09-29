@@ -3,6 +3,7 @@ cpp_binary(
     name = 'producer',
     srcs = [
         'configuration.cc',
+        'random_distribution.cc',
         'main.cc',
     ],
     preprocessor_flags = [

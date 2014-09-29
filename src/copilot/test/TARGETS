@@ -1,8 +1,8 @@
 # unit tests for pilot
 cpp_unittest(
-    name = 'pilotmessages_test',
+    name = 'copilotmessages_test',
     srcs = [
-        'pilotmessages_test.cc',
+        'copilotmessages_test.cc',
     ],
     type = 'gtest',
     preprocessor_flags = [
@@ -11,7 +11,8 @@ cpp_unittest(
         '-DUSE_LOGDEVICE',
     ],
     deps = [
-        '@/rocketspeed/github/src/pilot:pilot_library',
+        '@/rocketspeed/github/src/copilot:copilot_library',
+        '@/rocketspeed/github/src/controltower:control_tower_library',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/messages',
