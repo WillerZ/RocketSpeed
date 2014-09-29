@@ -16,6 +16,7 @@
 #include "src/port/port_posix.h"
 #include "src/messages/messages.h"
 #include "src/util/auto_roll_logger.h"
+#include "src/tools/producer/random_distribution.h"
 
 // This tool can behave as a standalone producer, a standalone
 // consumer or both a producer and a consumer.
@@ -36,6 +37,12 @@ DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
+DEFINE_string(topics_distribution, "uniform",
+"topics random distribution (uniform, normal, poisson)");
+DEFINE_int64(topics_mean, 0,
+"Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
+DEFINE_int64(topics_stddev, 0,
+"Standard Deviation for Normal topic distribution (rounded to nearest int64)");
 
 std::shared_ptr<rocketspeed::Logger> info_log;
 
@@ -50,7 +57,9 @@ namespace rocketspeed {
 Result ProducerWorker(int64_t num_messages, Client* producer) {
   // Random number generator.
   std::mt19937_64 rng;
-  std::uniform_int_distribution<uint64_t> distr(0, FLAGS_num_topics - 1);
+  std::unique_ptr<rocketspeed::RandomDistributionBase>
+    distr(GetDistributionByName(FLAGS_topics_distribution,
+    0, FLAGS_num_topics - 1, FLAGS_topics_mean, FLAGS_topics_stddev));
 
   // Generate some dummy data.
   std::vector<char> data(FLAGS_message_size);
@@ -73,7 +82,10 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
   for (int64_t i = 0; i < num_messages; ++i) {
     // Create random topic name
     char topic_name[64];
-    snprintf(topic_name, sizeof(topic_name), "benchmark.%lu", distr(rng));
+    snprintf(topic_name, sizeof(topic_name),
+             "benchmark.%lu",
+             distr->generateRandomInt());
+
     NamespaceID namespace_id = 100 + i % 100;
 
     // Random topic options
@@ -276,6 +288,11 @@ int main(int argc, char** argv) {
   } else {
     info_log = std::make_shared<rocketspeed::NullLogger>();
   }
+
+  printf("Topics distribution: %s; Mean: %ld; Stddev: %ld\n",
+         FLAGS_topics_distribution.c_str(),
+         FLAGS_topics_mean,
+         FLAGS_topics_stddev);
 
   // Configuration for RocketSpeed.
   rocketspeed::HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
