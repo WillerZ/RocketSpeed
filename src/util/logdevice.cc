@@ -13,7 +13,7 @@ namespace rocketspeed {
  * The mapping isn't one-to-one, so some information is lost.
  */
 static Status LogDeviceErrorToStatus(facebook::logdevice::Status error) {
-  switch (facebook::logdevice::err) {
+  switch (error) {
     case facebook::logdevice::E::OK:
       return Status::OK();
 
