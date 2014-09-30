@@ -38,7 +38,7 @@ DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
 DEFINE_string(topics_distribution, "uniform",
-"topics random distribution (uniform, normal, poisson)");
+"uniform, normal, poisson, fixed");
 DEFINE_int64(topics_mean, 0,
 "Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
 DEFINE_int64(topics_stddev, 0,
@@ -82,11 +82,17 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
   for (int64_t i = 0; i < num_messages; ++i) {
     // Create random topic name
     char topic_name[64];
-    snprintf(topic_name, sizeof(topic_name),
-             "benchmark.%lu",
-             distr->generateRandomInt());
+    if (distr.get() != nullptr) {
+      snprintf(topic_name, sizeof(topic_name),
+               "benchmark.%lu",
+               distr->generateRandomInt());
+    } else {               // distribution is "fixed"
+      snprintf(topic_name, sizeof(topic_name),
+               "benchmark.%lu",
+               i % 100);   // 100 messages per topic
+    }
 
-    NamespaceID namespace_id = 100 + i % 100;
+    NamespaceID namespace_id = 101 + i % 100;
 
     // Random topic options
     TopicOptions topic_options;
@@ -189,6 +195,9 @@ int DoProduce(Client* producer,
 int DoConsume(Client* consumer,
               rocketspeed::port::Semaphore* all_messages_received) {
 
+  SequenceNumber start = 1;   // start sequence number
+  NamespaceID nsid = 101;
+
   // subscribe 10K topics at a time
   unsigned int batch_size = 10240;
 
@@ -196,7 +205,7 @@ int DoConsume(Client* consumer,
   topics.resize(batch_size);
 
   // create all subscriptions from seqno 0
-  SubscriptionPair pair(0, "", 101);
+  SubscriptionPair pair(start, "", nsid);
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     // TODO(dhruba) 1234 make the topic names be the same as the producer
     pair.topic_name.assign(std::to_string(i));
@@ -278,6 +287,7 @@ int main(int argc, char** argv) {
   if (FLAGS_logging) {
     if (!rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
                                               "",
+                                              "LOG.rocketbench",
                                               0,
                                               0,
                                               rocketspeed::INFO_LEVEL,
@@ -289,11 +299,6 @@ int main(int argc, char** argv) {
     info_log = std::make_shared<rocketspeed::NullLogger>();
   }
 
-  printf("Topics distribution: %s; Mean: %ld; Stddev: %ld\n",
-         FLAGS_topics_distribution.c_str(),
-         FLAGS_topics_mean,
-         FLAGS_topics_stddev);
-
   // Configuration for RocketSpeed.
   rocketspeed::HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
   rocketspeed::HostId copilot(FLAGS_copilot_hostname, FLAGS_copilot_port);
@@ -303,13 +308,13 @@ int main(int argc, char** argv) {
     rocketspeed::Configuration::Create(
       std::vector<rocketspeed::HostId>{ pilot },
       std::vector<rocketspeed::HostId>{ copilot },
-      rocketspeed::Tenant(2),
+      rocketspeed::Tenant(102),
       FLAGS_producer_port));
   std::unique_ptr<rocketspeed::Configuration> cconfig(
     rocketspeed::Configuration::Create(
       std::vector<rocketspeed::HostId>{ pilot },
       std::vector<rocketspeed::HostId>{ copilot },
-      rocketspeed::Tenant(2),
+      rocketspeed::Tenant(102),
       FLAGS_consumer_port));
 
   // Start/end time for benchmark.

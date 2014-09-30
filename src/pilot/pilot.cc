@@ -19,6 +19,7 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
   if (options.info_log == nullptr) {
     Status s = CreateLoggerFromOptions(options.env,
                                        options.log_dir,
+                                       "LOG.pilot",
                                        options.log_file_time_to_roll,
                                        options.max_log_file_size,
                                        options.info_log_level,

@@ -138,7 +138,7 @@ TEST(AutoRollLoggerTest, RollLogFileBySize) {
     InitTestDb();
     size_t log_max_size = 1024 * 5;
 
-    AutoRollLogger logger(Env::Default(), kTestDir, log_max_size, 0);
+    AutoRollLogger logger(Env::Default(), kTestDir, "LOG", log_max_size, 0);
 
     RollLogFileBySizeTest(&logger, log_max_size,
                           kSampleMessage + ":RollLogFileBySize");
@@ -151,7 +151,7 @@ TEST(AutoRollLoggerTest, RollLogFileByTime) {
     InitTestDb();
     // -- Test the existence of file during the server restart.
     ASSERT_TRUE(!env->FileExists(kLogFile));
-    AutoRollLogger logger(Env::Default(), kTestDir, log_size, 1);
+    AutoRollLogger logger(Env::Default(), kTestDir, "LOG", log_size, 1);
     ASSERT_TRUE(env->FileExists(kLogFile));
 
     RollLogFileByTimeTest(&logger, time, kSampleMessage + ":RollLogFileByTime");
@@ -170,7 +170,7 @@ TEST(AutoRollLoggerTest,
   size_t log_size = 1024;
 
   AutoRollLogger* logger = new AutoRollLogger(
-    Env::Default(), kTestDir, log_size, 0);
+    Env::Default(), kTestDir, "LOG", log_size, 0);
 
   LogMessage(logger, kSampleMessage.c_str());
   ASSERT_GT(logger->GetLogFileSize(), kZero);
@@ -178,7 +178,7 @@ TEST(AutoRollLoggerTest,
 
   // reopens the log file and an empty log file will be created.
   logger = new AutoRollLogger(
-    Env::Default(), kTestDir, log_size, 0);
+    Env::Default(), kTestDir, "LOG", log_size, 0);
   ASSERT_EQ(logger->GetLogFileSize(), kZero);
   delete logger;
 }
@@ -188,7 +188,7 @@ TEST(AutoRollLoggerTest, CompositeRollByTimeAndSizeLogger) {
 
   InitTestDb();
 
-  AutoRollLogger logger(Env::Default(), kTestDir, log_max_size, time);
+  AutoRollLogger logger(Env::Default(), kTestDir, "LOG", log_max_size, time);
 
   // Test the ability to roll by size
   RollLogFileBySizeTest(
@@ -205,13 +205,13 @@ TEST(AutoRollLoggerTest, CreateLoggerFromOptions) {
   shared_ptr<Logger> logger;
 
   // Normal logger
-  ASSERT_OK(CreateLoggerFromOptions(env, "", 0, 0,
+  ASSERT_OK(CreateLoggerFromOptions(env, "", "LOG", 0, 0,
                                     InfoLogLevel::DEBUG_LEVEL, &logger));
   ASSERT_TRUE(dynamic_cast<PosixLogger*>(logger.get()));
 
   // Only roll by size
   size_t max_log_file_size = 1024;
-  ASSERT_OK(CreateLoggerFromOptions(env, "", 0,
+  ASSERT_OK(CreateLoggerFromOptions(env, "", "LOG", 0,
                                     max_log_file_size,
                                     InfoLogLevel::DEBUG_LEVEL, &logger));
   AutoRollLogger* auto_roll_logger =
@@ -223,7 +223,7 @@ TEST(AutoRollLoggerTest, CreateLoggerFromOptions) {
 
   // Only roll by Time
   size_t log_file_time_to_roll = 1;
-  ASSERT_OK(CreateLoggerFromOptions(env, "", log_file_time_to_roll,
+  ASSERT_OK(CreateLoggerFromOptions(env, "", "LOG", log_file_time_to_roll,
                                     0, InfoLogLevel::DEBUG_LEVEL, &logger));
   auto_roll_logger =
     dynamic_cast<AutoRollLogger*>(logger.get());
@@ -234,7 +234,7 @@ TEST(AutoRollLoggerTest, CreateLoggerFromOptions) {
   // roll by both Time and size
   max_log_file_size = 1024 * 5;
   log_file_time_to_roll = 1;
-  ASSERT_OK(CreateLoggerFromOptions(env, "", log_file_time_to_roll,
+  ASSERT_OK(CreateLoggerFromOptions(env, "", "LOG", log_file_time_to_roll,
                                     max_log_file_size,
                                     InfoLogLevel::DEBUG_LEVEL, &logger));
   auto_roll_logger =
@@ -255,7 +255,7 @@ TEST(AutoRollLoggerTest, InfoLogLevel) {
   // an extra-scope to force the AutoRollLogger to flush the log file when it
   // becomes out of scope.
   {
-    AutoRollLogger logger(Env::Default(), kTestDir, log_size, 0);
+    AutoRollLogger logger(Env::Default(), kTestDir, "LOG", log_size, 0);
     for (int log_level = InfoLogLevel::FATAL_LEVEL;
          log_level >= InfoLogLevel::DEBUG_LEVEL; log_level--) {
       logger.SetInfoLogLevel((InfoLogLevel)log_level);

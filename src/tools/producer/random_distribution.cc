@@ -41,11 +41,14 @@ RandomDistributionBase* GetDistributionByName(
         double stddev = (stdd > 0.0) ? stdd : StandardDeviation(a, b, mean);
         pDistribution = new NormalDistribution(mean, stddev);
     }
-    else if (dist_name.compare("poisson") == 0)
+    else if (dist_name.compare("poisson") == 0) {
         pDistribution = new PoissonDistribution(mean);
-    else //default is UniformDistribution
+    }
+    else if (dist_name.compare("uniform") == 0) {
         pDistribution = new UniformDistribution(a, b);
-
+    } else if (dist_name.compare("fixed") == 0) {
+        pDistribution = nullptr;
+    }
     return pDistribution;
 }
 }

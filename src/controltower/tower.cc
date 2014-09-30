@@ -24,6 +24,7 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
   if (result.info_log == nullptr) {
     Status s = CreateLoggerFromOptions(src.env,
                                        result.log_dir,
+                                       "LOG.controltower",
                                        result.log_file_time_to_roll,
                                        result.max_log_file_size,
                                        result.info_log_level,

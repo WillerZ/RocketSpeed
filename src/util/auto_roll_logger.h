@@ -19,11 +19,13 @@ class AutoRollLogger : public Logger {
  public:
   AutoRollLogger(Env* env,
                  const std::string& log_dir,
+                 const std::string& log_filename,
                  size_t log_max_size,
                  size_t log_file_time_to_roll,
                  const InfoLogLevel log_level = InfoLogLevel::INFO_LEVEL)
       : Logger(log_level),
         log_dir_(log_dir),
+        log_filename_(log_filename),
         env_(env),
         status_(Status::OK()),
         kMaxLogFileSize(log_max_size),
@@ -33,7 +35,7 @@ class AutoRollLogger : public Logger {
         cached_now_access_count(0),
         call_NowMicros_every_N_records_(100),
         mutex_() {
-    log_fname_ = log_dir_ + "/LOG";
+    log_fname_ = log_dir_ + "/" + log_filename_;
     RollLogFile();
     ResetLogger();
   }
@@ -63,6 +65,7 @@ class AutoRollLogger : public Logger {
 
   std::string log_fname_;  // Current active info log's file name.
   std::string log_dir_;
+  std::string log_filename_;
   Env* env_;
   std::shared_ptr<Logger> logger_;
   // current status of the logger
@@ -81,9 +84,12 @@ class AutoRollLogger : public Logger {
 Status CreateLoggerFromOptions(
     Env* env,
     const std::string& log_dir,
+    const std::string& log_filename,
     size_t log_file_time_to_roll,
     size_t max_log_file_size,
     InfoLogLevel log_level,
     std::shared_ptr<Logger>* logger);
-std::string OldInfoLogFileName(const std::string& dir, uint64_t ts);
+
+std::string OldInfoLogFileName(const std::string& dir,
+    const std::string& log_filename, uint64_t ts);
 }  // namespace rocketspeed

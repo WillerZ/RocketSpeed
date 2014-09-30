@@ -31,7 +31,8 @@ Status AutoRollLogger::ResetLogger() {
 }
 
 void AutoRollLogger::RollLogFile() {
-  std::string old_fname = OldInfoLogFileName(log_dir_, env_->NowMicros());
+  std::string old_fname = OldInfoLogFileName(log_dir_, log_filename_,
+                                             env_->NowMicros());
   env_->RenameFile(log_fname_, old_fname);
 }
 
@@ -75,19 +76,22 @@ bool AutoRollLogger::LogExpired() {
 }
 
 std::string InfoLogFileName(
-     const std::string& path, const std::string& log_dir) {
-  return path + "/" + log_dir + "/LOG";
+     const std::string& path, const std::string& log_dir,
+     const std::string& log_filename) {
+  return path + "/" + log_dir + "/" + log_filename;
 }
 
-std::string OldInfoLogFileName(const std::string& dir, uint64_t ts) {
+std::string OldInfoLogFileName(const std::string& dir,
+  const std::string& log_filename, uint64_t ts) {
   char buf[50];
   snprintf(buf, sizeof(buf), "%llu", static_cast<unsigned long long>(ts));
-  return dir + "/LOG.old." + buf;
+  return dir + "/" + log_filename + ".old." + buf;
 }
 
 Status CreateLoggerFromOptions(
     Env* env,
     const std::string& log_dir,
+    const std::string& log_filename,
     size_t log_file_time_to_roll,
     size_t max_log_file_size,
     InfoLogLevel log_level,
@@ -99,14 +103,14 @@ Status CreateLoggerFromOptions(
   } else {
     dir = log_dir;
   }
-  std::string fname = dir + "/LOG";
+  std::string fname = dir + "/" + log_filename;
 
   env->CreateDirIfMissing(dir);  // In case it does not exist
 
   // Currently we only support roll by time-to-roll and log size
   if (log_file_time_to_roll > 0 || max_log_file_size > 0) {
     AutoRollLogger* result = new AutoRollLogger(
-        env, dir,
+        env, dir, log_filename,
         max_log_file_size,
         log_file_time_to_roll,
         log_level);
@@ -119,7 +123,8 @@ Status CreateLoggerFromOptions(
     return s;
   } else {
     // Open a log file in the same directory as the db
-    env->RenameFile(fname, OldInfoLogFileName(dir, env->NowMicros()));
+    env->RenameFile(fname, OldInfoLogFileName(dir, log_filename,
+                    env->NowMicros()));
     auto s = env->NewLogger(fname, logger);
     if (logger->get() != nullptr) {
       (*logger)->SetInfoLogLevel(log_level);
