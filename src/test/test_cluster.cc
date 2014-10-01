@@ -34,9 +34,8 @@ LocalTestCluster::LocalTestCluster() :
   logdevice_cluster_ = ld::IntegrationTestUtils::ClusterFactory().create(3);
   logdevice_client_ = logdevice_cluster_->createClient();
   LogDeviceStorage* storage = nullptr;
-  ASSERT_TRUE(LogDeviceStorage::Create(logdevice_client_,
-                                       Env::Default(),
-                                       &storage).ok());
+  st = LogDeviceStorage::Create(logdevice_client_, Env::Default(), &storage);
+  ASSERT_TRUE(st.ok());
   logdevice_storage_.reset(storage);
 
   // Tell the pilot and control tower to use this storage interface instead
