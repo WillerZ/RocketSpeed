@@ -48,10 +48,8 @@ ControlTower::Run(void) {
 /**
  * Private constructor for a Control Tower
  */
-ControlTower::ControlTower(const ControlTowerOptions& options,
-                           const Configuration* conf):
+ControlTower::ControlTower(const ControlTowerOptions& options):
   options_(SanitizeOptions(options)),
-  conf_(conf),
   callbacks_(InitializeCallbacks()),
   log_router_(options.log_range.first, options.log_range.second),
   hostmap_(options.max_number_of_hosts),
@@ -77,15 +75,17 @@ ControlTower::~ControlTower() {
  */
 Status
 ControlTower::CreateNewInstance(const ControlTowerOptions& options,
-                                const Configuration* conf,
                                 ControlTower** ct) {
-  *ct = new ControlTower(options, conf);
+  *ct = new ControlTower(options);
   const ControlTowerOptions opt = (*ct)->GetOptions();
 
   // Start the LogTailer first.
   Tailer* tailer;
   Status st = Tailer::CreateNewInstance(opt.env, (*ct)->rooms_,
-                                        options.storage_url, &tailer);
+                                        options.storage,
+                                        options.storage_url,
+                                        opt.info_log,
+                                        &tailer);
   if (!st.ok()) {
     delete *ct;
     return st;
@@ -99,6 +99,13 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
     unique_ptr<ControlRoom> newroom(new ControlRoom(opt, *ct, i,
                                     opt.port_number + i + 1));
     (*ct)->rooms_.push_back(std::move(newroom));
+  }
+
+  // Initialize the tailer
+  // Needs to be done after constructing rooms.
+  st = (*ct)->tailer_->Initialize();
+  if (!st.ok()) {
+    return st;
   }
 
   // Start background threads for Room msg loops

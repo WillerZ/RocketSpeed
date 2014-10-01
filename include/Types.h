@@ -285,6 +285,12 @@ enum Retention : char {
  */
 class TopicOptions {
  public:
+  TopicOptions()
+  : retention(Retention::OneWeek) {}
+
+  explicit TopicOptions(Retention retention)
+  : retention(retention) {}
+
   Retention retention;
 };
 

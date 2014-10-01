@@ -197,7 +197,9 @@ Status LogDeviceStorage::Trim(LogID id,
   // conservative result.
 
   // Now do the trim.
-  int result = client_->trim(facebook::logdevice::logid_t(id), lsn);
+  // findTimeSync returns the *next* LSN after that time, so we trim up to
+  // (lsn - 1), otherwise this will trim the next message to be issued also.
+  int result = client_->trim(facebook::logdevice::logid_t(id), lsn - 1);
   if (result != 0) {
     return LogDeviceErrorToStatus(facebook::logdevice::err);
   }

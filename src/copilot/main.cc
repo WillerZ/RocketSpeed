@@ -53,7 +53,6 @@ int main(int argc, char** argv) {
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
 
-  rocketspeed::Configuration* conf = nullptr;
   rocketspeed::CopilotOptions options;
 
   options.port_number = FLAGS_port_number;
@@ -77,7 +76,7 @@ int main(int argc, char** argv) {
   rocketspeed::Copilot* copilot = nullptr;
 
   rocketspeed::Status st = rocketspeed::Copilot::CreateNewInstance(
-                             std::move(options), conf, &copilot);
+                             std::move(options), &copilot);
   if (!st.ok()) {
     printf("Error in Starting Copilot\n");
     return 1;

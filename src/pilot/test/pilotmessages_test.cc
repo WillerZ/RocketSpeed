@@ -27,23 +27,8 @@ class PilotTest {
   PilotTest():
     env_(Env::Default()), pilot_(nullptr), started_(false) {
     // Create Pilot
-    LogDeviceStorage* storage = nullptr;
-    std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
-      facebook::logdevice::ClientSettings::create());
-    st_ = rocketspeed::LogDeviceStorage::Create(
-            "rocketspeed.logdevice.primary",  // storage name
-            "configerator:logdevice/rocketspeed.logdevice.primary.conf",
-            "",
-            std::chrono::milliseconds(10000),
-            std::move(clientSettings),
-            rocketspeed::Env::Default(),
-            &storage);
-    if (!st_.ok()) {
-      return;
-    }
     options_.log_range = std::pair<LogID, LogID>(1, 1);
-    options_.log_storage = std::unique_ptr<rocketspeed::LogStorage>(storage);
-    st_ = Pilot::CreateNewInstance(std::move(options_), conf_, &pilot_);
+    st_ = Pilot::CreateNewInstance(std::move(options_), &pilot_);
     if (!st_.ok()) {
       return;
     }
@@ -101,7 +86,6 @@ class PilotTest {
   Pilot* pilot_;
   bool started_;
   PilotOptions options_;
-  Configuration* conf_ = nullptr;
   Status st_;
   std::string hostname_;
   std::set<MsgId> sent_msgs_;

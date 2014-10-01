@@ -184,7 +184,7 @@ class Semaphore {
   }
 
   /**
-   * @return 0 on success, -1 if semaphore could not
+   * @return true on success, false if semaphore could not
    *         be decremented before @param deadline.
    */
   bool TimedWait(std::chrono::system_clock::time_point deadline) {

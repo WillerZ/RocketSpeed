@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "src/util/logdevice.h"
 #include "src/util/memory.h"
 
 namespace rocketspeed {
@@ -55,10 +56,8 @@ void Pilot::Run() {
 /**
  * Private constructor for a Pilot
  */
-Pilot::Pilot(PilotOptions options,
-             const Configuration* conf):
+Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))),
-  conf_(conf),
   callbacks_(InitializeCallbacks()),
   msg_loop_(options_.env,
             options_.env_options,
@@ -66,8 +65,25 @@ Pilot::Pilot(PilotOptions options,
             options_.info_log,
             static_cast<ApplicationCallbackContext>(this),
             callbacks_),
-  log_storage_(std::move(options_.log_storage)),
   log_router_(options_.log_range.first, options_.log_range.second) {
+  if (options_.storage == nullptr) {
+    // Create log device client
+    LogDeviceStorage* storage = nullptr;
+    std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
+      facebook::logdevice::ClientSettings::create());
+    rocketspeed::LogDeviceStorage::Create(
+      "rocketspeed.logdevice.primary",
+      options_.storage_url,
+      "",
+      std::chrono::milliseconds(1000),
+      std::move(clientSettings),
+      options_.env,
+      &storage);
+    log_storage_.reset(storage);
+  } else {
+    log_storage_ = options_.storage;
+  }
+
   // Create workers.
   for (uint32_t i = 0; i < options_.num_workers_; ++i) {
     workers_.emplace_back(new PilotWorker(options_, log_storage_.get()));
@@ -97,9 +113,8 @@ Pilot::~Pilot() {
  * This is a static method to create a Pilot
  */
 Status Pilot::CreateNewInstance(PilotOptions options,
-                                const Configuration* conf,
                                 Pilot** pilot) {
-  *pilot = new Pilot(std::move(options), conf);
+  *pilot = new Pilot(std::move(options));
 
   // Ensure we managed to connect to the log storage.
   if ((*pilot)->log_storage_ == nullptr) {

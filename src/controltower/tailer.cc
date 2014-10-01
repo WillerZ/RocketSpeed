@@ -9,11 +9,11 @@
 namespace rocketspeed {
 
 Tailer::Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
-               const URL& storage_url,
-               LogStorage* storage) :
+               std::shared_ptr<LogStorage> storage,
+               std::shared_ptr<Logger> info_log) :
   rooms_(rooms),
-  storage_url_(storage_url),
-  storage_(storage) {
+  storage_(storage),
+  info_log_(info_log) {
 }
 
 Tailer::~Tailer() {
@@ -35,6 +35,12 @@ Status Tailer::Initialize() {
     MessageData* newmsg = new MessageData();
     Slice payload = record.payload;
     Status st = newmsg->DeSerializeStorage(&payload);
+    if (!st.ok()) {
+      Log(InfoLogLevel::WARN_LEVEL, info_log_,
+        "Failed to deserialize message (%s).",
+        st.ToString().c_str());
+        info_log_->Flush();
+    }
     assert(st.ok());
     newmsg->SetSequenceNumber(record.sequenceNumber);
 
@@ -64,33 +70,31 @@ Status Tailer::Initialize() {
 Status
 Tailer::CreateNewInstance(Env* env,
                           const std::vector<unique_ptr<ControlRoom>>& rooms,
+                          std::shared_ptr<LogStorage> storage,
                           const URL& storage_url,
+                          std::shared_ptr<Logger> info_log,
                           Tailer** tailer) {
-  // create logdevice client
-  std::unique_ptr<facebook::logdevice::ClientSettings> settings(
-    facebook::logdevice::ClientSettings::create());
-  std::shared_ptr<facebook::logdevice::Client> client =
-    facebook::logdevice::Client::create(
-                         "rocketspeed.logdevice.primary",  // storage name
-                         storage_url,
-                         "",                               // credentials
-                         std::chrono::milliseconds(1000),
-                         std::move(settings));
+  if (storage == nullptr) {
+    // create logdevice client
+    std::unique_ptr<facebook::logdevice::ClientSettings> settings(
+      facebook::logdevice::ClientSettings::create());
+    std::shared_ptr<facebook::logdevice::Client> client =
+      facebook::logdevice::Client::create(
+                           "rocketspeed.logdevice.primary",  // storage name
+                           storage_url,
+                           "",                               // credentials
+                           std::chrono::milliseconds(1000),
+                           std::move(settings));
 
-  // created logdevice reader
-  LogDeviceStorage* store;
-  Status st = LogDeviceStorage::Create(client, env, &store);
-  if (!st.ok()) {
-    return st;
+    // created logdevice reader
+    LogDeviceStorage* store;
+    Status st = LogDeviceStorage::Create(client, env, &store);
+    if (!st.ok()) {
+      return st;
+    }
+    storage.reset(store);
   }
-  *tailer = new Tailer(rooms, storage_url, store);
-
-  // Initialize the tailer
-  st = (*tailer)->Initialize();
-  if (!st.ok()) {
-    delete *tailer;
-    return st;
-  }
+  *tailer = new Tailer(rooms, storage, info_log);
   return Status::OK();
 }
 

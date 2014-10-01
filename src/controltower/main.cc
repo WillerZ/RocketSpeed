@@ -55,7 +55,6 @@ int main(int argc, char** argv) {
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
 
-  rocketspeed::Configuration* conf = nullptr;
   rocketspeed::ControlTowerOptions options;
 
   // Create global options and configs from command line
@@ -74,7 +73,7 @@ int main(int argc, char** argv) {
   rocketspeed::ControlTower* ct = nullptr;
 
   rocketspeed::Status st = rocketspeed::ControlTower::CreateNewInstance(
-                             options, conf, &ct);
+                             options, &ct);
   if (!st.ok()) {
     std::cout << "Error in Starting ControlTower";
   } else {

@@ -2,7 +2,6 @@
 cpp_binary(
     name = 'producer',
     srcs = [
-        'configuration.cc',
         'random_distribution.cc',
         'main.cc',
     ],
@@ -15,6 +14,7 @@ cpp_binary(
     ],
     deps = [
         '@/rocketspeed/github/src/client:client_library',
+        '@/rocketspeed/github/src/test:configuration',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/messages',

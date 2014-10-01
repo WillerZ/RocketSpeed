@@ -55,10 +55,8 @@ void Copilot::Run() {
 /**
  * Private constructor for a Copilot
  */
-Copilot::Copilot(CopilotOptions options,
-                 const Configuration* conf):
+Copilot::Copilot(CopilotOptions options):
   options_(SanitizeOptions(std::move(options))),
-  conf_(conf),
   callbacks_(InitializeCallbacks()),
   msg_loop_(options_.env,
             options_.env_options,
@@ -101,9 +99,8 @@ Copilot::~Copilot() {
  * This is a static method to create a Copilot
  */
 Status Copilot::CreateNewInstance(CopilotOptions options,
-                                  const Configuration* conf,
                                   Copilot** copilot) {
-  *copilot = new Copilot(std::move(options), conf);
+  *copilot = new Copilot(std::move(options));
   return Status::OK();
 }
 
@@ -114,6 +111,10 @@ void Copilot::ProcessData(ApplicationCallbackContext ctx,
 
   // get the request message
   MessageData* data = static_cast<MessageData*>(msg.get());
+
+  Log(InfoLogLevel::INFO_LEVEL, copilot->options_.info_log,
+      "Received data message for topic '%s'",
+      data->GetTopicName().ToString().c_str());
 
   // map the topic to a logid
   LogID logid;
@@ -145,6 +146,15 @@ void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
   for (size_t i = 0; i < request->GetTopicInfo().size(); i++) {
     // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
+
+    Log(InfoLogLevel::INFO_LEVEL, copilot->options_.info_log,
+      "Received %s %s for topic '%s'",
+      topic.topic_type == MetadataType::mSubscribe
+        ? "subscribe" : "unsubscribe",
+      request->GetMetaType() == MessageMetadata::MetaType::Request
+        ? "request" : "response",
+      topic.topic_name.c_str());
+
     LogID logid;
     Status st = copilot->log_router_.GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {

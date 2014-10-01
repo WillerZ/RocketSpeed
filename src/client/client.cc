@@ -36,11 +36,12 @@ class ClientImpl : public Client {
                             const TopicOptions& options);
 
   ClientImpl(const HostId& pilot_host_id,
-               TenantID tenant_id,
-               int port,
-               PublishCallback publish_callback,
-               SubscribeCallback subscription_callback,
-               MessageReceivedCallback receive_callback);
+             const HostId& copilot_host_id,
+             TenantID tenant_id,
+             int port,
+             PublishCallback publish_callback,
+             SubscribeCallback subscription_callback,
+             MessageReceivedCallback receive_callback);
 
  private:
   // Callback for a Data message
@@ -58,8 +59,9 @@ class ClientImpl : public Client {
   // HostId of this machine, i.e. the one the producer is running on.
   HostId host_id_;
 
-  // HostId of pilot machine to send messages to.
+  // HostId of pilot/copilot machines to send messages to.
   HostId pilot_host_id_;
+  HostId copilot_host_id_;
 
   // Tenant ID of this producer.
   TenantID tenant_id_;
@@ -108,21 +110,24 @@ Status Client::Open(const Configuration* config,
   // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
   *producer = new ClientImpl(config->GetPilotHostIds().front(),
-                               config->GetTenantID(),
-                               config->GetClientPort(),
-                               publish_callback,
-                               subscription_callback,
-                               receive_callback);
+                             config->GetCopilotHostIds().front(),
+                             config->GetTenantID(),
+                             config->GetClientPort(),
+                             publish_callback,
+                             subscription_callback,
+                             receive_callback);
   return Status::OK();
 }
 
 ClientImpl::ClientImpl(const HostId& pilot_host_id,
-                           TenantID tenant_id,
-                           int port,
-                           PublishCallback publish_callback,
-                           SubscribeCallback subscription_callback,
-                           MessageReceivedCallback receive_callback)
+                       const HostId& copilot_host_id,
+                       TenantID tenant_id,
+                       int port,
+                       PublishCallback publish_callback,
+                       SubscribeCallback subscription_callback,
+                       MessageReceivedCallback receive_callback)
 : pilot_host_id_(pilot_host_id)
+, copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
 , publish_callback_(publish_callback)
 , subscription_callback_(subscription_callback)
@@ -236,7 +241,7 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
                           host_id_,
                           list);
   // Construct command.
-  std::unique_ptr<Command> command(new ClientCommand(pilot_host_id_,
+  std::unique_ptr<Command> command(new ClientCommand(copilot_host_id_,
                                                      message));
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command));
@@ -286,7 +291,7 @@ void ClientImpl::ProcessData(const ApplicationCallbackContext arg,
 
 // Process the Ack message for a Data Message
 void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
-                                  std::unique_ptr<Message> msg) {
+                                std::unique_ptr<Message> msg) {
   ClientImpl* self = static_cast<ClientImpl*>(arg);
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 

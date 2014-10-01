@@ -81,6 +81,9 @@ void PilotWorker::CommandCallback(std::unique_ptr<Command> command) {
 
     } else {
       // Append failed, send failure ack.
+      Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
+          "AppendAsync failed (%s)",
+          append_status.ToString().c_str());
       SendAck(msg->GetOrigin(),
               msg->GetMessageId(),
               MessageDataAck::AckStatus::Failure);

@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
+#include <memory>
 #include <vector>
 #include "./Env.h"
 #include "./Status.h"
@@ -26,8 +27,13 @@ class Tailer {
   static Status CreateNewInstance(
                            Env* env,
                            const std::vector<unique_ptr<ControlRoom>>& rooms,
+                           std::shared_ptr<LogStorage> storage,
                            const URL& storage_url,
+                           std::shared_ptr<Logger> info_log,
                            Tailer** tailer);
+
+  // Initialize the Tailer first before using it
+  Status Initialize();
 
   // Opens the specified log at specified position
   // This call is not thread-safe.
@@ -43,23 +49,20 @@ class Tailer {
  private:
   // private constructor
   Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
-         const URL& storage_url,
-         LogStorage* storage);
+         std::shared_ptr<LogStorage> storage,
+         std::shared_ptr<Logger> info_log);
 
   // A pointer to all the rooms
   const std::vector<unique_ptr<ControlRoom>>& rooms_;
 
-  // definition of the storage
-  const URL storage_url_;
-
   // The Storage device
-  const unique_ptr<LogStorage> storage_;
+  const std::shared_ptr<LogStorage> storage_;
 
   // One reader per ControlRoom
   std::vector<unique_ptr<AsyncLogReader>> reader_;
 
-  // initialize the Tailer first before using it
-  Status Initialize();
+  // Information log
+  std::shared_ptr<Logger> info_log_;
 };
 
 }  // namespace rocketspeed

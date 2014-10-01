@@ -29,20 +29,19 @@ class CopilotTest {
   // Create a new instance of the copilot
   CopilotTest():
     env_(Env::Default()), copilot_(nullptr), started_(false) {
-
     // Create ControlTower
     ControlTowerOptions ct_options;
     ct_options.log_range = std::pair<LogID, LogID>(1, 1);
     ct_options.storage_url =
       "configerator:logdevice/rocketspeed.logdevice.primary.conf";
-    Status st = ControlTower::CreateNewInstance(ct_options, conf_, &ct_);
+    Status st = ControlTower::CreateNewInstance(ct_options, &ct_);
     ASSERT_TRUE(ct_ != nullptr);
     ASSERT_TRUE(st.ok());
 
     // Create Copilot
     options_.log_range = std::pair<LogID, LogID>(1, 1);
     options_.control_towers.push_back(ct_->GetHostId());
-    st_ = Copilot::CreateNewInstance(options_, conf_, &copilot_);
+    st_ = Copilot::CreateNewInstance(options_, &copilot_);
 
     // what is my machine name?
     char myname[1024];
@@ -100,7 +99,6 @@ class CopilotTest {
   ControlTower* ct_;
   bool started_;
   CopilotOptions options_;
-  Configuration* conf_ = nullptr;
   Status st_;
   std::string hostname_;
   std::set<Topic> sent_msgs_;

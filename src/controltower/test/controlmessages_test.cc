@@ -49,7 +49,7 @@ class ControlTowerTest {
       "configerator:logdevice/rocketspeed.logdevice.primary.conf";
 
     char myname[1024];
-    st_ = ControlTower::CreateNewInstance(ctoptions_, conf_, &ct_);
+    st_ = ControlTower::CreateNewInstance(ctoptions_, &ct_);
 
     // what is my machine name?
     ASSERT_EQ(gethostname(&myname[0], sizeof(myname)), 0);
@@ -91,7 +91,6 @@ class ControlTowerTest {
   std::shared_ptr<Logger> info_log_;
   bool started_;
   ControlTowerOptions ctoptions_;
-  Configuration* conf_ = nullptr;
   Status st_;
   std::string hostname_;
   int num_ping_responses_;

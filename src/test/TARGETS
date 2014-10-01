@@ -1,0 +1,63 @@
+cpp_library(
+    name = 'test_cluster',
+    srcs = [
+        'test_cluster.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DUSE_LOGDEVICE=1',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/pilot:pilot_library',
+        '@/rocketspeed/github/src/copilot:copilot_library',
+        '@/rocketspeed/github/src/controltower:control_tower_library',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/logdevice/external/libevent-2.1.3-alpha:event_core',
+    ],
+    compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
+)
+
+cpp_library(
+    name = 'configuration',
+    srcs = [
+        'configuration.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/logdevice/external/libevent-2.1.3-alpha:event_core',
+    ],
+    compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
+)
+
+# integration test
+cpp_unittest(
+    name = 'integration_test',
+    srcs = [
+        'integration_test.cc',
+    ],
+    type = 'gtest',
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+    ],
+    deps = [
+        ':test_cluster',
+        ':configuration',
+        '@/rocketspeed/github/src/client:client_library',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/messages',
+    ],
+    compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
+)

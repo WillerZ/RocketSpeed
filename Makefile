@@ -59,7 +59,9 @@ LIBOBJECTS = $(SOURCES:.cc=.o)
 LIBOBJECTS += $(SOURCESCPP:.cpp=.o)
 
 TESTUTIL = ./src/util/testutil.o
-TESTHARNESS = ./src/util/testharness.o $(TESTUTIL)
+TESTCLUSTER = ./src/test/test_cluster.o
+TESTHARNESS = ./src/util/testharness.o $(TESTUTIL) $(TESTCLUSTER)
+TESTCONFIGURATION = ./src/test/configuration.o
 BENCHHARNESS = ./src/util/benchharness.o
 VALGRIND_ERROR = 2
 VALGRIND_DIR = build_tools/VALGRIND_LOGS
@@ -82,7 +84,8 @@ TESTS = \
   control_tower_router_test \
   mock_logdevice_test \
   logdevice_storage_test \
-  hostmap_test
+  hostmap_test \
+  integration_test
 
 TOOLS = \
 	producer
@@ -164,8 +167,8 @@ controltower: src/controltower/main.o $(LIBOBJECTS)
 	$(CXX) src/controltower/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the producer tool
-producer: src/tools/producer/main.o $(LIBOBJECTS)
-	$(CXX) src/tools/producer/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+producer: src/tools/producer/main.o $(LIBOBJECTS) $(TESTCONFIGURATION)
+	$(CXX) src/tools/producer/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # run all unit tests
 check: $(TESTS)
@@ -259,6 +262,9 @@ logdevice_storage_test: src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS)
 
 hostmap_test: src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(TESTCONFIGURATION)
+	$(CXX) src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(TESTCONFIGURATION) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

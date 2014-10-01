@@ -26,7 +26,6 @@ class Copilot {
  public:
   // A new instance of a Copilot
   static Status CreateNewInstance(CopilotOptions options,
-                                  const Configuration* conf,
                                   Copilot** copilot);
   virtual ~Copilot();
 
@@ -39,12 +38,12 @@ class Copilot {
   // Returns the sanitized options used by the copilot
   CopilotOptions& GetOptions() { return options_; }
 
+  // Get HostID
+  const HostId& GetHostId() const { return msg_loop_.GetHostId(); }
+
  private:
   // The options used by the Copilot
   CopilotOptions options_;
-
-  // The configuration of this rocketspeed instance
-  const Configuration* conf_;
 
   // Message specific callbacks stored here
   const std::map<MessageType, MsgCallbackType> callbacks_;
@@ -63,8 +62,7 @@ class Copilot {
   ControlTowerRouter control_tower_router_;
 
   // private Constructor
-  Copilot(CopilotOptions options,
-          const Configuration* conf);
+  explicit Copilot(CopilotOptions options);
 
   // Sanitize input options if necessary
   CopilotOptions SanitizeOptions(CopilotOptions options);

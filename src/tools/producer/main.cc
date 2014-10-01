@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 #include "include/RocketSpeed.h"
+#include "include/Types.h"
 #include "src/port/port_posix.h"
 #include "src/messages/messages.h"
 #include "src/util/auto_roll_logger.h"

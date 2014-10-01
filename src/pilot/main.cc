@@ -28,7 +28,9 @@ DEFINE_int32(num_threads, 16, "number of threads");
 DEFINE_int32(port_number, 58600, "port number");
 DEFINE_string(logs, "1..100000", "range of logs");
 DEFINE_bool(libevent_debug, false, "Debugging libevent");
-
+DEFINE_string(storage_url,
+              "configerator:logdevice/rocketspeed.logdevice.primary.conf",
+              "Storage service url");
 /*
  * Dumps libevent info messages to stdout
  */
@@ -53,27 +55,10 @@ int main(int argc, char** argv) {
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
 
-  rocketspeed::Configuration* conf = nullptr;
+  // Setup Pilot options.
   rocketspeed::PilotOptions options;
-
-  // Create Log Device interface
-  rocketspeed::LogDeviceStorage* storage = nullptr;
-  std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
-    facebook::logdevice::ClientSettings::create());
-  if (!rocketspeed::LogDeviceStorage::Create(
-    "",
-    "",
-    "",
-    std::chrono::milliseconds(5000),
-    std::move(clientSettings),
-    rocketspeed::Env::Default(),
-    &storage).ok()) {
-    printf("Error creating Log Device client\n");
-    return 1;
-  }
-
   options.port_number = FLAGS_port_number;
-  options.log_storage = std::unique_ptr<rocketspeed::LogStorage>(storage);
+  options.storage_url = FLAGS_storage_url;
 
   // Parse and validate log range.
   int ret = sscanf(FLAGS_logs.c_str(), "%lu..%lu",
@@ -94,7 +79,7 @@ int main(int argc, char** argv) {
   rocketspeed::Pilot* pilot = nullptr;
 
   rocketspeed::Status st = rocketspeed::Pilot::CreateNewInstance(
-                             std::move(options), conf, &pilot);
+                             std::move(options), &pilot);
   if (!st.ok()) {
     printf("Error in Starting Pilot\n");
     return 1;

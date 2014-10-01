@@ -25,7 +25,6 @@ class Pilot {
  public:
   // A new instance of a Pilot
   static Status CreateNewInstance(PilotOptions options,
-                                  const Configuration* conf,
                                   Pilot** pilot);
   virtual ~Pilot();
 
@@ -38,12 +37,12 @@ class Pilot {
   // Returns the sanitized options used by the pilot
   PilotOptions& GetOptions() { return options_; }
 
+  // Get HostID
+  const HostId& GetHostId() const { return msg_loop_.GetHostId(); }
+
  private:
   // The options used by the Pilot
   PilotOptions options_;
-
-  // The configuration of this rocketspeed instance
-  const Configuration* conf_;
 
   // Message specific callbacks stored here
   const std::map<MessageType, MsgCallbackType> callbacks_;
@@ -52,7 +51,7 @@ class Pilot {
   MsgLoop msg_loop_;
 
   // Interface with LogDevice
-  std::unique_ptr<LogStorage> log_storage_;
+  std::shared_ptr<LogStorage> log_storage_;
 
   // Log router for mapping topic names to logs.
   LogRouter log_router_;
@@ -62,8 +61,7 @@ class Pilot {
   std::vector<std::thread> worker_threads_;
 
   // private Constructor
-  Pilot(PilotOptions options,
-        const Configuration* conf);
+  explicit Pilot(PilotOptions options);
 
   // Sanitize input options if necessary
   PilotOptions SanitizeOptions(PilotOptions options);
