@@ -152,6 +152,49 @@ TEST(ConsistentHashTest, Consistency) {
   }
 }
 
+TEST(ConsistentHashTest, Collisions) {
+  typedef std::pair<size_t, size_t> Value;
+  typedef std::function<size_t(Value)> HashFunc;
+  HashFunc first_func = [](Value val) { return val.first; };
+
+  ConsistentHash<Value, Value, HashFunc, HashFunc> hash(first_func, first_func);
+
+  hash.Add(Value(42, 1), 1);
+  hash.Add(Value(42, 2), 1);
+  hash.Add(Value(42, 3), 1);
+  hash.Add(Value(256, 20), 1);
+  hash.Add(Value(256, 10), 1);
+
+  // can't use ASSERT_EQ because it needs an operator<<(ostream&, value)
+  ASSERT_TRUE(hash.Get(Value(10, 0)) == Value(42, 1));
+  ASSERT_TRUE(hash.Get(Value(42, 0)) == Value(42, 1));
+  ASSERT_TRUE(hash.Get(Value(100, 0)) == Value(256, 20));
+  ASSERT_TRUE(hash.Get(Value(1000, 0)) == Value(42, 1));
+
+  hash.Remove(Value(42, 2));
+
+  ASSERT_TRUE(hash.Get(Value(10, 0)) == Value(42, 1));
+  ASSERT_TRUE(hash.Get(Value(42, 0)) == Value(42, 1));
+  ASSERT_TRUE(hash.Get(Value(100, 0)) == Value(256, 20));
+  ASSERT_TRUE(hash.Get(Value(1000, 0)) == Value(42, 1));
+
+  hash.Remove(Value(42, 1));
+
+  ASSERT_TRUE(hash.Get(Value(10, 0)) == Value(42, 3));
+  ASSERT_TRUE(hash.Get(Value(42, 0)) == Value(42, 3));
+  ASSERT_TRUE(hash.Get(Value(100, 0)) == Value(256, 20));
+  ASSERT_TRUE(hash.Get(Value(1000, 0)) == Value(42, 3));
+
+  hash.Remove(Value(42, 1));
+  hash.Remove(Value(42, 3));
+  hash.Remove(Value(256, 20));
+
+  ASSERT_TRUE(hash.Get(Value(10, 0)) == Value(256, 10));
+  ASSERT_TRUE(hash.Get(Value(42, 0)) == Value(256, 10));
+  ASSERT_TRUE(hash.Get(Value(100, 0)) == Value(256, 10));
+  ASSERT_TRUE(hash.Get(Value(1000, 0)) == Value(256, 10));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

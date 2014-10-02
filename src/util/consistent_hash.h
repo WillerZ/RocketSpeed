@@ -142,6 +142,10 @@ class ConsistentHash {
   // Add(X); // hash(X) == 42
   // Add(Y); // hash(Y) == 42 -- overrides X
   // Remove(Y); // now we have no slots, but should still have the X slot!
+  // NOTE: if the collision occurs, the order of slots in the ring is the same
+  // as the order in which they were added.
+  // So, strictly speaking, the hash is only guaranteed to be consistent if
+  // the order of slot additions is consistent.
 #ifdef CONSISTENT_HASH_USE_VECTOR
   std::vector<std::pair<size_t, Slot>> ring_;
 
@@ -178,7 +182,7 @@ void ConsistentHash<Key, Slot, KeyHash, SlotHash>::Add(
   while (replicas--) {
 #ifdef CONSISTENT_HASH_USE_VECTOR
     std::pair<size_t, Slot> p(hash, slot);
-    ring_.insert(std::lower_bound(ring_.begin(), ring_.end(), p), p);
+    ring_.insert(std::upper_bound(ring_.begin(), ring_.end(), p), p);
 #else
     ring_.insert(std::make_pair(hash, slot));
 #endif
@@ -201,7 +205,7 @@ void ConsistentHash<Key, Slot, KeyHash, SlotHash>::Remove(
     auto range = ring_.equal_range(hash);
 #endif
     bool found = false;
-    for (auto it = range.first; it != range.second; ) {
+    for (auto it = range.first; it != range.second; ++it) {
       if (it->second == slot) {
         found = true;
         ring_.erase(it);
