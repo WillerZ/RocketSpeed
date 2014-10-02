@@ -12,7 +12,11 @@ PilotOptions::PilotOptions()
   : env(Env::Default()),
     port_number(58600),
     info_log(nullptr),
+#ifdef NDEBUG
+    info_log_level(WARN_LEVEL),
+#else
     info_log_level(INFO_LEVEL),
+#endif
     log_dir(""),
     max_log_file_size(0),
     log_file_time_to_roll(0),

@@ -46,7 +46,6 @@ LocalTestCluster::LocalTestCluster() :
 
   // Create ControlTower
   control_tower_options_.log_range = log_range;
-  control_tower_options_.log_dir = test::TmpDir() + "/controltower";
   st = ControlTower::CreateNewInstance(control_tower_options_, &control_tower_);
   if (!st.ok()) {
     fprintf(stderr, "Failed to create control tower.\n");
@@ -57,7 +56,6 @@ LocalTestCluster::LocalTestCluster() :
   HostId control_tower_host(control_tower_options_.hostname,
                             control_tower_options_.port_number);
   copilot_options_.control_towers.push_back(control_tower_host);
-  copilot_options_.log_dir = test::TmpDir() + "/copilot";
   st = Copilot::CreateNewInstance(copilot_options_, &copilot_);
   if (!st.ok()) {
     fprintf(stderr, "Failed to create copilot.\n");
@@ -66,7 +64,6 @@ LocalTestCluster::LocalTestCluster() :
 
   // Create Pilot
   pilot_options_.log_range = log_range;
-  pilot_options_.log_dir = test::TmpDir() + "/pilot";
   st = Pilot::CreateNewInstance(pilot_options_, &pilot_);
   if (!st.ok()) {
     fprintf(stderr, "Failed to create pilot.\n");

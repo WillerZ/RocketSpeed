@@ -88,7 +88,8 @@ TESTS = \
   integration_test
 
 TOOLS = \
-	producer
+	producer \
+	local_server
 
 PROGRAMS = pilot copilot controltower $(TOOLS)
 
@@ -145,7 +146,7 @@ dbg: $(LIBRARY) $(PROGRAMS) $(TESTS)
 # creates static library and programs
 release:
 	$(MAKE) clean
-	OPT="-DNDEBUG -O2" $(MAKE) all $(PROGRAMS) -j32
+	OPT="-DNDEBUG -O2" $(MAKE) all $(PROGRAMS) $(TOOLS) -j32
 
 coverage:
 	$(MAKE) clean
@@ -169,6 +170,10 @@ controltower: src/controltower/main.o $(LIBOBJECTS)
 # compile only the producer tool
 producer: src/tools/producer/main.o $(LIBOBJECTS) $(TESTCONFIGURATION)
 	$(CXX) src/tools/producer/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+# compile only the local_server tool
+local_server: src/tools/local_server/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER)
+	$(CXX) src/tools/local_server/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # run all unit tests
 check: $(TESTS)

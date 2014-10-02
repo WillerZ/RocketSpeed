@@ -26,6 +26,7 @@ _mock_logdevice_logs/*
 /pilot
 /copilot
 /producer
+/local_server
 
 src/util/build_version.cc
 build_tools/VALGRIND_LOGS/
