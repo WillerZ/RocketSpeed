@@ -22,7 +22,8 @@ CopilotOptions::CopilotOptions()
     log_file_time_to_roll(0),
     log_range(1, 100000),
     num_workers(std::thread::hardware_concurrency()),
-    consistent_hash_replicas(20) {
+    consistent_hash_replicas(20),
+    control_towers_per_log(1) {
   char myname[1024];
   gethostname(&myname[0], sizeof(myname));
   copilotname.assign(myname);

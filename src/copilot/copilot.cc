@@ -66,7 +66,8 @@ Copilot::Copilot(CopilotOptions options):
             callbacks_),
   log_router_(options_.log_range.first, options_.log_range.second),
   control_tower_router_(options_.control_towers,
-                        options_.consistent_hash_replicas) {
+                        options_.consistent_hash_replicas,
+                        options_.control_towers_per_log) {
 
   // Create workers.
   for (uint32_t i = 0; i < options_.num_workers; ++i) {

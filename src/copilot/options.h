@@ -78,6 +78,9 @@ struct CopilotOptions {
   // lookups (logarithmic).
   uint32_t consistent_hash_replicas;
 
+  // Each topic should be tailed by this many control towers.
+  uint32_t control_towers_per_log;
+
   // Create CopilotOptions with default values for all fields
   CopilotOptions();
 };

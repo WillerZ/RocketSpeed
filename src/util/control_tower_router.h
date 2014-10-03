@@ -31,18 +31,30 @@ class ControlTowerRouter {
    * @param control_towers List of control towers to map to.
    * @param replicas Number of hash ring replicas (higher means better
    *        distribution, but more memory usage)
+   * @param control_towers_per_log Each log is mapped to this many
+   *        control towers.
    */
   explicit ControlTowerRouter(const std::vector<HostId>& control_towers,
-                              unsigned int replicas);
+                              unsigned int replicas,
+                              size_t control_towers_per_log);
 
   /**
-   * Gets the host ID of the control tower ring that is tailing this log.
+    * Gets the host ID of the control tower ring that is tailing this log.
+    *
+    * @param logID The ID of the log to lookup.
+    * @param out Where to place the resulting control tower ring host ID.
+    * @return on success OK(), otherwise errorcode.
+    */
+  Status GetControlTower(LogID logID, HostId const** out) const;
+
+  /**
+   * Gets the host IDs of the control tower rings that are tailing this log.
    *
    * @param logID The ID of the log to lookup.
-   * @param out Where to place the resulting control tower ring host ID.
+   * @param out Where to place the resulting control tower ring host IDs.
    * @return on success OK(), otherwise errorcode.
    */
-  Status GetControlTower(LogID logID, HostId const** out) const;
+  Status GetControlTowers(LogID logID, std::vector<HostId const*>* out) const;
 
   /**
    * Adds a control tower from the mapping.
@@ -75,6 +87,7 @@ class ControlTowerRouter {
                  MurmurHash2<LogID>,
                  HostIdHash> mapping_;
   unsigned int replication_;
+  size_t control_towers_per_log_;
 };
 
 }  // namespace rocketspeed

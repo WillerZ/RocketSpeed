@@ -9,9 +9,9 @@ namespace rocketspeed {
 
 ControlTowerRouter::ControlTowerRouter(
   const std::vector<HostId>& control_towers,
-  unsigned int replicas)
+  unsigned int replicas, size_t control_towers_per_log)
 : host_ids_(control_towers.begin(), control_towers.end())
-, replication_(replicas) {
+, replication_(replicas), control_towers_per_log(control_towers_per_log) {
   for (const HostId& host_id : host_ids_) {
     mapping_.Add(&host_id, replicas);
   }
@@ -19,12 +19,23 @@ ControlTowerRouter::ControlTowerRouter(
 
 Status ControlTowerRouter::GetControlTower(LogID logID,
                                            const HostId** out) const {
-  if (!mapping_.Empty()) {
-    *out = mapping_.Get(logID);
-    return Status::OK();
-  }
-  *out = nullptr;
-  return Status::NotFound();
+  std::vector<const HostId*> towers;
+  Status status = GetControlTowers(logID, &towers);
+  if (status.ok())
+    *out = towers[0];
+  return status;
+}
+
+Status ControlTowerRouter::GetControlTowers(
+    LogID logID,
+    std::vector<const HostId*>* out) const {
+  size_t count = std::min(control_towers_per_log_, mapping_.SlotCount());
+  out->resize(count);
+  if (count == 0)
+    return Status::NotFound();
+
+  mapping_.MultiGet(logID, count, out->begin());
+  return Status::OK();
 }
 
 Status ControlTowerRouter::AddControlTower(const HostId& host_id) {
