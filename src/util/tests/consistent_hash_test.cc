@@ -7,11 +7,13 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <vector>
 #include "src/util/consistent_hash.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
 using std::string;
+using std::vector;
 
 namespace rocketspeed {
 
@@ -193,6 +195,71 @@ TEST(ConsistentHashTest, Collisions) {
   ASSERT_TRUE(hash.Get(Value(42, 0)) == Value(256, 10));
   ASSERT_TRUE(hash.Get(Value(100, 0)) == Value(256, 10));
   ASSERT_TRUE(hash.Get(Value(1000, 0)) == Value(256, 10));
+}
+
+TEST(ConsistentHashTest, Multiget) {
+  ConsistentHash<size_t, string> hash;
+  string host = "abcde";
+  do {
+    // Add all permutations of abcde as hosts (1*2*3*4*5 == 120)
+    hash.Add(host);
+  } while (std::next_permutation(host.begin(), host.end()));
+
+  const int max_count = 5;
+  const size_t num_keys = 1000;
+
+  // Check that multiget(key, count) is a prefix of multiget(key, count+1)
+  // and that get(key) == multiget(key, 1).
+  std::map<size_t, vector<string>> original;
+  for (size_t key = 0; key < num_keys; ++key) {
+    vector<string> all(max_count);
+    hash.MultiGet(key, max_count, all.begin());
+    original[key] = all;
+
+    ASSERT_TRUE(hash.Get(key) == all[0]);
+
+    vector<string> prefix(max_count - 1);
+    for (size_t count = 1; count < max_count; ++count) {
+      hash.MultiGet(key, count, prefix.begin());
+      ASSERT_TRUE(std::equal(prefix.begin(), prefix.begin() + count,
+                             all.begin()));
+    }
+  }
+
+  // Check that adding a new host doesn't move keys between other hosts
+  // and preserves order.
+  string newHosts[] = { "host1", "host2", "host3" };
+  for (const string& host : newHosts) {
+    hash.Add(host);
+    vector<string> current(max_count);
+    for (size_t key = 0; key < num_keys; ++key) {
+      const vector<string>& old = original[key];
+
+      hash.MultiGet(key, max_count, current.begin());
+      auto end = std::remove(current.begin(), current.end(), host);
+
+      ASSERT_LE(current.end() - end, 1);
+      ASSERT_TRUE(std::equal(current.begin(), end, old.begin()));
+    }
+    hash.Remove(host);
+  }
+
+  // Now do the same, but remove some hosts
+  string removeHosts[] = { "abcde", "bcdea", "cdeab" };
+  for (const string& host : removeHosts) {
+    hash.Remove(host);
+    vector<string> current(max_count);
+    for (size_t key = 0; key < num_keys; ++key) {
+      vector<string> old = original[key];
+      auto end = std::remove(old.begin(), old.end(), host);
+
+      hash.MultiGet(key, max_count, current.begin());
+
+      ASSERT_LE(old.end() - end, 1);
+      ASSERT_TRUE(std::equal(old.begin(), end, current.begin()));
+    }
+    hash.Add(host);
+  }
 }
 
 }  // namespace rocketspeed

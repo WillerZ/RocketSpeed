@@ -57,6 +57,8 @@ namespace rocketspeed {
  * For good slot allocation, the hash functions need to have good key
  * distribution. As a default, we use MurmurHash2 rather than std::hash since
  * std::hash has very poor key distribution for integral types.
+ *
+ * Slot type needs to be comparable with std::less and std::equal_to.
  */
 template <class Key,
           class Slot,
@@ -102,6 +104,17 @@ class ConsistentHash {
    * @return slot The slot that the key is mapped to.
    */
   const Slot& Get(const Key& key) const;
+
+  /**
+   * Maps the key to multiple slots. The structure must contain
+   * at least count slots.
+   *
+   * @param key The key to get the mapping for.
+   * @param count How many slots to return.
+   * @param out_begin Iterator to the beginning of where to put the result.
+   */
+  template<class IT>
+  void MultiGet(const Key& key, size_t count, IT out_begin) const;
 
   /**
    * The number of unique slots in the mapping.
@@ -239,6 +252,38 @@ const Slot& ConsistentHash<Key, Slot, KeyHash, SlotHash>::Get(
     it = ring_.begin();  // Wrap back to first node.
   }
   return it->second;
+}
+
+template <class Key, class Slot, class KeyHash, class SlotHash>
+template <class IT>
+void ConsistentHash<Key, Slot, KeyHash, SlotHash>::MultiGet(
+    const Key& key, size_t count, IT out_begin) const {
+  assert(slotCount_ >= count);
+  size_t hash = keyHash_(key);
+#ifdef CONSISTENT_HASH_USE_VECTOR
+  auto it = std::lower_bound(ring_.begin(), ring_.end(), hash, Compare1st);
+#else
+  auto it = ring_.lower_bound(hash);
+#endif
+
+  auto initial_it = it;
+  int out_size = 0;
+
+  // Pick the next count distinct slots along the ring.
+  // We'll need at most count*2 steps on average (if count=slotCount_=2).
+  do {
+    if (it == ring_.end()) {
+      it = ring_.begin();  // Wrap back to first node.
+    }
+    // For small count this should be faster than a set.
+    bool seen = std::find(out_begin, out_begin + out_size, it->second)
+                != out_begin + out_size;
+    if (!seen)
+      out_begin[out_size++] = it->second;
+    ++it;
+  } while (it != initial_it && out_size < count);
+
+  assert(out_size == count);
 }
 
 template <class Key, class Slot, class KeyHash, class SlotHash>
