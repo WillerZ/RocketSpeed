@@ -88,7 +88,7 @@ TESTS = \
   integration_test
 
 TOOLS = \
-	producer \
+	rocketbench \
 	local_server
 
 PROGRAMS = pilot copilot controltower $(TOOLS)
@@ -167,9 +167,9 @@ copilot: src/copilot/main.o $(LIBOBJECTS)
 controltower: src/controltower/main.o $(LIBOBJECTS)
 	$(CXX) src/controltower/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
-# compile only the producer tool
-producer: src/tools/producer/main.o $(LIBOBJECTS) $(TESTCONFIGURATION)
-	$(CXX) src/tools/producer/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+# compile only the rocketbench tool
+rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCONFIGURATION)
+	$(CXX) src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the local_server tool
 local_server: src/tools/local_server/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER)

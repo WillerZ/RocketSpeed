@@ -17,7 +17,7 @@
 #include "src/port/port_posix.h"
 #include "src/messages/messages.h"
 #include "src/util/auto_roll_logger.h"
-#include "src/tools/producer/random_distribution.h"
+#include "src/tools/rocketbench/random_distribution.h"
 
 // This tool can behave as a standalone producer, a standalone
 // consumer or both a producer and a consumer.
@@ -32,7 +32,7 @@ DEFINE_int32(copilot_port, 58700, "port number of copilot");
 DEFINE_int32(producer_port, 58800, "port number of producer");
 DEFINE_int32(consumer_port, 58800, "port number of consumer");
 DEFINE_int32(message_size, 100, "message size (bytes)");
-DEFINE_uint64(num_topics, 1000000000, "number of topics");
+DEFINE_uint64(num_topics, 1000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
 DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
@@ -93,7 +93,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
                i % 100);   // 100 messages per topic
     }
 
-    NamespaceID namespace_id = 101 + i % 100;
+    NamespaceID namespace_id = 101;
 
     // Random topic options
     TopicOptions topic_options;
@@ -110,8 +110,10 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
     }
 
     // Send the message
-    PublishStatus ps = producer->Publish(topic_name, namespace_id,
-                                         topic_options, payload);
+    PublishStatus ps = producer->Publish(topic_name,
+                                         namespace_id,
+                                         topic_options,
+                                         payload);
 
     if (!ps.status.ok()) {
       Log(InfoLogLevel::WARN_LEVEL, info_log,
@@ -203,13 +205,12 @@ int DoConsume(Client* consumer,
   unsigned int batch_size = 10240;
 
   std::vector<SubscriptionPair> topics;
-  topics.resize(batch_size);
+  topics.reserve(batch_size);
 
-  // create all subscriptions from seqno 0
+  // create all subscriptions from seqno 1
   SubscriptionPair pair(start, "", nsid);
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
-    // TODO(dhruba) 1234 make the topic names be the same as the producer
-    pair.topic_name.assign(std::to_string(i));
+    pair.topic_name.assign("benchmark." + std::to_string(i));
     topics.push_back(pair);
     if (i % batch_size == batch_size - 1) {
       // send a subscription request

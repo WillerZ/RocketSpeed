@@ -4,7 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 
-#include "src/tools/producer/random_distribution.h"
+#include "src/tools/rocketbench/random_distribution.h"
 
 namespace rocketspeed {
 

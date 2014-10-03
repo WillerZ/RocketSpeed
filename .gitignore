@@ -25,7 +25,7 @@ _mock_logdevice_logs/*
 /controltower
 /pilot
 /copilot
-/producer
+/rocketbench
 /local_server
 
 src/util/build_version.cc
