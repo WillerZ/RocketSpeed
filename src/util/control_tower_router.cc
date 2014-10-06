@@ -11,7 +11,7 @@ ControlTowerRouter::ControlTowerRouter(
   const std::vector<HostId>& control_towers,
   unsigned int replicas, size_t control_towers_per_log)
 : host_ids_(control_towers.begin(), control_towers.end())
-, replication_(replicas), control_towers_per_log(control_towers_per_log) {
+, replication_(replicas), control_towers_per_log_(control_towers_per_log) {
   for (const HostId& host_id : host_ids_) {
     mapping_.Add(&host_id, replicas);
   }
