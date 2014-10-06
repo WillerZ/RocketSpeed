@@ -160,7 +160,14 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
       assert(hostid != nullptr);
       if (hostid != nullptr) {
         st = ct->GetClient().Send(*hostid, serialized);
-        if (!st.ok()) {
+        if (st.ok()) {
+          Log(InfoLogLevel::INFO_LEVEL, ct->GetOptions().info_log,
+            "Sent data (%.16s) for topic %s to %s:%d",
+            request->GetPayload().ToString().c_str(),
+            request->GetTopicName().ToString().c_str(),
+            hostid->hostname.c_str(),
+            hostid->port);
+        } else {
           Log(InfoLogLevel::INFO_LEVEL, ct->GetOptions().info_log,
               "Unable to forward Data message to %s:%d",
               hostid->hostname.c_str(), hostid->port);

@@ -1327,6 +1327,8 @@ class PosixEnv : public Env {
   virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
                                std::string thread_name);
 
+  virtual void SetThreadName(ThreadId thread_id, const std::string& name);
+
   virtual void WaitForJoin();
 
   virtual void WaitForJoin(ThreadId tid);
@@ -1804,15 +1806,19 @@ Env::ThreadId PosixEnv::StartThread(void (*function)(void* arg),
   threads_to_join_.push_back(t);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 
-  // set name of thread if supported
+  SetThreadName(t, thread_name);
+  return (Env::ThreadId)t;
+}
+
+void PosixEnv::SetThreadName(ThreadId thread_id, const std::string& name) {
+    // set name of thread if supported
 #if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 12)
   {
-    pthread_setname_np(t, thread_name.c_str());
+    pthread_setname_np((pthread_t)thread_id, name.c_str());
   }
 #endif
 #endif
-  return (Env::ThreadId)t;
 }
 
 void PosixEnv::WaitForJoin() {

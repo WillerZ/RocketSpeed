@@ -138,6 +138,11 @@ MsgClient::Send(const HostId& host, Slice msg) {
     if (!st.ok()) {
       // Send failed, remove the connection.
       // This closes the fd, and GetConnection will re-open.
+      if (retries) {
+        Log(InfoLogLevel::INFO_LEVEL, info_log_,
+          "Send to %s:%d failed (%s) -- reconnecting",
+          host.hostname.c_str(), host.port, st.ToString().c_str());
+      }
       remove(host);
     }
   } while (!st.ok() && retries--);

@@ -143,30 +143,53 @@ void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
 
 void CopilotWorker::ProcessData(MessageData* msg) {
   // Get the list of subscriptions for this topic.
+  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+      "Copilot received data (%.16s) for topic %s",
+      msg->GetPayload().ToString().c_str(),
+      msg->GetTopicName().ToString().c_str());
   auto it = subscriptions_.find(msg->GetTopicName().ToString());
   if (it != subscriptions_.end()) {
     // Serialize message once instead of in the loop.
     Slice msg_serial = msg->Serialize();
     auto seqno = msg->GetSequenceNumber();
     for (auto& subscription : it->second) {
-      // If the subscription is awaiting a response, do not forward,
-      // they aren't expecting a message yet.
-      if (!subscription.awaiting_ack && subscription.seqno < seqno) {
-        // Send the response.
-        const HostId& recipient = subscription.host_id;
-        Status status = msg_client_->Send(recipient, msg_serial);
-        if (status.ok()) {
-          subscription.seqno = seqno;
-        } else {
-          // Message failed to send. Possible reasons:
-          // 1. Connection closed at other end.
-          // 2. Outgoing socket buffer is full.
-          // 3. Some other low-level error.
-          // TODO(pja) 1 : handle these gracefully.
-          Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-            "Failed to forward data to %s:%d",
-            recipient.hostname.c_str(), recipient.port);
-        }
+      const HostId& recipient = subscription.host_id;
+
+      // If the subscription is awaiting a response, do not forward.
+      if (subscription.awaiting_ack) {
+        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+          "Data not delivered to %s:%d (awaiting ack)",
+          recipient.hostname.c_str(), recipient.port);
+        continue;
+      }
+
+      // Also do not send a response if the seqno is too low.
+      if (subscription.seqno >= seqno) {
+        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+          "Data not delivered to %s:%d (seqno too low)",
+          recipient.hostname.c_str(), recipient.port);
+        continue;
+      }
+
+      // Send the response.
+      Status status = msg_client_->Send(recipient, msg_serial);
+      if (status.ok()) {
+        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+          "Sent data (%.16ss) for topic %s to %s:%d",
+          msg->GetPayload().ToString().c_str(),
+          msg->GetTopicName().ToString().c_str(),
+          recipient.hostname.c_str(),
+          recipient.port);
+        subscription.seqno = seqno;
+      } else {
+        // Message failed to send. Possible reasons:
+        // 1. Connection closed at other end.
+        // 2. Outgoing socket buffer is full.
+        // 3. Some other low-level error.
+        // TODO(pja) 1 : handle these gracefully.
+        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+          "Failed to forward data to %s:%d",
+          recipient.hostname.c_str(), recipient.port);
       }
     }
   }

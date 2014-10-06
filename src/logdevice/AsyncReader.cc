@@ -58,9 +58,12 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
   // Iterate log records.
   LogFile file(logid, false);
   bool opened = false;
+  lsn_t last_lsn = 0;
   while (file.Next()) {
     opened = true;
     lsn_t lsn = file.GetLSN();
+    assert(lsn > last_lsn);
+    last_lsn = lsn;
     if (lsn > until) {
       // Past the end of our LSN range, so exit now.
       return lsn;

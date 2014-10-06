@@ -214,6 +214,9 @@ class Env {
   virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
                                std::string thread_name = "") = 0;
 
+  // Sets a thread name using the native thread handle.
+  virtual void SetThreadName(ThreadId thread_id, const std::string& name) = 0;
+
   // Waits for the specified thread to exit
   virtual void WaitForJoin(ThreadId tid) = 0;
 

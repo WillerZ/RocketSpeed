@@ -35,10 +35,12 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
 
 void Copilot::Run() {
   // Start worker threads.
-  for (auto& worker : workers_) {
+  for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
       [] (CopilotWorker* worker) { worker->Run(); },
-      worker.get());
+      workers_[i].get());
+    options_.env->SetThreadName(worker_threads_.back().native_handle(),
+                                "copilot-" + std::to_string(i));
   }
 
   // Wait for them to start.

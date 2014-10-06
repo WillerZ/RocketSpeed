@@ -78,7 +78,10 @@ void PilotWorker::CommandCallback(std::unique_ptr<Command> command) {
       SendAck(msg->GetOrigin(),
               msg->GetMessageId(),
               MessageDataAck::AckStatus::Success);
-
+      Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+          "Appended (%s) successfully",
+          msg_raw->GetPayload().ToString().c_str());
+      options_.info_log->Flush();
     } else {
       // Append failed, send failure ack.
       Log(InfoLogLevel::WARN_LEVEL, options_.info_log,

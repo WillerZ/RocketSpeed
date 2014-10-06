@@ -80,7 +80,7 @@ struct PilotOptions {
   std::pair<LogID, LogID> log_range;
 
   // Number of worker loops for the pilot.
-  uint32_t num_workers_;
+  uint32_t num_workers;
 
   // Create PilotOptions with default values for all fields
   PilotOptions();
