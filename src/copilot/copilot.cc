@@ -134,7 +134,11 @@ void Copilot::ProcessData(ApplicationCallbackContext ctx,
   auto& worker = copilot->workers_[worker_id];
 
   // forward message to worker
-  worker->Forward(logid, std::move(msg));
+  if (!worker->Forward(logid, std::move(msg))) {
+    Log(InfoLogLevel::WARN_LEVEL, copilot->options_.info_log,
+        "Worker %d queue is full.",
+        static_cast<int>(worker_id));
+  }
 }
 
 // A static callback method to process MessageMetadata

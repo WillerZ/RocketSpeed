@@ -11,66 +11,28 @@
 
 namespace rocketspeed {
 
-class CopilotWorkerCommand : public Command {
- public:
-  CopilotWorkerCommand(LogID logid, std::unique_ptr<Message> msg)
-  : logid_(logid)
-  , msg_(std::move(msg)) {
-  }
-
-  // Get log ID where topic lives to subscribe to
-  LogID GetLogID() const {
-    return logid_;
-  }
-
-  // Get the message.
-  Message* GetMessage() {
-    return msg_.get();
-  }
-
- private:
-  LogID logid_;
-  std::unique_ptr<Message> msg_;
-};
-
 CopilotWorker::CopilotWorker(const CopilotOptions& options,
                              const ControlTowerRouter* control_tower_router,
                              MsgClient* msg_client)
-: options_(options)
+: worker_loop_(options.worker_queue_size)
+, options_(options)
 , control_tower_router_(control_tower_router)
 , msg_client_(msg_client) {
   // msg_client is required.
   assert(msg_client_);
-
-  // Setup command callback.
-  auto command_callback = [this] (std::unique_ptr<Command> command) {
-    CommandCallback(std::move(command));
-  };
-
-  // Create message loop (not listening for connections).
-  msg_loop_.reset(new MsgLoop(options.env,
-                              options.env_options,
-                              HostId("", 0),
-                              options.info_log,
-                              static_cast<ApplicationCallbackContext>(this),
-                              callbacks_,
-                              command_callback));
 
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
     "Created a new CopilotWorker");
   options_.info_log->Flush();
 }
 
-void CopilotWorker::Forward(LogID logid, std::unique_ptr<Message> msg) {
-  std::unique_ptr<Command> cmd(new CopilotWorkerCommand(logid, std::move(msg)));
-  msg_loop_->SendCommand(std::move(cmd));
+bool CopilotWorker::Forward(LogID logid, std::unique_ptr<Message> msg) {
+  return worker_loop_.Send(logid, std::move(msg));
 }
 
-void CopilotWorker::CommandCallback(std::unique_ptr<Command> command) {
+void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
   // Process CopilotWorkerCommand
-  assert(command);
-  CopilotWorkerCommand* cmd = static_cast<CopilotWorkerCommand*>(command.get());
-  Message* msg = cmd->GetMessage();
+  Message* msg = command.GetMessage();
   assert(msg);
 
   switch (msg->GetMessageType()) {
@@ -83,10 +45,10 @@ void CopilotWorker::CommandCallback(std::unique_ptr<Command> command) {
       if (metadata->GetMetaType() == MessageMetadata::MetaType::Request) {
         if (request.topic_type == MetadataType::mSubscribe) {
           // Subscribe
-          ProcessSubscribe(metadata, request, cmd->GetLogID());
+          ProcessSubscribe(metadata, request, command.GetLogID());
         } else {
           // Unsubscribe
-          ProcessUnsubscribe(metadata, request, cmd->GetLogID());
+          ProcessUnsubscribe(metadata, request, command.GetLogID());
         }
       } else {
         if (request.topic_type == MetadataType::mSubscribe) {

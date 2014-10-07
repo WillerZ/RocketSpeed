@@ -70,6 +70,9 @@ struct ControlTowerOptions {
   // Default: number of cpus on the machine
   unsigned int number_of_rooms;
 
+  // Size of the worker queue (number of commands in flight).
+  uint32_t worker_queue_size;
+
   // Range of log IDs to use.
   // Warning: this should be picked up from Configuration
   std::pair<LogID, LogID> log_range;

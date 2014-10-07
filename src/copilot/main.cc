@@ -25,6 +25,7 @@ using GFLAGS::RegisterFlagValidator;
 using GFLAGS::SetUsageMessage;
 
 DEFINE_int32(num_threads, 16, "number of threads");
+DEFINE_int32(worker_queue_size, 1000000, "number of worker commands in flight");
 DEFINE_int32(port_number, 58700, "port number");
 DEFINE_string(logs, "1..100000", "range of logs");
 DEFINE_bool(libevent_debug, false, "Debugging libevent");
@@ -56,6 +57,7 @@ int main(int argc, char** argv) {
   rocketspeed::CopilotOptions options;
 
   options.port_number = FLAGS_port_number;
+  options.worker_queue_size = FLAGS_worker_queue_size;
 
   // Parse and validate log range.
   int ret = sscanf(FLAGS_logs.c_str(), "%lu..%lu",

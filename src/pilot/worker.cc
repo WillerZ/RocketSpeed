@@ -7,67 +7,30 @@
 #include <vector>
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/messages/commands.h"
+#include "src/messages/msg_client.h"
+#include "src/util/storage.h"
 
 namespace rocketspeed {
 
-// This command instructs a pilot worker to append to the log storage, and
-// then send an ack on completion.
-class PilotWorkerCommand : public Command {
- public:
-  PilotWorkerCommand(LogID logid, std::unique_ptr<MessageData> msg)
-  : logid_(logid)
-  , msg_(std::move(msg)) {
-  }
-
-  // Get the log ID to append to.
-  LogID GetLogID() const {
-    return logid_;
-  }
-
-  // Releases ownership of the message and returns it.
-  MessageData* ReleaseMessage() {
-    return msg_.release();
-  }
-
- private:
-  LogID logid_;
-  std::unique_ptr<MessageData> msg_;
-};
-
 PilotWorker::PilotWorker(const PilotOptions& options,
-                         LogStorage* storage)
-: storage_(storage)
-, options_(options) {
-  // Setup command callback.
-  auto command_callback = [this] (std::unique_ptr<Command> command) {
-    CommandCallback(std::move(command));
-  };
-
-  // Create message loop (not listening for connections).
-  msg_loop_.reset(new MsgLoop(options.env,
-                              options.env_options,
-                              HostId("", -1),
-                              options.info_log,
-                              static_cast<ApplicationCallbackContext>(this),
-                              callbacks_,
-                              command_callback));
-
+                         LogStorage* storage,
+                         MsgClient* client)
+: worker_loop_(options.worker_queue_size)
+, storage_(storage)
+, options_(options)
+, msg_client_(client) {
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
     "Created a new PilotWorker");
   options_.info_log->Flush();
 }
 
-void PilotWorker::Forward(LogID logid, std::unique_ptr<MessageData> msg) {
-  std::unique_ptr<Command> cmd(new PilotWorkerCommand(logid, std::move(msg)));
-  msg_loop_->SendCommand(std::move(cmd));
+bool PilotWorker::Forward(LogID logid, std::unique_ptr<MessageData> msg) {
+  return worker_loop_.Send(logid, std::move(msg));
 }
 
-void PilotWorker::CommandCallback(std::unique_ptr<Command> command) {
+void PilotWorker::CommandCallback(PilotWorkerCommand command) {
   // Process PilotWorkerCommand
-  assert(command);
-  PilotWorkerCommand* cmd = static_cast<PilotWorkerCommand*>(command.get());
-  MessageData* msg_raw = cmd->ReleaseMessage();
+  MessageData* msg_raw = command.ReleaseMessage();
   assert(msg_raw);
 
   // Setup AppendCallback
@@ -94,7 +57,7 @@ void PilotWorker::CommandCallback(std::unique_ptr<Command> command) {
   };
 
   // Asynchronously append to log storage.
-  LogID logid = cmd->GetLogID();
+  LogID logid = command.GetLogID();
   auto status = storage_->AppendAsync(logid,
                                       msg_raw->SerializeStorage(),
                                       append_callback);
@@ -129,7 +92,7 @@ void PilotWorker::SendAck(const HostId& host,
   std::vector<MessageDataAck::Ack> acks = { ack };
   MessageDataAck msg(acks);
 
-  Status st = msg_loop_->GetClient().Send(host, &msg);
+  Status st = msg_client_->Send(host, &msg);
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.

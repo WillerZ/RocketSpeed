@@ -8,11 +8,39 @@
 #include <map>
 #include <memory>
 #include "src/messages/messages.h"
-#include "src/messages/msg_loop.h"
 #include "src/pilot/options.h"
-#include "src/util/storage.h"
+#include "src/util/worker_loop.h"
 
 namespace rocketspeed {
+
+class LogStorage;
+class MsgClient;
+
+// This command instructs a pilot worker to append to the log storage, and
+// then send an ack on completion.
+class PilotWorkerCommand {
+ public:
+  PilotWorkerCommand() = default;
+
+  PilotWorkerCommand(LogID logid, std::unique_ptr<MessageData> msg)
+  : logid_(logid)
+  , msg_(std::move(msg)) {
+  }
+
+  // Get the log ID to append to.
+  LogID GetLogID() const {
+    return logid_;
+  }
+
+  // Releases ownership of the message and returns it.
+  MessageData* ReleaseMessage() {
+    return msg_.release();
+  }
+
+ private:
+  LogID logid_;
+  std::unique_ptr<MessageData> msg_;
+};
 
 /**
  * Pilot worker object. The pilot will allocate several of these, ideally one
@@ -23,42 +51,45 @@ class PilotWorker {
  public:
   // Constructs a new PilotWorker (does not start a thread).
   PilotWorker(const PilotOptions& options,
-              LogStorage* storage);
+              LogStorage* storage,
+              MsgClient* client);
 
   // Forward a message to this worker for processing.
   // This will asynchronously append the message into the log storage,
   // and then send an ack back to the to the message origin.
-  void Forward(LogID logid, std::unique_ptr<MessageData> msg);
+  bool Forward(LogID logid, std::unique_ptr<MessageData> msg);
 
-  // Start the message loop on this thread.
-  // Blocks until the message loop ends.
+  // Start the worker loop on this thread.
+  // Blocks until the worker loop ends.
   void Run() {
-    msg_loop_->Run();
+    worker_loop_.Run([this](PilotWorkerCommand command) {
+      CommandCallback(std::move(command));
+    });
   }
 
-  // Stop the message loop.
+  // Stop the worker loop.
   void Stop() {
-    msg_loop_->Stop();
+    worker_loop_.Stop();
   }
 
-  // Check if the message loop is running.
+  // Check if the worker loop is running.
   bool IsRunning() const {
-    return msg_loop_->IsRunning();
+    return worker_loop_.IsRunning();
   }
 
  private:
-  // Callback for message loop commands.
-  void CommandCallback(std::unique_ptr<Command> command);
+  // Callback for worker loop commands.
+  void CommandCallback(PilotWorkerCommand command);
 
   // Send an ack message to the host for the msgid.
   void SendAck(const HostId& host,
                const MsgId& msgid,
                MessageDataAck::AckStatus status);
 
-  std::unique_ptr<MsgLoop> msg_loop_;
+  WorkerLoop<PilotWorkerCommand> worker_loop_;
   LogStorage* storage_;
   const PilotOptions& options_;
-  const std::map<MessageType, MsgCallbackType> callbacks_;
+  MsgClient* msg_client_;
 };
 
 }  // namespace rocketspeed

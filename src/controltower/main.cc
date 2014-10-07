@@ -25,6 +25,7 @@ using GFLAGS::RegisterFlagValidator;
 using GFLAGS::SetUsageMessage;
 
 DEFINE_int32(num_threads, 16, "number of threads");
+DEFINE_int32(worker_queue_size, 1000000, "number of worker commands in flight");
 DEFINE_int32(port_number, 60000, "port number");
 DEFINE_bool(libevent_debug, false, "Debugging libevent");
 DEFINE_string(storage_url,
@@ -68,6 +69,7 @@ int main(int argc, char** argv) {
   if (!FLAGS_storage_url.empty()) {
     options.storage_url = FLAGS_storage_url;
   }
+  options.worker_queue_size = FLAGS_worker_queue_size;
 
   // create an instance of the ControlTower
   rocketspeed::ControlTower* ct = nullptr;

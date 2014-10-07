@@ -19,33 +19,11 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
   control_tower_(control_tower),
   room_number_(room_number),
   room_id_(HostId(options.hostname, port_number)),
-  topic_map_(control_tower->GetTailer()) {
-  // Define a lambda to process Commands by the room_loop_.
-  auto command_callback = [this] (std::unique_ptr<Command> command) {
-    assert(command);
-    RoomCommand* cmd = static_cast<RoomCommand*>(command.get());
-    std::unique_ptr<Message> message = cmd->GetMessage();
-    MessageType type = message->GetMessageType();
-    if (type == MessageType::mData) {
-      // data message from Tailer
-      ProcessData(std::move(message), cmd->GetLogId());
-    } else if (type == MessageType::mMetadata) {
-      // subscription message from ControlTower
-      ProcessMetadata(std::move(message), cmd->GetLogId());
-    }
-  };
-
-  room_loop_ = new MsgLoop(options.env,
-                           options.env_options,
-                           room_id_,
-                           options.info_log,
-                           static_cast<ApplicationCallbackContext>(this),
-                           callbacks_,
-                           command_callback);
+  topic_map_(control_tower->GetTailer()),
+  room_loop_(options.worker_queue_size) {
 }
 
 ControlRoom::~ControlRoom() {
-  delete room_loop_;
 }
 
 // static method to start the loop for processing Room events
@@ -54,15 +32,31 @@ void ControlRoom::Run(void* arg) {
   Log(InfoLogLevel::INFO_LEVEL,
       room->control_tower_->GetOptions().info_log,
       "Starting ControlRoom Loop at port %d", room->room_id_.port);
-  room->room_loop_->Run();
+
+  // Define a lambda to process Commands by the room_loop_.
+  auto command_callback = [room] (RoomCommand command) {
+    std::unique_ptr<Message> message = command.GetMessage();
+    MessageType type = message->GetMessageType();
+    if (type == MessageType::mData) {
+      // data message from Tailer
+      room->ProcessData(std::move(message), command.GetLogId());
+    } else if (type == MessageType::mMetadata) {
+      // subscription message from ControlTower
+      room->ProcessMetadata(std::move(message), command.GetLogId());
+    }
+  };
+
+  room->room_loop_.Run(command_callback);
 }
 
 // The Control Tower uses this method to forward a message to this Room.
 Status
 ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid) {
-  std::unique_ptr<Command> command(new RoomCommand(std::move(msg), logid));
-  Status st = room_loop_->SendCommand(std::move(command));
-  return st;
+  if (room_loop_.Send(std::move(msg), logid)) {
+    return Status::OK();
+  } else {
+    return Status::InternalError("Worker queue full");
+  }
 }
 
 // Process Metadata messages that are coming in from ControlTower.

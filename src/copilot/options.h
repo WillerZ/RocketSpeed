@@ -72,6 +72,9 @@ struct CopilotOptions {
   // Number of worker loops for the pilot.
   uint32_t num_workers;
 
+  // Size of the worker queue (number of commands in flight).
+  uint32_t worker_queue_size;
+
   // Number of replicas for the consistent hash ring for control tower lookup.
   // Trade-off: higher means better distribution of log IDs to control towers,
   // but also higher memory usage (linear with num replicas), and slower

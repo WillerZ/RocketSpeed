@@ -7,8 +7,9 @@
 #include <memory>
 #include <map>
 #include "include/Env.h"
-#include "src/messages/msg_loop.h"
+#include "src/messages/messages.h"
 #include "src/util/storage.h"
+#include "src/util/worker_loop.h"
 #include "src/controltower/options.h"
 #include "src/controltower/topic.h"
 
@@ -35,7 +36,7 @@ class ControlRoom {
   static void Run(void* arg);
 
   // Is the ControlRoom up and running?
-  bool IsRunning() const { return room_loop_->IsRunning(); }
+  bool IsRunning() const { return room_loop_.IsRunning(); }
 
   // The Room Identifier
   const HostId& GetRoomId() const { return room_id_; }
@@ -49,16 +50,18 @@ class ControlRoom {
   // The Commands sent to the ControlRoom.
   // The ControlTower sends subscribe/unsubscribe messages to ControlRoom.
   // The Tailer sends data messages to ControlRoom.
-  class RoomCommand : public Command {
+  class RoomCommand {
    public:
+    RoomCommand() = default;
+
     RoomCommand(std::unique_ptr<Message> message, LogID logid):
       message_(std::move(message)),
       logid_(logid) {
     }
-    virtual std::unique_ptr<Message> GetMessage() {
+    std::unique_ptr<Message> GetMessage() {
       return std::move(message_);
     }
-    virtual const LogID GetLogId() const { return logid_; }
+    const LogID GetLogId() const { return logid_; }
    private:
     std::unique_ptr<Message> message_;
     LogID logid_;
@@ -74,16 +77,13 @@ class ControlRoom {
   // The HostId of this msg loop
   HostId room_id_;
 
-  // Message specific callbacks stored here
-  const std::map<MessageType, MsgCallbackType> callbacks_;
-
   // Subscription information per topic
   TopicManager topic_map_;
 
   // The message loop base.
   // This is used to receive subscribe/unsubscribe/data messages
   // from the ControlTower.
-  MsgLoop* room_loop_;
+  WorkerLoop<RoomCommand> room_loop_;
 
   // callbacks to process incoming messages
   void ProcessMetadata(std::unique_ptr<Message> msg, LogID logid);

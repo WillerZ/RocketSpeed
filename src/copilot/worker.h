@@ -13,10 +13,34 @@
 #include "src/copilot/options.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_client.h"
-#include "src/messages/msg_loop.h"
 #include "src/util/control_tower_router.h"
+#include "src/util/worker_loop.h"
 
 namespace rocketspeed {
+
+class CopilotWorkerCommand {
+ public:
+  CopilotWorkerCommand() = default;
+
+  CopilotWorkerCommand(LogID logid, std::unique_ptr<Message> msg)
+  : logid_(logid)
+  , msg_(std::move(msg)) {
+  }
+
+  // Get log ID where topic lives to subscribe to
+  LogID GetLogID() const {
+    return logid_;
+  }
+
+  // Get the message.
+  Message* GetMessage() {
+    return msg_.get();
+  }
+
+ private:
+  LogID logid_;
+  std::unique_ptr<Message> msg_;
+};
 
 /**
  * Copilot worker. The copilot will allocate several of these, ideally one
@@ -33,32 +57,34 @@ class CopilotWorker {
   // Forward a message to this worker for processing.
   // This will asynchronously append the message into the log storage,
   // and then send an ack back to the to the message origin.
-  void Forward(LogID logid, std::unique_ptr<Message> msg);
+  bool Forward(LogID logid, std::unique_ptr<Message> msg);
 
-  // Start the message loop on this thread.
-  // Blocks until the message loop ends.
+  // Start the worker loop on this thread.
+  // Blocks until the worker loop ends.
   void Run() {
-    msg_loop_->Run();
+    worker_loop_.Run([this] (CopilotWorkerCommand command) {
+      CommandCallback(std::move(command));
+    });
   }
 
-  // Stop the message loop.
+  // Stop the worker loop.
   void Stop() {
-    msg_loop_->Stop();
+    worker_loop_.Stop();
   }
 
-  // Check if the message loop is running.
+  // Check if the worker loop is running.
   bool IsRunning() const {
-    return msg_loop_->IsRunning();
+    return worker_loop_.IsRunning();
   }
 
-  // Get the host id of this worker's message loop.
+  // Get the host id of this worker's worker loop.
   HostId GetHostId() const {
     return HostId(options_.copilotname, options_.port_number);
   }
 
  private:
-  // Callback for message loop commands.
-  void CommandCallback(std::unique_ptr<Command> command);
+  // Callback for worker loop commands.
+  void CommandCallback(CopilotWorkerCommand command);
 
   // Send an ack message to the host for the msgid.
   void SendAck(const HostId& host,
@@ -82,14 +108,11 @@ class CopilotWorker {
   // Forward data to subscribers.
   void ProcessData(MessageData* msg);
 
-  // Main message loop for this worker.
-  std::unique_ptr<MsgLoop> msg_loop_;
+  // Main worker loop for this worker.
+  WorkerLoop<CopilotWorkerCommand> worker_loop_;
 
   // Copilot specific options.
   const CopilotOptions& options_;
-
-  // MsgLoop callback map.
-  std::map<MessageType, MsgCallbackType> callbacks_;
 
   // Shared router for control towers.
   const ControlTowerRouter* control_tower_router_;

@@ -88,7 +88,9 @@ Pilot::Pilot(PilotOptions options):
 
   // Create workers.
   for (uint32_t i = 0; i < options_.num_workers; ++i) {
-    workers_.emplace_back(new PilotWorker(options_, log_storage_.get()));
+    workers_.emplace_back(new PilotWorker(options_,
+                                          log_storage_.get(),
+                                          &msg_loop_.GetClient()));
   }
 
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
@@ -153,7 +155,11 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
 
   // Forward to worker.
   size_t worker_id = logid % pilot->workers_.size();
-  pilot->workers_[worker_id]->Forward(logid, std::move(msg_data));
+  if (!pilot->workers_[worker_id]->Forward(logid, std::move(msg_data))) {
+    Log(InfoLogLevel::WARN_LEVEL, pilot->options_.info_log,
+        "Worker %d queue is full.",
+        static_cast<int>(worker_id));
+  }
 }
 
 // A static method to initialize the callback map
