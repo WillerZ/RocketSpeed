@@ -8,6 +8,7 @@ cpp_library(
         'control_tower_router.cc',
         'env.cc',
         'env_posix.cc',
+        'guid_generator.cc',
         'hostmap.cc',
         'log_buffer.cc',
         'log_router.cc',
@@ -49,6 +50,25 @@ cpp_benchmark(
     ],
   deps = [ '@/folly',
            '@/folly:benchmark',
-           '@/common/init:init', ],
+           '@/common/init:init',
+  ],
+  args = [ ],
+)
+
+cpp_benchmark(
+  name = 'guid_generator_bench',
+  srcs = [ 'guid_generator_bench.cc' ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DUSE_LOGDEVICE',
+    ],
+  deps = [ '@/folly',
+           '@/folly:benchmark',
+           '@/common/init:init',
+           '@/rocketspeed/github/src/util:util',
+  ],
   args = [ ],
 )

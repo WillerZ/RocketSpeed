@@ -11,7 +11,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "src/util/coding.h"
-#include "src/util/xxhash.h"
+#include "src/util/guid_generator.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are
@@ -165,8 +165,7 @@ Status MessagePing::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-static std::atomic<uint32_t> msgid_seed(static_cast<uint32_t>(time(NULL)));
-static std::atomic<uint32_t> msgid_counter(0);
+static GUIDGenerator msgid_generator;
 
 MessageData::MessageData(TenantID tenantID,
                          const HostId& origin,
@@ -183,29 +182,7 @@ MessageData::MessageData(TenantID tenantID,
   type_ = mData;
   tenantid_ = tenantID;
   seqno_ = 0;
-
-  // TODO(dhruba) 1 : generate better/faster GUID here
-  union {
-    char msgid[16];
-    struct {
-      uint32_t a;
-      uint32_t b;
-      uint32_t c;
-      uint32_t d;
-    };
-  } u;
-
-  u.a = XXH32(static_cast<const void*>(origin.hostname.c_str()),
-              static_cast<int>(origin.hostname.size()), msgid_seed);
-  u.b = XXH32(static_cast<const void*>(topic_name.data()),
-              static_cast<int>(topic_name.size()), msgid_seed);
-  u.c = XXH32(static_cast<const void*>(payload_.data()),
-              static_cast<int>(payload_.size()), msgid_seed);
-  u.d = msgid_counter++;
-  if (u.d == uint32_t(-1)) {
-    ++msgid_seed;
-  }
-  msgid_ = MsgId(u.msgid);
+  msgid_ = msgid_generator.Generate();
 }
 
 MessageData::MessageData():

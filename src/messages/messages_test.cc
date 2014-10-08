@@ -114,8 +114,8 @@ TEST(Messaging, DataAck) {
   std::vector<MessageDataAck::Ack> acks(10);
   char value = 0;
   for (auto& ack : acks) {
-    for (size_t i = 0; i < sizeof(acks[0].msgid.messageId); ++i) {
-      ack.msgid.messageId[i] = value++;
+    for (size_t i = 0; i < sizeof(acks[0].msgid.id); ++i) {
+      ack.msgid.id[i] = value++;
     }
   }
   MessageDataAck ack1(acks);

@@ -35,28 +35,31 @@ typedef std::string Topic;
 typedef uint64_t SequenceNumber;
 
 /**
- * The unique identifier of a message. This is globally unique in the entire
- * RocketSpeed ecosystem. A producer typically generates this id by calculating
- * a MD5/SHA signature of the message payload.
+ * A globally unique identifier.
  */
-class MsgId {
- public:
-  char messageId[16] {};
+struct GUID {
+  char id[16];
 
-  MsgId() {}
+  GUID() = default;
 
-  explicit MsgId(char msgid[16]) {
-    memcpy(messageId, msgid, 16);
+  explicit GUID(char guid[16]) {
+    memcpy(id, guid, 16);
   }
 
-  bool operator<(const MsgId& rhs) const {
-    return memcmp(messageId, rhs.messageId, sizeof(messageId)) < 0;
+  bool operator<(const GUID& rhs) const {
+    return memcmp(id, rhs.id, sizeof(id)) < 0;
   }
 
-  bool operator==(const MsgId& rhs) const {
-    return memcmp(messageId, rhs.messageId, sizeof(messageId)) == 0;
+  bool operator==(const GUID& rhs) const {
+    return memcmp(id, rhs.id, sizeof(id)) == 0;
   }
 };
+
+/**
+ * The unique identifier of a message. This is globally unique in the entire
+ * RocketSpeed ecosystem.
+ */
+typedef GUID MsgId;
 
 /**
  * This is the status returned when a new message is published.
