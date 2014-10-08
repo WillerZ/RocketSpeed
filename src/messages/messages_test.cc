@@ -110,6 +110,10 @@ TEST(Messaging, Metadata) {
 }
 
 TEST(Messaging, DataAck) {
+  int port = 200;
+  std::string mymachine = "machine.com";
+  HostId hostid(mymachine, port);
+
   // create a message
   std::vector<MessageDataAck::Ack> acks(10);
   char value = 0;
@@ -118,7 +122,7 @@ TEST(Messaging, DataAck) {
       ack.msgid.id[i] = value++;
     }
   }
-  MessageDataAck ack1(acks);
+  MessageDataAck ack1(101, hostid, acks);
 
   // serialize the message
   Slice original = ack1.Serialize();

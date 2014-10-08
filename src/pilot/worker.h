@@ -82,7 +82,8 @@ class PilotWorker {
   void CommandCallback(PilotWorkerCommand command);
 
   // Send an ack message to the host for the msgid.
-  void SendAck(const HostId& host,
+  void SendAck(const TenantID tenantid,
+               const HostId& host,
                const MsgId& msgid,
                MessageDataAck::AckStatus status);
 

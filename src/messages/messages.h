@@ -94,7 +94,10 @@ class Message : public Serializer {
    * @return The tenant ID.
    */
   TenantID GetTenantID() const { return tenantid_; }
-
+  /**
+   * @return The Origin host.
+   */
+  const HostId& GetOrigin() const { return origin_; }
   /*
    * Creates a Message of the appropriate subtype by looking at the
    * MessageType. Returns nullptr on error. It is the responsibility
@@ -116,14 +119,17 @@ class Message : public Serializer {
   virtual Status DeSerialize(Slice* in) = 0;
 
  protected:
-  Message(MessageType type, TenantID tenantid) :
-          type_(type), tenantid_(tenantid) {
+  Message(MessageType type, TenantID tenantid, const HostId& origin) :
+          type_(type), tenantid_(tenantid), origin_(origin) {
     msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   }
-  Message() : Message(MessageType::NotInitialized, 0) {}
+  Message() : type_(MessageType::NotInitialized) {
+    msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  }
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
+  HostId origin_;                   // sender's id
   std::unique_ptr<char[]> buffer_;  // owned memory for slices
 };
 
@@ -147,9 +153,9 @@ class MessagePing : public Message {
 
   MessagePing(TenantID tenantid,
               PingType pingtype,
-              const HostId& origin) :
-              Message(MessageType::mPing, tenantid),
-              pingtype_(pingtype), origin_(origin) {}
+              HostId& origin) :
+              Message(MessageType::mPing, tenantid, origin),
+              pingtype_(pingtype) {}
 
   PingType GetPingType() const {
     return pingtype_;
@@ -159,9 +165,6 @@ class MessagePing : public Message {
     pingtype_ = type;
   }
 
-  const HostId& GetOrigin() const {
-    return origin_;
-  }
   /*
    * Inherited from Serializer
    */
@@ -170,7 +173,6 @@ class MessagePing : public Message {
 
  protected:
   PingType pingtype_;
-  HostId origin_;
 };
 
 /*
@@ -220,11 +222,6 @@ class MessageData : public Message {
   const MsgId& GetMessageId() const { return msgid_; }
 
   /**
-   * @return The Origin host.
-   */
-  const HostId& GetOrigin() const { return origin_; }
-
-  /**
    * @return The Topic Name
    */
   Slice GetTopicName() const { return topic_name_; }
@@ -270,7 +267,6 @@ class MessageData : public Message {
   // type of this message: mData
   SequenceNumber seqno_;     // sequence number of message
   MsgId msgid_;              // globally unique id for message
-  HostId origin_;            // host that sent the data
   Slice topic_name_;         // name of topic
   Slice payload_;            // user data of message
   Retention retention_;      // message retention
@@ -329,11 +325,6 @@ class MessageMetadata : public Message {
   const std::vector<TopicPair>& GetTopicInfo() const { return topics_; }
 
   /**
-   * @return The Hostid of the origininator of this request
-   */
-  const HostId& GetOrigin() const { return origin_; }
-
-  /**
    * Set the origin host ID.
    */
   void SetOrigin(const HostId& host_id) {
@@ -348,7 +339,6 @@ class MessageMetadata : public Message {
 
  private:
   MetaType metatype_;         // request or response
-  HostId origin_;             // unique identifier for a client
 
   // The List of topics to subscribe-to/unsubscribe-from
   std::vector<TopicPair> topics_;
@@ -385,12 +375,13 @@ class MessageDataAck : public Message {
    *
    * @param msgid The MsgIds of the messages that have been ack'd
    */
-  explicit MessageDataAck(const std::vector<Ack>& acks);
-
+  explicit MessageDataAck(TenantID tenantID,
+                          const HostId& origin,
+                          const std::vector<Ack>& acks);
   /**
    * default constructor
    */
-  MessageDataAck();
+  MessageDataAck() {}
 
   /**
    * This message is not needed any more

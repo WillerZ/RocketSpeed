@@ -173,14 +173,11 @@ MessageData::MessageData(TenantID tenantID,
                          const NamespaceID namespace_id,
                          const Slice& payload,
                          Retention retention):
-  origin_(origin),
+  Message(mData, tenantID, origin),
   topic_name_(topic_name),
   payload_(payload),
   retention_(retention),
   namespaceid_(namespace_id) {
-  msghdr_.version_ =  ROCKETSPEED_CURRENT_MSG_VERSION;
-  type_ = mData;
-  tenantid_ = tenantID;
   seqno_ = 0;
   msgid_ = msgid_generator.Generate();
 }
@@ -201,11 +198,13 @@ Slice MessageData::Serialize() const {
                             sizeof(msghdr_.version_));
   PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
-  PutVarint64(&serialize_buffer__, seqno_);
 
   // origin
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
   PutVarint64(&serialize_buffer__, origin_.port);
+
+  // seqno
+  PutVarint64(&serialize_buffer__, seqno_);
 
   // The rest of the message is what goes into log storage.
   SerializeInternal();
@@ -243,11 +242,6 @@ Status MessageData::DeSerialize(Slice* in) {
   memcpy(&type_, in->data(), sizeof(type_));
   in->remove_prefix(sizeof(type_));
 
-  // extract sequence number of message
-  if (!GetVarint64(in, &seqno_)) {
-    return Status::InvalidArgument("Bad Sequence Number");
-  }
-
   // extract origin
   HostId* host = static_cast<HostId*>(&origin_);
   Slice sl;
@@ -260,6 +254,11 @@ Status MessageData::DeSerialize(Slice* in) {
     // extract port number
   if (!GetVarint64(in, &origin_.port)) {
     return Status::InvalidArgument("Bad Port Number");
+  }
+
+  // extract sequence number of message
+  if (!GetVarint64(in, &seqno_)) {
+    return Status::InvalidArgument("Bad Sequence Number");
   }
 
   // The rest of the message is what goes into log storage.
@@ -339,11 +338,11 @@ MessageMetadata::MessageMetadata(TenantID tenantID,
   const HostId& origin,
   const std::vector<TopicPair>& topics):
   metatype_(metatype),
-  origin_(origin),
   topics_(topics) {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mMetadata;
   tenantid_ = tenantID;
+  origin_ = origin;
 }
 
 MessageMetadata::MessageMetadata() {
@@ -366,15 +365,15 @@ Slice MessageMetadata::Serialize() const {
                             sizeof(msghdr_.version_));
   PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
 
-  // Type, tenantId and seqno
+  // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutFixed16(&serialize_buffer__, tenantid_);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
+  PutVarint64(&serialize_buffer__, origin_.port);
 
   // Now serialize message specific data
   serialize_buffer__.append((const char *)&metatype_, sizeof(metatype_));
   //  origin
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
-  PutVarint64(&serialize_buffer__, origin_.port);
 
   // Topics and metadata state
   PutVarint32(&serialize_buffer__, topics_.size());
@@ -424,11 +423,6 @@ Status MessageMetadata::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad tenant ID");
   }
 
-  // extract metadata type
-  void* p = static_cast<void *>(&metatype_);
-  memcpy(p, in->data(), sizeof(metatype_));
-  in->remove_prefix(sizeof(metatype_));
-
   // extract host id
   Slice sl;
   if (!GetLengthPrefixedSlice(in, &sl)) {
@@ -441,6 +435,11 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   if (!GetVarint64(in, &origin_.port)) {
     return Status::InvalidArgument("Bad Port Number");
   }
+
+  // extract metadata type
+  void* p = static_cast<void *>(&metatype_);
+  memcpy(p, in->data(), sizeof(metatype_));
+  in->remove_prefix(sizeof(metatype_));
 
   // extract number of topics
   uint32_t num_topics;
@@ -477,14 +476,14 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-MessageDataAck::MessageDataAck(const std::vector<Ack>& acks)
+MessageDataAck::MessageDataAck(TenantID tenantID,
+  const HostId& origin,
+  const std::vector<Ack>& acks)
 : acks_(acks) {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mDataAck;
-}
-
-MessageDataAck::MessageDataAck()
-: MessageDataAck(std::vector<Ack>()) {
+  tenantid_ = tenantID;
+  origin_ = origin;
 }
 
 MessageDataAck::~MessageDataAck() {
@@ -501,7 +500,12 @@ Slice MessageDataAck::Serialize() const {
   serialize_buffer__.append((const char *)&msghdr_.version_,
                             sizeof(msghdr_.version_));
   PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+
+  // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixed16(&serialize_buffer__, tenantid_);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
+  PutVarint64(&serialize_buffer__, origin_.port);
 
   // serialize message specific contents
   PutVarint32(&serialize_buffer__, acks_.size());
@@ -542,6 +546,24 @@ Status MessageDataAck::DeSerialize(Slice* in) {
   // extract type
   memcpy(&type_, in->data(), sizeof(type_));
   in->remove_prefix(sizeof(type_));
+
+  // extrant tenant ID
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
+  }
+
+  // extract host id
+  Slice sl;
+  if (!GetLengthPrefixedSlice(in, &sl)) {
+    return Status::InvalidArgument("Bad HostName");
+  }
+  origin_.hostname.clear();
+  origin_.hostname.append(sl.data(), sl.size());
+
+  // extract port number
+  if (!GetVarint64(in, &origin_.port)) {
+    return Status::InvalidArgument("Bad Port Number");
+  }
 
   // extract number of acks
   uint32_t num_acks;

@@ -124,14 +124,6 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   return Status::OK();
 }
 
-// A static callback method to process MessageData
-void
-ControlTower::ProcessData(const ApplicationCallbackContext ctx,
-                          std::unique_ptr<Message> msg) {
-  ControlTower* ct = static_cast<ControlTower*>(ctx);
-  fprintf(stdout, "Received data message %d\n", ct->IsRunning());
-}
-
 // A static callback method to process MessageMetadata
 // The message is forwarded to the appropriate ControlRoom
 void
@@ -192,7 +184,6 @@ std::map<MessageType, MsgCallbackType>
 ControlTower::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mData] = MsgCallbackType(ProcessData);
   cb[MessageType::mMetadata] = MsgCallbackType(ProcessMetadata);
 
   // return the updated map

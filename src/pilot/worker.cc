@@ -38,7 +38,8 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
     std::unique_ptr<MessageData> msg(msg_raw);
     if (append_status.ok()) {
       // Append successful, send success ack.
-      SendAck(msg->GetOrigin(),
+      SendAck(msg->GetTenantID(),
+              msg->GetOrigin(),
               msg->GetMessageId(),
               MessageDataAck::AckStatus::Success);
       Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
@@ -50,7 +51,8 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
       Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
           "AppendAsync failed (%s)",
           append_status.ToString().c_str());
-      SendAck(msg->GetOrigin(),
+      SendAck(msg->GetTenantID(),
+              msg->GetOrigin(),
               msg->GetMessageId(),
               MessageDataAck::AckStatus::Failure);
     }
@@ -76,13 +78,15 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
     // but because the append failed, it will never be called, so we own msg_raw
     // here, and it is our responsibility to delete it.
     std::unique_ptr<MessageData> msg(msg_raw);
-    SendAck(msg->GetOrigin(),
+    SendAck(msg->GetTenantID(),
+            msg->GetOrigin(),
             msg->GetMessageId(),
             MessageDataAck::AckStatus::Failure);
   }
 }
 
-void PilotWorker::SendAck(const HostId& host,
+void PilotWorker::SendAck(const TenantID tenantid,
+                          const HostId& host,
                           const MsgId& msgid,
                           MessageDataAck::AckStatus status) {
   MessageDataAck::Ack ack;
@@ -90,7 +94,7 @@ void PilotWorker::SendAck(const HostId& host,
   ack.msgid = msgid;
 
   std::vector<MessageDataAck::Ack> acks = { ack };
-  MessageDataAck msg(acks);
+  MessageDataAck msg(tenantid, host, acks);
 
   Status st = msg_client_->Send(host, &msg);
   if (!st.ok()) {

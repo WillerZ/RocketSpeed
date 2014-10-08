@@ -70,10 +70,6 @@ class Pilot {
   static void ProcessData(ApplicationCallbackContext ctx,
                           std::unique_ptr<Message> msg);
 
-  void SendAck(const HostId& host,
-               const MsgId& msgid,
-               MessageDataAck::AckStatus status);
-
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };
 

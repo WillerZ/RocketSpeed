@@ -225,10 +225,10 @@ EventLoop::Run(void) {
 
   // Port number <= 0 indicates that there is no accept loop.
   if (port_number_ > 0) {
-    struct sockaddr_in sin;
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = 0;
-    sin.sin_port = htons(port_number_);
+    struct sockaddr_in6 sin;
+    sin.sin6_family = AF_INET6;
+    sin.sin6_addr = in6addr_any;
+    sin.sin6_port = htons(port_number_);
 
     // Create libevent connection listener.
     listener_ = ld_evconnlistener_new_bind(
