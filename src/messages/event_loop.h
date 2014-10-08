@@ -72,6 +72,12 @@ class EventLoop {
   // This call is thread-safe.
   Status SendCommand(std::unique_ptr<Command> command);
 
+  // Dispatches a message to the event callback.
+  void Dispatch(std::unique_ptr<Message> message);
+
+  // Get the info log.
+  const std::shared_ptr<Logger>& GetLog() { return info_log_; }
+
  private:
   // the port nuber of
   int port_number_;
@@ -103,9 +109,6 @@ class EventLoop {
   struct event* command_pipe_event_ = nullptr;
 
   // callbacks needed by libevent
-  static void readhdr(struct bufferevent *bev, void *ctx);
-  static void readmsg(struct bufferevent *bev, void *ctx);
-  static void errorcb(struct bufferevent *bev, short error, void *ctx);
   static void do_accept(struct evconnlistener *listener,
     evutil_socket_t fd, struct sockaddr *address, int socklen,
     void *arg);

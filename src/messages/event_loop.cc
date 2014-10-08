@@ -13,103 +13,6 @@
 
 namespace rocketspeed {
 
-/**
- *  Reads a message header from an event. Then sets up another
- *  readcallback for the entire message body.
- */
-void
-EventLoop::readhdr(struct bufferevent *bev, void *arg) {
-  EventLoop* obj = static_cast<EventLoop *>(arg);
-  // Verify that we have at least the msg header available for reading.
-  struct evbuffer *input = ld_bufferevent_get_input(bev);
-  size_t available __attribute__((unused)) = ld_evbuffer_get_length(input);
-  assert(available >= MessageHeader::GetSize());
-
-  // Peek at the header.
-  // We can optimize this further by using ld_evbuffer_peek
-  const char* mem = (const char*)ld_evbuffer_pullup(input,
-                                     MessageHeader::GetSize());
-  Slice sl(mem, MessageHeader::GetSize());
-  MessageHeader hdr(&sl);
-
-  Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
-      "received msghdr of size %d, msg size %d",  available, hdr.msgsize_);
-  obj->info_log_->Flush();
-  assert(ld_evbuffer_get_length(input) == available);
-
-  // set up a new callback to read the entire message
-  ld_bufferevent_setcb(bev, EventLoop::readmsg, nullptr, errorcb, arg);
-  ld_bufferevent_setwatermark(bev, EV_READ, hdr.msgsize_, hdr.msgsize_);
-}
-
-/**
- *  Reads an entire message
- */
-void
-EventLoop::readmsg(struct bufferevent *bev, void *arg) {
-  EventLoop* obj = static_cast<EventLoop *>(arg);
-
-  // Verify that we have at least the msg header available for reading.
-  struct evbuffer *input = ld_bufferevent_get_input(bev);
-  size_t available __attribute__((unused)) = ld_evbuffer_get_length(input);
-  assert(available >= MessageHeader::GetSize());
-
-  Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
-      "received readmsg of size %d", available);
-  obj->info_log_->Flush();
-
-  // Peek at the header.
-  const char* mem = (const char*)ld_evbuffer_pullup(input,
-                                     MessageHeader::GetSize());
-  Slice sl(mem, MessageHeader::GetSize());
-  MessageHeader hdr(&sl);
-
-  // Retrieve the entire message.
-  // TODO(dhruba) 1111  use ld_evbuffer_peek
-  const char* data = (const char*)ld_evbuffer_pullup(input, hdr.msgsize_);
-
-  // Convert the serialized string to a message object
-  assert(available >= hdr.msgsize_);
-  Slice tmpsl(data, hdr.msgsize_);
-  std::unique_ptr<Message> msg = Message::CreateNewInstance(&tmpsl);
-  if (msg) {
-    // Invoke the callback. It is the responsibility of the
-    // callback to delete this message.
-    obj->event_callback_(obj->event_callback_context_, std::move(msg));
-  } else {
-    // Failed to decode message.
-    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
-      "failed to decode message");
-    obj->info_log_->Flush();
-  }
-
-  // drain the processed message from the event buffer
-  if (ld_evbuffer_drain(input, hdr.msgsize_)) {
-    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
-        "unable to drain msg of size %d from event buffer", hdr.msgsize_);
-  }
-
-  // Set up the callback event to read the msg header first.
-  ld_bufferevent_setcb(bev, EventLoop::readhdr, nullptr, errorcb, arg);
-  ld_bufferevent_setwatermark(bev, EV_READ, MessageHeader::GetSize(),
-                              MessageHeader::GetSize());
-}
-
-void
-EventLoop::errorcb(struct bufferevent *bev, short error, void *ctx) {
-  EventLoop* obj = static_cast<EventLoop *>(ctx);
-  Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
-      "bufferevent errorcb callback invoked, error = %d", error);
-  if (error & BEV_EVENT_EOF) {
-    ld_bufferevent_free(bev);
-  } else if (error & BEV_EVENT_ERROR) {
-    ld_bufferevent_free(bev);
-    /* check errno to see what error occurred */
-  } else if (error & BEV_EVENT_TIMEOUT) {
-    /* must be a timeout event handle, handle it */
-  }
-}
-
 //
 // This callback is fired from the first aritificial timer event
 // in the dispatch loop.
@@ -162,31 +65,141 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
   }
 }
 
+struct SocketEvent {
+ public:
+  SocketEvent(EventLoop* event_loop, int fd, event_base* base)
+  : hdr_idx_(0)
+  , msg_idx_(0)
+  , msg_size_(0)
+  , fd_(fd)
+  , ev_(nullptr)
+  , event_loop_(event_loop) {
+    ld_evutil_make_socket_nonblocking(fd);
+    ev_ = ld_event_new(base, fd, EV_READ|EV_PERSIST, EventCallback, this);
+    if (ev_ == nullptr || ld_event_add(ev_, nullptr)) {
+      Log(InfoLogLevel::WARN_LEVEL, event_loop_->GetLog(),
+          "Failed to create socket event for %d", fd);
+      delete this;
+    }
+  }
+
+  ~SocketEvent() {
+    close(fd_);
+    if (ev_) {
+      ld_event_free(ev_);
+    }
+  }
+
+ private:
+  static void EventCallback(evutil_socket_t fd, short what, void* arg) {
+    static_cast<SocketEvent*>(arg)->Callback(fd);
+  }
+
+  void Callback(evutil_socket_t fd) {
+    // This will keep reading while there is data to be read,
+    // but not more than 1MB to give other sockets a chance to read.
+    ssize_t total_read = 0;
+    while (total_read < 1024 * 1024) {
+      if (hdr_idx_ < sizeof(hdr_buf_)) {
+        // Read the header.
+        ssize_t count = sizeof(hdr_buf_) - hdr_idx_;
+        ssize_t n = read(fd_, hdr_buf_ + hdr_idx_, count);
+        // If n == -1 then an error has occurred (don't close on EAGAIN though).
+        // If n == 0 and this is our first read (total_read == 0) then this
+        // means the other end has closed, so we should close, too.
+        if (n == -1 || (n == 0 && total_read == 0)) {
+          if (!(n == -1 && errno == EAGAIN)) {
+            // Read error, close connection.
+            delete this;
+          }
+          return;
+        }
+        total_read += n;
+        hdr_idx_ += n;
+        if (n < count) {
+          // Still more header to be read, wait for next event.
+          return;
+        }
+
+        // Now have read header, prepare msg buffer.
+        Slice hdr_slice(hdr_buf_, sizeof(hdr_buf_));
+        MessageHeader hdr(&hdr_slice);
+        msg_size_ = hdr.msgsize_;
+        if (msg_size_ <= sizeof(hdr_buf_)) {
+          // Message size too small, bad data. Close connection.
+          delete this;
+          return;
+        }
+        msg_buf_.reset(new char[msg_size_]);
+
+        // Copy in header data.
+        memcpy(msg_buf_.get(), hdr_buf_, sizeof(hdr_buf_));
+        msg_idx_ = sizeof(hdr_buf_);
+      }
+      assert(msg_idx_ < msg_size_);
+
+      ssize_t count = msg_size_ - msg_idx_;
+      ssize_t n = read(fd_, msg_buf_.get() + msg_idx_, count);
+      // If n == -1 then an error has occurred (don't close on EAGAIN though).
+      // If n == 0 and this is our first read (total_read == 0) then this
+      // means the other end has closed, so we should close, too.
+      if (n == -1 || (n == 0 && total_read == 0)) {
+        if (!(n == -1 && errno == EAGAIN)) {
+          // Read error, close connection.
+          delete this;
+        }
+        return;
+      }
+      total_read += n;
+      msg_idx_ += n;
+      if (n < count) {
+        // Still more message to be read, wait for next event.
+        return;
+      }
+
+      // Now have whole message, process it.
+      std::unique_ptr<Message> msg =
+        Message::CreateNewInstance(std::move(msg_buf_), msg_size_);
+      if (msg) {
+        // Invoke the callback for this message.
+        event_loop_->Dispatch(std::move(msg));
+      } else {
+        // Failed to decode message.
+        Log(InfoLogLevel::WARN_LEVEL, event_loop_->GetLog(),
+            "Failed to decode message");
+        event_loop_->GetLog()->Flush();
+      }
+
+      // Reset state for next message.
+      hdr_idx_ = 0;
+      msg_idx_ = 0;
+    }
+  }
+
+  size_t hdr_idx_;
+  char hdr_buf_[MessageHeader::size];
+  size_t msg_idx_;
+  size_t msg_size_;
+  std::unique_ptr<char[]> msg_buf_;
+  evutil_socket_t fd_;
+  event* ev_;
+  EventLoop* event_loop_;
+};
+
 void
 EventLoop::do_accept(struct evconnlistener *listener,
-    evutil_socket_t fd, struct sockaddr *address, int socklen,
-    void *arg) {
-  EventLoop* obj = static_cast<EventLoop *>(arg);
-  struct event_base *base = obj->base_;
-  struct bufferevent *bev = ld_bufferevent_socket_new(base, fd,
-                                                      BEV_OPT_CLOSE_ON_FREE);
-  if (bev == nullptr) {
-    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
-        "bufferevent_socket_new() failed. errno=%d", errno);
-    return;
-  }
-  // Set up an event to read the msg header first.
-  ld_bufferevent_setcb(bev, &EventLoop::readhdr, nullptr, errorcb, arg);
-  ld_bufferevent_setwatermark(bev, EV_READ, MessageHeader::GetSize(),
-                              MessageHeader::GetSize());
-  if (ld_bufferevent_enable(bev, EV_READ|EV_WRITE)) {
-    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
-        "accept on socket %dmsghdr, error in enabling event errno=%d\n",
-        fd, errno);
-    return;
-  }
-  Log(InfoLogLevel::INFO_LEVEL, obj->info_log_,
-      "accept successful on socket %d", fd);
+                     evutil_socket_t fd,
+                     struct sockaddr *address,
+                     int socklen,
+                     void *arg) {
+  EventLoop* event_loop = static_cast<EventLoop *>(arg);
+
+  // This object is managed by the event that it creates, and will destroy
+  // itself during an EOF callback.
+  new SocketEvent(event_loop, fd, event_loop->base_);
+
+  Log(InfoLogLevel::INFO_LEVEL, event_loop->info_log_,
+      "Accept successful on socket %d", fd);
 }
 
 void
@@ -413,6 +426,10 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
       static_cast<int>(written), static_cast<int>(sizeof(command)));
     return Status::InternalError(err_msg);
   }
+}
+
+void EventLoop::Dispatch(std::unique_ptr<Message> message) {
+  event_callback_(event_callback_context_, std::move(message));
 }
 
 /**

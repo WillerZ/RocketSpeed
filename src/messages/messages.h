@@ -102,6 +102,13 @@ class Message : public Serializer {
    */
   static std::unique_ptr<Message> CreateNewInstance(Slice* in);
 
+  /**
+   * Similar to CreateNewInstance, but the memory ownership is passed to the
+   * message itself, and will be discarded once the message is destroyed.
+   */
+  static std::unique_ptr<Message> CreateNewInstance(std::unique_ptr<char[]> in,
+                                                    size_t size);
+
   /*
    * Inherited from Serializer
    */
@@ -115,8 +122,9 @@ class Message : public Serializer {
   }
   Message() : Message(MessageType::NotInitialized, 0) {}
 
-  MessageType type_;         // type of this message
-  TenantID tenantid_;        // unique id for tenant
+  MessageType type_;                // type of this message
+  TenantID tenantid_;               // unique id for tenant
+  std::unique_ptr<char[]> buffer_;  // owned memory for slices
 };
 
 

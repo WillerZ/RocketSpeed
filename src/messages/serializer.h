@@ -28,8 +28,10 @@ class MessageHeader {
    * Returns the serialized size of the message header
    */
   static unsigned int GetSize() {
-    return (sizeof(version_) + sizeof(msgsize_));
+    return size;
   }
+
+  static constexpr size_t size = sizeof(version_) + sizeof(msgsize_);
 
   MessageHeader() {}
 

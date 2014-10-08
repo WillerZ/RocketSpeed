@@ -34,7 +34,12 @@ Status Tailer::Initialize() {
     // is stored back into the in-memory copy of the message.
     MessageData* newmsg = new MessageData();
     Slice payload = record.payload;
-    Status st = newmsg->DeSerializeStorage(&payload);
+
+    // This payload is only valid as long as 'record' is valid, so need to
+    // make a copy.
+    std::string* data = new std::string(payload.data(), payload.size());
+    Slice data_payload(*data);
+    Status st = newmsg->DeSerializeStorage(&data_payload);
     if (!st.ok()) {
       Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "Failed to deserialize message (%s).",

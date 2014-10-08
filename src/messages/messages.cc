@@ -81,6 +81,16 @@ Message::CreateNewInstance(Slice* in) {
   return nullptr;
 }
 
+std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
+                                                    size_t size) {
+  Slice slice(in.get(), size);
+  std::unique_ptr<Message> msg = Message::CreateNewInstance(&slice);
+  if (msg) {
+    msg->buffer_ = std::move(in);
+  }
+  return std::move(msg);
+}
+
 Slice MessagePing::Serialize() const {
   // serialize common header
   msghdr_.msgsize_ = 0;
