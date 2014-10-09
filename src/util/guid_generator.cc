@@ -26,8 +26,10 @@ GUIDGenerator::GUIDGenerator() {
 GUID GUIDGenerator::Generate() {
   union {
     GUID guid;
-    uint64_t ui0;
-    uint64_t ui1;
+    struct {
+      uint64_t ui0;
+      uint64_t ui1;
+    };
   } result;
   result.ui0 = rng_();
   result.ui1 = rng_();

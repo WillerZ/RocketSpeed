@@ -13,7 +13,7 @@
 
 namespace rocketspeed {
 
-LocalTestCluster::LocalTestCluster() :
+LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
   pilot_(nullptr),
   copilot_(nullptr),
   control_tower_(nullptr) {
@@ -31,12 +31,26 @@ LocalTestCluster::LocalTestCluster() :
 #endif
 
 #ifdef USE_LOGDEVICE
-  // Setup the local LogDevice cluster and create, client, and storage.
-  logdevice_cluster_ = ld::IntegrationTestUtils::ClusterFactory().create(3);
-  logdevice_client_ = logdevice_cluster_->createClient();
   LogDeviceStorage* storage = nullptr;
-  st = LogDeviceStorage::Create(logdevice_client_, Env::Default(), &storage);
-  ASSERT_TRUE(st.ok());
+  if (storage_url.empty()) {
+    // Setup the local LogDevice cluster and create, client, and storage.
+    logdevice_cluster_ = ld::IntegrationTestUtils::ClusterFactory().create(3);
+    logdevice_client_ = logdevice_cluster_->createClient();
+    st = LogDeviceStorage::Create(logdevice_client_, Env::Default(), &storage);
+    ASSERT_TRUE(st.ok());
+  } else {
+    // Create log device client
+    std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
+      facebook::logdevice::ClientSettings::create());
+    rocketspeed::LogDeviceStorage::Create(
+      "rocketspeed.logdevice.primary",
+      storage_url,
+      "",
+      std::chrono::milliseconds(1000),
+      std::move(clientSettings),
+      env,
+      &storage);
+  }
   logdevice_storage_.reset(storage);
 
   // Tell the pilot and control tower to use this storage interface instead
@@ -65,6 +79,7 @@ LocalTestCluster::LocalTestCluster() :
   // Create ControlTower
   control_tower_options_.log_range = log_range;
   control_tower_options_.info_log = info_log;
+  control_tower_options_.number_of_rooms = 4;
   st = ControlTower::CreateNewInstance(control_tower_options_, &control_tower_);
   if (!st.ok()) {
     fprintf(stderr, "Failed to create control tower.\n");
@@ -76,6 +91,7 @@ LocalTestCluster::LocalTestCluster() :
                             control_tower_options_.port_number);
   copilot_options_.control_towers.push_back(control_tower_host);
   copilot_options_.info_log = info_log;
+  copilot_options_.num_workers = 4;
   st = Copilot::CreateNewInstance(copilot_options_, &copilot_);
   if (!st.ok()) {
     fprintf(stderr, "Failed to create copilot.\n");
@@ -85,6 +101,7 @@ LocalTestCluster::LocalTestCluster() :
   // Create Pilot
   pilot_options_.log_range = log_range;
   pilot_options_.info_log = info_log;
+  pilot_options_.num_workers = 4;
   st = Pilot::CreateNewInstance(pilot_options_, &pilot_);
   if (!st.ok()) {
     fprintf(stderr, "Failed to create pilot.\n");

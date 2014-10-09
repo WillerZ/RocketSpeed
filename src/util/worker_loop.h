@@ -8,7 +8,7 @@
 #include <atomic>
 #include <thread>
 #include <utility>
-#include <folly/producer_consumer_queue.h>
+#include "external/folly/producer_consumer_queue.h"
 
 namespace rocketspeed {
 

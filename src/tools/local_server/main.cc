@@ -8,6 +8,10 @@
 #include "include/Types.h"
 #include "src/test/test_cluster.h"
 
+DEFINE_string(storage_url,
+              "",
+              "Storage service url");
+
 /**
  * This process just starts a pilot, copilot, control tower, and logdevice
  * instance all inside the same process. This is for testing and benchmark
@@ -22,7 +26,7 @@ int main(int argc, char** argv) {
   signal(SIGPIPE, SIG_IGN);
 
   // Start local cluster.
-  rocketspeed::LocalTestCluster cluster;
+  rocketspeed::LocalTestCluster cluster(FLAGS_storage_url);
   while (1) {
     // Run forever - just keep this thread asleep.
     std::this_thread::sleep_for(std::chrono::seconds(1000));

@@ -33,8 +33,10 @@ class LocalTestCluster {
   /**
    * Constructs a new test cluster. Once this has finished constructing, the
    * pilot, copilot, and control tower will be running.
+   *
+   * @param storage_url URL of logdevice config. Leave blank to use test util.
    */
-  LocalTestCluster();
+  explicit LocalTestCluster(const std::string& storage_url = "");
 
   /**
    * Stops all parts of the test cluster.

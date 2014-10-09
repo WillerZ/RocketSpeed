@@ -165,7 +165,7 @@ Status MessagePing::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-static GUIDGenerator msgid_generator;
+thread_local GUIDGenerator msgid_generator;
 
 MessageData::MessageData(TenantID tenantID,
                          const HostId& origin,

@@ -24,7 +24,7 @@
 DEFINE_bool(start_producer, true, "starts the producer");
 DEFINE_bool(start_consumer, false, "starts the consumer");
 
-DEFINE_int32(num_threads, 16, "number of threads");
+DEFINE_int32(num_threads, 4, "number of threads");
 DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
 DEFINE_string(copilot_hostname, "localhost", "hostname of copilot");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
@@ -56,6 +56,8 @@ static const Result failed = { false, };
 namespace rocketspeed {
 
 Result ProducerWorker(int64_t num_messages, Client* producer) {
+  Env* env = Env::Default();
+
   // Random number generator.
   std::mt19937_64 rng;
   std::unique_ptr<rocketspeed::RandomDistributionBase>
@@ -108,6 +110,11 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
         topic_options.retention = Retention::OneWeek;
         break;
     }
+
+    // Add ID and timestamp to message ID.
+    static std::atomic<uint64_t> message_index;
+    snprintf(data.data(), data.size(),
+             "%lu %lu", message_index++, env->NowMicros());
 
     // Send the message
     PublishStatus ps = producer->Publish(topic_name,
@@ -177,22 +184,13 @@ int DoProduce(Client* producer,
   }
 
   if (FLAGS_await_ack) {
-    printf("Messages sent, awaiting acks...");
-    fflush(stdout);
-
     // Wait for the all_ack_messages_received semaphore to be posted.
-    // Keep waiting as long as a message was received in the last second.
-    auto timeout = std::chrono::seconds(1);
+    // Keep waiting as long as a message was received in the last 5 seconds.
+    auto timeout = std::chrono::seconds(5);
     do {
       all_ack_messages_received->TimedWait(timeout);
     } while (*ack_messages_received != FLAGS_num_messages &&
              std::chrono::steady_clock::now() - *last_ack_message < timeout);
-
-    if (*ack_messages_received == FLAGS_num_messages) {
-      printf(" done\n");
-    } else {
-      printf(" time out\n");
-    }
   }
   return ret;
 }
@@ -232,22 +230,13 @@ int DoConsume(Client* consumer,
     consumer->ListenTopics(topics, TopicOptions());
   }
 
-  printf("Waiting for Messages to be received...");
-  fflush(stdout);
-
   // Wait for the all_messages_received semaphore to be posted.
-  // Keep waiting as long as a message was received in the last 3 seconds.
-  auto timeout = std::chrono::seconds(3);
+  // Keep waiting as long as a message was received in the last 5 seconds.
+  auto timeout = std::chrono::seconds(5);
   do {
     all_messages_received->TimedWait(timeout);
   } while (*messages_received != FLAGS_num_messages &&
            std::chrono::steady_clock::now() - *last_data_message < timeout);
-
-  if (*messages_received == FLAGS_num_messages) {
-    printf(" done\n");
-  } else {
-    printf(" time out\n");
-  }
 
   return 0;
 }
@@ -370,12 +359,37 @@ int main(int argc, char** argv) {
   // Semaphore to signal when all data messages have been received
   rocketspeed::port::Semaphore all_messages_received;
 
+  // Data structure to track received message indices and latencies (microsecs).
+  uint64_t latency_max = static_cast<uint64_t>(-1);
+  std::vector<uint64_t> latencies(FLAGS_num_messages, latency_max);
+
   // Create callback for processing messages received
+  rocketspeed::Env* env = rocketspeed::Env::Default();
   int64_t messages_received = 0;
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived> rs) {
+    uint64_t now = env->NowMicros();
     ++messages_received;
     last_data_message = std::chrono::steady_clock::now();
+
+    // Parse message data to get received index.
+    rocketspeed::Slice data = rs->GetContents();
+    uint64_t message_index, send_time;
+    std::sscanf(data.data(), "%lu %lu", &message_index, &send_time);
+    if (message_index < latencies.size()) {
+      if (latencies[message_index] == latency_max) {
+        latencies[message_index] = now - send_time;
+      } else {
+        Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
+            "Received duplicate message index (%lu)",
+            message_index);
+      }
+    } else {
+      Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
+          "Received out of bounds message index (%lu)",
+          message_index);
+    }
+
     // If we've received all messages, let the main thread know to finish up.
     if (messages_received == FLAGS_num_messages) {
       all_messages_received.Post();
@@ -421,15 +435,50 @@ int main(int argc, char** argv) {
   }
   // Start the clock.
   start = std::chrono::steady_clock::now();
-  int ret = 0;
 
+  std::future<int> producer_ret;
+  std::future<int> consumer_ret;
   if (FLAGS_start_producer) {
-    ret = DoProduce(producer, &all_ack_messages_received,
-                    &ack_messages_received, &last_ack_message);
+    producer_ret = std::async(std::launch::async,
+                              &rocketspeed::DoProduce,
+                              producer,
+                              &all_ack_messages_received,
+                              &ack_messages_received,
+                              &last_ack_message);
   }
   if (FLAGS_start_consumer) {
-    ret = DoConsume(consumer, &all_messages_received,
-                    &messages_received, &last_data_message);
+    consumer_ret = std::async(std::launch::async,
+                              &rocketspeed::DoConsume,
+                              consumer,
+                              &all_messages_received,
+                              &messages_received,
+                              &last_data_message);
+  }
+
+  int ret = 0;
+  if (FLAGS_start_producer) {
+    printf("Messages sent, awaiting acks...");
+    fflush(stdout);
+
+    ret = producer_ret.get();
+
+    if (ack_messages_received == FLAGS_num_messages) {
+      printf(" done\n");
+    } else {
+      printf(" time out\n");
+    }
+  }
+  if (FLAGS_start_consumer) {
+    printf("Waiting for Messages to be received...");
+    fflush(stdout);
+
+    ret = consumer_ret.get();
+
+    if (messages_received == FLAGS_num_messages) {
+      printf(" done\n");
+    } else {
+      printf(" time out\n");
+    }
   }
 
   end = std::chrono::steady_clock::now();
@@ -452,11 +501,26 @@ int main(int argc, char** argv) {
                              FLAGS_num_messages *
                              FLAGS_message_size /
                              total_ms;
+
+    printf("\n");
+    printf("Results\n");
     printf("%ld messages sent\n", FLAGS_num_messages);
     printf("%ld messages sends acked\n", ack_messages_received);
     printf("%ld messages received\n", messages_received);
+
+    printf("\n");
+    printf("Throughput\n");
     printf("%u messages/s\n", msg_per_sec);
     printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
+
+    std::sort(latencies.begin(), latencies.end());
+    printf("\n");
+    printf("Latency (microseconds)\n");
+    printf("p50 = %lu\n", latencies[FLAGS_num_messages * 0.50]);
+    printf("p75 = %lu\n", latencies[FLAGS_num_messages * 0.75]);
+    printf("p90 = %lu\n", latencies[FLAGS_num_messages * 0.90]);
+    printf("p95 = %lu\n", latencies[FLAGS_num_messages * 0.95]);
+    printf("p99 = %lu\n", latencies[FLAGS_num_messages * 0.99]);
   }
 
   delete producer;

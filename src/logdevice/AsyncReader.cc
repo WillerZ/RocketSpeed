@@ -20,7 +20,7 @@ AsyncReaderImpl::AsyncReaderImpl()
       // Wait 100ms before polling again
       // Allows other threads to lock the mutex, and stops us from busily
       // hitting the OS for file attrs.
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
       // Check all the logs for data
       std::lock_guard<std::mutex> lock(mutex_);
