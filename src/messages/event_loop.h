@@ -43,7 +43,8 @@ class EventLoop {
    * @param info_log Write informational messages to this log
    * @param callback The callback method that is invoked for every msg received
    */
-  EventLoop(int port,
+  EventLoop(EnvOptions env_options,
+            int port,
             const std::shared_ptr<Logger>& info_log,
             EventCallbackType event_callback,
             CommandCallbackType command_callback = nullptr);
@@ -79,6 +80,9 @@ class EventLoop {
   const std::shared_ptr<Logger>& GetLog() { return info_log_; }
 
  private:
+  // Env options
+  EnvOptions env_options_;
+
   // the port nuber of
   int port_number_;
 

@@ -26,6 +26,14 @@ CopilotWorker::CopilotWorker(const CopilotOptions& options,
   options_.info_log->Flush();
 }
 
+void CopilotWorker::Run() {
+  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+      "Starting worker loop");
+  worker_loop_.Run([this] (CopilotWorkerCommand command) {
+    CommandCallback(std::move(command));
+  });
+}
+
 bool CopilotWorker::Forward(LogID logid, std::unique_ptr<Message> msg) {
   return worker_loop_.Send(logid, std::move(msg));
 }

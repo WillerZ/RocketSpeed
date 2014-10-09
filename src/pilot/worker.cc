@@ -24,6 +24,14 @@ PilotWorker::PilotWorker(const PilotOptions& options,
   options_.info_log->Flush();
 }
 
+void PilotWorker::Run() {
+  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+      "Starting worker loop");
+  worker_loop_.Run([this](PilotWorkerCommand command) {
+    CommandCallback(std::move(command));
+  });
+}
+
 bool PilotWorker::Forward(LogID logid, std::unique_ptr<MessageData> msg) {
   return worker_loop_.Send(logid, std::move(msg));
 }
@@ -43,14 +51,14 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
               msg->GetMessageId(),
               MessageDataAck::AckStatus::Success);
       Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Appended (%s) successfully",
+          "Appended (%.16s) successfully",
           msg_raw->GetPayload().ToString().c_str());
-      options_.info_log->Flush();
     } else {
       // Append failed, send failure ack.
       Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
           "AppendAsync failed (%s)",
           append_status.ToString().c_str());
+      options_.info_log->Flush();
       SendAck(msg->GetTenantID(),
               msg->GetOrigin(),
               msg->GetMessageId(),
@@ -73,6 +81,7 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
     Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
       "Failed to append to log ID %lu",
       static_cast<uint64_t>(logid));
+    options_.info_log->Flush();
 
     // Subtle note: msg_raw is actually owned by append_callback at this point,
     // but because the append failed, it will never be called, so we own msg_raw

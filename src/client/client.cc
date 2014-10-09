@@ -41,7 +41,8 @@ class ClientImpl : public Client {
              int port,
              PublishCallback publish_callback,
              SubscribeCallback subscription_callback,
-             MessageReceivedCallback receive_callback);
+             MessageReceivedCallback receive_callback,
+             bool enable_logging);
 
  private:
   // Callback for a Data message
@@ -115,7 +116,8 @@ Status Client::Open(const Configuration* config,
                              config->GetClientPort(),
                              publish_callback,
                              subscription_callback,
-                             receive_callback);
+                             receive_callback,
+                             true);
   return Status::OK();
 }
 
@@ -125,7 +127,8 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        int port,
                        PublishCallback publish_callback,
                        SubscribeCallback subscription_callback,
-                       MessageReceivedCallback receive_callback)
+                       MessageReceivedCallback receive_callback,
+                       bool enable_logging)
 : pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
@@ -166,11 +169,28 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
     }
   };
 
+  std::shared_ptr<Logger> info_log;
+  if (enable_logging) {
+    Status st = CreateLoggerFromOptions(Env::Default(),
+                                        "",
+                                        "LOG.client",
+                                        0,
+                                        0,
+#ifdef NDEBUG
+                                        WARN_LEVEL,
+#else
+                                        INFO_LEVEL,
+#endif
+                                        &info_log);
+  } else {
+    info_log = std::make_shared<NullLogger>();
+  }
+
   // Construct message loop.
   msg_loop_ = new MsgLoop(Env::Default(),
                           EnvOptions(),
                           host_id_,
-                          std::make_shared<NullLogger>(),  // no logging
+                          info_log,
                           static_cast<ApplicationCallbackContext>(this),
                           callbacks,
                           command_callback);

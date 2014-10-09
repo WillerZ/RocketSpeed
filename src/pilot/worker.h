@@ -61,11 +61,7 @@ class PilotWorker {
 
   // Start the worker loop on this thread.
   // Blocks until the worker loop ends.
-  void Run() {
-    worker_loop_.Run([this](PilotWorkerCommand command) {
-      CommandCallback(std::move(command));
-    });
-  }
+  void Run();
 
   // Stop the worker loop.
   void Stop() {

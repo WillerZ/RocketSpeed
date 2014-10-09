@@ -187,7 +187,12 @@ int DoProduce(Client* producer,
       all_ack_messages_received->TimedWait(timeout);
     } while (*ack_messages_received != FLAGS_num_messages &&
              std::chrono::steady_clock::now() - *last_ack_message < timeout);
-    printf(" done\n");
+
+    if (*ack_messages_received == FLAGS_num_messages) {
+      printf(" done\n");
+    } else {
+      printf(" time out\n");
+    }
   }
   return ret;
 }
@@ -196,7 +201,10 @@ int DoProduce(Client* producer,
  ** Receive messages
  */
 int DoConsume(Client* consumer,
-              rocketspeed::port::Semaphore* all_messages_received) {
+              rocketspeed::port::Semaphore* all_messages_received,
+              int64_t* messages_received,
+              std::chrono::time_point<std::chrono::steady_clock>*
+                                                     last_data_message) {
 
   SequenceNumber start = 1;   // start sequence number
   NamespaceID nsid = 101;
@@ -227,7 +235,20 @@ int DoConsume(Client* consumer,
   printf("Waiting for Messages to be received...");
   fflush(stdout);
 
-  all_messages_received->Wait();
+  // Wait for the all_messages_received semaphore to be posted.
+  // Keep waiting as long as a message was received in the last 3 seconds.
+  auto timeout = std::chrono::seconds(3);
+  do {
+    all_messages_received->TimedWait(timeout);
+  } while (*messages_received != FLAGS_num_messages &&
+           std::chrono::steady_clock::now() - *last_data_message < timeout);
+
+  if (*messages_received == FLAGS_num_messages) {
+    printf(" done\n");
+  } else {
+    printf(" time out\n");
+  }
+
   return 0;
 }
 
@@ -325,8 +346,9 @@ int main(int argc, char** argv) {
   // Semaphore to signal when all messages have been ack'd
   rocketspeed::port::Semaphore all_ack_messages_received;
 
-  // Time last ack message was received.
+  // Time last ack/data message was received.
   std::chrono::time_point<std::chrono::steady_clock> last_ack_message;
+  std::chrono::time_point<std::chrono::steady_clock> last_data_message;
 
   // Create callback for publish acks.
   int64_t ack_messages_received = 0;
@@ -353,6 +375,7 @@ int main(int argc, char** argv) {
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived> rs) {
     ++messages_received;
+    last_data_message = std::chrono::steady_clock::now();
     // If we've received all messages, let the main thread know to finish up.
     if (messages_received == FLAGS_num_messages) {
       all_messages_received.Post();
@@ -405,7 +428,8 @@ int main(int argc, char** argv) {
                     &ack_messages_received, &last_ack_message);
   }
   if (FLAGS_start_consumer) {
-    ret = DoConsume(consumer, &all_messages_received);
+    ret = DoConsume(consumer, &all_messages_received,
+                    &messages_received, &last_data_message);
   }
 
   end = std::chrono::steady_clock::now();
@@ -429,7 +453,8 @@ int main(int argc, char** argv) {
                              FLAGS_message_size /
                              total_ms;
     printf("%ld messages sent\n", FLAGS_num_messages);
-    printf("%ld messages acked\n", ack_messages_received);
+    printf("%ld messages sends acked\n", ack_messages_received);
+    printf("%ld messages received\n", messages_received);
     printf("%u messages/s\n", msg_per_sec);
     printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
   }

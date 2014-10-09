@@ -60,6 +60,11 @@ class EnvOptions {
   // write. By default, we set it to true for MANIFEST writes and false for
   // WAL writes
   bool fallocate_with_keep_size = true;
+
+  // Send and receive buffer sizes for TCP connections.
+  // Set to 0 to use OS defaults.
+  int tcp_send_buffer_size = 1 << 20;
+  int tcp_recv_buffer_size = 1 << 20;
 };
 
 class Env {
@@ -213,6 +218,9 @@ class Env {
   // Returns an identifier for the thread that is created.
   virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
                                std::string thread_name = "") = 0;
+
+  // Gets the thread ID for the current thread.
+  virtual ThreadId GetCurrentThreadId() const = 0;
 
   // Sets a thread name using the native thread handle.
   virtual void SetThreadName(ThreadId thread_id, const std::string& name) = 0;

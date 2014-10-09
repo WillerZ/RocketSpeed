@@ -52,7 +52,11 @@ LocalTestCluster::LocalTestCluster() :
                                "LOG",
                                0,
                                0,
+#ifdef NDEBUG
+                               WARN_LEVEL,
+#else
                                INFO_LEVEL,
+#endif
                                &info_log);
   if (!st.ok()) {
     info_log = nullptr;
@@ -88,20 +92,20 @@ LocalTestCluster::LocalTestCluster() :
   }
 
   // Start threads.
-  pilot_thread_ = std::thread([this]() {
+  pilot_thread_ = std::thread([env, this]() {
+    env->SetThreadName(env->GetCurrentThreadId(), "pilot");
     pilot_->Run();
   });
-  env->SetThreadName(pilot_thread_.native_handle(), "pilot");
 
-  copilot_thread_ = std::thread([this]() {
+  copilot_thread_ = std::thread([env, this]() {
+    env->SetThreadName(env->GetCurrentThreadId(), "copilot");
     copilot_->Run();
   });
-  env->SetThreadName(copilot_thread_.native_handle(), "copilot");
 
-  control_tower_thread_ = std::thread([this]() {
+  control_tower_thread_ = std::thread([env, this]() {
+    env->SetThreadName(env->GetCurrentThreadId(), "tower");
     control_tower_->Run();
   });
-  env->SetThreadName(copilot_thread_.native_handle(), "tower");
 
   // Wait for message loops to start.
   while (!pilot_->IsRunning() ||

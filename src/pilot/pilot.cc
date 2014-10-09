@@ -38,10 +38,12 @@ void Pilot::Run() {
   // Start worker threads.
   for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
-      [] (PilotWorker* worker) { worker->Run(); },
+      [this, i] (PilotWorker* worker) {
+        options_.env->SetThreadName(options_.env->GetCurrentThreadId(),
+                                    "pilot-" + std::to_string(i));
+        worker->Run();
+      },
       workers_[i].get());
-    options_.env->SetThreadName(worker_threads_.back().native_handle(),
-                                "pilot-" + std::to_string(i));
   }
 
   // Wait for them to start.
@@ -149,7 +151,7 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
   }
 
   Log(InfoLogLevel::INFO_LEVEL, pilot->options_.info_log,
-      "Received data (%s) for topic %s",
+      "Received data (%.16s) for topic %s",
       msg_data->GetPayload().ToString().c_str(),
       msg_data->GetTopicName().ToString().c_str());
 

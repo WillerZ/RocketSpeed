@@ -66,7 +66,11 @@ MsgLoop::MsgLoop(const Env* env,
   info_log_(info_log),
   application_context_(application_context),
   msg_callbacks_(SanitizeCallbacks(callbacks)),
-  event_loop_(hostid.port, info_log, EventCallback, command_callback),
+  event_loop_(env_options,
+              hostid.port,
+              info_log,
+              EventCallback,
+              command_callback),
   client_(env, env_options, info_log) {
   // set the Event callback context
   event_loop_.SetEventCallbackContext(this);

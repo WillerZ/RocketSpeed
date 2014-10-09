@@ -1327,6 +1327,8 @@ class PosixEnv : public Env {
   virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
                                std::string thread_name);
 
+  virtual ThreadId GetCurrentThreadId() const;
+
   virtual void SetThreadName(ThreadId thread_id, const std::string& name);
 
   virtual void WaitForJoin();
@@ -1502,6 +1504,16 @@ class PosixEnv : public Env {
 
         int one = 1;
         setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+        if (options.tcp_send_buffer_size) {
+          int sz = options.tcp_send_buffer_size;
+          setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
+        }
+
+        if (options.tcp_recv_buffer_size) {
+          int sz = options.tcp_recv_buffer_size;
+          setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
+        }
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
@@ -1808,6 +1820,10 @@ Env::ThreadId PosixEnv::StartThread(void (*function)(void* arg),
 
   SetThreadName(t, thread_name);
   return (Env::ThreadId)t;
+}
+
+Env::ThreadId PosixEnv::GetCurrentThreadId() const {
+  return static_cast<Env::ThreadId>(pthread_self());
 }
 
 void PosixEnv::SetThreadName(ThreadId thread_id, const std::string& name) {

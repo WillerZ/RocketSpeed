@@ -75,6 +75,7 @@ struct SocketEvent {
   , ev_(nullptr)
   , event_loop_(event_loop) {
     ld_evutil_make_socket_nonblocking(fd);
+
     ev_ = ld_event_new(base, fd, EV_READ|EV_PERSIST, EventCallback, this);
     if (ev_ == nullptr || ld_event_add(ev_, nullptr)) {
       Log(InfoLogLevel::WARN_LEVEL, event_loop_->GetLog(),
@@ -193,6 +194,25 @@ EventLoop::do_accept(struct evconnlistener *listener,
                      int socklen,
                      void *arg) {
   EventLoop* event_loop = static_cast<EventLoop *>(arg);
+
+  // Set buffer sizes.
+  if (event_loop->env_options_.tcp_send_buffer_size) {
+    int sz = event_loop->env_options_.tcp_send_buffer_size;
+    int r = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
+    if (r) {
+      Log(InfoLogLevel::WARN_LEVEL, event_loop->info_log_,
+          "Failed to set send buffer size on socket %d", fd);
+    }
+  }
+
+  if (event_loop->env_options_.tcp_recv_buffer_size) {
+    int sz = event_loop->env_options_.tcp_recv_buffer_size;
+    int r = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
+    if (r) {
+      Log(InfoLogLevel::WARN_LEVEL, event_loop->info_log_,
+          "Failed to set receive buffer size on socket %d", fd);
+    }
+  }
 
   // This object is managed by the event that it creates, and will destroy
   // itself during an EOF callback.
@@ -435,10 +455,12 @@ void EventLoop::Dispatch(std::unique_ptr<Message> message) {
 /**
  * Constructor for a Message Loop
  */
-EventLoop::EventLoop(int port_number,
+EventLoop::EventLoop(EnvOptions env_options,
+                     int port_number,
                      const std::shared_ptr<Logger>& info_log,
                      EventCallbackType event_callback,
                      CommandCallbackType command_callback) :
+  env_options_(env_options),
   port_number_(port_number),
   running_(false),
   base_(nullptr),

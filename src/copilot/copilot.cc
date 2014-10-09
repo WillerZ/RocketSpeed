@@ -37,10 +37,12 @@ void Copilot::Run() {
   // Start worker threads.
   for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
-      [] (CopilotWorker* worker) { worker->Run(); },
+      [this, i] (CopilotWorker* worker) {
+        options_.env->SetThreadName(options_.env->GetCurrentThreadId(),
+                                    "copilot-" + std::to_string(i));
+        worker->Run();
+      },
       workers_[i].get());
-    options_.env->SetThreadName(worker_threads_.back().native_handle(),
-                                "copilot-" + std::to_string(i));
   }
 
   // Wait for them to start.
