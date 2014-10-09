@@ -1502,6 +1502,16 @@ class PosixEnv : public Env {
             continue;
         }
 
+        // set non-blocking, if requested. Do this before the
+        // connect call.
+        if (!blocking) {
+          auto flags = fcntl(sockfd, F_GETFL, 0);
+          if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK)) {
+            close(sockfd);
+            continue;
+          }
+        }
+
         int one = 1;
         setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
@@ -1516,18 +1526,15 @@ class PosixEnv : public Env {
         }
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
-            continue;
+            if (!blocking && errno == EINPROGRESS) {
+              // if this is a nonblocking socket, then connect might
+              // not be successful immediately. This is not a problem
+              // because it can still be added to select or poll.
+            } else {
+              close(sockfd);
+              continue;
+            }
         }
-
-        if (!blocking) {
-          auto flags = fcntl(sockfd, F_GETFL, 0);
-          if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK)) {
-            close(sockfd);
-            continue;
-          }
-        }
-
         break;
     }
     if (p == nullptr) {

@@ -11,13 +11,16 @@
 #include <vector>
 #include "include/Types.h"
 #include "src/copilot/options.h"
+#include "src/messages/commands.h"
 #include "src/messages/messages.h"
-#include "src/messages/msg_client.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/worker_loop.h"
 
 namespace rocketspeed {
 
+class Copilot;
+
+// These are sent from the Copilot to the worker.
 class CopilotWorkerCommand {
  public:
   CopilotWorkerCommand() = default;
@@ -33,8 +36,8 @@ class CopilotWorkerCommand {
   }
 
   // Get the message.
-  Message* GetMessage() {
-    return msg_.get();
+  std::unique_ptr<Message> GetMessage() {
+    return std::move(msg_);
   }
 
  private:
@@ -42,21 +45,42 @@ class CopilotWorkerCommand {
   std::unique_ptr<Message> msg_;
 };
 
+// These Commands sent from the Worker to the Copilot
+class CopilotCommand : public Command {
+ public:
+  CopilotCommand() = default;
+
+  CopilotCommand(std::unique_ptr<Message> message, const HostId& host):
+    recipient_(host),
+    message_(std::move(message)) {
+  }
+  std::unique_ptr<Message> GetMessage() {
+    return std::move(message_);
+  }
+  // return the Destination HostId, otherwise returns null.
+  const HostId& GetDestination() const {
+    return recipient_;
+  }
+  bool IsSendCommand() const {
+    return true;
+  }
+ private:
+  HostId recipient_;
+  std::unique_ptr<Message> message_;
+};
+
 /**
  * Copilot worker. The copilot will allocate several of these, ideally one
- * per hardware thread. The workers take load off of the main thread by handling
- * the log appends and ack sending, and allows us to scale to multiple cores.
+ * per hardware thread. The workers take load off of the main thread.
  */
 class CopilotWorker {
  public:
   // Constructs a new CopilotWorker (does not start a thread).
   CopilotWorker(const CopilotOptions& options,
                 const ControlTowerRouter* control_tower_router,
-                MsgClient* msg_client);
+                Copilot* copilot);
 
   // Forward a message to this worker for processing.
-  // This will asynchronously append the message into the log storage,
-  // and then send an ack back to the to the message origin.
   bool Forward(LogID logid, std::unique_ptr<Message> msg);
 
   // Start the worker loop on this thread.
@@ -88,21 +112,21 @@ class CopilotWorker {
                MessageDataAck::AckStatus status);
 
   // Add a subscriber to a topic.
-  void ProcessSubscribe(MessageMetadata* msg,
+  void ProcessSubscribe(std::unique_ptr<Message> msg,
                         const TopicPair& request,
                         LogID logid);
 
   // Remove a subscriber from a topic.
-  void ProcessUnsubscribe(MessageMetadata* msg,
+  void ProcessUnsubscribe(std::unique_ptr<Message> msg,
                           const TopicPair& request,
                           LogID logid);
 
   // Process a metadata response from control tower.
-  void ProcessMetadataResponse(MessageMetadata* msg,
+  void ProcessMetadataResponse(std::unique_ptr<Message> msg,
                                const TopicPair& request);
 
   // Forward data to subscribers.
-  void ProcessData(MessageData* msg);
+  void ProcessData(std::unique_ptr<Message> msg);
 
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;
@@ -113,8 +137,8 @@ class CopilotWorker {
   // Shared router for control towers.
   const ControlTowerRouter* control_tower_router_;
 
-  // MsgClient from CoPilot, this is shared by all workers.
-  MsgClient* msg_client_;
+  // Reference to the copilot
+  Copilot* copilot_;
 
   // Subscription metadata
   struct Subscription {

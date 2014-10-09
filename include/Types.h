@@ -201,6 +201,10 @@ class HostId {
   bool operator==(const HostId& rhs) const {
     return port == rhs.port && hostname == rhs.hostname;
   }
+
+  std::string ToString() const {
+    return hostname + ":" + std::to_string(port);
+  }
 };
 
 /*

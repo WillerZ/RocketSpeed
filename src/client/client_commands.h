@@ -20,56 +20,50 @@ namespace rocketspeed {
  */
 class ClientCommand : public Command {
  public:
-  // The various types of commands sent from application
-  // thread to the event loop thread
-  enum Type : char {
-    Data,        // data
-    DataAck,     // data ack
-    MetaData,    // data
-  };
 
   // Construct from data message.
   ClientCommand(const MsgId& msgid,
                 const HostId& recipient,
-                const MessageData& message) :
-    type_(Type::Data),
+                unique_ptr<Message> msg) :
     msgid_(msgid),
     recipient_(recipient),
-    message_(message.Serialize().ToString()) {}
+    msg_(std::move(msg)) {
+    assert(msg_.get()->GetMessageType() == MessageType::mData);
+  }
 
   // Construct from metadata message.
   ClientCommand(const HostId& recipient,
-                const MessageMetadata& message) :
-    type_(Type::MetaData),
+                unique_ptr<MessageMetadata> msg) :
     recipient_(recipient),
-    message_(message.Serialize().ToString()) {}
+    msg_(std::move(msg)) {
+    assert(msg_.get()->GetMessageType() == MessageType::mMetadata);
+  }
 
   // Get the message ID.
   const MsgId& GetMessageId() const {
-    assert(type_ == Type::Data);
+    assert(msg_.get()->GetMessageType() == MessageType::mData);
     return msgid_;
   }
 
-  // Get the intended recipient of the message.
-  const HostId& GetRecipient() const {
+  // Get the message data stored in this Command.
+  unique_ptr<Message> GetMessage() {
+    return std::move(msg_);
+  }
+
+  MessageType GetType() {
+    return msg_.get()->GetMessageType();
+  }
+
+  const HostId& GetDestination() const {
     return recipient_;
   }
-
-  // Get the serialized message data stored in this Command.
-  Slice GetMessage() {
-    return Slice(message_);
+  bool IsSendCommand() const {
+    return true;
   }
-
-  Type GetType() {
-    return type_;
-  }
-
  private:
-
-  Type type_;
   MsgId msgid_;
   HostId recipient_;
-  std::string message_;
+  unique_ptr<Message> msg_;
 };
 
 }  // namespace rocketspeed

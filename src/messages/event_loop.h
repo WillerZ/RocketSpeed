@@ -20,6 +20,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <map>
 #include "include/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
@@ -33,6 +34,8 @@ typedef void* EventCallbackContext;
 typedef std::function<void(EventCallbackContext, std::unique_ptr<Message> msg)>
                                             EventCallbackType;
 typedef std::function<void(std::unique_ptr<Command>)> CommandCallbackType;
+
+class SocketEvent;
 
 class EventLoop {
  public:
@@ -80,6 +83,8 @@ class EventLoop {
   const std::shared_ptr<Logger>& GetLog() { return info_log_; }
 
  private:
+  friend class SocketEvent;
+
   // Env options
   EnvOptions env_options_;
 
@@ -112,10 +117,21 @@ class EventLoop {
   int command_pipe_fds_[2];  // read, write
   struct event* command_pipe_event_ = nullptr;
 
+  // a cache of HostId to connections
+  std::map<HostId, SocketEvent*> connection_cache_;
+
+  // connection cache updates
+  bool insert_connection_cache(const HostId& host, SocketEvent* ev);
+  bool remove_connection_cache(const HostId& host, SocketEvent* ev);
+  SocketEvent* lookup_connection_cache(const HostId& host) const;
+  SocketEvent* setup_connection(const HostId& host);
+  Status create_connection(const HostId& host, bool block, int* fd);
+
   // callbacks needed by libevent
   static void do_accept(struct evconnlistener *listener,
     evutil_socket_t fd, struct sockaddr *address, int socklen,
     void *arg);
+  static Status setup_fd(evutil_socket_t fd, EventLoop* event_loop);
   static void accept_error_cb(struct evconnlistener *listener, void *arg);
   static void do_startevent(evutil_socket_t listener, short event, void *arg);
   static void do_shutdown(evutil_socket_t listener, short event, void *arg);

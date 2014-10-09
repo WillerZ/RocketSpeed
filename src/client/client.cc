@@ -148,27 +148,6 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
   callbacks[MessageType::mDataAck] = MsgCallbackType(ProcessDataAck);
   callbacks[MessageType::mMetadata] = MsgCallbackType(ProcessMetadata);
 
-  auto command_callback = [this] (std::unique_ptr<Command> command) {
-    assert(command);
-    auto cmd = static_cast<ClientCommand*>(command.get());
-
-    if (cmd->GetType() == ClientCommand::Type::Data) {
-      // Send a data message to destination
-      bool added = messages_sent_.insert(cmd->GetMessageId()).second;
-      if (added) {
-        msg_loop_->GetClient().Send(cmd->GetRecipient(),
-                                    cmd->GetMessage());
-      } else {
-        // This means we have already sent a message with this ID, which
-        // means two separate messages have been given the same ID.
-      }
-    } else if (cmd->GetType() == ClientCommand::Type::MetaData) {
-      // Send a metadata message to destination
-      msg_loop_->GetClient().Send(cmd->GetRecipient(),
-                                  cmd->GetMessage());
-    }
-  };
-
   std::shared_ptr<Logger> info_log;
   if (enable_logging) {
     Status st = CreateLoggerFromOptions(Env::Default(),
@@ -193,7 +172,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                           info_log,
                           static_cast<ApplicationCallbackContext>(this),
                           callbacks,
-                          command_callback);
+                          nullptr);
 
   msg_loop_thread_ = std::thread([this] () {
     msg_loop_->Run();
@@ -229,17 +208,23 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                       namespaceId,
                       data,
                       options.retention);
+  std::unique_ptr<MessageData> msg(new MessageData(&message));
 
   // Take note of message ID before we move into the command.
-  const MsgId msgid = message.GetMessageId();
+  const MsgId msgid = msg.get()->GetMessageId();
 
   // Construct command.
   std::unique_ptr<Command> command(new ClientCommand(msgid,
                                                      pilot_host_id_,
-                                                     message));
+                                                     std::move(msg)));
 
   // Send to event loop for processing (the loop will free it).
+  bool added = messages_sent_.insert(msgid).second;
+  assert(added);
   Status status = msg_loop_->SendCommand(std::move(command));
+  if (!status.ok() && added) {
+    messages_sent_.erase(msgid);
+  }
 
   // Return status with the generated message ID.
   return PublishStatus(status, msgid);
@@ -256,13 +241,13 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
                              MetadataType::mSubscribe, elem.namespace_id));
   }
   // Construct message.
-  MessageMetadata message(tenant_id_,
-                          MessageMetadata::MetaType::Request,
-                          host_id_,
-                          list);
+  std::unique_ptr<MessageMetadata> msg(new MessageMetadata(tenant_id_,
+                                       MessageMetadata::MetaType::Request,
+                                       host_id_,
+                                       list));
   // Construct command.
   std::unique_ptr<Command> command(new ClientCommand(copilot_host_id_,
-                                                     message));
+                                                     std::move(msg)));
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command));
 

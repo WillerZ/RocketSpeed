@@ -185,15 +185,16 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   // change it to a response ack message
   request->SetMetaType(MessageMetadata::MetaType::Response);
 
-  // send reponse back to client
-  st = ct->GetClient().Send(origin, std::move(msg));
+  // send response back to client
+  std::unique_ptr<Command> cmd(new TowerCommand(std::move(msg), origin));
+  st = ct->SendCommand(std::move(cmd));
   if (!st.ok()) {
     LOG_INFO(ct->GetOptions().info_log,
-        "Unable to send Metadata response to %s:%ld",
+        "Unable to send Metadata response to tower at %s:%ld",
         origin.hostname.c_str(), (long)origin.port);
   } else {
     LOG_INFO(ct->GetOptions().info_log,
-        "Send Metadata response to %s:%ld",
+        "Send Metadata response to tower at %s:%ld",
         origin.hostname.c_str(), (long)origin.port);
   }
   ct->GetOptions().info_log->Flush();
@@ -232,19 +233,27 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
 
   // map the topic to a list of subscribers
   TopicList* list = topic_map_.GetSubscribers(topic_name);
+  int remaining_destination = list->size();
+  std::unique_ptr<Message> newmsg(nullptr);
 
   // send the messages to subscribers
   if (list != nullptr && !list->empty()) {
-    // serialize the message only once
-    Slice serialized = request->Serialize();
 
-    // send serialized message to all subscribers.
+    // send message to all subscribers.
     for (const auto& elem : *list) {
       // convert HostNumber to HostId
       HostId* hostid = ct->GetHostMap().Lookup(elem);
       assert(hostid != nullptr);
       if (hostid != nullptr) {
-        st = ct->GetClient().Send(*hostid, serialized);
+        // If this is not the final receipent, then make a copy.
+        if (remaining_destination > 1) {
+          newmsg.reset(new MessageData(request));
+        } else {
+          newmsg = std::move(msg);
+        }
+        std::unique_ptr<TowerCommand> cmd(new TowerCommand(
+                                          std::move(newmsg), *hostid));
+        st = ct->SendCommand(std::move(cmd));
         if (st.ok()) {
           LOG_INFO(ct->GetOptions().info_log,
               "Sent data (%.16s)@%lu for Topic(%s) to %s:%ld",
@@ -260,6 +269,7 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
           ct->GetOptions().info_log->Flush();
         }
       }
+      remaining_destination--;
     }
   } else {
     LOG_INFO(ct->GetOptions().info_log,

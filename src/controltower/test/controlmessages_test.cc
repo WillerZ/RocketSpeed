@@ -14,7 +14,7 @@
 
 #include "src/util/testharness.h"
 #include "src/controltower/tower.h"
-#include "src/messages/msg_client.h"
+#include "src/controltower/room.h"
 
 namespace rocketspeed {
 
@@ -211,9 +211,10 @@ TEST(ControlTowerTest, Ping) {
   ASSERT_EQ(ControlTowerRun().ok(), true);
 
   // create a message
-  MessagePing pingmsg(Tenant::GuestTenant,
-                      MessagePing::PingType::Request,
-                      clientId);
+  std::unique_ptr<Message> msg(new MessagePing(
+                               Tenant::GuestTenant,
+                               MessagePing::PingType::Request,
+                               clientId));
 
   // Define a callback to process the Ping response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
@@ -229,9 +230,9 @@ TEST(ControlTowerTest, Ping) {
   while (!loop->IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
-
-  // send one ping message to control tower
-  ASSERT_EQ(loop->GetClient().Send(controltower, &pingmsg).ok() ||
+  std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
+                               std::move(msg), controltower));
+  ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
             (delete loop, ControlTowerStop(), false), true);
 
   // verify that the ping response was received by the client
@@ -240,7 +241,13 @@ TEST(ControlTowerTest, Ping) {
 
   // now send multiple ping messages to server back-to-back
   for (int i = 0; i < num_msgs; i++) {
-    ASSERT_EQ(loop->GetClient().Send(controltower, &pingmsg).ok() ||
+    std::unique_ptr<Message> newmsg(new MessagePing(
+                                    Tenant::GuestTenant,
+                                    MessagePing::PingType::Request,
+                                    clientId));
+    std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
+                                 std::move(newmsg), controltower));
+    ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
               (delete loop, ControlTowerStop(), false), true);
   }
 
@@ -268,9 +275,10 @@ TEST(ControlTowerTest, Subscribe) {
     topics.push_back(TopicPair(4 + i, std::to_string(i), type, 101 + i));
   }
   // create a message
-  MessageMetadata meta1(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        clientId, topics);
+  std::unique_ptr<Message> meta1(new MessageMetadata(
+                                     Tenant::GuestTenant,
+                                     MessageMetadata::MetaType::Request,
+                                     clientId, topics));
 
   // Define a callback to process the subscribe response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
@@ -286,9 +294,11 @@ TEST(ControlTowerTest, Subscribe) {
   while (!loop->IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
+  std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
+                               std::move(meta1), controltower));
 
   // send message to control tower
-  ASSERT_EQ(loop->GetClient().Send(controltower, &meta1).ok() ||
+  ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
             (delete loop, ControlTowerStop(), false), true);
 
   // verify that the subscribe response was received by the client

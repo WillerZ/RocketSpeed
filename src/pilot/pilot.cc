@@ -92,7 +92,7 @@ Pilot::Pilot(PilotOptions options):
   for (uint32_t i = 0; i < options_.num_workers; ++i) {
     workers_.emplace_back(new PilotWorker(options_,
                                           log_storage_.get(),
-                                          &msg_loop_.GetClient()));
+                                          this));
   }
 
   LOG_INFO(options_.info_log, "Created a new Pilot");

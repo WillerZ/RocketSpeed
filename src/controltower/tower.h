@@ -31,8 +31,10 @@ class ControlTower {
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}
 
-  // Returns a client that pools connections to other MsgLoops
-  MsgClient& GetClient() { return msg_loop_.GetClient(); }
+  // Sends a command to the msgloop
+  Status SendCommand(std::unique_ptr<Command> command) {
+    return msg_loop_.SendCommand(std::move(command));
+  }
 
   // Returns the HostId to HostNumber mapping
   HostMap& GetHostMap() { return hostmap_; }

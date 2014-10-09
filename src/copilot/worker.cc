@@ -7,19 +7,19 @@
 #include <vector>
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/messages/commands.h"
+#include "src/copilot/copilot.h"
 
 namespace rocketspeed {
 
 CopilotWorker::CopilotWorker(const CopilotOptions& options,
                              const ControlTowerRouter* control_tower_router,
-                             MsgClient* msg_client)
+                             Copilot* copilot)
 : worker_loop_(options.worker_queue_size)
 , options_(options)
 , control_tower_router_(control_tower_router)
-, msg_client_(msg_client) {
-  // msg_client is required.
-  assert(msg_client_);
+, copilot_(copilot) {
+  // copilot is required.
+  assert(copilot_);
 
   LOG_INFO(options_.info_log, "Created a new CopilotWorker");
   options_.info_log->Flush();
@@ -38,7 +38,8 @@ bool CopilotWorker::Forward(LogID logid, std::unique_ptr<Message> msg) {
 
 void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
   // Process CopilotWorkerCommand
-  Message* msg = command.GetMessage();
+  std::unique_ptr<Message> message = command.GetMessage();
+  Message* msg = message.get();
   assert(msg);
 
   switch (msg->GetMessageType()) {
@@ -51,15 +52,15 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
       if (metadata->GetMetaType() == MessageMetadata::MetaType::Request) {
         if (request.topic_type == MetadataType::mSubscribe) {
           // Subscribe
-          ProcessSubscribe(metadata, request, command.GetLogID());
+          ProcessSubscribe(std::move(message), request, command.GetLogID());
         } else {
           // Unsubscribe
-          ProcessUnsubscribe(metadata, request, command.GetLogID());
+          ProcessUnsubscribe(std::move(message), request, command.GetLogID());
         }
       } else {
         if (request.topic_type == MetadataType::mSubscribe) {
           // Response from Control Tower.
-          ProcessMetadataResponse(metadata, request);
+          ProcessMetadataResponse(std::move(message), request);
         }
       }
     }
@@ -67,8 +68,7 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
 
   case MessageType::mData: {
       // Data to forward to client.
-      MessageData* data = static_cast<MessageData*>(msg);
-      ProcessData(data);
+      ProcessData(std::move(message));
     }
     break;
 
@@ -81,19 +81,28 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
   }
 }
 
-void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
+void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
                                             const TopicPair& request) {
+  MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
   // Get the list of subscriptions for this topic.
   auto it = subscriptions_.find(request.topic_name);
   if (it != subscriptions_.end()) {
-    // Serialize message once instead of in the loop.
-    Slice msg_serial = msg->Serialize();
+    std::unique_ptr<Message> newmsg(nullptr);
+    int remaining_destination = it->second.size();
+
     for (auto& subscription : it->second) {
       // If the subscription is awaiting a response.
       if (subscription.awaiting_ack) {
+        if (remaining_destination > 1) {
+          newmsg.reset(new MessageMetadata(msg));
+        } else {
+          newmsg = std::move(message);
+        }
         // Send the response.
         const HostId& recipient = subscription.host_id;
-        Status status = msg_client_->Send(recipient, msg_serial);
+        std::unique_ptr<Command> cmd(new CopilotCommand(
+                                     std::move(newmsg), recipient));
+        Status status = copilot_->SendCommand(std::move(cmd));
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
             "Failed to send metadata response to %s:%ld",
@@ -111,11 +120,13 @@ void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
           }
         }
       }
+      remaining_destination--;
     }
   }
 }
 
-void CopilotWorker::ProcessData(MessageData* msg) {
+void CopilotWorker::ProcessData(std::unique_ptr<Message> message) {
+  MessageData* msg = static_cast<MessageData*>(message.get());
   // Get the list of subscriptions for this topic.
   LOG_INFO(options_.info_log,
       "Copilot received data (%.16s)@%lu for Topic(%s)",
@@ -124,9 +135,9 @@ void CopilotWorker::ProcessData(MessageData* msg) {
       msg->GetTopicName().ToString().c_str());
   auto it = subscriptions_.find(msg->GetTopicName().ToString());
   if (it != subscriptions_.end()) {
-    // Serialize message once instead of in the loop.
-    Slice msg_serial = msg->Serialize();
     auto seqno = msg->GetSequenceNumber();
+    int remaining_destination = it->second.size();
+    std::unique_ptr<Message> newmsg(nullptr);
     for (auto& subscription : it->second) {
       const HostId& recipient = subscription.host_id;
 
@@ -135,6 +146,7 @@ void CopilotWorker::ProcessData(MessageData* msg) {
         LOG_INFO(options_.info_log,
           "Data not delivered to %s:%ld (awaiting ack)",
           recipient.hostname.c_str(), (long)recipient.port);
+        remaining_destination--;
         continue;
       }
 
@@ -144,11 +156,19 @@ void CopilotWorker::ProcessData(MessageData* msg) {
           "Data not delivered to %s:%ld (seqno too low, currently @%lu)",
           recipient.hostname.c_str(), (long)recipient.port,
           subscription.seqno);
+        remaining_destination--;
         continue;
       }
-
+      // If this is not the final receipent, then make a copy.
+      if (remaining_destination > 1) {
+        newmsg.reset(new MessageData(msg));
+      } else {
+        newmsg = std::move(message);
+      }
+      std::unique_ptr<Command> cmd(new CopilotCommand(
+                                   std::move(newmsg), recipient));
       // Send the response.
-      Status status = msg_client_->Send(recipient, msg_serial);
+      Status status = copilot_->SendCommand(std::move(cmd));
       if (status.ok()) {
         LOG_INFO(options_.info_log,
           "Sent data (%.16s)@%lu for Topic(%s) to %s:%ld",
@@ -172,11 +192,12 @@ void CopilotWorker::ProcessData(MessageData* msg) {
   }
 }
 
-void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
+void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
                                      const TopicPair& request,
                                      LogID logid) {
   bool notify_origin = false;
   bool notify_control_tower = false;
+  MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
 
   const HostId& subscriber = msg->GetOrigin();
   auto topic_iter = subscriptions_.find(request.topic_name);
@@ -244,6 +265,8 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
       }
     }
   }
+  // check that we need to notify only one, not both
+  assert(!notify_control_tower || !notify_origin);
 
   if (notify_control_tower) {
     // Find control tower responsible for this topic's log.
@@ -251,7 +274,10 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
     if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
       // Forward request to control tower to update the copilot subscription.
       msg->SetOrigin(GetHostId());
-      if (!msg_client_->Send(*recipient, msg).ok()) {
+      std::unique_ptr<Command> cmd(new CopilotCommand(
+                                   std::move(message), *recipient));
+      Status status = copilot_->SendCommand(std::move(cmd));
+      if (!status.ok()) {
         LOG_INFO(options_.info_log,
           "Failed to send metadata response to %s:%ld",
           recipient->hostname.c_str(), (long)recipient->port);
@@ -271,7 +297,10 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
   if (notify_origin) {
     // Send response to origin to notify that subscription has been processed.
     msg->SetMetaType(MessageMetadata::MetaType::Response);
-    if (!msg_client_->Send(subscriber, msg).ok()) {
+    std::unique_ptr<Command> cmd(new CopilotCommand(
+                                 std::move(message), subscriber));
+    Status status = copilot_->SendCommand(std::move(cmd));
+    if (!status.ok()) {
       // Failed to send response. The origin will re-send the subscription
       // again in the future, and we'll try to immediately respond again.
       LOG_INFO(options_.info_log,
@@ -281,9 +310,10 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
   }
 }
 
-void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
+void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                                        const TopicPair& request,
                                        LogID logid) {
+  MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
   const HostId& subscriber = msg->GetOrigin();
   auto topic_iter = subscriptions_.find(request.topic_name);
   if (topic_iter != subscriptions_.end()) {
@@ -310,14 +340,17 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Forward unsubscribe request to control tower, with this copilot
         // worker as the subscriber.
-        MessageMetadata ct_msg(msg->GetTenantID(),
+        std::unique_ptr<Message> newmsg(new MessageMetadata(
+                               msg->GetTenantID(),
                                MessageMetadata::MetaType::Request,
                                GetHostId(),
                                { TopicPair(request.seqno,
                                            request.topic_name,
                                            MetadataType::mUnSubscribe,
-                                           request.namespace_id) });
-        Status status = msg_client_->Send(*recipient, &ct_msg);
+                                           request.namespace_id) }));
+        std::unique_ptr<Command> cmd(new CopilotCommand(
+                                     std::move(newmsg), *recipient));
+        Status status = copilot_->SendCommand(std::move(cmd));
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
               "Failed to send unsubscribe request to %s:%ld",
@@ -329,14 +362,17 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
       HostId const* recipient = nullptr;
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Re subscribe our control tower subscription with the later seqno.
-        MessageMetadata ct_msg(msg->GetTenantID(),
+        std::unique_ptr<Message> newmsg(new MessageMetadata(
+                               msg->GetTenantID(),
                                MessageMetadata::MetaType::Request,
                                GetHostId(),
                                { TopicPair(earliest_other_seqno,
                                            request.topic_name,
                                            MetadataType::mSubscribe,
-                                           request.namespace_id) });
-        Status status = msg_client_->Send(*recipient, &ct_msg);
+                                           request.namespace_id) }));
+        std::unique_ptr<Command> cmd(new CopilotCommand(
+                                     std::move(newmsg), *recipient));
+        Status status = copilot_->SendCommand(std::move(cmd));
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
               "Failed to send unsubscribe request to %s:%ld",
@@ -353,7 +389,10 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
 
   // Send response to origin to notify that subscription has been processed.
   msg->SetMetaType(MessageMetadata::MetaType::Response);
-  if (!msg_client_->Send(subscriber, msg).ok()) {
+  std::unique_ptr<Command> cmd(new CopilotCommand(
+                               std::move(message), subscriber));
+  Status status = copilot_->SendCommand(std::move(cmd));
+  if (!status.ok()) {
     // Failed to send response. The origin will re-send the subscription
     // again in the future, and we'll try to immediately respond again.
     LOG_INFO(options_.info_log,

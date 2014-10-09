@@ -23,6 +23,20 @@ class Command {
 
   // Default destructor.
   virtual ~Command() {}
+
+  // Is this a message send-command? The msg-send command is special because
+  virtual std::unique_ptr<Message> GetMessage() = 0;
+
+  // Is this a message send-command? The msg-send command is special because
+  // the event loop processes it inline instead of invoking the application
+  // callback. If this is a SendCommand, then the event loop sends out the
+  // message associated with this Command to the host specified via a call
+  // to GetDestination().
+  virtual bool IsSendCommand() const = 0;
+
+  // If this is a command to send a mesage to a remote host, then
+  // return the Destination HostId, otherwise returns null.
+  virtual const HostId& GetDestination() const = 0;
 };
 
 }  // namespace rocketspeed

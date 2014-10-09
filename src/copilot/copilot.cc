@@ -34,6 +34,8 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
 }
 
 void Copilot::Run() {
+  options_.env->SetThreadName(options_.env->GetCurrentThreadId(), "copilot");
+
   // Start worker threads.
   for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
@@ -77,7 +79,7 @@ Copilot::Copilot(CopilotOptions options):
   for (uint32_t i = 0; i < options_.num_workers; ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
                                             &control_tower_router_,
-                                            &msg_loop_.GetClient()));
+                                            this));
   }
 
   LOG_INFO(options_.info_log, "Created a new Copilot");

@@ -108,16 +108,11 @@ class Message : public Serializer {
    * @return The Origin host.
    */
   const HostId& GetOrigin() const { return origin_; }
-  /*
-   * Creates a Message of the appropriate subtype by looking at the
-   * MessageType. Returns nullptr on error. It is the responsibility
-   * of the caller to own this memory object.
-   */
-  static std::unique_ptr<Message> CreateNewInstance(Slice* in);
 
   /**
-   * Similar to CreateNewInstance, but the memory ownership is passed to the
-   * message itself, and will be discarded once the message is destroyed.
+   * Creates a Message of the appropriate subtype by looking at the
+   * MessageType. Returns nullptr on error.  The memory ownership is passed
+   * to the message itself, and will be discarded once the message is destroyed.
    */
   static std::unique_ptr<Message> CreateNewInstance(std::unique_ptr<char[]> in,
                                                     size_t size);
@@ -141,6 +136,9 @@ class Message : public Serializer {
   TenantID tenantid_;               // unique id for tenant
   HostId origin_;                   // sender's id
   std::unique_ptr<char[]> buffer_;  // owned memory for slices
+
+ private:
+  static std::unique_ptr<Message> CreateNewInstance(Slice* in);
 };
 
 
@@ -205,6 +203,31 @@ class MessageData : public Message {
               const NamespaceID namespace_id,
               const Slice& payload,
               Retention retention = Retention::OneWeek);
+
+  /*
+   * copy constructor
+   */
+  explicit MessageData(MessageData* in) :
+    Message(MessageType::mData, in->GetTenantID(), in->GetOrigin()),
+    seqno_(in->GetSequenceNumber()),
+    msgid_(in->GetMessageId()),
+    retention_(in->GetRetention()),
+    namespaceid_(in->GetNamespaceId()) {
+
+    // allocate buffer to copy the slices to owned buffer
+    ssize_t size = in->GetTopicName().size() + in->GetPayload().size();
+    buffer_.reset(new char[size]);
+
+    // copy topic name
+    memcpy(buffer_.get(), in->GetTopicName().data(), in->GetTopicName().size());
+    topic_name_ = Slice(buffer_.get(), in->GetTopicName().size());
+    ssize_t offset = in->GetTopicName().size();
+
+    // copy payload
+    memcpy(buffer_.get() + offset, in->GetPayload().data(),
+           in->GetPayload().size());
+    payload_ = Slice(buffer_.get() + offset, in->GetPayload().size());
+  }
 
   /*
    * default constructor
@@ -309,6 +332,15 @@ class MessageMetadata : public Message {
    * default constructor
    */
   MessageMetadata();
+
+  /*
+   * copy constructor
+   */
+  explicit MessageMetadata(MessageMetadata* in) :
+    Message(MessageType::mMetadata, in->GetTenantID(), in->GetOrigin()),
+    metatype_(in->GetMetaType()),
+    topics_(in->GetTopicInfo()) {
+  }
 
   /**
    * This message is not needed any more

@@ -154,10 +154,13 @@ TEST(PilotTest, Publish) {
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test";
-    MessageData msg(Tenant::GuestTenant, clientId, Slice(topic), nsid,
-                    Slice(payload));
-    ASSERT_EQ(loop.GetClient().Send(pilot, &msg).ok(), true);
-    sent_msgs_.insert(msg.GetMessageId());
+    MessageData* data = new MessageData(Tenant::GuestTenant,
+                                        clientId, Slice(topic), nsid,
+                                        Slice(payload));
+    sent_msgs_.insert(data->GetMessageId());
+    std::unique_ptr<Message> msg(data);
+    std::unique_ptr<Command> cmd(new PilotCommand(std::move(msg), pilot));
+    ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(1));

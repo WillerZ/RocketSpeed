@@ -39,6 +39,8 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
 
 void
 ControlTower::Run(void) {
+  options_.env->SetThreadName(options_.env->GetCurrentThreadId(), "tower");
+
   LOG_INFO(options_.info_log,
       "Starting a new Control Tower with %d rooms",
       options_.number_of_rooms);
@@ -97,8 +99,7 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   // these after the Tailer is created. The port numbers for
   // the rooms are adjacent to the port number of the ControlTower.
   for (unsigned int i = 0; i < opt.number_of_rooms; i++) {
-    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, *ct, i,
-                                    opt.port_number + i + 1));
+    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, *ct, i, i));
     (*ct)->rooms_.push_back(std::move(newroom));
   }
 

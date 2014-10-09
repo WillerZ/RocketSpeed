@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 #include "src/messages/serializer.h"
+#include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/auto_roll_logger.h"
@@ -39,6 +40,11 @@ class Pilot {
 
   // Get HostID
   const HostId& GetHostId() const { return msg_loop_.GetHostId(); }
+
+  // Sends a command to the msgloop
+  Status SendCommand(std::unique_ptr<Command> command) {
+    return msg_loop_.SendCommand(std::move(command));
+  }
 
  private:
   // The options used by the Pilot

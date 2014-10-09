@@ -7,18 +7,18 @@
 #include <vector>
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/messages/msg_client.h"
 #include "src/util/storage.h"
+#include "src/pilot/pilot.h"
 
 namespace rocketspeed {
 
 PilotWorker::PilotWorker(const PilotOptions& options,
                          LogStorage* storage,
-                         MsgClient* client)
+                         Pilot* pilot)
 : worker_loop_(options.worker_queue_size)
 , storage_(storage)
 , options_(options)
-, msg_client_(client) {
+, pilot_(pilot) {
   LOG_INFO(options_.info_log, "Created a new PilotWorker");
   options_.info_log->Flush();
 }
@@ -102,10 +102,10 @@ void PilotWorker::SendAck(const TenantID tenantid,
   ack.status = status;
   ack.msgid = msgid;
 
-  std::vector<MessageDataAck::Ack> acks = { ack };
-  MessageDataAck msg(tenantid, host, acks);
-
-  Status st = msg_client_->Send(host, &msg);
+  std::unique_ptr<Message> newmsg(new MessageDataAck(tenantid, host,
+                                  { ack }));
+  std::unique_ptr<Command> cmd(new PilotCommand(std::move(newmsg), host));
+  Status st = pilot_->SendCommand(std::move(cmd));
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.

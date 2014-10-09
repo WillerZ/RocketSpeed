@@ -7,6 +7,7 @@
 
 #include <map>
 #include <memory>
+#include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/pilot/options.h"
 #include "src/util/worker_loop.h"
@@ -14,7 +15,7 @@
 namespace rocketspeed {
 
 class LogStorage;
-class MsgClient;
+class Pilot;
 
 // This command instructs a pilot worker to append to the log storage, and
 // then send an ack on completion.
@@ -42,6 +43,28 @@ class PilotWorkerCommand {
   std::unique_ptr<MessageData> msg_;
 };
 
+// These Commands sent from the Worker to the Pilot
+class PilotCommand : public Command {
+ public:
+  PilotCommand(std::unique_ptr<Message> message, const HostId& host):
+    recipient_(host),
+    message_(std::move(message)) {
+  }
+  std::unique_ptr<Message> GetMessage() {
+    return std::move(message_);
+  }
+  // return the Destination HostId, otherwise returns null.
+  const HostId& GetDestination() const {
+    return recipient_;
+  }
+  bool IsSendCommand() const  {
+    return true;
+  }
+ private:
+  HostId recipient_;
+  std::unique_ptr<Message> message_;
+};
+
 /**
  * Pilot worker object. The pilot will allocate several of these, ideally one
  * per hardware thread. The workers take load off of the main thread by handling
@@ -52,7 +75,7 @@ class PilotWorker {
   // Constructs a new PilotWorker (does not start a thread).
   PilotWorker(const PilotOptions& options,
               LogStorage* storage,
-              MsgClient* client);
+              Pilot* pilot);
 
   // Forward a message to this worker for processing.
   // This will asynchronously append the message into the log storage,
@@ -86,7 +109,7 @@ class PilotWorker {
   WorkerLoop<PilotWorkerCommand> worker_loop_;
   LogStorage* storage_;
   const PilotOptions& options_;
-  MsgClient* msg_client_;
+  Pilot* pilot_;
 };
 
 }  // namespace rocketspeed

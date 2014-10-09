@@ -7,6 +7,7 @@
 #include <memory>
 #include <map>
 #include "include/Env.h"
+#include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/util/storage.h"
 #include "src/util/worker_loop.h"
@@ -70,6 +71,28 @@ class ControlRoom {
    private:
     std::unique_ptr<Message> message_;
     LogID logid_;
+  };
+
+  // These Commands sent from the ControlRoom to the ControlTower
+  class TowerCommand : public Command {
+   public:
+    TowerCommand(std::unique_ptr<Message> message, const HostId& host):
+      recipient_(host),
+      message_(std::move(message)) {
+    }
+    std::unique_ptr<Message> GetMessage() {
+      return std::move(message_);
+    }
+    // return the Destination HostId, otherwise returns null.
+    const HostId& GetDestination() const {
+      return recipient_;
+    }
+    bool IsSendCommand() const  {
+      return true;
+    }
+   private:
+    HostId recipient_;
+    std::unique_ptr<Message> message_;
   };
 
  private:
