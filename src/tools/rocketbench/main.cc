@@ -16,13 +16,16 @@
 #include "include/Types.h"
 #include "src/port/port_posix.h"
 #include "src/messages/messages.h"
+#include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/tools/rocketbench/random_distribution.h"
 
 // This tool can behave as a standalone producer, a standalone
 // consumer or both a producer and a consumer.
 DEFINE_bool(start_producer, true, "starts the producer");
-DEFINE_bool(start_consumer, false, "starts the consumer");
+DEFINE_bool(start_consumer, true, "starts the consumer");
+DEFINE_bool(start_local_server, true, "starts an embedded rocketspeed server");
+DEFINE_string(storage_url, "", "Storage service URL for local server");
 
 DEFINE_int32(num_threads, 4, "number of threads");
 DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
@@ -155,7 +158,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
  */
 int DoProduce(Client* producer,
               rocketspeed::port::Semaphore* all_ack_messages_received,
-              int64_t* ack_messages_received,
+              std::atomic<int64_t>* ack_messages_received,
               std::chrono::time_point<std::chrono::steady_clock>*
                                                      last_ack_message){
   // Distribute total number of messages among them.
@@ -189,8 +192,10 @@ int DoProduce(Client* producer,
     auto timeout = std::chrono::seconds(5);
     do {
       all_ack_messages_received->TimedWait(timeout);
-    } while (*ack_messages_received != FLAGS_num_messages &&
+    } while (ack_messages_received->load() != FLAGS_num_messages &&
              std::chrono::steady_clock::now() - *last_ack_message < timeout);
+
+    ret = ack_messages_received->load() == FLAGS_num_messages ? 0 : 1;
   }
   return ret;
 }
@@ -200,7 +205,7 @@ int DoProduce(Client* producer,
  */
 int DoConsume(Client* consumer,
               rocketspeed::port::Semaphore* all_messages_received,
-              int64_t* messages_received,
+              std::atomic<int64_t>* messages_received,
               std::chrono::time_point<std::chrono::steady_clock>*
                                                      last_data_message) {
 
@@ -235,10 +240,10 @@ int DoConsume(Client* consumer,
   auto timeout = std::chrono::seconds(5);
   do {
     all_messages_received->TimedWait(timeout);
-  } while (*messages_received != FLAGS_num_messages &&
+  } while (messages_received->load() != FLAGS_num_messages &&
            std::chrono::steady_clock::now() - *last_data_message < timeout);
 
-  return 0;
+  return messages_received->load() == FLAGS_num_messages ? 0 : 1;
 }
 
 }  // namespace rocketspeed
@@ -311,6 +316,11 @@ int main(int argc, char** argv) {
     info_log = std::make_shared<rocketspeed::NullLogger>();
   }
 
+  std::unique_ptr<rocketspeed::LocalTestCluster> test_cluster;
+  if (FLAGS_start_local_server) {
+    test_cluster.reset(new rocketspeed::LocalTestCluster(FLAGS_storage_url));
+  }
+
   // Configuration for RocketSpeed.
   rocketspeed::HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
   rocketspeed::HostId copilot(FLAGS_copilot_hostname, FLAGS_copilot_port);
@@ -340,7 +350,7 @@ int main(int argc, char** argv) {
   std::chrono::time_point<std::chrono::steady_clock> last_data_message;
 
   // Create callback for publish acks.
-  int64_t ack_messages_received = 0;
+  std::atomic<int64_t> ack_messages_received{0};
   auto publish_callback = [&] (rocketspeed::ResultStatus rs) {
     ++ack_messages_received;
 
@@ -350,7 +360,7 @@ int main(int argc, char** argv) {
       last_ack_message = std::chrono::steady_clock::now();
 
       // If we've received all messages, let the main thread know to finish up.
-      if (ack_messages_received == FLAGS_num_messages) {
+      if (ack_messages_received.load() == FLAGS_num_messages) {
         all_ack_messages_received.Post();
       }
     }
@@ -365,7 +375,7 @@ int main(int argc, char** argv) {
 
   // Create callback for processing messages received
   rocketspeed::Env* env = rocketspeed::Env::Default();
-  int64_t messages_received = 0;
+  std::atomic<int64_t> messages_received{0};
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived> rs) {
     uint64_t now = env->NowMicros();
@@ -391,7 +401,7 @@ int main(int argc, char** argv) {
     }
 
     // If we've received all messages, let the main thread know to finish up.
-    if (messages_received == FLAGS_num_messages) {
+    if (messages_received.load() == FLAGS_num_messages) {
       all_messages_received.Post();
     }
   };
@@ -462,7 +472,7 @@ int main(int argc, char** argv) {
 
     ret = producer_ret.get();
 
-    if (ack_messages_received == FLAGS_num_messages) {
+    if (ack_messages_received.load() == FLAGS_num_messages) {
       printf(" done\n");
     } else {
       printf(" time out\n");
@@ -474,7 +484,7 @@ int main(int argc, char** argv) {
 
     ret = consumer_ret.get();
 
-    if (messages_received == FLAGS_num_messages) {
+    if (messages_received.load() == FLAGS_num_messages) {
       printf(" done\n");
     } else {
       printf(" time out\n");
@@ -487,7 +497,7 @@ int main(int argc, char** argv) {
   auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
     end - start);
 
-  if (ret == 0 && FLAGS_report) {
+  if (FLAGS_report) {
     uint32_t total_ms = static_cast<uint32_t>(total_time.count());
     if (total_ms == 0) {
       // To avoid divide-by-zero on near-instant benchmarks.
@@ -505,8 +515,36 @@ int main(int argc, char** argv) {
     printf("\n");
     printf("Results\n");
     printf("%ld messages sent\n", FLAGS_num_messages);
-    printf("%ld messages sends acked\n", ack_messages_received);
-    printf("%ld messages received\n", messages_received);
+    printf("%ld messages sends acked\n", ack_messages_received.load());
+    printf("%ld messages received\n", messages_received.load());
+
+    if (messages_received.load() != FLAGS_num_messages) {
+      // Print out dropped messages if there are any. This helps when
+      // debugging problems.
+      printf("\n");
+      printf("Messages failed to receive\n");
+
+      for (uint64_t i = 0; i < latencies.size(); ++i) {
+        // If latency is latency_max then it wasn't received.
+        if (latencies[i] == latency_max) {
+          // Find the range of message IDs dropped (e.g. 100-200)
+          uint64_t j;
+          for (j = i; j < latencies.size(); ++j) {
+            if (latencies[j] != latency_max) {
+              break;
+            }
+          }
+          // Print the dropped messages, either individal (e.g. 100) or
+          // as a range (e.g. 100-200)
+          if (i == j - 1) {
+            printf("%lu\n", i);
+          } else {
+            printf("%lu-%lu\n", i, j - 1);
+          }
+          i = j;
+        }
+      }
+    }
 
     printf("\n");
     printf("Throughput\n");

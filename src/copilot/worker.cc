@@ -114,8 +114,9 @@ void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
 void CopilotWorker::ProcessData(MessageData* msg) {
   // Get the list of subscriptions for this topic.
   Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-      "Copilot received data (%.16s) for topic %s",
+      "Copilot received data (%.16s)@%lu for topic %s",
       msg->GetPayload().ToString().c_str(),
+      msg->GetSequenceNumber(),
       msg->GetTopicName().ToString().c_str());
   auto it = subscriptions_.find(msg->GetTopicName().ToString());
   if (it != subscriptions_.end()) {
@@ -136,8 +137,9 @@ void CopilotWorker::ProcessData(MessageData* msg) {
       // Also do not send a response if the seqno is too low.
       if (subscription.seqno >= seqno) {
         Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Data not delivered to %s:%d (seqno too low)",
-          recipient.hostname.c_str(), recipient.port);
+          "Data not delivered to %s:%d (seqno too low, currently @%lu)",
+          recipient.hostname.c_str(), recipient.port,
+          subscription.seqno);
         continue;
       }
 
@@ -238,6 +240,10 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
         Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
           "Failed to send metadata response to %s:%d",
           recipient->hostname.c_str(), recipient->port);
+      } else {
+        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+          "Sent subscription for Topic(%s)@%lu",
+          request.topic_name.c_str(), request.seqno);
       }
     } else {
       // This should only ever happen if all control towers are offline.

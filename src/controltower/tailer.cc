@@ -45,6 +45,11 @@ Status Tailer::Initialize() {
         "Failed to deserialize message (%s).",
         st.ToString().c_str());
         info_log_->Flush();
+    } else {
+      Log(InfoLogLevel::INFO_LEVEL, info_log_,
+        "Tailer received data (%.16s) for Topic(%s).",
+        newmsg->GetPayload().ToString().c_str(),
+        newmsg->GetTopicName().ToString().c_str());
     }
     assert(st.ok());
     newmsg->SetSequenceNumber(record.sequenceNumber);

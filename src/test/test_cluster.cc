@@ -21,13 +21,18 @@ LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
   Status st;
 
   // Range of logs to use.
+  std::pair<LogID, LogID> log_range;
 #ifdef USE_LOGDEVICE
-  // Can only use one log as the logdevice test utils only supports that.
-  // See T4894216
-  std::pair<LogID, LogID> log_range(1, 1);
+  if (storage_url.empty()) {
+    // Can only use one log as the logdevice test utils only supports that.
+    // See T4894216
+    log_range = std::pair<LogID, LogID>(1, 1);
+  } else {
+    log_range = std::pair<LogID, LogID>(1, 1000);
+  }
 #else
   // Something more substantial for the mock logdevice.
-  std::pair<LogID, LogID> log_range(1, 1000);
+  log_range = std::pair<LogID, LogID>(1, 1000);
 #endif
 
 #ifdef USE_LOGDEVICE
