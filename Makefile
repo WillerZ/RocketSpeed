@@ -76,7 +76,6 @@ TESTS = \
 	consistent_hash_test \
 	guid_generator_test \
 	messages_test \
-	simple_storage_test \
 	auto_roll_logger_test \
   controlmessages_test \
   copilotmessages_test \
@@ -241,9 +240,6 @@ guid_generator_test: src/util/tests/guid_generator_test.o $(LIBOBJECTS) $(TESTHA
 
 messages_test: src/messages/messages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/messages/messages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-simple_storage_test: src/util/tests/simple_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) src/util/tests/simple_storage_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 auto_roll_logger_test: src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
