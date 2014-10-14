@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <chrono>
 #include <string>
 #include "src/port/stack_trace.h"
 
@@ -39,8 +40,11 @@ int RunAllTests() {
 
   const char* matcher = getenv("ROCKETSPEED_TESTS");
 
+  using clock = std::chrono::steady_clock;
+
   int num = 0;
   if (tests != nullptr) {
+    FILE* times_file = fopen("test_times", "a");
     for (unsigned int i = 0; i < tests->size(); i++) {
       const Test& t = (*tests)[i];
       if (matcher != nullptr) {
@@ -52,9 +56,18 @@ int RunAllTests() {
         }
       }
       fprintf(stderr, "==== Test %s.%s\n", t.base, t.name);
+      auto start = clock::now();
       (*t.func)();
+      auto end = clock::now();
+      if (times_file) {
+        fprintf(times_file, "%7lums %s.%s\n",
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                  end - start).count(),
+                t.base, t.name);
+      }
       ++num;
     }
+    fclose(times_file);
   }
   fprintf(stderr, "==== PASSED %d tests\n", num);
   return 0;

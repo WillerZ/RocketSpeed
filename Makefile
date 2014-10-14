@@ -177,7 +177,14 @@ local_server: src/tools/local_server/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $
 
 # run all unit tests
 check: $(TESTS)
-	for t in $(TESTS); do echo "***** Running $$t"; ./$$t || exit 1; done
+	-rm -f test_times; \
+	for t in $(TESTS); do \
+		echo "***** Running $$t"; \
+		./$$t || exit 1; \
+	done; \
+	echo ""; \
+	echo "**** Slowest tests"; \
+	cat test_times | sort -n -r | head -n10  # show 10 slowest tests
 
 # test unexpected crashing of pilots, copilots and controltowers
 crash_test:
