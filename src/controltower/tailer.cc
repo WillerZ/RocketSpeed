@@ -41,12 +41,12 @@ Status Tailer::Initialize() {
     Slice data_payload(*data);
     Status st = newmsg->DeSerializeStorage(&data_payload);
     if (!st.ok()) {
-      Log(InfoLogLevel::WARN_LEVEL, info_log_,
+      LOG_WARN(info_log_,
         "Failed to deserialize message (%s).",
         st.ToString().c_str());
         info_log_->Flush();
     } else {
-      Log(InfoLogLevel::INFO_LEVEL, info_log_,
+      LOG_INFO(info_log_,
         "Tailer received data (%.16s) for Topic(%s).",
         newmsg->GetPayload().ToString().c_str(),
         newmsg->GetTopicName().ToString().c_str());

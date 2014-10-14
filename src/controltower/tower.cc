@@ -39,7 +39,7 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
 
 void
 ControlTower::Run(void) {
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+  LOG_INFO(options_.info_log,
       "Starting a new Control Tower with %d rooms",
       options_.number_of_rooms);
   msg_loop_.Run();
@@ -134,7 +134,7 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
   // get the request message
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
   if (request->GetMetaType() != MessageMetadata::MetaType::Request) {
-    Log(InfoLogLevel::WARN_LEVEL, ct->options_.info_log,
+    LOG_WARN(ct->options_.info_log,
         "MessageMetadata with bad type %d received, ignoring...",
         request->GetMetaType());
   }
@@ -146,7 +146,7 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
     LogID logid;
     Status st = ct->log_router_.GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {
-      Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
+      LOG_INFO(ct->options_.info_log,
           "Unable to map msg to logid %s", st.ToString().c_str());
       continue;
     }
@@ -165,16 +165,16 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
     ControlRoom* room = ct->rooms_[room_number].get();
     st =  room->Forward(std::move(newmessage), logid);
     if (!st.ok()) {
-      Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
-          "Unable to forward Metadata msg to %s:%d %s",
+      LOG_INFO(ct->options_.info_log,
+          "Unable to forward Metadata msg to %s:%ld %s",
           room->GetRoomId().hostname.c_str(),
-          room->GetRoomId().port,
+          (long)room->GetRoomId().port,
           st.ToString().c_str());
     } else {
-      Log(InfoLogLevel::INFO_LEVEL, ct->options_.info_log,
-          "Forwarded Metadata to %s:%d",
+      LOG_INFO(ct->options_.info_log,
+          "Forwarded Metadata to %s:%ld",
           room->GetRoomId().hostname.c_str(),
-          room->GetRoomId().port);
+          (long)room->GetRoomId().port);
     }
   }
 }

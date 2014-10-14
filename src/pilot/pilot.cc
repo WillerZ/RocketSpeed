@@ -95,8 +95,7 @@ Pilot::Pilot(PilotOptions options):
                                           &msg_loop_.GetClient()));
   }
 
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-      "Created a new Pilot");
+  LOG_INFO(options_.info_log, "Created a new Pilot");
   options_.info_log->Flush();
 }
 
@@ -150,7 +149,7 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
     return;
   }
 
-  Log(InfoLogLevel::INFO_LEVEL, pilot->options_.info_log,
+  LOG_INFO(pilot->options_.info_log,
       "Received data (%.16s) for topic %s",
       msg_data->GetPayload().ToString().c_str(),
       msg_data->GetTopicName().ToString().c_str());
@@ -158,7 +157,7 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
   // Forward to worker.
   size_t worker_id = logid % pilot->workers_.size();
   if (!pilot->workers_[worker_id]->Forward(logid, std::move(msg_data))) {
-    Log(InfoLogLevel::WARN_LEVEL, pilot->options_.info_log,
+    LOG_WARN(pilot->options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
   }

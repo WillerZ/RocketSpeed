@@ -21,14 +21,12 @@ CopilotWorker::CopilotWorker(const CopilotOptions& options,
   // msg_client is required.
   assert(msg_client_);
 
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-    "Created a new CopilotWorker");
+  LOG_INFO(options_.info_log, "Created a new CopilotWorker");
   options_.info_log->Flush();
 }
 
 void CopilotWorker::Run() {
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-      "Starting worker loop");
+  LOG_INFO(options_.info_log, "Starting worker loop");
   worker_loop_.Run([this] (CopilotWorkerCommand command) {
     CommandCallback(std::move(command));
   });
@@ -75,7 +73,7 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
     break;
 
   default: {
-      Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
+      LOG_WARN(options_.info_log,
           "Unexpected message type in copilot worker %d",
           msg->GetMessageType());
     }
@@ -97,9 +95,9 @@ void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
         const HostId& recipient = subscription.host_id;
         Status status = msg_client_->Send(recipient, msg_serial);
         if (!status.ok()) {
-          Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-            "Failed to send metadata response to %s:%d",
-            recipient.hostname.c_str(), recipient.port);
+          LOG_INFO(options_.info_log,
+            "Failed to send metadata response to %s:%ld",
+            recipient.hostname.c_str(), (long)recipient.port);
         } else {
           // Successful, don't send any more acks.
           // (if the response didn't actually make it then the client
@@ -113,7 +111,7 @@ void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
 
 void CopilotWorker::ProcessData(MessageData* msg) {
   // Get the list of subscriptions for this topic.
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+  LOG_INFO(options_.info_log,
       "Copilot received data (%.16s)@%lu for topic %s",
       msg->GetPayload().ToString().c_str(),
       msg->GetSequenceNumber(),
@@ -128,17 +126,17 @@ void CopilotWorker::ProcessData(MessageData* msg) {
 
       // If the subscription is awaiting a response, do not forward.
       if (subscription.awaiting_ack) {
-        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Data not delivered to %s:%d (awaiting ack)",
-          recipient.hostname.c_str(), recipient.port);
+        LOG_INFO(options_.info_log,
+          "Data not delivered to %s:%ld (awaiting ack)",
+          recipient.hostname.c_str(), (long)recipient.port);
         continue;
       }
 
       // Also do not send a response if the seqno is too low.
       if (subscription.seqno >= seqno) {
-        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Data not delivered to %s:%d (seqno too low, currently @%lu)",
-          recipient.hostname.c_str(), recipient.port,
+        LOG_INFO(options_.info_log,
+          "Data not delivered to %s:%ld (seqno too low, currently @%lu)",
+          recipient.hostname.c_str(), (long)recipient.port,
           subscription.seqno);
         continue;
       }
@@ -146,12 +144,12 @@ void CopilotWorker::ProcessData(MessageData* msg) {
       // Send the response.
       Status status = msg_client_->Send(recipient, msg_serial);
       if (status.ok()) {
-        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Sent data (%.16ss) for topic %s to %s:%d",
+        LOG_INFO(options_.info_log,
+          "Sent data (%.16ss) for topic %s to %s:%ld",
           msg->GetPayload().ToString().c_str(),
           msg->GetTopicName().ToString().c_str(),
           recipient.hostname.c_str(),
-          recipient.port);
+          (long)recipient.port);
         subscription.seqno = seqno;
       } else {
         // Message failed to send. Possible reasons:
@@ -159,9 +157,9 @@ void CopilotWorker::ProcessData(MessageData* msg) {
         // 2. Outgoing socket buffer is full.
         // 3. Some other low-level error.
         // TODO(pja) 1 : handle these gracefully.
-        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Failed to forward data to %s:%d",
-          recipient.hostname.c_str(), recipient.port);
+        LOG_INFO(options_.info_log,
+          "Failed to forward data to %s:%ld",
+          recipient.hostname.c_str(), (long)recipient.port);
       }
     }
   }
@@ -237,19 +235,19 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
       // Forward request to control tower to update the copilot subscription.
       msg->SetOrigin(GetHostId());
       if (!msg_client_->Send(*recipient, msg).ok()) {
-        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Failed to send metadata response to %s:%d",
-          recipient->hostname.c_str(), recipient->port);
+        LOG_INFO(options_.info_log,
+          "Failed to send metadata response to %s:%ld",
+          recipient->hostname.c_str(), (long)recipient->port);
       } else {
-        Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+        LOG_INFO(options_.info_log,
           "Sent subscription for Topic(%s)@%lu",
           request.topic_name.c_str(), request.seqno);
       }
     } else {
       // This should only ever happen if all control towers are offline.
-      Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
+      LOG_WARN(options_.info_log,
         "Failed to find control tower for log ID %llu",
-        static_cast<uint64_t>(logid));
+        static_cast<unsigned long long>(logid));
     }
   }
 
@@ -259,9 +257,9 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
     if (!msg_client_->Send(subscriber, msg).ok()) {
       // Failed to send response. The origin will re-send the subscription
       // again in the future, and we'll try to immediately respond again.
-      Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-          "Failed to send subscribe response to %s:%d",
-          subscriber.hostname.c_str(), subscriber.port);
+      LOG_INFO(options_.info_log,
+          "Failed to send subscribe response to %s:%ld",
+          subscriber.hostname.c_str(), (long)subscriber.port);
     }
   }
 }
@@ -304,9 +302,9 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
                                            request.namespace_id) });
         Status status = msg_client_->Send(*recipient, &ct_msg);
         if (!status.ok()) {
-          Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-              "Failed to send unsubscribe request to %s:%d",
-              recipient->hostname.c_str(), recipient->port);
+          LOG_INFO(options_.info_log,
+              "Failed to send unsubscribe request to %s:%ld",
+              recipient->hostname.c_str(), (long)recipient->port);
         }
       }
     } else if (our_seqno < earliest_other_seqno) {
@@ -323,15 +321,15 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
                                            request.namespace_id) });
         Status status = msg_client_->Send(*recipient, &ct_msg);
         if (!status.ok()) {
-          Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-              "Failed to send unsubscribe request to %s:%d",
-              recipient->hostname.c_str(), recipient->port);
+          LOG_INFO(options_.info_log,
+              "Failed to send unsubscribe request to %s:%ld",
+              recipient->hostname.c_str(), (long)recipient->port);
         }
       } else {
         // This should only ever happen if all control towers are offline.
-        Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
+        LOG_WARN(options_.info_log,
           "Failed to find control tower for log ID %llu",
-          static_cast<uint64_t>(logid));
+          static_cast<unsigned long long>(logid));
       }
     }
   }
@@ -341,9 +339,9 @@ void CopilotWorker::ProcessUnsubscribe(MessageMetadata* msg,
   if (!msg_client_->Send(subscriber, msg).ok()) {
     // Failed to send response. The origin will re-send the subscription
     // again in the future, and we'll try to immediately respond again.
-    Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-        "Failed to send subscribe response to %s:%d",
-        subscriber.hostname.c_str(), subscriber.port);
+    LOG_INFO(options_.info_log,
+        "Failed to send subscribe response to %s:%ld",
+        subscriber.hostname.c_str(), (long)subscriber.port);
   }
 }
 

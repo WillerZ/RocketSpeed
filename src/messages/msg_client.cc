@@ -18,8 +18,7 @@ MsgClient::MsgClient(const Env* env,
   env_(env),
   env_options_(env_options),
   info_log_(info_log) {
-  Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "Created a new Client ");
+  LOG_INFO(info_log, "Created a new Client ");
 }
 
 // Lookup and lock an entry from the connection cache if it exists
@@ -139,20 +138,18 @@ MsgClient::Send(const HostId& host, Slice msg) {
       // Send failed, remove the connection.
       // This closes the fd, and GetConnection will re-open.
       if (retries) {
-        Log(InfoLogLevel::INFO_LEVEL, info_log_,
-          "Send to %s:%d failed (%s) -- reconnecting",
-          host.hostname.c_str(), host.port, st.ToString().c_str());
+        LOG_INFO(info_log_,
+          "Send to %s:%ld failed (%s) -- reconnecting",
+          host.hostname.c_str(), (long)host.port, st.ToString().c_str());
       }
       remove(host);
     }
   } while (!st.ok() && retries--);
 
   if (st.ok()) {
-    Log(InfoLogLevel::INFO_LEVEL, info_log_,
-        "MsgClient sent msg ok");
+    LOG_INFO(info_log_, "MsgClient sent msg ok");
   } else {
-    Log(InfoLogLevel::INFO_LEVEL, info_log_,
-        "MsgClient sent msg fail");
+    LOG_INFO(info_log_, "MsgClient sent msg fail");
   }
   info_log_->Flush();
   return st;

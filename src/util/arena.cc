@@ -88,7 +88,7 @@ char* Arena::AllocateAligned(size_t bytes, size_t huage_page_size,
                       (MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB), 0, 0);
 
     if (addr == MAP_FAILED) {
-      Warn(logger, "AllocateAligned fail to allocate huge TLB pages: %s",
+      LOG_WARN(logger, "AllocateAligned fail to allocate huge TLB pages: %s",
            strerror(errno));
       // fail back to malloc
     } else {

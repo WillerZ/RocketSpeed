@@ -19,14 +19,12 @@ PilotWorker::PilotWorker(const PilotOptions& options,
 , storage_(storage)
 , options_(options)
 , msg_client_(client) {
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-    "Created a new PilotWorker");
+  LOG_INFO(options_.info_log, "Created a new PilotWorker");
   options_.info_log->Flush();
 }
 
 void PilotWorker::Run() {
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-      "Starting worker loop");
+  LOG_INFO(options_.info_log, "Starting worker loop");
   worker_loop_.Run([this](PilotWorkerCommand command) {
     CommandCallback(std::move(command));
   });
@@ -50,12 +48,12 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
               msg->GetOrigin(),
               msg->GetMessageId(),
               MessageDataAck::AckStatus::Success);
-      Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+      LOG_INFO(options_.info_log,
           "Appended (%.16s) successfully",
           msg_raw->GetPayload().ToString().c_str());
     } else {
       // Append failed, send failure ack.
-      Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
+      LOG_WARN(options_.info_log,
           "AppendAsync failed (%s)",
           append_status.ToString().c_str());
       options_.info_log->Flush();
@@ -78,7 +76,7 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
 
   if (!status.ok()) {
     // Append call failed, log and send failure ack.
-    Log(InfoLogLevel::WARN_LEVEL, options_.info_log,
+    LOG_WARN(options_.info_log,
       "Failed to append to log ID %lu",
       static_cast<uint64_t>(logid));
     options_.info_log->Flush();
@@ -109,7 +107,7 @@ void PilotWorker::SendAck(const TenantID tenantid,
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.
-    Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
+    LOG_INFO(options_.info_log,
       "Failed to send ack to %s",
       host.hostname.c_str());
   }

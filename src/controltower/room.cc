@@ -29,9 +29,8 @@ ControlRoom::~ControlRoom() {
 // static method to start the loop for processing Room events
 void ControlRoom::Run(void* arg) {
   ControlRoom* room = static_cast<ControlRoom*>(arg);
-  Log(InfoLogLevel::INFO_LEVEL,
-      room->control_tower_->GetOptions().info_log,
-      "Starting ControlRoom Loop at port %d", room->room_id_.port);
+  LOG_INFO(room->control_tower_->GetOptions().info_log,
+      "Starting ControlRoom Loop at port %ld", (long)room->room_id_.port);
 
   // Define a lambda to process Commands by the room_loop_.
   auto command_callback = [room] (RoomCommand command) {
@@ -69,7 +68,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
   assert(request->GetMetaType() == MessageMetadata::MetaType::Request);
   if (request->GetMetaType() != MessageMetadata::MetaType::Request) {
-    Log(InfoLogLevel::WARN_LEVEL, ct->GetOptions().info_log,
+    LOG_WARN(ct->GetOptions().info_log,
         "MessageMetadata with bad type %d received, ignoring...",
         request->GetMetaType());
     return;
@@ -114,13 +113,13 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   // send reponse back to client
   st = ct->GetClient().Send(origin, std::move(msg));
   if (!st.ok()) {
-    Log(InfoLogLevel::INFO_LEVEL, ct->GetOptions().info_log,
-        "Unable to send Metadata response to %s:%d",
-        origin.hostname.c_str(), origin.port);
+    LOG_INFO(ct->GetOptions().info_log,
+        "Unable to send Metadata response to %s:%ld",
+        origin.hostname.c_str(), (long)origin.port);
   } else {
-    Log(InfoLogLevel::INFO_LEVEL, ct->GetOptions().info_log,
-        "Send Metadata response to %s:%d",
-        origin.hostname.c_str(), origin.port);
+    LOG_INFO(ct->GetOptions().info_log,
+        "Send Metadata response to %s:%ld",
+        origin.hostname.c_str(), (long)origin.port);
   }
   ct->GetOptions().info_log->Flush();
 }
@@ -155,16 +154,16 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
       if (hostid != nullptr) {
         st = ct->GetClient().Send(*hostid, serialized);
         if (st.ok()) {
-          Log(InfoLogLevel::INFO_LEVEL, ct->GetOptions().info_log,
-            "Sent data (%.16s) for topic %s to %s:%d",
+          LOG_INFO(ct->GetOptions().info_log,
+            "Sent data (%.16s) for topic %s to %s:%ld",
             request->GetPayload().ToString().c_str(),
             request->GetTopicName().ToString().c_str(),
             hostid->hostname.c_str(),
-            hostid->port);
+            (long)hostid->port);
         } else {
-          Log(InfoLogLevel::INFO_LEVEL, ct->GetOptions().info_log,
-              "Unable to forward Data message to %s:%d",
-              hostid->hostname.c_str(), hostid->port);
+          LOG_INFO(ct->GetOptions().info_log,
+              "Unable to forward Data message to %s:%ld",
+              hostid->hostname.c_str(), (long)hostid->port);
           ct->GetOptions().info_log->Flush();
         }
       }

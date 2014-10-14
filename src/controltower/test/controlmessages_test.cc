@@ -137,8 +137,7 @@ class ControlTowerTest {
       case _EVENT_LOG_ERR:   s = "libev:err"; break;
       default:               s = "libev:???"; break; /* never reached */
     }
-    Log(InfoLogLevel::INFO_LEVEL, info_log,
-        "[%s] %s\n", s, msg);
+    LOG_INFO(info_log, "[%s] %s\n", s, msg);
     info_log->Flush();
   }
 

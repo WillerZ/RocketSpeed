@@ -19,6 +19,35 @@
 #include <stdint.h>
 #include "include/Status.h"
 
+#define LOG(log_level_expr, info_log_expr, ...) \
+  do { \
+    ::rocketspeed::InfoLogLevel _log_level = (log_level_expr); \
+    const auto& _info_log = (info_log_expr); \
+    if (_info_log && _log_level >= _info_log->GetInfoLogLevel()) { \
+      _info_log->Log(_log_level, __VA_ARGS__); \
+    } \
+  } while (0)
+
+#define LOG_DEBUG(info_log_expr, ...) \
+  LOG(::rocketspeed::InfoLogLevel::DEBUG_LEVEL, \
+      info_log_expr, __VA_ARGS__)
+
+#define LOG_INFO(info_log_expr, ...) \
+  LOG(::rocketspeed::InfoLogLevel::INFO_LEVEL, \
+      info_log_expr, __VA_ARGS__)
+
+#define LOG_WARN(info_log_expr, ...) \
+  LOG(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
+      info_log_expr, __VA_ARGS__)
+
+#define LOG_ERROR(info_log_expr, ...) \
+  LOG(::rocketspeed::InfoLogLevel::ERROR_LEVEL, \
+      info_log_expr, __VA_ARGS__)
+
+#define LOG_FATAL(info_log_expr, ...) \
+  LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
+      info_log_expr, __VA_ARGS__)
+
 namespace rocketspeed {
 
 class FileLock;
@@ -578,7 +607,10 @@ enum InfoLogLevel : unsigned char {
   NUM_INFO_LOG_LEVELS,
 };
 
-// An interface for writing log messages.
+// An interface for writing log messages. It is recommended to use the LOG
+// macro instead of directly calling methods of this class because the macro
+// makes sure the format arguments are not evaluated if the specified log level
+// is lower than the current minimal log level, which can improve performance.
 class Logger {
  public:
   enum { DO_NOT_SUPPORT_GET_LOG_FILE_SIZE = -1 };
@@ -613,6 +645,16 @@ class Logger {
                kInfoLogLevelNames[log_level], format);
       Logv(new_format, ap);
     }
+  }
+  void Log(const InfoLogLevel log_level, const char* format, ...)
+#   if defined(__GNUC__) || defined(__clang__)
+      __attribute__((__format__ (__printf__, 3, 4)))
+#   endif
+  {
+    va_list ap;
+    va_start(ap, format);
+    Logv(log_level, format, ap);
+    va_end(ap);
   }
   virtual size_t GetLogFileSize() const {
     return DO_NOT_SUPPORT_GET_LOG_FILE_SIZE;
@@ -668,42 +710,7 @@ class Connection {
 
 extern void LogFlush(const shared_ptr<Logger>& info_log);
 
-extern void Log(const InfoLogLevel log_level,
-                const shared_ptr<Logger>& info_log, const char* format, ...);
-
-// a set of log functions with different log levels.
-extern void Debug(const shared_ptr<Logger>& info_log, const char* format, ...);
-extern void Info(const shared_ptr<Logger>& info_log, const char* format, ...);
-extern void Warn(const shared_ptr<Logger>& info_log, const char* format, ...);
-extern void Error(const shared_ptr<Logger>& info_log, const char* format, ...);
-extern void Fatal(const shared_ptr<Logger>& info_log, const char* format, ...);
-
-// Log the specified data to *info_log if info_log is non-nullptr.
-// The default info log level is InfoLogLevel::ERROR.
-extern void Log(const shared_ptr<Logger>& info_log, const char* format, ...)
-#   if defined(__GNUC__) || defined(__clang__)
-    __attribute__((__format__ (__printf__, 2, 3)))
-#   endif
-    ;
-
 extern void LogFlush(Logger *info_log);
-
-extern void Log(const InfoLogLevel log_level, Logger* info_log,
-                const char* format, ...);
-
-// The default info log level is InfoLogLevel::ERROR.
-extern void Log(Logger* info_log, const char* format, ...)
-#   if defined(__GNUC__) || defined(__clang__)
-    __attribute__((__format__ (__printf__, 2, 3)))
-#   endif
-    ;
-
-// a set of log functions with different log levels.
-extern void Debug(Logger* info_log, const char* format, ...);
-extern void Info(Logger* info_log, const char* format, ...);
-extern void Warn(Logger* info_log, const char* format, ...);
-extern void Error(Logger* info_log, const char* format, ...);
-extern void Fatal(Logger* info_log, const char* format, ...);
 
 // A utility routine: write "data" to the named file.
 extern Status WriteStringToFile(Env* env, const Slice& data,

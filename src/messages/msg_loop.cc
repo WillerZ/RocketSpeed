@@ -24,8 +24,8 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
 
   // what message have we received?
   MessageType type = msg->GetMessageType();
-  Log(InfoLogLevel::INFO_LEVEL, msgloop->info_log_,
-      "Received message %d at port %d", type, msgloop->hostid_.port);
+  LOG_INFO(msgloop->info_log_,
+      "Received message %d at port %ld", type, (long)msgloop->hostid_.port);
 
   // Search for a callback method corresponding to this msg type
   // Give up ownership of this message to the callback function
@@ -43,7 +43,7 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
   } else {
     // If the user has not registered a message of this type,
     // then this msg will be droped silently.
-    Log(InfoLogLevel::WARN_LEVEL, msgloop->info_log_,
+    LOG_WARN(msgloop->info_log_,
         "No registered msg callback for msg type %d", type);
     msgloop->info_log_->Flush();
     assert(0);
@@ -76,21 +76,19 @@ MsgLoop::MsgLoop(const Env* env,
   event_loop_.SetEventCallbackContext(this);
 
   // log an informational message
-  Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "Created a new Message Loop at port %d with %d callbacks",
-      hostid_.port, msg_callbacks_.size());
+  LOG_INFO(info_log,
+      "Created a new Message Loop at port %ld with %zu callbacks",
+      (long)hostid_.port, msg_callbacks_.size());
 }
 
 void MsgLoop::Run() {
-  Log(InfoLogLevel::INFO_LEVEL, info_log_,
-      "Starting Message Loop at port %d", hostid_.port);
+  LOG_INFO(info_log_, "Starting Message Loop at port %ld", (long)hostid_.port);
   event_loop_.Run();
 }
 
 void MsgLoop::Stop() {
   event_loop_.Stop();
-  Log(InfoLogLevel::INFO_LEVEL, info_log_,
-    "Stopped a Message Loop at port %d", hostid_.port);
+  LOG_INFO(info_log_, "Stopped a Message Loop at port %ld", (long)hostid_.port);
   info_log_->Flush();
 }
 
@@ -119,13 +117,13 @@ MsgLoop::ProcessPing(const ApplicationCallbackContext mloop,
   Status st = msgloop->GetClient().Send(origin, std::move(msg));
 
   if (!st.ok()) {
-    Log(InfoLogLevel::INFO_LEVEL, msgloop->info_log_,
-        "Unable to send ping response to %s:%d",
-        origin.hostname.c_str(), origin.port);
+    LOG_INFO(msgloop->info_log_,
+        "Unable to send ping response to %s:%ld",
+        origin.hostname.c_str(), (long)origin.port);
   } else {
-    Log(InfoLogLevel::INFO_LEVEL, msgloop->info_log_,
-        "Send ping response to %s:%d",
-        origin.hostname.c_str(), origin.port);
+    LOG_INFO(msgloop->info_log_,
+        "Send ping response to %s:%ld",
+        origin.hostname.c_str(), (long)origin.port);
   }
   msgloop->info_log_->Flush();
 }

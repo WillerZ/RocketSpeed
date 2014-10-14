@@ -80,8 +80,7 @@ Copilot::Copilot(CopilotOptions options):
                                             &msg_loop_.GetClient()));
   }
 
-  Log(InfoLogLevel::INFO_LEVEL, options_.info_log,
-      "Created a new Copilot");
+  LOG_INFO(options_.info_log, "Created a new Copilot");
   options_.info_log->Flush();
 }
 
@@ -117,7 +116,7 @@ void Copilot::ProcessData(ApplicationCallbackContext ctx,
   // get the request message
   MessageData* data = static_cast<MessageData*>(msg.get());
 
-  Log(InfoLogLevel::INFO_LEVEL, copilot->options_.info_log,
+  LOG_INFO(copilot->options_.info_log,
       "Received data message for topic '%s'",
       data->GetTopicName().ToString().c_str());
 
@@ -126,7 +125,7 @@ void Copilot::ProcessData(ApplicationCallbackContext ctx,
   Status st = copilot->log_router_.GetLogID(data->GetTopicName().ToString(),
                                             &logid);
   if (!st.ok()) {
-    Log(InfoLogLevel::INFO_LEVEL, copilot->options_.info_log,
+    LOG_INFO(copilot->options_.info_log,
         "Unable to map msg to logid %s", st.ToString().c_str());
     return;
   }
@@ -137,7 +136,7 @@ void Copilot::ProcessData(ApplicationCallbackContext ctx,
 
   // forward message to worker
   if (!worker->Forward(logid, std::move(msg))) {
-    Log(InfoLogLevel::WARN_LEVEL, copilot->options_.info_log,
+    LOG_WARN(copilot->options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
   }
@@ -156,7 +155,7 @@ void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
     // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
 
-    Log(InfoLogLevel::INFO_LEVEL, copilot->options_.info_log,
+    LOG_INFO(copilot->options_.info_log,
       "Received %s %s for topic '%s'",
       topic.topic_type == MetadataType::mSubscribe
         ? "subscribe" : "unsubscribe",
@@ -167,7 +166,7 @@ void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
     LogID logid;
     Status st = copilot->log_router_.GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {
-      Log(InfoLogLevel::INFO_LEVEL, copilot->options_.info_log,
+      LOG_INFO(copilot->options_.info_log,
           "Unable to map msg to logid %s", st.ToString().c_str());
       continue;
     }

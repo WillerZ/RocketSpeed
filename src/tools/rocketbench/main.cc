@@ -75,7 +75,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
   }
   Slice payload(data.data(), data.size());
 
-  Log(InfoLogLevel::INFO_LEVEL, info_log, "Starting message loop");
+  LOG_INFO(info_log, "Starting message loop");
   info_log->Flush();
 
   // Calculate message rate for this worker.
@@ -126,7 +126,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
                                          payload);
 
     if (!ps.status.ok()) {
-      Log(InfoLogLevel::WARN_LEVEL, info_log,
+      LOG_WARN(info_log,
         "Failed to send message number %lu (%s)",
         i, ps.status.ToString().c_str());
       info_log->Flush();
@@ -390,12 +390,12 @@ int main(int argc, char** argv) {
       if (latencies[message_index] == latency_max) {
         latencies[message_index] = now - send_time;
       } else {
-        Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
+        LOG_WARN(info_log,
             "Received duplicate message index (%lu)",
             message_index);
       }
     } else {
-      Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
+      LOG_WARN(info_log,
           "Received out of bounds message index (%lu)",
           message_index);
     }
@@ -417,8 +417,7 @@ int main(int argc, char** argv) {
     if (!rocketspeed::Client::Open(pconfig.get(), publish_callback,
                                    nullptr, receive_callback,
                                    &producer).ok()) {
-      Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
-          "Failed to connect to RocketSpeed");
+      LOG_WARN(info_log, "Failed to connect to RocketSpeed");
       info_log->Flush();
       return 1;
     }
@@ -428,8 +427,7 @@ int main(int argc, char** argv) {
         !rocketspeed::Client::Open(pconfig.get(), publish_callback,
                                    nullptr, nullptr,
                                    &producer).ok()) {
-      Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
-          "Failed to connect to RocketSpeed: producer ");
+      LOG_WARN(info_log, "Failed to connect to RocketSpeed: producer ");
       info_log->Flush();
       return 1;
     }
@@ -437,8 +435,7 @@ int main(int argc, char** argv) {
         !rocketspeed::Client::Open(cconfig.get(), nullptr,
                                    nullptr, receive_callback,
                                    &consumer).ok()) {
-      Log(rocketspeed::InfoLogLevel::WARN_LEVEL, info_log,
-          "Failed to connect to RocketSpeed: consumer ");
+      LOG_WARN(info_log, "Failed to connect to RocketSpeed: consumer ");
       info_log->Flush();
       return 1;
     }

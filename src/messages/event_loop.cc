@@ -42,15 +42,14 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
 
   // Check for read errors.
   if (received == -1) {
-    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
+    LOG_WARN(obj->info_log_,
         "Reading from command pipe failed. errno=%d", errno);
     obj->info_log_->Flush();
     return;
   } else if (received < static_cast<ssize_t>(sizeof(data))) {
     // Partial read from the pipe. This may happen if the write call is
     // interrupted by a signal.
-    Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
-        "Partial read from command pipe.");
+    LOG_WARN(obj->info_log_, "Partial read from command pipe.");
     obj->info_log_->Flush();
     return;
   }
@@ -78,7 +77,7 @@ struct SocketEvent {
 
     ev_ = ld_event_new(base, fd, EV_READ|EV_PERSIST, EventCallback, this);
     if (ev_ == nullptr || ld_event_add(ev_, nullptr)) {
-      Log(InfoLogLevel::WARN_LEVEL, event_loop_->GetLog(),
+      LOG_WARN(event_loop_->GetLog(),
           "Failed to create socket event for %d", fd);
       delete this;
     }
@@ -166,8 +165,7 @@ struct SocketEvent {
         event_loop_->Dispatch(std::move(msg));
       } else {
         // Failed to decode message.
-        Log(InfoLogLevel::WARN_LEVEL, event_loop_->GetLog(),
-            "Failed to decode message");
+        LOG_WARN(event_loop_->GetLog(), "Failed to decode message");
         event_loop_->GetLog()->Flush();
       }
 
@@ -200,7 +198,7 @@ EventLoop::do_accept(struct evconnlistener *listener,
     int sz = event_loop->env_options_.tcp_send_buffer_size;
     int r = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
     if (r) {
-      Log(InfoLogLevel::WARN_LEVEL, event_loop->info_log_,
+      LOG_WARN(event_loop->info_log_,
           "Failed to set send buffer size on socket %d", fd);
     }
   }
@@ -209,7 +207,7 @@ EventLoop::do_accept(struct evconnlistener *listener,
     int sz = event_loop->env_options_.tcp_recv_buffer_size;
     int r = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
     if (r) {
-      Log(InfoLogLevel::WARN_LEVEL, event_loop->info_log_,
+      LOG_WARN(event_loop->info_log_,
           "Failed to set receive buffer size on socket %d", fd);
     }
   }
@@ -218,8 +216,7 @@ EventLoop::do_accept(struct evconnlistener *listener,
   // itself during an EOF callback.
   new SocketEvent(event_loop, fd, event_loop->base_);
 
-  Log(InfoLogLevel::INFO_LEVEL, event_loop->info_log_,
-      "Accept successful on socket %d", fd);
+  LOG_INFO(event_loop->info_log_, "Accept successful on socket %d", fd);
 }
 
 void
@@ -227,7 +224,7 @@ EventLoop::accept_error_cb(struct evconnlistener *listener, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   struct event_base *base = ld_evconnlistener_get_base(listener);
   int err = EVUTIL_SOCKET_ERROR();
-  Log(InfoLogLevel::WARN_LEVEL, obj->info_log_,
+  LOG_WARN(obj->info_log_,
     "Got an error %d (%s) on the listener. "
     "Shutting down.\n", err, evutil_socket_error_to_string(err));
   ld_event_base_loopexit(base, NULL);
@@ -237,7 +234,7 @@ void
 EventLoop::Run(void) {
   base_ = ld_event_base_new();
   if (!base_) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
+    LOG_WARN(info_log_,
       "Failed to create an event base for an EventLoop thread");
     info_log_->Flush();
     return;
@@ -261,7 +258,7 @@ EventLoop::Run(void) {
       sizeof(sin));
 
     if (listener_ == nullptr) {
-      Log(InfoLogLevel::WARN_LEVEL, info_log_,
+      LOG_WARN(info_log_,
           "Failed to create connection listener on port %d", port_number_);
       info_log_->Flush();
       return;
@@ -280,16 +277,14 @@ EventLoop::Run(void) {
     reinterpret_cast<void*>(this));
 
   if (startup_event == nullptr) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to create first startup event");
+    LOG_WARN(info_log_, "Failed to create first startup event");
     info_log_->Flush();
     return;
   }
   struct timeval zero_seconds = {0, 0};
   int rv = evtimer_add(startup_event, &zero_seconds);
   if (rv != 0) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to add startup event to event base");
+    LOG_WARN(info_log_, "Failed to add startup event to event base");
     info_log_->Flush();
     return;
   }
@@ -306,15 +301,13 @@ EventLoop::Run(void) {
     this->do_shutdown,
     reinterpret_cast<void*>(this));
   if (shutdown_event_ == nullptr) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to create shutdown event");
+    LOG_WARN(info_log_, "Failed to create shutdown event");
     info_log_->Flush();
     return;
   }
   rv = ld_event_add(shutdown_event_, nullptr);
   if (rv != 0) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to add shutdown event to event base");
+    LOG_WARN(info_log_, "Failed to add shutdown event to event base");
     info_log_->Flush();
     return;
   }
@@ -322,8 +315,7 @@ EventLoop::Run(void) {
   // This is a pipe that other threads can write to for asynchronous
   // processing on the event thread.
   if (pipe(command_pipe_fds_)) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to create command pipe.");
+    LOG_WARN(info_log_, "Failed to create command pipe.");
     info_log_->Flush();
     return;
   }
@@ -335,21 +327,18 @@ EventLoop::Run(void) {
     this->do_command,
     reinterpret_cast<void*>(this));
   if (command_pipe_event_ == nullptr) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to create command pipe event");
+    LOG_WARN(info_log_, "Failed to create command pipe event");
     info_log_->Flush();
     return;
   }
   rv = ld_event_add(command_pipe_event_, nullptr);
   if (rv != 0) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-        "Failed to add command event to event base");
+    LOG_WARN(info_log_, "Failed to add command event to event base");
     info_log_->Flush();
     return;
   }
 
-  Log(InfoLogLevel::INFO_LEVEL, info_log_,
-      "Starting EventLoop at port %d", port_number_);
+  LOG_INFO(info_log_, "Starting EventLoop at port %d", port_number_);
   info_log_->Flush();
 
   // Start the event loop.
@@ -385,8 +374,7 @@ void EventLoop::Stop() {
       close(command_pipe_fds_[0]);
       close(command_pipe_fds_[1]);
     }
-    Log(InfoLogLevel::INFO_LEVEL, info_log_,
-      "Stopped EventLoop at port %d", port_number_);
+    LOG_INFO(info_log_, "Stopped EventLoop at port %d", port_number_);
     info_log_->Flush();
     base_ = nullptr;
   }
@@ -395,8 +383,8 @@ void EventLoop::Stop() {
 Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
   // Check the pipe hasn't been closed due to partial write (see below).
   if (command_pipe_fds_[1] == 0) {
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-      "Trying to write to closed command pipe.", errno);
+    LOG_WARN(info_log_,
+        "Trying to write to closed command pipe, errno=%d", errno);
     info_log_->Flush();
     return Status::InternalError("pipe closed");
   }
@@ -425,16 +413,15 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
     return Status::OK();
   } else if (written == -1) {
     // Some internal error happened.
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-      "Error writing command to event loop, errno=%d", errno);
+    LOG_WARN(info_log_, "Error writing command to event loop, errno=%d", errno);
     info_log_->Flush();
     return Status::InternalError("write returned error");
   } else {
     // Partial write. This is bad; only part of the pointer has been written
     // to the pipe. This should never happen, but if it does we need to close
     // the pipe so no more data is written to it.
-    Log(InfoLogLevel::WARN_LEVEL, info_log_,
-      "Partial write of command to event loop, written=%d", written);
+    LOG_WARN(info_log_,
+      "Partial write of command to event loop, written=%zd", written);
 
     // Close the pipe.
     close(command_pipe_fds_[0]);
@@ -469,8 +456,7 @@ EventLoop::EventLoop(EnvOptions env_options,
   command_callback_(command_callback),
   event_callback_context_(nullptr),
   listener_(nullptr) {
-  Log(InfoLogLevel::INFO_LEVEL, info_log,
-      "Created a new Event Loop at port %d", port_number);
+  LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }
 
 EventLoop::~EventLoop() {

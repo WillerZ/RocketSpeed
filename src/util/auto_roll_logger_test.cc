@@ -52,12 +52,12 @@ Env* AutoRollLoggerTest::env = Env::Default();
 // call Log(logger, log_message) directly.
 namespace {
 void LogMessage(Logger* logger, const char* message) {
-  Log(logger, "%s", message);
+  LOG_INFO(logger, "%s", message);
 }
 
 void LogMessage(const InfoLogLevel log_level, Logger* logger,
                 const char* message) {
-  Log(log_level, logger, "%s", message);
+  LOG(log_level, logger, "%s", message);
 }
 }  // namespace
 
@@ -272,11 +272,11 @@ TEST(AutoRollLoggerTest, InfoLogLevel) {
       logger.SetInfoLogLevel((InfoLogLevel)log_level);
 
       // again, messages with level smaller than log_level will not be logged.
-      Debug(&logger, "%s", kSampleMessage.c_str());
-      Info(&logger, "%s", kSampleMessage.c_str());
-      Warn(&logger, "%s", kSampleMessage.c_str());
-      Error(&logger, "%s", kSampleMessage.c_str());
-      Fatal(&logger, "%s", kSampleMessage.c_str());
+      LOG_DEBUG(&logger, "%s", kSampleMessage.c_str());
+      LOG_INFO(&logger, "%s", kSampleMessage.c_str());
+      LOG_WARN(&logger, "%s", kSampleMessage.c_str());
+      LOG_ERROR(&logger, "%s", kSampleMessage.c_str());
+      LOG_FATAL(&logger, "%s", kSampleMessage.c_str());
       log_lines += InfoLogLevel::FATAL_LEVEL - log_level + 1;
     }
   }
