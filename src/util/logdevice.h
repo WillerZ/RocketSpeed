@@ -18,10 +18,6 @@
 
 namespace rocketspeed {
 
-// Forward declarations
-class LogDeviceReader;
-class LogDeviceSelector;
-
 /**
  * Log storage interface backed by LogDevice.
  */
@@ -86,9 +82,6 @@ class LogDeviceStorage : public LogStorage {
   Status Trim(LogID id,
               std::chrono::microseconds age) final;
 
-  Status CreateReaders(unsigned int parallelism,
-                       std::vector<LogReader*>* readers) final;
-
   Status CreateAsyncReaders(unsigned int parallelism,
                             std::function<void(const LogRecord&)> callback,
                             std::vector<AsyncLogReader*>* readers);
@@ -98,40 +91,6 @@ class LogDeviceStorage : public LogStorage {
 
   std::shared_ptr<facebook::logdevice::Client> client_;
   Env* env_;
-};
-
-/**
- * Log Reader interface backed by LogDevice.
- */
-class LogDeviceReader : public LogReader {
- public:
-  LogDeviceReader(LogDeviceStorage* storage,
-                  std::unique_ptr<facebook::logdevice::AsyncReader>&& reader);
-
-  ~LogDeviceReader() final;
-
-  Status Open(LogID id,
-              SequenceNumber startPoint,
-              SequenceNumber endPoint) final;
-
-  Status Close(LogID id) final;
-
-  Status Read(std::vector<LogRecord>* records,
-              size_t maxRecords) final;
-
-  bool HasData() const;
-
- private:
-  friend class LogDeviceSelector;
-
-  void SetSelector(LogDeviceSelector* selector);
-
-  LogDeviceStorage& storage_;
-  std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
-  mutable std::mutex mutex_;
-  std::vector<std::unique_ptr<char[]>> buffers_;
-  std::vector<LogRecord> pending_;
-  LogDeviceSelector* selector_ = nullptr;
 };
 
 /**
@@ -155,32 +114,6 @@ class AsyncLogDeviceReader : public AsyncLogReader {
  private:
   LogDeviceStorage& storage_;
   std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
-};
-
-/**
- * LogSelector interface backed by LogDevice.
- */
-class LogDeviceSelector : public LogSelector {
- public:
-  LogDeviceSelector();
-
-  static Status Create(LogDeviceSelector** selector);
-
-  ~LogDeviceSelector() final;
-
-  Status Register(LogReader* reader) final;
-
-  Status Deregister(LogReader* reader) final;
-
-  Status Select(std::vector<LogReader*>* selected,
-                std::chrono::microseconds timeout) final;
-
-  void Notify();
-
- private:
-  std::vector<LogDeviceReader*> readers_;
-  std::mutex mutex_;
-  std::condition_variable monitor_;
 };
 
 }  // namespace rocketspeed
