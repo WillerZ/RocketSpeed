@@ -57,7 +57,7 @@ void LogMessage(Logger* logger, const char* message) {
 
 void LogMessage(const InfoLogLevel log_level, Logger* logger,
                 const char* message) {
-  LOG(log_level, logger, "%s", message);
+  RS_LOG(log_level, logger, "%s", message);
 }
 }  // namespace
 

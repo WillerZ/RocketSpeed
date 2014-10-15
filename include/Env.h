@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include "include/Status.h"
 
-#define LOG(log_level_expr, info_log_expr, ...) \
+#define RS_LOG(log_level_expr, info_log_expr, ...) \
   do { \
     ::rocketspeed::InfoLogLevel _log_level = (log_level_expr); \
     const auto& _info_log = (info_log_expr); \
@@ -29,23 +29,23 @@
   } while (0)
 
 #define LOG_DEBUG(info_log_expr, ...) \
-  LOG(::rocketspeed::InfoLogLevel::DEBUG_LEVEL, \
+  RS_LOG(::rocketspeed::InfoLogLevel::DEBUG_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
 #define LOG_INFO(info_log_expr, ...) \
-  LOG(::rocketspeed::InfoLogLevel::INFO_LEVEL, \
+  RS_LOG(::rocketspeed::InfoLogLevel::INFO_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
 #define LOG_WARN(info_log_expr, ...) \
-  LOG(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
+  RS_LOG(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
 #define LOG_ERROR(info_log_expr, ...) \
-  LOG(::rocketspeed::InfoLogLevel::ERROR_LEVEL, \
+  RS_LOG(::rocketspeed::InfoLogLevel::ERROR_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
 #define LOG_FATAL(info_log_expr, ...) \
-  LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
+  RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
 namespace rocketspeed {
