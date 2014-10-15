@@ -24,8 +24,8 @@ Status Tailer::Initialize() {
     return Status::OK();  // already initialized, nothing more to do
   }
   // define a lambda for callback
-  auto callback = [this] (const LogRecord& record) {
-    int room_number = record.logID % rooms_.size();
+  auto record_cb = [this] (const LogRecord& record) {
+    int room_number = record.log_id % rooms_.size();
     ControlRoom* room = rooms_[room_number].get();
 
     // Convert storage record into RocketSpeed message.
@@ -47,23 +47,62 @@ Status Tailer::Initialize() {
         info_log_->Flush();
     } else {
       LOG_INFO(info_log_,
-        "Tailer received data (%.16s) for Topic(%s).",
+        "Tailer received data (%.16s)@%lu for Topic(%s).",
         newmsg->GetPayload().ToString().c_str(),
+        record.seqno,
         newmsg->GetTopicName().ToString().c_str());
     }
     assert(st.ok());
-    newmsg->SetSequenceNumber(record.sequenceNumber);
+    newmsg->SetSequenceNumber(record.seqno);
 
     // forward to appropriate room
     std::unique_ptr<Message> m(newmsg);
-    st = room->Forward(std::move(m), record.logID);
+    st = room->Forward(std::move(m), record.log_id);
     assert(st.ok());
   };
+
+  auto gap_cb = [this] (const GapRecord& record) {
+    // Log the gap.
+    switch (record.type) {
+      case GapType::kDataLoss:
+        LOG_WARN(info_log_,
+            "Data Loss in log %lu from %lu-%lu.",
+            record.log_id, record.from, record.to);
+        break;
+
+      case GapType::kRetention:
+        LOG_INFO(info_log_,
+            "Retention gap in log %lu from %lu-%lu.",
+            record.log_id, record.from, record.to);
+        break;
+
+      case GapType::kBenign:
+        LOG_INFO(info_log_,
+            "Benign gap in log %lu from %lu-%lu.",
+            record.log_id, record.from, record.to);
+        break;
+    }
+
+    // Create message to send to control room.
+    // We don't know the tenant ID at this point, or the host ID. These will
+    // have to be set in the control room.
+    std::unique_ptr<Message> msg(new MessageGap(Tenant::InvalidTenant,
+                                                HostId(),
+                                                record.type,
+                                                record.from,
+                                                record.to));
+
+    int room_number = record.log_id % rooms_.size();
+    ControlRoom* room = rooms_[room_number].get();
+    room->Forward(std::move(msg), record.log_id);
+  };
+
   // create logdevice reader. There is one reader per ControlRoom.
   std::vector<AsyncLogReader*> handle;
-  Status st = storage_.get()->CreateAsyncReaders(rooms_.size(),
-                                                 callback,
-                                                 &handle);
+  Status st = storage_->CreateAsyncReaders(rooms_.size(),
+                                           record_cb,
+                                           gap_cb,
+                                           &handle);
   if (!st.ok()) {
     return st;
   }
@@ -116,7 +155,17 @@ Tailer::StartReading(LogID logid, SequenceNumber start,
     return Status::NotInitialized();
   }
   AsyncLogReader* r = reader_[room_id].get();
-  return r->Open(logid, start);
+  Status st = r->Open(logid, start);
+  if (st.ok()) {
+    LOG_INFO(info_log_,
+        "AsyncReader %u start reading logid %lu@%lu.",
+        room_id, logid, start);
+  } else {
+    LOG_WARN(info_log_,
+        "AsyncReader %u failed to start reading logid %lu@%lu (%s).",
+        room_id, logid, start, st.ToString().c_str());
+  }
+  return st;
 }
 
 // start reading from this log
@@ -126,6 +175,16 @@ Tailer::StopReading(LogID logid, unsigned int room_id) const {
     return Status::NotInitialized();
   }
   AsyncLogReader* r = reader_[room_id].get();
-  return r->Close(logid);
+  Status st = r->Close(logid);
+  if (st.ok()) {
+    LOG_INFO(info_log_,
+        "AsyncReader %u stopped reading logid %lu.",
+        room_id, logid);
+  } else {
+    LOG_WARN(info_log_,
+        "AsyncReader %u failed to stop reading logid %lu (%s).",
+        room_id, logid, st.ToString().c_str());
+  }
+  return st;
 }
 }  // namespace rocketspeed

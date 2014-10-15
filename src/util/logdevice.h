@@ -83,7 +83,8 @@ class LogDeviceStorage : public LogStorage {
               std::chrono::microseconds age) final;
 
   Status CreateAsyncReaders(unsigned int parallelism,
-                            std::function<void(const LogRecord&)> callback,
+                            std::function<void(const LogRecord&)> record_cb,
+                            std::function<void(const GapRecord&)> gap_cb,
                             std::vector<AsyncLogReader*>* readers);
  private:
   LogDeviceStorage(std::shared_ptr<facebook::logdevice::Client> client,
@@ -99,7 +100,8 @@ class LogDeviceStorage : public LogStorage {
 class AsyncLogDeviceReader : public AsyncLogReader {
  public:
   AsyncLogDeviceReader(LogDeviceStorage* storage,
-                       std::function<void(const LogRecord&)> callback,
+                       std::function<void(const LogRecord&)> record_cb,
+                       std::function<void(const GapRecord&)> gap_cb,
                        std::unique_ptr
                         <facebook::logdevice::AsyncReader>&& reader);
 

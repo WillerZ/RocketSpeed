@@ -35,6 +35,7 @@ enum MessageType : char {
   mData = 0x02,               // user data
   mMetadata = 0x03,           // subscription information
   mDataAck = 0x04,            // ack for user data
+  mGap = 0x05,                // gap in the log
 };
 
 /*
@@ -44,6 +45,15 @@ enum MetadataType : char {
   mNotinitialized = 0x00,          // message is not yet initialized
   mSubscribe = 0x01,               // subscribe
   mUnSubscribe = 0x02              // unsubscribe
+};
+
+/**
+ * Type of gaps that may appear in the logs.
+ */
+enum GapType : char {
+  kBenign = 0x00,     // Gap due to operational issue, no data lost.
+  kDataLoss = 0x01,   // Catastrophic failure, acknowledged data was lost.
+  kRetention = 0x02,  // Gap due to data falling out of retention period.
 };
 
 /*
@@ -403,5 +413,59 @@ class MessageDataAck : public Message {
   // type of this message: mDataAck
   std::vector<Ack> acks_;  // message acks
 };
+
+/*
+ * This message indicates a gap in the logs.
+ */
+class MessageGap : public Message {
+ public:
+  /**
+   * Creates a message from a GapRecord.
+   *
+   * @param msgid The MsgIds of the messages that have been ack'd
+   */
+  explicit MessageGap(TenantID tenantID,
+                      const HostId& origin,
+                      GapType gap_type,
+                      SequenceNumber gap_from,
+                      SequenceNumber gap_to);
+  /**
+   * default constructor
+   */
+  MessageGap() {}
+
+  /**
+   * This message is not needed any more
+   */
+  virtual ~MessageGap();
+
+  /**
+   * Get the gap information.
+   */
+  GapType GetType() const {
+    return gap_type_;
+  }
+
+  SequenceNumber GetStartSequenceNumber() const {
+    return gap_from_;
+  }
+
+  SequenceNumber GetEndSequenceNumber() const {
+    return gap_to_;
+  }
+
+  /*
+   * Inherited from Serializer
+   */
+  virtual Slice Serialize() const;
+  virtual Status DeSerialize(Slice* in);
+
+ private:
+  // type of this message: mGap
+  GapType gap_type_;
+  SequenceNumber gap_from_;
+  SequenceNumber gap_to_;
+};
+
 
 }  // namespace rocketspeed

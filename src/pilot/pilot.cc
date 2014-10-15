@@ -112,6 +112,8 @@ Pilot::~Pilot() {
   for (auto& worker_thread : worker_threads_) {
     worker_thread.join();
   }
+
+  options_.info_log->Flush();
 }
 
 /**
@@ -150,7 +152,7 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
   }
 
   LOG_INFO(pilot->options_.info_log,
-      "Received data (%.16s) for topic %s",
+      "Received data (%.16s) for Topic(%s)",
       msg_data->GetPayload().ToString().c_str(),
       msg_data->GetTopicName().ToString().c_str());
 

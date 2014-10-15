@@ -15,7 +15,6 @@ cpp_library(
         'logdevice.cc',
         'logging.cc',
         'scoped_file_lock.cc',
-        'simple_storage.cc',
         'testharness.cc',
         'testutil.cc',
         'xxhash.cc',

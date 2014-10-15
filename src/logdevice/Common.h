@@ -22,6 +22,10 @@ inline std::string LogFilename(logid_t logid) {
   return MOCK_LOG_DIR + "/" + std::to_string((int64_t)logid) + ".log";
 }
 
+inline std::string SeqnoFilename(logid_t logid) {
+  return MOCK_LOG_DIR + "/" + std::to_string((int64_t)logid) + ".seqno";
+}
+
 /* Log File Format:
 
 +-Record-+-Field------+-Size--------+

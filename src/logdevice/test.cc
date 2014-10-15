@@ -250,7 +250,7 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     if (i % 25 == 0) {
       // Trim the log every so often to test reading while trimming also.
-      client->trim(logid, std::min(lsn1, lsn2));
+      client->trim(logid, std::min(lsn1, lsn2) - 1);
     }
   }
 

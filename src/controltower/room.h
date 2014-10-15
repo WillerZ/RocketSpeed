@@ -58,10 +58,15 @@ class ControlRoom {
       message_(std::move(message)),
       logid_(logid) {
     }
+
     std::unique_ptr<Message> GetMessage() {
       return std::move(message_);
     }
-    const LogID GetLogId() const { return logid_; }
+
+    const LogID GetLogId() const {
+      return logid_;
+    }
+
    private:
     std::unique_ptr<Message> message_;
     LogID logid_;
@@ -88,6 +93,7 @@ class ControlRoom {
   // callbacks to process incoming messages
   void ProcessMetadata(std::unique_ptr<Message> msg, LogID logid);
   void ProcessData(std::unique_ptr<Message> msg, LogID logid);
+  void ProcessGap(std::unique_ptr<Message> msg, LogID logid);
 };
 
 }  // namespace rocketspeed

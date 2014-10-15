@@ -5,6 +5,7 @@
 //
 #include "src/controltower/room.h"
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 #include "src/util/coding.h"
@@ -20,7 +21,7 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
   room_number_(room_number),
   room_id_(HostId(options.hostname, port_number)),
   topic_map_(control_tower->GetTailer()),
-  room_loop_(options.worker_queue_size) {
+  room_loop_(options.worker_queue_size, WorkerLoopType::kMultiProducer) {
 }
 
 ControlRoom::~ControlRoom() {
@@ -42,6 +43,9 @@ void ControlRoom::Run(void* arg) {
     } else if (type == MessageType::mMetadata) {
       // subscription message from ControlTower
       room->ProcessMetadata(std::move(message), command.GetLogId());
+    } else if (type == MessageType::mGap) {
+      // gap message from Tailer
+      room->ProcessGap(std::move(message), command.GetLogId());
     }
   };
 
@@ -102,9 +106,20 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
     topic_map_.AddSubscriber(topic_name,
                              topic[0].seqno,
                              logid, hostnum, room_number_);
+    LOG_INFO(ct->GetOptions().info_log,
+        "Added subscriber %s:%ld for Topic(%s)@%lu",
+        origin.hostname.c_str(),
+        (long)origin.port,
+        topic[0].topic_name.c_str(),
+        topic[0].seqno);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
     topic_map_.RemoveSubscriber(topic_name,
                                 logid, hostnum, room_number_);
+    LOG_INFO(ct->GetOptions().info_log,
+        "Removed subscriber %s:%ld from Topic(%s)",
+        origin.hostname.c_str(),
+        (long)origin.port,
+        topic[0].topic_name.c_str());
   }
 
   // change it to a response ack message
@@ -133,6 +148,23 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
   // get the request message
   MessageData* request = static_cast<MessageData*>(msg.get());
 
+  LOG_INFO(ct->GetOptions().info_log,
+      "Received data (%.16s)@%lu for Topic(%s)",
+      request->GetPayload().ToString().c_str(),
+      request->GetSequenceNumber(),
+      request->GetTopicName().ToString().c_str());
+
+  // Check that seqno is as expected.
+  if (topic_map_.GetLastRead(logid) + 1 != request->GetSequenceNumber()) {
+    // Out of order sequence number, skip!
+    LOG_INFO(ct->GetOptions().info_log,
+      "Out of order seqno on log %lu. Received:%lu Expected:%lu.",
+      logid,
+      request->GetSequenceNumber(),
+      topic_map_.GetLastRead(logid) + 1);
+    return;
+  }
+
   // Prefix the namespace id to the topic name
   NamespaceTopic topic_name;
   PutNamespaceId(&topic_name, request->GetNamespaceId());
@@ -142,7 +174,7 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
   TopicList* list = topic_map_.GetSubscribers(topic_name);
 
   // send the messages to subscribers
-  if (list != nullptr) {
+  if (list != nullptr && !list->empty()) {
     // serialize the message only once
     Slice serialized = request->Serialize();
 
@@ -155,11 +187,12 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
         st = ct->GetClient().Send(*hostid, serialized);
         if (st.ok()) {
           LOG_INFO(ct->GetOptions().info_log,
-            "Sent data (%.16s) for topic %s to %s:%ld",
-            request->GetPayload().ToString().c_str(),
-            request->GetTopicName().ToString().c_str(),
-            hostid->hostname.c_str(),
-            (long)hostid->port);
+              "Sent data (%.16s)@%lu for Topic(%s) to %s:%ld",
+              request->GetPayload().ToString().c_str(),
+              request->GetSequenceNumber(),
+              request->GetTopicName().ToString().c_str(),
+              hostid->hostname.c_str(),
+              (long)hostid->port);
         } else {
           LOG_INFO(ct->GetOptions().info_log,
               "Unable to forward Data message to %s:%ld",
@@ -168,9 +201,25 @@ ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
         }
       }
     }
+  } else {
+    LOG_INFO(ct->GetOptions().info_log,
+      "No subscribers for Topic(%s)",
+      request->GetTopicName().ToString().c_str());
   }
+
   // update the last message received for this log
   topic_map_.SetLastRead(logid, request->GetSequenceNumber());
+}
+
+// Process Gap messages that are coming in from Tailer.
+void
+ControlRoom::ProcessGap(std::unique_ptr<Message> msg, LogID logid) {
+  MessageGap* request = static_cast<MessageGap*>(msg.get());
+
+  if (topic_map_.GetLastRead(logid) + 1 == request->GetStartSequenceNumber()) {
+    topic_map_.SetLastRead(logid, request->GetEndSequenceNumber());
+    // TODO(pja) 1 : Forward data loss gap to copilot to notify consumer.
+  }
 }
 
 }  // namespace rocketspeed

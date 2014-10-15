@@ -67,6 +67,10 @@ static Status LogDeviceErrorToStatus(facebook::logdevice::Status error) {
   }
 }
 
+static LogID CastLogID(facebook::logdevice::logid_t logid) {
+  return static_cast<LogID>(static_cast<int64_t>(logid));
+}
+
 Status LogDeviceStorage::Create(
   std::string cluster_name,
   std::string config_url,
@@ -207,9 +211,11 @@ Status LogDeviceStorage::Trim(LogID id,
 }
 
 Status
-LogDeviceStorage::CreateAsyncReaders(unsigned int parallelism,
-                                     std::function<void(const LogRecord&)> cb,
-                                     std::vector<AsyncLogReader*>* readers) {
+LogDeviceStorage::CreateAsyncReaders(
+  unsigned int parallelism,
+  std::function<void(const LogRecord&)> record_cb,
+  std::function<void(const GapRecord&)> gap_cb,
+  std::vector<AsyncLogReader*>* readers) {
   // Validate
   if (!readers) {
     return Status::InvalidArgument("readers must not be null.");
@@ -219,7 +225,8 @@ LogDeviceStorage::CreateAsyncReaders(unsigned int parallelism,
   readers->reserve(parallelism);
   while (parallelism--) {
     auto reader = new AsyncLogDeviceReader(this,
-                                           cb,
+                                           record_cb,
+                                           gap_cb,
                                            client_->createAsyncReader());
     readers->push_back(reader);
   }
@@ -229,22 +236,49 @@ LogDeviceStorage::CreateAsyncReaders(unsigned int parallelism,
 
 AsyncLogDeviceReader::AsyncLogDeviceReader(
   LogDeviceStorage* storage,
-  std::function<void(const LogRecord&)> callback,
+  std::function<void(const LogRecord&)> record_cb,
+  std::function<void(const GapRecord&)> gap_cb,
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
 : storage_(*storage)
 , reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
   reader_->setRecordCallback(
-    [this, callback] (const facebook::logdevice::DataRecord& data) {
+    [this, record_cb] (const facebook::logdevice::DataRecord& data) {
       // Convert DataRecord to our LogRecord format.
       const LogRecord record(
-              static_cast<LogID>(static_cast<int64_t>(data.logid)),
+              CastLogID(data.logid),
               Slice((const char*)data.payload.data, data.payload.size),
               data.attrs.lsn,
               std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::milliseconds(data.attrs.timestamp)));
 
-      callback(record);
+      record_cb(record);
+    });
+
+  reader_->setGapCallback(
+    [this, gap_cb] (const facebook::logdevice::GapRecord& gap) {
+      // Convert GapRecord to our GapRecord format.
+      GapRecord record { GapType::kBenign,
+                         CastLogID(gap.logid),
+                         gap.lo,
+                         gap.hi };
+      switch (gap.type) {
+        case facebook::logdevice::GapType::UNKNOWN:
+        case facebook::logdevice::GapType::BRIDGE:
+        case facebook::logdevice::GapType::HOLE:
+          record.type = GapType::kBenign;
+          break;
+
+        case facebook::logdevice::GapType::DATALOSS:
+          record.type = GapType::kDataLoss;
+          break;
+
+        case facebook::logdevice::GapType::TRIM:
+          record.type = GapType::kRetention;
+          break;
+      }
+
+      gap_cb(record);
     });
 }
 

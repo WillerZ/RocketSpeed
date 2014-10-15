@@ -50,19 +50,19 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
   std::vector<LogRecord> records;
   ASSERT_TRUE(readers[0]->Read(&records, 10).ok());
   ASSERT_EQ(records.size(), 2);
-  ASSERT_EQ(records[0].logID, 1001);
+  ASSERT_EQ(records[0].log_id, 1001);
   ASSERT_EQ(records[0].payload.compare("Rocket"), 0);
-  ASSERT_EQ(records[1].logID, 1001);
+  ASSERT_EQ(records[1].log_id, 1001);
   ASSERT_EQ(records[1].payload.compare("Speed"), 0);
-  ASSERT_GT(records[1].sequenceNumber, records[0].sequenceNumber);
+  ASSERT_GT(records[1].seqno, records[0].seqno);
   ASSERT_TRUE(records[1].timestamp >= records[0].timestamp);
-  auto speedSeqno = records[1].sequenceNumber;
+  auto speedSeqno = records[1].seqno;
 
   ASSERT_TRUE(readers[1]->Read(&records, 10).ok());
   ASSERT_EQ(records.size(), 1);
-  ASSERT_EQ(records[0].logID, 1002);
+  ASSERT_EQ(records[0].log_id, 1002);
   ASSERT_EQ(records[0].payload.compare("Test 1"), 0);
-  auto test1Seqno = records[0].sequenceNumber;
+  auto test1Seqno = records[0].seqno;
 
   // Should be no records left now
   ASSERT_TRUE(readers[0]->Read(&records, 10).ok());
@@ -87,13 +87,13 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
     [](const LogRecord& lhs, const LogRecord& rhs) {
       return lhs.payload.compare(rhs.payload) < 0;
     });
-  ASSERT_EQ(records[0].logID, 1001);
+  ASSERT_EQ(records[0].log_id, 1001);
   ASSERT_EQ(records[0].payload.compare("Speed"), 0);
-  ASSERT_EQ(records[1].logID, 1002);
+  ASSERT_EQ(records[1].log_id, 1002);
   ASSERT_EQ(records[1].payload.compare("Test 2"), 0);
-  ASSERT_EQ(records[2].logID, 1002);
+  ASSERT_EQ(records[2].log_id, 1002);
   ASSERT_EQ(records[2].payload.compare("Test 3"), 0);
-  auto test2Seqno = records[1].sequenceNumber;
+  auto test2Seqno = records[1].seqno;
 
   // Now subscribe readers[0] to log 100, from Test 1 to Test 2.
   ASSERT_TRUE(readers[0]->Open(1002, test1Seqno, test2Seqno).ok());
@@ -101,11 +101,11 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
 
   ASSERT_TRUE(readers[0]->Read(&records, 1).ok());
   ASSERT_EQ(records.size(), 1);
-  ASSERT_EQ(records[0].logID, 1002);
+  ASSERT_EQ(records[0].log_id, 1002);
   ASSERT_EQ(records[0].payload.compare("Test 1"), 0);
   ASSERT_TRUE(readers[0]->Read(&records, 10).ok());
   ASSERT_EQ(records.size(), 1);
-  ASSERT_EQ(records[0].logID, 1002);
+  ASSERT_EQ(records[0].log_id, 1002);
   ASSERT_EQ(records[0].payload.compare("Test 2"), 0);
 }
 

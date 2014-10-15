@@ -46,6 +46,7 @@ Message::CreateNewInstance(Slice* in) {
   MessageData* msg1 = nullptr;
   MessageMetadata* msg2 = nullptr;
   MessageDataAck* msg3 = nullptr;
+  MessageGap* msg4 = nullptr;
   MessageType mtype;
 
   // make a temporary copy of the input slice
@@ -75,6 +76,10 @@ Message::CreateNewInstance(Slice* in) {
       msg3 = new MessageDataAck();
       msg3->DeSerialize(in);
       return std::unique_ptr<Message>(msg3);
+    case mGap:
+      msg4 = new MessageGap();
+      msg4->DeSerialize(in);
+      return std::unique_ptr<Message>(msg4);
     default:
       break;
   }
@@ -590,6 +595,113 @@ Status MessageDataAck::DeSerialize(Slice* in) {
     in->remove_prefix(sizeof(ack.msgid));
 
     acks_.push_back(ack);
+  }
+
+  return Status::OK();
+}
+
+MessageGap::MessageGap(TenantID tenantID,
+                      const HostId& origin,
+                      GapType gap_type,
+                      SequenceNumber gap_from,
+                      SequenceNumber gap_to)
+: gap_type_(gap_type)
+, gap_from_(gap_from)
+, gap_to_(gap_to) {
+  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  type_ = mGap;
+  tenantid_ = tenantID;
+  origin_ = origin;
+}
+
+MessageGap::~MessageGap() {
+}
+
+Slice MessageGap::Serialize() const {
+  // serialize common header
+  msghdr_.msgsize_ = 0;
+  serialize_buffer__.clear();
+  serialize_buffer__.append((const char *)&msghdr_.version_,
+                            sizeof(msghdr_.version_));
+  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+
+  // Type, tenantId and origin
+  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixed16(&serialize_buffer__, tenantid_);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
+  PutVarint64(&serialize_buffer__, origin_.port);
+
+  // Write the gap information.
+  serialize_buffer__.append((const char*)&gap_type_, sizeof(gap_type_));
+  PutVarint64(&serialize_buffer__, gap_from_);
+  PutVarint64(&serialize_buffer__, gap_to_);
+
+  // compute the size of this message
+  msghdr_.msgsize_ = serialize_buffer__.size();
+  std::string mlength;
+  PutFixed32(&mlength, msghdr_.msgsize_);
+  assert(mlength.size() == sizeof(msghdr_.msgsize_));
+
+  // Update the 4byte-msg size starting from the 2nd byte
+  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+  return Slice(serialize_buffer__);
+}
+
+Status MessageGap::DeSerialize(Slice* in) {
+  const unsigned int len = in->size();
+  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
+      sizeof(type_)) {
+    return Status::InvalidArgument("Bad Message Version/Type");
+  }
+  // extract msg version
+  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
+  in->remove_prefix(sizeof(msghdr_.version_));
+
+  // If we do not support this version, then return error
+  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
+    return Status::NotSupported("Bad Message Version");
+  }
+  // extract msg size
+  if (!GetFixed32(in, &msghdr_.msgsize_)) {
+    return Status::InvalidArgument("Bad msg size");
+  }
+  // extract type
+  memcpy(&type_, in->data(), sizeof(type_));
+  in->remove_prefix(sizeof(type_));
+
+  // extrant tenant ID
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
+  }
+
+  // extract host id
+  Slice sl;
+  if (!GetLengthPrefixedSlice(in, &sl)) {
+    return Status::InvalidArgument("Bad HostName");
+  }
+  origin_.hostname.clear();
+  origin_.hostname.append(sl.data(), sl.size());
+
+  // extract port number
+  if (!GetVarint64(in, &origin_.port)) {
+    return Status::InvalidArgument("Bad Port Number");
+  }
+
+  // Read gap type
+  if (in->size() < sizeof(gap_type_)) {
+    return Status::InvalidArgument("Missing gap type");
+  }
+  memcpy(&gap_type_, in->data(), sizeof(gap_type_));
+  in->remove_prefix(sizeof(gap_type_));
+
+  // Read gap start seqno
+  if (!GetVarint64(in, &gap_from_)) {
+    return Status::InvalidArgument("Bad gap log ID");
+  }
+
+  // Read gap end seqno
+  if (!GetVarint64(in, &gap_to_)) {
+    return Status::InvalidArgument("Bad gap log ID");
   }
 
   return Status::OK();

@@ -38,9 +38,10 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
   // Process PilotWorkerCommand
   MessageData* msg_raw = command.ReleaseMessage();
   assert(msg_raw);
+  LogID logid = command.GetLogID();
 
   // Setup AppendCallback
-  auto append_callback = [this, msg_raw] (Status append_status) {
+  auto append_callback = [this, msg_raw, logid] (Status append_status) {
     std::unique_ptr<MessageData> msg(msg_raw);
     if (append_status.ok()) {
       // Append successful, send success ack.
@@ -49,8 +50,10 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
               msg->GetMessageId(),
               MessageDataAck::AckStatus::Success);
       LOG_INFO(options_.info_log,
-          "Appended (%.16s) successfully",
-          msg_raw->GetPayload().ToString().c_str());
+          "Appended (%.16s) successfully to Topic(%s) in log %lu",
+          msg_raw->GetPayload().ToString().c_str(),
+          msg_raw->GetTopicName().ToString().c_str(),
+          logid);
     } else {
       // Append failed, send failure ack.
       LOG_WARN(options_.info_log,
@@ -65,7 +68,6 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
   };
 
   // Asynchronously append to log storage.
-  LogID logid = command.GetLogID();
   auto status = storage_->AppendAsync(logid,
                                       msg_raw->SerializeStorage(),
                                       append_callback);

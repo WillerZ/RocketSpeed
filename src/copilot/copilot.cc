@@ -97,6 +97,8 @@ Copilot::~Copilot() {
   for (auto& worker_thread : worker_threads_) {
     worker_thread.join();
   }
+
+  options_.info_log->Flush();
 }
 
 /**
@@ -117,7 +119,9 @@ void Copilot::ProcessData(ApplicationCallbackContext ctx,
   MessageData* data = static_cast<MessageData*>(msg.get());
 
   LOG_INFO(copilot->options_.info_log,
-      "Received data message for topic '%s'",
+      "Received data (%s)@%lu for Topic(%s)",
+      data->GetPayload().ToString().c_str(),
+      data->GetSequenceNumber(),
       data->GetTopicName().ToString().c_str());
 
   // map the topic to a logid
@@ -156,12 +160,13 @@ void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
     TopicPair topic = request->GetTopicInfo()[i];
 
     LOG_INFO(copilot->options_.info_log,
-      "Received %s %s for topic '%s'",
+      "Received %s %s for Topic(%s)@%lu",
       topic.topic_type == MetadataType::mSubscribe
         ? "subscribe" : "unsubscribe",
       request->GetMetaType() == MessageMetadata::MetaType::Request
         ? "request" : "response",
-      topic.topic_name.c_str());
+      topic.topic_name.c_str(),
+      topic.seqno);
 
     LogID logid;
     Status st = copilot->log_router_.GetLogID(topic.topic_name, &logid);

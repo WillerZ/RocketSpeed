@@ -112,7 +112,7 @@ void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
 void CopilotWorker::ProcessData(MessageData* msg) {
   // Get the list of subscriptions for this topic.
   LOG_INFO(options_.info_log,
-      "Copilot received data (%.16s)@%lu for topic %s",
+      "Copilot received data (%.16s)@%lu for Topic(%s)",
       msg->GetPayload().ToString().c_str(),
       msg->GetSequenceNumber(),
       msg->GetTopicName().ToString().c_str());
@@ -133,7 +133,7 @@ void CopilotWorker::ProcessData(MessageData* msg) {
       }
 
       // Also do not send a response if the seqno is too low.
-      if (subscription.seqno >= seqno) {
+      if (subscription.seqno > seqno) {
         LOG_INFO(options_.info_log,
           "Data not delivered to %s:%ld (seqno too low, currently @%lu)",
           recipient.hostname.c_str(), (long)recipient.port,
@@ -145,12 +145,13 @@ void CopilotWorker::ProcessData(MessageData* msg) {
       Status status = msg_client_->Send(recipient, msg_serial);
       if (status.ok()) {
         LOG_INFO(options_.info_log,
-          "Sent data (%.16ss) for topic %s to %s:%ld",
+          "Sent data (%.16s)@%lu for Topic(%s) to %s:%ld",
           msg->GetPayload().ToString().c_str(),
+          msg->GetSequenceNumber(),
           msg->GetTopicName().ToString().c_str(),
           recipient.hostname.c_str(),
           (long)recipient.port);
-        subscription.seqno = seqno;
+        subscription.seqno = seqno + 1;
       } else {
         // Message failed to send. Possible reasons:
         // 1. Connection closed at other end.
@@ -246,8 +247,8 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
     } else {
       // This should only ever happen if all control towers are offline.
       LOG_WARN(options_.info_log,
-        "Failed to find control tower for log ID %llu",
-        static_cast<unsigned long long>(logid));
+        "Failed to find control tower for log ID %lu",
+        static_cast<uint64_t>(logid));
     }
   }
 

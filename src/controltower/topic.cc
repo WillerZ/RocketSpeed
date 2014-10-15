@@ -83,14 +83,22 @@ TopicManager::ReseekIfNeeded(LogID logid, SequenceNumber start,
   // then we need to reseek from Storage
   if (start != 0 && (start <= current || current == 0)) {
     st = tailer_->StartReading(logid, start, roomnum);
+    SetLastRead(logid, start - 1);
   }
   return st;
+}
+
+// Retrieves the last seqno read from Storage
+SequenceNumber
+TopicManager::GetLastRead(LogID logid) {
+  auto it = last_read_.find(logid);
+  return it != last_read_.end() ? it->second : SequenceNumber(-1);
 }
 
 // Updates the last seqno read from Storage
 void
 TopicManager::SetLastRead(LogID logid, SequenceNumber seqno) {
-  assert(seqno > 0);
+  assert(seqno != SequenceNumber(-1));
   last_read_[logid] = seqno;
 }
 

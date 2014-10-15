@@ -40,6 +40,9 @@ class TopicManager {
   Status RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
                           HostNumber subscriber, unsigned int roomnum);
 
+  // Get the seqno last read from log
+  SequenceNumber GetLastRead(LogID logid);
+
   // Sets the seqno last read from log
   void SetLastRead(LogID logid, SequenceNumber seqno);
 

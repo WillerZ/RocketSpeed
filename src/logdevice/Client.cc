@@ -27,10 +27,59 @@ class ClientImpl : public Client {
  private:
   friend class Client;
 
+  lsn_t GetLogSeqno(logid_t logid);
+
   rocketspeed::Env* env_;
   std::unique_ptr<ClientSettings> settings_;
   std::chrono::milliseconds timeout_;
 };
+
+lsn_t ClientImpl::GetLogSeqno(logid_t logid) {
+  // Seqno is stored in its own file.
+  std::string fname = SeqnoFilename(logid);
+  rocketspeed::FileLock* fileLock;
+
+  while (!(env_->LockFile(fname, &fileLock).ok() && fileLock)) {
+    // Another thread or process has the lock, so yield to let them finish.
+    std::this_thread::yield();
+  }
+
+  // Lock acquired, now try to open the file.
+  rocketspeed::EnvOptions opts;
+  opts.use_mmap_writes = false;  // PosixRandomRWFile doesn't support this
+  std::unique_ptr<rocketspeed::RandomRWFile> file;
+  if (!(env_->NewRandomRWFile(fname, &file, opts).ok() && file)) {
+    env_->UnlockFile(fileLock);
+    return LSN_INVALID;
+  }
+
+  // Get the file size to use as the write offset (to append).
+  lsn_t lsn = LSN_OLDEST;
+  uint8_t buff[sizeof(lsn_t)];
+  uint64_t size;
+  if (impl()->env_->GetFileSize(fname, &size).ok() && size == sizeof(lsn_t)) {
+    // Get last seqno.
+    rocketspeed::Slice sl(reinterpret_cast<char*>(buff), sizeof(buff));
+    if (file->Read(0, sizeof(buff), &sl, reinterpret_cast<char*>(buff)).ok()) {
+      lsn = 0;
+      for (int i = 0; i < static_cast<int>(sizeof(buff)); ++i) {
+        lsn <<= 8;
+        lsn |= buff[i];
+      }
+    }
+  }
+
+  // Write new seqno.
+  lsn_t newlsn = lsn + 1;
+  for (int i = static_cast<int>(sizeof(buff)) - 1; i >= 0; --i) {
+    buff[i] = newlsn & 0xff;
+    newlsn >>= 8;
+  }
+  file->Write(0, rocketspeed::Slice(reinterpret_cast<char*>(buff),
+                                    sizeof(buff)));
+  env_->UnlockFile(fileLock);
+  return lsn;
+}
 
 std::shared_ptr<Client> Client::create(
   std::string cluster_name,
@@ -77,9 +126,8 @@ lsn_t Client::appendSync(logid_t logid, const Payload& payload) noexcept {
 
   auto now = std::chrono::system_clock::now().time_since_epoch();
 
-  // Using system time for LSN, hacky!
   RecordHeader header;
-  header.lsn = static_cast<lsn_t>(duration_cast<microseconds>(now).count());
+  header.lsn = impl()->GetLogSeqno(logid);
   header.timestamp = duration_cast<milliseconds>(now).count();
   header.datasize = payload.size;
 

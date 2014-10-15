@@ -68,6 +68,7 @@ ControlTower::~ControlTower() {
   // The ControlRooms use the msg_loop.MsgClient to send messages.
   // Shutdown all the ControlRooms before shutting down msg_loop.
   rooms_.clear();
+  options_.info_log->Flush();
 }
 
 /**
@@ -163,18 +164,20 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
 
     // forward message to the destination room
     ControlRoom* room = ct->rooms_[room_number].get();
-    st =  room->Forward(std::move(newmessage), logid);
+    st = room->Forward(std::move(newmessage), logid);
     if (!st.ok()) {
       LOG_INFO(ct->options_.info_log,
-          "Unable to forward Metadata msg to %s:%ld %s",
-          room->GetRoomId().hostname.c_str(),
-          (long)room->GetRoomId().port,
+          "Unable to forward subscription for Topic(%s)@%lu to room %u (%s)",
+          topic.topic_name.c_str(),
+          topic.seqno,
+          room_number,
           st.ToString().c_str());
     } else {
       LOG_INFO(ct->options_.info_log,
-          "Forwarded Metadata to %s:%ld",
-          room->GetRoomId().hostname.c_str(),
-          (long)room->GetRoomId().port);
+          "Forwarded subscription for Topic(%s)@%lu to room %u",
+          topic.topic_name.c_str(),
+          topic.seqno,
+          room_number);
     }
   }
 }

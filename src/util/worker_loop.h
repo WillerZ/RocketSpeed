@@ -6,11 +6,17 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <utility>
 #include "external/folly/producer_consumer_queue.h"
 
 namespace rocketspeed {
+
+enum class WorkerLoopType {
+  kSingleProducer,
+  kMultiProducer,
+};
 
 template <typename Command>
 class WorkerLoop {
@@ -20,8 +26,10 @@ class WorkerLoop {
    *
    * @param size The size of the worker queue. Due to the queue implementation,
    *             the maximum number of items in the queue will be size - 1.
+   * @param type Whether the queue has single or multiple producers.
    */
-  explicit WorkerLoop(uint32_t size);
+  explicit WorkerLoop(uint32_t size,
+                      WorkerLoopType type = WorkerLoopType::kSingleProducer);
 
   /**
    * Destroys the worker loop, and waits for it to stop.
@@ -62,14 +70,17 @@ class WorkerLoop {
   void Stop();
 
  private:
+  WorkerLoopType type_;
+  std::mutex write_lock_;
   folly::ProducerConsumerQueue<Command> command_queue_;
   std::atomic<bool> stop_;
   std::atomic<bool> running_;
 };
 
 template <typename Command>
-WorkerLoop<Command>::WorkerLoop(uint32_t size)
-: command_queue_(size)
+WorkerLoop<Command>::WorkerLoop(uint32_t size, WorkerLoopType type)
+: type_(type)
+, command_queue_(size)
 , stop_(false)
 , running_(false) {
 }
@@ -105,7 +116,15 @@ void WorkerLoop<Command>::Run(std::function<void(Command cmd)> callback) {
 template <typename Command>
 template <typename... Args>
 bool WorkerLoop<Command>::Send(Args&&... args) {
-  return command_queue_.write(std::forward<Args>(args)...);
+  std::unique_lock<std::mutex> lock(write_lock_, std::defer_lock);
+  if (type_ == WorkerLoopType::kMultiProducer) {
+    lock.lock();
+  }
+  bool result = command_queue_.write(std::forward<Args>(args)...);
+  if (type_ == WorkerLoopType::kMultiProducer) {
+    lock.unlock();
+  }
+  return result;
 }
 
 template <typename Command>

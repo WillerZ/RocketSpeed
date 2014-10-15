@@ -12,6 +12,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
+#include "src/messages/messages.h"
 
 namespace rocketspeed {
 
@@ -26,14 +27,25 @@ enum SequencePoint : SequenceNumber {
  * Raw log record entry.
  */
 struct LogRecord {
-  LogID logID;                          // log that this record came from
+  LogID log_id;                         // log that this record came from
   Slice payload;                        // raw record data
-  SequenceNumber sequenceNumber = 0;    // sequence number of record
+  SequenceNumber seqno = 0;             // sequence number of record
   std::chrono::microseconds timestamp;  // record timestamp
   LogRecord(LogID l, Slice p, SequenceNumber s, std::chrono::microseconds t) :
-    logID(l), payload(p), sequenceNumber(s), timestamp(t) {
+    log_id(l), payload(p), seqno(s), timestamp(t) {
   }
   LogRecord() {}
+};
+
+/**
+ * Gap record. This indicates that a range of sequence numbers is missing
+ * from the log for a variety of reasons.
+ */
+struct GapRecord {
+  GapType type;
+  LogID log_id;
+  SequenceNumber from;
+  SequenceNumber to;
 };
 
 /**
@@ -103,13 +115,16 @@ class LogStorage {
    * Creates a group of AsyncLogReaders that will execute in parallel.
    *
    * @param parallelism number of parallel readers to create.
-   * @param callback a callback that will be called on an
+   * @param record_cb a callback that will be called on an
    *        unspecified thread when a record is read.
+   * @param gap_cb a callback that will be called on an
+   *        unspecified thread when a gap occurs in the log.
    * @param readers output buffer for the AsyncLogReaders.
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status CreateAsyncReaders(unsigned int parallelism,
-                                std::function<void(const LogRecord&)> callback,
+                                std::function<void(const LogRecord&)> record_cb,
+                                std::function<void(const GapRecord&)> gap_cb,
                                 std::vector<AsyncLogReader*>* readers) = 0;
 };
 
