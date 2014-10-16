@@ -57,7 +57,12 @@ int RunAllTests() {
       }
       fprintf(stderr, "==== Test %s.%s\n", t.base, t.name);
       auto start = clock::now();
-      (*t.func)();
+      try {
+        (*t.func)();
+      } catch(...) {
+        fclose(times_file);
+        return 1;
+      }
       auto end = clock::now();
       if (times_file) {
         fprintf(times_file, "%7lums %s.%s\n",

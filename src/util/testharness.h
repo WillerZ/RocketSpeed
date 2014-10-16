@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "include/Env.h"
@@ -58,7 +59,7 @@ class Tester {
     if (!ok_) {
       fprintf(stderr, "%s:%d:%s\n", fname_, line_, ss_.str().c_str());
       port::PrintStack(2);
-      exit(1);
+      throw std::logic_error("test failed");
     }
   }
 
