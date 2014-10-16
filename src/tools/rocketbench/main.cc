@@ -200,16 +200,11 @@ int DoProduce(Client* producer,
   return ret;
 }
 
-/*
- ** Receive messages
+/**
+ * Subscribe to topics.
  */
-int DoConsume(Client* consumer,
-              rocketspeed::port::Semaphore* all_messages_received,
-              std::atomic<int64_t>* messages_received,
-              std::chrono::time_point<std::chrono::steady_clock>*
-                                                     last_data_message) {
-
-  SequenceNumber start = 1;   // start sequence number
+void DoSubscribe(Client* consumer) {
+  SequenceNumber start = 0;   // start sequence number (0 = only new records)
   NamespaceID nsid = 101;
 
   // subscribe 10K topics at a time
@@ -234,7 +229,15 @@ int DoConsume(Client* consumer,
   if (topics.size() != 0) {
     consumer->ListenTopics(topics, TopicOptions());
   }
+}
 
+/*
+ ** Receive messages
+ */
+int DoConsume(rocketspeed::port::Semaphore* all_messages_received,
+              std::atomic<int64_t>* messages_received,
+              std::chrono::time_point<std::chrono::steady_clock>*
+                                                     last_data_message) {
   // Wait for the all_messages_received semaphore to be posted.
   // Keep waiting as long as a message was received in the last 5 seconds.
   auto timeout = std::chrono::seconds(5);
@@ -406,6 +409,19 @@ int main(int argc, char** argv) {
     }
   };
 
+  // Subscribe callback.
+  std::atomic<uint64_t> num_topics_subscribed{0};
+  rocketspeed::port::Semaphore all_topics_subscribed;
+  auto subscribe_callback = [&] (rocketspeed::SubscriptionStatus ss) {
+    if (ss.subscribed) {
+      if (++num_topics_subscribed == FLAGS_num_topics) {
+        all_topics_subscribed.Post();
+      }
+    } else {
+      LOG_WARN(info_log, "Received an unsubscribe response");
+    }
+  };
+
   rocketspeed::Client* producer = nullptr;
   rocketspeed::Client* consumer = nullptr;
 
@@ -414,8 +430,10 @@ int main(int argc, char** argv) {
   // consumer to share the same connections to the Cloud.
   if (FLAGS_start_producer && FLAGS_start_consumer &&
       FLAGS_producer_port == FLAGS_consumer_port) {
-    if (!rocketspeed::Client::Open(pconfig.get(), publish_callback,
-                                   nullptr, receive_callback,
+    if (!rocketspeed::Client::Open(pconfig.get(),
+                                   publish_callback,
+                                   subscribe_callback,
+                                   receive_callback,
                                    &producer).ok()) {
       LOG_WARN(info_log, "Failed to connect to RocketSpeed");
       info_log->Flush();
@@ -424,22 +442,42 @@ int main(int argc, char** argv) {
     consumer = producer;
   } else {
     if (FLAGS_start_producer &&
-        !rocketspeed::Client::Open(pconfig.get(), publish_callback,
-                                   nullptr, nullptr,
+        !rocketspeed::Client::Open(pconfig.get(),
+                                   publish_callback,
+                                   nullptr,
+                                   nullptr,
                                    &producer).ok()) {
       LOG_WARN(info_log, "Failed to connect to RocketSpeed: producer ");
       info_log->Flush();
       return 1;
     }
     if (FLAGS_start_consumer &&
-        !rocketspeed::Client::Open(cconfig.get(), nullptr,
-                                   nullptr, receive_callback,
+        !rocketspeed::Client::Open(cconfig.get(),
+                                   nullptr,
+                                   subscribe_callback,
+                                   receive_callback,
                                    &consumer).ok()) {
       LOG_WARN(info_log, "Failed to connect to RocketSpeed: consumer ");
       info_log->Flush();
       return 1;
     }
   }
+
+  // Subscribe to topics (don't count this as part of the time)
+  // Also waits for the subscription responses.
+  if (FLAGS_start_consumer) {
+    DoSubscribe(consumer);
+    if (!all_topics_subscribed.TimedWait(std::chrono::seconds(5))) {
+      LOG_WARN(info_log, "Failed to subscribe to all topics");
+      info_log->Flush();
+      printf("Failed to subscribe to all topics (%lu/%lu)\n",
+        num_topics_subscribed.load(),
+        FLAGS_num_topics);
+
+      return 1;
+    }
+  }
+
   // Start the clock.
   start = std::chrono::steady_clock::now();
 
@@ -456,7 +494,6 @@ int main(int argc, char** argv) {
   if (FLAGS_start_consumer) {
     consumer_ret = std::async(std::launch::async,
                               &rocketspeed::DoConsume,
-                              consumer,
                               &all_messages_received,
                               &messages_received,
                               &last_data_message);
