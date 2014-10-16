@@ -103,6 +103,12 @@ void CopilotWorker::ProcessMetadataResponse(MessageMetadata* msg,
           // (if the response didn't actually make it then the client
           // will resubscribe anyway).
           subscription.awaiting_ack = false;
+
+          // When the subscription seqno is 0, it was waiting on the correct
+          // seqno for *now*. The response has provided the correct seqno.
+          if (subscription.seqno == 0) {
+            subscription.seqno = request.seqno;
+          }
         }
       }
     }
@@ -190,7 +196,15 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
       if (subscription.host_id == subscriber) {
         assert(!found);  // should never have a duplicate subscription
         // Already a subscriber. Do we need to update seqno?
-        if (subscription.seqno == request.seqno) {
+        if (request.seqno == 0 || subscription.seqno == 0) {
+          // Requesting with seqno == 0 means we want to subscribe from *now*.
+          // Always need to notify the control_tower because the control tower
+          // will need to tell us the correct seqno, which will be updated
+          // locally in the metadata response.
+          subscription.seqno = request.seqno;
+          subscription.awaiting_ack = true;
+          notify_control_tower = true;
+        } else if (subscription.seqno == request.seqno) {
           // Already subscribed at the correct seqno, just ack again.
           subscription.awaiting_ack = false;
           notify_origin = true;
@@ -210,7 +224,9 @@ void CopilotWorker::ProcessSubscribe(MessageMetadata* msg,
         found = true;
       }
       // Find earliest seqno subscription for this topic.
-      earliest_seqno = std::min(earliest_seqno, subscription.seqno);
+      if (subscription.seqno != 0) {
+        earliest_seqno = std::min(earliest_seqno, subscription.seqno);
+      }
     }
 
     if (!found) {

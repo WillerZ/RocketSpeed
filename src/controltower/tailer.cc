@@ -187,4 +187,17 @@ Tailer::StopReading(LogID logid, unsigned int room_id) const {
   }
   return st;
 }
+
+// find latest seqno then invoke callback
+Status
+Tailer::FindLatestSeqno(LogID logid,
+                        std::function<void(Status, SequenceNumber)> callback)
+    const {
+  // LogDevice treats std::chrono::milliseconds::max() specially, avoiding
+  // a binary search and just returning the next LSN.
+  return storage_->FindTimeAsync(logid,
+                                 std::chrono::milliseconds::max(),
+                                 callback);
+}
+
 }  // namespace rocketspeed

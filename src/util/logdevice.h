@@ -82,6 +82,10 @@ class LogDeviceStorage : public LogStorage {
   Status Trim(LogID id,
               std::chrono::microseconds age) final;
 
+  Status FindTimeAsync(LogID id,
+                       std::chrono::milliseconds timestamp,
+                       std::function<void(Status, SequenceNumber)> callback);
+
   Status CreateAsyncReaders(unsigned int parallelism,
                             std::function<void(const LogRecord&)> record_cb,
                             std::function<void(const GapRecord&)> gap_cb,

@@ -333,6 +333,7 @@ class MessageMetadata : public Message {
    * @return Information about all topics
    */
   const std::vector<TopicPair>& GetTopicInfo() const { return topics_; }
+  std::vector<TopicPair>& GetTopicInfo() { return topics_; }
 
   /**
    * Set the origin host ID.

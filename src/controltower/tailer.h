@@ -44,6 +44,11 @@ class Tailer {
   // This call is not thread-safe.
   Status StopReading(LogID logid, unsigned int roomid) const;
 
+  // Asynchronously finds the latest seqno then
+  // invokes the callback.
+  Status FindLatestSeqno(LogID logid,
+                    std::function<void(Status, SequenceNumber)> callback) const;
+
   virtual ~Tailer();
 
  private:

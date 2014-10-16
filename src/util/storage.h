@@ -112,6 +112,24 @@ class LogStorage {
                       std::chrono::microseconds age) = 0;
 
   /**
+   * Finds the sequence number for a point in time for a particular log
+   * then invokes the callback with the sequence number.
+   *
+   * @param id ID number of the log to search.
+   * @param timestamp Timestamp of the record to search for.
+   *                  If std::chrono::milliseconds::max() is given, it will
+   *                  return the next sequence number to be issued.
+   * @param callback The callback to be called when the sequence number is
+   *                 found. The callback will be called if and only if the
+   *                 returned status is OK. If the callback status is not OK
+   *                 then the sequence number argument is undefined.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  virtual Status FindTimeAsync(LogID id,
+                      std::chrono::milliseconds timestamp,
+                      std::function<void(Status, SequenceNumber)> callback) = 0;
+
+  /**
    * Creates a group of AsyncLogReaders that will execute in parallel.
    *
    * @param parallelism number of parallel readers to create.

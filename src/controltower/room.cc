@@ -82,7 +82,67 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   // splits every topic into a distinct separate messages per ControlRoom.
   const std::vector<TopicPair>& topic = request->GetTopicInfo();
   assert(topic.size() == 1);
-  const HostId origin = request->GetOrigin();
+  const HostId& origin = request->GetOrigin();
+
+  // Handle to 0 sequence number special case.
+  // Zero means to start reading from the latest records, so we first need
+  // to asynchronously consult the tailer for the latest seqno, and then
+  // process the subscription.
+  if (topic[0].seqno == 0) {
+    // Create a callback to enqueue a subscribe command.
+    // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
+    // when converted to an std::function - could use an alloc pool for this.
+    auto callback = [this, logid, request] (Status st, SequenceNumber seqno) {
+      std::unique_ptr<Message> msg(request);
+      if (!st.ok()) {
+        LOG_WARN(control_tower_->GetOptions().info_log,
+                 "Failed to find latest sequence number in log ID %lu",
+                 logid);
+        return;
+      }
+
+      request->GetTopicInfo()[0].seqno = seqno;  // update seqno
+      st = Forward(std::move(msg), logid);
+      if (!st.ok()) {
+        // TODO(pja) 1: may need to do some flow control if this is due
+        // to receiving too many subscriptions.
+        LOG_WARN(control_tower_->GetOptions().info_log,
+                 "Failed to enqueue subscription (%s)",
+                 st.ToString().c_str());
+      } else {
+        const HostId& origin = request->GetOrigin();
+        const std::vector<TopicPair>& topic = request->GetTopicInfo();
+        LOG_INFO(control_tower_->GetOptions().info_log,
+                 "Subscribing %s:%ld at latest seqno for Topic(%s)@%lu",
+                 origin.hostname.c_str(),
+                 (long)origin.port,
+                 topic[0].topic_name.c_str(),
+                 topic[0].seqno);
+      }
+    };
+
+    // Ownership of message is in the callback.
+    msg.release();
+    st = ct->GetTailer()->FindLatestSeqno(logid, callback);
+    if (!st.ok()) {
+      // If call to FindLatestSeqno failed then callback will not be called,
+      // so delete now.
+      delete request;
+
+      // TODO(pja) 1: may need to do some flow control if this is due
+      // to receiving too many subscriptions.
+      LOG_WARN(ct->GetOptions().info_log,
+               "Failed to find latest seqno (%s)",
+               st.ToString().c_str());
+    } else {
+      LOG_INFO(ct->GetOptions().info_log,
+        "Sent FindLatestSeqno request for %s:%ld for Topic(%s)",
+        origin.hostname.c_str(),
+        (long)origin.port,
+        topic[0].topic_name.c_str());
+    }
+    return;
+  }
 
   // Map the origin to a HostNumber
   HostNumber hostnum = ct->GetHostMap().Lookup(origin);

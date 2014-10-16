@@ -256,31 +256,30 @@ lsn_t Client::findTimeSync(logid_t logid,
                            std::chrono::milliseconds timestamp,
                            Status *status_out) noexcept {
   // Opens the log and reads through until we find the timestamp.
+  // If not found, returns the last LSN + 1 (i.e. the next LSN).
+  // If log empty, returns LSN_OLDEST.
   LogFile file(logid, true);
+  lsn_t lsn = LSN_OLDEST;
   while (file.Next()) {
+    lsn = file.GetLSN();
     if (file.GetTimestamp() >= timestamp) {
-      if (status_out) {
-        *status_out = E::OK;
-      }
-      return file.GetLSN();
+      break;
     }
+    ++lsn;
   }
   if (status_out) {
-    *status_out = E::NOTFOUND;
+    *status_out = E::OK;
   }
-  return LSN_INVALID;
+  return lsn;
 }
 
 int Client::findTime(logid_t logid,
                      std::chrono::milliseconds timestamp,
                      find_time_callback_t cb) noexcept {
-  // Kick off a detached thread that just calls the synchronous version.
-  std::thread t([=] {
-    Status err;
-    lsn_t lsn = findTimeSync(logid, timestamp, &err);
-    cb(err, lsn);
-  });
-  t.detach();
+  // Do it synchronously.
+  Status err;
+  lsn_t lsn = findTimeSync(logid, timestamp, &err);
+  cb(err, lsn);
   return 0;
 }
 

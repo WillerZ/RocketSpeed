@@ -210,6 +210,27 @@ Status LogDeviceStorage::Trim(LogID id,
   return Status::OK();
 }
 
+Status LogDeviceStorage::FindTimeAsync(
+    LogID id,
+    std::chrono::milliseconds timestamp,
+    std::function<void(Status, SequenceNumber)> callback) {
+  // Construct callback adapted for the logdevice interface.
+  auto adapted_callback = [callback] (facebook::logdevice::Status err,
+                                      facebook::logdevice::lsn_t lsn) {
+    callback(LogDeviceErrorToStatus(err), SequenceNumber(lsn));
+  };
+
+  // Call into LogDevice.
+  int result = client_->findTime(facebook::logdevice::logid_t(id),
+                                 timestamp,
+                                 adapted_callback);
+  if (result) {
+    return LogDeviceErrorToStatus(facebook::logdevice::err);
+  } else {
+    return Status::OK();
+  }
+}
+
 Status
 LogDeviceStorage::CreateAsyncReaders(
   unsigned int parallelism,

@@ -3,7 +3,9 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#include <chrono>
 #include <memory>
+#include <vector>
 #include "include/RocketSpeed.h"
 #include "src/util/testharness.h"
 #include "src/test/test_cluster.h"
@@ -59,6 +61,7 @@ TEST(IntegrationTest, OneMessage) {
                            subscription_callback,
                            receive_callback,
                            &client);
+  std::unique_ptr<Client> client_owned(client);
   ASSERT_TRUE(st.ok());
 
   // Send a message.
@@ -72,10 +75,82 @@ TEST(IntegrationTest, OneMessage) {
   client->ListenTopics(subscriptions, topic_options);
 
   // Wait for the message.
-  bool result = msg_received.TimedWait(std::chrono::system_clock::now() +
-                                       std::chrono::seconds(10));
+  bool result = msg_received.TimedWait(std::chrono::seconds(10));
   ASSERT_TRUE(result);
-  delete client;
+}
+
+TEST(IntegrationTest, SequenceNumberZero) {
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster;
+
+  // Message read semaphore.
+  port::Semaphore message_sem;
+  port::Semaphore publish_sem;
+  port::Semaphore subscribe_sem;
+
+  // Message setup.
+  Topic topic = "SequenceNumberZero";
+  NamespaceID ns = 102;
+  TopicOptions opts(Retention::OneDay);
+  std::chrono::seconds timeout(5);
+
+  // RocketSpeed callbacks;
+  auto publish_callback = [&] (ResultStatus rs) {
+    publish_sem.Post();
+  };
+
+  auto subscription_callback = [&] (SubscriptionStatus ss) {
+    subscribe_sem.Post();
+  };
+
+  std::vector<std::string> received;
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
+    received.push_back(mr->GetContents().ToString());
+    message_sem.Post();
+  };
+
+  // Create configuration for this cluster.
+  std::unique_ptr<Configuration> config(
+    Configuration::Create(cluster.GetPilotHostIds(),
+                          cluster.GetCopilotHostIds(),
+                          Tenant(102),
+                          58499));
+
+  // Create RocketSpeed client.
+  Client* client = nullptr;
+  Status st = Client::Open(config.get(),
+                           publish_callback,
+                           subscription_callback,
+                           receive_callback,
+                           &client);
+  std::unique_ptr<Client> client_owned(client);
+  ASSERT_TRUE(st.ok());
+
+  // Send some messages and wait for the acks.
+  for (int i = 0; i < 3; ++i) {
+    std::string data = std::to_string(i);
+    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+  }
+
+  // Subscribe using seqno 0.
+  std::vector<SubscriptionPair> subscriptions = {
+    SubscriptionPair(0, topic, ns)
+  };
+  client->ListenTopics(subscriptions, opts);
+  ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
+
+  // Should not receive any of the last three messages.
+  // Send 3 more different messages.
+  for (int i = 3; i < 6; ++i) {
+    std::string data = std::to_string(i);
+    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+    ASSERT_TRUE(message_sem.TimedWait(timeout));
+  }
+
+  std::vector<std::string> expected = {"3", "4", "5"};
+  ASSERT_TRUE(received == expected);
 }
 
 }  // namespace rocketspeed

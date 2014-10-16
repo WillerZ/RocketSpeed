@@ -213,7 +213,8 @@ class Semaphore {
     }
   }
 
-  bool TimedWait(std::chrono::milliseconds timeout) {
+  template <typename Duration>
+  bool TimedWait(Duration timeout) {
     return TimedWait(std::chrono::system_clock::now() + timeout);
   }
 
