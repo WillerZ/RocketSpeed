@@ -444,6 +444,7 @@ EventLoop::Run(void) {
   // Port number <= 0 indicates that there is no accept loop.
   if (port_number_ > 0) {
     struct sockaddr_in6 sin;
+    memset(&sin, 0, sizeof(sin));
     sin.sin6_family = AF_INET6;
     sin.sin6_addr = in6addr_any;
     sin.sin6_port = htons(port_number_);
