@@ -21,6 +21,8 @@
 #include <functional>
 #include <memory>
 #include <map>
+#include <mutex>
+#include <folly/producer_consumer_queue.h>
 #include "include/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
@@ -44,13 +46,16 @@ class EventLoop {
    * @param port The port on which the EventLoop is running.
    *             Set to <= 0 to have no accept loop.
    * @param info_log Write informational messages to this log
-   * @param callback The callback method that is invoked for every msg received
+   * @param event_callback Callback invoked when Dispatch is called
+   * @param command_callback Callback invoked for every msg received
+   * @param command_queue_size The size of the internal command queue
    */
   EventLoop(EnvOptions env_options,
             int port,
             const std::shared_ptr<Logger>& info_log,
             EventCallbackType event_callback,
-            CommandCallbackType command_callback = nullptr);
+            CommandCallbackType command_callback = nullptr,
+            uint32_t command_queue_size = 65536);
 
   virtual ~EventLoop();
 
@@ -113,9 +118,10 @@ class EventLoop {
   // Shutdown event
   struct event* shutdown_event_ = nullptr;
 
-  // Command pipe and event
-  int command_pipe_fds_[2];  // read, write
-  struct event* command_pipe_event_ = nullptr;
+  // Command queue and its associated event
+  folly::ProducerConsumerQueue<std::unique_ptr<Command>> command_queue_;
+  int command_ready_eventfd_ = -1;
+  std::mutex command_queue_write_mutex_;
 
   // a cache of HostId to connections
   std::map<HostId, SocketEvent*> connection_cache_;

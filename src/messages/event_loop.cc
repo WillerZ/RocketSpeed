@@ -90,7 +90,7 @@ struct SocketEvent {
       ld_event_free(ev_);
     }
     // remove the socket from the connection cache
-    bool removed  __attribute__((__unused__)) = 
+    bool removed  __attribute__((__unused__)) =
       event_loop_->remove_connection_cache(remote_host_, this);
     assert(removed || !known_remote_);
     ld_event_free(write_ev_);
@@ -315,58 +315,56 @@ void
 EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
 
-  // Posix guarantees that writes occur atomically below a certain size, so
-  // if this callback occurs then the whole command should have been written.
-  // No need for buffer events.
-  Command* data;
-  ssize_t received = read(obj->command_pipe_fds_[0],
-                          reinterpret_cast<void*>(&data),
-                          sizeof(data));
-
-  // Check for read errors.
-  if (received == -1) {
-    LOG_WARN(obj->info_log_,
-        "Reading from command pipe failed. errno=%d", errno);
-    obj->info_log_->Flush();
-    return;
-  } else if (received < static_cast<ssize_t>(sizeof(data))) {
-    // Partial read from the pipe. This may happen if the write call is
-    // interrupted by a signal.
-    LOG_WARN(obj->info_log_,
-        "Partial read from command pipe.");
+  // Read the value from the eventfd to find out how many commands are ready.
+  uint64_t available;
+  if (eventfd_read(obj->command_ready_eventfd_, &available)) {
+    LOG_WARN(obj->info_log_, "Failed to read eventfd value, errno=%d", errno);
     obj->info_log_->Flush();
     return;
   }
-  // Take ownership of the command.
-  std::unique_ptr<Command> command(data);
 
-  if (command.get()->IsSendCommand()) {
-    // If this is a message-send command, then process it inline.
-    // Have to handle the case when the message-send failed to write
-    // to output socket and have to invoke *some* callback to the app. XXX
-    HostId remote = command.get()->GetDestination();
-    SocketEvent* sev = obj->lookup_connection_cache(remote);
+  // Read commands from the queue (there might have been multiple
+  // commands added since we have received the last notification).
+  while (available--) {
+    std::unique_ptr<Command> command;
 
-    // If the remote side has not yet established a connection, then
-    // create a new connection and insert into connection cache.
-    if (sev == nullptr) {
-      sev = obj->setup_connection(remote);
-    }
-    if (sev != nullptr) {
-      // enqueue data to SocketEvent queue. This message will be sent out
-      // when the output socket is ready to write.
-      std::unique_ptr<Message> msg = command.get()->GetMessage();
-      assert(msg.get() != nullptr);
-      sev->Enqueue(std::move(msg));
-    } else {
-      LOG_WARN(obj->info_log_,
-          "No Socket to send msg to host %s, msg dropped...",
-          remote.ToString().c_str());
+    // Read a command from the queue.
+    if (!obj->command_queue_.read(command)) {
+      // This should not happen.
+      LOG_WARN(obj->info_log_, "Wrong number of available commands reported");
       obj->info_log_->Flush();
+      return;
     }
-  } else if (obj->command_callback_) {
-    // Pass ownership to the callback (it can decide whether or not to delete).
-    obj->command_callback_(std::move(command));
+
+    if (command.get()->IsSendCommand()) {
+      // If this is a message-send command, then process it inline.
+      // Have to handle the case when the message-send failed to write
+      // to output socket and have to invoke *some* callback to the app. XXX
+      HostId remote = command.get()->GetDestination();
+      SocketEvent* sev = obj->lookup_connection_cache(remote);
+
+      // If the remote side has not yet established a connection, then
+      // create a new connection and insert into connection cache.
+      if (sev == nullptr) {
+        sev = obj->setup_connection(remote);
+      }
+      if (sev != nullptr) {
+        // enqueue data to SocketEvent queue. This message will be sent out
+        // when the output socket is ready to write.
+        std::unique_ptr<Message> msg = command.get()->GetMessage();
+        assert(msg.get() != nullptr);
+        sev->Enqueue(std::move(msg));
+      } else {
+        LOG_WARN(obj->info_log_,
+            "No Socket to send msg to host %s, msg dropped...",
+            remote.ToString().c_str());
+        obj->info_log_->Flush();
+      }
+    } else if (obj->command_callback_) {
+      // Pass ownership to the callback
+      // (it can decide whether or not to delete).
+      obj->command_callback_(std::move(command));
+    }
   }
 }
 
@@ -514,26 +512,25 @@ EventLoop::Run(void) {
     return;
   }
 
-  // This is a pipe that other threads can write to for asynchronous
-  // processing on the event thread.
-  if (pipe(command_pipe_fds_)) {
-    LOG_WARN(info_log_, "Failed to create command pipe.");
+  // An event that signals new commands in the command queue.
+  command_ready_eventfd_ = eventfd(0, 0);
+  if (command_ready_eventfd_ < 0) {
+    LOG_WARN(info_log_, "Failed to create eventfd for waiting commands");
     info_log_->Flush();
     return;
   }
-
-  command_pipe_event_ = ld_event_new(
+  struct event *command_ready_event = ld_event_new(
     base_,
-    command_pipe_fds_[0],
+    command_ready_eventfd_,
     EV_PERSIST|EV_READ,
     this->do_command,
     reinterpret_cast<void*>(this));
-  if (command_pipe_event_ == nullptr) {
-    LOG_WARN(info_log_, "Failed to create command pipe event");
+  if (command_ready_event == nullptr) {
+    LOG_WARN(info_log_, "Failed to create command queue event");
     info_log_->Flush();
     return;
   }
-  rv = ld_event_add(command_pipe_event_, nullptr);
+  rv = ld_event_add(command_ready_event, nullptr);
   if (rv != 0) {
     LOG_WARN(info_log_, "Failed to add command event to event base");
     info_log_->Flush();
@@ -573,8 +570,7 @@ void EventLoop::Stop() {
       }
       ld_event_base_free(base_);
       close(shutdown_fd);
-      close(command_pipe_fds_[0]);
-      close(command_pipe_fds_[1]);
+      close(command_ready_eventfd_);
     }
     LOG_INFO(info_log_, "Stopped EventLoop at port %d", port_number_);
     info_log_->Flush();
@@ -583,58 +579,33 @@ void EventLoop::Stop() {
 }
 
 Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
-  // Check the pipe hasn't been closed due to partial write (see below).
-  if (command_pipe_fds_[1] == 0) {
-    LOG_WARN(info_log_,
-        "Trying to write to closed command pipe, errno=%d", errno);
+  bool success = false;
+
+  { // Lock the write mutex.
+    std::lock_guard<std::mutex> lock(command_queue_write_mutex_);
+
+    // Try to store the commend in the queue (can fail if the queue is full).
+    success = command_queue_.write(std::move(command));
+
+  } // Unlock the mutex.
+
+  if (!success) {
+    // The queue was full and the write failed.
+    LOG_WARN(info_log_, "The command queue is full");
     info_log_->Flush();
-    return Status::InternalError("pipe closed");
+    return Status::InternalError("Full command queue");
   }
 
-  // Write the command *pointer* to the pipe.
-  //
-  // Even though this may be written to by multiple threads, no synchronization
-  // is needed because Posix guarantees that writes of sizes <= PIPE_BUF are
-  // atomic.
-  //
-  // Sanity check:
-  Command* data = command.get();
-  static_assert(sizeof(data) <= PIPE_BUF,
-                "PIPE_BUF too small for atomic writes, need locks");
-
-  // Note: this write could block if the pipe is full, so care needs to be taken
-  // to ensure that the event loop processing can keep up with the threads
-  // writing to the pipe if blocking is undesirable.
-  ssize_t written = write(command_pipe_fds_[1],
-                          reinterpret_cast<const void*>(&data),
-                          sizeof(data));
-
-  if (written == sizeof(data)) {
-    // Command was successfully written, so release the pointer.
-    command.release();
-    return Status::OK();
-  } else if (written == -1) {
+  // Write to the command_ready_eventfd_ to send an event to the reader.
+  if (eventfd_write(command_ready_eventfd_, 1)) {
     // Some internal error happened.
-    LOG_WARN(info_log_, "Error writing command to event loop, errno=%d", errno);
-    info_log_->Flush();
-    return Status::InternalError("write returned error");
-  } else {
-    // Partial write. This is bad; only part of the pointer has been written
-    // to the pipe. This should never happen, but if it does we need to close
-    // the pipe so no more data is written to it.
     LOG_WARN(info_log_,
-      "Partial write of command to event loop, written=%zd", written);
-
-    // Close the pipe.
-    close(command_pipe_fds_[0]);
-    close(command_pipe_fds_[1]);
-    command_pipe_fds_[0] = 0;
-    command_pipe_fds_[1] = 0;
-    char err_msg[64];
-    snprintf(err_msg, sizeof(err_msg), "partial write, %d/%d bytes",
-      static_cast<int>(written), static_cast<int>(sizeof(command)));
-    return Status::InternalError(err_msg);
+        "Error writing a notification to eventfd, errno=%d", errno);
+    info_log_->Flush();
+    return Status::InternalError("eventfd_write returned error");
   }
+
+  return Status::OK();
 }
 
 void EventLoop::Dispatch(std::unique_ptr<Message> message) {
@@ -779,7 +750,8 @@ EventLoop::EventLoop(EnvOptions env_options,
                      int port_number,
                      const std::shared_ptr<Logger>& info_log,
                      EventCallbackType event_callback,
-                     CommandCallbackType command_callback) :
+                     CommandCallbackType command_callback,
+                     uint32_t command_queue_size) :
   env_options_(env_options),
   port_number_(port_number),
   running_(false),
@@ -788,7 +760,8 @@ EventLoop::EventLoop(EnvOptions env_options,
   event_callback_(event_callback),
   command_callback_(command_callback),
   event_callback_context_(nullptr),
-  listener_(nullptr) {
+  listener_(nullptr),
+  command_queue_(command_queue_size) {
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }
 
