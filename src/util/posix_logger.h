@@ -61,7 +61,7 @@ class PosixLogger : public Logger {
   }
   virtual void Logv(const char* format, va_list ap) {
     const uint64_t thread_id = (*gettid_)();
-    const char* name = (*gettname_)().c_str();
+    const std::string name = (*gettname_)();
 
     // We try twice: the first time with a fixed-size stack allocated buffer,
     // and the second time with a much larger dynamically allocated buffer.
@@ -93,7 +93,7 @@ class PosixLogger : public Logger {
                     t.tm_sec,
                     static_cast<int>(now_tv.tv_usec),
                     static_cast<long long unsigned int>(thread_id),
-                    name);
+                    name.c_str());
 
       // Print the message
       if (p < limit) {
