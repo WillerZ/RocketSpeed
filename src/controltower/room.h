@@ -29,8 +29,7 @@ class ControlRoom {
  public:
   ControlRoom(const ControlTowerOptions& options,
               ControlTower* control_tower,
-              unsigned int room_number,
-              int port_number);
+              unsigned int room_number);
   virtual ~ControlRoom();
 
   // Start this instance of the Control Room Msg Loop
@@ -38,9 +37,6 @@ class ControlRoom {
 
   // Is the ControlRoom up and running?
   bool IsRunning() const { return room_loop_.IsRunning(); }
-
-  // The Room Identifier
-  const HostId& GetRoomId() const { return room_id_; }
 
   // The Room Number [0...n)
   unsigned int GetRoomNumber() const { return room_number_; }
@@ -101,9 +97,6 @@ class ControlRoom {
 
   // My room number
   unsigned int room_number_;
-
-  // The HostId of this msg loop
-  HostId room_id_;
 
   // Subscription information per topic
   TopicManager topic_map_;

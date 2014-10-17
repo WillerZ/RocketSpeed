@@ -15,11 +15,9 @@ namespace rocketspeed {
 
 ControlRoom::ControlRoom(const ControlTowerOptions& options,
                          ControlTower* control_tower,
-                         unsigned int room_number,
-                         int port_number) :
+                         unsigned int room_number) :
   control_tower_(control_tower),
   room_number_(room_number),
-  room_id_(HostId(options.hostname, port_number)),
   topic_map_(control_tower->GetTailer()),
   room_loop_(options.worker_queue_size, WorkerLoopType::kMultiProducer) {
 }
@@ -31,7 +29,8 @@ ControlRoom::~ControlRoom() {
 void ControlRoom::Run(void* arg) {
   ControlRoom* room = static_cast<ControlRoom*>(arg);
   LOG_INFO(room->control_tower_->GetOptions().info_log,
-      "Starting ControlRoom Loop at port %ld", (long)room->room_id_.port);
+      "Starting ControlRoom Loop at room number %d",
+      room->room_number_);
 
   // Define a lambda to process Commands by the room_loop_.
   auto command_callback = [room] (RoomCommand command) {

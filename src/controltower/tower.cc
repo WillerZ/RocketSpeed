@@ -98,7 +98,7 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   // these after the Tailer is created. The port numbers for
   // the rooms are adjacent to the port number of the ControlTower.
   for (unsigned int i = 0; i < opt.number_of_rooms; i++) {
-    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, *ct, i, i));
+    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, *ct, i));
     (*ct)->rooms_.push_back(std::move(newroom));
   }
 
@@ -114,7 +114,7 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   for (unsigned int i = 0; i < numrooms; i++) {
     ControlRoom* room = (*ct)->rooms_[i].get();
     opt.env->StartThread(ControlRoom::Run, room,
-                  "rooms-" + std::to_string(room->GetRoomId().port));
+                  "rooms-" + room->GetRoomNumber());
   }
   // Wait for all the Rooms to be ready to process events
   for (unsigned int i = 0; i < numrooms; i++) {
