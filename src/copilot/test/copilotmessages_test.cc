@@ -141,14 +141,12 @@ class CopilotTest {
   }
 
   // A static method to process a subscribe response message
-  static void ProcessMetadata(const ApplicationCallbackContext arg,
-                              std::unique_ptr<Message> msg) {
+  void ProcessMetadata(std::unique_ptr<Message> msg) {
     ASSERT_EQ(msg->GetMessageType(), MessageType::mMetadata);
     MessageMetadata* metadata = static_cast<MessageMetadata*>(msg.get());
     ASSERT_EQ(metadata->GetMetaType(), MessageMetadata::MetaType::Response);
-    CopilotTest* self = reinterpret_cast<CopilotTest*>(arg);
     ASSERT_EQ(metadata->GetTopicInfo().size(), 1);
-    self->acked_msgs_.insert(metadata->GetTopicInfo()[0].topic_name);
+    acked_msgs_.insert(metadata->GetTopicInfo()[0].topic_name);
   }
 
   // Dumps libevent info messages to stdout
@@ -173,13 +171,15 @@ TEST(CopilotTest, Publish) {
   // create a client to communicate with the Copilot
   HostId client_id(hostname_, options_.port_number - 1);
   std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mMetadata] = MsgCallbackType(ProcessMetadata);
+  client_callback[MessageType::mMetadata] =
+    [this] (std::unique_ptr<Message> msg) {
+      ProcessMetadata(std::move(msg));
+    };
 
   MsgLoop loop(env_,
                env_options_,
                client_id,
                GetLogger(),
-               static_cast<ApplicationCallbackContext>(this),
                client_callback);
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(client_id.port));

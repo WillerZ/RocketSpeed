@@ -32,14 +32,7 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
   std::map<MessageType, MsgCallbackType>::const_iterator iter =
     msgloop->msg_callbacks_.find(type);
   if (iter != msgloop->msg_callbacks_.end()) {
-    MsgCallbackType cb = iter->second;
-
-    // special handling of ping message
-    if (type == mPing) {
-      cb(static_cast<ApplicationCallbackContext>(msgloop), std::move(msg));
-    } else {
-      cb(msgloop->application_context_, std::move(msg));
-    }
+    iter->second(std::move(msg));
   } else {
     // If the user has not registered a message of this type,
     // then this msg will be droped silently.
@@ -57,14 +50,12 @@ MsgLoop::MsgLoop(const Env* env,
                  const EnvOptions& env_options,
                  const HostId& hostid,
                  const std::shared_ptr<Logger>& info_log,
-                 const ApplicationCallbackContext application_context,
                  const std::map<MessageType, MsgCallbackType>& callbacks,
                  CommandCallbackType command_callback):
   env_(env),
   env_options_(env_options),
   hostid_(hostid),
   info_log_(info_log),
-  application_context_(application_context),
   msg_callbacks_(SanitizeCallbacks(callbacks)),
   event_loop_(env_options,
               hostid.port,
@@ -100,12 +91,7 @@ MsgLoop::~MsgLoop() {
 // This is the system's handling of the ping message.
 // Applications can override this behaviour if desired.
 void
-MsgLoop::ProcessPing(const ApplicationCallbackContext mloop,
-                     std::unique_ptr<Message> msg) {
-  // This was a system generated message, so the application
-  // context is the msg loop itself.
-  MsgLoop* msgloop = static_cast<MsgLoop*>(mloop);
-
+MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   // get the ping request message
   MessagePing* request = static_cast<MessagePing*>(msg.get());
   const HostId origin = request->GetOrigin();
@@ -114,18 +100,18 @@ MsgLoop::ProcessPing(const ApplicationCallbackContext mloop,
   request->SetPingType(MessagePing::Response);
 
   // send reponse
-  Status st = msgloop->GetClient().Send(origin, std::move(msg));
+  Status st = GetClient().Send(origin, std::move(msg));
 
   if (!st.ok()) {
-    LOG_INFO(msgloop->info_log_,
+    LOG_INFO(info_log_,
         "Unable to send ping response to %s:%ld",
         origin.hostname.c_str(), (long)origin.port);
   } else {
-    LOG_INFO(msgloop->info_log_,
+    LOG_INFO(info_log_,
         "Send ping response to %s:%ld",
         origin.hostname.c_str(), (long)origin.port);
   }
-  msgloop->info_log_->Flush();
+  info_log_->Flush();
 }
 
 //
@@ -140,7 +126,9 @@ MsgLoop::SanitizeCallbacks(const std::map<MessageType,
 
   // add Ping handler
   if (newmap.find(MessageType::mPing) == newmap.end()) {
-    newmap[MessageType::mPing] = MsgCallbackType(ProcessPing);
+    newmap[MessageType::mPing] = [this] (std::unique_ptr<Message> msg) {
+      ProcessPing(std::move(msg));
+    };
   }
   return newmap;
 }

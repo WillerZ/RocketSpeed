@@ -18,14 +18,8 @@
 
 namespace rocketspeed {
 
-// The first parameter of callbacks specified by the application are
-// of this type. It allows an application to get back its own context
-// when invoked as part of a callback.
-typedef void* ApplicationCallbackContext;
-
 // Application callback are invoked with messages of this type
-typedef std::function<void(const ApplicationCallbackContext,
-                           std::unique_ptr<Message> msg)> MsgCallbackType;
+typedef std::function<void(std::unique_ptr<Message> msg)> MsgCallbackType;
 
 class MsgLoop {
  public:
@@ -35,7 +29,6 @@ class MsgLoop {
           const EnvOptions& env_options,
           const HostId& hostid,
           const std::shared_ptr<Logger>& info_log,
-          const ApplicationCallbackContext application_context,
           const std::map<MessageType, MsgCallbackType>& callbacks,
           CommandCallbackType command_callback = nullptr);
 
@@ -75,9 +68,6 @@ class MsgLoop {
   // debug message go here
   const std::shared_ptr<Logger> info_log_;
 
-  // The application context that is passed back to app on every callback
-  const ApplicationCallbackContext application_context_;
-
   // The callbacks specified by the application
   const std::map<MessageType, MsgCallbackType> msg_callbacks_;
 
@@ -91,10 +81,9 @@ class MsgLoop {
   static void EventCallback(EventCallbackContext ctx,
                             std::unique_ptr<Message> msg);
 
-  // static methods to provide default hadling of ping message
-  static void ProcessPing(const ApplicationCallbackContext ctx,
-                          std::unique_ptr<Message> msg);
-  static std::map<MessageType, MsgCallbackType> SanitizeCallbacks(
+  // method to provide default handling of ping message
+  void ProcessPing(std::unique_ptr<Message> msg);
+  std::map<MessageType, MsgCallbackType> SanitizeCallbacks(
                   const std::map<MessageType, MsgCallbackType>& cb);
 };
 

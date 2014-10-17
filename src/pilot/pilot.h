@@ -73,8 +73,7 @@ class Pilot {
   PilotOptions SanitizeOptions(PilotOptions options);
 
   // callbacks to process incoming messages
-  static void ProcessData(ApplicationCallbackContext ctx,
-                          std::unique_ptr<Message> msg);
+  void ProcessData(std::unique_ptr<Message> msg);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };

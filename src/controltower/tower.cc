@@ -59,7 +59,6 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
             options_.env_options,
             HostId(options_.hostname, options_.port_number),
             options_.info_log,
-            static_cast<ApplicationCallbackContext>(this),
             callbacks_) {
   // The rooms and that tailers are not initialized here.
   // The reason being that those initializations could fail and
@@ -126,17 +125,14 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   return Status::OK();
 }
 
-// A static callback method to process MessageMetadata
+// A callback method to process MessageMetadata
 // The message is forwarded to the appropriate ControlRoom
 void
-ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
-                              std::unique_ptr<Message> msg) {
-  ControlTower* ct = static_cast<ControlTower*>(ctx);
-
+ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
   // get the request message
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
   if (request->GetMetaType() != MessageMetadata::MetaType::Request) {
-    LOG_WARN(ct->options_.info_log,
+    LOG_WARN(options_.info_log,
         "MessageMetadata with bad type %d received, ignoring...",
         request->GetMetaType());
   }
@@ -146,14 +142,14 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
     // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
     LogID logid;
-    Status st = ct->log_router_.GetLogID(topic.topic_name, &logid);
+    Status st = log_router_.GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {
-      LOG_INFO(ct->options_.info_log,
+      LOG_INFO(options_.info_log,
           "Unable to map msg to logid %s", st.ToString().c_str());
       continue;
     }
     // calculate the destination room number
-    int room_number = logid % ct->options_.number_of_rooms;
+    int room_number = logid % options_.number_of_rooms;
 
     // Copy out only the ith topic into a new message.
     MessageMetadata* newmsg = new MessageMetadata(
@@ -164,17 +160,17 @@ ControlTower::ProcessMetadata(const ApplicationCallbackContext ctx,
     std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to the destination room
-    ControlRoom* room = ct->rooms_[room_number].get();
+    ControlRoom* room = rooms_[room_number].get();
     st = room->Forward(std::move(newmessage), logid);
     if (!st.ok()) {
-      LOG_INFO(ct->options_.info_log,
+      LOG_INFO(options_.info_log,
           "Unable to forward subscription for Topic(%s)@%lu to room %u (%s)",
           topic.topic_name.c_str(),
           topic.seqno,
           room_number,
           st.ToString().c_str());
     } else {
-      LOG_INFO(ct->options_.info_log,
+      LOG_INFO(options_.info_log,
           "Forwarded subscription for Topic(%s)@%lu to room %u",
           topic.topic_name.c_str(),
           topic.seqno,
@@ -188,7 +184,9 @@ std::map<MessageType, MsgCallbackType>
 ControlTower::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mMetadata] = MsgCallbackType(ProcessMetadata);
+  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
+    ProcessMetadata(std::move(msg));
+  };
 
   // return the updated map
   return cb;

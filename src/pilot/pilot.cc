@@ -67,7 +67,6 @@ Pilot::Pilot(PilotOptions options):
             options_.env_options,
             HostId(options_.pilotname, options_.port_number),
             options_.info_log,
-            static_cast<ApplicationCallbackContext>(this),
             callbacks_),
   log_router_(options_.log_range.first, options_.log_range.second) {
   if (options_.storage == nullptr) {
@@ -133,11 +132,8 @@ Status Pilot::CreateNewInstance(PilotOptions options,
   return Status::OK();
 }
 
-// A static callback method to process MessageData
-void Pilot::ProcessData(ApplicationCallbackContext ctx,
-                        std::unique_ptr<Message> msg) {
-  Pilot* pilot = static_cast<Pilot*>(ctx);
-
+// A callback method to process MessageData
+void Pilot::ProcessData(std::unique_ptr<Message> msg) {
   // Sanity checks.
   assert(msg);
   assert(msg->GetMessageType() == MessageType::mData);
@@ -146,20 +142,20 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
   auto msg_data = unique_static_cast<MessageData>(std::move(msg));
   LogID logid;
   std::string topic_name = msg_data->GetTopicName().ToString();
-  if (!pilot->log_router_.GetLogID(topic_name, &logid).ok()) {
+  if (!log_router_.GetLogID(topic_name, &logid).ok()) {
     assert(false);  // GetLogID should never fail.
     return;
   }
 
-  LOG_INFO(pilot->options_.info_log,
+  LOG_INFO(options_.info_log,
       "Received data (%.16s) for Topic(%s)",
       msg_data->GetPayload().ToString().c_str(),
       msg_data->GetTopicName().ToString().c_str());
 
   // Forward to worker.
-  size_t worker_id = logid % pilot->workers_.size();
-  if (!pilot->workers_[worker_id]->Forward(logid, std::move(msg_data))) {
-    LOG_WARN(pilot->options_.info_log,
+  size_t worker_id = logid % workers_.size();
+  if (!workers_[worker_id]->Forward(logid, std::move(msg_data))) {
+    LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
   }
@@ -169,7 +165,9 @@ void Pilot::ProcessData(ApplicationCallbackContext ctx,
 std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mData] = MsgCallbackType(&ProcessData);
+  cb[MessageType::mData] = [this] (std::unique_ptr<Message> msg) {
+    ProcessData(std::move(msg));
+  };
 
   // return the updated map
   return cb;

@@ -68,7 +68,6 @@ Copilot::Copilot(CopilotOptions options):
             options_.env_options,
             HostId(options_.copilotname, options_.port_number),
             options_.info_log,
-            static_cast<ApplicationCallbackContext>(this),
             callbacks_),
   log_router_(options_.log_range.first, options_.log_range.second),
   control_tower_router_(options_.control_towers,
@@ -113,14 +112,11 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
 }
 
 // A static callback method to process MessageData
-void Copilot::ProcessData(ApplicationCallbackContext ctx,
-                          std::unique_ptr<Message> msg) {
-  Copilot* copilot = static_cast<Copilot*>(ctx);
-
+void Copilot::ProcessData(std::unique_ptr<Message> msg) {
   // get the request message
   MessageData* data = static_cast<MessageData*>(msg.get());
 
-  LOG_INFO(copilot->options_.info_log,
+  LOG_INFO(options_.info_log,
       "Received data (%s)@%lu for Topic(%s)",
       data->GetPayload().ToString().c_str(),
       data->GetSequenceNumber(),
@@ -128,31 +124,28 @@ void Copilot::ProcessData(ApplicationCallbackContext ctx,
 
   // map the topic to a logid
   LogID logid;
-  Status st = copilot->log_router_.GetLogID(data->GetTopicName().ToString(),
+  Status st = log_router_.GetLogID(data->GetTopicName().ToString(),
                                             &logid);
   if (!st.ok()) {
-    LOG_INFO(copilot->options_.info_log,
+    LOG_INFO(options_.info_log,
         "Unable to map msg to logid %s", st.ToString().c_str());
     return;
   }
 
   // calculate the destination worker
-  int worker_id = logid % copilot->options_.num_workers;
-  auto& worker = copilot->workers_[worker_id];
+  int worker_id = logid % options_.num_workers;
+  auto& worker = workers_[worker_id];
 
   // forward message to worker
   if (!worker->Forward(logid, std::move(msg))) {
-    LOG_WARN(copilot->options_.info_log,
+    LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
   }
 }
 
 // A static callback method to process MessageMetadata
-void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
-                              std::unique_ptr<Message> msg) {
-  Copilot* copilot = static_cast<Copilot*>(ctx);
-
+void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
   // get the request message
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
 
@@ -161,7 +154,7 @@ void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
     // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
 
-    LOG_INFO(copilot->options_.info_log,
+    LOG_INFO(options_.info_log,
       "Received %s %s for Topic(%s)@%lu",
       topic.topic_type == MetadataType::mSubscribe
         ? "subscribe" : "unsubscribe",
@@ -171,15 +164,15 @@ void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
       topic.seqno);
 
     LogID logid;
-    Status st = copilot->log_router_.GetLogID(topic.topic_name, &logid);
+    Status st = log_router_.GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {
-      LOG_INFO(copilot->options_.info_log,
+      LOG_INFO(options_.info_log,
           "Unable to map msg to logid %s", st.ToString().c_str());
       continue;
     }
     // calculate the destination worker
-    int worker_id = logid % copilot->options_.num_workers;
-    auto& worker = copilot->workers_[worker_id];
+    int worker_id = logid % options_.num_workers;
+    auto& worker = workers_[worker_id];
 
     // Copy out only the ith topic into a new message.
     MessageMetadata* newmsg = new MessageMetadata(
@@ -198,8 +191,12 @@ void Copilot::ProcessMetadata(ApplicationCallbackContext ctx,
 std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mData] = MsgCallbackType(&ProcessData);
-  cb[MessageType::mMetadata] = MsgCallbackType(&ProcessMetadata);
+  cb[MessageType::mData] = [this] (std::unique_ptr<Message> msg) {
+    ProcessData(std::move(msg));
+  };
+  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
+    ProcessMetadata(std::move(msg));
+  };
   return cb;
 }
 }  // namespace rocketspeed

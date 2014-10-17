@@ -103,13 +103,11 @@ class PilotTest {
     loop->Run();
   }
 
-  static void ProcessDataAck(ApplicationCallbackContext ctx,
-                             std::unique_ptr<Message> msg) {
-    PilotTest* self = static_cast<PilotTest*>(ctx);
+  void ProcessDataAck(std::unique_ptr<Message> msg) {
     const MessageDataAck* acks = static_cast<const MessageDataAck*>(msg.get());
     for (const auto& ack : acks->GetAcks()) {
       ASSERT_EQ(ack.status, MessageDataAck::AckStatus::Success);
-      self->acked_msgs_.insert(ack.msgid);  // mark msgid as ack'd
+      acked_msgs_.insert(ack.msgid);  // mark msgid as ack'd
     }
   }
 
@@ -135,13 +133,15 @@ TEST(PilotTest, Publish) {
   // create a client to communicate with the Pilot
   HostId clientId(hostname_, options_.port_number + 1);
   std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mDataAck] = MsgCallbackType(ProcessDataAck);
+  client_callback[MessageType::mDataAck] =
+    [this] (std::unique_ptr<Message> msg) {
+      ProcessDataAck(std::move(msg));
+    };
 
   MsgLoop loop(env_,
                env_options_,
                clientId,
                GetLogger(),
-               static_cast<ApplicationCallbackContext>(this),
                client_callback);
   env_->StartThread(PilotTest::MsgLoopStart, &loop);
   while (!loop.IsRunning()) {

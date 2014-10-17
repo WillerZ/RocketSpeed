@@ -46,16 +46,13 @@ class ClientImpl : public Client {
 
  private:
   // Callback for a Data message
-  static void ProcessData(const ApplicationCallbackContext arg,
-                          std::unique_ptr<Message> msg);
+  void ProcessData(std::unique_ptr<Message> msg);
 
   // Callback for MessageDataAck message.
-  static void ProcessDataAck(const ApplicationCallbackContext arg,
-                             std::unique_ptr<Message> msg);
+  void ProcessDataAck(std::unique_ptr<Message> msg);
 
   // Callback for MessageMetadata message.
-  static void ProcessMetadata(const ApplicationCallbackContext arg,
-                              std::unique_ptr<Message> msg);
+  void ProcessMetadata(std::unique_ptr<Message> msg);
 
   // HostId of this machine, i.e. the one the producer is running on.
   HostId host_id_;
@@ -144,9 +141,15 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mData] = MsgCallbackType(ProcessData);
-  callbacks[MessageType::mDataAck] = MsgCallbackType(ProcessDataAck);
-  callbacks[MessageType::mMetadata] = MsgCallbackType(ProcessMetadata);
+  callbacks[MessageType::mData] = [this] (std::unique_ptr<Message> msg) {
+    ProcessData(std::move(msg));
+  };
+  callbacks[MessageType::mDataAck] = [this] (std::unique_ptr<Message> msg) {
+    ProcessDataAck(std::move(msg));
+  };
+  callbacks[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
+    ProcessMetadata(std::move(msg));
+  };
 
   std::shared_ptr<Logger> info_log;
   if (enable_logging) {
@@ -170,7 +173,6 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                           EnvOptions(),
                           host_id_,
                           info_log,
-                          static_cast<ApplicationCallbackContext>(this),
                           callbacks,
                           nullptr);
 
@@ -262,9 +264,7 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
 /*
 ** Process a received data message and deliver it to application.
 */
-void ClientImpl::ProcessData(const ApplicationCallbackContext arg,
-                             std::unique_ptr<Message> msg) {
-  ClientImpl* self = static_cast<ClientImpl*>(arg);
+void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   const MessageData* data = static_cast<const MessageData*>(msg.get());
 
   // extract topic name from message
@@ -272,9 +272,9 @@ void ClientImpl::ProcessData(const ApplicationCallbackContext arg,
 
   // verify that we are subscribed to this topic
   std::unordered_map<Topic, SequenceNumber>::iterator iter =
-                                        self->topic_map_.find(name);
+                                        topic_map_.find(name);
   // No active subscription to this topic, ignore message
-  if (iter == self->topic_map_.end()) {
+  if (iter == topic_map_.end()) {
     return;
   }
   SequenceNumber last_msg_received = iter->second;
@@ -291,19 +291,17 @@ void ClientImpl::ProcessData(const ApplicationCallbackContext arg,
                                      new MessageReceivedClient(std::move(msg)));
 
   // deliver message to application
-  self->receive_callback_(std::move(newmsg));
+  receive_callback_(std::move(newmsg));
 }
 
 // Process the Ack message for a Data Message
-void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
-                                std::unique_ptr<Message> msg) {
-  ClientImpl* self = static_cast<ClientImpl*>(arg);
+void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
-    if (self->messages_sent_.erase(ack.msgid)) {
+    if (messages_sent_.erase(ack.msgid)) {
       ResultStatus rs;
       rs.msgid = ack.msgid;
       if (ack.status == MessageDataAck::AckStatus::Success) {
@@ -313,8 +311,8 @@ void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
         rs.status = Status::IOError("publish failed");
       }
 
-      if (self->publish_callback_) {
-        self->publish_callback_(rs);
+      if (publish_callback_) {
+        publish_callback_(rs);
       }
     } else {
       // We've received an ack for a message that has already been acked
@@ -325,10 +323,8 @@ void ClientImpl::ProcessDataAck(const ApplicationCallbackContext arg,
 }
 
 // Process Metadata response messages arriving from the Cloud.
-void ClientImpl::ProcessMetadata(const ApplicationCallbackContext arg,
-                                 std::unique_ptr<Message> msg) {
+void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   SubscriptionStatus ret;
-  ClientImpl* self = static_cast<ClientImpl*>(arg);
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());
 
   // The client should receive only responses to subscribe/unsubscribe.
@@ -339,14 +335,14 @@ void ClientImpl::ProcessMetadata(const ApplicationCallbackContext arg,
 
   for (const auto& elem : pairs) {
     // record confirmed subscriptions
-    self->topic_map_[elem.topic_name] = elem.seqno;
+    topic_map_[elem.topic_name] = elem.seqno;
 
     // invoke application-registered callback
-    if (self->subscription_callback_) {
+    if (subscription_callback_) {
       ret.status = Status::OK();
       ret.seqno = elem.seqno;  // start seqno of this subscription
       ret.subscribed = true;   // subscribed to this topic
-      self->subscription_callback_(ret);
+      subscription_callback_(ret);
     }
   }
 }

@@ -82,9 +82,8 @@ class ControlTower {
   ControlTowerOptions SanitizeOptions(const ControlTowerOptions& src);
 
   // callbacks to process incoming messages
-  static void ProcessMetadata(ApplicationCallbackContext ctx,
-                              std::unique_ptr<Message> msg);
-  static std::map<MessageType, MsgCallbackType> InitializeCallbacks();
+  void ProcessMetadata(std::unique_ptr<Message> msg);
+  std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };
 
 }  // namespace rocketspeed

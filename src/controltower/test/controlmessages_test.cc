@@ -28,9 +28,6 @@ namespace {
 // with the test output.
 static bool debug_libevent = false;
 
-// A static variable that points to the current test
-static ControlTowerTest* singleton;
-
 static std::shared_ptr<Logger> info_log;
 
 }  //  namespace
@@ -64,7 +61,6 @@ class ControlTowerTest {
       ld_event_enable_debug_mode();
       debug_libevent = false;
     }
-    singleton = this;
   }
 
   // deleting the ControlTower shuts down the event disptach loop.
@@ -72,7 +68,6 @@ class ControlTowerTest {
     delete ct_;
     ct_ = nullptr;
     env_->WaitForJoin();  // This is good hygine
-    singleton = nullptr;
   }
 
   std::string GetHostName() {
@@ -108,22 +103,20 @@ class ControlTowerTest {
     loop->Run();
   }
 
-  // A static method to process a ping message
-  static void processPing(const ApplicationCallbackContext arg,
-                          std::unique_ptr<Message> msg) {
+  // A method to process a ping message
+  void processPing(std::unique_ptr<Message> msg) {
     ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
     MessagePing* m = static_cast<MessagePing*>(msg.get());
     ASSERT_EQ(m->GetPingType(), MessagePing::PingType::Response);
-    singleton->num_ping_responses_++;
+    num_ping_responses_++;
   }
 
-  // A static method to process a subscribe response message
-  static void processMetadata(const ApplicationCallbackContext arg,
-                              std::unique_ptr<Message> msg) {
+  // A method to process a subscribe response message
+  void processMetadata(std::unique_ptr<Message> msg) {
     ASSERT_EQ(msg->GetMessageType(), MessageType::mMetadata);
     MessageMetadata* m = static_cast<MessageMetadata*>(msg.get());
     ASSERT_EQ(m->GetMetaType(), MessageMetadata::MetaType::Response);
-    singleton->num_subscribe_responses_++;
+    num_subscribe_responses_++;
   }
 
   // Dumps libevent info messages to stdout
@@ -218,12 +211,14 @@ TEST(ControlTowerTest, Ping) {
 
   // Define a callback to process the Ping response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mPing] = MsgCallbackType(processPing);
+  client_callback[MessageType::mPing] =
+    [this] (std::unique_ptr<Message> msg) {
+      processPing(std::move(msg));
+    };
 
   // create a client to communicate with the ControlTower
   MsgLoop* loop = new MsgLoop(env_, env_options_, clientId,
                               GetLogger(),
-                              static_cast<ApplicationCallbackContext>(this),
                               client_callback);
   env_->StartThread(ControlTowerTest::MsgLoopStart, loop,
                     "testc-" + std::to_string(clientId.port));
@@ -282,12 +277,14 @@ TEST(ControlTowerTest, Subscribe) {
 
   // Define a callback to process the subscribe response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mMetadata] = MsgCallbackType(processMetadata);
+  client_callback[MessageType::mMetadata] =
+    [this] (std::unique_ptr<Message> msg) {
+      processMetadata(std::move(msg));
+    };
 
   // create a client to communicate with the ControlTower
   MsgLoop* loop = new MsgLoop(env_, env_options_, clientId,
                               GetLogger(),
-                              static_cast<ApplicationCallbackContext>(this),
                               client_callback);
   env_->StartThread(ControlTowerTest::MsgLoopStart, loop,
                     "testc-" + std::to_string(clientId.port));
