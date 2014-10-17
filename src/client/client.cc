@@ -5,6 +5,7 @@
 //
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <thread>
 #include <unordered_map>
@@ -70,6 +71,7 @@ class ClientImpl : public Client {
 
   // Messages sent, awaiting ack.
   std::set<MsgId> messages_sent_;
+  std::mutex message_sent_mutex_;  // mutex for operators on messages_sent_
 
   // callback for incoming data message
   PublishCallback publish_callback_;
@@ -221,11 +223,16 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                                                      std::move(msg)));
 
   // Send to event loop for processing (the loop will free it).
+  std::unique_lock<std::mutex> lock(message_sent_mutex_);
   bool added = messages_sent_.insert(msgid).second;
+  lock.unlock();
+
   assert(added);
   Status status = msg_loop_->SendCommand(std::move(command));
   if (!status.ok() && added) {
+    std::unique_lock<std::mutex> lock(message_sent_mutex_);
     messages_sent_.erase(msgid);
+    lock.unlock();
   }
 
   // Return status with the generated message ID.
@@ -301,7 +308,13 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
-    if (messages_sent_.erase(ack.msgid)) {
+    // Attempt to remove sent message from list.
+    std::unique_lock<std::mutex> lock(message_sent_mutex_);
+    bool successful_ack = messages_sent_.erase(ack.msgid);
+    lock.unlock();
+
+    // If successful, invoke callback.
+    if (successful_ack) {
       ResultStatus rs;
       rs.msgid = ack.msgid;
       if (ack.status == MessageDataAck::AckStatus::Success) {
