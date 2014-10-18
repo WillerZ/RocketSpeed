@@ -204,10 +204,11 @@ TEST(ControlTowerTest, Ping) {
   ASSERT_EQ(ControlTowerRun().ok(), true);
 
   // create a message
-  std::unique_ptr<Message> msg(new MessagePing(
-                               Tenant::GuestTenant,
-                               MessagePing::PingType::Request,
-                               clientId));
+  std::string serial;
+  MessagePing msg(Tenant::GuestTenant,
+                  MessagePing::PingType::Request,
+                  clientId);
+  msg.SerializeToString(&serial);  // serialize msg
 
   // Define a callback to process the Ping response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
@@ -226,7 +227,7 @@ TEST(ControlTowerTest, Ping) {
     env_->SleepForMicroseconds(1000);
   }
   std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                               std::move(msg), controltower));
+                               std::move(serial), controltower));
   ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
             (delete loop, ControlTowerStop(), false), true);
 
@@ -236,12 +237,12 @@ TEST(ControlTowerTest, Ping) {
 
   // now send multiple ping messages to server back-to-back
   for (int i = 0; i < num_msgs; i++) {
-    std::unique_ptr<Message> newmsg(new MessagePing(
-                                    Tenant::GuestTenant,
-                                    MessagePing::PingType::Request,
-                                    clientId));
+    MessagePing newmsg(Tenant::GuestTenant,
+                       MessagePing::PingType::Request,
+                       clientId);
+    msg.SerializeToString(&serial);  // serialize msg
     std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                                 std::move(newmsg), controltower));
+                                 std::move(serial), controltower));
     ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
               (delete loop, ControlTowerStop(), false), true);
   }
@@ -270,10 +271,11 @@ TEST(ControlTowerTest, Subscribe) {
     topics.push_back(TopicPair(4 + i, std::to_string(i), type, 101 + i));
   }
   // create a message
-  std::unique_ptr<Message> meta1(new MessageMetadata(
-                                     Tenant::GuestTenant,
-                                     MessageMetadata::MetaType::Request,
-                                     clientId, topics));
+  std::string serial;
+  MessageMetadata meta1(Tenant::GuestTenant,
+                        MessageMetadata::MetaType::Request,
+                        clientId, topics);
+  meta1.SerializeToString(&serial);
 
   // Define a callback to process the subscribe response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
@@ -292,7 +294,7 @@ TEST(ControlTowerTest, Subscribe) {
     env_->SleepForMicroseconds(1000);
   }
   std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                               std::move(meta1), controltower));
+                               std::move(serial), controltower));
 
   // send message to control tower
   ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||

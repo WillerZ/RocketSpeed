@@ -35,6 +35,9 @@ class HostMap {
   // not exist, then return nullptr;
   HostId* Lookup(HostNumber num);
 
+  // Utility method to convert a list of Hostids to a printable string
+  static std::string ToString(std::vector<HostId>& hostlist);
+
  private:
   // size of the store
   unsigned int number_buckets_;

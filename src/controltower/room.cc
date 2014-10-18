@@ -52,6 +52,8 @@ void ControlRoom::Run(void* arg) {
 }
 
 // The Control Tower uses this method to forward a message to this Room.
+// The Control Room forwards some messages (those with seqno = 0) to
+// itself by using this method.
 Status
 ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid) {
   if (room_loop_.Send(std::move(msg), logid)) {
@@ -101,6 +103,9 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
       }
 
       request->GetTopicInfo()[0].seqno = seqno;  // update seqno
+      // send message back to this Room with the seqno appropriately
+      // filled up in the message.
+      assert(seqno != 0);
       st = Forward(std::move(msg), logid);
       if (!st.ok()) {
         // TODO(pja) 1: may need to do some flow control if this is due
@@ -184,8 +189,12 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   // change it to a response ack message
   request->SetMetaType(MessageMetadata::MetaType::Response);
 
+  // serialize message
+  std::string out;
+  request->SerializeToString(&out);
+
   // send response back to client
-  std::unique_ptr<Command> cmd(new TowerCommand(std::move(msg), origin));
+  std::unique_ptr<Command> cmd(new TowerCommand(std::move(out), origin));
   st = ct->SendCommand(std::move(cmd));
   if (!st.ok()) {
     LOG_INFO(ct->GetOptions().info_log,
@@ -230,45 +239,42 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   PutNamespaceId(&topic_name, request->GetNamespaceId());
   topic_name.append(request->GetTopicName().ToString());
 
+  // serialize msg
+  std::string serial;
+  request->SerializeToString(&serial);
+
   // map the topic to a list of subscribers
   TopicList* list = topic_map_.GetSubscribers(topic_name);
-  int remaining_destination = list->size();
-  std::unique_ptr<Message> newmsg(nullptr);
+  std::vector<HostId> destinations;
 
   // send the messages to subscribers
   if (list != nullptr && !list->empty()) {
 
-    // send message to all subscribers.
+    // find all subscribers
     for (const auto& elem : *list) {
       // convert HostNumber to HostId
       HostId* hostid = ct->GetHostMap().Lookup(elem);
       assert(hostid != nullptr);
       if (hostid != nullptr) {
-        // If this is not the final receipent, then make a copy.
-        if (remaining_destination > 1) {
-          newmsg.reset(new MessageData(request));
-        } else {
-          newmsg = std::move(msg);
-        }
-        std::unique_ptr<TowerCommand> cmd(new TowerCommand(
-                                          std::move(newmsg), *hostid));
-        st = ct->SendCommand(std::move(cmd));
-        if (st.ok()) {
-          LOG_INFO(ct->GetOptions().info_log,
-              "Sent data (%.16s)@%lu for Topic(%s) to %s:%ld",
+        destinations.push_back(*hostid);
+      }
+    }
+    // send message to all subscribers
+    std::unique_ptr<TowerCommand> cmd(new TowerCommand(
+                                      std::move(serial), destinations));
+    st = ct->SendCommand(std::move(cmd));
+    if (st.ok()) {
+      LOG_INFO(ct->GetOptions().info_log,
+              "Sent data (%.16s)@%lu for Topic(%s) to %s",
               request->GetPayload().ToString().c_str(),
               request->GetSequenceNumber(),
               request->GetTopicName().ToString().c_str(),
-              hostid->hostname.c_str(),
-              (long)hostid->port);
-        } else {
-          LOG_INFO(ct->GetOptions().info_log,
-              "Unable to forward Data message to %s:%ld",
-              hostid->hostname.c_str(), (long)hostid->port);
+              HostMap::ToString(destinations).c_str());
+    } else {
+      LOG_INFO(ct->GetOptions().info_log,
+              "Unable to forward Data message to %s",
+              HostMap::ToString(destinations).c_str());
           ct->GetOptions().info_log->Flush();
-        }
-      }
-      remaining_destination--;
     }
   } else {
     LOG_INFO(ct->GetOptions().info_log,

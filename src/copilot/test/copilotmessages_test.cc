@@ -194,13 +194,14 @@ TEST(CopilotTest, Publish) {
     std::string topic = "copilot_test_" + std::to_string(i % 50);
     auto type = i < num_msg/2 ? MetadataType::mSubscribe :
                                 MetadataType::mUnSubscribe;
-    std::unique_ptr<Message> msg(new MessageMetadata(
-                                 Tenant::GuestTenant,
-                                 MessageMetadata::MetaType::Request,
-                                 client_id,
-                                 { TopicPair(0, topic, type, 101 + i) }));
+    std::string serial;
+    MessageMetadata msg(Tenant::GuestTenant,
+                        MessageMetadata::MetaType::Request,
+                        client_id,
+                        { TopicPair(0, topic, type, 101 + i) });
+    msg.SerializeToString(&serial);
     std::unique_ptr<Command> cmd(new CopilotCommand(
-                                     std::move(msg), copilot));
+                                     std::move(serial), copilot));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);
   }

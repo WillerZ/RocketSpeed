@@ -154,13 +154,14 @@ TEST(PilotTest, Publish) {
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test";
-    MessageData* data = new MessageData(MessageType::mPublish,
-                                        Tenant::GuestTenant,
-                                        clientId, Slice(topic), nsid,
-                                        Slice(payload));
-    sent_msgs_.insert(data->GetMessageId());
-    std::unique_ptr<Message> msg(data);
-    std::unique_ptr<Command> cmd(new PilotCommand(std::move(msg), pilot));
+    std::string serial;
+    MessageData data(MessageType::mPublish,
+                     Tenant::GuestTenant,
+                     clientId, Slice(topic), nsid,
+                     Slice(payload));
+    data.SerializeToString(&serial);
+    sent_msgs_.insert(data.GetMessageId());
+    std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial), pilot));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 

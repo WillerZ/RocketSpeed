@@ -102,9 +102,13 @@ void PilotWorker::SendAck(const TenantID tenantid,
   ack.status = status;
   ack.msgid = msgid;
 
-  std::unique_ptr<Message> newmsg(new MessageDataAck(tenantid, host,
-                                  { ack }));
-  std::unique_ptr<Command> cmd(new PilotCommand(std::move(newmsg), host));
+  // create new message
+  MessageDataAck newmsg(tenantid, host, { ack });
+  // serialize message
+  std::string serial;
+  newmsg.SerializeToString(&serial);
+  // send message
+  std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial), host));
   Status st = pilot_->SendCommand(std::move(cmd));
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time

@@ -46,23 +46,23 @@ class PilotWorkerCommand {
 // These Commands sent from the Worker to the Pilot
 class PilotCommand : public Command {
  public:
-  PilotCommand(std::unique_ptr<Message> message, const HostId& host):
-    recipient_(host),
+  PilotCommand(std::string message, const HostId& host):
     message_(std::move(message)) {
+    recipient_.push_back(host);
   }
-  std::unique_ptr<Message> GetMessage() {
-    return std::move(message_);
+  void GetMessage(std::string* out) {
+    out->assign(std::move(message_));
   }
   // return the Destination HostId, otherwise returns null.
-  const HostId& GetDestination() const {
+  const std::vector<HostId>& GetDestination() const {
     return recipient_;
   }
   bool IsSendCommand() const  {
     return true;
   }
  private:
-  HostId recipient_;
-  std::unique_ptr<Message> message_;
+  std::vector<HostId> recipient_;
+  std::string message_;
 };
 
 /**

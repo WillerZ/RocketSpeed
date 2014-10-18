@@ -213,15 +213,18 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                       namespaceId,
                       data,
                       options.retention);
-  std::unique_ptr<MessageData> msg(new MessageData(&message));
 
   // Take note of message ID before we move into the command.
-  const MsgId msgid = msg.get()->GetMessageId();
+  const MsgId msgid = message.GetMessageId();
+
+  // Get a serialized version of the message
+  std::string serialized;
+  message.SerializeToString(&serialized);
 
   // Construct command.
   std::unique_ptr<Command> command(new ClientCommand(msgid,
                                                      pilot_host_id_,
-                                                     std::move(msg)));
+                                                     std::move(serialized)));
 
   // Send to event loop for processing (the loop will free it).
   std::unique_lock<std::mutex> lock(message_sent_mutex_);
@@ -251,13 +254,18 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
                              MetadataType::mSubscribe, elem.namespace_id));
   }
   // Construct message.
-  std::unique_ptr<MessageMetadata> msg(new MessageMetadata(tenant_id_,
-                                       MessageMetadata::MetaType::Request,
-                                       host_id_,
-                                       list));
+  MessageMetadata message(tenant_id_,
+                          MessageMetadata::MetaType::Request,
+                          host_id_,
+                          list);
+
+  // Get a serialized version of the message
+  std::string serialized;
+  message.SerializeToString(&serialized);
+
   // Construct command.
   std::unique_ptr<Command> command(new ClientCommand(copilot_host_id_,
-                                                     std::move(msg)));
+                                                     std::move(serialized)));
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command));
 

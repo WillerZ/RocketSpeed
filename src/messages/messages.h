@@ -121,8 +121,8 @@ class Message : public Serializer {
   /*
    * Inherited from Serializer
    */
-  virtual Slice Serialize() const = 0;
   virtual Status DeSerialize(Slice* in) = 0;
+  virtual void SerializeToString(std::string* out);
 
  protected:
   Message(MessageType type, TenantID tenantid, const HostId& origin) :
@@ -140,6 +140,7 @@ class Message : public Serializer {
 
  private:
   static std::unique_ptr<Message> CreateNewInstance(Slice* in);
+  virtual Slice Serialize() const = 0;  // make this private XXX
 };
 
 

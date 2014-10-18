@@ -111,4 +111,13 @@ HostMap::Lookup(HostNumber number) {
   return  one;
 }
 
+// Utility method to convert a list of Hostids to a printable string
+std::string
+HostMap::ToString(std::vector<HostId>& hostlist) {
+  std::string out;
+  for (HostId host : hostlist) {
+    out += " " + host.ToString();
+  }
+  return out;
+}
 }  // namespace rocketspeed

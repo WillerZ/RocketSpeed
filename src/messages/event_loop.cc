@@ -14,6 +14,13 @@
 
 namespace rocketspeed {
 
+// A refcounted version of a serialized message string
+struct SharedString {
+  SharedString(std::string s, int c) : store(std::move(s)), refcount(c) {}
+  std::string store;
+  int refcount;
+};
+
 struct SocketEvent {
  public:
   SocketEvent(EventLoop* event_loop, int fd, event_base* base)
@@ -97,11 +104,11 @@ struct SocketEvent {
   }
 
   // One message message to be sent out.
-  Status Enqueue(std::unique_ptr<Message> msg) {
+  Status Enqueue(SharedString* msg) {
     Status status;
     // insert into outgoing queue
-    send_queue_.push_back(std::move(msg));
-    assert(send_queue_.front().get() != nullptr);
+    send_queue_.push_back(msg);
+    assert(msg->refcount);
 
     // If the write-ready event was not currently registered, then
     // register it now. The enqueued message will be sent out when the
@@ -131,7 +138,6 @@ struct SocketEvent {
 
   void WriteCallback(evutil_socket_t fd) {
     assert(write_ev_added_ && send_queue_.size() > 0);
-    assert(send_queue_.front().get() != nullptr);
 
     while (send_queue_.size() > 0) {
       //
@@ -160,14 +166,17 @@ struct SocketEvent {
         }
         // The partial message is completely sent out. Remove it from queue.
         partial_ = Slice();
+        SharedString* str = send_queue_.front();
+        if (--(str->refcount) == 0) {
+          delete str;
+        }
         send_queue_.pop_front();
       }
 
       // No more partial data to be sent out.
       if (send_queue_.size() > 0) {
-        // If there are any new pending messages, serialize it.
-        Message* msg = send_queue_.front().get();
-        partial_ = msg->Serialize();
+        // If there are any new pending messages, start processing it.
+        partial_ = Slice(send_queue_.front()->store);
         assert(partial_.size() > 0);
       } else {
         // No more queued messages. Switch off ready-to-write event on socket.
@@ -292,7 +301,7 @@ struct SocketEvent {
 
   // The list of outgoing messages.
   // partial_ records the next valid offset in the earliest message.
-  std::deque<std::unique_ptr<Message>> send_queue_;
+  std::deque<SharedString*> send_queue_;
   Slice partial_;
 };
 
@@ -339,26 +348,39 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
     if (command.get()->IsSendCommand()) {
       // If this is a message-send command, then process it inline.
       // Have to handle the case when the message-send failed to write
-      // to output socket and have to invoke *some* callback to the app. XXX
-      HostId remote = command.get()->GetDestination();
-      SocketEvent* sev = obj->lookup_connection_cache(remote);
+      // to output socket and have to invoke *some* callback to the app.
+      const std::vector<HostId>& remote = command.get()->GetDestination();
 
-      // If the remote side has not yet established a connection, then
-      // create a new connection and insert into connection cache.
-      if (sev == nullptr) {
-        sev = obj->setup_connection(remote);
-      }
-      if (sev != nullptr) {
-        // enqueue data to SocketEvent queue. This message will be sent out
-        // when the output socket is ready to write.
-        std::unique_ptr<Message> msg = command.get()->GetMessage();
-        assert(msg.get() != nullptr);
-        sev->Enqueue(std::move(msg));
-      } else {
-        LOG_WARN(obj->info_log_,
-            "No Socket to send msg to host %s, msg dropped...",
-            remote.ToString().c_str());
-        obj->info_log_->Flush();
+      // Move the message payload into a ref-counted string. The string
+      // will be deallocated only when all the remote destinations
+      // have been served.
+      std::string out;
+      command.get()->GetMessage(&out);
+      assert(out.size() > 0);
+      SharedString* msg = new SharedString(std::move(out), remote.size());
+
+      for (const HostId& host : remote) {
+        SocketEvent* sev = obj->lookup_connection_cache(host);
+
+        // If the remote side has not yet established a connection, then
+        // create a new connection and insert into connection cache.
+        if (sev == nullptr) {
+          sev = obj->setup_connection(host);
+        }
+        if (sev != nullptr) {
+          // Enqueue data to SocketEvent queue. This message will be sent out
+          // when the output socket is ready to write.
+          sev->Enqueue(msg);
+        } else {
+          LOG_WARN(obj->info_log_,
+              "No Socket to send msg to host %s, msg dropped...",
+              host.ToString().c_str());
+          obj->info_log_->Flush();
+          msg->refcount--;  // unable to queue msg, decrement refcount
+        }
+      }  // for loop
+      if (msg->refcount == 0) {
+        delete msg;
       }
     } else if (obj->command_callback_) {
       // Pass ownership to the callback

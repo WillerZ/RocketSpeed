@@ -23,40 +23,31 @@ class ClientCommand : public Command {
 
   // Construct from data message.
   ClientCommand(const MsgId& msgid,
-                const HostId& recipient,
-                unique_ptr<Message> msg) :
+                HostId recipient,
+                std::string msg) :
     msgid_(msgid),
-    recipient_(recipient),
     msg_(std::move(msg)) {
-    assert(msg_.get()->GetMessageType() == MessageType::mPublish ||
-           msg_.get()->GetMessageType() == MessageType::mDeliver);
+    recipient_.push_back(recipient);
   }
 
   // Construct from metadata message.
-  ClientCommand(const HostId& recipient,
-                unique_ptr<MessageMetadata> msg) :
-    recipient_(recipient),
+  ClientCommand(HostId recipient,
+                std::string msg) :
     msg_(std::move(msg)) {
-    assert(msg_.get()->GetMessageType() == MessageType::mMetadata);
+    recipient_.push_back(recipient);
   }
 
   // Get the message ID.
   const MsgId& GetMessageId() const {
-    assert(msg_.get()->GetMessageType() == MessageType::mPublish ||
-           msg_.get()->GetMessageType() == MessageType::mDeliver);
     return msgid_;
   }
 
   // Get the message data stored in this Command.
-  unique_ptr<Message> GetMessage() {
-    return std::move(msg_);
+  void GetMessage(std::string* out) {
+    out->assign(std::move(msg_));
   }
 
-  MessageType GetType() {
-    return msg_.get()->GetMessageType();
-  }
-
-  const HostId& GetDestination() const {
+  const std::vector<HostId>& GetDestination() const {
     return recipient_;
   }
   bool IsSendCommand() const {
@@ -64,8 +55,8 @@ class ClientCommand : public Command {
   }
  private:
   MsgId msgid_;
-  HostId recipient_;
-  unique_ptr<Message> msg_;
+  std::vector<HostId> recipient_;
+  std::string msg_;
 };
 
 }  // namespace rocketspeed

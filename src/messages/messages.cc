@@ -97,6 +97,11 @@ std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
   return std::move(msg);
 }
 
+void Message::SerializeToString(std::string* out) {
+  Serialize();  // serialize into local buffer
+  out->assign(std::move(serialize_buffer__));
+}
+
 Slice MessagePing::Serialize() const {
   // serialize common header
   msghdr_.msgsize_ = 0;

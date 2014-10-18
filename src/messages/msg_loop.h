@@ -11,7 +11,6 @@
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/messages/event_loop.h"
-#include "src/messages/msg_client.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/auto_roll_logger.h"
@@ -43,9 +42,6 @@ class MsgLoop {
   // Stop the message loop.
   void Stop();
 
-  // returns a client that is used to send messages to remote hosts
-  MsgClient& GetClient() { return client_; }
-
   // Get the host ID of this message loop.
   const HostId& GetHostId() const { return hostid_; }
 
@@ -74,9 +70,6 @@ class MsgLoop {
   // The underlying Eventloop callback handler
   EventLoop event_loop_;
 
-  // A client that is used to respond to system Ping messages
-  MsgClient client_;
-
   // The static method registered with the EventLoop
   static void EventCallback(EventCallbackContext ctx,
                             std::unique_ptr<Message> msg);
@@ -85,6 +78,28 @@ class MsgLoop {
   void ProcessPing(std::unique_ptr<Message> msg);
   std::map<MessageType, MsgCallbackType> SanitizeCallbacks(
                   const std::map<MessageType, MsgCallbackType>& cb);
+
+  // Used by the PingCallback to enqueue a Ping response to the event loop
+  class PingCommand : public Command {
+   public:
+    PingCommand(std::string message, const HostId& host):
+      message_(std::move(message)) {
+      recipient_.push_back(host);
+    }
+    void GetMessage(std::string* out) {
+      out->assign(std::move(message_));
+    }
+    // return the Destination HostId, otherwise returns null.
+    const std::vector<HostId>& GetDestination() const {
+      return recipient_;
+    }
+    bool IsSendCommand() const  {
+      return true;
+    }
+   private:
+    std::vector<HostId> recipient_;
+    std::string message_;
+  };
 };
 
 }  // namespace rocketspeed

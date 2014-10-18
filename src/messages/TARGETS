@@ -3,8 +3,7 @@ cpp_library(
     srcs = [
         'event_loop.cc',
         'messages.cc',
-        'msg_loop.cc',
-        'msg_client.cc',
+        'msg_loop.cc'
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',

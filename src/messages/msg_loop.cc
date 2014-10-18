@@ -61,8 +61,7 @@ MsgLoop::MsgLoop(const Env* env,
               hostid.port,
               info_log,
               EventCallback,
-              command_callback),
-  client_(env, env_options, info_log) {
+              command_callback) {
   // set the Event callback context
   event_loop_.SetEventCallbackContext(this);
 
@@ -99,8 +98,14 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   // change it to a ping response message
   request->SetPingType(MessagePing::Response);
 
+  // serialize response
+  std::string serial;
+  request->SerializeToString(&serial);
+
   // send reponse
-  Status st = GetClient().Send(origin, std::move(msg));
+  std::unique_ptr<Command> cmd(new PingCommand(
+                               std::move(serial), origin));
+  Status st = SendCommand(std::move(cmd));
 
   if (!st.ok()) {
     LOG_INFO(info_log_,

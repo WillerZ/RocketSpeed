@@ -72,23 +72,27 @@ class ControlRoom {
   // These Commands sent from the ControlRoom to the ControlTower
   class TowerCommand : public Command {
    public:
-    TowerCommand(std::unique_ptr<Message> message, const HostId& host):
-      recipient_(host),
+    TowerCommand(std::string message, std::vector<HostId>& recipient):
+      recipient_(recipient),
       message_(std::move(message)) {
     }
-    std::unique_ptr<Message> GetMessage() {
-      return std::move(message_);
+    TowerCommand(std::string message, const HostId& recipient):
+      message_(std::move(message)) {
+      recipient_.push_back(recipient);
+    }
+    void GetMessage(std::string* out) {
+      out->assign(std::move(message_));
     }
     // return the Destination HostId, otherwise returns null.
-    const HostId& GetDestination() const {
+    const std::vector<HostId>& GetDestination() const {
       return recipient_;
     }
     bool IsSendCommand() const  {
       return true;
     }
    private:
-    HostId recipient_;
-    std::unique_ptr<Message> message_;
+    std::vector<HostId> recipient_;
+    std::string message_;
   };
 
  private:
