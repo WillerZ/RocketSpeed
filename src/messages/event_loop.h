@@ -22,7 +22,7 @@
 #include <memory>
 #include <map>
 #include <mutex>
-#include <folly/producer_consumer_queue.h>
+#include "external/folly/producer_consumer_queue.h"
 #include "include/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
