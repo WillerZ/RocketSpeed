@@ -108,7 +108,7 @@ class ControlRoom {
 
   // callbacks to process incoming messages
   void ProcessMetadata(std::unique_ptr<Message> msg, LogID logid);
-  void ProcessData(std::unique_ptr<Message> msg, LogID logid);
+  void ProcessDeliver(std::unique_ptr<Message> msg, LogID logid);
   void ProcessGap(std::unique_ptr<Message> msg, LogID logid);
 };
 

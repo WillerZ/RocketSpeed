@@ -133,10 +133,10 @@ Status Pilot::CreateNewInstance(PilotOptions options,
 }
 
 // A callback method to process MessageData
-void Pilot::ProcessData(std::unique_ptr<Message> msg) {
+void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
   // Sanity checks.
   assert(msg);
-  assert(msg->GetMessageType() == MessageType::mData);
+  assert(msg->GetMessageType() == MessageType::mPublish);
 
   // Route topic to log ID.
   auto msg_data = unique_static_cast<MessageData>(std::move(msg));
@@ -165,8 +165,8 @@ void Pilot::ProcessData(std::unique_ptr<Message> msg) {
 std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mData] = [this] (std::unique_ptr<Message> msg) {
-    ProcessData(std::move(msg));
+  cb[MessageType::mPublish] = [this] (std::unique_ptr<Message> msg) {
+    ProcessPublish(std::move(msg));
   };
 
   // return the updated map

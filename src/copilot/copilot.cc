@@ -112,7 +112,7 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
 }
 
 // A static callback method to process MessageData
-void Copilot::ProcessData(std::unique_ptr<Message> msg) {
+void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
   // get the request message
   MessageData* data = static_cast<MessageData*>(msg.get());
 
@@ -191,8 +191,8 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
 std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mData] = [this] (std::unique_ptr<Message> msg) {
-    ProcessData(std::move(msg));
+  cb[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
+    ProcessDeliver(std::move(msg));
   };
   cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
     ProcessMetadata(std::move(msg));

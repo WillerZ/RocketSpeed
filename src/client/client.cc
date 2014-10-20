@@ -143,7 +143,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mData] = [this] (std::unique_ptr<Message> msg) {
+  callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
     ProcessData(std::move(msg));
   };
   callbacks[MessageType::mDataAck] = [this] (std::unique_ptr<Message> msg) {
@@ -206,7 +206,8 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                          MsgId());
   }
   // Construct message.
-  MessageData message(tenant_id_,
+  MessageData message(MessageType::mPublish,
+                      tenant_id_,
                       host_id_,
                       Slice(name),
                       namespaceId,

@@ -74,7 +74,7 @@ class Copilot {
   CopilotOptions SanitizeOptions(CopilotOptions options);
 
   // callbacks to process incoming messages
-  void ProcessData(std::unique_ptr<Message> msg);
+  void ProcessDeliver(std::unique_ptr<Message> msg);
   void ProcessMetadata(std::unique_ptr<Message> msg);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();

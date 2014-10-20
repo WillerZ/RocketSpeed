@@ -66,9 +66,9 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
     }
     break;
 
-  case MessageType::mData: {
+  case MessageType::mDeliver: {
       // Data to forward to client.
-      ProcessData(std::move(message));
+      ProcessDeliver(std::move(message));
     }
     break;
 
@@ -125,7 +125,7 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
   }
 }
 
-void CopilotWorker::ProcessData(std::unique_ptr<Message> message) {
+void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
   MessageData* msg = static_cast<MessageData*>(message.get());
   // Get the list of subscriptions for this topic.
   LOG_INFO(options_.info_log,

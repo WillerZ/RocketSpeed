@@ -36,9 +36,9 @@ void ControlRoom::Run(void* arg) {
   auto command_callback = [room] (RoomCommand command) {
     std::unique_ptr<Message> message = command.GetMessage();
     MessageType type = message->GetMessageType();
-    if (type == MessageType::mData) {
+    if (type == MessageType::mDeliver) {
       // data message from Tailer
-      room->ProcessData(std::move(message), command.GetLogId());
+      room->ProcessDeliver(std::move(message), command.GetLogId());
     } else if (type == MessageType::mMetadata) {
       // subscription message from ControlTower
       room->ProcessMetadata(std::move(message), command.GetLogId());
@@ -201,7 +201,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
 
 // Process Data messages that are coming in from Tailer.
 void
-ControlRoom::ProcessData(std::unique_ptr<Message> msg, LogID logid) {
+ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   ControlTower* ct = control_tower_;
   Status st;
 

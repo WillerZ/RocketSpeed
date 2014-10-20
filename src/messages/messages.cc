@@ -64,7 +64,8 @@ Message::CreateNewInstance(Slice* in) {
       msg0 = new MessagePing();
       msg0->DeSerialize(in);
       return std::unique_ptr<Message>(msg0);
-    case mData:
+    case mPublish:
+    case mDeliver:
       msg1 = new MessageData();
       msg1->DeSerialize(in);
       return std::unique_ptr<Message>(msg1);
@@ -172,24 +173,30 @@ Status MessagePing::DeSerialize(Slice* in) {
 
 thread_local GUIDGenerator msgid_generator;
 
-MessageData::MessageData(TenantID tenantID,
+MessageData::MessageData(MessageType type,
+                         TenantID tenantID,
                          const HostId& origin,
                          const Slice& topic_name,
                          const NamespaceID namespace_id,
                          const Slice& payload,
                          Retention retention):
-  Message(mData, tenantID, origin),
+  Message(type, tenantID, origin),
   topic_name_(topic_name),
   payload_(payload),
   retention_(retention),
   namespaceid_(namespace_id) {
+  assert(type == mPublish || type == mDeliver);
   seqno_ = 0;
   msgid_ = msgid_generator.Generate();
 }
 
-MessageData::MessageData():
-  MessageData(Tenant::InvalidTenant, HostId(), Slice(),
+MessageData::MessageData(MessageType type):
+  MessageData(type, Tenant::InvalidTenant, HostId(), Slice(),
               Namespace::InvalidNamespace, Slice()) {
+}
+
+MessageData::MessageData():
+  MessageData(mPublish) {
 }
 
 MessageData::~MessageData() {

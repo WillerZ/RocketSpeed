@@ -28,7 +28,8 @@ class ClientCommand : public Command {
     msgid_(msgid),
     recipient_(recipient),
     msg_(std::move(msg)) {
-    assert(msg_.get()->GetMessageType() == MessageType::mData);
+    assert(msg_.get()->GetMessageType() == MessageType::mPublish ||
+           msg_.get()->GetMessageType() == MessageType::mDeliver);
   }
 
   // Construct from metadata message.
@@ -41,7 +42,8 @@ class ClientCommand : public Command {
 
   // Get the message ID.
   const MsgId& GetMessageId() const {
-    assert(msg_.get()->GetMessageType() == MessageType::mData);
+    assert(msg_.get()->GetMessageType() == MessageType::mPublish ||
+           msg_.get()->GetMessageType() == MessageType::mDeliver);
     return msgid_;
   }
 

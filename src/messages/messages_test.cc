@@ -20,7 +20,8 @@ TEST(Messaging, Data) {
   NamespaceID nsid1 = 200;
 
   // create a message
-  MessageData data1(Tenant::GuestTenant, host1, name1, nsid1, payload1,
+  MessageData data1(MessageType::mPublish,
+                    Tenant::GuestTenant, host1, name1, nsid1, payload1,
                     Retention::OneDay);
 
   // serialize the message
@@ -47,7 +48,8 @@ TEST(Messaging, DataLogStorage) {
   NamespaceID nsid1 = 300;
 
   // create a message
-  MessageData data1(Tenant::GuestTenant, host1, name1, nsid1, payload1,
+  MessageData data1(MessageType::mPublish,
+                    Tenant::GuestTenant, host1, name1, nsid1, payload1,
                     Retention::OneDay);
 
   // serialize the message

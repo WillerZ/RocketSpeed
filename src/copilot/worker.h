@@ -126,7 +126,7 @@ class CopilotWorker {
                                const TopicPair& request);
 
   // Forward data to subscribers.
-  void ProcessData(std::unique_ptr<Message> msg);
+  void ProcessDeliver(std::unique_ptr<Message> msg);
 
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;

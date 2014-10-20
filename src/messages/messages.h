@@ -29,19 +29,20 @@ namespace rocketspeed {
 /*
  * The message types. The first byte of a message indicates the message type.
  */
-enum MessageType : char {
+enum MessageType : uint8_t {
   NotInitialized = 0,         // not initialized yet
   mPing = 0x01,               // ping data
-  mData = 0x02,               // user data
+  mPublish = 0x02,            // data publish
   mMetadata = 0x03,           // subscription information
   mDataAck = 0x04,            // ack for user data
   mGap = 0x05,                // gap in the log
+  mDeliver = 0x06,            // data delivery
 };
 
 /*
  * The metadata messages can be of two subtypes
  */
-enum MetadataType : char {
+enum MetadataType : uint8_t {
   mNotinitialized = 0x00,          // message is not yet initialized
   mSubscribe = 0x01,               // subscribe
   mUnSubscribe = 0x02              // unsubscribe
@@ -50,7 +51,7 @@ enum MetadataType : char {
 /**
  * Type of gaps that may appear in the logs.
  */
-enum GapType : char {
+enum GapType : uint8_t {
   kBenign = 0x00,     // Gap due to operational issue, no data lost.
   kDataLoss = 0x01,   // Catastrophic failure, acknowledged data was lost.
   kRetention = 0x02,  // Gap due to data falling out of retention period.
@@ -197,7 +198,8 @@ class MessageData : public Message {
    * @param topic_name name of the topic
    * @param payload The user defined message contents
    */
-  MessageData(TenantID tenantID,
+  MessageData(MessageType type,
+              TenantID tenantID,
               const HostId& origin,
               const Slice& topic_name,
               const NamespaceID namespace_id,
@@ -208,7 +210,7 @@ class MessageData : public Message {
    * copy constructor
    */
   explicit MessageData(MessageData* in) :
-    Message(MessageType::mData, in->GetTenantID(), in->GetOrigin()),
+    Message(in->GetMessageType(), in->GetTenantID(), in->GetOrigin()),
     seqno_(in->GetSequenceNumber()),
     msgid_(in->GetMessageId()),
     retention_(in->GetRetention()),
@@ -228,6 +230,11 @@ class MessageData : public Message {
            in->GetPayload().size());
     payload_ = Slice(buffer_.get() + offset, in->GetPayload().size());
   }
+
+  /*
+   * constructor with type
+   */
+  explicit MessageData(MessageType type);
 
   /*
    * default constructor
@@ -297,7 +304,7 @@ class MessageData : public Message {
  private:
   void SerializeInternal() const;
 
-  // type of this message: mData
+  // type of this message: mPublish or mDeliver
   SequenceNumber seqno_;     // sequence number of message
   MsgId msgid_;              // globally unique id for message
   Slice topic_name_;         // name of topic

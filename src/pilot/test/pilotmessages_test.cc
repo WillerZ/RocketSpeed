@@ -154,7 +154,8 @@ TEST(PilotTest, Publish) {
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test";
-    MessageData* data = new MessageData(Tenant::GuestTenant,
+    MessageData* data = new MessageData(MessageType::mPublish,
+                                        Tenant::GuestTenant,
                                         clientId, Slice(topic), nsid,
                                         Slice(payload));
     sent_msgs_.insert(data->GetMessageId());
