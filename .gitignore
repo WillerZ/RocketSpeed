@@ -26,6 +26,7 @@ _mock_logdevice_logs/*
 /pilot
 /copilot
 /rocketbench
+/rocketspeed
 /local_server
 /test_times
 

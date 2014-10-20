@@ -88,10 +88,9 @@ TESTS = \
   integration_test
 
 TOOLS = \
-	rocketbench \
-	local_server
+	rocketbench
 
-PROGRAMS = pilot copilot controltower $(TOOLS)
+PROGRAMS = rocketspeed $(TOOLS)
 
 # The library name is configurable since we are maintaining libraries of both
 # debug/release mode.
@@ -167,13 +166,13 @@ copilot: src/copilot/main.o $(LIBOBJECTS)
 controltower: src/controltower/main.o $(LIBOBJECTS)
 	$(CXX) src/controltower/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
+# compile only the rocketspeed server
+rocketspeed: src/server/main.o $(LIBOBJECTS)
+	$(CXX) src/server/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
 # compile only the rocketbench tool
 rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER)
 	$(CXX) src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-# compile only the local_server tool
-local_server: src/tools/local_server/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER)
-	$(CXX) src/tools/local_server/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # run all unit tests
 check: $(TESTS)

@@ -63,7 +63,8 @@ static Status LogDeviceErrorToStatus(facebook::logdevice::Status error) {
       return Status::TimedOut();
 
     default:
-      return Status::InternalError("LogDevice UNKNOWN");
+      return Status::InternalError("LogDevice UNKNOWN " +
+          std::to_string(static_cast<uint16_t>(error)));
   }
 }
 
