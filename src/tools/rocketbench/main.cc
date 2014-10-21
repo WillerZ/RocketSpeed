@@ -355,17 +355,21 @@ int main(int argc, char** argv) {
   // Create callback for publish acks.
   std::atomic<int64_t> ack_messages_received{0};
   auto publish_callback = [&] (rocketspeed::ResultStatus rs) {
-    ++ack_messages_received;
+    if (rs.status.ok()) {
+      ++ack_messages_received;
 
-    if (FLAGS_await_ack) {
-      // This may be the last ack we receive, so set end to the time now.
-      end = std::chrono::steady_clock::now();
-      last_ack_message = std::chrono::steady_clock::now();
+      if (FLAGS_await_ack) {
+        // This may be the last ack we receive, so set end to the time now.
+        end = std::chrono::steady_clock::now();
+        last_ack_message = std::chrono::steady_clock::now();
 
-      // If we've received all messages, let the main thread know to finish up.
-      if (ack_messages_received.load() == FLAGS_num_messages) {
-        all_ack_messages_received.Post();
+        // If we've received all messages, let the main thread know to finish up.
+        if (ack_messages_received.load() == FLAGS_num_messages) {
+          all_ack_messages_received.Post();
+        }
       }
+    } else {
+      LOG_WARN(info_log, "Received publish failure response");
     }
   };
 
