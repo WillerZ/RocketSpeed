@@ -4,7 +4,7 @@
 
 VALGRIND_DIR=build_tools/VALGRIND_LOGS
 make clean
-make -j$(nproc) valgrind_check
+make -j$(nproc) valgrind_check OPT="-g -fno-inline"
 NUM_FAILED_TESTS=$((`wc -l $VALGRIND_DIR/valgrind_failed_tests | awk '{print $1}'` - 1))
 if [ $NUM_FAILED_TESTS -lt 1 ]; then
   echo No tests have valgrind errors

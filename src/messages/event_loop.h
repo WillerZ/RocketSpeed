@@ -118,6 +118,12 @@ class EventLoop {
   // Shutdown event
   struct event* shutdown_event_ = nullptr;
 
+  // Startup event
+  struct event* startup_event_ = nullptr;
+
+  // Command event
+  struct event* command_ready_event_ = nullptr;
+
   // Command queue and its associated event
   folly::ProducerConsumerQueue<std::unique_ptr<Command>> command_queue_;
   int command_ready_eventfd_ = -1;
@@ -132,6 +138,7 @@ class EventLoop {
   SocketEvent* lookup_connection_cache(const HostId& host) const;
   SocketEvent* setup_connection(const HostId& host);
   Status create_connection(const HostId& host, bool block, int* fd);
+  void clear_connection_cache();
 
   // callbacks needed by libevent
   static void do_accept(struct evconnlistener *listener,

@@ -92,6 +92,7 @@ struct SocketEvent {
   }
 
   ~SocketEvent() {
+      event_loop_->GetLog()->Flush();
     close(fd_);
     if (ev_) {
       ld_event_free(ev_);
@@ -99,11 +100,19 @@ struct SocketEvent {
     // remove the socket from the connection cache
     bool removed  __attribute__((__unused__)) =
       event_loop_->remove_connection_cache(remote_host_, this);
-    assert(removed || !known_remote_);
+    assert(!event_loop_->running_ || removed || !known_remote_);
     ld_event_free(write_ev_);
+
+    // free up unsent pending messages
+    for (const auto msg : send_queue_) {
+      msg->refcount--;
+      if (msg->refcount == 0) {
+        delete msg;
+      }
+    }
   }
 
-  // One message message to be sent out.
+  // One message to be sent out.
   Status Enqueue(SharedString* msg) {
     Status status;
     // insert into outgoing queue
@@ -123,6 +132,10 @@ struct SocketEvent {
       }
     }
     return status;
+  }
+
+  evutil_socket_t GetFd() {
+    return fd_;
   }
 
  private:
@@ -336,6 +349,7 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
   // commands added since we have received the last notification).
   while (available--) {
     std::unique_ptr<Command> command;
+    Status status;
 
     // Read a command from the queue.
     if (!obj->command_queue_.read(command)) {
@@ -370,8 +384,9 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
         if (sev != nullptr) {
           // Enqueue data to SocketEvent queue. This message will be sent out
           // when the output socket is ready to write.
-          sev->Enqueue(msg);
-        } else {
+          status = sev->Enqueue(msg);
+        }
+        if (sev == nullptr || !status.ok()) {
           LOG_WARN(obj->info_log_,
               "No Socket to send msg to host %s, msg dropped...",
               host.ToString().c_str());
@@ -493,18 +508,18 @@ EventLoop::Run(void) {
   // loop is run. This is the first event to ever run on the dispatch loop.
   // The firing of this artificial event indicates that the event loop
   // is up and running.
-  struct event *startup_event = evtimer_new(
+  startup_event_ = evtimer_new(
     base_,
     this->do_startevent,
     reinterpret_cast<void*>(this));
 
-  if (startup_event == nullptr) {
+  if (startup_event_ == nullptr) {
     LOG_WARN(info_log_, "Failed to create first startup event");
     info_log_->Flush();
     return;
   }
   struct timeval zero_seconds = {0, 0};
-  int rv = evtimer_add(startup_event, &zero_seconds);
+  int rv = evtimer_add(startup_event_, &zero_seconds);
   if (rv != 0) {
     LOG_WARN(info_log_, "Failed to add startup event to event base");
     info_log_->Flush();
@@ -541,18 +556,18 @@ EventLoop::Run(void) {
     info_log_->Flush();
     return;
   }
-  struct event *command_ready_event = ld_event_new(
+  command_ready_event_ = ld_event_new(
     base_,
     command_ready_eventfd_,
     EV_PERSIST|EV_READ,
     this->do_command,
     reinterpret_cast<void*>(this));
-  if (command_ready_event == nullptr) {
+  if (command_ready_event_ == nullptr) {
     LOG_WARN(info_log_, "Failed to create command queue event");
     info_log_->Flush();
     return;
   }
-  rv = ld_event_add(command_ready_event, nullptr);
+  rv = ld_event_add(command_ready_event_, nullptr);
   if (rv != 0) {
     LOG_WARN(info_log_, "Failed to add command event to event base");
     info_log_->Flush();
@@ -590,9 +605,13 @@ void EventLoop::Stop() {
       if (listener_) {
         ld_evconnlistener_free(listener_);
       }
+      ld_event_free(startup_event_);
+      ld_event_free(shutdown_event_);
+      ld_event_free(command_ready_event_);
       ld_event_base_free(base_);
       close(shutdown_fd);
       close(command_ready_eventfd_);
+      clear_connection_cache();
     }
     LOG_INFO(info_log_, "Stopped EventLoop at port %d", port_number_);
     info_log_->Flush();
@@ -670,6 +689,28 @@ EventLoop::lookup_connection_cache(const HostId& host) const {
     return iter->second;
   }
   return nullptr;     // not found
+}
+
+// Clears out the connection cache
+void
+EventLoop::clear_connection_cache() {
+  // accumulate all the pending SocketEvents in temporary vector
+  std::vector<SocketEvent*> socks;
+  for (auto iter = connection_cache_.begin();
+       iter != connection_cache_.end(); ++iter) {
+    SocketEvent* sev = iter->second;
+    assert(sev);
+    socks.push_back(sev);
+  }
+  // Clears the connection cache.
+  connection_cache_.clear();
+
+  // Delete all pending SocketEvents. This is done after cleaning the
+  // connect_cache_ because the destructor of SocketEvent checks to see
+  // if the SocketEvent being destroyed is part of the connect_cache_.
+  for(SocketEvent* sev : socks) {
+    delete sev;
+  }
 }
 
 // Creates a socket connection to specified host and

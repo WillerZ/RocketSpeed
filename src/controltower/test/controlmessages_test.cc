@@ -45,12 +45,11 @@ class ControlTowerTest {
     ctoptions_.storage_url =
       "configerator:logdevice/rocketspeed.logdevice.primary.conf";
 
-    char myname[1024];
     st_ = ControlTower::CreateNewInstance(ctoptions_, &ct_);
 
     // what is my machine name?
-    ASSERT_EQ(gethostname(&myname[0], sizeof(myname)), 0);
-    hostname_.assign(myname);
+    ASSERT_EQ(gethostname(&myname_[0], sizeof(myname_)), 0);
+    hostname_.assign(myname_, strlen(myname_));
 
     info_log = GetLogger();
 
@@ -90,6 +89,7 @@ class ControlTowerTest {
   std::string hostname_;
   int num_ping_responses_;
   int num_subscribe_responses_;
+  char myname_[1024];
 
   // A static method that is the entry point of a background thread
   static void ControlTowerStart(void* arg) {

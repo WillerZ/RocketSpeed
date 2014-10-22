@@ -73,6 +73,8 @@ int RunAllTests() {
       ++num;
     }
     fclose(times_file);
+    delete tests;
+    tests = nullptr;
   }
   fprintf(stderr, "==== PASSED %d tests\n", num);
   return 0;
