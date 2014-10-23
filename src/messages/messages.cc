@@ -102,34 +102,40 @@ void Message::SerializeToString(std::string* out) {
   out->assign(std::move(serialize_buffer__));
 }
 
-Slice MessagePing::Serialize() const {
-  // serialize common header
-  msghdr_.msgsize_ = 0;
-  serialize_buffer__.clear();
-  serialize_buffer__.append((const char *)&msghdr_.version_,
-                            sizeof(msghdr_.version_));
-  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
-  serialize_buffer__.append((const char *)&type_, sizeof(type_));
-  PutFixed16(&serialize_buffer__, tenantid_);
-
-  // serialize message specific contents
-  serialize_buffer__.append((const char *)&pingtype_, sizeof(type_));
-  //  origin
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
-  PutVarint64(&serialize_buffer__, origin_.port);
-
-  // compute the size of this message
-  msghdr_.msgsize_ = serialize_buffer__.size();
-  std::string mlength;
-  PutFixed32(&mlength, msghdr_.msgsize_);
-  assert(mlength.size() == sizeof(msghdr_.msgsize_));
-
-  // Update the 4byte-msg size starting from the 2nd byte
-  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
-  return Slice(serialize_buffer__);
+/*
+ * Fills the first bytes serialize_buffer__ with the messageHeader attributes
+ */
+void Message::serializeMessageHeader() const {
+  if (serialize_buffer__.size() < MessageHeader::GetSize()) {
+    serialize_buffer__.resize(MessageHeader::GetSize());
+  }
+  serialize_buffer__[0] = msghdr_.version_;
+  serializeMessageSize();
 }
 
-Status MessagePing::DeSerialize(Slice* in) {
+/*
+ * Inserts the message size in serialize_buffer__ at the appropriate position
+ */
+void Message::serializeMessageSize() const {
+  msghdr_.msgsize_ = serialize_buffer__.size();
+  serializeMessageSize(msghdr_.msgsize_);
+}
+
+void Message::serializeMessageSize(int msgsize) const {
+  if (serialize_buffer__.size() < MessageHeader::GetSize()) {
+    serialize_buffer__.resize(MessageHeader::GetSize());
+  }
+  std::string mlength;
+  PutFixed32(&mlength, msgsize);
+  assert(mlength.size() == sizeof(msghdr_.msgsize_));
+  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+}
+
+/*
+ *  Extracts message header from first few bytes of in and returns
+ *  Status::OK() on success
+ */
+Status Message::deserializeMessageHeader(Slice* in){
   const unsigned int len = in->size();
   if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
       sizeof(type_)) {
@@ -147,6 +153,35 @@ Status MessagePing::DeSerialize(Slice* in) {
   if (!GetFixed32(in, &msghdr_.msgsize_)) {
     return Status::InvalidArgument("Bad msg size");
   }
+  return Status::OK();
+}
+
+Slice MessagePing::Serialize() const {
+  // serialize common header
+  msghdr_.msgsize_ = 0;
+  serialize_buffer__.clear();
+  serializeMessageHeader();
+
+  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixed16(&serialize_buffer__, tenantid_);
+
+  // serialize message specific contents
+  serialize_buffer__.append((const char *)&pingtype_, sizeof(type_));
+  //  origin
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
+  PutVarint64(&serialize_buffer__, origin_.port);
+
+  // compute the size of this message
+  serializeMessageSize();
+  return Slice(serialize_buffer__);
+}
+
+Status MessagePing::DeSerialize(Slice* in) {
+  Status msghdrStatus = deserializeMessageHeader(in);
+  if (!msghdrStatus.ok()) {
+    return msghdrStatus;
+  }
+
   // extract type
   memcpy(&type_, in->data(), sizeof(type_));
   in->remove_prefix(sizeof(type_));
@@ -211,9 +246,8 @@ Slice MessageData::Serialize() const {
   // serialize common header
   msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
-  serialize_buffer__.append((const char *)&msghdr_.version_,
-                            sizeof(msghdr_.version_));
-  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+  serializeMessageHeader();
+
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
 
   // origin
@@ -227,34 +261,16 @@ Slice MessageData::Serialize() const {
   SerializeInternal();
 
   // compute the size of this message
-  msghdr_.msgsize_ = serialize_buffer__.size();
-  std::string mlength;
-  PutFixed32(&mlength, msghdr_.msgsize_);
-  assert(mlength.size() == sizeof(msghdr_.msgsize_));
-
-  // Update the 4byte-msg size starting from the 2nd byte
-  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageData::DeSerialize(Slice* in) {
-  const unsigned int len = in->size();
-  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
-      sizeof(type_)) {
-    return Status::InvalidArgument("Bad Message Version/Type");
+  Status msghdrStatus = deserializeMessageHeader(in);
+  if (!msghdrStatus.ok()) {
+    return msghdrStatus;
   }
-  // extract msg version
-  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
-  in->remove_prefix(sizeof(msghdr_.version_));
 
-  // If we do not support this version, then return error
-  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
-    return Status::NotSupported("Bad Message Version");
-  }
-  // extract msg size
-  if (!GetFixed32(in, &msghdr_.msgsize_)) {
-    return Status::InvalidArgument("Bad msg size");
-  }
   // extract type
   memcpy(&type_, in->data(), sizeof(type_));
   in->remove_prefix(sizeof(type_));
@@ -376,11 +392,7 @@ Slice MessageMetadata::Serialize() const {
   // serialize common header
   msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
-
-  // version and msg size
-  serialize_buffer__.append((const char *)&msghdr_.version_,
-                            sizeof(msghdr_.version_));
-  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+  serializeMessageHeader();
 
   // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
@@ -402,33 +414,14 @@ Slice MessageMetadata::Serialize() const {
                               sizeof(p.topic_type));
   }
   // compute msg size
-  msghdr_.msgsize_ = serialize_buffer__.size();
-  std::string mlength;
-  PutFixed32(&mlength, msghdr_.msgsize_);
-  assert(mlength.size() == sizeof(msghdr_.msgsize_));
-
-  // Update the 4-bye msg size starting from the 1 byte
-  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageMetadata::DeSerialize(Slice* in) {
-  if (in->size() < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
-      sizeof(type_)) {
-    return Status::InvalidArgument("Bad Message Version/Type");
-  }
-  // extract version
-  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
-  in->remove_prefix(sizeof(msghdr_.version_));
-
-  // If we do not support this version, then return error
-  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
-    return Status::NotSupported("Bad Message Version");
-  }
-
-  // extract msg size
-  if (!GetFixed32(in, &msghdr_.msgsize_)) {
-    return Status::InvalidArgument("Bad msg size");
+  Status msghdrStatus = deserializeMessageHeader(in);
+  if (!msghdrStatus.ok()) {
+    return msghdrStatus;
   }
 
   // extract type
@@ -514,9 +507,7 @@ Slice MessageDataAck::Serialize() const {
   // serialize common header
   msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
-  serialize_buffer__.append((const char *)&msghdr_.version_,
-                            sizeof(msghdr_.version_));
-  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+  serializeMessageHeader();
 
   // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
@@ -532,34 +523,17 @@ Slice MessageDataAck::Serialize() const {
   }
 
   // compute the size of this message
-  msghdr_.msgsize_ = serialize_buffer__.size();
-  std::string mlength;
-  PutFixed32(&mlength, msghdr_.msgsize_);
-  assert(mlength.size() == sizeof(msghdr_.msgsize_));
-
-  // Update the 4byte-msg size starting from the 2nd byte
-  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageDataAck::DeSerialize(Slice* in) {
-  const unsigned int len = in->size();
-  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
-      sizeof(type_)) {
-    return Status::InvalidArgument("Bad Message Version/Type");
+  // extract message header from in
+  Status msghdrStatus = deserializeMessageHeader(in);
+  if (!msghdrStatus.ok()) {
+    return msghdrStatus;
   }
-  // extract msg version
-  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
-  in->remove_prefix(sizeof(msghdr_.version_));
 
-  // If we do not support this version, then return error
-  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
-    return Status::NotSupported("Bad Message Version");
-  }
-  // extract msg size
-  if (!GetFixed32(in, &msghdr_.msgsize_)) {
-    return Status::InvalidArgument("Bad msg size");
-  }
   // extract type
   memcpy(&type_, in->data(), sizeof(type_));
   in->remove_prefix(sizeof(type_));
@@ -633,9 +607,7 @@ Slice MessageGap::Serialize() const {
   // serialize common header
   msghdr_.msgsize_ = 0;
   serialize_buffer__.clear();
-  serialize_buffer__.append((const char *)&msghdr_.version_,
-                            sizeof(msghdr_.version_));
-  PutFixed32(&serialize_buffer__, msghdr_.msgsize_);
+  serializeMessageHeader();
 
   // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
@@ -649,33 +621,14 @@ Slice MessageGap::Serialize() const {
   PutVarint64(&serialize_buffer__, gap_to_);
 
   // compute the size of this message
-  msghdr_.msgsize_ = serialize_buffer__.size();
-  std::string mlength;
-  PutFixed32(&mlength, msghdr_.msgsize_);
-  assert(mlength.size() == sizeof(msghdr_.msgsize_));
-
-  // Update the 4byte-msg size starting from the 2nd byte
-  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
+  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageGap::DeSerialize(Slice* in) {
-  const unsigned int len = in->size();
-  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
-      sizeof(type_)) {
-    return Status::InvalidArgument("Bad Message Version/Type");
-  }
-  // extract msg version
-  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
-  in->remove_prefix(sizeof(msghdr_.version_));
-
-  // If we do not support this version, then return error
-  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
-    return Status::NotSupported("Bad Message Version");
-  }
-  // extract msg size
-  if (!GetFixed32(in, &msghdr_.msgsize_)) {
-    return Status::InvalidArgument("Bad msg size");
+  Status msghdrStatus = deserializeMessageHeader(in);
+  if (!msghdrStatus.ok()) {
+    return msghdrStatus;
   }
   // extract type
   memcpy(&type_, in->data(), sizeof(type_));

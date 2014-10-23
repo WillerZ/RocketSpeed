@@ -132,6 +132,11 @@ class Message : public Serializer {
   Message() : type_(MessageType::NotInitialized) {
     msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   }
+  void serializeMessageHeader() const;
+  void serializeMessageSize() const;
+  void serializeMessageSize(int msgsize) const;
+  Status deserializeMessageHeader(Slice* in);
+
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
