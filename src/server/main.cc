@@ -20,6 +20,10 @@
 #include "src/controltower/tower.h"
 #include "src/util/logdevice.h"
 
+#ifdef USE_LOGDEVICE
+#include "memcache/fbi/debug.h"
+#endif
+
 using GFLAGS::ParseCommandLineFlags;
 using GFLAGS::RegisterFlagValidator;
 using GFLAGS::SetUsageMessage;
@@ -68,6 +72,13 @@ int main(int argc, char** argv) {
 
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
+
+#ifdef USE_LOGDEVICE
+#ifdef NDEBUG
+  // Disable LogDevice info logging in release.
+  fbi_set_debug(FBI_LOG_WARNING);
+#endif
+#endif
 
   // Parse and validate log range.
   std::pair<rocketspeed::LogID, rocketspeed::LogID> log_range;

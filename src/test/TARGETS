@@ -17,6 +17,7 @@ cpp_library(
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/logdevice/external/libevent-2.1.3-alpha:event_core',
+        '@/mcrouter/lib/fbi',  # needed for fbi_set_debug
     ],
     compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
 )

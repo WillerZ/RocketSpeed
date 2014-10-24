@@ -11,6 +11,10 @@
 #include "src/util/logdevice.h"
 #include "src/util/testharness.h"
 
+#ifdef USE_LOGDEVICE
+#include "memcache/fbi/debug.h"
+#endif
+
 namespace rocketspeed {
 
 LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
@@ -20,6 +24,13 @@ LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
   Env* env = Env::Default();
   EnvOptions env_options;
   Status st;
+
+#ifdef USE_LOGDEVICE
+#ifdef NDEBUG
+  // Disable LogDevice info logging in release.
+  fbi_set_debug(FBI_LOG_WARNING);
+#endif
+#endif
 
   // Range of logs to use.
   std::pair<LogID, LogID> log_range;
