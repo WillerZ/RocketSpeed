@@ -42,7 +42,7 @@ class AsyncReaderImpl : public AsyncReader {
   lsn_t ReadFile(logid_t logid, lsn_t from, lsn_t until);
 
   // Callbacks
-  std::function<void(const DataRecord&)> data_cb_;
+  std::function<void(std::unique_ptr<DataRecord>)> data_cb_;
   std::function<void(const GapRecord&)> gap_cb_;
 
   // Mutex for locking the logs_ map.

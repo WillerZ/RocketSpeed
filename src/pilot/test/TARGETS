@@ -4,7 +4,6 @@ cpp_unittest(
     srcs = [
         'pilotmessages_test.cc',
     ],
-    type = 'gtest',
     preprocessor_flags = [
         '-Irocketspeed/github/include',
         '-Irocketspeed/github',

@@ -72,6 +72,16 @@ static LogID CastLogID(facebook::logdevice::logid_t logid) {
   return static_cast<LogID>(static_cast<int64_t>(logid));
 }
 
+LogDeviceRecord::LogDeviceRecord(
+  std::unique_ptr<facebook::logdevice::DataRecord> record)
+: LogRecord(CastLogID(record->logid),
+            Slice((const char*)record->payload.data, record->payload.size),
+            record->attrs.lsn,
+            std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::milliseconds(record->attrs.timestamp)))
+, record_(std::move(record)) {
+}
+
 Status LogDeviceStorage::Create(
   std::string cluster_name,
   std::string config_url,
@@ -235,7 +245,7 @@ Status LogDeviceStorage::FindTimeAsync(
 Status
 LogDeviceStorage::CreateAsyncReaders(
   unsigned int parallelism,
-  std::function<void(const LogRecord&)> record_cb,
+  std::function<void(std::unique_ptr<LogRecord>)> record_cb,
   std::function<void(const GapRecord&)> gap_cb,
   std::vector<AsyncLogReader*>* readers) {
   // Validate
@@ -258,23 +268,17 @@ LogDeviceStorage::CreateAsyncReaders(
 
 AsyncLogDeviceReader::AsyncLogDeviceReader(
   LogDeviceStorage* storage,
-  std::function<void(const LogRecord&)> record_cb,
+  std::function<void(std::unique_ptr<LogRecord>)> record_cb,
   std::function<void(const GapRecord&)> gap_cb,
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
 : storage_(*storage)
 , reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
   reader_->setRecordCallback(
-    [this, record_cb] (const facebook::logdevice::DataRecord& data) {
+    [this, record_cb] (std::unique_ptr<facebook::logdevice::DataRecord> data) {
       // Convert DataRecord to our LogRecord format.
-      const LogRecord record(
-              CastLogID(data.logid),
-              Slice((const char*)data.payload.data, data.payload.size),
-              data.attrs.lsn,
-              std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::milliseconds(data.attrs.timestamp)));
-
-      record_cb(record);
+      std::unique_ptr<LogRecord> record(new LogDeviceRecord(std::move(data)));
+      record_cb(std::move(record));
     });
 
   reader_->setGapCallback(

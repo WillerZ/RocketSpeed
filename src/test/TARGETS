@@ -47,7 +47,6 @@ cpp_unittest(
     srcs = [
         'integration_test.cc',
     ],
-    type = 'gtest',
     preprocessor_flags = [
         '-Irocketspeed/github/include',
         '-Irocketspeed/github',

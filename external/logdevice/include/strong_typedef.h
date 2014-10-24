@@ -34,4 +34,4 @@ struct NewType {                                                            \
       return val.val_;                                                      \
     }                                                                       \
   };                                                                        \
-} __attribute__((packed))
+} __attribute__((__packed__))

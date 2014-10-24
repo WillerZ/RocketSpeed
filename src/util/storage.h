@@ -24,16 +24,28 @@ enum SequencePoint : SequenceNumber {
 };
 
 /**
- * Raw log record entry.
+ * Abstract raw log record entry.
  */
 struct LogRecord {
+ public:
   LogID log_id;                         // log that this record came from
   Slice payload;                        // raw record data
   SequenceNumber seqno = 0;             // sequence number of record
   std::chrono::microseconds timestamp;  // record timestamp
-  LogRecord(LogID l, Slice p, SequenceNumber s, std::chrono::microseconds t) :
-    log_id(l), payload(p), seqno(s), timestamp(t) {
+
+  virtual ~LogRecord() {}
+
+ protected:
+  LogRecord(LogID log_id,
+            Slice payload,
+            SequenceNumber seqno,
+            std::chrono::microseconds timestamp) :
+    log_id(log_id),
+    payload(payload),
+    seqno(seqno),
+    timestamp(timestamp) {
   }
+
   LogRecord() {}
 };
 
@@ -141,9 +153,9 @@ class LogStorage {
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status CreateAsyncReaders(unsigned int parallelism,
-                                std::function<void(const LogRecord&)> record_cb,
-                                std::function<void(const GapRecord&)> gap_cb,
-                                std::vector<AsyncLogReader*>* readers) = 0;
+                      std::function<void(std::unique_ptr<LogRecord>)> record_cb,
+                      std::function<void(const GapRecord&)> gap_cb,
+                      std::vector<AsyncLogReader*>* readers) = 0;
 };
 
 /**

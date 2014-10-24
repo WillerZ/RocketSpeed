@@ -84,16 +84,18 @@ TEST(MockLogDeviceTest, Basic) {
   // and verify the expected contents.
   std::atomic<int> count1{0};
   std::atomic<int> count2{0};
-  reader1->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
-    ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec.payload.data)),
-              "test" + std::to_string(count1));
-    ++count1;
-  });
-  reader2->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
-    ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec.payload.data)),
-              "test" + std::to_string(count2 + 1));
-    ++count2;
-  });
+  reader1->setRecordCallback(
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+                "test" + std::to_string(count1));
+      ++count1;
+    });
+  reader2->setRecordCallback(
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+                "test" + std::to_string(count2 + 1));
+      ++count2;
+    });
 
   reader1->startReading(logid, lsn[0]);
   reader2->startReading(logid, lsn[1], lsn[4]);
@@ -141,11 +143,12 @@ TEST(MockLogDeviceTest, FindTime) {
   // Read all the timestamps from the records.
   std::chrono::milliseconds timestamps[3];
   std::atomic<int> count{0};
-  reader->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
-    ASSERT_LT(count, 3);
-    timestamps[count] = rec.attrs.timestamp;
-    ++count;
-  });
+  reader->setRecordCallback(
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+      ASSERT_LT(count, 3);
+      timestamps[count] = rec->attrs.timestamp;
+      ++count;
+    });
   reader->startReading(logid, lsn[0]);
 
   // Let the readers catch up.
@@ -200,11 +203,12 @@ TEST(MockLogDeviceTest, Trim) {
 
   // Read all the timestamps from the records.
   std::atomic<int> count{0};
-  reader->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
-    ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec.payload.data)),
-              "test" + std::to_string(count + 2));
-    ++count;
-  });
+  reader->setRecordCallback(
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+                "test" + std::to_string(count + 2));
+      ++count;
+    });
   reader->startReading(logid, lsn[0]);
 
   // Let the readers catch up.
@@ -222,24 +226,26 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
   std::atomic<int> count1{0};
   std::atomic<lsn_t> lsn1{LSN_OLDEST};  // last LSN read
   auto reader1 = client->createAsyncReader();
-  reader1->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
-    ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec.payload.data)),
-              "test" + std::to_string(count1));
-    ++count1;
-    lsn1 = rec.attrs.lsn;
-  });
+  reader1->setRecordCallback(
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+                "test" + std::to_string(count1));
+      ++count1;
+      lsn1 = rec->attrs.lsn;
+    });
   reader1->startReading(logid, LSN_OLDEST, LSN_MAX);
 
 
   std::atomic<int> count2{0};
   std::atomic<lsn_t> lsn2{LSN_OLDEST};
   auto reader2 = client->createAsyncReader();
-  reader2->setRecordCallback([&] (const facebook::logdevice::DataRecord& rec) {
-    ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec.payload.data)),
-              "test" + std::to_string(count2));
-    ++count2;
-    lsn2 = rec.attrs.lsn;
-  });
+  reader2->setRecordCallback(
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+                "test" + std::to_string(count2));
+      ++count2;
+      lsn2 = rec->attrs.lsn;
+    });
   reader2->startReading(logid, LSN_OLDEST, LSN_MAX);
 
   // Write 1000 messages to the log while occasionally waiting.

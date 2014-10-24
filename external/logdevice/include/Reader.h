@@ -25,7 +25,7 @@ class ReaderImpl; // private implementation
 class Reader {
  public:
   /**
-   * Start reading a log.  Similar to Log::startReading().
+   * Start reading a log.  Similar to AsyncReader::startReading().
    *
    * Any one log can only be read once by a single Reader.  If this method is
    * called for the same log multiple times, it restarts reading, optionally
@@ -33,9 +33,14 @@ class Reader {
    *
    * @return On success, returns 0.  On failure, -1 is returned and
    *         logdevice::err is set to:
-   *            [any of the error codes from Log::startReading()]
-   *            TOOMANY  exceeded limit on number of logs that had been
-   *                     specified the Reader was created
+   *             NOBUFS        if request could not be enqueued because a buffer
+   *                           space limit was reached
+   *             INVALID_PARAM if from > until or the record callback was not
+   *                           specified.
+   *             SHUTDOWN      the logdevice::Client instance was destroyedA.
+   *             INTERNAL      An internal error has been detected, check logs.
+   *             TOOMANY       exceeded limit on number of logs that had been
+   *                           specified the Reader was created.
    */
   int startReading(logid_t log_id, lsn_t from, lsn_t until=LSN_MAX);
 
@@ -44,7 +49,7 @@ class Reader {
    *
    * @return On success, returns 0.  On failure, -1 is returned and
    *         logdevice::err is set to:
-   *            [any of the error codes from Log::stopReading()]
+   *            [any of the error codes from AsyncReader::stopReading()]
    *            NOTFOUND  log is not being read
    */
   int stopReading(logid_t log_id);

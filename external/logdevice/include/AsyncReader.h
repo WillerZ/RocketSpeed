@@ -2,6 +2,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 
 #include "logdevice/include/Record.h"
 #include "logdevice/include/types.h"
@@ -39,7 +40,7 @@ class AsyncReader {
    * Only affects subsequent startReading() calls; calling startReading()
    * first and setRecordCallback() after has no effect.
    */
-  void setRecordCallback(std::function<void(const DataRecord&)>);
+  void setRecordCallback(std::function<void(std::unique_ptr<DataRecord>)>);
 
 
   /**
@@ -87,10 +88,12 @@ class AsyncReader {
    *
    * @return  0 is returned if the request was successfully enqueued for
    *          delivery. On failure -1 is returned and logdevice::err is set to
-   *             NOBUFS  if request could not be enqueued because a buffer
-   *                     space limit was reached
-   *             INVALID_PARAM if from > until
-   *          TODO check if list is exhaustive
+   *             NOBUFS        if request could not be enqueued because a buffer
+   *                           space limit was reached
+   *             INVALID_PARAM if from > until or the record callback was not
+   *                           specified.
+   *             SHUTDOWN      the logdevice::Client instance was destroyed.
+   *             INTERNAL      An internal error has been detected, check logs.
    *
    */
   int startReading(logid_t log_id, lsn_t from, lsn_t until=LSN_MAX);

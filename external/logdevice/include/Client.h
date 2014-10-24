@@ -1,9 +1,9 @@
 /* -*- Mode: C++; tab-width: 2; c-basic-offset: 2; indent-tabs-mode: nil -*- */
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
-#include <chrono>
 #include <utility>
 
 #include "logdevice/include/AsyncReader.h"
@@ -103,44 +103,66 @@ public:
    * The delivery of a signal does not interrupt the wait.
    *
    * @param logid     unique id of the log to which to append a new record
-   * @param payload  record payload, see Record.h. Other threads of the caller
-   *                 must not modify payload data until the call returns.
+   *
+   * @param payload   record payload
    *
    * @return on success the sequence number (LSN) of new record is returned.
    *         On failure LSN_INVALID is returned and logdevice::err is set to
    *         one of:
    *    TIMEDOUT       timeout expired before operation status was known. The
-   *                   record may or may not have been appended. The timeout
+   *                   record may or may not be appended. The timeout
    *                   used is from this Client object.
-   *    NOSEQUENCER    There is currently no sequencer for this log. For
-   *                   example, previous instance crashed and another one
-   *                   has not yet been brought up.
-   *    CONNFAILED     Failed to connect to sequencer. Possible reasons:
+   *    NOSEQUENCER    The client has been unable to locate a sequencer for
+   *                   this log. For example, the server that was previously
+   *                   sequencing this log has crashed or is shutting down,
+   *                   and a replacement has not yet been brought up, or its
+   *                   identity has not yet been communicated to this client.
+   *    CONNFAILED     Failed to connect to sequencer. Request was not sent.
+   *                   Possible reasons:
    *                    - invalid address in cluster config
    *                    - logdeviced running the sequencer is down or
    *                      unreachable
+   *    PEER_CLOSED    Sequencer closed connection after we sent the append
+   *                   request but before we got a reply. Record may or
+   *                   may not be appended.
    *    TOOBIG         Payload is too big (see Payload::maxSize())
-   *    PREEMPTED      the log is configured to have at most one writer at
-   *                   a time, and another writer has bumped this one
    *    NOBUFS         request could not be enqueued because a buffer
-   *                   space limit was reached
-   *    SYSLIMIT       a system limit on resources, such as file descriptors,
-   *                   ephemeral ports, or memory has been reached. Request
-   *                   was not sent.
-   *    FAILED         request did not reach LogDevice cluster, or the cluster
-   *                   reported that it was unable to complete the request
-   *                   because its nodes were misconfigured, overloaded,
-   *                   or partitioned. In rare cases the record may still be
-   *                   appended to a log and delivered to readers after log
-   *                   recovery is executed.
+   *                   space limit was reached in this Client object. Request
+   *                   was not sent
+   *    SYSLIMIT       client process has reached a system limit on resources,
+   *                   such as file descriptors, ephemeral ports, or memory.
+   *                   Request was not sent.
+   *    SEQNOBUFS      sequencer is out of buffer space for this log. Record
+   *                   was not appended.
+   *    SEQSYSLIMIT    sequencer has reached a file descriptor limit,
+   *                   the maximum number of ephemeral ports, or some other
+   *                   system limit. Record may or may not be appended.
+   *    NOSPC          too many nodes on the storage cluster have run out of
+   *                   free disk space. Record was not appended.
+   *    OVERLOADED     too many nodes on the storage cluster are
+   *                   overloaded. Record was not appended.
    *    ACCESS         the service denied access to this client based on
    *                   credentials presented
-   *    SHUTDOWN       the logdevice::Client instance was destroyed
+   *    SHUTDOWN       the logdevice::Client instance was destroyed. Request
+   *                   was not sent.
    *    INTERNAL       an internal error has been detected, check logs
    *    INVALID_PARAM  logid is invalid
    */
-  lsn_t appendSync(logid_t logid, const Payload& payload) noexcept;
+  lsn_t appendSync(logid_t logid, std::string payload) noexcept;
 
+  /**
+   * Appends a new record to the log. Blocks until operation completes.
+   * The delivery of a signal does not interrupt the wait.
+   *
+   * @param payload   record payload, see Record.h. The function does not
+   *                  make an internal copy of payload. Other threads of the
+   *                  caller must not modify payload data until the call
+   *                  returns.
+   *
+   * See appendSync(logid_t, const Payload&) for a description of return
+   * values.
+   */
+  lsn_t appendSync(logid_t logid, const Payload& payload) noexcept;
 
   /**
    * Appends a new record to the log without blocking. The function returns
@@ -148,29 +170,57 @@ public:
    * queue in this process' address space. The LogDevice client library will
    * call a callback on an unspecified thread when the operation completes.
    *
-   * NOTE: records sent by calling append() method of the same Client object
-   *       on the same thread are guaranteed to be sequenced (receive their
-   *       sequence numbers) in the order the append() calls were made.
-   *       No guarantees are made for the sequencing order of records written
-   *       via append() calls made on different threads.
+   * NOTE: records appended to the same log by calling append() method of the
+   *       same Client object on the same thread are guaranteed to receive
+   *       sequence numbers in the order the append() calls were made. That is,
+   *       if both appends succeed, the sequence number assigned to the record
+   *       sent earler will be smaller than the sequence number assigned to
+   *       the later record.
+   *
+   *       This is not always true for a pair of append() calls on the same
+   *       log made by _different_ threads or through _different_ Client
+   *       objects. In those cases internal buffering in various LogDevice
+   *       client and server components may result in the record in an earlier
+   *       append() call to receive a higher sequence number than the one
+   *       submitted by a later append() call made by a different thread or
+   *       process, or made through a different logdevice::Client object.
    *
    * @param logid     unique id of the log to which to append a new record
-   * @param payload   record payload. Same as appendSync() above. The data
-   *                  and the payload object itself must not be modified until
-   *                  cb() is called for this payload.
+   *
+   * @param payload   record payload.
+   *
    * @param cb        the callback to call
    *
    * @return  0 is returned if the request was successfully enqueued for
    *          delivery. On failure -1 is returned and logdevice::err is set to
-   *             TOOBIG  if payload is too big (see Payload::maxSize())
-   *             NOBUFS  if request could not be enqueued because a buffer
-   *                     space limit was reached
-   *      INVALID_PARAM  logid is invalid
+   *             TOOBIG      if payload is too big (see Payload::maxSize())
+   *             NOBUFS      if request could not be enqueued because a buffer
+   *                         space limit was reached
+   *      INVALID_PARAM      logid is invalid
+   */
+  int append(logid_t logid,
+             std::string payload,
+             append_callback_t cb) noexcept;
+
+
+  /**
+   * Appends a new record to the log without blocking. This version doesn't
+   * transfer the ownership of the payload to LogDevice and assumes that the
+   * caller will be responsible for destroying it.
+   *
+   *  IMPORTANT: for performance reasons this function does not make
+   *  an internal copy of payload.  It just passes payload.data
+   *  pointer and payload.size value to the LogDevice client thread
+   *  pool. The caller MUST make sure that the payload is not free'd
+   *  or modified, or its memory is otherwise reused until the
+   *  callback cb() is called with the same payload as its argument. A
+   *  common pattern for sending a payload that's on the stack is to
+   *  memcpy() it into a malloc'ed buffer, then call free() on
+   *  payload.data pointer passed to cb().
    */
   int append(logid_t logid,
              const Payload& payload,
              append_callback_t cb) noexcept;
-
 
   /**
    * Creates a Reader object that can be used to read from one or more logs.
@@ -224,13 +274,18 @@ public:
    * acknowledge the trim command, or the timeout occurs.
    *
    * @param logid ID of log to trim
-   * @param lsn   Trim the log up to this LSN (inclusive)
+   * @param lsn   Trim the log up to this LSN (inclusive), should not be larger
+   *              than the LSN of the most recent record available to readers
    * @return      Returns 0 if the request was successfully acknowledged
    *              by all nodes. Otherwise, returns -1 with logdevice::err set to
-   *              E::FAILED or E::PARTIAL (if some, but not all, nodes
-   *              responded -- in that case, some storage nodes might not have
-   *              trimmed their part of the log, so records with LSNs less than
-   *              or equal to 'lsn' might still be delivered).
+   *
+   *    E::INVALID_PARAM      logid or lsn is invalid
+   *    E::FAILED             FAILED to trim on all storage nodes
+   *    E::PARTIAL            if some, but not all, nodes successfully
+   *                          trimmed the log. In this case, some storage
+   *                          nodes might not have trimmed their part of the
+   *                          log, so records with LSNs less than or equal to
+   *                          'lsn' might still be delivered).
    */
   int trim(logid_t logid, lsn_t lsn) noexcept;
 

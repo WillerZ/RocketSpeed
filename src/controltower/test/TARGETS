@@ -4,8 +4,7 @@ cpp_unittest(
     srcs = [
 	'controlmessages_test.cc',
     ],
-    type = 'gtest',
-    preprocessor_flags = [ 
+    preprocessor_flags = [
 	'-Irocketspeed/github/include',
 	'-Irocketspeed/github',
     ],

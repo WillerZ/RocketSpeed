@@ -42,7 +42,7 @@ ERROR_CODE(NOTINCONFIG, ,"server is not in cluster configuration")
 ERROR_CODE(PROTONOSUPPORT, ,"unsupport LogDevice protocol version") // errno(3)
 ERROR_CODE(PROTO,       ,"protocol error") // errno(3)
 ERROR_CODE(PEER_CLOSED, ,"connection closed by peer")
-ERROR_CODE(FAILED,      ,"service failed to receive or execute request")
+ERROR_CODE(SEQNOBUFS,   ,"sequencer is out of buffer space for log")
 ERROR_CODE(WOULDBLOCK,  ,"operation would block")
 ERROR_CODE(ABORTED,     ,"operation aborted")
 ERROR_CODE(INPROGRESS,  ,"operation is already in progress") // errno(3)
@@ -55,6 +55,15 @@ ERROR_CODE(PARTIAL,     ,"operation partially succeeded")
 ERROR_CODE(GAP,         ,"gap in sequence numbers detected")
 ERROR_CODE(TRUNCATED,   ,"result truncated")
 ERROR_CODE(STALE,       ,"object or identifier is stale")
+ERROR_CODE(NOSPC,       ,"not enough free disk space on local log store")
+ERROR_CODE(OVERLOADED,  ,"storage node is overloaded")
+ERROR_CODE(PENDING,     ,"have pending Appenders")
+ERROR_CODE(PENDING_FULL,,"pending Appenders queue full")
+ERROR_CODE(FAILED,      ,"request failed")
+ERROR_CODE(SEQSYSLIMIT, ,"sequencer process has reached a limit set by the OS "
+                         "or runtime")
+
+// Errors about invalid entities
 
 ERROR_CODE(INVALID_PARAM, =100,"invalid parameter")
 ERROR_CODE(INVALID_CLUSTER,   ,"invalid LogDevice cluster name")
@@ -82,5 +91,4 @@ ERROR_CODE(BYTE_LIMIT_REACHED,        ,"hit max_record_bytes_queued")
 ERROR_CODE(MALFORMED_RECORD,          ,"malformed record in local log store")
 ERROR_CODE(LOCAL_LOG_STORE_READ,      ,"error reading from local log store")
 
-ERROR_CODE(PENDING,                   ,"have pending Appenders")
 #undef ERROR_CODE

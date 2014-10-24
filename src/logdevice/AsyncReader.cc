@@ -12,6 +12,25 @@
 
 namespace facebook { namespace logdevice {
 
+// Version of the LogDevice DataRecord that frees the payload when done.
+// The payload is copied into a member string to persist it.
+struct MockDataRecord : public DataRecord {
+ public:
+  MockDataRecord(logid_t logid,
+                 const Payload& payload,
+                 lsn_t lsn,
+                 std::chrono::milliseconds timestamp)
+  : payload_(reinterpret_cast<const char*>(payload.data), payload.size) {
+    this->payload = Payload(payload_.data(), payload_.size());
+    this->logid = logid;
+    this->attrs.lsn = lsn;
+    this->attrs.timestamp = timestamp;
+  }
+
+ private:
+  std::string payload_;
+};
+
 AsyncReaderImpl::AsyncReaderImpl()
 : env_(rocketspeed::Env::Default()) {
   // Start a thread that polls all the logs currently being read.
@@ -72,14 +91,16 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
     if (lsn >= from) {
       // In range, so call the callback and adjust the return LSN.
       from = lsn + 1;
-      DataRecord dataRecord(logid, file.GetData(), lsn, file.GetTimestamp());
-      data_cb_(dataRecord);
+      std::unique_ptr<DataRecord> dataRecord(
+        new MockDataRecord(logid, file.GetData(), lsn, file.GetTimestamp()));
+      data_cb_(std::move(dataRecord));
     }
   }
   return opened ? from : LSN_INVALID;
 }
 
-void AsyncReader::setRecordCallback(std::function<void(const DataRecord&)> cb) {
+void AsyncReader::setRecordCallback(
+    std::function<void(std::unique_ptr<DataRecord>)> cb) {
   impl()->data_cb_ = cb;
 }
 

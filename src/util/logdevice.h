@@ -19,6 +19,18 @@
 namespace rocketspeed {
 
 /**
+ * LogDevice log record entry.
+ */
+struct LogDeviceRecord : public LogRecord {
+ public:
+  explicit
+  LogDeviceRecord(std::unique_ptr<facebook::logdevice::DataRecord> record);
+
+ private:
+  std::unique_ptr<facebook::logdevice::DataRecord> record_;
+};
+
+/**
  * Log storage interface backed by LogDevice.
  */
 class LogDeviceStorage : public LogStorage {
@@ -87,9 +99,9 @@ class LogDeviceStorage : public LogStorage {
                        std::function<void(Status, SequenceNumber)> callback);
 
   Status CreateAsyncReaders(unsigned int parallelism,
-                            std::function<void(const LogRecord&)> record_cb,
-                            std::function<void(const GapRecord&)> gap_cb,
-                            std::vector<AsyncLogReader*>* readers);
+                      std::function<void(std::unique_ptr<LogRecord>)> record_cb,
+                      std::function<void(const GapRecord&)> gap_cb,
+                      std::vector<AsyncLogReader*>* readers);
  private:
   LogDeviceStorage(std::shared_ptr<facebook::logdevice::Client> client,
                    Env* env);
@@ -104,10 +116,9 @@ class LogDeviceStorage : public LogStorage {
 class AsyncLogDeviceReader : public AsyncLogReader {
  public:
   AsyncLogDeviceReader(LogDeviceStorage* storage,
-                       std::function<void(const LogRecord&)> record_cb,
-                       std::function<void(const GapRecord&)> gap_cb,
-                       std::unique_ptr
-                        <facebook::logdevice::AsyncReader>&& reader);
+                    std::function<void(std::unique_ptr<LogRecord>)> record_cb,
+                    std::function<void(const GapRecord&)> gap_cb,
+                    std::unique_ptr<facebook::logdevice::AsyncReader>&& reader);
 
   ~AsyncLogDeviceReader() final;
 
