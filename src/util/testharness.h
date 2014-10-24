@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -36,6 +37,11 @@ extern int RunAllTests();
 // Return the directory to use for temporary storage.
 extern std::string TmpDir();
 
+// Create a logger for the test.
+extern Status CreateLogger(Env* env,
+                           const std::string& dir,
+                           std::shared_ptr<Logger>* logger);
+
 // Return a randomization seed for this run.  Typically returns the
 // same number on repeated invocations of this binary, but automated
 // runs may be able to vary the seed.
@@ -59,14 +65,18 @@ class Tester {
     if (!ok_) {
       fprintf(stderr, "%s:%d:%s\n", fname_, line_, ss_.str().c_str());
       port::PrintStack(2);
-      throw std::logic_error("test failed");
     }
+  }
+
+  void Fail() {
+    ok_ = false;
+    throw std::logic_error("test failed");
   }
 
   Tester& Is(bool b, const char* msg) {
     if (!b) {
       ss_ << " Assertion failure " << msg;
-      ok_ = false;
+      Fail();
     }
     return *this;
   }
@@ -74,7 +84,7 @@ class Tester {
   Tester& IsOk(const Status& s) {
     if (!s.ok()) {
       ss_ << " " << s.ToString();
-      ok_ = false;
+      Fail();
     }
     return *this;
   }
@@ -84,7 +94,7 @@ class Tester {
   Tester& name(const X& x, const Y& y) {                \
     if (!(x op y)) {                                   \
       ss_ << " failed: " << x << (" " #op " ") << y;    \
-      ok_ = false;                                      \
+      Fail();                                      \
     }                                                   \
     return *this;                                       \
   }

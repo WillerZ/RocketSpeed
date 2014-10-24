@@ -359,48 +359,41 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
       return;
     }
 
-    if (command.get()->IsSendCommand()) {
-      // If this is a message-send command, then process it inline.
-      // Have to handle the case when the message-send failed to write
-      // to output socket and have to invoke *some* callback to the app.
-      const std::vector<HostId>& remote = command.get()->GetDestination();
+    // Have to handle the case when the message-send failed to write
+    // to output socket and have to invoke *some* callback to the app.
+    const std::vector<HostId>& remote = command.get()->GetDestination();
 
-      // Move the message payload into a ref-counted string. The string
-      // will be deallocated only when all the remote destinations
-      // have been served.
-      std::string out;
-      command.get()->GetMessage(&out);
-      assert(out.size() > 0);
-      SharedString* msg = new SharedString(std::move(out), remote.size());
+    // Move the message payload into a ref-counted string. The string
+    // will be deallocated only when all the remote destinations
+    // have been served.
+    std::string out;
+    command.get()->GetMessage(&out);
+    assert(out.size() > 0);
+    SharedString* msg = new SharedString(std::move(out), remote.size());
 
-      for (const HostId& host : remote) {
-        SocketEvent* sev = obj->lookup_connection_cache(host);
+    for (const HostId& host : remote) {
+      SocketEvent* sev = obj->lookup_connection_cache(host);
 
-        // If the remote side has not yet established a connection, then
-        // create a new connection and insert into connection cache.
-        if (sev == nullptr) {
-          sev = obj->setup_connection(host);
-        }
-        if (sev != nullptr) {
-          // Enqueue data to SocketEvent queue. This message will be sent out
-          // when the output socket is ready to write.
-          status = sev->Enqueue(msg);
-        }
-        if (sev == nullptr || !status.ok()) {
-          LOG_WARN(obj->info_log_,
-              "No Socket to send msg to host %s, msg dropped...",
-              host.ToString().c_str());
-          obj->info_log_->Flush();
-          msg->refcount--;  // unable to queue msg, decrement refcount
-        }
-      }  // for loop
-      if (msg->refcount == 0) {
-        delete msg;
+      // If the remote side has not yet established a connection, then
+      // create a new connection and insert into connection cache.
+      if (sev == nullptr) {
+        sev = obj->setup_connection(host);
       }
-    } else if (obj->command_callback_) {
-      // Pass ownership to the callback
-      // (it can decide whether or not to delete).
-      obj->command_callback_(std::move(command));
+      if (sev != nullptr) {
+        // Enqueue data to SocketEvent queue. This message will be sent out
+        // when the output socket is ready to write.
+        status = sev->Enqueue(msg);
+      }
+      if (sev == nullptr || !status.ok()) {
+        LOG_WARN(obj->info_log_,
+            "No Socket to send msg to host %s, msg dropped...",
+            host.ToString().c_str());
+        obj->info_log_->Flush();
+        msg->refcount--;  // unable to queue msg, decrement refcount
+      }
+    }  // for loop
+    if (msg->refcount == 0) {
+      delete msg;
     }
   }
 }
@@ -813,7 +806,6 @@ EventLoop::EventLoop(EnvOptions env_options,
                      int port_number,
                      const std::shared_ptr<Logger>& info_log,
                      EventCallbackType event_callback,
-                     CommandCallbackType command_callback,
                      uint32_t command_queue_size) :
   env_options_(env_options),
   port_number_(port_number),
@@ -821,7 +813,6 @@ EventLoop::EventLoop(EnvOptions env_options,
   base_(nullptr),
   info_log_(info_log),
   event_callback_(event_callback),
-  command_callback_(command_callback),
   event_callback_context_(nullptr),
   listener_(nullptr),
   command_queue_(command_queue_size) {

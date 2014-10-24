@@ -25,37 +25,29 @@ namespace rocketspeed {
 
 class Copilot {
  public:
+  static const int DEFAULT_PORT = 58600;
+
   // A new instance of a Copilot
   static Status CreateNewInstance(CopilotOptions options,
                                   Copilot** copilot);
   virtual ~Copilot();
 
-  // Start this instance of the Copilot
-  void Run();
-
-  // Is the Copilot up and running?
-  bool IsRunning() { return msg_loop_.IsRunning(); }
-
   // Returns the sanitized options used by the copilot
   CopilotOptions& GetOptions() { return options_; }
 
   // Get HostID
-  const HostId& GetHostId() const { return msg_loop_.GetHostId(); }
+  const HostId& GetHostId() const {
+    return options_.msg_loop->GetHostId();
+  }
 
   // Sends a command to the msgloop
   Status SendCommand(std::unique_ptr<Command> command) {
-    return msg_loop_.SendCommand(std::move(command));
+    return options_.msg_loop->SendCommand(std::move(command));
   }
 
  private:
   // The options used by the Copilot
   CopilotOptions options_;
-
-  // Message specific callbacks stored here
-  const std::map<MessageType, MsgCallbackType> callbacks_;
-
-  // The message loop base.
-  MsgLoop msg_loop_;
 
   // Log router for mapping topic names to logs.
   LogRouter log_router_;
@@ -72,6 +64,9 @@ class Copilot {
 
   // Sanitize input options if necessary
   CopilotOptions SanitizeOptions(CopilotOptions options);
+
+  // Start the background workers.
+  void StartWorkers();
 
   // callbacks to process incoming messages
   void ProcessDeliver(std::unique_ptr<Message> msg);

@@ -173,10 +173,9 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
   // Construct message loop.
   msg_loop_ = new MsgLoop(Env::Default(),
                           EnvOptions(),
-                          host_id_,
-                          info_log,
-                          callbacks,
-                          nullptr);
+                          port,
+                          info_log);
+  msg_loop_->RegisterCallbacks(callbacks);
 
   msg_loop_thread_ = std::thread([this] () {
     msg_loop_->Run();

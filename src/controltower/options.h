@@ -13,6 +13,8 @@
 
 namespace rocketspeed {
 
+class MsgLoop;
+
 struct ControlTowerOptions {
   //
   // Use the specified object to interact with the environment,
@@ -27,11 +29,12 @@ struct ControlTowerOptions {
   // Default: TODO(dhruba) 1234
   Configuration* conf;
 
+  // Message loop for this control tower.
+  // This is not owned by the control tower and should not be deleted.
+  MsgLoop* msg_loop;
+
   // The machine name that identifies this control tower
   std::string hostname;
-
-  // The port number for this service
-  int port_number;
 
   // If non-null, then server info logs are written to this object.
   // If null, then server info logs are written to log_dir.

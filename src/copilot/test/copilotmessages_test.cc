@@ -31,14 +31,19 @@ class CopilotTest {
   CopilotTest():
     env_(Env::Default()), copilot_(nullptr), started_(false) {
 
-    Status s = CreateLoggerFromOptions(env_,
-                                       test::TmpDir(),
-                                       "LOG.copilotmessages",
-                                       0,
-                                       0,
-                                       InfoLogLevel::DEBUG_LEVEL,
-                                       &info_log_);
+    Status s = test::CreateLogger(env_, "CopilotTest", &info_log_);
     ASSERT_TRUE(s.ok());
+
+    // Create MsgLoops
+    ct_msg_loop_.reset(new MsgLoop(env_,
+                                   EnvOptions(),
+                                   ControlTower::DEFAULT_PORT,
+                                   info_log_));
+
+    cp_msg_loop_.reset(new MsgLoop(env_,
+                                   EnvOptions(),
+                                   Copilot::DEFAULT_PORT,
+                                   info_log_));
 
     // Create ControlTower
     ControlTowerOptions ct_options;
@@ -47,6 +52,8 @@ class CopilotTest {
       "configerator:logdevice/rocketspeed.logdevice.primary.conf";
     ct_options.log_dir = test::TmpDir();
     ct_options.info_log = info_log_;
+    ct_options.msg_loop = ct_msg_loop_.get();
+
     Status st = ControlTower::CreateNewInstance(ct_options, &ct_);
     ASSERT_TRUE(ct_ != nullptr);
     ASSERT_TRUE(st.ok());
@@ -56,6 +63,7 @@ class CopilotTest {
     options_.log_dir = test::TmpDir();
     options_.info_log = info_log_;
     options_.control_towers.push_back(ct_->GetHostId());
+    options_.msg_loop = cp_msg_loop_.get();
     st_ = Copilot::CreateNewInstance(options_, &copilot_);
 
     // what is my machine name?
@@ -75,6 +83,8 @@ class CopilotTest {
 
   virtual ~CopilotTest() {
     // deleting the Copilot shuts down the event disptach loop.
+    ct_msg_loop_->Stop();
+    cp_msg_loop_->Stop();
     delete copilot_;
     delete ct_;
     env_->WaitForJoin();  // This is good hygine
@@ -90,13 +100,13 @@ class CopilotTest {
 
     // If the copilot has not already been started, then start it
     if (!started_) {
-      env_->StartThread(CopilotTest::ControlTowerStart, ct_);
-      env_->StartThread(CopilotTest::CopilotStart, copilot_);
+      env_->StartThread(CopilotTest::MsgLoopStart, ct_msg_loop_.get());
+      env_->StartThread(CopilotTest::MsgLoopStart, cp_msg_loop_.get());
     }
     started_ = true;
 
     // Wait till the background thread has setup the dispatch loop
-    while (!copilot_->IsRunning() || !ct_->IsRunning()) {
+    while (!ct_msg_loop_->IsRunning() || !cp_msg_loop_->IsRunning()) {
       env_->SleepForMicroseconds(1000);
     }
     return Status::OK();
@@ -119,20 +129,8 @@ class CopilotTest {
   std::set<Topic> sent_msgs_;
   std::set<Topic> acked_msgs_;
   std::shared_ptr<Logger> info_log_;
-
-  // A static method that is the entry point of a background thread
-  // for the Copilot.
-  static void CopilotStart(void* arg) {
-    Copilot* copilot = reinterpret_cast<Copilot*>(arg);
-    copilot->Run();
-  }
-
-  // A static method that is the entry point of a background thread
-  // for the ControlTower.
-  static void ControlTowerStart(void* arg) {
-    ControlTower* ct = reinterpret_cast<ControlTower*>(arg);
-    ct->Run();
-  }
+  std::unique_ptr<MsgLoop> ct_msg_loop_;
+  std::unique_ptr<MsgLoop> cp_msg_loop_;
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
@@ -169,26 +167,21 @@ TEST(CopilotTest, Publish) {
   ASSERT_EQ(CopilotRun().ok(), true);
 
   // create a client to communicate with the Copilot
-  HostId client_id(hostname_, options_.port_number - 1);
   std::map<MessageType, MsgCallbackType> client_callback;
   client_callback[MessageType::mMetadata] =
     [this] (std::unique_ptr<Message> msg) {
       ProcessMetadata(std::move(msg));
     };
 
-  MsgLoop loop(env_,
-               env_options_,
-               client_id,
-               GetLogger(),
-               client_callback);
+  MsgLoop loop(env_, env_options_, 58499, GetLogger());
+  loop.RegisterCallbacks(client_callback);
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
-                    "testc-" + std::to_string(client_id.port));
+                    "testc-" + std::to_string(loop.GetHostId().port));
   while (!loop.IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
 
   // send messages to copilot
-  HostId copilot(hostname_, options_.port_number);
   int num_msg = 100;
   for (int i = 0; i < num_msg; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i % 50);
@@ -197,11 +190,12 @@ TEST(CopilotTest, Publish) {
     std::string serial;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        client_id,
+                        loop.GetHostId(),
                         { TopicPair(0, topic, type, 101 + i) });
     msg.SerializeToString(&serial);
     std::unique_ptr<Command> cmd(new CopilotCommand(
-                                     std::move(serial), copilot));
+                                     std::move(serial),
+                                     copilot_->GetHostId()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);
   }

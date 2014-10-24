@@ -33,9 +33,7 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
   return std::move(options);
 }
 
-void Copilot::Run() {
-  options_.env->SetThreadName(options_.env->GetCurrentThreadId(), "copilot");
-
+void Copilot::StartWorkers() {
   // Start worker threads.
   for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
@@ -53,9 +51,6 @@ void Copilot::Run() {
       std::this_thread::yield();
     }
   }
-
-  // Start our message loop now.
-  msg_loop_.Run();
 }
 
 /**
@@ -63,16 +58,12 @@ void Copilot::Run() {
  */
 Copilot::Copilot(CopilotOptions options):
   options_(SanitizeOptions(std::move(options))),
-  callbacks_(InitializeCallbacks()),
-  msg_loop_(options_.env,
-            options_.env_options,
-            HostId(options_.copilotname, options_.port_number),
-            options_.info_log,
-            callbacks_),
   log_router_(options_.log_range.first, options_.log_range.second),
   control_tower_router_(options_.control_towers,
                         options_.consistent_hash_replicas,
                         options_.control_towers_per_log) {
+
+  options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
   // Create workers.
   for (uint32_t i = 0; i < options_.num_workers; ++i) {
@@ -86,9 +77,6 @@ Copilot::Copilot(CopilotOptions options):
 }
 
 Copilot::~Copilot() {
-  // Stop the main Copilot loop.
-  msg_loop_.Stop();
-
   // Stop all the workers.
   for (auto& worker : workers_) {
     worker->Stop();
@@ -108,6 +96,7 @@ Copilot::~Copilot() {
 Status Copilot::CreateNewInstance(CopilotOptions options,
                                   Copilot** copilot) {
   *copilot = new Copilot(std::move(options));
+  (*copilot)->StartWorkers();
   return Status::OK();
 }
 

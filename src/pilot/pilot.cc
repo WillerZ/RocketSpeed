@@ -34,7 +34,7 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
   return std::move(options);
 }
 
-void Pilot::Run() {
+void Pilot::StartWorkers() {
   // Start worker threads.
   for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
@@ -52,9 +52,6 @@ void Pilot::Run() {
       std::this_thread::yield();
     }
   }
-
-  // Start our message loop now.
-  msg_loop_.Run();
 }
 
 /**
@@ -62,13 +59,9 @@ void Pilot::Run() {
  */
 Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))),
-  callbacks_(InitializeCallbacks()),
-  msg_loop_(options_.env,
-            options_.env_options,
-            HostId(options_.pilotname, options_.port_number),
-            options_.info_log,
-            callbacks_),
   log_router_(options_.log_range.first, options_.log_range.second) {
+  assert(options_.msg_loop);
+
   if (options_.storage == nullptr) {
     // Create log device client
     LogDeviceStorage* storage = nullptr;
@@ -87,6 +80,8 @@ Pilot::Pilot(PilotOptions options):
     log_storage_ = options_.storage;
   }
 
+  options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
+
   // Create workers.
   for (uint32_t i = 0; i < options_.num_workers; ++i) {
     workers_.emplace_back(new PilotWorker(options_,
@@ -99,9 +94,6 @@ Pilot::Pilot(PilotOptions options):
 }
 
 Pilot::~Pilot() {
-  // Stop the main Pilot loop.
-  msg_loop_.Stop();
-
   // Stop all the workers.
   for (auto& worker : workers_) {
     worker->Stop();
@@ -128,6 +120,8 @@ Status Pilot::CreateNewInstance(PilotOptions options,
     *pilot = nullptr;
     return Status::NotInitialized();
   }
+
+  (*pilot)->StartWorkers();
 
   return Status::OK();
 }

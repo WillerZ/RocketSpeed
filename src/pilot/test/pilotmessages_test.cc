@@ -26,8 +26,21 @@ class PilotTest {
   // Create a new instance of the pilot
   PilotTest():
     env_(Env::Default()), pilot_(nullptr), started_(false) {
+    // Create Logger
+    st_ = test::CreateLogger(env_, "PilotTest", &info_log_);
+    if (!st_.ok()) {
+      return;
+    }
+
+    msg_loop_.reset(new MsgLoop(env_,
+                                EnvOptions(),
+                                Pilot::DEFAULT_PORT,
+                                info_log_));
+
     // Create Pilot
     options_.log_range = std::pair<LogID, LogID>(1, 1);
+    options_.msg_loop = msg_loop_.get();
+    options_.info_log = info_log_;
     st_ = Pilot::CreateNewInstance(std::move(options_), &pilot_);
     if (!st_.ok()) {
       return;
@@ -50,6 +63,7 @@ class PilotTest {
 
   virtual ~PilotTest() {
     // deleting the Pilot shuts down the event disptach loop.
+    msg_loop_->Stop();
     delete pilot_;
     env_->WaitForJoin();  // This is good hygine
   }
@@ -64,20 +78,15 @@ class PilotTest {
 
     // If the pilot has not already been started, then start it
     if (!started_) {
-      env_->StartThread(PilotTest::PilotStart, pilot_);
+      env_->StartThread(PilotTest::MsgLoopStart, msg_loop_.get());
     }
     started_ = true;
 
     // Wait till the background thread has setup the dispatch loop
-    while (!pilot_->IsRunning()) {
+    while (!msg_loop_->IsRunning()) {
       env_->SleepForMicroseconds(1000);
     }
     return Status::OK();
-  }
-
-  // Returns the logger that logs into the LOG file
-  std::shared_ptr<Logger> GetLogger() {
-    return pilot_->GetOptions().info_log;
   }
 
  protected:
@@ -90,12 +99,8 @@ class PilotTest {
   std::string hostname_;
   std::set<MsgId> sent_msgs_;
   std::set<MsgId> acked_msgs_;
-
-  // A static method that is the entry point of a background thread
-  static void PilotStart(void* arg) {
-    Pilot* pilot = reinterpret_cast<Pilot*>(arg);
-    pilot->Run();
-  }
+  std::unique_ptr<MsgLoop> msg_loop_;
+  std::shared_ptr<Logger> info_log_;
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
@@ -131,25 +136,20 @@ TEST(PilotTest, Publish) {
   ASSERT_EQ(PilotRun().ok(), true);
 
   // create a client to communicate with the Pilot
-  HostId clientId(hostname_, options_.port_number + 1);
   std::map<MessageType, MsgCallbackType> client_callback;
   client_callback[MessageType::mDataAck] =
     [this] (std::unique_ptr<Message> msg) {
       ProcessDataAck(std::move(msg));
     };
 
-  MsgLoop loop(env_,
-               env_options_,
-               clientId,
-               GetLogger(),
-               client_callback);
+  MsgLoop loop(env_, env_options_, 58499, info_log_);
+  loop.RegisterCallbacks(client_callback);
   env_->StartThread(PilotTest::MsgLoopStart, &loop);
   while (!loop.IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
 
   // send messages to pilot
-  HostId pilot(hostname_, options_.port_number);
   NamespaceID nsid = 101;
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
@@ -157,11 +157,12 @@ TEST(PilotTest, Publish) {
     std::string serial;
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
-                     clientId, Slice(topic), nsid,
+                     loop.GetHostId(), Slice(topic), nsid,
                      Slice(payload));
     data.SerializeToString(&serial);
     sent_msgs_.insert(data.GetMessageId());
-    std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial), pilot));
+    std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
+                                                  pilot_->GetHostId()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 

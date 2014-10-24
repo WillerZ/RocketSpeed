@@ -17,23 +17,19 @@ namespace rocketspeed {
 
 class ControlTower {
  public:
+  static const int DEFAULT_PORT = 58500;
+
   // A new instance of a Control Tower
   static Status CreateNewInstance(const ControlTowerOptions& options,
                                   ControlTower** ct);
   virtual ~ControlTower();
-
-  // Start this instance of the Control Tower
-  void Run(void);
-
-  // Is the ControlTower up and running?
-  bool IsRunning() { return msg_loop_.IsRunning(); }
 
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}
 
   // Sends a command to the msgloop
   Status SendCommand(std::unique_ptr<Command> command) {
-    return msg_loop_.SendCommand(std::move(command));
+    return options_.msg_loop->SendCommand(std::move(command));
   }
 
   // Returns the HostId to HostNumber mapping
@@ -46,14 +42,13 @@ class ControlTower {
   const Tailer* GetTailer() const { return tailer_.get(); }
 
   // Get HostID
-  const HostId& GetHostId() const { return msg_loop_.GetHostId(); }
+  const HostId& GetHostId() const {
+    return options_.msg_loop->GetHostId();
+  }
 
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;
-
-  // Message specific callbacks stored here
-  const std::map<MessageType, MsgCallbackType> callbacks_;
 
   // Maps a topic to a log
   const LogRouter log_router_;
@@ -68,12 +63,6 @@ class ControlTower {
 
   // The Tailer to feed in data from LogStorage to Rooms
   unique_ptr<Tailer> tailer_;
-
-  // The message loop base.
-  // This is used to receive subscribe/unsubscribe/data messages
-  // from other processes. The MsgLoop should be the last field of
-  // ControlTower so that it gets destructed first.
-  MsgLoop msg_loop_;
 
   // private Constructor
   explicit ControlTower(const ControlTowerOptions& options);

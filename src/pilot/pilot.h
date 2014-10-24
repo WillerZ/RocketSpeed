@@ -24,37 +24,29 @@ namespace rocketspeed {
 
 class Pilot {
  public:
+  static const int DEFAULT_PORT = 58600;
+
   // A new instance of a Pilot
   static Status CreateNewInstance(PilotOptions options,
                                   Pilot** pilot);
   virtual ~Pilot();
 
-  // Start this instance of the Pilot
-  void Run();
-
-  // Is the Pilot up and running?
-  bool IsRunning() { return msg_loop_.IsRunning(); }
-
   // Returns the sanitized options used by the pilot
   PilotOptions& GetOptions() { return options_; }
 
   // Get HostID
-  const HostId& GetHostId() const { return msg_loop_.GetHostId(); }
+  const HostId& GetHostId() const {
+    return options_.msg_loop->GetHostId();
+  }
 
   // Sends a command to the msgloop
   Status SendCommand(std::unique_ptr<Command> command) {
-    return msg_loop_.SendCommand(std::move(command));
+    return options_.msg_loop->SendCommand(std::move(command));
   }
 
  private:
   // The options used by the Pilot
   PilotOptions options_;
-
-  // Message specific callbacks stored here
-  const std::map<MessageType, MsgCallbackType> callbacks_;
-
-  // The message loop base.
-  MsgLoop msg_loop_;
 
   // Interface with LogDevice
   std::shared_ptr<LogStorage> log_storage_;
@@ -71,6 +63,9 @@ class Pilot {
 
   // Sanitize input options if necessary
   PilotOptions SanitizeOptions(PilotOptions options);
+
+  // Start the worker threads in the background.
+  void StartWorkers();
 
   // callbacks to process incoming messages
   void ProcessPublish(std::unique_ptr<Message> msg);

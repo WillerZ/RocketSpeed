@@ -14,6 +14,7 @@
 #include "src/copilot/options.h"
 #include "src/pilot/options.h"
 #include "src/pilot/pilot.h"
+#include "src/messages/msg_loop.h"
 #include "src/util/storage.h"
 
 #ifdef USE_LOGDEVICE
@@ -67,16 +68,19 @@ class LocalTestCluster {
   // Pilot
   PilotOptions pilot_options_;
   Pilot* pilot_;
-  std::thread pilot_thread_;
 
   // Copilot
   CopilotOptions copilot_options_;
   Copilot* copilot_;
-  std::thread copilot_thread_;
 
   // Control Tower
   ControlTowerOptions control_tower_options_;
   ControlTower* control_tower_;
+
+  // Message loops and threads
+  std::unique_ptr<MsgLoop> cockpit_loop_;
+  std::thread cockpit_thread_;
+  std::unique_ptr<MsgLoop> control_tower_loop_;
   std::thread control_tower_thread_;
 };
 

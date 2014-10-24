@@ -48,20 +48,20 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
  */
 MsgLoop::MsgLoop(const Env* env,
                  const EnvOptions& env_options,
-                 const HostId& hostid,
-                 const std::shared_ptr<Logger>& info_log,
-                 const std::map<MessageType, MsgCallbackType>& callbacks,
-                 CommandCallbackType command_callback):
+                 int port,
+                 const std::shared_ptr<Logger>& info_log):
   env_(env),
   env_options_(env_options),
-  hostid_(hostid),
   info_log_(info_log),
-  msg_callbacks_(SanitizeCallbacks(callbacks)),
   event_loop_(env_options,
-              hostid.port,
+              port,
               info_log,
-              EventCallback,
-              command_callback) {
+              EventCallback) {
+  // Setup host id
+  char myname[1024];
+  gethostname(&myname[0], sizeof(myname));
+  hostid_ = HostId(std::string(myname), port);
+
   // set the Event callback context
   event_loop_.SetEventCallbackContext(this);
 
@@ -71,8 +71,30 @@ MsgLoop::MsgLoop(const Env* env,
       (long)hostid_.port, msg_callbacks_.size());
 }
 
+void
+MsgLoop::RegisterCallbacks(
+    const std::map<MessageType, MsgCallbackType>& callbacks) {
+  // Cannot call this when it is already running.
+  assert(!IsRunning());
+
+  // Add each callback to the registered callbacks.
+  for (auto& elem : callbacks) {
+    // Not allowed to add duplicates.
+    assert(msg_callbacks_.find(elem.first) == msg_callbacks_.end());
+    msg_callbacks_[elem.first] = elem.second;
+  }
+}
+
 void MsgLoop::Run() {
   LOG_INFO(info_log_, "Starting Message Loop at port %ld", (long)hostid_.port);
+
+  // Add ping callback if it hasn't already been added.
+  if (msg_callbacks_.find(MessageType::mPing) == msg_callbacks_.end()) {
+    msg_callbacks_[MessageType::mPing] = [this] (std::unique_ptr<Message> msg) {
+      ProcessPing(std::move(msg));
+    };
+  }
+
   event_loop_.Run();
 }
 
@@ -117,25 +139,6 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
         origin.hostname.c_str(), (long)origin.port);
   }
   info_log_->Flush();
-}
-
-//
-// Create a new copy of the callback map.
-// Add a ping handler to the callbacks if not already set
-//
-std::map<MessageType, MsgCallbackType>
-MsgLoop::SanitizeCallbacks(const std::map<MessageType,
-                           MsgCallbackType>& cb) {
-  // make a copy
-  std::map<MessageType, MsgCallbackType> newmap(cb);
-
-  // add Ping handler
-  if (newmap.find(MessageType::mPing) == newmap.end()) {
-    newmap[MessageType::mPing] = [this] (std::unique_ptr<Message> msg) {
-      ProcessPing(std::move(msg));
-    };
-  }
-  return newmap;
 }
 
 }  // namespace rocketspeed

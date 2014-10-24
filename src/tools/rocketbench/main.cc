@@ -31,7 +31,7 @@ DEFINE_int32(num_threads, 4, "number of threads");
 DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
 DEFINE_string(copilot_hostname, "localhost", "hostname of copilot");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
-DEFINE_int32(copilot_port, 58700, "port number of copilot");
+DEFINE_int32(copilot_port, 58600, "port number of copilot");
 DEFINE_int32(producer_port, 58800, "port number of producer");
 DEFINE_int32(consumer_port, 58800, "port number of consumer");
 DEFINE_int32(message_size, 100, "message size (bytes)");

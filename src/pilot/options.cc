@@ -10,7 +10,6 @@ namespace rocketspeed {
 
 PilotOptions::PilotOptions()
   : env(Env::Default()),
-    port_number(58600),
     info_log(nullptr),
 #ifdef NDEBUG
     info_log_level(WARN_LEVEL),

@@ -14,6 +14,8 @@
 
 namespace rocketspeed {
 
+class MsgLoop;
+
 struct PilotOptions {
   //
   // Use the specified object to interact with the environment,
@@ -27,11 +29,12 @@ struct PilotOptions {
   // The configuration of this rocketspeed instance
   Configuration* conf;
 
+  // Message loop for this pilot.
+  // This is not owned by the pilot and should not be deleted.
+  MsgLoop* msg_loop;
+
   // The machine name that identifies this pilot
   std::string pilotname;
-
-  // The port number for this service
-  int port_number;
 
   // If non-null, then server info logs are written to this object.
   // If null, then server info logs are written to log_dir.

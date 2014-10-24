@@ -26,12 +26,14 @@ class MsgLoop {
   // When a message arrives, invoke the specified callback.
   MsgLoop(const Env* env,
           const EnvOptions& env_options,
-          const HostId& hostid,
-          const std::shared_ptr<Logger>& info_log,
-          const std::map<MessageType, MsgCallbackType>& callbacks,
-          CommandCallbackType command_callback = nullptr);
+          int port,
+          const std::shared_ptr<Logger>& info_log);
 
   virtual ~MsgLoop();
+
+  // Registers callbacks for a number of message types.
+  void
+  RegisterCallbacks(const std::map<MessageType, MsgCallbackType>& callbacks);
 
   // Start this instance of the Event Loop
   void Run(void);
@@ -65,7 +67,7 @@ class MsgLoop {
   const std::shared_ptr<Logger> info_log_;
 
   // The callbacks specified by the application
-  const std::map<MessageType, MsgCallbackType> msg_callbacks_;
+  std::map<MessageType, MsgCallbackType> msg_callbacks_;
 
   // The underlying Eventloop callback handler
   EventLoop event_loop_;

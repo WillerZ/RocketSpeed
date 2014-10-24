@@ -35,7 +35,6 @@ namespace rocketspeed {
 typedef void* EventCallbackContext;
 typedef std::function<void(EventCallbackContext, std::unique_ptr<Message> msg)>
                                             EventCallbackType;
-typedef std::function<void(std::unique_ptr<Command>)> CommandCallbackType;
 
 class SocketEvent;
 
@@ -54,7 +53,6 @@ class EventLoop {
             int port,
             const std::shared_ptr<Logger>& info_log,
             EventCallbackType event_callback,
-            CommandCallbackType command_callback = nullptr,
             uint32_t command_queue_size = 65536);
 
   virtual ~EventLoop();
@@ -107,7 +105,6 @@ class EventLoop {
 
   // The callbacks
   EventCallbackType event_callback_;
-  CommandCallbackType command_callback_;
 
   // The callback context
   EventCallbackContext event_callback_context_;

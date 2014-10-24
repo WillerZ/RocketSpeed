@@ -168,7 +168,7 @@ class MessagePing : public Message {
 
   MessagePing(TenantID tenantid,
               PingType pingtype,
-              HostId& origin) :
+              const HostId& origin) :
               Message(MessageType::mPing, tenantid, origin),
               pingtype_(pingtype) {}
 

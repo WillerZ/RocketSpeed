@@ -41,7 +41,15 @@ class ControlTowerTest {
     num_ping_responses_(0),
     num_subscribe_responses_(0) {
     // set control tower to log information to test dir
-    ctoptions_.log_dir = test::TmpDir() + "/controltower";
+    st_ = test::CreateLogger(env_, "ControlTowerTest", &info_log);
+
+    msg_loop_.reset(new MsgLoop(env_,
+                                EnvOptions(),
+                                ControlTower::DEFAULT_PORT,
+                                info_log));
+
+    ctoptions_.info_log = info_log;
+    ctoptions_.msg_loop = msg_loop_.get();
     ctoptions_.storage_url =
       "configerator:logdevice/rocketspeed.logdevice.primary.conf";
 
@@ -50,8 +58,6 @@ class ControlTowerTest {
     // what is my machine name?
     ASSERT_EQ(gethostname(&myname_[0], sizeof(myname_)), 0);
     hostname_.assign(myname_, strlen(myname_));
-
-    info_log = GetLogger();
 
     // enable all kinds of libevent debugging
     if (debug_libevent) {
@@ -64,6 +70,7 @@ class ControlTowerTest {
 
   // deleting the ControlTower shuts down the event disptach loop.
   virtual ~ControlTowerTest() {
+    msg_loop_->Stop();
     delete ct_;
     ct_ = nullptr;
     env_->WaitForJoin();  // This is good hygine
@@ -73,16 +80,10 @@ class ControlTowerTest {
     return hostname_;
   }
 
-  // Returns the logger that logs into the LOG file
-  std::shared_ptr<Logger> GetLogger() {
-    return ct_->GetOptions().info_log;
-  }
-
  protected:
   Env* env_;
   EnvOptions env_options_;
   ControlTower* ct_;
-  std::shared_ptr<Logger> info_log_;
   bool started_;
   ControlTowerOptions ctoptions_;
   Status st_;
@@ -90,12 +91,7 @@ class ControlTowerTest {
   int num_ping_responses_;
   int num_subscribe_responses_;
   char myname_[1024];
-
-  // A static method that is the entry point of a background thread
-  static void ControlTowerStart(void* arg) {
-    ControlTower* ct = reinterpret_cast<ControlTower*>(arg);
-    ct->Run();
-  }
+  std::unique_ptr<MsgLoop> msg_loop_;
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
@@ -144,14 +140,14 @@ class ControlTowerTest {
 
     // If the control tower has not already been started, then start it
     if (!started_) {
-      env_->StartThread(ControlTowerTest::ControlTowerStart, ct_,
+      env_->StartThread(ControlTowerTest::MsgLoopStart, msg_loop_.get(),
                         "tower-" +
-                        std::to_string(ct_->GetOptions().port_number));
+                        std::to_string(ct_->GetHostId().port));
     }
     started_ = true;
 
     // Wait till the background thread has setup the dispatch loop
-    while (!ct_->IsRunning()) {
+    while (!msg_loop_->IsRunning()) {
       env_->SleepForMicroseconds(1000);
     }
     return Status::OK();
@@ -184,12 +180,6 @@ class ControlTowerTest {
     }
     return false;
   }
-
-  Status ControlTowerStop() {
-    delete ct_;
-    ct_ = nullptr;
-    return Status::OK();
-  }
 };
 
 //
@@ -197,18 +187,9 @@ class ControlTowerTest {
 // the control tower
 TEST(ControlTowerTest, Ping) {
   int num_msgs = 100;
-  HostId controltower(hostname_, ctoptions_.port_number);
-  HostId clientId(hostname_, ctoptions_.port_number-1);
 
   // create a ControlTower (if not already created)
   ASSERT_EQ(ControlTowerRun().ok(), true);
-
-  // create a message
-  std::string serial;
-  MessagePing msg(Tenant::GuestTenant,
-                  MessagePing::PingType::Request,
-                  clientId);
-  msg.SerializeToString(&serial);  // serialize msg
 
   // Define a callback to process the Ping response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
@@ -218,48 +199,45 @@ TEST(ControlTowerTest, Ping) {
     };
 
   // create a client to communicate with the ControlTower
-  MsgLoop* loop = new MsgLoop(env_, env_options_, clientId,
-                              GetLogger(),
-                              client_callback);
-  env_->StartThread(ControlTowerTest::MsgLoopStart, loop,
-                    "testc-" + std::to_string(clientId.port));
-  while (!loop->IsRunning()) {
+  MsgLoop loop(env_, env_options_, 58499, info_log);
+  loop.RegisterCallbacks(client_callback);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop,
+                    "testc-" + std::to_string(loop.GetHostId().port));
+  while (!loop.IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
+
+  // create a message
+  std::string serial;
+  MessagePing msg(Tenant::GuestTenant,
+                  MessagePing::PingType::Request,
+                  loop.GetHostId());
+  msg.SerializeToString(&serial);  // serialize msg
   std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                               std::move(serial), controltower));
-  ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
-            (delete loop, ControlTowerStop(), false), true);
+                               std::move(serial), ct_->GetHostId()));
+  ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
 
   // verify that the ping response was received by the client
-  ASSERT_EQ(CheckPingResponse(1) ||
-            (delete loop, ControlTowerStop(), false), true);
+  ASSERT_EQ(CheckPingResponse(1), true);
 
   // now send multiple ping messages to server back-to-back
   for (int i = 0; i < num_msgs; i++) {
     MessagePing newmsg(Tenant::GuestTenant,
                        MessagePing::PingType::Request,
-                       clientId);
+                       loop.GetHostId());
     msg.SerializeToString(&serial);  // serialize msg
     std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                                 std::move(serial), controltower));
-    ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
-              (delete loop, ControlTowerStop(), false), true);
+                                 std::move(serial), ct_->GetHostId()));
+    ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 
   // check that all 100 responses were received
-  ASSERT_EQ(CheckPingResponse(1+num_msgs) ||
-            (delete loop, ControlTowerStop(), false), true);
-
-  // free up resources
-  delete loop;
+  ASSERT_EQ(CheckPingResponse(1+num_msgs), true);
 }
 
 TEST(ControlTowerTest, Subscribe) {
   std::vector<TopicPair> topics;
   int num_topics = 5;
-  HostId controltower(hostname_, ctoptions_.port_number);
-  HostId clientId(hostname_, ctoptions_.port_number-1);
 
   // create a ControlTower (if not already created)
   ASSERT_EQ(ControlTowerRun().ok(), true);
@@ -270,12 +248,6 @@ TEST(ControlTowerTest, Subscribe) {
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
     topics.push_back(TopicPair(4 + i, std::to_string(i), type, 101 + i));
   }
-  // create a message
-  std::string serial;
-  MessageMetadata meta1(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        clientId, topics);
-  meta1.SerializeToString(&serial);
 
   // Define a callback to process the subscribe response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
@@ -285,27 +257,28 @@ TEST(ControlTowerTest, Subscribe) {
     };
 
   // create a client to communicate with the ControlTower
-  MsgLoop* loop = new MsgLoop(env_, env_options_, clientId,
-                              GetLogger(),
-                              client_callback);
-  env_->StartThread(ControlTowerTest::MsgLoopStart, loop,
-                    "testc-" + std::to_string(clientId.port));
-  while (!loop->IsRunning()) {
+  MsgLoop loop(env_, env_options_, 58499, info_log);
+  loop.RegisterCallbacks(client_callback);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop,
+                    "testc-" + std::to_string(loop.GetHostId().port));
+  while (!loop.IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
+
+  // create a message
+  std::string serial;
+  MessageMetadata meta1(Tenant::GuestTenant,
+                        MessageMetadata::MetaType::Request,
+                        loop.GetHostId(), topics);
+  meta1.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                               std::move(serial), controltower));
+                               std::move(serial), ct_->GetHostId()));
 
   // send message to control tower
-  ASSERT_EQ(loop->SendCommand(std::move(cmd)).ok() ||
-            (delete loop, ControlTowerStop(), false), true);
+  ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
 
   // verify that the subscribe response was received by the client
-  ASSERT_EQ(CheckSubscribeResponse(num_topics) ||
-           (delete loop, ControlTowerStop(), false), true);
-
-  // free up resources
-  delete loop;
+  ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
 }
 }  // namespace rocketspeed
 

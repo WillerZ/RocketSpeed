@@ -9,7 +9,6 @@ namespace rocketspeed {
 ControlTowerOptions::ControlTowerOptions()
   : env(Env::Default()),
     hostname(""),
-    port_number(58500),
     info_log(nullptr),
 #ifdef NDEBUG
     info_log_level(WARN_LEVEL),

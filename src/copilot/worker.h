@@ -13,6 +13,7 @@
 #include "src/copilot/options.h"
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
+#include "src/messages/msg_loop.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/worker_loop.h"
 
@@ -104,8 +105,8 @@ class CopilotWorker {
   }
 
   // Get the host id of this worker's worker loop.
-  HostId GetHostId() const {
-    return HostId(options_.copilotname, options_.port_number);
+  const HostId& GetHostId() const {
+    return options_.msg_loop->GetHostId();
   }
 
  private:

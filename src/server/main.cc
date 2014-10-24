@@ -33,17 +33,23 @@ DEFINE_int32(worker_queue_size, 1000000, "number of worker commands in flight");
 
 // Control tower settings
 DEFINE_bool(tower, false, "start the control tower");
-DEFINE_int32(tower_port, 58500, "tower port number");
+DEFINE_int32(tower_port,
+             rocketspeed::ControlTower::DEFAULT_PORT,
+             "tower port number");
 DEFINE_int32(tower_rooms, 4, "tower rooms");
 
 // Pilot settings
 DEFINE_bool(pilot, false, "start the pilot");
-DEFINE_int32(pilot_port, 58600, "pilot port number");
+DEFINE_int32(pilot_port,
+             rocketspeed::Pilot::DEFAULT_PORT,
+             "pilot port number");
 DEFINE_int32(pilot_workers, 4, "pilot worker threads");
 
 // Copilot settings
 DEFINE_bool(copilot, false, "start the copilot");
-DEFINE_int32(copilot_port, 58700, "copilot port number");
+DEFINE_int32(copilot_port,
+             rocketspeed::Copilot::DEFAULT_PORT,
+             "copilot port number");
 DEFINE_int32(copilot_workers, 4, "copilot worker threads");
 
 int main(int argc, char** argv) {
@@ -72,9 +78,13 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Environment.
+  rocketspeed::Env* env = rocketspeed::Env::Default();
+  rocketspeed::EnvOptions env_options;
+
   // Create info log
   std::shared_ptr<rocketspeed::Logger> info_log;
-  st = rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
+  st = rocketspeed::CreateLoggerFromOptions(env,
                                             "",
                                             "LOG",
                                             0,
@@ -89,14 +99,41 @@ int main(int argc, char** argv) {
     info_log = nullptr;
   }
 
+  // Utility for creating a message loop.
+  auto make_msg_loop = [&] (int port) {
+    return new rocketspeed::MsgLoop(env, env_options, port, info_log);
+  };
+
   rocketspeed::ControlTower* tower = nullptr;
   rocketspeed::Pilot* pilot = nullptr;
   rocketspeed::Copilot* copilot = nullptr;
 
+  std::unique_ptr<rocketspeed::MsgLoop> tower_loop;
+  std::shared_ptr<rocketspeed::MsgLoop> pilot_loop;
+  std::shared_ptr<rocketspeed::MsgLoop> copilot_loop;
+
+  if (FLAGS_tower) {
+    tower_loop.reset(make_msg_loop(FLAGS_tower_port));
+  }
+
+  if (FLAGS_pilot && FLAGS_copilot && FLAGS_pilot_port == FLAGS_copilot_port) {
+    // Pilot + Copilot sharing message loop.
+    pilot_loop.reset(make_msg_loop(FLAGS_pilot_port));
+    copilot_loop = pilot_loop;
+  } else {
+    // Separate message loops if enabled.
+    if (FLAGS_pilot) {
+      pilot_loop.reset(make_msg_loop(FLAGS_pilot_port));
+    }
+    if (FLAGS_copilot) {
+      copilot_loop.reset(make_msg_loop(FLAGS_copilot_port));
+    }
+  }
+
   // Create Control Tower.
   if (FLAGS_tower) {
     rocketspeed::ControlTowerOptions tower_opts;
-    tower_opts.port_number = FLAGS_tower_port;
+    tower_opts.msg_loop = tower_loop.get();
     tower_opts.storage_url = FLAGS_storage_url;
     tower_opts.worker_queue_size = FLAGS_worker_queue_size;
     tower_opts.number_of_rooms = FLAGS_tower_rooms;
@@ -114,7 +151,7 @@ int main(int argc, char** argv) {
   // Create Pilot.
   if (FLAGS_pilot) {
     rocketspeed::PilotOptions pilot_opts;
-    pilot_opts.port_number = FLAGS_pilot_port;
+    pilot_opts.msg_loop = pilot_loop.get();
     pilot_opts.storage_url = FLAGS_storage_url;
     pilot_opts.worker_queue_size = FLAGS_worker_queue_size;
     pilot_opts.log_range = log_range;
@@ -132,7 +169,7 @@ int main(int argc, char** argv) {
   // Create Copilot.
   if (FLAGS_copilot) {
     rocketspeed::CopilotOptions copilot_opts;
-    copilot_opts.port_number = FLAGS_copilot_port;
+    copilot_opts.msg_loop = copilot_loop.get();
     copilot_opts.worker_queue_size = FLAGS_worker_queue_size;
     copilot_opts.log_range = log_range;
     copilot_opts.num_workers = FLAGS_copilot_workers;
@@ -151,43 +188,43 @@ int main(int argc, char** argv) {
   }
 
   // Start all the services, with the last one running in this thread.
+  // Get a list of message loops.
+  std::vector<rocketspeed::MsgLoop*> msg_loops;
+  if (tower_loop) {
+    msg_loops.push_back(tower_loop.get());
+  }
+  if (copilot_loop) {
+    msg_loops.push_back(copilot_loop.get());
+  }
+  if (pilot_loop && pilot_loop != copilot_loop) {
+    msg_loops.push_back(pilot_loop.get());
+  }
+
+  // Start all the messages loops, with the last loop started in this thread.
   std::vector<std::thread> threads;
-  if (tower) {
-    if (!copilot && !pilot) {
-      // No other services, run in this thread.
-      tower->Run();
-    } else {
-      // Start in background.
-      threads.emplace_back([tower] () { tower->Run(); });
-    }
+  assert(msg_loops.size() != 0);
+  for (size_t i = 0; i < msg_loops.size() - 1; ++i) {
+    threads.emplace_back(
+      [] (rocketspeed::MsgLoop* msg_loop) {
+        msg_loop->Run();
+      },
+      msg_loops[i]);
   }
+  // Start the last loop, this will block until something the loop exits for
+  // some reason.
+  msg_loops[msg_loops.size() - 1]->Run();
 
-  if (copilot) {
-    if (!pilot) {
-      // No other services, run in this thread.
-      copilot->Run();
-    } else {
-      // Start in background.
-      threads.emplace_back([copilot] () { copilot->Run(); });
-    }
-  }
-
-  if (pilot) {
-    // Run in this thread.
-    pilot->Run();
-  }
-
-  // Stop all event loops.
-  delete pilot;
-  delete copilot;
-  delete tower;
-
-  // Join all the background threads.
+  // Join all the other message loops.
   for (std::thread& t : threads) {
     if (t.joinable()) {
       t.join();
     }
   }
+
+  // Stop all background services.
+  delete pilot;
+  delete copilot;
+  delete tower;
 
   // Shutdown libevent for good hygiene.
   ld_libevent_global_shutdown();

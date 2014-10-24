@@ -37,32 +37,18 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
   return result;
 }
 
-void
-ControlTower::Run(void) {
-  options_.env->SetThreadName(options_.env->GetCurrentThreadId(), "tower");
-
-  LOG_INFO(options_.info_log,
-      "Starting a new Control Tower with %d rooms",
-      options_.number_of_rooms);
-  msg_loop_.Run();
-}
-
 /**
  * Private constructor for a Control Tower
  */
 ControlTower::ControlTower(const ControlTowerOptions& options):
   options_(SanitizeOptions(options)),
-  callbacks_(InitializeCallbacks()),
   log_router_(options.log_range.first, options.log_range.second),
-  hostmap_(options.max_number_of_hosts),
-  msg_loop_(options_.env,
-            options_.env_options,
-            HostId(options_.hostname, options_.port_number),
-            options_.info_log,
-            callbacks_) {
+  hostmap_(options.max_number_of_hosts) {
   // The rooms and that tailers are not initialized here.
   // The reason being that those initializations could fail and
   // return error Status.
+
+  options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 }
 
 ControlTower::~ControlTower() {

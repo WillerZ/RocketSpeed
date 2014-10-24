@@ -10,6 +10,7 @@
 #include <chrono>
 #include <string>
 #include "src/port/stack_trace.h"
+#include "src/util/auto_roll_logger.h"
 
 namespace rocketspeed {
 namespace test {
@@ -85,6 +86,18 @@ std::string TmpDir() {
   Status s = Env::Default()->GetTestDirectory(&dir);
   ASSERT_TRUE(s.ok()) << s.ToString();
   return dir;
+}
+
+Status CreateLogger(Env* env,
+                    const std::string& dir,
+                    std::shared_ptr<Logger>* logger) {
+  return CreateLoggerFromOptions(env,
+                                 TmpDir() + "/" + dir,
+                                 "LOG",
+                                 0,
+                                 0,
+                                 DEBUG_LEVEL,
+                                 logger);
 }
 
 int RandomSeed() {
