@@ -1,6 +1,6 @@
-# create the pilot binary
+# create the rocketbench binary
 cpp_binary(
-    name = 'producer',
+    name = 'rocketbench',
     srcs = [
         'random_distribution.cc',
         'main.cc',

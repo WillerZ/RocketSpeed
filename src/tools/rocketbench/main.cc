@@ -50,11 +50,14 @@ DEFINE_int64(topics_stddev, 0,
 
 std::shared_ptr<rocketspeed::Logger> info_log;
 
+typedef std::pair<rocketspeed::MsgId, uint64_t> MsgTime;
+
 struct Result {
   bool succeeded;
+  std::vector<MsgTime> msg_send_times;
 };
 
-static const Result failed = { false, };
+static const Result failed = { false, {} };
 
 namespace rocketspeed {
 
@@ -83,6 +86,10 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
 
   // Number of messages we should have sent in 10ms
   int64_t rate_check = std::max<int64_t>(1, rate / 100);
+
+  // Record the send times for each message.
+  std::vector<MsgTime> msg_send_times;
+  msg_send_times.reserve(num_messages);
 
   auto start = std::chrono::steady_clock::now();
   for (int64_t i = 0; i < num_messages; ++i) {
@@ -116,8 +123,9 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
 
     // Add ID and timestamp to message ID.
     static std::atomic<uint64_t> message_index;
+    uint64_t send_time = env->NowMicros();
     snprintf(data.data(), data.size(),
-             "%lu %lu", message_index++, env->NowMicros());
+             "%lu %lu", message_index++, send_time);
 
     // Send the message
     PublishStatus ps = producer->Publish(topic_name,
@@ -132,6 +140,8 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
       info_log->Flush();
       return failed;
     }
+
+    msg_send_times.emplace_back(ps.msgid, send_time);
 
     if (FLAGS_message_rate != 0 &&
         (i + 1) % rate_check == 0) {
@@ -150,7 +160,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
       }
     }
   }
-  return Result { true };
+  return Result { true, std::move(msg_send_times) };
 }
 
 /*
@@ -160,7 +170,8 @@ int DoProduce(Client* producer,
               rocketspeed::port::Semaphore* all_ack_messages_received,
               std::atomic<int64_t>* ack_messages_received,
               std::chrono::time_point<std::chrono::steady_clock>*
-                                                     last_ack_message){
+                                                     last_ack_message,
+              std::vector<std::vector<MsgTime>>* all_msg_send_times){
   // Distribute total number of messages among them.
   std::vector<std::future<Result>> futures;
   int64_t total_messages = FLAGS_num_messages;
@@ -184,6 +195,7 @@ int DoProduce(Client* producer,
       }
       ret = 1;
     }
+    all_msg_send_times->emplace_back(std::move(result.msg_send_times));
   }
 
   if (FLAGS_await_ack) {
@@ -252,6 +264,7 @@ int DoConsume(rocketspeed::port::Semaphore* all_messages_received,
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
+  rocketspeed::Env* env = rocketspeed::Env::Default();
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
 
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
@@ -352,6 +365,10 @@ int main(int argc, char** argv) {
   std::chrono::time_point<std::chrono::steady_clock> last_ack_message;
   std::chrono::time_point<std::chrono::steady_clock> last_data_message;
 
+  // Message ack times
+  std::vector<MsgTime> msg_ack_times;
+  msg_ack_times.reserve(FLAGS_num_messages);
+
   // Create callback for publish acks.
   std::atomic<int64_t> ack_messages_received{0};
   auto publish_callback = [&] (rocketspeed::ResultStatus rs) {
@@ -362,6 +379,9 @@ int main(int argc, char** argv) {
         // This may be the last ack we receive, so set end to the time now.
         end = std::chrono::steady_clock::now();
         last_ack_message = std::chrono::steady_clock::now();
+
+        // Append receive time.
+        msg_ack_times.emplace_back(rs.msgid, env->NowMicros());
 
         // If we've received all messages, let the main thread know to finish up.
         if (ack_messages_received.load() == FLAGS_num_messages) {
@@ -378,10 +398,9 @@ int main(int argc, char** argv) {
 
   // Data structure to track received message indices and latencies (microsecs).
   uint64_t latency_max = static_cast<uint64_t>(-1);
-  std::vector<uint64_t> latencies(FLAGS_num_messages, latency_max);
+  std::vector<uint64_t> recv_latencies(FLAGS_num_messages, latency_max);
 
   // Create callback for processing messages received
-  rocketspeed::Env* env = rocketspeed::Env::Default();
   std::atomic<int64_t> messages_received{0};
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived> rs) {
@@ -393,9 +412,9 @@ int main(int argc, char** argv) {
     rocketspeed::Slice data = rs->GetContents();
     uint64_t message_index, send_time;
     std::sscanf(data.data(), "%lu %lu", &message_index, &send_time);
-    if (message_index < latencies.size()) {
-      if (latencies[message_index] == latency_max) {
-        latencies[message_index] = now - send_time;
+    if (message_index < recv_latencies.size()) {
+      if (recv_latencies[message_index] == latency_max) {
+        recv_latencies[message_index] = now - send_time;
       } else {
         LOG_WARN(info_log,
             "Received duplicate message index (%lu)",
@@ -482,6 +501,9 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Vector of message IDs and the time they were sent.
+  std::vector<std::vector<MsgTime>> all_msg_send_times;
+
   // Start the clock.
   start = std::chrono::steady_clock::now();
 
@@ -493,7 +515,8 @@ int main(int argc, char** argv) {
                               producer,
                               &all_ack_messages_received,
                               &ack_messages_received,
-                              &last_ack_message);
+                              &last_ack_message,
+                              &all_msg_send_times);
   }
   if (FLAGS_start_consumer) {
     consumer_ret = std::async(std::launch::async,
@@ -535,6 +558,32 @@ int main(int argc, char** argv) {
   auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
     end - start);
 
+  // Process the publish-ack latencies.
+  // Accumulate individual worker results into single vector.
+  std::vector<MsgTime> msg_send_times;
+  for (const auto& worker_batch : all_msg_send_times) {
+    // Insert this worker's results into msg_send_times.
+    msg_send_times.insert(msg_send_times.end(),
+                          worker_batch.begin(),
+                          worker_batch.end());
+  }
+
+  // Now sort both the send and ack times so that the GUIDs are in order.
+  std::sort(msg_send_times.begin(), msg_send_times.end());
+  std::sort(msg_ack_times.begin(), msg_ack_times.end());
+
+  // Now generate the latencies.
+  std::vector<uint64_t> ack_latencies;
+  size_t num_acks = std::min(msg_send_times.size(), msg_ack_times.size());
+  ack_latencies.reserve(num_acks);
+  for (size_t i = 0; i < num_acks; ++i) {
+    ack_latencies.push_back(msg_ack_times[i].second - msg_send_times[i].second);
+  }
+
+  // Sort the latencies so we can work out percentiles.
+  std::sort(ack_latencies.begin(), ack_latencies.end());
+  std::sort(recv_latencies.begin(), recv_latencies.end());
+
   if (FLAGS_report) {
     uint32_t total_ms = static_cast<uint32_t>(total_time.count());
     if (total_ms == 0) {
@@ -554,21 +603,24 @@ int main(int argc, char** argv) {
     printf("Results\n");
     printf("%ld messages sent\n", FLAGS_num_messages);
     printf("%ld messages sends acked\n", ack_messages_received.load());
-    printf("%ld messages received\n", messages_received.load());
+    if (FLAGS_start_consumer) {
+      printf("%ld messages received\n", messages_received.load());
+    }
 
-    if (messages_received.load() != FLAGS_num_messages) {
+    if (FLAGS_start_consumer &&
+        messages_received.load() != FLAGS_num_messages) {
       // Print out dropped messages if there are any. This helps when
       // debugging problems.
       printf("\n");
       printf("Messages failed to receive\n");
 
-      for (uint64_t i = 0; i < latencies.size(); ++i) {
+      for (uint64_t i = 0; i < recv_latencies.size(); ++i) {
         // If latency is latency_max then it wasn't received.
-        if (latencies[i] == latency_max) {
+        if (recv_latencies[i] == latency_max) {
           // Find the range of message IDs dropped (e.g. 100-200)
           uint64_t j;
-          for (j = i; j < latencies.size(); ++j) {
-            if (latencies[j] != latency_max) {
+          for (j = i; j < recv_latencies.size(); ++j) {
+            if (recv_latencies[j] != latency_max) {
               break;
             }
           }
@@ -584,19 +636,34 @@ int main(int argc, char** argv) {
       }
     }
 
-    printf("\n");
-    printf("Throughput\n");
-    printf("%u messages/s\n", msg_per_sec);
-    printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
+    // Only report results if everything succeeded.
+    // Otherwise, they don't make sense.
+    if (ret == 0) {
+      printf("\n");
+      printf("Throughput\n");
+      printf("%u messages/s\n", msg_per_sec);
+      printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
 
-    std::sort(latencies.begin(), latencies.end());
-    printf("\n");
-    printf("Latency (microseconds)\n");
-    printf("p50 = %lu\n", latencies[FLAGS_num_messages * 0.50]);
-    printf("p75 = %lu\n", latencies[FLAGS_num_messages * 0.75]);
-    printf("p90 = %lu\n", latencies[FLAGS_num_messages * 0.90]);
-    printf("p95 = %lu\n", latencies[FLAGS_num_messages * 0.95]);
-    printf("p99 = %lu\n", latencies[FLAGS_num_messages * 0.99]);
+      // Report ack latencies.
+      printf("\n");
+      printf("Publish->Ack Latency (microseconds)\n");
+      printf("p50 = %lu\n", ack_latencies[ack_latencies.size() * 0.50]);
+      printf("p75 = %lu\n", ack_latencies[ack_latencies.size() * 0.75]);
+      printf("p90 = %lu\n", ack_latencies[ack_latencies.size() * 0.90]);
+      printf("p95 = %lu\n", ack_latencies[ack_latencies.size() * 0.95]);
+      printf("p99 = %lu\n", ack_latencies[ack_latencies.size() * 0.99]);
+
+      // Report receive latencies.
+      if (FLAGS_start_consumer) {
+        printf("\n");
+        printf("Publish->Receive Latency (microseconds)\n");
+        printf("p50 = %lu\n", recv_latencies[recv_latencies.size() * 0.50]);
+        printf("p75 = %lu\n", recv_latencies[recv_latencies.size() * 0.75]);
+        printf("p90 = %lu\n", recv_latencies[recv_latencies.size() * 0.90]);
+        printf("p95 = %lu\n", recv_latencies[recv_latencies.size() * 0.95]);
+        printf("p99 = %lu\n", recv_latencies[recv_latencies.size() * 0.99]);
+      }
+    }
   }
 
   delete producer;
