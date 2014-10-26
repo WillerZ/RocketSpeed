@@ -84,9 +84,6 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
   // Calculate message rate for this worker.
   int64_t rate = FLAGS_message_rate / FLAGS_num_threads;
 
-  // Number of messages we should have sent in 10ms
-  int64_t rate_check = std::max<int64_t>(1, rate / 100);
-
   // Record the send times for each message.
   std::vector<MsgTime> msg_send_times;
   msg_send_times.reserve(num_messages);
@@ -143,8 +140,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
 
     msg_send_times.emplace_back(ps.msgid, send_time);
 
-    if (FLAGS_message_rate != 0 &&
-        (i + 1) % rate_check == 0) {
+    if (FLAGS_message_rate) {
       // Check if we are sending messages too fast, and if so, sleep.
       int64_t have_sent = i;
 
