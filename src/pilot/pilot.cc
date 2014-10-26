@@ -135,7 +135,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
   // Route topic to log ID.
   auto msg_data = unique_static_cast<MessageData>(std::move(msg));
   LogID logid;
-  std::string topic_name = msg_data->GetTopicName().ToString();
+  Slice topic_name = msg_data->GetTopicName();
   if (!log_router_.GetLogID(topic_name, &logid).ok()) {
     assert(false);  // GetLogID should never fail.
     return;

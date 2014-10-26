@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <string>
+#include "include/Slice.h"
 
 namespace rocketspeed {
 
@@ -48,8 +49,8 @@ struct MurmurHash2<size_t> {
 };
 
 template <>
-struct MurmurHash2<std::string> {
-  size_t operator()(const std::string& x) const {
+struct MurmurHash2<Slice> {
+  size_t operator()(Slice x) const {
     const uint64_t* data = reinterpret_cast<const uint64_t*>(x.data());
     const size_t len = x.size();
     const uint64_t* end = data + (len / 8);
@@ -84,6 +85,13 @@ struct MurmurHash2<std::string> {
     h ^= h >> r;
 
     return h;
+  }
+};
+
+template <>
+struct MurmurHash2<std::string> {
+  size_t operator()(const std::string& x) const {
+    return MurmurHash2<Slice>()(Slice(x));
   }
 };
 

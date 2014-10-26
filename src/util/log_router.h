@@ -40,6 +40,7 @@ class LogRouter {
    * @return on success OK(), otherwise errorcode.
    */
   Status GetLogID(const Topic& topic, LogID* out) const;
+  Status GetLogID(Slice topic, LogID* out) const;
 
  private:
   /**

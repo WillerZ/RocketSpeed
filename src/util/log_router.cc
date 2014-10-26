@@ -15,12 +15,15 @@ LogRouter::LogRouter(LogID first, LogID last)
   assert(last >= first);
 }
 
-Status LogRouter::GetLogID(const Topic& topic,
-                           LogID* out) const {
+Status LogRouter::GetLogID(const Topic& topic, LogID* out) const {
+  return GetLogID(Slice(topic), out);
+}
+
+Status LogRouter::GetLogID(Slice topic, LogID* out) const {
   // Hash the topic name
   // Using MurmurHash instead of std::hash because std::hash is implementation
   // defined, meaning we cannot rely on it to have a good distribution.
-  MurmurHash2<std::string> hasher;
+  MurmurHash2<Slice> hasher;
   size_t hash = hasher(topic);
 
   // Find the Log ID for this topic hash key.

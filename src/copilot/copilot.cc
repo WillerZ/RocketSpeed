@@ -113,8 +113,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
 
   // map the topic to a logid
   LogID logid;
-  Status st = log_router_.GetLogID(data->GetTopicName().ToString(),
-                                            &logid);
+  Status st = log_router_.GetLogID(data->GetTopicName(), &logid);
   if (!st.ok()) {
     LOG_INFO(options_.info_log,
         "Unable to map msg to logid %s", st.ToString().c_str());
