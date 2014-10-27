@@ -22,7 +22,7 @@
 
 namespace rocketspeed {
 
-static const int kDelayMicros = 100000;
+static const int kDelayMicros = 10000;
 
 class EnvPosixTest {
  private:
@@ -136,8 +136,8 @@ TEST(EnvPosixTest, TwoPools) {
         ASSERT_LE(num_running_, pool_size_);
       }
 
-      // sleep for 1 sec
-      Env::Default()->SleepForMicroseconds(1000000);
+      // sleep for 100 msec
+      Env::Default()->SleepForMicroseconds(100000);
 
       {
         MutexLock l(&mu_);
@@ -450,7 +450,7 @@ TEST(EnvPosixTest, RandomAccessUniqueID) {
   ASSERT_TRUE(IsUniqueIDValid(unique_id2));
 
   // Get Unique ID again after waiting some time.
-  env_->SleepForMicroseconds(1000000);
+  env_->SleepForMicroseconds(100000);
   ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
   id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
   ASSERT_TRUE(id_size > 0);

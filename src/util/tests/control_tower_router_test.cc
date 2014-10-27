@@ -32,9 +32,9 @@ TEST(ControlTowerRouterTest, ConsistencyTest) {
   ControlTowerRouter router2(
     MakeControlTowers(numCTs * 105 / 100), 100, numCopies);
 
-  // Count number of changes for 1 million logs.
+  // Count number of changes for 100k logs.
   int numRelocations = 0;
-  const int numLogs = 1000000;
+  const int numLogs = 100000;
   for (int i = 0; i < numLogs; ++i) {
     std::vector<HostId const*> hosts1;
     std::vector<HostId const*> hosts2;
@@ -68,8 +68,8 @@ TEST(ControlTowerRouterTest, LogDistribution) {
   ControlTowerRouter router(MakeControlTowers(numControlTowers), 100, 1);
   std::vector<int> logCount(numControlTowers, 0);
 
-  // Count number of changed for 1 million logs.
-  int numLogs = 1000000;
+  // Count number of changed for 100k logs.
+  int numLogs = 100000;
   for (int i = 0; i < numLogs; ++i) {
     std::vector<HostId const*> hosts;
     ASSERT_TRUE(router.GetControlTowers(i, &hosts).ok());

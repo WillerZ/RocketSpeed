@@ -89,7 +89,7 @@ TEST(ArenaTest, ApproximateMemoryUsageTest) {
 TEST(ArenaTest, Simple) {
   std::vector<std::pair<size_t, char*>> allocated;
   Arena arena;
-  const int N = 100000;
+  const int N = 10000;
   size_t bytes = 0;
   Random rnd(301);
   for (int i = 0; i < N; i++) {

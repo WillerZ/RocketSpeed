@@ -17,6 +17,7 @@
 #endif
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
+#include "src/port/port.h"
 
 namespace rocketspeed {
 
@@ -80,6 +81,9 @@ TEST(MockLogDeviceTest, Basic) {
   auto reader1 = client->createAsyncReader();
   auto reader2 = client->createAsyncReader();
 
+  port::Semaphore checkpoint1;
+  port::Semaphore checkpoint2;
+
   // Use the reader callbacks to count the number of messages received
   // and verify the expected contents.
   std::atomic<int> count1{0};
@@ -89,38 +93,45 @@ TEST(MockLogDeviceTest, Basic) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count1));
       ++count1;
+      if (count1 == 6 && count2 == 4) {
+        checkpoint1.Post();
+      }
+      if (count1 == 8 && count2 == 4) {
+        checkpoint2.Post();
+      }
     });
   reader2->setRecordCallback(
     [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count2 + 1));
       ++count2;
+      if (count1 == 6 && count2 == 4) {
+        checkpoint1.Post();
+      }
     });
 
   reader1->startReading(logid, lsn[0]);
   reader2->startReading(logid, lsn[1], lsn[4]);
 
-  // Sleep a little to allow the readers to catch up.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   // Check that all messages were recevied.
+  checkpoint1.TimedWait(std::chrono::seconds(1));
   ASSERT_EQ(count1, 6);
   ASSERT_EQ(count2, 4);
 
-  // Add a couple more and sleep again.
+  // Add a couple more.
   ASSERT_NE(client->appendSync(logid, payload("test6")), LSN_INVALID);
   ASSERT_NE(client->appendSync(logid, payload("test7")), LSN_INVALID);
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   // Reader 1 should have received two more messages, while reader 2
   // should receive no more because it only subscribed up to lsn[5].
+  checkpoint2.TimedWait(std::chrono::seconds(1));
   ASSERT_EQ(count1, 8);
   ASSERT_EQ(count2, 4);
 
   // Stop reading and check that no more messages are received on reader 1.
   reader1->stopReading(logid);
   ASSERT_NE(client->appendSync(logid, payload("test8")), LSN_INVALID);
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(count1, 8);
 }
 
@@ -140,6 +151,8 @@ TEST(MockLogDeviceTest, FindTime) {
 
   auto reader = client->createAsyncReader();
 
+  port::Semaphore checkpoint;
+
   // Read all the timestamps from the records.
   std::chrono::milliseconds timestamps[3];
   std::atomic<int> count{0};
@@ -148,11 +161,14 @@ TEST(MockLogDeviceTest, FindTime) {
       ASSERT_LT(count, 3);
       timestamps[count] = rec->attrs.timestamp;
       ++count;
+      if (count == 3) {
+        checkpoint.Post();
+      }
     });
   reader->startReading(logid, lsn[0]);
 
   // Let the readers catch up.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_EQ(count, 3);
 
   // Check that using findTimeSync on the timestamps matches up with
@@ -168,15 +184,18 @@ TEST(MockLogDeviceTest, FindTime) {
   count = 0;
   for (int i = 0; i < 3; ++i) {
     client->findTime(logid, timestamps[i],
-      [i, &count, &lsn](facebook::logdevice::Status err, lsn_t l) {
+      [i, &count, &lsn, &checkpoint](facebook::logdevice::Status err, lsn_t l) {
         ASSERT_EQ(l, lsn[i]);
         ASSERT_TRUE(err == facebook::logdevice::E::OK);
         ++count;
+        if (count == 3) {
+          checkpoint.Post();
+        }
       });
   }
 
   // Let the callbacks happen
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_EQ(count, 3);  // ensure they were eventually called
 }
 
@@ -200,6 +219,7 @@ TEST(MockLogDeviceTest, Trim) {
   client->trim(logid, lsn[1]);
 
   auto reader = client->createAsyncReader();
+  port::Semaphore checkpoint;
 
   // Read all the timestamps from the records.
   std::atomic<int> count{0};
@@ -208,11 +228,14 @@ TEST(MockLogDeviceTest, Trim) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count + 2));
       ++count;
+      if (count == 2) {
+        checkpoint.Post();
+      }
     });
   reader->startReading(logid, lsn[0]);
 
   // Let the readers catch up.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_EQ(count, 2);  // should only have read the last two messages
 }
 
@@ -221,6 +244,10 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
 
   // Write a bunch of messages to a single log.
   logid_t logid(1);
+  const int numMessages = 1000;
+
+  port::Semaphore checkpoint1;
+  port::Semaphore checkpoint2;
 
   // Create two readers from that log.
   std::atomic<int> count1{0};
@@ -232,6 +259,9 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
                 "test" + std::to_string(count1));
       ++count1;
       lsn1 = rec->attrs.lsn;
+      if (count1 == numMessages) {
+        checkpoint1.Post();
+      }
     });
   reader1->startReading(logid, LSN_OLDEST, LSN_MAX);
 
@@ -245,25 +275,26 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
                 "test" + std::to_string(count2));
       ++count2;
       lsn2 = rec->attrs.lsn;
+      if (count2 == numMessages) {
+        checkpoint2.Post();
+      }
     });
   reader2->startReading(logid, LSN_OLDEST, LSN_MAX);
 
   // Write 1000 messages to the log while occasionally waiting.
-  const int numMessages = 1000;
   for (int i = 0; i < numMessages; ++i) {
     ASSERT_NE(client->appendSync(logid, payload("test" + std::to_string(i))),
               LSN_INVALID);
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    std::this_thread::sleep_for(std::chrono::microseconds(100));
     if (i % 25 == 0) {
       // Trim the log every so often to test reading while trimming also.
       client->trim(logid, std::min(lsn1, lsn2) - 1);
     }
   }
 
-  // Sleep a little to allow the readers to catch up with latest writes.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   // Check that all messages were recevied.
+  checkpoint1.TimedWait(std::chrono::seconds(1));
+  checkpoint2.TimedWait(std::chrono::seconds(1));
   ASSERT_EQ(count1, numMessages);
   ASSERT_EQ(count2, numMessages);
 }

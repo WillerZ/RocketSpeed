@@ -19,13 +19,14 @@ class LogRouterTest { };
 
 TEST(LogRouterTest, ConsistencyTest) {
   // Test that topic mapping changes minimally when increasing number of logs.
-  int numLogs = 1000000;
+  int numLogs = 10000;
   LogRouter router1(1, numLogs);
   LogRouter router2(1, numLogs * 105 / 100);  // 5% more
 
-  // Count number of changed for 1 million topics.
+  // Count number of changed for 100k topics.
   int numChanged = 0;
-  for (int i = 0; i < 1000000; ++i) {
+  const int numTopics = 100000;
+  for (int i = 0; i < numTopics; ++i) {
     Topic topic = std::to_string(i);
     LogID logID1;
     LogID logID2;
@@ -37,8 +38,8 @@ TEST(LogRouterTest, ConsistencyTest) {
   }
 
   // Ideally ~5% should change, but allow for up to 2-8% margin of error.
-  ASSERT_LT(numChanged, numLogs * 8 / 100);
-  ASSERT_GT(numChanged, numLogs * 2 / 100);
+  ASSERT_LT(numChanged, numTopics * 8 / 100);
+  ASSERT_GT(numChanged, numTopics * 2 / 100);
 }
 
 TEST(LogRouterTest, LogDistribution) {

@@ -134,12 +134,16 @@ class PilotTest {
 TEST(PilotTest, Publish) {
   // create a Pilot (if not already created)
   ASSERT_EQ(PilotRun().ok(), true);
+  port::Semaphore checkpoint;
 
   // create a client to communicate with the Pilot
   std::map<MessageType, MsgCallbackType> client_callback;
   client_callback[MessageType::mDataAck] =
-    [this] (std::unique_ptr<Message> msg) {
+    [this, &checkpoint] (std::unique_ptr<Message> msg) {
       ProcessDataAck(std::move(msg));
+      if (sent_msgs_.size() == acked_msgs_.size()) {
+        checkpoint.Post();
+      }
     };
 
   MsgLoop loop(env_, env_options_, 58499, info_log_);
@@ -148,6 +152,7 @@ TEST(PilotTest, Publish) {
   while (!loop.IsRunning()) {
     env_->SleepForMicroseconds(1000);
   }
+
 
   // send messages to pilot
   NamespaceID nsid = 101;
@@ -166,9 +171,8 @@ TEST(PilotTest, Publish) {
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   // Ensure all messages were ack'd
+  checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 }
 

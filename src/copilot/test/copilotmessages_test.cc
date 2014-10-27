@@ -165,12 +165,16 @@ class CopilotTest {
 TEST(CopilotTest, Publish) {
   // create a Copilot (if not already created)
   ASSERT_EQ(CopilotRun().ok(), true);
+  port::Semaphore checkpoint;
 
   // create a client to communicate with the Copilot
   std::map<MessageType, MsgCallbackType> client_callback;
   client_callback[MessageType::mMetadata] =
-    [this] (std::unique_ptr<Message> msg) {
+    [this, &checkpoint] (std::unique_ptr<Message> msg) {
       ProcessMetadata(std::move(msg));
+      if (sent_msgs_.size() == acked_msgs_.size()) {
+        checkpoint.Post();
+      }
     };
 
   MsgLoop loop(env_, env_options_, 58499, GetLogger());
@@ -200,9 +204,8 @@ TEST(CopilotTest, Publish) {
     sent_msgs_.insert(topic);
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   // Ensure all messages were ack'd
+  checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 }
 
