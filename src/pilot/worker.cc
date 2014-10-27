@@ -41,13 +41,15 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
   LogID logid = command.GetLogID();
 
   // Setup AppendCallback
-  auto append_callback = [this, msg_raw, logid] (Status append_status) {
+  auto append_callback = [this, msg_raw, logid] (Status append_status,
+                                                 SequenceNumber seqno) {
     std::unique_ptr<MessageData> msg(msg_raw);
     if (append_status.ok()) {
       // Append successful, send success ack.
       SendAck(msg->GetTenantID(),
               msg->GetOrigin(),
               msg->GetMessageId(),
+              seqno,
               MessageDataAck::AckStatus::Success);
       LOG_INFO(options_.info_log,
           "Appended (%.16s) successfully to Topic(%s) in log %lu",
@@ -63,6 +65,7 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
       SendAck(msg->GetTenantID(),
               msg->GetOrigin(),
               msg->GetMessageId(),
+              0,
               MessageDataAck::AckStatus::Failure);
     }
   };
@@ -90,6 +93,7 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
     SendAck(msg->GetTenantID(),
             msg->GetOrigin(),
             msg->GetMessageId(),
+            0,
             MessageDataAck::AckStatus::Failure);
   }
 }
@@ -97,10 +101,12 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
 void PilotWorker::SendAck(const TenantID tenantid,
                           const HostId& host,
                           const MsgId& msgid,
+                          SequenceNumber seqno,
                           MessageDataAck::AckStatus status) {
   MessageDataAck::Ack ack;
   ack.status = status;
   ack.msgid = msgid;
+  ack.seqno = seqno;
 
   // create new message
   MessageDataAck newmsg(tenantid, host, { ack });

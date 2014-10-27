@@ -172,7 +172,7 @@ Status LogDeviceStorage::AppendAsync(LogID id,
   auto logdevice_callback =
     [callback] (facebook::logdevice::Status st,
                 const facebook::logdevice::DataRecord& r) {
-    callback(LogDeviceErrorToStatus(st));
+    callback(LogDeviceErrorToStatus(st), r.attrs.lsn);
   };
 
   // Asynchronously append the data.

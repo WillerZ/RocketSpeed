@@ -520,6 +520,7 @@ Slice MessageDataAck::Serialize() const {
   for (const Ack& ack : acks_) {
     serialize_buffer__.append((const char*)&ack.status, sizeof(ack.status));
     serialize_buffer__.append((const char*)&ack.msgid, sizeof(ack.msgid));
+    PutVarint64(&serialize_buffer__, ack.seqno);
   }
 
   // compute the size of this message
@@ -579,6 +580,10 @@ Status MessageDataAck::DeSerialize(Slice* in) {
     }
     memcpy(&ack.msgid, in->data(), sizeof(ack.msgid));
     in->remove_prefix(sizeof(ack.msgid));
+
+    if (!GetVarint64(in, &ack.seqno)) {
+      return Status::InvalidArgument("Bad Ack Sequence number");
+    }
 
     acks_.push_back(ack);
   }

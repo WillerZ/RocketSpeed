@@ -63,7 +63,7 @@ struct GapRecord {
 /**
  * Callback for asynchronous append requests.
  */
-typedef std::function<void(Status)> AppendCallback;
+typedef std::function<void(Status, SequenceNumber)> AppendCallback;
 
 class AsyncLogReader;
 

@@ -122,6 +122,7 @@ TEST(Messaging, DataAck) {
   for (auto& ack : acks) {
     for (size_t i = 0; i < sizeof(acks[0].msgid.id); ++i) {
       ack.msgid.id[i] = value++;
+      ack.seqno = i;
     }
   }
   MessageDataAck ack1(101, hostid, acks);

@@ -418,11 +418,21 @@ class MessageDataAck : public Message {
    * Individual message ack.
    */
   struct Ack {
+    // If the message was successfully stored in the log storage.
     AckStatus status;
+
+    // Message ID of the message that was successfully stored.
     MsgId msgid;
 
+    // Sequence number of the message in the log storage.
+    // This can be used after a publish to read all messages from the point
+    // of the published message.
+    SequenceNumber seqno;
+
     bool operator==(const Ack& rhs) const {
-      return status == rhs.status && msgid == rhs.msgid;
+      return status == rhs.status &&
+             msgid == rhs.msgid &&
+             seqno == rhs.seqno;
     }
   };
 

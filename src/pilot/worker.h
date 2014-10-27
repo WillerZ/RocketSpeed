@@ -104,6 +104,7 @@ class PilotWorker {
   void SendAck(const TenantID tenantid,
                const HostId& host,
                const MsgId& msgid,
+               SequenceNumber seqno,
                MessageDataAck::AckStatus status);
 
   WorkerLoop<PilotWorkerCommand> worker_loop_;

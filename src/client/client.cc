@@ -327,7 +327,7 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
       rs.msgid = ack.msgid;
       if (ack.status == MessageDataAck::AckStatus::Success) {
         rs.status = Status::OK();
-        // TODO(pja) 1: get seqno
+        rs.seqno = ack.seqno;
       } else {
         rs.status = Status::IOError("publish failed");
       }
