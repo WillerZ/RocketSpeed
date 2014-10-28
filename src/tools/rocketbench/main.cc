@@ -368,24 +368,26 @@ int main(int argc, char** argv) {
 
   // Create callback for publish acks.
   std::atomic<int64_t> ack_messages_received{0};
+  std::atomic<int64_t> failed_publishes{0};
   auto publish_callback = [&] (rocketspeed::ResultStatus rs) {
-    if (rs.status.ok()) {
-      ++ack_messages_received;
+    ++ack_messages_received;
 
-      if (FLAGS_await_ack) {
-        // This may be the last ack we receive, so set end to the time now.
-        end = std::chrono::steady_clock::now();
-        last_ack_message = std::chrono::steady_clock::now();
+    if (FLAGS_await_ack) {
+      // This may be the last ack we receive, so set end to the time now.
+      end = std::chrono::steady_clock::now();
+      last_ack_message = std::chrono::steady_clock::now();
 
-        // Append receive time.
-        msg_ack_times.emplace_back(rs.msgid, env->NowMicros());
+      // Append receive time.
+      msg_ack_times.emplace_back(rs.msgid, env->NowMicros());
 
-        // If we've received all messages, let the main thread know to finish up.
-        if (ack_messages_received.load() == FLAGS_num_messages) {
-          all_ack_messages_received.Post();
-        }
+      // If we've received all messages, let the main thread know to finish up.
+      if (ack_messages_received.load() == FLAGS_num_messages) {
+        all_ack_messages_received.Post();
       }
-    } else {
+    }
+
+    if (!rs.status.ok()) {
+      ++failed_publishes;
       LOG_WARN(info_log, "Received publish failure response");
     }
   };
@@ -600,6 +602,9 @@ int main(int argc, char** argv) {
     printf("Results\n");
     printf("%ld messages sent\n", FLAGS_num_messages);
     printf("%ld messages sends acked\n", ack_messages_received.load());
+    if (failed_publishes != 0) {
+      printf("%ld published failed\n", failed_publishes.load());
+    }
     if (FLAGS_start_consumer) {
       printf("%ld messages received\n", messages_received.load());
     }
