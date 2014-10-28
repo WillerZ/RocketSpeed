@@ -127,7 +127,7 @@ class EventLoop {
   std::mutex command_queue_write_mutex_;
 
   // a cache of HostId to connections
-  std::map<HostId, SocketEvent*> connection_cache_;
+  std::map<HostId, std::vector<SocketEvent*>> connection_cache_;
 
   // connection cache updates
   bool insert_connection_cache(const HostId& host, SocketEvent* ev);

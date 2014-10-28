@@ -651,8 +651,26 @@ void EventLoop::Dispatch(std::unique_ptr<Message> message) {
 // otherwise returns false if the object already existed.
 bool
 EventLoop::insert_connection_cache(const HostId& host, SocketEvent* sev) {
+  auto iter = connection_cache_.find(host);
+
+  // There exists a mapping about this host
+  if (iter != connection_cache_.end()) {
+    for (auto item: iter->second) {
+      if (item == sev) {
+        return false;   // pre-existing object
+      }
+    }
+    iter->second.push_back(sev);  // add new object into cache
+    return true;                  // new object added
+  }
+
+  // There isn't any mapping for this host.
+  std::vector<SocketEvent*> newarray;
+  newarray.push_back(sev);
+
+  // Create first mapping for this host.
   auto ret = connection_cache_.insert(
-    std::pair<HostId, SocketEvent*>(host, sev));
+    std::pair<HostId, std::vector<SocketEvent*>>(host, newarray));
   if (!ret.second) {
     return false;   // object already existed
   }
@@ -666,20 +684,25 @@ bool
 EventLoop::remove_connection_cache(const HostId& host, SocketEvent* sev) {
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
-    assert(iter->second == sev);
-    connection_cache_.erase(iter);
-    return true;    // deleted successfully
+    for (unsigned int i = 0; i < iter->second.size(); i++) {
+      if (iter->second[i] == sev) {
+        iter->second.erase(iter->second.begin() + i);
+        return true;    // deleted successfully
+      }
+    }
   }
   return false;     // not found
 }
 
 // Finds an entry from the connection cache.
-// Returns null if the entry does not exist
+// If there are multiple socket connections to the specified host,
+// then returns the latest connection to that host.
+// Returns null if the host does not have any connected socket.
 SocketEvent*
 EventLoop::lookup_connection_cache(const HostId& host) const {
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
-    return iter->second;
+    return iter->second.back();  // return the last element for now
   }
   return nullptr;     // not found
 }
@@ -691,9 +714,10 @@ EventLoop::clear_connection_cache() {
   std::vector<SocketEvent*> socks;
   for (auto iter = connection_cache_.begin();
        iter != connection_cache_.end(); ++iter) {
-    SocketEvent* sev = iter->second;
-    assert(sev);
-    socks.push_back(sev);
+    for (auto sev : iter->second) {
+      assert(sev);
+      socks.push_back(sev);
+    }
   }
   // Clears the connection cache.
   connection_cache_.clear();
