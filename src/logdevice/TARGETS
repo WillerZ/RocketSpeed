@@ -29,6 +29,7 @@ cpp_binary(
         '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DUSE_LOGDEVICE',
+        '-DROCKETSPEED_PLATFORM_POSIX',
     ],
     deps = [
         '@/rocketspeed/github/src/port',
