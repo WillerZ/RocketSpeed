@@ -287,17 +287,17 @@ class MessageData : public Message {
    */
   Retention GetRetention() const { return retention_; }
 
+  /**
+   * @return the slice containing tenant ID, topic_name and paylodad from
+   * buffer_
+   */
+  Slice GetStorageSlice() const;
+
   /*
    * Inherited from Serializer
    */
   virtual Slice Serialize() const;
   virtual Status DeSerialize(Slice* in);
-
-  /**
-   * @param clear_buffer Set to true to serialize to the start of the buffer.
-   * @return Serializes the message into the log storage format.
-   */
-  Slice SerializeStorage() const;
 
   /**
    * @return Deserializes the message from the log storage format.
@@ -317,6 +317,7 @@ class MessageData : public Message {
   Slice payload_;            // user data of message
   Retention retention_;      // message retention
   NamespaceID namespaceid_;  // message namespace
+  Slice storage_slice_;       // slice starting from tenantid from buffer_
 };
 
 /*

@@ -295,14 +295,15 @@ Status MessageData::DeSerialize(Slice* in) {
   }
 
   // The rest of the message is what goes into log storage.
+  storage_slice_ = *in;
   return DeSerializeStorage(in);
 }
 
-Slice MessageData::SerializeStorage() const {
-  // If we are serializing as part of Serialize then don't restart buffer.
-  serialize_buffer__.clear();
-  SerializeInternal();
-  return Slice(serialize_buffer__);
+Slice MessageData::GetStorageSlice() const {
+  // Returns a Slice starting from tenant_id of the message.
+  // storage_slice_ is constructed during deserialization.
+  assert(storage_slice_.size() != 0);
+  return storage_slice_;
 }
 
 void MessageData::SerializeInternal() const {

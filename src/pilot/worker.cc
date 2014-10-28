@@ -72,7 +72,7 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
 
   // Asynchronously append to log storage.
   auto status = storage_->AppendAsync(logid,
-                                      msg_raw->SerializeStorage(),
+                                      msg_raw->GetStorageSlice(),
                                       append_callback);
   // TODO(pja) 1: Technically there is no need to re-serialize the message.
   // If we keep the wire-serialized form that we received the message in then
