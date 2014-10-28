@@ -3,6 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#include "src/client/client.h"
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -24,78 +25,12 @@ namespace rocketspeed {
 Client::~Client() {
 }
 
-// Internal implementation of the Client API.
-class ClientImpl : public Client {
- public:
-  virtual ~ClientImpl();
-
-  virtual PublishStatus Publish(const Topic& name,
-                                const NamespaceID namespaceId,
-                                const TopicOptions& options,
-                                const Slice& data);
-  virtual void ListenTopics(std::vector<SubscriptionPair>& names,
-                            const TopicOptions& options);
-
-  ClientImpl(const HostId& pilot_host_id,
-             const HostId& copilot_host_id,
-             TenantID tenant_id,
-             int port,
-             PublishCallback publish_callback,
-             SubscribeCallback subscription_callback,
-             MessageReceivedCallback receive_callback,
-             bool enable_logging);
-
- private:
-  // Callback for a Data message
-  void ProcessData(std::unique_ptr<Message> msg);
-
-  // Callback for MessageDataAck message.
-  void ProcessDataAck(std::unique_ptr<Message> msg);
-
-  // Callback for MessageMetadata message.
-  void ProcessMetadata(std::unique_ptr<Message> msg);
-
-  // The environment
-  Env* env_;
-
-  // HostId of this machine, i.e. the one the producer is running on.
-  HostId host_id_;
-
-  // HostId of pilot/copilot machines to send messages to.
-  HostId pilot_host_id_;
-  HostId copilot_host_id_;
-
-  // Tenant ID of this producer.
-  TenantID tenant_id_;
-
-  // Incoming message loop object.
-  MsgLoop* msg_loop_ = nullptr;
-  std::thread msg_loop_thread_;
-
-  // Messages sent, awaiting ack.
-  std::set<MsgId> messages_sent_;
-  std::mutex message_sent_mutex_;  // mutex for operators on messages_sent_
-
-  // callback for incoming data message
-  PublishCallback publish_callback_;
-
-  // callback for incoming ack message for a subscription/unsubscription
-  SubscribeCallback subscription_callback_;
-
-  // callback for incoming data messages
-  MessageReceivedCallback receive_callback_;
-
-  // Map a subscribed topic name to the last sequence number
-  // received for this topic.
-  std::unordered_map<Topic, SequenceNumber>  topic_map_;
-};
-
 // Implementation of Client::Open from RocketSpeed.h
 Status Client::Open(const Configuration* config,
-                      PublishCallback publish_callback,
-                      SubscribeCallback subscription_callback,
-                      MessageReceivedCallback receive_callback,
-                      Client** producer) {
+                    PublishCallback publish_callback,
+                    SubscribeCallback subscription_callback,
+                    MessageReceivedCallback receive_callback,
+                    Client** producer) {
   // Validate arguments.
   if (config == nullptr) {
     return Status::InvalidArgument("config must not be null.");
@@ -119,7 +54,7 @@ Status Client::Open(const Configuration* config,
                              publish_callback,
                              subscription_callback,
                              receive_callback,
-                             true);
+                             std::make_shared<NullLogger>());
   return Status::OK();
 }
 
@@ -130,7 +65,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        PublishCallback publish_callback,
                        SubscribeCallback subscription_callback,
                        MessageReceivedCallback receive_callback,
-                       bool enable_logging)
+                       std::shared_ptr<Logger> info_log)
 : env_(Env::Default())
 , pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
@@ -156,23 +91,6 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
   callbacks[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
     ProcessMetadata(std::move(msg));
   };
-
-  std::shared_ptr<Logger> info_log;
-  if (enable_logging) {
-    Status st = CreateLoggerFromOptions(Env::Default(),
-                                        "",
-                                        "LOG.client",
-                                        0,
-                                        0,
-#ifdef NDEBUG
-                                        WARN_LEVEL,
-#else
-                                        INFO_LEVEL,
-#endif
-                                        &info_log);
-  } else {
-    info_log = std::make_shared<NullLogger>();
-  }
 
   // Construct message loop.
   msg_loop_ = new MsgLoop(Env::Default(),

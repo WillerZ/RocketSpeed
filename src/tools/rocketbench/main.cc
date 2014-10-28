@@ -19,6 +19,7 @@
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/tools/rocketbench/random_distribution.h"
+#include "src/client/client.h"
 
 // This tool can behave as a standalone producer, a standalone
 // consumer or both a producer and a consumer.
@@ -452,36 +453,35 @@ int main(int argc, char** argv) {
   // consumer to share the same connections to the Cloud.
   if (FLAGS_start_producer && FLAGS_start_consumer &&
       FLAGS_producer_port == FLAGS_consumer_port) {
-    if (!rocketspeed::Client::Open(pconfig.get(),
-                                   publish_callback,
-                                   subscribe_callback,
-                                   receive_callback,
-                                   &producer).ok()) {
-      LOG_WARN(info_log, "Failed to connect to RocketSpeed");
-      info_log->Flush();
-      return 1;
-    }
+    producer = new rocketspeed::ClientImpl(pilot,
+                                           copilot,
+                                           rocketspeed::Tenant(102),
+                                           FLAGS_producer_port,
+                                           publish_callback,
+                                           subscribe_callback,
+                                           receive_callback,
+                                           info_log);
     consumer = producer;
   } else {
-    if (FLAGS_start_producer &&
-        !rocketspeed::Client::Open(pconfig.get(),
-                                   publish_callback,
-                                   nullptr,
-                                   nullptr,
-                                   &producer).ok()) {
-      LOG_WARN(info_log, "Failed to connect to RocketSpeed: producer ");
-      info_log->Flush();
-      return 1;
+    if (FLAGS_start_producer) {
+      producer = new rocketspeed::ClientImpl(pilot,
+                                             copilot,
+                                             rocketspeed::Tenant(102),
+                                             FLAGS_producer_port,
+                                             publish_callback,
+                                             nullptr,
+                                             nullptr,
+                                             info_log);
     }
-    if (FLAGS_start_consumer &&
-        !rocketspeed::Client::Open(cconfig.get(),
-                                   nullptr,
-                                   subscribe_callback,
-                                   receive_callback,
-                                   &consumer).ok()) {
-      LOG_WARN(info_log, "Failed to connect to RocketSpeed: consumer ");
-      info_log->Flush();
-      return 1;
+    if (FLAGS_start_consumer) {
+      consumer = new rocketspeed::ClientImpl(pilot,
+                                             copilot,
+                                             rocketspeed::Tenant(102),
+                                             FLAGS_producer_port,
+                                             nullptr,
+                                             subscribe_callback,
+                                             receive_callback,
+                                             info_log);
     }
   }
 

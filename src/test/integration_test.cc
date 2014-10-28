@@ -10,6 +10,7 @@
 #include "src/util/testharness.h"
 #include "src/test/test_cluster.h"
 #include "src/port/port.h"
+#include "src/client/client.h"
 
 namespace rocketspeed {
 
@@ -63,32 +64,25 @@ TEST(IntegrationTest, OneMessage) {
     msg_received.Post();
   };
 
-  // Create configuration for this cluster.
-  std::unique_ptr<Configuration> config(
-    Configuration::Create(cluster.GetPilotHostIds(),
-                          cluster.GetCopilotHostIds(),
-                          Tenant(102),
-                          58499));
-
   // Create RocketSpeed client.
-  Client* client = nullptr;
-  Status st = Client::Open(config.get(),
-                           publish_callback,
-                           subscription_callback,
-                           receive_callback,
-                           &client);
-  std::unique_ptr<Client> client_owned(client);
-  ASSERT_TRUE(st.ok());
+  ClientImpl client(cluster.GetPilotHostIds().front(),
+                    cluster.GetCopilotHostIds().front(),
+                    Tenant(102),
+                    58499,
+                    publish_callback,
+                    subscription_callback,
+                    receive_callback,
+                    info_log);
 
   // Send a message.
-  auto ps = client->Publish(topic, namespace_id, topic_options, Slice(data));
+  auto ps = client.Publish(topic, namespace_id, topic_options, Slice(data));
   ASSERT_TRUE(ps.status.ok());
 
   // Listen for the message.
   std::vector<SubscriptionPair> subscriptions = {
     SubscriptionPair(1, topic, namespace_id)
   };
-  client->ListenTopics(subscriptions, topic_options);
+  client.ListenTopics(subscriptions, topic_options);
 
   // Wait for the message.
   bool result = msg_received.TimedWait(std::chrono::seconds(10));
@@ -125,27 +119,20 @@ TEST(IntegrationTest, SequenceNumberZero) {
     message_sem.Post();
   };
 
-  // Create configuration for this cluster.
-  std::unique_ptr<Configuration> config(
-    Configuration::Create(cluster.GetPilotHostIds(),
-                          cluster.GetCopilotHostIds(),
-                          Tenant(102),
-                          58499));
-
-  // Create RocketSpeed client.
-  Client* client = nullptr;
-  Status st = Client::Open(config.get(),
-                           publish_callback,
-                           subscription_callback,
-                           receive_callback,
-                           &client);
-  std::unique_ptr<Client> client_owned(client);
-  ASSERT_TRUE(st.ok());
+    // Create RocketSpeed client.
+  ClientImpl client(cluster.GetPilotHostIds().front(),
+                    cluster.GetCopilotHostIds().front(),
+                    Tenant(102),
+                    58499,
+                    publish_callback,
+                    subscription_callback,
+                    receive_callback,
+                    info_log);
 
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(client.Publish(topic, ns, opts, Slice(data)).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
 
@@ -153,14 +140,14 @@ TEST(IntegrationTest, SequenceNumberZero) {
   std::vector<SubscriptionPair> subscriptions = {
     SubscriptionPair(0, topic, ns)
   };
-  client->ListenTopics(subscriptions, opts);
+  client.ListenTopics(subscriptions, opts);
   ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
 
   // Should not receive any of the last three messages.
   // Send 3 more different messages.
   for (int i = 3; i < 6; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(client.Publish(topic, ns, opts, Slice(data)).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
     ASSERT_TRUE(message_sem.TimedWait(timeout));
   }
