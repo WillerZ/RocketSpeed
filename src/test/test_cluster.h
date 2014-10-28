@@ -36,9 +36,11 @@ class LocalTestCluster {
    * Constructs a new test cluster. Once this has finished constructing, the
    * pilot, copilot, and control tower will be running.
    *
+   * @param info_log The logger for server informational messages
    * @param storage_url URL of logdevice config. Leave blank to use test util.
    */
-  explicit LocalTestCluster(const std::string& storage_url = "");
+  explicit LocalTestCluster(std::shared_ptr<Logger> info_log,
+                            const std::string& storage_url = "");
 
   /**
    * Stops all parts of the test cluster.
@@ -82,6 +84,9 @@ class LocalTestCluster {
   std::thread cockpit_thread_;
   std::unique_ptr<MsgLoop> control_tower_loop_;
   std::thread control_tower_thread_;
+
+  // info log
+  std::shared_ptr<Logger> info_log_;
 };
 
 

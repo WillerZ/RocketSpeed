@@ -330,7 +330,8 @@ int main(int argc, char** argv) {
 
   std::unique_ptr<rocketspeed::LocalTestCluster> test_cluster;
   if (FLAGS_start_local_server) {
-    test_cluster.reset(new rocketspeed::LocalTestCluster(FLAGS_storage_url));
+    test_cluster.reset(new rocketspeed::LocalTestCluster(
+                           info_log, FLAGS_storage_url));
   }
 
   // Configuration for RocketSpeed.

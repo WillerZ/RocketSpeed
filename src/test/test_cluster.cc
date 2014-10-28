@@ -17,10 +17,12 @@
 
 namespace rocketspeed {
 
-LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
+LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
+  const std::string& storage_url) :
   pilot_(nullptr),
   copilot_(nullptr),
-  control_tower_(nullptr) {
+  control_tower_(nullptr),
+  info_log_(info_log) {
   Env* env = Env::Default();
   EnvOptions env_options;
   Status st;
@@ -76,35 +78,18 @@ LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
   control_tower_options_.storage.reset(storage);
 #endif
 
-  // Create info log
-  std::shared_ptr<Logger> info_log;
-  st = CreateLoggerFromOptions(Env::Default(),
-                               "",
-                               "LOG",
-                               0,
-                               0,
-#ifdef NDEBUG
-                               WARN_LEVEL,
-#else
-                               INFO_LEVEL,
-#endif
-                               &info_log);
-  if (!st.ok()) {
-    info_log = nullptr;
-  }
-
   control_tower_loop_.reset(new MsgLoop(env,
                                         env_options,
                                         ControlTower::DEFAULT_PORT,
-                                        info_log));
+                                        info_log_));
   cockpit_loop_.reset(new MsgLoop(env,
                                   env_options,
                                   Copilot::DEFAULT_PORT,
-                                  info_log));
+                                  info_log_));
 
   // Create ControlTower
   control_tower_options_.log_range = log_range;
-  control_tower_options_.info_log = info_log;
+  control_tower_options_.info_log = info_log_;
   control_tower_options_.number_of_rooms = 4;
   control_tower_options_.msg_loop = control_tower_loop_.get();
   st = ControlTower::CreateNewInstance(control_tower_options_, &control_tower_);
@@ -115,7 +100,7 @@ LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
 
   // Create Copilot
   copilot_options_.control_towers.push_back(control_tower_->GetHostId());
-  copilot_options_.info_log = info_log;
+  copilot_options_.info_log = info_log_;
   copilot_options_.num_workers = 4;
   copilot_options_.msg_loop = cockpit_loop_.get();
   st = Copilot::CreateNewInstance(copilot_options_, &copilot_);
@@ -126,7 +111,7 @@ LocalTestCluster::LocalTestCluster(const std::string& storage_url) :
 
   // Create Pilot
   pilot_options_.log_range = log_range;
-  pilot_options_.info_log = info_log;
+  pilot_options_.info_log = info_log_;
   pilot_options_.num_workers = 4;
   pilot_options_.msg_loop = cockpit_loop_.get();
   st = Pilot::CreateNewInstance(pilot_options_, &pilot_);

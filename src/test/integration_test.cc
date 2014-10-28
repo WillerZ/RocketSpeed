@@ -13,11 +13,27 @@
 
 namespace rocketspeed {
 
-class IntegrationTest {};
+class IntegrationTest {
+ public:
+  IntegrationTest() {
+    if (!rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
+                                              "",
+                                              "LOG.integrationtest",
+                                              0,
+                                              0,
+                                              rocketspeed::INFO_LEVEL,
+                                              &info_log).ok()) {
+      fprintf(stderr, "Error creating logger, aborting.\n");
+    } else {
+      info_log = std::make_shared<rocketspeed::NullLogger>();
+    }
+  }
+  std::shared_ptr<rocketspeed::Logger> info_log;
+};
 
 TEST(IntegrationTest, OneMessage) {
   // Setup local RocketSpeed cluster.
-  LocalTestCluster cluster;
+  LocalTestCluster cluster(info_log);
 
   // Message read semaphore.
   port::Semaphore msg_received;
@@ -81,7 +97,7 @@ TEST(IntegrationTest, OneMessage) {
 
 TEST(IntegrationTest, SequenceNumberZero) {
   // Setup local RocketSpeed cluster.
-  LocalTestCluster cluster;
+  LocalTestCluster cluster(info_log);
 
   // Message read semaphore.
   port::Semaphore message_sem;
