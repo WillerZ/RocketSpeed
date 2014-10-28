@@ -55,6 +55,9 @@ class ClientImpl : public Client {
   // Callback for MessageMetadata message.
   void ProcessMetadata(std::unique_ptr<Message> msg);
 
+  // The environment
+  Env* env_;
+
   // HostId of this machine, i.e. the one the producer is running on.
   HostId host_id_;
 
@@ -128,7 +131,8 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        SubscribeCallback subscription_callback,
                        MessageReceivedCallback receive_callback,
                        bool enable_logging)
-: pilot_host_id_(pilot_host_id)
+: env_(Env::Default())
+, pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
 , publish_callback_(publish_callback)
@@ -178,6 +182,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
   msg_loop_->RegisterCallbacks(callbacks);
 
   msg_loop_thread_ = std::thread([this] () {
+    env_->SetThreadName(env_->GetCurrentThreadId(), "client");
     msg_loop_->Run();
   });
 
