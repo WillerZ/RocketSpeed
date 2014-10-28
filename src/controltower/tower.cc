@@ -100,7 +100,7 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   for (unsigned int i = 0; i < numrooms; i++) {
     ControlRoom* room = (*ct)->rooms_[i].get();
     opt.env->StartThread(ControlRoom::Run, room,
-                  "rooms-" + room->GetRoomNumber());
+                  "rooms-" + std::to_string(room->GetRoomNumber()));
   }
   // Wait for all the Rooms to be ready to process events
   for (unsigned int i = 0; i < numrooms; i++) {
