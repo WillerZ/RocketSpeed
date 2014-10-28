@@ -4,18 +4,6 @@ if [ $# -ne 1 ]; then
   exit 0
 fi
 
-if [ -f rocketbench ]; then
-  BENCH=./rocketbench
-elif [ -f _build/opt/rocketspeed/github/src/tools/rocketbench/rocketbench ]; then
-  BENCH=_build/opt/rocketspeed/github/src/tools/rocketbench/rocketbench
-else
-  echo "Must have either: "
-  echo "  rocketbench, or"
-  echo "  _build/opt/rocketspeed/github/src/tools/rocketbench/rocketbench"
-  echo "from current directory"
-  exit 0
-fi
-
 # size constants
 K=1024
 M=$((1024 * K))
@@ -30,8 +18,25 @@ storage_url=${STORAGE_URL:-\"configerator:logdevice/rocketspeed.logdevice.primar
 message_rate=${MESSAGE_RATE:-$((50 * K))}
 num_messages=${NUM_MESSAGES:-$((1 * M))}
 
+# If you want to use the debug build, then set an environment varibale
+# called DBG=dbg. By default, pick the optimized build.
+part=${DBG:-opt}
+
 const_params="
   --storage_url=$storage_url"
+
+if [ -f rocketbench ]; then
+  BENCH=./rocketbench
+elif [ -f _build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench ]; then
+  BENCH=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
+else
+  echo "Must have either: "
+  echo "  rocketbench, or"
+  echo "  _build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench"
+  echo "from current directory"
+  exit 0
+fi
+
 
 function run_produce {
   echo "Burst writing $num_messages messages into log storage..."
