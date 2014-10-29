@@ -28,7 +28,8 @@ class ClientImpl : public Client {
   virtual PublishStatus Publish(const Topic& name,
                                 const NamespaceID namespaceId,
                                 const TopicOptions& options,
-                                const Slice& data);
+                                const Slice& data,
+                                const MsgId messageId = MsgId());
   virtual void ListenTopics(std::vector<SubscriptionPair>& names,
                             const TopicOptions& options);
 

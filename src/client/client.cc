@@ -121,11 +121,12 @@ ClientImpl::~ClientImpl() {
 PublishStatus ClientImpl::Publish(const Topic& name,
                                   const NamespaceID namespaceId,
                                   const TopicOptions& options,
-                                  const Slice& data) {
+                                  const Slice& data,
+                                  const MsgId messageId) {
   if (namespaceId <= 100) {       // Namespace <= 100 are reserved
     return PublishStatus(Status::InvalidArgument(
                          "NamespaceID must be greater than 100."),
-                         MsgId());
+                         messageId);
   }
   // Construct message.
   MessageData message(MessageType::mPublish,
@@ -137,6 +138,10 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                       options.retention);
 
   // Take note of message ID before we move into the command.
+  const MsgId empty_msgid = MsgId();
+  if (!(messageId == empty_msgid)) {
+    message.SetMessageId(messageId);
+  }
   const MsgId msgid = message.GetMessageId();
 
   // Get a serialized version of the message

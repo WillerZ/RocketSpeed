@@ -11,6 +11,7 @@
 #include "src/test/test_cluster.h"
 #include "src/port/port.h"
 #include "src/client/client.h"
+#include "src/util/guid_generator.h"
 
 namespace rocketspeed {
 
@@ -44,6 +45,8 @@ TEST(IntegrationTest, OneMessage) {
   NamespaceID namespace_id = 102;
   TopicOptions topic_options(Retention::OneDay);
   std::string data = "test_message";
+  GUIDGenerator msgid_generator;
+  MsgId message_id = msgid_generator.Generate();
 
   // RocketSpeed callbacks;
   auto publish_callback = [&] (ResultStatus rs) {
@@ -75,8 +78,13 @@ TEST(IntegrationTest, OneMessage) {
                     info_log);
 
   // Send a message.
-  auto ps = client.Publish(topic, namespace_id, topic_options, Slice(data));
+  auto ps = client.Publish(topic,
+                           namespace_id,
+                           topic_options,
+                           Slice(data),
+                           message_id);
   ASSERT_TRUE(ps.status.ok());
+  ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
   std::vector<SubscriptionPair> subscriptions = {

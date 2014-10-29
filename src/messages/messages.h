@@ -268,6 +268,11 @@ class MessageData : public Message {
   const MsgId& GetMessageId() const { return msgid_; }
 
   /**
+   * @Sets the Message ID
+   */
+  void SetMessageId(MsgId m) { msgid_ = m; }
+
+  /**
    * @return The Topic Name
    */
   Slice GetTopicName() const { return topic_name_; }
