@@ -23,7 +23,7 @@ TEST(GUIDGeneratorTest, Uniqueness) {
     threads.push_back(std::async([guids_per_thread]() -> std::vector<GUID>{
       GUIDGenerator gen;
       std::vector<GUID> res;
-      for (int i = 0; i < guids_per_thread; ++i) {
+      for (int k = 0; k < guids_per_thread; ++k) {
         res.push_back(gen.Generate());
       }
       return res;

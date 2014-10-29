@@ -3,11 +3,11 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
-#include <sys/types.h>
 
 #include <iostream>
 #include <unordered_set>
 
+#include <sys/types.h>
 #ifdef OS_LINUX
 #include <sys/stat.h>
 #include <unistd.h>

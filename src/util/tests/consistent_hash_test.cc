@@ -109,11 +109,11 @@ TEST(ConsistentHashTest, SlotRatioTest) {
 
 TEST(ConsistentHashTest, Consistency) {
   ConsistentHash<size_t, string> hash;
-  string host = "abcde";
+  string myhost = "abcde";
   do {
     // Add all permutations of abcde as hosts (1*2*3*4*5 == 120)
-    hash.Add(host);
-  } while (std::next_permutation(host.begin(), host.end()));
+    hash.Add(myhost);
+  } while (std::next_permutation(myhost.begin(), myhost.end()));
 
   // Now check that adding a new host doesn't change the mappings too much.
   std::map<size_t, string> original;
@@ -199,11 +199,11 @@ TEST(ConsistentHashTest, Collisions) {
 
 TEST(ConsistentHashTest, Multiget) {
   ConsistentHash<size_t, string> hash;
-  string host = "abcde";
+  string myhost = "abcde";
   do {
     // Add all permutations of abcde as hosts (1*2*3*4*5 == 120)
-    hash.Add(host);
-  } while (std::next_permutation(host.begin(), host.end()));
+    hash.Add(myhost);
+  } while (std::next_permutation(myhost.begin(), myhost.end()));
 
   const int max_count = 5;
   const size_t num_keys = 1000;

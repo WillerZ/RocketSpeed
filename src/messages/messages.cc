@@ -448,8 +448,8 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   }
 
   // extract metadata type
-  void* p = static_cast<void *>(&metatype_);
-  memcpy(p, in->data(), sizeof(metatype_));
+  void* ptr = static_cast<void *>(&metatype_);
+  memcpy(ptr, in->data(), sizeof(metatype_));
   in->remove_prefix(sizeof(metatype_));
 
   // extract number of topics

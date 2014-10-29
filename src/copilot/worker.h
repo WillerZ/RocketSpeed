@@ -149,10 +149,10 @@ class CopilotWorker {
 
   // Subscription metadata
   struct Subscription {
-    Subscription(HostId const& host_id, SequenceNumber seqno, bool awaiting_ack)
-    : host_id(host_id)
-    , seqno(seqno)
-    , awaiting_ack(awaiting_ack) {}
+    Subscription(HostId const& hostid, SequenceNumber seq_no, bool await_ack)
+    : host_id(hostid)
+    , seqno(seq_no)
+    , awaiting_ack(await_ack) {}
 
     HostId host_id;        // The subscriber
     SequenceNumber seqno;  // Lowest seqno to accept

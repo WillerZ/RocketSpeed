@@ -3,6 +3,8 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#pragma GCC diagnostic ignored "-Wshadow"
+
 #include "logdevice/include/Client.h"
 #include <assert.h>
 #include <algorithm>

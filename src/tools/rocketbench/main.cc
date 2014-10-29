@@ -3,15 +3,15 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-#include <assert.h>
-#include <gflags/gflags.h>
-#include <signal.h>
-#include <unistd.h>
 #include <future>
 #include <random>
 #include <string>
 #include <thread>
 #include <vector>
+#include <assert.h>
+#include <gflags/gflags.h>
+#include <signal.h>
+#include <unistd.h>
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 #include "src/port/port_posix.h"

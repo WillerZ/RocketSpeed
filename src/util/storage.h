@@ -36,14 +36,14 @@ struct LogRecord {
   virtual ~LogRecord() {}
 
  protected:
-  LogRecord(LogID log_id,
-            Slice payload,
-            SequenceNumber seqno,
-            std::chrono::microseconds timestamp) :
-    log_id(log_id),
-    payload(payload),
-    seqno(seqno),
-    timestamp(timestamp) {
+  LogRecord(LogID log_Id,
+            Slice pay_load,
+            SequenceNumber sequenceno,
+            std::chrono::microseconds time) :
+    log_id(log_Id),
+    payload(pay_load),
+    seqno(sequenceno),
+    timestamp(time) {
   }
 
   LogRecord() {}

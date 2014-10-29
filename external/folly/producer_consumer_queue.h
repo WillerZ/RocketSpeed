@@ -63,12 +63,12 @@ struct ProducerConsumerQueue {
     // We need to destruct anything that may still exist in our queue.
     // (No real synchronization needed at destructor time: only one
     // thread can be doing this.)
-    int read = readIndex_;
+    int pread = readIndex_;
     int end = writeIndex_;
-    while (read != end) {
-      records_[read].~T();
-      if (++read == size_) {
-        read = 0;
+    while (pread != end) {
+      records_[pread].~T();
+      if (++pread == size_) {
+        pread = 0;
       }
     }
 

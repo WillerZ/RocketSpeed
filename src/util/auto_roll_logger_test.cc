@@ -3,14 +3,14 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
-#include <sys/stat.h>
-#include <errno.h>
 #include <string>
 #include <cmath>
 #include <iostream>
 #include <fstream>
 #include <iterator>
 #include <algorithm>
+#include <sys/stat.h>
+#include <errno.h>
 #include "src/util/testharness.h"
 #include "src/util/auto_roll_logger.h"
 

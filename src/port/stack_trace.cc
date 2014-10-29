@@ -23,7 +23,6 @@ void PrintStack(int first_frames_to_skip) {}
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <cxxabi.h>
 
 namespace {
 

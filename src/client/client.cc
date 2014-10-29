@@ -156,9 +156,9 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   assert(added);
   Status status = msg_loop_->SendCommand(std::move(command));
   if (!status.ok() && added) {
-    std::unique_lock<std::mutex> lock(message_sent_mutex_);
+    std::unique_lock<std::mutex> lock1(message_sent_mutex_);
     messages_sent_.erase(msgid);
-    lock.unlock();
+    lock1.unlock();
   }
 
   // Return status with the generated message ID.
@@ -240,9 +240,9 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
     // Attempt to remove sent message from list.
-    std::unique_lock<std::mutex> lock(message_sent_mutex_);
+    std::unique_lock<std::mutex> lock1(message_sent_mutex_);
     bool successful_ack = messages_sent_.erase(ack.msgid);
-    lock.unlock();
+    lock1.unlock();
 
     // If successful, invoke callback.
     if (successful_ack) {

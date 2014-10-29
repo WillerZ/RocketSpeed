@@ -69,9 +69,9 @@ class PublishStatus {
   Status status;
   MsgId msgid;
 
-  PublishStatus(Status status, MsgId msgid)
-  : status(status)
-  , msgid(msgid) {
+  PublishStatus(Status pstatus, MsgId messageid)
+  : status(pstatus)
+  , msgid(messageid) {
   }
 };
 
@@ -295,8 +295,8 @@ class TopicOptions {
   TopicOptions()
   : retention(Retention::OneWeek) {}
 
-  explicit TopicOptions(Retention retention)
-  : retention(retention) {}
+  explicit TopicOptions(Retention retentionp)
+  : retention(retentionp) {}
 
   Retention retention;
 };

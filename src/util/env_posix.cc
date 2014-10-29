@@ -3,9 +3,13 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+#include <algorithm>
+#include <deque>
+#include <set>
+#include <thread>
 #include <dirent.h>
 #include <errno.h>
-#include <ftw.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +17,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <ftw.h>
 #ifdef OS_LINUX
 #include <sys/statfs.h>
 #endif
@@ -22,17 +27,12 @@
 #include <unistd.h>
 #if defined(OS_LINUX)
 #include <linux/fs.h>
-#include <fcntl.h>
 #endif
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <signal.h>
-#include <algorithm>
-#include <deque>
-#include <set>
-#include <thread>
 #include "include/Env.h"
 #include "include/Slice.h"
 #include "src/port/port.h"
