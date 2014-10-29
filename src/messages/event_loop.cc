@@ -44,7 +44,7 @@ struct SocketEvent {
     if (ev_ == nullptr || write_ev_ == nullptr ||
         ld_event_add(ev_, nullptr)) {
       LOG_WARN(event_loop_->GetLog(),
-          "Failed to create socket event for %d", fd);
+          "Failed to create socket event for fd(%d)", fd);
       delete this;
     }
   }
@@ -71,7 +71,7 @@ struct SocketEvent {
     if (ev_ == nullptr || write_ev_  == nullptr ||
         ld_event_add(ev_, nullptr)) {
       LOG_WARN(event_loop_->GetLog(),
-          "Failed to create socket event for %d", fd);
+          "Failed to create socket event for fd(%d)", fd);
       delete this;
     }
 
@@ -81,19 +81,21 @@ struct SocketEvent {
     bool inserted = event_loop_->insert_connection_cache(remote_host_, this);
     if (inserted) {
       LOG_INFO(event_loop_->GetLog(),
-          "Server Socket %d to %s inserted into connection_cache_.",
+          "Server Socket fd(%d) to %s inserted into connection_cache_.",
           fd_, remote_host_.ToString().c_str());
     } else {
       LOG_WARN(event_loop_->GetLog(),
-          "Failed to insert server socket %d connected to %s into cache",
+          "Failed to insert server socket fd(%d) connected to %s into cache",
           fd_, remote_host_.ToString().c_str());
       delete this;
     }
   }
 
   ~SocketEvent() {
-      event_loop_->GetLog()->Flush();
-    close(fd_);
+    LOG_INFO(event_loop_->GetLog(),
+             "Closing fd(%d)",
+             fd_);
+    event_loop_->GetLog()->Flush();
     if (ev_) {
       ld_event_free(ev_);
     }
@@ -102,6 +104,7 @@ struct SocketEvent {
       event_loop_->remove_connection_cache(remote_host_, this);
     assert(!event_loop_->running_ || removed || !known_remote_);
     ld_event_free(write_ev_);
+    close(fd_);
 
     // free up unsent pending messages
     for (const auto msg : send_queue_) {
@@ -125,7 +128,7 @@ struct SocketEvent {
     if (!write_ev_added_) {
       if (ld_event_add(write_ev_, nullptr)) {
         LOG_WARN(event_loop_->GetLog(),
-            "Failed to add write event for %d", fd_);
+            "Failed to add write event for fd(%d)", fd_);
         status = Status::InternalError("Failed to enqueue write message");
       } else {
         write_ev_added_ = true;
@@ -161,8 +164,9 @@ struct SocketEvent {
         int count = write(fd_, (const void *)partial_.data(), partial_.size());
         if (count == -1) {
           LOG_WARN(event_loop_->info_log_,
-              "Wanted to write %d bytes to remote host but connection closed.",
-              (int)partial_.size());
+              "Wanted to write %d bytes to remote host fd(%d) but encountered "
+              "errno(%d) \"%s\".",
+              (int)partial_.size(), fd_, errno, strerror(errno));
           event_loop_->info_log_->Flush();
           // write error, close connection.
           delete this;
@@ -170,8 +174,9 @@ struct SocketEvent {
         }
         if ((unsigned int)count != partial_.size()) {
           LOG_WARN(event_loop_->info_log_,
-              "Wanted to write %d bytes to remote host but only %d success.",
-              (int)partial_.size(), (int)count);
+              "Wanted to write %d bytes to remote host fd(%d) but only "
+              "%d success.",
+              (int)partial_.size(), fd_, (int)count);
           event_loop_->info_log_->Flush();
           // update partial data pointers
           partial_ = Slice(partial_.data() + count, partial_.size() - count);
@@ -195,7 +200,7 @@ struct SocketEvent {
         // No more queued messages. Switch off ready-to-write event on socket.
         if (ld_event_del(write_ev_)) {
           LOG_WARN(event_loop_->GetLog(),
-              "Failed to remove write event for %d", fd_);
+              "Failed to remove write event for fd(%d)", fd_);
         } else {
           write_ev_added_ = false;
         }
@@ -279,7 +284,7 @@ struct SocketEvent {
                             remote_host_, this);
           if (inserted) {
             LOG_INFO(event_loop_->GetLog(),
-                "Client Socket %d connected to %s "
+                "Client Socket fd(%d) connected to %s "
                 "inserted into connection_cache_.",
                 fd_, remote_host_.ToString().c_str());
           }
@@ -411,7 +416,7 @@ EventLoop::do_accept(struct evconnlistener *listener,
   // itself during an EOF callback.
   new SocketEvent(event_loop, fd, event_loop->base_);
 
-  LOG_INFO(event_loop->info_log_, "Accept successful on socket %d", fd);
+  LOG_INFO(event_loop->info_log_, "Accept successful on socket fd(%d)", fd);
 }
 
 //
@@ -431,7 +436,7 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
     int r = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
     if (r) {
       LOG_WARN(event_loop->info_log_,
-          "Failed to set send buffer size on socket %d", fd);
+          "Failed to set send buffer size on socket fd(%d)", fd);
       status = Status::InternalError("Failed to set send buffer size");
     }
   }
@@ -441,7 +446,7 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
     int r = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
     if (r) {
       LOG_WARN(event_loop->info_log_,
-          "Failed to set receive buffer size on socket %d", fd);
+          "Failed to set receive buffer size on socket fd(%d)", fd);
       status = Status::InternalError("Failed to set receive buffer size");
     }
   }
@@ -687,6 +692,10 @@ EventLoop::remove_connection_cache(const HostId& host, SocketEvent* sev) {
     for (unsigned int i = 0; i < iter->second.size(); i++) {
       if (iter->second[i] == sev) {
         iter->second.erase(iter->second.begin() + i);
+        if (iter->second.empty()) {
+          // No more SocketEvents for this host, so remove the entry.
+          connection_cache_.erase(host);
+        }
         return true;    // deleted successfully
       }
     }
@@ -702,7 +711,10 @@ SocketEvent*
 EventLoop::lookup_connection_cache(const HostId& host) const {
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
-    return iter->second.back();  // return the last element for now
+    assert(!iter->second.empty());
+    if (!iter->second.empty()) {
+      return iter->second.back();  // return the last element for now
+    }
   }
   return nullptr;     // not found
 }
@@ -746,7 +758,7 @@ EventLoop::setup_connection(const HostId& host) {
   SocketEvent* sev = new SocketEvent(this, fd, base_, host);
 
   LOG_INFO(info_log_,
-      "Connect to %s scheduled on socket %d",
+      "Connect to %s scheduled on socket fd(%d)",
       host.ToString().c_str(), fd);
   return sev;
 }
