@@ -9,6 +9,11 @@ K=1024
 M=$((1024 * K))
 G=$((1024 * M))
 
+# Use the 2 lower order bytes from the UID to generate a namespace id.
+# The hope is that this will be sufficiently unique so that concurrent
+# runs of this benchmark do not pollute one another.
+namespaceid=`id -u`
+
 output_dir=${OUTPUT_DIR:-/tmp}
 if [ ! -d $output_dir ]; then
   mkdir -p $output_dir
@@ -41,6 +46,7 @@ fi
 function run_produce {
   echo "Burst writing $num_messages messages into log storage..."
   cmd="$BENCH $const_params \
+       --namespaceid=$namespaceid \
        --num_messages=$num_messages \
        --message_rate=$message_rate \
        --start_producer=true \
@@ -53,6 +59,7 @@ function run_produce {
 function run_readwrite {
   echo "Writing and reading $num_messages simultaneously..."
   cmd="$BENCH $const_params \
+       --namespaceid=$namespaceid \
        --num_messages=$num_messages \
        --message_rate=$message_rate \
        --start_producer=true \

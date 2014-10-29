@@ -42,6 +42,7 @@ DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
+DEFINE_int32(namespaceid, 101, "namespace id");
 DEFINE_string(topics_distribution, "uniform",
 "uniform, normal, poisson, fixed");
 DEFINE_int64(topics_mean, 0,
@@ -62,7 +63,8 @@ static const Result failed = { false, {} };
 
 namespace rocketspeed {
 
-Result ProducerWorker(int64_t num_messages, Client* producer) {
+Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
+  Client* producer) {
   Env* env = Env::Default();
 
   // Random number generator.
@@ -103,8 +105,6 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
                i % 100);   // 100 messages per topic
     }
 
-    NamespaceID namespace_id = 101;
-
     // Random topic options
     TopicOptions topic_options;
     switch (rng() % Retention::Total) {
@@ -127,7 +127,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
 
     // Send the message
     PublishStatus ps = producer->Publish(topic_name,
-                                         namespace_id,
+                                         namespaceid,
                                          topic_options,
                                          payload);
 
@@ -164,6 +164,7 @@ Result ProducerWorker(int64_t num_messages, Client* producer) {
  ** Produce messages
  */
 int DoProduce(Client* producer,
+              rocketspeed::NamespaceID nsid,
               rocketspeed::port::Semaphore* all_ack_messages_received,
               std::atomic<int64_t>* ack_messages_received,
               std::chrono::time_point<std::chrono::steady_clock>*
@@ -177,6 +178,7 @@ int DoProduce(Client* producer,
     futures.emplace_back(std::async(std::launch::async,
                                     &rocketspeed::ProducerWorker,
                                     num_messages,
+                                    nsid,
                                     producer));
     total_messages -= num_messages;
   }
@@ -212,9 +214,8 @@ int DoProduce(Client* producer,
 /**
  * Subscribe to topics.
  */
-void DoSubscribe(Client* consumer) {
+void DoSubscribe(Client* consumer, NamespaceID nsid) {
   SequenceNumber start = 0;   // start sequence number (0 = only new records)
-  NamespaceID nsid = 101;
 
   // subscribe 10K topics at a time
   unsigned int batch_size = 10240;
@@ -484,11 +485,13 @@ int main(int argc, char** argv) {
                                              info_log);
     }
   }
+  rocketspeed::NamespaceID nsid =
+    static_cast<rocketspeed::NamespaceID>(FLAGS_namespaceid);
 
   // Subscribe to topics (don't count this as part of the time)
   // Also waits for the subscription responses.
   if (FLAGS_start_consumer) {
-    DoSubscribe(consumer);
+    DoSubscribe(consumer, nsid);
     if (!all_topics_subscribed.TimedWait(std::chrono::seconds(5))) {
       LOG_WARN(info_log, "Failed to subscribe to all topics");
       info_log->Flush();
@@ -512,6 +515,7 @@ int main(int argc, char** argv) {
     producer_ret = std::async(std::launch::async,
                               &rocketspeed::DoProduce,
                               producer,
+                              nsid,
                               &all_ack_messages_received,
                               &ack_messages_received,
                               &last_ack_message,
