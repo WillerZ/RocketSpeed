@@ -17,6 +17,7 @@ build_config.mk
 *.d-e
 *.o-*
 *.swp
+*.jar
 LOG*
 _mock_logdevice_logs/*
 

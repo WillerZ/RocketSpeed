@@ -68,6 +68,11 @@ VALGRIND_DIR = build_tools/VALGRIND_LOGS
 VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 VALGRIND_OPTS = --error-exitcode=$(VALGRIND_ERROR) --leak-check=full
 
+# constants for java
+JC = javac
+JARFLAGS = -cf
+JAR = jar
+
 TESTS = \
 	autovector_test \
 	arena_test \
@@ -212,12 +217,22 @@ valgrind_check: all $(PROGRAMS) $(TESTS)
 		echo $$t $$((etime - stime)) >> $(VALGRIND_DIR)/valgrind_tests_times; \
 	done
 
+java: rocketspeed.jar
+
+rocketspeed.jar: RocketSpeedClient.class
+	$(JAR) $(JARFLAGS) RocketSpeed.jar src/java/org/rocketspeed/RocketSpeedClient.class
+
+RocketSpeedClient.class: src/java/org/rocketspeed/RocketSpeedClient.java
+	$(JC) src/java/org/rocketspeed/RocketSpeedClient.java
+
 clean:
 	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(MEMENVLIBRARY) build_config.mk
 	-rm -rf ios-x86/* ios-arm/*
 	-rm -rf _mock_logdevice_logs
 	-find src -name "*.[od]" -exec rm {} \;
 	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
+	-find src/java -name "*.class" -exec rm {} \;
+	-rm *.jar;
 
 tags:
 	ctags * -R
