@@ -83,7 +83,13 @@ if test -z "$EVENTDIR"; then
     PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -L$EVENTDIR/lib"
 fi
 
+# Detect location of djinni
+if test -z "$DJINNIDIR"; then
+    DJINNIDIR="external/djinni"
+fi
+
 COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS} -I${EVENTDIR}/include -Iexternal"
+COMMON_FLAGS="$COMMON_FLAGS -I ${DJINNIDIR}/support-lib/jni -Isrc/djinni/generated/c++"
 CROSS_COMPILE=
 PLATFORM_CCFLAGS=
 PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS ${CXXFLAGS}"
@@ -184,12 +190,16 @@ PRUNE_BENCH="-name *bench*.cc -prune"
 PRUNE_MAIN="-name main.cc -prune"
 PORTABLE_FILES=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cc' -print | sort | tr "\n" " "`
 PORTABLE_CPP=`cd "$ROCKETSPEED_ROOT"; find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cpp' -print | sort | tr "\n" " "`
+DJINNI_FILES=`cd "$ROCKETSPEED_ROOT"; find src/djinni $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cc' -print | sort | tr "\n" " "`
+DJINNI_CPP=`cd "$ROCKETSPEED_ROOT"; find src/djinni $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cpp' -print | sort | tr "\n" " "`
 set +f # re-enable globbing
 
 # The sources consist of the portable files, plus the platform-specific port
 # file.
 echo "SOURCES=$PORTABLE_FILES $GENERIC_PORT_FILES $PORT_FILES" >> "$OUTPUT"
 echo "SOURCESCPP=$PORTABLE_CPP" >> "$OUTPUT"
+echo "SOURCES_DJINNI=$DJINNI_FILES" >> "$OUTPUT"
+echo "SOURCES_DJINNI_CPP=$DJINNI_CPP" >> "$OUTPUT"
 
 if [ "$CROSS_COMPILE" = "true" -o "$FBCODE_BUILD" = "true" ]; then
     # Cross-compiling; do not try any compilation tests.
@@ -304,20 +314,19 @@ EOF
     fi
 fi
 
-# shall we use HDFS?
+# We need java for JNI
 
-if test "$USE_HDFS"; then
-  if test -z "$JAVA_HOME"; then
-    echo "JAVA_HOME has to be set for HDFS usage."
-    exit 1
-  fi
-  HDFS_CCFLAGS="$HDFS_CCFLAGS -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -DUSE_HDFS"
-  HDFS_LDFLAGS="$HDFS_LDFLAGS -Wl,--no-whole-archive -lhdfs -L$JAVA_HOME/jre/lib/amd64"
-  HDFS_LDFLAGS="$HDFS_LDFLAGS -L$JAVA_HOME/jre/lib/amd64/server -L$GLIBC_RUNTIME_PATH/lib"
-  HDFS_LDFLAGS="$HDFS_LDFLAGS -ldl -lverify -ljava -ljvm"
-  COMMON_FLAGS="$COMMON_FLAGS $HDFS_CCFLAGS"
-  PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS $HDFS_LDFLAGS"
+if test -z "$JAVA_HOME"; then
+ echo "JAVA_HOME has to be set for Java usage."
+ exit 1
 fi
+
+JAVA_CCFLAGS="-I$JAVA_HOME/include -I$JAVA_HOME/include/linux"
+JAVA_LDFLAGS="$JAVA_LDFLAGS -Wl,--no-whole-archive -L${JAVA_HOME}/jre/lib/amd64"
+JAVA_LDFLAGS+="${JAVA_LDFLAGS} -L${JAVA_HOME}/jre/lib/amd64/server -L$GLIBC_RUNTIME_PATH/lib"
+JAVA_LDFLAGS+="${JAVA_LDFLAGS} -ldl -lverify -ljava -ljvm"
+
+COMMON_FLAGS="${COMMON_FLAGS} ${JAVA_CCFLAGS}"
 
 # if Intel SSE instruction set is supported, set USE_SSE=" -msse -msse4.2 "
 COMMON_FLAGS="$COMMON_FLAGS $USE_SSE"
@@ -331,6 +340,7 @@ echo "CC=$CC" >> "$OUTPUT"
 echo "CXX=$CXX" >> "$OUTPUT"
 echo "PLATFORM=$PLATFORM" >> "$OUTPUT"
 echo "PLATFORM_LDFLAGS=$PLATFORM_LDFLAGS" >> "$OUTPUT"
+echo "JAVA_LDFLAGS=$JAVA_LDFLAGS" >> "$OUTPUT"
 echo "VALGRIND_VER=$VALGRIND_VER" >> "$OUTPUT"
 echo "PLATFORM_CCFLAGS=$PLATFORM_CCFLAGS" >> "$OUTPUT"
 echo "PLATFORM_CXXFLAGS=$PLATFORM_CXXFLAGS" >> "$OUTPUT"

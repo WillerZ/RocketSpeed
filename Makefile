@@ -218,16 +218,8 @@ valgrind_check: all $(PROGRAMS) $(TESTS)
 		echo $$t $$((etime - stime)) >> $(VALGRIND_DIR)/valgrind_tests_times; \
 	done
 
-java: rocketspeed.jar
-
-rocketspeed.jar: RocketSpeedClient.class
-	$(JAR) $(JARFLAGS) RocketSpeed.jar src/java/org/rocketspeed/RocketSpeedClient.class
-
-RocketSpeedClient.class: src/java/org/rocketspeed/RocketSpeedClient.java
-	$(JC) src/java/org/rocketspeed/RocketSpeedClient.java
-
 clean:
-	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(MEMENVLIBRARY) build_config.mk
+	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(JAVA_LIBRARY) build_config.mk
 	-rm -rf ios-x86/* ios-arm/*
 	-rm -rf _mock_logdevice_logs
 	-find src -name "*.[od]" -exec rm {} \;
@@ -308,6 +300,28 @@ rs_bench: db/rs_bench.o $(LIBOBJECTS) $(TESTUTIL)
 
 rs_stress: tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL)
 	$(CXX) tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
+
+# ---------------------------------------------------------------------------
+#  	Java and JNI specific compilation
+# ---------------------------------------------------------------------------
+JAVALIBOBJECTS = $(SOURCES_DJINNI:.cc=.o)
+JAVALIBOBJECTS += $(SOURCES_DJINNI_CPP:.cpp=.o)
+
+LIBRARY = ${LIBNAME}.a
+JAVA_LIBRARY = librocketspeedjava.a
+
+rocketspeed.jar: RocketSpeedClient.class
+	$(JAR) $(JARFLAGS) RocketSpeed.jar src/java/org/rocketspeed/RocketSpeedClient.class
+
+RocketSpeedClient.class: src/java/org/rocketspeed/RocketSpeedClient.java
+	$(JC) src/java/org/rocketspeed/RocketSpeedClient.java
+
+java: rocketspeed.jar
+	LDFLAGS+="$(JAVA_LDFLAGS)" CFLAGS="$(JAVA_CFLAGS)" CXXFLAGS="$(JAVA_CXXFLAGS)" $(MAKE) $(JAVA_LIBRARY)
+
+$(JAVA_LIBRARY): $(JAVALIBOBJECTS)
+	rm -f $@
+	$(AR) -rs $@ $(JAVALIBOBJECTS)
 
 # ---------------------------------------------------------------------------
 #  	Platform-specific compilation
