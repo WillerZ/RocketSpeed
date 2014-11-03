@@ -41,6 +41,7 @@ class PilotTest {
     options_.log_range = std::pair<LogID, LogID>(1, 1);
     options_.msg_loop = msg_loop_.get();
     options_.info_log = info_log_;
+    options_.num_workers = 10;  // ensure multiple workers to test stats
     st_ = Pilot::CreateNewInstance(std::move(options_), &pilot_);
     if (!st_.ok()) {
       return;
@@ -158,7 +159,7 @@ TEST(PilotTest, Publish) {
   NamespaceID nsid = 101;
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
-    std::string topic = "test";
+    std::string topic = "test" + std::to_string(i);
     std::string serial;
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
@@ -174,6 +175,15 @@ TEST(PilotTest, Publish) {
   // Ensure all messages were ack'd
   checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
+
+  Statistics stats = pilot_->GetStatistics();
+  std::string stats_report = stats.Report();
+  ASSERT_NE(stats_report.find("rocketspeed.pilot.append_requests: 100"),
+    std::string::npos);
+  ASSERT_NE(stats_report.find("rocketspeed.pilot.failed_appends: 0"),
+    std::string::npos);
+  ASSERT_NE(stats_report.find("rocketspeed.pilot.append_latency_us"),
+    std::string::npos);
 }
 
 }  // namespace rocketspeed

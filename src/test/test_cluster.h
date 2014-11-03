@@ -16,6 +16,7 @@
 #include "src/pilot/pilot.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/storage.h"
+#include "src/util/statistics.h"
 
 #ifdef USE_LOGDEVICE
 // We'll set up a local, isolated LogDevice instance.
@@ -58,6 +59,8 @@ class LocalTestCluster {
     assert(copilot_);
     return std::vector<HostId>{ copilot_->GetHostId() };
   }
+
+  Statistics GetStatistics() const;
 
  private:
 #ifdef USE_LOGDEVICE

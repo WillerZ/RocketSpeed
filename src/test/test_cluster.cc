@@ -156,4 +156,14 @@ LocalTestCluster::~LocalTestCluster() {
   delete control_tower_;
 }
 
+Statistics LocalTestCluster::GetStatistics() const {
+  Statistics aggregated;
+  if (pilot_) {
+    aggregated.Aggregate(pilot_->GetStatistics());
+  }
+  // TODO(pja) 1 : Add copilot and control tower once they have stats.
+  return std::move(aggregated);
+}
+
+
 }  // namespace rocketspeed

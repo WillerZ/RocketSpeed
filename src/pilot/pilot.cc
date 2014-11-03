@@ -166,4 +166,13 @@ std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
   // return the updated map
   return cb;
 }
+
+Statistics Pilot::GetStatistics() const {
+  Statistics aggregated;
+  for (size_t i = 0; i < workers_.size(); ++i) {
+    aggregated.Aggregate(workers_[i]->GetStatistics());
+  }
+  return std::move(aggregated);
+}
+
 }  // namespace rocketspeed

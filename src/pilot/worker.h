@@ -10,6 +10,7 @@
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/pilot/options.h"
+#include "src/util/statistics.h"
 #include "src/util/worker_loop.h"
 
 namespace rocketspeed {
@@ -96,6 +97,11 @@ class PilotWorker {
     return worker_loop_.IsRunning();
   }
 
+  // Get the statistics for this worker.
+  const Statistics& GetStatistics() const {
+    return stats_.all;
+  }
+
  private:
   // Callback for worker loop commands.
   void CommandCallback(PilotWorkerCommand command);
@@ -111,6 +117,26 @@ class PilotWorker {
   LogStorage* storage_;
   const PilotOptions& options_;
   Pilot* pilot_;
+
+  struct Stats {
+    Stats() {
+      append_latency = all.AddHistogram("rocketspeed.pilot.append_latency_us",
+                                        0.0, 1.0e9, 1.0, 1.1);
+      append_requests = all.AddCounter("rocketspeed.pilot.append_requests");
+      failed_appends = all.AddCounter("rocketspeed.pilot.failed_appends");
+    }
+
+    Statistics all;
+
+    // Latency of append request -> response.
+    Histogram* append_latency;
+
+    // Number of append requests received.
+    Counter* append_requests;
+
+    // Number of append failures.
+    Counter* failed_appends;
+  } stats_;
 };
 
 }  // namespace rocketspeed

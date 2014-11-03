@@ -44,6 +44,8 @@ class Pilot {
     return options_.msg_loop->SendCommand(std::move(command));
   }
 
+  Statistics GetStatistics() const;
+
  private:
   // The options used by the Pilot
   PilotOptions options_;

@@ -90,7 +90,8 @@ TESTS = \
   mock_logdevice_test \
   logdevice_storage_test \
   hostmap_test \
-  integration_test
+  integration_test \
+  statistics_test
 
 TOOLS = \
 	rocketbench
@@ -291,6 +292,9 @@ hostmap_test: src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS)
 
 integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(TESTCONFIGURATION)
 	$(CXX) src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(TESTCONFIGURATION) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

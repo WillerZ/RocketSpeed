@@ -41,8 +41,13 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
   LogID logid = command.GetLogID();
 
   // Setup AppendCallback
-  auto append_callback = [this, msg_raw, logid] (Status append_status,
-                                                 SequenceNumber seqno) {
+  uint64_t now = options_.env->NowMicros();
+  auto append_callback = [this, msg_raw, logid, now] (Status append_status,
+                                                      SequenceNumber seqno) {
+    // Record latency
+    stats_.append_latency->Record(options_.env->NowMicros() - now);
+    stats_.append_requests->Add(1);
+
     std::unique_ptr<MessageData> msg(msg_raw);
     if (append_status.ok()) {
       // Append successful, send success ack.
@@ -58,6 +63,7 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
           logid);
     } else {
       // Append failed, send failure ack.
+      stats_.failed_appends->Add(1);
       LOG_WARN(options_.info_log,
           "AppendAsync failed (%s)",
           append_status.ToString().c_str());
@@ -74,13 +80,9 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
   auto status = storage_->AppendAsync(logid,
                                       msg_raw->GetStorageSlice(),
                                       append_callback);
-  // TODO(pja) 1: Technically there is no need to re-serialize the message.
-  // If we keep the wire-serialized form that we received the message in then
-  // the SerializeLogStorage slice is just a sub-slice of that format.
-  // This is an optimization though, so it can wait.
-
   if (!status.ok()) {
     // Append call failed, log and send failure ack.
+    stats_.failed_appends->Add(1);
     LOG_WARN(options_.info_log,
       "Failed to append to log ID %lu",
       static_cast<uint64_t>(logid));

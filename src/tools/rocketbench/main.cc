@@ -669,6 +669,12 @@ int main(int argc, char** argv) {
         printf("p95 = %lu\n", recv_latencies[recv_latencies.size() * 0.95]);
         printf("p99 = %lu\n", recv_latencies[recv_latencies.size() * 0.99]);
       }
+
+      if (FLAGS_start_local_server) {
+        printf("\n");
+        printf("Test Cluster Statistics\n");
+        printf(test_cluster->GetStatistics().Report().c_str());
+      }
     }
   }
 
