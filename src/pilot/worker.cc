@@ -31,7 +31,7 @@ void PilotWorker::Run() {
 }
 
 bool PilotWorker::Forward(LogID logid, std::unique_ptr<MessageData> msg) {
-  return worker_loop_.Send(logid, std::move(msg));
+  return worker_loop_.Send(logid, std::move(msg), options_.env->NowMicros());
 }
 
 void PilotWorker::CommandCallback(PilotWorkerCommand command) {
@@ -42,6 +42,7 @@ void PilotWorker::CommandCallback(PilotWorkerCommand command) {
 
   // Setup AppendCallback
   uint64_t now = options_.env->NowMicros();
+  stats_.worker_latency->Record(now - command.GetIssuedTime());
   auto append_callback = [this, msg_raw, logid, now] (Status append_status,
                                                       SequenceNumber seqno) {
     // Record latency
@@ -116,7 +117,9 @@ void PilotWorker::SendAck(const TenantID tenantid,
   std::string serial;
   newmsg.SerializeToString(&serial);
   // send message
-  std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial), host));
+  std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
+                                                host,
+                                                options_.env->NowMicros()));
   Status st = pilot_->SendCommand(std::move(cmd));
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time

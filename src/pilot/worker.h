@@ -24,9 +24,12 @@ class PilotWorkerCommand {
  public:
   PilotWorkerCommand() = default;
 
-  PilotWorkerCommand(LogID logid, std::unique_ptr<MessageData> msg)
+  PilotWorkerCommand(LogID logid,
+                     std::unique_ptr<MessageData> msg,
+                     uint64_t issued_time)
   : logid_(logid)
-  , msg_(std::move(msg)) {
+  , msg_(std::move(msg))
+  , issued_time_(issued_time) {
   }
 
   // Get the log ID to append to.
@@ -39,15 +42,22 @@ class PilotWorkerCommand {
     return msg_.release();
   }
 
+  // Get the time when this command was issued by the Pilot.
+  uint64_t GetIssuedTime() const {
+    return issued_time_;
+  }
+
  private:
   LogID logid_;
   std::unique_ptr<MessageData> msg_;
+  uint64_t issued_time_;
 };
 
 // These Commands sent from the Worker to the Pilot
 class PilotCommand : public Command {
  public:
-  PilotCommand(std::string message, const HostId& host):
+  PilotCommand(std::string message, const HostId& host, uint64_t issued_time):
+    Command(issued_time),
     message_(std::move(message)) {
     recipient_.push_back(host);
   }
@@ -61,6 +71,7 @@ class PilotCommand : public Command {
   bool IsSendCommand() const  {
     return true;
   }
+
  private:
   std::vector<HostId> recipient_;
   std::string message_;
@@ -120,8 +131,8 @@ class PilotWorker {
 
   struct Stats {
     Stats() {
-      append_latency = all.AddHistogram("rocketspeed.pilot.append_latency_us",
-                                        0.0, 1.0e9, 1.0, 1.1);
+      append_latency = all.AddLatency("rocketspeed.pilot.append_latency_us");
+      worker_latency = all.AddLatency("rocketspeed.pilot.worker_latency_us");
       append_requests = all.AddCounter("rocketspeed.pilot.append_requests");
       failed_appends = all.AddCounter("rocketspeed.pilot.failed_appends");
     }
@@ -130,6 +141,9 @@ class PilotWorker {
 
     // Latency of append request -> response.
     Histogram* append_latency;
+
+    // Latency of send -> command process
+    Histogram* worker_latency;
 
     // Number of append requests received.
     Counter* append_requests;

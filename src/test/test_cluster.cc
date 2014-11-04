@@ -81,11 +81,13 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   control_tower_loop_.reset(new MsgLoop(env,
                                         env_options,
                                         ControlTower::DEFAULT_PORT,
-                                        info_log_));
+                                        info_log_,
+                                        "control_tower"));
   cockpit_loop_.reset(new MsgLoop(env,
                                   env_options,
                                   Copilot::DEFAULT_PORT,
-                                  info_log_));
+                                  info_log_,
+                                  "cockpit"));
 
   // Create ControlTower
   control_tower_options_.log_range = log_range;
@@ -161,6 +163,8 @@ Statistics LocalTestCluster::GetStatistics() const {
   if (pilot_) {
     aggregated.Aggregate(pilot_->GetStatistics());
   }
+  aggregated.Aggregate(control_tower_loop_->GetStatistics());
+  aggregated.Aggregate(cockpit_loop_->GetStatistics());
   // TODO(pja) 1 : Add copilot and control tower once they have stats.
   return std::move(aggregated);
 }

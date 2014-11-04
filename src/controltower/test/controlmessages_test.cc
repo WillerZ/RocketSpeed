@@ -213,8 +213,10 @@ TEST(ControlTowerTest, Ping) {
                   MessagePing::PingType::Request,
                   loop.GetHostId());
   msg.SerializeToString(&serial);  // serialize msg
-  std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                               std::move(serial), ct_->GetHostId()));
+  std::unique_ptr<Command> cmd(
+    new ControlRoom::TowerCommand(std::move(serial),
+                                  ct_->GetHostId(),
+                                  env_->NowMicros()));
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
 
   // verify that the ping response was received by the client
@@ -226,8 +228,10 @@ TEST(ControlTowerTest, Ping) {
                        MessagePing::PingType::Request,
                        loop.GetHostId());
     msg.SerializeToString(&serial);  // serialize msg
-    std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                                 std::move(serial), ct_->GetHostId()));
+    std::unique_ptr<Command> cmd(
+      new ControlRoom::TowerCommand(std::move(serial),
+                                    ct_->GetHostId(),
+                                    env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 
@@ -271,8 +275,10 @@ TEST(ControlTowerTest, Subscribe) {
                         MessageMetadata::MetaType::Request,
                         loop.GetHostId(), topics);
   meta1.SerializeToString(&serial);
-  std::unique_ptr<Command> cmd(new ControlRoom::TowerCommand(
-                               std::move(serial), ct_->GetHostId()));
+  std::unique_ptr<Command> cmd(
+    new ControlRoom::TowerCommand(std::move(serial),
+                                  ct_->GetHostId(),
+                                  env_->NowMicros()));
 
   // send message to control tower
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);

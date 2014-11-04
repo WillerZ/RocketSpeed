@@ -96,7 +96,8 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
   msg_loop_ = new MsgLoop(Env::Default(),
                           EnvOptions(),
                           port,
-                          info_log);
+                          info_log,
+                          "client");
   msg_loop_->RegisterCallbacks(callbacks);
 
   msg_loop_thread_ = std::thread([this] () {
@@ -151,7 +152,8 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   // Construct command.
   std::unique_ptr<Command> command(new ClientCommand(msgid,
                                                      pilot_host_id_,
-                                                     std::move(serialized)));
+                                                     std::move(serialized),
+                                                     env_->NowMicros()));
 
   // Send to event loop for processing (the loop will free it).
   std::unique_lock<std::mutex> lock(message_sent_mutex_);
@@ -192,7 +194,8 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
 
   // Construct command.
   std::unique_ptr<Command> command(new ClientCommand(copilot_host_id_,
-                                                     std::move(serialized)));
+                                                     std::move(serialized),
+                                                     env_->NowMicros()));
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command));
 

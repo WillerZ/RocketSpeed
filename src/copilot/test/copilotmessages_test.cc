@@ -197,9 +197,10 @@ TEST(CopilotTest, Publish) {
                         loop.GetHostId(),
                         { TopicPair(0, topic, type, 101 + i) });
     msg.SerializeToString(&serial);
-    std::unique_ptr<Command> cmd(new CopilotCommand(
-                                     std::move(serial),
-                                     copilot_->GetHostId()));
+    std::unique_ptr<Command> cmd(
+      new CopilotCommand(std::move(serial),
+                         copilot_->GetHostId(),
+                         env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);
   }

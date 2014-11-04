@@ -24,10 +24,11 @@ class MsgLoop {
  public:
   // Create a listener to receive messages on a specified port.
   // When a message arrives, invoke the specified callback.
-  MsgLoop(const Env* env,
+  MsgLoop(Env* env,
           const EnvOptions& env_options,
           int port,
-          const std::shared_ptr<Logger>& info_log);
+          const std::shared_ptr<Logger>& info_log,
+          const std::string& stats_prefix = "");
 
   virtual ~MsgLoop();
 
@@ -53,9 +54,13 @@ class MsgLoop {
     return event_loop_.SendCommand(std::move(command));
   }
 
+  const Statistics& GetStatistics() const {
+    return event_loop_.GetStatistics();
+  }
+
  private:
   // The Environment
-  const Env* env_;
+  Env* env_;
 
   // The Environment Options
   const EnvOptions env_options_;
@@ -84,7 +89,8 @@ class MsgLoop {
   // Used by the PingCallback to enqueue a Ping response to the event loop
   class PingCommand : public Command {
    public:
-    PingCommand(std::string message, const HostId& host):
+    PingCommand(std::string message, const HostId& host, uint64_t issued_time):
+      Command(issued_time),
       message_(std::move(message)) {
       recipient_.push_back(host);
     }

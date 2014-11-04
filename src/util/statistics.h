@@ -134,6 +134,12 @@ class Statistics {
                           double ratio = 1.2);
 
   /**
+   * Adds a new, named Histogram object with default settings for measuring
+   * latencies.
+   */
+  Histogram* AddLatency(const std::string& name);
+
+  /**
    * Generate a report of all tracked statistics.
    */
   std::string Report() const;

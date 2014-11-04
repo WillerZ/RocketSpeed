@@ -72,8 +72,8 @@ TEST(StatisticsTest, Basic) {
     "count1: 10\n"
     "count2: 20\n"
     "count3: 30\n"
-    "histo1: p50: 55.0  p90: 77.5  p99: 77.5  p99.9 77.5\n"
-    "histo2: p50: 16.0  p90: 17.0  p99: 17.0  p99.9 17.0\n");
+    "histo1: p50: 55.0  p90: 77.5  p99: 77.5  p99.9: 77.5\n"
+    "histo2: p50: 16.0  p90: 17.0  p99: 17.0  p99.9: 17.0\n");
 
   // Aggregate stats1 into stats2
   stats2.Aggregate(stats1);
@@ -90,9 +90,9 @@ TEST(StatisticsTest, Basic) {
     "count1: 110\n"
     "count2: 220\n"
     "count3: 30\n"
-    "histo1: p50: 55.0  p90: 100.0  p99: 100.0  p99.9 100.0\n"
-    "histo2: p50: 16.0  p90: 18.0  p99: 18.0  p99.9 18.0\n"
-    "histo3: p50: 55.0  p90: 77.5  p99: 77.5  p99.9 77.5\n");
+    "histo1: p50: 55.0  p90: 100.0  p99: 100.0  p99.9: 100.0\n"
+    "histo2: p50: 16.0  p90: 18.0  p99: 18.0  p99.9: 18.0\n"
+    "histo3: p50: 55.0  p90: 77.5  p99: 77.5  p99.9: 77.5\n");
 }
 
 TEST(StatisticsTest, HistogramPercentiles) {

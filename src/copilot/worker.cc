@@ -104,8 +104,10 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
 
     if (destinations.size() > 0) {
       // Send the response.
-      std::unique_ptr<Command> cmd(new CopilotCommand(
-                                   std::move(serial), destinations));
+      std::unique_ptr<Command> cmd(
+        new CopilotCommand(std::move(serial),
+                           destinations,
+                           options_.env->NowMicros()));
       Status status = copilot_->SendCommand(std::move(cmd));
       if (!status.ok()) {
         LOG_INFO(options_.info_log,
@@ -171,8 +173,10 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       destinations.push_back(recipient);
     }
     // Send the response.
-    std::unique_ptr<Command> cmd(new CopilotCommand(
-                                   std::move(serial), destinations));
+    std::unique_ptr<Command> cmd(
+      new CopilotCommand(std::move(serial),
+                         destinations,
+                         options_.env->NowMicros()));
     Status status = copilot_->SendCommand(std::move(cmd));
 
     if (!status.ok()) {
@@ -287,8 +291,10 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       msg->SerializeToString(&serial);
 
       // Forward request to control tower to update the copilot subscription.
-      std::unique_ptr<Command> cmd(new CopilotCommand(
-                                   std::move(serial), *recipient));
+      std::unique_ptr<Command> cmd(
+        new CopilotCommand(std::move(serial),
+                           *recipient,
+                           options_.env->NowMicros()));
       Status status = copilot_->SendCommand(std::move(cmd));
       if (!status.ok()) {
         LOG_INFO(options_.info_log,
@@ -313,8 +319,10 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // serialize
     std::string serial;
     msg->SerializeToString(&serial);
-    std::unique_ptr<Command> cmd(new CopilotCommand(
-                                 std::move(serial), subscriber));
+    std::unique_ptr<Command> cmd(
+      new CopilotCommand(std::move(serial),
+                         subscriber,
+                         options_.env->NowMicros()));
     Status status = copilot_->SendCommand(std::move(cmd));
     if (!status.ok()) {
       // Failed to send response. The origin will re-send the subscription
@@ -366,8 +374,10 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         // serialize message
         std::string serial;
         newmsg.SerializeToString(&serial);
-        std::unique_ptr<Command> cmd(new CopilotCommand(
-                                     std::move(serial), *recipient));
+        std::unique_ptr<Command> cmd(
+          new CopilotCommand(std::move(serial),
+                             *recipient,
+                             options_.env->NowMicros()));
         Status status = copilot_->SendCommand(std::move(cmd));
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
@@ -390,8 +400,10 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         // serialize message
         std::string serial;
         newmsg.SerializeToString(&serial);
-        std::unique_ptr<Command> cmd(new CopilotCommand(
-                                     std::move(serial), *recipient));
+        std::unique_ptr<Command> cmd(
+          new CopilotCommand(std::move(serial),
+                             *recipient,
+                             options_.env->NowMicros()));
         Status status = copilot_->SendCommand(std::move(cmd));
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
@@ -411,8 +423,10 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
   msg->SetMetaType(MessageMetadata::MetaType::Response);
   std::string serial;
   msg->SerializeToString(&serial);
-  std::unique_ptr<Command> cmd(new CopilotCommand(
-                               std::move(serial), subscriber));
+  std::unique_ptr<Command> cmd(
+    new CopilotCommand(std::move(serial),
+                       subscriber,
+                       options_.env->NowMicros()));
   Status status = copilot_->SendCommand(std::move(cmd));
   if (!status.ok()) {
     // Failed to send response. The origin will re-send the subscription

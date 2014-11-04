@@ -364,6 +364,10 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
       return;
     }
 
+    uint64_t now = obj->env_->NowMicros();
+    obj->stats_.command_latency->Record(now - command->GetIssuedTime());
+    obj->stats_.commands_processed->Add(1);
+
     // Have to handle the case when the message-send failed to write
     // to output socket and have to invoke *some* callback to the app.
     const std::vector<HostId>& remote = command.get()->GetDestination();
@@ -838,11 +842,14 @@ EventLoop::create_connection(const HostId& host,
 /**
  * Constructor for a Message Loop
  */
-EventLoop::EventLoop(EnvOptions env_options,
+EventLoop::EventLoop(Env* env,
+                     EnvOptions env_options,
                      int port_number,
                      const std::shared_ptr<Logger>& info_log,
                      EventCallbackType event_callback,
+                     const std::string& stats_prefix,
                      uint32_t command_queue_size) :
+  env_(env),
   env_options_(env_options),
   port_number_(port_number),
   running_(false),
@@ -851,7 +858,8 @@ EventLoop::EventLoop(EnvOptions env_options,
   event_callback_(event_callback),
   event_callback_context_(nullptr),
   listener_(nullptr),
-  command_queue_(command_queue_size) {
+  command_queue_(command_queue_size),
+  stats_(stats_prefix) {
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }
 

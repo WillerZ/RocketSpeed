@@ -446,8 +446,8 @@ int main(int argc, char** argv) {
     }
   };
 
-  rocketspeed::Client* producer = nullptr;
-  rocketspeed::Client* consumer = nullptr;
+  rocketspeed::ClientImpl* producer = nullptr;
+  rocketspeed::ClientImpl* consumer = nullptr;
 
   // If the producer port and the consumer port are the same, then we
   // use a single client object. This allows the producer and the
@@ -653,27 +653,33 @@ int main(int argc, char** argv) {
       // Report ack latencies.
       printf("\n");
       printf("Publish->Ack Latency (microseconds)\n");
-      printf("p50 = %lu\n", ack_latencies[ack_latencies.size() * 0.50]);
-      printf("p75 = %lu\n", ack_latencies[ack_latencies.size() * 0.75]);
-      printf("p90 = %lu\n", ack_latencies[ack_latencies.size() * 0.90]);
-      printf("p95 = %lu\n", ack_latencies[ack_latencies.size() * 0.95]);
-      printf("p99 = %lu\n", ack_latencies[ack_latencies.size() * 0.99]);
+      printf("p50   = %lu\n", ack_latencies[ack_latencies.size() * 0.50]);
+      printf("p90   = %lu\n", ack_latencies[ack_latencies.size() * 0.90]);
+      printf("p99   = %lu\n", ack_latencies[ack_latencies.size() * 0.99]);
+      printf("p99.9 = %lu\n", ack_latencies[ack_latencies.size() * 0.999]);
 
       // Report receive latencies.
       if (FLAGS_start_consumer) {
         printf("\n");
         printf("Publish->Receive Latency (microseconds)\n");
-        printf("p50 = %lu\n", recv_latencies[recv_latencies.size() * 0.50]);
-        printf("p75 = %lu\n", recv_latencies[recv_latencies.size() * 0.75]);
-        printf("p90 = %lu\n", recv_latencies[recv_latencies.size() * 0.90]);
-        printf("p95 = %lu\n", recv_latencies[recv_latencies.size() * 0.95]);
-        printf("p99 = %lu\n", recv_latencies[recv_latencies.size() * 0.99]);
+        printf("p50   = %lu\n", recv_latencies[recv_latencies.size() * 0.50]);
+        printf("p90   = %lu\n", recv_latencies[recv_latencies.size() * 0.90]);
+        printf("p99   = %lu\n", recv_latencies[recv_latencies.size() * 0.99]);
+        printf("p99.9 = %lu\n", recv_latencies[recv_latencies.size() * 0.999]);
       }
 
       if (FLAGS_start_local_server) {
+        rocketspeed::Statistics stats(test_cluster->GetStatistics());
+        if (producer) {
+          stats.Aggregate(producer->GetStatistics());
+        }
+        if (consumer && consumer != producer) {
+          stats.Aggregate(consumer->GetStatistics());
+        }
+
         printf("\n");
-        printf("Test Cluster Statistics\n");
-        printf(test_cluster->GetStatistics().Report().c_str());
+        printf("Statistics\n");
+        printf(stats.Report().c_str());
       }
     }
   }

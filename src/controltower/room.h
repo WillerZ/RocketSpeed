@@ -72,11 +72,17 @@ class ControlRoom {
   // These Commands sent from the ControlRoom to the ControlTower
   class TowerCommand : public Command {
    public:
-    TowerCommand(std::string message, std::vector<HostId>& recipient):
+    TowerCommand(std::string message,
+                 std::vector<HostId>& recipient,
+                 uint64_t issued_time):
+      Command(issued_time),
       recipient_(recipient),
       message_(std::move(message)) {
     }
-    TowerCommand(std::string message, const HostId& recipient):
+    TowerCommand(std::string message,
+                 const HostId& recipient,
+                 uint64_t issued_time):
+      Command(issued_time),
       message_(std::move(message)) {
       recipient_.push_back(recipient);
     }

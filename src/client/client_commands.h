@@ -24,7 +24,9 @@ class ClientCommand : public Command {
   // Construct from data message.
   ClientCommand(const MsgId& msgid,
                 HostId recipient,
-                std::string msg) :
+                std::string msg,
+                uint64_t issued_time) :
+    Command(issued_time),
     msgid_(msgid),
     msg_(std::move(msg)) {
     recipient_.push_back(recipient);
@@ -32,7 +34,9 @@ class ClientCommand : public Command {
 
   // Construct from metadata message.
   ClientCommand(HostId recipient,
-                std::string msg) :
+                std::string msg,
+                uint64_t issued_time) :
+    Command(issued_time),
     msg_(std::move(msg)) {
     recipient_.push_back(recipient);
   }

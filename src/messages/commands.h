@@ -19,7 +19,7 @@ namespace rocketspeed {
 class Command {
  public:
   // Default constructor.
-  Command() {}
+  explicit Command(uint64_t issued_time) : issued_time_(issued_time) {}
 
   // Default destructor.
   virtual ~Command() {}
@@ -34,10 +34,18 @@ class Command {
   // to GetDestination().
   virtual bool IsSendCommand() const = 0;
 
+  // Get the time when this command was issued by the sender.
+  uint64_t GetIssuedTime() const {
+    return issued_time_;
+  }
+
   // If this is a command to send a mesage to remote hosts, then
   // returns the list of destination HostIds.
   // are returned in num_hosts.
   virtual const std::vector<HostId>& GetDestination() const = 0;
+
+ private:
+  uint64_t issued_time_;
 };
 
 }  // namespace rocketspeed

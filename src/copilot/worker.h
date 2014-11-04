@@ -51,12 +51,18 @@ class CopilotCommand : public Command {
  public:
   CopilotCommand() = default;
 
-  CopilotCommand(std::string message, const HostId& host):
+  CopilotCommand(std::string message,
+                 const HostId& host,
+                 uint64_t issued_time):
+    Command(issued_time),
     message_(std::move(message)) {
     recipient_.push_back(host);
     assert(message_.size() > 0);
   }
-  CopilotCommand(std::string message, std::vector<HostId>& hosts):
+  CopilotCommand(std::string message,
+                 std::vector<HostId>& hosts,
+                 uint64_t issued_time):
+    Command(issued_time),
     recipient_(hosts),
     message_(std::move(message)) {
     assert(message_.size() > 0);

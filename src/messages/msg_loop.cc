@@ -46,17 +46,20 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
 /**
  * Constructor for a Message Loop
  */
-MsgLoop::MsgLoop(const Env* env,
+MsgLoop::MsgLoop(Env* env,
                  const EnvOptions& env_options,
                  int port,
-                 const std::shared_ptr<Logger>& info_log):
+                 const std::shared_ptr<Logger>& info_log,
+                 const std::string& stats_prefix):
   env_(env),
   env_options_(env_options),
   info_log_(info_log),
-  event_loop_(env_options,
+  event_loop_(env,
+              env_options,
               port,
               info_log,
-              EventCallback) {
+              EventCallback,
+              stats_prefix) {
   // Setup host id
   char myname[1024];
   gethostname(&myname[0], sizeof(myname));
@@ -125,8 +128,9 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   request->SerializeToString(&serial);
 
   // send reponse
-  std::unique_ptr<Command> cmd(new PingCommand(
-                               std::move(serial), origin));
+  std::unique_ptr<Command> cmd(new PingCommand(std::move(serial),
+                                               origin,
+                                               env_->NowMicros()));
   Status st = SendCommand(std::move(cmd));
 
   if (!st.ok()) {

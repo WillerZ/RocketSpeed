@@ -42,6 +42,10 @@ class ClientImpl : public Client {
              MessageReceivedCallback receive_callback,
              std::shared_ptr<Logger> info_log);
 
+  const Statistics& GetStatistics() const {
+    return msg_loop_->GetStatistics();
+  }
+
  private:
   // Callback for a Data message
   void ProcessData(std::unique_ptr<Message> msg);

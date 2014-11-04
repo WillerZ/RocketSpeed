@@ -29,6 +29,7 @@
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/auto_roll_logger.h"
+#include "src/util/statistics.h"
 
 namespace rocketspeed {
 
@@ -49,10 +50,12 @@ class EventLoop {
    * @param command_callback Callback invoked for every msg received
    * @param command_queue_size The size of the internal command queue
    */
-  EventLoop(EnvOptions env_options,
+  EventLoop(Env* env,
+            EnvOptions env_options,
             int port,
             const std::shared_ptr<Logger>& info_log,
             EventCallbackType event_callback,
+            const std::string& stats_prefix = "",
             uint32_t command_queue_size = 65536);
 
   virtual ~EventLoop();
@@ -85,8 +88,16 @@ class EventLoop {
   // Get the info log.
   const std::shared_ptr<Logger>& GetLog() { return info_log_; }
 
+  // Get event loop statistics
+  const Statistics& GetStatistics() const {
+    return stats_.all;
+  }
+
  private:
   friend class SocketEvent;
+
+  // Env
+  Env* env_;
 
   // Env options
   EnvOptions env_options_;
@@ -128,6 +139,17 @@ class EventLoop {
 
   // a cache of HostId to connections
   std::map<HostId, std::vector<SocketEvent*>> connection_cache_;
+
+  struct Stats {
+    explicit Stats(const std::string& prefix) {
+      command_latency = all.AddLatency(prefix + ".command_latency");
+      commands_processed = all.AddCounter(prefix + ".commands_processed");
+    }
+
+    Statistics all;
+    Histogram* command_latency;
+    Counter* commands_processed;
+  } stats_;
 
   // connection cache updates
   bool insert_connection_cache(const HostId& host, SocketEvent* ev);

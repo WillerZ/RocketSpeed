@@ -130,7 +130,7 @@ void Histogram::Aggregate(const Histogram& histogram) {
 std::string Histogram::Report() const {
   // Reports the p50, p90, p99, and p99.9 percentiles.
   char buffer[256];
-  snprintf(buffer, 256, "p50: %.1lf  p90: %.1lf  p99: %.1lf  p99.9 %.1lf",
+  snprintf(buffer, 256, "p50: %.1lf  p90: %.1lf  p99: %.1lf  p99.9: %.1lf",
     Percentile(0.50), Percentile(0.90), Percentile(0.99), Percentile(0.999));
   return std::string(buffer);
 }
@@ -152,6 +152,12 @@ Histogram* Statistics::AddHistogram(const std::string& name,
                                     double bucket_ratio) {
   histograms_[name] = std::unique_ptr<Histogram>(
     new Histogram(min, max, smallest_bucket, bucket_ratio));
+  return histograms_[name].get();
+}
+
+Histogram* Statistics::AddLatency(const std::string& name) {
+  histograms_[name] = std::unique_ptr<Histogram>(
+    new Histogram(0, 1e12, 1.0, 1.1));
   return histograms_[name].get();
 }
 

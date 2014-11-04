@@ -67,13 +67,14 @@ ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid) {
 void
 ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   ControlTower* ct = control_tower_;
+  ControlTowerOptions& options = ct->GetOptions();
   Status st;
 
   // get the request message
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
   assert(request->GetMetaType() == MessageMetadata::MetaType::Request);
   if (request->GetMetaType() != MessageMetadata::MetaType::Request) {
-    LOG_WARN(ct->GetOptions().info_log,
+    LOG_WARN(options.info_log,
         "MessageMetadata with bad type %d received, ignoring...",
         request->GetMetaType());
     return;
@@ -135,11 +136,11 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
 
       // TODO(pja) 1: may need to do some flow control if this is due
       // to receiving too many subscriptions.
-      LOG_WARN(ct->GetOptions().info_log,
+      LOG_WARN(options.info_log,
                "Failed to find latest seqno (%s)",
                st.ToString().c_str());
     } else {
-      LOG_INFO(ct->GetOptions().info_log,
+      LOG_INFO(options.info_log,
         "Sent FindLatestSeqno request for %s:%ld for Topic(%s)",
         origin.hostname.c_str(),
         (long)origin.port,
@@ -170,7 +171,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
     topic_map_.AddSubscriber(topic_name,
                              topic[0].seqno,
                              logid, hostnum, room_number_);
-    LOG_INFO(ct->GetOptions().info_log,
+    LOG_INFO(options.info_log,
         "Added subscriber %s:%ld for Topic(%s)@%lu",
         origin.hostname.c_str(),
         (long)origin.port,
@@ -179,7 +180,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
     topic_map_.RemoveSubscriber(topic_name,
                                 logid, hostnum, room_number_);
-    LOG_INFO(ct->GetOptions().info_log,
+    LOG_INFO(options.info_log,
         "Removed subscriber %s:%ld from Topic(%s)",
         origin.hostname.c_str(),
         (long)origin.port,
@@ -194,30 +195,33 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   request->SerializeToString(&out);
 
   // send response back to client
-  std::unique_ptr<Command> cmd(new TowerCommand(std::move(out), origin));
+  std::unique_ptr<Command> cmd(new TowerCommand(std::move(out),
+                                                origin,
+                                                options.env->NowMicros()));
   st = ct->SendCommand(std::move(cmd));
   if (!st.ok()) {
-    LOG_INFO(ct->GetOptions().info_log,
+    LOG_INFO(options.info_log,
         "Unable to send Metadata response to tower at %s:%ld",
         origin.hostname.c_str(), (long)origin.port);
   } else {
-    LOG_INFO(ct->GetOptions().info_log,
+    LOG_INFO(options.info_log,
         "Send Metadata response to tower at %s:%ld",
         origin.hostname.c_str(), (long)origin.port);
   }
-  ct->GetOptions().info_log->Flush();
+  options.info_log->Flush();
 }
 
 // Process Data messages that are coming in from Tailer.
 void
 ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   ControlTower* ct = control_tower_;
+  ControlTowerOptions& options = ct->GetOptions();
   Status st;
 
   // get the request message
   MessageData* request = static_cast<MessageData*>(msg.get());
 
-  LOG_INFO(ct->GetOptions().info_log,
+  LOG_INFO(options.info_log,
       "Received data (%.16s)@%lu for Topic(%s)",
       request->GetPayload().ToString().c_str(),
       request->GetSequenceNumber(),
@@ -226,7 +230,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   // Check that seqno is as expected.
   if (topic_map_.GetLastRead(logid) + 1 != request->GetSequenceNumber()) {
     // Out of order sequence number, skip!
-    LOG_INFO(ct->GetOptions().info_log,
+    LOG_INFO(options.info_log,
       "Out of order seqno on log %lu. Received:%lu Expected:%lu.",
       logid,
       request->GetSequenceNumber(),
@@ -260,24 +264,26 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
       }
     }
     // send message to all subscribers
-    std::unique_ptr<TowerCommand> cmd(new TowerCommand(
-                                      std::move(serial), destinations));
+    std::unique_ptr<TowerCommand> cmd(
+      new TowerCommand(std::move(serial),
+                       destinations,
+                       options.env->NowMicros()));
     st = ct->SendCommand(std::move(cmd));
     if (st.ok()) {
-      LOG_INFO(ct->GetOptions().info_log,
+      LOG_INFO(options.info_log,
               "Sent data (%.16s)@%lu for Topic(%s) to %s",
               request->GetPayload().ToString().c_str(),
               request->GetSequenceNumber(),
               request->GetTopicName().ToString().c_str(),
               HostMap::ToString(destinations).c_str());
     } else {
-      LOG_INFO(ct->GetOptions().info_log,
+      LOG_INFO(options.info_log,
               "Unable to forward Data message to %s",
               HostMap::ToString(destinations).c_str());
-          ct->GetOptions().info_log->Flush();
+          options.info_log->Flush();
     }
   } else {
-    LOG_INFO(ct->GetOptions().info_log,
+    LOG_INFO(options.info_log,
       "No subscribers for Topic(%s)",
       request->GetTopicName().ToString().c_str());
   }

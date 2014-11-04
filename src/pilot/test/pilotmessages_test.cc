@@ -168,7 +168,8 @@ TEST(PilotTest, Publish) {
     data.SerializeToString(&serial);
     sent_msgs_.insert(data.GetMessageId());
     std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
-                                                  pilot_->GetHostId()));
+                                                  pilot_->GetHostId(),
+                                                  env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 
