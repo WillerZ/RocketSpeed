@@ -321,7 +321,11 @@ int main(int argc, char** argv) {
                                               "LOG.rocketbench",
                                               0,
                                               0,
+#ifdef NDEBUG
+                                              rocketspeed::WARN_LEVEL,
+#else
                                               rocketspeed::INFO_LEVEL,
+#endif
                                               &info_log).ok()) {
       fprintf(stderr, "Error creating logger, aborting.\n");
       return 1;
