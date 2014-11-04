@@ -304,11 +304,13 @@ rs_stress: tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL)
 # ---------------------------------------------------------------------------
 #  	Java and JNI specific compilation
 # ---------------------------------------------------------------------------
-JAVALIBOBJECTS = $(SOURCES_DJINNI:.cc=.o)
-JAVALIBOBJECTS += $(SOURCES_DJINNI_CPP:.cpp=.o)
+CLIENTSOURCES = $(SOURCES_DJINNI) $(SOURCES_DJINNI_CPP)
+CLIENTOBJECTS = $(SOURCES_DJINNI:.cc=.o)
+CLIENTOBJECTS += $(SOURCES_DJINNI_CPP:.cpp=.o)
 
 LIBRARY = ${LIBNAME}.a
-JAVA_LIBRARY = librocketspeedjava.a
+CLIENT_LIBRARY_STATIC = librocketspeedclient.a
+CLIENT_LIBRARY_SHARED = librocketspeedclient.so
 
 rocketspeed.jar: RocketSpeedClient.class
 	$(JAR) $(JARFLAGS) RocketSpeed.jar src/java/org/rocketspeed/RocketSpeedClient.class
@@ -316,12 +318,16 @@ rocketspeed.jar: RocketSpeedClient.class
 RocketSpeedClient.class: src/java/org/rocketspeed/RocketSpeedClient.java
 	$(JC) src/java/org/rocketspeed/RocketSpeedClient.java
 
-java: rocketspeed.jar
-	LDFLAGS+="$(JAVA_LDFLAGS)" CFLAGS="$(JAVA_CFLAGS)" CXXFLAGS="$(JAVA_CXXFLAGS)" $(MAKE) $(JAVA_LIBRARY)
+client: rocketspeed.jar 
+	LDFLAGS+="$(JAVA_LDFLAGS)" CFLAGS="$(JAVA_CFLAGS)" CXXFLAGS="$(JAVA_CXXFLAGS)" $(MAKE) $(CLIENT_LIBRARY_STATIC) $(CLIENT_LIBRARY_SHARED)
 
-$(JAVA_LIBRARY): $(JAVALIBOBJECTS)
+$(CLIENT_LIBRARY_STATIC): $(CLIENTOBJECTS)
 	rm -f $@
-	$(AR) -rs $@ $(JAVALIBOBJECTS)
+	$(AR) -rs $@ $(CLIENTOBJECTS)
+
+$(CLIENT_LIBRARY_SHARED): $(CLIENTOBJECTS)
+	rm -f $@
+	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED2) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(CLIENTSOURCES) $(LDFLAGS) -o $@
 
 # ---------------------------------------------------------------------------
 #  	Platform-specific compilation
