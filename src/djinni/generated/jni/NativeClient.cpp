@@ -4,6 +4,7 @@
 #include "NativeClient.hpp"  // my header
 #include "HBinary.hpp"
 #include "HList.hpp"
+#include "NativeClient.hpp"
 #include "NativeConfiguration.hpp"
 #include "NativeMessageReceivedCallback.hpp"
 #include "NativeMsgId.hpp"
@@ -28,11 +29,10 @@ CJNIEXPORT void JNICALL Java_org_rocketspeed_Client_00024NativeProxy_nativeDestr
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
 }
 
-CJNIEXPORT void JNICALL Java_org_rocketspeed_Client_00024NativeProxy_native_1Open(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jobject j_config, jobject j_publishCallback, jobject j_subscribeCallback, jobject j_receiveCallback)
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_Client_Open(JNIEnv* jniEnv, jobject /*this*/, jobject j_config, jobject j_publishCallback, jobject j_subscribeCallback, jobject j_receiveCallback)
 {
     try {
-        DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
-        const std::shared_ptr<::rocketglue::Client> & ref = *reinterpret_cast<const std::shared_ptr<::rocketglue::Client>*>(nativeRef);
+        DJINNI_FUNCTION_PROLOGUE0(jniEnv);
         std::shared_ptr<::rocketglue::Configuration> c_config = NativeConfiguration::fromJava(jniEnv, j_config);
         jniEnv->DeleteLocalRef(j_config);
         std::shared_ptr<::rocketglue::PublishCallback> c_publish_callback = NativePublishCallback::fromJava(jniEnv, j_publishCallback);
@@ -42,8 +42,10 @@ CJNIEXPORT void JNICALL Java_org_rocketspeed_Client_00024NativeProxy_native_1Ope
         std::shared_ptr<::rocketglue::MessageReceivedCallback> c_receive_callback = NativeMessageReceivedCallback::fromJava(jniEnv, j_receiveCallback);
         jniEnv->DeleteLocalRef(j_receiveCallback);
 
-        ref->Open(c_config, c_publish_callback, c_subscribe_callback, c_receive_callback);
-    } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
+        std::shared_ptr<::rocketglue::Client> cr = ::rocketglue::Client::Open(c_config, c_publish_callback, c_subscribe_callback, c_receive_callback);
+
+        return NativeClient::toJava(jniEnv, cr);
+    } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0  /* value doesn't matter */ )
 }
 
 CJNIEXPORT void JNICALL Java_org_rocketspeed_Client_00024NativeProxy_native_1Publish(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jobject j_topicName, jobject j_namespaceId, jobject j_options, jbyteArray j_data, jobject j_msgid)

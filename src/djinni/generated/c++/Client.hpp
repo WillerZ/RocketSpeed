@@ -27,7 +27,7 @@ class Client {
 public:
     virtual ~Client() {}
 
-    virtual void Open(const std::shared_ptr<Configuration> & config, const std::shared_ptr<PublishCallback> & publish_callback, const std::shared_ptr<SubscribeCallback> & subscribe_callback, const std::shared_ptr<MessageReceivedCallback> & receive_callback) = 0;
+    static std::shared_ptr<Client> Open(const std::shared_ptr<Configuration> & config, const std::shared_ptr<PublishCallback> & publish_callback, const std::shared_ptr<SubscribeCallback> & subscribe_callback, const std::shared_ptr<MessageReceivedCallback> & receive_callback);
 
     virtual void Publish(const Topic & topic_name, const NamespaceID & namespace_id, const TopicOptions & options, const std::vector<uint8_t> & data, const MsgId & msgid) = 0;
 

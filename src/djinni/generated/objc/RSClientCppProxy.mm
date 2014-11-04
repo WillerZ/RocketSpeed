@@ -4,6 +4,7 @@
 #import "RSClientCppProxy+Private.h"
 #import "DJIError.h"
 #import "RSClient.h"
+#import "RSClientCppProxy+Private.h"
 #import "RSConfigurationCppProxy+Private.h"
 #import "RSMessageReceivedCallbackObjcProxy+Private.h"
 #import "RSMsgId+Private.h"
@@ -40,13 +41,15 @@ static_assert(__has_feature(objc_arc), "Djinni requires ARC to be enabled for th
     return cache.get(cppRef, [] (const std::shared_ptr<::rocketglue::Client> & p) { return [[RSClientCppProxy alloc] initWithCpp:p]; });
 }
 
-- (void)Open:(id <RSConfiguration>)config publishCallback:(id <RSPublishCallback>)publishCallback subscribeCallback:(id <RSSubscribeCallback>)subscribeCallback receiveCallback:(id <RSMessageReceivedCallback>)receiveCallback {
++ (id <RSClient>)Open:(id <RSConfiguration>)config publishCallback:(id <RSPublishCallback>)publishCallback subscribeCallback:(id <RSSubscribeCallback>)subscribeCallback receiveCallback:(id <RSMessageReceivedCallback>)receiveCallback {
     try {
         std::shared_ptr<::rocketglue::Configuration> cppConfig = [(RSConfigurationCppProxy *)config cppRef];
         std::shared_ptr<::rocketglue::PublishCallback> cppPublishCallback = ::rocketglue::PublishCallbackObjcProxy::PublishCallback_with_objc(publishCallback);
         std::shared_ptr<::rocketglue::SubscribeCallback> cppSubscribeCallback = ::rocketglue::SubscribeCallbackObjcProxy::SubscribeCallback_with_objc(subscribeCallback);
         std::shared_ptr<::rocketglue::MessageReceivedCallback> cppReceiveCallback = ::rocketglue::MessageReceivedCallbackObjcProxy::MessageReceivedCallback_with_objc(receiveCallback);
-        _cppRef->Open(std::move(cppConfig), std::move(cppPublishCallback), std::move(cppSubscribeCallback), std::move(cppReceiveCallback));
+        std::shared_ptr<::rocketglue::Client> cppRet = ::rocketglue::Client::Open(std::move(cppConfig), std::move(cppPublishCallback), std::move(cppSubscribeCallback), std::move(cppReceiveCallback));
+        id <RSClient> objcRet = [RSClientCppProxy ClientWithCpp:cppRet];
+        return objcRet;
     } DJINNI_TRANSLATE_EXCEPTIONS()
 }
 

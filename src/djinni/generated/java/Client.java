@@ -11,11 +11,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Implemented in c++ and called from Java and ObjC
  */
 public abstract class Client {
-    public abstract void Open(Configuration config, PublishCallback publishCallback, SubscribeCallback subscribeCallback, MessageReceivedCallback receiveCallback);
-
     public abstract void Publish(Topic topicName, NamespaceID namespaceId, TopicOptions options, byte[] data, MsgId msgid);
 
     public abstract void ListenTopics(ArrayList<SubscriptionPair> names, TopicOptions options);
+
+    public static native Client Open(Configuration config, PublishCallback publishCallback, SubscribeCallback subscribeCallback, MessageReceivedCallback receiveCallback);
 
     public static final class NativeProxy extends Client
     {
@@ -39,14 +39,6 @@ public abstract class Client {
             destroy();
             super.finalize();
         }
-
-        @Override
-        public void Open(Configuration config, PublishCallback publishCallback, SubscribeCallback subscribeCallback, MessageReceivedCallback receiveCallback)
-        {
-            assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_Open(this.nativeRef, config, publishCallback, subscribeCallback, receiveCallback);
-        }
-        private native void native_Open(long _nativeRef, Configuration config, PublishCallback publishCallback, SubscribeCallback subscribeCallback, MessageReceivedCallback receiveCallback);
 
         @Override
         public void Publish(Topic topicName, NamespaceID namespaceId, TopicOptions options, byte[] data, MsgId msgid)

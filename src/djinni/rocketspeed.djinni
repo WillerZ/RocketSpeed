@@ -178,10 +178,10 @@ MessageReceivedCallback = interface +j +o {
 # Implemented in c++ and called from Java and ObjC
 
 Client = interface +c {
-  Open(config             : Configuration,
-       publish_callback   : PublishCallback,
-       subscribe_callback : SubscribeCallback,
-       receive_callback   : MessageReceivedCallback);
+  static Open(config             : Configuration,
+              publish_callback   : PublishCallback,
+              subscribe_callback : SubscribeCallback,
+              receive_callback   : MessageReceivedCallback) : Client;
 
   Publish(topic_name      : Topic,
           namespace_id    : NamespaceID,
