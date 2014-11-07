@@ -89,7 +89,7 @@ TEST(Messaging, DataAck) {
   HostId hostid(mymachine, port);
 
   // create a message
-  std::vector<MessageDataAck::Ack> acks(10);
+  MessageDataAck::AckVector acks(10);
   char value = 0;
   for (auto& ack : acks) {
     for (size_t i = 0; i < sizeof(acks[0].msgid.id); ++i) {

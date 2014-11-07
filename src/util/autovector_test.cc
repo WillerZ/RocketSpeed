@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <iostream>
+#include <memory>
 
 #include "src/port/Env.h"
 #include "src/util/autovector.h"
@@ -181,6 +182,35 @@ TEST(AutoVectorTest, Iterators) {
     size_t diff = static_cast<size_t>(pos - vec.begin());
     ASSERT_EQ(i + 2, diff);
   }
+}
+
+TEST(AutoVectorTest, InitializerList) {
+  autovector<int, 3> v1 = {1, 2, 3};
+  ASSERT_EQ(v1[0], 1);
+  ASSERT_EQ(v1[1], 2);
+  ASSERT_EQ(v1[2], 3);
+  ASSERT_EQ(v1.size(), 3);
+
+  autovector<int, 3> v2 = {1, 2, 3, 4};
+  ASSERT_EQ(v2[0], 1);
+  ASSERT_EQ(v2[1], 2);
+  ASSERT_EQ(v2[2], 3);
+  ASSERT_EQ(v2[3], 4);
+  ASSERT_EQ(v2.size(), 4);
+}
+
+TEST(AutoVectorTest, MoveOperators) {
+  autovector<std::unique_ptr<int>, 2> v1;
+  v1.emplace_back(new int(123));
+  v1.emplace_back(new int(456));
+  v1.emplace_back(new int(789));
+
+  autovector<std::unique_ptr<int>, 2> v2(std::move(v1));
+  ASSERT_TRUE(v1.empty());
+  ASSERT_EQ(v2.size(), 3);
+  ASSERT_TRUE(v2[0] != nullptr && *v2[0] == 123);
+  ASSERT_TRUE(v2[1] != nullptr && *v2[1] == 456);
+  ASSERT_TRUE(v2[2] != nullptr && *v2[2] == 789);
 }
 
 namespace {

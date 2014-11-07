@@ -488,9 +488,9 @@ Status MessageMetadata::DeSerialize(Slice* in) {
 }
 
 MessageDataAck::MessageDataAck(TenantID tenantID,
-  const HostId& origin,
-  const std::vector<Ack>& acks)
-: acks_(acks) {
+                               const HostId& origin,
+                               AckVector acks)
+: acks_(std::move(acks)) {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mDataAck;
   tenantid_ = tenantID;
@@ -500,7 +500,7 @@ MessageDataAck::MessageDataAck(TenantID tenantID,
 MessageDataAck::~MessageDataAck() {
 }
 
-const std::vector<MessageDataAck::Ack>& MessageDataAck::GetAcks() const {
+const MessageDataAck::AckVector& MessageDataAck::GetAcks() const {
   return acks_;
 }
 

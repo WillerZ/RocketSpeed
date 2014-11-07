@@ -28,12 +28,6 @@ class autovector : public std::vector<T> {};
 //     If used correctly, in most cases, people should not touch the
 //     underlying vector at all.
 //  * random insert()/erase(), please only use push_back()/pop_back().
-//  * No move/swap operations. Each autovector instance has a
-//     stack-allocated array and if we want support move/swap operations, we
-//     need to copy the arrays other than just swapping the pointers. In this
-//     case we'll just explicitly forbid these operations since they may
-//     lead users to make false assumption by thinking they are inexpensive
-//     operations.
 //
 // Naming style of public methods almost follows that of the STL's.
 template <class T, size_t kSize = 8>
@@ -118,6 +112,10 @@ class autovector {
 
     // -- Reference
     reference operator*() {
+      assert(vect_->size() >= index_);
+      return (*vect_)[index_];
+    }
+    const reference operator*() const {
       assert(vect_->size() >= index_);
       return (*vect_)[index_];
     }
@@ -247,7 +245,12 @@ class autovector {
 
   template <class... Args>
   void emplace_back(Args&&... args) {
-    push_back(value_type(args...));
+    if (num_stack_items_ < kSize) {
+      values_[num_stack_items_++] =
+        std::move(value_type(std::forward<Args>(args)...));
+    } else {
+      vect_.emplace_back(std::forward<Args>(args)...);
+    }
   }
 
   void pop_back() {
@@ -267,14 +270,43 @@ class autovector {
   // -- Copy and Assignment
   autovector& assign(const autovector& other);
 
+  autovector& assign(autovector&& other) {
+    vect_ = std::move(other.vect_);
+    num_stack_items_ = other.num_stack_items_;
+    other.num_stack_items_ = 0;
+    std::move(other.values_, other.values_ + num_stack_items_, values_);
+    return *this;
+  }
+
   autovector(const autovector& other) { assign(other); }
 
   autovector& operator=(const autovector& other) { return assign(other); }
 
-  // move operation are disallowed since it is very hard to make sure both
-  // autovectors are allocated from the same function stack.
-  autovector& operator=(autovector&& other) = delete;
-  autovector(autovector&& other) = delete;
+  autovector& operator=(autovector&& other) {
+    return assign(other);
+  }
+
+  autovector(autovector&& other) noexcept {
+    assign(std::move(other));
+  }
+
+  autovector(std::initializer_list<T> init) {
+    if (init.size() > kSize) {
+      vect_.reserve(init.size() - kSize);
+    }
+    for (const T& e : init) {
+      push_back(e);
+    }
+  }
+
+  explicit autovector(size_type count, const value_type& value = value_type()) {
+    if (count > kSize) {
+      vect_.reserve(count - kSize);
+    }
+    while (count--) {
+      push_back(value);
+    }
+  }
 
   // -- Iterator Operations
   iterator begin() { return iterator(this, 0); }
@@ -295,6 +327,11 @@ class autovector {
 
   const_reverse_iterator rend() const {
     return const_reverse_iterator(begin());
+  }
+
+  // -- Comparisons
+  bool operator==(const autovector& rhs) const {
+    return size() == rhs.size() && std::equal(begin(), end(), rhs.begin());
   }
 
  private:

@@ -12,6 +12,7 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/messages/serializer.h"
+#include "src/util/autovector.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are
@@ -443,13 +444,18 @@ class MessageDataAck : public Message {
   };
 
   /**
+   * Vector of Acks, with one Ack allocated in place (this is the common case).
+   */
+  typedef autovector<Ack, 1> AckVector;
+
+  /**
    * Creates a message by specifying the message acks.
    *
    * @param msgid The MsgIds of the messages that have been ack'd
    */
   explicit MessageDataAck(TenantID tenantID,
                           const HostId& origin,
-                          const std::vector<Ack>& acks);
+                          AckVector acks);
   /**
    * default constructor
    */
@@ -463,7 +469,7 @@ class MessageDataAck : public Message {
   /**
    * @return The message IDs
    */
-  const std::vector<Ack>& GetAcks() const;
+  const AckVector& GetAcks() const;
 
   /*
    * Inherited from Serializer
@@ -473,7 +479,7 @@ class MessageDataAck : public Message {
 
  private:
   // type of this message: mDataAck
-  std::vector<Ack> acks_;  // message acks
+  AckVector acks_;  // message acks
 };
 
 /*
