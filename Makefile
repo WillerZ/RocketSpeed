@@ -225,7 +225,7 @@ clean:
 	-find src -name "*.[od]" -exec rm {} \;
 	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
 	-find src/java -name "*.class" -exec rm {} \;
-	-rm *.jar;
+	-rm -f *.jar
 
 tags:
 	ctags * -R
@@ -318,7 +318,7 @@ rocketspeed.jar: RocketSpeedClient.class
 RocketSpeedClient.class: src/java/org/rocketspeed/RocketSpeedClient.java
 	$(JC) src/java/org/rocketspeed/RocketSpeedClient.java
 
-client: rocketspeed.jar 
+client: rocketspeed.jar
 	LDFLAGS+="$(JAVA_LDFLAGS)" CFLAGS="$(JAVA_CFLAGS)" CXXFLAGS="$(JAVA_CXXFLAGS)" $(MAKE) $(CLIENT_LIBRARY_STATIC) $(CLIENT_LIBRARY_SHARED)
 
 $(CLIENT_LIBRARY_STATIC): $(CLIENTOBJECTS)
