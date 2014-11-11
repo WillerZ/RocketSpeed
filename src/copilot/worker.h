@@ -60,7 +60,7 @@ class CopilotCommand : public Command {
     assert(message_.size() > 0);
   }
   CopilotCommand(std::string message,
-                 std::vector<HostId>& hosts,
+                 const Recipients& hosts,
                  uint64_t issued_time):
     Command(issued_time),
     recipient_(hosts),
@@ -71,14 +71,14 @@ class CopilotCommand : public Command {
     out->assign(std::move(message_));
   }
   // return the Destination HostId, otherwise returns null.
-  const std::vector<HostId>& GetDestination() const {
+  const Recipients& GetDestination() const {
     return recipient_;
   }
   bool IsSendCommand() const {
     return true;
   }
  private:
-  std::vector<HostId> recipient_;
+  Recipients recipient_;
   std::string message_;
 };
 

@@ -67,6 +67,7 @@ Pilot::Pilot(PilotOptions options):
     LogDeviceStorage* storage = nullptr;
     std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
       facebook::logdevice::ClientSettings::create());
+    clientSettings->set("num-workers", options_.num_storage_workers_);
     rocketspeed::LogDeviceStorage::Create(
       "rocketspeed.logdevice.primary",
       options_.storage_url,

@@ -98,14 +98,14 @@ class MsgLoop {
       out->assign(std::move(message_));
     }
     // return the Destination HostId, otherwise returns null.
-    const std::vector<HostId>& GetDestination() const {
+    const Recipients& GetDestination() const {
       return recipient_;
     }
     bool IsSendCommand() const  {
       return true;
     }
    private:
-    std::vector<HostId> recipient_;
+    Recipients recipient_;
     std::string message_;
   };
 };

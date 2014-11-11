@@ -181,7 +181,7 @@ Status LogDeviceStorage::AppendAsync(LogID id,
     data.size());
   int result = client_->append(facebook::logdevice::logid_t(id),
                                payload,
-                               logdevice_callback);
+                               std::move(logdevice_callback));
 
   // Check for errors
   if (result != 0) {

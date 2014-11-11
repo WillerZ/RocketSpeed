@@ -8,6 +8,7 @@
 #include "include/Types.h"
 #include "src/port/port.h"
 #include "src/port/atomic_pointer.h"
+#include "src/messages/commands.h"
 
 namespace rocketspeed {
 
@@ -36,7 +37,7 @@ class HostMap {
   HostId* Lookup(HostNumber num);
 
   // Utility method to convert a list of Hostids to a printable string
-  static std::string ToString(std::vector<HostId>& hostlist);
+  static std::string ToString(const Command::Recipients& hostlist);
 
  private:
   // size of the store

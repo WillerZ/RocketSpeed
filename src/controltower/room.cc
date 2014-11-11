@@ -249,7 +249,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
 
   // map the topic to a list of subscribers
   TopicList* list = topic_map_.GetSubscribers(topic_name);
-  std::vector<HostId> destinations;
+  Command::Recipients destinations;
 
   // send the messages to subscribers
   if (list != nullptr && !list->empty()) {

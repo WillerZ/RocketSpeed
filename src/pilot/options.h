@@ -88,6 +88,9 @@ struct PilotOptions {
   // Size of the worker queue (number of commands in flight).
   uint32_t worker_queue_size;
 
+  // Number of workers for the log storage.
+  uint32_t num_storage_workers_;
+
   // Create PilotOptions with default values for all fields
   PilotOptions();
 };

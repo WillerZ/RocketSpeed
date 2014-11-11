@@ -22,7 +22,8 @@ PilotOptions::PilotOptions()
     storage(nullptr),
     log_range(1, 100000),
     num_workers(std::thread::hardware_concurrency()),
-    worker_queue_size(1000000) {
+    worker_queue_size(1000000),
+    num_storage_workers_(12) {
   char myname[1024];
   gethostname(&myname[0], sizeof(myname));
   pilotname.assign(myname);

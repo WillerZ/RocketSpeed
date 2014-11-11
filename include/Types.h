@@ -38,7 +38,10 @@ typedef uint64_t SequenceNumber;
  * A globally unique identifier.
  */
 struct GUID {
-  char id[16];
+  union {
+    char id[16];
+    struct { uint64_t hi, lo; };
+  };
 
   GUID() = default;
 
@@ -47,12 +50,18 @@ struct GUID {
   }
 
   bool operator<(const GUID& rhs) const {
-    return memcmp(id, rhs.id, sizeof(id)) < 0;
+    return hi < rhs.hi || (hi == rhs.hi && lo < rhs.lo);
   }
 
   bool operator==(const GUID& rhs) const {
-    return memcmp(id, rhs.id, sizeof(id)) == 0;
+    return lo == rhs.lo && hi == rhs.hi;
   }
+
+  struct Hash {
+    size_t operator()(const GUID& guid) const {
+      return guid.lo ^ guid.hi;
+    }
+  };
 };
 
 /**

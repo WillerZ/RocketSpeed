@@ -20,7 +20,6 @@ namespace rocketspeed {
  */
 class ClientCommand : public Command {
  public:
-
   // Construct from data message.
   ClientCommand(const MsgId& msgid,
                 HostId recipient,
@@ -29,7 +28,7 @@ class ClientCommand : public Command {
     Command(issued_time),
     msgid_(msgid),
     msg_(std::move(msg)) {
-    recipient_.push_back(recipient);
+    recipient_.push_back(std::move(recipient));
   }
 
   // Construct from metadata message.
@@ -38,7 +37,7 @@ class ClientCommand : public Command {
                 uint64_t issued_time) :
     Command(issued_time),
     msg_(std::move(msg)) {
-    recipient_.push_back(recipient);
+    recipient_.push_back(std::move(recipient));
   }
 
   // Get the message ID.
@@ -51,7 +50,7 @@ class ClientCommand : public Command {
     out->assign(std::move(msg_));
   }
 
-  const std::vector<HostId>& GetDestination() const {
+  const Recipients& GetDestination() const {
     return recipient_;
   }
   bool IsSendCommand() const {
@@ -59,7 +58,7 @@ class ClientCommand : public Command {
   }
  private:
   MsgId msgid_;
-  std::vector<HostId> recipient_;
+  Recipients recipient_;
   std::string msg_;
 };
 

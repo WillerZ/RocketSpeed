@@ -7,11 +7,13 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/pilot/options.h"
 #include "src/util/statistics.h"
 #include "src/util/worker_loop.h"
+#include "src/util/object_pool.h"
 
 namespace rocketspeed {
 
@@ -65,7 +67,7 @@ class PilotCommand : public Command {
     out->assign(std::move(message_));
   }
   // return the Destination HostId, otherwise returns null.
-  const std::vector<HostId>& GetDestination() const {
+  const Recipients& GetDestination() const {
     return recipient_;
   }
   bool IsSendCommand() const  {
@@ -73,8 +75,32 @@ class PilotCommand : public Command {
   }
 
  private:
-  std::vector<HostId> recipient_;
+  Recipients recipient_;
   std::string message_;
+};
+
+class PilotWorker;
+
+// Storage for captured objects in the append callback.
+struct AppendClosure : public PooledObject<AppendClosure> {
+ public:
+  AppendClosure(PilotWorker* worker,
+                std::unique_ptr<MessageData> msg,
+                LogID logid,
+                uint64_t now)
+  : worker_(worker)
+  , msg_(std::move(msg))
+  , logid_(logid)
+  , append_time_(now) {
+  }
+
+  void operator()(Status append_status, SequenceNumber seqno);
+
+ private:
+  PilotWorker* worker_;
+  std::unique_ptr<MessageData> msg_;
+  LogID logid_;
+  uint64_t append_time_;
 };
 
 /**
@@ -113,14 +139,20 @@ class PilotWorker {
     return stats_.all;
   }
 
+  void AppendCallback(Status append_status,
+                      SequenceNumber seqno,
+                      std::unique_ptr<MessageData> msg,
+                      LogID logid,
+                      uint64_t append_time);
+
  private:
+  friend struct AppendClosure;
+
   // Callback for worker loop commands.
   void CommandCallback(PilotWorkerCommand command);
 
   // Send an ack message to the host for the msgid.
-  void SendAck(const TenantID tenantid,
-               const HostId& host,
-               const MsgId& msgid,
+  void SendAck(MessageData* msg,
                SequenceNumber seqno,
                MessageDataAck::AckStatus status);
 
@@ -128,6 +160,8 @@ class PilotWorker {
   LogStorage* storage_;
   const PilotOptions& options_;
   Pilot* pilot_;
+  PooledObjectList<AppendClosure> append_closure_pool_;
+  std::mutex append_closure_pool_mutex_;
 
   struct Stats {
     Stats() {

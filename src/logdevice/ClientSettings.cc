@@ -19,12 +19,10 @@ ClientSettings* ClientSettings::create() {
 }
 
 int ClientSettings::set(const char *name, const char *value) {
-  assert(false);  // not implemented
   return 0;
 }
 
 int ClientSettings::set(const char *name, int64_t value) {
-  assert(false);  // not implemented
   return 0;
 }
 

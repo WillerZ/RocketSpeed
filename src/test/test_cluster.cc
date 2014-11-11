@@ -50,32 +50,24 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
 #endif
 
 #ifdef USE_LOGDEVICE
-  LogDeviceStorage* storage = nullptr;
   if (storage_url.empty()) {
     // Setup the local LogDevice cluster and create, client, and storage.
     logdevice_cluster_ = ld::IntegrationTestUtils::ClusterFactory().create(3);
     logdevice_client_ = logdevice_cluster_->createClient();
+    LogDeviceStorage* storage = nullptr;
     st = LogDeviceStorage::Create(logdevice_client_, Env::Default(), &storage);
     ASSERT_TRUE(st.ok());
-  } else {
-    // Create log device client
-    std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
-      facebook::logdevice::ClientSettings::create());
-    rocketspeed::LogDeviceStorage::Create(
-      "rocketspeed.logdevice.primary",
-      storage_url,
-      "",
-      std::chrono::milliseconds(1000),
-      std::move(clientSettings),
-      env,
-      &storage);
-  }
-  logdevice_storage_.reset(storage);
+    logdevice_storage_.reset(storage);
 
-  // Tell the pilot and control tower to use this storage interface instead
-  // of opening a new one.
-  pilot_options_.storage.reset(storage);
-  control_tower_options_.storage.reset(storage);
+    // Tell the pilot and control tower to use this storage interface instead
+    // of opening a new one.
+    pilot_options_.storage.reset(storage);
+    control_tower_options_.storage.reset(storage);
+  } else {
+    // Just give the storage url to the components.
+    pilot_options_.storage_url = storage_url;
+    control_tower_options_.storage_url = storage_url;
+  }
 #endif
 
   control_tower_loop_.reset(new MsgLoop(env,
@@ -114,7 +106,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   // Create Pilot
   pilot_options_.log_range = log_range;
   pilot_options_.info_log = info_log_;
-  pilot_options_.num_workers = 4;
+  pilot_options_.num_workers = 12;
   pilot_options_.msg_loop = cockpit_loop_.get();
   st = Pilot::CreateNewInstance(pilot_options_, &pilot_);
   if (!st.ok()) {

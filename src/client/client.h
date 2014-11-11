@@ -10,6 +10,7 @@
 #include <set>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
 #include "include/Status.h"
@@ -74,7 +75,7 @@ class ClientImpl : public Client {
   std::thread msg_loop_thread_;
 
   // Messages sent, awaiting ack.
-  std::set<MsgId> messages_sent_;
+  std::unordered_set<MsgId, MsgId::Hash> messages_sent_;
   std::mutex message_sent_mutex_;  // mutex for operators on messages_sent_
 
   // callback for incoming data message

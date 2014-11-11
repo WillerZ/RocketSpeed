@@ -30,6 +30,7 @@
 #include "src/util/log_buffer.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/statistics.h"
+#include "src/util/object_pool.h"
 
 namespace rocketspeed {
 
@@ -38,6 +39,17 @@ typedef std::function<void(EventCallbackContext, std::unique_ptr<Message> msg)>
                                             EventCallbackType;
 
 class SocketEvent;
+
+// A refcounted, pooled version of a serialized message string
+struct SharedString : public PooledObject<SharedString> {
+ public:
+  explicit SharedString(std::string s, int c)
+  : store(std::move(s))
+  , refcount(c) {}
+
+  std::string store;
+  int refcount;
+};
 
 class EventLoop {
  public:
@@ -96,6 +108,14 @@ class EventLoop {
  private:
   friend class SocketEvent;
 
+  SharedString* AllocString(std::string s, int c) {
+    return string_pool_.Allocate(s, c);
+  }
+
+  void FreeString(SharedString* s) {
+    string_pool_.Deallocate(s);
+  }
+
   // Env
   Env* env_;
 
@@ -139,6 +159,9 @@ class EventLoop {
 
   // a cache of HostId to connections
   std::map<HostId, std::vector<SocketEvent*>> connection_cache_;
+
+  // Object pool of SharedStrings
+  PooledObjectList<SharedString> string_pool_;
 
   struct Stats {
     explicit Stats(const std::string& prefix) {

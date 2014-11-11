@@ -113,7 +113,7 @@ HostMap::Lookup(HostNumber number) {
 
 // Utility method to convert a list of Hostids to a printable string
 std::string
-HostMap::ToString(std::vector<HostId>& hostlist) {
+HostMap::ToString(const Command::Recipients& hostlist) {
   std::string out;
   for (HostId host : hostlist) {
     out += " " + host.ToString();

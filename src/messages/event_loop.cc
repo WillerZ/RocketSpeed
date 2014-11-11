@@ -14,13 +14,6 @@
 
 namespace rocketspeed {
 
-// A refcounted version of a serialized message string
-struct SharedString {
-  SharedString(std::string s, int c) : store(std::move(s)), refcount(c) {}
-  std::string store;
-  int refcount;
-};
-
 struct SocketEvent {
  public:
   SocketEvent(EventLoop* event_loop, int fd, event_base* base)
@@ -110,7 +103,7 @@ struct SocketEvent {
     for (const auto msg : send_queue_) {
       msg->refcount--;
       if (msg->refcount == 0) {
-        delete msg;
+        event_loop_->FreeString(msg);
       }
     }
   }
@@ -186,7 +179,7 @@ struct SocketEvent {
         partial_ = Slice();
         SharedString* str = send_queue_.front();
         if (--(str->refcount) == 0) {
-          delete str;
+          event_loop_->FreeString(str);
         }
         send_queue_.pop_front();
       }
@@ -370,7 +363,7 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
 
     // Have to handle the case when the message-send failed to write
     // to output socket and have to invoke *some* callback to the app.
-    const std::vector<HostId>& remote = command.get()->GetDestination();
+    const Command::Recipients& remote = command.get()->GetDestination();
 
     // Move the message payload into a ref-counted string. The string
     // will be deallocated only when all the remote destinations
@@ -378,7 +371,7 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
     std::string out;
     command.get()->GetMessage(&out);
     assert(out.size() > 0);
-    SharedString* msg = new SharedString(std::move(out), remote.size());
+    SharedString* msg = obj->AllocString(std::move(out), remote.size());
 
     for (const HostId& host : remote) {
       SocketEvent* sev = obj->lookup_connection_cache(host);
@@ -402,7 +395,7 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
       }
     }  // for loop
     if (msg->refcount == 0) {
-      delete msg;
+      obj->FreeString(msg);
     }
   }
 }

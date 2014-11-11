@@ -89,7 +89,7 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
   // Get the list of subscriptions for this topic.
   auto it = subscriptions_.find(request.topic_name);
   if (it != subscriptions_.end()) {
-    std::vector<HostId> destinations;
+    Command::Recipients destinations;
 
     // serialize message
     std::string serial;
@@ -144,7 +144,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
   auto it = subscriptions_.find(msg->GetTopicName().ToString());
   if (it != subscriptions_.end()) {
     auto seqno = msg->GetSequenceNumber();
-    std::vector<HostId> destinations;
+    Command::Recipients destinations;
 
     // serialize message
     std::string serial;
