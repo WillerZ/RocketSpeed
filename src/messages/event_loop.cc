@@ -54,6 +54,7 @@ struct SocketEvent {
   , known_remote_(true)
   , remote_host_(remote)
   , write_ev_added_(false) {
+    event_loop_->thread_check_.Check();
 
     // create read and write events
     ev_ = ld_event_new(base, fd, EV_READ|EV_PERSIST,
@@ -85,6 +86,7 @@ struct SocketEvent {
   }
 
   ~SocketEvent() {
+    event_loop_->thread_check_.Check();
     LOG_INFO(event_loop_->GetLog(),
              "Closing fd(%d)",
              fd_);
@@ -110,6 +112,7 @@ struct SocketEvent {
 
   // One message to be sent out.
   Status Enqueue(SharedString* msg) {
+    event_loop_->thread_check_.Check();
     Status status;
     // insert into outgoing queue
     send_queue_.push_back(msg);
@@ -146,6 +149,7 @@ struct SocketEvent {
   }
 
   void WriteCallback(evutil_socket_t fd) {
+    event_loop_->thread_check_.Check();
     assert(write_ev_added_ && send_queue_.size() > 0);
 
     while (send_queue_.size() > 0) {
@@ -202,6 +206,7 @@ struct SocketEvent {
   }
 
   void ReadCallback(evutil_socket_t fd) {
+    event_loop_->thread_check_.Check();
     // This will keep reading while there is data to be read,
     // but not more than 1MB to give other sockets a chance to read.
     ssize_t total_read = 0;
@@ -322,18 +327,21 @@ struct SocketEvent {
 void
 EventLoop::do_startevent(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
+  obj->thread_check_.Check();
   obj->running_ = true;
 }
 
 void
 EventLoop::do_shutdown(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
+  obj->thread_check_.Check();
   ld_event_base_loopexit(obj->base_, nullptr);
 }
 
 void
 EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
+  obj->thread_check_.Check();
 
   // Read the value from the eventfd to find out how many commands are ready.
   uint64_t available;
@@ -407,6 +415,7 @@ EventLoop::do_accept(struct evconnlistener *listener,
                      int socklen,
                      void *arg) {
   EventLoop* event_loop = static_cast<EventLoop *>(arg);
+  event_loop->thread_check_.Check();
   setup_fd(fd, event_loop);
 
   // This object is managed by the event that it creates, and will destroy
@@ -420,6 +429,7 @@ EventLoop::do_accept(struct evconnlistener *listener,
 // Sets up the socket descriptor appropriately.
 Status
 EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
+  event_loop->thread_check_.Check();
   Status status;
 
   // make socket non-blocking
@@ -453,6 +463,7 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
 void
 EventLoop::accept_error_cb(struct evconnlistener *listener, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
+  obj->thread_check_.Check();
   struct event_base *base = ld_evconnlistener_get_base(listener);
   int err = EVUTIL_SOCKET_ERROR();
   LOG_WARN(obj->info_log_,
@@ -606,6 +617,10 @@ void EventLoop::Stop() {
       ld_event_base_free(base_);
       close(shutdown_fd);
       close(command_ready_eventfd_);
+
+      // Reset the thread checker for clear_connection_cache since the
+      // event loop thread is no longer running.
+      thread_check_.Reset();
       clear_connection_cache();
     }
     LOG_INFO(info_log_, "Stopped EventLoop at port %d", port_number_);
@@ -653,6 +668,7 @@ void EventLoop::Dispatch(std::unique_ptr<Message> message) {
 // otherwise returns false if the object already existed.
 bool
 EventLoop::insert_connection_cache(const HostId& host, SocketEvent* sev) {
+  thread_check_.Check();
   auto iter = connection_cache_.find(host);
 
   // There exists a mapping about this host
@@ -684,6 +700,7 @@ EventLoop::insert_connection_cache(const HostId& host, SocketEvent* sev) {
 // otherwise returns false if the object was not found.
 bool
 EventLoop::remove_connection_cache(const HostId& host, SocketEvent* sev) {
+  thread_check_.Check();
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
     for (unsigned int i = 0; i < iter->second.size(); i++) {
@@ -706,6 +723,7 @@ EventLoop::remove_connection_cache(const HostId& host, SocketEvent* sev) {
 // Returns null if the host does not have any connected socket.
 SocketEvent*
 EventLoop::lookup_connection_cache(const HostId& host) const {
+  thread_check_.Check();
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
     assert(!iter->second.empty());
@@ -744,6 +762,7 @@ EventLoop::clear_connection_cache() {
 // Returns null on error.
 SocketEvent*
 EventLoop::setup_connection(const HostId& host) {
+  thread_check_.Check();
   int fd;
   Status status =  create_connection(host, false, &fd);
   if (!status.ok()) {
@@ -766,6 +785,7 @@ Status
 EventLoop::create_connection(const HostId& host,
                              bool blocking,
                              int* fd) {
+  thread_check_.Check();
   struct addrinfo hints, *servinfo, *p;
   int rv;
   std::string port_string(std::to_string(host.port));
@@ -852,6 +872,7 @@ EventLoop::EventLoop(Env* env,
   event_callback_context_(nullptr),
   listener_(nullptr),
   command_queue_(command_queue_size),
+  thread_check_(env),
   stats_(stats_prefix) {
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }

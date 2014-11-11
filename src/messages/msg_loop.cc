@@ -21,6 +21,7 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
   MsgLoop* msgloop = static_cast<MsgLoop*> (ctx);
   assert(msgloop);
   assert(msg);
+  msgloop->ThreadCheck();
 
   // what message have we received?
   MessageType type = msg->GetMessageType();
@@ -117,6 +118,7 @@ MsgLoop::~MsgLoop() {
 void
 MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   // get the ping request message
+  ThreadCheck();
   MessagePing* request = static_cast<MessagePing*>(msg.get());
   const HostId origin = request->GetOrigin();
 

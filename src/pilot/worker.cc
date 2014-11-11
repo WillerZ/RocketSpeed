@@ -25,7 +25,7 @@ void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
 PilotWorker::PilotWorker(const PilotOptions& options,
                          LogStorage* storage,
                          Pilot* pilot)
-: worker_loop_(options.worker_queue_size)
+: worker_loop_(options.env, options.worker_queue_size)
 , storage_(storage)
 , options_(options)
 , pilot_(pilot) {

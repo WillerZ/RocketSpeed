@@ -130,6 +130,7 @@ Status Pilot::CreateNewInstance(PilotOptions options,
 // A callback method to process MessageData
 void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
   // Sanity checks.
+  options_.msg_loop->ThreadCheck();
   assert(msg);
   assert(msg->GetMessageType() == MessageType::mPublish);
 

@@ -31,6 +31,7 @@
 #include "src/util/auto_roll_logger.h"
 #include "src/util/statistics.h"
 #include "src/util/object_pool.h"
+#include "src/util/thread_check.h"
 
 namespace rocketspeed {
 
@@ -105,6 +106,10 @@ class EventLoop {
     return stats_.all;
   }
 
+  void ThreadCheck() const {
+    thread_check_.Check();
+  }
+
  private:
   friend class SocketEvent;
 
@@ -162,6 +167,9 @@ class EventLoop {
 
   // Object pool of SharedStrings
   PooledObjectList<SharedString> string_pool_;
+
+  // Thread check
+  rocketspeed::ThreadCheck thread_check_;
 
   struct Stats {
     explicit Stats(const std::string& prefix) {

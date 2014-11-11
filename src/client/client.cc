@@ -211,6 +211,7 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
 ** Process a received data message and deliver it to application.
 */
 void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
+  msg_loop_->ThreadCheck();
   const MessageData* data = static_cast<const MessageData*>(msg.get());
 
   // extract topic name from message
@@ -242,6 +243,7 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
 
 // Process the Ack message for a Data Message
 void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
+  msg_loop_->ThreadCheck();
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
   // For each ack'd message, if it was waiting for an ack then remove it
@@ -276,6 +278,7 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
 
 // Process Metadata response messages arriving from the Cloud.
 void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
+  msg_loop_->ThreadCheck();
   SubscriptionStatus ret;
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());
 

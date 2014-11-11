@@ -10,6 +10,8 @@
 #include <thread>
 #include <utility>
 #include "external/folly/producer_consumer_queue.h"
+#include "src/util/thread_check.h"
+#include "src/port/Env.h"
 
 namespace rocketspeed {
 
@@ -24,11 +26,13 @@ class WorkerLoop {
   /**
    * Constructs a WorkerLoop with a specific queue size.
    *
+   * @param env Environment context
    * @param size The size of the worker queue. Due to the queue implementation,
    *             the maximum number of items in the queue will be size - 1.
    * @param type Whether the queue has single or multiple producers.
    */
-  explicit WorkerLoop(uint32_t size,
+  explicit WorkerLoop(Env* env,
+                      uint32_t size,
                       WorkerLoopType type = WorkerLoopType::kSingleProducer);
 
   /**
@@ -75,14 +79,16 @@ class WorkerLoop {
   folly::ProducerConsumerQueue<Command> command_queue_;
   std::atomic<bool> stop_;
   std::atomic<bool> running_;
+  ThreadCheck thread_check_;
 };
 
 template <typename Command>
-WorkerLoop<Command>::WorkerLoop(uint32_t size, WorkerLoopType type)
+WorkerLoop<Command>::WorkerLoop(Env* env, uint32_t size, WorkerLoopType type)
 : type_(type)
 , command_queue_(size)
 , stop_(false)
-, running_(false) {
+, running_(false)
+, thread_check_(env) {
 }
 
 template <typename Command>
@@ -119,6 +125,9 @@ bool WorkerLoop<Command>::Send(Args&&... args) {
   std::unique_lock<std::mutex> lock(write_lock_, std::defer_lock);
   if (type_ == WorkerLoopType::kMultiProducer) {
     lock.lock();
+  } else {
+    // When we don't lock, we need to ensure only one thread calls Send.
+    thread_check_.Check();
   }
   bool result = command_queue_.write(std::forward<Args>(args)...);
   if (type_ == WorkerLoopType::kMultiProducer) {

@@ -115,6 +115,8 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
 // The message is forwarded to the appropriate ControlRoom
 void
 ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
+  options_.msg_loop->ThreadCheck();
+
   // get the request message
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
   if (request->GetMetaType() != MessageMetadata::MetaType::Request) {

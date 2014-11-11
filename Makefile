@@ -91,7 +91,8 @@ TESTS = \
   logdevice_storage_test \
   hostmap_test \
   integration_test \
-  statistics_test
+  statistics_test \
+  thread_check_test
 
 TOOLS = \
 	rocketbench
@@ -287,6 +288,9 @@ integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(TES
 
 statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+thread_check_test: src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

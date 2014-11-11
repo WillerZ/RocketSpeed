@@ -15,7 +15,7 @@ namespace rocketspeed {
 CopilotWorker::CopilotWorker(const CopilotOptions& options,
                              const ControlTowerRouter* control_tower_router,
                              Copilot* copilot)
-: worker_loop_(options.worker_queue_size)
+: worker_loop_(options.env, options.worker_queue_size)
 , options_(options)
 , control_tower_router_(control_tower_router)
 , copilot_(copilot) {

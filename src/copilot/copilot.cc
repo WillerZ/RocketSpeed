@@ -102,6 +102,8 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
 
 // A static callback method to process MessageData
 void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
+  options_.msg_loop->ThreadCheck();
+
   // get the request message
   MessageData* data = static_cast<MessageData*>(msg.get());
 
@@ -134,6 +136,8 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
 
 // A static callback method to process MessageMetadata
 void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
+  options_.msg_loop->ThreadCheck();
+
   // get the request message
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
 

@@ -58,6 +58,10 @@ class MsgLoop {
     return event_loop_.GetStatistics();
   }
 
+  void ThreadCheck() const {
+    event_loop_.ThreadCheck();
+  }
+
  private:
   // The Environment
   Env* env_;
