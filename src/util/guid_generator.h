@@ -16,6 +16,8 @@ class GUIDGenerator {
   GUIDGenerator();
 
   GUID Generate();
+
+  std::string GenerateString();
  private:
   std::mt19937_64 rng_;
 };

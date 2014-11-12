@@ -27,6 +27,7 @@ Client::~Client() {
 
 // Implementation of Client::Open from RocketSpeed.h
 Status Client::Open(const Configuration* config,
+                    const ClientID& client_id,
                     PublishCallback publish_callback,
                     SubscribeCallback subscription_callback,
                     MessageReceivedCallback receive_callback,
@@ -47,7 +48,8 @@ Status Client::Open(const Configuration* config,
 
   // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
-  *producer = new ClientImpl(config->GetPilotHostIds().front(),
+  *producer = new ClientImpl(client_id,
+                             config->GetPilotHostIds().front(),
                              config->GetCopilotHostIds().front(),
                              config->GetTenantID(),
                              config->GetClientPort(),
@@ -58,7 +60,8 @@ Status Client::Open(const Configuration* config,
   return Status::OK();
 }
 
-ClientImpl::ClientImpl(const HostId& pilot_host_id,
+ClientImpl::ClientImpl(const ClientID& client_id,
+                       const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
                        int port,
@@ -67,18 +70,13 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        MessageReceivedCallback receive_callback,
                        std::shared_ptr<Logger> info_log)
 : env_(Env::Default())
+, client_id_(client_id)
 , pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
 , publish_callback_(publish_callback)
 , subscription_callback_(subscription_callback)
 , receive_callback_(receive_callback) {
-  // Initialise host_id_.
-  char myname[1024];
-  if (gethostname(&myname[0], sizeof(myname))) {
-    assert(false);
-  }
-  host_id_ = HostId(myname, port);
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
@@ -95,7 +93,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
   // Construct message loop.
   msg_loop_ = new MsgLoop(Env::Default(),
                           EnvOptions(),
-                          port,
+                          0,           // no accept loop
                           info_log,
                           "client");
   msg_loop_->RegisterCallbacks(callbacks);
@@ -132,7 +130,7 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   // Construct message.
   MessageData message(MessageType::mPublish,
                       tenant_id_,
-                      host_id_,
+                      client_id_,
                       Slice(name),
                       namespaceId,
                       data,
@@ -151,7 +149,7 @@ PublishStatus ClientImpl::Publish(const Topic& name,
 
   // Construct command.
   std::unique_ptr<Command> command(new ClientCommand(msgid,
-                                                     pilot_host_id_,
+                                                     pilot_host_id_.ToClientId(),
                                                      std::move(serialized),
                                                      env_->NowMicros()));
 
@@ -185,7 +183,7 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
   // Construct message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
-                          host_id_,
+                          client_id_,
                           list);
 
   // Get a serialized version of the message
@@ -193,9 +191,10 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
   message.SerializeToString(&serialized);
 
   // Construct command.
-  std::unique_ptr<Command> command(new ClientCommand(copilot_host_id_,
-                                                     std::move(serialized),
-                                                     env_->NowMicros()));
+  std::unique_ptr<Command> command(new ClientCommand(
+                                       copilot_host_id_.ToClientId(),
+                                       std::move(serialized),
+                                       env_->NowMicros()));
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command));
 

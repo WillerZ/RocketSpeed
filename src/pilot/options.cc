@@ -24,9 +24,6 @@ PilotOptions::PilotOptions()
     num_workers(std::thread::hardware_concurrency()),
     worker_queue_size(1000000),
     num_storage_workers_(12) {
-  char myname[1024];
-  gethostname(&myname[0], sizeof(myname));
-  pilotname.assign(myname);
 }
 
 }  // namespace rocketspeed

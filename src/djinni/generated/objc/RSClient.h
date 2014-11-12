@@ -7,6 +7,7 @@
 #import "RSPublishCallback.h"
 #import "RSSubscribeCallback.h"
 #import <Foundation/Foundation.h>
+@class RSClientID;
 @class RSMsgId;
 @class RSNamespaceID;
 @class RSSubscriptionPair;
@@ -20,7 +21,7 @@
 
 @protocol RSClient
 
-+ (id <RSClient>)Open:(id <RSConfiguration>)config publishCallback:(id <RSPublishCallback>)publishCallback subscribeCallback:(id <RSSubscribeCallback>)subscribeCallback receiveCallback:(id <RSMessageReceivedCallback>)receiveCallback;
++ (id <RSClient>)Open:(RSClientID *)clientId config:(id <RSConfiguration>)config publishCallback:(id <RSPublishCallback>)publishCallback subscribeCallback:(id <RSSubscribeCallback>)subscribeCallback receiveCallback:(id <RSMessageReceivedCallback>)receiveCallback;
 
 - (void)Publish:(RSTopic *)topicName namespaceId:(RSNamespaceID *)namespaceId options:(RSTopicOptions *)options data:(NSData *)data msgid:(RSMsgId *)msgid;
 

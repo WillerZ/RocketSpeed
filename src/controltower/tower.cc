@@ -43,7 +43,8 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
 ControlTower::ControlTower(const ControlTowerOptions& options):
   options_(SanitizeOptions(options)),
   log_router_(options.log_range.first, options.log_range.second),
-  hostmap_(options.max_number_of_hosts) {
+  hostmap_(options.max_number_of_hosts),
+  tower_id_(options_.msg_loop->GetHostId().ToClientId()) {
   // The rooms and that tailers are not initialized here.
   // The reason being that those initializations could fail and
   // return error Status.

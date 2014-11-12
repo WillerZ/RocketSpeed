@@ -59,7 +59,8 @@ void Pilot::StartWorkers() {
  */
 Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))),
-  log_router_(options_.log_range.first, options_.log_range.second) {
+  log_router_(options_.log_range.first, options_.log_range.second),
+  pilot_id_(options_.msg_loop->GetHostId().ToClientId()) {
   assert(options_.msg_loop);
 
   if (options_.storage == nullptr) {

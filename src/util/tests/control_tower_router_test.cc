@@ -16,10 +16,10 @@ namespace rocketspeed {
 
 class ControlTowerRouterTest { };
 
-std::vector<HostId> MakeControlTowers(int num) {
-  std::vector<HostId> control_towers;
+std::vector<ClientID> MakeControlTowers(int num) {
+  std::vector<ClientID> control_towers;
   for (int i = 0; i < num; ++i) {
-    control_towers.emplace_back(std::to_string(i), i);
+    control_towers.push_back(HostId(std::to_string(i), i).ToClientId());
   }
   return control_towers;
 }
@@ -36,19 +36,19 @@ TEST(ControlTowerRouterTest, ConsistencyTest) {
   int numRelocations = 0;
   const int numLogs = 100000;
   for (int i = 0; i < numLogs; ++i) {
-    std::vector<HostId const*> hosts1;
-    std::vector<HostId const*> hosts2;
+    std::vector<ClientID const*> hosts1;
+    std::vector<ClientID const*> hosts2;
     ASSERT_TRUE(router1.GetControlTowers(i, &hosts1).ok());
     ASSERT_TRUE(router2.GetControlTowers(i, &hosts2).ok());
     ASSERT_EQ(hosts1.size(), numCopies);
     ASSERT_EQ(hosts2.size(), numCopies);
 
-    auto host_less = [](HostId const* lhs, HostId const* rhs) {
+    auto host_less = [](ClientID const* lhs, ClientID const* rhs) {
       return *lhs < *rhs;
     };
     std::sort(hosts1.begin(), hosts1.end(), host_less);
     std::sort(hosts2.begin(), hosts2.end(), host_less);
-    std::vector<HostId const*> intersection(numCopies);
+    std::vector<ClientID const*> intersection(numCopies);
     auto intersection_end = std::set_intersection(
       hosts1.begin(), hosts1.end(),
       hosts2.begin(), hosts2.end(),
@@ -71,16 +71,17 @@ TEST(ControlTowerRouterTest, LogDistribution) {
   // Count number of changed for 100k logs.
   int numLogs = 100000;
   for (int i = 0; i < numLogs; ++i) {
-    std::vector<HostId const*> hosts;
-    ASSERT_TRUE(router.GetControlTowers(i, &hosts).ok());
-    logCount[hosts[0]->port]++;
+    std::vector<ClientID const*> clients;
+    ASSERT_TRUE(router.GetControlTowers(i, &clients).ok());
+    HostId h = HostId::ToHostId(*clients[0]);
+    logCount[h.port]++;
   }
 
   // Find the minimum and maximum logs per control tower.
   auto minmax = std::minmax_element(logCount.begin(), logCount.end());
   int expected = numLogs / numControlTowers;  // perfect distribution
   ASSERT_GT(*minmax.first, expected * 0.5);  // allow +/-50% error worst case
-  ASSERT_LT(*minmax.second, expected * 1.5);
+  ASSERT_LT(*minmax.second, expected * 1.6);
 }
 
 }  // namespace rocketspeed

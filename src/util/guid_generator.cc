@@ -6,6 +6,7 @@
 #include "guid_generator.h"
 #include <array>
 #include <algorithm>
+#include "src/util/coding.h"
 
 namespace rocketspeed {
 
@@ -36,4 +37,11 @@ GUID GUIDGenerator::Generate() {
   return result.guid;
 }
 
+// generates a 16 byte guid string
+std::string GUIDGenerator::GenerateString() {
+  std::string buf;
+  PutFixed64(&buf, rng_());
+  PutFixed64(&buf, rng_());
+  return buf;
+}
 }

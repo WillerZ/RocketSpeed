@@ -21,21 +21,20 @@ HostMap::HostMap(unsigned int number_buckets) :
 HostMap::~HostMap() {
   MutexLock lock(&hostlock_);
   for (unsigned int i = 0; i < number_buckets_; i++) {
-    delete static_cast<HostId*>(hostlist_[i].Acquire_Load());
+    delete static_cast<ClientID*>(hostlist_[i].Acquire_Load());
     hostlist_[i].Release_Store(nullptr);
   }
 }
 
 HostNumber
-HostMap::Insert(const HostId& hostid) {
+HostMap::Insert(const ClientID& clientid) {
   // acquire the lock so that conflicting inserts do not trample
   // one another
   MutexLock lock(&hostlock_);
 
   // generate a hash
-  unsigned int hashval = XXH32(hostid.hostname.c_str(),
-                               hostid.hostname.size(), 0);
-  hashval += hostid.port;
+  unsigned int hashval = XXH32(clientid.c_str(),
+                               clientid.size(), 0);
   hashval = hashval % number_buckets_;
 
   // The hash value gives us the starting point of our search
@@ -46,10 +45,9 @@ HostMap::Insert(const HostId& hostid) {
     if (index == number_buckets_) {
       index = 0;                  // wrap around circular array
     }
-    HostId* one = static_cast<HostId*>(hostlist_[index].Acquire_Load());
+    ClientID* one = static_cast<ClientID*>(hostlist_[index].Acquire_Load());
     if (one != nullptr) {
-      if (one->hostname == hostid.hostname &&
-          one->port == hostid.port) {
+      if (*one == clientid) {
         return index;            // found it
       }
     } else {
@@ -63,7 +61,7 @@ HostMap::Insert(const HostId& hostid) {
   }
 
   // we found a free slot at offset 'index'
-  HostId* newhost = new HostId(hostid.hostname, hostid.port);
+  ClientID* newhost = new ClientID(clientid);
   hostlist_[index].Release_Store(newhost);
   return index;
 }
@@ -73,11 +71,10 @@ HostMap::Insert(const HostId& hostid) {
 // Lookups are entirely lock-free.
 //
 HostNumber
-HostMap::Lookup(const HostId& hostid) {
+HostMap::Lookup(const ClientID& clientid) {
   // generate a hash
-  unsigned int hashval = XXH32(hostid.hostname.c_str(),
-                               hostid.hostname.size(), 0);
-  hashval += hostid.port;
+  unsigned int hashval = XXH32(clientid.c_str(),
+                               clientid.size(), 0);
   hashval = hashval % number_buckets_;
 
   // The hash value gives us the starting point of our search
@@ -88,10 +85,9 @@ HostMap::Lookup(const HostId& hostid) {
     if (index == number_buckets_) {
       index = 0;                  // wrap around circular array
     }
-    HostId* one = static_cast<HostId*>(hostlist_[index].Acquire_Load());
+    ClientID* one = static_cast<ClientID*>(hostlist_[index].Acquire_Load());
     if (one != nullptr) {
-      if (one->hostname == hostid.hostname &&
-          one->port == hostid.port) {
+      if (*one == clientid) {
         return index;        // found it
       }
     } else {
@@ -104,10 +100,10 @@ HostMap::Lookup(const HostId& hostid) {
 //
 // Returns the host for a specified HostNumber.
 //
-HostId*
+ClientID*
 HostMap::Lookup(HostNumber number) {
   assert(number >= 0 && (unsigned int)number < number_buckets_);
-  HostId* one = static_cast<HostId*>(hostlist_[number].Acquire_Load());
+  ClientID* one = static_cast<ClientID*>(hostlist_[number].Acquire_Load());
   return  one;
 }
 
@@ -115,8 +111,8 @@ HostMap::Lookup(HostNumber number) {
 std::string
 HostMap::ToString(const Command::Recipients& hostlist) {
   std::string out;
-  for (HostId host : hostlist) {
-    out += " " + host.ToString();
+  for (ClientID host : hostlist) {
+    out += " " + host;
   }
   return out;
 }

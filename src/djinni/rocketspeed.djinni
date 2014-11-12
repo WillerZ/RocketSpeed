@@ -72,6 +72,13 @@ HostId = record {
 }
 
 #
+# The identifier for a client
+#
+ClientID = record {
+  name : string;
+}
+
+#
 # Retention modes
 #
 Retention = enum {
@@ -178,7 +185,8 @@ MessageReceivedCallback = interface +j +o {
 # Implemented in c++ and called from Java and ObjC
 
 Client = interface +c {
-  static Open(config             : Configuration,
+  static Open(client_id          : ClientID,
+              config             : Configuration,
               publish_callback   : PublishCallback,
               subscribe_callback : SubscribeCallback,
               receive_callback   : MessageReceivedCallback) : Client;

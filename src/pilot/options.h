@@ -33,9 +33,6 @@ struct PilotOptions {
   // This is not owned by the pilot and should not be deleted.
   MsgLoop* msg_loop;
 
-  // The machine name that identifies this pilot
-  std::string pilotname;
-
   // If non-null, then server info logs are written to this object.
   // If null, then server info logs are written to log_dir.
   // This allows multiple instances of the server to log to the

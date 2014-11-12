@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
     rocketspeed::HostId tower_host("localhost", FLAGS_tower_port);
-    copilot_opts.control_towers.push_back(tower_host);
+    copilot_opts.control_towers.push_back(tower_host.ToClientId());
 
     st = rocketspeed::Copilot::CreateNewInstance(std::move(copilot_opts),
                                                  &copilot);

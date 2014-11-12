@@ -19,8 +19,8 @@ namespace rocketspeed {
  */
 class Command {
  public:
-  // Allocate one HostId in-place for the common case.
-  typedef autovector<HostId, 1> Recipients;
+  // Allocate one ClientID in-place for the common case.
+  typedef autovector<ClientID, 1> Recipients;
 
   // Default constructor.
   explicit Command(uint64_t issued_time) : issued_time_(issued_time) {}
@@ -45,7 +45,6 @@ class Command {
 
   // If this is a command to send a mesage to remote hosts, then
   // returns the list of destination HostIds.
-  // are returned in num_hosts.
   virtual const Recipients& GetDestination() const = 0;
 
  private:

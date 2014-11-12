@@ -34,7 +34,8 @@ class ClientImpl : public Client {
   virtual void ListenTopics(std::vector<SubscriptionPair>& names,
                             const TopicOptions& options);
 
-  ClientImpl(const HostId& pilot_host_id,
+  ClientImpl(const ClientID& client_id,
+             const HostId& pilot_host_id,
              const HostId& copilot_host_id,
              TenantID tenant_id,
              int port,
@@ -60,8 +61,8 @@ class ClientImpl : public Client {
   // The environment
   Env* env_;
 
-  // HostId of this machine, i.e. the one the producer is running on.
-  HostId host_id_;
+  // The identifier for the client
+  const ClientID client_id_;
 
   // HostId of pilot/copilot machines to send messages to.
   HostId pilot_host_id_;

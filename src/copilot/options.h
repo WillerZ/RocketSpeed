@@ -33,9 +33,6 @@ struct CopilotOptions {
   // This is not owned by the copilot and should not be deleted.
   MsgLoop* msg_loop;
 
-  // The machine name that identifies this copilot
-  std::string copilotname;
-
   // If non-null, then server info logs are written to this object.
   // If null, then server info logs are written to log_dir.
   // This allows multiple instances of the server to log to the
@@ -70,7 +67,7 @@ struct CopilotOptions {
   std::pair<LogID, LogID> log_range;
 
   // Control Tower host IDs.
-  std::vector<HostId> control_towers;
+  std::vector<ClientID> control_towers;
 
   // Number of worker loops for the pilot.
   uint32_t num_workers;

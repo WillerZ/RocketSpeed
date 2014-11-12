@@ -93,7 +93,8 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   }
 
   // Create Copilot
-  copilot_options_.control_towers.push_back(control_tower_->GetHostId());
+  copilot_options_.control_towers.push_back(
+                   control_tower_->GetHostId().ToClientId());
   copilot_options_.info_log = info_log_;
   copilot_options_.num_workers = 4;
   copilot_options_.msg_loop = cockpit_loop_.get();

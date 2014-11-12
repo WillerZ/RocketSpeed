@@ -163,12 +163,12 @@ TEST(PilotTest, Publish) {
     std::string serial;
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
-                     loop.GetHostId(), Slice(topic), nsid,
+                     ClientID("client1"), Slice(topic), nsid,
                      Slice(payload));
     data.SerializeToString(&serial);
     sent_msgs_.insert(data.GetMessageId());
     std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
-                                                  pilot_->GetHostId(),
+                                                  pilot_->GetPilotId(),
                                                   env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }

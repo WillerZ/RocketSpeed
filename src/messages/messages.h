@@ -109,7 +109,7 @@ class Message : public Serializer {
   /**
    * @return The Origin host.
    */
-  const HostId& GetOrigin() const { return origin_; }
+  const ClientID& GetOrigin() const { return origin_; }
 
   /**
    * Creates a Message of the appropriate subtype by looking at the
@@ -126,7 +126,7 @@ class Message : public Serializer {
   virtual void SerializeToString(std::string* out);
 
  protected:
-  Message(MessageType type, TenantID tenantid, const HostId& origin) :
+  Message(MessageType type, TenantID tenantid, const ClientID& origin) :
           type_(type), tenantid_(tenantid), origin_(origin) {
     msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   }
@@ -141,12 +141,12 @@ class Message : public Serializer {
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
-  HostId origin_;                   // sender's id
+  ClientID origin_;                 // sender's id
   std::unique_ptr<char[]> buffer_;  // owned memory for slices
 
  private:
   static std::unique_ptr<Message> CreateNewInstance(Slice* in);
-  virtual Slice Serialize() const = 0;  // make this private XXX
+  virtual Slice Serialize() const = 0;
 };
 
 
@@ -169,7 +169,7 @@ class MessagePing : public Message {
 
   MessagePing(TenantID tenantid,
               PingType pingtype,
-              const HostId& origin) :
+              const ClientID& origin) :
               Message(MessageType::mPing, tenantid, origin),
               pingtype_(pingtype) {}
 
@@ -207,7 +207,7 @@ class MessageData : public Message {
    */
   MessageData(MessageType type,
               TenantID tenantID,
-              const HostId& origin,
+              const ClientID& origin,
               const Slice& topic_name,
               const NamespaceID namespace_id,
               const Slice& payload,
@@ -345,7 +345,7 @@ class MessageMetadata : public Message {
    */
   MessageMetadata(TenantID tenantID,
                   const MetaType metatype,
-                  const HostId& origin,
+                  const ClientID& origin,
                   const std::vector<TopicPair>& topics);
 
   /*
@@ -390,8 +390,8 @@ class MessageMetadata : public Message {
   /**
    * Set the origin host ID.
    */
-  void SetOrigin(const HostId& host_id) {
-    origin_ = host_id;
+  void SetOrigin(const ClientID& client_id) {
+    origin_ = client_id;
   }
 
   /*
@@ -454,7 +454,7 @@ class MessageDataAck : public Message {
    * @param msgid The MsgIds of the messages that have been ack'd
    */
   explicit MessageDataAck(TenantID tenantID,
-                          const HostId& origin,
+                          const ClientID& origin,
                           AckVector acks);
   /**
    * default constructor
@@ -493,7 +493,7 @@ class MessageGap : public Message {
    * @param msgid The MsgIds of the messages that have been ack'd
    */
   explicit MessageGap(TenantID tenantID,
-                      const HostId& origin,
+                      const ClientID& origin,
                       GapType gap_type,
                       SequenceNumber gap_from,
                       SequenceNumber gap_to);

@@ -129,6 +129,13 @@ class MessageReceived {
 typedef std::string URL;
 
 /**
+ * A application generated identifier to represent a
+ * RocketSpeed client. The RocketSpeed system uses this to
+ * manage client's subscriptions and publications.
+ */
+typedef std::string ClientID;
+
+/**
  * A unique ID for this RocketSpeed tenant. Each tenant will have a Service
  * Level Agreement with the RocketSpeed system used to limit the impact any one
  * tenant can have on the system as a whole. If a tenant exceeds their agreed
@@ -211,8 +218,23 @@ class HostId {
     return port == rhs.port && hostname == rhs.hostname;
   }
 
+  // converts a HostId to a name:port string
   std::string ToString() const {
     return hostname + ":" + std::to_string(port);
+  }
+
+  // converts a name:port string to a HostId
+  static HostId ToHostId(std::string str) {
+    std::string::size_type sep = str.find(":");
+    assert(sep != std::string::npos);
+    std::string hostname = str.substr(0, sep);
+    std::string portstr = str.substr(sep+1, str.size());
+    return HostId(hostname, atoi(portstr.c_str()));
+  }
+
+  // converts a HostId to a ClientID
+  ClientID ToClientId() const {
+    return ToString();
   }
 };
 

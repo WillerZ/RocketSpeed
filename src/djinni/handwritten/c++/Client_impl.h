@@ -32,6 +32,7 @@ class ClientImpl : public Client {
 
   // Store the application-specified callbacks.
   // These callbacks are implemented in Java/objc.
+  ClientID  client_id_;
   std::shared_ptr<Configuration> config_;
   std::shared_ptr<PublishCallback> publish_callback_;
   std::shared_ptr<SubscribeCallback> subscribe_callback_;
@@ -39,7 +40,8 @@ class ClientImpl : public Client {
 
 
   // private constructor
-  ClientImpl(const std::shared_ptr<Configuration>& config,
+  ClientImpl(const ClientID& client_id,
+             const std::shared_ptr<Configuration>& config,
              const std::shared_ptr<PublishCallback>& publish_callback,
              const std::shared_ptr<SubscribeCallback>& subscribe_callback,
              const std::shared_ptr<MessageReceivedCallback>& receive_callback);

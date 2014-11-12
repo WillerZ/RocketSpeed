@@ -118,14 +118,14 @@ void PilotWorker::SendAck(MessageData* msg,
   ack.seqno = seqno;
 
   // create new message
-  const HostId& host = msg->GetOrigin();
-  MessageDataAck newmsg(msg->GetTenantID(), host, { ack });
+  const ClientID& clientid = msg->GetOrigin();
+  MessageDataAck newmsg(msg->GetTenantID(), clientid, { ack });
   // serialize message
   std::string serial;
   newmsg.SerializeToString(&serial);
   // send message
   std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
-                                                host,
+                                                clientid,
                                                 options_.env->NowMicros()));
   Status st = pilot_->SendCommand(std::move(cmd));
   if (!st.ok()) {
@@ -133,7 +133,7 @@ void PilotWorker::SendAck(MessageData* msg,
     // we get round to sending an ack. This shouldn't be a rare occurrence.
     LOG_INFO(options_.info_log,
       "Failed to send ack to %s",
-      host.hostname.c_str());
+      clientid.c_str());
   }
 }
 

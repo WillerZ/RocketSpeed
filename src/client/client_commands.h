@@ -22,7 +22,7 @@ class ClientCommand : public Command {
  public:
   // Construct from data message.
   ClientCommand(const MsgId& msgid,
-                HostId recipient,
+                ClientID recipient,
                 std::string msg,
                 uint64_t issued_time) :
     Command(issued_time),
@@ -32,7 +32,7 @@ class ClientCommand : public Command {
   }
 
   // Construct from metadata message.
-  ClientCommand(HostId recipient,
+  ClientCommand(ClientID recipient,
                 std::string msg,
                 uint64_t issued_time) :
     Command(issued_time),
@@ -56,6 +56,7 @@ class ClientCommand : public Command {
   bool IsSendCommand() const {
     return true;
   }
+
  private:
   MsgId msgid_;
   Recipients recipient_;

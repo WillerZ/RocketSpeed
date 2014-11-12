@@ -62,7 +62,7 @@ class CopilotTest {
     options_.log_range = std::pair<LogID, LogID>(1, 1);
     options_.log_dir = test::TmpDir();
     options_.info_log = info_log_;
-    options_.control_towers.push_back(ct_->GetHostId());
+    options_.control_towers.push_back(ct_->GetTowerId());
     options_.msg_loop = cp_msg_loop_.get();
     st_ = Copilot::CreateNewInstance(options_, &copilot_);
 
@@ -194,12 +194,12 @@ TEST(CopilotTest, Publish) {
     std::string serial;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        loop.GetHostId(),
+                        ClientID("client1"),
                         { TopicPair(0, topic, type, 101 + i) });
     msg.SerializeToString(&serial);
     std::unique_ptr<Command> cmd(
       new CopilotCommand(std::move(serial),
-                         copilot_->GetHostId(),
+                         copilot_->GetCopilotId(),
                          env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);

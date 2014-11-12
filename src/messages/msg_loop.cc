@@ -120,7 +120,7 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   // get the ping request message
   ThreadCheck();
   MessagePing* request = static_cast<MessagePing*>(msg.get());
-  const HostId origin = request->GetOrigin();
+  const ClientID origin = request->GetOrigin();
 
   // change it to a ping response message
   request->SetPingType(MessagePing::Response);
@@ -137,12 +137,12 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
 
   if (!st.ok()) {
     LOG_INFO(info_log_,
-        "Unable to send ping response to %s:%ld",
-        origin.hostname.c_str(), (long)origin.port);
+        "Unable to send ping response to %s",
+        origin.c_str());
   } else {
     LOG_INFO(info_log_,
-        "Send ping response to %s:%ld",
-        origin.hostname.c_str(), (long)origin.port);
+        "Send ping response to %s",
+        origin.c_str());
   }
   info_log_->Flush();
 }

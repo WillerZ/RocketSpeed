@@ -168,8 +168,7 @@ Slice MessagePing::Serialize() const {
   // serialize message specific contents
   serialize_buffer__.append((const char *)&pingtype_, sizeof(type_));
   //  origin
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
-  PutVarint64(&serialize_buffer__, origin_.port);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // compute the size of this message
   serializeMessageSize();
@@ -196,18 +195,12 @@ Status MessagePing::DeSerialize(Slice* in) {
   in->remove_prefix(sizeof(pingtype_));
 
   // extract origin
-  HostId* host = static_cast<HostId*>(&origin_);
   Slice sl;
   if (!GetLengthPrefixedSlice(in, &sl)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  host->hostname.clear();
-  host->hostname.append(sl.data(), sl.size());
-
-  // extract port number
-  if (!GetVarint64(in, &host->port)) {
-    return Status::InvalidArgument("Bad Port Number");
-  }
+  origin_.clear();
+  origin_.append(sl.data(), sl.size());
   return Status::OK();
 }
 
@@ -215,7 +208,7 @@ thread_local GUIDGenerator msgid_generator;
 
 MessageData::MessageData(MessageType type,
                          TenantID tenantID,
-                         const HostId& origin,
+                         const ClientID& origin,
                          const Slice& topic_name,
                          const NamespaceID namespace_id,
                          const Slice& payload,
@@ -231,7 +224,7 @@ MessageData::MessageData(MessageType type,
 }
 
 MessageData::MessageData(MessageType type):
-  MessageData(type, Tenant::InvalidTenant, HostId(), Slice(),
+  MessageData(type, Tenant::InvalidTenant, "", Slice(),
               Namespace::InvalidNamespace, Slice()) {
 }
 
@@ -251,8 +244,7 @@ Slice MessageData::Serialize() const {
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
 
   // origin
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
-  PutVarint64(&serialize_buffer__, origin_.port);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // seqno
   PutVarint64(&serialize_buffer__, seqno_);
@@ -276,18 +268,12 @@ Status MessageData::DeSerialize(Slice* in) {
   in->remove_prefix(sizeof(type_));
 
   // extract origin
-  HostId* host = static_cast<HostId*>(&origin_);
   Slice sl;
   if (!GetLengthPrefixedSlice(in, &sl)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  host->hostname.clear();
-  host->hostname.append(sl.data(), sl.size());
-
-    // extract port number
-  if (!GetVarint64(in, &origin_.port)) {
-    return Status::InvalidArgument("Bad Port Number");
-  }
+  origin_.clear();
+  origin_.append(sl.data(), sl.size());
 
   // extract sequence number of message
   if (!GetVarint64(in, &seqno_)) {
@@ -369,7 +355,7 @@ Status MessageData::DeSerializeStorage(Slice* in) {
 
 MessageMetadata::MessageMetadata(TenantID tenantID,
   const MetaType metatype,
-  const HostId& origin,
+  const ClientID& origin,
   const std::vector<TopicPair>& topics):
   metatype_(metatype),
   topics_(topics) {
@@ -398,8 +384,7 @@ Slice MessageMetadata::Serialize() const {
   // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
-  PutVarint64(&serialize_buffer__, origin_.port);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // Now serialize message specific data
   serialize_buffer__.append((const char *)&metatype_, sizeof(metatype_));
@@ -439,13 +424,8 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   if (!GetLengthPrefixedSlice(in, &sl)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.hostname.clear();
-  origin_.hostname.append(sl.data(), sl.size());
-
-  // extract port number
-  if (!GetVarint64(in, &origin_.port)) {
-    return Status::InvalidArgument("Bad Port Number");
-  }
+  origin_.clear();
+  origin_.append(sl.data(), sl.size());
 
   // extract metadata type
   void* ptr = static_cast<void *>(&metatype_);
@@ -488,7 +468,7 @@ Status MessageMetadata::DeSerialize(Slice* in) {
 }
 
 MessageDataAck::MessageDataAck(TenantID tenantID,
-                               const HostId& origin,
+                               const ClientID& origin,
                                AckVector acks)
 : acks_(std::move(acks)) {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
@@ -513,8 +493,7 @@ Slice MessageDataAck::Serialize() const {
   // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
-  PutVarint64(&serialize_buffer__, origin_.port);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // serialize message specific contents
   PutVarint32(&serialize_buffer__, acks_.size());
@@ -550,13 +529,8 @@ Status MessageDataAck::DeSerialize(Slice* in) {
   if (!GetLengthPrefixedSlice(in, &sl)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.hostname.clear();
-  origin_.hostname.append(sl.data(), sl.size());
-
-  // extract port number
-  if (!GetVarint64(in, &origin_.port)) {
-    return Status::InvalidArgument("Bad Port Number");
-  }
+  origin_.clear();
+  origin_.append(sl.data(), sl.size());
 
   // extract number of acks
   uint32_t num_acks;
@@ -593,7 +567,7 @@ Status MessageDataAck::DeSerialize(Slice* in) {
 }
 
 MessageGap::MessageGap(TenantID tenantID,
-                      const HostId& origin,
+                      const ClientID& origin,
                       GapType gap_type,
                       SequenceNumber gap_from,
                       SequenceNumber gap_to)
@@ -618,8 +592,7 @@ Slice MessageGap::Serialize() const {
   // Type, tenantId and origin
   serialize_buffer__.append((const char *)&type_, sizeof(type_));
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_.hostname));
-  PutVarint64(&serialize_buffer__, origin_.port);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // Write the gap information.
   serialize_buffer__.append((const char*)&gap_type_, sizeof(gap_type_));
@@ -650,13 +623,8 @@ Status MessageGap::DeSerialize(Slice* in) {
   if (!GetLengthPrefixedSlice(in, &sl)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.hostname.clear();
-  origin_.hostname.append(sl.data(), sl.size());
-
-  // extract port number
-  if (!GetVarint64(in, &origin_.port)) {
-    return Status::InvalidArgument("Bad Port Number");
-  }
+  origin_.clear();
+  origin_.append(sl.data(), sl.size());
 
   // Read gap type
   if (in->size() < sizeof(gap_type_)) {
@@ -674,7 +642,6 @@ Status MessageGap::DeSerialize(Slice* in) {
   if (!GetVarint64(in, &gap_to_)) {
     return Status::InvalidArgument("Bad gap log ID");
   }
-
   return Status::OK();
 }
 

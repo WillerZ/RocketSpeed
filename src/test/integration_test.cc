@@ -68,7 +68,8 @@ TEST(IntegrationTest, OneMessage) {
   };
 
   // Create RocketSpeed client.
-  ClientImpl client(cluster.GetPilotHostIds().front(),
+  ClientImpl client(GUIDGenerator().GenerateString(),
+                    cluster.GetPilotHostIds().front(),
                     cluster.GetCopilotHostIds().front(),
                     Tenant(102),
                     58499,
@@ -128,7 +129,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   };
 
     // Create RocketSpeed client.
-  ClientImpl client(cluster.GetPilotHostIds().front(),
+  ClientImpl client(GUIDGenerator().GenerateString(),
+                    cluster.GetPilotHostIds().front(),
                     cluster.GetCopilotHostIds().front(),
                     Tenant(102),
                     58499,

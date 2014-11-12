@@ -47,6 +47,7 @@ class Client {
    * Provider, validate credentials, etc.
    *
    * @param config The configuration of this service provider
+   * @param client_id Identifier for this client
    * @param publish_callback Invoked when a sent-message is acknowledged
    * @param subscription_callback Invoked when a subscription is confirmed
    * @param receive_callback Invoked when a message is received
@@ -56,6 +57,7 @@ class Client {
    * All or any of the callbacks can be NULL.
    */
   static Status Open(const Configuration* config,
+                     const ClientID& client_id,
                      PublishCallback publish_callback,
                      SubscribeCallback subscription_callback,
                      MessageReceivedCallback receive_callback,

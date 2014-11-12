@@ -18,6 +18,7 @@
 #include "src/messages/messages.h"
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
+#include "src/util/guid_generator.h"
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
 
@@ -452,13 +453,15 @@ int main(int argc, char** argv) {
 
   rocketspeed::ClientImpl* producer = nullptr;
   rocketspeed::ClientImpl* consumer = nullptr;
+  std::string clientid = rocketspeed::GUIDGenerator().GenerateString();
 
   // If the producer port and the consumer port are the same, then we
   // use a single client object. This allows the producer and the
   // consumer to share the same connections to the Cloud.
   if (FLAGS_start_producer && FLAGS_start_consumer &&
       FLAGS_producer_port == FLAGS_consumer_port) {
-    producer = new rocketspeed::ClientImpl(pilot,
+    producer = new rocketspeed::ClientImpl(clientid,
+                                           pilot,
                                            copilot,
                                            rocketspeed::Tenant(102),
                                            FLAGS_producer_port,
@@ -469,7 +472,8 @@ int main(int argc, char** argv) {
     consumer = producer;
   } else {
     if (FLAGS_start_producer) {
-      producer = new rocketspeed::ClientImpl(pilot,
+      producer = new rocketspeed::ClientImpl(clientid,
+                                             pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
                                              FLAGS_producer_port,
@@ -479,7 +483,8 @@ int main(int argc, char** argv) {
                                              info_log);
     }
     if (FLAGS_start_consumer) {
-      consumer = new rocketspeed::ClientImpl(pilot,
+      consumer = new rocketspeed::ClientImpl(clientid,
+                                             pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
                                              FLAGS_producer_port,

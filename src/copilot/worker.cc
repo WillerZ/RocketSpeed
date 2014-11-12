@@ -98,7 +98,7 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
     for (auto& subscription : it->second) {
       // If the subscription is awaiting a response.
       if (subscription.awaiting_ack) {
-        destinations.push_back(subscription.host_id);
+        destinations.push_back(subscription.client_id);
       }
     }
 
@@ -152,22 +152,21 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
 
     // accumulate all possible recipients
     for (auto& subscription : it->second) {
-      const HostId& recipient = subscription.host_id;
+      const ClientID& recipient = subscription.client_id;
 
       // If the subscription is awaiting a response, do not forward.
       if (subscription.awaiting_ack) {
         LOG_INFO(options_.info_log,
-          "Data not delivered to %s:%ld (awaiting ack)",
-          recipient.hostname.c_str(), (long)recipient.port);
+          "Data not delivered to %s (awaiting ack)",
+          recipient.c_str());
         continue;
       }
 
       // Also do not send a response if the seqno is too low.
       if (subscription.seqno > seqno) {
         LOG_INFO(options_.info_log,
-          "Data not delivered to %s:%ld (seqno too low, currently @%lu)",
-          recipient.hostname.c_str(), (long)recipient.port,
-          subscription.seqno);
+          "Data not delivered to %s (seqno too low, currently @%lu)",
+          recipient.c_str(), subscription.seqno);
         continue;
       }
       destinations.push_back(recipient);
@@ -211,7 +210,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   bool notify_control_tower = false;
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
 
-  const HostId& subscriber = msg->GetOrigin();
+  const ClientID& subscriber = msg->GetOrigin();
   auto topic_iter = subscriptions_.find(request.topic_name);
   if (topic_iter == subscriptions_.end()) {
     // No subscribers on this topic, create new topic entry.
@@ -226,7 +225,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     bool found = false;
     SequenceNumber earliest_seqno = request.seqno + 1;
     for (auto& subscription : topic_iter->second) {
-      if (subscription.host_id == subscriber) {
+      if (subscription.client_id == subscriber) {
         assert(!found);  // should never have a duplicate subscription
         // Already a subscriber. Do we need to update seqno?
         if (request.seqno == 0 || subscription.seqno == 0) {
@@ -282,9 +281,9 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
 
   if (notify_control_tower) {
     // Find control tower responsible for this topic's log.
-    HostId const* recipient = nullptr;
+    ClientID const* recipient = nullptr;
     if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
-      msg->SetOrigin(GetHostId());
+      msg->SetOrigin(copilot_->GetCopilotId());
 
       // serialize
       std::string serial;
@@ -298,8 +297,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       Status status = copilot_->SendCommand(std::move(cmd));
       if (!status.ok()) {
         LOG_INFO(options_.info_log,
-          "Failed to send metadata response to %s:%ld",
-          recipient->hostname.c_str(), (long)recipient->port);
+          "Failed to send metadata response to %s",
+          recipient->c_str());
       } else {
         LOG_INFO(options_.info_log,
           "Sent subscription for Topic(%s)@%lu",
@@ -328,8 +327,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       // Failed to send response. The origin will re-send the subscription
       // again in the future, and we'll try to immediately respond again.
       LOG_INFO(options_.info_log,
-          "Failed to send subscribe response to %s:%ld",
-          subscriber.hostname.c_str(), (long)subscriber.port);
+          "Failed to send subscribe response to %s",
+          subscriber.c_str());
     }
   }
 }
@@ -338,7 +337,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                                        const TopicPair& request,
                                        LogID logid) {
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
-  const HostId& subscriber = msg->GetOrigin();
+  const ClientID& subscriber = msg->GetOrigin();
   auto topic_iter = subscriptions_.find(request.topic_name);
   if (topic_iter != subscriptions_.end()) {
     // Find our subscription and remove it.
@@ -346,7 +345,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
     SequenceNumber our_seqno = 0;
     auto& subscriptions = topic_iter->second;
     for (auto it = subscriptions.begin(); it != subscriptions.end(); ) {
-      if (it->host_id == subscriber) {
+      if (it->client_id == subscriber) {
         // This is our subscription, remove it.
         our_seqno = it->seqno;
         it = subscriptions.erase(it);
@@ -360,13 +359,13 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
     if (subscriptions.empty()) {
       // No subscriptions on this topic left, tell control tower to unsubscribe
       // this copilot worker.
-      HostId const* recipient = nullptr;
+      ClientID const* recipient = nullptr;
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Forward unsubscribe request to control tower, with this copilot
         // worker as the subscriber.
         MessageMetadata newmsg(msg->GetTenantID(),
                                MessageMetadata::MetaType::Request,
-                               GetHostId(),
+                               copilot_->GetCopilotId(),
                                { TopicPair(request.seqno,
                                            request.topic_name,
                                            MetadataType::mUnSubscribe,
@@ -381,18 +380,18 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         Status status = copilot_->SendCommand(std::move(cmd));
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
-              "Failed to send unsubscribe request to %s:%ld",
-              recipient->hostname.c_str(), (long)recipient->port);
+              "Failed to send unsubscribe request to %s",
+              recipient->c_str());
         }
       }
     } else if (our_seqno < earliest_other_seqno) {
       // Need to update control tower.
-      HostId const* recipient = nullptr;
+      ClientID const* recipient = nullptr;
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Re subscribe our control tower subscription with the later seqno.
         MessageMetadata newmsg(msg->GetTenantID(),
                                MessageMetadata::MetaType::Request,
-                               GetHostId(),
+                               copilot_->GetCopilotId(),
                                { TopicPair(earliest_other_seqno,
                                            request.topic_name,
                                            MetadataType::mSubscribe,
@@ -407,8 +406,8 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         Status status = copilot_->SendCommand(std::move(cmd));
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
-              "Failed to send unsubscribe request to %s:%ld",
-              recipient->hostname.c_str(), (long)recipient->port);
+              "Failed to send unsubscribe request to %s",
+              recipient->c_str());
         }
       } else {
         // This should only ever happen if all control towers are offline.
@@ -432,8 +431,8 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
     // Failed to send response. The origin will re-send the subscription
     // again in the future, and we'll try to immediately respond again.
     LOG_INFO(options_.info_log,
-        "Failed to send subscribe response to %s:%ld",
-        subscriber.hostname.c_str(), (long)subscriber.port);
+        "Failed to send subscribe response to %s",
+        subscriber.c_str());
   }
 }
 

@@ -86,7 +86,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   // splits every topic into a distinct separate messages per ControlRoom.
   const std::vector<TopicPair>& topic = request->GetTopicInfo();
   assert(topic.size() == 1);
-  const HostId& origin = request->GetOrigin();
+  const ClientID& origin = request->GetOrigin();
 
   // Handle to 0 sequence number special case.
   // Zero means to start reading from the latest records, so we first need
@@ -117,12 +117,11 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
                  "Failed to enqueue subscription (%s)",
                  st.ToString().c_str());
       } else {
-        const HostId& origin = request->GetOrigin();
+        const ClientID& origin = request->GetOrigin();
         const std::vector<TopicPair>& topic = request->GetTopicInfo();
         LOG_INFO(control_tower_->GetOptions().info_log,
-                 "Subscribing %s:%ld at latest seqno for Topic(%s)@%lu",
-                 origin.hostname.c_str(),
-                 (long)origin.port,
+                 "Subscribing %s at latest seqno for Topic(%s)@%lu",
+                 origin.c_str(),
                  topic[0].topic_name.c_str(),
                  topic[0].seqno);
       }
@@ -143,9 +142,8 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
                st.ToString().c_str());
     } else {
       LOG_INFO(options.info_log,
-        "Sent FindLatestSeqno request for %s:%ld for Topic(%s)",
-        origin.hostname.c_str(),
-        (long)origin.port,
+        "Sent FindLatestSeqno request for %s for Topic(%s)",
+        origin.c_str(),
         topic[0].topic_name.c_str());
     }
     return;
@@ -174,18 +172,16 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
                              topic[0].seqno,
                              logid, hostnum, room_number_);
     LOG_INFO(options.info_log,
-        "Added subscriber %s:%ld for Topic(%s)@%lu",
-        origin.hostname.c_str(),
-        (long)origin.port,
+        "Added subscriber %s for Topic(%s)@%lu",
+        origin.c_str(),
         topic[0].topic_name.c_str(),
         topic[0].seqno);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
     topic_map_.RemoveSubscriber(topic_name,
                                 logid, hostnum, room_number_);
     LOG_INFO(options.info_log,
-        "Removed subscriber %s:%ld from Topic(%s)",
-        origin.hostname.c_str(),
-        (long)origin.port,
+        "Removed subscriber %s from Topic(%s)",
+        origin.c_str(),
         topic[0].topic_name.c_str());
   }
 
@@ -203,12 +199,12 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   st = ct->SendCommand(std::move(cmd));
   if (!st.ok()) {
     LOG_INFO(options.info_log,
-        "Unable to send Metadata response to tower at %s:%ld",
-        origin.hostname.c_str(), (long)origin.port);
+        "Unable to send Metadata response to tower for subscriber %s ",
+        origin.c_str());
   } else {
     LOG_INFO(options.info_log,
-        "Send Metadata response to tower at %s:%ld",
-        origin.hostname.c_str(), (long)origin.port);
+        "Send Metadata response to tower for subscriber %s",
+        origin.c_str());
   }
   options.info_log->Flush();
 }
@@ -258,8 +254,8 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
 
     // find all subscribers
     for (const auto& elem : *list) {
-      // convert HostNumber to HostId
-      HostId* hostid = ct->GetHostMap().Lookup(elem);
+      // convert HostNumber to ClientID
+      ClientID* hostid = ct->GetHostMap().Lookup(elem);
       assert(hostid != nullptr);
       if (hostid != nullptr) {
         destinations.push_back(*hostid);
@@ -280,7 +276,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
               HostMap::ToString(destinations).c_str());
     } else {
       LOG_INFO(options.info_log,
-              "Unable to forward Data message to %s",
+              "Unable to forward Data message to subscriber %s",
               HostMap::ToString(destinations).c_str());
           options.info_log->Flush();
     }

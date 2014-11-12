@@ -211,11 +211,11 @@ TEST(ControlTowerTest, Ping) {
   std::string serial;
   MessagePing msg(Tenant::GuestTenant,
                   MessagePing::PingType::Request,
-                  loop.GetHostId());
+                  ClientID("clientid1"));
   msg.SerializeToString(&serial);  // serialize msg
   std::unique_ptr<Command> cmd(
     new ControlRoom::TowerCommand(std::move(serial),
-                                  ct_->GetHostId(),
+                                  ct_->GetTowerId(),
                                   env_->NowMicros()));
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
 
@@ -226,11 +226,11 @@ TEST(ControlTowerTest, Ping) {
   for (int i = 0; i < num_msgs; i++) {
     MessagePing newmsg(Tenant::GuestTenant,
                        MessagePing::PingType::Request,
-                       loop.GetHostId());
+                       ClientID("clientidx"));
     msg.SerializeToString(&serial);  // serialize msg
     std::unique_ptr<Command> cmd(
       new ControlRoom::TowerCommand(std::move(serial),
-                                    ct_->GetHostId(),
+                                    ct_->GetTowerId(),
                                     env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
@@ -273,11 +273,11 @@ TEST(ControlTowerTest, Subscribe) {
   std::string serial;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        loop.GetHostId(), topics);
+                        ClientID("clientid100"), topics);
   meta1.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(
     new ControlRoom::TowerCommand(std::move(serial),
-                                  ct_->GetHostId(),
+                                  ct_->GetTowerId(),
                                   env_->NowMicros()));
 
   // send message to control tower

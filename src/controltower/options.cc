@@ -8,7 +8,6 @@ namespace rocketspeed {
 
 ControlTowerOptions::ControlTowerOptions()
   : env(Env::Default()),
-    hostname(""),
     info_log(nullptr),
 #ifdef NDEBUG
     info_log_level(WARN_LEVEL),
@@ -23,9 +22,6 @@ ControlTowerOptions::ControlTowerOptions()
     log_range(1, 100000),
     max_number_of_hosts(10000),
     storage(nullptr) {
-  char myname[1024];
-  gethostname(&myname[0], sizeof(myname));
-  hostname.assign(myname);
 }
 
 }  // namespace rocketspeed

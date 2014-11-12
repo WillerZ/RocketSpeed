@@ -15,7 +15,7 @@ public abstract class Client {
 
     public abstract void ListenTopics(ArrayList<SubscriptionPair> names, TopicOptions options);
 
-    public static native Client Open(Configuration config, PublishCallback publishCallback, SubscribeCallback subscribeCallback, MessageReceivedCallback receiveCallback);
+    public static native Client Open(ClientID clientId, Configuration config, PublishCallback publishCallback, SubscribeCallback subscribeCallback, MessageReceivedCallback receiveCallback);
 
     public static final class NativeProxy extends Client
     {

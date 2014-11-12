@@ -44,7 +44,7 @@ struct SocketEvent {
 
   // this constructor is used by server-side connection initiation
   SocketEvent(EventLoop* event_loop, int fd, event_base* base,
-              const HostId& remote)
+              const ClientID& remote)
   : hdr_idx_(0)
   , msg_idx_(0)
   , msg_size_(0)
@@ -76,11 +76,11 @@ struct SocketEvent {
     if (inserted) {
       LOG_INFO(event_loop_->GetLog(),
           "Server Socket fd(%d) to %s inserted into connection_cache_.",
-          fd_, remote_host_.ToString().c_str());
+          fd_, remote_host_.c_str());
     } else {
       LOG_WARN(event_loop_->GetLog(),
           "Failed to insert server socket fd(%d) connected to %s into cache",
-          fd_, remote_host_.ToString().c_str());
+          fd_, remote_host_.c_str());
       delete this;
     }
   }
@@ -284,7 +284,7 @@ struct SocketEvent {
             LOG_INFO(event_loop_->GetLog(),
                 "Client Socket fd(%d) connected to %s "
                 "inserted into connection_cache_.",
-                fd_, remote_host_.ToString().c_str());
+                fd_, remote_host_.c_str());
           }
         }
 
@@ -312,7 +312,7 @@ struct SocketEvent {
   event* write_ev_;
   EventLoop* event_loop_;
   bool known_remote_;      // we know the remote identity
-  HostId remote_host_;     // id of remote entity
+  ClientID remote_host_;   // id of remote entity
   bool write_ev_added_;    // is the write event added?
 
   // The list of outgoing messages.
@@ -381,13 +381,14 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
     assert(out.size() > 0);
     SharedString* msg = obj->AllocString(std::move(out), remote.size());
 
-    for (const HostId& host : remote) {
-      SocketEvent* sev = obj->lookup_connection_cache(host);
+    for (const ClientID& clientid : remote) {
+      SocketEvent* sev = obj->lookup_connection_cache(clientid);
 
       // If the remote side has not yet established a connection, then
       // create a new connection and insert into connection cache.
       if (sev == nullptr) {
-        sev = obj->setup_connection(host);
+        HostId host = HostId::ToHostId(clientid);
+        sev = obj->setup_connection(host, clientid);
       }
       if (sev != nullptr) {
         // Enqueue data to SocketEvent queue. This message will be sent out
@@ -397,7 +398,7 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
       if (sev == nullptr || !status.ok()) {
         LOG_WARN(obj->info_log_,
             "No Socket to send msg to host %s, msg dropped...",
-            host.ToString().c_str());
+            clientid.c_str());
         obj->info_log_->Flush();
         msg->refcount--;  // unable to queue msg, decrement refcount
       }
@@ -667,7 +668,7 @@ void EventLoop::Dispatch(std::unique_ptr<Message> message) {
 // Returns true if the object was inserted successfully,
 // otherwise returns false if the object already existed.
 bool
-EventLoop::insert_connection_cache(const HostId& host, SocketEvent* sev) {
+EventLoop::insert_connection_cache(const ClientID& host, SocketEvent* sev) {
   thread_check_.Check();
   auto iter = connection_cache_.find(host);
 
@@ -688,7 +689,7 @@ EventLoop::insert_connection_cache(const HostId& host, SocketEvent* sev) {
 
   // Create first mapping for this host.
   auto ret = connection_cache_.insert(
-    std::pair<HostId, std::vector<SocketEvent*>>(host, newarray));
+    std::pair<ClientID, std::vector<SocketEvent*>>(host, newarray));
   if (!ret.second) {
     return false;   // object already existed
   }
@@ -699,7 +700,7 @@ EventLoop::insert_connection_cache(const HostId& host, SocketEvent* sev) {
 // Returns true if the object existed before this call,
 // otherwise returns false if the object was not found.
 bool
-EventLoop::remove_connection_cache(const HostId& host, SocketEvent* sev) {
+EventLoop::remove_connection_cache(const ClientID& host, SocketEvent* sev) {
   thread_check_.Check();
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
@@ -722,7 +723,7 @@ EventLoop::remove_connection_cache(const HostId& host, SocketEvent* sev) {
 // then returns the latest connection to that host.
 // Returns null if the host does not have any connected socket.
 SocketEvent*
-EventLoop::lookup_connection_cache(const HostId& host) const {
+EventLoop::lookup_connection_cache(const ClientID& host) const {
   thread_check_.Check();
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
@@ -761,7 +762,7 @@ EventLoop::clear_connection_cache() {
 // inserts it into connection cache.
 // Returns null on error.
 SocketEvent*
-EventLoop::setup_connection(const HostId& host) {
+EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
   thread_check_.Check();
   int fd;
   Status status =  create_connection(host, false, &fd);
@@ -771,7 +772,7 @@ EventLoop::setup_connection(const HostId& host) {
 
   // This object is managed by the event that it creates, and will destroy
   // itself during an EOF callback.
-  SocketEvent* sev = new SocketEvent(this, fd, base_, host);
+  SocketEvent* sev = new SocketEvent(this, fd, base_, remote_client);
 
   LOG_INFO(info_log_,
       "Connect to %s scheduled on socket fd(%d)",

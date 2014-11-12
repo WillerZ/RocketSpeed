@@ -17,11 +17,12 @@ TEST(Messaging, Data) {
   Slice name1("Topic1");
   Slice payload1("Payload1");
   HostId host1("host.id", 1234);
+  ClientID clid1("client1");
   NamespaceID nsid1 = 200;
 
   // create a message
   MessageData data1(MessageType::mPublish,
-                    Tenant::GuestTenant, host1, name1, nsid1, payload1,
+                    Tenant::GuestTenant, clid1, name1, nsid1, payload1,
                     Retention::OneDay);
 
   // serialize the message
@@ -33,7 +34,7 @@ TEST(Messaging, Data) {
 
   // verify that the new message is the same as original
   ASSERT_TRUE(data2.GetMessageId() == data1.GetMessageId());
-  ASSERT_TRUE(data2.GetOrigin() == host1);
+  ASSERT_TRUE(data2.GetOrigin() == clid1);
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
@@ -42,9 +43,8 @@ TEST(Messaging, Data) {
 }
 
 TEST(Messaging, Metadata) {
-  int port = 200;
   std::string mymachine = "machine.com";
-  HostId hostid(mymachine, port);
+  ClientID clid1("client1");
   std::vector<TopicPair> topics;
   int num_topics = 5;
 
@@ -58,7 +58,7 @@ TEST(Messaging, Metadata) {
   // create a message
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        hostid, topics);
+                        clid1, topics);
 
   // serialize the message
   Slice original = meta1.Serialize();
@@ -68,8 +68,7 @@ TEST(Messaging, Metadata) {
   data2.DeSerialize(&original);
 
   // verify that the new message is the same as original
-  ASSERT_EQ(mymachine, data2.GetOrigin().hostname);
-  ASSERT_EQ(port, data2.GetOrigin().port);
+  ASSERT_EQ(clid1, data2.GetOrigin());
   ASSERT_EQ(Tenant::GuestTenant, data2.GetTenantID());
 
   // verify that the new message is the same as original
@@ -87,6 +86,7 @@ TEST(Messaging, DataAck) {
   int port = 200;
   std::string mymachine = "machine.com";
   HostId hostid(mymachine, port);
+  ClientID clid = hostid.ToClientId();
 
   // create a message
   MessageDataAck::AckVector acks(10);
@@ -97,7 +97,7 @@ TEST(Messaging, DataAck) {
       ack.seqno = i;
     }
   }
-  MessageDataAck ack1(101, hostid, acks);
+  MessageDataAck ack1(101, clid, acks);
 
   // serialize the message
   Slice original = ack1.Serialize();

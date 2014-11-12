@@ -24,17 +24,17 @@ class HostMap {
 
   // Insert a new element in the map. Returns the HostNumber.
   // Returns -1 if error
-  HostNumber Insert(const HostId& hostid);
+  HostNumber Insert(const ClientID& hostid);
 
   // There isn't a way to delete an entry.
 
   // Looks up the id for a host. If the host does not
   // exist, then returns -1
-  HostNumber Lookup(const HostId& hostid);
+  HostNumber Lookup(const ClientID& hostid);
 
   // Looks up a host given its HostNumber. If the host does
   // not exist, then return nullptr;
-  HostId* Lookup(HostNumber num);
+  ClientID* Lookup(HostNumber num);
 
   // Utility method to convert a list of Hostids to a printable string
   static std::string ToString(const Command::Recipients& hostlist);

@@ -39,6 +39,11 @@ class Pilot {
     return options_.msg_loop->GetHostId();
   }
 
+  // Get the subscriber id of this pilot
+  const ClientID& GetPilotId() const {
+    return pilot_id_;
+  }
+
   // Sends a command to the msgloop
   Status SendCommand(std::unique_ptr<Command> command) {
     return options_.msg_loop->SendCommand(std::move(command));
@@ -59,6 +64,9 @@ class Pilot {
   // Worker objects and threads, these have their own message loops.
   std::vector<std::unique_ptr<PilotWorker>> workers_;
   std::vector<std::thread> worker_threads_;
+
+ // My subscriber id
+ const ClientID pilot_id_;
 
   // private Constructor
   explicit Pilot(PilotOptions options);

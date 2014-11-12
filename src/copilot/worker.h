@@ -52,7 +52,7 @@ class CopilotCommand : public Command {
   CopilotCommand() = default;
 
   CopilotCommand(std::string message,
-                 const HostId& host,
+                 const ClientID& host,
                  uint64_t issued_time):
     Command(issued_time),
     message_(std::move(message)) {
@@ -70,7 +70,7 @@ class CopilotCommand : public Command {
   void GetMessage(std::string* out) {
     out->assign(std::move(message_));
   }
-  // return the Destination HostId, otherwise returns null.
+  // return the Destination ClientID, otherwise returns null.
   const Recipients& GetDestination() const {
     return recipient_;
   }
@@ -120,7 +120,7 @@ class CopilotWorker {
   void CommandCallback(CopilotWorkerCommand command);
 
   // Send an ack message to the host for the msgid.
-  void SendAck(const HostId& host,
+  void SendAck(const ClientID& host,
                const MsgId& msgid,
                MessageDataAck::AckStatus status);
 
@@ -155,12 +155,12 @@ class CopilotWorker {
 
   // Subscription metadata
   struct Subscription {
-    Subscription(HostId const& hostid, SequenceNumber seq_no, bool await_ack)
-    : host_id(hostid)
+    Subscription(ClientID const& id, SequenceNumber seq_no, bool await_ack)
+    : client_id(id)
     , seqno(seq_no)
     , awaiting_ack(await_ack) {}
 
-    HostId host_id;        // The subscriber
+    ClientID client_id;    // The subscriber
     SequenceNumber seqno;  // Lowest seqno to accept
     bool awaiting_ack;     // Is the subscriber awaiting an subscribe response?
   };

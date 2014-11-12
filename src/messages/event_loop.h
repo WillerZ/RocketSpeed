@@ -127,7 +127,7 @@ class EventLoop {
   // Env options
   EnvOptions env_options_;
 
-  // the port nuber of
+  // Port nuber of accept loop (in network byte order)
   int port_number_;
 
   // Is the EventLoop all setup and running?
@@ -162,8 +162,8 @@ class EventLoop {
   int command_ready_eventfd_ = -1;
   std::mutex command_queue_write_mutex_;
 
-  // a cache of HostId to connections
-  std::map<HostId, std::vector<SocketEvent*>> connection_cache_;
+  // a cache of ClientIds to connections
+  std::map<ClientID, std::vector<SocketEvent*>> connection_cache_;
 
   // Object pool of SharedStrings
   PooledObjectList<SharedString> string_pool_;
@@ -183,10 +183,10 @@ class EventLoop {
   } stats_;
 
   // connection cache updates
-  bool insert_connection_cache(const HostId& host, SocketEvent* ev);
-  bool remove_connection_cache(const HostId& host, SocketEvent* ev);
-  SocketEvent* lookup_connection_cache(const HostId& host) const;
-  SocketEvent* setup_connection(const HostId& host);
+  bool insert_connection_cache(const ClientID& host, SocketEvent* ev);
+  bool remove_connection_cache(const ClientID& host, SocketEvent* ev);
+  SocketEvent* lookup_connection_cache(const ClientID& host) const;
+  SocketEvent* setup_connection(const HostId& host, const ClientID& clientid);
   Status create_connection(const HostId& host, bool block, int* fd);
   void clear_connection_cache();
 

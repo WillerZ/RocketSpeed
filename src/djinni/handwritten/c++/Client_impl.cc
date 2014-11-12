@@ -39,12 +39,14 @@ class Message : public MessageReceived {
 // This is a static method to create an instance of the RS client.
 //
 std::shared_ptr<Client>
-Client::Open(const std::shared_ptr<Configuration>& config,
+Client::Open(const ClientID& client_id,
+             const std::shared_ptr<Configuration>& config,
              const std::shared_ptr<PublishCallback>& publish_callback,
              const std::shared_ptr<SubscribeCallback>& subscribe_callback,
              const std::shared_ptr<MessageReceivedCallback>& receive_callback) {
-  std::unique_ptr<ClientImpl> cl(new ClientImpl(config, publish_callback,
-                                  subscribe_callback, receive_callback));
+  std::unique_ptr<ClientImpl> cl(new ClientImpl(
+                                   client_id, config, publish_callback,
+                                   subscribe_callback, receive_callback));
   if (cl) {
     Status status = cl->Initialize();
     if (status.code != StatusCode::KOK) {
@@ -58,12 +60,14 @@ Client::Open(const std::shared_ptr<Configuration>& config,
 //
 // Constructor initializes the app specified callbacks.
 //
-ClientImpl::ClientImpl(const std::shared_ptr<Configuration>& config,
+ClientImpl::ClientImpl(const ClientID& client_id,
+             const std::shared_ptr<Configuration>& config,
              const std::shared_ptr<PublishCallback>& publish_callback,
              const std::shared_ptr<SubscribeCallback>& subscribe_callback,
              const std::shared_ptr<MessageReceivedCallback>& receive_callback):
   client_(nullptr),
   rs_config_(nullptr),
+  client_id_(client_id),
   config_(config),
   publish_callback_(publish_callback),
   subscribe_callback_(subscribe_callback),
@@ -127,6 +131,7 @@ ClientImpl::Initialize() {
   // create RS client
   rocketspeed::Client* client;
   rocketspeed::Status status = rocketspeed::Client::Open(rs_config_.get(),
+                                 client_id_.name,
                                  publish_callback,
                                  subscribe_callback,
                                  receive_callback,

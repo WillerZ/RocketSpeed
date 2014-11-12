@@ -93,7 +93,8 @@ class MsgLoop {
   // Used by the PingCallback to enqueue a Ping response to the event loop
   class PingCommand : public Command {
    public:
-    PingCommand(std::string message, const HostId& host, uint64_t issued_time):
+    PingCommand(std::string message, const ClientID& host,
+                uint64_t issued_time):
       Command(issued_time),
       message_(std::move(message)) {
       recipient_.push_back(host);
@@ -101,7 +102,7 @@ class MsgLoop {
     void GetMessage(std::string* out) {
       out->assign(std::move(message_));
     }
-    // return the Destination HostId, otherwise returns null.
+    // return the Destination ClientID, otherwise returns null.
     const Recipients& GetDestination() const {
       return recipient_;
     }

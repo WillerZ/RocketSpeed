@@ -96,7 +96,7 @@ Status Tailer::Initialize() {
     // We don't know the tenant ID at this point, or the host ID. These will
     // have to be set in the control room.
     std::unique_ptr<Message> msg(new MessageGap(Tenant::InvalidTenant,
-                                                HostId(),
+                                                ClientID(),
                                                 record.type,
                                                 record.from,
                                                 record.to));

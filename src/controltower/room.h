@@ -80,7 +80,7 @@ class ControlRoom {
       message_(std::move(message)) {
     }
     TowerCommand(std::string message,
-                 const HostId& recipient,
+                 const ClientID& recipient,
                  uint64_t issued_time):
       Command(issued_time),
       message_(std::move(message)) {

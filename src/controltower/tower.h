@@ -46,6 +46,11 @@ class ControlTower {
     return options_.msg_loop->GetHostId();
   }
 
+  // Returns the unique id of this control tower
+  const ClientID& GetTowerId() const {
+    return tower_id_;
+  }
+
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;
@@ -63,6 +68,9 @@ class ControlTower {
 
   // The Tailer to feed in data from LogStorage to Rooms
   unique_ptr<Tailer> tailer_;
+
+  // The id of this control tower
+  const ClientID tower_id_;
 
   // private Constructor
   explicit ControlTower(const ControlTowerOptions& options);

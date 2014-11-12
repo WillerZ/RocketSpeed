@@ -12,47 +12,41 @@ class HostMapTest {};
 
 TEST(HostMapTest, Empty) {
   HostMap map1(10);
-  HostId dummyid;
+  ClientID dummyid;
   ASSERT_EQ(map1.Lookup(dummyid), -1);
 }
 
 TEST(HostMapTest, Simple) {
   HostId id1("name1", 0);
-  HostId id1alias("name1", 0);
   HostId id2("name1", 1);
   HostId id3("name2", 1);
   HostId id4("name2", 2);
 
   // insert id1
   HostMap map(100);
-  map.Insert(id1);
-  ASSERT_NE(map.Lookup(id1), -1);
-
-  // insert an alias of id1
-  map.Insert(id1alias);
-  ASSERT_NE(map.Lookup(id1), -1);
-  ASSERT_EQ(map.Lookup(id1), map.Lookup(id1alias));
+  map.Insert(id1.ToClientId());
+  ASSERT_NE(map.Lookup(id1.ToClientId()), -1);
 
   // insert id2
-  map.Insert(id2);
-  ASSERT_NE(map.Lookup(id1), -1);
-  ASSERT_NE(map.Lookup(id2), -1);
-  ASSERT_NE(map.Lookup(id1), map.Lookup(id2));
+  map.Insert(id2.ToClientId());
+  ASSERT_NE(map.Lookup(id1.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id2.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id1.ToClientId()), map.Lookup(id2.ToClientId()));
 
   // insert id3
-  map.Insert(id3);
-  ASSERT_NE(map.Lookup(id1), -1);
-  ASSERT_NE(map.Lookup(id2), -1);
-  ASSERT_NE(map.Lookup(id3), -1);
-  ASSERT_NE(map.Lookup(id3), map.Lookup(id2));
+  map.Insert(id3.ToClientId());
+  ASSERT_NE(map.Lookup(id1.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id2.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id3.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id3.ToClientId()), map.Lookup(id2.ToClientId()));
 
   // insert id4
-  map.Insert(id4);
-  ASSERT_NE(map.Lookup(id1), -1);
-  ASSERT_NE(map.Lookup(id2), -1);
-  ASSERT_NE(map.Lookup(id3), -1);
-  ASSERT_NE(map.Lookup(id4), -1);
-  ASSERT_NE(map.Lookup(id3), map.Lookup(id4));
+  map.Insert(id4.ToClientId());
+  ASSERT_NE(map.Lookup(id1.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id2.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id3.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id4.ToClientId()), -1);
+  ASSERT_NE(map.Lookup(id3.ToClientId()), map.Lookup(id4.ToClientId()));
 }
 
 }  // namespace rocketspeed

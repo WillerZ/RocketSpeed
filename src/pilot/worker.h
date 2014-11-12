@@ -58,7 +58,7 @@ class PilotWorkerCommand {
 // These Commands sent from the Worker to the Pilot
 class PilotCommand : public Command {
  public:
-  PilotCommand(std::string message, const HostId& host, uint64_t issued_time):
+  PilotCommand(std::string message, const ClientID& host, uint64_t issued_time):
     Command(issued_time),
     message_(std::move(message)) {
     recipient_.push_back(host);

@@ -33,9 +33,6 @@ struct ControlTowerOptions {
   // This is not owned by the control tower and should not be deleted.
   MsgLoop* msg_loop;
 
-  // The machine name that identifies this control tower
-  std::string hostname;
-
   // If non-null, then server info logs are written to this object.
   // If null, then server info logs are written to log_dir.
   // This allows multiple instances of the server to log to the

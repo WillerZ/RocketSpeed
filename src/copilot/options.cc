@@ -24,9 +24,6 @@ CopilotOptions::CopilotOptions()
     worker_queue_size(1000000),
     consistent_hash_replicas(20),
     control_towers_per_log(1) {
-  char myname[1024];
-  gethostname(&myname[0], sizeof(myname));
-  copilotname.assign(myname);
 }
 
 }  // namespace rocketspeed
