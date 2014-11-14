@@ -32,10 +32,11 @@ struct MurmurHash2<T, Ts...> {
 
 template <>
 struct MurmurHash2<size_t> {
-  size_t operator()(size_t x) const {
-    const size_t m = 0xc6a4a7935bd1e995;
+  size_t operator()(size_t xa) const {
+    uint64_t x = xa;
+    const uint64_t m = 0xc6a4a7935bd1e995;
     const unsigned int r = 47;
-    size_t h = 0xfacec0defacec0de;
+    uint64_t h = 0xfacec0defacec0de;
     x *= m;
     x ^= x >> r;
     x *= m;
@@ -44,7 +45,7 @@ struct MurmurHash2<size_t> {
     h ^= h >> r;
     h *= m;
     h ^= h >> r;
-    return h;
+    return static_cast<size_t>(h);
   }
 };
 

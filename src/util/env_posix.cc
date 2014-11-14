@@ -18,7 +18,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <ftw.h>
-#ifdef OS_LINUX
+#if defined(OS_LINUX)
 #include <sys/statfs.h>
 #endif
 #include <sys/time.h>
@@ -1363,12 +1363,14 @@ class PosixEnv : public Env {
   }
 
   static std::string gettname() {
+#if !defined(OS_ANDROID)
     char name[64];
     // this can be optimized by keeping a local hashmap
     if (pthread_getname_np(pthread_self(), name, sizeof(name)) == 0) {
       name[sizeof(name)-1] = 0;
       return std::string(name);
     }
+#endif
     return "";
   }
 
@@ -1394,7 +1396,7 @@ class PosixEnv : public Env {
   }
 
   virtual uint64_t NowNanos() {
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_ANDROID)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return static_cast<uint64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;

@@ -7,9 +7,11 @@
 
 #include "src/messages/event_loop.h"
 #include <limits.h>
-#include <sys/eventfd.h>
 #include <deque>
 #include <thread>
+#include <sys/eventfd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include "src/messages/serializer.h"
 
 namespace rocketspeed {
