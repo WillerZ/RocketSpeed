@@ -19,9 +19,7 @@ public abstract class Configuration {
 
     public abstract TenantID GetTenantID();
 
-    public abstract int GetClientPort();
-
-    public static native Configuration CreateNewInstance(ArrayList<HostId> pilots, ArrayList<HostId> copilots, TenantID tenantId, int port);
+    public static native Configuration CreateNewInstance(ArrayList<HostId> pilots, ArrayList<HostId> copilots, TenantID tenantId);
 
     public static final class NativeProxy extends Configuration
     {
@@ -69,13 +67,5 @@ public abstract class Configuration {
             return native_GetTenantID(this.nativeRef);
         }
         private native TenantID native_GetTenantID(long _nativeRef);
-
-        @Override
-        public int GetClientPort()
-        {
-            assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_GetClientPort(this.nativeRef);
-        }
-        private native int native_GetClientPort(long _nativeRef);
     }
 }

@@ -15,7 +15,6 @@ class ConfigurationImpl : public Configuration {
   std::vector<HostId> GetPilotHostIds() override;
   std::vector<HostId> GetCopilotHostIds() override;
   TenantID GetTenantID() override;
-  int32_t GetClientPort() override;
 
  private:
   // The base rocketspedd config object

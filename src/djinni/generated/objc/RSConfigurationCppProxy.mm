@@ -34,7 +34,7 @@ static_assert(__has_feature(objc_arc), "Djinni requires ARC to be enabled for th
     return cache.get(cppRef, [] (const std::shared_ptr<::rocketglue::Configuration> & p) { return [[RSConfigurationCppProxy alloc] initWithCpp:p]; });
 }
 
-+ (id <RSConfiguration>)CreateNewInstance:(NSMutableArray *)pilots copilots:(NSMutableArray *)copilots tenantId:(RSTenantID *)tenantId port:(int32_t)port {
++ (id <RSConfiguration>)CreateNewInstance:(NSMutableArray *)pilots copilots:(NSMutableArray *)copilots tenantId:(RSTenantID *)tenantId {
     try {
         std::vector<::rocketglue::HostId> cppPilots;
         cppPilots.reserve([pilots count]);
@@ -49,8 +49,7 @@ static_assert(__has_feature(objc_arc), "Djinni requires ARC to be enabled for th
             cppCopilots.push_back(std::move(cppValue_0));
         }
         ::rocketglue::TenantID cppTenantId = std::move([tenantId cppTenantID]);
-        int32_t cppPort = port;
-        std::shared_ptr<::rocketglue::Configuration> cppRet = ::rocketglue::Configuration::CreateNewInstance(std::move(cppPilots), std::move(cppCopilots), std::move(cppTenantId), std::move(cppPort));
+        std::shared_ptr<::rocketglue::Configuration> cppRet = ::rocketglue::Configuration::CreateNewInstance(std::move(cppPilots), std::move(cppCopilots), std::move(cppTenantId));
         id <RSConfiguration> objcRet = [RSConfigurationCppProxy ConfigurationWithCpp:cppRet];
         return objcRet;
     } DJINNI_TRANSLATE_EXCEPTIONS()
@@ -84,14 +83,6 @@ static_assert(__has_feature(objc_arc), "Djinni requires ARC to be enabled for th
     try {
         ::rocketglue::TenantID cppRet = _cppRef->GetTenantID();
         RSTenantID *objcRet = [[RSTenantID alloc] initWithCppTenantID:cppRet];
-        return objcRet;
-    } DJINNI_TRANSLATE_EXCEPTIONS()
-}
-
-- (int32_t)GetClientPort {
-    try {
-        int32_t cppRet = _cppRef->GetClientPort();
-        int32_t objcRet = cppRet;
         return objcRet;
     } DJINNI_TRANSLATE_EXCEPTIONS()
 }

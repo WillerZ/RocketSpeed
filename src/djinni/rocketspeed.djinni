@@ -145,13 +145,11 @@ SubscriptionPair = record {
 Configuration = interface +c {
   static CreateNewInstance(pilots    : list<HostId>,
                            copilots  : list<HostId>,
-                           tenant_id : TenantID,
-                           port      : i32
+                           tenant_id : TenantID
                           ) : Configuration;
   GetPilotHostIds()   : list<HostId>;
   GetCopilotHostIds() : list<HostId>;
   GetTenantID()       : TenantID;
-  GetClientPort()     : i32;
 }
 
 #

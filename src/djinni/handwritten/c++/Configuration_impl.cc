@@ -5,8 +5,7 @@ namespace rocketglue {
 std::shared_ptr<Configuration> Configuration::CreateNewInstance(
   const std::vector<HostId>& pilots,
   const std::vector<HostId>& copilots,
-  const TenantID& tenant_id,
-  const int32_t& port) {
+  const TenantID& tenant_id) {
 
   std::vector<rocketspeed::HostId> pilot_rs;
   std::vector<rocketspeed::HostId> copilot_rs;
@@ -25,8 +24,7 @@ std::shared_ptr<Configuration> Configuration::CreateNewInstance(
                                rocketspeed::Configuration::Create(
                                  pilot_rs,
                                  copilot_rs,
-                                 tenant,
-                                 (int)port));
+                                 tenant));
   return std::make_shared<ConfigurationImpl>(std::move(pconfig));
 };
 
@@ -48,10 +46,6 @@ std::vector<HostId> ConfigurationImpl::GetCopilotHostIds() {
 
 TenantID ConfigurationImpl::GetTenantID() {
   return TenantID(conf_.get()->GetTenantID());
-};
-
-int32_t ConfigurationImpl::GetClientPort() {
-  return  (int16_t)conf_.get()->GetClientPort();
 };
 
 }

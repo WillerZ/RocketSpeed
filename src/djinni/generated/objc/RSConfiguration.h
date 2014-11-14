@@ -15,14 +15,12 @@
 
 @protocol RSConfiguration
 
-+ (id <RSConfiguration>)CreateNewInstance:(NSMutableArray *)pilots copilots:(NSMutableArray *)copilots tenantId:(RSTenantID *)tenantId port:(int32_t)port;
++ (id <RSConfiguration>)CreateNewInstance:(NSMutableArray *)pilots copilots:(NSMutableArray *)copilots tenantId:(RSTenantID *)tenantId;
 
 - (NSMutableArray *)GetPilotHostIds;
 
 - (NSMutableArray *)GetCopilotHostIds;
 
 - (RSTenantID *)GetTenantID;
-
-- (int32_t)GetClientPort;
 
 @end

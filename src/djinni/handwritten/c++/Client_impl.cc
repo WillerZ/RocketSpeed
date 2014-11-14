@@ -126,7 +126,7 @@ ClientImpl::Initialize() {
 
   // Create RS configuration
   rs_config_.reset(rocketspeed::Configuration::Create(
-                     pilots, copilots, tenant, config_->GetClientPort()));
+                     pilots, copilots, tenant));
 
   // create RS client
   rocketspeed::Client* client;

@@ -38,7 +38,6 @@ class ClientImpl : public Client {
              const HostId& pilot_host_id,
              const HostId& copilot_host_id,
              TenantID tenant_id,
-             int port,
              PublishCallback publish_callback,
              SubscribeCallback subscription_callback,
              MessageReceivedCallback receive_callback,

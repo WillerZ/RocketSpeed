@@ -277,14 +277,11 @@ class Configuration {
    * @param pilots Pilot hostnames.
    * @param copilots Copilot hostnames.
    * @param tenant_id Client tenant ID.
-   * @param client_port The port on the client for receiving
-   *                    incoming messages
    * @return A new Configuration with the specified options.
    */
   static Configuration* Create(const std::vector<HostId>& pilots,
                                const std::vector<HostId>& copilots,
-                               TenantID tenant_id,
-                               int client_port);
+                               TenantID tenant_id);
 
   virtual ~Configuration() {}
 
@@ -302,11 +299,6 @@ class Configuration {
    * The Tenant associated with this configuration
    */
   virtual TenantID GetTenantID() const = 0;
-
-  /**
-   * The port on the client on incoming messages are received
-   */
-  virtual int GetClientPort() const = 0;
 };
 
 enum Retention : char {

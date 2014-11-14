@@ -34,8 +34,6 @@ DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
 DEFINE_string(copilot_hostname, "localhost", "hostname of copilot");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
-DEFINE_int32(producer_port, 58800, "port number of producer");
-DEFINE_int32(consumer_port, 58800, "port number of consumer");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 1000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
@@ -285,16 +283,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (FLAGS_producer_port > 65535 || FLAGS_producer_port < 0) {
-    fprintf(stderr, "producer_port must be 0-65535.\n");
-    return 1;
-  }
-
-  if (FLAGS_consumer_port > 65535 || FLAGS_consumer_port < 0) {
-    fprintf(stderr, "consumer_port must be 0-65535.\n");
-    return 1;
-  }
-
   if (FLAGS_message_size <= 0 || FLAGS_message_size > 1024*1024) {
     fprintf(stderr, "message_size must be 0-1MB.\n");
     return 1;
@@ -350,14 +338,12 @@ int main(int argc, char** argv) {
     rocketspeed::Configuration::Create(
       std::vector<rocketspeed::HostId>{ pilot },
       std::vector<rocketspeed::HostId>{ copilot },
-      rocketspeed::Tenant(102),
-      FLAGS_producer_port));
+      rocketspeed::Tenant(102)));
   std::unique_ptr<rocketspeed::Configuration> cconfig(
     rocketspeed::Configuration::Create(
       std::vector<rocketspeed::HostId>{ pilot },
       std::vector<rocketspeed::HostId>{ copilot },
-      rocketspeed::Tenant(102),
-      FLAGS_consumer_port));
+      rocketspeed::Tenant(102)));
 
   // Start/end time for benchmark.
   std::chrono::time_point<std::chrono::steady_clock> start, end;
@@ -458,13 +444,11 @@ int main(int argc, char** argv) {
   // If the producer port and the consumer port are the same, then we
   // use a single client object. This allows the producer and the
   // consumer to share the same connections to the Cloud.
-  if (FLAGS_start_producer && FLAGS_start_consumer &&
-      FLAGS_producer_port == FLAGS_consumer_port) {
+  if (FLAGS_start_producer && FLAGS_start_consumer) {
     producer = new rocketspeed::ClientImpl(clientid,
                                            pilot,
                                            copilot,
                                            rocketspeed::Tenant(102),
-                                           FLAGS_producer_port,
                                            publish_callback,
                                            subscribe_callback,
                                            receive_callback,
@@ -476,7 +460,6 @@ int main(int argc, char** argv) {
                                              pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
-                                             FLAGS_producer_port,
                                              publish_callback,
                                              nullptr,
                                              nullptr,
@@ -487,7 +470,6 @@ int main(int argc, char** argv) {
                                              pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
-                                             FLAGS_producer_port,
                                              nullptr,
                                              subscribe_callback,
                                              receive_callback,

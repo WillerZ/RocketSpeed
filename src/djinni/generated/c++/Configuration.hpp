@@ -5,7 +5,6 @@
 
 #include "HostId.hpp"
 #include "TenantID.hpp"
-#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -21,15 +20,13 @@ class Configuration {
 public:
     virtual ~Configuration() {}
 
-    static std::shared_ptr<Configuration> CreateNewInstance(const std::vector<HostId> & pilots, const std::vector<HostId> & copilots, const TenantID & tenant_id, const int32_t & port);
+    static std::shared_ptr<Configuration> CreateNewInstance(const std::vector<HostId> & pilots, const std::vector<HostId> & copilots, const TenantID & tenant_id);
 
     virtual std::vector<HostId> GetPilotHostIds() = 0;
 
     virtual std::vector<HostId> GetCopilotHostIds() = 0;
 
     virtual TenantID GetTenantID() = 0;
-
-    virtual int32_t GetClientPort() = 0;
 };
 
 }  // namespace rocketglue
