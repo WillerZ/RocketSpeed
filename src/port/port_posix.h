@@ -50,9 +50,26 @@
 #include <semaphore.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 #include <chrono>
 #include <memory>
+
 #include <string>
+#if defined(OS_ANDROID)
+// std::to_string(...) is missing in <string> on Android:
+// https://code.google.com/p/android/issues/detail?id=53460
+#include <sstream>
+
+namespace std {
+template <typename T>
+string to_string(const T& t) {
+  ostringstream os;
+  os << t;
+  return os.str();
+}
+} // namespace std
+#endif
+
 #include "src/port/atomic_pointer.h"
 
 #ifndef PLATFORM_IS_LITTLE_ENDIAN
@@ -193,8 +210,10 @@ class Semaphore {
       std::chrono::duration_cast<std::chrono::milliseconds>(
                                              deadline.time_since_epoch())
     };
-    struct timespec abs_timeout { deadline_ms.count() / 1000,
-                                  deadline_ms.count() % 1000 * 1000000 };
+    struct timespec abs_timeout {
+      static_cast<time_t>(deadline_ms.count() / 1000),
+      static_cast<long>(deadline_ms.count() % 1000 * 1000000),
+    };
     for (;;) {
       rv = sem_timedwait(rawsem(), &abs_timeout);
       if (rv == 0) {
