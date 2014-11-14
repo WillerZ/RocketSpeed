@@ -14,6 +14,8 @@
 #pragma once
 
 #include <cstring>
+#include <cstdlib>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -220,7 +222,9 @@ class HostId {
 
   // converts a HostId to a name:port string
   std::string ToString() const {
-    return hostname + ":" + std::to_string(port);
+    std::ostringstream oss;
+    oss << hostname << ':' << port;
+    return oss.str();
   }
 
   // converts a name:port string to a HostId
