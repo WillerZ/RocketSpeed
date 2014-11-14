@@ -17,7 +17,9 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#if !defined(OS_ANDROID)
 #include <ftw.h>
+#endif
 #if defined(OS_LINUX)
 #include <sys/statfs.h>
 #endif
@@ -1247,6 +1249,12 @@ class PosixEnv : public Env {
     return result;
   };
 
+#if defined(OS_ANDROID)
+  virtual Status DeleteDirRecursive(const std::string& name) {
+    // <ftw.h> is missing on Android
+    return Status::NotSupported("This platform doesn't support nftw()");
+  }
+#else
   // Callback needed for DeleteDirRecursive
   static int unlink_cb(const char *fpath,
                        const struct stat *sb,
@@ -1262,6 +1270,7 @@ class PosixEnv : public Env {
     }
     return result;
   }
+#endif
 
   virtual Status GetFileSize(const std::string& fname, uint64_t* size) {
     Status s;
