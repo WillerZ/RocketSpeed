@@ -859,9 +859,11 @@ EventLoop::create_connection(const HostId& host,
 }
 
 void EventLoop::EnableDebugThreadUnsafe(DebugCallback log_cb) {
+#if LIBEVENT_VERSION_NUMBER >= 0x02010300
   event_enable_debug_logging(EVENT_DBG_ALL);
   event_set_log_callback(log_cb);
   event_enable_debug_mode();
+#endif
 }
 
 /**
