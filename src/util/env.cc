@@ -23,9 +23,6 @@ RandomAccessFile::~RandomAccessFile() {
 WritableFile::~WritableFile() {
 }
 
-Logger::~Logger() {
-}
-
 FileLock::~FileLock() {
 }
 
