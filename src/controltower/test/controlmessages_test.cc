@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "src/messages/event2_version.h"
 #include "src/util/testharness.h"
 #include "src/controltower/tower.h"
 #include "src/controltower/room.h"
@@ -22,11 +23,11 @@ class ControlTowerTest;
 
 namespace {
 // A static variable that is used to initialize the
-// libevent library settings at the start of the
+// event loop library settings at the start of the
 // first unit test. If you set it to true, then you
-// will see the entire libevent debug messages along
-// with the test output.
-static bool debug_libevent = false;
+// will see the entire event loop debug messages
+// along with the test output.
+static bool debug_event_loop = false;
 
 static std::shared_ptr<Logger> info_log;
 
@@ -59,12 +60,11 @@ class ControlTowerTest {
     ASSERT_EQ(gethostname(&myname_[0], sizeof(myname_)), 0);
     hostname_.assign(myname_, strlen(myname_));
 
-    // enable all kinds of libevent debugging
-    if (debug_libevent) {
-      ld_event_enable_debug_logging(EVENT_DBG_ALL);
-      ld_event_set_log_callback(dump_libevent_cb);
-      ld_event_enable_debug_mode();
-      debug_libevent = false;
+    // enable all kinds of event loop debugging
+    // not enabling by default since it is not thread safe
+    if (debug_event_loop) {
+      EventLoop::EnableDebugThreadUnsafe(dump_libevent_cb);
+      debug_event_loop = false;
     }
   }
 
@@ -120,11 +120,11 @@ class ControlTowerTest {
   dump_libevent_cb(int severity, const char* msg) {
     const char* s;
     switch (severity) {
-      case _EVENT_LOG_DEBUG: s = "libev:dbg"; break;
-      case _EVENT_LOG_MSG:   s = "libev:msg"; break;
-      case _EVENT_LOG_WARN:  s = "libev:wrn"; break;
-      case _EVENT_LOG_ERR:   s = "libev:err"; break;
-      default:               s = "libev:???"; break; /* never reached */
+      case EventLoop::kLogSeverityDebug: s = "dbg"; break;
+      case EventLoop::kLogSeverityMsg:   s = "msg"; break;
+      case EventLoop::kLogSeverityWarn:  s = "wrn"; break;
+      case EventLoop::kLogSeverityErr:   s = "err"; break;
+      default:                           s = "???"; break; // never reached
     }
     LOG_INFO(info_log, "[%s] %s\n", s, msg);
     info_log->Flush();

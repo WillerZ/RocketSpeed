@@ -6,12 +6,15 @@
 #define __STDC_FORMAT_MACROS
 
 #include "src/messages/event_loop.h"
+
 #include <limits.h>
-#include <deque>
-#include <thread>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <deque>
+#include <functional>
+#include <thread>
+
 #include "src/messages/serializer.h"
 
 namespace rocketspeed {
@@ -30,14 +33,14 @@ struct SocketEvent {
   , write_ev_added_(false) {
 
     // create read and write events
-    ev_ = ld_event_new(base, fd, EV_READ|EV_PERSIST,
+    ev_ = event_new(base, fd, EV_READ|EV_PERSIST,
                        EventCallback, this);
-    write_ev_ = ld_event_new(base, fd, EV_WRITE|EV_PERSIST,
+    write_ev_ = event_new(base, fd, EV_WRITE|EV_PERSIST,
                        EventCallback, this);
 
     // register only the read callback
     if (ev_ == nullptr || write_ev_ == nullptr ||
-        ld_event_add(ev_, nullptr)) {
+        event_add(ev_, nullptr)) {
       LOG_WARN(event_loop_->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
       delete this;
@@ -59,13 +62,13 @@ struct SocketEvent {
     event_loop_->thread_check_.Check();
 
     // create read and write events
-    ev_ = ld_event_new(base, fd, EV_READ|EV_PERSIST,
+    ev_ = event_new(base, fd, EV_READ|EV_PERSIST,
                        EventCallback, this);
-    write_ev_ = ld_event_new(base, fd, EV_WRITE|EV_PERSIST,
+    write_ev_ = event_new(base, fd, EV_WRITE|EV_PERSIST,
                        EventCallback, this);
     // register only the read callback
     if (ev_ == nullptr || write_ev_  == nullptr ||
-        ld_event_add(ev_, nullptr)) {
+        event_add(ev_, nullptr)) {
       LOG_WARN(event_loop_->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
       delete this;
@@ -94,13 +97,13 @@ struct SocketEvent {
              fd_);
     event_loop_->GetLog()->Flush();
     if (ev_) {
-      ld_event_free(ev_);
+      event_free(ev_);
     }
     // remove the socket from the connection cache
     bool removed  __attribute__((__unused__)) =
       event_loop_->remove_connection_cache(remote_host_, this);
     assert(!event_loop_->running_ || removed || !known_remote_);
-    ld_event_free(write_ev_);
+    event_free(write_ev_);
     close(fd_);
 
     // free up unsent pending messages
@@ -124,7 +127,7 @@ struct SocketEvent {
     // register it now. The enqueued message will be sent out when the
     // socket is ready to be written.
     if (!write_ev_added_) {
-      if (ld_event_add(write_ev_, nullptr)) {
+      if (event_add(write_ev_, nullptr)) {
         LOG_WARN(event_loop_->GetLog(),
             "Failed to add write event for fd(%d)", fd_);
         status = Status::InternalError("Failed to enqueue write message");
@@ -197,7 +200,7 @@ struct SocketEvent {
         assert(partial_.size() > 0);
       } else {
         // No more queued messages. Switch off ready-to-write event on socket.
-        if (ld_event_del(write_ev_)) {
+        if (event_del(write_ev_)) {
           LOG_WARN(event_loop_->GetLog(),
               "Failed to remove write event for fd(%d)", fd_);
         } else {
@@ -337,7 +340,7 @@ void
 EventLoop::do_shutdown(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   obj->thread_check_.Check();
-  ld_event_base_loopexit(obj->base_, nullptr);
+  event_base_loopexit(obj->base_, nullptr);
 }
 
 void
@@ -436,7 +439,7 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
   Status status;
 
   // make socket non-blocking
-  if (ld_evutil_make_socket_nonblocking(fd) != 0) {
+  if (evutil_make_socket_nonblocking(fd) != 0) {
     status = Status::InternalError("Unable to make socket non-blocking");
   }
 
@@ -467,17 +470,17 @@ void
 EventLoop::accept_error_cb(struct evconnlistener *listener, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   obj->thread_check_.Check();
-  struct event_base *base = ld_evconnlistener_get_base(listener);
+  struct event_base *base = evconnlistener_get_base(listener);
   int err = EVUTIL_SOCKET_ERROR();
   LOG_WARN(obj->info_log_,
     "Got an error %d (%s) on the listener. "
     "Shutting down.\n", err, evutil_socket_error_to_string(err));
-  ld_event_base_loopexit(base, NULL);
+  event_base_loopexit(base, NULL);
 }
 
 void
 EventLoop::Run(void) {
-  base_ = ld_event_base_new();
+  base_ = event_base_new();
   if (!base_) {
     LOG_WARN(info_log_,
       "Failed to create an event base for an EventLoop thread");
@@ -494,7 +497,7 @@ EventLoop::Run(void) {
     sin.sin6_port = htons(port_number_);
 
     // Create libevent connection listener.
-    listener_ = ld_evconnlistener_new_bind(
+    listener_ = evconnlistener_new_bind(
       base_,
       &EventLoop::do_accept,
       reinterpret_cast<void*>(this),
@@ -510,7 +513,7 @@ EventLoop::Run(void) {
       return;
     }
 
-    ld_evconnlistener_set_error_cb(listener_, &EventLoop::accept_error_cb);
+    evconnlistener_set_error_cb(listener_, &EventLoop::accept_error_cb);
   }
 
   // Create a non-persistent event that will run as soon as the dispatch
@@ -540,7 +543,7 @@ EventLoop::Run(void) {
   // is available, that indicates that the loop should stop.
   // This allows us to communicate to the event loop from another thread
   // safely without locks.
-  shutdown_event_ = ld_event_new(
+  shutdown_event_ = event_new(
     base_,
     eventfd(0, 0),
     EV_PERSIST|EV_READ,
@@ -551,7 +554,7 @@ EventLoop::Run(void) {
     info_log_->Flush();
     return;
   }
-  rv = ld_event_add(shutdown_event_, nullptr);
+  rv = event_add(shutdown_event_, nullptr);
   if (rv != 0) {
     LOG_WARN(info_log_, "Failed to add shutdown event to event base");
     info_log_->Flush();
@@ -565,7 +568,7 @@ EventLoop::Run(void) {
     info_log_->Flush();
     return;
   }
-  command_ready_event_ = ld_event_new(
+  command_ready_event_ = event_new(
     base_,
     command_ready_eventfd_,
     EV_PERSIST|EV_READ,
@@ -576,7 +579,7 @@ EventLoop::Run(void) {
     info_log_->Flush();
     return;
   }
-  rv = ld_event_add(command_ready_event_, nullptr);
+  rv = event_add(command_ready_event_, nullptr);
   if (rv != 0) {
     LOG_WARN(info_log_, "Failed to add command event to event base");
     info_log_->Flush();
@@ -589,13 +592,13 @@ EventLoop::Run(void) {
   // Start the event loop.
   // This will not exit until Stop is called, or some error
   // happens within libevent.
-  ld_event_base_dispatch(base_);
+  event_base_dispatch(base_);
   running_ = false;
 }
 
 void EventLoop::Stop() {
   if (base_ != nullptr) {
-    int shutdown_fd = ld_event_get_fd(shutdown_event_);
+    int shutdown_fd = event_get_fd(shutdown_event_);
     if (running_) {
       // Write to the shutdown event FD to signal the event loop thread
       // to shutdown and stop looping.
@@ -612,12 +615,12 @@ void EventLoop::Stop() {
 
       // Shutdown everything
       if (listener_) {
-        ld_evconnlistener_free(listener_);
+        evconnlistener_free(listener_);
       }
-      ld_event_free(startup_event_);
-      ld_event_free(shutdown_event_);
-      ld_event_free(command_ready_event_);
-      ld_event_base_free(base_);
+      event_free(startup_event_);
+      event_free(shutdown_event_);
+      event_free(command_ready_event_);
+      event_base_free(base_);
       close(shutdown_fd);
       close(command_ready_eventfd_);
 
@@ -853,6 +856,12 @@ EventLoop::create_connection(const HostId& host,
   freeaddrinfo(servinfo);
   *fd = sockfd;
   return Status::OK();
+}
+
+void EventLoop::EnableDebugThreadUnsafe(DebugCallback log_cb) {
+  event_enable_debug_logging(EVENT_DBG_ALL);
+  event_set_log_callback(log_cb);
+  event_enable_debug_mode();
 }
 
 /**

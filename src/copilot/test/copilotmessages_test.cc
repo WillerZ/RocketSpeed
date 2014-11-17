@@ -4,11 +4,6 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include <unistd.h>
-#include <event2/event.h>
-#include <event2/buffer.h>
-#include <event2/bufferevent.h>
-#include <event2/thread.h>
-#include <event2/util.h>
 #include <chrono>
 #include <set>
 #include <string>
@@ -71,13 +66,10 @@ class CopilotTest {
     ASSERT_EQ(gethostname(&myname[0], sizeof(myname)), 0);
     hostname_.assign(myname);
 
-    // enable all kinds of libevent debugging
-    // not enabling debugging by default since it isn't threadsafe in our
-    // version of libevent (we compile it without threading support).
+    // enable all kinds of event loop debugging
+    // not enabling by default since it is not thread safe
     if (false) {
-      ld_event_enable_debug_logging(EVENT_DBG_ALL);
-      ld_event_set_log_callback(dump_libevent_cb);
-      ld_event_enable_debug_mode();
+      EventLoop::EnableDebugThreadUnsafe(dump_libevent_cb);
     }
   }
 
@@ -152,11 +144,11 @@ class CopilotTest {
   dump_libevent_cb(int severity, const char* msg) {
     const char* s;
     switch (severity) {
-      case _EVENT_LOG_DEBUG: s = "dbg"; break;
-      case _EVENT_LOG_MSG:   s = "msg"; break;
-      case _EVENT_LOG_WARN:  s = "wrn"; break;
-      case _EVENT_LOG_ERR:   s = "err"; break;
-      default:               s = "?";   break; /* never reached */
+      case EventLoop::kLogSeverityDebug: s = "dbg"; break;
+      case EventLoop::kLogSeverityMsg:   s = "msg"; break;
+      case EventLoop::kLogSeverityWarn:  s = "wrn"; break;
+      case EventLoop::kLogSeverityErr:   s = "err"; break;
+      default:                           s = "???"; break; // never reached
     }
     printf("[%s] %s\n", s, msg);
   }

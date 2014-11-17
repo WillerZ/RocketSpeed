@@ -11,18 +11,22 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <map>
+#include <mutex>
+
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 #include <event2/listener.h>
 #include <event2/thread.h>
 #include <event2/util.h>
-#include <atomic>
-#include <functional>
-#include <memory>
-#include <map>
-#include <mutex>
+#include "src/messages/event2_version.h"
+
 #include "external/folly/producer_consumer_queue.h"
+
 #include "src/port/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
@@ -54,6 +58,8 @@ struct SharedString : public PooledObject<SharedString> {
 
 class EventLoop {
  public:
+  static void EnableDebug();
+
   /*
    * Create an EventLoop at the specified port.
    * @param port The port on which the EventLoop is running.
@@ -109,6 +115,22 @@ class EventLoop {
   void ThreadCheck() const {
     thread_check_.Check();
   }
+
+  // Debug logging severity levels.
+  static const int kLogSeverityDebug = _EVENT_LOG_DEBUG;
+  static const int kLogSeverityMsg = _EVENT_LOG_MSG;
+  static const int kLogSeverityWarn = _EVENT_LOG_WARN;
+  static const int kLogSeverityErr = _EVENT_LOG_ERR;
+
+  // A type of a function that, provided with severity level and log message,
+  // will print or dicard it appopriately.
+  typedef void (*DebugCallback)(int, const char*);
+
+  // Enables debugging of all instances of EventLoop in this application.
+  // Messages are handled by provided callback.
+  // Debugging is not thread safe in current implementation (we compile
+  // libevent without threading support).
+  static void EnableDebugThreadUnsafe(DebugCallback log_cb);
 
  private:
   friend class SocketEvent;
@@ -199,7 +221,6 @@ class EventLoop {
   static void do_startevent(evutil_socket_t listener, short event, void *arg);
   static void do_shutdown(evutil_socket_t listener, short event, void *arg);
   static void do_command(evutil_socket_t listener, short event, void *arg);
-  static void dump_libevent_cb(int severity, const char* msg);
 };
 
 }  // namespace rocketspeed
