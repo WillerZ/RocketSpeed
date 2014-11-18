@@ -15,7 +15,8 @@ namespace rocketspeed {
 
 class MessageReceivedClient : public MessageReceived {
  public:
-  explicit MessageReceivedClient(unique_ptr<Message> m) : msg_(std::move(m)) {
+  explicit MessageReceivedClient(std::unique_ptr<Message> m) :
+      msg_(std::move(m)) {
     data_ = static_cast<const MessageData*>(msg_.get());
   }
 
@@ -37,7 +38,7 @@ class MessageReceivedClient : public MessageReceived {
   virtual ~MessageReceivedClient();
 
  private:
-  const unique_ptr<Message> msg_;
+  const std::unique_ptr<Message> msg_;
   const MessageData* data_;
 };
 

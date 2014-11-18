@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "include/Status.h"
+#include "src/util/common/base_env.h"
 #include "src/util/common/env_options.h"
 #include "src/util/common/logger.h"
 
@@ -35,7 +36,7 @@ class Connection;
 using std::unique_ptr;
 using std::shared_ptr;
 
-class Env {
+class Env : public BaseEnv {
  public:
   Env() { }
   virtual ~Env();
@@ -192,6 +193,10 @@ class Env {
 
   // Sets a thread name using the native thread handle.
   virtual void SetThreadName(ThreadId thread_id, const std::string& name) = 0;
+
+  virtual void SetCurrentThreadName(const std::string& name) override {
+    SetThreadName(GetCurrentThreadId(), name);
+  }
 
   // Waits for the specified thread to exit
   virtual void WaitForJoin(ThreadId tid) = 0;

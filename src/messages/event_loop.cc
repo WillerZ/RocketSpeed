@@ -869,7 +869,7 @@ void EventLoop::EnableDebugThreadUnsafe(DebugCallback log_cb) {
 /**
  * Constructor for a Message Loop
  */
-EventLoop::EventLoop(Env* env,
+EventLoop::EventLoop(BaseEnv* env,
                      EnvOptions env_options,
                      int port_number,
                      const std::shared_ptr<Logger>& info_log,

@@ -6,9 +6,12 @@
 #define __STDC_FORMAT_MACROS
 
 #include "src/controltower/tower.h"
+
 #include <map>
 #include <thread>
 #include <vector>
+
+#include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"

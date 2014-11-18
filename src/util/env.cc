@@ -26,18 +26,6 @@ WritableFile::~WritableFile() {
 FileLock::~FileLock() {
 }
 
-void LogFlush(Logger *info_log) {
-  if (info_log) {
-    info_log->Flush();
-  }
-}
-
-void LogFlush(const shared_ptr<Logger>& info_log) {
-  if (info_log) {
-    info_log->Flush();
-  }
-}
-
 Status WriteStringToFile(Env* env, const Slice& data, const std::string& fname,
                          bool should_sync) {
   unique_ptr<WritableFile> file;

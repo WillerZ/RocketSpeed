@@ -6,14 +6,13 @@
 
 #include <map>
 #include <memory>
-#include "src/port/Env.h"
+
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/messages/event_loop.h"
-#include "src/util/logging.h"
-#include "src/util/log_buffer.h"
-#include "src/util/auto_roll_logger.h"
+#include "src/util/common/base_env.h"
+#include "src/util/common/logger.h"
 
 namespace rocketspeed {
 
@@ -24,7 +23,7 @@ class MsgLoop {
  public:
   // Create a listener to receive messages on a specified port.
   // When a message arrives, invoke the specified callback.
-  MsgLoop(Env* env,
+  MsgLoop(BaseEnv* env,
           const EnvOptions& env_options,
           int port,
           const std::shared_ptr<Logger>& info_log,
@@ -64,7 +63,7 @@ class MsgLoop {
 
  private:
   // The Environment
-  Env* env_;
+  BaseEnv* env_;
 
   // The Environment Options
   const EnvOptions env_options_;

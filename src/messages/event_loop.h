@@ -27,12 +27,10 @@
 
 #include "external/folly/producer_consumer_queue.h"
 
-#include "src/port/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
-#include "src/util/logging.h"
-#include "src/util/log_buffer.h"
-#include "src/util/auto_roll_logger.h"
+#include "src/util/common/base_env.h"
+#include "src/util/common/logger.h"
 #include "src/util/statistics.h"
 #include "src/util/object_pool.h"
 #include "src/util/thread_check.h"
@@ -69,7 +67,7 @@ class EventLoop {
    * @param command_callback Callback invoked for every msg received
    * @param command_queue_size The size of the internal command queue
    */
-  EventLoop(Env* env,
+  EventLoop(BaseEnv* env,
             EnvOptions env_options,
             int port,
             const std::shared_ptr<Logger>& info_log,
@@ -143,10 +141,8 @@ class EventLoop {
     string_pool_.Deallocate(s);
   }
 
-  // Env
-  Env* env_;
+  BaseEnv* env_;
 
-  // Env options
   EnvOptions env_options_;
 
   // Port nuber of accept loop (in network byte order)

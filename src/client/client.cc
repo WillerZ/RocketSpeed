@@ -4,21 +4,23 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/client/client.h"
+
 #include <chrono>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/port/Env.h"
+#include "src/client/client_commands.h"
+#include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
-#include "src/port/port.h"
-#include "client_commands.h"
-#include "message_received.h"
+#include "src/util/client/client_env.h"
+#include "src/util/common/logger.h"
 
 namespace rocketspeed {
 
@@ -67,7 +69,7 @@ ClientImpl::ClientImpl(const ClientID& client_id,
                        SubscribeCallback subscription_callback,
                        MessageReceivedCallback receive_callback,
                        std::shared_ptr<Logger> info_log)
-: env_(Env::Default())
+: env_(ClientEnv::Default())
 , client_id_(client_id)
 , pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
@@ -89,7 +91,7 @@ ClientImpl::ClientImpl(const ClientID& client_id,
   };
 
   // Construct message loop.
-  msg_loop_ = new MsgLoop(Env::Default(),
+  msg_loop_ = new MsgLoop(ClientEnv::Default(),
                           EnvOptions(),
                           0,           // no accept loop
                           info_log,
@@ -97,7 +99,7 @@ ClientImpl::ClientImpl(const ClientID& client_id,
   msg_loop_->RegisterCallbacks(callbacks);
 
   msg_loop_thread_ = std::thread([this] () {
-    env_->SetThreadName(env_->GetCurrentThreadId(), "client");
+    env_->SetCurrentThreadName("client");
     msg_loop_->Run();
   });
 
@@ -231,7 +233,7 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   iter->second = data->GetSequenceNumber();
 
   // Create message wrapper for client (do not copy payload)
-  unique_ptr<MessageReceivedClient> newmsg(
+  std::unique_ptr<MessageReceivedClient> newmsg(
                                      new MessageReceivedClient(std::move(msg)));
 
   // deliver message to application

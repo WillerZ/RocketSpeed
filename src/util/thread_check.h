@@ -5,9 +5,10 @@
 //
 #pragma once
 
-#include <atomic>
 #include <assert.h>
-#include "src/port/Env.h"
+#include <atomic>
+
+#include "src/util/common/base_env.h"
 
 namespace rocketspeed {
 
@@ -20,7 +21,7 @@ namespace rocketspeed {
  */
 struct ThreadCheck {
  public:
-  explicit ThreadCheck(Env* env)
+  explicit ThreadCheck(BaseEnv* env)
 #ifndef NDEBUG
   : env_(env)
   , thread_id_(0)
@@ -35,8 +36,8 @@ struct ThreadCheck {
    */
   inline bool Ok() const {
 #ifndef NDEBUG
-    Env::ThreadId desired = env_->GetCurrentThreadId();
-    Env::ThreadId expected = 0;
+    BaseEnv::ThreadId desired = env_->GetCurrentThreadId();
+    BaseEnv::ThreadId expected = 0;
     return thread_id_.compare_exchange_strong(expected, desired) ||
            expected == desired;
 
@@ -64,8 +65,8 @@ struct ThreadCheck {
 
  private:
 #ifndef NDEBUG
-  Env* env_;
-  mutable std::atomic<Env::ThreadId> thread_id_;
+  BaseEnv* env_;
+  mutable std::atomic<BaseEnv::ThreadId> thread_id_;
 #endif
 };
 

@@ -8,6 +8,8 @@
 #include "src/messages/msg_loop.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
+#include "src/util/common/base_env.h"
+#include "src/util/common/logger.h"
 
 namespace rocketspeed {
 
@@ -47,7 +49,7 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
 /**
  * Constructor for a Message Loop
  */
-MsgLoop::MsgLoop(Env* env,
+MsgLoop::MsgLoop(BaseEnv* env,
                  const EnvOptions& env_options,
                  int port,
                  const std::shared_ptr<Logger>& info_log,

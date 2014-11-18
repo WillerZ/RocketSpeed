@@ -11,13 +11,15 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
-#include "include/RocketSpeed.h"
+
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/port/Env.h"
+#include "include/RocketSpeed.h"
+#include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
-#include "message_received.h"
+#include "src/util/client/client_env.h"
+#include "src/util/common/logger.h"
 
 namespace rocketspeed {
 
@@ -58,7 +60,7 @@ class ClientImpl : public Client {
   void ProcessMetadata(std::unique_ptr<Message> msg);
 
   // The environment
-  Env* env_;
+  ClientEnv* env_;
 
   // The identifier for the client
   const ClientID client_id_;

@@ -134,8 +134,4 @@ class NullLogger : public Logger {
   virtual void SetInfoLogLevel(const InfoLogLevel log_level) {}
 };
 
-extern void LogFlush(const std::shared_ptr<Logger>& info_log);
-
-extern void LogFlush(Logger *info_log);
-
 }  // namespace rocketspeed
