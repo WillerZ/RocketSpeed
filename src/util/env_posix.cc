@@ -38,7 +38,7 @@
 #include "include/Slice.h"
 #include "src/port/Env.h"
 #include "src/port/port.h"
-#include "src/util/coding.h"
+#include "src/util/common/coding.h"
 #include "src/util/logging.h"
 #include "src/util/posix_logger.h"
 #include "src/util/random.h"

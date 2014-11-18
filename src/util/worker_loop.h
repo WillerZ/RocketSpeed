@@ -9,8 +9,10 @@
 #include <mutex>
 #include <thread>
 #include <utility>
+
 #include "external/folly/producer_consumer_queue.h"
-#include "src/util/thread_check.h"
+
+#include "src/util/common/thread_check.h"
 #include "src/port/Env.h"
 
 namespace rocketspeed {

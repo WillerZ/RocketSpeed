@@ -3,15 +3,17 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+
 #include <chrono>
 #include <memory>
 #include <vector>
+
 #include "include/RocketSpeed.h"
 #include "src/util/testharness.h"
 #include "src/test/test_cluster.h"
 #include "src/port/port.h"
 #include "src/client/client.h"
-#include "src/util/guid_generator.h"
+#include "src/util/client/guid_generator.h"
 
 namespace rocketspeed {
 

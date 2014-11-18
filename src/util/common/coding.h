@@ -7,15 +7,17 @@
 // * Fixed-length numbers are encoded with least-significant byte first
 // * In addition we support variable length "varint" encoding
 // * Strings are encoded prefixed by their length in varint format
-
+//
 #pragma once
-#include <algorithm>
+
 #include <stdint.h>
 #include <string.h>
+#include <algorithm>
 #include <string>
-#include "src/port/port.h"
+
 #include "include/Slice.h"
 #include "include/Types.h"
+#include "src/port/port.h"
 
 namespace rocketspeed {
 

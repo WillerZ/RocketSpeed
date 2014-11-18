@@ -3,30 +3,17 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
-#include "src/util/client/client_env.h"
+#include "client_env.h"
 
 #include <errno.h>
 #include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
-#include <algorithm>
-#include <deque>
-#include <set>
-#include <thread>
-
 #include "include/Slice.h"
-#include "src/port/Env.h"
-#include "src/port/port.h"
-#include "src/util/coding.h"
-#include "src/util/logging.h"
-#include "src/util/posix_logger.h"
-#include "src/util/random.h"
+#include "src/util/common/coding.h"
 
 // Get nano time for mach systems
 #ifdef __MACH__

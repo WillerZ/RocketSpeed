@@ -6,6 +6,7 @@
 #pragma once
 
 #include <random>
+
 #include "include/Types.h"
 
 namespace rocketspeed {

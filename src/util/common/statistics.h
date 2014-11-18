@@ -5,12 +5,13 @@
 //
 #pragma once
 
-#include "src/port/port.h"
 #include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "src/port/port.h"
 
 namespace rocketspeed {
 

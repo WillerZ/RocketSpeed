@@ -7,9 +7,10 @@
 
 #include <memory>
 #include <string>
+
 #include "include/Types.h"
 #include "src/messages/messages.h"
-#include "src/util/autovector.h"
+#include "src/util/common/autovector.h"
 
 namespace rocketspeed {
 

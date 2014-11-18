@@ -2,6 +2,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
 #include <inttypes.h>
@@ -31,9 +32,9 @@
 #include "src/messages/serializer.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/logger.h"
-#include "src/util/statistics.h"
-#include "src/util/object_pool.h"
-#include "src/util/thread_check.h"
+#include "src/util/common/statistics.h"
+#include "src/util/common/object_pool.h"
+#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 

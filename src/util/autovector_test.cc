@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "src/port/Env.h"
-#include "src/util/autovector.h"
+#include "src/util/common/autovector.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 

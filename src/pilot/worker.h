@@ -8,12 +8,13 @@
 #include <map>
 #include <memory>
 #include <mutex>
+
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/pilot/options.h"
-#include "src/util/statistics.h"
+#include "src/util/common/object_pool.h"
+#include "src/util/common/statistics.h"
 #include "src/util/worker_loop.h"
-#include "src/util/object_pool.h"
 
 namespace rocketspeed {
 

@@ -4,8 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
-
-#include "src/messages/event_loop.h"
+#include "event_loop.h"
 
 #include <limits.h>
 #include <sys/eventfd.h>

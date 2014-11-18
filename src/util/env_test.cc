@@ -15,7 +15,7 @@
 
 #include "src/port/Env.h"
 #include "src/port/port.h"
-#include "src/util/coding.h"
+#include "src/util/common/coding.h"
 #include "src/util/log_buffer.h"
 #include "src/util/mutexlock.h"
 #include "src/util/testharness.h"

@@ -11,11 +11,10 @@ LOCAL_SRC_FILES := \
 	src/messages/msg_loop.cc \
 	src/port/port_posix.cc \
 	src/util/build_version.cc \
-	src/util/coding.cc \
-	src/util/env.cc \
-	src/util/env_posix.cc \
-	src/util/guid_generator.cc \
-	src/util/statistics.cc \
+	src/util/client/client_env.cc \
+	src/util/client/guid_generator.cc \
+	src/util/common/coding.cc \
+	src/util/common/statistics.cc \
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)
 

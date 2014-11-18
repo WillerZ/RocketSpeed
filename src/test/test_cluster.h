@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <utility>
+
 #include "include/Types.h"
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
@@ -16,7 +17,7 @@
 #include "src/pilot/pilot.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/storage.h"
-#include "src/util/statistics.h"
+#include "src/util/common/statistics.h"
 
 #ifdef USE_LOGDEVICE
 // We'll set up a local, isolated LogDevice instance.

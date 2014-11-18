@@ -4,12 +4,14 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/controltower/room.h"
+
 #include <map>
 #include <mutex>
 #include <string>
 #include <vector>
-#include "src/util/coding.h"
+
 #include "src/controltower/tower.h"
+#include "src/util/common/coding.h"
 
 namespace rocketspeed {
 

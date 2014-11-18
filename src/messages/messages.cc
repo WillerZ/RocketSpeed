@@ -3,15 +3,15 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-#include "src/messages/messages.h"
+#include "messages.h"
 
 #include <string>
 #include <vector>
 
 #include "include/Slice.h"
 #include "include/Status.h"
-#include "src/util/coding.h"
-#include "src/util/guid_generator.h"
+#include "src/util/client/guid_generator.h"
+#include "src/util/common/coding.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are

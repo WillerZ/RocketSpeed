@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 #include "include/Status.h"
 #include "src/util/common/env_options.h"

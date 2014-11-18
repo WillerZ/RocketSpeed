@@ -4,10 +4,12 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 
 #include <vector>
+
 #include <folly/Benchmark.h>
 #include <folly/Foreach.h>
+
 #include "common/init/Init.h"
-#include "src/util/guid_generator.h"
+#include "src/util/common/guid_generator.h"
 
 using namespace std;
 using namespace folly;

@@ -8,6 +8,8 @@
 #include <atomic>
 #include <memory>
 
+namespace rocketspeed {
+
 /**
  * A simple object pooling allocator, constructed from an intrusive linked list.
  *
@@ -82,3 +84,5 @@ struct PooledObjectList {
  private:
   std::unique_ptr<PooledObject<T>> head_;
 };
+
+}  // namespace

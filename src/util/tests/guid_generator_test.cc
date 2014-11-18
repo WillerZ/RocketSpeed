@@ -2,11 +2,13 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//
 
 #include <future>
 #include <vector>
 #include <algorithm>
-#include "src/util/guid_generator.h"
+
+#include "src/util/client/guid_generator.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 

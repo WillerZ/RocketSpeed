@@ -8,11 +8,12 @@
 #include <string>
 #include <vector>
 #include <memory>
+
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/messages/serializer.h"
-#include "src/util/autovector.h"
+#include "src/util/common/autovector.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are
