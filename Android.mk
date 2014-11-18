@@ -9,7 +9,6 @@ LOCAL_SRC_FILES := \
 	src/messages/event_loop.cc \
 	src/messages/messages.cc \
 	src/messages/msg_loop.cc \
-	src/port/port_posix.cc \
 	src/util/build_version.cc \
 	src/util/client/client_env.cc \
 	src/util/client/guid_generator.cc \
@@ -24,7 +23,7 @@ LOCAL_CPPFLAGS := \
 	-std=c++11 \
 	-Wall \
 	-Werror \
-	-DROCKETSPEED_PLATFORM_POSIX \
+	-DROCKETSPEED_PLATFORM_ANDROID \
 	-DOS_ANDROID \
 	-DUSE_UPSTREAM_LIBEVENT \
 

@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <cassert>
 #include <atomic>
 #include <memory>
 #include <string>

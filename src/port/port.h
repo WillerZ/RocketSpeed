@@ -3,17 +3,11 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+#pragma once
 
-#ifndef STORAGE_ROCKETSPEED_PORT_PORT_H_
-#define STORAGE_ROCKETSPEED_PORT_PORT_H_
-
-#include <string.h>
-
-// Include the appropriate platform specific file below.  If you are
-// porting to a new platform, see "port_example.h" for documentation
-// of what the new port_<platform>.h file must provide.
+// Include the appropriate platform specific file below.
 #if defined(ROCKETSPEED_PLATFORM_POSIX)
-#  include "src/port/port_posix.h"
+#include "src/port/port_posix.h"
+#elif defined(ROCKETSPEED_PLATFORM_ANDROID)
+#include "src/port/port_android.h"
 #endif
-
-#endif  // STORAGE_ROCKETSPEED_PORT_PORT_H_

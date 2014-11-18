@@ -55,20 +55,6 @@
 #include <memory>
 
 #include <string>
-#if defined(OS_ANDROID)
-// std::to_string(...) is missing in <string> on Android:
-// https://code.google.com/p/android/issues/detail?id=53460
-#include <sstream>
-
-namespace std {
-template <typename T>
-string to_string(const T& t) {
-  ostringstream os;
-  os << t;
-  return os.str();
-}
-} // namespace std
-#endif
 
 #include "src/port/atomic_pointer.h"
 
