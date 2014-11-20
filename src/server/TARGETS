@@ -18,6 +18,7 @@ cpp_binary(
         '@/rocketspeed/github/src/controltower:control_tower_library',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
         '@/mcrouter/lib/fbi',  # needed for fbi_set_debug
     ],
