@@ -17,9 +17,9 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/client/client_commands.h"
+#include "src/client/client_env.h"
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
-#include "src/util/client/client_env.h"
 #include "src/util/common/logger.h"
 
 namespace rocketspeed {

@@ -6,13 +6,13 @@ LOCAL_MODULE := rocketspeed
 
 LOCAL_SRC_FILES := \
 	src/client/client.cc \
+	src/client/client_env.cc \
 	src/messages/event_loop.cc \
 	src/messages/messages.cc \
 	src/messages/msg_loop.cc \
 	src/util/build_version.cc \
-	src/util/client/client_env.cc \
-	src/util/client/guid_generator.cc \
 	src/util/common/coding.cc \
+	src/util/common/guid_generator.cc \
 	src/util/common/statistics.cc \
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)

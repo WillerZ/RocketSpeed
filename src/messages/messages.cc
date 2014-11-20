@@ -10,8 +10,8 @@
 
 #include "include/Slice.h"
 #include "include/Status.h"
-#include "src/util/client/guid_generator.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/guid_generator.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are

@@ -13,7 +13,7 @@
 #include "src/test/test_cluster.h"
 #include "src/port/port.h"
 #include "src/client/client.h"
-#include "src/util/client/guid_generator.h"
+#include "src/util/common/guid_generator.h"
 
 namespace rocketspeed {
 

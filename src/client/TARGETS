@@ -2,6 +2,7 @@ cpp_library(
     name = 'client_library',
     srcs = [
         'client.cc',
+        'client_env.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',
@@ -12,6 +13,7 @@ cpp_library(
     deps = [
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
     ],
     compiler_flags = [

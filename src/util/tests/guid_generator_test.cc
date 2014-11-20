@@ -8,7 +8,7 @@
 #include <vector>
 #include <algorithm>
 
-#include "src/util/client/guid_generator.h"
+#include "src/util/common/guid_generator.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 

@@ -18,7 +18,7 @@
 #include "src/messages/messages.h"
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
-#include "src/util/client/guid_generator.h"
+#include "src/util/common/guid_generator.h"
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
 
