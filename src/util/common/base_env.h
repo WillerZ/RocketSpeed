@@ -39,8 +39,11 @@ class BaseEnv {
   // Gets the thread ID for the current thread.
   virtual ThreadId GetCurrentThreadId() const = 0;
 
-  // Sets a thread name using the native thread handle.
-  virtual void SetCurrentThreadName(const std::string& name) = 0;
+  // Sets a thread name using the native thread handle if supported.
+  virtual void SetCurrentThreadName(const std::string& name);
+
+  // Gets a thread name for current thread.
+  virtual const std::string& GetCurrentThreadName();
 
   // Returns the number of micro-seconds since some fixed point in time.
   // Only useful for computing deltas of time.

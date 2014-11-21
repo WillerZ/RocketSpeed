@@ -36,10 +36,6 @@ class ClientEnv : public BaseEnv {
 
   virtual ThreadId GetCurrentThreadId() const;
 
-  virtual const std::string GetCurrentThreadName();
-
-  virtual void SetCurrentThreadName(const std::string& name);
-
   virtual uint64_t NowMicros();
 
   virtual uint64_t NowNanos();

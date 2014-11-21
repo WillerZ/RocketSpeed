@@ -195,13 +195,6 @@ class Env : public BaseEnv {
   // Gets the thread ID for the current thread.
   virtual ThreadId GetCurrentThreadId() const = 0;
 
-  // Sets a thread name using the native thread handle.
-  virtual void SetThreadName(ThreadId thread_id, const std::string& name) = 0;
-
-  virtual void SetCurrentThreadName(const std::string& name) override {
-    SetThreadName(GetCurrentThreadId(), name);
-  }
-
   // Waits for the specified thread to exit
   virtual void WaitForJoin(ThreadId tid) = 0;
 

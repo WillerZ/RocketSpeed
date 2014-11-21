@@ -1332,8 +1332,6 @@ class PosixEnv : public Env {
 
   virtual ThreadId GetCurrentThreadId() const;
 
-  virtual void SetThreadName(ThreadId thread_id, const std::string& name);
-
   virtual void WaitForJoin();
 
   virtual void WaitForJoin(ThreadId tid);
@@ -1365,18 +1363,6 @@ class PosixEnv : public Env {
     return gettid(tid);
   }
 
-  static std::string gettname() {
-#if !defined(OS_ANDROID)
-    char name[64];
-    // this can be optimized by keeping a local hashmap
-    if (pthread_getname_np(pthread_self(), name, sizeof(name)) == 0) {
-      name[sizeof(name)-1] = 0;
-      return std::string(name);
-    }
-#endif
-    return "";
-  }
-
   virtual Status NewLogger(const std::string& fname,
                            shared_ptr<Logger>* result) {
     FILE* f = fopen(fname.c_str(), "w");
@@ -1386,8 +1372,8 @@ class PosixEnv : public Env {
     } else {
       int fd = fileno(f);
       SetFD_CLOEXEC(fd, nullptr);
-      result->reset(new PosixLogger(f, &PosixEnv::gettid,
-                                    &PosixEnv::gettname, this));
+      //FIXME (stubaq)
+      result->reset(new PosixLogger(f, &PosixEnv::gettid, this));
       return Status::OK();
     }
   }
@@ -1830,22 +1816,13 @@ Env::ThreadId PosixEnv::StartThread(std::function<void()> f,
   PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
+
+  //SetThreadName(t, thread_name); FIXME(stupaq)
   return (Env::ThreadId)t;
 }
 
 Env::ThreadId PosixEnv::GetCurrentThreadId() const {
   return static_cast<Env::ThreadId>(pthread_self());
-}
-
-void PosixEnv::SetThreadName(ThreadId thread_id, const std::string& name) {
-    // set name of thread if supported
-#if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
-#if __GLIBC_PREREQ(2, 12)
-  {
-    pthread_setname_np((pthread_t)thread_id, name.c_str());
-  }
-#endif
-#endif
 }
 
 void PosixEnv::WaitForJoin() {

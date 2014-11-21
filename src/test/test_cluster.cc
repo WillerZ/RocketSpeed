@@ -117,12 +117,12 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
 
   // Start threads.
   control_tower_thread_ = std::thread([env, this]() {
-    env->SetThreadName(env->GetCurrentThreadId(), "tower");
+    env->SetCurrentThreadName("tower");
     control_tower_loop_->Run();
   });
 
   cockpit_thread_ = std::thread([env, this]() {
-    env->SetThreadName(env->GetCurrentThreadId(), "cockpit");
+    env->SetCurrentThreadName("cockpit");
     cockpit_loop_->Run();
   });
 

@@ -39,8 +39,7 @@ void Pilot::StartWorkers() {
   for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
       [this, i] (PilotWorker* worker) {
-        options_.env->SetThreadName(options_.env->GetCurrentThreadId(),
-                                    "pilot-" + std::to_string(i));
+        options_.env->SetCurrentThreadName("pilot-" + std::to_string(i));
         worker->Run();
       },
       workers_[i].get());

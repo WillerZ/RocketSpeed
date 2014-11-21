@@ -71,26 +71,6 @@ BaseEnv::ThreadId ClientEnv::GetCurrentThreadId() const {
   return static_cast<BaseEnv::ThreadId>(pthread_self());
 }
 
-const std::string ClientEnv::GetCurrentThreadName() {
-#if !defined(OS_ANDROID)
-  char name[64];
-  // this can be optimized by keeping a local hashmap
-  if (pthread_getname_np(pthread_self(), name, sizeof(name)) == 0) {
-    name[sizeof(name)-1] = 0;
-    return std::string(name);
-  }
-#endif
-  return "";
-}
-
-void ClientEnv::SetCurrentThreadName(const std::string& name) {
-#if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
-#if __GLIBC_PREREQ(2, 12)
-  pthread_setname_np(pthread_self(), name.c_str());
-#endif
-#endif
-}
-
 uint64_t ClientEnv::NowMicros() {
   struct timeval tv;
   gettimeofday(&tv, nullptr);
