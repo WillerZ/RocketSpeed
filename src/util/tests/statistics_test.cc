@@ -71,11 +71,11 @@ TEST(StatisticsTest, Basic) {
   histo_c2->Record(99);
 
   ASSERT_EQ(stats1.Report(),
-    "count1: 10\n"
-    "count2: 20\n"
-    "count3: 30\n"
-    "histo1: p50: 55.0  p90: 77.5  p99: 77.5  p99.9: 77.5\n"
-    "histo2: p50: 16.0  p90: 17.0  p99: 17.0  p99.9: 17.0\n");
+    "count1:                                   10\n"
+    "count2:                                   20\n"
+    "count3:                                   30\n"
+    "histo1:                                   p50: 55.0      p90: 77.5      p99: 77.5      p99.9: 77.5\n"
+    "histo2:                                   p50: 16.0      p90: 17.0      p99: 17.0      p99.9: 17.0\n");
 
   // Aggregate stats1 into stats2
   stats2.Aggregate(stats1);
@@ -89,12 +89,12 @@ TEST(StatisticsTest, Basic) {
   ASSERT_LT(histo_c2->Percentile(0.5), 100);
 
   ASSERT_EQ(stats2.Report(),
-    "count1: 110\n"
-    "count2: 220\n"
-    "count3: 30\n"
-    "histo1: p50: 55.0  p90: 100.0  p99: 100.0  p99.9: 100.0\n"
-    "histo2: p50: 16.0  p90: 18.0  p99: 18.0  p99.9: 18.0\n"
-    "histo3: p50: 55.0  p90: 77.5  p99: 77.5  p99.9: 77.5\n");
+    "count1:                                   110\n"
+    "count2:                                   220\n"
+    "count3:                                   30\n"
+    "histo1:                                   p50: 55.0      p90: 100.0     p99: 100.0     p99.9: 100.0\n"
+    "histo2:                                   p50: 16.0      p90: 18.0      p99: 18.0      p99.9: 18.0\n"
+    "histo3:                                   p50: 55.0      p90: 77.5      p99: 77.5      p99.9: 77.5\n");
 }
 
 TEST(StatisticsTest, HistogramPercentiles) {

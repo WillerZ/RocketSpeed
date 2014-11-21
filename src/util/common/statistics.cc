@@ -132,7 +132,10 @@ void Histogram::Aggregate(const Histogram& histogram) {
 std::string Histogram::Report() const {
   // Reports the p50, p90, p99, and p99.9 percentiles.
   char buffer[256];
-  snprintf(buffer, 256, "p50: %.1lf  p90: %.1lf  p99: %.1lf  p99.9: %.1lf",
+  snprintf(buffer, 256, "p50: %-8.1lf  "
+                        "p90: %-8.1lf  "
+                        "p99: %-8.1lf  "
+                        "p99.9: %.1lf",
     Percentile(0.50), Percentile(0.90), Percentile(0.99), Percentile(0.999));
   return std::string(buffer);
 }
@@ -165,15 +168,22 @@ Histogram* Statistics::AddLatency(const std::string& name) {
 
 std::string Statistics::Report() const {
   std::vector<std::string> reports;
+  size_t width = 40;
 
   // Add all counters to the report.
   for (const auto& stat : counters_) {
-    reports.emplace_back(stat.first + ": " + stat.second->Report());
+    size_t padding = width - std::min(width, stat.first.size());
+    reports.emplace_back(stat.first +
+                         ": " + std::string(padding, ' ') +
+                         stat.second->Report());
   }
 
   // Add all histograms to the report.
   for (const auto& stat : histograms_) {
-    reports.emplace_back(stat.first + ": " + stat.second->Report());
+    size_t padding = width - std::min(width, stat.first.size());
+    reports.emplace_back(stat.first +
+                         ": " + std::string(padding, ' ') +
+                         stat.second->Report());
   }
 
   // Sort the strings (effectively sorting by statistic name).
