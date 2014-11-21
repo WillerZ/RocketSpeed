@@ -186,7 +186,11 @@ class Env : public BaseEnv {
   // When "function(arg)" returns, the thread will be destroyed.
   // Returns an identifier for the thread that is created.
   virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
-                               std::string thread_name = "") = 0;
+                               const std::string& thread_name = "") = 0;
+
+  // Start a new thread, invoking an std::function.
+  virtual ThreadId StartThread(std::function<void()> f,
+                               const std::string& thread_name = "") = 0;
 
   // Gets the thread ID for the current thread.
   virtual ThreadId GetCurrentThreadId() const = 0;
@@ -639,8 +643,14 @@ class EnvWrapper : public Env {
   void Schedule(void (*f)(void*), void* a, Priority pri) {
     return target_->Schedule(f, a, pri);
   }
-  ThreadId StartThread(void (*f)(void*), void* a, std::string n) {
+  ThreadId StartThread(void (*f)(void*), void* a, const std::string& n) {
     return target_->StartThread(f, a, n);
+  }
+  ThreadId StartThread(std::function<void()> f, const std::string& n) {
+    return target_->StartThread(std::move(f), n);
+  }
+  ThreadId GetCurrentThreadId() const {
+    return target_->GetCurrentThreadId();
   }
   void WaitForJoin() { return target_->WaitForJoin(); }
   void WaitForJoin(ThreadId tid) { return target_->WaitForJoin(tid); }

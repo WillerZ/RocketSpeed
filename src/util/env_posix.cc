@@ -1061,7 +1061,7 @@ class PosixEnv : public Env {
 
   virtual ~PosixEnv(){
     for (const auto tid : threads_to_join_) {
-      pthread_join(tid, nullptr);
+      PthreadCall("join", pthread_join(tid, nullptr));
     }
   }
 
@@ -1325,7 +1325,10 @@ class PosixEnv : public Env {
   virtual void Schedule(void (*function)(void*), void* arg, Priority pri = LOW);
 
   virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
-                               std::string thread_name);
+                               const std::string& thread_name);
+
+  virtual ThreadId StartThread(std::function<void()> f,
+                               const std::string& thread_name);
 
   virtual ThreadId GetCurrentThreadId() const;
 
@@ -1610,7 +1613,7 @@ class PosixEnv : public Env {
       PthreadCall("signalall", pthread_cond_broadcast(&bgsignal_));
       PthreadCall("unlock", pthread_mutex_unlock(&mu_));
       for (const auto tid : bgthreads_) {
-        pthread_join(tid, nullptr);
+        PthreadCall("join", pthread_join(tid, nullptr));
       }
     }
 
@@ -1801,33 +1804,32 @@ unsigned int PosixEnv::GetThreadPoolQueueLen(Priority pri) const {
   return thread_pools_[pri].GetQueueLen();
 }
 
-namespace {
-struct StartThreadState {
-  void (*user_function)(void*);
-  void* arg;
-};
-}
-
 static void* StartThreadWrapper(void* arg) {
-  StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
-  state->user_function(state->arg);
+  std::function<void()>* state = reinterpret_cast<std::function<void()>*>(arg);
+  (*state)();
   delete state;
   return nullptr;
 }
 
 Env::ThreadId PosixEnv::StartThread(void (*function)(void* arg),
-  void* arg, std::string thread_name) {
+                                    void* arg, const std::string& thread_name) {
+  // Forward to std::function version.
+  return StartThread([function, arg] () { (*function)(arg); }, thread_name);
+}
+
+Env::ThreadId PosixEnv::StartThread(std::function<void()> f,
+                                    const std::string& thread_name) {
+  auto named_f = [this, f, thread_name] () {
+    SetCurrentThreadName(thread_name);
+    f();
+  };
+  std::function<void()>* state = new std::function<void()>(std::move(named_f));
   pthread_t t;
-  StartThreadState* state = new StartThreadState;
-  state->user_function = function;
-  state->arg = arg;
   PthreadCall("start thread",
               pthread_create(&t, nullptr,  &StartThreadWrapper, state));
   PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
-
-  SetThreadName(t, thread_name);
   return (Env::ThreadId)t;
 }
 
@@ -1847,14 +1849,21 @@ void PosixEnv::SetThreadName(ThreadId thread_id, const std::string& name) {
 }
 
 void PosixEnv::WaitForJoin() {
+  PthreadCall("lock", pthread_mutex_lock(&mu_));
   for (const auto tid : threads_to_join_) {
-    pthread_join(tid, nullptr);
+    PthreadCall("join", pthread_join(tid, nullptr));
   }
   threads_to_join_.clear();
+  PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 }
 
 void PosixEnv::WaitForJoin(Env::ThreadId tid) {
-  pthread_join((pthread_t)tid, nullptr);
+  PthreadCall("lock", pthread_mutex_lock(&mu_));
+  auto it = std::remove(threads_to_join_.begin(), threads_to_join_.end(), tid);
+  assert(it != threads_to_join_.end());
+  threads_to_join_.erase(it);
+  PthreadCall("unlock", pthread_mutex_unlock(&mu_));
+  PthreadCall("join", pthread_join((pthread_t)tid, nullptr));
 }
 
 }  // namespace

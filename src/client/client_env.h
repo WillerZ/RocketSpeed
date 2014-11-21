@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <cstdarg>
+#include <functional>
 #include <string>
 #include <memory>
 #include <vector>
@@ -24,6 +25,14 @@ class ClientEnv : public BaseEnv {
   // Return a default environment suitable for the current operating system.
   // The result of Default() belongs to rocketspeed and must never be deleted.
   static ClientEnv* Default();
+
+  virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
+                               const std::string& thread_name = "");
+
+  virtual ThreadId StartThread(std::function<void()> f,
+                               const std::string& thread_name = "");
+
+  virtual void WaitForJoin(ThreadId tid);
 
   virtual ThreadId GetCurrentThreadId() const;
 

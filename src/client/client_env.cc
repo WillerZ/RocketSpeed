@@ -21,11 +21,50 @@
 #include <mach/mach.h>
 #endif
 
+namespace {
+void PthreadCall(const char* label, int result) {
+  if (result != 0) {
+    fprintf(stderr, "pthread %s: %s\n", label, strerror(result));
+    exit(1);
+  }
+}
+}
+
 namespace rocketspeed {
 
 ClientEnv* ClientEnv::Default() {
   static ClientEnv client_env;
   return &client_env;
+}
+
+static void* StartThreadWrapper(void* arg) {
+  std::function<void()>* state = reinterpret_cast<std::function<void()>*>(arg);
+  (*state)();
+  delete state;
+  return nullptr;
+}
+
+BaseEnv::ThreadId ClientEnv::StartThread(void (*function)(void* arg), void* arg,
+                                         const std::string& thread_name) {
+  // Forward to std::function version.
+  return StartThread([function, arg] () { (*function)(arg); }, thread_name);
+}
+
+BaseEnv::ThreadId ClientEnv::StartThread(std::function<void()> f,
+                                         const std::string& thread_name) {
+  auto named_f = [this, f, thread_name] () {
+    SetCurrentThreadName(thread_name);
+    f();
+  };
+  std::function<void()>* state = new std::function<void()>(std::move(named_f));
+  pthread_t t;
+  PthreadCall("start thread",
+              pthread_create(&t, nullptr,  &StartThreadWrapper, state));
+  return (BaseEnv::ThreadId)t;
+}
+
+void ClientEnv::WaitForJoin(ThreadId tid) {
+  PthreadCall("join", pthread_join((pthread_t)tid, nullptr));
 }
 
 BaseEnv::ThreadId ClientEnv::GetCurrentThreadId() const {

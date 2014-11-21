@@ -23,6 +23,19 @@ class BaseEnv {
   // An identifier for a thread.
   typedef uint64_t ThreadId;
 
+  // Start a new thread, invoking "function(arg)" within the new thread.
+  // When "function(arg)" returns, the thread will be destroyed.
+  // Returns an identifier for the thread that is created.
+  virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
+                               const std::string& thread_name = "") = 0;
+
+  // Start a new thread, invoking an std::function.
+  virtual ThreadId StartThread(std::function<void()> f,
+                               const std::string& thread_name = "") = 0;
+
+  // Waits for the specified thread to exit
+  virtual void WaitForJoin(ThreadId tid) = 0;
+
   // Gets the thread ID for the current thread.
   virtual ThreadId GetCurrentThreadId() const = 0;
 
