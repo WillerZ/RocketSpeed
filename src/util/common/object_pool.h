@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 
 namespace rocketspeed {
 
@@ -54,11 +55,13 @@ struct PooledObject {
  private:
   // Only the pool list can access the tail.
   friend struct PooledObjectList<T>;
-  std::unique_ptr<PooledObject<T>> tail_;
+
+  PooledObject<T>* tail_ = nullptr;
 };
 
 /**
  * The actual pool of objects.
+ * Not thread safe.
  */
 template <typename T>
 struct PooledObjectList {
@@ -68,7 +71,8 @@ struct PooledObjectList {
     if (T* obj = static_cast<T*>(head_.release())) {
       // List has an object, so use that memory.
       // Just construct a new object with it.
-      head_ = std::move(obj->tail_);
+      head_.reset(obj->tail_);
+      obj->tail_ = nullptr;
       *obj = T(std::forward<Args>(args)...);
       return obj;
     }
@@ -77,12 +81,48 @@ struct PooledObjectList {
   }
 
   void Deallocate(T* obj) {
-    obj->tail_ = std::move(head_);
+    obj->tail_ = head_.release();
     head_.reset(obj);
+  }
+
+  ~PooledObjectList() {
+    // Delete in a loop.
+    // Doing this recursively can cause stack overflow.
+    PooledObject<T>* head = head_.release();
+    while (head) {
+      PooledObject<T>* next = head->tail_;
+      delete head;
+      head = next;
+    }
   }
 
  private:
   std::unique_ptr<PooledObject<T>> head_;
+};
+
+/**
+ * Thread safe version of PooledObjectList.
+ *
+ * Currently uses a lock, but should be possible to write a lock-free version
+ * of this if necessary.
+ */
+template <typename T>
+struct SharedPooledObjectList {
+ public:
+  template <typename... Args>
+  T* Allocate(Args&&... args) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return list_.Allocate(std::forward<Args>(args)...);
+  }
+
+  void Deallocate(T* obj) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    list_.Deallocate(obj);
+  }
+
+ private:
+  PooledObjectList<T> list_;
+  std::mutex mutex_;
 };
 
 }  // namespace
