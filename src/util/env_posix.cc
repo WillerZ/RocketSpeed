@@ -1352,17 +1352,6 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
-  static uint64_t gettid(pthread_t tid) {
-    uint64_t thread_id = 0;
-    memcpy(&thread_id, &tid, std::min(sizeof(thread_id), sizeof(tid)));
-    return thread_id;
-  }
-
-  static uint64_t gettid() {
-    pthread_t tid = pthread_self();
-    return gettid(tid);
-  }
-
   virtual Status NewLogger(const std::string& fname,
                            shared_ptr<Logger>* result) {
     FILE* f = fopen(fname.c_str(), "w");
@@ -1372,8 +1361,7 @@ class PosixEnv : public Env {
     } else {
       int fd = fileno(f);
       SetFD_CLOEXEC(fd, nullptr);
-      //FIXME (stubaq)
-      result->reset(new PosixLogger(f, &PosixEnv::gettid, this));
+      result->reset(new PosixLogger(f, this));
       return Status::OK();
     }
   }
@@ -1645,10 +1633,6 @@ class PosixEnv : public Env {
             WakeUpAllThreads();
           }
           PthreadCall("unlock", pthread_mutex_unlock(&mu_));
-          // TODO(sdong): temp logging. Need to help debugging. Remove it when
-          // the feature is proved to be stable.
-          fprintf(stdout, "Bg thread %zu terminates %llx\n", thread_id,
-                  static_cast<long long unsigned int>(gettid()));
           break;
         }
         void (*function)(void*) = queue_.front().function;
@@ -1812,13 +1796,12 @@ Env::ThreadId PosixEnv::StartThread(std::function<void()> f,
   std::function<void()>* state = new std::function<void()>(std::move(named_f));
   pthread_t t;
   PthreadCall("start thread",
-              pthread_create(&t, nullptr,  &StartThreadWrapper, state));
+              pthread_create(&t, nullptr, &StartThreadWrapper, state));
   PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 
-  //SetThreadName(t, thread_name); FIXME(stupaq)
-  return (Env::ThreadId)t;
+  return static_cast<Env::ThreadId>(t);
 }
 
 Env::ThreadId PosixEnv::GetCurrentThreadId() const {

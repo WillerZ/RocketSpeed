@@ -1,6 +1,7 @@
 cpp_library(
     name = 'common',
     srcs = [
+        'base_env.cc',
         'coding.cc',
         'guid_generator.cc',
         'statistics.cc',

@@ -28,7 +28,6 @@ const int kDebugLogChunkSize = 128 * 1024;
 class PosixLogger : public Logger {
  private:
   FILE* file_;
-  uint64_t (*gettid_)();  // Return the thread id for the current thread
   std::atomic_size_t log_size_;
   int fd_;
   const static uint64_t flush_every_seconds_ = 5;
@@ -36,12 +35,11 @@ class PosixLogger : public Logger {
   Env* env_;
   bool flush_pending_;
  public:
-  PosixLogger(FILE* f, uint64_t (*gettid)(),
+  PosixLogger(FILE* f,
               Env* env,
               const InfoLogLevel log_level = InfoLogLevel::ERROR_LEVEL)
       : Logger(log_level),
         file_(f),
-        gettid_(gettid),
         log_size_(0),
         fd_(fileno(f)),
         last_flush_micros_(0),
@@ -58,7 +56,7 @@ class PosixLogger : public Logger {
     last_flush_micros_ = env_->NowMicros();
   }
   virtual void Logv(const char* format, va_list ap) {
-    const uint64_t thread_id = (*gettid_)();
+    const uint64_t thread_id = env_->GetCurrentThreadId();
     const std::string& tname_ = env_->GetCurrentThreadName();
 
     // We try twice: the first time with a fixed-size stack allocated buffer,
