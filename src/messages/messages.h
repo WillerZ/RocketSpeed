@@ -89,13 +89,11 @@ class TopicPair {
 
 /**
  * This is a superclass of all RocketSpeed messages.
- * All RocketSpeed messages have a type, a sequence number,
- * a tenant-id and a msgid.
+ * All RocketSpeed messages have a type, tenant-id and Origin.
  * The type identifies the functionality of the message,
- * the TenantId is used to implement fair sharing of resources
+ * The TenantId is used to implement fair sharing of resources
  * among multiple users of the system.
- * The sequence number is used to delivery messages in order.
- * The msgid is used to remove duplicates messages.
+ * The Origin identifies the entity that produced this message.
  */
 class Message : public Serializer {
  public:
