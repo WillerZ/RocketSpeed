@@ -77,6 +77,7 @@ TEST(IntegrationTest, OneMessage) {
                     publish_callback,
                     subscription_callback,
                     receive_callback,
+                    nullptr,
                     info_log);
 
   // Send a message.
@@ -89,10 +90,10 @@ TEST(IntegrationTest, OneMessage) {
   ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
-  std::vector<SubscriptionPair> subscriptions = {
-    SubscriptionPair(1, topic, namespace_id)
+  std::vector<SubscriptionRequest> subscriptions = {
+    SubscriptionRequest(namespace_id, topic, 1)
   };
-  client.ListenTopics(subscriptions, topic_options);
+  client.ListenTopics(subscriptions);
 
   // Wait for the message.
   bool result = msg_received.TimedWait(std::chrono::seconds(10));
@@ -137,6 +138,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
                     publish_callback,
                     subscription_callback,
                     receive_callback,
+                    nullptr,
                     info_log);
 
   // Send some messages and wait for the acks.
@@ -147,10 +149,10 @@ TEST(IntegrationTest, SequenceNumberZero) {
   }
 
   // Subscribe using seqno 0.
-  std::vector<SubscriptionPair> subscriptions = {
-    SubscriptionPair(0, topic, ns)
+  std::vector<SubscriptionRequest> subscriptions = {
+    SubscriptionRequest(ns, topic, 0)
   };
-  client.ListenTopics(subscriptions, opts);
+  client.ListenTopics(subscriptions);
   ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
 
   // Should not receive any of the last three messages.

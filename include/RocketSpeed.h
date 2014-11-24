@@ -12,6 +12,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
+#include "include/SubscriptionStorage.h"
 
 /**
  * This is the RocketSpeed interface. The interface is partitioned
@@ -51,6 +52,7 @@ class Client {
    * @param publish_callback Invoked when a sent-message is acknowledged
    * @param subscription_callback Invoked when a subscription is confirmed
    * @param receive_callback Invoked when a message is received
+   * @param storage Strategy for storing subscription state
    * @param client Output parameter for constructred client
    * @return on success returns OK(), otherwise errorcode
    *
@@ -61,6 +63,7 @@ class Client {
                      PublishCallback publish_callback,
                      SubscribeCallback subscription_callback,
                      MessageReceivedCallback receive_callback,
+                     std::unique_ptr<SubscriptionStorage> storage,
                      Client** client);
 
   /**
@@ -93,10 +96,22 @@ class Client {
    * Messages arriving for this topic will be returned to the
    * application via invocation to MessageReceivedCallback.
    *
-   * @param name Name of this topic to be opened
-   * @param options Quality of service for this Topic
+   * @param requests a vector describing subscription/unsubscription requests
    */
-  virtual void ListenTopics(std::vector<SubscriptionPair>& names,
-                            const TopicOptions& options) = 0;
+  virtual void ListenTopics(const std::vector<SubscriptionRequest>& names) = 0;
+
+  /**
+   * Asynchronously acknowledges message to the client.
+   *
+   * All sequence numbers no later than the sequence number of given message
+   * are considered to be processed by the application.
+   * Consequently, when application closes the client and then attempts to
+   * renew subscription on the same topic, it will be restarted from the next
+   * sequence number.
+   *
+   * @param message the message to be acknowledged.
+   */
+  virtual void Acknowledge(const MessageReceived& message) = 0;
 };
+
 }  // namespace rocketspeed

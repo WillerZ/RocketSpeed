@@ -33,6 +33,7 @@ Status Client::Open(const Configuration* config,
                     PublishCallback publish_callback,
                     SubscribeCallback subscription_callback,
                     MessageReceivedCallback receive_callback,
+                    std::unique_ptr<SubscriptionStorage> storage,
                     Client** producer) {
   // Validate arguments.
   if (config == nullptr) {
@@ -57,6 +58,7 @@ Status Client::Open(const Configuration* config,
                              publish_callback,
                              subscription_callback,
                              receive_callback,
+                             std::move(storage),
                              std::make_shared<NullLogger>());
   return Status::OK();
 }
@@ -68,6 +70,7 @@ ClientImpl::ClientImpl(const ClientID& client_id,
                        PublishCallback publish_callback,
                        SubscribeCallback subscription_callback,
                        MessageReceivedCallback receive_callback,
+                       std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log)
 : env_(ClientEnv::Default())
 , client_id_(client_id)
@@ -76,7 +79,8 @@ ClientImpl::ClientImpl(const ClientID& client_id,
 , tenant_id_(tenant_id)
 , publish_callback_(publish_callback)
 , subscription_callback_(subscription_callback)
-, receive_callback_(receive_callback) {
+, receive_callback_(receive_callback)
+, storage_(std::move(storage)) {
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
@@ -105,6 +109,14 @@ ClientImpl::ClientImpl(const ClientID& client_id,
 
   while (!msg_loop_->IsRunning()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  if (storage_) {
+    // Initialize subscription storage
+    storage_->Initialize([this](
+        const std::vector<SubscriptionRequest>& restored) {
+      ProcessRestoredSubscription(restored);
+    });
   }
 }
 
@@ -171,20 +183,35 @@ PublishStatus ClientImpl::Publish(const Topic& name,
 }
 
 // Subscribe to a specific topics.
-void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
-                              const TopicOptions& options) {
-  std::vector<TopicPair> list;
+void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
+  std::vector<TopicPair> subscribe;
+  std::vector<SubscriptionRequest> restore;
 
-  // Construct subscription list
-  for (const auto& elem : names) {
-    list.push_back(TopicPair(elem.seqno, elem.topic_name,
-                             MetadataType::mSubscribe, elem.namespace_id));
+  // Determine which requests can be executed right away and which
+  // subscriptions need to be restored.
+  for (const auto& elem : topics) {
+    if (elem.start) {
+      subscribe.emplace_back(elem.start.get(),
+                             elem.topic_name,
+                             MetadataType::mSubscribe,
+                             elem.namespace_id);
+    } else {
+      restore.push_back(elem);
+    }
   }
+
+  if (storage_) {
+    storage_->Load(restore);
+  }
+  IssueSubscriptions(subscribe);
+}
+
+void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics) {
   // Construct message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
                           client_id_,
-                          list);
+                          topics);
 
   // Get a serialized version of the message
   std::string serialized;
@@ -199,10 +226,19 @@ void ClientImpl::ListenTopics(std::vector<SubscriptionPair>& names,
   Status status = msg_loop_->SendCommand(std::move(command));
 
   // If there was any error, invoke callback with appropriate status
-  if (!status.ok()) {
+  if (!status.ok() && subscription_callback_) {
     SubscriptionStatus error_msg;
     error_msg.status = status;
     subscription_callback_(error_msg);
+  }
+}
+
+void ClientImpl::Acknowledge(const MessageReceived& message) {
+  if (storage_) {
+    SubscriptionRequest request(message.GetNamespaceId(),
+                                message.GetTopicName().ToString(),
+                                message.GetSequenceNumber());
+    storage_->Store(request);
   }
 }
 
@@ -299,6 +335,30 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
       subscription_callback_(ret);
     }
   }
+}
+
+void ClientImpl::ProcessRestoredSubscription(
+    const std::vector<SubscriptionRequest> &restored) {
+  std::vector<TopicPair> subscribe;
+  // This is the status returned when we failed to restore subscription.
+  SubscriptionStatus failed_restore;
+  failed_restore.status = Status::NotFound();
+
+  for (const auto& elem : restored) {
+    if (elem.start) {
+      subscribe.emplace_back(elem.start.get(),
+                             elem.topic_name,
+                             MetadataType::mSubscribe,
+                             elem.namespace_id);
+    } else {
+      // Inform the user that subscription restoring failed.
+      if (subscription_callback_) {
+        subscription_callback_(failed_restore);
+      }
+    }
+  }
+
+  IssueSubscriptions(subscribe);
 }
 
 MessageReceivedClient::~MessageReceivedClient() {

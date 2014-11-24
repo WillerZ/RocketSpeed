@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include "include/Types.h"
 #include "src/messages/messages.h"
 
 namespace rocketspeed {
@@ -21,17 +22,22 @@ class MessageReceivedClient : public MessageReceived {
   }
 
   // The sequence number of this message
-  virtual SequenceNumber GetSequenceNumber() {
+  virtual SequenceNumber GetSequenceNumber() const {
     return data_->GetSequenceNumber();
   }
 
+  // The namespace id of this message
+  virtual NamespaceID GetNamespaceId() const {
+    return data_->GetNamespaceId();
+  }
+
   // The Topic name
-  virtual const Slice GetTopicName() {
+  virtual const Slice GetTopicName() const {
     return data_->GetTopicName();
   }
 
   // The contents of the message
-  virtual const Slice GetContents() {
+  virtual const Slice GetContents() const {
     return data_->GetPayload();
   }
 

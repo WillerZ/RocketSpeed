@@ -1,16 +1,8 @@
-/**
- * @file
- * @version 1.0
- *
- * @section LICENSE
- *
- * Copyright Facebook 2014
- *
- * @section DESCRIPTION
- *
- * This file defines the various data structures needed to access
- * the RocketSpeed pub-sub service.
- */
+// Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree. An additional grant
+// of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
 #include <cstring>
@@ -23,6 +15,32 @@
 #include "include/Slice.h"
 
 namespace rocketspeed {
+
+/**
+ * A unique ID for this RocketSpeed namespace. Each namespace can have its own
+ * set of topic names. Namespaces are a way to partition the set of topics in
+ * a single instance of RocketSpeed.
+ * A Tenant can access topics from any number of namespaces.
+ */
+typedef uint16_t NamespaceID;
+
+enum Namespace : NamespaceID {
+  /**
+   * The invalid namespaceID should never be used. It is here to catch cases
+   * when the client fails to set the tenant ID.
+   */
+  InvalidNamespace = 0,
+
+  /**
+   * The Guest Namespace ID may be used by applications during development.
+   */
+  GuestNamespace = 1,
+
+  /**
+   * NamespaceIds 2-100 are reserved for system usage. Real users should be
+   * using namespaces larger than 100
+   */
+};
 
 /**
  * Each Topic is a string
@@ -114,13 +132,16 @@ class SubscriptionStatus {
 class MessageReceived {
  public:
   // The sequence number of this message
-  virtual SequenceNumber GetSequenceNumber() = 0;
+  virtual SequenceNumber GetSequenceNumber() const = 0;
+
+  // The namespace id of this message
+  virtual NamespaceID GetNamespaceId() const = 0;
 
   // The Topic name
-  virtual const Slice GetTopicName() = 0;
+  virtual const Slice GetTopicName() const = 0;
 
   // The contents of the message
-  virtual const Slice GetContents() = 0;
+  virtual const Slice GetContents() const = 0;
 
   virtual ~MessageReceived()  {}
 };
@@ -167,29 +188,56 @@ enum Tenant : TenantID {
 };
 
 /**
- * A unique ID for this RocketSpeed namespace. Each namespace can have its own
- * set of topic names. Namespaces are a way to partition the set of topics in
- * a single instance of RocketSpeed.
- * A Tenant can access topics from any number of namespaces.
+ * Indicates a sequence number which marks a begnning of subscription.
+ * If present, the subscription will be started/resumed from given number.
+ * If absent, the subscription will be resumed from last known sequence number,
+ * according to specified storage strategy.
  */
-typedef uint16_t NamespaceID;
+class SubscriptionStart {
+ public:
+  /* implicit */ SubscriptionStart(SequenceNumber seqno)
+      : seqno_(seqno), present_(true) {}
 
-enum Namespace : NamespaceID {
-  /**
-   * The invalid namespaceID should never be used. It is here to catch cases
-   * when the client fails to set the tenant ID.
-   */
-  InvalidNamespace = 0,
+  SubscriptionStart() : present_(false) {}
 
-  /**
-   * The Guest Namespace ID may be used by applications during development.
-   */
-  GuestNamespace = 1,
+  /* implicit */ operator bool() const {
+    return present_;
+  }
 
-  /**
-   * NamespaceIds 2-100 are reserved for system usage. Real users should be
-   * using namespaces larger than 100
-   */
+  SequenceNumber get() const {
+    assert(*this);
+    return seqno_;
+  }
+
+ private:
+  SequenceNumber seqno_;
+  bool present_;
+};
+
+/**
+ * Indicates which topic to subscribe, messages after the specified sequence
+ * number will be delivered to the client.
+ * A seqno of 0 indicates that the subscriber is interested in receiving
+ * whatever data is available via this topic.
+ * A seqno of 1 indicates that the subscriber is interested in receiving
+ * all the data that was published to this topic.
+ * An absent seqno indicates that subscription should be resumed based on
+ * information from state storage.
+ */
+class SubscriptionRequest {
+ public:
+  NamespaceID namespace_id;
+  Topic topic_name;
+  SubscriptionStart start;
+
+  SubscriptionRequest(NamespaceID _namespace_id,
+                      Topic _topic_name,
+                      SubscriptionStart _start)
+      : namespace_id(_namespace_id),
+        topic_name(_topic_name),
+        start(_start) {}
+
+  SubscriptionRequest() {}
 };
 
 /**
@@ -240,31 +288,6 @@ class HostId {
   ClientID ToClientId() const {
     return ToString();
   }
-};
-
-/*
- *  A topic:bool pair to indicate whether to subscribe or unsubscribe
- *  from the specified topic.
- *  Messages after the specified sequence number will be delivered to
- *  the client.
- *  A seqno of 0 indicates that the subscriber is interested in
- *  receiving whatever data is available via this topic.
- *  A seqno of 1 indicates that the subscriber is interested in
- *  receiving all the data that was published to this topic.
- **/
-class SubscriptionPair {
- public:
-  SequenceNumber seqno;  // the starting sequence number for this subscription
-  Topic topic_name;
-  NamespaceID namespace_id;
-
-  SubscriptionPair(SequenceNumber s, std::string name,
-                   NamespaceID namespaceId) :
-    seqno(s),
-    topic_name(name),
-    namespace_id(namespaceId) {
-  }
-  SubscriptionPair() {}
 };
 
 /**
@@ -328,4 +351,4 @@ class TopicOptions {
   Retention retention;
 };
 
-}
+}  // namespace rocketspeed

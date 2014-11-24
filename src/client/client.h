@@ -33,8 +33,10 @@ class ClientImpl : public Client {
                                 const TopicOptions& options,
                                 const Slice& data,
                                 const MsgId messageId = MsgId());
-  virtual void ListenTopics(std::vector<SubscriptionPair>& names,
-                            const TopicOptions& options);
+
+  virtual void ListenTopics(const std::vector<SubscriptionRequest>& names);
+
+  virtual void Acknowledge(const MessageReceived& message);
 
   ClientImpl(const ClientID& client_id,
              const HostId& pilot_host_id,
@@ -43,6 +45,7 @@ class ClientImpl : public Client {
              PublishCallback publish_callback,
              SubscribeCallback subscription_callback,
              MessageReceivedCallback receive_callback,
+             std::unique_ptr<SubscriptionStorage> storage,
              std::shared_ptr<Logger> info_log);
 
   const Statistics& GetStatistics() const {
@@ -58,6 +61,12 @@ class ClientImpl : public Client {
 
   // Callback for MessageMetadata message.
   void ProcessMetadata(std::unique_ptr<Message> msg);
+
+  // Handler for SubscriptionStorage load all events.
+  void ProcessRestoredSubscription(
+      const std::vector<SubscriptionRequest>& restored);
+
+  void IssueSubscriptions(const std::vector<TopicPair> &topics);
 
   // The environment
   ClientEnv* env_;
@@ -88,6 +97,9 @@ class ClientImpl : public Client {
 
   // callback for incoming data messages
   MessageReceivedCallback receive_callback_;
+
+  // Persistent subscription storage
+  std::unique_ptr<SubscriptionStorage> storage_;
 
   // Map a subscribed topic name to the last sequence number
   // received for this topic.

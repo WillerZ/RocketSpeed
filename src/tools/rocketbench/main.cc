@@ -219,24 +219,24 @@ void DoSubscribe(Client* consumer, NamespaceID nsid) {
   // subscribe 10K topics at a time
   unsigned int batch_size = 10240;
 
-  std::vector<SubscriptionPair> topics;
+  std::vector<SubscriptionRequest> topics;
   topics.reserve(batch_size);
 
   // create all subscriptions from seqno 1
-  SubscriptionPair pair(start, "", nsid);
+  SubscriptionRequest request(nsid, "", start);
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
-    pair.topic_name.assign("benchmark." + std::to_string(i));
-    topics.push_back(pair);
+    request.topic_name.assign("benchmark." + std::to_string(i));
+    topics.push_back(request);
     if (i % batch_size == batch_size - 1) {
       // send a subscription request
-      consumer->ListenTopics(topics, TopicOptions());
+      consumer->ListenTopics(topics);
       topics.clear();
     }
   }
 
   // subscribe to all remaining topics
   if (topics.size() != 0) {
-    consumer->ListenTopics(topics, TopicOptions());
+    consumer->ListenTopics(topics);
   }
 }
 
@@ -452,6 +452,7 @@ int main(int argc, char** argv) {
                                            publish_callback,
                                            subscribe_callback,
                                            receive_callback,
+                                           nullptr,
                                            info_log);
     consumer = producer;
   } else {
@@ -461,6 +462,7 @@ int main(int argc, char** argv) {
                                              copilot,
                                              rocketspeed::Tenant(102),
                                              publish_callback,
+                                             nullptr,
                                              nullptr,
                                              nullptr,
                                              info_log);
@@ -473,6 +475,7 @@ int main(int argc, char** argv) {
                                              nullptr,
                                              subscribe_callback,
                                              receive_callback,
+                                             nullptr,
                                              info_log);
     }
   }
