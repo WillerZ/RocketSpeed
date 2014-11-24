@@ -228,13 +228,16 @@ class SubscriptionRequest {
  public:
   NamespaceID namespace_id;
   Topic topic_name;
+  bool subscribe;
   SubscriptionStart start;
 
   SubscriptionRequest(NamespaceID _namespace_id,
                       Topic _topic_name,
+                      bool _subscribe,
                       SubscriptionStart _start)
       : namespace_id(_namespace_id),
         topic_name(_topic_name),
+        subscribe(_subscribe),
         start(_start) {}
 
   SubscriptionRequest() {}

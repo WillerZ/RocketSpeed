@@ -80,7 +80,8 @@ ClientImpl::ClientImpl(const ClientID& client_id,
 , publish_callback_(publish_callback)
 , subscription_callback_(subscription_callback)
 , receive_callback_(receive_callback)
-, storage_(std::move(storage)) {
+, storage_(std::move(storage))
+, info_log_(info_log) {
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
@@ -190,10 +191,22 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
   // Determine which requests can be executed right away and which
   // subscriptions need to be restored.
   for (const auto& elem : topics) {
+    if (storage_) {
+      // Store or remove subscription state depending whether we subscribe or
+      // unsubscribe.
+      if (elem.subscribe) {
+        storage_->Store(elem);
+      } else {
+        storage_->Remove(elem);
+      }
+    }
+
     if (elem.start) {
+      auto type = elem.subscribe ? MetadataType::mSubscribe
+                                 : MetadataType::mUnSubscribe;
       subscribe.emplace_back(elem.start.get(),
                              elem.topic_name,
-                             MetadataType::mSubscribe,
+                             type,
                              elem.namespace_id);
     } else {
       restore.push_back(elem);
@@ -237,6 +250,7 @@ void ClientImpl::Acknowledge(const MessageReceived& message) {
   if (storage_) {
     SubscriptionRequest request(message.GetNamespaceId(),
                                 message.GetTopicName().ToString(),
+                                true,
                                 message.GetSequenceNumber());
     storage_->Store(request);
   }
@@ -345,7 +359,14 @@ void ClientImpl::ProcessRestoredSubscription(
   failed_restore.status = Status::NotFound();
 
   for (const auto& elem : restored) {
-    if (elem.start) {
+    if (!elem.subscribe) {
+      // We shouldn't ever restore unsubscribe request.
+      LOG_WARN(info_log_,
+               "Restored unsubscribe request for namespace %d topic %s",
+               elem.namespace_id,
+               elem.topic_name.c_str());
+      assert(0);
+    } else if (elem.start) {
       subscribe.emplace_back(elem.start.get(),
                              elem.topic_name,
                              MetadataType::mSubscribe,

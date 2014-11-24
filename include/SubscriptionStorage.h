@@ -35,10 +35,21 @@ class SubscriptionStorage {
   virtual void Store(const SubscriptionRequest& message);
 
   /**
+   * Asynchronously removes subscription data entry for given topic (in given
+   * namespace).
+   */
+  virtual void Remove(const SubscriptionRequest& message);
+
+  /**
    * Loads subscription data asynchronously for given topics, appropriate
    * callback is invoked with all retrieved subscriptions.
    */
   virtual void Load(const std::vector<SubscriptionRequest>& requests);
+
+  /**
+   * Loads all subscription data asynchronously.
+   */
+  virtual void LoadAll();
 };
 
 }  // namespace rocketspeed

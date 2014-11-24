@@ -223,7 +223,7 @@ void DoSubscribe(Client* consumer, NamespaceID nsid) {
   topics.reserve(batch_size);
 
   // create all subscriptions from seqno 1
-  SubscriptionRequest request(nsid, "", start);
+  SubscriptionRequest request(nsid, "", true, start);
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     request.topic_name.assign("benchmark." + std::to_string(i));
     topics.push_back(request);

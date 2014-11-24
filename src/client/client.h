@@ -101,6 +101,9 @@ class ClientImpl : public Client {
   // Persistent subscription storage
   std::unique_ptr<SubscriptionStorage> storage_;
 
+  // Main logger for the client
+  const std::shared_ptr<Logger> info_log_;
+
   // Map a subscribed topic name to the last sequence number
   // received for this topic.
   std::unordered_map<Topic, SequenceNumber>  topic_map_;

@@ -91,7 +91,7 @@ TEST(IntegrationTest, OneMessage) {
 
   // Listen for the message.
   std::vector<SubscriptionRequest> subscriptions = {
-    SubscriptionRequest(namespace_id, topic, 1)
+    SubscriptionRequest(namespace_id, topic, true, 1)
   };
   client.ListenTopics(subscriptions);
 
@@ -148,12 +148,13 @@ TEST(IntegrationTest, SequenceNumberZero) {
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
 
-  // Subscribe using seqno 0.
-  std::vector<SubscriptionRequest> subscriptions = {
-    SubscriptionRequest(ns, topic, 0)
-  };
-  client.ListenTopics(subscriptions);
-  ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
+  { // Subscribe using seqno 0.
+    std::vector<SubscriptionRequest> subscriptions = {
+        SubscriptionRequest(ns, topic, true, 0)
+    };
+    client.ListenTopics(subscriptions);
+    ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
+  }
 
   // Should not receive any of the last three messages.
   // Send 3 more different messages.
@@ -166,6 +167,42 @@ TEST(IntegrationTest, SequenceNumberZero) {
 
   std::vector<std::string> expected = {"3", "4", "5"};
   ASSERT_TRUE(received == expected);
+
+  { // Unsubscribe from previously subscribed topic.
+    std::vector<SubscriptionRequest> subscriptions = {
+      SubscriptionRequest(ns, topic, false, 0)
+    };
+    client.ListenTopics(subscriptions);
+    ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
+  }
+
+  // Send some messages and wait for the acks.
+  for (int i = 6; i < 9; ++i) {
+    std::string data = std::to_string(i);
+    ASSERT_TRUE(client.Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+  }
+
+  { // Subscribe using seqno 0.
+    std::vector<SubscriptionRequest> subscriptions = {
+        SubscriptionRequest(ns, topic, true, 0)
+    };
+    client.ListenTopics(subscriptions);
+    ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
+  }
+
+  // Send 3 more messages again.
+  for (int i = 9; i < 12; ++i) {
+    std::string data = std::to_string(i);
+    ASSERT_TRUE(client.Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+    ASSERT_TRUE(message_sem.TimedWait(timeout));
+  }
+
+  { // Should not receive any of the messages sent while it unsubscribed.
+    std::vector<std::string> expected = {"3", "4", "5", "9", "10", "11"};
+    ASSERT_TRUE(received == expected);
+  }
 }
 
 }  // namespace rocketspeed
