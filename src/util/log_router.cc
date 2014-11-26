@@ -5,7 +5,7 @@
 
 #include "src/util/log_router.h"
 #include <string>
-#include "src/util/hash.h"
+#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 

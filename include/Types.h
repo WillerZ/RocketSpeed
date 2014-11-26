@@ -278,8 +278,11 @@ class HostId {
     return oss.str();
   }
 
-  // converts a name:port string to a HostId
-  static HostId ToHostId(std::string str) {
+  // Converts an internal client ID to a HostId
+  // The client ID must be formatted as <host>:<port><worker_id-byte>
+  // e.g. "localhost:1234\x01"
+  static HostId ToHostId(ClientID str) {
+    str.pop_back();  // remove the worker ID byte.
     std::string::size_type sep = str.find(":");
     assert(sep != std::string::npos);
     std::string hostname = str.substr(0, sep);
@@ -288,8 +291,11 @@ class HostId {
   }
 
   // converts a HostId to a ClientID
-  ClientID ToClientId() const {
-    return ToString();
+  ClientID ToClientId(int worker_id = 0) const {
+    ClientID client_id = ToString();
+    assert(worker_id < 256);
+    client_id.push_back(static_cast<char>(worker_id));
+    return client_id;
   }
 };
 

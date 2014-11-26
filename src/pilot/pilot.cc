@@ -53,8 +53,7 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
  */
 Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))),
-  log_router_(options_.log_range.first, options_.log_range.second),
-  pilot_id_(options_.msg_loop->GetHostId().ToClientId()) {
+  log_router_(options_.log_range.first, options_.log_range.second) {
   assert(options_.msg_loop);
 
   worker_data_.resize(options_.msg_loop->GetNumWorkers());

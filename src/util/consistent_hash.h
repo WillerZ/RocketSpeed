@@ -11,7 +11,7 @@
 #include <functional>
 #include <map>
 #include <utility>
-#include "src/util/hash.h"
+#include "src/util/common/hash.h"
 
 
 // If this is not defined, std::multimap is used

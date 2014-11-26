@@ -40,9 +40,9 @@ class Copilot {
     return options_.msg_loop->GetHostId();
   }
 
-  // Get the subscriber id of this copilot
-  const ClientID& GetCopilotId() const {
-    return copilot_id_;
+  // Get the client id of a worker thread on this copilot
+  const ClientID& GetClientId(int worker_id) const {
+    return options_.msg_loop->GetClientId(worker_id);
   }
 
   // Sends a command to a msgloop worker.
@@ -68,9 +68,6 @@ class Copilot {
 
   // Control tower router. Workers will access this, but don't own it.
   ControlTowerRouter control_tower_router_;
-
-  // My subscriber id
-  const ClientID copilot_id_;
 
   // private Constructor
   explicit Copilot(CopilotOptions options);

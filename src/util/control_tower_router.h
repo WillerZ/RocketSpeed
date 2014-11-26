@@ -10,7 +10,7 @@
 #include <vector>
 #include "include/Types.h"
 #include "src/util/consistent_hash.h"
-#include "src/util/hash.h"
+#include "src/util/common/hash.h"
 #include "src/util/storage.h"
 
 namespace rocketspeed {

@@ -90,9 +90,9 @@ class Pilot {
     return options_.msg_loop->GetHostId();
   }
 
-  // Get the subscriber id of this pilot
-  const ClientID& GetPilotId() const {
-    return pilot_id_;
+  // Get the client id of a worker thread on this pilot
+  const ClientID& GetClientId(int worker_id) const {
+    return options_.msg_loop->GetClientId(worker_id);
   }
 
   Statistics GetStatistics() const;
@@ -140,9 +140,6 @@ class Pilot {
 
   // Log router for mapping topic names to logs.
   LogRouter log_router_;
-
-  // My subscriber id
-  const ClientID pilot_id_;
 
   struct alignas(CACHE_LINE_SIZE) WorkerData {
     WorkerData()

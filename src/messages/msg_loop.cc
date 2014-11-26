@@ -52,7 +52,8 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  int port,
                  int num_workers,
                  const std::shared_ptr<Logger>& info_log,
-                 std::string name):
+                 std::string name,
+                 ClientID client_id):
   env_(env),
   env_options_(env_options),
   info_log_(info_log),
@@ -64,6 +65,19 @@ MsgLoop::MsgLoop(BaseEnv* env,
   char myname[1024];
   gethostname(&myname[0], sizeof(myname));
   hostid_ = HostId(std::string(myname), port);
+
+  // Generate client ID from the host ID if none was specified.
+  if (client_id.empty()) {
+    client_id = hostid_.ToClientId();
+  }
+
+  // Setup event loop client IDs.
+  assert(num_workers < 256);
+  worker_client_ids_.reset(new ClientID[num_workers]);
+  for (int i = 0; i < num_workers; ++i) {
+    worker_client_ids_[i] = client_id;
+    worker_client_ids_[i].push_back(static_cast<char>(i));
+  }
 
   auto event_callback = [this] (std::unique_ptr<Message> msg) {
     EventCallback(std::move(msg));

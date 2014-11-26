@@ -21,6 +21,7 @@
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/logger.h"
+#include "src/port/port.h"
 
 namespace rocketspeed {
 
@@ -66,13 +67,12 @@ class ClientImpl : public Client {
   void ProcessRestoredSubscription(
       const std::vector<SubscriptionRequest>& restored);
 
-  void IssueSubscriptions(const std::vector<TopicPair> &topics);
+  void IssueSubscriptions(const std::vector<TopicPair> &topics, int worker_id);
+
+  int GetWorkerForTopic(const Topic& name) const;
 
   // The environment
   ClientEnv* env_;
-
-  // The identifier for the client
-  const ClientID client_id_;
 
   // HostId of pilot/copilot machines to send messages to.
   HostId pilot_host_id_;
@@ -84,10 +84,6 @@ class ClientImpl : public Client {
   // Incoming message loop object.
   MsgLoop* msg_loop_ = nullptr;
   std::thread msg_loop_thread_;
-
-  // Messages sent, awaiting ack.
-  std::unordered_set<MsgId, MsgId::Hash> messages_sent_;
-  std::mutex message_sent_mutex_;  // mutex for operators on messages_sent_
 
   // callback for incoming data message
   PublishCallback publish_callback_;
@@ -104,13 +100,18 @@ class ClientImpl : public Client {
   // Main logger for the client
   const std::shared_ptr<Logger> info_log_;
 
-  // Map a subscribed topic name to the last sequence number
-  // received for this topic.
-  std::unordered_map<Topic, SequenceNumber> topic_map_;
+  // Data per worker thread.
+  // Aligned to avoid false sharing.
+  struct alignas(CACHE_LINE_SIZE) WorkerData {
+    // Map a subscribed topic name to the last sequence number
+    // received for this topic (one per worker thread).
+    std::unordered_map<Topic, SequenceNumber> topic_map;
 
-  // Lock for topic_map.
-  // TODO(pja) 1 : Have a topic map per client loop.
-  std::mutex topic_map_mutex_;
+    // Messages sent, awaiting ack.
+    std::unordered_set<MsgId, MsgId::Hash> messages_sent;
+    std::mutex message_sent_mutex;  // mutex for operators on messages_sent_
+  };
+  std::unique_ptr<WorkerData[]> worker_data_;
 
   // Worker ID to send next message from.
   // This loops in a round robin fashion.

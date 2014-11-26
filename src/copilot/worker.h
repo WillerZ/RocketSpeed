@@ -148,7 +148,8 @@ class CopilotWorker {
   void ProcessDeliver(std::unique_ptr<Message> msg);
 
   // Duplicates and distributes a command to different copilot event loops.
-  Status DistributeCommand(std::string msg, Command::Recipients destinations);
+  void DistributeCommand(std::string msg,
+                         std::vector<std::pair<ClientID, int>> destinations);
 
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;
@@ -164,21 +165,23 @@ class CopilotWorker {
 
   // Subscription metadata
   struct Subscription {
-    Subscription(ClientID const& id, SequenceNumber seq_no, bool await_ack)
+    Subscription(ClientID const& id,
+                 SequenceNumber seq_no,
+                 bool await_ack,
+                 int _worker_id)
     : client_id(id)
     , seqno(seq_no)
-    , awaiting_ack(await_ack) {}
+    , awaiting_ack(await_ack)
+    , worker_id(_worker_id) {}
 
     ClientID client_id;    // The subscriber
     SequenceNumber seqno;  // Lowest seqno to accept
     bool awaiting_ack;     // Is the subscriber awaiting an subscribe response?
+    int worker_id;         // The event loop worker for client.
   };
 
   // Map of topics to active subscriptions.
   std::unordered_map<Topic, std::vector<Subscription>> subscriptions_;
-
-  // Map of clients to message loop worker IDs.
-  std::unordered_map<ClientID, int> client_worker_id_;
 };
 
 }  // namespace rocketspeed

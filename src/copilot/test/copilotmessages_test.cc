@@ -34,13 +34,15 @@ class CopilotTest {
                                    EnvOptions(),
                                    ControlTower::DEFAULT_PORT,
                                    1,
-                                   info_log_));
+                                   info_log_,
+                                   "tower"));
 
     cp_msg_loop_.reset(new MsgLoop(env_,
                                    EnvOptions(),
                                    Copilot::DEFAULT_PORT,
                                    1,
-                                   info_log_));
+                                   info_log_,
+                                   "copilot"));
 
     // Create ControlTower
     ControlTowerOptions ct_options;
@@ -59,7 +61,7 @@ class CopilotTest {
     options_.log_range = std::pair<LogID, LogID>(1, 1);
     options_.log_dir = test::TmpDir();
     options_.info_log = info_log_;
-    options_.control_towers.push_back(ct_->GetTowerId());
+    options_.control_towers.push_back(ct_->GetClientId(0));
     options_.msg_loop = cp_msg_loop_.get();
     st_ = Copilot::CreateNewInstance(options_, &copilot_);
 
@@ -171,7 +173,7 @@ TEST(CopilotTest, Publish) {
       }
     };
 
-  MsgLoop loop(env_, env_options_, 58499, 1, GetLogger());
+  MsgLoop loop(env_, env_options_, 58499, 1, GetLogger(), "test");
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
@@ -193,7 +195,7 @@ TEST(CopilotTest, Publish) {
     msg.SerializeToString(&serial);
     std::unique_ptr<Command> cmd(
       new CopilotCommand(std::move(serial),
-                         copilot_->GetCopilotId(),
+                         copilot_->GetClientId(0),
                          env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);

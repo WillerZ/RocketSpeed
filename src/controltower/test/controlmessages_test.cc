@@ -48,7 +48,8 @@ class ControlTowerTest {
                                 EnvOptions(),
                                 ControlTower::DEFAULT_PORT,
                                 1,
-                                info_log));
+                                info_log,
+                                "tower"));
 
     ctoptions_.info_log = info_log;
     ctoptions_.msg_loop = msg_loop_.get();
@@ -200,7 +201,7 @@ TEST(ControlTowerTest, Ping) {
     };
 
   // create a client to communicate with the ControlTower
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log);
+  MsgLoop loop(env_, env_options_, 58499, 1, info_log, "test");
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
@@ -216,7 +217,7 @@ TEST(ControlTowerTest, Ping) {
   msg.SerializeToString(&serial);  // serialize msg
   std::unique_ptr<Command> cmd(
     new ControlRoom::TowerCommand(std::move(serial),
-                                  ct_->GetTowerId(),
+                                  ct_->GetClientId(0),
                                   env_->NowMicros()));
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
 
@@ -231,7 +232,7 @@ TEST(ControlTowerTest, Ping) {
     msg.SerializeToString(&serial);  // serialize msg
     std::unique_ptr<Command> cmd(
       new ControlRoom::TowerCommand(std::move(serial),
-                                    ct_->GetTowerId(),
+                                    ct_->GetClientId(0),
                                     env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
@@ -262,7 +263,7 @@ TEST(ControlTowerTest, Subscribe) {
     };
 
   // create a client to communicate with the ControlTower
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log);
+  MsgLoop loop(env_, env_options_, 58499, 1, info_log, "test");
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
@@ -278,7 +279,7 @@ TEST(ControlTowerTest, Subscribe) {
   meta1.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(
     new ControlRoom::TowerCommand(std::move(serial),
-                                  ct_->GetTowerId(),
+                                  ct_->GetClientId(0),
                                   env_->NowMicros()));
 
   // send message to control tower

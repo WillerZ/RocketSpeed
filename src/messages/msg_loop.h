@@ -30,7 +30,8 @@ class MsgLoop {
           int port,
           int num_workers,
           const std::shared_ptr<Logger>& info_log,
-          std::string name = "msgloop");
+          std::string name,
+          ClientID client_id = "");
 
   virtual ~MsgLoop();
 
@@ -56,6 +57,11 @@ class MsgLoop {
 
   // Get the host ID of this message loop.
   const HostId& GetHostId() const { return hostid_; }
+
+  // The client ID of a specific event loop.
+  const ClientID& GetClientId(int worker_id) const {
+    return worker_client_ids_[worker_id];
+  }
 
   // Send a command to an unspecified event loop for processing.
   // This call is thread-safe.
@@ -129,6 +135,9 @@ class MsgLoop {
 
   // Looping counter to distribute load on the message loop.
   mutable std::atomic<int> next_worker_id_;
+
+  // Client ID per event loop.
+  std::unique_ptr<ClientID[]> worker_client_ids_;
 
   // The EventLoop callback.
   void EventCallback(std::unique_ptr<Message> msg);

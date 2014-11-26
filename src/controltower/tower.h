@@ -46,9 +46,9 @@ class ControlTower {
     return options_.msg_loop->GetHostId();
   }
 
-  // Returns the unique id of this control tower
-  const ClientID& GetTowerId() const {
-    return tower_id_;
+  // Get the client id of a worker thread on this control tower
+  const ClientID& GetClientId(int worker_id) const {
+    return options_.msg_loop->GetClientId(worker_id);
   }
 
   // Get the worker loop associated with a log.

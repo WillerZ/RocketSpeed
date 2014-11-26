@@ -99,7 +99,7 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
   // Get the list of subscriptions for this topic.
   auto it = subscriptions_.find(request.topic_name);
   if (it != subscriptions_.end()) {
-    Command::Recipients destinations;
+    std::vector<std::pair<ClientID, int>> destinations;
 
     // serialize message
     std::string serial;
@@ -108,19 +108,14 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
     for (auto& subscription : it->second) {
       // If the subscription is awaiting a response.
       if (subscription.awaiting_ack) {
-        destinations.push_back(subscription.client_id);
+        destinations.emplace_back(subscription.client_id,
+                                  subscription.worker_id);
       }
     }
 
     if (destinations.size() > 0) {
-      Status status = DistributeCommand(std::move(serial),
-                                        std::move(destinations));
-      if (!status.ok()) {
-        LOG_INFO(options_.info_log,
-          "Failed to send metadata response to %s",
-          HostMap::ToString(destinations).c_str());
-        return;
-      }
+      DistributeCommand(std::move(serial), std::move(destinations));
+
       // Successful, don't send any more acks.
       // (if the response didn't actually make it then the client
       // will resubscribe anyway).
@@ -150,7 +145,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
   auto it = subscriptions_.find(msg->GetTopicName().ToString());
   if (it != subscriptions_.end()) {
     auto seqno = msg->GetSequenceNumber();
-    Command::Recipients destinations;
+    std::vector<std::pair<ClientID, int>> destinations;
 
     // serialize message
     std::string serial;
@@ -175,21 +170,11 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
           recipient.c_str(), subscription.seqno);
         continue;
       }
-      destinations.push_back(recipient);
+      destinations.emplace_back(recipient, subscription.worker_id);
     }
-    Status status = DistributeCommand(std::move(serial),
-                                      std::move(destinations));
-    if (!status.ok()) {
-      // Message failed to send. Possible reasons:
-      // 1. Connection closed at other end.
-      // 2. Outgoing socket buffer is full.
-      // 3. Some other low-level error.
-      // TODO(pja) 1 : handle these gracefully.
-      LOG_INFO(options_.info_log,
-          "Failed to forward data to %s",
-          HostMap::ToString(destinations).c_str());
-      return;
-    }
+
+    DistributeCommand(std::move(serial), std::move(destinations));
+
     int count = 0;
     for (auto& subscription : it->second) {
       LOG_INFO(options_.info_log,
@@ -197,7 +182,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
                msg->GetPayload().ToString().c_str(),
                msg->GetSequenceNumber(),
                msg->GetTopicName().ToString().c_str(),
-               HostMap::ToString(destinations).c_str());
+               subscription.client_id.c_str());
       subscription.seqno = seqno + 1;
       count++;
     }
@@ -213,15 +198,13 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
   const ClientID& subscriber = msg->GetOrigin();
 
-  // Update client -> worker mapping.
-  client_worker_id_[subscriber] = worker_id;
-
   auto topic_iter = subscriptions_.find(request.topic_name);
   if (topic_iter == subscriptions_.end()) {
     // No subscribers on this topic, create new topic entry.
     std::vector<Subscription> subscribers{ Subscription(subscriber,
                                                         request.seqno,
-                                                        true) };
+                                                        true,
+                                                        worker_id) };
     subscriptions_.emplace(request.topic_name, subscribers);
     notify_control_tower = true;
   } else {
@@ -258,6 +241,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
           subscription.awaiting_ack = false;
           notify_origin = true;
         }
+        // Update the worker_id for this subscription, in case it changed.
+        subscription.worker_id = worker_id;
         found = true;
       }
       // Find earliest seqno subscription for this topic.
@@ -272,11 +257,17 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
         // the client request and let the tailer catch up.
         // TODO(pja) 1 : may take a long time to catch up, so may need to
         // notify the CT.
-        topic_iter->second.emplace_back(subscriber, request.seqno, false);
+        topic_iter->second.emplace_back(subscriber,
+                                        request.seqno,
+                                        false,
+                                        worker_id);
         notify_origin = true;
       } else {
         // Need to add new subscription and rewind existing subscription.
-        topic_iter->second.emplace_back(subscriber, request.seqno, true);
+        topic_iter->second.emplace_back(subscriber,
+                                        request.seqno,
+                                        true,
+                                        worker_id);
         notify_control_tower = true;
       }
     }
@@ -288,7 +279,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // Find control tower responsible for this topic's log.
     ClientID const* recipient = nullptr;
     if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
-      msg->SetOrigin(copilot_->GetCopilotId());
+      msg->SetOrigin(copilot_->GetClientId(worker_id));
 
       // serialize
       std::string serial;
@@ -372,7 +363,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         // worker as the subscriber.
         MessageMetadata newmsg(msg->GetTenantID(),
                                MessageMetadata::MetaType::Request,
-                               copilot_->GetCopilotId(),
+                               copilot_->GetClientId(worker_id),
                                { TopicPair(request.seqno,
                                            request.topic_name,
                                            MetadataType::mUnSubscribe,
@@ -399,7 +390,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         // Re subscribe our control tower subscription with the later seqno.
         MessageMetadata newmsg(msg->GetTenantID(),
                                MessageMetadata::MetaType::Request,
-                               copilot_->GetCopilotId(),
+                               copilot_->GetClientId(worker_id),
                                { TopicPair(earliest_other_seqno,
                                            request.topic_name,
                                            MetadataType::mSubscribe,
@@ -445,21 +436,15 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
   }
 }
 
-Status CopilotWorker::DistributeCommand(std::string msg,
-                                        Command::Recipients destinations) {
+void CopilotWorker::DistributeCommand(
+    std::string msg,
+    std::vector<std::pair<ClientID, int>> destinations) {
   // Destinations per worker.
   std::unordered_map<int, Command::Recipients> sub_destinations;
 
   // Find which worker the command needs to be sent to for each client.
-  for (ClientID& client_id : destinations) {
-    auto it = client_worker_id_.find(client_id);
-    if (it != client_worker_id_.end()) {
-      sub_destinations[it->second].push_back(std::move(client_id));
-    } else {
-      LOG_WARN(options_.info_log,
-        "No worker ID for client '%s'",
-        client_id.c_str());
-    }
+  for (auto& elem : destinations) {
+    sub_destinations[elem.second].push_back(std::move(elem.first));
   }
 
   // Send the command to each worker.
@@ -473,9 +458,13 @@ Status CopilotWorker::DistributeCommand(std::string msg,
       new CopilotCommand(msg,
                          std::move(recipients),
                          options_.env->NowMicros()));
-    /*Status status = */copilot_->SendCommand(std::move(cmd), worker_id);
+    Status status = copilot_->SendCommand(std::move(cmd), worker_id);
+    if (!status.ok()) {
+      LOG_INFO(options_.info_log,
+        "Failed to distribute message to %s",
+        HostMap::ToString(recipients).c_str());
+    }
   }
-  return Status::OK();
 }
 
 

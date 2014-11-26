@@ -21,6 +21,7 @@
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/logger.h"
+#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
@@ -75,7 +76,6 @@ ClientImpl::ClientImpl(const ClientID& client_id,
                        std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log)
 : env_(ClientEnv::Default())
-, client_id_(client_id)
 , pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
@@ -97,13 +97,16 @@ ClientImpl::ClientImpl(const ClientID& client_id,
     ProcessMetadata(std::move(msg));
   };
 
+  worker_data_.reset(new WorkerData[num_workers]);
+
   // Construct message loop.
   msg_loop_ = new MsgLoop(ClientEnv::Default(),
                           EnvOptions(),
                           0,           // no accept loop
                           num_workers,
                           info_log,
-                          "client");
+                          "client",
+                          client_id);
 
   msg_loop_->RegisterCallbacks(callbacks);
   msg_loop_thread_ = std::thread([this] () {
@@ -143,10 +146,15 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                          "NamespaceID must be greater than 100."),
                          messageId);
   }
+
+  // Find the worker ID for this topic.
+  int worker_id = GetWorkerForTopic(name);
+  auto& worker_data = worker_data_[worker_id];
+
   // Construct message.
   MessageData message(MessageType::mPublish,
                       tenant_id_,
-                      client_id_,
+                      msg_loop_->GetClientId(worker_id),
                       Slice(name),
                       namespaceId,
                       data,
@@ -171,16 +179,15 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                       env_->NowMicros()));
 
   // Send to event loop for processing (the loop will free it).
-  std::unique_lock<std::mutex> lock(message_sent_mutex_);
-  bool added = messages_sent_.insert(msgid).second;
+  std::unique_lock<std::mutex> lock(worker_data.message_sent_mutex);
+  bool added = worker_data.messages_sent.insert(msgid).second;
   lock.unlock();
 
   assert(added);
-  int worker_id = next_worker_id_++ % msg_loop_->GetNumWorkers();
   Status status = msg_loop_->SendCommand(std::move(command), worker_id);
   if (!status.ok() && added) {
-    std::unique_lock<std::mutex> lock1(message_sent_mutex_);
-    messages_sent_.erase(msgid);
+    std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
+    worker_data.messages_sent.erase(msgid);
     lock1.unlock();
   }
 
@@ -190,7 +197,9 @@ PublishStatus ClientImpl::Publish(const Topic& name,
 
 // Subscribe to a specific topics.
 void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
-  std::vector<TopicPair> subscribe;
+  // Vector of subscriptions for each worker loop.
+  // (subscriptions are sharded on topic to worker loops).
+  std::vector<std::vector<TopicPair>> subscribe(msg_loop_->GetNumWorkers());
   std::vector<SubscriptionRequest> restore;
 
   // Determine which requests can be executed right away and which
@@ -209,10 +218,11 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
     if (elem.start) {
       auto type = elem.subscribe ? MetadataType::mSubscribe
                                  : MetadataType::mUnSubscribe;
-      subscribe.emplace_back(elem.start.get(),
-                             elem.topic_name,
-                             type,
-                             elem.namespace_id);
+      int worker_id = GetWorkerForTopic(elem.topic_name);
+      subscribe[worker_id].emplace_back(elem.start.get(),
+                                        elem.topic_name,
+                                        type,
+                                        elem.namespace_id);
     } else {
       restore.push_back(elem);
     }
@@ -221,14 +231,19 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
   if (storage_) {
     storage_->Load(restore);
   }
-  IssueSubscriptions(subscribe);
+  for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers(); ++worker_id) {
+    if (!subscribe[worker_id].empty()) {
+      IssueSubscriptions(subscribe[worker_id], worker_id);
+    }
+  }
 }
 
-void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics) {
+void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics,
+                                    int worker_id) {
   // Construct message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
-                          client_id_,
+                          msg_loop_->GetClientId(worker_id),
                           topics);
 
   // Get a serialized version of the message
@@ -241,7 +256,6 @@ void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics) {
                                        std::move(serialized),
                                        env_->NowMicros()));
   // Send to event loop for processing (the loop will free it).
-  int worker_id = next_worker_id_++ % msg_loop_->GetNumWorkers();
   Status status = msg_loop_->SendCommand(std::move(command), worker_id);
 
   // If there was any error, invoke callback with appropriate status
@@ -275,35 +289,35 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   // extract topic name from message
   std::string name = data->GetTopicName().ToString();
 
-  {
-    std::lock_guard<std::mutex> lock(topic_map_mutex_);
+  // Get the topic map for this thread.
+  int worker_id = MsgLoop::GetThreadWorkerIndex();
+  auto& topic_map = worker_data_[worker_id].topic_map;
 
-    // verify that we are subscribed to this topic
-    std::unordered_map<Topic, SequenceNumber>::iterator iter =
-                                          topic_map_.find(name);
-    // No active subscription to this topic, ignore message
-    if (iter == topic_map_.end()) {
-      LOG_INFO(info_log_,
-        "Discarded message (%.16s) due to missing subcription for Topic(%s)",
-        data->GetPayload().ToString().c_str(),
-        name.c_str());
-      return;
-    }
-    SequenceNumber last_msg_received = iter->second;
-
-    // Old message, ignore iter
-    if (data->GetSequenceNumber() < last_msg_received) {
-      LOG_INFO(info_log_,
-        "Message (%.16s)@%lu received out of order on Topic(%s)@%lu",
-        data->GetPayload().ToString().c_str(),
-        data->GetSequenceNumber(),
-        name.c_str(),
-        last_msg_received);
-      return;
-    }
-    // update last seqno received for this topic
-    iter->second = data->GetSequenceNumber();
+  // verify that we are subscribed to this topic
+  std::unordered_map<Topic, SequenceNumber>::iterator iter =
+                                        topic_map.find(name);
+  // No active subscription to this topic, ignore message
+  if (iter == topic_map.end()) {
+    LOG_INFO(info_log_,
+      "Discarded message (%.16s) due to missing subcription for Topic(%s)",
+      data->GetPayload().ToString().c_str(),
+      name.c_str());
+    return;
   }
+  SequenceNumber last_msg_received = iter->second;
+
+  // Old message, ignore iter
+  if (data->GetSequenceNumber() < last_msg_received) {
+    LOG_INFO(info_log_,
+      "Message (%.16s)@%lu received out of order on Topic(%s)@%lu",
+      data->GetPayload().ToString().c_str(),
+      data->GetSequenceNumber(),
+      name.c_str(),
+      last_msg_received);
+    return;
+  }
+  // update last seqno received for this topic
+  iter->second = data->GetSequenceNumber();
 
   // Create message wrapper for client (do not copy payload)
   std::unique_ptr<MessageReceivedClient> newmsg(
@@ -318,12 +332,15 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   msg_loop_->ThreadCheck();
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
+  int worker_id = MsgLoop::GetThreadWorkerIndex();
+  auto& worker_data = worker_data_[worker_id];
+
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
     // Attempt to remove sent message from list.
-    std::unique_lock<std::mutex> lock1(message_sent_mutex_);
-    bool successful_ack = messages_sent_.erase(ack.msgid);
+    std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
+    bool successful_ack = worker_data.messages_sent.erase(ack.msgid);
     lock1.unlock();
 
     // If successful, invoke callback.
@@ -358,14 +375,14 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   assert(meta->GetMetaType() == MessageMetadata::MetaType::Response);
   std::vector<TopicPair> pairs = meta->GetTopicInfo();
 
-  // This is the response ack of a subscription request sent earlier
+  // Get the topic map for this thread.
+  int worker_id = MsgLoop::GetThreadWorkerIndex();
+  auto& topic_map = worker_data_[worker_id].topic_map;
 
+  // This is the response ack of a subscription request sent earlier.
   for (const auto& elem : pairs) {
     // record confirmed subscriptions
-    {
-      std::lock_guard<std::mutex> lock(topic_map_mutex_);
-      topic_map_[elem.topic_name] = elem.seqno;
-    }
+    topic_map[elem.topic_name] = elem.seqno;
 
     // invoke application-registered callback
     if (subscription_callback_) {
@@ -379,7 +396,9 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
 
 void ClientImpl::ProcessRestoredSubscription(
     const std::vector<SubscriptionRequest> &restored) {
-  std::vector<TopicPair> subscribe;
+  // Vector of subscriptions for each worker loop.
+  // (subscriptions are sharded on topic to worker loops).
+  std::vector<std::vector<TopicPair>> subscribe(msg_loop_->GetNumWorkers());
   // This is the status returned when we failed to restore subscription.
   SubscriptionStatus failed_restore;
   failed_restore.status = Status::NotFound();
@@ -393,10 +412,11 @@ void ClientImpl::ProcessRestoredSubscription(
                elem.topic_name.c_str());
       assert(0);
     } else if (elem.start) {
-      subscribe.emplace_back(elem.start.get(),
-                             elem.topic_name,
-                             MetadataType::mSubscribe,
-                             elem.namespace_id);
+      int worker_id = GetWorkerForTopic(elem.topic_name);
+      subscribe[worker_id].emplace_back(elem.start.get(),
+                                        elem.topic_name,
+                                        MetadataType::mSubscribe,
+                                        elem.namespace_id);
     } else {
       // Inform the user that subscription restoring failed.
       if (subscription_callback_) {
@@ -405,11 +425,19 @@ void ClientImpl::ProcessRestoredSubscription(
     }
   }
 
-  IssueSubscriptions(subscribe);
+  for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers(); ++worker_id) {
+    if (!subscribe[worker_id].empty()) {
+      IssueSubscriptions(subscribe[worker_id], worker_id);
+    }
+  }
 }
 
 Statistics ClientImpl::GetStatistics() const {
   return msg_loop_->GetStatistics();
+}
+
+int ClientImpl::GetWorkerForTopic(const Topic& name) const {
+  return MurmurHash2<std::string>()(name) % msg_loop_->GetNumWorkers();
 }
 
 MessageReceivedClient::~MessageReceivedClient() {

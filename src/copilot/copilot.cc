@@ -60,8 +60,7 @@ Copilot::Copilot(CopilotOptions options):
   log_router_(options_.log_range.first, options_.log_range.second),
   control_tower_router_(options_.control_towers,
                         options_.consistent_hash_replicas,
-                        options_.control_towers_per_log),
-  copilot_id_(GetHostId().ToClientId()) {
+                        options_.control_towers_per_log) {
 
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 

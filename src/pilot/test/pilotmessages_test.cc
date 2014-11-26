@@ -31,7 +31,8 @@ class PilotTest {
                                 EnvOptions(),
                                 Pilot::DEFAULT_PORT,
                                 1,
-                                info_log_));
+                                info_log_,
+                                "pilot"));
 
     // Create Pilot
     options_.log_range = std::pair<LogID, LogID>(1, 1);
@@ -139,7 +140,7 @@ TEST(PilotTest, Publish) {
       }
     };
 
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log_);
+  MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(PilotTest::MsgLoopStart, &loop);
   while (!loop.IsRunning()) {
@@ -160,7 +161,7 @@ TEST(PilotTest, Publish) {
     data.SerializeToString(&serial);
     sent_msgs_.insert(data.GetMessageId());
     std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
-                                                  pilot_->GetPilotId(),
+                                                  pilot_->GetClientId(0),
                                                   env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
