@@ -14,6 +14,7 @@
 #include "src/port/port.h"
 #include "src/client/client.h"
 #include "src/util/common/guid_generator.h"
+#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
@@ -126,7 +127,10 @@ TEST(IntegrationTest, SequenceNumberZero) {
   };
 
   std::vector<std::string> received;
+  ThreadCheck thread_check(Env::Default());
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
+    // Messages from the same topic will always be received on the same thread.
+    thread_check.Check();
     received.push_back(mr->GetContents().ToString());
     message_sem.Post();
   };
