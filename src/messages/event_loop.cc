@@ -197,11 +197,11 @@ struct SocketEvent {
         partial_ = Slice();
         SharedString* str = send_queue_.front();
         if (--(str->refcount) == 0) {
-          event_loop_->stats_.write_latency->Record(
-            event_loop_->env_->NowMicros() - str->command_issue_time);
           event_loop_->FreeString(str);
         }
         send_queue_.pop_front();
+        event_loop_->stats_.write_latency->Record(
+          event_loop_->env_->NowMicros() - str->command_issue_time);
       }
 
       // No more partial data to be sent out.
