@@ -18,9 +18,9 @@
 #include <vector>
 
 #include "include/Status.h"
+#include "include/Logger.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/env_options.h"
-#include "src/util/common/logger.h"
 
 namespace rocketspeed {
 

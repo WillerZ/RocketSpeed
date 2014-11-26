@@ -28,10 +28,10 @@
 
 #include "external/folly/producer_consumer_queue.h"
 
+#include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/util/common/base_env.h"
-#include "src/util/common/logger.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/object_pool.h"
 #include "src/util/common/thread_check.h"

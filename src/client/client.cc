@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
 #include "include/Status.h"
@@ -20,49 +21,70 @@
 #include "src/client/client_env.h"
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
-#include "src/util/common/logger.h"
 #include "src/util/common/hash.h"
 
 namespace rocketspeed {
+
+ClientOptions::ClientOptions(const Configuration& _config,
+                             ClientID _client_id)
+    : config(_config),
+      client_id(std::move(_client_id)),
+      publish_callback(nullptr),
+      subscription_callback(nullptr),
+      receive_callback(nullptr),
+      storage(nullptr),
+      info_log(nullptr) {
+}
 
 Client::~Client() {
 }
 
 // Implementation of Client::Open from RocketSpeed.h
-Status Client::Open(const Configuration* config,
-                    const ClientID& client_id,
-                    PublishCallback publish_callback,
-                    SubscribeCallback subscription_callback,
-                    MessageReceivedCallback receive_callback,
-                    std::unique_ptr<SubscriptionStorage> storage,
+Status Client::Open(ClientOptions&& options_tmp,
                     Client** producer) {
+  ClientOptions options(std::move(options_tmp));
   // Validate arguments.
-  if (config == nullptr) {
-    return Status::InvalidArgument("config must not be null.");
-  }
   if (producer == nullptr) {
     return Status::InvalidArgument("producer must not be null.");
   }
-  if (config->GetTenantID() <= 100) {
+  if (options.config.GetTenantID() <= 100) {
     return Status::InvalidArgument("TenantId must be greater than 100.");
   }
-  if (config->GetPilotHostIds().empty()) {
+  if (options.config.GetPilotHostIds().empty()) {
     return Status::InvalidArgument("Must have at least one pilot.");
+  }
+  if (!options.info_log) {
+    options.info_log = std::make_shared<NullLogger>();
   }
 
   // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
-  *producer = new ClientImpl(client_id,
-                             config->GetPilotHostIds().front(),
-                             config->GetCopilotHostIds().front(),
-                             config->GetTenantID(),
-                             config->GetNumWorkers(),
-                             publish_callback,
-                             subscription_callback,
-                             receive_callback,
-                             std::move(storage),
-                             std::make_shared<NullLogger>());
+  *producer = new ClientImpl(options.client_id,
+                             options.config.GetPilotHostIds().front(),
+                             options.config.GetCopilotHostIds().front(),
+                             options.config.GetTenantID(),
+                             options.config.GetNumWorkers(),
+                             options.publish_callback,
+                             options.subscription_callback,
+                             options.receive_callback,
+                             std::move(options.storage),
+                             options.info_log);
   return Status::OK();
+}
+
+Status Client::Open(ClientOptions&& client_options,
+                    std::unique_ptr<Client>* client) {
+  // Validate arguments that we hide from undelying Open call.
+  if (client == nullptr) {
+    return Status::InvalidArgument("producer must not be null.");
+  }
+
+  Client* client_ptr;
+  Status status = Client::Open(std::move(client_options), &client_ptr);
+  if (status.ok()) {
+    client->reset(client_ptr);
+  }
+  return status;
 }
 
 ClientImpl::ClientImpl(const ClientID& client_id,

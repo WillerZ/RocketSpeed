@@ -20,10 +20,11 @@
 #include "src/client/client_env.h"
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
-#include "src/util/common/logger.h"
 #include "src/port/port.h"
 
 namespace rocketspeed {
+
+class Logger;
 
 // Internal implementation of the Client API.
 class ClientImpl : public Client {

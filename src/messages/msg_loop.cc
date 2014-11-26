@@ -4,12 +4,12 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
+#include "msg_loop.h"
 
-#include "src/messages/msg_loop.h"
+#include "include/Logger.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/util/common/base_env.h"
-#include "src/util/common/logger.h"
 
 namespace rocketspeed {
 

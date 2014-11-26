@@ -37,6 +37,45 @@ typedef std::function<void(SubscriptionStatus)> SubscribeCallback;
 typedef std::function<void(std::unique_ptr<MessageReceived>)>
                                           MessageReceivedCallback;
 
+/**
+ * An opaque logger type.
+ */
+class Logger;
+
+/**
+ * Describes the Client object to be created by Client::Open() call.
+ */
+struct ClientOptions {
+  // Configuration of this service provider.
+  const Configuration& config;
+
+  // Identifier for this client.
+  ClientID client_id;
+
+  // Invoked when a sent-message is acknowledged.
+  // Default: nullptr.
+  PublishCallback publish_callback;
+
+  // Invoked when a subscription is confirmed.
+  // Default: nullptr.
+  SubscribeCallback subscription_callback;
+
+  // Invoked when a message is received.
+  // Default: nullptr.
+  MessageReceivedCallback receive_callback;
+
+  // Strategy for storing subscription state.
+  // Default: nullptr.
+  std::unique_ptr<SubscriptionStorage> storage;
+
+  // Logger that is used for info messages.
+  // Default: nullptr.
+  std::shared_ptr<Logger> info_log;
+
+  // Constructor which fills default values.
+  ClientOptions(const Configuration& _config, ClientID _client_id);
+};
+
 /*
  * The Client is used to produce and consumer messages for a single topic
  * or multiple topics.
@@ -47,24 +86,18 @@ class Client {
    * Opens a Client. This can create connections to the Cloud Service
    * Provider, validate credentials, etc.
    *
-   * @param config The configuration of this service provider
-   * @param client_id Identifier for this client
-   * @param publish_callback Invoked when a sent-message is acknowledged
-   * @param subscription_callback Invoked when a subscription is confirmed
-   * @param receive_callback Invoked when a message is received
-   * @param storage Strategy for storing subscription state
-   * @param client Output parameter for constructred client
+   * @param options The description of client object to be created
    * @return on success returns OK(), otherwise errorcode
-   *
-   * All or any of the callbacks can be NULL.
    */
-  static Status Open(const Configuration* config,
-                     const ClientID& client_id,
-                     PublishCallback publish_callback,
-                     SubscribeCallback subscription_callback,
-                     MessageReceivedCallback receive_callback,
-                     std::unique_ptr<SubscriptionStorage> storage,
+  static Status Open(ClientOptions&& client_options,
                      Client** client);
+
+  /**
+   * See above for doumentation, this is a wrapper which uses smart pointer to
+   * return Client object.
+   */
+  static Status Open(ClientOptions&& client_options,
+                     std::unique_ptr<Client>* client);
 
   /**
    * Closes this Client's connection to the Cloud Service Provider.

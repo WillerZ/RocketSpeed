@@ -7,10 +7,10 @@
 
 #include <cstdint>
 #include <string>
+#include <functional>
 
 #include "include/Status.h"
 #include "src/util/common/env_options.h"
-#include "src/util/common/logger.h"
 
 namespace rocketspeed {
 

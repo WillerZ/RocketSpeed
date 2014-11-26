@@ -13,10 +13,11 @@
 #include "src/messages/messages.h"
 #include "src/messages/event_loop.h"
 #include "src/util/common/base_env.h"
-#include "src/util/common/logger.h"
 #include "src/port/Env.h"
 
 namespace rocketspeed {
+
+class Logger;
 
 // Application callback are invoked with messages of this type
 typedef std::function<void(std::unique_ptr<Message> msg)> MsgCallbackType;
