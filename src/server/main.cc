@@ -40,21 +40,21 @@ DEFINE_bool(tower, false, "start the control tower");
 DEFINE_int32(tower_port,
              rocketspeed::ControlTower::DEFAULT_PORT,
              "tower port number");
-DEFINE_int32(tower_rooms, 4, "tower rooms");
+DEFINE_int32(tower_rooms, 16, "tower rooms");
 
 // Pilot settings
 DEFINE_bool(pilot, false, "start the pilot");
 DEFINE_int32(pilot_port,
              rocketspeed::Pilot::DEFAULT_PORT,
              "pilot port number");
-DEFINE_int32(pilot_workers, 4, "pilot worker threads");
+DEFINE_int32(pilot_workers, 16, "pilot worker threads");
 
 // Copilot settings
 DEFINE_bool(copilot, false, "start the copilot");
 DEFINE_int32(copilot_port,
              rocketspeed::Copilot::DEFAULT_PORT,
              "copilot port number");
-DEFINE_int32(copilot_workers, 4, "copilot worker threads");
+DEFINE_int32(copilot_workers, 16, "copilot worker threads");
 
 int main(int argc, char** argv) {
   rocketspeed::Status st;
@@ -111,8 +111,13 @@ int main(int argc, char** argv) {
   }
 
   // Utility for creating a message loop.
-  auto make_msg_loop = [&] (int port) {
-    return new rocketspeed::MsgLoop(env, env_options, port, info_log);
+  auto make_msg_loop = [&] (int port, int workers, std::string name) {
+    return new rocketspeed::MsgLoop(env,
+                                    env_options,
+                                    port,
+                                    workers,
+                                    info_log,
+                                    std::move(name));
   };
 
   rocketspeed::ControlTower* tower = nullptr;
@@ -124,20 +129,29 @@ int main(int argc, char** argv) {
   std::shared_ptr<rocketspeed::MsgLoop> copilot_loop;
 
   if (FLAGS_tower) {
-    tower_loop.reset(make_msg_loop(FLAGS_tower_port));
+    tower_loop.reset(make_msg_loop(FLAGS_tower_port,
+                                   FLAGS_tower_rooms,
+                                   "tower"));
   }
 
   if (FLAGS_pilot && FLAGS_copilot && FLAGS_pilot_port == FLAGS_copilot_port) {
     // Pilot + Copilot sharing message loop.
-    pilot_loop.reset(make_msg_loop(FLAGS_pilot_port));
+    int workers = std::max(FLAGS_pilot_workers, FLAGS_copilot_workers);
+    pilot_loop.reset(make_msg_loop(FLAGS_pilot_port,
+                                   workers,
+                                   "cockpit"));
     copilot_loop = pilot_loop;
   } else {
     // Separate message loops if enabled.
     if (FLAGS_pilot) {
-      pilot_loop.reset(make_msg_loop(FLAGS_pilot_port));
+      pilot_loop.reset(make_msg_loop(FLAGS_pilot_port,
+                                     FLAGS_pilot_workers,
+                                     "pilot"));
     }
     if (FLAGS_copilot) {
-      copilot_loop.reset(make_msg_loop(FLAGS_copilot_port));
+      copilot_loop.reset(make_msg_loop(FLAGS_copilot_port,
+                                       FLAGS_copilot_workers,
+                                       "copilot"));
     }
   }
 
@@ -164,9 +178,7 @@ int main(int argc, char** argv) {
     rocketspeed::PilotOptions pilot_opts;
     pilot_opts.msg_loop = pilot_loop.get();
     pilot_opts.storage_url = FLAGS_storage_url;
-    pilot_opts.worker_queue_size = FLAGS_worker_queue_size;
     pilot_opts.log_range = log_range;
-    pilot_opts.num_workers = FLAGS_pilot_workers;
     pilot_opts.info_log = info_log;
 
     st = rocketspeed::Pilot::CreateNewInstance(std::move(pilot_opts),

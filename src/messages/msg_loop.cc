@@ -13,35 +13,33 @@
 
 namespace rocketspeed {
 
+thread_local int MsgLoop::worker_id_ = -1;
+
 //
 // This is registered with the event loop. The event loop invokes
 // this call on every message received.
 void
-MsgLoop::EventCallback(EventCallbackContext ctx,
-                       std::unique_ptr<Message> msg) {
+MsgLoop::EventCallback(std::unique_ptr<Message> msg) {
   // find the MsgLoop that we are working for
-  MsgLoop* msgloop = static_cast<MsgLoop*> (ctx);
-  assert(msgloop);
   assert(msg);
-  msgloop->ThreadCheck();
 
   // what message have we received?
   MessageType type = msg->GetMessageType();
-  LOG_INFO(msgloop->info_log_,
-      "Received message %d at port %ld", type, (long)msgloop->hostid_.port);
+  LOG_INFO(info_log_,
+      "Received message %d at port %ld", type, (long)hostid_.port);
 
   // Search for a callback method corresponding to this msg type
   // Give up ownership of this message to the callback function
   std::map<MessageType, MsgCallbackType>::const_iterator iter =
-    msgloop->msg_callbacks_.find(type);
-  if (iter != msgloop->msg_callbacks_.end()) {
+    msg_callbacks_.find(type);
+  if (iter != msg_callbacks_.end()) {
     iter->second(std::move(msg));
   } else {
     // If the user has not registered a message of this type,
     // then this msg will be droped silently.
-    LOG_WARN(msgloop->info_log_,
+    LOG_WARN(info_log_,
         "No registered msg callback for msg type %d", type);
-    msgloop->info_log_->Flush();
+    info_log_->Flush();
     assert(0);
   }
 }
@@ -52,24 +50,40 @@ MsgLoop::EventCallback(EventCallbackContext ctx,
 MsgLoop::MsgLoop(BaseEnv* env,
                  const EnvOptions& env_options,
                  int port,
+                 int num_workers,
                  const std::shared_ptr<Logger>& info_log,
-                 const std::string& stats_prefix):
+                 std::string name):
   env_(env),
   env_options_(env_options),
   info_log_(info_log),
-  event_loop_(env,
-              env_options,
-              port,
-              info_log,
-              EventCallback,
-              stats_prefix) {
+  name_(std::move(name)),
+  next_worker_id_(0) {
+  assert(num_workers >= 1);
+
   // Setup host id
   char myname[1024];
   gethostname(&myname[0], sizeof(myname));
   hostid_ = HostId(std::string(myname), port);
 
-  // set the Event callback context
-  event_loop_.SetEventCallbackContext(this);
+  auto event_callback = [this] (std::unique_ptr<Message> msg) {
+    EventCallback(std::move(msg));
+  };
+
+  auto accept_callback = [this] (int fd) {
+    // Assign the new connection to the least loaded event loop.
+    event_loops_[LoadBalancedWorkerId()]->Accept(fd);
+  };
+
+  for (int i = 0; i < num_workers; ++i) {
+    EventLoop* event_loop = new EventLoop(env,
+                                          env_options,
+                                          i == 0 ? port : 0,
+                                          info_log,
+                                          event_callback,
+                                          accept_callback,
+                                          "rocketspeed." + name);
+    event_loops_.emplace_back(event_loop);
+  }
 
   // log an informational message
   LOG_INFO(info_log,
@@ -101,11 +115,36 @@ void MsgLoop::Run() {
     };
   }
 
-  event_loop_.Run();
+  // Starting from 1, run worker loops on new threads.
+  for (size_t i = 1; i < event_loops_.size(); ++i) {
+    Env::ThreadId tid = env_->StartThread(
+      [this, i] () {
+        worker_id_ = i;  // Set this thread's worker index.
+        event_loops_[i]->Run();
+        worker_id_ = -1;  // No longer running an event loop.
+      },
+      name_ + "-" + std::to_string(i));
+    worker_threads_.push_back(tid);
+  }
+
+  // Main loop run on this thread.
+  assert(event_loops_.size() >= 1);
+
+  worker_id_ = 0;  // This thread is worker 0.
+  event_loops_[0]->Run();
+  worker_id_ = -1;  // No longer running the event loop.
 }
 
 void MsgLoop::Stop() {
-  event_loop_.Stop();
+  for (auto& event_loop : event_loops_) {
+    event_loop->Stop();
+  }
+
+  for (Env::ThreadId tid : worker_threads_) {
+    env_->WaitForJoin(tid);
+  }
+  worker_threads_.clear();
+
   LOG_INFO(info_log_, "Stopped a Message Loop at port %ld", (long)hostid_.port);
   info_log_->Flush();
 }
@@ -147,6 +186,20 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
         origin.c_str());
   }
   info_log_->Flush();
+}
+
+int MsgLoop::LoadBalancedWorkerId() const {
+  // Find the event loop with minimum load.
+  int worker_id = next_worker_id_++ % event_loops_.size();
+  uint64_t load_factor = event_loops_[worker_id]->GetLoadFactor();
+  for (int i = 0; i < static_cast<int>(event_loops_.size()); ++i) {
+    uint64_t next_load_factor = event_loops_[i]->GetLoadFactor();
+    if (next_load_factor < load_factor) {
+      worker_id = i;
+      load_factor = next_load_factor;
+    }
+  }
+  return worker_id;
 }
 
 }  // namespace rocketspeed

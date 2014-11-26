@@ -30,13 +30,13 @@ class PilotTest {
     msg_loop_.reset(new MsgLoop(env_,
                                 EnvOptions(),
                                 Pilot::DEFAULT_PORT,
+                                1,
                                 info_log_));
 
     // Create Pilot
     options_.log_range = std::pair<LogID, LogID>(1, 1);
     options_.msg_loop = msg_loop_.get();
     options_.info_log = info_log_;
-    options_.num_workers = 10;  // ensure multiple workers to test stats
     st_ = Pilot::CreateNewInstance(std::move(options_), &pilot_);
     if (!st_.ok()) {
       return;
@@ -139,7 +139,7 @@ TEST(PilotTest, Publish) {
       }
     };
 
-  MsgLoop loop(env_, env_options_, 58499, info_log_);
+  MsgLoop loop(env_, env_options_, 58499, 1, info_log_);
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(PilotTest::MsgLoopStart, &loop);
   while (!loop.IsRunning()) {
@@ -169,7 +169,7 @@ TEST(PilotTest, Publish) {
   checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
-  Statistics stats = pilot_->GetStatistics();
+  const Statistics& stats = pilot_->GetStatistics();
   std::string stats_report = stats.Report();
   ASSERT_NE(stats_report.find("rocketspeed.pilot.append_requests:        100"),
     std::string::npos);

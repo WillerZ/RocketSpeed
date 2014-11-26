@@ -19,10 +19,12 @@ class ManualConfiguration : public Configuration {
  public:
   ManualConfiguration(const std::vector<HostId>& pilots,
                       const std::vector<HostId>& copilots,
-                      TenantID tenant_id)
+                      TenantID tenant_id,
+                      int num_workers)
   : pilots_(pilots)
   , copilots_(copilots)
-  , tenant_id_(tenant_id) {
+  , tenant_id_(tenant_id)
+  , num_workers_(num_workers) {
   }
 
   virtual ~ManualConfiguration() {
@@ -40,18 +42,25 @@ class ManualConfiguration : public Configuration {
     return tenant_id_;
   }
 
+  virtual int GetNumWorkers() const {
+    return num_workers_;
+  }
+
  private:
   std::vector<HostId> pilots_;
   std::vector<HostId> copilots_;
   TenantID tenant_id_;
+  int num_workers_;
 };
 
 Configuration* Configuration::Create(const std::vector<HostId>& pilots,
                                      const std::vector<HostId>& copilots,
-                                     TenantID tenant_id) {
+                                     TenantID tenant_id,
+                                     int num_workers) {
   return new ManualConfiguration(pilots,
                                  copilots,
-                                 tenant_id);
+                                 tenant_id,
+                                 num_workers);
 }
 
 }  // namespace rocketspeed

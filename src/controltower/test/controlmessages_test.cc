@@ -47,6 +47,7 @@ class ControlTowerTest {
     msg_loop_.reset(new MsgLoop(env_,
                                 EnvOptions(),
                                 ControlTower::DEFAULT_PORT,
+                                1,
                                 info_log));
 
     ctoptions_.info_log = info_log;
@@ -199,7 +200,7 @@ TEST(ControlTowerTest, Ping) {
     };
 
   // create a client to communicate with the ControlTower
-  MsgLoop loop(env_, env_options_, 58499, info_log);
+  MsgLoop loop(env_, env_options_, 58499, 1, info_log);
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
@@ -261,7 +262,7 @@ TEST(ControlTowerTest, Subscribe) {
     };
 
   // create a client to communicate with the ControlTower
-  MsgLoop loop(env_, env_options_, 58499, info_log);
+  MsgLoop loop(env_, env_options_, 58499, 1, info_log);
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));

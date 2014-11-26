@@ -45,9 +45,14 @@ class Copilot {
     return copilot_id_;
   }
 
-  // Sends a command to the msgloop
-  Status SendCommand(std::unique_ptr<Command> command) {
-    return options_.msg_loop->SendCommand(std::move(command));
+  // Sends a command to a msgloop worker.
+  Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
+    return options_.msg_loop->SendCommand(std::move(command), worker_id);
+  }
+
+  // Get the worker loop associated with a log.
+  int GetLogWorker(LogID logid) const {
+    return logid % options_.msg_loop->GetNumWorkers();
   }
 
  private:

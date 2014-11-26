@@ -21,9 +21,7 @@ PilotOptions::PilotOptions()
     log_file_time_to_roll(0),
     storage(nullptr),
     log_range(1, 100000),
-    num_workers(std::thread::hardware_concurrency()),
-    worker_queue_size(1000000),
-    num_storage_workers_(12) {
+    num_storage_workers_(16) {
 }
 
 }  // namespace rocketspeed

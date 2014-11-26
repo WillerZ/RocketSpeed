@@ -42,7 +42,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
     // See T4894216
     log_range = std::pair<LogID, LogID>(1, 1);
   } else {
-    log_range = std::pair<LogID, LogID>(1, 1000);
+    log_range = std::pair<LogID, LogID>(1, 100000);
   }
 #else
   // Something more substantial for the mock logdevice.
@@ -73,18 +73,20 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   control_tower_loop_.reset(new MsgLoop(env,
                                         env_options,
                                         ControlTower::DEFAULT_PORT,
+                                        16,
                                         info_log_,
-                                        "control_tower"));
+                                        "tower"));
   cockpit_loop_.reset(new MsgLoop(env,
                                   env_options,
                                   Copilot::DEFAULT_PORT,
+                                  16,
                                   info_log_,
                                   "cockpit"));
 
   // Create ControlTower
   control_tower_options_.log_range = log_range;
   control_tower_options_.info_log = info_log_;
-  control_tower_options_.number_of_rooms = 4;
+  control_tower_options_.number_of_rooms = 16;
   control_tower_options_.msg_loop = control_tower_loop_.get();
   st = ControlTower::CreateNewInstance(control_tower_options_, &control_tower_);
   if (!st.ok()) {
@@ -96,7 +98,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   copilot_options_.control_towers.push_back(
                    control_tower_->GetHostId().ToClientId());
   copilot_options_.info_log = info_log_;
-  copilot_options_.num_workers = 4;
+  copilot_options_.num_workers = 16;
   copilot_options_.msg_loop = cockpit_loop_.get();
   st = Copilot::CreateNewInstance(copilot_options_, &copilot_);
   if (!st.ok()) {
@@ -107,7 +109,6 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   // Create Pilot
   pilot_options_.log_range = log_range;
   pilot_options_.info_log = info_log_;
-  pilot_options_.num_workers = 12;
   pilot_options_.msg_loop = cockpit_loop_.get();
   st = Pilot::CreateNewInstance(pilot_options_, &pilot_);
   if (!st.ok()) {

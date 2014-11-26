@@ -38,21 +38,42 @@
 
 namespace rocketspeed {
 
-typedef void* EventCallbackContext;
-typedef std::function<void(EventCallbackContext, std::unique_ptr<Message> msg)>
-                                            EventCallbackType;
+typedef std::function<void(std::unique_ptr<Message> msg)>
+  EventCallbackType;
+
+typedef std::function<void(int fd)> AcceptCallbackType;
 
 class SocketEvent;
 
 // A refcounted, pooled version of a serialized message string
 struct SharedString : public PooledObject<SharedString> {
  public:
-  explicit SharedString(std::string s, int c)
+  explicit SharedString(std::string s, int c, uint64_t t)
   : store(std::move(s))
-  , refcount(c) {}
+  , refcount(c)
+  , command_issue_time(t) {}
 
   std::string store;
   int refcount;
+  uint64_t command_issue_time;  // time the associated command was issued
+};
+
+class AcceptCommand : public Command {
+ public:
+  explicit AcceptCommand(int fd, uint64_t issued_time)
+  : Command(issued_time)
+  , fd_(fd) {}
+
+  bool IsSendCommand() const {
+    return false;
+  }
+
+  int GetFD() const {
+    return fd_;
+  }
+
+ private:
+  int fd_;
 };
 
 class EventLoop {
@@ -65,7 +86,7 @@ class EventLoop {
    *             Set to <= 0 to have no accept loop.
    * @param info_log Write informational messages to this log
    * @param event_callback Callback invoked when Dispatch is called
-   * @param command_callback Callback invoked for every msg received
+   * @param accept_callback Callback invoked when a new client connects
    * @param command_queue_size The size of the internal command queue
    */
   EventLoop(BaseEnv* env,
@@ -73,19 +94,11 @@ class EventLoop {
             int port,
             const std::shared_ptr<Logger>& info_log,
             EventCallbackType event_callback,
+            AcceptCallbackType accept_callback,
             const std::string& stats_prefix = "",
             uint32_t command_queue_size = 65536);
 
   virtual ~EventLoop();
-
-  /**
-   *  Set the callback context
-   * @param arg A opaque blob that is passed back to every invocation of
-   *            event_callback_.
-   */
-  void SetEventCallbackContext(EventCallbackContext ctx) {
-    event_callback_context_ = ctx;
-  }
 
   // Start this instance of the Event Loop
   void Run(void);
@@ -100,6 +113,10 @@ class EventLoop {
   // This call is thread-safe.
   Status SendCommand(std::unique_ptr<Command> command);
 
+  // Start communicating on a fd.
+  // This call is thread-safe.
+  void Accept(int fd);
+
   // Dispatches a message to the event callback.
   void Dispatch(std::unique_ptr<Message> message);
 
@@ -113,6 +130,16 @@ class EventLoop {
 
   void ThreadCheck() const {
     thread_check_.Check();
+  }
+
+  // Returns a proxy for the amount of load on this thread.
+  // This is used for load balancing new connections.
+  // This call is thread-safe.
+  uint64_t GetLoadFactor() const {
+    // As a simple approximation, use number of connections as load proxy.
+    // A better implementation may be to count the number of messages processed
+    // in the last N seconds.
+    return active_connections_.load();
   }
 
   // Debug logging severity levels.
@@ -134,8 +161,8 @@ class EventLoop {
  private:
   friend class SocketEvent;
 
-  SharedString* AllocString(std::string s, int c) {
-    return string_pool_.Allocate(s, c);
+  SharedString* AllocString(std::string s, int c, uint64_t t) {
+    return string_pool_.Allocate(std::move(s), c, t);
   }
 
   void FreeString(SharedString* s) {
@@ -160,9 +187,7 @@ class EventLoop {
 
   // The callbacks
   EventCallbackType event_callback_;
-
-  // The callback context
-  EventCallbackContext event_callback_context_;
+  AcceptCallbackType accept_callback_;
 
   // The connection listener
   evconnlistener* listener_ = nullptr;
@@ -184,6 +209,9 @@ class EventLoop {
   // a cache of ClientIds to connections
   std::map<ClientID, std::vector<SocketEvent*>> connection_cache_;
 
+  // connection_cache_.size(), but atomic
+  std::atomic<uint64_t> active_connections_;
+
   // Object pool of SharedStrings
   PooledObjectList<SharedString> string_pool_;
 
@@ -193,11 +221,13 @@ class EventLoop {
   struct Stats {
     explicit Stats(const std::string& prefix) {
       command_latency = all.AddLatency(prefix + ".command_latency");
+      write_latency = all.AddLatency(prefix + ".write_latency");
       commands_processed = all.AddCounter(prefix + ".commands_processed");
     }
 
     Statistics all;
-    Histogram* command_latency;
+    Histogram* command_latency;   // time from SendCommand to do_command
+    Histogram* write_latency;     // time from SendCommand to socket write
     Counter* commands_processed;
   } stats_;
 

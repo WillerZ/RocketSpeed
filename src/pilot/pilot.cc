@@ -13,6 +13,20 @@
 
 namespace rocketspeed {
 
+void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
+  // Record latency
+  uint64_t latency = pilot_->options_.env->NowMicros() - append_time_;
+  pilot_->worker_data_[worker_id_].stats_.append_latency->Record(latency);
+  pilot_->worker_data_[worker_id_].stats_.append_requests->Add(1);
+  pilot_->AppendCallback(append_status,
+                         seqno,
+                         std::move(msg_),
+                         logid_,
+                         append_time_,
+                         worker_id_);
+  pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
+}
+
 /**
  * Sanitize user-specified options
  */
@@ -34,25 +48,6 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
   return std::move(options);
 }
 
-void Pilot::StartWorkers() {
-  // Start worker threads.
-  for (size_t i = 0; i < workers_.size(); ++i) {
-    worker_threads_.emplace_back(
-      [this, i] (PilotWorker* worker) {
-        options_.env->SetCurrentThreadName("pilot-" + std::to_string(i));
-        worker->Run();
-      },
-      workers_[i].get());
-  }
-
-  // Wait for them to start.
-  for (const auto& worker : workers_) {
-    while (!worker->IsRunning()) {
-      std::this_thread::yield();
-    }
-  }
-}
-
 /**
  * Private constructor for a Pilot
  */
@@ -61,6 +56,8 @@ Pilot::Pilot(PilotOptions options):
   log_router_(options_.log_range.first, options_.log_range.second),
   pilot_id_(options_.msg_loop->GetHostId().ToClientId()) {
   assert(options_.msg_loop);
+
+  worker_data_.resize(options_.msg_loop->GetNumWorkers());
 
   if (options_.storage == nullptr) {
     // Create log device client
@@ -83,28 +80,11 @@ Pilot::Pilot(PilotOptions options):
 
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
-  // Create workers.
-  for (uint32_t i = 0; i < options_.num_workers; ++i) {
-    workers_.emplace_back(new PilotWorker(options_,
-                                          log_storage_.get(),
-                                          this));
-  }
-
   LOG_INFO(options_.info_log, "Created a new Pilot");
   options_.info_log->Flush();
 }
 
 Pilot::~Pilot() {
-  // Stop all the workers.
-  for (auto& worker : workers_) {
-    worker->Stop();
-  }
-
-  // Join their threads.
-  for (auto& worker_thread : worker_threads_) {
-    worker_thread.join();
-  }
-
   options_.info_log->Flush();
 }
 
@@ -122,20 +102,19 @@ Status Pilot::CreateNewInstance(PilotOptions options,
     return Status::NotInitialized();
   }
 
-  (*pilot)->StartWorkers();
-
   return Status::OK();
 }
 
 // A callback method to process MessageData
 void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
   // Sanity checks.
-  options_.msg_loop->ThreadCheck();
   assert(msg);
   assert(msg->GetMessageType() == MessageType::mPublish);
 
+  int worker_id = MsgLoop::GetThreadWorkerIndex();
+
   // Route topic to log ID.
-  auto msg_data = unique_static_cast<MessageData>(std::move(msg));
+  MessageData* msg_data = static_cast<MessageData*>(msg.release());
   LogID logid;
   Slice topic_name = msg_data->GetTopicName();
   if (!log_router_.GetLogID(topic_name, &logid).ok()) {
@@ -148,12 +127,89 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
       msg_data->GetPayload().ToString().c_str(),
       msg_data->GetTopicName().ToString().c_str());
 
-  // Forward to worker.
-  size_t worker_id = logid % workers_.size();
-  if (!workers_[worker_id]->Forward(logid, std::move(msg_data))) {
+  // Setup AppendCallback
+  uint64_t now = options_.env->NowMicros();
+  AppendClosure* closure;
+  std::unique_ptr<MessageData> msg_owned(msg_data);
+  closure = worker_data_[worker_id].append_closure_pool_->Allocate(
+    this,
+    std::move(msg_owned),
+    logid,
+    now,
+    worker_id);
+
+  // Asynchronously append to log storage.
+  auto append_callback = std::ref(*closure);
+  auto status = log_storage_->AppendAsync(logid,
+                                          msg_data->GetStorageSlice(),
+                                          std::move(append_callback));
+
+  if (!status.ok()) {
+    // Append call failed, log and send failure ack.
+    worker_data_[worker_id].stats_.failed_appends->Add(1);
     LOG_WARN(options_.info_log,
-        "Worker %d queue is full.",
-        static_cast<int>(worker_id));
+      "Failed to append to log ID %lu (%s)",
+      static_cast<uint64_t>(logid), status.ToString().c_str());
+    options_.info_log->Flush();
+
+    SendAck(msg_data, 0, MessageDataAck::AckStatus::Failure, worker_id);
+
+    // If AppendAsync, the closure will never be invoked, so delete now.
+    worker_data_[worker_id].append_closure_pool_->Deallocate(closure);
+  }
+}
+
+void Pilot::AppendCallback(Status append_status,
+                           SequenceNumber seqno,
+                           std::unique_ptr<MessageData> msg,
+                           LogID logid,
+                           uint64_t append_time,
+                           int worker_id) {
+  if (append_status.ok()) {
+    // Append successful, send success ack.
+    SendAck(msg.get(), seqno, MessageDataAck::AckStatus::Success, worker_id);
+    LOG_INFO(options_.info_log,
+        "Appended (%.16s) successfully to Topic(%s) in log %lu",
+        msg->GetPayload().ToString().c_str(),
+        msg->GetTopicName().ToString().c_str(),
+        logid);
+  } else {
+    // Append failed, send failure ack.
+    worker_data_[worker_id].stats_.failed_appends->Add(1);
+    LOG_WARN(options_.info_log,
+        "AppendAsync failed (%s)",
+        append_status.ToString().c_str());
+    options_.info_log->Flush();
+    SendAck(msg.get(), 0, MessageDataAck::AckStatus::Failure, worker_id);
+  }
+}
+
+void Pilot::SendAck(MessageData* msg,
+                    SequenceNumber seqno,
+                    MessageDataAck::AckStatus status,
+                    int worker_id) {
+  MessageDataAck::Ack ack;
+  ack.status = status;
+  ack.msgid = msg->GetMessageId();
+  ack.seqno = seqno;
+
+  // create new message
+  const ClientID& client = msg->GetOrigin();
+  MessageDataAck newmsg(msg->GetTenantID(), client, { ack });
+  // serialize message
+  std::string serial;
+  newmsg.SerializeToString(&serial);
+  // send message
+  std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
+                                                client,
+                                                options_.env->NowMicros()));
+  Status st = options_.msg_loop->SendCommand(std::move(cmd), worker_id);
+  if (!st.ok()) {
+    // This is entirely possible, other end may have disconnected by the time
+    // we get round to sending an ack. This shouldn't be a rare occurrence.
+    LOG_INFO(options_.info_log,
+      "Failed to send ack to %s",
+      client.c_str());
   }
 }
 
@@ -170,11 +226,11 @@ std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
 }
 
 Statistics Pilot::GetStatistics() const {
-  Statistics aggregated;
-  for (size_t i = 0; i < workers_.size(); ++i) {
-    aggregated.Aggregate(workers_[i]->GetStatistics());
+  Statistics aggr;
+  for (const WorkerData& data : worker_data_) {
+    aggr.Aggregate(data.stats_.all);
   }
-  return std::move(aggregated);
+  return aggr;
 }
 
 }  // namespace rocketspeed

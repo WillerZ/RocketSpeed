@@ -33,11 +33,13 @@ class CopilotTest {
     ct_msg_loop_.reset(new MsgLoop(env_,
                                    EnvOptions(),
                                    ControlTower::DEFAULT_PORT,
+                                   1,
                                    info_log_));
 
     cp_msg_loop_.reset(new MsgLoop(env_,
                                    EnvOptions(),
                                    Copilot::DEFAULT_PORT,
+                                   1,
                                    info_log_));
 
     // Create ControlTower
@@ -169,7 +171,7 @@ TEST(CopilotTest, Publish) {
       }
     };
 
-  MsgLoop loop(env_, env_options_, 58499, GetLogger());
+  MsgLoop loop(env_, env_options_, 58499, 1, GetLogger());
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));

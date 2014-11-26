@@ -18,14 +18,14 @@ namespace rocketspeed {
 /**
  * Command containing a pre-serialized message.
  */
-class ClientCommand : public Command {
+class ClientCommand : public SendCommand {
  public:
   // Construct from data message.
   ClientCommand(const MsgId& msgid,
                 ClientID recipient,
                 std::string msg,
                 uint64_t issued_time) :
-    Command(issued_time),
+    SendCommand(issued_time),
     msgid_(msgid),
     msg_(std::move(msg)) {
     recipient_.push_back(std::move(recipient));
@@ -35,7 +35,7 @@ class ClientCommand : public Command {
   ClientCommand(ClientID recipient,
                 std::string msg,
                 uint64_t issued_time) :
-    Command(issued_time),
+    SendCommand(issued_time),
     msg_(std::move(msg)) {
     recipient_.push_back(std::move(recipient));
   }
@@ -52,9 +52,6 @@ class ClientCommand : public Command {
 
   const Recipients& GetDestination() const {
     return recipient_;
-  }
-  bool IsSendCommand() const {
-    return true;
   }
 
  private:

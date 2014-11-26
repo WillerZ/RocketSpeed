@@ -307,11 +307,13 @@ class Configuration {
    * @param pilots Pilot hostnames.
    * @param copilots Copilot hostnames.
    * @param tenant_id Client tenant ID.
+   * @param num_workers Number of client worker threads.
    * @return A new Configuration with the specified options.
    */
   static Configuration* Create(const std::vector<HostId>& pilots,
                                const std::vector<HostId>& copilots,
-                               TenantID tenant_id);
+                               TenantID tenant_id,
+                               int num_workers = 4);
 
   virtual ~Configuration() {}
 
@@ -329,6 +331,11 @@ class Configuration {
    * The Tenant associated with this configuration
    */
   virtual TenantID GetTenantID() const = 0;
+
+  /**
+   * The number of client worker threads.
+   */
+  virtual int GetNumWorkers() const = 0;
 };
 
 enum Retention : char {

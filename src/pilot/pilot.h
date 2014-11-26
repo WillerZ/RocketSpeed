@@ -18,9 +18,60 @@
 #include "src/util/log_router.h"
 #include "src/util/storage.h"
 #include "src/pilot/options.h"
-#include "src/pilot/worker.h"
 
 namespace rocketspeed {
+
+class Pilot;
+
+// Command for sending acks.
+class PilotCommand : public SendCommand {
+ public:
+  PilotCommand(std::string message,
+               const ClientID& client,
+               uint64_t issued_time):
+    SendCommand(issued_time),
+    message_(std::move(message)) {
+    recipient_.push_back(client);
+  }
+  void GetMessage(std::string* out) {
+    out->assign(std::move(message_));
+  }
+  // return the Destination HostId, otherwise returns null.
+  const Recipients& GetDestination() const {
+    return recipient_;
+  }
+
+ private:
+  Recipients recipient_;
+  std::string message_;
+};
+
+// Storage for captured objects in the append callback.
+struct AppendClosure : public PooledObject<AppendClosure> {
+ public:
+  AppendClosure(Pilot* pilot,
+                std::unique_ptr<MessageData> msg,
+                LogID logid,
+                uint64_t now,
+                int worker_id)
+  : pilot_(pilot)
+  , msg_(std::move(msg))
+  , logid_(logid)
+  , append_time_(now)
+  , worker_id_(worker_id) {
+  }
+
+  void operator()(Status append_status, SequenceNumber seqno);
+
+  void Invoke(Status append_status, SequenceNumber seqno);
+
+ private:
+  Pilot* pilot_;
+  std::unique_ptr<MessageData> msg_;
+  LogID logid_;
+  uint64_t append_time_;
+  int worker_id_;
+};
 
 class Pilot {
  public:
@@ -44,14 +95,43 @@ class Pilot {
     return pilot_id_;
   }
 
-  // Sends a command to the msgloop
-  Status SendCommand(std::unique_ptr<Command> command) {
-    return options_.msg_loop->SendCommand(std::move(command));
-  }
-
   Statistics GetStatistics() const;
 
+  void AppendCallback(Status append_status,
+                      SequenceNumber seqno,
+                      std::unique_ptr<MessageData> msg,
+                      LogID logid,
+                      uint64_t append_time,
+                      int worker_id);
+
  private:
+  friend struct AppendClosure;
+
+  struct Stats {
+    Stats() {
+      append_latency = all.AddLatency("rocketspeed.pilot.append_latency_us");
+      append_requests = all.AddCounter("rocketspeed.pilot.append_requests");
+      failed_appends = all.AddCounter("rocketspeed.pilot.failed_appends");
+    }
+
+    Statistics all;
+
+    // Latency of append request -> response.
+    Histogram* append_latency;
+
+    // Number of append requests received.
+    Counter* append_requests;
+
+    // Number of append failures.
+    Counter* failed_appends;
+  };
+
+  // Send an ack message to the host for the msgid.
+  void SendAck(MessageData* msg,
+               SequenceNumber seqno,
+               MessageDataAck::AckStatus status,
+               int worker_id);
+
   // The options used by the Pilot
   PilotOptions options_;
 
@@ -61,21 +141,27 @@ class Pilot {
   // Log router for mapping topic names to logs.
   LogRouter log_router_;
 
-  // Worker objects and threads, these have their own message loops.
-  std::vector<std::unique_ptr<PilotWorker>> workers_;
-  std::vector<std::thread> worker_threads_;
+  // My subscriber id
+  const ClientID pilot_id_;
 
- // My subscriber id
- const ClientID pilot_id_;
+  struct alignas(CACHE_LINE_SIZE) WorkerData {
+    WorkerData()
+    : append_closure_pool_(new SharedPooledObjectList<AppendClosure>()) {
+    }
+
+    // AppendClosure object pool and lock.
+    std::unique_ptr<SharedPooledObjectList<AppendClosure>> append_closure_pool_;
+    Stats stats_;
+  };
+
+  // Per-thread data.
+  std::vector<WorkerData> worker_data_;
 
   // private Constructor
   explicit Pilot(PilotOptions options);
 
   // Sanitize input options if necessary
   PilotOptions SanitizeOptions(PilotOptions options);
-
-  // Start the worker threads in the background.
-  void StartWorkers();
 
   // callbacks to process incoming messages
   void ProcessPublish(std::unique_ptr<Message> msg);

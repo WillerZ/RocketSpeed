@@ -30,6 +30,7 @@ struct SocketEvent {
   , event_loop_(event_loop)
   , known_remote_(false)
   , write_ev_added_(false) {
+    event_loop->thread_check_.Check();
 
     // create read and write events
     ev_ = event_new(base, fd, EV_READ|EV_PERSIST,
@@ -126,12 +127,19 @@ struct SocketEvent {
     // register it now. The enqueued message will be sent out when the
     // socket is ready to be written.
     if (!write_ev_added_) {
-      if (event_add(write_ev_, nullptr)) {
-        LOG_WARN(event_loop_->GetLog(),
-            "Failed to add write event for fd(%d)", fd_);
-        status = Status::InternalError("Failed to enqueue write message");
-      } else {
-        write_ev_added_ = true;
+      // Try to write everything now.
+      WriteCallback(fd_);
+
+      if (!send_queue_.empty()) {
+        // Failed to write everything, so add a write event to notify us
+        // later when writing is available on this socket.
+        if (event_add(write_ev_, nullptr)) {
+          LOG_WARN(event_loop_->GetLog(),
+              "Failed to add write event for fd(%d)", fd_);
+          status = Status::InternalError("Failed to enqueue write message");
+        } else {
+          write_ev_added_ = true;
+        }
       }
     }
     return status;
@@ -154,7 +162,7 @@ struct SocketEvent {
 
   void WriteCallback(evutil_socket_t fd) {
     event_loop_->thread_check_.Check();
-    assert(write_ev_added_ && send_queue_.size() > 0);
+    assert(send_queue_.size() > 0);
 
     while (send_queue_.size() > 0) {
       //
@@ -169,8 +177,10 @@ struct SocketEvent {
               "errno(%d) \"%s\".",
               (int)partial_.size(), fd_, errno, strerror(errno));
           event_loop_->info_log_->Flush();
-          // write error, close connection.
-          delete this;
+          if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            // write error, close connection.
+            delete this;
+          }
           return;
         }
         if ((unsigned int)count != partial_.size()) {
@@ -187,6 +197,8 @@ struct SocketEvent {
         partial_ = Slice();
         SharedString* str = send_queue_.front();
         if (--(str->refcount) == 0) {
+          event_loop_->stats_.write_latency->Record(
+            event_loop_->env_->NowMicros() - str->command_issue_time);
           event_loop_->FreeString(str);
         }
         send_queue_.pop_front();
@@ -197,7 +209,7 @@ struct SocketEvent {
         // If there are any new pending messages, start processing it.
         partial_ = Slice(send_queue_.front()->store);
         assert(partial_.size() > 0);
-      } else {
+      } else if (write_ev_added_) {
         // No more queued messages. Switch off ready-to-write event on socket.
         if (event_del(write_ev_)) {
           LOG_WARN(event_loop_->GetLog(),
@@ -373,42 +385,65 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
     obj->stats_.command_latency->Record(now - command->GetIssuedTime());
     obj->stats_.commands_processed->Add(1);
 
-    // Have to handle the case when the message-send failed to write
-    // to output socket and have to invoke *some* callback to the app.
-    const Command::Recipients& remote = command.get()->GetDestination();
+    if (command->IsSendCommand()) {
+      // Need using otherwise SendCommand is confused with the member function.
+      using rocketspeed::SendCommand;
+      SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
 
-    // Move the message payload into a ref-counted string. The string
-    // will be deallocated only when all the remote destinations
-    // have been served.
-    std::string out;
-    command.get()->GetMessage(&out);
-    assert(out.size() > 0);
-    SharedString* msg = obj->AllocString(std::move(out), remote.size());
+      // Have to handle the case when the message-send failed to write
+      // to output socket and have to invoke *some* callback to the app.
+      const Command::Recipients& remote = send_cmd->GetDestination();
 
-    for (const ClientID& clientid : remote) {
-      SocketEvent* sev = obj->lookup_connection_cache(clientid);
+      // Move the message payload into a ref-counted string. The string
+      // will be deallocated only when all the remote destinations
+      // have been served.
+      std::string out;
+      send_cmd->GetMessage(&out);
+      assert(out.size() > 0);
+      SharedString* msg = obj->AllocString(std::move(out),
+                                           remote.size(),
+                                           send_cmd->GetIssuedTime());
 
-      // If the remote side has not yet established a connection, then
-      // create a new connection and insert into connection cache.
-      if (sev == nullptr) {
-        HostId host = HostId::ToHostId(clientid);
-        sev = obj->setup_connection(host, clientid);
+      // Increment ref count again in case it is deleted inside Enqueue.
+      msg->refcount++;
+      for (const ClientID& clientid : remote) {
+        SocketEvent* sev = obj->lookup_connection_cache(clientid);
+
+        // If the remote side has not yet established a connection, then
+        // create a new connection and insert into connection cache.
+        if (sev == nullptr) {
+          HostId host = HostId::ToHostId(clientid);
+          sev = obj->setup_connection(host, clientid);
+        }
+        if (sev != nullptr) {
+          // Enqueue data to SocketEvent queue. This message will be sent out
+          // when the output socket is ready to write.
+          status = sev->Enqueue(msg);
+        }
+        if (sev == nullptr || !status.ok()) {
+          if (sev == nullptr) {
+            LOG_WARN(obj->info_log_,
+              "No Socket to send msg to host %s, msg dropped...",
+              clientid.c_str());
+          } else {
+            LOG_WARN(obj->info_log_,
+              "Failed to enqueue message (%s) to host %s",
+              status.ToString().c_str(),
+              clientid.c_str());
+          }
+          obj->info_log_->Flush();
+          msg->refcount--;  // unable to queue msg, decrement refcount
+        }
+      }  // for loop
+      if (--msg->refcount == 0) {
+        obj->FreeString(msg);
       }
-      if (sev != nullptr) {
-        // Enqueue data to SocketEvent queue. This message will be sent out
-        // when the output socket is ready to write.
-        status = sev->Enqueue(msg);
-      }
-      if (sev == nullptr || !status.ok()) {
-        LOG_WARN(obj->info_log_,
-            "No Socket to send msg to host %s, msg dropped...",
-            clientid.c_str());
-        obj->info_log_->Flush();
-        msg->refcount--;  // unable to queue msg, decrement refcount
-      }
-    }  // for loop
-    if (msg->refcount == 0) {
-      obj->FreeString(msg);
+    } else {
+      // Must be an AcceptCommand.
+      // This object is managed by the event that it creates, and will destroy
+      // itself during an EOF callback.
+      AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
+      new SocketEvent(obj, accept_cmd->GetFD(), obj->base_);
     }
   }
 }
@@ -422,11 +457,7 @@ EventLoop::do_accept(struct evconnlistener *listener,
   EventLoop* event_loop = static_cast<EventLoop *>(arg);
   event_loop->thread_check_.Check();
   setup_fd(fd, event_loop);
-
-  // This object is managed by the event that it creates, and will destroy
-  // itself during an EOF callback.
-  new SocketEvent(event_loop, fd, event_loop->base_);
-
+  event_loop->accept_callback_(fd);
   LOG_INFO(event_loop->info_log_, "Accept successful on socket fd(%d)", fd);
 }
 
@@ -664,8 +695,14 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
   return Status::OK();
 }
 
+void EventLoop::Accept(int fd) {
+  // May be called from another thread, so must add to the command queue.
+  std::unique_ptr<Command> command(new AcceptCommand(fd, env_->NowMicros()));
+  SendCommand(std::move(command));
+}
+
 void EventLoop::Dispatch(std::unique_ptr<Message> message) {
-  event_callback_(event_callback_context_, std::move(message));
+  event_callback_(std::move(message));
 }
 
 // Adds an entry into the connection cache
@@ -697,6 +734,8 @@ EventLoop::insert_connection_cache(const ClientID& host, SocketEvent* sev) {
   if (!ret.second) {
     return false;   // object already existed
   }
+  ++active_connections_;
+  assert(active_connections_ == connection_cache_.size());
   return true;  // successfully inserted
 }
 
@@ -714,6 +753,8 @@ EventLoop::remove_connection_cache(const ClientID& host, SocketEvent* sev) {
         if (iter->second.empty()) {
           // No more SocketEvents for this host, so remove the entry.
           connection_cache_.erase(host);
+          --active_connections_;
+          assert(active_connections_ == connection_cache_.size());
         }
         return true;    // deleted successfully
       }
@@ -873,6 +914,7 @@ EventLoop::EventLoop(BaseEnv* env,
                      int port_number,
                      const std::shared_ptr<Logger>& info_log,
                      EventCallbackType event_callback,
+                     AcceptCallbackType accept_callback,
                      const std::string& stats_prefix,
                      uint32_t command_queue_size) :
   env_(env),
@@ -881,10 +923,11 @@ EventLoop::EventLoop(BaseEnv* env,
   running_(false),
   base_(nullptr),
   info_log_(info_log),
-  event_callback_(event_callback),
-  event_callback_context_(nullptr),
+  event_callback_(std::move(event_callback)),
+  accept_callback_(std::move(accept_callback)),
   listener_(nullptr),
   command_queue_(command_queue_size),
+  active_connections_(0),
   thread_check_(env),
   stats_(stats_prefix) {
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);

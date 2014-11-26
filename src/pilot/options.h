@@ -79,12 +79,6 @@ struct PilotOptions {
   // Warning: changing this range will change the mapping of topics to logs.
   std::pair<LogID, LogID> log_range;
 
-  // Number of worker loops for the pilot.
-  uint32_t num_workers;
-
-  // Size of the worker queue (number of commands in flight).
-  uint32_t worker_queue_size;
-
   // Number of workers for the log storage.
   uint32_t num_storage_workers_;
 

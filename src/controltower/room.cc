@@ -198,7 +198,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   std::unique_ptr<Command> cmd(new TowerCommand(std::move(out),
                                                 origin,
                                                 options.env->NowMicros()));
-  st = ct->SendCommand(std::move(cmd));
+  st = ct->SendCommand(std::move(cmd), ct->GetLogWorker(logid));
   if (!st.ok()) {
     LOG_INFO(options.info_log,
         "Unable to send Metadata response to tower for subscriber %s ",
@@ -268,7 +268,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
       new TowerCommand(std::move(serial),
                        destinations,
                        options.env->NowMicros()));
-    st = ct->SendCommand(std::move(cmd));
+    st = ct->SendCommand(std::move(cmd), ct->GetLogWorker(logid));
     if (st.ok()) {
       LOG_INFO(options.info_log,
               "Sent data (%.16s)@%lu for Topic(%s) to %s",

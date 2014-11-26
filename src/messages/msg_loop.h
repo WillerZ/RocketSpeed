@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
+#include <atomic>
 #include <map>
 #include <memory>
 
@@ -13,6 +14,7 @@
 #include "src/messages/event_loop.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/logger.h"
+#include "src/port/Env.h"
 
 namespace rocketspeed {
 
@@ -26,8 +28,9 @@ class MsgLoop {
   MsgLoop(BaseEnv* env,
           const EnvOptions& env_options,
           int port,
+          int num_workers,
           const std::shared_ptr<Logger>& info_log,
-          const std::string& stats_prefix = "");
+          std::string name = "msgloop");
 
   virtual ~MsgLoop();
 
@@ -39,7 +42,14 @@ class MsgLoop {
   void Run(void);
 
   // Is the MsgLoop up and running?
-  bool IsRunning() const { return event_loop_.IsRunning(); }
+  bool IsRunning() const {
+    for (const auto& event_loop : event_loops_) {
+      if (!event_loop->IsRunning()) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   // Stop the message loop.
   void Stop();
@@ -47,21 +57,53 @@ class MsgLoop {
   // Get the host ID of this message loop.
   const HostId& GetHostId() const { return hostid_; }
 
-  // Send a command to the event loop for processing.
+  // Send a command to an unspecified event loop for processing.
   // This call is thread-safe.
   Status SendCommand(std::unique_ptr<Command> command) {
-    return event_loop_.SendCommand(std::move(command));
+    return SendCommand(std::move(command), LoadBalancedWorkerId());
   }
 
-  const Statistics& GetStatistics() const {
-    return event_loop_.GetStatistics();
+  // Send a command to a specific event loop for processing.
+  // This call is thread-safe.
+  Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
+    assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
+    return event_loops_[worker_id]->SendCommand(std::move(command));
   }
 
+  Statistics GetStatistics() const {
+    Statistics stats;
+    for (const auto& event_loop : event_loops_) {
+      stats.Aggregate(event_loop->GetStatistics());
+    }
+    return stats;
+  }
+
+  // Checks that we are running on any EventLoop thread.
   void ThreadCheck() const {
-    event_loop_.ThreadCheck();
+    assert(worker_id_ != -1);
+  }
+
+  // Retrieves the number of EventLoop threads.
+  int GetNumWorkers() const {
+    return static_cast<int>(event_loops_.size());
+  }
+
+  // Get the worker ID of the least busy event loop.
+  int LoadBalancedWorkerId() const;
+
+  // Retrieves the worker ID for the currently running thread.
+  // Will assert if called from a non-EventLoop thread.
+  static int GetThreadWorkerIndex() {
+    assert(worker_id_ != -1);
+    return worker_id_;
   }
 
  private:
+  // Stores the worker_id for this thread.
+  // Reading this is only valid within an EventLoop callback. It is used to
+  // define affinities between workers and messages.
+  static thread_local int worker_id_;
+
   // The Environment
   BaseEnv* env_;
 
@@ -77,12 +119,19 @@ class MsgLoop {
   // The callbacks specified by the application
   std::map<MessageType, MsgCallbackType> msg_callbacks_;
 
-  // The underlying Eventloop callback handler
-  EventLoop event_loop_;
+  // The underlying EventLoop callback handlers, and threads.
+  std::vector<std::unique_ptr<EventLoop>> event_loops_;
+  std::vector<Env::ThreadId> worker_threads_;
 
-  // The static method registered with the EventLoop
-  static void EventCallback(EventCallbackContext ctx,
-                            std::unique_ptr<Message> msg);
+  // Name of the message loop.
+  // Used for stats and thread naming.
+  std::string name_;
+
+  // Looping counter to distribute load on the message loop.
+  mutable std::atomic<int> next_worker_id_;
+
+  // The EventLoop callback.
+  void EventCallback(std::unique_ptr<Message> msg);
 
   // method to provide default handling of ping message
   void ProcessPing(std::unique_ptr<Message> msg);
@@ -90,11 +139,11 @@ class MsgLoop {
                   const std::map<MessageType, MsgCallbackType>& cb);
 
   // Used by the PingCallback to enqueue a Ping response to the event loop
-  class PingCommand : public Command {
+  class PingCommand : public SendCommand {
    public:
     PingCommand(std::string message, const ClientID& host,
                 uint64_t issued_time):
-      Command(issued_time),
+      SendCommand(issued_time),
       message_(std::move(message)) {
       recipient_.push_back(host);
     }
@@ -104,9 +153,6 @@ class MsgLoop {
     // return the Destination ClientID, otherwise returns null.
     const Recipients& GetDestination() const {
       return recipient_;
-    }
-    bool IsSendCommand() const  {
-      return true;
     }
    private:
     Recipients recipient_;

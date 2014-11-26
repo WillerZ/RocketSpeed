@@ -55,6 +55,7 @@ Status Client::Open(const Configuration* config,
                              config->GetPilotHostIds().front(),
                              config->GetCopilotHostIds().front(),
                              config->GetTenantID(),
+                             config->GetNumWorkers(),
                              publish_callback,
                              subscription_callback,
                              receive_callback,
@@ -67,6 +68,7 @@ ClientImpl::ClientImpl(const ClientID& client_id,
                        const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
+                       int num_workers,
                        PublishCallback publish_callback,
                        SubscribeCallback subscription_callback,
                        MessageReceivedCallback receive_callback,
@@ -81,8 +83,8 @@ ClientImpl::ClientImpl(const ClientID& client_id,
 , subscription_callback_(subscription_callback)
 , receive_callback_(receive_callback)
 , storage_(std::move(storage))
-, info_log_(info_log) {
-
+, info_log_(info_log)
+, next_worker_id_(0) {
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
@@ -99,10 +101,11 @@ ClientImpl::ClientImpl(const ClientID& client_id,
   msg_loop_ = new MsgLoop(ClientEnv::Default(),
                           EnvOptions(),
                           0,           // no accept loop
+                          num_workers,
                           info_log,
                           "client");
-  msg_loop_->RegisterCallbacks(callbacks);
 
+  msg_loop_->RegisterCallbacks(callbacks);
   msg_loop_thread_ = std::thread([this] () {
     env_->SetCurrentThreadName("client");
     msg_loop_->Run();
@@ -161,10 +164,11 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   message.SerializeToString(&serialized);
 
   // Construct command.
-  std::unique_ptr<Command> command(new ClientCommand(msgid,
-                                                     pilot_host_id_.ToClientId(),
-                                                     std::move(serialized),
-                                                     env_->NowMicros()));
+  std::unique_ptr<Command> command(
+    new ClientCommand(msgid,
+                      pilot_host_id_.ToClientId(),
+                      std::move(serialized),
+                      env_->NowMicros()));
 
   // Send to event loop for processing (the loop will free it).
   std::unique_lock<std::mutex> lock(message_sent_mutex_);
@@ -172,7 +176,8 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   lock.unlock();
 
   assert(added);
-  Status status = msg_loop_->SendCommand(std::move(command));
+  int worker_id = next_worker_id_++ % msg_loop_->GetNumWorkers();
+  Status status = msg_loop_->SendCommand(std::move(command), worker_id);
   if (!status.ok() && added) {
     std::unique_lock<std::mutex> lock1(message_sent_mutex_);
     messages_sent_.erase(msgid);
@@ -236,7 +241,8 @@ void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics) {
                                        std::move(serialized),
                                        env_->NowMicros()));
   // Send to event loop for processing (the loop will free it).
-  Status status = msg_loop_->SendCommand(std::move(command));
+  int worker_id = next_worker_id_++ % msg_loop_->GetNumWorkers();
+  Status status = msg_loop_->SendCommand(std::move(command), worker_id);
 
   // If there was any error, invoke callback with appropriate status
   if (!status.ok() && subscription_callback_) {
@@ -263,24 +269,41 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   msg_loop_->ThreadCheck();
   const MessageData* data = static_cast<const MessageData*>(msg.get());
 
+  LOG_INFO(info_log_, "Received data (%.16s)",
+    data->GetPayload().ToString().c_str());
+
   // extract topic name from message
   std::string name = data->GetTopicName().ToString();
 
-  // verify that we are subscribed to this topic
-  std::unordered_map<Topic, SequenceNumber>::iterator iter =
-                                        topic_map_.find(name);
-  // No active subscription to this topic, ignore message
-  if (iter == topic_map_.end()) {
-    return;
-  }
-  SequenceNumber last_msg_received = iter->second;
+  {
+    std::lock_guard<std::mutex> lock(topic_map_mutex_);
 
-  // Old message, ignore it
-  if (data->GetSequenceNumber() < last_msg_received) {
-    return;
+    // verify that we are subscribed to this topic
+    std::unordered_map<Topic, SequenceNumber>::iterator iter =
+                                          topic_map_.find(name);
+    // No active subscription to this topic, ignore message
+    if (iter == topic_map_.end()) {
+      LOG_INFO(info_log_,
+        "Discarded message (%.16s) due to missing subcription for Topic(%s)",
+        data->GetPayload().ToString().c_str(),
+        name.c_str());
+      return;
+    }
+    SequenceNumber last_msg_received = iter->second;
+
+    // Old message, ignore iter
+    if (data->GetSequenceNumber() < last_msg_received) {
+      LOG_INFO(info_log_,
+        "Message (%.16s)@%lu received out of order on Topic(%s)@%lu",
+        data->GetPayload().ToString().c_str(),
+        data->GetSequenceNumber(),
+        name.c_str(),
+        last_msg_received);
+      return;
+    }
+    // update last seqno received for this topic
+    iter->second = data->GetSequenceNumber();
   }
-  // update last seqno received for this topic
-  iter->second = data->GetSequenceNumber();
 
   // Create message wrapper for client (do not copy payload)
   std::unique_ptr<MessageReceivedClient> newmsg(
@@ -339,7 +362,10 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
 
   for (const auto& elem : pairs) {
     // record confirmed subscriptions
-    topic_map_[elem.topic_name] = elem.seqno;
+    {
+      std::lock_guard<std::mutex> lock(topic_map_mutex_);
+      topic_map_[elem.topic_name] = elem.seqno;
+    }
 
     // invoke application-registered callback
     if (subscription_callback_) {
@@ -380,6 +406,10 @@ void ClientImpl::ProcessRestoredSubscription(
   }
 
   IssueSubscriptions(subscribe);
+}
+
+Statistics ClientImpl::GetStatistics() const {
+  return msg_loop_->GetStatistics();
 }
 
 MessageReceivedClient::~MessageReceivedClient() {

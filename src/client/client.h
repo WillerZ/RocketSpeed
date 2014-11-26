@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -42,15 +43,14 @@ class ClientImpl : public Client {
              const HostId& pilot_host_id,
              const HostId& copilot_host_id,
              TenantID tenant_id,
+             int num_workers,
              PublishCallback publish_callback,
              SubscribeCallback subscription_callback,
              MessageReceivedCallback receive_callback,
              std::unique_ptr<SubscriptionStorage> storage,
              std::shared_ptr<Logger> info_log);
 
-  const Statistics& GetStatistics() const {
-    return msg_loop_->GetStatistics();
-  }
+  Statistics GetStatistics() const;
 
  private:
   // Callback for a Data message
@@ -106,7 +106,15 @@ class ClientImpl : public Client {
 
   // Map a subscribed topic name to the last sequence number
   // received for this topic.
-  std::unordered_map<Topic, SequenceNumber>  topic_map_;
+  std::unordered_map<Topic, SequenceNumber> topic_map_;
+
+  // Lock for topic_map.
+  // TODO(pja) 1 : Have a topic map per client loop.
+  std::mutex topic_map_mutex_;
+
+  // Worker ID to send next message from.
+  // This loops in a round robin fashion.
+  std::atomic<int> next_worker_id_;
 };
 
 }  // namespace rocketspeed

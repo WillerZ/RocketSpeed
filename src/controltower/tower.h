@@ -28,8 +28,8 @@ class ControlTower {
   ControlTowerOptions& GetOptions() {return options_;}
 
   // Sends a command to the msgloop
-  Status SendCommand(std::unique_ptr<Command> command) {
-    return options_.msg_loop->SendCommand(std::move(command));
+  Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
+    return options_.msg_loop->SendCommand(std::move(command), worker_id);
   }
 
   // Returns the HostId to HostNumber mapping
@@ -49,6 +49,11 @@ class ControlTower {
   // Returns the unique id of this control tower
   const ClientID& GetTowerId() const {
     return tower_id_;
+  }
+
+  // Get the worker loop associated with a log.
+  int GetLogWorker(LogID logid) const {
+    return logid % options_.msg_loop->GetNumWorkers();
   }
 
  private:

@@ -108,7 +108,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
   MessageData* data = static_cast<MessageData*>(msg.get());
 
   LOG_INFO(options_.info_log,
-      "Received data (%s)@%lu for Topic(%s)",
+      "Received data (%.16s)@%lu for Topic(%s)",
       data->GetPayload().ToString().c_str(),
       data->GetSequenceNumber(),
       data->GetTopicName().ToString().c_str());
@@ -127,7 +127,8 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
   auto& worker = workers_[worker_id];
 
   // forward message to worker
-  if (!worker->Forward(logid, std::move(msg))) {
+  int event_loop_worker = MsgLoop::GetThreadWorkerIndex();
+  if (!worker->Forward(logid, std::move(msg), event_loop_worker)) {
     LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
@@ -175,7 +176,8 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
     std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to worker
-    worker->Forward(logid, std::move(newmessage));
+    int event_loop_worker = MsgLoop::GetThreadWorkerIndex();
+    worker->Forward(logid, std::move(newmessage), event_loop_worker);
   }
 }
 
@@ -191,4 +193,5 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   };
   return cb;
 }
+
 }  // namespace rocketspeed

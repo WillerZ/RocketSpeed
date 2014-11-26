@@ -29,11 +29,13 @@ DEFINE_bool(start_consumer, true, "starts the consumer");
 DEFINE_bool(start_local_server, true, "starts an embedded rocketspeed server");
 DEFINE_string(storage_url, "", "Storage service URL for local server");
 
-DEFINE_int32(num_threads, 4, "number of threads");
+DEFINE_int32(num_threads, 8, "number of threads");
 DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
 DEFINE_string(copilot_hostname, "localhost", "hostname of copilot");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
+DEFINE_int32(producer_workers, 16, "number of producer client workers");
+DEFINE_int32(consumer_workers, 16, "number of consumer client workers");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 1000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
@@ -55,16 +57,16 @@ typedef std::pair<rocketspeed::MsgId, uint64_t> MsgTime;
 
 struct Result {
   bool succeeded;
-  std::vector<MsgTime> msg_send_times;
 };
 
-static const Result failed = { false, {} };
+static const Result failed = { false };
 
 namespace rocketspeed {
 
 Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
   Client* producer) {
   Env* env = Env::Default();
+  GUIDGenerator msgid_generator;
 
   // Random number generator.
   std::mt19937_64 rng;
@@ -85,10 +87,6 @@ Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
 
   // Calculate message rate for this worker.
   int64_t rate = FLAGS_message_rate / FLAGS_num_threads;
-
-  // Record the send times for each message.
-  std::vector<MsgTime> msg_send_times;
-  msg_send_times.reserve(num_messages);
 
   auto start = std::chrono::steady_clock::now();
   for (int64_t i = 0; i < num_messages; ++i) {
@@ -124,11 +122,18 @@ Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
     snprintf(data.data(), data.size(),
              "%lu %lu", message_index++, send_time);
 
+    // Generate GUID for message
+    // 64 bits random
+    // 64 bits encode send time micros
+    MsgId msgid = msgid_generator.Generate();
+    *reinterpret_cast<uint64_t*>(&msgid) = send_time;
+
     // Send the message
     PublishStatus ps = producer->Publish(topic_name,
                                          namespaceid,
                                          topic_options,
-                                         payload);
+                                         payload,
+                                         msgid);
 
     if (!ps.status.ok()) {
       LOG_WARN(info_log,
@@ -137,8 +142,6 @@ Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
       info_log->Flush();
       return failed;
     }
-
-    msg_send_times.emplace_back(ps.msgid, send_time);
 
     if (FLAGS_message_rate) {
       // Check if we are sending messages too fast, and if so, sleep.
@@ -156,7 +159,7 @@ Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
       }
     }
   }
-  return Result { true, std::move(msg_send_times) };
+  return Result { true };
 }
 
 /*
@@ -167,8 +170,7 @@ int DoProduce(Client* producer,
               rocketspeed::port::Semaphore* all_ack_messages_received,
               std::atomic<int64_t>* ack_messages_received,
               std::chrono::time_point<std::chrono::steady_clock>*
-                                                     last_ack_message,
-              std::vector<std::vector<MsgTime>>* all_msg_send_times){
+                                                     last_ack_message){
   // Distribute total number of messages among them.
   std::vector<std::future<Result>> futures;
   int64_t total_messages = FLAGS_num_messages;
@@ -193,7 +195,6 @@ int DoProduce(Client* producer,
       }
       ret = 1;
     }
-    all_msg_send_times->emplace_back(std::move(result.msg_send_times));
   }
 
   if (FLAGS_await_ack) {
@@ -216,8 +217,10 @@ int DoProduce(Client* producer,
 void DoSubscribe(Client* consumer, NamespaceID nsid) {
   SequenceNumber start = 0;   // start sequence number (0 = only new records)
 
-  // subscribe 10K topics at a time
-  unsigned int batch_size = 10240;
+  // Subscribe 16 topics at a time
+  // This needs to be low enough so that subscriptions are evenly distributed
+  // among client threads.
+  unsigned int batch_size = 16;
 
   std::vector<SubscriptionRequest> topics;
   topics.reserve(batch_size);
@@ -355,23 +358,25 @@ int main(int argc, char** argv) {
   std::chrono::time_point<std::chrono::steady_clock> last_ack_message;
   std::chrono::time_point<std::chrono::steady_clock> last_data_message;
 
-  // Message ack times
-  std::vector<MsgTime> msg_ack_times;
-  msg_ack_times.reserve(FLAGS_num_messages);
+  // Benchmark statistics.
+  rocketspeed::Statistics stats;
+  rocketspeed::Histogram* ack_latency = stats.AddLatency("ack-latency");
+  rocketspeed::Histogram* recv_latency = stats.AddLatency("recv-latency");
 
   // Create callback for publish acks.
   std::atomic<int64_t> ack_messages_received{0};
   std::atomic<int64_t> failed_publishes{0};
   auto publish_callback = [&] (rocketspeed::ResultStatus rs) {
+    uint64_t now = env->NowMicros();
+    uint64_t send_time = *reinterpret_cast<uint64_t const*>(&rs.msgid);
+    ack_latency->Record(now - send_time);
+
     ++ack_messages_received;
 
     if (FLAGS_await_ack) {
       // This may be the last ack we receive, so set end to the time now.
       end = std::chrono::steady_clock::now();
       last_ack_message = std::chrono::steady_clock::now();
-
-      // Append receive time.
-      msg_ack_times.emplace_back(rs.msgid, env->NowMicros());
 
       // If we've received all messages, let the main thread know to finish up.
       if (ack_messages_received.load() == FLAGS_num_messages) {
@@ -388,12 +393,10 @@ int main(int argc, char** argv) {
   // Semaphore to signal when all data messages have been received
   rocketspeed::port::Semaphore all_messages_received;
 
-  // Data structure to track received message indices and latencies (microsecs).
-  uint64_t latency_max = static_cast<uint64_t>(-1);
-  std::vector<uint64_t> recv_latencies(FLAGS_num_messages, latency_max);
-
   // Create callback for processing messages received
   std::atomic<int64_t> messages_received{0};
+  std::vector<bool> is_received(FLAGS_num_messages, false);
+  std::mutex is_received_mutex;
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived> rs) {
     uint64_t now = env->NowMicros();
@@ -404,14 +407,13 @@ int main(int argc, char** argv) {
     rocketspeed::Slice data = rs->GetContents();
     uint64_t message_index, send_time;
     std::sscanf(data.data(), "%lu %lu", &message_index, &send_time);
-    if (message_index < recv_latencies.size()) {
-      if (recv_latencies[message_index] == latency_max) {
-        recv_latencies[message_index] = now - send_time;
-      } else {
-        LOG_WARN(info_log,
-            "Received duplicate message index (%lu)",
-            message_index);
-      }
+    if (message_index < static_cast<uint64_t>(FLAGS_num_messages)) {
+      LOG_INFO(info_log,
+          "Received message %lu with timestamp %lu",
+          message_index, send_time);
+      recv_latency->Record(now - send_time);
+      std::lock_guard<std::mutex> lock(is_received_mutex);
+      is_received[message_index] = true;
     } else {
       LOG_WARN(info_log,
           "Received out of bounds message index (%lu)",
@@ -449,6 +451,8 @@ int main(int argc, char** argv) {
                                            pilot,
                                            copilot,
                                            rocketspeed::Tenant(102),
+                                           std::max(FLAGS_producer_workers,
+                                                    FLAGS_consumer_workers),
                                            publish_callback,
                                            subscribe_callback,
                                            receive_callback,
@@ -461,6 +465,7 @@ int main(int argc, char** argv) {
                                              pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
+                                             FLAGS_producer_workers,
                                              publish_callback,
                                              nullptr,
                                              nullptr,
@@ -472,6 +477,7 @@ int main(int argc, char** argv) {
                                              pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
+                                             FLAGS_consumer_workers,
                                              nullptr,
                                              subscribe_callback,
                                              receive_callback,
@@ -497,9 +503,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Vector of message IDs and the time they were sent.
-  std::vector<std::vector<MsgTime>> all_msg_send_times;
-
   // Start the clock.
   start = std::chrono::steady_clock::now();
 
@@ -512,8 +515,7 @@ int main(int argc, char** argv) {
                               nsid,
                               &all_ack_messages_received,
                               &ack_messages_received,
-                              &last_ack_message,
-                              &all_msg_send_times);
+                              &last_ack_message);
   }
   if (FLAGS_start_consumer) {
     consumer_ret = std::async(std::launch::async,
@@ -555,32 +557,6 @@ int main(int argc, char** argv) {
   auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
     end - start);
 
-  // Process the publish-ack latencies.
-  // Accumulate individual worker results into single vector.
-  std::vector<MsgTime> msg_send_times;
-  for (const auto& worker_batch : all_msg_send_times) {
-    // Insert this worker's results into msg_send_times.
-    msg_send_times.insert(msg_send_times.end(),
-                          worker_batch.begin(),
-                          worker_batch.end());
-  }
-
-  // Now sort both the send and ack times so that the GUIDs are in order.
-  std::sort(msg_send_times.begin(), msg_send_times.end());
-  std::sort(msg_ack_times.begin(), msg_ack_times.end());
-
-  // Now generate the latencies.
-  std::vector<uint64_t> ack_latencies;
-  size_t num_acks = std::min(msg_send_times.size(), msg_ack_times.size());
-  ack_latencies.reserve(num_acks);
-  for (size_t i = 0; i < num_acks; ++i) {
-    ack_latencies.push_back(msg_ack_times[i].second - msg_send_times[i].second);
-  }
-
-  // Sort the latencies so we can work out percentiles.
-  std::sort(ack_latencies.begin(), ack_latencies.end());
-  std::sort(recv_latencies.begin(), recv_latencies.end());
-
   if (FLAGS_report) {
     uint32_t total_ms = static_cast<uint32_t>(total_time.count());
     if (total_ms == 0) {
@@ -614,13 +590,12 @@ int main(int argc, char** argv) {
       printf("\n");
       printf("Messages failed to receive\n");
 
-      for (uint64_t i = 0; i < recv_latencies.size(); ++i) {
-        // If latency is latency_max then it wasn't received.
-        if (recv_latencies[i] == latency_max) {
+      for (uint64_t i = 0; i < is_received.size(); ++i) {
+        if (!is_received[i]) {
           // Find the range of message IDs dropped (e.g. 100-200)
           uint64_t j;
-          for (j = i; j < recv_latencies.size(); ++j) {
-            if (recv_latencies[j] != latency_max) {
+          for (j = i; j < is_received.size(); ++j) {
+            if (is_received[j]) {
               break;
             }
           }
@@ -644,39 +619,22 @@ int main(int argc, char** argv) {
       printf("%u messages/s\n", msg_per_sec);
       printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
 
-      // Report ack latencies.
-      printf("\n");
-      printf("Publish->Ack Latency (microseconds)\n");
-      printf("p50   = %lu\n", ack_latencies[ack_latencies.size() * 0.50]);
-      printf("p90   = %lu\n", ack_latencies[ack_latencies.size() * 0.90]);
-      printf("p99   = %lu\n", ack_latencies[ack_latencies.size() * 0.99]);
-      printf("p99.9 = %lu\n", ack_latencies[ack_latencies.size() * 0.999]);
-
-      // Report receive latencies.
-      if (FLAGS_start_consumer) {
-        printf("\n");
-        printf("Publish->Receive Latency (microseconds)\n");
-        printf("p50   = %lu\n", recv_latencies[recv_latencies.size() * 0.50]);
-        printf("p90   = %lu\n", recv_latencies[recv_latencies.size() * 0.90]);
-        printf("p99   = %lu\n", recv_latencies[recv_latencies.size() * 0.99]);
-        printf("p99.9 = %lu\n", recv_latencies[recv_latencies.size() * 0.999]);
-      }
-
       if (FLAGS_start_local_server) {
-        rocketspeed::Statistics stats(test_cluster->GetStatistics());
-        if (producer) {
-          stats.Aggregate(producer->GetStatistics());
-        }
-        if (consumer && consumer != producer) {
-          stats.Aggregate(consumer->GetStatistics());
-        }
-
-        printf("\n");
-        printf("Statistics\n");
-        printf(stats.Report().c_str());
+        stats.Aggregate(test_cluster->GetStatistics());
       }
+      if (producer) {
+        stats.Aggregate(producer->GetStatistics());
+      }
+      if (consumer && consumer != producer) {
+        stats.Aggregate(consumer->GetStatistics());
+      }
+
+      printf("\n");
+      printf("Statistics\n");
+      printf(stats.Report().c_str());
     }
   }
+  fflush(stdout);
 
   delete producer;
   if (producer != consumer) {

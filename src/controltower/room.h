@@ -70,19 +70,19 @@ class ControlRoom {
   };
 
   // These Commands sent from the ControlRoom to the ControlTower
-  class TowerCommand : public Command {
+  class TowerCommand : public SendCommand {
    public:
     TowerCommand(std::string message,
                  const Recipients& recipient,
                  uint64_t issued_time):
-      Command(issued_time),
+      SendCommand(issued_time),
       recipient_(recipient),
       message_(std::move(message)) {
     }
     TowerCommand(std::string message,
                  const ClientID& recipient,
                  uint64_t issued_time):
-      Command(issued_time),
+      SendCommand(issued_time),
       message_(std::move(message)) {
       recipient_.push_back(recipient);
     }
@@ -92,9 +92,6 @@ class ControlRoom {
     // return the Destination HostId, otherwise returns null.
     const Recipients& GetDestination() const {
       return recipient_;
-    }
-    bool IsSendCommand() const  {
-      return true;
     }
    private:
     Recipients recipient_;

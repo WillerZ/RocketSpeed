@@ -30,9 +30,6 @@ class Command {
   virtual ~Command() {}
 
   // Is this a message send-command? The msg-send command is special because
-  virtual void GetMessage(std::string* out) = 0;
-
-  // Is this a message send-command? The msg-send command is special because
   // the event loop processes it inline instead of invoking the application
   // callback. If this is a SendCommand, then the event loop sends out the
   // message associated with this Command to the host specified via a call
@@ -44,12 +41,28 @@ class Command {
     return issued_time_;
   }
 
+ private:
+  uint64_t issued_time_;
+};
+
+/**
+ * Command for sending a message to remote recipients.
+ */
+class SendCommand : public Command {
+ public:
+  explicit SendCommand(uint64_t issued_time) : Command(issued_time) {}
+
+  virtual ~SendCommand() {}
+
+  bool IsSendCommand() const {
+    return true;
+  }
+
+  virtual void GetMessage(std::string* out) = 0;
+
   // If this is a command to send a mesage to remote hosts, then
   // returns the list of destination HostIds.
   virtual const Recipients& GetDestination() const = 0;
-
- private:
-  uint64_t issued_time_;
 };
 
 }  // namespace rocketspeed

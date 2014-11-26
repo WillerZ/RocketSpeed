@@ -4,7 +4,6 @@ cpp_library(
     srcs = [
         'pilot.cc',
         'options.cc',
-        'worker.cc',
     ],
     preprocessor_flags = [
     	'-Irocketspeed/github/include',

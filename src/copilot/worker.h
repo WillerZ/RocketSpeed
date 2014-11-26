@@ -26,9 +26,10 @@ class CopilotWorkerCommand {
  public:
   CopilotWorkerCommand() = default;
 
-  CopilotWorkerCommand(LogID logid, std::unique_ptr<Message> msg)
+  CopilotWorkerCommand(LogID logid, std::unique_ptr<Message> msg, int worker_id)
   : logid_(logid)
-  , msg_(std::move(msg)) {
+  , msg_(std::move(msg))
+  , worker_id_(worker_id) {
   }
 
   // Get log ID where topic lives to subscribe to
@@ -41,29 +42,34 @@ class CopilotWorkerCommand {
     return std::move(msg_);
   }
 
+  int GetWorkerId() const {
+    return worker_id_;
+  }
+
  private:
   LogID logid_;
   std::unique_ptr<Message> msg_;
+  int worker_id_;
 };
 
 // These Commands sent from the Worker to the Copilot
-class CopilotCommand : public Command {
+class CopilotCommand : public SendCommand {
  public:
   CopilotCommand() = default;
 
   CopilotCommand(std::string message,
                  const ClientID& host,
                  uint64_t issued_time):
-    Command(issued_time),
+    SendCommand(issued_time),
     message_(std::move(message)) {
     recipient_.push_back(host);
     assert(message_.size() > 0);
   }
   CopilotCommand(std::string message,
-                 const Recipients& hosts,
+                 Recipients hosts,
                  uint64_t issued_time):
-    Command(issued_time),
-    recipient_(hosts),
+    SendCommand(issued_time),
+    recipient_(std::move(hosts)),
     message_(std::move(message)) {
     assert(message_.size() > 0);
   }
@@ -74,9 +80,7 @@ class CopilotCommand : public Command {
   const Recipients& GetDestination() const {
     return recipient_;
   }
-  bool IsSendCommand() const {
-    return true;
-  }
+
  private:
   Recipients recipient_;
   std::string message_;
@@ -94,7 +98,7 @@ class CopilotWorker {
                 Copilot* copilot);
 
   // Forward a message to this worker for processing.
-  bool Forward(LogID logid, std::unique_ptr<Message> msg);
+  bool Forward(LogID logid, std::unique_ptr<Message> msg, int worker_id);
 
   // Start the worker loop on this thread.
   // Blocks until the worker loop ends.
@@ -127,12 +131,14 @@ class CopilotWorker {
   // Add a subscriber to a topic.
   void ProcessSubscribe(std::unique_ptr<Message> msg,
                         const TopicPair& request,
-                        LogID logid);
+                        LogID logid,
+                        int worker_id);
 
   // Remove a subscriber from a topic.
   void ProcessUnsubscribe(std::unique_ptr<Message> msg,
                           const TopicPair& request,
-                          LogID logid);
+                          LogID logid,
+                          int worker_id);
 
   // Process a metadata response from control tower.
   void ProcessMetadataResponse(std::unique_ptr<Message> msg,
@@ -140,6 +146,9 @@ class CopilotWorker {
 
   // Forward data to subscribers.
   void ProcessDeliver(std::unique_ptr<Message> msg);
+
+  // Duplicates and distributes a command to different copilot event loops.
+  Status DistributeCommand(std::string msg, Command::Recipients destinations);
 
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;
@@ -167,6 +176,9 @@ class CopilotWorker {
 
   // Map of topics to active subscriptions.
   std::unordered_map<Topic, std::vector<Subscription>> subscriptions_;
+
+  // Map of clients to message loop worker IDs.
+  std::unordered_map<ClientID, int> client_worker_id_;
 };
 
 }  // namespace rocketspeed
