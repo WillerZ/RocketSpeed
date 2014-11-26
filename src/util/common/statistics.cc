@@ -135,8 +135,10 @@ std::string Histogram::Report() const {
   snprintf(buffer, 256, "p50: %-8.1lf  "
                         "p90: %-8.1lf  "
                         "p99: %-8.1lf  "
-                        "p99.9: %.1lf",
-    Percentile(0.50), Percentile(0.90), Percentile(0.99), Percentile(0.999));
+                        "p99.9: %-8.1lf  "
+                        "(%lu samples)",
+    Percentile(0.50), Percentile(0.90), Percentile(0.99), Percentile(0.999),
+    num_samples_.load(std::memory_order_acquire));
   return std::string(buffer);
 }
 
