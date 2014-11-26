@@ -51,8 +51,10 @@ class Copilot {
   }
 
   // Get the worker loop associated with a log.
-  int GetLogWorker(LogID logid) const {
-    return logid % options_.msg_loop->GetNumWorkers();
+  int GetLogWorker(LogID logid) const;
+
+  const ControlTowerRouter& GetControlTowerRouter() const {
+    return control_tower_router_;
   }
 
  private:

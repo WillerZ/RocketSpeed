@@ -193,4 +193,26 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   return cb;
 }
 
+int Copilot::GetLogWorker(LogID logid) const {
+  const int num_workers = options_.msg_loop->GetNumWorkers();
+
+  // First map logid to control tower.
+  ClientID const* control_tower = nullptr;
+  Status st = control_tower_router_.GetControlTower(logid, &control_tower);
+  if (!st.ok()) {
+    LOG_WARN(options_.info_log,
+      "Failed to map log ID %lu to a control tower",
+      logid);
+
+    // Fallback to log ID-based allocation.
+    // This is less efficient (multiple workers talking to same tower)
+    // but no less correct.
+    return logid % num_workers;
+  }
+  assert(control_tower);
+
+  // Hash control tower to a worker.
+  return MurmurHash2<std::string>()(*control_tower) % num_workers;
+}
+
 }  // namespace rocketspeed

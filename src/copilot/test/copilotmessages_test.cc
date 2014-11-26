@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "src/controltower/tower.h"
@@ -204,6 +205,44 @@ TEST(CopilotTest, Publish) {
   // Ensure all messages were ack'd
   checkpoint.TimedWait(std::chrono::seconds(1));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
+}
+
+TEST(CopilotTest, WorkerMapping) {
+  const int num_towers = 100;
+  const int num_workers = 10;
+  const int port = ControlTower::DEFAULT_PORT;
+
+  MsgLoop loop(env_, EnvOptions(), port, num_workers, info_log_, "test");
+
+  CopilotOptions options;
+  options.log_range = std::pair<LogID, LogID>(1, 10000);
+  options.info_log = info_log_;
+  for (int i = 0; i < num_towers; ++i) {
+    // Generate fake control towers.
+    options.control_towers.push_back(HostId("tower", i).ToClientId());
+  }
+  options.msg_loop = &loop;
+  Copilot* copilot;
+  Status st = Copilot::CreateNewInstance(options, &copilot);
+  ASSERT_TRUE(st.ok());
+
+  // Now check that each control tower is mapped to one worker.
+  std::unordered_map<const ClientID*, std::set<int>> tower_to_workers;
+  const auto& router = copilot->GetControlTowerRouter();
+  for (LogID logid = options.log_range.first;
+       logid <= options.log_range.second;
+       ++logid) {
+    // Find the tower responsible for this log.
+    ClientID const* control_tower = nullptr;
+    ASSERT_TRUE(router.GetControlTower(logid, &control_tower).ok());
+
+    // Find the worker responsible for this log.
+    int worker_id = copilot->GetLogWorker(logid);
+    tower_to_workers[control_tower].insert(worker_id);
+
+    // Check that the tower maps to only one worker.
+    ASSERT_EQ(tower_to_workers[control_tower].size(), 1);
+  }
 }
 
 }  // namespace rocketspeed
