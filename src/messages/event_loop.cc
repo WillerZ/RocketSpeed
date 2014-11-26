@@ -734,7 +734,7 @@ EventLoop::insert_connection_cache(const ClientID& host, SocketEvent* sev) {
   if (!ret.second) {
     return false;   // object already existed
   }
-  ++active_connections_;
+  active_connections_.fetch_add(1, std::memory_order_acq_rel);
   assert(active_connections_ == connection_cache_.size());
   return true;  // successfully inserted
 }
@@ -753,7 +753,7 @@ EventLoop::remove_connection_cache(const ClientID& host, SocketEvent* sev) {
         if (iter->second.empty()) {
           // No more SocketEvents for this host, so remove the entry.
           connection_cache_.erase(host);
-          --active_connections_;
+          active_connections_.fetch_sub(1, std::memory_order_acq_rel);
           assert(active_connections_ == connection_cache_.size());
         }
         return true;    // deleted successfully

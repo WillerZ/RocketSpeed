@@ -139,7 +139,7 @@ class EventLoop {
     // As a simple approximation, use number of connections as load proxy.
     // A better implementation may be to count the number of messages processed
     // in the last N seconds.
-    return active_connections_.load();
+    return active_connections_.load(std::memory_order_acquire);
   }
 
   // Debug logging severity levels.
