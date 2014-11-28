@@ -34,10 +34,9 @@ DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
 DEFINE_string(copilot_hostname, "localhost", "hostname of copilot");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
-DEFINE_int32(producer_workers, 16, "number of producer client workers");
-DEFINE_int32(consumer_workers, 16, "number of consumer client workers");
+DEFINE_int32(client_workers, 32, "number of client workers");
 DEFINE_int32(message_size, 100, "message size (bytes)");
-DEFINE_uint64(num_topics, 1000, "number of topics");
+DEFINE_uint64(num_topics, 1000000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
 DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
@@ -451,8 +450,7 @@ int main(int argc, char** argv) {
                                            pilot,
                                            copilot,
                                            rocketspeed::Tenant(102),
-                                           std::max(FLAGS_producer_workers,
-                                                    FLAGS_consumer_workers),
+                                           FLAGS_client_workers,
                                            publish_callback,
                                            subscribe_callback,
                                            receive_callback,
@@ -465,7 +463,7 @@ int main(int argc, char** argv) {
                                              pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
-                                             FLAGS_producer_workers,
+                                             FLAGS_client_workers,
                                              publish_callback,
                                              nullptr,
                                              nullptr,
@@ -477,7 +475,7 @@ int main(int argc, char** argv) {
                                              pilot,
                                              copilot,
                                              rocketspeed::Tenant(102),
-                                             FLAGS_consumer_workers,
+                                             FLAGS_client_workers,
                                              nullptr,
                                              subscribe_callback,
                                              receive_callback,
