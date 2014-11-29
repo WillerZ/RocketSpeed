@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "external/folly/producer_consumer_queue.h"
+#include "src/port/port.h"
 
 #include "src/util/common/thread_check.h"
 #include "src/port/Env.h"
@@ -82,6 +83,7 @@ class WorkerLoop {
   std::atomic<bool> stop_;
   std::atomic<bool> running_;
   ThreadCheck thread_check_;
+  port::Semaphore cmd_received;
 };
 
 template <typename Command>
@@ -106,18 +108,16 @@ void WorkerLoop<Command>::Run(std::function<void(Command cmd)> callback) {
   Command cmd;
   running_ = true;
   do {
+    // Wait for commands or Stop() call.
+    cmd_received.Wait();
+
     // Continue processing commands as they come in.
-    while (command_queue_.read(cmd)) {
-      callback(std::move(cmd));
-    }
-    // No more messages, sleep a little.
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    if (command_queue_.read(cmd)) callback(std::move(cmd));
+
   } while (!stop_.load());
 
-  // Make sure any final commands are processed.
-  while (command_queue_.read(cmd)) {
-    callback(std::move(cmd));
-  }
+  while (command_queue_.read(cmd)) callback(std::move(cmd));
+
   running_ = false;
 }
 
@@ -135,12 +135,14 @@ bool WorkerLoop<Command>::Send(Args&&... args) {
   if (type_ == WorkerLoopType::kMultiProducer) {
     lock.unlock();
   }
+  cmd_received.Post();
   return result;
 }
 
 template <typename Command>
 void WorkerLoop<Command>::Stop() {
   stop_ = true;
+  cmd_received.Post();
 }
 
 }  // namespace rocketspeed

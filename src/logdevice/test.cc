@@ -116,10 +116,9 @@ TEST(MockLogDeviceTest, Basic) {
   reader2->startReading(logid, lsn[1], lsn[4]);
 
   // Check that all messages were recevied.
-  checkpoint1.TimedWait(std::chrono::seconds(1));
+  checkpoint1.TimedWait(std::chrono::seconds(10));
   ASSERT_EQ(count1, 6);
   ASSERT_EQ(count2, 4);
-
   // Add a couple more.
   ASSERT_NE(client->appendSync(logid, payload("test6")), LSN_INVALID);
   ASSERT_NE(client->appendSync(logid, payload("test7")), LSN_INVALID);
