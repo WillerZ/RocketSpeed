@@ -121,6 +121,7 @@ MsgLoop::RegisterCallbacks(
 
 void MsgLoop::Run() {
   LOG_INFO(info_log_, "Starting Message Loop at port %ld", (long)hostid_.port);
+  env_->SetCurrentThreadName(name_ + "-0");
 
   // Add ping callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mPing) == msg_callbacks_.end()) {
