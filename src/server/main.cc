@@ -11,6 +11,8 @@
 
 #include <gflags/gflags.h>
 #include <signal.h>
+#include <algorithm>
+#include <string>
 #include "include/Types.h"
 #include "src/pilot/options.h"
 #include "src/pilot/pilot.h"
@@ -55,6 +57,9 @@ DEFINE_int32(copilot_port,
              rocketspeed::Copilot::DEFAULT_PORT,
              "copilot port number");
 DEFINE_int32(copilot_workers, 16, "copilot worker threads");
+DEFINE_string(control_towers,
+              "localhost",
+              "comma-separated control tower hostnames");
 
 int main(int argc, char** argv) {
   rocketspeed::Status st;
@@ -199,9 +204,20 @@ int main(int argc, char** argv) {
     copilot_opts.info_log = info_log;
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
-    rocketspeed::HostId tower_host("localhost", FLAGS_tower_port);
-    copilot_opts.control_towers.push_back(tower_host.ToClientId());
-
+    // Parse comma-separated control_towers hostname.
+    const std::string& hosts = FLAGS_control_towers;
+    auto first = hosts.begin();
+    for (auto last = first; first != hosts.end(); first = last) {
+      last = std::find(first, hosts.end(), ',');
+      std::string hostname(first, last);
+      rocketspeed::HostId host(hostname, FLAGS_tower_port);
+      copilot_opts.control_towers.push_back(host.ToClientId());
+      LOG_WARN(info_log, "Adding control tower '%s'",
+        host.ToString().c_str());
+      if (last != hosts.end()) {
+        ++last;  // move past ','
+      }
+    }
     st = rocketspeed::Copilot::CreateNewInstance(std::move(copilot_opts),
                                                  &copilot);
     if (!st.ok()) {
