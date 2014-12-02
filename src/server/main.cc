@@ -23,7 +23,7 @@
 #include "src/util/logdevice.h"
 
 #ifdef USE_LOGDEVICE
-#include "memcache/fbi/debug.h"
+#include "external/logdevice/include/debug.h"
 #endif
 
 using GFLAGS::ParseCommandLineFlags;
@@ -81,7 +81,8 @@ int main(int argc, char** argv) {
 #ifdef USE_LOGDEVICE
 #ifdef NDEBUG
   // Disable LogDevice info logging in release.
-  fbi_set_debug(FBI_LOG_WARNING);
+  facebook::logdevice::dbg::currentLevel =
+    facebook::logdevice::dbg::Level::WARNING;
 #endif
 #endif
 

@@ -8,6 +8,7 @@ cpp_library(
         'Client.cc',
         'ClientSettings.cc',
         'Common.cc',
+        'debug.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',

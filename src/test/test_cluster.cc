@@ -12,7 +12,7 @@
 #include "src/util/testharness.h"
 
 #ifdef USE_LOGDEVICE
-#include "memcache/fbi/debug.h"
+#include "external/logdevice/include/debug.h"
 #endif
 
 namespace rocketspeed {
@@ -30,7 +30,8 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
 #ifdef USE_LOGDEVICE
 #ifdef NDEBUG
   // Disable LogDevice info logging in release.
-  fbi_set_debug(FBI_LOG_WARNING);
+  facebook::logdevice::dbg::currentLevel =
+    facebook::logdevice::dbg::Level::WARNING;
 #endif
 #endif
 
