@@ -62,6 +62,7 @@ ERROR_CODE(PENDING_FULL,,"pending Appenders queue full")
 ERROR_CODE(FAILED,      ,"request failed")
 ERROR_CODE(SEQSYSLIMIT, ,"sequencer process has reached a limit set by the OS "
                          "or runtime")
+ERROR_CODE(REBUILDING,  ,"rebuilding is in progress")
 
 // Errors about invalid entities
 

@@ -14,7 +14,7 @@ LOGDEVICE_STRONG_TYPEDEF(int64_t, logid_t);
 constexpr logid_t LOGID_INVALID(0);
 constexpr logid_t LOGID_MAX((1ull<<48)-1); //48 bits
 
-// Log sequence numbers are 64-bit unsigned ints.
+// Log sequence numbers are 48-bit unsigned ints.
 typedef uint64_t lsn_t;
 
 // 0 is not a valid LSN.

@@ -1,5 +1,5 @@
 This version of logdevice was fetched from git commit number
-402f92f90141db9fef9651b6793793bfb877ac20 Date:   Tue Jul 15 08:17:51 2014 -0700
+e87f956d45d6c592f80389726a42d9cf581e2128 Date:   Tue Dec 02 05:41:54 2014 -0800
 
 The 'lib' directory contains the binaries that are compiled in fbcode.
 rocketspeed will link against these libraries. The rocketspeed code should

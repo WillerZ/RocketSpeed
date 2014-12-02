@@ -37,8 +37,9 @@ class Reader {
    *                           space limit was reached
    *             INVALID_PARAM if from > until or the record callback was not
    *                           specified.
+   *             NOTFOUND      if the log doesn't exist
    *             SHUTDOWN      the logdevice::Client instance was destroyedA.
-   *             INTERNAL      An internal error has been detected, check logs.
+   *             INTERNAL      an internal error has been detected, check logs.
    *             TOOMANY       exceeded limit on number of logs that had been
    *                           specified the Reader was created.
    */
