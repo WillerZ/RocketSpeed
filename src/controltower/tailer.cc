@@ -57,16 +57,17 @@ Status Tailer::Initialize() {
         info_log_->Flush();
     } else {
       LOG_INFO(info_log_,
-        "Tailer received data (%.16s)@%lu for Topic(%s).",
+        "Tailer received data (%.16s)@%lu for Topic(%s) in Log(%lu).",
         msg->GetPayload().ToString().c_str(),
         msg->GetSequenceNumber(),
-        msg->GetTopicName().ToString().c_str());
+        msg->GetTopicName().ToString().c_str(),
+        log_id);
     }
     assert(st.ok());
 
     // forward to appropriate room
     std::unique_ptr<Message> m(msg);
-    st = room->Forward(std::move(m), log_id);
+    st = room->Forward(std::move(m), log_id, -1);
     assert(st.ok());
   };
 
@@ -75,19 +76,19 @@ Status Tailer::Initialize() {
     switch (record.type) {
       case GapType::kDataLoss:
         LOG_WARN(info_log_,
-            "Data Loss in log %lu from %lu-%lu.",
+            "Data Loss in Log(%lu) from %lu-%lu.",
             record.log_id, record.from, record.to);
         break;
 
       case GapType::kRetention:
         LOG_INFO(info_log_,
-            "Retention gap in log %lu from %lu-%lu.",
+            "Retention gap in Log(%lu) from %lu-%lu.",
             record.log_id, record.from, record.to);
         break;
 
       case GapType::kBenign:
         LOG_INFO(info_log_,
-            "Benign gap in log %lu from %lu-%lu.",
+            "Benign gap in Log(%lu) from %lu-%lu.",
             record.log_id, record.from, record.to);
         break;
     }
@@ -103,7 +104,7 @@ Status Tailer::Initialize() {
 
     int room_number = record.log_id % rooms_.size();
     ControlRoom* room = rooms_[room_number].get();
-    room->Forward(std::move(msg), record.log_id);
+    room->Forward(std::move(msg), record.log_id, -1);
   };
 
   // create logdevice reader. There is one reader per ControlRoom.
@@ -167,11 +168,11 @@ Tailer::StartReading(LogID logid, SequenceNumber start,
   Status st = r->Open(logid, start);
   if (st.ok()) {
     LOG_INFO(info_log_,
-        "AsyncReader %u start reading logid %lu@%lu.",
+        "AsyncReader %u start reading Log(%lu)@%lu.",
         room_id, logid, start);
   } else {
     LOG_WARN(info_log_,
-        "AsyncReader %u failed to start reading logid %lu@%lu (%s).",
+        "AsyncReader %u failed to start reading Log(%lu)@%lu (%s).",
         room_id, logid, start, st.ToString().c_str());
   }
   return st;
@@ -187,11 +188,11 @@ Tailer::StopReading(LogID logid, unsigned int room_id) const {
   Status st = r->Close(logid);
   if (st.ok()) {
     LOG_INFO(info_log_,
-        "AsyncReader %u stopped reading logid %lu.",
+        "AsyncReader %u stopped reading Log(%lu).",
         room_id, logid);
   } else {
     LOG_WARN(info_log_,
-        "AsyncReader %u failed to stop reading logid %lu (%s).",
+        "AsyncReader %u failed to stop reading Log(%lu) (%s).",
         room_id, logid, st.ToString().c_str());
   }
   return st;

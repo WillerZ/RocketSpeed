@@ -47,11 +47,14 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
   options_(SanitizeOptions(options)),
   log_router_(options.log_range.first, options.log_range.second),
   hostmap_(options.max_number_of_hosts),
+  hostworker_(new std::atomic<int>[options.max_number_of_hosts]),
   tower_id_(options_.msg_loop->GetHostId().ToClientId()) {
   // The rooms and that tailers are not initialized here.
   // The reason being that those initializations could fail and
   // return error Status.
-
+  for (unsigned int i = 0; i < options.max_number_of_hosts; ++i) {
+    hostworker_[i].store(-1, std::memory_order_release);
+  }
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 }
 
@@ -136,8 +139,10 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
     LogID logid;
     Status st = log_router_.GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {
-      LOG_INFO(options_.info_log,
-          "Unable to map msg to logid %s", st.ToString().c_str());
+      LOG_WARN(options_.info_log,
+          "Unable to map Topic(%s) to logid %s",
+          topic.topic_name.c_str(),
+          st.ToString().c_str());
       continue;
     }
     // calculate the destination room number
@@ -153,17 +158,20 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
 
     // forward message to the destination room
     ControlRoom* room = rooms_[room_number].get();
-    st = room->Forward(std::move(newmessage), logid);
+    int worker_id = MsgLoop::GetThreadWorkerIndex();
+    st = room->Forward(std::move(newmessage), logid, worker_id);
     if (!st.ok()) {
-      LOG_INFO(options_.info_log,
-          "Unable to forward subscription for Topic(%s)@%lu to room %u (%s)",
+      LOG_WARN(options_.info_log,
+          "Unable to forward %ssubscription for Topic(%s)@%lu to room %u (%s)",
+          topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.topic_name.c_str(),
           topic.seqno,
           room_number,
           st.ToString().c_str());
     } else {
       LOG_INFO(options_.info_log,
-          "Forwarded subscription for Topic(%s)@%lu to room %u",
+          "Forwarded %ssubscription for Topic(%s)@%lu to room %u",
+          topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.topic_name.c_str(),
           topic.seqno,
           room_number);
@@ -182,6 +190,36 @@ ControlTower::InitializeCallbacks() {
 
   // return the updated map
   return cb;
+}
+
+HostNumber ControlTower::LookupHost(const ClientID& client_id,
+                                    int* out_worker_id) const {
+  HostNumber hostnum = hostmap_.Lookup(client_id);
+  if (hostnum != -1) {
+    assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
+    *out_worker_id = hostworker_[hostnum].load(std::memory_order_acquire);
+  }
+  return hostnum;
+}
+
+const ClientID* ControlTower::LookupHost(HostNumber hostnum,
+                                         int* out_worker_id) const {
+  const ClientID* client_id = hostmap_.Lookup(hostnum);
+  if (hostnum != -1) {
+    assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
+    *out_worker_id = hostworker_[hostnum].load(std::memory_order_acquire);
+  }
+  return client_id;
+}
+
+HostNumber ControlTower::InsertHost(const ClientID& client_id,
+                                    int worker_id) {
+  HostNumber hostnum = hostmap_.Insert(client_id);
+  if (hostnum != -1) {
+    assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
+    hostworker_[hostnum].store(worker_id, std::memory_order_release);
+  }
+  return hostnum;
 }
 
 }  // namespace rocketspeed

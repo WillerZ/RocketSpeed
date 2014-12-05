@@ -29,7 +29,6 @@ class IntegrationTest {
                                               rocketspeed::INFO_LEVEL,
                                               &info_log).ok()) {
       fprintf(stderr, "Error creating logger, aborting.\n");
-    } else {
       info_log = std::make_shared<rocketspeed::NullLogger>();
     }
   }

@@ -8,6 +8,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "src/controltower/tower.h"
@@ -40,15 +41,20 @@ void ControlRoom::Run(void* arg) {
   auto command_callback = [room] (RoomCommand command) {
     std::unique_ptr<Message> message = command.GetMessage();
     MessageType type = message->GetMessageType();
+    LogID logid = command.GetLogId();
+    int worker_id = command.GetWorkerId();
     if (type == MessageType::mDeliver) {
       // data message from Tailer
-      room->ProcessDeliver(std::move(message), command.GetLogId());
+      assert(worker_id == -1);  // from tailer
+      room->ProcessDeliver(std::move(message), logid);
     } else if (type == MessageType::mMetadata) {
       // subscription message from ControlTower
-      room->ProcessMetadata(std::move(message), command.GetLogId());
+      assert(worker_id != -1);  // from tower
+      room->ProcessMetadata(std::move(message), logid, worker_id);
     } else if (type == MessageType::mGap) {
       // gap message from Tailer
-      room->ProcessGap(std::move(message), command.GetLogId());
+      assert(worker_id == -1);  // from tailer
+      room->ProcessGap(std::move(message), logid);
     }
   };
 
@@ -59,8 +65,8 @@ void ControlRoom::Run(void* arg) {
 // The Control Room forwards some messages (those with seqno = 0) to
 // itself by using this method.
 Status
-ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid) {
-  if (room_loop_.Send(std::move(msg), logid)) {
+ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid, int worker_id) {
+  if (room_loop_.Send(std::move(msg), logid, worker_id)) {
     return Status::OK();
   } else {
     return Status::InternalError("Worker queue full");
@@ -69,7 +75,9 @@ ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid) {
 
 // Process Metadata messages that are coming in from ControlTower.
 void
-ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
+ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
+                             LogID logid,
+                             int worker_id) {
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
   Status st;
@@ -94,15 +102,17 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   // Zero means to start reading from the latest records, so we first need
   // to asynchronously consult the tailer for the latest seqno, and then
   // process the subscription.
-  if (topic[0].seqno == 0) {
+  if (topic[0].topic_type == MetadataType::mSubscribe &&
+      topic[0].seqno == 0) {
     // Create a callback to enqueue a subscribe command.
     // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
     // when converted to an std::function - could use an alloc pool for this.
-    auto callback = [this, logid, request] (Status st, SequenceNumber seqno) {
+    auto callback = [this, logid, request, worker_id] (Status st,
+                                                       SequenceNumber seqno) {
       std::unique_ptr<Message> msg(request);
       if (!st.ok()) {
         LOG_WARN(control_tower_->GetOptions().info_log,
-                 "Failed to find latest sequence number in log ID %lu",
+                 "Failed to find latest sequence number in Log(%lu)",
                  logid);
         return;
       }
@@ -111,7 +121,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
       // send message back to this Room with the seqno appropriately
       // filled up in the message.
       assert(seqno != 0);
-      st = Forward(std::move(msg), logid);
+      st = Forward(std::move(msg), logid, worker_id);
       if (!st.ok()) {
         // TODO(pja) 1: may need to do some flow control if this is due
         // to receiving too many subscriptions.
@@ -152,9 +162,12 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   }
 
   // Map the origin to a HostNumber
-  HostNumber hostnum = ct->GetHostMap().Lookup(origin);
+  int test_worker_id = -1;
+  HostNumber hostnum = ct->LookupHost(origin, &test_worker_id);
   if (hostnum == -1) {
-    hostnum = ct->GetHostMap().Insert(origin);
+    hostnum = ct->InsertHost(origin, worker_id);
+  } else {
+    assert(test_worker_id == worker_id);
   }
   assert(hostnum >= 0);
 
@@ -198,14 +211,22 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg, LogID logid) {
   std::unique_ptr<Command> cmd(new TowerCommand(std::move(out),
                                                 origin,
                                                 options.env->NowMicros()));
-  st = ct->SendCommand(std::move(cmd), ct->GetLogWorker(logid));
+  st = ct->SendCommand(std::move(cmd), worker_id);
   if (!st.ok()) {
-    LOG_INFO(options.info_log,
-        "Unable to send Metadata response to tower for subscriber %s ",
+    LOG_WARN(options.info_log,
+        "Unable to send %s response for Topic(%s)@%lu to tower for %s",
+        topic[0].topic_type == MetadataType::mSubscribe
+          ? "subscribe" : "unsubscribe",
+        topic[0].topic_name.c_str(),
+        topic[0].seqno,
         origin.c_str());
   } else {
     LOG_INFO(options.info_log,
-        "Send Metadata response to tower for subscriber %s",
+        "Sent %s response for Topic(%s)@%lu to tower for %s",
+        topic[0].topic_type == MetadataType::mSubscribe
+          ? "subscribe" : "unsubscribe",
+        topic[0].topic_name.c_str(),
+        topic[0].seqno,
         origin.c_str());
   }
   options.info_log->Flush();
@@ -231,7 +252,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   if (topic_map_.GetLastRead(logid) + 1 != request->GetSequenceNumber()) {
     // Out of order sequence number, skip!
     LOG_INFO(options.info_log,
-      "Out of order seqno on log %lu. Received:%lu Expected:%lu.",
+      "Out of order seqno on Log(%lu). Received:%lu Expected:%lu.",
       logid,
       request->GetSequenceNumber(),
       topic_map_.GetLastRead(logid) + 1);
@@ -249,38 +270,50 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
 
   // map the topic to a list of subscribers
   TopicList* list = topic_map_.GetSubscribers(topic_name);
-  Command::Recipients destinations;
 
   // send the messages to subscribers
   if (list != nullptr && !list->empty()) {
+    // Recipients for each control tower event loop worker.
+    std::unordered_map<int, Command::Recipients> destinations;
 
     // find all subscribers
-    for (const auto& elem : *list) {
+    for (const auto& hostnum : *list) {
       // convert HostNumber to ClientID
-      ClientID* hostid = ct->GetHostMap().Lookup(elem);
+      int worker_id = -1;
+      const ClientID* hostid = ct->LookupHost(hostnum, &worker_id);
       assert(hostid != nullptr);
-      if (hostid != nullptr) {
-        destinations.push_back(*hostid);
+      assert(worker_id != -1);
+      if (hostid != nullptr && worker_id != -1) {
+        destinations[worker_id].push_back(*hostid);
       }
     }
-    // send message to all subscribers
-    std::unique_ptr<TowerCommand> cmd(
-      new TowerCommand(std::move(serial),
-                       destinations,
-                       options.env->NowMicros()));
-    st = ct->SendCommand(std::move(cmd), ct->GetLogWorker(logid));
-    if (st.ok()) {
-      LOG_INFO(options.info_log,
-              "Sent data (%.16s)@%lu for Topic(%s) to %s",
-              request->GetPayload().ToString().c_str(),
-              request->GetSequenceNumber(),
-              request->GetTopicName().ToString().c_str(),
-              HostMap::ToString(destinations).c_str());
-    } else {
-      LOG_INFO(options.info_log,
-              "Unable to forward Data message to subscriber %s",
-              HostMap::ToString(destinations).c_str());
-          options.info_log->Flush();
+
+    // Send command to each worker loop.
+    for (auto it = destinations.begin(); it != destinations.end(); ++it) {
+      int worker_id = it->first;
+      Command::Recipients& recipients = it->second;
+
+      std::unique_ptr<TowerCommand> cmd(
+        new TowerCommand(serial,  // TODO(pja) 1 : avoid copy here
+                         std::move(recipients),
+                         options.env->NowMicros()));
+
+      // Send to correct worker loop.
+      st = ct->SendCommand(std::move(cmd), worker_id);
+
+      if (st.ok()) {
+        LOG_INFO(options.info_log,
+                "Sent data (%.16s)@%lu for Topic(%s) to %s",
+                request->GetPayload().ToString().c_str(),
+                request->GetSequenceNumber(),
+                request->GetTopicName().ToString().c_str(),
+                HostMap::ToString(recipients).c_str());
+      } else {
+        LOG_INFO(options.info_log,
+                "Unable to forward Data message to subscriber %s",
+                HostMap::ToString(recipients).c_str());
+        options.info_log->Flush();
+      }
     }
   } else {
     LOG_INFO(options.info_log,

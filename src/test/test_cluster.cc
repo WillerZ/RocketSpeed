@@ -100,6 +100,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   copilot_options_.info_log = info_log_;
   copilot_options_.num_workers = 16;
   copilot_options_.msg_loop = cockpit_loop_.get();
+  copilot_options_.control_tower_connections = cockpit_loop_->GetNumWorkers();
   st = Copilot::CreateNewInstance(copilot_options_, &copilot_);
   if (!st.ok()) {
     fprintf(stderr, "Failed to create copilot.\n");

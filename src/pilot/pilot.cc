@@ -147,7 +147,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
     // Append call failed, log and send failure ack.
     worker_data_[worker_id].stats_.failed_appends->Add(1);
     LOG_WARN(options_.info_log,
-      "Failed to append to log ID %lu (%s)",
+      "Failed to append to Log(%lu) (%s)",
       static_cast<uint64_t>(logid), status.ToString().c_str());
     options_.info_log->Flush();
 
@@ -168,10 +168,11 @@ void Pilot::AppendCallback(Status append_status,
     // Append successful, send success ack.
     SendAck(msg.get(), seqno, MessageDataAck::AckStatus::Success, worker_id);
     LOG_INFO(options_.info_log,
-        "Appended (%.16s) successfully to Topic(%s) in log %lu",
+        "Appended (%.16s) successfully to Topic(%s) in Log(%lu)@%lu",
         msg->GetPayload().ToString().c_str(),
         msg->GetTopicName().ToString().c_str(),
-        logid);
+        logid,
+        seqno);
   } else {
     // Append failed, send failure ack.
     worker_data_[worker_id].stats_.failed_appends->Add(1);

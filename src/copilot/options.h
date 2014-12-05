@@ -84,6 +84,11 @@ struct CopilotOptions {
   // Each topic should be tailed by this many control towers.
   uint32_t control_towers_per_log;
 
+  // Number of connections between this copilot and each control tower.
+  // Should be <= num_workers
+  // Default: 4
+  uint32_t control_tower_connections;
+
   // Create CopilotOptions with default values for all fields
   CopilotOptions();
 };

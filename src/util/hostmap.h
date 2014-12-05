@@ -30,11 +30,11 @@ class HostMap {
 
   // Looks up the id for a host. If the host does not
   // exist, then returns -1
-  HostNumber Lookup(const ClientID& hostid);
+  HostNumber Lookup(const ClientID& hostid) const;
 
   // Looks up a host given its HostNumber. If the host does
   // not exist, then return nullptr;
-  ClientID* Lookup(HostNumber num);
+  const ClientID* Lookup(HostNumber num) const;
 
   // Utility method to convert a list of Hostids to a printable string
   static std::string ToString(const Command::Recipients& hostlist);

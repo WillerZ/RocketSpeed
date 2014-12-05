@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <map>
+#include <unordered_map>
 #include "src/port/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
@@ -42,7 +43,7 @@ class ControlRoom {
   unsigned int GetRoomNumber() const { return room_number_; }
 
   // Forwards a message to this Room
-  Status Forward(std::unique_ptr<Message> msg, LogID logid);
+  Status Forward(std::unique_ptr<Message> msg, LogID logid, int worker_id);
 
   // The Commands sent to the ControlRoom.
   // The ControlTower sends subscribe/unsubscribe messages to ControlRoom.
@@ -51,9 +52,10 @@ class ControlRoom {
    public:
     RoomCommand() = default;
 
-    RoomCommand(std::unique_ptr<Message> message, LogID logid):
+    RoomCommand(std::unique_ptr<Message> message, LogID logid, int worker_id):
       message_(std::move(message)),
-      logid_(logid) {
+      logid_(logid),
+      worker_id_(worker_id) {
     }
 
     std::unique_ptr<Message> GetMessage() {
@@ -64,9 +66,14 @@ class ControlRoom {
       return logid_;
     }
 
+    int GetWorkerId() const {
+      return worker_id_;
+    }
+
    private:
     std::unique_ptr<Message> message_;
     LogID logid_;
+    int worker_id_;
   };
 
   // These Commands sent from the ControlRoom to the ControlTower
@@ -113,8 +120,13 @@ class ControlRoom {
   // from the ControlTower.
   WorkerLoop<RoomCommand> room_loop_;
 
+  // Map of host numbers to worker loop IDs.
+  std::unordered_map<HostNumber, int> hostnum_to_worker_id_;
+
   // callbacks to process incoming messages
-  void ProcessMetadata(std::unique_ptr<Message> msg, LogID logid);
+  void ProcessMetadata(std::unique_ptr<Message> msg,
+                       LogID logid,
+                       int worker_id);
   void ProcessDeliver(std::unique_ptr<Message> msg, LogID logid);
   void ProcessGap(std::unique_ptr<Message> msg, LogID logid);
 };

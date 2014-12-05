@@ -60,6 +60,8 @@ DEFINE_int32(copilot_workers, 16, "copilot worker threads");
 DEFINE_string(control_towers,
               "localhost",
               "comma-separated control tower hostnames");
+DEFINE_int32(copilot_connections, 16,
+             "num connections between one copilot and one control tower");
 
 int main(int argc, char** argv) {
   rocketspeed::Status st;
@@ -203,6 +205,7 @@ int main(int argc, char** argv) {
     copilot_opts.log_range = log_range;
     copilot_opts.num_workers = FLAGS_copilot_workers;
     copilot_opts.info_log = info_log;
+    copilot_opts.control_tower_connections = FLAGS_copilot_connections;
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
     // Parse comma-separated control_towers hostname.

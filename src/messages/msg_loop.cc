@@ -69,6 +69,9 @@ MsgLoop::MsgLoop(BaseEnv* env,
   // Generate client ID from the host ID if none was specified.
   if (client_id.empty()) {
     client_id = hostid_.ToClientId();
+  } else {
+    // Provided client ID shouldn't include the worker byte.
+    client_id.push_back('a');
   }
 
   // Setup event loop client IDs.
@@ -76,7 +79,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   worker_client_ids_.reset(new ClientID[num_workers]);
   for (int i = 0; i < num_workers; ++i) {
     worker_client_ids_[i] = client_id;
-    worker_client_ids_[i].push_back(static_cast<char>(i));
+    worker_client_ids_[i].back() = static_cast<char>('a' + i);
   }
 
   auto event_callback = [this] (std::unique_ptr<Message> msg) {

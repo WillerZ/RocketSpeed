@@ -63,7 +63,12 @@ TopicManager::RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
   if (iter != topic_map_.end()) {
     // remove this subscriber from list
     TopicList* list = iter->second.get();
-    list->erase(list->find(subscriber));
+    assert(list);
+    auto list_iter = list->find(subscriber);
+    assert(list_iter != list->end());
+    if (list_iter != list->end()) {
+      list->erase(list_iter);
+    }
   }
   return Status::OK();
 }

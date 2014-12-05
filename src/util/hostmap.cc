@@ -71,7 +71,7 @@ HostMap::Insert(const ClientID& clientid) {
 // Lookups are entirely lock-free.
 //
 HostNumber
-HostMap::Lookup(const ClientID& clientid) {
+HostMap::Lookup(const ClientID& clientid) const {
   // generate a hash
   unsigned int hashval = XXH32(clientid.c_str(),
                                clientid.size(), 0);
@@ -85,7 +85,8 @@ HostMap::Lookup(const ClientID& clientid) {
     if (index == number_buckets_) {
       index = 0;                  // wrap around circular array
     }
-    ClientID* one = static_cast<ClientID*>(hostlist_[index].Acquire_Load());
+    const ClientID* one =
+      static_cast<const ClientID*>(hostlist_[index].Acquire_Load());
     if (one != nullptr) {
       if (*one == clientid) {
         return index;        // found it
@@ -100,10 +101,11 @@ HostMap::Lookup(const ClientID& clientid) {
 //
 // Returns the host for a specified HostNumber.
 //
-ClientID*
-HostMap::Lookup(HostNumber number) {
+const ClientID*
+HostMap::Lookup(HostNumber number) const {
   assert(number >= 0 && (unsigned int)number < number_buckets_);
-  ClientID* one = static_cast<ClientID*>(hostlist_[number].Acquire_Load());
+  const ClientID* one =
+    static_cast<const ClientID*>(hostlist_[number].Acquire_Load());
   return  one;
 }
 

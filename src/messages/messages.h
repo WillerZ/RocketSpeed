@@ -80,7 +80,7 @@ class TopicPair {
   TopicPair(SequenceNumber s, std::string name, MetadataType type,
             NamespaceID namespaceId) :
     seqno(s),
-    topic_name(name),
+    topic_name(std::move(name)),
     namespace_id(namespaceId),
     topic_type(type) {
   }
@@ -109,6 +109,12 @@ class Message : public Serializer {
    * @return The Origin host.
    */
   const ClientID& GetOrigin() const { return origin_; }
+  /**
+   * Set the origin host ID.
+   */
+  void SetOrigin(const ClientID& client_id) {
+    origin_ = client_id;
+  }
 
   /**
    * Creates a Message of the appropriate subtype by looking at the
@@ -385,13 +391,6 @@ class MessageMetadata : public Message {
    */
   const std::vector<TopicPair>& GetTopicInfo() const { return topics_; }
   std::vector<TopicPair>& GetTopicInfo() { return topics_; }
-
-  /**
-   * Set the origin host ID.
-   */
-  void SetOrigin(const ClientID& client_id) {
-    origin_ = client_id;
-  }
 
   /*
    * Inherited from Serializer

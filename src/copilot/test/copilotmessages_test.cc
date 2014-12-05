@@ -185,6 +185,7 @@ TEST(CopilotTest, Publish) {
   // send messages to copilot
   int num_msg = 100;
   for (int i = 0; i < num_msg; ++i) {
+    NamespaceID ns = 101 + i % 50;
     std::string topic = "copilot_test_" + std::to_string(i % 50);
     auto type = i < num_msg/2 ? MetadataType::mSubscribe :
                                 MetadataType::mUnSubscribe;
@@ -192,7 +193,7 @@ TEST(CopilotTest, Publish) {
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         ClientID("client1"),
-                        { TopicPair(0, topic, type, 101 + i) });
+                        { TopicPair(0, topic, type, ns) });
     msg.SerializeToString(&serial);
     std::unique_ptr<Command> cmd(
       new CopilotCommand(std::move(serial),
@@ -222,6 +223,7 @@ TEST(CopilotTest, WorkerMapping) {
     options.control_towers.push_back(HostId("tower", i).ToClientId());
   }
   options.msg_loop = &loop;
+  options.control_tower_connections = 4;
   Copilot* copilot;
   Status st = Copilot::CreateNewInstance(options, &copilot);
   ASSERT_TRUE(st.ok());
@@ -241,7 +243,8 @@ TEST(CopilotTest, WorkerMapping) {
     tower_to_workers[control_tower].insert(worker_id);
 
     // Check that the tower maps to only one worker.
-    ASSERT_EQ(tower_to_workers[control_tower].size(), 1);
+    ASSERT_LE(tower_to_workers[control_tower].size(),
+              options.control_tower_connections);
   }
 }
 

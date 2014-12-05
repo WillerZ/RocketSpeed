@@ -294,7 +294,7 @@ class HostId {
   ClientID ToClientId(int worker_id = 0) const {
     ClientID client_id = ToString();
     assert(worker_id < 256);
-    client_id.push_back(static_cast<char>(worker_id));
+    client_id.push_back(static_cast<char>('a' + worker_id));
     return client_id;
   }
 };

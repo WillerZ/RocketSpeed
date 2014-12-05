@@ -23,7 +23,8 @@ CopilotOptions::CopilotOptions()
     num_workers(std::thread::hardware_concurrency()),
     worker_queue_size(1000000),
     consistent_hash_replicas(20),
-    control_towers_per_log(1) {
+    control_towers_per_log(1),
+    control_tower_connections(4) {
 }
 
 }  // namespace rocketspeed

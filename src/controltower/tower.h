@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <map>
 #include <vector>
@@ -51,10 +52,14 @@ class ControlTower {
     return options_.msg_loop->GetClientId(worker_id);
   }
 
-  // Get the worker loop associated with a log.
-  int GetLogWorker(LogID logid) const {
-    return logid % options_.msg_loop->GetNumWorkers();
-  }
+  // Find a host number and worker ID by client ID
+  HostNumber LookupHost(const ClientID& client_id, int* out_worker_id) const;
+
+  // Find a client ID and worker ID by host number
+  const ClientID* LookupHost(HostNumber hostnum, int* out_worker_id) const;
+
+  // Add a new client ID and worker ID then return its host number
+  HostNumber InsertHost(const ClientID& client_id, int worker_id);
 
  private:
   // The options used by the Control Tower
@@ -65,6 +70,9 @@ class ControlTower {
 
   // Maps a HostId to a HostNumber.
   HostMap hostmap_;
+
+  // Maps a HostNumber to a worker_id
+  std::unique_ptr<std::atomic<int>[]> hostworker_;
 
   // A control tower has multiple ControlRooms.
   // Each Room handles its own set of topics. Each room has its own

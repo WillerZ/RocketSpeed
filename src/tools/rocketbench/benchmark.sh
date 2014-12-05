@@ -52,6 +52,18 @@ done
 # Shift remaining arguments into place
 shift $((OPTIND-1))
 
+function stop_servers {
+  if [ $remote ]; then
+    echo "Stopping remote servers..."
+    for host in ${all_hosts[@]}; do
+      ssh root@$host 'pkill -f rocketspeed'
+    done
+  fi
+}
+
+# Make sure there are no old servers running before we start.
+stop_servers
+
 # Do the server deployment if specified.
 if [ $deploy ]; then
   # Setup remote server
@@ -133,7 +145,7 @@ function start_servers {
     for host in ${cockpits[@]}; do
       cmd="rocketspeed --pilot --copilot --control_towers=$towers_csv"
       echo "$host: $cmd"
-      if ! eval "ssh -f root@$host '${remote_path}/${cmd}'" >/dev/null 2>&1; then
+      if ! eval "ssh -f root@$host '${remote_path}/${cmd}'"; then
         echo "Failed to start rocketspeed on $host."
         exit 1
       fi
@@ -141,21 +153,28 @@ function start_servers {
     for host in ${control_towers[@]}; do
       cmd="rocketspeed --tower"
       echo "$host: $cmd"
-      if ! eval "ssh -f root@$host '${remote_path}/${cmd}'" >/dev/null 2>&1; then
+      if ! eval "ssh -f root@$host '${remote_path}/${cmd}'"; then
         echo "Failed to start rocketspeed on $host."
         exit 1
       fi
     done
+    sleep 3  # give servers time to start
     echo
   fi
 }
 
-function stop_servers {
+function collect_logs {
   if [ $remote ]; then
-    echo "Stopping remote servers..."
+    echo "Merging remote logs into LOG.remote..."
+    rm -f LOG.remote
+    rm -f LOG.tmp
+    touch LOG.tmp
     for host in ${all_hosts[@]}; do
-      ssh root@$host 'pkill rocketspeed'
+      # merge remote LOG file into LOG.remote
+      sort -m <(ssh root@$host 'cat LOG') LOG.tmp > LOG.remote
+      cp LOG.remote LOG.tmp
     done
+    rm LOG.tmp
   fi
 }
 
@@ -169,6 +188,7 @@ function run_produce {
   echo $cmd | tee $output_dir/benchmark_produce.log
   eval $cmd
   echo
+  collect_logs
   stop_servers
 }
 
@@ -182,15 +202,13 @@ function run_readwrite {
   echo $cmd | tee $output_dir/benchmark_readwrite.log
   eval $cmd
   echo
+  collect_logs
   stop_servers
 }
 
 function now() {
   echo `date +"%s"`
 }
-
-# Make sure there are no old servers running before we start.
-stop_servers
 
 report="$output_dir/report.txt"
 

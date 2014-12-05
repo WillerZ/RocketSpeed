@@ -38,7 +38,7 @@ void Copilot::StartWorkers() {
   for (size_t i = 0; i < workers_.size(); ++i) {
     worker_threads_.emplace_back(
       [this, i] (CopilotWorker* worker) {
-        options_.env->SetCurrentThreadName("copilot-" + std::to_string(i));
+        options_.env->SetCurrentThreadName("copilotw-" + std::to_string(i));
         worker->Run();
       },
       workers_[i].get());
@@ -144,7 +144,7 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
   // Process each topic
   for (size_t i = 0; i < request->GetTopicInfo().size(); i++) {
     // map the topic to a logid
-    TopicPair topic = request->GetTopicInfo()[i];
+    const TopicPair& topic = request->GetTopicInfo()[i];
 
     LOG_INFO(options_.info_log,
       "Received %s %s for Topic(%s)@%lu",
@@ -212,7 +212,9 @@ int Copilot::GetLogWorker(LogID logid) const {
   assert(control_tower);
 
   // Hash control tower to a worker.
-  return MurmurHash2<std::string>()(*control_tower) % num_workers;
+  size_t connection = logid % options_.control_tower_connections;
+  size_t hash = MurmurHash2<std::string>()(*control_tower);
+  return static_cast<int>((hash + connection) % num_workers);
 }
 
 }  // namespace rocketspeed
