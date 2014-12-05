@@ -204,7 +204,7 @@ TEST(CopilotTest, Publish) {
   }
 
   // Ensure all messages were ack'd
-  checkpoint.TimedWait(std::chrono::seconds(1));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 }
 

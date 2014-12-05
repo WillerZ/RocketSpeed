@@ -167,7 +167,7 @@ TEST(PilotTest, Publish) {
   }
 
   // Ensure all messages were ack'd
-  checkpoint.TimedWait(std::chrono::seconds(100));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(100)));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
   const Statistics& stats = pilot_->GetStatistics();

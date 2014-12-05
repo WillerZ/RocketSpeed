@@ -116,7 +116,7 @@ TEST(MockLogDeviceTest, Basic) {
   reader2->startReading(logid, lsn[1], lsn[4]);
 
   // Check that all messages were recevied.
-  checkpoint1.TimedWait(std::chrono::seconds(10));
+  ASSERT_TRUE(checkpoint1.TimedWait(std::chrono::seconds(10)));
   ASSERT_EQ(count1, 6);
   ASSERT_EQ(count2, 4);
   // Add a couple more.
@@ -125,7 +125,7 @@ TEST(MockLogDeviceTest, Basic) {
 
   // Reader 1 should have received two more messages, while reader 2
   // should receive no more because it only subscribed up to lsn[5].
-  checkpoint2.TimedWait(std::chrono::seconds(1));
+  ASSERT_TRUE(checkpoint2.TimedWait(std::chrono::seconds(1)));
   ASSERT_EQ(count1, 8);
   ASSERT_EQ(count2, 4);
 
@@ -169,7 +169,7 @@ TEST(MockLogDeviceTest, FindTime) {
   reader->startReading(logid, lsn[0]);
 
   // Let the readers catch up.
-  checkpoint.TimedWait(std::chrono::seconds(1));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
   ASSERT_EQ(count, 3);
 
   // Check that using findTimeSync on the timestamps matches up with
@@ -196,7 +196,7 @@ TEST(MockLogDeviceTest, FindTime) {
   }
 
   // Let the callbacks happen
-  checkpoint.TimedWait(std::chrono::seconds(1));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
   ASSERT_EQ(count, 3);  // ensure they were eventually called
 }
 
@@ -236,7 +236,7 @@ TEST(MockLogDeviceTest, Trim) {
   reader->startReading(logid, lsn[0]);
 
   // Let the readers catch up.
-  checkpoint.TimedWait(std::chrono::seconds(1));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
   ASSERT_EQ(count, 2);  // should only have read the last two messages
 }
 
@@ -294,8 +294,8 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
   }
 
   // Check that all messages were recevied.
-  checkpoint1.TimedWait(std::chrono::seconds(1));
-  checkpoint2.TimedWait(std::chrono::seconds(1));
+  ASSERT_TRUE(checkpoint1.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(checkpoint2.TimedWait(std::chrono::seconds(1)));
   ASSERT_EQ(count1, numMessages);
   ASSERT_EQ(count2, numMessages);
 }
