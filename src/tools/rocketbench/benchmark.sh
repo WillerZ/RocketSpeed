@@ -14,7 +14,7 @@ client_workers=32
 num_topics=1000000
 storage_url=${STORAGE_URL:-\"configerator:logdevice/rocketspeed.logdevice.primary.conf\"}
 cockpits=( rocketspeed001.11.lla1 rocketspeed002.11.lla1 rocketspeed003.11.lla1 )
-control_towers=( rocketspeed004.11.lla1 rocketspeed005.11.lla1 rocketspeed006.11.lla1 rocketspeed007.11.lla1 )
+control_towers=( rocketspeed004.11.lla1 rocketspeed005.11.lla1 ) #rocketspeed006.11.lla1 rocketspeed007.11.lla1 )
 all_hosts=( "${cockpits[@]}" "${control_towers[@]}" )
 remote_path="/usr/local/bin"
 
@@ -90,7 +90,7 @@ if [ $deploy ]; then
 fi
 
 if [ $# -ne 1 ]; then
-  echo "./benchmark.sh [-bcdnrst] [produce|readwrite]"
+  echo "./benchmark.sh [-bcdnrst] [produce|readwrite|consume]"
   echo
   echo "-b  Message size (bytes)."
   echo "-c  Number of client threads."
@@ -184,6 +184,7 @@ function run_produce {
   cmd="$bench $const_params \
        --start_producer=true \
        --start_consumer=false \
+       --delay_subscribe=false \
        2>&1 | tee $output_dir/benchmark_produce.log"
   echo $cmd | tee $output_dir/benchmark_produce.log
   eval $cmd
@@ -198,8 +199,24 @@ function run_readwrite {
   cmd="$bench $const_params \
        --start_producer=true \
        --start_consumer=true \
+       --delay_subscribe=false \
        2>&1 | tee $output_dir/benchmark_readwrite.log"
   echo $cmd | tee $output_dir/benchmark_readwrite.log
+  eval $cmd
+  echo
+  collect_logs
+  stop_servers
+}
+
+function run_consume {
+  start_servers
+  echo "Reading a backlog of $num_messages..."
+  cmd="$bench $const_params \
+       --start_producer=true \
+       --start_consumer=true \
+       --delay_subscribe=true \
+       2>&1 | tee $output_dir/benchmark_consume.log"
+  echo $cmd | tee $output_dir/benchmark_consume.log
   eval $cmd
   echo
   collect_logs
@@ -225,6 +242,8 @@ for job in ${jobs[@]}; do
     run_produce
   elif [ $job = readwrite ]; then
     run_readwrite
+  elif [ $job = consume ]; then
+    run_consume
   else
     echo "unknown job $job"
     exit 1

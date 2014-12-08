@@ -40,6 +40,7 @@ DEFINE_uint64(num_topics, 1000000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
 DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
+DEFINE_bool(delay_subscribe, false, "start reading after publishing");
 DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
 DEFINE_int32(namespaceid, 101, "namespace id");
@@ -65,7 +66,6 @@ namespace rocketspeed {
 Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
   Client* producer) {
   Env* env = Env::Default();
-  GUIDGenerator msgid_generator;
 
   // Random number generator.
   std::mt19937_64 rng;
@@ -91,15 +91,12 @@ Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
   for (int64_t i = 0; i < num_messages; ++i) {
     // Create random topic name
     char topic_name[64];
-    if (distr.get() != nullptr) {
-      snprintf(topic_name, sizeof(topic_name),
-               "benchmark.%lu",
-               distr->generateRandomInt());
-    } else {               // distribution is "fixed"
-      snprintf(topic_name, sizeof(topic_name),
-               "benchmark.%lu",
-               i % 100);   // 100 messages per topic
-    }
+    uint64_t topic_num = distr.get() != nullptr ?
+                         distr->generateRandomInt() :
+                         i % 100;  // "fixed", 100 messages per topic
+    snprintf(topic_name, sizeof(topic_name),
+             "benchmark.%lu",
+             topic_num);
 
     // Random topic options
     TopicOptions topic_options;
@@ -118,14 +115,17 @@ Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
     // Add ID and timestamp to message ID.
     static std::atomic<uint64_t> message_index;
     uint64_t send_time = env->NowMicros();
+    uint64_t index = message_index++;
     snprintf(data.data(), data.size(),
-             "%lu %lu", message_index++, send_time);
+             "%lu %lu", index, send_time);
 
     // Generate GUID for message
-    // 64 bits random
+    // 32 bits topic num
+    // 32 bits message index
     // 64 bits encode send time micros
-    MsgId msgid = msgid_generator.Generate();
-    *reinterpret_cast<uint64_t*>(&msgid) = send_time;
+    MsgId msgid;
+    msgid.hi = (topic_num << 32) | index;
+    msgid.lo = send_time;
 
     // Send the message
     PublishStatus ps = producer->Publish(topic_name,
@@ -213,7 +213,10 @@ int DoProduce(Client* producer,
 /**
  * Subscribe to topics.
  */
-void DoSubscribe(Client* consumer, NamespaceID nsid) {
+void DoSubscribe(
+    Client* consumer,
+    NamespaceID nsid,
+    std::unordered_map<std::string, rocketspeed::SequenceNumber> first_seqno) {
   SequenceNumber start = 0;   // start sequence number (0 = only new records)
 
   // Subscribe 16 topics at a time
@@ -228,6 +231,16 @@ void DoSubscribe(Client* consumer, NamespaceID nsid) {
   SubscriptionRequest request(nsid, "", true, start);
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     request.topic_name.assign("benchmark." + std::to_string(i));
+    if (FLAGS_delay_subscribe) {
+      // Find the first seqno published to this topic (or 0 if none published).
+      auto it = first_seqno.find(request.topic_name);
+      if (it == first_seqno.end()) {
+        request.start = 0;
+      } else {
+        request.start = it->second;
+      }
+    }
+
     topics.push_back(request);
     if (i % batch_size == batch_size - 1) {
       // send a subscription request
@@ -365,12 +378,32 @@ int main(int argc, char** argv) {
   // Create callback for publish acks.
   std::atomic<int64_t> ack_messages_received{0};
   std::atomic<int64_t> failed_publishes{0};
+
+  // Map of topics to the first sequence number in that topic.
+  std::unordered_map<std::string, rocketspeed::SequenceNumber> first_seqno;
+  std::mutex first_seqno_mutex;
+
   auto publish_callback = [&] (rocketspeed::ResultStatus rs) {
     uint64_t now = env->NowMicros();
-    uint64_t send_time = *reinterpret_cast<uint64_t const*>(&rs.msgid);
+    uint64_t send_time = rs.msgid.lo;
+    uint64_t topic_num = rs.msgid.hi >> 32;
     ack_latency->Record(now - send_time);
 
     ++ack_messages_received;
+
+    if (FLAGS_delay_subscribe) {
+      if (rs.status.ok()) {
+        // Get the minimum sequence number for this topic to subscribe to later.
+        std::string topic = "benchmark." + std::to_string(topic_num);
+        std::lock_guard<std::mutex> lock(first_seqno_mutex);
+        auto it = first_seqno.find(topic);
+        if (it == first_seqno.end()) {
+          first_seqno[topic] = rs.seqno;
+        } else {
+          it->second = std::min(it->second, rs.seqno);
+        }
+      }
+    }
 
     if (FLAGS_await_ack) {
       // This may be the last ack we receive, so set end to the time now.
@@ -412,11 +445,16 @@ int main(int argc, char** argv) {
           message_index, send_time);
       recv_latency->Record(now - send_time);
       std::lock_guard<std::mutex> lock(is_received_mutex);
+      if (is_received[message_index]) {
+        LOG_WARN(info_log,
+          "Received message %lu twice.",
+          message_index);
+      }
       is_received[message_index] = true;
     } else {
       LOG_WARN(info_log,
-          "Received out of bounds message index (%lu)",
-          message_index);
+          "Received out of bounds message index (%lu), message was (%s)",
+          message_index, data.data());
     }
 
     // If we've received all messages, let the main thread know to finish up.
@@ -488,25 +526,31 @@ int main(int argc, char** argv) {
 
   // Subscribe to topics (don't count this as part of the time)
   // Also waits for the subscription responses.
-  if (FLAGS_start_consumer) {
-    DoSubscribe(consumer, nsid);
-    if (!all_topics_subscribed.TimedWait(std::chrono::seconds(5))) {
-      LOG_WARN(info_log, "Failed to subscribe to all topics");
-      info_log->Flush();
-      printf("Failed to subscribe to all topics (%lu/%lu)\n",
-        num_topics_subscribed.load(),
-        FLAGS_num_topics);
-
-      return 1;
+  if (!FLAGS_delay_subscribe) {
+    if (FLAGS_start_consumer) {
+      printf("Subscribing to topics... ");
+      fflush(stdout);
+      DoSubscribe(consumer, nsid, std::move(first_seqno));
+      if (!all_topics_subscribed.TimedWait(std::chrono::seconds(5))) {
+        printf("time out\n");
+        LOG_WARN(info_log, "Failed to subscribe to all topics");
+        info_log->Flush();
+        printf("Failed to subscribe to all topics (%lu/%lu)\n",
+          num_topics_subscribed.load(),
+          FLAGS_num_topics);
+        return 1;
+      }
+      printf("done\n");
     }
-  }
 
-  // Start the clock.
-  start = std::chrono::steady_clock::now();
+    // Start the clock.
+    start = std::chrono::steady_clock::now();
+  }
 
   std::future<int> producer_ret;
   std::future<int> consumer_ret;
   if (FLAGS_start_producer) {
+    printf("Publishing messages.\n");
     producer_ret = std::async(std::launch::async,
                               &rocketspeed::DoProduce,
                               producer,
@@ -515,37 +559,48 @@ int main(int argc, char** argv) {
                               &ack_messages_received,
                               &last_ack_message);
   }
-  if (FLAGS_start_consumer) {
+
+  auto start_consumer = [&] () {
+    printf("Waiting for messages.\n");
     consumer_ret = std::async(std::launch::async,
                               &rocketspeed::DoConsume,
                               &all_messages_received,
                               &messages_received,
                               &last_data_message);
+  };
+
+  if (!FLAGS_delay_subscribe) {
+    if (FLAGS_start_consumer) {
+      start_consumer();
+    }
   }
 
   int ret = 0;
   if (FLAGS_start_producer) {
-    printf("Messages sent, awaiting acks...");
-    fflush(stdout);
-
     ret = producer_ret.get();
-
-    if (ack_messages_received.load() == FLAGS_num_messages) {
-      printf(" done\n");
+    if (ack_messages_received.load() != FLAGS_num_messages) {
+      printf("Time out awaiting publish acks.\n");
     } else {
-      printf(" time out\n");
+      printf("All messages published.\n");
     }
   }
+
+  if (FLAGS_delay_subscribe) {
+    assert(FLAGS_start_consumer);
+    printf("Subscribing to topics.\n");
+
+    // Start the clock.
+    start = std::chrono::steady_clock::now();
+    DoSubscribe(consumer, nsid, std::move(first_seqno));
+    start_consumer();
+  }
+
   if (FLAGS_start_consumer) {
-    printf("Waiting for Messages to be received...");
-    fflush(stdout);
-
     ret = consumer_ret.get();
-
     if (messages_received.load() == FLAGS_num_messages) {
-      printf(" done\n");
+      printf("Time out awaiting messages.\n");
     } else {
-      printf(" time out\n");
+      printf("All messages received.\n");
     }
   }
 
