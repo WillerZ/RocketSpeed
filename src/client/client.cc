@@ -329,7 +329,7 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   SequenceNumber last_msg_received = iter->second;
 
   // Old message, ignore iter
-  if (data->GetSequenceNumber() < last_msg_received) {
+  if (data->GetSequenceNumber() <= last_msg_received) {
     LOG_INFO(info_log_,
       "Message (%.16s)@%lu received out of order on Topic(%s)@%lu",
       data->GetPayload().ToString().c_str(),
@@ -404,7 +404,8 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   // This is the response ack of a subscription request sent earlier.
   for (const auto& elem : pairs) {
     // record confirmed subscriptions
-    topic_map[elem.topic_name] = elem.seqno;
+    // topic_map stores last received, so use -1 to say we want higher seqnos.
+    topic_map[elem.topic_name] = elem.seqno - 1;
 
     // invoke application-registered callback
     if (subscription_callback_) {
