@@ -341,6 +341,84 @@ struct SocketEvent {
   Slice partial_;
 };
 
+class AcceptCommand : public Command {
+ public:
+  explicit AcceptCommand(int fd,
+                         uint64_t issued_time)
+      : Command(issued_time),
+        fd_(fd) {}
+
+  CommandType GetCommandType() const { return kAcceptCommand; }
+
+  int GetFD() const { return fd_; }
+
+ private:
+  int fd_;
+};
+
+void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
+  // Need using otherwise SendCommand is confused with the member function.
+  using rocketspeed::SendCommand;
+  SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
+
+  // Have to handle the case when the message-send failed to write
+  // to output socket and have to invoke *some* callback to the app.
+  const SendCommand::Recipients& remote = send_cmd->GetDestination();
+
+  // Move the message payload into a ref-counted string. The string
+  // will be deallocated only when all the remote destinations
+  // have been served.
+  std::string out;
+  send_cmd->GetMessage(&out);
+  assert(out.size() > 0);
+  SharedString* msg = AllocString(std::move(out),
+                                  remote.size(),
+                                  send_cmd->GetIssuedTime());
+
+  // Increment ref count again in case it is deleted inside Enqueue.
+  msg->refcount++;
+  for (const ClientID& clientid : remote) {
+    Status status;
+    SocketEvent* sev = lookup_connection_cache(clientid);
+
+    // If the remote side has not yet established a connection, then
+    // create a new connection and insert into connection cache.
+    if (sev == nullptr) {
+      HostId host = HostId::ToHostId(clientid);
+      sev = setup_connection(host, clientid);
+    }
+    if (sev != nullptr) {
+      // Enqueue data to SocketEvent queue. This message will be sent out
+      // when the output socket is ready to write.
+      status = sev->Enqueue(msg);
+    }
+    if (sev == nullptr || !status.ok()) {
+      if (sev == nullptr) {
+        LOG_WARN(info_log_,
+                 "No Socket to send msg to host %s, msg dropped...",
+                 clientid.c_str());
+      } else {
+        LOG_WARN(info_log_,
+                 "Failed to enqueue message (%s) to host %s",
+                 status.ToString().c_str(),
+                 clientid.c_str());
+      }
+      info_log_->Flush();
+      msg->refcount--;  // unable to queue msg, decrement refcount
+    }
+  }  // for loop
+  if (--msg->refcount == 0) {
+    FreeString(msg);
+  }
+}
+
+void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
+  // This object is managed by the event that it creates, and will destroy
+  // itself during an EOF callback.
+  AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
+  new SocketEvent(this, accept_cmd->GetFD(), this->base_);
+}
+
 //
 // This callback is fired from the first aritificial timer event
 // in the dispatch loop.
@@ -358,8 +436,7 @@ EventLoop::do_shutdown(evutil_socket_t listener, short event, void *arg) {
   event_base_loopexit(obj->base_, nullptr);
 }
 
-void
-EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
+void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   obj->thread_check_.Check();
 
@@ -375,7 +452,6 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
   // commands added since we have received the last notification).
   while (available--) {
     std::unique_ptr<Command> command;
-    Status status;
 
     // Read a command from the queue.
     if (!obj->command_queue_.read(command)) {
@@ -389,65 +465,19 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
     obj->stats_.command_latency->Record(now - command->GetIssuedTime());
     obj->stats_.commands_processed->Add(1);
 
-    auto command_type = command->GetCommandType();
-    if (CommandType::kSendCommand == command_type) {
-      // Need using otherwise SendCommand is confused with the member function.
-      using rocketspeed::SendCommand;
-      SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
-
-      // Have to handle the case when the message-send failed to write
-      // to output socket and have to invoke *some* callback to the app.
-      const SendCommand::Recipients& remote = send_cmd->GetDestination();
-
-      // Move the message payload into a ref-counted string. The string
-      // will be deallocated only when all the remote destinations
-      // have been served.
-      std::string out;
-      send_cmd->GetMessage(&out);
-      assert(out.size() > 0);
-      SharedString* msg = obj->AllocString(std::move(out),
-                                           remote.size(),
-                                           send_cmd->GetIssuedTime());
-
-      // Increment ref count again in case it is deleted inside Enqueue.
-      msg->refcount++;
-      for (const ClientID& clientid : remote) {
-        SocketEvent* sev = obj->lookup_connection_cache(clientid);
-
-        // If the remote side has not yet established a connection, then
-        // create a new connection and insert into connection cache.
-        if (sev == nullptr) {
-          HostId host = HostId::ToHostId(clientid);
-          sev = obj->setup_connection(host, clientid);
-        }
-        if (sev != nullptr) {
-          // Enqueue data to SocketEvent queue. This message will be sent out
-          // when the output socket is ready to write.
-          status = sev->Enqueue(msg);
-        }
-        if (sev == nullptr || !status.ok()) {
-          if (sev == nullptr) {
-            LOG_WARN(obj->info_log_,
-              "No Socket to send msg to host %s, msg dropped...",
-              clientid.c_str());
-          } else {
-            LOG_WARN(obj->info_log_,
-              "Failed to enqueue message (%s) to host %s",
-              status.ToString().c_str(),
-              clientid.c_str());
-          }
-          obj->info_log_->Flush();
-          msg->refcount--;  // unable to queue msg, decrement refcount
-        }
-      }  // for loop
-      if (--msg->refcount == 0) {
-        obj->FreeString(msg);
-      }
-    } else if (CommandType::kAcceptCommand == command_type) {
-      // This object is managed by the event that it creates, and will destroy
-      // itself during an EOF callback.
-      AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
-      new SocketEvent(obj, accept_cmd->GetFD(), obj->base_);
+    // Search for callback registered for this command type.
+    // Command ownership will be passed along to the callback.
+    const auto type = command->GetCommandType();
+    auto iter = obj->command_callbacks_.find(type);
+    if (iter != obj->command_callbacks_.end()) {
+      iter->second(std::move(command));
+    } else {
+      // If the user has not registered a callback for this command type, then
+      // the command will be droped silently.
+      LOG_WARN(obj->info_log_,
+               "No registered command callback for command type %d",
+               type);
+      obj->info_log_->Flush();
     }
   }
 }
@@ -934,6 +964,17 @@ EventLoop::EventLoop(BaseEnv* env,
   active_connections_(0),
   thread_check_(env),
   stats_(stats_prefix) {
+
+  // Setup callbacks.
+  command_callbacks_[CommandType::kAcceptCommand] = [this](
+      std::unique_ptr<Command> command) {
+    HandleAcceptCommand(std::move(command));
+  };
+  command_callbacks_[CommandType::kSendCommand] = [this](
+      std::unique_ptr<Command> command) {
+    HandleSendCommand(std::move(command));
+  };
+
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }
 

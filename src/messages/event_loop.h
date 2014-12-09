@@ -43,6 +43,11 @@ typedef std::function<void(std::unique_ptr<Message> msg)>
 
 typedef std::function<void(int fd)> AcceptCallbackType;
 
+// Callback registered for a command type is invoked for all commands of the
+// type.
+typedef std::function<void(std::unique_ptr<Command> command)>
+  CommandCallbackType;
+
 class SocketEvent;
 
 // A refcounted, pooled version of a serialized message string
@@ -56,22 +61,6 @@ struct SharedString : public PooledObject<SharedString> {
   std::string store;
   int refcount;
   uint64_t command_issue_time;  // time the associated command was issued
-};
-
-class AcceptCommand : public Command {
- public:
-  explicit AcceptCommand(int fd, uint64_t issued_time)
-  : Command(issued_time)
-  , fd_(fd) {}
-
-  CommandType GetCommandType() const { return kAcceptCommand; }
-
-  int GetFD() const {
-    return fd_;
-  }
-
- private:
-  int fd_;
 };
 
 class EventLoop {
@@ -186,6 +175,7 @@ class EventLoop {
   // The callbacks
   EventCallbackType event_callback_;
   AcceptCallbackType accept_callback_;
+  std::map<CommandType, CommandCallbackType> command_callbacks_;
 
   // The connection listener
   evconnlistener* listener_ = nullptr;
@@ -228,6 +218,11 @@ class EventLoop {
     Histogram* write_latency;     // time from SendCommand to socket write
     Counter* commands_processed;
   } stats_;
+
+  // A callback for handling SendCommands.
+  void HandleSendCommand(std::unique_ptr<Command> command);
+  // A callback for handling AcceptCommands.
+  void HandleAcceptCommand(std::unique_ptr<Command> command);
 
   // connection cache updates
   bool insert_connection_cache(const ClientID& host, SocketEvent* ev);
