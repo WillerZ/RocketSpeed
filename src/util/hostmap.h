@@ -37,7 +37,7 @@ class HostMap {
   const ClientID* Lookup(HostNumber num) const;
 
   // Utility method to convert a list of Hostids to a printable string
-  static std::string ToString(const Command::Recipients& hostlist);
+  static std::string ToString(const SendCommand::Recipients& hostlist);
 
  private:
   // size of the store

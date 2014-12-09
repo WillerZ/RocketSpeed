@@ -64,9 +64,7 @@ class AcceptCommand : public Command {
   : Command(issued_time)
   , fd_(fd) {}
 
-  bool IsSendCommand() const {
-    return false;
-  }
+  CommandType GetCommandType() const { return kAcceptCommand; }
 
   int GetFD() const {
     return fd_;

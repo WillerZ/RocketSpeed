@@ -274,7 +274,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   // send the messages to subscribers
   if (list != nullptr && !list->empty()) {
     // Recipients for each control tower event loop worker.
-    std::unordered_map<int, Command::Recipients> destinations;
+    std::unordered_map<int, SendCommand::Recipients> destinations;
 
     // find all subscribers
     for (const auto& hostnum : *list) {
@@ -291,7 +291,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
     // Send command to each worker loop.
     for (auto it = destinations.begin(); it != destinations.end(); ++it) {
       int worker_id = it->first;
-      Command::Recipients& recipients = it->second;
+      SendCommand::Recipients& recipients = it->second;
 
       std::unique_ptr<TowerCommand> cmd(
         new TowerCommand(serial,  // TODO(pja) 1 : avoid copy here

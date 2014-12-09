@@ -389,14 +389,15 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
     obj->stats_.command_latency->Record(now - command->GetIssuedTime());
     obj->stats_.commands_processed->Add(1);
 
-    if (command->IsSendCommand()) {
+    auto command_type = command->GetCommandType();
+    if (CommandType::kSendCommand == command_type) {
       // Need using otherwise SendCommand is confused with the member function.
       using rocketspeed::SendCommand;
       SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
 
       // Have to handle the case when the message-send failed to write
       // to output socket and have to invoke *some* callback to the app.
-      const Command::Recipients& remote = send_cmd->GetDestination();
+      const SendCommand::Recipients& remote = send_cmd->GetDestination();
 
       // Move the message payload into a ref-counted string. The string
       // will be deallocated only when all the remote destinations
@@ -442,8 +443,7 @@ EventLoop::do_command(evutil_socket_t listener, short event, void *arg) {
       if (--msg->refcount == 0) {
         obj->FreeString(msg);
       }
-    } else {
-      // Must be an AcceptCommand.
+    } else if (CommandType::kAcceptCommand == command_type) {
       // This object is managed by the event that it creates, and will destroy
       // itself during an EOF callback.
       AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());

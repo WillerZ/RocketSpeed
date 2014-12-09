@@ -477,7 +477,7 @@ void CopilotWorker::DistributeCommand(
     std::string msg,
     std::vector<std::pair<ClientID, int>> destinations) {
   // Destinations per worker.
-  std::unordered_map<int, Command::Recipients> sub_destinations;
+  std::unordered_map<int, SendCommand::Recipients> sub_destinations;
 
   // Find which worker the command needs to be sent to for each client.
   for (auto& elem : destinations) {
@@ -487,7 +487,7 @@ void CopilotWorker::DistributeCommand(
   // Send the command to each worker.
   for (auto it = sub_destinations.begin(); it != sub_destinations.end(); ++it) {
     int worker_id = it->first;
-    Command::Recipients& recipients = it->second;
+    SendCommand::Recipients& recipients = it->second;
 
     // Send the response.
     // TODO(pja) 1 : Find way to avoid msg copy.

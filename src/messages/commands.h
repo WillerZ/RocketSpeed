@@ -14,32 +14,27 @@
 
 namespace rocketspeed {
 
+enum CommandType : uint8_t {
+  kNotInitialized = 0,
+  kSendCommand = 0x01,
+  kAcceptCommand = 0x02,
+};
+
 /**
- * Interface class for sending messages from any thread to the event loop
- * for processing on the event loop thread.
+ * Interface class for sending messages from any thread to the event loop for
+ * processing on the event loop thread.
  */
 class Command {
  public:
-  // Allocate one ClientID in-place for the common case.
-  typedef autovector<ClientID, 1> Recipients;
-
-  // Default constructor.
   explicit Command(uint64_t issued_time) : issued_time_(issued_time) {}
 
-  // Default destructor.
   virtual ~Command() {}
 
-  // Is this a message send-command? The msg-send command is special because
-  // the event loop processes it inline instead of invoking the application
-  // callback. If this is a SendCommand, then the event loop sends out the
-  // message associated with this Command to the host specified via a call
-  // to GetDestination().
-  virtual bool IsSendCommand() const = 0;
+  // Get type of the command.
+  virtual CommandType GetCommandType() const = 0;
 
   // Get the time when this command was issued by the sender.
-  uint64_t GetIssuedTime() const {
-    return issued_time_;
-  }
+  uint64_t GetIssuedTime() const { return issued_time_; }
 
  private:
   uint64_t issued_time_;
@@ -47,21 +42,25 @@ class Command {
 
 /**
  * Command for sending a message to remote recipients.
+ * The SendCommand is special because the event loop processes it inline
+ * instead of invoking the application callback. The message associated with
+ * this command is sent to the host specified via a call to GetDestination().
  */
 class SendCommand : public Command {
  public:
+  // Allocate one ClientID in-place for the common case.
+  typedef autovector<ClientID, 1> Recipients;
+
   explicit SendCommand(uint64_t issued_time) : Command(issued_time) {}
 
   virtual ~SendCommand() {}
 
-  bool IsSendCommand() const {
-    return true;
-  }
+  CommandType GetCommandType() const { return kSendCommand; }
 
   virtual void GetMessage(std::string* out) = 0;
 
-  // If this is a command to send a mesage to remote hosts, then
-  // returns the list of destination HostIds.
+  // If this is a command to send a mesage to remote hosts, then returns the
+  // list of destination HostIds.
   virtual const Recipients& GetDestination() const = 0;
 };
 

@@ -111,7 +111,7 @@ HostMap::Lookup(HostNumber number) const {
 
 // Utility method to convert a list of Hostids to a printable string
 std::string
-HostMap::ToString(const Command::Recipients& hostlist) {
+HostMap::ToString(const SendCommand::Recipients& hostlist) {
   std::string out;
   for (ClientID host : hostlist) {
     out += " " + host;
