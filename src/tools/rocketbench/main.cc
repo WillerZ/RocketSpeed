@@ -597,7 +597,7 @@ int main(int argc, char** argv) {
 
   if (FLAGS_start_consumer) {
     ret = consumer_ret.get();
-    if (messages_received.load() == FLAGS_num_messages) {
+    if (messages_received.load() != FLAGS_num_messages) {
       printf("Time out awaiting messages.\n");
     } else {
       printf("All messages received.\n");

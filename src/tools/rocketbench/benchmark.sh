@@ -143,17 +143,17 @@ function start_servers {
   if [ $remote ]; then
     echo "Starting remote servers..."
     for host in ${cockpits[@]}; do
-      cmd="rocketspeed --pilot --copilot --control_towers=$towers_csv"
+      cmd="${remote_path}/rocketspeed --pilot --copilot --control_towers=$towers_csv"
       echo "$host: $cmd"
-      if ! eval "ssh -f root@$host '${remote_path}/${cmd}'"; then
+      if ! eval "ssh -f root@$host '${cmd}'"; then
         echo "Failed to start rocketspeed on $host."
         exit 1
       fi
     done
     for host in ${control_towers[@]}; do
-      cmd="rocketspeed --tower"
+      cmd="${remote_path}/rocketspeed --tower"
       echo "$host: $cmd"
-      if ! eval "ssh -f root@$host '${remote_path}/${cmd}'"; then
+      if ! eval "ssh -f root@$host '${cmd}'"; then
         echo "Failed to start rocketspeed on $host."
         exit 1
       fi
@@ -172,6 +172,7 @@ function collect_logs {
     for host in ${all_hosts[@]}; do
       # merge remote LOG file into LOG.remote
       sort -m <(ssh root@$host 'cat LOG') LOG.tmp > LOG.remote
+      ssh root@$host 'rm -f LOG*'  # tidy up
       cp LOG.remote LOG.tmp
     done
     rm LOG.tmp
