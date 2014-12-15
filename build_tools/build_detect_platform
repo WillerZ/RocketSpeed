@@ -124,7 +124,8 @@ case "$TARGET_OS" in
         if [ -z "$USE_CLANG" ]; then
             COMMON_FLAGS="$COMMON_FLAGS -fno-builtin-memcmp"
         fi
-        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lpthread -lrt -levent_core"
+        # -rdynamic needed for backtrace_symbols_fd.
+        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lpthread -lrt -levent_core -rdynamic"
         # PORT_FILES=port/linux/linux_specific.cc
         ;;
     SunOS)

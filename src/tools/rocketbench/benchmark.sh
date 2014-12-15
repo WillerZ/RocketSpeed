@@ -143,17 +143,17 @@ function start_servers {
   if [ $remote ]; then
     echo "Starting remote servers..."
     for host in ${cockpits[@]}; do
-      cmd="${remote_path}/rocketspeed --pilot --copilot --control_towers=$towers_csv"
+      cmd="${remote_path}/rocketspeed --pilot --copilot --control_towers=$towers_csv 2>&1 | sed 's/^/${host}: /'"
       echo "$host: $cmd"
-      if ! eval "ssh -f root@$host '${cmd}'"; then
+      if ! ssh -f root@$host -- "${cmd}"; then
         echo "Failed to start rocketspeed on $host."
         exit 1
       fi
     done
     for host in ${control_towers[@]}; do
-      cmd="${remote_path}/rocketspeed --tower"
+      cmd="${remote_path}/rocketspeed --tower 2>&1 | sed 's/^/${host}: /'"
       echo "$host: $cmd"
-      if ! eval "ssh -f root@$host '${cmd}'"; then
+      if ! ssh -f root@$host -- "${cmd}"; then
         echo "Failed to start rocketspeed on $host."
         exit 1
       fi
