@@ -12,19 +12,11 @@ remote=''
 deploy=''
 client_workers=32
 num_topics=1000000
+num_pilots=1
+num_copilots=1
+num_towers=1
 storage_url=${STORAGE_URL:-\"configerator:logdevice/rocketspeed.logdevice.primary.conf\"}
-cockpits=( rocketspeed001.11.lla1 rocketspeed002.11.lla1 rocketspeed003.11.lla1 )
-control_towers=( rocketspeed004.11.lla1 rocketspeed005.11.lla1 ) #rocketspeed006.11.lla1 rocketspeed007.11.lla1 )
-all_hosts=( "${cockpits[@]}" "${control_towers[@]}" )
 remote_path="/usr/local/bin"
-
-function join {
-  # joins elements of an array with $1
-  local IFS="$1"; shift; echo "$*";
-}
-
-# Comma separate control_towers
-towers_csv=$(join , ${control_towers[@]})
 
 # Use the 2 lower order bytes from the UID to generate a namespace id.
 # The hope is that this will be sufficiently unique so that concurrent
@@ -35,22 +27,72 @@ namespaceid=`id -u`
 # called DBG=dbg. By default, pick the optimized build.
 part=${DBG:-opt}
 
-# Parse flags
-while getopts ':b:c:dn:r:st:' flag; do
-  case "${flag}" in
-    b) message_size=${OPTARG} ;;
-    c) client_workers=${OPTARG} ;;
-    d) deploy='true' ;;
-    n) num_messages=${OPTARG} ;;
-    r) message_rate=${OPTARG} ;;
-    s) remote='true' ;;
-    t) num_topics=${OPTARG} ;;
-    *) echo "Unexpected option ${OPTARG}"; exit 1 ;;
+# Argument parsing
+OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
+             -l size:,client-threads:,deploy,messages:,rate:,remote,topics:,pilots:,copilots:,towers: \
+             -n 'rocketbench' -- "$@"`
+
+if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
+
+eval set -- "$OPTS"
+
+while true; do
+  case "$1" in
+    -b | --size )
+      message_size="$2"; shift 2 ;;
+    -c | --client-threads )
+      client_workers="$2"; shift 2 ;;
+    -d | --deploy )
+      deploy='true'; shift ;;
+    -n | --messages )
+      num_messages="$2"; shift 2 ;;
+    -r | --rate )
+      message_rate="$2"; shift 2 ;;
+    -s | --remote )
+      remote='true'; shift ;;
+    -t | --topics )
+      num_topics="$2"; shift 2 ;;
+    -x | --pilots )
+      num_pilots="$2"; shift 2 ;;
+    -y | --copilots )
+      num_copilots="$2"; shift 2 ;;
+    -z | --towers )
+      num_towers="$2"; shift 2 ;;
+    -- )
+      shift; break ;;
+    * )
+      exit 1 ;;
   esac
 done
 
-# Shift remaining arguments into place
-shift $((OPTIND-1))
+available_hosts=( rocketspeed001.11.lla1 \
+                  rocketspeed002.11.lla1 \
+                  rocketspeed003.11.lla1 \
+                  rocketspeed004.11.lla1 \
+                  rocketspeed005.11.lla1 \
+                  rocketspeed006.11.lla1 \
+                  rocketspeed007.11.lla1 )
+
+pilots=("${available_hosts[@]::num_pilots}")
+available_hosts=("${available_hosts[@]:num_pilots}")  # pop num_pilots off
+
+copilots=("${available_hosts[@]::num_copilots}")
+available_hosts=("${available_hosts[@]:num_copilots}")  # pop num_copilots off
+
+control_towers=("${available_hosts[@]::num_towers}")
+available_hosts=("${available_hosts[@]:num_towers}")  # pop num_towers off
+
+cockpits=("${pilots[@]} ${copilots[@]}")
+all_hosts=("${cockpits[@]} ${control_towers[@]}")
+
+function join {
+  # joins elements of an array with $1
+  local IFS="$1"; shift; echo "$*";
+}
+
+pilots_csv=$(join , ${pilots[@]})
+copilots_csv=$(join , ${copilots[@]})
+towers_csv=$(join , ${control_towers[@]})
 
 function stop_servers {
   if [ $remote ]; then
@@ -90,15 +132,18 @@ if [ $deploy ]; then
 fi
 
 if [ $# -ne 1 ]; then
-  echo "./benchmark.sh [-bcdnrst] [produce|readwrite|consume]"
+  echo "./benchmark.sh [-bcdnrstxyz] [produce|readwrite|consume]"
   echo
-  echo "-b  Message size (bytes)."
-  echo "-c  Number of client threads."
-  echo "-d  Deploy the rocketspeed binary to remote servers."
-  echo "-n  Number of messages to send."
-  echo "-r  Messages to send per second."
-  echo "-s  Use remote server(s) for pilot, copilot, control towers."
-  echo "-t  Number of topics."
+  echo "-b --size            Message size (bytes)."
+  echo "-c --client_threads  Number of client threads."
+  echo "-d --deploy          Deploy the rocketspeed binary to remote servers."
+  echo "-n --num_messages    Number of messages to send."
+  echo "-r --rate            Messages to send per second."
+  echo "-s --remote          Use remote server(s) for pilot, copilot, control towers."
+  echo "-t --topics          Number of topics."
+  echo "-x --pilots          Number of pilots to use."
+  echo "-y --copilots        Number of copilots to use."
+  echo "-z --towers          Number of control towers to use."
   exit 1
 fi
 
@@ -130,11 +175,9 @@ fi
 
 # Setup const params
 if [ $remote ]; then
-  pilot_host=${cockpits[0]}
-  copilot_host=${cockpits[1]}
   const_params+=" --start_local_server=false"
-  const_params+=" --pilot_hostname=$pilot_host"
-  const_params+=" --copilot_hostname=$copilot_host"
+  const_params+=" --pilot_hostnames=$pilots_csv"
+  const_params+=" --copilot_hostnames=$copilots_csv"
 else
   const_params+=" --start_local_server=true"
 fi

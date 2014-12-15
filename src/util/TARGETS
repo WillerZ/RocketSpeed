@@ -12,6 +12,7 @@ cpp_library(
         'log_router.cc',
         'logdevice.cc',
         'logging.cc',
+        'parsing.cc',
         'scoped_file_lock.cc',
         'testharness.cc',
         'testutil.cc',

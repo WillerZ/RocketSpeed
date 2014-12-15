@@ -21,6 +21,7 @@
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
 #include "src/util/logdevice.h"
+#include "src/util/parsing.h"
 
 #ifdef USE_LOGDEVICE
 #include "external/logdevice/include/debug.h"
@@ -209,18 +210,11 @@ int main(int argc, char** argv) {
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
     // Parse comma-separated control_towers hostname.
-    const std::string& hosts = FLAGS_control_towers;
-    auto first = hosts.begin();
-    for (auto last = first; first != hosts.end(); first = last) {
-      last = std::find(first, hosts.end(), ',');
-      std::string hostname(first, last);
+    for (auto hostname : rocketspeed::SplitString(FLAGS_control_towers)) {
       rocketspeed::HostId host(hostname, FLAGS_tower_port);
       copilot_opts.control_towers.push_back(host.ToClientId());
-      LOG_WARN(info_log, "Adding control tower '%s'",
+      LOG_INFO(info_log, "Adding control tower '%s'",
         host.ToString().c_str());
-      if (last != hosts.end()) {
-        ++last;  // move past ','
-      }
     }
     st = rocketspeed::Copilot::CreateNewInstance(std::move(copilot_opts),
                                                  &copilot);

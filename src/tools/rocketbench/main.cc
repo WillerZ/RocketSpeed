@@ -19,6 +19,7 @@
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/common/guid_generator.h"
+#include "src/util/parsing.h"
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
 
@@ -30,8 +31,8 @@ DEFINE_bool(start_local_server, true, "starts an embedded rocketspeed server");
 DEFINE_string(storage_url, "", "Storage service URL for local server");
 
 DEFINE_int32(num_threads, 8, "number of threads");
-DEFINE_string(pilot_hostname, "localhost", "hostname of pilot");
-DEFINE_string(copilot_hostname, "localhost", "hostname of copilot");
+DEFINE_string(pilot_hostnames, "localhost", "hostnames of pilots");
+DEFINE_string(copilot_hostnames, "localhost", "hostnames of copilots");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
 DEFINE_int32(client_workers, 32, "number of client workers");
@@ -63,8 +64,9 @@ static const Result failed = { false };
 
 namespace rocketspeed {
 
-Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
-  Client* producer) {
+Result ProducerWorker(int64_t num_messages,
+                      NamespaceID namespaceid,
+                      Client* producer) {
   Env* env = Env::Default();
 
   // Random number generator.
@@ -164,7 +166,7 @@ Result ProducerWorker(int64_t num_messages, NamespaceID namespaceid,
 /*
  ** Produce messages
  */
-int DoProduce(Client* producer,
+int DoProduce(std::vector<std::unique_ptr<ClientImpl>>& producers,
               rocketspeed::NamespaceID nsid,
               rocketspeed::port::Semaphore* all_ack_messages_received,
               std::atomic<int64_t>* ack_messages_received,
@@ -173,13 +175,14 @@ int DoProduce(Client* producer,
   // Distribute total number of messages among them.
   std::vector<std::future<Result>> futures;
   int64_t total_messages = FLAGS_num_messages;
+  size_t p = 0;
   for (int32_t remaining = FLAGS_num_threads; remaining; --remaining) {
     int64_t num_messages = total_messages / remaining;
     futures.emplace_back(std::async(std::launch::async,
                                     &rocketspeed::ProducerWorker,
                                     num_messages,
                                     nsid,
-                                    producer));
+                                    producers[p++ % producers.size()].get()));
     total_messages -= num_messages;
   }
   assert(total_messages == 0);
@@ -213,22 +216,24 @@ int DoProduce(Client* producer,
 /**
  * Subscribe to topics.
  */
-void DoSubscribe(
-    Client* consumer,
-    NamespaceID nsid,
-    std::unordered_map<std::string, rocketspeed::SequenceNumber> first_seqno) {
+void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
+                 NamespaceID nsid,
+                 std::unordered_map<std::string, SequenceNumber> first_seqno) {
   SequenceNumber start = 0;   // start sequence number (0 = only new records)
 
-  // Subscribe 16 topics at a time
   // This needs to be low enough so that subscriptions are evenly distributed
   // among client threads.
-  unsigned int batch_size = 16;
+  auto total_threads = consumers.size() * FLAGS_client_workers;
+  unsigned int batch_size =
+    std::min(100, std::max(1,
+      static_cast<int>(FLAGS_num_topics / total_threads / 10)));
 
   std::vector<SubscriptionRequest> topics;
   topics.reserve(batch_size);
 
   // create all subscriptions from seqno 1
   SubscriptionRequest request(nsid, "", true, start);
+  size_t c = 0;
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     request.topic_name.assign("benchmark." + std::to_string(i));
     if (FLAGS_delay_subscribe) {
@@ -244,14 +249,14 @@ void DoSubscribe(
     topics.push_back(request);
     if (i % batch_size == batch_size - 1) {
       // send a subscription request
-      consumer->ListenTopics(topics);
+      consumers[c++ % consumers.size()]->ListenTopics(topics);
       topics.clear();
     }
   }
 
   // subscribe to all remaining topics
   if (topics.size() != 0) {
-    consumer->ListenTopics(topics);
+    consumers[c++ % consumers.size()]->ListenTopics(topics);
   }
 }
 
@@ -345,20 +350,15 @@ int main(int argc, char** argv) {
   }
 
   // Configuration for RocketSpeed.
-  rocketspeed::HostId pilot(FLAGS_pilot_hostname, FLAGS_pilot_port);
-  rocketspeed::HostId copilot(FLAGS_copilot_hostname, FLAGS_copilot_port);
+  std::vector<rocketspeed::HostId> pilots;
+  for (auto hostname : rocketspeed::SplitString(FLAGS_pilot_hostnames)) {
+    pilots.emplace_back(hostname, FLAGS_pilot_port);
+  }
 
-  // Create two configs: one for the prpducer and one for the consumer
-  std::unique_ptr<rocketspeed::Configuration> pconfig(
-    rocketspeed::Configuration::Create(
-      std::vector<rocketspeed::HostId>{ pilot },
-      std::vector<rocketspeed::HostId>{ copilot },
-      rocketspeed::Tenant(102)));
-  std::unique_ptr<rocketspeed::Configuration> cconfig(
-    rocketspeed::Configuration::Create(
-      std::vector<rocketspeed::HostId>{ pilot },
-      std::vector<rocketspeed::HostId>{ copilot },
-      rocketspeed::Tenant(102)));
+  std::vector<rocketspeed::HostId> copilots;
+  for (auto hostname : rocketspeed::SplitString(FLAGS_copilot_hostnames)) {
+    copilots.emplace_back(hostname, FLAGS_copilot_port);
+  }
 
   // Start/end time for benchmark.
   std::chrono::time_point<std::chrono::steady_clock> start, end;
@@ -389,8 +389,6 @@ int main(int argc, char** argv) {
     uint64_t topic_num = rs.msgid.hi >> 32;
     ack_latency->Record(now - send_time);
 
-    ++ack_messages_received;
-
     if (FLAGS_delay_subscribe) {
       if (rs.status.ok()) {
         // Get the minimum sequence number for this topic to subscribe to later.
@@ -411,7 +409,7 @@ int main(int argc, char** argv) {
       last_ack_message = std::chrono::steady_clock::now();
 
       // If we've received all messages, let the main thread know to finish up.
-      if (ack_messages_received.load() == FLAGS_num_messages) {
+      if (++ack_messages_received == FLAGS_num_messages) {
         all_ack_messages_received.Post();
       }
     }
@@ -476,50 +474,22 @@ int main(int argc, char** argv) {
     }
   };
 
-  rocketspeed::ClientImpl* producer = nullptr;
-  rocketspeed::ClientImpl* consumer = nullptr;
-  std::string clientid = rocketspeed::GUIDGenerator().GenerateString();
 
-  // If the producer port and the consumer port are the same, then we
-  // use a single client object. This allows the producer and the
-  // consumer to share the same connections to the Cloud.
-  if (FLAGS_start_producer && FLAGS_start_consumer) {
-    producer = new rocketspeed::ClientImpl(clientid,
-                                           pilot,
-                                           copilot,
-                                           rocketspeed::Tenant(102),
-                                           FLAGS_client_workers,
-                                           publish_callback,
-                                           subscribe_callback,
-                                           receive_callback,
-                                           nullptr,
-                                           info_log);
-    consumer = producer;
-  } else {
-    if (FLAGS_start_producer) {
-      producer = new rocketspeed::ClientImpl(clientid,
-                                             pilot,
-                                             copilot,
-                                             rocketspeed::Tenant(102),
-                                             FLAGS_client_workers,
-                                             publish_callback,
-                                             nullptr,
-                                             nullptr,
-                                             nullptr,
-                                             info_log);
-    }
-    if (FLAGS_start_consumer) {
-      consumer = new rocketspeed::ClientImpl(clientid,
-                                             pilot,
-                                             copilot,
-                                             rocketspeed::Tenant(102),
-                                             FLAGS_client_workers,
-                                             nullptr,
-                                             subscribe_callback,
-                                             receive_callback,
-                                             nullptr,
-                                             info_log);
-    }
+  std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;
+  size_t num_clients = std::max(pilots.size(), copilots.size());
+  for (size_t i = 0; i < num_clients; ++i) {
+    std::string clientid = rocketspeed::GUIDGenerator().GenerateString();
+    clients.emplace_back(
+      new rocketspeed::ClientImpl(clientid,
+                                  pilots[i % pilots.size()],
+                                  copilots[i % copilots.size()],
+                                  rocketspeed::Tenant(102),
+                                  FLAGS_client_workers,
+                                  publish_callback,
+                                  subscribe_callback,
+                                  receive_callback,
+                                  nullptr,
+                                  info_log));
   }
   rocketspeed::NamespaceID nsid =
     static_cast<rocketspeed::NamespaceID>(FLAGS_namespaceid);
@@ -530,7 +500,7 @@ int main(int argc, char** argv) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
-      DoSubscribe(consumer, nsid, std::move(first_seqno));
+      DoSubscribe(clients, nsid, std::move(first_seqno));
       if (!all_topics_subscribed.TimedWait(std::chrono::seconds(5))) {
         printf("time out\n");
         LOG_WARN(info_log, "Failed to subscribe to all topics");
@@ -553,7 +523,7 @@ int main(int argc, char** argv) {
     printf("Publishing messages.\n");
     producer_ret = std::async(std::launch::async,
                               &rocketspeed::DoProduce,
-                              producer,
+                              std::ref(clients),
                               nsid,
                               &all_ack_messages_received,
                               &ack_messages_received,
@@ -580,6 +550,7 @@ int main(int argc, char** argv) {
     ret = producer_ret.get();
     if (ack_messages_received.load() != FLAGS_num_messages) {
       printf("Time out awaiting publish acks.\n");
+      ret = 1;
     } else {
       printf("All messages published.\n");
     }
@@ -591,7 +562,7 @@ int main(int argc, char** argv) {
 
     // Start the clock.
     start = std::chrono::steady_clock::now();
-    DoSubscribe(consumer, nsid, std::move(first_seqno));
+    DoSubscribe(clients, nsid, std::move(first_seqno));
     start_consumer();
   }
 
@@ -675,11 +646,8 @@ int main(int argc, char** argv) {
       if (FLAGS_start_local_server) {
         stats.Aggregate(test_cluster->GetStatistics());
       }
-      if (producer) {
-        stats.Aggregate(producer->GetStatistics());
-      }
-      if (consumer && consumer != producer) {
-        stats.Aggregate(consumer->GetStatistics());
+      for (auto& client : clients) {
+        stats.Aggregate(client->GetStatistics());
       }
 
       printf("\n");
@@ -689,9 +657,5 @@ int main(int argc, char** argv) {
   }
   fflush(stdout);
 
-  delete producer;
-  if (producer != consumer) {
-    delete consumer;
-  }
   return ret;
 }
