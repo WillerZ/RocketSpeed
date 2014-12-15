@@ -80,6 +80,7 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
                                         options.storage,
                                         options.storage_url,
                                         opt.info_log,
+                                        options.num_storage_workers,
                                         &tailer);
   if (!st.ok()) {
     delete *ct;

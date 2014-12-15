@@ -96,6 +96,9 @@ struct ControlTowerOptions {
   //    "configerator:logdevice/logdevice.test.conf"
   URL storage_url;
 
+  // Number of workers for the log storage.
+  uint32_t num_storage_workers;
+
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
 };

@@ -132,11 +132,13 @@ Tailer::CreateNewInstance(Env* env,
                           std::shared_ptr<LogStorage> storage,
                           const URL& storage_url,
                           std::shared_ptr<Logger> info_log,
+                          int num_workers,
                           Tailer** tailer) {
   if (storage == nullptr) {
     // create logdevice client
     std::unique_ptr<facebook::logdevice::ClientSettings> settings(
       facebook::logdevice::ClientSettings::create());
+    settings->set("num-workers", num_workers);
     std::shared_ptr<facebook::logdevice::Client> client =
       facebook::logdevice::Client::create(
                            "rocketspeed.logdevice.primary",  // storage name

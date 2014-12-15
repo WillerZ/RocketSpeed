@@ -30,6 +30,7 @@ class Tailer {
                            std::shared_ptr<LogStorage> storage,
                            const URL& storage_url,
                            std::shared_ptr<Logger> info_log,
+                           int num_workers,
                            Tailer** tailer);
 
   // Initialize the Tailer first before using it
