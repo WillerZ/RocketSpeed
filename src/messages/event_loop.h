@@ -83,7 +83,7 @@ class EventLoop {
             EventCallbackType event_callback,
             AcceptCallbackType accept_callback,
             const std::string& stats_prefix = "",
-            uint32_t command_queue_size = 65536);
+            uint32_t command_queue_size = 1000000);
 
   virtual ~EventLoop();
 

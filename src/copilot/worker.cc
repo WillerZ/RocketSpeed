@@ -497,7 +497,7 @@ void CopilotWorker::DistributeCommand(
                          options_.env->NowMicros()));
     Status status = copilot_->SendCommand(std::move(cmd), worker_id);
     if (!status.ok()) {
-      LOG_INFO(options_.info_log,
+      LOG_WARN(options_.info_log,
         "Failed to distribute message to %s",
         HostMap::ToString(recipients).c_str());
     }

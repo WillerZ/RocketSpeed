@@ -309,7 +309,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
                 request->GetTopicName().ToString().c_str(),
                 HostMap::ToString(recipients).c_str());
       } else {
-        LOG_INFO(options.info_log,
+        LOG_WARN(options.info_log,
                 "Unable to forward Data message to subscriber %s",
                 HostMap::ToString(recipients).c_str());
         options.info_log->Flush();
