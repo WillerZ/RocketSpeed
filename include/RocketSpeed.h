@@ -52,6 +52,12 @@ struct ClientOptions {
   // Identifier for this client.
   ClientID client_id;
 
+  // Username for authentication.
+  std::string username;
+
+  // Access Token for authentication.
+  std::string access_token;
+
   // Invoked when a sent-message is acknowledged.
   // Default: nullptr.
   PublishCallback publish_callback;
@@ -73,7 +79,8 @@ struct ClientOptions {
   std::shared_ptr<Logger> info_log;
 
   // Constructor which fills default values.
-  ClientOptions(const Configuration& _config, ClientID _client_id);
+  ClientOptions(const Configuration& _config,
+                ClientID _client_id);
 };
 
 /*

@@ -29,6 +29,8 @@ ClientOptions::ClientOptions(const Configuration& _config,
                              ClientID _client_id)
     : config(_config),
       client_id(std::move(_client_id)),
+      username(""),
+      access_token(""),
       publish_callback(nullptr),
       subscription_callback(nullptr),
       receive_callback(nullptr),

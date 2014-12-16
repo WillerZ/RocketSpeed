@@ -75,6 +75,7 @@ TEST(IntegrationTest, OneMessage) {
                             cluster.GetCopilotHostIds(),
                             Tenant(102),
                             1));
+  //TODO(ranji42) Try to use the same integration_test for mqttclient.
   ClientOptions options(*config, GUIDGenerator().GenerateString());
   options.publish_callback = publish_callback;
   options.subscription_callback = subscription_callback;
