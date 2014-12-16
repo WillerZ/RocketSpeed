@@ -417,6 +417,7 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
   // itself during an EOF callback.
   AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
   new SocketEvent(this, accept_cmd->GetFD(), this->base_);
+  stats_.accepts->Add(1);
 }
 
 //

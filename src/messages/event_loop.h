@@ -211,12 +211,14 @@ class EventLoop {
       command_latency = all.AddLatency(prefix + ".command_latency");
       write_latency = all.AddLatency(prefix + ".write_latency");
       commands_processed = all.AddCounter(prefix + ".commands_processed");
+      accepts = all.AddCounter(prefix + ".accepts");
     }
 
     Statistics all;
     Histogram* command_latency;   // time from SendCommand to do_command
     Histogram* write_latency;     // time from SendCommand to socket write
     Counter* commands_processed;
+    Counter* accepts;             // number of connection accepted
   } stats_;
 
   // A callback for handling SendCommands.
