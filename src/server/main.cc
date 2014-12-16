@@ -57,11 +57,11 @@ DEFINE_bool(copilot, false, "start the copilot");
 DEFINE_int32(copilot_port,
              rocketspeed::Copilot::DEFAULT_PORT,
              "copilot port number");
-DEFINE_int32(copilot_workers, 16, "copilot worker threads");
+DEFINE_int32(copilot_workers, 32, "copilot worker threads");
 DEFINE_string(control_towers,
               "localhost",
               "comma-separated control tower hostnames");
-DEFINE_int32(copilot_connections, 16,
+DEFINE_int32(copilot_connections, 8,
              "num connections between one copilot and one control tower");
 
 int main(int argc, char** argv) {
