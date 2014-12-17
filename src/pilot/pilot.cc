@@ -200,9 +200,10 @@ void Pilot::SendAck(MessageData* msg,
   std::string serial;
   newmsg.SerializeToString(&serial);
   // send message
-  std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
-                                                client,
-                                                options_.env->NowMicros()));
+  std::unique_ptr<Command> cmd(
+    new SerializedSendCommand(std::move(serial),
+                              client,
+                              options_.env->NowMicros()));
   Status st = options_.msg_loop->SendCommand(std::move(cmd), worker_id);
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time

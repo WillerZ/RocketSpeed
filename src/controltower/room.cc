@@ -208,9 +208,10 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   request->SerializeToString(&out);
 
   // send response back to client
-  std::unique_ptr<Command> cmd(new TowerCommand(std::move(out),
-                                                origin,
-                                                options.env->NowMicros()));
+  std::unique_ptr<Command> cmd(
+    new SerializedSendCommand(std::move(out),
+                              origin,
+                              options.env->NowMicros()));
   st = ct->SendCommand(std::move(cmd), worker_id);
   if (!st.ok()) {
     LOG_WARN(options.info_log,
@@ -293,10 +294,10 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
       int worker_id = it->first;
       SendCommand::Recipients& recipients = it->second;
 
-      std::unique_ptr<TowerCommand> cmd(
-        new TowerCommand(serial,  // TODO(pja) 1 : avoid copy here
-                         std::move(recipients),
-                         options.env->NowMicros()));
+      std::unique_ptr<Command> cmd(
+        new SerializedSendCommand(serial,  // TODO(pja) 1 : avoid copy here
+                                  std::move(recipients),
+                                  options.env->NowMicros()));
 
       // Send to correct worker loop.
       st = ct->SendCommand(std::move(cmd), worker_id);

@@ -147,27 +147,6 @@ class MsgLoop {
   void ProcessPing(std::unique_ptr<Message> msg);
   std::map<MessageType, MsgCallbackType> SanitizeCallbacks(
                   const std::map<MessageType, MsgCallbackType>& cb);
-
-  // Used by the PingCallback to enqueue a Ping response to the event loop
-  class PingCommand : public SendCommand {
-   public:
-    PingCommand(std::string message, const ClientID& host,
-                uint64_t issued_time):
-      SendCommand(issued_time),
-      message_(std::move(message)) {
-      recipient_.push_back(host);
-    }
-    void GetMessage(std::string* out) {
-      out->assign(std::move(message_));
-    }
-    // return the Destination ClientID, otherwise returns null.
-    const Recipients& GetDestination() const {
-      return recipient_;
-    }
-   private:
-    Recipients recipient_;
-    std::string message_;
-  };
 };
 
 }  // namespace rocketspeed

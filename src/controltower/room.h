@@ -76,35 +76,6 @@ class ControlRoom {
     int worker_id_;
   };
 
-  // These Commands sent from the ControlRoom to the ControlTower
-  class TowerCommand : public SendCommand {
-   public:
-    TowerCommand(std::string message,
-                 const Recipients& recipient,
-                 uint64_t issued_time):
-      SendCommand(issued_time),
-      recipient_(recipient),
-      message_(std::move(message)) {
-    }
-    TowerCommand(std::string message,
-                 const ClientID& recipient,
-                 uint64_t issued_time):
-      SendCommand(issued_time),
-      message_(std::move(message)) {
-      recipient_.push_back(recipient);
-    }
-    void GetMessage(std::string* out) {
-      out->assign(std::move(message_));
-    }
-    // return the Destination HostId, otherwise returns null.
-    const Recipients& GetDestination() const {
-      return recipient_;
-    }
-   private:
-    Recipients recipient_;
-    std::string message_;
-  };
-
  private:
   // I am part of this control tower
   ControlTower* control_tower_;

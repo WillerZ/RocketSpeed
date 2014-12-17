@@ -307,9 +307,9 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
 
       // Forward request to control tower to update the copilot subscription.
       std::unique_ptr<Command> cmd(
-        new CopilotCommand(std::move(serial),
-                           *recipient,
-                           options_.env->NowMicros()));
+        new SerializedSendCommand(std::move(serial),
+                                  *recipient,
+                                  options_.env->NowMicros()));
       Status status = copilot_->SendCommand(std::move(cmd),
                                             outgoing_worker_id);
       if (!status.ok()) {
@@ -336,9 +336,9 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     std::string serial;
     msg->SerializeToString(&serial);
     std::unique_ptr<Command> cmd(
-      new CopilotCommand(std::move(serial),
-                         subscriber,
-                         options_.env->NowMicros()));
+      new SerializedSendCommand(std::move(serial),
+                                subscriber,
+                                options_.env->NowMicros()));
     Status status = copilot_->SendCommand(std::move(cmd), worker_id);
     if (!status.ok()) {
       // Failed to send response. The origin will re-send the subscription
@@ -401,9 +401,9 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         std::string serial;
         newmsg.SerializeToString(&serial);
         std::unique_ptr<Command> cmd(
-          new CopilotCommand(std::move(serial),
-                             *recipient,
-                             options_.env->NowMicros()));
+          new SerializedSendCommand(std::move(serial),
+                                    *recipient,
+                                    options_.env->NowMicros()));
         Status status = copilot_->SendCommand(std::move(cmd),
                                               outgoing_worker_id);
         if (!status.ok()) {
@@ -429,9 +429,9 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         std::string serial;
         newmsg.SerializeToString(&serial);
         std::unique_ptr<Command> cmd(
-          new CopilotCommand(std::move(serial),
-                             *recipient,
-                             options_.env->NowMicros()));
+          new SerializedSendCommand(std::move(serial),
+                                    *recipient,
+                                    options_.env->NowMicros()));
         Status status = copilot_->SendCommand(std::move(cmd),
                                               outgoing_worker_id);
         if (!status.ok()) {
@@ -454,9 +454,9 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
   std::string serial;
   msg->SerializeToString(&serial);
   std::unique_ptr<Command> cmd(
-    new CopilotCommand(std::move(serial),
-                       subscriber,
-                       options_.env->NowMicros()));
+    new SerializedSendCommand(std::move(serial),
+                              subscriber,
+                              options_.env->NowMicros()));
   Status status = copilot_->SendCommand(std::move(cmd), worker_id);
   if (!status.ok()) {
     // Failed to send response. The origin will re-send the subscription
@@ -492,9 +492,9 @@ void CopilotWorker::DistributeCommand(
     // Send the response.
     // TODO(pja) 1 : Find way to avoid msg copy.
     std::unique_ptr<Command> cmd(
-      new CopilotCommand(msg,
-                         std::move(recipients),
-                         options_.env->NowMicros()));
+      new SerializedSendCommand(msg,
+                                std::move(recipients),
+                                options_.env->NowMicros()));
     Status status = copilot_->SendCommand(std::move(cmd), worker_id);
     if (!status.ok()) {
       LOG_WARN(options_.info_log,

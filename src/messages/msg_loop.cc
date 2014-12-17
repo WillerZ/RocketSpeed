@@ -189,9 +189,10 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   request->SerializeToString(&serial);
 
   // send reponse
-  std::unique_ptr<Command> cmd(new PingCommand(std::move(serial),
-                                               origin,
-                                               env_->NowMicros()));
+  std::unique_ptr<Command> cmd(
+    new SerializedSendCommand(std::move(serial),
+                              origin,
+                              env_->NowMicros()));
   Status st = SendCommand(std::move(cmd));
 
   if (!st.ok()) {

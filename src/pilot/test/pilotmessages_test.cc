@@ -160,9 +160,10 @@ TEST(PilotTest, Publish) {
                      Slice(payload));
     data.SerializeToString(&serial);
     sent_msgs_.insert(data.GetMessageId());
-    std::unique_ptr<Command> cmd(new PilotCommand(std::move(serial),
-                                                  pilot_->GetClientId(0),
-                                                  env_->NowMicros()));
+    std::unique_ptr<Command> cmd(
+      new SerializedSendCommand(std::move(serial),
+                                pilot_->GetClientId(0),
+                                env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 

@@ -196,9 +196,9 @@ TEST(CopilotTest, Publish) {
                         { TopicPair(0, topic, type, ns) });
     msg.SerializeToString(&serial);
     std::unique_ptr<Command> cmd(
-      new CopilotCommand(std::move(serial),
-                         copilot_->GetClientId(0),
-                         env_->NowMicros()));
+      new SerializedSendCommand(std::move(serial),
+                                copilot_->GetClientId(0),
+                                env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);
   }

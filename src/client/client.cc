@@ -17,7 +17,6 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/client/client_commands.h"
 #include "src/client/client_env.h"
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop.h"
@@ -197,10 +196,9 @@ PublishStatus ClientImpl::Publish(const Topic& name,
 
   // Construct command.
   std::unique_ptr<Command> command(
-    new ClientCommand(msgid,
-                      pilot_host_id_.ToClientId(),
-                      std::move(serialized),
-                      env_->NowMicros()));
+    new SerializedSendCommand(std::move(serialized),
+                              pilot_host_id_.ToClientId(),
+                              env_->NowMicros()));
 
   // Send to event loop for processing (the loop will free it).
   std::unique_lock<std::mutex> lock(worker_data.message_sent_mutex);
@@ -275,10 +273,10 @@ void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics,
   message.SerializeToString(&serialized);
 
   // Construct command.
-  std::unique_ptr<Command> command(new ClientCommand(
-                                       copilot_host_id_.ToClientId(),
-                                       std::move(serialized),
-                                       env_->NowMicros()));
+  std::unique_ptr<Command> command(
+    new SerializedSendCommand(std::move(serialized),
+                              copilot_host_id_.ToClientId(),
+                              env_->NowMicros()));
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command), worker_id);
 

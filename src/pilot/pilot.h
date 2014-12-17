@@ -23,29 +23,6 @@ namespace rocketspeed {
 
 class Pilot;
 
-// Command for sending acks.
-class PilotCommand : public SendCommand {
- public:
-  PilotCommand(std::string message,
-               const ClientID& client,
-               uint64_t issued_time):
-    SendCommand(issued_time),
-    message_(std::move(message)) {
-    recipient_.push_back(client);
-  }
-  void GetMessage(std::string* out) {
-    out->assign(std::move(message_));
-  }
-  // return the Destination HostId, otherwise returns null.
-  const Recipients& GetDestination() const {
-    return recipient_;
-  }
-
- private:
-  Recipients recipient_;
-  std::string message_;
-};
-
 // Storage for captured objects in the append callback.
 struct AppendClosure : public PooledObject<AppendClosure> {
  public:

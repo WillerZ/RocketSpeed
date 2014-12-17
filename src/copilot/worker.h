@@ -52,40 +52,6 @@ class CopilotWorkerCommand {
   int worker_id_;
 };
 
-// These Commands sent from the Worker to the Copilot
-class CopilotCommand : public SendCommand {
- public:
-  CopilotCommand() = default;
-
-  CopilotCommand(std::string message,
-                 const ClientID& host,
-                 uint64_t issued_time):
-    SendCommand(issued_time),
-    message_(std::move(message)) {
-    recipient_.push_back(host);
-    assert(message_.size() > 0);
-  }
-  CopilotCommand(std::string message,
-                 Recipients hosts,
-                 uint64_t issued_time):
-    SendCommand(issued_time),
-    recipient_(std::move(hosts)),
-    message_(std::move(message)) {
-    assert(message_.size() > 0);
-  }
-  void GetMessage(std::string* out) {
-    out->assign(std::move(message_));
-  }
-  // return the Destination ClientID, otherwise returns null.
-  const Recipients& GetDestination() const {
-    return recipient_;
-  }
-
- private:
-  Recipients recipient_;
-  std::string message_;
-};
-
 /**
  * Copilot worker. The copilot will allocate several of these, ideally one
  * per hardware thread. The workers take load off of the main thread.

@@ -216,9 +216,9 @@ TEST(ControlTowerTest, Ping) {
                   ClientID("clientid1"));
   msg.SerializeToString(&serial);  // serialize msg
   std::unique_ptr<Command> cmd(
-    new ControlRoom::TowerCommand(std::move(serial),
-                                  ct_->GetClientId(0),
-                                  env_->NowMicros()));
+    new SerializedSendCommand(std::move(serial),
+                              ct_->GetClientId(0),
+                              env_->NowMicros()));
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
 
   // verify that the ping response was received by the client
@@ -231,9 +231,9 @@ TEST(ControlTowerTest, Ping) {
                        ClientID("clientidx"));
     msg.SerializeToString(&serial);  // serialize msg
     std::unique_ptr<Command> cmd(
-      new ControlRoom::TowerCommand(std::move(serial),
-                                    ct_->GetClientId(0),
-                                    env_->NowMicros()));
+      new SerializedSendCommand(std::move(serial),
+                                ct_->GetClientId(0),
+                                env_->NowMicros()));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 
@@ -278,9 +278,9 @@ TEST(ControlTowerTest, Subscribe) {
                         ClientID("clientid100"), topics);
   meta1.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(
-    new ControlRoom::TowerCommand(std::move(serial),
-                                  ct_->GetClientId(0),
-                                  env_->NowMicros()));
+    new SerializedSendCommand(std::move(serial),
+                              ct_->GetClientId(0),
+                              env_->NowMicros()));
 
   // send message to control tower
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);

@@ -64,4 +64,42 @@ class SendCommand : public Command {
   virtual const Recipients& GetDestination() const = 0;
 };
 
+/**
+ * SendCommand where message is serialized before sending.
+ */
+class SerializedSendCommand : public SendCommand {
+ public:
+  SerializedSendCommand() = default;
+
+  SerializedSendCommand(std::string message,
+                        const ClientID& host,
+                        uint64_t issued_time):
+    SendCommand(issued_time),
+    message_(std::move(message)) {
+    recipient_.push_back(host);
+    assert(message_.size() > 0);
+  }
+
+  SerializedSendCommand(std::string message,
+                        Recipients hosts,
+                        uint64_t issued_time):
+    SendCommand(issued_time),
+    recipient_(std::move(hosts)),
+    message_(std::move(message)) {
+    assert(message_.size() > 0);
+  }
+
+  void GetMessage(std::string* out) {
+    out->assign(std::move(message_));
+  }
+
+  const Recipients& GetDestination() const {
+    return recipient_;
+  }
+
+ private:
+  Recipients recipient_;
+  std::string message_;
+};
+
 }  // namespace rocketspeed
