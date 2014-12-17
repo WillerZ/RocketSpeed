@@ -11,6 +11,7 @@
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
+#include "src/messages/msg_loop_base.h"
 #include "src/messages/event_loop.h"
 #include "src/util/common/base_env.h"
 #include "src/port/Env.h"
@@ -22,7 +23,7 @@ class Logger;
 // Application callback are invoked with messages of this type
 typedef std::function<void(std::unique_ptr<Message> msg)> MsgCallbackType;
 
-class MsgLoop {
+class MsgLoop : public MsgLoopBase {
  public:
   // Create a listener to receive messages on a specified port.
   // When a message arrives, invoke the specified callback.

@@ -22,6 +22,7 @@
 #include "src/util/parsing.h"
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
+#include "src/client/client_env.h"
 
 // This tool can behave as a standalone producer, a standalone
 // consumer or both a producer and a consumer.
@@ -479,11 +480,22 @@ int main(int argc, char** argv) {
   size_t num_clients = std::max(pilots.size(), copilots.size());
   for (size_t i = 0; i < num_clients; ++i) {
     std::string clientid = rocketspeed::GUIDGenerator().GenerateString();
+
+    rocketspeed::MsgLoop* msg_loop =
+          new rocketspeed::MsgLoop(rocketspeed::ClientEnv::Default(),
+                                   rocketspeed::EnvOptions(),
+                                   0,
+                                   FLAGS_client_workers,
+                                   info_log,
+                                   "client",
+                                   clientid);
+
+
     clients.emplace_back(
-      new rocketspeed::ClientImpl(clientid,
-                                  pilots[i % pilots.size()],
+      new rocketspeed::ClientImpl(pilots[i % pilots.size()],
                                   copilots[i % copilots.size()],
                                   rocketspeed::Tenant(102),
+                                  msg_loop,
                                   FLAGS_client_workers,
                                   publish_callback,
                                   subscribe_callback,

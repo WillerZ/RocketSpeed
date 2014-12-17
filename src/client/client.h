@@ -19,7 +19,7 @@
 #include "include/RocketSpeed.h"
 #include "src/client/client_env.h"
 #include "src/client/message_received.h"
-#include "src/messages/msg_loop.h"
+#include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
 
 namespace rocketspeed {
@@ -41,10 +41,10 @@ class ClientImpl : public Client {
 
   virtual void Acknowledge(const MessageReceived& message);
 
-  ClientImpl(const ClientID& client_id,
-             const HostId& pilot_host_id,
+  ClientImpl(const HostId& pilot_host_id,
              const HostId& copilot_host_id,
              TenantID tenant_id,
+             MsgLoopBase* msg_loop,
              int num_workers,
              PublishCallback publish_callback,
              SubscribeCallback subscription_callback,
@@ -83,7 +83,7 @@ class ClientImpl : public Client {
   TenantID tenant_id_;
 
   // Incoming message loop object.
-  MsgLoop* msg_loop_ = nullptr;
+  MsgLoopBase* msg_loop_ = nullptr;
   std::thread msg_loop_thread_;
 
   // callback for incoming data message

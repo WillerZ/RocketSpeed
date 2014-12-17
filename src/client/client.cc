@@ -58,12 +58,20 @@ Status Client::Open(ClientOptions&& options_tmp,
     options.info_log = std::make_shared<NullLogger>();
   }
 
+  MsgLoop* msg_loop_ = new MsgLoop(ClientEnv::Default(),
+                                   EnvOptions(),
+                                   0,
+                                   options.config.GetNumWorkers(),
+                                   options.info_log,
+                                   "client",
+                                   options.client_id);
+
   // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
-  *producer = new ClientImpl(options.client_id,
-                             options.config.GetPilotHostIds().front(),
+  *producer = new ClientImpl(options.config.GetPilotHostIds().front(),
                              options.config.GetCopilotHostIds().front(),
                              options.config.GetTenantID(),
+                             msg_loop_,
                              options.config.GetNumWorkers(),
                              options.publish_callback,
                              options.subscription_callback,
@@ -88,10 +96,10 @@ Status Client::Open(ClientOptions&& client_options,
   return status;
 }
 
-ClientImpl::ClientImpl(const ClientID& client_id,
-                       const HostId& pilot_host_id,
+ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
+                       MsgLoopBase* msg_loop,
                        int num_workers,
                        PublishCallback publish_callback,
                        SubscribeCallback subscription_callback,
@@ -102,6 +110,7 @@ ClientImpl::ClientImpl(const ClientID& client_id,
 , pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
+, msg_loop_(msg_loop)
 , publish_callback_(publish_callback)
 , subscription_callback_(subscription_callback)
 , receive_callback_(receive_callback)
@@ -121,15 +130,6 @@ ClientImpl::ClientImpl(const ClientID& client_id,
   };
 
   worker_data_.reset(new WorkerData[num_workers]);
-
-  // Construct message loop.
-  msg_loop_ = new MsgLoop(ClientEnv::Default(),
-                          EnvOptions(),
-                          0,           // no accept loop
-                          num_workers,
-                          info_log,
-                          "client",
-                          client_id);
 
   msg_loop_->RegisterCallbacks(callbacks);
   msg_loop_thread_ = std::thread([this] () {
