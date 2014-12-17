@@ -496,7 +496,6 @@ int main(int argc, char** argv) {
                                   copilots[i % copilots.size()],
                                   rocketspeed::Tenant(102),
                                   msg_loop,
-                                  FLAGS_client_workers,
                                   publish_callback,
                                   subscribe_callback,
                                   receive_callback,

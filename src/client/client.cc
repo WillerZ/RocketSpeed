@@ -72,7 +72,6 @@ Status Client::Open(ClientOptions&& options_tmp,
                              options.config.GetCopilotHostIds().front(),
                              options.config.GetTenantID(),
                              msg_loop_,
-                             options.config.GetNumWorkers(),
                              options.publish_callback,
                              options.subscription_callback,
                              options.receive_callback,
@@ -100,7 +99,6 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
                        MsgLoopBase* msg_loop,
-                       int num_workers,
                        PublishCallback publish_callback,
                        SubscribeCallback subscription_callback,
                        MessageReceivedCallback receive_callback,
@@ -129,7 +127,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
     ProcessMetadata(std::move(msg));
   };
 
-  worker_data_.reset(new WorkerData[num_workers]);
+  worker_data_.reset(new WorkerData[msg_loop_->GetNumWorkers()]);
 
   msg_loop_->RegisterCallbacks(callbacks);
   msg_loop_thread_ = std::thread([this] () {

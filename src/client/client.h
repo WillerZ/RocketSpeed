@@ -45,7 +45,6 @@ class ClientImpl : public Client {
              const HostId& copilot_host_id,
              TenantID tenant_id,
              MsgLoopBase* msg_loop,
-             int num_workers,
              PublishCallback publish_callback,
              SubscribeCallback subscription_callback,
              MessageReceivedCallback receive_callback,
