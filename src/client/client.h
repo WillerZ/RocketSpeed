@@ -108,7 +108,8 @@ class ClientImpl : public Client {
     std::unordered_map<Topic, SequenceNumber> topic_map;
 
     // Messages sent, awaiting ack.
-    std::unordered_set<MsgId, MsgId::Hash> messages_sent;
+    // Maps message ID -> pre-serialized message.
+    std::unordered_map<MsgId, std::string, MsgId::Hash> messages_sent;
     std::mutex message_sent_mutex;  // mutex for operators on messages_sent_
   };
   std::unique_ptr<WorkerData[]> worker_data_;

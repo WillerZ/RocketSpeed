@@ -109,9 +109,42 @@ class PublishStatus {
  */
 class ResultStatus {
  public:
-  Status status;
-  MsgId msgid;
-  SequenceNumber seqno;
+  /**
+   * The status of the Publish call.
+   */
+  virtual Status GetStatus() const = 0;
+
+  /**
+   * The message ID of the published message. This will match the message ID
+   * given in the PublishStatus.
+   */
+  virtual MsgId GetMessageId() const = 0;
+
+  /**
+   * The sequence number where the message was published. A subscription to
+   * this sequence number + topic + namespace will receive this message first
+   * (assuming it is still within the retention period).
+   */
+  virtual SequenceNumber GetSequenceNumber() const = 0;
+
+  /**
+   * Topic name of the published message.
+   * This Slice is only valid as long as this ResultStatus.
+   */
+  virtual Slice GetTopicName() const = 0;
+
+  /**
+   * Namespace of the published message.
+   */
+  virtual NamespaceID GetNamespaceId() const = 0;
+
+  /**
+   * Payload of the published message.
+   * This Slice is only valid as long as this ResultStatus.
+   */
+  virtual Slice GetContents() const = 0;
+
+  virtual ~ResultStatus() {}
 };
 
 /**

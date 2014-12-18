@@ -122,20 +122,11 @@ Result ProducerWorker(int64_t num_messages,
     snprintf(data.data(), data.size(),
              "%lu %lu", index, send_time);
 
-    // Generate GUID for message
-    // 32 bits topic num
-    // 32 bits message index
-    // 64 bits encode send time micros
-    MsgId msgid;
-    msgid.hi = (topic_num << 32) | index;
-    msgid.lo = send_time;
-
     // Send the message
     PublishStatus ps = producer->Publish(topic_name,
                                          namespaceid,
                                          topic_options,
-                                         payload,
-                                         msgid);
+                                         payload);
 
     if (!ps.status.ok()) {
       LOG_WARN(info_log,
@@ -384,22 +375,25 @@ int main(int argc, char** argv) {
   std::unordered_map<std::string, rocketspeed::SequenceNumber> first_seqno;
   std::mutex first_seqno_mutex;
 
-  auto publish_callback = [&] (rocketspeed::ResultStatus rs) {
+  auto publish_callback = [&] (std::unique_ptr<rocketspeed::ResultStatus> rs) {
     uint64_t now = env->NowMicros();
-    uint64_t send_time = rs.msgid.lo;
-    uint64_t topic_num = rs.msgid.hi >> 32;
+
+    // Parse message data to get received index.
+    rocketspeed::Slice data = rs->GetContents();
+    uint64_t message_index, send_time;
+    std::sscanf(data.data(), "%lu %lu", &message_index, &send_time);
     ack_latency->Record(now - send_time);
 
     if (FLAGS_delay_subscribe) {
-      if (rs.status.ok()) {
+      if (rs->GetStatus().ok()) {
         // Get the minimum sequence number for this topic to subscribe to later.
-        std::string topic = "benchmark." + std::to_string(topic_num);
+        std::string topic = rs->GetTopicName().ToString();
         std::lock_guard<std::mutex> lock(first_seqno_mutex);
         auto it = first_seqno.find(topic);
         if (it == first_seqno.end()) {
-          first_seqno[topic] = rs.seqno;
+          first_seqno[topic] = rs->GetSequenceNumber();
         } else {
-          it->second = std::min(it->second, rs.seqno);
+          it->second = std::min(it->second, rs->GetSequenceNumber());
         }
       }
     }
@@ -415,7 +409,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (!rs.status.ok()) {
+    if (!rs->GetStatus().ok()) {
       ++failed_publishes;
       LOG_WARN(info_log, "Received publish failure response");
     }

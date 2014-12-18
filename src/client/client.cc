@@ -24,6 +24,61 @@
 
 namespace rocketspeed {
 
+struct ClientResultStatus : public ResultStatus {
+ public:
+  ClientResultStatus(Status status,
+                     std::string serialized_message,
+                     SequenceNumber seqno)
+  : status_(status)
+  , serialized_(std::move(serialized_message))
+  , seqno_(seqno) {
+    Slice in(serialized_);
+    if (!message_.DeSerialize(&in).ok()) {
+      // Failed to deserialize a message after it has been serialized?
+      assert(false);
+      status_ = Status::InternalError("Message corrupt.");
+    }
+  }
+
+  virtual Status GetStatus() const {
+    return status_;
+  }
+
+  virtual MsgId GetMessageId() const {
+    assert(status_.ok());
+    return message_.GetMessageId();
+  }
+
+  virtual SequenceNumber GetSequenceNumber() const {
+    // Sequence number comes from the ack, not the original message.
+    assert(status_.ok());
+    return seqno_;
+  }
+
+  virtual Slice GetTopicName() const {
+    assert(status_.ok());
+    return message_.GetTopicName();
+  }
+
+  virtual NamespaceID GetNamespaceId() const {
+    assert(status_.ok());
+    return message_.GetNamespaceId();
+  }
+
+  virtual Slice GetContents() const {
+    assert(status_.ok());
+    return message_.GetPayload();
+  }
+
+  ~ClientResultStatus() {}
+
+ private:
+  Status status_;
+  MessageData message_;
+  std::string serialized_;
+  SequenceNumber seqno_;
+};
+
 ClientOptions::ClientOptions(const Configuration& _config,
                              ClientID _client_id)
     : config(_config),
@@ -192,18 +247,24 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   std::string serialized;
   message.SerializeToString(&serialized);
 
+  // TODO(pja) 1 : Figure out what to do with shared strings.
+  std::string dup = serialized;
+
   // Construct command.
   std::unique_ptr<Command> command(
     new SerializedSendCommand(std::move(serialized),
                               pilot_host_id_.ToClientId(),
                               env_->NowMicros()));
 
-  // Send to event loop for processing (the loop will free it).
+  // Add message to the sent list.
+  std::pair<MsgId, std::string> new_msg(msgid, std::move(dup));
   std::unique_lock<std::mutex> lock(worker_data.message_sent_mutex);
-  bool added = worker_data.messages_sent.insert(msgid).second;
+  bool added = worker_data.messages_sent.insert(new_msg).second;
   lock.unlock();
 
   assert(added);
+
+  // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command), worker_id);
   if (!status.ok() && added) {
     std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
@@ -358,25 +419,33 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
-    // Attempt to remove sent message from list.
+    // Find the message ID from the messages_sent list.
     std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
-    bool successful_ack = worker_data.messages_sent.erase(ack.msgid);
+    auto it = worker_data.messages_sent.find(ack.msgid);
+    bool successful_ack = it != worker_data.messages_sent.end();
     lock1.unlock();
 
     // If successful, invoke callback.
     if (successful_ack) {
-      ResultStatus rs;
-      rs.msgid = ack.msgid;
-      if (ack.status == MessageDataAck::AckStatus::Success) {
-        rs.status = Status::OK();
-        rs.seqno = ack.seqno;
-      } else {
-        rs.status = Status::IOError("publish failed");
+      if (publish_callback_) {
+        Status st;
+        SequenceNumber seqno = 0;
+        if (ack.status == MessageDataAck::AckStatus::Success) {
+          st = Status::OK();
+          seqno = ack.seqno;
+        } else {
+          st = Status::IOError("Publish failed");
+        }
+
+        std::unique_ptr<ClientResultStatus> result_status(
+          new ClientResultStatus(st, std::move(it->second), seqno));
+        publish_callback_(std::move(result_status));
       }
 
-      if (publish_callback_) {
-        publish_callback_(rs);
-      }
+      // Remove sent message from list.
+      std::unique_lock<std::mutex> lock2(worker_data.message_sent_mutex);
+      worker_data.messages_sent.erase(it);
+      lock2.unlock();
     } else {
       // We've received an ack for a message that has already been acked
       // (or was never sent). This is possible if a message was sent twice

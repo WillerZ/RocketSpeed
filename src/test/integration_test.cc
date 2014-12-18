@@ -51,8 +51,8 @@ TEST(IntegrationTest, OneMessage) {
   MsgId message_id = msgid_generator.Generate();
 
   // RocketSpeed callbacks;
-  auto publish_callback = [&] (ResultStatus rs) {
-    printf("publish -- %s\n", rs.status.ToString().c_str());
+  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
+    printf("publish -- %s\n", rs->GetStatus().ToString().c_str());
   };
 
   auto subscription_callback = [&] (SubscriptionStatus ss) {
@@ -120,7 +120,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   std::chrono::seconds timeout(5);
 
   // RocketSpeed callbacks;
-  auto publish_callback = [&] (ResultStatus rs) {
+  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
     publish_sem.Post();
   };
 
