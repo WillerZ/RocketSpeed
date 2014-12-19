@@ -19,8 +19,13 @@
 #include "include/Types.h"
 #include "src/client/client_env.h"
 #include "src/client/message_received.h"
-#include "src/messages/msg_loop.h"
 #include "src/util/common/hash.h"
+
+#ifndef USE_MQTTMSGLOOP
+#include "src/messages/msg_loop.h"
+#else
+#include "rocketspeed/mqttclient/mqtt_msg_loop.h"
+#endif
 
 namespace rocketspeed {
 
@@ -113,6 +118,8 @@ Status Client::Open(ClientOptions&& options_tmp,
     options.info_log = std::make_shared<NullLogger>();
   }
 
+
+#ifndef USE_MQTTMSGLOOP
   MsgLoop* msg_loop_ = new MsgLoop(ClientEnv::Default(),
                                    EnvOptions(),
                                    0,
@@ -120,6 +127,15 @@ Status Client::Open(ClientOptions&& options_tmp,
                                    options.info_log,
                                    "client",
                                    options.client_id);
+#else
+  MQTTMsgLoop* msg_loop_ = new MQTTMsgLoop(
+      options.client_id,
+      options.config.GetPilotHostIds().front(),
+      options.username,
+      options.access_token,
+      true,
+      options.info_log);
+#endif
 
   // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
@@ -371,7 +387,7 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   std::string name = data->GetTopicName().ToString();
 
   // Get the topic map for this thread.
-  int worker_id = MsgLoop::GetThreadWorkerIndex();
+  int worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& topic_map = worker_data_[worker_id].topic_map;
 
   // verify that we are subscribed to this topic
@@ -413,7 +429,7 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   msg_loop_->ThreadCheck();
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
-  int worker_id = MsgLoop::GetThreadWorkerIndex();
+  int worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
   // For each ack'd message, if it was waiting for an ack then remove it
@@ -465,7 +481,7 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   std::vector<TopicPair> pairs = meta->GetTopicInfo();
 
   // Get the topic map for this thread.
-  int worker_id = MsgLoop::GetThreadWorkerIndex();
+  int worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& topic_map = worker_data_[worker_id].topic_map;
 
   // This is the response ack of a subscription request sent earlier.

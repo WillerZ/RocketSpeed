@@ -110,7 +110,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
   assert(msg);
   assert(msg->GetMessageType() == MessageType::mPublish);
 
-  int worker_id = MsgLoop::GetThreadWorkerIndex();
+  int worker_id = options_.msg_loop->GetThreadWorkerIndex();
 
   // Route topic to log ID.
   MessageData* msg_data = static_cast<MessageData*>(msg.release());

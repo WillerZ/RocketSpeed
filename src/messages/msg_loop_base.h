@@ -11,13 +11,12 @@
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
-#include "src/messages/event_loop.h"
 #include "src/util/common/base_env.h"
+#include "src/util/common/statistics.h"
 #include "src/port/Env.h"
 
-namespace rocketspeed {
 
-class Logger;
+namespace rocketspeed {
 
 // Application callback are invoked with messages of this type
 typedef std::function<void(std::unique_ptr<Message> msg)> MsgCallbackType;
@@ -60,6 +59,10 @@ class MsgLoopBase {
 
   // Retrieves the number of EventLoop threads.
   virtual int GetNumWorkers() const = 0;
+
+  // Retrieves the worker ID for the currently running thread.
+  virtual int GetThreadWorkerIndex() const = 0;
+
 };
 
 }  // namespace rocketspeed

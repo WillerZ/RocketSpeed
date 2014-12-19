@@ -101,7 +101,7 @@ class MsgLoop : public MsgLoopBase {
 
   // Retrieves the worker ID for the currently running thread.
   // Will assert if called from a non-EventLoop thread.
-  static int GetThreadWorkerIndex() {
+  int GetThreadWorkerIndex() const {
     assert(worker_id_ != -1);
     return worker_id_;
   }

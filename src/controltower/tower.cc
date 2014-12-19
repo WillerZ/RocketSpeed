@@ -159,7 +159,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
 
     // forward message to the destination room
     ControlRoom* room = rooms_[room_number].get();
-    int worker_id = MsgLoop::GetThreadWorkerIndex();
+    int worker_id = options_.msg_loop->GetThreadWorkerIndex();
     st = room->Forward(std::move(newmessage), logid, worker_id);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,

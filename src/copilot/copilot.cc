@@ -126,7 +126,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
   auto& worker = workers_[worker_id];
 
   // forward message to worker
-  int event_loop_worker = MsgLoop::GetThreadWorkerIndex();
+  int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
   if (!worker->Forward(logid, std::move(msg), event_loop_worker)) {
     LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
@@ -175,7 +175,7 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
     std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to worker
-    int event_loop_worker = MsgLoop::GetThreadWorkerIndex();
+    int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
     worker->Forward(logid, std::move(newmessage), event_loop_worker);
   }
 }
