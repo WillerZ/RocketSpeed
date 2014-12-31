@@ -129,7 +129,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   };
 
   std::vector<std::string> received;
-  ThreadCheck thread_check(Env::Default());
+  ThreadCheck thread_check;
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
     // Messages from the same topic will always be received on the same thread.
     thread_check.Check();

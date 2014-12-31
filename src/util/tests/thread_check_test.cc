@@ -15,8 +15,8 @@ namespace rocketspeed {
 class ThreadCheckTest { };
 
 TEST(ThreadCheckTest, Test) {
-  ThreadCheck c1(Env::Default());
-  ThreadCheck c2(Env::Default());
+  ThreadCheck c1;
+  ThreadCheck c2;
   ASSERT_TRUE(c1.Ok());
   c1.Check();
 

@@ -91,8 +91,7 @@ WorkerLoop<Command>::WorkerLoop(Env* env, uint32_t size, WorkerLoopType type)
 : type_(type)
 , command_queue_(size)
 , stop_(false)
-, running_(false)
-, thread_check_(env) {
+, running_(false) {
 }
 
 template <typename Command>

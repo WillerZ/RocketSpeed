@@ -7,8 +7,7 @@
 
 #include <assert.h>
 #include <atomic>
-
-#include "src/util/common/base_env.h"
+#include <pthread.h>
 
 namespace rocketspeed {
 
@@ -18,13 +17,15 @@ namespace rocketspeed {
  * and subsequent calls will assert that it is being called on the same thread.
  *
  * In release builds, everything is a no-op.
+ *
+ * Current implmentation works on all platforms, on which pthread_t can be
+ * wrapped in std::atomic.
  */
 struct ThreadCheck {
  public:
-  explicit ThreadCheck(BaseEnv* env)
+  ThreadCheck()
 #ifndef NDEBUG
-  : env_(env)
-  , thread_id_(0)
+  : thread_id_(0)
 #endif
   {
   }
@@ -36,8 +37,7 @@ struct ThreadCheck {
    */
   inline bool Ok() const {
 #ifndef NDEBUG
-    BaseEnv::ThreadId desired = env_->GetCurrentThreadId();
-    BaseEnv::ThreadId expected = 0;
+   pthread_t  desired = pthread_self(), expected = 0;
     return thread_id_.compare_exchange_strong(expected, desired) ||
            expected == desired;
 
@@ -59,14 +59,13 @@ struct ThreadCheck {
    */
   inline void Reset() const {
 #ifndef NDEBUG
-    thread_id_ = env_->GetCurrentThreadId();
+    thread_id_ = pthread_self();
 #endif
   }
 
  private:
 #ifndef NDEBUG
-  BaseEnv* env_;
-  mutable std::atomic<BaseEnv::ThreadId> thread_id_;
+  mutable std::atomic<pthread_t> thread_id_;
 #endif
 };
 

@@ -963,7 +963,6 @@ EventLoop::EventLoop(BaseEnv* env,
   listener_(nullptr),
   command_queue_(command_queue_size),
   active_connections_(0),
-  thread_check_(env),
   stats_(stats_prefix) {
 
   // Setup callbacks.
