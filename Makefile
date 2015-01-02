@@ -222,7 +222,7 @@ valgrind_check: all $(PROGRAMS) $(TESTS)
 clean:
 	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(JAVA_LIBRARY) build_config.mk
 	-rm -rf ios-x86/* ios-arm/*
-	-rm -rf _mock_logdevice_logs
+	-rm -rf _mock_logdevice_logs test_times LOG.*
 	-find src -name "*.[od]" -exec rm {} \;
 	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
 	-find src/java -name "*.class" -exec rm {} \;
