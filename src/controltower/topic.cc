@@ -24,6 +24,7 @@ Status
 TopicManager::AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
                             LogID logid, HostNumber subscriber,
                             unsigned int roomnum) {
+  bool newsubscriber = true;
   std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
                                       topic_map_.find(topic);
   // This is the first time we are receiving any subscription
@@ -45,9 +46,9 @@ TopicManager::AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
     // There are some pre-existing subscriptions for this topic.
     // Insert new subscriber.
     TopicList* list = iter->second.get();
-    list->insert(subscriber);
+    newsubscriber = list->insert(subscriber).second;
   }
-  Status st = ReseekIfNeeded(logid, start, roomnum);
+  Status st = ReseekIfNeeded(logid, start, roomnum, newsubscriber);
   assert(st.ok());
   return st;
 }
@@ -57,6 +58,7 @@ Status
 TopicManager::RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
                                HostNumber subscriber,
                                unsigned int roomnum) {
+  Status status;
   // find list of subscribers for this topic
   std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
                                       topic_map_.find(topic);
@@ -67,22 +69,46 @@ TopicManager::RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
     auto list_iter = list->find(subscriber);
     assert(list_iter != list->end());
     if (list_iter != list->end()) {
+
+      // remove subscriber from TopicList
       list->erase(list_iter);
+
+      // Update the number of subscribers of this log
+      std::unordered_map<LogID, LogData>::iterator it =
+                                      logdata_.find(logid);
+      assert(it != logdata_.end() &&
+             it->second.num_subscribers > 0);
+      it->second.num_subscribers--;
+
+      // If there are no more subscribers for this log, then close log
+      if (it->second.num_subscribers == 0) {
+        logdata_.erase(it);
+        status = tailer_->StopReading(logid, roomnum);
+      }
     }
   }
-  return Status::OK();
+  return status;
 }
 
 // Re-position the Storage read-point if necessary
 Status
 TopicManager::ReseekIfNeeded(LogID logid, SequenceNumber start,
-                             unsigned int roomnum) {
+                             unsigned int roomnum, bool newsubscriber) {
   Status st;
   SequenceNumber current = 0;
-  std::unordered_map<LogID, SequenceNumber>::iterator iter =
-                                      last_read_.find(logid);
-  if (iter != last_read_.end()) {
-    current = iter->second;
+  std::unordered_map<LogID, LogData>::iterator iter =
+                                      logdata_.find(logid);
+  assert((iter != logdata_.end()) || newsubscriber);
+
+  if (iter != logdata_.end()) {
+    current = iter->second.last_read;
+    // Increment the number of unique subscribers for this log
+    if (newsubscriber) {
+      iter->second.num_subscribers++;
+    }
+  } else if (newsubscriber) {
+    // Increment the number of unique subscribers for this log
+    logdata_[logid].num_subscribers++;
   }
   // If the new starting seqno is smaller than the current one,
   // then we need to reseek from Storage
@@ -96,15 +122,15 @@ TopicManager::ReseekIfNeeded(LogID logid, SequenceNumber start,
 // Retrieves the last seqno read from Storage
 SequenceNumber
 TopicManager::GetLastRead(LogID logid) {
-  auto it = last_read_.find(logid);
-  return it != last_read_.end() ? it->second : SequenceNumber(-1);
+  auto it = logdata_.find(logid);
+  return it != logdata_.end() ? it->second.last_read : SequenceNumber(-1);
 }
 
 // Updates the last seqno read from Storage
 void
 TopicManager::SetLastRead(LogID logid, SequenceNumber seqno) {
   assert(seqno != SequenceNumber(-1));
-  last_read_[logid] = seqno;
+  logdata_[logid].last_read = seqno;
 }
 
 // Returns the list of subscribers for a specified topic.

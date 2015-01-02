@@ -58,10 +58,6 @@ class ControlTowerTest {
 
     st_ = ControlTower::CreateNewInstance(ctoptions_, &ct_);
 
-    // what is my machine name?
-    ASSERT_EQ(gethostname(&myname_[0], sizeof(myname_)), 0);
-    hostname_.assign(myname_, strlen(myname_));
-
     // enable all kinds of event loop debugging
     // not enabling by default since it is not thread safe
     if (debug_event_loop) {
@@ -78,10 +74,6 @@ class ControlTowerTest {
     env_->WaitForJoin();  // This is good hygine
   }
 
-  std::string GetHostName() {
-    return hostname_;
-  }
-
  protected:
   Env* env_;
   EnvOptions env_options_;
@@ -90,9 +82,8 @@ class ControlTowerTest {
   ControlTowerOptions ctoptions_;
   Status st_;
   std::string hostname_;
-  int num_ping_responses_;
-  int num_subscribe_responses_;
-  char myname_[1024];
+  std::atomic<int> num_ping_responses_;
+  std::atomic<int> num_subscribe_responses_;
   std::unique_ptr<MsgLoop> msg_loop_;
 
   // A static method that is the entry point of a background MsgLoop
@@ -171,7 +162,7 @@ class ControlTowerTest {
 
   // If the number of subscribe responses have reached the expected value,
   // then return true, otherwise return false.
-  bool CheckSubscribeResponse(int expected) {
+  bool CheckSubscribeResponse(int expected) const {
     int retry = 10000;
     while (retry-- > 0 &&
            num_subscribe_responses_ != expected) {
@@ -181,6 +172,15 @@ class ControlTowerTest {
       return true;
     }
     return false;
+  }
+
+  void ClearSubscribeResponse() {
+    num_subscribe_responses_ = 0;
+  }
+
+  // gets the number of open logs
+  int GetNumOpenLogs() const {
+    return ct_->GetTailer()->NumberOpenLogs();
   }
 };
 
@@ -213,7 +213,7 @@ TEST(ControlTowerTest, Ping) {
   std::string serial;
   MessagePing msg(Tenant::GuestTenant,
                   MessagePing::PingType::Request,
-                  ClientID("clientid1"));
+                  ClientID("clientid1:100"));
   msg.SerializeToString(&serial);  // serialize msg
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
@@ -228,7 +228,7 @@ TEST(ControlTowerTest, Ping) {
   for (int i = 0; i < num_msgs; i++) {
     MessagePing newmsg(Tenant::GuestTenant,
                        MessagePing::PingType::Request,
-                       ClientID("clientidx"));
+                       ClientID("clientidx:100"));
     msg.SerializeToString(&serial);  // serialize msg
     std::unique_ptr<Command> cmd(
       new SerializedSendCommand(std::move(serial),
@@ -275,7 +275,7 @@ TEST(ControlTowerTest, Subscribe) {
   std::string serial;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        ClientID("clientid100"), topics);
+                        ClientID("clientid100:100"), topics);
   meta1.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
@@ -287,6 +287,144 @@ TEST(ControlTowerTest, Subscribe) {
 
   // verify that the subscribe response was received by the client
   ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
+}
+
+TEST(ControlTowerTest, MultipleSubscribers) {
+  std::vector<TopicPair> topics;
+  int num_topics = 5;
+
+  // create a ControlTower (if not already created)
+  ASSERT_EQ(ControlTowerRun().ok(), true);
+
+  // create a few topics
+  for (int i = 0; i < num_topics; i++)  {
+    // alternate between types
+    MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
+    topics.push_back(TopicPair(4 + i, std::to_string(i), type, 101 + i));
+  }
+
+  // Define a callback to process the subscribe response at the client
+  std::map<MessageType, MsgCallbackType> client_callback;
+  client_callback[MessageType::mMetadata] =
+    [this] (std::unique_ptr<Message> msg) {
+      processMetadata(std::move(msg));
+    };
+
+  // create a client to communicate with the ControlTower
+  MsgLoop loop1(env_, env_options_, 58499, 1, info_log, "test");
+  loop1.RegisterCallbacks(client_callback);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop1,
+                    "testc-" + std::to_string(loop1.GetHostId().port));
+  while (!loop1.IsRunning()) {
+    env_->SleepForMicroseconds(1000);
+  }
+
+  // first subscriber *******
+  std::string serial;
+  MessageMetadata meta1(Tenant::GuestTenant,
+                        MessageMetadata::MetaType::Request,
+                        ClientID("clientid100:100"), topics);
+  meta1.SerializeToString(&serial);
+  std::unique_ptr<Command> cmd(
+    new SerializedSendCommand(std::move(serial),
+                              ct_->GetClientId(0),
+                              env_->NowMicros()));
+
+  // send message to control tower
+  ASSERT_EQ(loop1.SendCommand(std::move(cmd)).ok(), true);
+
+  // verify that the subscribe response was received by the client
+  ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
+  ClearSubscribeResponse();
+
+  // The number of distinct logs that are opened cannot be more than
+  // the number of topics.
+  int numopenlogs1 = GetNumOpenLogs();
+  ASSERT_LE(numopenlogs1, num_topics);
+  ASSERT_NE(numopenlogs1, 0);
+
+  // create second client to communicate with the ControlTower
+  MsgLoop loop2(env_, env_options_, 58489, 1, info_log, "test");
+  loop2.RegisterCallbacks(client_callback);
+  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop2,
+                    "testc-" + std::to_string(loop2.GetHostId().port));
+  while (!loop2.IsRunning()) {
+    env_->SleepForMicroseconds(1000);
+  }
+
+  // The second subscriber subscribes to the same topics.
+  std::string serial2;
+  MessageMetadata meta2(Tenant::GuestTenant,
+                        MessageMetadata::MetaType::Request,
+                        ClientID("clientid200:200"), topics);
+  meta2.SerializeToString(&serial2);
+  std::unique_ptr<Command> cmd2(
+    new SerializedSendCommand(std::move(serial2),
+                              ct_->GetClientId(0),
+                              env_->NowMicros()));
+
+  // send message to control tower
+  ASSERT_EQ(loop2.SendCommand(std::move(cmd2)).ok(), true);
+
+  // verify that the subscribe response was received by the client
+  ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
+  ClearSubscribeResponse();
+
+  // The control tower should not have re-opened any of those logs
+  // because they were already subscribed to by the first client.
+  ASSERT_EQ(numopenlogs1, GetNumOpenLogs());
+
+  // Create unsubscription request for all topics
+  topics.clear();
+  for (int i = 0; i < num_topics; i++)  {
+    // alternate between types
+    MetadataType type = mUnSubscribe;
+    topics.push_back(TopicPair(4 + i, std::to_string(i), type, 101 + i));
+  }
+
+  // Unsubscribe all the topics from the first client.
+  std::string serial3;
+  MessageMetadata meta3(Tenant::GuestTenant,
+                        MessageMetadata::MetaType::Request,
+                        ClientID("clientid100:100"), topics);
+  meta3.SerializeToString(&serial3);
+  std::unique_ptr<Command> cmd3(
+    new SerializedSendCommand(std::move(serial3),
+                              ct_->GetClientId(0),
+                              env_->NowMicros()));
+
+  // send message to control tower
+  ASSERT_EQ(loop1.SendCommand(std::move(cmd3)).ok(), true);
+
+  // verify that the subscribe response was received by the client
+  ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
+  ClearSubscribeResponse();
+
+  // The number of open logs should not change because the second
+  // client still has a live subscription for all those topics.
+  ASSERT_EQ(numopenlogs1, GetNumOpenLogs());
+
+  // Finally, unsubscribe from the second client too.
+  std::string serial4;
+  MessageMetadata meta4(Tenant::GuestTenant,
+                        MessageMetadata::MetaType::Request,
+                        ClientID("clientid200:200"), topics);
+  meta4.SerializeToString(&serial4);
+  std::unique_ptr<Command> cmd4(
+    new SerializedSendCommand(std::move(serial4),
+                              ct_->GetClientId(0),
+                              env_->NowMicros()));
+
+  // send message to control tower
+  ASSERT_EQ(loop2.SendCommand(std::move(cmd4)).ok(), true);
+
+  // verify that the subscribe response was received by the client
+  ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
+  ClearSubscribeResponse();
+
+  // The number of open logs should be zero now because no client
+  // has any topic subscriptions.
+  ASSERT_EQ(0, GetNumOpenLogs());
 }
 }  // namespace rocketspeed
 

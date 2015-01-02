@@ -22,6 +22,7 @@ namespace rocketspeed {
 // to sychronize access to a Reader, thereby avoiding any kind of locking.
 //
 class Tailer {
+ friend class ControlTowerTest;
  public:
   // create a Tailer
   static Status CreateNewInstance(
@@ -69,6 +70,12 @@ class Tailer {
 
   // Information log
   std::shared_ptr<Logger> info_log_;
+
+  // Count of number of open logs per reader (unit tests only)
+  mutable std::vector<int> num_open_logs_per_reader_;
+
+  // The total number of open logs (no locks) (unit test only)
+  int NumberOpenLogs() const;
 };
 
 }  // namespace rocketspeed

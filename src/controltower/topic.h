@@ -53,13 +53,21 @@ class TopicManager {
   // Map a topic name to a list of TopicEntries.
   std::unordered_map<NamespaceTopic, std::unique_ptr<TopicList>>  topic_map_;
 
-  // Map of logid to the last seqno already read from the storage
-  std::unordered_map<LogID, SequenceNumber> last_read_;
+  // Information stored about each open logid
+  class LogData {
+   public:
+    SequenceNumber last_read;       // last seqno read from this log
+    unsigned int   num_subscribers; // number of subscribers for this log
+    LogData() : last_read(0), num_subscribers(0) {}
+  };
+
+  // Map of logid to the stored information per log
+  std::unordered_map<LogID, LogData> logdata_;
 
   const Tailer* tailer_;
 
   Status ReseekIfNeeded(LogID logid, SequenceNumber start,
-                        unsigned int roomid);
+                        unsigned int roomid, bool newsubscriber);
 };
 
 }  // namespace rocketspeed

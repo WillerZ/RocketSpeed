@@ -122,6 +122,9 @@ Status Tailer::Initialize() {
   for (unsigned int i = 0; i < handle.size(); i++) {
     reader_.emplace_back(handle[i]);
   }
+
+  // initialize the number of open logs per reader to zero.
+  num_open_logs_per_reader_.resize(rooms_.size(), 0);
   return Status::OK();
 }
 
@@ -159,7 +162,7 @@ Tailer::CreateNewInstance(Env* env,
   return Status::OK();
 }
 
-// start reading from this log
+// Start reading from this log
 Status
 Tailer::StartReading(LogID logid, SequenceNumber start,
                      unsigned int room_id) const {
@@ -172,6 +175,7 @@ Tailer::StartReading(LogID logid, SequenceNumber start,
     LOG_INFO(info_log_,
         "AsyncReader %u start reading Log(%lu)@%lu.",
         room_id, logid, start);
+    num_open_logs_per_reader_[room_id]++;
   } else {
     LOG_WARN(info_log_,
         "AsyncReader %u failed to start reading Log(%lu)@%lu (%s).",
@@ -180,7 +184,7 @@ Tailer::StartReading(LogID logid, SequenceNumber start,
   return st;
 }
 
-// start reading from this log
+// Stop reading from this log
 Status
 Tailer::StopReading(LogID logid, unsigned int room_id) const {
   if (reader_.size() == 0) {
@@ -192,6 +196,7 @@ Tailer::StopReading(LogID logid, unsigned int room_id) const {
     LOG_INFO(info_log_,
         "AsyncReader %u stopped reading Log(%lu).",
         room_id, logid);
+    num_open_logs_per_reader_[room_id]--;
   } else {
     LOG_WARN(info_log_,
         "AsyncReader %u failed to stop reading Log(%lu) (%s).",
@@ -210,6 +215,18 @@ Tailer::FindLatestSeqno(LogID logid,
   return storage_->FindTimeAsync(logid,
                                  std::chrono::milliseconds::max(),
                                  callback);
+}
+
+// This traverses the reader array without any locks but that is
+// ok because it is used only by unit tests when there is no
+// tailer activity.
+int
+Tailer::NumberOpenLogs() const {
+  int count = 0;
+  for (unsigned int i = 0; i < rooms_.size(); i++) {
+    count += num_open_logs_per_reader_[i];
+  }
+  return count;
 }
 
 }  // namespace rocketspeed
