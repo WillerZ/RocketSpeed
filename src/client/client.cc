@@ -383,22 +383,22 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   LOG_INFO(info_log_, "Received data (%.16s)",
     data->GetPayload().ToString().c_str());
 
-  // extract topic name from message
-  std::string name = data->GetTopicName().ToString();
+  // Extract topic id from message.
+  TopicID topic_id(data->GetNamespaceId(), data->GetTopicName().ToString());
 
   // Get the topic map for this thread.
   int worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& topic_map = worker_data_[worker_id].topic_map;
 
   // verify that we are subscribed to this topic
-  std::unordered_map<Topic, SequenceNumber>::iterator iter =
-                                        topic_map.find(name);
+  auto iter = topic_map.find(topic_id);
   // No active subscription to this topic, ignore message
   if (iter == topic_map.end()) {
     LOG_INFO(info_log_,
-      "Discarded message (%.16s) due to missing subcription for Topic(%s)",
+      "Discarded message (%.16s) due to missing subcription for Topic(%d, %s)",
       data->GetPayload().ToString().c_str(),
-      name.c_str());
+      data->GetNamespaceId(),
+      topic_id.topic_name.c_str());
     return;
   }
   SequenceNumber last_msg_received = iter->second;
@@ -406,10 +406,11 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   // Old message, ignore iter
   if (data->GetSequenceNumber() <= last_msg_received) {
     LOG_INFO(info_log_,
-      "Message (%.16s)@%lu received out of order on Topic(%s)@%lu",
+      "Message (%.16s)@%lu received out of order on Topic(%d, %s)@%lu",
       data->GetPayload().ToString().c_str(),
       data->GetSequenceNumber(),
-      name.c_str(),
+      data->GetNamespaceId(),
+      topic_id.topic_name.c_str(),
       last_msg_received);
     return;
   }
@@ -478,17 +479,18 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
 
   // The client should receive only responses to subscribe/unsubscribe.
   assert(meta->GetMetaType() == MessageMetadata::MetaType::Response);
-  std::vector<TopicPair> pairs = meta->GetTopicInfo();
 
   // Get the topic map for this thread.
   int worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& topic_map = worker_data_[worker_id].topic_map;
 
+  std::vector<TopicPair> pairs = meta->GetTopicInfo();
   // This is the response ack of a subscription request sent earlier.
-  for (const auto& elem : pairs) {
-    // record confirmed subscriptions
+  for (auto& elem : pairs) {
+    // Record confirmed subscriptions
+    TopicID topic_id(elem.namespace_id, std::move(elem.topic_name));
     // topic_map stores last received, so use -1 to say we want higher seqnos.
-    topic_map[elem.topic_name] = elem.seqno - 1;
+    topic_map[topic_id] = elem.seqno - 1;
 
     // invoke application-registered callback
     if (subscription_callback_) {

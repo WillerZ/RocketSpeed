@@ -18,6 +18,7 @@
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
 #include "src/client/client_env.h"
+#include "src/client/topic_id.h"
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
@@ -105,7 +106,7 @@ class ClientImpl : public Client {
   struct alignas(CACHE_LINE_SIZE) WorkerData {
     // Map a subscribed topic name to the last sequence number
     // received for this topic (one per worker thread).
-    std::unordered_map<Topic, SequenceNumber> topic_map;
+    std::unordered_map<TopicID, SequenceNumber> topic_map;
 
     // Messages sent, awaiting ack.
     // Maps message ID -> pre-serialized message.
