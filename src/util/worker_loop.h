@@ -9,19 +9,11 @@
 #include <mutex>
 #include <thread>
 #include <utility>
-
-#include "external/folly/producer_consumer_queue.h"
+#include "src/util/common/multi_producer_queue.h"
 #include "src/port/port.h"
-
-#include "src/util/common/thread_check.h"
 #include "src/port/Env.h"
 
 namespace rocketspeed {
-
-enum class WorkerLoopType {
-  kSingleProducer,
-  kMultiProducer,
-};
 
 template <typename Command>
 class WorkerLoop {
@@ -32,11 +24,9 @@ class WorkerLoop {
    * @param env Environment context
    * @param size The size of the worker queue. Due to the queue implementation,
    *             the maximum number of items in the queue will be size - 1.
-   * @param type Whether the queue has single or multiple producers.
    */
   explicit WorkerLoop(Env* env,
-                      uint32_t size,
-                      WorkerLoopType type = WorkerLoopType::kSingleProducer);
+                      uint32_t size);
 
   /**
    * Destroys the worker loop, and waits for it to stop.
@@ -77,19 +67,15 @@ class WorkerLoop {
   void Stop();
 
  private:
-  WorkerLoopType type_;
-  std::mutex write_lock_;
-  folly::ProducerConsumerQueue<Command> command_queue_;
+  MultiProducerQueue<Command> command_queue_;
   std::atomic<bool> stop_;
   std::atomic<bool> running_;
-  ThreadCheck thread_check_;
-  port::Semaphore cmd_received;
+  port::Semaphore cmd_received_;
 };
 
 template <typename Command>
-WorkerLoop<Command>::WorkerLoop(Env* env, uint32_t size, WorkerLoopType type)
-: type_(type)
-, command_queue_(size)
+WorkerLoop<Command>::WorkerLoop(Env* env, uint32_t size)
+: command_queue_(size)
 , stop_(false)
 , running_(false) {
 }
@@ -108,14 +94,17 @@ void WorkerLoop<Command>::Run(std::function<void(Command cmd)> callback) {
   running_ = true;
   do {
     // Wait for commands or Stop() call.
-    cmd_received.Wait();
+    cmd_received_.Wait();
 
     // Continue processing commands as they come in.
-    if (command_queue_.read(cmd)) callback(std::move(cmd));
-
+    if (command_queue_.read(cmd)) {
+      callback(std::move(cmd));
+    }
   } while (!stop_.load());
 
-  while (command_queue_.read(cmd)) callback(std::move(cmd));
+  while (command_queue_.read(cmd)) {
+    callback(std::move(cmd));
+  }
 
   running_ = false;
 }
@@ -123,25 +112,15 @@ void WorkerLoop<Command>::Run(std::function<void(Command cmd)> callback) {
 template <typename Command>
 template <typename... Args>
 bool WorkerLoop<Command>::Send(Args&&... args) {
-  std::unique_lock<std::mutex> lock(write_lock_, std::defer_lock);
-  if (type_ == WorkerLoopType::kMultiProducer) {
-    lock.lock();
-  } else {
-    // When we don't lock, we need to ensure only one thread calls Send.
-    thread_check_.Check();
-  }
   bool result = command_queue_.write(std::forward<Args>(args)...);
-  if (type_ == WorkerLoopType::kMultiProducer) {
-    lock.unlock();
-  }
-  cmd_received.Post();
+  cmd_received_.Post();
   return result;
 }
 
 template <typename Command>
 void WorkerLoop<Command>::Stop() {
   stop_ = true;
-  cmd_received.Post();
+  cmd_received_.Post();
 }
 
 }  // namespace rocketspeed

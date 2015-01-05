@@ -16,7 +16,6 @@
 #include <functional>
 #include <memory>
 #include <map>
-#include <mutex>
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -26,8 +25,6 @@
 #include <event2/util.h>
 #include "src/messages/event2_version.h"
 
-#include "external/folly/producer_consumer_queue.h"
-
 #include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
@@ -35,6 +32,7 @@
 #include "src/util/common/statistics.h"
 #include "src/util/common/object_pool.h"
 #include "src/util/common/thread_check.h"
+#include "src/util/common/multi_producer_queue.h"
 
 namespace rocketspeed {
 
@@ -190,9 +188,8 @@ class EventLoop {
   struct event* command_ready_event_ = nullptr;
 
   // Command queue and its associated event
-  folly::ProducerConsumerQueue<std::unique_ptr<Command>> command_queue_;
+  MultiProducerQueue<std::unique_ptr<Command>> command_queue_;
   int command_ready_eventfd_ = -1;
-  std::mutex command_queue_write_mutex_;
 
   // a cache of ClientIds to connections
   std::map<ClientID, std::vector<SocketEvent*>> connection_cache_;

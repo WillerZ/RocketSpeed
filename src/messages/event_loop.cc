@@ -701,15 +701,7 @@ void EventLoop::Stop() {
 }
 
 Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
-  bool success = false;
-
-  { // Lock the write mutex.
-    std::lock_guard<std::mutex> lock(command_queue_write_mutex_);
-
-    // Try to store the commend in the queue (can fail if the queue is full).
-    success = command_queue_.write(std::move(command));
-
-  } // Unlock the mutex.
+  bool success = command_queue_.write(std::move(command));
 
   if (!success) {
     // The queue was full and the write failed.
