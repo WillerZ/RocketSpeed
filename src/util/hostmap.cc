@@ -27,7 +27,9 @@ HostMap::~HostMap() {
 }
 
 HostNumber
-HostMap::Insert(const ClientID& clientid) {
+HostMap::Insert(const ClientID& clientid,
+                std::atomic<int>* auxiliary_array,
+                int auxiliary_id) {
   // acquire the lock so that conflicting inserts do not trample
   // one another
   MutexLock lock(&hostlock_);
@@ -54,14 +56,19 @@ HostMap::Insert(const ClientID& clientid) {
       break;                 // not found
     }
   }
-
   // no more available slots in the list, return error
   if (loop == number_buckets_) {
     return -1;
   }
-
   // we found a free slot at offset 'index'
   ClientID* newhost = new ClientID(clientid);
+
+  // insert into auxiliary data structure first
+  if (auxiliary_array != nullptr) {
+    auxiliary_array[index].store(auxiliary_id, std::memory_order_release);
+  }
+
+  // insert into hostmap
   hostlist_[index].Release_Store(newhost);
   return index;
 }

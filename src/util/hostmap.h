@@ -23,8 +23,12 @@ class HostMap {
   ~HostMap();
 
   // Insert a new element in the map. Returns the HostNumber.
+  // The auxiliary_array, which is a map from the HostNum to the
+  // specified auxiliary_id, is updated atomically.
   // Returns -1 if error
-  HostNumber Insert(const ClientID& hostid);
+  HostNumber Insert(const ClientID& hostid,
+                    std::atomic<int>* auxiliary_array = nullptr,
+                    int auxiliary_id = 0);
 
   // There isn't a way to delete an entry.
 

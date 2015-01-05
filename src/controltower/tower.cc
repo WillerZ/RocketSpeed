@@ -163,7 +163,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
     st = room->Forward(std::move(newmessage), logid, worker_id);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
-          "Unable to forward %ssubscription for Topic(%s)@%lu to room %u (%s)",
+          "Unable to forward %ssubscription for Topic(%s)@%lu to rooms-%u (%s)",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.topic_name.c_str(),
           topic.seqno,
@@ -171,7 +171,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
           st.ToString().c_str());
     } else {
       LOG_INFO(options_.info_log,
-          "Forwarded %ssubscription for Topic(%s)@%lu to room %u",
+          "Forwarded %ssubscription for Topic(%s)@%lu to rooms-%u",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.topic_name.c_str(),
           topic.seqno,
@@ -215,10 +215,10 @@ const ClientID* ControlTower::LookupHost(HostNumber hostnum,
 
 HostNumber ControlTower::InsertHost(const ClientID& client_id,
                                     int worker_id) {
-  HostNumber hostnum = hostmap_.Insert(client_id);
+  HostNumber hostnum = hostmap_.Insert(client_id, hostworker_.get(),
+                                       worker_id);
   if (hostnum != -1) {
     assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
-    hostworker_[hostnum].store(worker_id, std::memory_order_release);
   }
   return hostnum;
 }
