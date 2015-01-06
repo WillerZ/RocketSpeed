@@ -201,6 +201,21 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
   worker_data_.reset(new WorkerData[msg_loop_->GetNumWorkers()]);
 
   msg_loop_->RegisterCallbacks(callbacks);
+
+  if (storage_) {
+    // Initialize subscription storage
+    auto load_callback = [this](
+        const std::vector<SubscriptionRequest>& restored) {
+      ProcessRestoredSubscription(restored);
+    };
+    auto update_callback = [](const SubscriptionRequest& request) {};
+    auto snapshot_callback = [](Status status) {};
+    storage_->Initialize(load_callback,
+                         update_callback,
+                         snapshot_callback,
+                         msg_loop_);
+  }
+
   msg_loop_thread_ = std::thread([this] () {
     env_->SetCurrentThreadName("client");
     msg_loop_->Run();
@@ -208,14 +223,6 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
 
   while (!msg_loop_->IsRunning()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-
-  if (storage_) {
-    // Initialize subscription storage
-    storage_->Initialize([this](
-        const std::vector<SubscriptionRequest>& restored) {
-      ProcessRestoredSubscription(restored);
-    });
   }
 }
 
@@ -303,13 +310,8 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
   // subscriptions need to be restored.
   for (const auto& elem : topics) {
     if (storage_) {
-      // Store or remove subscription state depending whether we subscribe or
-      // unsubscribe.
-      if (elem.subscribe) {
-        storage_->Store(elem);
-      } else {
-        storage_->Remove(elem);
-      }
+      // Update subscription state accordingly.
+      storage_->Update(elem);
     }
 
     if (elem.start) {
@@ -325,8 +327,8 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
     }
   }
 
-  if (storage_) {
-    storage_->Load(restore);
+  if (storage_ && !restore.empty()) {
+    storage_->Load(std::move(restore));
   }
   for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers(); ++worker_id) {
     if (!subscribe[worker_id].empty()) {
@@ -369,7 +371,7 @@ void ClientImpl::Acknowledge(const MessageReceived& message) {
                                 message.GetTopicName().ToString(),
                                 true,
                                 message.GetSequenceNumber());
-    storage_->Store(request);
+    storage_->Update(std::move(request));
   }
 }
 

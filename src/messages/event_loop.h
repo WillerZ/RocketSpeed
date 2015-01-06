@@ -94,6 +94,9 @@ class EventLoop {
   // Stop the event loop.
   void Stop();
 
+  // Registers callback for certain command types.
+  void RegisterCallback(CommandType type, CommandCallbackType callbacks);
+
   // Send a command to the event loop for processing.
   // This call is thread-safe.
   Status SendCommand(std::unique_ptr<Command> command);

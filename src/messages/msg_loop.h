@@ -37,6 +37,10 @@ class MsgLoop : public MsgLoopBase {
 
   virtual ~MsgLoop();
 
+  // Register callback for a command in all underlying EventLoops.
+  void RegisterCommandCallback(CommandType type,
+                               CommandCallbackType callback);
+
   // Registers callbacks for a number of message types.
   void
   RegisterCallbacks(const std::map<MessageType, MsgCallbackType>& callbacks);

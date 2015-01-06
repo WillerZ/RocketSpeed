@@ -11,6 +11,7 @@
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
+#include "src/messages/event_loop.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
 #include "src/port/Env.h"
@@ -30,6 +31,10 @@ class MsgLoopBase {
 
   virtual ~MsgLoopBase() {
   };
+
+  // Register callback for a command in all underlying EventLoops.
+  virtual void RegisterCommandCallback(CommandType type,
+                                       CommandCallbackType callback) = 0;
 
   // Registers callbacks for a number of message types.
   virtual void RegisterCallbacks(const std::map<MessageType,
@@ -59,6 +64,9 @@ class MsgLoopBase {
 
   // Retrieves the number of EventLoop threads.
   virtual int GetNumWorkers() const = 0;
+
+  // Get the worker ID of the least busy event loop.
+  virtual int LoadBalancedWorkerId() const = 0;
 
   // Retrieves the worker ID for the currently running thread.
   virtual int GetThreadWorkerIndex() const = 0;

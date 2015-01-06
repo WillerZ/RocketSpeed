@@ -233,7 +233,7 @@ class SubscriptionStart {
 
   SubscriptionStart() : present_(false) {}
 
-  /* implicit */ operator bool() const {
+  explicit operator bool() const {
     return present_;
   }
 

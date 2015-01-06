@@ -20,7 +20,8 @@ namespace rocketspeed {
 
 class IntegrationTest {
  public:
-  IntegrationTest() {
+  IntegrationTest()
+      : file_path(test::TmpDir() + "/IntegrationTest-file_storage_data") {
     if (!rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
                                               "",
                                               "LOG.integrationtest",
@@ -33,6 +34,7 @@ class IntegrationTest {
     }
   }
   std::shared_ptr<rocketspeed::Logger> info_log;
+  std::string file_path;
 };
 
 TEST(IntegrationTest, OneMessage) {
@@ -81,6 +83,9 @@ TEST(IntegrationTest, OneMessage) {
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
+  ASSERT_OK(SubscriptionStorage::File(file_path,
+                                      info_log,
+                                      &options.storage));
   std::unique_ptr<Client> client;
   ASSERT_TRUE((Client::Open(std::move(options), &client).ok()));
 
@@ -148,6 +153,9 @@ TEST(IntegrationTest, SequenceNumberZero) {
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
+  ASSERT_OK(SubscriptionStorage::File(file_path,
+                                      info_log,
+                                      &options.storage));
   std::unique_ptr<Client> client;
   ASSERT_TRUE((Client::Open(std::move(options), &client).ok()));
 
