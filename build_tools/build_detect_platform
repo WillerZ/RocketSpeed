@@ -100,7 +100,7 @@ PLATFORM_SHARED_CFLAGS="-fPIC"
 PLATFORM_SHARED_VERSIONED=false
 
 # generic port files (working on all platform by #ifdef) go directly in /port
-GENERIC_PORT_FILES=`cd "$ROCKETSPEED_ROOT"; find src/port -name '*.cc' | tr "\n" " "`
+GENERIC_PORT_FILES=`cd "$ROCKETSPEED_ROOT"; find src/port -name '*.cc' ! -name '*test*.cc' | tr "\n" " "`
 
 # On GCC, we pick libc's memcmp over GCC's memcmp via -fno-builtin-memcmp
 case "$TARGET_OS" in

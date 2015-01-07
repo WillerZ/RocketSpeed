@@ -93,7 +93,8 @@ TESTS = \
   integration_test \
   statistics_test \
   thread_check_test \
-	file_storage_test
+  file_storage_test \
+  port_android_to_string_test
 
 TOOLS = \
 	rocketbench
@@ -295,6 +296,9 @@ thread_check_test: src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNES
 
 file_storage_test: src/client/storage/tests/file_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+port_android_to_string_test: src/port/tests/port_android_to_string_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/port/tests/port_android_to_string_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test

@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <sstream>
 #include <string>
 
 namespace rocketspeed {
@@ -104,9 +103,7 @@ class Status {
       case Code::kTimedOut:
         return "Timed out: " + state_;
       default:
-        std::ostringstream oss;
-        oss << "Unknown code " << code;
-        return oss.str();
+        return "Unknown code " + std::to_string(code);
     }
   }
 

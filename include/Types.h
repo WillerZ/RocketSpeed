@@ -7,7 +7,6 @@
 
 #include <cstring>
 #include <cstdlib>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -306,9 +305,7 @@ class HostId {
 
   // converts a HostId to a name:port string
   std::string ToString() const {
-    std::ostringstream oss;
-    oss << hostname << ':' << port;
-    return oss.str();
+    return hostname + ':' + std::to_string(port);
   }
 
   // Converts an internal client ID to a HostId
