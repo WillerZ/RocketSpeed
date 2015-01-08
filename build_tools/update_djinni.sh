@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-REPO_ROOT="$(dirname "$0")/../.."
+REPO_ROOT="$(dirname "$0")/.."
 DJINNI_HOME="$REPO_ROOT/external/djinni"
 IFACE_FILE="$REPO_ROOT/src/main/rocketspeed.djinni"
 JAVA_PACKAGE="org.rocketspeed"
-JAVA_DIR="$REPO_ROOT/target/generated-sources/djinni/java/${JAVA_PACKAGE/.//}"
-CPP_DIR="$REPO_ROOT/target/generated-sources/djinni/cpp"
+JAVA_DIR="$REPO_ROOT/src/main/java-gen/${JAVA_PACKAGE/.//}"
+CPP_DIR="$REPO_ROOT/src-gen"
 
 set -e
 set +x
@@ -19,7 +19,7 @@ rm -rf \
   \
   --java-out "$JAVA_DIR" \
   --java-package "$JAVA_PACKAGE" \
-  --ident-java-field mFooBar \
+  --ident-java-field fooBar \
   \
   --cpp-out "$CPP_DIR" \
   --cpp-namespace rocketspeed::djinni \
