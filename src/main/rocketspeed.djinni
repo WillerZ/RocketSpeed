@@ -1,200 +1,102 @@
-# Define the cross-platform public interface for
-# accessing the RocketSpeed service
-#
 StatusCode = enum {
-    kOk;
-    kNotFound;
-    kNotSupported;
-    kInvalidArgument;
-    kIOError;
-    kNotInitialized;
-    kInternal;
-    kUnauthorized;
-    kTimedOut;
+  Ok;
+  NotFound;
+  NotSupported;
+  InvalidArgument;
+  IOError;
+  NotInitialized;
+  Internal;
+  Unauthorized;
+  TimedOut;
 }
 
-#
-# The status code returned from most RocketSpeed calls
-#
-Status = record {
-  code:   StatusCode;
-  state:  string;
+Status = record +j {
+  code: StatusCode;
+  state: string;
 }
 
-#
-# A 16 byte messsage id that uniquely identifies a message
-#
-MsgId = record {
-  guid : binary;
+MsgIdImpl = record {
+  const SIZE: i32 = 16;
+
+  guid: binary;
 }
 
-#
-# A 8 byte sequence number
-#
-SequenceNumber = record {
-  seqno : i64;
-}
-
-#
-# Tenant Id. Valid values 101 - 65000.
-#
-TenantID = record {
-  tenantid : i32;
-}
-
-#
-# Namespace id. Valid values 101 - 65000.
-#
-NamespaceID = record {
-  nsid : i32;
-}
-
-#
-# A URL
-#
-URL = record {
-  url : string;
-}
-
-#
-# A topic is a very important construct in RocketSpeed
-#
-Topic = record {
-  name : string;
-}
-
-#
-# Definition of a Host
-#
 HostId = record {
-  hostname : string;
-  port     : i32;
+  hostname: string;
+  port: i32;
 }
 
-#
-# The identifier for a client
-#
-ClientID = record {
-  name : string;
-}
-
-#
-# Retention modes
-#
-Retention = enum {
+RetentionBase = enum {
   OneHour;
   OneDay;
   OneWeek;
 }
 
-#
-# Options related to a topic
-# retention: The amount of time a message would remain 
-#            in RocketSpeed
-TopicOptions = record {
-  retention : Retention;
+SubscriptionStartImpl = record {
+  sequence_number: i64;
+  present: bool;
 }
 
-#
-# Status returned when a new message is published.
-#
+SubscriptionRequestImpl = record {
+  namespace_id: i16;
+  topic_name: string;
+  subscribe: bool;
+  sequence_number: SubscriptionStartImpl;
+}
+
+ConfigurationImpl = record {
+  pilots: list<HostId>;
+  copilots: list<HostId>;
+  tenant_id: i16;
+}
+
+PublishCallbackImpl = interface +j +o {
+  Call(status: Status,
+       namespace_id: i16,
+       topic_name: string,
+       message_id: MsgIdImpl,
+       sequence_number: i64,
+       contents: binary);
+}
+
+SubscribeCallbackImpl = interface +j +o {
+  Call(status: Status,
+       sequence_number: i64,
+       subscribed: bool);
+}
+
+ReceiveCallbackImpl = interface +j +o {
+  Call(namespace_id: i16,
+       topic_name: string,
+       sequence_number: i64,
+       contents: binary);
+}
+
 PublishStatus = record {
-  status : Status;
-  msgid  : MsgId;
+  status: Status;
+  message_id: optional<MsgIdImpl>;
 }
 
-#
-#  Status returned when a published message is acknowledged.
-#
-ResultStatus = record {
-  status : Status;
-  msgid  : MsgId;
-  seqno  : SequenceNumber;
-}
+ClientImpl = interface +c {
+  static Open(config: ConfigurationImpl,
+              client_id: string,
+              publish_callback: PublishCallbackImpl,
+              subscribe_callback: SubscribeCallbackImpl,
+              receive_callback: ReceiveCallbackImpl,
+              file_path: optional<string>) : ClientImpl;
 
-#
-# Status returned when a subscription/unsubscription
-# message is acknowledged and confirmed by the Cloud Service.
-#
-SubscriptionStatus  = record {
-  status     : Status;
-  seqno      : SequenceNumber;
-  subscribed : bool;
-}
+  Publish(namespace_id: i16,
+          topic_name: string,
+          retention: RetentionBase,
+          data: binary,
+          message_id: optional<MsgIdImpl>) : PublishStatus;
 
-#
-# Indicates whether to subscribe or unsubscribe
-# from the specified topic.
-# Messages after the specified sequence number will be 
-# delivered to the client.
-# A seqno of 0 indicates that the subscriber is interested in
-# receiving whatever data is available via this topic.
-# A seqno of 1 indicates that the subscriber is interested in
-# receiving all the data that was published to this topic.
-#
-SubscriptionPair = record {
-  seqno        : SequenceNumber;
-  topic_name   : Topic;
-  namespace_id : NamespaceID;
-}
+  ListenTopics(names: list<SubscriptionRequestImpl>);
 
-#
-# Specify a configuration that describes the RocketSpeed instance
-# Created in C++ and used by Java and ObjC
-#
-Configuration = interface +c {
-  static CreateNewInstance(pilots    : list<HostId>,
-                           copilots  : list<HostId>,
-                           tenant_id : TenantID
-                          ) : Configuration;
-  GetPilotHostIds()   : list<HostId>;
-  GetCopilotHostIds() : list<HostId>;
-  GetTenantID()       : TenantID;
-}
+  Acknowledge(namespace_id: i16,
+              topic_name: string,
+              sequence_number: i64,
+              contents: binary);
 
-#
-# Interface to access a received message
-# Created in C++ and used by Java and ObjC
-#
-MessageReceived = interface +c {
-  GetSequenceNumber() : SequenceNumber;
-  GetTopicName()      : Topic;
-  GetContents()       : binary;
-}
-
-#
-#
-# Implemented in Java and ObjC and can be called from C++.
-
-PublishCallback = interface +j +o {
-  Call(result_status : ResultStatus);
-}
-
-SubscribeCallback = interface +j +o {
-  Call(subscription_status : SubscriptionStatus);
-}
-
-MessageReceivedCallback = interface +j +o {
-  Call(message_received : MessageReceived);
-}
-
-
-# The RocketSpeed Client object.
-# Implemented in c++ and called from Java and ObjC
-
-Client = interface +c {
-  static Open(client_id          : ClientID,
-              config             : Configuration,
-              publish_callback   : PublishCallback,
-              subscribe_callback : SubscribeCallback,
-              receive_callback   : MessageReceivedCallback) : Client;
-
-  Publish(topic_name      : Topic,
-          namespace_id    : NamespaceID,
-          options         : TopicOptions,
-          data            : binary,
-          msgid           : MsgId);
-
-  ListenTopics(names      : list<SubscriptionPair>,
-               options    : TopicOptions);
+  Close();
 }

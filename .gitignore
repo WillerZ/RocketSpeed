@@ -38,3 +38,7 @@ coverage/COVERAGE_REPORT
 .phutil_module_cache
 tags
 
+# Java
+/.idea/
+/*.iml
+/target/
