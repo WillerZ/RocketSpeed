@@ -188,6 +188,7 @@ void Pilot::SendAck(MessageData* msg,
                     SequenceNumber seqno,
                     MessageDataAck::AckStatus status,
                     int worker_id) {
+  const bool is_new_request = false;
   MessageDataAck::Ack ack;
   ack.status = status;
   ack.msgid = msg->GetMessageId();
@@ -203,7 +204,8 @@ void Pilot::SendAck(MessageData* msg,
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
                               client,
-                              options_.env->NowMicros()));
+                              options_.env->NowMicros(),
+                              is_new_request));
   Status st = options_.msg_loop->SendCommand(std::move(cmd), worker_id);
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time

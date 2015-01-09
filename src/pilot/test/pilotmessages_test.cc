@@ -150,6 +150,7 @@ TEST(PilotTest, Publish) {
 
   // send messages to pilot
   NamespaceID nsid = 101;
+  const bool is_new_request = true;
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test" + std::to_string(i);
@@ -163,7 +164,8 @@ TEST(PilotTest, Publish) {
     std::unique_ptr<Command> cmd(
       new SerializedSendCommand(std::move(serial),
                                 pilot_->GetClientId(0),
-                                env_->NowMicros()));
+                                env_->NowMicros(),
+                                is_new_request));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 

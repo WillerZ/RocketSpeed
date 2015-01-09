@@ -211,6 +211,7 @@ TEST(ControlTowerTest, Ping) {
 
   // create a message
   std::string serial;
+  const bool is_new_request = true;
   MessagePing msg(Tenant::GuestTenant,
                   MessagePing::PingType::Request,
                   ClientID("clientid1:100"));
@@ -218,7 +219,8 @@ TEST(ControlTowerTest, Ping) {
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
                               ct_->GetClientId(0),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
 
   // verify that the ping response was received by the client
@@ -233,7 +235,8 @@ TEST(ControlTowerTest, Ping) {
     std::unique_ptr<Command> cmd(
       new SerializedSendCommand(std::move(serial),
                                 ct_->GetClientId(0),
-                                env_->NowMicros()));
+                                env_->NowMicros(),
+                                is_new_request));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
   }
 
@@ -273,6 +276,7 @@ TEST(ControlTowerTest, Subscribe) {
 
   // create a message
   std::string serial;
+  const bool is_new_request = true;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         ClientID("clientid100:100"), topics);
@@ -280,7 +284,8 @@ TEST(ControlTowerTest, Subscribe) {
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
                               ct_->GetClientId(0),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
 
   // send message to control tower
   ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
@@ -321,6 +326,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 
   // first subscriber *******
   std::string serial;
+  const bool is_new_request = true;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         ClientID("clientid100:100"), topics);
@@ -328,7 +334,8 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
                               ct_->GetClientId(0),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
 
   // send message to control tower
   ASSERT_EQ(loop1.SendCommand(std::move(cmd)).ok(), true);
@@ -361,7 +368,8 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::unique_ptr<Command> cmd2(
     new SerializedSendCommand(std::move(serial2),
                               ct_->GetClientId(0),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
 
   // send message to control tower
   ASSERT_EQ(loop2.SendCommand(std::move(cmd2)).ok(), true);
@@ -391,7 +399,8 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::unique_ptr<Command> cmd3(
     new SerializedSendCommand(std::move(serial3),
                               ct_->GetClientId(0),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
 
   // send message to control tower
   ASSERT_EQ(loop1.SendCommand(std::move(cmd3)).ok(), true);
@@ -413,7 +422,8 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::unique_ptr<Command> cmd4(
     new SerializedSendCommand(std::move(serial4),
                               ct_->GetClientId(0),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
 
   // send message to control tower
   ASSERT_EQ(loop2.SendCommand(std::move(cmd4)).ok(), true);

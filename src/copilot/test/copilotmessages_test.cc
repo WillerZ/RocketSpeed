@@ -184,6 +184,7 @@ TEST(CopilotTest, Publish) {
 
   // send messages to copilot
   int num_msg = 100;
+  const bool is_new_request = true;
   for (int i = 0; i < num_msg; ++i) {
     NamespaceID ns = 101 + i % 50;
     std::string topic = "copilot_test_" + std::to_string(i % 50);
@@ -198,7 +199,8 @@ TEST(CopilotTest, Publish) {
     std::unique_ptr<Command> cmd(
       new SerializedSendCommand(std::move(serial),
                                 copilot_->GetClientId(0),
-                                env_->NowMicros()));
+                                env_->NowMicros(),
+                                is_new_request));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);
   }

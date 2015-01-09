@@ -54,7 +54,9 @@ class SendCommand : public Command {
   // Allocate one ClientID in-place for the common case.
   typedef autovector<ClientID, 1> Recipients;
 
-  explicit SendCommand(uint64_t issued_time) : Command(issued_time) {}
+  explicit SendCommand(uint64_t issued_time, bool is_new_request) :
+                       Command(issued_time),
+                       is_new_request_(is_new_request) {}
 
   virtual ~SendCommand() {}
 
@@ -65,6 +67,16 @@ class SendCommand : public Command {
   // If this is a command to send a mesage to remote hosts, then returns the
   // list of destination HostIds.
   virtual const Recipients& GetDestination() const = 0;
+
+  // Returns true if this is a new request. If this is not a new
+  // request (but is a response to an earlier request), then the
+  // underlying transport can possibly skip establishing new
+  // connection/authentication.
+  bool IsNewRequest() const { return is_new_request_; }
+
+ private:
+  // This is a new request and is not a response to an earlier request
+  const bool is_new_request_;
 };
 
 /**
@@ -76,8 +88,9 @@ class SerializedSendCommand : public SendCommand {
 
   SerializedSendCommand(std::string message,
                         const ClientID& host,
-                        uint64_t issued_time):
-    SendCommand(issued_time),
+                        uint64_t issued_time,
+                        bool is_new_request):
+    SendCommand(issued_time, is_new_request),
     message_(std::move(message)) {
     recipient_.push_back(host);
     assert(message_.size() > 0);
@@ -85,8 +98,9 @@ class SerializedSendCommand : public SendCommand {
 
   SerializedSendCommand(std::string message,
                         Recipients hosts,
-                        uint64_t issued_time):
-    SendCommand(issued_time),
+                        uint64_t issued_time,
+                        bool is_new_request):
+    SendCommand(issued_time, is_new_request),
     recipient_(std::move(hosts)),
     message_(std::move(message)) {
     assert(message_.size() > 0);
@@ -101,8 +115,8 @@ class SerializedSendCommand : public SendCommand {
   }
 
  private:
-  Recipients recipient_;
-  std::string message_;
+  Recipients recipient_;      // the list of destinations
+  std::string message_;       // the message itself
 };
 
 }  // namespace rocketspeed

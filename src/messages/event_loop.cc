@@ -396,9 +396,12 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
     Status status;
     SocketEvent* sev = lookup_connection_cache(clientid);
 
-    // If the remote side has not yet established a connection, then
-    // create a new connection and insert into connection cache.
-    if (sev == nullptr) {
+    // If the remote side has not yet established a connection, and
+    // this is a new request then create a new connection and insert
+    // into connection cache. if this is not a new request but is a
+    // response to some other request, then the connection to the
+    // remote side should already exist.
+    if (sev == nullptr && send_cmd->IsNewRequest()) {
       HostId host = HostId::ToHostId(clientid);
       sev = setup_connection(host, clientid);
     }

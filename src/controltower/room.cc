@@ -203,14 +203,16 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   request->SetMetaType(MessageMetadata::MetaType::Response);
 
   // serialize message
+  const bool is_new_request = false;
   std::string out;
   request->SerializeToString(&out);
 
-  // send response back to client
+  // send response back to copilot
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(out),
                               origin,
-                              options.env->NowMicros()));
+                              options.env->NowMicros(),
+                              is_new_request));
   st = ct->SendCommand(std::move(cmd), worker_id);
   if (!st.ok()) {
     LOG_WARN(options.info_log,
@@ -265,6 +267,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   topic_name.append(request->GetTopicName().ToString());
 
   // serialize msg
+  const bool is_new_request = false;
   std::string serial;
   request->SerializeToString(&serial);
 
@@ -296,7 +299,8 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
       std::unique_ptr<Command> cmd(
         new SerializedSendCommand(serial,  // TODO(pja) 1 : avoid copy here
                                   std::move(recipients),
-                                  options.env->NowMicros()));
+                                  options.env->NowMicros(),
+                                  is_new_request));
 
       // Send to correct worker loop.
       st = ct->SendCommand(std::move(cmd), worker_id);

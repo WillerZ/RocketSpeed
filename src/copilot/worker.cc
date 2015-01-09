@@ -296,6 +296,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   if (notify_control_tower) {
     // Find control tower responsible for this topic's log.
     ClientID const* recipient = nullptr;
+    const bool is_new_request = true;
     if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
       int outgoing_worker_id = copilot_->GetLogWorker(logid);
       msg->SetOrigin(copilot_->GetClientId(outgoing_worker_id));
@@ -308,7 +309,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       std::unique_ptr<Command> cmd(
         new SerializedSendCommand(std::move(serial),
                                   *recipient,
-                                  options_.env->NowMicros()));
+                                  options_.env->NowMicros(),
+                                  is_new_request));
       Status status = copilot_->SendCommand(std::move(cmd),
                                             outgoing_worker_id);
       if (!status.ok()) {
@@ -332,12 +334,14 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // Send response to origin to notify that subscription has been processed.
     msg->SetMetaType(MessageMetadata::MetaType::Response);
     // serialize
+    const bool is_new_request = false;
     std::string serial;
     msg->SerializeToString(&serial);
     std::unique_ptr<Command> cmd(
       new SerializedSendCommand(std::move(serial),
                                 subscriber,
-                                options_.env->NowMicros()));
+                                options_.env->NowMicros(),
+                                is_new_request));
     Status status = copilot_->SendCommand(std::move(cmd), worker_id);
     if (!status.ok()) {
       // Failed to send response. The origin will re-send the subscription
@@ -397,12 +401,14 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                                            MetadataType::mUnSubscribe,
                                            request.namespace_id) });
         // serialize message
+        const bool is_new_request = true;
         std::string serial;
         newmsg.SerializeToString(&serial);
         std::unique_ptr<Command> cmd(
           new SerializedSendCommand(std::move(serial),
                                     *recipient,
-                                    options_.env->NowMicros()));
+                                    options_.env->NowMicros(),
+                                    is_new_request));
         Status status = copilot_->SendCommand(std::move(cmd),
                                               outgoing_worker_id);
         if (!status.ok()) {
@@ -425,12 +431,14 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                                            MetadataType::mSubscribe,
                                            request.namespace_id) });
         // serialize message
+        const bool is_new_request = true;
         std::string serial;
         newmsg.SerializeToString(&serial);
         std::unique_ptr<Command> cmd(
           new SerializedSendCommand(std::move(serial),
                                     *recipient,
-                                    options_.env->NowMicros()));
+                                    options_.env->NowMicros(),
+                                    is_new_request));
         Status status = copilot_->SendCommand(std::move(cmd),
                                               outgoing_worker_id);
         if (!status.ok()) {
@@ -450,12 +458,14 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
   // Send response to origin to notify that subscription has been processed.
   msg->SetOrigin(copilot_->GetClientId(worker_id));
   msg->SetMetaType(MessageMetadata::MetaType::Response);
+  const bool is_new_request = false;
   std::string serial;
   msg->SerializeToString(&serial);
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
                               subscriber,
-                              options_.env->NowMicros()));
+                              options_.env->NowMicros(),
+                              is_new_request));
   Status status = copilot_->SendCommand(std::move(cmd), worker_id);
   if (!status.ok()) {
     // Failed to send response. The origin will re-send the subscription
@@ -477,6 +487,7 @@ void CopilotWorker::DistributeCommand(
     std::vector<std::pair<ClientID, int>> destinations) {
   // Destinations per worker.
   std::unordered_map<int, SendCommand::Recipients> sub_destinations;
+  const bool is_new_request = false;
 
   // Find which worker the command needs to be sent to for each client.
   for (auto& elem : destinations) {
@@ -493,7 +504,8 @@ void CopilotWorker::DistributeCommand(
     std::unique_ptr<Command> cmd(
       new SerializedSendCommand(msg,
                                 std::move(recipients),
-                                options_.env->NowMicros()));
+                                options_.env->NowMicros(),
+                                is_new_request));
     Status status = copilot_->SendCommand(std::move(cmd), worker_id);
     if (!status.ok()) {
       LOG_WARN(options_.info_log,

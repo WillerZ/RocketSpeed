@@ -190,6 +190,7 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   ThreadCheck();
   MessagePing* request = static_cast<MessagePing*>(msg.get());
   const ClientID origin = request->GetOrigin();
+  const bool is_new_request = false;
 
   // change it to a ping response message
   request->SetPingType(MessagePing::Response);
@@ -202,7 +203,8 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
                               origin,
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
   Status st = SendCommand(std::move(cmd));
 
   if (!st.ok()) {

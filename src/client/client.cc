@@ -265,6 +265,7 @@ PublishStatus ClientImpl::Publish(const Topic& name,
     message.SetMessageId(messageId);
   }
   const MsgId msgid = message.GetMessageId();
+  const bool is_new_request = true;
 
   // Get a serialized version of the message
   std::string serialized;
@@ -277,7 +278,8 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   std::unique_ptr<Command> command(
     new SerializedSendCommand(std::move(serialized),
                               pilot_host_id_.ToClientId(),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
 
   // Add message to the sent list.
   std::pair<MsgId, std::string> new_msg(msgid, std::move(dup));
@@ -339,6 +341,7 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
 
 void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics,
                                     int worker_id) {
+  const bool is_new_request = true;
   // Construct message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
@@ -353,7 +356,8 @@ void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics,
   std::unique_ptr<Command> command(
     new SerializedSendCommand(std::move(serialized),
                               copilot_host_id_.ToClientId(),
-                              env_->NowMicros()));
+                              env_->NowMicros(),
+                              is_new_request));
   // Send to event loop for processing (the loop will free it).
   Status status = msg_loop_->SendCommand(std::move(command), worker_id);
 
