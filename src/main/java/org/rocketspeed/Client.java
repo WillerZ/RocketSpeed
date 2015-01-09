@@ -16,7 +16,7 @@ public class Client implements AutoCloseable {
       throws IOException {
     PublishStatus
         status =
-        client.Publish(namespaceID, topicName, options.getRetention().djinni(), data, null);
+        client.Publish0(namespaceID, topicName, options.getRetention().djinni(), data);
     status.getStatus().checkExceptions();
     return new MsgId(status.getMessageId());
   }
@@ -24,8 +24,8 @@ public class Client implements AutoCloseable {
   MsgId publish(short namespaceID, String topicName, TopicOptions options, byte[] data,
                 MsgId messageId) throws IOException {
     PublishStatus status =
-        client.Publish(namespaceID, topicName, options.getRetention().djinni(), data,
-                       messageId.djinni());
+        client.Publish1(namespaceID, topicName, options.getRetention().djinni(), data,
+                        messageId.djinni());
     status.getStatus().checkExceptions();
     assert messageId.djinni().equals(status.getMessageId());
     return messageId;

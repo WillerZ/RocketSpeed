@@ -8,9 +8,9 @@
 #include "PublishStatus.hpp"
 #include "RetentionBase.hpp"
 #include "SubscriptionRequestImpl.hpp"
+#include "SubscriptionStorage.hpp"
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,9 +24,12 @@ class ClientImpl {
 public:
     virtual ~ClientImpl() {}
 
-    static std::shared_ptr<ClientImpl> Open(const ConfigurationImpl & config, const std::string & client_id, const std::shared_ptr<PublishCallbackImpl> & publish_callback, const std::shared_ptr<SubscribeCallbackImpl> & subscribe_callback, const std::shared_ptr<ReceiveCallbackImpl> & receive_callback, const std::optional<std::string> & file_path);
+    static std::shared_ptr<ClientImpl> Open(const ConfigurationImpl & config, const std::string & client_id, const std::shared_ptr<PublishCallbackImpl> & publish_callback, const std::shared_ptr<SubscribeCallbackImpl> & subscribe_callback, const std::shared_ptr<ReceiveCallbackImpl> & receive_callback, const SubscriptionStorage & storage);
 
-    virtual PublishStatus Publish(int16_t namespace_id, const std::string & topic_name, RetentionBase retention, const std::vector<uint8_t> & data, const std::optional<MsgIdImpl> & message_id) = 0;
+    virtual PublishStatus Publish0(int16_t namespace_id, const std::string & topic_name, RetentionBase retention, const std::vector<uint8_t> & data) = 0;
+
+    /** TODO(stupaq) the message_id param should be optional */
+    virtual PublishStatus Publish1(int16_t namespace_id, const std::string & topic_name, RetentionBase retention, const std::vector<uint8_t> & data, const MsgIdImpl & message_id) = 0;
 
     virtual void ListenTopics(const std::vector<SubscriptionRequestImpl> & names) = 0;
 

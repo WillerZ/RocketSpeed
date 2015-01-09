@@ -7,7 +7,20 @@ public final class Builder {
   private PublishCallbackImpl publishCallback;
   private SubscribeCallbackImpl subscribeCallback;
   private ReceiveCallbackImpl receiveCallback;
-  private String filePath;
+  private SubscriptionStorage storage;
+
+  public Builder() {
+    reset();
+  }
+
+  private void reset() {
+    config = null;
+    clientID = null;
+    publishCallback = null;
+    subscribeCallback = null;
+    receiveCallback = null;
+    storage = new SubscriptionStorage(StorageType.NONE, "");
+  }
 
   private Builder configuration(Configuration config) {
     this.config = config.djinni();
@@ -52,19 +65,17 @@ public final class Builder {
   }
 
   public Builder usingFileStorage(String filePath) {
-    this.filePath = filePath;
+    if (!StorageType.NONE.equals(storage.getType())) {
+      throw new IllegalStateException();
+    }
+    storage = new SubscriptionStorage(StorageType.FILE, filePath);
     return this;
   }
 
   public Client build() {
     ClientImpl client = ClientImpl.Open(config, clientID, publishCallback, subscribeCallback,
-                                        receiveCallback, filePath);
-    config = null;
-    clientID = null;
-    publishCallback = null;
-    subscribeCallback = null;
-    receiveCallback = null;
-    filePath = null;
+                                        receiveCallback, storage);
+    reset();
     return new Client(client);
   }
 }

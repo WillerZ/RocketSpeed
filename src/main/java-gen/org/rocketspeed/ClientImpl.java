@@ -7,7 +7,10 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ClientImpl {
-    public abstract PublishStatus Publish(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId);
+    public abstract PublishStatus Publish0(short namespaceId, String topicName, RetentionBase retention, byte[] data);
+
+    /** TODO(stupaq) the message_id param should be optional */
+    public abstract PublishStatus Publish1(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId);
 
     public abstract void ListenTopics(ArrayList<SubscriptionRequestImpl> names);
 
@@ -15,7 +18,7 @@ public abstract class ClientImpl {
 
     public abstract void Close();
 
-    public static native ClientImpl Open(ConfigurationImpl config, String clientId, PublishCallbackImpl publishCallback, SubscribeCallbackImpl subscribeCallback, ReceiveCallbackImpl receiveCallback, String filePath);
+    public static native ClientImpl Open(ConfigurationImpl config, String clientId, PublishCallbackImpl publishCallback, SubscribeCallbackImpl subscribeCallback, ReceiveCallbackImpl receiveCallback, SubscriptionStorage storage);
 
     public static final class CppProxy extends ClientImpl
     {
@@ -41,12 +44,20 @@ public abstract class ClientImpl {
         }
 
         @Override
-        public PublishStatus Publish(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId)
+        public PublishStatus Publish0(short namespaceId, String topicName, RetentionBase retention, byte[] data)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Publish(this.nativeRef, namespaceId, topicName, retention, data, messageId);
+            return native_Publish0(this.nativeRef, namespaceId, topicName, retention, data);
         }
-        private native PublishStatus native_Publish(long _nativeRef, short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId);
+        private native PublishStatus native_Publish0(long _nativeRef, short namespaceId, String topicName, RetentionBase retention, byte[] data);
+
+        @Override
+        public PublishStatus Publish1(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId)
+        {
+            assert !this.destroyed.get() : "trying to use a destroyed object";
+            return native_Publish1(this.nativeRef, namespaceId, topicName, retention, data, messageId);
+        }
+        private native PublishStatus native_Publish1(long _nativeRef, short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId);
 
         @Override
         public void ListenTopics(ArrayList<SubscriptionRequestImpl> names)

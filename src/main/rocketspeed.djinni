@@ -74,7 +74,20 @@ ReceiveCallbackImpl = interface +j +o {
 
 PublishStatus = record {
   status: Status;
-  message_id: optional<MsgIdImpl>;
+  # TODO(stupaq) this should be optional
+  message_id: MsgIdImpl;
+}
+
+StorageType = enum {
+  None;
+  File;
+}
+
+SubscriptionStorage = record {
+  type: StorageType;
+  # Used only when this is a file storage
+  # TODO(stupaq) this should be optional
+  file_path: string;
 }
 
 ClientImpl = interface +c {
@@ -83,13 +96,19 @@ ClientImpl = interface +c {
               publish_callback: PublishCallbackImpl,
               subscribe_callback: SubscribeCallbackImpl,
               receive_callback: ReceiveCallbackImpl,
-              file_path: optional<string>) : ClientImpl;
+              storage: SubscriptionStorage) : ClientImpl;
 
-  Publish(namespace_id: i16,
-          topic_name: string,
-          retention: RetentionBase,
-          data: binary,
-          message_id: optional<MsgIdImpl>) : PublishStatus;
+  Publish0(namespace_id: i16,
+           topic_name: string,
+           retention: RetentionBase,
+           data: binary) : PublishStatus;
+
+  # TODO(stupaq) the message_id param should be optional
+  Publish1(namespace_id: i16,
+           topic_name: string,
+           retention: RetentionBase,
+           data: binary,
+           message_id: MsgIdImpl) : PublishStatus;
 
   ListenTopics(names: list<SubscriptionRequestImpl>);
 
