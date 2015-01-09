@@ -5,7 +5,7 @@ DJINNI_HOME="$REPO_ROOT/external/djinni"
 IFACE_FILE="$REPO_ROOT/src/main/rocketspeed.djinni"
 JAVA_PACKAGE="org.rocketspeed"
 JAVA_DIR="$REPO_ROOT/src/main/java-gen/${JAVA_PACKAGE/.//}"
-CPP_DIR="$REPO_ROOT/src-gen"
+CPP_DIR="$REPO_ROOT/src-gen/djinni"
 
 set -e
 set +x
