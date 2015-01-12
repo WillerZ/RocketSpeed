@@ -1,5 +1,6 @@
-package com.faceboo.rocketspeed.tests;
+package org.rocketspeed.tests;
 
+import org.junit.Test;
 import org.rocketspeed.Builder;
 import org.rocketspeed.MessageReceived;
 import org.rocketspeed.MsgId;
@@ -8,13 +9,11 @@ import org.rocketspeed.ReceiveCallback;
 import org.rocketspeed.Status;
 import org.rocketspeed.SubscribeCallback;
 
-import org.junit.Test;
-
 /**
  * This test is deliberately placed in a separate package, so that we can verify visibility of user
  * facing types.
  */
-public class BuilderTest {
+public class VisibilityTest {
 
   @Test
   public void testBuilder() throws Exception {
