@@ -23,7 +23,8 @@ rm -rf \
   \
   --cpp-out "$CPP_DIR" \
   --cpp-namespace rocketspeed::djinni \
-  --jni-out "$CPP_DIR" \
+  \
+  --jni-out "$CPP_DIR/jni" \
   --ident-jni-class NativeFooBar \
   --ident-jni-file NativeFooBar
 
