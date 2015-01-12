@@ -1,6 +1,7 @@
 cpp_library(
     name = 'messages',
     srcs = [
+        'descriptor_event.cc',
         'event_loop.cc',
         'messages.cc',
         'msg_loop.cc'
