@@ -283,50 +283,22 @@ class HostId {
   std::string hostname;      // name of a machine
   uint64_t    port;          // name of port to connect to
 
-  HostId(std::string s, uint64_t p) :
-    hostname(s),
-    port(p) {
-  }
-  HostId() {}
+  HostId(std::string s, uint64_t p);
+  HostId();
 
-  bool operator<(const HostId& rhs) const {
-    if (port < rhs.port) {
-      return true;
-    } else if (port > rhs.port) {
-      return false;
-    } else {
-      return hostname < rhs.hostname;
-    }
-  }
-
-  bool operator==(const HostId& rhs) const {
-    return port == rhs.port && hostname == rhs.hostname;
-  }
+  bool operator<(const HostId& rhs) const;
+  bool operator==(const HostId& rhs) const;
 
   // converts a HostId to a name:port string
-  std::string ToString() const {
-    return hostname + ':' + std::to_string(port);
-  }
+  std::string ToString() const;
 
   // Converts an internal client ID to a HostId
   // The client ID must be formatted as <host>:<port><worker_id-byte>
   // e.g. "localhost:1234\x01"
-  static HostId ToHostId(ClientID str) {
-    str.pop_back();  // remove the worker ID byte.
-    std::string::size_type sep = str.find(":");
-    assert(sep != std::string::npos);
-    std::string hostname = str.substr(0, sep);
-    std::string portstr = str.substr(sep+1, str.size());
-    return HostId(hostname, atoi(portstr.c_str()));
-  }
+  static HostId ToHostId(ClientID str);
 
   // converts a HostId to a ClientID
-  ClientID ToClientId(int worker_id = 0) const {
-    ClientID client_id = ToString();
-    assert(worker_id < 256);
-    client_id.push_back(static_cast<char>('a' + worker_id));
-    return client_id;
-  }
+  ClientID ToClientId(int worker_id = 0) const;
 };
 
 /**

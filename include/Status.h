@@ -12,100 +12,66 @@ namespace rocketspeed {
 class Status {
  public:
   /// Create a success status.
-  Status() : code_(Code::kOk), state_("") { }
+  Status();
 
   /// Return a success status.
-  static Status OK() { return Status(); }
+  static Status OK();
 
   /// Return error status of an appropriate type.
-  static Status NotFound(const std::string& msg, const std::string& msg2 = "") {
-    return Status(Code::kNotFound, msg, msg2);
-  }
+  static Status NotFound(const std::string& msg, const std::string& msg2 = "");
+
   /// Fast path for not found without malloc;
-  static Status NotFound() {
-    return Status(Code::kNotFound);
-  }
+  static Status NotFound();
+
   static Status NotSupported(const std::string msg,
-                             const std::string msg2 = "") {
-    return Status(Code::kNotSupported, msg, msg2);
-  }
+                             const std::string msg2 = "");
+
   static Status InvalidArgument(const std::string msg,
-                                const std::string msg2 = "") {
-    return Status(Code::kInvalidArgument, msg, msg2);
-  }
+                                const std::string msg2 = "");
+
   static Status IOError(const std::string msg,
-                        const std::string msg2 = "") {
-    return Status(Code::kIOError, msg, msg2);
-  }
-  static Status NotInitialized() {
-    return Status(Code::kNotInitialized);
-  }
+                        const std::string msg2 = "");
+
+  static Status NotInitialized();
+
   static Status InternalError(const std::string msg,
-                              const std::string msg2 = "") {
-    return Status(Code::kInternal, msg, msg2);
-  }
+                              const std::string msg2 = "");
+
   static Status Unauthorized(const std::string msg,
-                             const std::string msg2 = "") {
-    return Status(Code::kInternal, msg, msg2);
-  }
-  static Status TimedOut() {
-    return Status(Code::kTimedOut);
-  }
+                             const std::string msg2 = "");
+
+  static Status TimedOut();
 
   /// Returns true iff the status indicates success.
-  bool ok() const { return code_ == Code::kOk; }
+  bool ok() const;
 
   /// Returns true iff the status indicates a NotFound error.
-  bool IsNotFound() const { return code_ == Code::kNotFound; }
+  bool IsNotFound() const;
 
   /// Returns true iff the status indicates a NotSupported error.
-  bool IsNotSupported() const { return code_ == Code::kNotSupported; }
+  bool IsNotSupported() const;
 
   /// Returns true iff the status indicates an InvalidArgument error.
-  bool IsInvalidArgument() const { return code_ == Code::kInvalidArgument; }
+  bool IsInvalidArgument() const;
 
   /// Returns true iff the status indicates an IOError error.
-  bool IsIOError() const { return code_ == Code::kIOError; }
+  bool IsIOError() const;
 
   /// Returns true iff the status indicates Not initialized
-  bool IsNotInitialized() const { return code_ == Code::kNotInitialized; }
+  bool IsNotInitialized() const;
 
   /// Returns true iff the status indicates an internal error.
-  bool IsInternal() const { return code_ == Code::kInternal; }
+  bool IsInternal() const;
 
   /// Returns true iff the status indicates an unauthorized access.
-  bool IsUnauthorized() const { return code_ == Code::kUnauthorized; }
+  bool IsUnauthorized() const;
 
   /// Returns true iff the status indicates a time out.
-  bool IsTimedOut() const { return code_ == Code::kTimedOut; }
+  bool IsTimedOut() const;
 
   /// Return a string representation of this status suitable for printing.
   /// Returns the string "OK" for success.
-  std::string ToString() const {
-    int code = static_cast<int>(code_);
-    switch (code_) {
-      case Code::kOk:
-        return "OK";
-      case Code::kNotFound:
-        return "NotFound: " + state_;
-      case Code::kNotSupported:
-        return "Not implemented: " + state_;
-      case Code::kInvalidArgument:
-        return "Invalid argument: " + state_;
-      case Code::kIOError:
-        return "IO error: " + state_;
-      case Code::kNotInitialized:
-        return "Not initialized: " + state_;
-      case Code::kInternal:
-        return "Internal error: " + state_;
-      case Code::kUnauthorized:
-        return "Unauthorized: " + state_;
-      case Code::kTimedOut:
-        return "Timed out: " + state_;
-      default:
-        return "Unknown code " + std::to_string(code);
-    }
-  }
+  std::string ToString() const;
 
  private:
   enum class Code : char {

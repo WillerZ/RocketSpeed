@@ -14,6 +14,7 @@
 #include <functional>
 #include <thread>
 
+#include "src/port/port.h"
 #include "src/messages/serializer.h"
 
 namespace rocketspeed {

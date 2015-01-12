@@ -412,12 +412,12 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   // Old message, ignore iter
   if (data->GetSequenceNumber() <= last_msg_received) {
     LOG_INFO(info_log_,
-      "Message (%.16s)@%lu received out of order on Topic(%d, %s)@%lu",
+      "Message (%.16s)@%llu received out of order on Topic(%d, %s)@%llu",
       data->GetPayload().ToString().c_str(),
-      data->GetSequenceNumber(),
+      static_cast<long long unsigned int>(data->GetSequenceNumber()),
       data->GetNamespaceId(),
       topic_id.topic_name.c_str(),
-      last_msg_received);
+      static_cast<long long unsigned int>(last_msg_received));
     return;
   }
   // update last seqno received for this topic

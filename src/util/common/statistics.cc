@@ -13,6 +13,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "src/port/port.h"
+
 namespace rocketspeed {
 
 std::string Counter::Report() const {
@@ -136,9 +138,10 @@ std::string Histogram::Report() const {
                         "p90: %-8.1lf  "
                         "p99: %-8.1lf  "
                         "p99.9: %-8.1lf  "
-                        "(%lu samples)",
+                        "(%llu samples)",
     Percentile(0.50), Percentile(0.90), Percentile(0.99), Percentile(0.999),
-    num_samples_.load(std::memory_order_acquire));
+    static_cast<long long unsigned int>(
+      num_samples_.load(std::memory_order_acquire)));
   return std::string(buffer);
 }
 

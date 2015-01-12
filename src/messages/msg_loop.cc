@@ -7,6 +7,7 @@
 #include "msg_loop.h"
 
 #include "include/Logger.h"
+#include "src/port/port.h"
 #include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/util/common/base_env.h"
