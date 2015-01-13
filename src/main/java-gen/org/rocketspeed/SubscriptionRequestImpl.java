@@ -12,13 +12,13 @@ public final class SubscriptionRequestImpl {
 
     /*package*/ final boolean subscribe;
 
-    /*package*/ final SubscriptionStartImpl sequenceNumber;
+    /*package*/ final Long sequenceNumber;
 
     public SubscriptionRequestImpl(
             short namespaceId,
             String topicName,
             boolean subscribe,
-            SubscriptionStartImpl sequenceNumber) {
+            Long sequenceNumber) {
         this.namespaceId = namespaceId;
         this.topicName = topicName;
         this.subscribe = subscribe;
@@ -37,7 +37,7 @@ public final class SubscriptionRequestImpl {
         return subscribe;
     }
 
-    public SubscriptionStartImpl getSequenceNumber() {
+    public Long getSequenceNumber() {
         return sequenceNumber;
     }
 }

@@ -21,7 +21,6 @@ public final class PublishStatus {
         return status;
     }
 
-    /** TODO(stupaq) this should be optional */
     public MsgIdImpl getMessageId() {
         return messageId;
     }

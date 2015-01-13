@@ -4,7 +4,6 @@ public final class Builder {
 
   private ConfigurationImpl config;
   private String clientID;
-  private PublishCallbackImpl publishCallback;
   private SubscribeCallbackImpl subscribeCallback;
   private ReceiveCallbackImpl receiveCallback;
   private SubscriptionStorage storage;
@@ -16,7 +15,6 @@ public final class Builder {
   private void reset() {
     config = null;
     clientID = null;
-    publishCallback = null;
     subscribeCallback = null;
     receiveCallback = null;
     storage = new SubscriptionStorage(StorageType.NONE, "");
@@ -29,18 +27,6 @@ public final class Builder {
 
   public Builder clientID(String clientID) {
     this.clientID = clientID;
-    return this;
-  }
-
-  public Builder publishCallback(final PublishCallback callback) {
-    this.publishCallback = new PublishCallbackImpl() {
-      @Override
-      public void Call(Status status, short namespaceId, String topicName, MsgIdImpl messageId,
-                       long sequenceNumber, byte[] contents) {
-        callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber,
-                      contents);
-      }
-    };
     return this;
   }
 
@@ -73,8 +59,8 @@ public final class Builder {
   }
 
   public Client build() {
-    ClientImpl client = ClientImpl.Open(config, clientID, publishCallback, subscribeCallback,
-                                        receiveCallback, storage);
+    ClientImpl client = ClientImpl.Open(config, clientID, subscribeCallback, receiveCallback,
+                                        storage);
     reset();
     return new Client(client);
   }

@@ -32,16 +32,11 @@ RetentionBase = enum {
   OneWeek;
 }
 
-SubscriptionStartImpl = record {
-  sequence_number: i64;
-  present: bool;
-}
-
 SubscriptionRequestImpl = record {
   namespace_id: i16;
   topic_name: string;
   subscribe: bool;
-  sequence_number: SubscriptionStartImpl;
+  sequence_number: optional<i64>;
 }
 
 ConfigurationImpl = record {
@@ -74,8 +69,7 @@ ReceiveCallbackImpl = interface +j +o {
 
 PublishStatus = record {
   status: Status;
-  # TODO(stupaq) this should be optional
-  message_id: MsgIdImpl;
+  message_id: optional<MsgIdImpl>;
 }
 
 StorageType = enum {
@@ -86,36 +80,28 @@ StorageType = enum {
 SubscriptionStorage = record {
   type: StorageType;
   # Used only when this is a file storage
-  # TODO(stupaq) this should be optional
-  file_path: string;
+  file_path: optional<string>;
 }
 
 ClientImpl = interface +c {
   static Open(config: ConfigurationImpl,
               client_id: string,
-              publish_callback: PublishCallbackImpl,
               subscribe_callback: SubscribeCallbackImpl,
               receive_callback: ReceiveCallbackImpl,
               storage: SubscriptionStorage) : ClientImpl;
 
-  Publish0(namespace_id: i16,
-           topic_name: string,
-           retention: RetentionBase,
-           data: binary) : PublishStatus;
-
-  # TODO(stupaq) the message_id param should be optional
-  Publish1(namespace_id: i16,
-           topic_name: string,
-           retention: RetentionBase,
-           data: binary,
-           message_id: MsgIdImpl) : PublishStatus;
+  Publish(namespace_id: i16,
+          topic_name: string,
+          retention: RetentionBase,
+          data: binary,
+          message_id: optional<MsgIdImpl>,
+          publish_callback: optional<PublishCallbackImpl>) : PublishStatus;
 
   ListenTopics(names: list<SubscriptionRequestImpl>);
 
   Acknowledge(namespace_id: i16,
               topic_name: string,
-              sequence_number: i64,
-              contents: binary);
+              sequence_number: i64);
 
   Close();
 }

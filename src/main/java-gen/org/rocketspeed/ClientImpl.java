@@ -7,18 +7,15 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ClientImpl {
-    public abstract PublishStatus Publish0(short namespaceId, String topicName, RetentionBase retention, byte[] data);
-
-    /** TODO(stupaq) the message_id param should be optional */
-    public abstract PublishStatus Publish1(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId);
+    public abstract PublishStatus Publish(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
     public abstract void ListenTopics(ArrayList<SubscriptionRequestImpl> names);
 
-    public abstract void Acknowledge(short namespaceId, String topicName, long sequenceNumber, byte[] contents);
+    public abstract void Acknowledge(short namespaceId, String topicName, long sequenceNumber);
 
     public abstract void Close();
 
-    public static native ClientImpl Open(ConfigurationImpl config, String clientId, PublishCallbackImpl publishCallback, SubscribeCallbackImpl subscribeCallback, ReceiveCallbackImpl receiveCallback, SubscriptionStorage storage);
+    public static native ClientImpl Open(ConfigurationImpl config, String clientId, SubscribeCallbackImpl subscribeCallback, ReceiveCallbackImpl receiveCallback, SubscriptionStorage storage);
 
     public static final class CppProxy extends ClientImpl
     {
@@ -44,20 +41,12 @@ public abstract class ClientImpl {
         }
 
         @Override
-        public PublishStatus Publish0(short namespaceId, String topicName, RetentionBase retention, byte[] data)
+        public PublishStatus Publish(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Publish0(this.nativeRef, namespaceId, topicName, retention, data);
+            return native_Publish(this.nativeRef, namespaceId, topicName, retention, data, messageId, publishCallback);
         }
-        private native PublishStatus native_Publish0(long _nativeRef, short namespaceId, String topicName, RetentionBase retention, byte[] data);
-
-        @Override
-        public PublishStatus Publish1(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId)
-        {
-            assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Publish1(this.nativeRef, namespaceId, topicName, retention, data, messageId);
-        }
-        private native PublishStatus native_Publish1(long _nativeRef, short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId);
+        private native PublishStatus native_Publish(long _nativeRef, short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
         @Override
         public void ListenTopics(ArrayList<SubscriptionRequestImpl> names)
@@ -68,12 +57,12 @@ public abstract class ClientImpl {
         private native void native_ListenTopics(long _nativeRef, ArrayList<SubscriptionRequestImpl> names);
 
         @Override
-        public void Acknowledge(short namespaceId, String topicName, long sequenceNumber, byte[] contents)
+        public void Acknowledge(short namespaceId, String topicName, long sequenceNumber)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_Acknowledge(this.nativeRef, namespaceId, topicName, sequenceNumber, contents);
+            native_Acknowledge(this.nativeRef, namespaceId, topicName, sequenceNumber);
         }
-        private native void native_Acknowledge(long _nativeRef, short namespaceId, String topicName, long sequenceNumber, byte[] contents);
+        private native void native_Acknowledge(long _nativeRef, short namespaceId, String topicName, long sequenceNumber);
 
         @Override
         public void Close()

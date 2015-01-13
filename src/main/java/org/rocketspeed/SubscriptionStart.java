@@ -2,28 +2,31 @@ package org.rocketspeed;
 
 public class SubscriptionStart {
 
-  private SubscriptionStartImpl impl;
+  private boolean present;
+  private long sequenceNumber;
 
   public SubscriptionStart(long sequenceNumber) {
-    impl = new SubscriptionStartImpl(sequenceNumber, false);
+    present = true;
+    this.sequenceNumber = sequenceNumber;
   }
 
   public SubscriptionStart() {
-    impl = new SubscriptionStartImpl(0, false);
+    present = false;
+    sequenceNumber = 0;
   }
 
   public boolean isPresent() {
-    return impl.getPresent();
+    return present;
   }
 
   public long getSequenceNumber() {
     if (!isPresent()) {
       throw new IllegalStateException("Sequence number is absent.");
     }
-    return impl.getSequenceNumber();
+    return sequenceNumber;
   }
 
-  /* package */ SubscriptionStartImpl djinni() {
-    return impl;
+  /* package */ Long djinni() {
+    return present ? sequenceNumber : null;
   }
 }

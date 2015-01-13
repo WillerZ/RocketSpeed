@@ -4,6 +4,7 @@
 #pragma once
 
 #include "StorageType.hpp"
+#include <experimental/optional>
 #include <string>
 #include <utility>
 
@@ -13,16 +14,13 @@ struct SubscriptionStorage final {
 
     StorageType type;
 
-    /**
-     * Used only when this is a file storage
-     * TODO(stupaq) this should be optional
-     */
-    std::string file_path;
+    /** Used only when this is a file storage */
+    std::experimental::optional<std::string> file_path;
 
 
     SubscriptionStorage(
             StorageType type,
-            std::string file_path) :
+            std::experimental::optional<std::string> file_path) :
                 type(std::move(type)),
                 file_path(std::move(file_path)) {
     }

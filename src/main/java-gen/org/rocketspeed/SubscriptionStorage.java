@@ -21,10 +21,7 @@ public final class SubscriptionStorage {
         return type;
     }
 
-    /**
-     * Used only when this is a file storage
-     * TODO(stupaq) this should be optional
-     */
+    /** Used only when this is a file storage */
     public String getFilePath() {
         return filePath;
     }

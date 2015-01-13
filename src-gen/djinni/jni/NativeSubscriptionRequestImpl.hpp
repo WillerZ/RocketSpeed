@@ -17,11 +17,11 @@ public:
     static ::rocketspeed::djinni::SubscriptionRequestImpl fromJava(JNIEnv*, jobject);
 
     const djinni::GlobalRef<jclass> clazz { djinni::jniFindClass("org/rocketspeed/SubscriptionRequestImpl") };
-    const jmethodID jconstructor { djinni::jniGetMethodID(clazz.get(), "<init>", "(SLjava/lang/String;ZLorg/rocketspeed/SubscriptionStartImpl;)V") };
+    const jmethodID jconstructor { djinni::jniGetMethodID(clazz.get(), "<init>", "(SLjava/lang/String;ZLjava/lang/Long;)V") };
     const jfieldID field_namespaceId { djinni::jniGetFieldID(clazz.get(), "namespaceId", "S") };
     const jfieldID field_topicName { djinni::jniGetFieldID(clazz.get(), "topicName", "Ljava/lang/String;") };
     const jfieldID field_subscribe { djinni::jniGetFieldID(clazz.get(), "subscribe", "Z") };
-    const jfieldID field_sequenceNumber { djinni::jniGetFieldID(clazz.get(), "sequenceNumber", "Lorg/rocketspeed/SubscriptionStartImpl;") };
+    const jfieldID field_sequenceNumber { djinni::jniGetFieldID(clazz.get(), "sequenceNumber", "Ljava/lang/Long;") };
 
 private:
     NativeSubscriptionRequestImpl() {}
