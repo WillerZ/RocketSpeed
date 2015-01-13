@@ -90,7 +90,6 @@ ClientOptions::ClientOptions(const Configuration& _config,
       client_id(std::move(_client_id)),
       username(""),
       access_token(""),
-      publish_callback(nullptr),
       subscription_callback(nullptr),
       receive_callback(nullptr),
       storage(nullptr),
@@ -143,7 +142,6 @@ Status Client::Open(ClientOptions&& options_tmp,
                              options.config.GetCopilotHostIds().front(),
                              options.config.GetTenantID(),
                              msg_loop_,
-                             options.publish_callback,
                              options.subscription_callback,
                              options.receive_callback,
                              std::move(options.storage),
@@ -170,7 +168,6 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
                        MsgLoopBase* msg_loop,
-                       PublishCallback publish_callback,
                        SubscribeCallback subscription_callback,
                        MessageReceivedCallback receive_callback,
                        std::unique_ptr<SubscriptionStorage> storage,
@@ -180,7 +177,6 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
 , msg_loop_(msg_loop)
-, publish_callback_(publish_callback)
 , subscription_callback_(subscription_callback)
 , receive_callback_(receive_callback)
 , storage_(std::move(storage))
@@ -239,6 +235,7 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                                   const NamespaceID namespaceId,
                                   const TopicOptions& options,
                                   const Slice& data,
+                                  PublishCallback callback,
                                   const MsgId messageId) {
   if (namespaceId <= 100) {       // Namespace <= 100 are reserved
     return PublishStatus(Status::InvalidArgument(
@@ -282,9 +279,10 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                               is_new_request));
 
   // Add message to the sent list.
-  std::pair<MsgId, std::string> new_msg(msgid, std::move(dup));
+  PendingAck pending_ack(std::move(callback), std::move(dup));
   std::unique_lock<std::mutex> lock(worker_data.message_sent_mutex);
-  bool added = worker_data.messages_sent.insert(new_msg).second;
+  bool added =
+    worker_data.messages_sent.emplace(msgid, std::move(pending_ack)).second;
   lock.unlock();
 
   assert(added);
@@ -450,7 +448,7 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
 
     // If successful, invoke callback.
     if (successful_ack) {
-      if (publish_callback_) {
+      if (it->second.callback) {
         Status st;
         SequenceNumber seqno = 0;
         if (ack.status == MessageDataAck::AckStatus::Success) {
@@ -461,8 +459,8 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
         }
 
         std::unique_ptr<ClientResultStatus> result_status(
-          new ClientResultStatus(st, std::move(it->second), seqno));
-        publish_callback_(std::move(result_status));
+          new ClientResultStatus(st, std::move(it->second.data), seqno));
+        it->second.callback(std::move(result_status));
       }
 
       // Remove sent message from list.

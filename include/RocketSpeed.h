@@ -58,10 +58,6 @@ struct ClientOptions {
   // Access Token for authentication.
   std::string access_token;
 
-  // Invoked when a sent-message is acknowledged.
-  // Default: nullptr.
-  PublishCallback publish_callback;
-
   // Invoked when a subscription is confirmed.
   // Default: nullptr.
   SubscribeCallback subscription_callback;
@@ -119,6 +115,10 @@ class Client {
    * @param topic_namespace Namespace of this topic name
    * @param options Quality of service for this Topic
    * @param data Payload of message
+   * @param callback Callback to call with response from RocketSpeed. This will
+   *                 only be called when Publish was successful. The result will
+   *                 be ok if the message was succesfully commited into
+   *                 RocketSpeed, otherwise an error will be provided.
    * @params message_id The provided message_id, optional
    * @return the status and message ID of the published message.
    */
@@ -126,6 +126,7 @@ class Client {
                                 const NamespaceID topic_namespace,
                                 const TopicOptions& options,
                                 const Slice& data,
+                                PublishCallback callback,
                                 const MsgId message_id = MsgId()) = 0;
 
   /**

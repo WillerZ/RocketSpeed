@@ -36,6 +36,7 @@ class ClientImpl : public Client {
                                 const NamespaceID namespaceId,
                                 const TopicOptions& options,
                                 const Slice& data,
+                                PublishCallback callback,
                                 const MsgId messageId = MsgId());
 
   virtual void ListenTopics(const std::vector<SubscriptionRequest>& names);
@@ -46,7 +47,6 @@ class ClientImpl : public Client {
              const HostId& copilot_host_id,
              TenantID tenant_id,
              MsgLoopBase* msg_loop,
-             PublishCallback publish_callback,
              SubscribeCallback subscription_callback,
              MessageReceivedCallback receive_callback,
              std::unique_ptr<SubscriptionStorage> storage,
@@ -86,9 +86,6 @@ class ClientImpl : public Client {
   MsgLoopBase* msg_loop_ = nullptr;
   std::thread msg_loop_thread_;
 
-  // callback for incoming data message
-  PublishCallback publish_callback_;
-
   // callback for incoming ack message for a subscription/unsubscription
   SubscribeCallback subscription_callback_;
 
@@ -101,6 +98,16 @@ class ClientImpl : public Client {
   // Main logger for the client
   const std::shared_ptr<Logger> info_log_;
 
+  // Published message awaiting response.
+  struct PendingAck {
+    PendingAck(PublishCallback _callback, std::string _data)
+    : callback(std::move(_callback))
+    , data(std::move(_data)) {}
+
+    PublishCallback callback;
+    std::string data;
+  };
+
   // Data per worker thread.
   // Aligned to avoid false sharing.
   struct alignas(CACHE_LINE_SIZE) WorkerData {
@@ -110,7 +117,7 @@ class ClientImpl : public Client {
 
     // Messages sent, awaiting ack.
     // Maps message ID -> pre-serialized message.
-    std::unordered_map<MsgId, std::string, MsgId::Hash> messages_sent;
+    std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent;
     std::mutex message_sent_mutex;  // mutex for operators on messages_sent_
   };
   std::unique_ptr<WorkerData[]> worker_data_;

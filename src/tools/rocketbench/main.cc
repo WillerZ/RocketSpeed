@@ -67,7 +67,8 @@ namespace rocketspeed {
 
 Result ProducerWorker(int64_t num_messages,
                       NamespaceID namespaceid,
-                      Client* producer) {
+                      Client* producer,
+                      PublishCallback publish_callback) {
   Env* env = Env::Default();
 
   // Random number generator.
@@ -126,7 +127,8 @@ Result ProducerWorker(int64_t num_messages,
     PublishStatus ps = producer->Publish(topic_name,
                                          namespaceid,
                                          topic_options,
-                                         payload);
+                                         payload,
+                                         publish_callback);
 
     if (!ps.status.ok()) {
       LOG_WARN(info_log,
@@ -163,7 +165,8 @@ int DoProduce(std::vector<std::unique_ptr<ClientImpl>>& producers,
               rocketspeed::port::Semaphore* all_ack_messages_received,
               std::atomic<int64_t>* ack_messages_received,
               std::chrono::time_point<std::chrono::steady_clock>*
-                                                     last_ack_message){
+                                                     last_ack_message,
+              rocketspeed::PublishCallback publish_callback){
   // Distribute total number of messages among them.
   std::vector<std::future<Result>> futures;
   int64_t total_messages = FLAGS_num_messages;
@@ -174,7 +177,8 @@ int DoProduce(std::vector<std::unique_ptr<ClientImpl>>& producers,
                                     &rocketspeed::ProducerWorker,
                                     num_messages,
                                     nsid,
-                                    producers[p++ % producers.size()].get()));
+                                    producers[p++ % producers.size()].get(),
+                                    publish_callback));
     total_messages -= num_messages;
   }
   assert(total_messages == 0);
@@ -490,7 +494,6 @@ int main(int argc, char** argv) {
                                   copilots[i % copilots.size()],
                                   rocketspeed::Tenant(102),
                                   msg_loop,
-                                  publish_callback,
                                   subscribe_callback,
                                   receive_callback,
                                   nullptr,
@@ -532,7 +535,8 @@ int main(int argc, char** argv) {
                               nsid,
                               &all_ack_messages_received,
                               &ack_messages_received,
-                              &last_ack_message);
+                              &last_ack_message,
+                              std::move(publish_callback));
   }
 
   auto start_consumer = [&] () {

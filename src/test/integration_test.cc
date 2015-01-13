@@ -79,7 +79,6 @@ TEST(IntegrationTest, OneMessage) {
                             1));
   //TODO(ranji42) Try to use the same integration_test for mqttclient.
   ClientOptions options(*config, GUIDGenerator().GenerateString());
-  options.publish_callback = publish_callback;
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
@@ -94,6 +93,7 @@ TEST(IntegrationTest, OneMessage) {
                            namespace_id,
                            topic_options,
                            Slice(data),
+                           publish_callback,
                            message_id);
   ASSERT_TRUE(ps.status.ok());
   ASSERT_TRUE(ps.msgid == message_id);
@@ -149,7 +149,6 @@ TEST(IntegrationTest, SequenceNumberZero) {
                             Tenant(102),
                             4));
   ClientOptions options(*config, GUIDGenerator().GenerateString());
-  options.publish_callback = publish_callback;
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
@@ -162,7 +161,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+                                publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
 
@@ -178,7 +178,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   // Send 3 more different messages.
   for (int i = 3; i < 6; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+                                publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
     ASSERT_TRUE(message_sem.TimedWait(timeout));
   }
@@ -197,7 +198,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   // Send some messages and wait for the acks.
   for (int i = 6; i < 9; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+                                publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
 
@@ -212,7 +214,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   // Send 3 more messages again.
   for (int i = 9; i < 12; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data)).status.ok());
+    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+                                publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
     ASSERT_TRUE(message_sem.TimedWait(timeout));
   }
