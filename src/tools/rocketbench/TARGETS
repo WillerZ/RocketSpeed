@@ -14,7 +14,7 @@ cpp_binary(
         '-DUSE_LOGDEVICE',
     ],
     deps = [
-        '@/rocketspeed/github/src/client:client_library',
+        '@/rocketspeed/github/src/client:client',
         '@/rocketspeed/github/src/test:configuration',
         '@/rocketspeed/github/src/test:test_cluster',
         '@/rocketspeed/github/src/port',

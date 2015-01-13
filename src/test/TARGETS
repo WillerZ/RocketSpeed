@@ -58,7 +58,7 @@ cpp_unittest(
     deps = [
         ':test_cluster',
         ':configuration',
-        '@/rocketspeed/github/src/client:client_library',
+        '@/rocketspeed/github/src/client:client',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',

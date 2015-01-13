@@ -1,0 +1,23 @@
+JAVA_VERSION = '7'
+
+java_library(
+    name = 'client_java',
+    srcs =
+        util.files('src/main/java/**/*.java') +
+        util.files('src/main/java-gen/**/*.java'),
+    deps = [
+        '@/rocketspeed/github/src/djinni:librocketspeedjni.so',
+    ],
+)
+
+java_unittest(
+    name = 'client_java_test',
+    srcs = util.files('src/test/java/**/*.java'),
+    deps = [
+        ':client_java',
+    ],
+    test_classes = [
+        'org.rocketspeed.tests.VisibilityTest',
+    ],
+    java_version = JAVA_VERSION,
+)

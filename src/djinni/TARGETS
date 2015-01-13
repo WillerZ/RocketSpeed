@@ -1,0 +1,32 @@
+cpp_library(
+    name = 'djinni_implementation',
+    srcs = util.files('*.cc'),
+    deps = [
+        '@/rocketspeed/github/src/client',
+        '@/rocketspeed/github/src-gen:djinni_interface',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+)
+
+cpp_binary(
+    name = 'librocketspeedjni.so',
+    srcs = [
+        'djinni_main.cpp',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/djinni:djinni_implementation',
+        '@/rocketspeed/github/src-gen:djinni_jni',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    dlopen_enabled = True,
+)

@@ -1,0 +1,10 @@
+cpp_library(
+    name = 'jni',
+    srcs = [
+        'djinni_support.cpp',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    warp = False,
+)

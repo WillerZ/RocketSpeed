@@ -11,9 +11,9 @@ cpp_library(
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
-        '-DUSE_LOGDEVICE',
     ],
     deps = [
         '@/rocketspeed/github/src/port',
     ],
+    warp = False,
 )
