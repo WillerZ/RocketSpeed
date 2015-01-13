@@ -13,7 +13,7 @@ class ReceiveCallbackImpl {
 public:
     virtual ~ReceiveCallbackImpl() {}
 
-    virtual void Call(int16_t namespace_id, const std::string & topic_name, int64_t sequence_number, const std::vector<uint8_t> & contents) = 0;
+    virtual void Call(int16_t namespace_id, std::string topic_name, int64_t sequence_number, std::vector<uint8_t> contents) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

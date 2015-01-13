@@ -10,6 +10,7 @@ cpp_library(
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
+        '-Irocketspeed/github/external/Optional',
     ],
 )
 
@@ -24,6 +25,7 @@ cpp_binary(
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/external/djinni/support-lib/jni',
+        '-Irocketspeed/github/external/Optional',
     ],
     external_deps = [
         ('openjdk', None, 'jvm'),

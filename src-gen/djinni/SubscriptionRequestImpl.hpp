@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "optional.hpp"
 #include <cstdint>
-#include <experimental/optional>
 #include <string>
 #include <utility>
 
@@ -18,18 +18,18 @@ struct SubscriptionRequestImpl final {
 
     bool subscribe;
 
-    std::experimental::optional<int64_t> sequence_number;
+    std::experimental::optional<int64_t> start;
 
 
     SubscriptionRequestImpl(
             int16_t namespace_id,
             std::string topic_name,
             bool subscribe,
-            std::experimental::optional<int64_t> sequence_number) :
+            std::experimental::optional<int64_t> start) :
                 namespace_id(std::move(namespace_id)),
                 topic_name(std::move(topic_name)),
                 subscribe(std::move(subscribe)),
-                sequence_number(std::move(sequence_number)) {
+                start(std::move(start)) {
     }
 };
 

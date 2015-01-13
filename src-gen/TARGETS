@@ -3,6 +3,7 @@ cpp_library(
     srcs = util.files('djinni/*.cpp'),
     preprocessor_flags = [
         '-Irocketspeed/github/src-gen/djinni',
+        '-Irocketspeed/github/external/Optional',
     ],
 )
 
@@ -16,5 +17,6 @@ cpp_library(
     preprocessor_flags = [
         '-Irocketspeed/github/src-gen/djinni',
         '-Irocketspeed/github/external/djinni/support-lib/jni',
+        '-Irocketspeed/github/external/Optional',
     ],
 )

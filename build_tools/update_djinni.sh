@@ -16,6 +16,8 @@ rm -rf \
 
 "$DJINNI_HOME/src/run" \
   --idl "$IFACE_FILE" \
+  --cpp-optional-template "std::experimental::optional" \
+  --cpp-optional-header "\"optional.hpp\"" \
   \
   --java-out "$JAVA_DIR" \
   --java-package "$JAVA_PACKAGE" \
@@ -26,6 +28,6 @@ rm -rf \
   \
   --jni-out "$CPP_DIR/jni" \
   --ident-jni-class NativeFooBar \
-  --ident-jni-file NativeFooBar
+  --ident-jni-file NativeFooBar \
 
 # EOF

@@ -22,7 +22,7 @@ public:
     class JavaProxy final : djinni::JavaProxyCacheEntry, public ::rocketspeed::djinni::SubscribeCallbackImpl {
     public:
         JavaProxy(jobject obj);
-        virtual void Call(const ::rocketspeed::djinni::Status & status, int64_t sequence_number, bool subscribed) override;
+        virtual void Call(::rocketspeed::djinni::Status status, int64_t sequence_number, bool subscribed) override;
 
     private:
         using djinni::JavaProxyCacheEntry::getGlobalRef;

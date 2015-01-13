@@ -15,7 +15,7 @@ NativePublishCallbackImpl::NativePublishCallbackImpl() : djinni::JniInterface<::
 
 NativePublishCallbackImpl::JavaProxy::JavaProxy(jobject obj) : JavaProxyCacheEntry(obj) {}
 
-void NativePublishCallbackImpl::JavaProxy::JavaProxy::Call(const ::rocketspeed::djinni::Status & c_status, int16_t c_namespace_id, const std::string & c_topic_name, const ::rocketspeed::djinni::MsgIdImpl & c_message_id, int64_t c_sequence_number, const std::vector<uint8_t> & c_contents) {
+void NativePublishCallbackImpl::JavaProxy::JavaProxy::Call(::rocketspeed::djinni::Status c_status, int16_t c_namespace_id, std::string c_topic_name, ::rocketspeed::djinni::MsgIdImpl c_message_id, int64_t c_sequence_number, std::vector<uint8_t> c_contents) {
     JNIEnv * const jniEnv = djinni::jniGetThreadEnv();
     djinni::JniLocalScope jscope(jniEnv, 10);
     djinni::LocalRef<jobject> j_status(jniEnv, NativeStatus::toJava(jniEnv, c_status));

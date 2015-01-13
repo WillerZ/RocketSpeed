@@ -36,7 +36,7 @@ SubscriptionRequestImpl = record {
   namespace_id: i16;
   topic_name: string;
   subscribe: bool;
-  sequence_number: optional<i64>;
+  start: optional<i64>;
 }
 
 ConfigurationImpl = record {
@@ -95,7 +95,7 @@ ClientImpl = interface +c {
           retention: RetentionBase,
           data: binary,
           message_id: optional<MsgIdImpl>,
-          publish_callback: optional<PublishCallbackImpl>) : PublishStatus;
+          publish_callback: PublishCallbackImpl) : PublishStatus;
 
   ListenTopics(names: list<SubscriptionRequestImpl>);
 

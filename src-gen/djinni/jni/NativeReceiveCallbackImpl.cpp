@@ -13,7 +13,7 @@ NativeReceiveCallbackImpl::NativeReceiveCallbackImpl() : djinni::JniInterface<::
 
 NativeReceiveCallbackImpl::JavaProxy::JavaProxy(jobject obj) : JavaProxyCacheEntry(obj) {}
 
-void NativeReceiveCallbackImpl::JavaProxy::JavaProxy::Call(int16_t c_namespace_id, const std::string & c_topic_name, int64_t c_sequence_number, const std::vector<uint8_t> & c_contents) {
+void NativeReceiveCallbackImpl::JavaProxy::JavaProxy::Call(int16_t c_namespace_id, std::string c_topic_name, int64_t c_sequence_number, std::vector<uint8_t> c_contents) {
     JNIEnv * const jniEnv = djinni::jniGetThreadEnv();
     djinni::JniLocalScope jscope(jniEnv, 10);
     jshort j_namespace_id = ::djinni::HI16::Unboxed::toJava(jniEnv, c_namespace_id);

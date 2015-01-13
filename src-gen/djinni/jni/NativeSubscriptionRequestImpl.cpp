@@ -14,9 +14,9 @@ jobject NativeSubscriptionRequestImpl::toJava(JNIEnv* jniEnv, ::rocketspeed::dji
     jshort j_namespace_id = ::djinni::HI16::Unboxed::toJava(jniEnv, c.namespace_id);
     djinni::LocalRef<jstring> j_topic_name(jniEnv, ::djinni::HString::toJava(jniEnv, c.topic_name));
     jboolean j_subscribe = ::djinni::HBool::Unboxed::toJava(jniEnv, c.subscribe);
-    djinni::LocalRef<jobject> j_sequence_number(jniEnv, ::djinni::HOptional<std::experimental::optional, ::djinni::HI64>::toJava(jniEnv, c.sequence_number));
+    djinni::LocalRef<jobject> j_start(jniEnv, ::djinni::HOptional<std::experimental::optional, ::djinni::HI64>::toJava(jniEnv, c.start));
     const auto & data = djinni::JniClass<::djinni_generated::NativeSubscriptionRequestImpl>::get();
-    jobject r = jniEnv->NewObject(data.clazz.get(), data.jconstructor, j_namespace_id, j_topic_name.get(), j_subscribe, j_sequence_number.get());
+    jobject r = jniEnv->NewObject(data.clazz.get(), data.jconstructor, j_namespace_id, j_topic_name.get(), j_subscribe, j_start.get());
     djinni::jniExceptionCheck(jniEnv);
     return r;
 }
@@ -28,7 +28,7 @@ jobject NativeSubscriptionRequestImpl::toJava(JNIEnv* jniEnv, ::rocketspeed::dji
         ::djinni::HI16::Unboxed::fromJava(jniEnv, jniEnv->GetShortField(j, data.field_namespaceId)),
         ::djinni::HString::fromJava(jniEnv, djinni::LocalRef<jstring>(jniEnv, static_cast<jstring>(jniEnv->GetObjectField(j, data.field_topicName))).get()),
         ::djinni::HBool::Unboxed::fromJava(jniEnv, jniEnv->GetBooleanField(j, data.field_subscribe)),
-        ::djinni::HOptional<std::experimental::optional, ::djinni::HI64>::fromJava(jniEnv, djinni::LocalRef<jobject>(jniEnv, jniEnv->GetObjectField(j, data.field_sequenceNumber)).get()));
+        ::djinni::HOptional<std::experimental::optional, ::djinni::HI64>::fromJava(jniEnv, djinni::LocalRef<jobject>(jniEnv, jniEnv->GetObjectField(j, data.field_start)).get()));
 }
 
 }  // namespace djinni_generated

@@ -12,7 +12,7 @@ class SubscribeCallbackImpl {
 public:
     virtual ~SubscribeCallbackImpl() {}
 
-    virtual void Call(const Status & status, int64_t sequence_number, bool subscribed) = 0;
+    virtual void Call(Status status, int64_t sequence_number, bool subscribed) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

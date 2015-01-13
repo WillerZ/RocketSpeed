@@ -12,7 +12,7 @@ NativeSubscribeCallbackImpl::NativeSubscribeCallbackImpl() : djinni::JniInterfac
 
 NativeSubscribeCallbackImpl::JavaProxy::JavaProxy(jobject obj) : JavaProxyCacheEntry(obj) {}
 
-void NativeSubscribeCallbackImpl::JavaProxy::JavaProxy::Call(const ::rocketspeed::djinni::Status & c_status, int64_t c_sequence_number, bool c_subscribed) {
+void NativeSubscribeCallbackImpl::JavaProxy::JavaProxy::Call(::rocketspeed::djinni::Status c_status, int64_t c_sequence_number, bool c_subscribed) {
     JNIEnv * const jniEnv = djinni::jniGetThreadEnv();
     djinni::JniLocalScope jscope(jniEnv, 10);
     djinni::LocalRef<jobject> j_status(jniEnv, NativeStatus::toJava(jniEnv, c_status));

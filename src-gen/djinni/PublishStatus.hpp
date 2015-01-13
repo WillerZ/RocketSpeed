@@ -5,7 +5,7 @@
 
 #include "MsgIdImpl.hpp"
 #include "Status.hpp"
-#include <experimental/optional>
+#include "optional.hpp"
 #include <utility>
 
 namespace rocketspeed { namespace djinni {

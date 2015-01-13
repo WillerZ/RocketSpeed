@@ -21,7 +21,7 @@ public:
     const jfieldID field_namespaceId { djinni::jniGetFieldID(clazz.get(), "namespaceId", "S") };
     const jfieldID field_topicName { djinni::jniGetFieldID(clazz.get(), "topicName", "Ljava/lang/String;") };
     const jfieldID field_subscribe { djinni::jniGetFieldID(clazz.get(), "subscribe", "Z") };
-    const jfieldID field_sequenceNumber { djinni::jniGetFieldID(clazz.get(), "sequenceNumber", "Ljava/lang/Long;") };
+    const jfieldID field_start { djinni::jniGetFieldID(clazz.get(), "start", "Ljava/lang/Long;") };
 
 private:
     NativeSubscriptionRequestImpl() {}
