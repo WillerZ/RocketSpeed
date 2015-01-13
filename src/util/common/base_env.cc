@@ -10,11 +10,13 @@
 
 namespace {
 std::string gettname() {
+#if !defined(ROCKETSPEED_PLATFORM_ANDROID)
   char name[64];
   if (pthread_getname_np(pthread_self(), name, sizeof(name)) == 0) {
     name[sizeof(name)-1] = 0;
     return std::string(name);
   }
+#endif
   return "";
 }
 
