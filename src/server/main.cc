@@ -264,7 +264,7 @@ int main(int argc, char** argv) {
   delete tower;
 
   // Shutdown libevent for good hygiene.
-  ld_libevent_global_shutdown();
+  rocketspeed::EventLoop::GlobalShutdown();
 
   return 0;
 }

@@ -18,6 +18,5 @@ cpp_library(
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
     ],
-    compiler_flags = [ "-Ilogdevice/external/libevent-2.1.3-alpha/include" ],
 )
 

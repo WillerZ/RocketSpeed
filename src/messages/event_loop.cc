@@ -14,10 +14,26 @@
 #include <functional>
 #include <thread>
 
+#include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
+#include <event2/listener.h>
+#include <event2/thread.h>
+#include <event2/util.h>
+#include "src/messages/event2_version.h"
+
 #include "src/port/port.h"
 #include "src/messages/serializer.h"
 
+static_assert(std::is_same<evutil_socket_t, int>::value,
+  "EventLoop assumes evutil_socket_t is int.");
+
 namespace rocketspeed {
+
+const int EventLoop::kLogSeverityDebug = _EVENT_LOG_DEBUG;
+const int EventLoop::kLogSeverityMsg = _EVENT_LOG_MSG;
+const int EventLoop::kLogSeverityWarn = _EVENT_LOG_WARN;
+const int EventLoop::kLogSeverityErr = _EVENT_LOG_ERR;
 
 struct SocketEvent {
  public:
@@ -503,9 +519,9 @@ void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
 }
 
 void
-EventLoop::do_accept(struct evconnlistener *listener,
+EventLoop::do_accept(evconnlistener *listener,
                      evutil_socket_t fd,
-                     struct sockaddr *address,
+                     sockaddr *address,
                      int socklen,
                      void *arg) {
   EventLoop* event_loop = static_cast<EventLoop *>(arg);
@@ -551,10 +567,10 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
 }
 
 void
-EventLoop::accept_error_cb(struct evconnlistener *listener, void *arg) {
+EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   obj->thread_check_.Check();
-  struct event_base *base = evconnlistener_get_base(listener);
+  event_base *base = evconnlistener_get_base(listener);
   int err = EVUTIL_SOCKET_ERROR();
   LOG_WARN(obj->info_log_,
     "Got an error %d (%s) on the listener. "
@@ -574,7 +590,7 @@ EventLoop::Run(void) {
 
   // Port number <= 0 indicates that there is no accept loop.
   if (port_number_ > 0) {
-    struct sockaddr_in6 sin;
+    sockaddr_in6 sin;
     memset(&sin, 0, sizeof(sin));
     sin.sin6_family = AF_INET6;
     sin.sin6_addr = in6addr_any;
@@ -587,7 +603,7 @@ EventLoop::Run(void) {
       reinterpret_cast<void*>(this),
       LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE,
       -1,  // backlog
-      reinterpret_cast<struct sockaddr*>(&sin),
+      reinterpret_cast<sockaddr*>(&sin),
       sizeof(sin));
 
     if (listener_ == nullptr) {
@@ -614,7 +630,7 @@ EventLoop::Run(void) {
     info_log_->Flush();
     return;
   }
-  struct timeval zero_seconds = {0, 0};
+  timeval zero_seconds = {0, 0};
   int rv = evtimer_add(startup_event_, &zero_seconds);
   if (rv != 0) {
     LOG_WARN(info_log_, "Failed to add startup event to event base");
@@ -878,7 +894,7 @@ EventLoop::create_connection(const HostId& host,
                              bool blocking,
                              int* fd) {
   thread_check_.Check();
-  struct addrinfo hints, *servinfo, *p;
+  addrinfo hints, *servinfo, *p;
   int rv;
   std::string port_string(std::to_string(host.port));
   int sockfd;
@@ -992,6 +1008,24 @@ EventLoop::EventLoop(BaseEnv* env,
 EventLoop::~EventLoop() {
   // stop dispatch loop
   Stop();
+}
+
+const char* EventLoop::SeverityToString(int severity) {
+  if (severity == EventLoop::kLogSeverityDebug) {
+    return "dbg";
+  } else if (severity == EventLoop::kLogSeverityMsg) {
+    return "msg";
+  } else if (severity == EventLoop::kLogSeverityWarn) {
+    return "wrn";
+  } else if (severity == EventLoop::kLogSeverityErr) {
+    return "err";
+  } else {
+    return "???"; // never reached
+  }
+}
+
+void EventLoop::GlobalShutdown() {
+  libevent_global_shutdown();
 }
 
 }  // namespace rocketspeed

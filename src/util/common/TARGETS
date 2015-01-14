@@ -4,7 +4,9 @@ cpp_library(
         'base_env.cc',
         'coding.cc',
         'guid_generator.cc',
+        'host.cc',
         'statistics.cc',
+        'status.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',

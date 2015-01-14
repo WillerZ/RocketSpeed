@@ -111,14 +111,7 @@ class ControlTowerTest {
   // Dumps libevent info messages to stdout
   static void
   dump_libevent_cb(int severity, const char* msg) {
-    const char* s;
-    switch (severity) {
-      case EventLoop::kLogSeverityDebug: s = "dbg"; break;
-      case EventLoop::kLogSeverityMsg:   s = "msg"; break;
-      case EventLoop::kLogSeverityWarn:  s = "wrn"; break;
-      case EventLoop::kLogSeverityErr:   s = "err"; break;
-      default:                           s = "???"; break; // never reached
-    }
+    const char* s = EventLoop::SeverityToString(severity);
     LOG_INFO(info_log, "[%s] %s\n", s, msg);
     info_log->Flush();
   }

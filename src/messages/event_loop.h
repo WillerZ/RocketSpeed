@@ -17,14 +17,6 @@
 #include <memory>
 #include <map>
 
-#include <event2/event.h>
-#include <event2/buffer.h>
-#include <event2/bufferevent.h>
-#include <event2/listener.h>
-#include <event2/thread.h>
-#include <event2/util.h>
-#include "src/messages/event2_version.h"
-
 #include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
@@ -33,6 +25,12 @@
 #include "src/util/common/object_pool.h"
 #include "src/util/common/thread_check.h"
 #include "src/util/common/multi_producer_queue.h"
+
+// libevent2 forward declarations.
+struct event;
+struct event_base;
+struct evconnlistener;
+struct sockaddr;
 
 namespace rocketspeed {
 
@@ -131,10 +129,10 @@ class EventLoop {
   }
 
   // Debug logging severity levels.
-  static const int kLogSeverityDebug = _EVENT_LOG_DEBUG;
-  static const int kLogSeverityMsg = _EVENT_LOG_MSG;
-  static const int kLogSeverityWarn = _EVENT_LOG_WARN;
-  static const int kLogSeverityErr = _EVENT_LOG_ERR;
+  static const int kLogSeverityDebug;
+  static const int kLogSeverityMsg;
+  static const int kLogSeverityWarn;
+  static const int kLogSeverityErr;
 
   // A type of a function that, provided with severity level and log message,
   // will print or dicard it appopriately.
@@ -145,6 +143,11 @@ class EventLoop {
   // Debugging is not thread safe in current implementation (we compile
   // libevent without threading support).
   static void EnableDebugThreadUnsafe(DebugCallback log_cb);
+
+  static const char* SeverityToString(int severity);
+
+  // Shutdown libevent. Should be called at end of main().
+  static void GlobalShutdown();
 
  private:
   friend class SocketEvent;
@@ -168,7 +171,7 @@ class EventLoop {
   std::atomic<bool> running_;
 
   // The event loop base.
-  struct event_base *base_;
+  event_base *base_;
 
   // debug message go here
   const std::shared_ptr<Logger> info_log_;
@@ -182,13 +185,13 @@ class EventLoop {
   evconnlistener* listener_ = nullptr;
 
   // Shutdown event
-  struct event* shutdown_event_ = nullptr;
+  event* shutdown_event_ = nullptr;
 
   // Startup event
-  struct event* startup_event_ = nullptr;
+  event* startup_event_ = nullptr;
 
   // Command event
-  struct event* command_ready_event_ = nullptr;
+  event* command_ready_event_ = nullptr;
 
   // Command queue and its associated event
   MultiProducerQueue<std::unique_ptr<Command>> command_queue_;
@@ -235,14 +238,14 @@ class EventLoop {
   void clear_connection_cache();
 
   // callbacks needed by libevent
-  static void do_accept(struct evconnlistener *listener,
-    evutil_socket_t fd, struct sockaddr *address, int socklen,
+  static void do_accept(evconnlistener *listener,
+    int fd, sockaddr *address, int socklen,
     void *arg);
-  static Status setup_fd(evutil_socket_t fd, EventLoop* event_loop);
-  static void accept_error_cb(struct evconnlistener *listener, void *arg);
-  static void do_startevent(evutil_socket_t listener, short event, void *arg);
-  static void do_shutdown(evutil_socket_t listener, short event, void *arg);
-  static void do_command(evutil_socket_t listener, short event, void *arg);
+  static Status setup_fd(int fd, EventLoop* event_loop);
+  static void accept_error_cb(evconnlistener *listener, void *arg);
+  static void do_startevent(int listener, short event, void *arg);
+  static void do_shutdown(int listener, short event, void *arg);
+  static void do_command(int listener, short event, void *arg);
 };
 
 }  // namespace rocketspeed

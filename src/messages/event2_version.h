@@ -24,5 +24,6 @@
 #define event_enable_debug_logging ld_event_enable_debug_logging
 #define event_set_log_callback ld_event_set_log_callback
 #define event_enable_debug_mode ld_event_enable_debug_mode
+#define libevent_global_shutdown ld_libevent_global_shutdown
 
 #endif  // USE_UPSTREAM_LIBEVENT
