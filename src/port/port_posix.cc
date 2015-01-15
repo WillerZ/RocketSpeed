@@ -8,7 +8,9 @@
 #include <stdio.h>
 #include <assert.h>
 #include <errno.h>
+#if !defined(OS_ANDROID)
 #include <execinfo.h>
+#endif
 #include <sys/time.h>
 #include <unistd.h>
 #include <string.h>
@@ -138,6 +140,7 @@ void InitOnce(OnceType* once, void (*initializer)()) {
   PthreadCall("once", pthread_once(once, initializer));
 }
 
+#if !defined(OS_ANDROID)
 void BackTraceHandler(int sig) {
   void* callstack[256];
   size_t entries = backtrace(callstack, 10);
@@ -164,6 +167,7 @@ static struct SignalHandlerInstaller {
     signal(SIGUSR1, BackTraceHandler);
   }
 } installer;  // this runs the constructor before main to install the handler
+#endif
 
 }  // namespace port
 }  // namespace rocketspeed

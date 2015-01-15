@@ -8,8 +8,6 @@
 // Include the appropriate platform specific file below.
 #if defined(ROCKETSPEED_PLATFORM_POSIX)
 #include "src/port/port_posix.h"
-#elif defined(ROCKETSPEED_PLATFORM_ANDROID)
-#include "src/port/port_android.h"
 #else
 #error No platform defined. Did you forget to pass -DROCKETSPEED_PLATFORM_*?
 #endif

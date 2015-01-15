@@ -83,6 +83,23 @@
 #define fdatasync fsync
 #endif
 
+#if defined(OS_ANDROID) && !defined(__clang__)
+// std::to_string(...) is missing in <string> on Android gcc
+// https://code.google.com/p/android/issues/detail?id=53460
+
+namespace std {
+extern string to_string(int value);
+extern string to_string(unsigned int value);
+extern string to_string(long value);
+extern string to_string(unsigned long value);
+extern string to_string(long long value);
+extern string to_string(unsigned long long value);
+extern string to_string(float value);
+extern string to_string(double value);
+extern string to_string(long double value);
+}
+#endif
+
 namespace rocketspeed {
 namespace port {
 

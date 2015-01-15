@@ -35,7 +35,7 @@ const int EventLoop::kLogSeverityMsg = _EVENT_LOG_MSG;
 const int EventLoop::kLogSeverityWarn = _EVENT_LOG_WARN;
 const int EventLoop::kLogSeverityErr = _EVENT_LOG_ERR;
 
-struct SocketEvent {
+class SocketEvent {
  public:
   SocketEvent(EventLoop* event_loop, int fd, event_base* base)
   : hdr_idx_(0)
