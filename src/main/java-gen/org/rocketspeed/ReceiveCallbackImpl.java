@@ -4,5 +4,5 @@
 package org.rocketspeed;
 
 public abstract class ReceiveCallbackImpl {
-    public abstract void Call(short namespaceId, String topicName, long sequenceNumber, byte[] contents);
+    public abstract void Call(int namespaceId, String topicName, long sequenceNumber, byte[] contents);
 }

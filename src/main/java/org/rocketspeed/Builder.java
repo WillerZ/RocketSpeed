@@ -43,7 +43,7 @@ public final class Builder {
   public Builder receiveCallback(final ReceiveCallback callback) {
     this.receiveCallback = new ReceiveCallbackImpl() {
       @Override
-      public void Call(short namespaceId, String topicName, long sequenceNumber, byte[] contents) {
+      public void Call(int namespaceId, String topicName, long sequenceNumber, byte[] contents) {
         callback.call(new MessageReceived(namespaceId, topicName, sequenceNumber, contents));
       }
     };

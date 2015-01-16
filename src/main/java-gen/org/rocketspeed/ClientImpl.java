@@ -7,11 +7,11 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ClientImpl {
-    public abstract PublishStatus Publish(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+    public abstract PublishStatus Publish(int namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
     public abstract void ListenTopics(ArrayList<SubscriptionRequestImpl> names);
 
-    public abstract void Acknowledge(short namespaceId, String topicName, long sequenceNumber);
+    public abstract void Acknowledge(int namespaceId, String topicName, long sequenceNumber);
 
     public abstract void Close();
 
@@ -41,12 +41,12 @@ public abstract class ClientImpl {
         }
 
         @Override
-        public PublishStatus Publish(short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
+        public PublishStatus Publish(int namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
             return native_Publish(this.nativeRef, namespaceId, topicName, retention, data, messageId, publishCallback);
         }
-        private native PublishStatus native_Publish(long _nativeRef, short namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+        private native PublishStatus native_Publish(long _nativeRef, int namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
         @Override
         public void ListenTopics(ArrayList<SubscriptionRequestImpl> names)
@@ -57,12 +57,12 @@ public abstract class ClientImpl {
         private native void native_ListenTopics(long _nativeRef, ArrayList<SubscriptionRequestImpl> names);
 
         @Override
-        public void Acknowledge(short namespaceId, String topicName, long sequenceNumber)
+        public void Acknowledge(int namespaceId, String topicName, long sequenceNumber)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
             native_Acknowledge(this.nativeRef, namespaceId, topicName, sequenceNumber);
         }
-        private native void native_Acknowledge(long _nativeRef, short namespaceId, String topicName, long sequenceNumber);
+        private native void native_Acknowledge(long _nativeRef, int namespaceId, String topicName, long sequenceNumber);
 
         @Override
         public void Close()

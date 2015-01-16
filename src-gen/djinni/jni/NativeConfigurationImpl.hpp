@@ -17,10 +17,10 @@ public:
     static ::rocketspeed::djinni::ConfigurationImpl fromJava(JNIEnv*, jobject);
 
     const djinni::GlobalRef<jclass> clazz { djinni::jniFindClass("org/rocketspeed/ConfigurationImpl") };
-    const jmethodID jconstructor { djinni::jniGetMethodID(clazz.get(), "<init>", "(Ljava/util/ArrayList;Ljava/util/ArrayList;S)V") };
+    const jmethodID jconstructor { djinni::jniGetMethodID(clazz.get(), "<init>", "(Ljava/util/ArrayList;Ljava/util/ArrayList;I)V") };
     const jfieldID field_pilots { djinni::jniGetFieldID(clazz.get(), "pilots", "Ljava/util/ArrayList;") };
     const jfieldID field_copilots { djinni::jniGetFieldID(clazz.get(), "copilots", "Ljava/util/ArrayList;") };
-    const jfieldID field_tenantId { djinni::jniGetFieldID(clazz.get(), "tenantId", "S") };
+    const jfieldID field_tenantId { djinni::jniGetFieldID(clazz.get(), "tenantId", "I") };
 
 private:
     NativeConfigurationImpl() {}

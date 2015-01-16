@@ -3,7 +3,7 @@
 
 #include "NativeSubscriptionRequestImpl.hpp"  // my header
 #include "HBool.hpp"
-#include "HI16.hpp"
+#include "HI32.hpp"
 #include "HI64.hpp"
 #include "HOptional.hpp"
 #include "HString.hpp"
@@ -11,7 +11,7 @@
 namespace djinni_generated {
 
 jobject NativeSubscriptionRequestImpl::toJava(JNIEnv* jniEnv, ::rocketspeed::djinni::SubscriptionRequestImpl c) {
-    jshort j_namespace_id = ::djinni::HI16::Unboxed::toJava(jniEnv, c.namespace_id);
+    jint j_namespace_id = ::djinni::HI32::Unboxed::toJava(jniEnv, c.namespace_id);
     djinni::LocalRef<jstring> j_topic_name(jniEnv, ::djinni::HString::toJava(jniEnv, c.topic_name));
     jboolean j_subscribe = ::djinni::HBool::Unboxed::toJava(jniEnv, c.subscribe);
     djinni::LocalRef<jobject> j_start(jniEnv, ::djinni::HOptional<std::experimental::optional, ::djinni::HI64>::toJava(jniEnv, c.start));
@@ -25,7 +25,7 @@ jobject NativeSubscriptionRequestImpl::toJava(JNIEnv* jniEnv, ::rocketspeed::dji
     assert(j != nullptr);
     const auto & data = djinni::JniClass<::djinni_generated::NativeSubscriptionRequestImpl>::get();
     return ::rocketspeed::djinni::SubscriptionRequestImpl(
-        ::djinni::HI16::Unboxed::fromJava(jniEnv, jniEnv->GetShortField(j, data.field_namespaceId)),
+        ::djinni::HI32::Unboxed::fromJava(jniEnv, jniEnv->GetIntField(j, data.field_namespaceId)),
         ::djinni::HString::fromJava(jniEnv, djinni::LocalRef<jstring>(jniEnv, static_cast<jstring>(jniEnv->GetObjectField(j, data.field_topicName))).get()),
         ::djinni::HBool::Unboxed::fromJava(jniEnv, jniEnv->GetBooleanField(j, data.field_subscribe)),
         ::djinni::HOptional<std::experimental::optional, ::djinni::HI64>::fromJava(jniEnv, djinni::LocalRef<jobject>(jniEnv, jniEnv->GetObjectField(j, data.field_start)).get()));

@@ -16,13 +16,13 @@ struct ConfigurationImpl final {
 
     std::vector<HostId> copilots;
 
-    int16_t tenant_id;
+    int32_t tenant_id;
 
 
     ConfigurationImpl(
             std::vector<HostId> pilots,
             std::vector<HostId> copilots,
-            int16_t tenant_id) :
+            int32_t tenant_id) :
                 pilots(std::move(pilots)),
                 copilots(std::move(copilots)),
                 tenant_id(std::move(tenant_id)) {

@@ -4,5 +4,5 @@
 package org.rocketspeed;
 
 public abstract class PublishCallbackImpl {
-    public abstract void Call(Status status, short namespaceId, String topicName, MsgIdImpl messageId, long sequenceNumber, byte[] contents);
+    public abstract void Call(Status status, int namespaceId, String topicName, MsgIdImpl messageId, long sequenceNumber, byte[] contents);
 }

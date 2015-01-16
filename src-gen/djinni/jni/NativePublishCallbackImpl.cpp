@@ -3,7 +3,7 @@
 
 #include "NativePublishCallbackImpl.hpp"  // my header
 #include "HBinary.hpp"
-#include "HI16.hpp"
+#include "HI32.hpp"
 #include "HI64.hpp"
 #include "HString.hpp"
 #include "NativeMsgIdImpl.hpp"
@@ -15,11 +15,11 @@ NativePublishCallbackImpl::NativePublishCallbackImpl() : djinni::JniInterface<::
 
 NativePublishCallbackImpl::JavaProxy::JavaProxy(jobject obj) : JavaProxyCacheEntry(obj) {}
 
-void NativePublishCallbackImpl::JavaProxy::JavaProxy::Call(::rocketspeed::djinni::Status c_status, int16_t c_namespace_id, std::string c_topic_name, ::rocketspeed::djinni::MsgIdImpl c_message_id, int64_t c_sequence_number, std::vector<uint8_t> c_contents) {
+void NativePublishCallbackImpl::JavaProxy::JavaProxy::Call(::rocketspeed::djinni::Status c_status, int32_t c_namespace_id, std::string c_topic_name, ::rocketspeed::djinni::MsgIdImpl c_message_id, int64_t c_sequence_number, std::vector<uint8_t> c_contents) {
     JNIEnv * const jniEnv = djinni::jniGetThreadEnv();
     djinni::JniLocalScope jscope(jniEnv, 10);
     djinni::LocalRef<jobject> j_status(jniEnv, NativeStatus::toJava(jniEnv, c_status));
-    jshort j_namespace_id = ::djinni::HI16::Unboxed::toJava(jniEnv, c_namespace_id);
+    jint j_namespace_id = ::djinni::HI32::Unboxed::toJava(jniEnv, c_namespace_id);
     djinni::LocalRef<jstring> j_topic_name(jniEnv, ::djinni::HString::toJava(jniEnv, c_topic_name));
     djinni::LocalRef<jobject> j_message_id(jniEnv, NativeMsgIdImpl::toJava(jniEnv, c_message_id));
     jlong j_sequence_number = ::djinni::HI64::Unboxed::toJava(jniEnv, c_sequence_number);

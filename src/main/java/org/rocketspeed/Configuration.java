@@ -2,15 +2,12 @@ package org.rocketspeed;
 
 import java.util.ArrayList;
 
-import static org.rocketspeed.Types.fromUnsignedShort;
-
 public class Configuration {
 
   private final ConfigurationImpl impl;
 
   public Configuration(int tenantId) {
-    impl = new ConfigurationImpl(new ArrayList<HostId>(), new ArrayList<HostId>(),
-                                 fromUnsignedShort(tenantId));
+    impl = new ConfigurationImpl(new ArrayList<HostId>(), new ArrayList<HostId>(), tenantId);
   }
 
   public void addPilot(String hostName, int port) {

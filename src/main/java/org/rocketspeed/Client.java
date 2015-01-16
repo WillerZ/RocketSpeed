@@ -3,9 +3,6 @@ package org.rocketspeed;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.rocketspeed.Types.fromUnsignedShort;
-import static org.rocketspeed.Types.toUnsignedShort;
-
 public class Client implements AutoCloseable {
 
   private final ClientImpl client;
@@ -34,15 +31,15 @@ public class Client implements AutoCloseable {
     MsgIdImpl messageId1 = messageId == null ? null : messageId.djinni();
     PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackImpl() {
       @Override
-      public void Call(Status status, short namespaceId, String topicName, MsgIdImpl messageId,
+      public void Call(Status status, int namespaceId, String topicName, MsgIdImpl messageId,
                        long sequenceNumber, byte[] contents) {
-        callback.call(status, toUnsignedShort(namespaceId), topicName, new MsgId(messageId),
-                      sequenceNumber, contents);
+        callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber,
+                      contents);
       }
     };
     PublishStatus status =
-        client.Publish(fromUnsignedShort(namespaceID), topicName, options.getRetention().djinni(),
-                       data, messageId1, callback1);
+        client.Publish(namespaceID, topicName, options.getRetention().djinni(), data, messageId1,
+                       callback1);
     status.getStatus().checkExceptions();
     return new MsgId(status.getMessageId()
 
@@ -58,7 +55,7 @@ public class Client implements AutoCloseable {
   }
 
   public void acknowledge(MessageReceived message) {
-    client.Acknowledge(fromUnsignedShort(message.getNamespaceId()), message.getTopicName(),
+    client.Acknowledge(message.getNamespaceId(), message.getTopicName(),
                        message.getSequenceNumber());
   }
 

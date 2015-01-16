@@ -12,7 +12,7 @@ namespace rocketspeed { namespace djinni {
 
 struct SubscriptionRequestImpl final {
 
-    int16_t namespace_id;
+    int32_t namespace_id;
 
     std::string topic_name;
 
@@ -22,7 +22,7 @@ struct SubscriptionRequestImpl final {
 
 
     SubscriptionRequestImpl(
-            int16_t namespace_id,
+            int32_t namespace_id,
             std::string topic_name,
             bool subscribe,
             std::experimental::optional<int64_t> start) :
