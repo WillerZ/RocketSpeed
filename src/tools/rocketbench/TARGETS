@@ -15,10 +15,11 @@ cpp_binary(
     ],
     deps = [
         '@/rocketspeed/github/src/client:client',
-        '@/rocketspeed/github/src/test:configuration',
         '@/rocketspeed/github/src/test:test_cluster',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:configuration',
         '@/rocketspeed/github/src/messages',
     ],
     compiler_flags = [

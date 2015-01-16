@@ -61,7 +61,6 @@ LIBOBJECTS += $(SOURCESCPP:.cpp=.o)
 TESTUTIL = ./src/util/testutil.o
 TESTCLUSTER = ./src/test/test_cluster.o
 TESTHARNESS = ./src/util/testharness.o $(TESTUTIL) $(TESTCLUSTER)
-TESTCONFIGURATION = ./src/test/configuration.o
 BENCHHARNESS = ./src/util/benchharness.o
 VALGRIND_ERROR = 2
 VALGRIND_DIR = build_tools/VALGRIND_LOGS
@@ -180,8 +179,8 @@ rocketspeed: src/server/main.o $(LIBOBJECTS)
 	$(CXX) src/server/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the rocketbench tool
-rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER)
-	$(CXX) src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCONFIGURATION) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCLUSTER)
+	$(CXX) src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # run all unit tests
 check: $(TESTS)
@@ -285,8 +284,8 @@ logdevice_storage_test: src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS)
 hostmap_test: src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
-integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(TESTCONFIGURATION)
-	$(CXX) src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(TESTCONFIGURATION) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)

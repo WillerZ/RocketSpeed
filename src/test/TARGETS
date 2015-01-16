@@ -20,25 +20,6 @@ cpp_library(
     ],
 )
 
-cpp_library(
-    name = 'configuration',
-    srcs = [
-        'configuration.cc',
-    ],
-    preprocessor_flags = [
-        '-Irocketspeed/github/include',
-        '-Irocketspeed/github',
-        '-DROCKETSPEED_PLATFORM_POSIX=1',
-        '-DOS_LINUX=1',
-        '-DUSE_LOGDEVICE=1',
-    ],
-    deps = [
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-    ],
-)
-
-# integration test
 cpp_unittest(
     name = 'integration_test',
     srcs = [
@@ -53,11 +34,11 @@ cpp_unittest(
     ],
     deps = [
         ':test_cluster',
-        ':configuration',
         '@/rocketspeed/github/src/client:client',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:configuration',
         '@/rocketspeed/github/src/messages',
     ],
 )
