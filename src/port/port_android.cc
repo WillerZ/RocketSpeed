@@ -4,7 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #if defined(OS_ANDROID)
-#include "src/port/port_android.h"
+#include "src/port/port.h"
 
 #include <stdio.h>
 #include <assert.h>
@@ -57,7 +57,14 @@ string to_string(double value) {
 string to_string(long double value) {
   TO_STRING_HELPER("%Lf", value, 40);
 }
-
 }  // namespace std
+
+/*
+** We are using libevent 2.0.* on android which does not support
+** the method libevent_global_shutdown.
+** https://raw.githubusercontent.com/libevent/libevent/master/whatsnew-2.1.txt
+*/
+void libevent_global_shutdown(void) {
+}
 
 #endif /* OS_ANDROID */

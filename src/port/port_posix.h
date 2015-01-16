@@ -83,10 +83,11 @@
 #define fdatasync fsync
 #endif
 
-#if defined(OS_ANDROID) && !defined(__clang__)
+#if defined(OS_ANDROID)
 // std::to_string(...) is missing in <string> on Android gcc
 // https://code.google.com/p/android/issues/detail?id=53460
 
+#if !defined(__clang__)
 namespace std {
 extern string to_string(int value);
 extern string to_string(unsigned int value);
@@ -98,6 +99,10 @@ extern string to_string(float value);
 extern string to_string(double value);
 extern string to_string(long double value);
 }
+#endif /* __clang__ */
+
+// libevent_global_shutdown not available in libevent 2.0.*
+extern void libevent_global_shutdown(void);
 #endif
 
 namespace rocketspeed {
