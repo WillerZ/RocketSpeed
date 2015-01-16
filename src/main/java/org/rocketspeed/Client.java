@@ -1,8 +1,10 @@
 package org.rocketspeed;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.rocketspeed.Types.fromUnsignedShort;
+import static org.rocketspeed.Types.toUnsignedShort;
 
 public class Client implements AutoCloseable {
 
@@ -12,41 +14,42 @@ public class Client implements AutoCloseable {
     this.client = client;
   }
 
-  MsgId publish(short namespaceID, String topicName, TopicOptions options, byte[] data)
-      throws IOException {
+  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data)
+      throws Exception {
     return publish(namespaceID, topicName, options, data, null, null);
   }
 
-  MsgId publish(short namespaceID, String topicName, TopicOptions options, byte[] data,
-                final PublishCallback callback) throws IOException {
+  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data,
+                       final PublishCallback callback) throws Exception {
     return publish(namespaceID, topicName, options, data, null, callback);
   }
 
-  MsgId publish(short namespaceID, String topicName, TopicOptions options, byte[] data,
-                MsgId messageId) throws IOException {
+  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data,
+                       MsgId messageId) throws Exception {
     return publish(namespaceID, topicName, options, data, messageId, null);
   }
 
-  MsgId publish(short namespaceID, String topicName, TopicOptions options, byte[] data,
-                MsgId messageId, final PublishCallback callback) throws IOException {
+  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data,
+                       MsgId messageId, final PublishCallback callback) throws Exception {
     MsgIdImpl messageId1 = messageId == null ? null : messageId.djinni();
     PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackImpl() {
       @Override
       public void Call(Status status, short namespaceId, String topicName, MsgIdImpl messageId,
                        long sequenceNumber, byte[] contents) {
-        callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber,
-                      contents);
+        callback.call(status, toUnsignedShort(namespaceId), topicName, new MsgId(messageId),
+                      sequenceNumber, contents);
       }
     };
-    PublishStatus status = client.Publish(namespaceID, topicName, options.getRetention().djinni(),
-                                          data, messageId1, callback1);
+    PublishStatus status =
+        client.Publish(fromUnsignedShort(namespaceID), topicName, options.getRetention().djinni(),
+                       data, messageId1, callback1);
     status.getStatus().checkExceptions();
     return new MsgId(status.getMessageId()
 
     );
   }
 
-  void listenTopics(List<SubscriptionRequest> requests) {
+  public void listenTopics(List<SubscriptionRequest> requests) {
     ArrayList<SubscriptionRequestImpl> requests1 = new ArrayList<SubscriptionRequestImpl>();
     for (SubscriptionRequest request : requests) {
       requests1.add(request.djinni());
@@ -54,8 +57,8 @@ public class Client implements AutoCloseable {
     client.ListenTopics(requests1);
   }
 
-  void acknowledge(MessageReceived message) {
-    client.Acknowledge(message.getNamespaceId(), message.getTopicName(),
+  public void acknowledge(MessageReceived message) {
+    client.Acknowledge(fromUnsignedShort(message.getNamespaceId()), message.getTopicName(),
                        message.getSequenceNumber());
   }
 

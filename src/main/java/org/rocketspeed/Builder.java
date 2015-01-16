@@ -20,7 +20,7 @@ public final class Builder {
     storage = new SubscriptionStorage(StorageType.NONE, "");
   }
 
-  private Builder configuration(Configuration config) {
+  public Builder configuration(Configuration config) {
     this.config = config.djinni();
     return this;
   }
@@ -59,8 +59,8 @@ public final class Builder {
   }
 
   public Client build() {
-    ClientImpl client = ClientImpl.Open(config, clientID, subscribeCallback, receiveCallback,
-                                        storage);
+    ClientImpl client =
+        ClientImpl.Open(config, clientID, subscribeCallback, receiveCallback, storage);
     reset();
     return new Client(client);
   }

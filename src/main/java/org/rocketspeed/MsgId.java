@@ -20,8 +20,9 @@ public class MsgId {
 
   @Override
   public boolean equals(Object o) {
-    return this == o || !(o == null || getClass() != o.getClass()) && Arrays
-        .equals(impl.getGuid(), ((MsgId) o).impl.getGuid());
+    return this == o || !(o == null || getClass() != o.getClass()) && Arrays.equals(impl.getGuid(),
+                                                                                    ((MsgId) o).impl
+                                                                                        .getGuid());
   }
 
   @Override

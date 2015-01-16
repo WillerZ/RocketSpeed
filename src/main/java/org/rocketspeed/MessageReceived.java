@@ -2,20 +2,19 @@ package org.rocketspeed;
 
 public class MessageReceived {
 
-  private final short mNamespaceId;
+  private final int mNamespaceId;
   private final String mTopicName;
   private final long mSequenceNumber;
   private final byte[] mContents;
 
-  public MessageReceived(short namespaceId, String topicName, long sequenceNumber,
-                         byte[] contents) {
+  public MessageReceived(int namespaceId, String topicName, long sequenceNumber, byte[] contents) {
     this.mNamespaceId = namespaceId;
     this.mTopicName = topicName;
     this.mSequenceNumber = sequenceNumber;
     this.mContents = contents;
   }
 
-  public short getNamespaceId() {
+  public int getNamespaceId() {
     return mNamespaceId;
   }
 

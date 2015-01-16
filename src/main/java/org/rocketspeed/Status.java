@@ -9,19 +9,34 @@ public final class Status extends StatusBase {
     super(code, state);
   }
 
-  public void checkExceptions() throws IOException, IllegalArgumentException,
-                                       IllegalStateException {
+  public void checkExceptions() throws Exception {
+    Exception e = getException();
+    if (e != null) {
+      throw e;
+    }
+  }
+
+  public Exception getException() {
     switch (getCode()) {
-      case INTERNAL:
-        throw new IllegalStateException(getState());
-      case INVALIDARGUMENT:
-        throw new IllegalArgumentException(getState());
-      case IOERROR:
-        throw new IOException(getState());
+      case OK:
+        return null;
       case NOTFOUND:
-        throw new FileNotFoundException(getState());
+        return new FileNotFoundException(getState());
+      case NOTSUPPORTED:
+        return new UnsupportedOperationException(getState());
+      case INVALIDARGUMENT:
+        return new IllegalArgumentException(getState());
+      case IOERROR:
+        return new IOException(getState());
+      case NOTINITIALIZED:
+        return new IllegalStateException(getState());
+      case UNAUTHORIZED:
+        return new IllegalArgumentException(getState());
+      case TIMEDOUT:
+      case INTERNAL:
+        return new RuntimeException(getState());
       default:
-        throw new RuntimeException();
+        throw new AssertionError("Missing branch for " + StatusCode.class.getSimpleName());
     }
   }
 }

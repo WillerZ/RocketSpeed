@@ -2,6 +2,9 @@ package org.rocketspeed;
 
 public class SubscriptionStart {
 
+  public static final SubscriptionStart BEGINNING = new SubscriptionStart(Long.MIN_VALUE + 1);
+  public static final SubscriptionStart CURRENT = new SubscriptionStart(Long.MIN_VALUE);
+  public static final SubscriptionStart UNKNOWN = new SubscriptionStart();
   private boolean present;
   private long sequenceNumber;
 
@@ -10,7 +13,7 @@ public class SubscriptionStart {
     this.sequenceNumber = sequenceNumber;
   }
 
-  public SubscriptionStart() {
+  private SubscriptionStart() {
     present = false;
     sequenceNumber = 0;
   }
