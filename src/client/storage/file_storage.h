@@ -13,10 +13,9 @@
 #include "include/Logger.h"
 #include "include/Types.h"
 #include "include/SubscriptionStorage.h"
-#include "src/client/client_env.h"
 #include "src/client/topic_id.h"
-#include "src/port/Env.h"
 #include "src/port/port.h"
+#include "src/util/common/env_options.h"
 #include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
@@ -24,13 +23,15 @@ namespace rocketspeed {
 class MsgLoopBase;
 class DescriptorEvent;
 class Command;
+class BaseEnv;
 
 /**
  * Local file based subscription metadate storage.
  */
 class FileStorage final : public SubscriptionStorage {
  public:
-  FileStorage(std::string read_path,
+  FileStorage(BaseEnv* env,
+              std::string read_path,
               std::shared_ptr<Logger> info_log);
 
   virtual ~FileStorage();
@@ -52,7 +53,7 @@ class FileStorage final : public SubscriptionStorage {
 
  private:
   // Client's environment.
-  Env* env_;
+  BaseEnv* env_;
   // Client environment options.
   const EnvOptions env_options_;
   // Logger for info messages.

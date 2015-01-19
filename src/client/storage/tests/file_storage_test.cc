@@ -57,7 +57,8 @@ class FileStorageTest {
   }
 
   void SetupStorage() {
-    storage.reset(new FileStorage(file_path,
+    storage.reset(new FileStorage(env,
+                                  file_path,
                                   info_log));
 
     msg_loop.reset(new MsgLoop(env,

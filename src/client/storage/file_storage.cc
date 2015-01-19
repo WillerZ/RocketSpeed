@@ -26,17 +26,20 @@
 
 namespace rocketspeed {
 
-Status SubscriptionStorage::File(const std::string& file_path,
+Status SubscriptionStorage::File(BaseEnv* env,
+                                 const std::string& file_path,
                                  std::shared_ptr<Logger> info_log,
                                  std::unique_ptr<SubscriptionStorage>* out) {
-  out->reset(new FileStorage(file_path,
+  out->reset(new FileStorage(env,
+                             file_path,
                              info_log));
   return Status::OK();
 }
 
-FileStorage::FileStorage(std::string read_path,
+FileStorage::FileStorage(BaseEnv* env,
+                         std::string read_path,
                          std::shared_ptr<Logger> info_log)
-    : env_(Env::Default()),
+    : env_(env),
       info_log_(std::move(info_log)),
       write_path_(read_path + ".tmp"),
       // Field write_path_ will be initialized first, so we do not need

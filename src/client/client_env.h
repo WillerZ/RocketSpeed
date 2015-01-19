@@ -22,11 +22,14 @@ class ClientEnv : public BaseEnv {
  public:
   ClientEnv() {}
 
-  // Return a default environment suitable for the current operating system.
-  // The result of Default() belongs to rocketspeed and must never be deleted.
+  /**
+   * Return a default environment suitable for the current operating system.
+   * The result of Default() belongs to rocketspeed and must never be deleted.
+   */
   static ClientEnv* Default();
 
-  virtual ThreadId StartThread(void (*function)(void* arg), void* arg,
+  virtual ThreadId StartThread(void (*function)(void* arg),
+                               void* arg,
                                const std::string& thread_name = "");
 
   virtual ThreadId StartThread(std::function<void()> f,

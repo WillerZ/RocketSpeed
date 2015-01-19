@@ -16,9 +16,6 @@ namespace rocketspeed {
 Env::~Env() {
 }
 
-SequentialFile::~SequentialFile() {
-}
-
 RandomAccessFile::~RandomAccessFile() {
 }
 

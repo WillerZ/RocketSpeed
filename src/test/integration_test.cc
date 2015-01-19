@@ -22,7 +22,7 @@ class IntegrationTest {
  public:
   IntegrationTest()
       : file_path(test::TmpDir() + "/IntegrationTest-file_storage_data") {
-    if (!rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
+    if (!rocketspeed::CreateLoggerFromOptions(Env::Default(),
                                               "",
                                               "LOG.integrationtest",
                                               0,
@@ -82,7 +82,8 @@ TEST(IntegrationTest, OneMessage) {
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
-  ASSERT_OK(SubscriptionStorage::File(file_path,
+  ASSERT_OK(SubscriptionStorage::File(Env::Default(),
+                                      file_path,
                                       info_log,
                                       &options.storage));
   std::unique_ptr<Client> client;
@@ -152,7 +153,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
-  ASSERT_OK(SubscriptionStorage::File(file_path,
+  ASSERT_OK(SubscriptionStorage::File(Env::Default(),
+                                      file_path,
                                       info_log,
                                       &options.storage));
   std::unique_ptr<Client> client;

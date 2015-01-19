@@ -17,21 +17,18 @@ namespace rocketspeed {
 
 class MsgLoopBase;
 
-/**
- * Callback to notify Client about loaded subscription data.
- */
+/** Callback to notify Client about loaded subscription data. */
 typedef std::function<void(const std::vector<SubscriptionRequest>&)>
     LoadCallback;
 
-/**
- * Callback to notify Client about finished update.
- */
+/** Callback to notify Client about finished update. */
 typedef std::function<void(const SubscriptionRequest&)> UpdateCallback;
 
-/**
- * Callback to notify Client about finished snapshot.
- */
+/** Callback to notify Client about finished snapshot. */
 typedef std::function<void(Status)> SnapshotCallback;
+
+/** Environment used by the storage. */
+class BaseEnv;
 
 /**
  * Defines how the RocketSpeed Client saves and restores subscription data.
@@ -46,10 +43,12 @@ class SubscriptionStorage {
    * Creates subscription storage backed by a file.
    * The file must not be concurrently used by two different instances of the
    * storage, and this must be ensured by the caller.
-   * @param file_path path to a file in which subscription state is persisted
+   * @param env environment used by the storage,
+   * @param file_path path to a file in which subscription state is persisted,
    * @param info_log log for info messages.
    */
-  static Status File(const std::string& file_path,
+  static Status File(BaseEnv* env,
+                     const std::string& file_path,
                      std::shared_ptr<Logger> info_log,
                      std::unique_ptr<SubscriptionStorage>* out);
 

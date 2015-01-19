@@ -17,7 +17,6 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
-#include "src/client/client_env.h"
 #include "src/client/topic_id.h"
 #include "src/client/message_received.h"
 #include "src/messages/msg_loop_base.h"
@@ -26,6 +25,7 @@
 namespace rocketspeed {
 
 class Logger;
+class ClientEnv;
 
 // Internal implementation of the Client API.
 class ClientImpl : public Client {
@@ -43,7 +43,8 @@ class ClientImpl : public Client {
 
   virtual void Acknowledge(const MessageReceived& message);
 
-  ClientImpl(const HostId& pilot_host_id,
+  ClientImpl(BaseEnv* env,
+             const HostId& pilot_host_id,
              const HostId& copilot_host_id,
              TenantID tenant_id,
              MsgLoopBase* msg_loop,
@@ -73,7 +74,7 @@ class ClientImpl : public Client {
   int GetWorkerForTopic(const Topic& name) const;
 
   // The environment
-  ClientEnv* env_;
+  BaseEnv* env_;
 
   // HostId of pilot/copilot machines to send messages to.
   HostId pilot_host_id_;
@@ -84,7 +85,7 @@ class ClientImpl : public Client {
 
   // Incoming message loop object.
   MsgLoopBase* msg_loop_ = nullptr;
-  std::thread msg_loop_thread_;
+  BaseEnv::ThreadId msg_loop_thread_;
 
   // callback for incoming ack message for a subscription/unsubscription
   SubscribeCallback subscription_callback_;

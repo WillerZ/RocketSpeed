@@ -146,7 +146,7 @@ void MsgLoop::Run() {
 
   // Starting from 1, run worker loops on new threads.
   for (size_t i = 1; i < event_loops_.size(); ++i) {
-    Env::ThreadId tid = env_->StartThread(
+    BaseEnv::ThreadId tid = env_->StartThread(
       [this, i] () {
         worker_id_ = i;  // Set this thread's worker index.
         event_loops_[i]->Run();
@@ -169,7 +169,7 @@ void MsgLoop::Stop() {
     event_loop->Stop();
   }
 
-  for (Env::ThreadId tid : worker_threads_) {
+  for (BaseEnv::ThreadId tid : worker_threads_) {
     env_->WaitForJoin(tid);
   }
   worker_threads_.clear();

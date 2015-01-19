@@ -37,10 +37,11 @@ typedef std::function<void(SubscriptionStatus)> SubscribeCallback;
 typedef std::function<void(std::unique_ptr<MessageReceived>)>
                                           MessageReceivedCallback;
 
-/**
- * An opaque logger type.
- */
+/** An opaque logger type. */
 class Logger;
+
+/** An opaque client's environment class. */
+class BaseEnv;
 
 /**
  * Describes the Client object to be created by Client::Open() call.
@@ -74,6 +75,10 @@ struct ClientOptions {
   // Default: nullptr.
   std::shared_ptr<Logger> info_log;
 
+  // BaseEnv to be used by all client side components.
+  // Default: a default env of a client.
+  BaseEnv* env;
+
   // Constructor which fills default values.
   ClientOptions(const Configuration& _config,
                 ClientID _client_id);
@@ -92,14 +97,14 @@ class Client {
    * @param options The description of client object to be created
    * @return on success returns OK(), otherwise errorcode
    */
-  static Status Open(ClientOptions&& client_options,
+  static Status Open(ClientOptions client_options,
                      Client** client);
 
   /**
    * See above for doumentation, this is a wrapper which uses smart pointer to
    * return Client object.
    */
-  static Status Open(ClientOptions&& client_options,
+  static Status Open(ClientOptions client_options,
                      std::unique_ptr<Client>* client);
 
   /**

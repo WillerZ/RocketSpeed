@@ -5,15 +5,16 @@
 //
 #include "src/util/common/base_env.h"
 
-#include <thread>
+#include <fcntl.h>
 #include <pthread.h>
+#include <thread>
 
 namespace {
 std::string gettname() {
 #if !defined(OS_ANDROID)
   char name[64];
   if (pthread_getname_np(pthread_self(), name, sizeof(name)) == 0) {
-    name[sizeof(name)-1] = 0;
+    name[sizeof(name) - 1] = 0;
     return std::string(name);
   }
 #endif
@@ -28,16 +29,77 @@ namespace rocketspeed {
 void BaseEnv::SetCurrentThreadName(const std::string& name) {
 #if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 12)
-    {
-      thread_name = name.c_str();
-      pthread_setname_np(pthread_self(), name.c_str());
+  {
+    thread_name = name.c_str();
+    pthread_setname_np(pthread_self(), name.c_str());
+  }
+#endif
+#endif
+}
+
+const std::string& BaseEnv::GetCurrentThreadName() { return thread_name; }
+
+class SequentialFileImpl : public SequentialFile {
+ private:
+  std::string filename_;
+  FILE* file_;
+
+ public:
+  SequentialFileImpl(std::string fname,
+                      FILE* f,
+                      const EnvOptions& options)
+      : filename_(std::move(fname))
+      , file_(f) {}
+
+  virtual ~SequentialFileImpl() { fclose(file_); }
+
+  Status Read(size_t n, Slice* result, char* scratch) {
+    Status s;
+    size_t r = 0;
+    do {
+      r = fread_unlocked(scratch, 1, n, file_);
+    } while (r == 0 && ferror(file_) && errno == EINTR);
+    *result = Slice(scratch, r);
+    if (r < n) {
+      if (feof(file_)) {
+        // We leave status as ok if we hit the end of the file
+        // We also clear the error so that the reads can continue
+        // if a new data is written to the file
+        clearerr(file_);
+      } else {
+        // A partial read with an error: return a non-ok status
+        s = Status::IOError(filename_, strerror(errno));
+      }
     }
-#endif
-#endif
+    return s;
   }
 
-const std::string& BaseEnv::GetCurrentThreadName() {
-    return thread_name;
+  Status Skip(uint64_t n) {
+    if (fseek(file_, n, SEEK_CUR)) {
+      return Status::IOError(filename_, strerror(errno));
+    }
+    return Status::OK();
+  }
+};
+
+Status BaseEnv::NewSequentialFile(const std::string& fname,
+                         std::unique_ptr<SequentialFile>* result,
+                         const EnvOptions& options) {
+  result->reset();
+  FILE* f = nullptr;
+  do {
+    f = fopen(fname.c_str(), "r");
+  } while (f == nullptr && errno == EINTR);
+  if (f == nullptr) {
+    return Status::IOError(fname, strerror(errno));
+  } else {
+    int fd = fileno(f);
+    if (options.set_fd_cloexec) {
+      fcntl(fd, F_SETFD, FD_CLOEXEC);
+    }
+    result->reset(new SequentialFileImpl(fname, f, options));
+    return Status::OK();
+  }
 }
 
 }  // namespace rocketspeed

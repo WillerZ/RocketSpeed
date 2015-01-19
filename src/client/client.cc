@@ -17,7 +17,6 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/client/client_env.h"
 #include "src/client/message_received.h"
 #include "src/util/common/hash.h"
 
@@ -84,23 +83,11 @@ struct ClientResultStatus : public ResultStatus {
   SequenceNumber seqno_;
 };
 
-ClientOptions::ClientOptions(const Configuration& _config,
-                             ClientID _client_id)
-    : config(_config),
-      client_id(std::move(_client_id)),
-      username(""),
-      access_token(""),
-      subscription_callback(nullptr),
-      receive_callback(nullptr),
-      storage(nullptr),
-      info_log(nullptr) {
-}
-
 Client::~Client() {
 }
 
 // Implementation of Client::Open from RocketSpeed.h
-Status Client::Open(ClientOptions&& options_tmp,
+Status Client::Open(ClientOptions options_tmp,
                     Client** producer) {
   ClientOptions options(std::move(options_tmp));
   // Validate arguments.
@@ -117,9 +104,8 @@ Status Client::Open(ClientOptions&& options_tmp,
     options.info_log = std::make_shared<NullLogger>();
   }
 
-
 #ifndef USE_MQTTMSGLOOP
-  MsgLoop* msg_loop_ = new MsgLoop(ClientEnv::Default(),
+  MsgLoop* msg_loop_ = new MsgLoop(options.env,
                                    EnvOptions(),
                                    0,
                                    options.config.GetNumWorkers(),
@@ -138,7 +124,8 @@ Status Client::Open(ClientOptions&& options_tmp,
 
   // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
-  *producer = new ClientImpl(options.config.GetPilotHostIds().front(),
+  *producer = new ClientImpl(options.env,
+                             options.config.GetPilotHostIds().front(),
                              options.config.GetCopilotHostIds().front(),
                              options.config.GetTenantID(),
                              msg_loop_,
@@ -149,7 +136,7 @@ Status Client::Open(ClientOptions&& options_tmp,
   return Status::OK();
 }
 
-Status Client::Open(ClientOptions&& client_options,
+Status Client::Open(ClientOptions client_options,
                     std::unique_ptr<Client>* client) {
   // Validate arguments that we hide from undelying Open call.
   if (client == nullptr) {
@@ -164,7 +151,8 @@ Status Client::Open(ClientOptions&& client_options,
   return status;
 }
 
-ClientImpl::ClientImpl(const HostId& pilot_host_id,
+ClientImpl::ClientImpl(BaseEnv* env,
+                       const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
                        MsgLoopBase* msg_loop,
@@ -172,7 +160,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                        MessageReceivedCallback receive_callback,
                        std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log)
-: env_(ClientEnv::Default())
+: env_(env)
 , pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
@@ -212,7 +200,7 @@ ClientImpl::ClientImpl(const HostId& pilot_host_id,
                          msg_loop_);
   }
 
-  msg_loop_thread_ = std::thread([this] () {
+  msg_loop_thread_ = env_->StartThread([this] () {
     env_->SetCurrentThreadName("client");
     msg_loop_->Run();
   });
@@ -228,7 +216,7 @@ ClientImpl::~ClientImpl() {
   delete msg_loop_;
 
   // Wait for thread to join.
-  msg_loop_thread_.join();
+  env_->WaitForJoin(msg_loop_thread_);
 }
 
 PublishStatus ClientImpl::Publish(const Topic& name,

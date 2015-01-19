@@ -490,7 +490,8 @@ int main(int argc, char** argv) {
 
 
     clients.emplace_back(
-      new rocketspeed::ClientImpl(pilots[i % pilots.size()],
+      new rocketspeed::ClientImpl(env,
+                                  pilots[i % pilots.size()],
                                   copilots[i % copilots.size()],
                                   rocketspeed::Tenant(102),
                                   msg_loop,
