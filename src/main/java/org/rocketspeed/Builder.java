@@ -1,5 +1,7 @@
 package org.rocketspeed;
 
+import java.util.logging.Level;
+
 public final class Builder {
 
   static {
@@ -37,8 +39,12 @@ public final class Builder {
   public Builder subscribeCallback(final SubscribeCallback callback) {
     this.subscribeCallback = new SubscribeCallbackImpl() {
       @Override
-      public void Call(Status status, long sequenceNumber, boolean subscribed) {
-        callback.call(status, sequenceNumber, subscribed);
+      public void Call(final Status status, final long sequenceNumber, final boolean subscribed) {
+        try {
+          callback.call(status, sequenceNumber, subscribed);
+        } catch (Exception e) {
+          Client.LOGGER.log(Level.WARNING, "Exception thrown in subscribe callback", e);
+        }
       }
     };
     return this;
@@ -47,8 +53,13 @@ public final class Builder {
   public Builder receiveCallback(final ReceiveCallback callback) {
     this.receiveCallback = new ReceiveCallbackImpl() {
       @Override
-      public void Call(int namespaceId, String topicName, long sequenceNumber, byte[] contents) {
-        callback.call(new MessageReceived(namespaceId, topicName, sequenceNumber, contents));
+      public void Call(final int namespaceId, final String topicName, final long sequenceNumber,
+                       final byte[] contents) {
+        try {
+          callback.call(new MessageReceived(namespaceId, topicName, sequenceNumber, contents));
+        } catch (Exception e) {
+          Client.LOGGER.log(Level.WARNING, "Exception thrown in receive callback", e);
+        }
       }
     };
     return this;

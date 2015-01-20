@@ -2,8 +2,12 @@ package org.rocketspeed;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class Client implements AutoCloseable {
+
+  /* package */ static final Logger LOGGER = Logger.getLogger(Client.class.getName());
 
   static {
     System.loadLibrary("rocketspeedjni");
@@ -37,8 +41,12 @@ public class Client implements AutoCloseable {
       @Override
       public void Call(Status status, int namespaceId, String topicName, MsgIdImpl messageId,
                        long sequenceNumber, byte[] contents) {
-        callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber,
-                      contents);
+        try {
+          callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber,
+                        contents);
+        } catch (Exception e) {
+          LOGGER.log(Level.WARNING, "Exception thrown in publish callback", e);
+        }
       }
     };
     PublishStatus status =

@@ -59,6 +59,8 @@ public class IntegrationTest {
         assertArrayEquals(data, contents);
         statuses.append(status);
         publishSemaphore.release();
+        // This exception should be swallowed by a thread that executes the callback.
+        throw new RuntimeException("Catch me if you can!");
       }
     };
     final Semaphore subscribeSemaphore = new Semaphore(0);
@@ -68,6 +70,8 @@ public class IntegrationTest {
         assertEquals(true, subscribed);
         statuses.append(status);
         subscribeSemaphore.release();
+        // This exception should be swallowed by a thread that executes the callback.
+        throw new RuntimeException("Catch me if you can!");
       }
     };
     final Semaphore receiveSemaphore = new Semaphore(0);
@@ -78,6 +82,8 @@ public class IntegrationTest {
         assertEquals(topic, message.getTopicName());
         assertArrayEquals(data, message.getContents());
         receiveSemaphore.release();
+        // This exception should be swallowed by a thread that executes the callback.
+        throw new RuntimeException("Catch me if you can!");
       }
     };
 
