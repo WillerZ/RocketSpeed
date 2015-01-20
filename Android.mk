@@ -31,6 +31,8 @@ LOCAL_CPP_FEATURES := exceptions
 
 LOCAL_STATIC_LIBRARIES := libevent2_static
 
+LOCAL_CFLAGS += $(BUCK_DEP_CFLAGS)
+LOCAL_LDFLAGS += $(BUCK_DEP_LDFLAGS)
 include $(BUILD_STATIC_LIBRARY)
 
 $(call import-module,libevent-2.0.21)
