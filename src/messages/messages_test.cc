@@ -110,6 +110,50 @@ TEST(Messaging, DataAck) {
   ASSERT_TRUE(ack1.GetAcks() == ack2.GetAcks());
 }
 
+static void TestMessage(const Serializer& msg) {
+  Slice slice = msg.Serialize();
+
+  // Should successfully parse.
+  ASSERT_TRUE(Message::CreateNewInstance(slice.ToUniqueChars(),
+                                         slice.size()) != nullptr);
+
+  // All sub-sizes should fail to parse:
+  for (size_t n = 0; n < slice.size(); ++n) {
+    // Only first n bytes
+    ASSERT_TRUE(Message::CreateNewInstance(slice.ToUniqueChars(),
+                                           n) == nullptr);
+  }
+}
+
+TEST(Messaging, ErrorHandling) {
+  // Test that Message::CreateNewInstance handles bad messages.
+  TenantID tenant = Tenant::GuestTenant;
+  ClientID client = "client1";
+  NamespaceID nsid = 200;
+
+  MessagePing msg0(tenant, MessagePing::Request, client);
+  TestMessage(msg0);
+
+  MessageData msg1(MessageType::mPublish,
+                   tenant, client, "topic", nsid, "payload",
+                   Retention::OneDay);
+  TestMessage(msg1);
+
+  std::vector<TopicPair> topics = {{ 100, "topic", mSubscribe, nsid }};
+  MessageMetadata msg2(tenant,
+                       MessageMetadata::MetaType::Request,
+                       client,
+                       topics);
+  TestMessage(msg2);
+
+  MessageDataAck::AckVector acks(1);
+  MessageDataAck msg3(nsid, client, acks);
+  TestMessage(msg3);
+
+  MessageGap msg4(tenant, client, kBenign, 100, 200);
+  TestMessage(msg4);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

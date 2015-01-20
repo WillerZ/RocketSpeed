@@ -299,6 +299,45 @@ TEST(Coding, BitStreamConvenienceFuncs) {
   ASSERT_EQ(BitStreamGetInt(&slice, 0, 64), (uint64_t)(-1));
 }
 
+enum class Fixed8  : uint8_t  { empty = 0, x = 0x12 };
+enum class Fixed16 : uint16_t { empty = 0, x = 0x1234 };
+enum class Fixed32 : uint32_t { empty = 0, x = 0x12345678 };
+enum class Fixed64 : uint64_t { empty = 0, x = 0x1234567898765432 };
+
+TEST(Coding, FixedEnum) {
+  Fixed8  in8  = Fixed8::x,  out8  = Fixed8::empty;
+  Fixed16 in16 = Fixed16::x, out16 = Fixed16::empty;
+  Fixed32 in32 = Fixed32::x, out32 = Fixed32::empty;
+  Fixed64 in64 = Fixed64::x, out64 = Fixed64::empty;
+
+  std::string dst;
+  Slice in;
+
+  dst.clear();
+  PutFixedEnum8(&dst, in8);
+  in = Slice(dst);
+  ASSERT_TRUE(GetFixedEnum8(&in, &out8));
+  ASSERT_TRUE(out8 == Fixed8::x);
+
+  dst.clear();
+  PutFixedEnum16(&dst, in16);
+  in = Slice(dst);
+  ASSERT_TRUE(GetFixedEnum16(&in, &out16));
+  ASSERT_TRUE(out16 == Fixed16::x);
+
+  dst.clear();
+  PutFixedEnum32(&dst, in32);
+  in = Slice(dst);
+  ASSERT_TRUE(GetFixedEnum32(&in, &out32));
+  ASSERT_TRUE(out32 == Fixed32::x);
+
+  dst.clear();
+  PutFixedEnum64(&dst, in64);
+  in = Slice(dst);
+  ASSERT_TRUE(GetFixedEnum64(&in, &out64));
+  ASSERT_TRUE(out64 == Fixed64::x);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

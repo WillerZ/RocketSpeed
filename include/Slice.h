@@ -19,6 +19,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <string.h>
+#include <memory>
 #include <string>
 
 namespace rocketspeed {
@@ -78,6 +79,13 @@ class Slice {
     } else {
       return std::string(data_, size_);
     }
+  }
+
+  // Returns a unique_ptr<char[]> containing a copy of the data.
+  std::unique_ptr<char[]> ToUniqueChars() const {
+    std::unique_ptr<char[]> buf(new char[size_]);
+    memcpy(buf.get(), data_, size_);
+    return buf;
   }
 
   // Three-way comparison.  Returns value:

@@ -14,6 +14,7 @@
 #include <string.h>
 #include <algorithm>
 #include <string>
+#include <type_traits>
 
 #include "include/Slice.h"
 #include "include/Types.h"
@@ -26,6 +27,7 @@ const unsigned int kMaxVarint32Length = 5;
 const unsigned int kMaxVarint64Length = 10;
 
 // Standard Put... routines append to a string
+extern void PutFixed8(std::string* dst, uint8_t value);
 extern void PutFixed16(std::string* dst, uint16_t value);
 extern void PutFixed32(std::string* dst, uint32_t value);
 extern void PutFixed64(std::string* dst, uint64_t value);
@@ -37,6 +39,7 @@ extern void PutLengthPrefixedSliceParts(std::string* dst,
 
 // Standard Get... routines parse a value from the beginning of a Slice
 // and advance the slice past the parsed value.
+extern bool GetFixed8(Slice* input, uint8_t* value);
 extern bool GetFixed16(Slice* input, uint16_t* value);
 extern bool GetFixed32(Slice* input, uint32_t* value);
 extern bool GetFixed64(Slice* input, uint64_t* value);
@@ -191,6 +194,10 @@ inline void EncodeFixed64(char* buf, uint64_t value) {
 #endif
 }
 
+inline void PutFixed8(std::string* output, uint8_t value) {
+  output->push_back(static_cast<char>(value));
+}
+
 inline void PutFixed16(std::string* dst, uint16_t value) {
   char buf[sizeof(value)];
   EncodeFixed16(buf, value);
@@ -256,6 +263,15 @@ inline int VarintLength(uint64_t v) {
     len++;
   }
   return len;
+}
+
+inline bool GetFixed8(Slice* input, uint8_t* value) {
+  if (input->size() < sizeof(*value)) {
+    return false;
+  }
+  *value = static_cast<uint8_t>((*input)[0]);
+  input->remove_prefix(sizeof(*value));
+  return true;
 }
 
 inline bool GetFixed16(Slice* input, uint16_t* value) {
@@ -359,4 +375,94 @@ inline bool GetNamespaceId(Slice* input, NamespaceID* value) {
   assert(sizeof(*value) == sizeof(uint16_t));
   return GetFixed16(input, value);
 }
+
+inline void PutBytes(std::string* output, const char* data, size_t size) {
+  output->append(data, size);
+}
+
+inline bool GetBytes(Slice* input, char* value, size_t size) {
+  if (input->size() < size) {
+    return false;
+  }
+  memcpy(value, input->data(), size);
+  input->remove_prefix(size);
+  return true;
+}
+
+template <typename T>
+inline void PutFixedEnum8(std::string* dst, T value) {
+  static_assert(std::is_enum<T>::value, "Must be an enum");
+  static_assert(sizeof(T) == 1, "Incorrect enum size");
+  PutFixed8(dst, static_cast<uint8_t>(value));
+}
+
+template <typename T>
+inline void PutFixedEnum16(std::string* dst, T value) {
+  static_assert(std::is_enum<T>::value, "Must be an enum");
+  static_assert(sizeof(T) == 2, "Incorrect enum size");
+  PutFixed16(dst, static_cast<uint16_t>(value));
+}
+
+template <typename T>
+inline void PutFixedEnum32(std::string* dst, T value) {
+  static_assert(std::is_enum<T>::value, "Must be an enum");
+  static_assert(sizeof(T) == 4, "Incorrect enum size");
+  PutFixed32(dst, static_cast<uint32_t>(value));
+}
+
+template <typename T>
+inline void PutFixedEnum64(std::string* dst, T value) {
+  static_assert(std::is_enum<T>::value, "Must be an enum");
+  static_assert(sizeof(T) == 8, "Incorrect enum size");
+  PutFixed64(dst, static_cast<uint64_t>(value));
+}
+
+template <typename T>
+inline bool GetFixedEnum8(Slice* input, T* value) {
+  static_assert(std::is_enum<T>::value, "T must be an enum");
+  static_assert(sizeof(T) == 1, "Incorrect enum size");
+  uint8_t data;
+  if (!GetFixed8(input, &data)) {
+    return false;
+  }
+  *value = static_cast<T>(data);
+  return true;
+}
+
+template <typename T>
+inline bool GetFixedEnum16(Slice* input, T* value) {
+  static_assert(std::is_enum<T>::value, "T must be an enum");
+  static_assert(sizeof(T) == 2, "Incorrect enum size");
+  uint16_t data;
+  if (!GetFixed16(input, &data)) {
+    return false;
+  }
+  *value = static_cast<T>(data);
+  return true;
+}
+
+template <typename T>
+inline bool GetFixedEnum32(Slice* input, T* value) {
+  static_assert(std::is_enum<T>::value, "T must be an enum");
+  static_assert(sizeof(T) == 4, "Incorrect enum size");
+  uint32_t data;
+  if (!GetFixed32(input, &data)) {
+    return false;
+  }
+  *value = static_cast<T>(data);
+  return true;
+}
+
+template <typename T>
+inline bool GetFixedEnum64(Slice* input, T* value) {
+  static_assert(std::is_enum<T>::value, "T must be an enum");
+  static_assert(sizeof(T) == 8, "Incorrect enum size");
+  uint64_t data;
+  if (!GetFixed64(input, &data)) {
+    return false;
+  }
+  *value = static_cast<T>(data);
+  return true;
+}
+
 }  // namespace rocketspeed

@@ -51,7 +51,9 @@ Message::CreateNewInstance(Slice* in) {
 
   // make a temporary copy of the input slice
   Slice tmp(*in);
-  assert(in->size() >= MessageHeader::GetSize());
+  if (in->size() < MessageHeader::GetSize()) {
+    return nullptr;
+  }
 
   // remove msg header
   tmp.remove_prefix(MessageHeader::GetSize());
@@ -59,28 +61,49 @@ Message::CreateNewInstance(Slice* in) {
   // extract msg type
   memcpy(&mtype, tmp.data(), sizeof(mtype));
 
+  Status st;
   switch (mtype) {
     case mPing:
       msg0 = new MessagePing();
-      msg0->DeSerialize(in);
-      return std::unique_ptr<Message>(msg0);
+      st = msg0->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg0);
+      }
+      break;
+
     case mPublish:
     case mDeliver:
       msg1 = new MessageData();
-      msg1->DeSerialize(in);
-      return std::unique_ptr<Message>(msg1);
+      st = msg1->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg1);
+      }
+      break;
+
     case mMetadata:
       msg2 = new MessageMetadata();
-      msg2->DeSerialize(in);
-      return std::unique_ptr<Message>(msg2);
+      st = msg2->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg2);
+      }
+      break;
+
     case mDataAck:
       msg3 = new MessageDataAck();
-      msg3->DeSerialize(in);
-      return std::unique_ptr<Message>(msg3);
+      st = msg3->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg3);
+      }
+      break;
+
     case mGap:
       msg4 = new MessageGap();
-      msg4->DeSerialize(in);
-      return std::unique_ptr<Message>(msg4);
+      st = msg4->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg4);
+      }
+      break;
+
     default:
       break;
   }
@@ -162,11 +185,11 @@ Slice MessagePing::Serialize() const {
   serialize_buffer__.clear();
   serializeMessageHeader();
 
-  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
 
   // serialize message specific contents
-  serialize_buffer__.append((const char *)&pingtype_, sizeof(type_));
+  PutFixedEnum8(&serialize_buffer__, pingtype_);
   //  origin
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
@@ -182,17 +205,18 @@ Status MessagePing::DeSerialize(Slice* in) {
   }
 
   // extract type
-  memcpy(&type_, in->data(), sizeof(type_));
-  in->remove_prefix(sizeof(type_));
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
 
   if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
   }
 
   // extract ping type
-  void* p = static_cast<void *>(&pingtype_);
-  memcpy(p, in->data(), sizeof(pingtype_));
-  in->remove_prefix(sizeof(pingtype_));
+  if (!GetFixedEnum8(in, &pingtype_)) {
+    return Status::InvalidArgument("Bad ping type");
+  }
 
   // extract origin
   Slice sl;
@@ -241,7 +265,7 @@ Slice MessageData::Serialize() const {
   serialize_buffer__.clear();
   serializeMessageHeader();
 
-  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixedEnum8(&serialize_buffer__, type_);
 
   // origin
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
@@ -264,8 +288,9 @@ Status MessageData::DeSerialize(Slice* in) {
   }
 
   // extract type
-  memcpy(&type_, in->data(), sizeof(type_));
-  in->remove_prefix(sizeof(type_));
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
 
   // extract origin
   Slice sl;
@@ -308,7 +333,7 @@ void MessageData::SerializeInternal() const {
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
 
-  serialize_buffer__.append(payload_.data(), payload_.size());
+  PutLengthPrefixedSlice(&serialize_buffer__, payload_);
 }
 
 Status MessageData::DeSerializeStorage(Slice* in) {
@@ -348,7 +373,9 @@ Status MessageData::DeSerializeStorage(Slice* in) {
   memcpy(&msgid_, idSlice.data(), sizeof(msgid_));
 
   // extract payload (the rest of the message)
-  payload_ = *in;
+  if (!GetLengthPrefixedSlice(in, &payload_)) {
+    return Status::InvalidArgument("Bad payload");
+  }
   return Status::OK();
 }
 
@@ -382,12 +409,12 @@ Slice MessageMetadata::Serialize() const {
   serializeMessageHeader();
 
   // Type, tenantId and origin
-  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // Now serialize message specific data
-  serialize_buffer__.append((const char *)&metatype_, sizeof(metatype_));
+  PutFixedEnum8(&serialize_buffer__, metatype_);
   //  origin
 
   // Topics and metadata state
@@ -396,8 +423,7 @@ Slice MessageMetadata::Serialize() const {
     PutVarint64(&serialize_buffer__, p.seqno);
     PutLengthPrefixedSlice(&serialize_buffer__, Slice(p.topic_name));
     PutFixed16(&serialize_buffer__, p.namespace_id);
-    serialize_buffer__.append((const char *)&p.topic_type,
-                              sizeof(p.topic_type));
+    PutFixedEnum8(&serialize_buffer__, p.topic_type);
   }
   // compute msg size
   serializeMessageSize();
@@ -411,8 +437,9 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   }
 
   // extract type
-  memcpy(&type_, in->data(), sizeof(type_));
-  in->remove_prefix(sizeof(type_));
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
 
   // extrant tenant ID
   if (!GetFixed16(in, &tenantid_)) {
@@ -428,9 +455,9 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   origin_.append(sl.data(), sl.size());
 
   // extract metadata type
-  void* ptr = static_cast<void *>(&metatype_);
-  memcpy(ptr, in->data(), sizeof(metatype_));
-  in->remove_prefix(sizeof(metatype_));
+  if (!GetFixedEnum8(in, &metatype_)) {
+    return Status::InvalidArgument("Bad metadata type");
+  }
 
   // extract number of topics
   uint32_t num_topics;
@@ -439,7 +466,7 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   }
 
   // extract each topic
-  for (unsigned i = 0; i < num_topics; i++) {
+  for (uint32_t i = 0; i < num_topics; i++) {
     TopicPair p;
 
     // extract start seqno for this topic subscription
@@ -459,8 +486,9 @@ Status MessageMetadata::DeSerialize(Slice* in) {
     }
 
     // extract one topic type
-    memcpy(&p.topic_type, in->data(), sizeof(p.topic_type));
-    in->remove_prefix(sizeof(p.topic_type));
+    if (!GetFixedEnum8(in, &p.topic_type)) {
+      return Status::InvalidArgument("Bad topic type");
+    }
 
     topics_.push_back(p);
   }
@@ -491,15 +519,15 @@ Slice MessageDataAck::Serialize() const {
   serializeMessageHeader();
 
   // Type, tenantId and origin
-  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // serialize message specific contents
   PutVarint32(&serialize_buffer__, acks_.size());
   for (const Ack& ack : acks_) {
-    serialize_buffer__.append((const char*)&ack.status, sizeof(ack.status));
-    serialize_buffer__.append((const char*)&ack.msgid, sizeof(ack.msgid));
+    PutFixedEnum8(&serialize_buffer__, ack.status);
+    PutBytes(&serialize_buffer__, ack.msgid.id, sizeof(ack.msgid.id));
     PutVarint64(&serialize_buffer__, ack.seqno);
   }
 
@@ -516,8 +544,9 @@ Status MessageDataAck::DeSerialize(Slice* in) {
   }
 
   // extract type
-  memcpy(&type_, in->data(), sizeof(type_));
-  in->remove_prefix(sizeof(type_));
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
 
   // extrant tenant ID
   if (!GetFixed16(in, &tenantid_)) {
@@ -543,18 +572,14 @@ Status MessageDataAck::DeSerialize(Slice* in) {
     Ack ack;
 
     // extract status
-    if (in->empty()) {
+    if (!GetFixedEnum8(in, &ack.status)) {
       return Status::InvalidArgument("Bad Ack Status");
     }
-    ack.status = static_cast<AckStatus>((*in)[0]);
-    in->remove_prefix(1);
 
     // extract msgid
-    if (in->size() < sizeof(ack.msgid)) {
+    if (!GetBytes(in, ack.msgid.id, sizeof(ack.msgid.id))) {
       return Status::InvalidArgument("Bad Ack MsgId");
     }
-    memcpy(&ack.msgid, in->data(), sizeof(ack.msgid));
-    in->remove_prefix(sizeof(ack.msgid));
 
     if (!GetVarint64(in, &ack.seqno)) {
       return Status::InvalidArgument("Bad Ack Sequence number");
@@ -590,12 +615,12 @@ Slice MessageGap::Serialize() const {
   serializeMessageHeader();
 
   // Type, tenantId and origin
-  serialize_buffer__.append((const char *)&type_, sizeof(type_));
+  PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // Write the gap information.
-  serialize_buffer__.append((const char*)&gap_type_, sizeof(gap_type_));
+  PutFixedEnum8(&serialize_buffer__, gap_type_);
   PutVarint64(&serialize_buffer__, gap_from_);
   PutVarint64(&serialize_buffer__, gap_to_);
 
@@ -610,8 +635,9 @@ Status MessageGap::DeSerialize(Slice* in) {
     return msghdrStatus;
   }
   // extract type
-  memcpy(&type_, in->data(), sizeof(type_));
-  in->remove_prefix(sizeof(type_));
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
 
   // extrant tenant ID
   if (!GetFixed16(in, &tenantid_)) {
@@ -627,11 +653,9 @@ Status MessageGap::DeSerialize(Slice* in) {
   origin_.append(sl.data(), sl.size());
 
   // Read gap type
-  if (in->size() < sizeof(gap_type_)) {
+  if (!GetFixedEnum8(in, &gap_type_)) {
     return Status::InvalidArgument("Missing gap type");
   }
-  memcpy(&gap_type_, in->data(), sizeof(gap_type_));
-  in->remove_prefix(sizeof(gap_type_));
 
   // Read gap start seqno
   if (!GetVarint64(in, &gap_from_)) {
