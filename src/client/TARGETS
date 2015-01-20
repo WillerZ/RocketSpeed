@@ -25,6 +25,7 @@ cpp_library(
     srcs = [
         'client.cc',
         'client_env.cc',
+        'options.cc',
         'storage/file_storage.cc',
     ],
     preprocessor_flags = [
