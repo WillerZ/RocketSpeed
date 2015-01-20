@@ -302,11 +302,13 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
       storage_->Update(elem);
     }
 
-    if (elem.start) {
+    // No need to restore subscription state if we want to unsubscribe.
+    if (!elem.subscribe || elem.start) {
       auto type = elem.subscribe ? MetadataType::mSubscribe
                                  : MetadataType::mUnSubscribe;
+      auto start = elem.subscribe ? elem.start.get() : 0;
       int worker_id = GetWorkerForTopic(elem.topic_name);
-      subscribe[worker_id].emplace_back(elem.start.get(),
+      subscribe[worker_id].emplace_back(start,
                                         elem.topic_name,
                                         type,
                                         elem.namespace_id);

@@ -64,7 +64,7 @@ struct GUID {
 
   GUID() = default;
 
-  explicit GUID(char guid[16]) {
+  explicit GUID(const char guid[16]) {
     memcpy(id, guid, 16);
   }
 
@@ -101,6 +101,8 @@ class PublishStatus {
   : status(pstatus)
   , msgid(messageid) {
   }
+
+  PublishStatus() {}
 };
 
 /**

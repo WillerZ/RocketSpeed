@@ -1,17 +1,32 @@
 cpp_library(
     name = 'djinni_interface',
-    srcs = util.files('djinni/*.cpp'),
+    srcs = [
+        'djinni/HostId.cpp',
+        'djinni/MsgIdImpl.cpp',
+    ],
     preprocessor_flags = [
         '-Irocketspeed/github/src-gen/djinni',
-        '-Irocketspeed/github/external/Optional',
     ],
 )
 
 cpp_library(
     name = 'djinni_jni',
-    srcs = util.files('djinni/jni/*.cpp'),
+    srcs = [
+        'djinni/jni/NativeClientImpl.cpp',
+        'djinni/jni/NativeConfigurationImpl.cpp',
+        'djinni/jni/NativeHostId.cpp',
+        'djinni/jni/NativeMsgIdImpl.cpp',
+        'djinni/jni/NativePublishCallbackImpl.cpp',
+        'djinni/jni/NativePublishStatus.cpp',
+        'djinni/jni/NativeReceiveCallbackImpl.cpp',
+        'djinni/jni/NativeStatus.cpp',
+        'djinni/jni/NativeSubscribeCallbackImpl.cpp',
+        'djinni/jni/NativeSubscriptionRequestImpl.cpp',
+        'djinni/jni/NativeSubscriptionStorage.cpp',
+    ],
     deps = [
         ':djinni_interface',
+        '@/rocketspeed/github/src/djinni:djinni_implementation',
         '@/rocketspeed/github/external/djinni/support-lib/jni',
     ],
     preprocessor_flags = [
@@ -19,4 +34,5 @@ cpp_library(
         '-Irocketspeed/github/external/djinni/support-lib/jni',
         '-Irocketspeed/github/external/Optional',
     ],
+    link_whole = True,
 )

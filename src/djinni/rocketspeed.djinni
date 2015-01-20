@@ -19,12 +19,12 @@ MsgIdImpl = record {
   const SIZE: i32 = 16;
 
   guid: binary;
-}
+} deriving (eq)
 
 HostId = record {
   hostname: string;
   port: i32;
-}
+} deriving (eq)
 
 RetentionBase = enum {
   OneHour;
@@ -88,14 +88,14 @@ ClientImpl = interface +c {
               client_id: string,
               subscribe_callback: SubscribeCallbackImpl,
               receive_callback: ReceiveCallbackImpl,
-              storage: SubscriptionStorage) : ClientImpl;
+              storage: SubscriptionStorage): ClientImpl;
 
   Publish(namespace_id: i32,
           topic_name: string,
           retention: RetentionBase,
           data: binary,
           message_id: optional<MsgIdImpl>,
-          publish_callback: PublishCallbackImpl) : PublishStatus;
+          publish_callback: PublishCallbackImpl): PublishStatus;
 
   ListenTopics(names: list<SubscriptionRequestImpl>);
 

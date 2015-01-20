@@ -18,4 +18,13 @@ public final class MsgIdImpl {
     public byte[] getGuid() {
         return guid;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof MsgIdImpl)) {
+            return false;
+        }
+        MsgIdImpl other = (MsgIdImpl) obj;
+        return java.util.Arrays.equals(guid, other.guid);
+    }
 }

@@ -2,6 +2,10 @@ package org.rocketspeed;
 
 public final class Builder {
 
+  static {
+    System.loadLibrary("rocketspeedjni");
+  }
+
   private ConfigurationImpl config;
   private String clientID;
   private SubscribeCallbackImpl subscribeCallback;

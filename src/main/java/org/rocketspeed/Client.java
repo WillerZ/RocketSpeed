@@ -5,6 +5,10 @@ import java.util.List;
 
 public class Client implements AutoCloseable {
 
+  static {
+    System.loadLibrary("rocketspeedjni");
+  }
+
   private final ClientImpl client;
 
   /* package */ Client(ClientImpl client) {

@@ -15,6 +15,8 @@ struct MsgIdImpl final {
 
     std::vector<uint8_t> guid;
 
+    bool operator==(const MsgIdImpl & other) const;
+    bool operator!=(const MsgIdImpl & other) const;
 
     MsgIdImpl(
             std::vector<uint8_t> guid) :

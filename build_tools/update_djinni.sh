@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 REPO_ROOT="$(dirname "$0")/.."
-DJINNI_HOME="$REPO_ROOT/external/djinni"
-IFACE_FILE="$REPO_ROOT/src/main/rocketspeed.djinni"
+DJINNI_HOME=${DJINNI_HOME:-"$REPO_ROOT/external/djinni"}
+IFACE_FILE="$REPO_ROOT/src/djinni/rocketspeed.djinni"
 JAVA_PACKAGE="org.rocketspeed"
 JAVA_DIR="$REPO_ROOT/src/main/java-gen/${JAVA_PACKAGE/.//}"
 CPP_DIR="$REPO_ROOT/src-gen/djinni"

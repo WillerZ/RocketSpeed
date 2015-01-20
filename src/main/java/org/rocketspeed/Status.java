@@ -5,7 +5,9 @@ import java.io.IOException;
 
 public final class Status extends StatusBase {
 
-  public Status(StatusCode code, String state) {
+  public static final Status OK = new Status(StatusCode.OK, "");
+
+  /* package */ Status(StatusCode code, String state) {
     super(code, state);
   }
 
@@ -38,5 +40,9 @@ public final class Status extends StatusBase {
       default:
         throw new AssertionError("Missing branch for " + StatusCode.class.getSimpleName());
     }
+  }
+
+  public boolean isOk() {
+    return StatusCode.OK.equals(getCode());
   }
 }

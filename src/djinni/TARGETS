@@ -1,15 +1,23 @@
 cpp_library(
     name = 'djinni_implementation',
-    srcs = util.files('*.cc'),
+    srcs = [
+        'client.cc',
+        'jvm_env.cc',
+    ],
     deps = [
         '@/rocketspeed/github/src/client',
+        '@/rocketspeed/github/src/util/common:configuration',
         '@/rocketspeed/github/src-gen:djinni_interface',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
         '-Irocketspeed/github/external/Optional',
     ],
 )
@@ -17,18 +25,18 @@ cpp_library(
 cpp_binary(
     name = 'librocketspeedjni.so',
     srcs = [
-        'djinni_main.cpp',
+        'djinni_main.cc',
     ],
     deps = [
-        '@/rocketspeed/github/src/djinni:djinni_implementation',
         '@/rocketspeed/github/src-gen:djinni_jni',
-    ],
-    preprocessor_flags = [
-        '-Irocketspeed/github/external/djinni/support-lib/jni',
-        '-Irocketspeed/github/external/Optional',
+        '@/rocketspeed/github/external/djinni/support-lib/jni',
     ],
     external_deps = [
         ('openjdk', None, 'jvm'),
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
     ],
     dlopen_enabled = True,
 )

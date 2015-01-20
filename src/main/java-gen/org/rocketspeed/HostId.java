@@ -24,4 +24,14 @@ public final class HostId {
     public int getPort() {
         return port;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof HostId)) {
+            return false;
+        }
+        HostId other = (HostId) obj;
+        return this.hostname.equals(other.hostname) &&
+                this.port == other.port;
+    }
 }

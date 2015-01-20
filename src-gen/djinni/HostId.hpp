@@ -15,6 +15,8 @@ struct HostId final {
 
     int32_t port;
 
+    bool operator==(const HostId & other) const;
+    bool operator!=(const HostId & other) const;
 
     HostId(
             std::string hostname,

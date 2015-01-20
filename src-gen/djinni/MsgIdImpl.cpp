@@ -7,4 +7,12 @@ namespace rocketspeed { namespace djinni {
 
 const int32_t MsgIdImpl::SIZE = 16;
 
+bool MsgIdImpl::operator==(const MsgIdImpl & other) const {
+    return guid == other.guid;
+}
+
+bool MsgIdImpl::operator!=(const MsgIdImpl & other) const {
+    return !(*this == other);
+}
+
 } }  // namespace rocketspeed::djinni

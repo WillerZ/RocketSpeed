@@ -6,5 +6,5 @@ cpp_library(
     external_deps = [
         ('openjdk', None, 'jvm'),
     ],
-    warp = False,
+    link_whole = True,
 )

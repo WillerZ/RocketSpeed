@@ -1,0 +1,46 @@
+JAVA_VERSION = '7'
+
+java_binary (
+    name = "publisher",
+    srcs = util.files('main/java/org/rocketspeed/cli/Publisher.java'),
+    main_class = "org.rocketspeed.cli.Publisher",
+    deps = [
+        ':client_java',
+    ],
+    java_version = JAVA_VERSION,
+    openjdk = True,
+)
+
+java_library(
+    name = 'client_java',
+    srcs =
+        util.files('main/java/org/rocketspeed/*.java') +
+        util.files('main/java-gen/org/rocketspeed/*.java'),
+    deps = [
+        '@/rocketspeed/github/src/djinni:librocketspeedjni.so',
+    ],
+)
+
+java_unittest(
+    name = 'client_java_test',
+    srcs = util.files('test/java/**/*.java'),
+    deps = [
+        ':client_java',
+        '@/rocketspeed/github/src/server:rocketspeed',
+    ],
+    test_classes = [
+        'org.rocketspeed.IntegrationTest',
+        'org.rocketspeed.LocalTestClusterTest',
+        'org.rocketspeed.tests.VisibilityTest',
+    ],
+    tags = [
+        'serialize',
+        'serialize_test_cases',
+    ],
+    env = {
+        #'ROCKETSPEED_BINARY_PATH' : '_bin/rocketspeed/github/src/server/rocketspeed',
+        'LD_LIBRARY_PATH' : '_bin/rocketspeed/github/src/djinni',
+    },
+    java_version = JAVA_VERSION,
+    openjdk = True,
+)
