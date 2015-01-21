@@ -59,11 +59,12 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
     st = LogDeviceStorage::Create(logdevice_client_, Env::Default(), &storage);
     ASSERT_TRUE(st.ok());
     logdevice_storage_.reset(storage);
+    storage = nullptr;
 
     // Tell the pilot and control tower to use this storage interface instead
     // of opening a new one.
-    pilot_options_.storage.reset(storage);
-    control_tower_options_.storage.reset(storage);
+    pilot_options_.storage = logdevice_storage_;
+    control_tower_options_.storage = logdevice_storage_;
   } else {
     // Just give the storage url to the components.
     pilot_options_.storage_url = storage_url;
