@@ -20,6 +20,23 @@ cpp_library(
     ],
 )
 
+cpp_binary(
+    name = 'test_cluster_proc',
+    srcs = [
+        'test_cluster_proc.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DUSE_LOGDEVICE=1',
+    ],
+    deps = [
+        ':test_cluster',
+    ],
+)
+
 cpp_unittest(
     name = 'integration_test',
     srcs = [

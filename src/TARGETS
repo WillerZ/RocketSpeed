@@ -26,7 +26,7 @@ java_unittest(
     srcs = util.files('test/java/**/*.java'),
     deps = [
         ':client_java',
-        '@/rocketspeed/github/src/server:rocketspeed',
+        '@/rocketspeed/github/src/test:test_cluster_proc',
     ],
     test_classes = [
         'org.rocketspeed.IntegrationTest',
@@ -38,7 +38,7 @@ java_unittest(
         'serialize_test_cases',
     ],
     env = {
-        #'ROCKETSPEED_BINARY_PATH' : '_bin/rocketspeed/github/src/server/rocketspeed',
+        'RS_CLUSTER_BIN_PATH' : '_bin/rocketspeed/github/src/test/test_cluster_proc',
         'LD_LIBRARY_PATH' : '_bin/rocketspeed/github/src/djinni',
     },
     java_version = JAVA_VERSION,

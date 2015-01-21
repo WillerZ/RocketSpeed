@@ -6,7 +6,7 @@
 #define __STDC_FORMAT_MACROS
 
 #ifndef GFLAGS
-#error "glags is required for rocketspeed"
+#error "gflags is required for rocketspeed"
 #endif
 
 #include <gflags/gflags.h>

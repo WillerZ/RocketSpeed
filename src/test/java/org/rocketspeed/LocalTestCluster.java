@@ -1,32 +1,45 @@
 package org.rocketspeed;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.util.Collections;
 import java.util.List;
 
 public class LocalTestCluster implements AutoCloseable {
 
-  private static final String ENV_ROCKETSPEED_BINARY_PATH = "ROCKETSPEED_BINARY_PATH";
+  private static final String ENV_RS_CLUSTER_BIN_PATH = "RS_CLUSTER_BIN_PATH";
+  private static final int COMMAND_READY = 'R';
+  private static final int COMMAND_QUIT = 'Q';
   private static final int PILOT_DEFAULT_PORT = 58600;
   private static final int COPILOT_DEFAULT_PORT = 58600;
-  private final String binaryPath;
   private Process cluster;
+  private OutputStreamWriter clusterIn;
+  private InputStreamReader clusterOut;
 
-  private static String getRocketspeedBinaryPath() {
-    return System.getenv(ENV_ROCKETSPEED_BINARY_PATH);
+  private static String getBinaryPath() {
+    return System.getenv(ENV_RS_CLUSTER_BIN_PATH);
   }
 
   public LocalTestCluster() throws IOException, InterruptedException {
-    this(getRocketspeedBinaryPath());
+    this(getBinaryPath());
   }
 
   public LocalTestCluster(String binaryPath) throws IOException, InterruptedException {
-    this.binaryPath = binaryPath;
-    if (binaryPath != null) {
-      cluster = new ProcessBuilder(binaryPath).inheritIO().start();
-      // This is rather suboptimal. In the future we can make a wrapper over single process cluster
-      // to communicate pilots/copilots ports and asynchronous events via stdout.
-      Thread.sleep(500);
+    try {
+      if (binaryPath != null) {
+        cluster = new ProcessBuilder(binaryPath).redirectError(ProcessBuilder.Redirect.INHERIT).
+            start();
+        clusterIn = new OutputStreamWriter(cluster.getOutputStream());
+        clusterOut = new InputStreamReader(cluster.getInputStream());
+        // Wait for cluster to start.
+        if (COMMAND_READY != clusterOut.read()) {
+          throw new IOException("Unexpected command.");
+        }
+      }
+    } catch (IOException e) {
+      close();
+      throw e;
     }
   }
 
@@ -50,16 +63,22 @@ public class LocalTestCluster implements AutoCloseable {
   }
 
   @Override
-  public void close() throws InterruptedException {
-    if (binaryPath != null) {
+  public void close() throws InterruptedException, IOException {
+    // Possible partial initialisation 1): failed starting cluster process.
+    if (cluster != null) {
       try {
         cluster.exitValue();
         throw new IllegalStateException("Cluster process terminated prematurely.");
       } catch (IllegalThreadStateException ignored) {
         // It is expected that the cluster process still runs.
       }
-      cluster.destroy();
+      // Cleanly shut down the cluster.
+      clusterOut.close();
+      clusterIn.write(COMMAND_QUIT);
+      clusterIn.flush();
+      clusterIn.close();
       cluster.waitFor();
     }
+    // Possible partial initialisation 2): failed to get right command.
   }
 }
