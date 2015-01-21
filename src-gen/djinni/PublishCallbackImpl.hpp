@@ -7,7 +7,6 @@
 #include "Status.hpp"
 #include <cstdint>
 #include <string>
-#include <vector>
 
 namespace rocketspeed { namespace djinni {
 
@@ -15,7 +14,7 @@ class PublishCallbackImpl {
 public:
     virtual ~PublishCallbackImpl() {}
 
-    virtual void Call(Status status, int32_t namespace_id, std::string topic_name, MsgIdImpl message_id, int64_t sequence_number, std::vector<uint8_t> contents) = 0;
+    virtual void Call(Status status, int32_t namespace_id, std::string topic_name, MsgIdImpl message_id, int64_t sequence_number) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

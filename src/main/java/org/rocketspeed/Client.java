@@ -40,10 +40,9 @@ public class Client implements AutoCloseable {
     PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackImpl() {
       @Override
       public void Call(Status status, int namespaceId, String topicName, MsgIdImpl messageId,
-                       long sequenceNumber, byte[] contents) {
+                       long sequenceNumber) {
         try {
-          callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber,
-                        contents);
+          callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber);
         } catch (Exception e) {
           LOGGER.log(Level.WARNING, "Exception thrown in publish callback", e);
         }

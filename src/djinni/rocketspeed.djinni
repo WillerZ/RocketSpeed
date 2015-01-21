@@ -50,8 +50,7 @@ PublishCallbackImpl = interface +j +o {
        namespace_id: i32,
        topic_name: string,
        message_id: MsgIdImpl,
-       sequence_number: i64,
-       contents: binary);
+       sequence_number: i64);
 }
 
 SubscribeCallbackImpl = interface +j +o {

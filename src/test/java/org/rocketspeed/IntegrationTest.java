@@ -53,10 +53,9 @@ public class IntegrationTest {
     PublishCallback publishCallback = new PublishCallback() {
       @Override
       public void call(Status status, int namespaceId, String topicName, MsgId messageId,
-                       long sequenceNumber, byte[] contents) {
+                       long sequenceNumber) {
         assertEquals(ns, namespaceId);
         assertEquals(topic, topicName);
-        assertArrayEquals(data, contents);
         statuses.append(status);
         publishSemaphore.release();
         // This exception should be swallowed by a thread that executes the callback.
@@ -126,15 +125,13 @@ public class IntegrationTest {
 
     // Callbacks.
     final Semaphore publishSemaphore = new Semaphore(0);
-    final List<String> publishedMessages = synchronizedList(new ArrayList<String>());
     PublishCallback publishCallback = new PublishCallback() {
       @Override
       public void call(Status status, int namespaceId, String topicName, MsgId messageId,
-                       long sequenceNumber, byte[] contents) {
+                       long sequenceNumber) {
         assertEquals(ns, namespaceId);
         assertEquals(topic, topicName);
         statuses.append(status);
-        publishedMessages.add(new String(contents));
         publishSemaphore.release();
       }
     };
@@ -172,7 +169,6 @@ public class IntegrationTest {
         client.publish(ns, topic, options, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
-      assertEquals(asList("1", "2", "3"), publishedMessages);
 
       // Subscribe starting from current topic head.
       client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, CURRENT)));
@@ -184,7 +180,6 @@ public class IntegrationTest {
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
-      assertEquals(asList("1", "2", "3", "3", "4", "5"), publishedMessages);
 
       // Should not receive any of the first three messages.
       assertEquals(asList("3", "4", "5"), receivedMessages);
@@ -198,7 +193,6 @@ public class IntegrationTest {
         client.publish(ns, topic, options, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
-      assertEquals(asList("1", "2", "3", "3", "4", "5", "6", "7", "8"), publishedMessages);
 
       // Subscribe starting from current topic head.
       client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, CURRENT)));
@@ -210,8 +204,6 @@ public class IntegrationTest {
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
-      assertEquals(asList("1", "2", "3", "3", "4", "5", "6", "7", "8", "9", "10", "11"),
-                   publishedMessages);
 
       // Should not receive any of the messages sent while we were not subscribing.
       assertEquals(asList("3", "4", "5", "9", "10", "11"), receivedMessages);

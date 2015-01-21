@@ -17,12 +17,12 @@ public:
     static std::shared_ptr<::rocketspeed::djinni::PublishCallbackImpl> fromJava(JNIEnv* jniEnv, jobject j) { return djinni::JniClass<::djinni_generated::NativePublishCallbackImpl>::get()._fromJava(jniEnv, j); }
 
     const djinni::GlobalRef<jclass> clazz { djinni::jniFindClass("org/rocketspeed/PublishCallbackImpl") };
-    const jmethodID method_Call { djinni::jniGetMethodID(clazz.get(), "Call", "(Lorg/rocketspeed/Status;ILjava/lang/String;Lorg/rocketspeed/MsgIdImpl;J[B)V") };
+    const jmethodID method_Call { djinni::jniGetMethodID(clazz.get(), "Call", "(Lorg/rocketspeed/Status;ILjava/lang/String;Lorg/rocketspeed/MsgIdImpl;J)V") };
 
     class JavaProxy final : djinni::JavaProxyCacheEntry, public ::rocketspeed::djinni::PublishCallbackImpl {
     public:
         JavaProxy(jobject obj);
-        virtual void Call(::rocketspeed::djinni::Status status, int32_t namespace_id, std::string topic_name, ::rocketspeed::djinni::MsgIdImpl message_id, int64_t sequence_number, std::vector<uint8_t> contents) override;
+        virtual void Call(::rocketspeed::djinni::Status status, int32_t namespace_id, std::string topic_name, ::rocketspeed::djinni::MsgIdImpl message_id, int64_t sequence_number) override;
 
     private:
         using djinni::JavaProxyCacheEntry::getGlobalRef;

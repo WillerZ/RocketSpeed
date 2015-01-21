@@ -199,8 +199,7 @@ PublishStatus Client::Publish(
                              status->GetNamespaceId(),
                              status->GetTopicName().ToString(),
                              fromMsgId(status->GetMessageId()),
-                             fromSequenceNumber(status->GetSequenceNumber()),
-                             fromSlice(status->GetContents()));
+                             fromSequenceNumber(status->GetSequenceNumber()));
     };
   }
 
