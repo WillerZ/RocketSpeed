@@ -51,7 +51,7 @@ endif
 
 WARNING_FLAGS = -Wall -Werror -Wshadow
 CFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
-CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual
+CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -DOUTPUT_TEST_TIMES
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 

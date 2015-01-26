@@ -45,7 +45,11 @@ int RunAllTests() {
 
   int num = 0;
   if (tests != nullptr) {
+#ifdef OUTPUT_TEST_TIMES
     FILE* times_file = fopen("test_times", "a");
+#else
+    FILE* times_file = nullptr;
+#endif
     for (unsigned int i = 0; i < tests->size(); i++) {
       const Test& t = (*tests)[i];
       if (matcher != nullptr) {
@@ -61,7 +65,9 @@ int RunAllTests() {
       try {
         (*t.func)();
       } catch(...) {
-        fclose(times_file);
+        if (times_file) {
+          fclose(times_file);
+        }
         return 1;
       }
       auto end = clock::now();
@@ -73,7 +79,9 @@ int RunAllTests() {
       }
       ++num;
     }
-    fclose(times_file);
+    if (times_file) {
+      fclose(times_file);
+    }
     delete tests;
     tests = nullptr;
   }
