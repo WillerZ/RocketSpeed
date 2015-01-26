@@ -3,6 +3,7 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+
 #include <unistd.h>
 #include <chrono>
 #include <set>
@@ -17,6 +18,7 @@
 #include "src/copilot/worker.h"
 #include "src/copilot/options.h"
 #include "src/logdevice/storage.h"
+#include "src/test/test_cluster.h"
 #include "src/util/testharness.h"
 
 namespace rocketspeed {
@@ -24,110 +26,21 @@ namespace rocketspeed {
 class CopilotTest {
  public:
   // Create a new instance of the copilot
-  CopilotTest():
-    env_(Env::Default()), copilot_(nullptr), started_(false) {
-
-    Status s = test::CreateLogger(env_, "CopilotTest", &info_log_);
-    ASSERT_TRUE(s.ok());
-
-    // Create MsgLoops
-    ct_msg_loop_.reset(new MsgLoop(env_,
-                                   EnvOptions(),
-                                   ControlTower::DEFAULT_PORT,
-                                   1,
-                                   info_log_,
-                                   "tower"));
-
-    cp_msg_loop_.reset(new MsgLoop(env_,
-                                   EnvOptions(),
-                                   Copilot::DEFAULT_PORT,
-                                   1,
-                                   info_log_,
-                                   "copilot"));
-
-    // Create ControlTower
-    ControlTowerOptions ct_options;
-    ct_options.log_range = std::pair<LogID, LogID>(1, 1);
-    ct_options.storage_url =
-      "configerator:logdevice/rocketspeed.logdevice.primary.conf";
-    ct_options.log_dir = test::TmpDir();
-    ct_options.info_log = info_log_;
-    ct_options.msg_loop = ct_msg_loop_.get();
-
-    Status st = ControlTower::CreateNewInstance(ct_options, &ct_);
-    ASSERT_TRUE(ct_ != nullptr);
-    ASSERT_TRUE(st.ok());
-
-    // Create Copilot
-    options_.log_range = std::pair<LogID, LogID>(1, 1);
-    options_.log_dir = test::TmpDir();
-    options_.info_log = info_log_;
-    options_.control_towers.push_back(ct_->GetClientId(0));
-    options_.msg_loop = cp_msg_loop_.get();
-    st_ = Copilot::CreateNewInstance(options_, &copilot_);
-
-    // what is my machine name?
-    char myname[1024];
-    ASSERT_EQ(gethostname(&myname[0], sizeof(myname)), 0);
-    hostname_.assign(myname);
-
-    // enable all kinds of event loop debugging
-    // not enabling by default since it is not thread safe
-    if (false) {
-      EventLoop::EnableDebugThreadUnsafe(dump_libevent_cb);
-    }
+  CopilotTest() : env_(Env::Default()) {
+    // Create Logger
+    ASSERT_OK(test::CreateLogger(env_, "PilotTest", &info_log_));
   }
 
   virtual ~CopilotTest() {
-    // deleting the Copilot shuts down the event disptach loop.
-    ct_msg_loop_->Stop();
-    cp_msg_loop_->Stop();
-    delete copilot_;
-    delete ct_;
     env_->WaitForJoin();  // This is good hygine
-  }
-
-  // Setup dispatch thread and ensure that it is running.
-  Status CopilotRun() {
-    // If there was an error in instantiating the Copilot earlier.
-    // then return error immediately.
-    if (!st_.ok()) {
-      return st_;
-    }
-
-    // If the copilot has not already been started, then start it
-    if (!started_) {
-      env_->StartThread(CopilotTest::MsgLoopStart, ct_msg_loop_.get());
-      env_->StartThread(CopilotTest::MsgLoopStart, cp_msg_loop_.get());
-    }
-    started_ = true;
-
-    // Wait till the background thread has setup the dispatch loop
-    while (!ct_msg_loop_->IsRunning() || !cp_msg_loop_->IsRunning()) {
-      env_->SleepForMicroseconds(1000);
-    }
-    return Status::OK();
-  }
-
-  // Returns the logger that logs into the LOG file
-  std::shared_ptr<Logger> GetLogger() {
-    return copilot_->GetOptions().info_log;
   }
 
  protected:
   Env* env_;
   EnvOptions env_options_;
-  Copilot* copilot_;
-  ControlTower* ct_;
-  bool started_;
-  CopilotOptions options_;
-  Status st_;
-  std::string hostname_;
+  std::shared_ptr<Logger> info_log_;
   std::set<Topic> sent_msgs_;
   std::set<Topic> acked_msgs_;
-  std::shared_ptr<Logger> info_log_;
-  std::unique_ptr<MsgLoop> ct_msg_loop_;
-  std::unique_ptr<MsgLoop> cp_msg_loop_;
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
@@ -143,18 +56,13 @@ class CopilotTest {
     ASSERT_EQ(metadata->GetTopicInfo().size(), 1);
     acked_msgs_.insert(metadata->GetTopicInfo()[0].topic_name);
   }
-
-  // Dumps libevent info messages to stdout
-  static void
-  dump_libevent_cb(int severity, const char* msg) {
-    const char* s = EventLoop::SeverityToString(severity);
-    printf("[%s] %s\n", s, msg);
-  }
 };
 
 TEST(CopilotTest, Publish) {
-  // create a Copilot (if not already created)
-  ASSERT_EQ(CopilotRun().ok(), true);
+  // Create cluster with copilot and controltower only.
+  LocalTestCluster cluster(info_log_, true, true, false);
+  ASSERT_OK(cluster.GetStatus());
+
   port::Semaphore checkpoint;
 
   // create a client to communicate with the Copilot
@@ -167,7 +75,7 @@ TEST(CopilotTest, Publish) {
       }
     };
 
-  MsgLoop loop(env_, env_options_, 58499, 1, GetLogger(), "test");
+  MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
@@ -189,11 +97,11 @@ TEST(CopilotTest, Publish) {
                         ClientID("client1"),
                         { TopicPair(0, topic, type, ns) });
     msg.SerializeToString(&serial);
-    std::unique_ptr<Command> cmd(
-      new SerializedSendCommand(std::move(serial),
-                                copilot_->GetClientId(0),
-                                env_->NowMicros(),
-                                is_new_request));
+    std::unique_ptr<Command> cmd(new SerializedSendCommand(
+        std::move(serial),
+        cluster.GetCopilotHostIds().front().ToClientId(),
+        env_->NowMicros(),
+        is_new_request));
     ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
     sent_msgs_.insert(topic);
   }
@@ -204,6 +112,10 @@ TEST(CopilotTest, Publish) {
 }
 
 TEST(CopilotTest, WorkerMapping) {
+  // Create cluster with copilot and controltower only.
+  LocalTestCluster cluster(info_log_, true, true, false);
+  ASSERT_OK(cluster.GetStatus());
+
   const int num_towers = 100;
   const int num_workers = 10;
   const int port = ControlTower::DEFAULT_PORT;

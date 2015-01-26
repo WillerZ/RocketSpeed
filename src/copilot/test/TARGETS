@@ -13,10 +13,11 @@ cpp_unittest(
     deps = [
         '@/rocketspeed/github/src/copilot:copilot_library',
         '@/rocketspeed/github/src/controltower:control_tower_library',
+        '@/rocketspeed/github/src/messages',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/github/src/test:test_cluster',
         '@/logdevice/lib',
     ],
     tags = [
