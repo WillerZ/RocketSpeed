@@ -10,7 +10,6 @@
 #include "./Types.h"
 #include "src/port/Env.h"
 #include "src/util/storage.h"
-#include "src/util/logdevice.h"
 #include "src/controltower/room.h"
 
 namespace rocketspeed {

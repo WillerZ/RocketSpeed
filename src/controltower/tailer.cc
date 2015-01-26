@@ -4,6 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/controltower/tailer.h"
+#include "src/logdevice/storage.h"
 #include <vector>
 
 namespace rocketspeed {

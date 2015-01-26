@@ -14,6 +14,7 @@ cpp_binary(
         '-DUSE_LOGDEVICE',
     ],
     deps = [
+        '@/external/gflags',
         '@/rocketspeed/github/src/client:client',
         '@/rocketspeed/github/src/test:test_cluster',
         '@/rocketspeed/github/src/port',
@@ -21,8 +22,5 @@ cpp_binary(
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/util/common:configuration',
         '@/rocketspeed/github/src/messages',
-    ],
-    compiler_flags = [
-        "-Ilogdevice/external/libevent-2.1.3-alpha/include"
     ],
 )

@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "src/pilot/pilot.h"
-#include "src/util/logdevice.h"
+#include "src/logdevice/storage.h"
 #include "src/util/testharness.h"
 
 namespace rocketspeed {

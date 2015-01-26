@@ -16,7 +16,7 @@
 #include "src/copilot/copilot.h"
 #include "src/copilot/worker.h"
 #include "src/copilot/options.h"
-#include "src/util/logdevice.h"
+#include "src/logdevice/storage.h"
 #include "src/util/testharness.h"
 
 namespace rocketspeed {

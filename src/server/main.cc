@@ -20,7 +20,7 @@
 #include "src/copilot/copilot.h"
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
-#include "src/util/logdevice.h"
+#include "src/logdevice/storage.h"
 #include "src/util/parsing.h"
 
 #ifdef USE_LOGDEVICE

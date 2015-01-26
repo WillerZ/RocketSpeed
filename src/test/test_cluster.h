@@ -21,6 +21,7 @@
 
 #ifdef USE_LOGDEVICE
 // We'll set up a local, isolated LogDevice instance.
+#include "src/logdevice/storage.h"
 #include "logdevice/test/utils/IntegrationTestUtils.h"
 namespace ld = facebook::logdevice;
 #endif

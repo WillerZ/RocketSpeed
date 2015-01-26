@@ -10,7 +10,6 @@ cpp_library(
         'hostmap.cc',
         'log_buffer.cc',
         'log_router.cc',
-        'logdevice.cc',
         'logging.cc',
         'parsing.cc',
         'scoped_file_lock.cc',
@@ -23,14 +22,10 @@ cpp_library(
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
-        '-DUSE_LOGDEVICE',
     ],
     deps = [
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/port',
-        '@/common/network:address',
-        '@/logdevice/lib',
-        '@/logdevice/test/utils',
     ],
     warp = False,
 )

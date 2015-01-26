@@ -186,8 +186,10 @@ TEST(IntegrationTest, SequenceNumberZero) {
     ASSERT_TRUE(message_sem.TimedWait(timeout));
   }
 
-  std::vector<std::string> expected = {"3", "4", "5"};
-  ASSERT_TRUE(received == expected);
+  {
+    std::vector<std::string> expected = {"3", "4", "5"};
+    ASSERT_TRUE(received == expected);
+  }
 
   { // Unsubscribe from previously subscribed topic.
     std::vector<SubscriptionRequest> subscriptions = {

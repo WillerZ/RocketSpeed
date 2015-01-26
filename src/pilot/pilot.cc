@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "src/util/logdevice.h"
+#include "src/logdevice/storage.h"
 #include "src/util/memory.h"
 
 namespace rocketspeed {

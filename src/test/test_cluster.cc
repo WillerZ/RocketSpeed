@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 #include <stdio.h>
-#include "src/util/logdevice.h"
+#include "src/logdevice/storage.h"
 #include "src/util/testharness.h"
 
 #ifdef USE_LOGDEVICE

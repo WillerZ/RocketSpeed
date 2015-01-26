@@ -40,6 +40,7 @@ cpp_library(
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/mqttclient:rs_mqtt_msg_loop',
     ],
     warp = False,
 )

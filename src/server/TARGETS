@@ -13,6 +13,7 @@ cpp_binary(
       '-DUSE_LOGDEVICE=1',
     ],
     deps = [
+        '@/external/gflags',
         '@/rocketspeed/github/src/pilot:pilot_library',
         '@/rocketspeed/github/src/copilot:copilot_library',
         '@/rocketspeed/github/src/controltower:control_tower_library',

@@ -225,12 +225,12 @@ TEST(ControlTowerTest, Ping) {
                        MessagePing::PingType::Request,
                        ClientID("clientidx:100"));
     msg.SerializeToString(&serial);  // serialize msg
-    std::unique_ptr<Command> cmd(
+    std::unique_ptr<Command> cmd2(
       new SerializedSendCommand(std::move(serial),
                                 ct_->GetClientId(0),
                                 env_->NowMicros(),
                                 is_new_request));
-    ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
+    ASSERT_EQ(loop.SendCommand(std::move(cmd2)).ok(), true);
   }
 
   // check that all 100 responses were received

@@ -106,10 +106,10 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
     // Create a callback to enqueue a subscribe command.
     // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
     // when converted to an std::function - could use an alloc pool for this.
-    auto callback = [this, logid, request, worker_id] (Status st,
+    auto callback = [this, logid, request, worker_id] (Status status,
                                                        SequenceNumber seqno) {
-      std::unique_ptr<Message> msg(request);
-      if (!st.ok()) {
+      std::unique_ptr<Message> message(request);
+      if (!status.ok()) {
         LOG_WARN(control_tower_->GetOptions().info_log,
                  "Failed to find latest sequence number in Log(%lu)",
                  logid);
@@ -120,21 +120,20 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
       // send message back to this Room with the seqno appropriately
       // filled up in the message.
       assert(seqno != 0);
-      st = Forward(std::move(msg), logid, worker_id);
-      if (!st.ok()) {
+      status = Forward(std::move(message), logid, worker_id);
+      if (!status.ok()) {
         // TODO(pja) 1: may need to do some flow control if this is due
         // to receiving too many subscriptions.
         LOG_WARN(control_tower_->GetOptions().info_log,
                  "Failed to enqueue subscription (%s)",
-                 st.ToString().c_str());
+                 status.ToString().c_str());
       } else {
-        const ClientID& origin = request->GetOrigin();
-        const std::vector<TopicPair>& topic = request->GetTopicInfo();
+        const std::vector<TopicPair>& req_topic = request->GetTopicInfo();
         LOG_INFO(control_tower_->GetOptions().info_log,
                  "Subscribing %s at latest seqno for Topic(%s)@%lu",
-                 origin.c_str(),
-                 topic[0].topic_name.c_str(),
-                 topic[0].seqno);
+                 request->GetOrigin().c_str(),
+                 req_topic[0].topic_name.c_str(),
+                 req_topic[0].seqno);
       }
     };
 

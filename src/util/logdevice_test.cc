@@ -10,7 +10,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "src/util/logdevice.h"
+#include "src/logdevice/storage.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
