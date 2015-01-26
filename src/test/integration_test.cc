@@ -9,29 +9,28 @@
 #include <vector>
 
 #include "include/RocketSpeed.h"
-#include "src/util/testharness.h"
-#include "src/test/test_cluster.h"
-#include "src/port/port.h"
 #include "src/client/client.h"
+#include "src/port/port.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/thread_check.h"
+#include "src/util/testharness.h"
+#include "src/test/test_cluster.h"
 
 namespace rocketspeed {
 
 class IntegrationTest {
  public:
+  std::chrono::seconds timeout;
+
   IntegrationTest()
-      : file_path(test::TmpDir() + "/IntegrationTest-file_storage_data") {
-    ASSERT_OK(rocketspeed::CreateLoggerFromOptions(Env::Default(),
-                                                   "",
-                                                   "LOG.integrationtest",
-                                                   0,
-                                                   0,
-                                                   rocketspeed::INFO_LEVEL,
-                                                   &info_log));
+      : timeout(5)
+      , env_(Env::Default())
+      , file_path(test::TmpDir() + "/IntegrationTest/FileStorage.bin") {
+    ASSERT_OK(test::CreateLogger(env_, "IntegrationTest", &info_log));
   }
 
  protected:
+  Env* env_;
   std::shared_ptr<rocketspeed::Logger> info_log;
   std::string file_path;
 };
@@ -82,7 +81,7 @@ TEST(IntegrationTest, OneMessage) {
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
-  ASSERT_OK(SubscriptionStorage::File(Env::Default(),
+  ASSERT_OK(SubscriptionStorage::File(env_,
                                       file_path,
                                       info_log,
                                       &options.storage));
@@ -106,7 +105,7 @@ TEST(IntegrationTest, OneMessage) {
   client->ListenTopics(subscriptions);
 
   // Wait for the message.
-  bool result = msg_received.TimedWait(std::chrono::seconds(10));
+  bool result = msg_received.TimedWait(timeout);
   ASSERT_TRUE(result);
 }
 
@@ -124,7 +123,6 @@ TEST(IntegrationTest, SequenceNumberZero) {
   Topic topic = "SequenceNumberZero";
   NamespaceID ns = 102;
   TopicOptions opts(Retention::OneDay);
-  std::chrono::seconds timeout(5);
 
   // RocketSpeed callbacks;
   auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
@@ -154,7 +152,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
   options.info_log = info_log;
-  ASSERT_OK(SubscriptionStorage::File(Env::Default(),
+  ASSERT_OK(SubscriptionStorage::File(env_,
                                       file_path,
                                       info_log,
                                       &options.storage));
