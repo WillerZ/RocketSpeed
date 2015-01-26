@@ -98,7 +98,7 @@ Status LogDeviceStorage::Create(
   if (config_url.empty()) {
     return Status::InvalidArgument("config_url must not be empty.");
   }
-#endif
+#endif  // USE_LOGDEVICE
   if (storage == nullptr) {
     return Status::InvalidArgument("Must provide the storage pointer.");
   }

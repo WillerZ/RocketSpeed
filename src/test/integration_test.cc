@@ -22,17 +22,16 @@ class IntegrationTest {
  public:
   IntegrationTest()
       : file_path(test::TmpDir() + "/IntegrationTest-file_storage_data") {
-    if (!rocketspeed::CreateLoggerFromOptions(Env::Default(),
-                                              "",
-                                              "LOG.integrationtest",
-                                              0,
-                                              0,
-                                              rocketspeed::INFO_LEVEL,
-                                              &info_log).ok()) {
-      fprintf(stderr, "Error creating logger, aborting.\n");
-      info_log = std::make_shared<rocketspeed::NullLogger>();
-    }
+    ASSERT_OK(rocketspeed::CreateLoggerFromOptions(Env::Default(),
+                                                   "",
+                                                   "LOG.integrationtest",
+                                                   0,
+                                                   0,
+                                                   rocketspeed::INFO_LEVEL,
+                                                   &info_log));
   }
+
+ protected:
   std::shared_ptr<rocketspeed::Logger> info_log;
   std::string file_path;
 };
@@ -40,6 +39,7 @@ class IntegrationTest {
 TEST(IntegrationTest, OneMessage) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
 
   // Message read semaphore.
   port::Semaphore msg_received;
@@ -113,6 +113,7 @@ TEST(IntegrationTest, OneMessage) {
 TEST(IntegrationTest, SequenceNumberZero) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
 
   // Message read semaphore.
   port::Semaphore message_sem;

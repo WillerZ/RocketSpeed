@@ -206,7 +206,7 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
                               origin,
                               env_->NowMicros(),
                               is_new_request));
-  Status st = SendCommand(std::move(cmd));
+  Status st = SendCommand(std::move(cmd), GetThreadWorkerIndex());
 
   if (!st.ok()) {
     LOG_INFO(info_log_,

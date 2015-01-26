@@ -59,4 +59,9 @@ cpp_unittest(
         '@/rocketspeed/github/src/util/common:configuration',
         '@/rocketspeed/github/src/messages',
     ],
+    tags = [
+        'serialize',
+        'serialize_test_cases',
+        'unmanaged_test_cases',
+    ],
 )

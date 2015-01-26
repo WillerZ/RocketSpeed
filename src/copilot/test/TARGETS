@@ -9,7 +9,6 @@ cpp_unittest(
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
-        '-DUSE_LOGDEVICE',
     ],
     deps = [
         '@/rocketspeed/github/src/copilot:copilot_library',
@@ -19,5 +18,10 @@ cpp_unittest(
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
         '@/logdevice/lib',
+    ],
+    tags = [
+        'serialize',
+        'serialize_test_cases',
+        'unmanaged_test_cases',
     ],
 )

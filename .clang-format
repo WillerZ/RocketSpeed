@@ -2,6 +2,10 @@
 BasedOnStyle: Google
 ---
 AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
 # BinPackArguments: false
 BinPackParameters: false
 BreakConstructorInitializersBeforeComma: true

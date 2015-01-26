@@ -19,13 +19,6 @@
 #include "src/util/storage.h"
 #include "src/util/common/statistics.h"
 
-#ifdef USE_LOGDEVICE
-// We'll set up a local, isolated LogDevice instance.
-#include "src/logdevice/storage.h"
-#include "logdevice/test/utils/IntegrationTestUtils.h"
-namespace ld = facebook::logdevice;
-#endif
-
 namespace rocketspeed {
 
 /**
@@ -39,16 +32,30 @@ class LocalTestCluster {
    * Constructs a new test cluster. Once this has finished constructing, the
    * pilot, copilot, and control tower will be running.
    *
-   * @param info_log The logger for server informational messages
+   * @param info_log The logger for server informational messages.
+   * @param start_controltower Whether or not to start CT.
+   * @param start_copilot Whether or not to start Copilot.
+   * @param start_pilot Whether or not to start Pilot.
    * @param storage_url URL of logdevice config. Leave blank to use test util.
    */
   explicit LocalTestCluster(std::shared_ptr<Logger> info_log,
+                            bool start_controltower = true,
+                            bool start_copilot = true,
+                            bool start_pilot = true,
                             const std::string& storage_url = "");
 
   /**
    * Stops all parts of the test cluster.
    */
   ~LocalTestCluster();
+
+  /**
+   * Gets status which reflects last (if any) error condition encountered in the
+   * cluster.
+   */
+  Status GetStatus() const {
+    return status_;
+  }
 
   // Get the pilot host IDs.
   std::vector<HostId> GetPilotHostIds() const {
@@ -62,15 +69,22 @@ class LocalTestCluster {
     return std::vector<HostId>{ copilot_->GetHostId() };
   }
 
+  ControlTower* GetControlTower() {
+    return control_tower_;
+  }
+
   Statistics GetStatistics() const;
 
  private:
-#ifdef USE_LOGDEVICE
-  // LogDevice cluster and client
-  std::unique_ptr<ld::IntegrationTestUtils::Cluster> logdevice_cluster_;
-  std::shared_ptr<ld::Client> logdevice_client_;
-  std::shared_ptr<LogStorage> logdevice_storage_;
-#endif
+  struct LogDevice;
+  std::unique_ptr<LogDevice> logdevice_;
+
+  // General cluster status.
+  Status status_;
+  // Environment used by the cluster.
+  Env* env_;
+  // Logger.
+  std::shared_ptr<Logger> info_log_;
 
   // Pilot
   PilotOptions pilot_options_;
@@ -89,10 +103,6 @@ class LocalTestCluster {
   std::thread cockpit_thread_;
   std::unique_ptr<MsgLoop> control_tower_loop_;
   std::thread control_tower_thread_;
-
-  // info log
-  std::shared_ptr<Logger> info_log_;
 };
-
 
 }  // namespace rocketspeed
