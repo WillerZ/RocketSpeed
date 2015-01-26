@@ -36,10 +36,14 @@ class Tailer {
   // Initialize the Tailer first before using it
   Status Initialize();
 
-  // Opens the specified log at specified position
-  // This call is not thread-safe.
-  Status StartReading(LogID logid, SequenceNumber start,
-                      unsigned int roomid) const;
+  /**
+   * Opens the specified log at specified position or reseeks to the position if
+   * the log was opened. This call is not thread-safe.
+   */
+  Status StartReading(LogID logid,
+                      SequenceNumber start,
+                      unsigned int roomid,
+                      bool first_open) const;
 
   // No more records from this log anymore
   // This call is not thread-safe.

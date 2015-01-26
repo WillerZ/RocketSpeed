@@ -163,10 +163,10 @@ Tailer::CreateNewInstance(Env* env,
   return Status::OK();
 }
 
-// Start reading from this log
-Status
-Tailer::StartReading(LogID logid, SequenceNumber start,
-                     unsigned int room_id) const {
+Status Tailer::StartReading(LogID logid,
+                            SequenceNumber start,
+                            unsigned int room_id,
+                            bool first_open) const {
   if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
@@ -174,13 +174,20 @@ Tailer::StartReading(LogID logid, SequenceNumber start,
   Status st = r->Open(logid, start);
   if (st.ok()) {
     LOG_INFO(info_log_,
-        "AsyncReader %u start reading Log(%lu)@%lu.",
-        room_id, logid, start);
-    num_open_logs_per_reader_[room_id]++;
+             "AsyncReader %u start reading Log(%lu)@%lu.",
+             room_id,
+             logid,
+             start);
+    if (first_open) {
+      num_open_logs_per_reader_[room_id]++;
+    }
   } else {
     LOG_WARN(info_log_,
-        "AsyncReader %u failed to start reading Log(%lu)@%lu (%s).",
-        room_id, logid, start, st.ToString().c_str());
+             "AsyncReader %u failed to start reading Log(%lu)@%lu (%s).",
+             room_id,
+             logid,
+             start,
+             st.ToString().c_str());
   }
   return st;
 }

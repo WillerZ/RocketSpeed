@@ -113,7 +113,8 @@ TopicManager::ReseekIfNeeded(LogID logid, SequenceNumber start,
   // If the new starting seqno is smaller than the current one,
   // then we need to reseek from Storage
   if (start != 0 && (start <= current || current == 0)) {
-    st = tailer_->StartReading(logid, start, roomnum);
+    bool first_open = current == 0;
+    st = tailer_->StartReading(logid, start, roomnum, first_open);
     SetLastRead(logid, start - 1);
   }
   return st;
