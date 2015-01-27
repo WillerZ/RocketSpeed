@@ -76,6 +76,40 @@ struct GUID {
     return lo == rhs.lo && hi == rhs.hi;
   }
 
+  // Return a string that contains a copy of the GUID.
+  std::string ToString() const {
+    return std::string(id, 16);
+  }
+  // if hex == true, it returns a Hex format of the GUID
+  std::string ToHexString() const {
+    char buf[33];
+    memset(buf, 0, 33);
+    for (int i = 0; i < 16; i++) {
+      snprintf(buf + (i * 2), 3, "%02X", (unsigned char)id[i]);
+    }
+    return std::string(buf);
+  }
+  // Sets the GUID to the string, only if str is at least 16 chars long
+  // returns true if successfully set or false otherwise.
+  bool FromString(const std::string& str) {
+    if (str.length() == 16) {
+      memcpy(id, str.c_str(), 16);
+      return true;
+    }
+    // clear and return false
+    Clear();
+    return false;
+  }
+
+  // set the hi and lo = 0 to mark it as empty
+  void Clear() {
+    hi = lo = 0;
+  }
+  // return true iff both hi and lo are 0
+  bool Empty() const {
+    return (hi == 0 && lo == 0);
+  }
+
   struct Hash {
     size_t operator()(const GUID& guid) const {
       return guid.lo ^ guid.hi;
