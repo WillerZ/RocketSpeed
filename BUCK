@@ -6,6 +6,7 @@ ndk_library(
   ],
   flags = [
     'NDK_APPLICATION_MK=${PWD}/native/Application.mk',
+    'ROCKETSPEED_RELEASE_BUILD=true', 
   ],
   visibility = [
     '//native/rocketspeed:rocketspeed',

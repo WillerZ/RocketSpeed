@@ -15,9 +15,12 @@
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 #include "include/WakeLock.h"
-#include "src/port/port_posix.h"
+#include "src/port/port.h"
 #include "src/messages/messages.h"
+#include "src/messages/msg_loop.h"
+#if !defined(OS_ANDROID)
 #include "src/test/test_cluster.h"
+#endif
 #include "src/util/auto_roll_logger.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/parsing.h"
@@ -64,12 +67,41 @@ struct Result {
 
 static const Result failed = { false };
 
+struct ProducerArgs {
+  std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* producers;
+  rocketspeed::NamespaceID nsid;
+  rocketspeed::port::Semaphore* all_ack_messages_received;
+  std::atomic<int64_t>* ack_messages_received;
+  std::chrono::time_point<std::chrono::steady_clock>* last_ack_message;
+  rocketspeed::PublishCallback publish_callback;
+  bool result;
+};
+
+struct  ProducerWorkerArgs {
+  int64_t num_messages;
+  rocketspeed::NamespaceID namespaceid;
+  rocketspeed::Client* producer;
+  rocketspeed::PublishCallback publish_callback;
+  bool result;
+};
+
+struct ConsumerArgs {
+  rocketspeed::port::Semaphore* all_messages_received;
+  std::atomic<int64_t>* messages_received;
+  std::chrono::time_point<std::chrono::steady_clock>* last_data_message;
+  bool result;
+};
+
 namespace rocketspeed {
 
-Result ProducerWorker(int64_t num_messages,
-                      NamespaceID namespaceid,
-                      Client* producer,
-                      PublishCallback publish_callback) {
+static void ProducerWorker(void* param) {
+  ProducerWorkerArgs* args = static_cast<ProducerWorkerArgs*>(param);
+  int64_t num_messages = args->num_messages;
+  NamespaceID namespaceid = args->namespaceid;
+  Client* producer = args->producer;
+  PublishCallback publish_callback = args->publish_callback;
+  args->result = false;
+
   Env* env = Env::Default();
 
   // Random number generator.
@@ -100,8 +132,8 @@ Result ProducerWorker(int64_t num_messages,
                          distr->generateRandomInt() :
                          i % 100;  // "fixed", 100 messages per topic
     snprintf(topic_name, sizeof(topic_name),
-             "benchmark.%lu",
-             topic_num);
+             "benchmark.%llu",
+             static_cast<long long unsigned int>(topic_num));
 
     // Random topic options
     TopicOptions topic_options;
@@ -122,7 +154,9 @@ Result ProducerWorker(int64_t num_messages,
     uint64_t send_time = env->NowMicros();
     uint64_t index = message_index++;
     snprintf(data.data(), data.size(),
-             "%lu %lu", index, send_time);
+             "%llu %llu",
+             static_cast<long long unsigned int>(index),
+             static_cast<long long unsigned int>(send_time));
 
     // Send the message
     PublishStatus ps = producer->Publish(topic_name,
@@ -133,10 +167,11 @@ Result ProducerWorker(int64_t num_messages,
 
     if (!ps.status.ok()) {
       LOG_WARN(info_log,
-        "Failed to send message number %lu (%s)",
-        i, ps.status.ToString().c_str());
+        "Failed to send message number %llu (%s)",
+        static_cast<long long unsigned int>(i),
+        ps.status.ToString().c_str());
       info_log->Flush();
-      return failed;
+      args->result = false;
     }
 
     if (FLAGS_message_rate) {
@@ -155,40 +190,55 @@ Result ProducerWorker(int64_t num_messages,
       }
     }
   }
-  return Result { true };
+  args->result = true;
 }
 
 /*
  ** Produce messages
  */
-int DoProduce(std::vector<std::unique_ptr<ClientImpl>>& producers,
-              rocketspeed::NamespaceID nsid,
-              rocketspeed::port::Semaphore* all_ack_messages_received,
-              std::atomic<int64_t>* ack_messages_received,
-              std::chrono::time_point<std::chrono::steady_clock>*
-                                                     last_ack_message,
-              rocketspeed::PublishCallback publish_callback){
+static void DoProduce(void* params) {
+
+  struct ProducerArgs* args = static_cast<ProducerArgs*>(params);
+  std::vector<std::unique_ptr<ClientImpl>>* producers =
+    args->producers;
+  rocketspeed::NamespaceID namespaceid = args->nsid;
+  rocketspeed::port::Semaphore* all_ack_messages_received =
+    args->all_ack_messages_received;
+  std::atomic<int64_t>* ack_messages_received = args->ack_messages_received;
+  std::chrono::time_point<std::chrono::steady_clock>* last_ack_message =
+    args->last_ack_message;
+  rocketspeed::PublishCallback publish_callback = args->publish_callback;
+  Env* env = Env::Default();
+
   // Distribute total number of messages among them.
-  std::vector<std::future<Result>> futures;
+  std::vector<Env::ThreadId> thread_ids;
   int64_t total_messages = FLAGS_num_messages;
   size_t p = 0;
+  ProducerWorkerArgs pargs[1024]; // no more than 1K threads
+
   for (int32_t remaining = FLAGS_num_threads; remaining; --remaining) {
     int64_t num_messages = total_messages / remaining;
-    futures.emplace_back(std::async(std::launch::async,
-                                    &rocketspeed::ProducerWorker,
-                                    num_messages,
-                                    nsid,
-                                    producers[p++ % producers.size()].get(),
-                                    publish_callback));
+    ProducerWorkerArgs* parg = &pargs[p];
+    parg->num_messages = num_messages;
+    parg->namespaceid = namespaceid;
+    parg->producer = (*producers)[p % producers->size()].get();
+    parg->publish_callback = publish_callback;
+
+    thread_ids.push_back(env->StartThread(rocketspeed::ProducerWorker, parg));
     total_messages -= num_messages;
+    p++;
+    if (p > sizeof(pargs)/sizeof(pargs[0])) {
+      break;
+    }
   }
   assert(total_messages == 0);
+  assert(p == thread_ids.size());
 
   // Join all the threads to finish production.
   int ret = 0;
-  for (int i = 0; i < static_cast<int>(futures.size()); ++i) {
-    Result result = futures[i].get();
-    if (!result.succeeded) {
+  for (unsigned int i = 0; i < thread_ids.size(); ++i) {
+    env->WaitForJoin(thread_ids[i]);
+    if (!pargs[i].result) {
       if (FLAGS_report) {
         printf("Thread %d failed to send all messages\n", i);
       }
@@ -207,7 +257,7 @@ int DoProduce(std::vector<std::unique_ptr<ClientImpl>>& producers,
 
     ret = ack_messages_received->load() == FLAGS_num_messages ? 0 : 1;
   }
-  return ret;
+  args->result = ret; // 0: success, 1: error
 }
 
 /**
@@ -260,10 +310,13 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
 /*
  ** Receive messages
  */
-int DoConsume(rocketspeed::port::Semaphore* all_messages_received,
-              std::atomic<int64_t>* messages_received,
-              std::chrono::time_point<std::chrono::steady_clock>*
-                                                     last_data_message) {
+static void DoConsume(void* param) {
+  ConsumerArgs* args = static_cast<ConsumerArgs*>(param);
+  rocketspeed::port::Semaphore* all_messages_received =
+    args->all_messages_received;
+  std::atomic<int64_t>* messages_received = args->messages_received;
+  std::chrono::time_point<std::chrono::steady_clock>* last_data_message =
+    args->last_data_message;
   // Wait for the all_messages_received semaphore to be posted.
   // Keep waiting as long as a message was received in the last 5 seconds.
   auto timeout = std::chrono::seconds(5);
@@ -272,7 +325,7 @@ int DoConsume(rocketspeed::port::Semaphore* all_messages_received,
   } while (messages_received->load() != FLAGS_num_messages &&
            std::chrono::steady_clock::now() - *last_data_message < timeout);
 
-  return messages_received->load() == FLAGS_num_messages ? 0 : 1;
+  args->result = messages_received->load() == FLAGS_num_messages ? 0 : 1;
 }
 
 }  // namespace rocketspeed
@@ -340,11 +393,18 @@ int main(int argc, char** argv) {
     info_log = std::make_shared<rocketspeed::NullLogger>();
   }
 
+#if defined(OS_ANDROID)
+  if (FLAGS_start_local_server) {
+    fprintf(stderr, "Servers not supported on Android.\n");
+    return 1;
+  }
+#else
   std::unique_ptr<rocketspeed::LocalTestCluster> test_cluster;
   if (FLAGS_start_local_server) {
     test_cluster.reset(new rocketspeed::LocalTestCluster(
-        info_log, true, true, true, FLAGS_storage_url));
+                           info_log, true, true, true, FLAGS_storage_url));
   }
+#endif
 
   // Configuration for RocketSpeed.
   std::vector<rocketspeed::HostId> pilots;
@@ -380,13 +440,14 @@ int main(int argc, char** argv) {
   std::unordered_map<std::string, rocketspeed::SequenceNumber> first_seqno;
   std::mutex first_seqno_mutex;
 
-  auto publish_callback = [&] (std::unique_ptr<rocketspeed::ResultStatus> rs) {
+  auto publish_callback =
+    [&] (std::unique_ptr<rocketspeed::ResultStatus> rs) {
     uint64_t now = env->NowMicros();
 
     // Parse message data to get received index.
     rocketspeed::Slice data = rs->GetContents();
-    uint64_t message_index, send_time;
-    std::sscanf(data.data(), "%lu %lu", &message_index, &send_time);
+    unsigned long long int message_index, send_time;
+    std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
     ack_latency->Record(now - send_time);
 
     if (FLAGS_delay_subscribe) {
@@ -435,24 +496,26 @@ int main(int argc, char** argv) {
 
     // Parse message data to get received index.
     rocketspeed::Slice data = rs->GetContents();
-    uint64_t message_index, send_time;
-    std::sscanf(data.data(), "%lu %lu", &message_index, &send_time);
+    unsigned long long int message_index, send_time;
+    std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
     if (message_index < static_cast<uint64_t>(FLAGS_num_messages)) {
       LOG_INFO(info_log,
-          "Received message %lu with timestamp %lu",
-          message_index, send_time);
+          "Received message %llu with timestamp %llu",
+          static_cast<long long unsigned int>(message_index),
+          static_cast<long long unsigned int>(send_time));
       recv_latency->Record(now - send_time);
       std::lock_guard<std::mutex> lock(is_received_mutex);
       if (is_received[message_index]) {
         LOG_WARN(info_log,
-          "Received message %lu twice.",
-          message_index);
+          "Received message %llu twice.",
+          static_cast<long long unsigned int>(message_index));
       }
       is_received[message_index] = true;
     } else {
       LOG_WARN(info_log,
-          "Received out of bounds message index (%lu), message was (%s)",
-          message_index, data.data());
+          "Received out of bounds message index (%llu), message was (%s)",
+          static_cast<long long unsigned int>(message_index),
+          data.data());
     }
 
     // If we've received all messages, let the main thread know to finish up.
@@ -516,9 +579,9 @@ int main(int argc, char** argv) {
         printf("time out\n");
         LOG_WARN(info_log, "Failed to subscribe to all topics");
         info_log->Flush();
-        printf("Failed to subscribe to all topics (%lu/%lu)\n",
-          num_topics_subscribed.load(),
-          FLAGS_num_topics);
+        printf("Failed to subscribe to all topics (%llu/%llu)\n",
+          static_cast<long long unsigned int>(num_topics_subscribed.load()),
+          static_cast<long long unsigned int>(FLAGS_num_topics));
         return 1;
       }
       printf("done\n");
@@ -528,38 +591,42 @@ int main(int argc, char** argv) {
     start = std::chrono::steady_clock::now();
   }
 
-  std::future<int> producer_ret;
-  std::future<int> consumer_ret;
+  ProducerArgs pargs;
+  ConsumerArgs cargs;
+  rocketspeed::Env::ThreadId producer_threadid = 0;
+  rocketspeed::Env::ThreadId consumer_threadid = 0;
+
+  // Start producing messages
   if (FLAGS_start_producer) {
     printf("Publishing messages.\n");
-    producer_ret = std::async(std::launch::async,
-                              &rocketspeed::DoProduce,
-                              std::ref(clients),
-                              nsid,
-                              &all_ack_messages_received,
-                              &ack_messages_received,
-                              &last_ack_message,
-                              std::move(publish_callback));
+    pargs.producers = &clients;
+    pargs.nsid = nsid;
+    pargs.all_ack_messages_received = &all_ack_messages_received;
+    pargs.ack_messages_received = &ack_messages_received;
+    pargs.last_ack_message = &last_ack_message;
+    pargs.publish_callback = publish_callback;
+    producer_threadid = env->StartThread(rocketspeed::DoProduce,
+                                         static_cast<void*>(&pargs),
+                                         "ProducerMain");
   }
 
-  auto start_consumer = [&] () {
+  // If we are not 'delayed', then we are already subscribed to
+  // topics, simply starts threads to consume
+  if (FLAGS_start_consumer && !FLAGS_delay_subscribe) {
     printf("Waiting for messages.\n");
-    consumer_ret = std::async(std::launch::async,
-                              &rocketspeed::DoConsume,
-                              &all_messages_received,
-                              &messages_received,
-                              &last_data_message);
-  };
-
-  if (!FLAGS_delay_subscribe) {
-    if (FLAGS_start_consumer) {
-      start_consumer();
-    }
+    cargs.all_messages_received = &all_messages_received;
+    cargs.messages_received = &messages_received;
+    cargs.last_data_message = &last_data_message;
+    consumer_threadid = env->StartThread(rocketspeed::DoConsume,
+                                         &cargs,
+                                         "ConsumerMain");
   }
 
+  // Wait for all producers to finish
   int ret = 0;
   if (FLAGS_start_producer) {
-    ret = producer_ret.get();
+    env->WaitForJoin(producer_threadid);
+    ret = pargs.result;
     if (ack_messages_received.load() != FLAGS_num_messages) {
       printf("Time out awaiting publish acks.\n");
       ret = 1;
@@ -568,18 +635,32 @@ int main(int argc, char** argv) {
     }
   }
 
+  // If we are delayed, then start subscriptions after all
+  // publishers are completed.
   if (FLAGS_delay_subscribe) {
     assert(FLAGS_start_consumer);
-    printf("Subscribing to topics.\n");
+    printf("Subscribing (delayed) to topics.\n");
 
     // Start the clock.
     start = std::chrono::steady_clock::now();
+
+    // Subscribe to topics
     DoSubscribe(clients, nsid, std::move(first_seqno));
-    start_consumer();
+
+    // Wait for all messages to be received
+    printf("Waiting (delayed) for messages.\n");
+    cargs.all_messages_received = &all_messages_received;
+    cargs.messages_received = &messages_received;
+    cargs.last_data_message = &last_data_message;
+    consumer_threadid = env->StartThread(rocketspeed::DoConsume,
+                                         &cargs,
+                                         "ConsumerMain");
   }
 
   if (FLAGS_start_consumer) {
-    ret = consumer_ret.get();
+    // Wait for Consumer thread to exit
+    env->WaitForJoin(consumer_threadid);
+    ret = cargs.result;
     if (messages_received.load() != FLAGS_num_messages) {
       printf("Time out awaiting messages.\n");
     } else {
@@ -610,13 +691,17 @@ int main(int argc, char** argv) {
 
     printf("\n");
     printf("Results\n");
-    printf("%ld messages sent\n", FLAGS_num_messages);
-    printf("%ld messages sends acked\n", ack_messages_received.load());
+    printf("%lld messages sent\n",
+           static_cast<long long unsigned int>(FLAGS_num_messages));
+    printf("%lld messages sends acked\n",
+           static_cast<long long unsigned int>(ack_messages_received.load()));
     if (failed_publishes != 0) {
-      printf("%ld published failed\n", failed_publishes.load());
+      printf("%lld published failed\n",
+             static_cast<long long unsigned int>(failed_publishes.load()));
     }
     if (FLAGS_start_consumer) {
-      printf("%ld messages received\n", messages_received.load());
+      printf("%lld messages received\n",
+             static_cast<long long unsigned int>(messages_received.load()));
     }
 
     if (FLAGS_start_consumer &&
@@ -638,9 +723,10 @@ int main(int argc, char** argv) {
           // Print the dropped messages, either individal (e.g. 100) or
           // as a range (e.g. 100-200)
           if (i == j - 1) {
-            printf("%lu\n", i);
+            printf("%llu\n", static_cast<long long unsigned int>(i));
           } else {
-            printf("%lu-%lu\n", i, j - 1);
+            printf("%llu-%llu\n", static_cast<long long unsigned int>(i),
+                   static_cast<long long unsigned int>(j - 1));
           }
           i = j;
         }
@@ -655,16 +741,18 @@ int main(int argc, char** argv) {
       printf("%u messages/s\n", msg_per_sec);
       printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
 
+#if !defined(OS_ANDROID)
       if (FLAGS_start_local_server) {
         stats.Aggregate(test_cluster->GetStatistics());
       }
+#endif
       for (auto& client : clients) {
         stats.Aggregate(client->GetStatistics());
       }
 
       printf("\n");
       printf("Statistics\n");
-      printf(stats.Report().c_str());
+      printf("%s", stats.Report().c_str());
     }
   }
   fflush(stdout);
