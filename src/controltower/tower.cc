@@ -71,6 +71,11 @@ ControlTower::~ControlTower() {
 Status
 ControlTower::CreateNewInstance(const ControlTowerOptions& options,
                                 ControlTower** ct) {
+  if (!options.storage) {
+    assert(false);
+    return Status::InvalidArgument("Log storage must be provided");
+  }
+
   *ct = new ControlTower(options);
   const ControlTowerOptions opt = (*ct)->GetOptions();
 
@@ -78,9 +83,7 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   Tailer* tailer;
   Status st = Tailer::CreateNewInstance(opt.env, (*ct)->rooms_,
                                         options.storage,
-                                        options.storage_url,
                                         opt.info_log,
-                                        options.num_storage_workers,
                                         &tailer);
   if (!st.ok()) {
     delete *ct;

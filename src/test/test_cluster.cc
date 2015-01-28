@@ -23,8 +23,8 @@ struct LocalTestCluster::LogDevice {
   // LogDevice cluster and client.
   std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster> cluster_;
   std::shared_ptr<facebook::logdevice::Client> client_;
-  std::shared_ptr<LogStorage> storage_;
 #endif  // USE_LOGDEVICE
+  std::shared_ptr<LogStorage> storage_;
 };
 
 LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
@@ -65,31 +65,44 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
   log_range = std::pair<LogID, LogID>(1, 1000);
 #endif  // USE_LOGDEVICE
 
+  LogDeviceStorage* storage = nullptr;
 #ifdef USE_LOGDEVICE
   if (storage_url.empty()) {
     // Setup the local LogDevice cluster and create, client, and storage.
     logdevice_->cluster_ =
         facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(3);
     logdevice_->client_ = logdevice_->cluster_->createClient();
-    LogDeviceStorage* storage = nullptr;
     status_ = LogDeviceStorage::Create(logdevice_->client_, env_, &storage);
-    if (!status_.ok()) {
-      LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
-      return;
-    }
-    logdevice_->storage_.reset(storage);
-    storage = nullptr;
-
-    // Tell the pilot and control tower to use this storage interface instead
-    // of opening a new one.
-    pilot_options_.storage = logdevice_->storage_;
-    control_tower_options_.storage = logdevice_->storage_;
   } else {
-    // Just give the storage url to the components.
-    pilot_options_.storage_url = storage_url;
-    control_tower_options_.storage_url = storage_url;
+    status_ = LogDeviceStorage::Create("rocketspeed.logdevice.primary",
+                                       storage_url,
+                                       "",
+                                       std::chrono::milliseconds(1000),
+                                       16,
+                                       env_,
+                                       &storage);
   }
+#else
+  status_ = LogDeviceStorage::Create("",
+                                     "",
+                                     "",
+                                     std::chrono::milliseconds(1000),
+                                     16,
+                                     env_,
+                                     &storage);
 #endif  // USE_LOGDEVICE
+
+  if (!status_.ok() || !storage) {
+    LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
+    return;
+  }
+  logdevice_->storage_.reset(storage);
+  storage = nullptr;
+
+  // Tell the pilot and control tower to use this storage interface instead
+  // of opening a new one.
+  pilot_options_.storage = logdevice_->storage_;
+  control_tower_options_.storage = logdevice_->storage_;
 
   EnvOptions env_options;
 

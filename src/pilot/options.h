@@ -63,24 +63,11 @@ struct PilotOptions {
   size_t log_file_time_to_roll;
 
   // Pointer to persistent log storage to use.
-  // If null, open a new storage interface using the storage_url.
   std::shared_ptr<LogStorage> storage;
-
-  // A URL that identifies a storage configuration resource that
-  // describes the storage cluster the controltower will use.
-  // The only supported formats are currently
-  // file:<path-to-configuration-file> and
-  // configerator:<configerator-path>. Examples:
-  //   "file:logdevice.test.conf"
-  //   "configerator:logdevice/logdevice.test.conf"
-  URL storage_url;
 
   // Range of log IDs to use.
   // Warning: changing this range will change the mapping of topics to logs.
   std::pair<LogID, LogID> log_range;
-
-  // Number of workers for the log storage.
-  uint32_t num_storage_workers_;
 
   // Create PilotOptions with default values for all fields
   PilotOptions();

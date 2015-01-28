@@ -4,7 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/controltower/tailer.h"
-#include "src/logdevice/storage.h"
+#include "src/util/storage.h"
 #include <vector>
 
 namespace rocketspeed {
@@ -108,7 +108,7 @@ Status Tailer::Initialize() {
     room->Forward(std::move(msg), record.log_id, -1);
   };
 
-  // create logdevice reader. There is one reader per ControlRoom.
+  // create log reader. There is one reader per ControlRoom.
   std::vector<AsyncLogReader*> handle;
   Status st = storage_->CreateAsyncReaders(rooms_.size(),
                                            record_cb,
@@ -134,31 +134,8 @@ Status
 Tailer::CreateNewInstance(Env* env,
                           const std::vector<unique_ptr<ControlRoom>>& rooms,
                           std::shared_ptr<LogStorage> storage,
-                          const URL& storage_url,
                           std::shared_ptr<Logger> info_log,
-                          int num_workers,
                           Tailer** tailer) {
-  if (storage == nullptr) {
-    // create logdevice client
-    std::unique_ptr<facebook::logdevice::ClientSettings> settings(
-      facebook::logdevice::ClientSettings::create());
-    settings->set("num-workers", num_workers);
-    std::shared_ptr<facebook::logdevice::Client> client =
-      facebook::logdevice::Client::create(
-                           "rocketspeed.logdevice.primary",  // storage name
-                           storage_url,
-                           "",                               // credentials
-                           std::chrono::milliseconds(1000),
-                           std::move(settings));
-
-    // created logdevice reader
-    LogDeviceStorage* store;
-    Status st = LogDeviceStorage::Create(client, env, &store);
-    if (!st.ok()) {
-      return st;
-    }
-    storage.reset(store);
-  }
   *tailer = new Tailer(rooms, storage, info_log);
   return Status::OK();
 }

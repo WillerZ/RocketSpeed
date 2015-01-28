@@ -84,17 +84,7 @@ struct ControlTowerOptions {
   unsigned int max_number_of_hosts;
 
   // Pointer to persistent log storage to use.
-  // If null, open a new storage interface using the storage_url.
   std::shared_ptr<LogStorage> storage;
-
-  //  A URL that identifies a storage configuration resource that
-  //  describes the storage cluster the controltower will use.
-  //  The only supported formats are currently
-  //  file:<path-to-configuration-file> and
-  //  configerator:<configerator-path>. Examples:
-  //    "file:logdevice.test.conf"
-  //    "configerator:logdevice/logdevice.test.conf"
-  URL storage_url;
 
   // Number of workers for the log storage.
   uint32_t num_storage_workers;

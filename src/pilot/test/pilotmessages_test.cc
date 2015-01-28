@@ -12,7 +12,6 @@
 
 #include "src/test/test_cluster.h"
 #include "src/pilot/pilot.h"
-#include "src/logdevice/storage.h"
 #include "src/util/testharness.h"
 
 namespace rocketspeed {

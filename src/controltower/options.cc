@@ -21,8 +21,7 @@ ControlTowerOptions::ControlTowerOptions()
     worker_queue_size(1000000),
     log_range(1, 100000),
     max_number_of_hosts(10000),
-    storage(nullptr),
-    num_storage_workers(16) {
+    storage(nullptr) {
 }
 
 }  // namespace rocketspeed

@@ -17,7 +17,6 @@
 #include "src/copilot/copilot.h"
 #include "src/copilot/worker.h"
 #include "src/copilot/options.h"
-#include "src/logdevice/storage.h"
 #include "src/test/test_cluster.h"
 #include "src/util/testharness.h"
 

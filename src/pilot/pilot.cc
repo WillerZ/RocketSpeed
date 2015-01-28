@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "src/logdevice/storage.h"
+#include "src/util/storage.h"
 #include "src/util/memory.h"
 
 namespace rocketspeed {
@@ -54,29 +54,9 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
 Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))),
   log_router_(options_.log_range.first, options_.log_range.second) {
-  assert(options_.msg_loop);
 
   worker_data_.resize(options_.msg_loop->GetNumWorkers());
-
-  if (options_.storage == nullptr) {
-    // Create log device client
-    LogDeviceStorage* storage = nullptr;
-    std::unique_ptr<facebook::logdevice::ClientSettings> clientSettings(
-      facebook::logdevice::ClientSettings::create());
-    clientSettings->set("num-workers", options_.num_storage_workers_);
-    rocketspeed::LogDeviceStorage::Create(
-      "rocketspeed.logdevice.primary",
-      options_.storage_url,
-      "",
-      std::chrono::milliseconds(1000),
-      std::move(clientSettings),
-      options_.env,
-      &storage);
-    log_storage_.reset(storage);
-  } else {
-    log_storage_ = options_.storage;
-  }
-
+  log_storage_ = options_.storage;
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
   LOG_INFO(options_.info_log, "Created a new Pilot");
@@ -92,6 +72,16 @@ Pilot::~Pilot() {
  */
 Status Pilot::CreateNewInstance(PilotOptions options,
                                 Pilot** pilot) {
+  if (!options.msg_loop) {
+    assert(false);
+    return Status::InvalidArgument("Message loop must be provided");
+  }
+
+  if (!options.storage) {
+    assert(false);
+    return Status::InvalidArgument("Log storage must be provided");
+  }
+
   *pilot = new Pilot(std::move(options));
 
   // Ensure we managed to connect to the log storage.

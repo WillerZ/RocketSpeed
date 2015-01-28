@@ -54,8 +54,7 @@ class LogDeviceStorage : public LogStorage {
    *                       Format TBD. Currently ignored.
    * @param timeout        construction timeout. This value also serves as the
    *                       default timeout for methods on the created object
-   * @param settings       client settings instance to take ownership of,
-   *                       or nullptr for default settings
+   * @param num_workers    number of client workers.
    * @param storage        output parameter to store the constructed
    *                       LogDeviceStorage object.
    * @return on success returns OK(), otherwise errorcode.
@@ -65,7 +64,7 @@ class LogDeviceStorage : public LogStorage {
     std::string config_url,
     std::string credentials,
     std::chrono::milliseconds timeout,
-    std::unique_ptr<facebook::logdevice::ClientSettings>&& settings,
+    int num_workers,
     Env* env,
     LogDeviceStorage** storage);
 

@@ -87,7 +87,7 @@ Status LogDeviceStorage::Create(
   std::string config_url,
   std::string credentials,
   std::chrono::milliseconds timeout,
-  std::unique_ptr<facebook::logdevice::ClientSettings>&& settings,
+  int num_workers,
   Env* env,
   LogDeviceStorage** storage) {
 #ifdef USE_LOGDEVICE
@@ -102,6 +102,11 @@ Status LogDeviceStorage::Create(
   if (storage == nullptr) {
     return Status::InvalidArgument("Must provide the storage pointer.");
   }
+
+  // Create client settings.
+  std::unique_ptr<facebook::logdevice::ClientSettings> settings(
+    facebook::logdevice::ClientSettings::create());
+  settings->set("num-workers", num_workers);
 
   // Attempt to create internal LogDevice Client.
   // Returns null on error.

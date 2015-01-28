@@ -21,6 +21,7 @@ cpp_binary(
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/github/src/logdevice:logdevice_storage',
     ],
 )
 

@@ -36,6 +36,7 @@ DEFINE_string(logs, "1..100000", "range of logs");
 DEFINE_string(storage_url,
               "configerator:logdevice/rocketspeed.logdevice.primary.conf",
               "Storage service url");
+DEFINE_int32(storage_workers, 16, "number of logdevice storage workers");
 DEFINE_int32(worker_queue_size, 1000000, "number of worker commands in flight");
 
 // Control tower settings
@@ -164,15 +165,27 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Create LogDevice storage.
+  rocketspeed::LogDeviceStorage* logdevice_storage = nullptr;
+  rocketspeed::LogDeviceStorage::Create(
+    "rocketspeed.logdevice.primary",
+    FLAGS_storage_url,
+    "",
+    std::chrono::milliseconds(1000),
+    FLAGS_storage_workers,
+    env,
+    &logdevice_storage);
+  std::shared_ptr<rocketspeed::LogStorage> storage(logdevice_storage);
+
   // Create Control Tower.
   if (FLAGS_tower) {
     rocketspeed::ControlTowerOptions tower_opts;
     tower_opts.msg_loop = tower_loop.get();
-    tower_opts.storage_url = FLAGS_storage_url;
     tower_opts.worker_queue_size = FLAGS_worker_queue_size;
     tower_opts.number_of_rooms = FLAGS_tower_rooms;
     tower_opts.info_log = info_log;
     tower_opts.log_range = log_range;
+    tower_opts.storage = storage;
 
     st = rocketspeed::ControlTower::CreateNewInstance(std::move(tower_opts),
                                                       &tower);
@@ -186,9 +199,9 @@ int main(int argc, char** argv) {
   if (FLAGS_pilot) {
     rocketspeed::PilotOptions pilot_opts;
     pilot_opts.msg_loop = pilot_loop.get();
-    pilot_opts.storage_url = FLAGS_storage_url;
     pilot_opts.log_range = log_range;
     pilot_opts.info_log = info_log;
+    pilot_opts.storage = storage;
 
     st = rocketspeed::Pilot::CreateNewInstance(std::move(pilot_opts),
                                                &pilot);
