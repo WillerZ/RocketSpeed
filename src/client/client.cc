@@ -17,7 +17,9 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
+#include "include/WakeLock.h"
 #include "src/client/message_received.h"
+#include "src/client/smart_wake_lock.h"
 #include "src/util/common/hash.h"
 
 #ifndef USE_MQTTMSGLOOP
@@ -103,6 +105,9 @@ Status Client::Open(ClientOptions options_tmp,
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();
   }
+  if (!options.wake_lock) {
+    options.wake_lock = WakeLock::GetNull();
+  }
 
 #ifndef USE_MQTTMSGLOOP
   MsgLoop* msg_loop_ = new MsgLoop(options.env,
@@ -125,6 +130,7 @@ Status Client::Open(ClientOptions options_tmp,
   // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
   *producer = new ClientImpl(options.env,
+                             options.wake_lock,
                              options.config.GetPilotHostIds().front(),
                              options.config.GetCopilotHostIds().front(),
                              options.config.GetTenantID(),
@@ -152,6 +158,7 @@ Status Client::Open(ClientOptions client_options,
 }
 
 ClientImpl::ClientImpl(BaseEnv* env,
+                       std::shared_ptr<WakeLock> wake_lock,
                        const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
@@ -161,6 +168,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
                        std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log)
 : env_(env)
+, wake_lock_(std::move(wake_lock))
 , pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
@@ -276,6 +284,7 @@ PublishStatus ClientImpl::Publish(const Topic& name,
   assert(added);
 
   // Send to event loop for processing (the loop will free it).
+  wake_lock_.AcquireForSending();
   Status status = msg_loop_->SendCommand(std::move(command), worker_id);
   if (!status.ok() && added) {
     std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
@@ -318,6 +327,7 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
   }
 
   if (storage_ && !restore.empty()) {
+    wake_lock_.AcquireForLoadingSubscriptions();
     storage_->Load(std::move(restore));
   }
   for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers(); ++worker_id) {
@@ -347,6 +357,7 @@ void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics,
                               env_->NowMicros(),
                               is_new_request));
   // Send to event loop for processing (the loop will free it).
+  wake_lock_.AcquireForSending();
   Status status = msg_loop_->SendCommand(std::move(command), worker_id);
 
   // If there was any error, invoke callback with appropriate status
@@ -363,6 +374,7 @@ void ClientImpl::Acknowledge(const MessageReceived& message) {
                                 message.GetTopicName().ToString(),
                                 true,
                                 message.GetSequenceNumber());
+    wake_lock_.AcquireForUpdatingSubscriptions();
     storage_->Update(std::move(request));
   }
 }
@@ -371,6 +383,7 @@ void ClientImpl::Acknowledge(const MessageReceived& message) {
 ** Process a received data message and deliver it to application.
 */
 void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
+  wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
   const MessageData* data = static_cast<const MessageData*>(msg.get());
 
@@ -421,6 +434,7 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
 
 // Process the Ack message for a Data Message
 void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
+  wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
@@ -467,6 +481,7 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
 
 // Process Metadata response messages arriving from the Cloud.
 void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
+  wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
   SubscriptionStatus ret;
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());

@@ -16,8 +16,9 @@ public class VisibilityTest {
 
   @Test
   public void testBuilder() throws Exception {
-    Configuration config = new Configuration(123);
+    Configuration config = new Configuration();
     Builder builder = new Builder().configuration(config)
+        .tenantID(123)
         .clientID("client-id-123")
         .subscribeCallback(new SubscribeCallback() {
           @Override

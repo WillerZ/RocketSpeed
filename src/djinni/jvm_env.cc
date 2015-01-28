@@ -41,9 +41,6 @@ void DetachCurrentThread(void* arg) {
   }
 }
 
-/** A default instance of JvmEnv. */
-static JvmEnv jvm_env_default_;
-
 }  // namespace
 
 jint JvmEnv::Init(JavaVM* java_vm) {
@@ -60,7 +57,11 @@ void JvmEnv::DeInit() {
   java_vm_ = nullptr;
 }
 
-JvmEnv* JvmEnv::Default() { return &jvm_env_default_; }
+JvmEnv* JvmEnv::Default() {
+  /** A default instance of JvmEnv. */
+  static JvmEnv jvm_env_default_;
+  return &jvm_env_default_;
+}
 
 BaseEnv::ThreadId JvmEnv::StartThread(void (*function)(void* arg),
                                       void* arg,

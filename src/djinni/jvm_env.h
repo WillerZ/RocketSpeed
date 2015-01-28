@@ -27,14 +27,14 @@ class JvmEnv : public ClientEnv {
 
   static JvmEnv* Default();
 
-  JvmEnv() {};
-
   virtual ThreadId StartThread(void (*function)(void* arg),
                                void* arg,
                                const std::string& thread_name = "");
 
   virtual ThreadId StartThread(std::function<void()> f,
                                const std::string& thread_name = "");
+ private:
+  JvmEnv() {}
 };
 
 }  // namespace rocketspeed

@@ -9,9 +9,9 @@ public class BuilderTest {
 
   @Test
   public void testExceptionOnClientOpen() {
-    Configuration config = new Configuration(123);
+    Configuration config = new Configuration();
     // The configuration has no pilots or copilots, creation of a client must fail.
-    Builder builder = new Builder().clientID("client-id-123").configuration(config);
+    Builder builder = new Builder().tenantID(123).clientID("client-id-123").configuration(config);
     try {
       builder.build();
     } catch (Exception e) {

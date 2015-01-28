@@ -1,5 +1,7 @@
 package org.rocketspeed;
 
+import org.rocketspeed.android.WakeLock;
+
 import java.util.logging.Level;
 
 public final class Builder {
@@ -8,18 +10,35 @@ public final class Builder {
     System.loadLibrary("rocketspeedjni");
   }
 
+  private WakeLock wakeLock;
   private ConfigurationImpl config;
+  private int tenantID;
   private String clientID;
   private SubscribeCallbackImpl subscribeCallback;
   private ReceiveCallbackImpl receiveCallback;
   private SubscriptionStorage storage;
 
+  /**
+   * A constructor to be used by non-Android applications.
+   */
   public Builder() {
     reset();
   }
 
+  /**
+   * A constructor to be used by Android applications.
+   */
+  public Builder(WakeLock wakeLock) {
+    assertNotNull(wakeLock, "Wake lock");
+    reset();
+    this.wakeLock = wakeLock;
+  }
+
+
   private void reset() {
-    config = null;
+    wakeLock = null;
+    // We do not reset config, as it can be reused by multiple clients.
+    tenantID = -1;
     clientID = null;
     subscribeCallback = null;
     receiveCallback = null;
@@ -28,6 +47,11 @@ public final class Builder {
 
   public Builder configuration(Configuration config) {
     this.config = config.djinni();
+    return this;
+  }
+
+  public Builder tenantID(int tenantID) {
+    this.tenantID = tenantID;
     return this;
   }
 
@@ -42,7 +66,7 @@ public final class Builder {
       public void Call(final Status status, final long sequenceNumber, final boolean subscribed) {
         try {
           callback.call(status, sequenceNumber, subscribed);
-        } catch (Exception e) {
+        } catch (Throwable e) {
           Client.LOGGER.log(Level.WARNING, "Exception thrown in subscribe callback", e);
         }
       }
@@ -57,7 +81,7 @@ public final class Builder {
                        final byte[] contents) {
         try {
           callback.call(new MessageReceived(namespaceId, topicName, sequenceNumber, contents));
-        } catch (Exception e) {
+        } catch (Throwable e) {
           Client.LOGGER.log(Level.WARNING, "Exception thrown in receive callback", e);
         }
       }
@@ -66,17 +90,53 @@ public final class Builder {
   }
 
   public Builder usingFileStorage(String filePath) {
-    if (!StorageType.NONE.equals(storage.getType())) {
-      throw new IllegalStateException();
-    }
     storage = new SubscriptionStorage(StorageType.FILE, filePath);
     return this;
   }
 
   public Client build() throws RuntimeException {
-    ClientImpl client = ClientImpl.Open(config, clientID, subscribeCallback, receiveCallback,
-                                        storage);
+    assertNotNull(config, "Configuration");
+    assertNotNull(clientID, "ClientID");
+    assertNotNull(storage, "Storage type");
+    if (tenantID < 0) {
+      throw new IllegalStateException("Tenant ID is missing.");
+    }
+    ClientImpl client = ClientImpl.Open(config, tenantID, clientID, subscribeCallback,
+                                        receiveCallback, storage, wrapWakeLock(wakeLock));
+    // No-throw guarantee below this line until the end of the function.
     reset();
     return new Client(client);
+  }
+
+  private void assertNotNull(Object param, String name) {
+    if (param == null) {
+      throw new IllegalStateException(name + " is missing.");
+    }
+  }
+
+  private static WakeLockImpl wrapWakeLock(final WakeLock wakeLock) {
+    return wakeLock == null ? null : new WakeLockImpl() {
+      @Override
+      public void Acquire(long timeout) {
+        try {
+          if (timeout < 0) {
+            wakeLock.acquire();
+          } else {
+            wakeLock.acquire(timeout);
+          }
+        } catch (Throwable e) {
+          Client.LOGGER.log(Level.WARNING, "Exception thrown in WakeLock.acquire()", e);
+        }
+      }
+
+      @Override
+      public void Release() {
+        try {
+          wakeLock.release();
+        } catch (Throwable e) {
+          Client.LOGGER.log(Level.WARNING, "Exception thrown in WakeLock.release()", e);
+        }
+      }
+    };
   }
 }

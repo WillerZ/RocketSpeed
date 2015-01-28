@@ -12,15 +12,11 @@ public final class ConfigurationImpl {
 
     /*package*/ final ArrayList<HostId> copilots;
 
-    /*package*/ final int tenantId;
-
     public ConfigurationImpl(
             ArrayList<HostId> pilots,
-            ArrayList<HostId> copilots,
-            int tenantId) {
+            ArrayList<HostId> copilots) {
         this.pilots = pilots;
         this.copilots = copilots;
-        this.tenantId = tenantId;
     }
 
     public ArrayList<HostId> getPilots() {
@@ -29,9 +25,5 @@ public final class ConfigurationImpl {
 
     public ArrayList<HostId> getCopilots() {
         return copilots;
-    }
-
-    public int getTenantId() {
-        return tenantId;
     }
 }

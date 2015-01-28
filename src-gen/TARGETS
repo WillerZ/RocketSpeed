@@ -23,6 +23,7 @@ cpp_library(
         'djinni/jni/NativeSubscribeCallbackImpl.cpp',
         'djinni/jni/NativeSubscriptionRequestImpl.cpp',
         'djinni/jni/NativeSubscriptionStorage.cpp',
+        'djinni/jni/NativeWakeLockImpl.cpp',
     ],
     deps = [
         ':djinni_interface',

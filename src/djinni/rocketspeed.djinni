@@ -42,7 +42,6 @@ SubscriptionRequestImpl = record {
 ConfigurationImpl = record {
   pilots: list<HostId>;
   copilots: list<HostId>;
-  tenant_id: i32;
 }
 
 PublishCallbackImpl = interface +j +o {
@@ -51,6 +50,11 @@ PublishCallbackImpl = interface +j +o {
        topic_name: string,
        message_id: MsgIdImpl,
        sequence_number: i64);
+}
+
+PublishStatus = record {
+  status: Status;
+  message_id: optional<MsgIdImpl>;
 }
 
 SubscribeCallbackImpl = interface +j +o {
@@ -66,14 +70,15 @@ ReceiveCallbackImpl = interface +j +o {
        contents: binary);
 }
 
-PublishStatus = record {
-  status: Status;
-  message_id: optional<MsgIdImpl>;
-}
-
 StorageType = enum {
   None;
   File;
+}
+
+WakeLockImpl = interface +j +o {
+  Acquire(timeout: i64);
+
+  Release();
 }
 
 SubscriptionStorage = record {
@@ -84,10 +89,12 @@ SubscriptionStorage = record {
 
 ClientImpl = interface +c {
   static Open(config: ConfigurationImpl,
+              tenant_id: i32,
               client_id: string,
               subscribe_callback: SubscribeCallbackImpl,
               receive_callback: ReceiveCallbackImpl,
-              storage: SubscriptionStorage): ClientImpl;
+              storage: SubscriptionStorage,
+              wake_lock: WakeLockImpl): ClientImpl;
 
   Publish(namespace_id: i32,
           topic_name: string,

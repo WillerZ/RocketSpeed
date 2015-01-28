@@ -15,6 +15,16 @@
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
 #include "src/djinni/jvm_env.h"
+#include "src/djinni/wake_lock.h"
+
+#include "src-gen/djinni/HostId.hpp"
+#include "src-gen/djinni/ConfigurationImpl.hpp"
+#include "src-gen/djinni/PublishCallbackImpl.hpp"
+#include "src-gen/djinni/ReceiveCallbackImpl.hpp"
+#include "src-gen/djinni/StorageType.hpp"
+#include "src-gen/djinni/SubscribeCallbackImpl.hpp"
+#include "src-gen/djinni/SubscriptionStorage.hpp"
+#include "src-gen/djinni/WakeLockImpl.hpp"
 
 namespace rocketspeed {
 namespace djinni {
@@ -22,7 +32,8 @@ namespace djinni {
 namespace {
 
 std::unique_ptr<rocketspeed::Configuration> toConfiguration(
-    ConfigurationImpl config) {
+    ConfigurationImpl config,
+    int32_t tenant_id) {
   std::vector<rocketspeed::HostId> pilots, copilots;
   for (auto& host_id : config.pilots) {
     pilots.emplace_back(std::move(host_id.hostname), host_id.port);
@@ -30,8 +41,10 @@ std::unique_ptr<rocketspeed::Configuration> toConfiguration(
   for (auto& host_id : config.copilots) {
     copilots.emplace_back(std::move(host_id.hostname), host_id.port);
   }
+  auto tenant_id1 = static_cast<rocketspeed::TenantID>(tenant_id);
+  assert(tenant_id == tenant_id1);
   std::unique_ptr<Configuration> config1(
-      Configuration::Create(pilots, copilots, config.tenant_id));
+      Configuration::Create(pilots, copilots, tenant_id1));
   return std::move(config1);
 }
 
@@ -150,15 +163,21 @@ PublishStatus fromPublishStatus(rocketspeed::PublishStatus status) {
 
 std::shared_ptr<ClientImpl> ClientImpl::Open(
     ConfigurationImpl config,
+    int32_t tenant_id,
     std::string client_id,
     std::shared_ptr<SubscribeCallbackImpl> subscribe_callback,
     std::shared_ptr<ReceiveCallbackImpl> receive_callback,
-    SubscriptionStorage storage) {
-  auto config1 = toConfiguration(config);
+    SubscriptionStorage storage,
+    std::shared_ptr<WakeLockImpl> wake_lock) {
+  auto config1 = toConfiguration(config, tenant_id);
 
   rocketspeed::ClientOptions options(*config1, client_id);
 
   options.env = JvmEnv::Default();
+
+  if (wake_lock) {
+    options.wake_lock = std::make_shared<WakeLock>(wake_lock);
+  }
 
   options.subscription_callback =
       [subscribe_callback](SubscriptionStatus status) {

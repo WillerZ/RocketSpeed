@@ -12,8 +12,7 @@ public class LocalTestClusterTest {
     try (LocalTestCluster cluster = new LocalTestCluster()) {
       assertFalse(cluster.getPilots().isEmpty());
       assertFalse(cluster.getCopilots().isEmpty());
-      Configuration config = cluster.createConfiguration(101);
-      assertEquals(101, config.djinni().getTenantId());
+      Configuration config = cluster.createConfiguration();
       assertEquals(cluster.getPilots(), config.djinni().getPilots());
       assertEquals(cluster.getCopilots(), config.djinni().getCopilots());
     }

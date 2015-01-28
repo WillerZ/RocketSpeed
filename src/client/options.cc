@@ -19,6 +19,8 @@ ClientOptions::ClientOptions(const Configuration& _config, ClientID _client_id)
     , receive_callback(nullptr)
     , storage(nullptr)
     , info_log(nullptr)
-    , env(ClientEnv::Default()) {}
+    , env(ClientEnv::Default())
+    , wake_lock(nullptr) {
+}
 
 }  // namespace rocketspeed

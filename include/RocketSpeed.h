@@ -43,6 +43,9 @@ class Logger;
 /** An opaque client's environment class. */
 class BaseEnv;
 
+/** An opaque wake lock. */
+class WakeLock;
+
 /**
  * Describes the Client object to be created by Client::Open() call.
  */
@@ -78,6 +81,10 @@ struct ClientOptions {
   // BaseEnv to be used by all client side components.
   // Default: a default env of a client.
   BaseEnv* env;
+
+  // WakeLock acquired by the client when it processes messages.
+  // Default: nullptr
+  std::shared_ptr<WakeLock> wake_lock;
 
   // Constructor which fills default values.
   ClientOptions(const Configuration& _config,

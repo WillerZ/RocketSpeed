@@ -19,6 +19,7 @@
 #include "include/RocketSpeed.h"
 #include "src/client/topic_id.h"
 #include "src/client/message_received.h"
+#include "src/client/smart_wake_lock.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
 
@@ -26,6 +27,7 @@ namespace rocketspeed {
 
 class Logger;
 class ClientEnv;
+class WakeLock;
 
 // Internal implementation of the Client API.
 class ClientImpl : public Client {
@@ -44,6 +46,7 @@ class ClientImpl : public Client {
   virtual void Acknowledge(const MessageReceived& message);
 
   ClientImpl(BaseEnv* env,
+             std::shared_ptr<WakeLock> wake_lock,
              const HostId& pilot_host_id,
              const HostId& copilot_host_id,
              TenantID tenant_id,
@@ -75,6 +78,9 @@ class ClientImpl : public Client {
 
   // The environment
   BaseEnv* env_;
+
+  // A wake lock used on mobile devices.
+  SmartWakeLock wake_lock_;
 
   // HostId of pilot/copilot machines to send messages to.
   HostId pilot_host_id_;

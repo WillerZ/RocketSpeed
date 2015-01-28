@@ -43,18 +43,15 @@ public class Client implements AutoCloseable {
                        long sequenceNumber) {
         try {
           callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber);
-        } catch (Exception e) {
+        } catch (Throwable e) {
           LOGGER.log(Level.WARNING, "Exception thrown in publish callback", e);
         }
       }
     };
-    PublishStatus status =
-        client.Publish(namespaceID, topicName, options.getRetention().djinni(), data, messageId1,
-                       callback1);
+    PublishStatus status = client.Publish(namespaceID, topicName, options.getRetention().djinni(),
+                                          data, messageId1, callback1);
     status.getStatus().checkExceptions();
-    return new MsgId(status.getMessageId()
-
-    );
+    return new MsgId(status.getMessageId());
   }
 
   public void listenTopics(List<SubscriptionRequest> requests) {

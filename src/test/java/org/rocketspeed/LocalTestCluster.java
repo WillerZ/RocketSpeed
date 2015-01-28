@@ -13,6 +13,7 @@ public class LocalTestCluster implements AutoCloseable {
   private static final int COMMAND_QUIT = 'Q';
   private static final int PILOT_DEFAULT_PORT = 58600;
   private static final int COPILOT_DEFAULT_PORT = 58600;
+  private static final int SHUTDOWN_RETRIES = 100;
   private Process cluster;
   private OutputStreamWriter clusterIn;
   private InputStreamReader clusterOut;
@@ -51,8 +52,8 @@ public class LocalTestCluster implements AutoCloseable {
     return Collections.singletonList(new HostId("localhost", COPILOT_DEFAULT_PORT));
   }
 
-  public Configuration createConfiguration(int tenantId) {
-    Configuration config = new Configuration(tenantId);
+  public Configuration createConfiguration() {
+    Configuration config = new Configuration();
     for (HostId hostId : getPilots()) {
       config.addPilot(hostId.getHostname(), hostId.getPort());
     }
@@ -62,22 +63,37 @@ public class LocalTestCluster implements AutoCloseable {
     return config;
   }
 
+  private boolean hasTerminated() {
+    try {
+      cluster.exitValue();
+      return true;
+    } catch (IllegalThreadStateException ignored) {
+      return false;
+    }
+  }
+
   @Override
   public void close() throws InterruptedException, IOException {
     // Possible partial initialisation 1): failed starting cluster process.
     if (cluster != null) {
-      try {
-        cluster.exitValue();
-        throw new IllegalStateException("Cluster process terminated prematurely.");
-      } catch (IllegalThreadStateException ignored) {
-        // It is expected that the cluster process still runs.
-      }
-      // Cleanly shut down the cluster.
+      // Try to cleanly shut down the cluster.
       clusterOut.close();
       clusterIn.write(COMMAND_QUIT);
       clusterIn.flush();
       clusterIn.close();
-      cluster.waitFor();
+      // Wait for clean shutdown.
+      int i;
+      for (i = 0; i < SHUTDOWN_RETRIES; ++i) {
+        if (hasTerminated()) {
+          break;
+        }
+        Thread.sleep(5);
+      }
+      // If diplomacy fails, just kill it.
+      if (i == SHUTDOWN_RETRIES) {
+        cluster.destroy();
+        cluster.waitFor();
+      }
     }
     // Possible partial initialisation 2): failed to get right command.
   }

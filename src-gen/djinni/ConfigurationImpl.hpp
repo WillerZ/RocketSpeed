@@ -4,7 +4,6 @@
 #pragma once
 
 #include "HostId.hpp"
-#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -16,16 +15,12 @@ struct ConfigurationImpl final {
 
     std::vector<HostId> copilots;
 
-    int32_t tenant_id;
-
 
     ConfigurationImpl(
             std::vector<HostId> pilots,
-            std::vector<HostId> copilots,
-            int32_t tenant_id) :
+            std::vector<HostId> copilots) :
                 pilots(std::move(pilots)),
-                copilots(std::move(copilots)),
-                tenant_id(std::move(tenant_id)) {
+                copilots(std::move(copilots)) {
     }
 };
 

@@ -6,8 +6,8 @@ public class Configuration {
 
   private final ConfigurationImpl impl;
 
-  public Configuration(int tenantId) {
-    impl = new ConfigurationImpl(new ArrayList<HostId>(), new ArrayList<HostId>(), tenantId);
+  public Configuration() {
+    impl = new ConfigurationImpl(new ArrayList<HostId>(), new ArrayList<HostId>());
   }
 
   public void addPilot(String hostName, int port) {

@@ -5,7 +5,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.rocketspeed.util.StatusMonoidFirst;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
@@ -29,7 +28,7 @@ public class IntegrationTest {
   public LocalTestCluster testCluster;
 
   @Before
-  public void setUp() throws IOException, InterruptedException {
+  public void setUp() throws Exception {
     testCluster = new LocalTestCluster();
   }
 
@@ -90,7 +89,8 @@ public class IntegrationTest {
     String clientId = "test_client_id-OneMessage";
     int tenantId = 101;
     Builder builder = new Builder().clientID(clientId)
-        .configuration(testCluster.createConfiguration(tenantId))
+        .configuration(testCluster.createConfiguration())
+        .tenantID(tenantId)
         .receiveCallback(receiveCallback)
         .subscribeCallback(subscribeCallback);
 
@@ -159,7 +159,8 @@ public class IntegrationTest {
     String clientId = "test_topic-SequenceNumberZero";
     int tenantId = 102;
     Builder builder = new Builder().clientID(clientId)
-        .configuration(testCluster.createConfiguration(tenantId))
+        .configuration(testCluster.createConfiguration())
+        .tenantID(tenantId)
         .receiveCallback(receiveCallback)
         .subscribeCallback(subscribeCallback);
 

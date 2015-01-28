@@ -7,26 +7,19 @@
 
 #include <memory>
 
-#include "src-gen/djinni/StatusCode.hpp"
-#include "src-gen/djinni/Status.hpp"
+#include "src-gen/djinni/ClientImpl.hpp"
 #include "src-gen/djinni/MsgIdImpl.hpp"
-#include "src-gen/djinni/HostId.hpp"
+#include "src-gen/djinni/PublishStatus.hpp"
 #include "src-gen/djinni/RetentionBase.hpp"
 #include "src-gen/djinni/SubscriptionRequestImpl.hpp"
-#include "src-gen/djinni/ConfigurationImpl.hpp"
-#include "src-gen/djinni/PublishCallbackImpl.hpp"
-#include "src-gen/djinni/SubscribeCallbackImpl.hpp"
-#include "src-gen/djinni/ReceiveCallbackImpl.hpp"
-#include "src-gen/djinni/PublishStatus.hpp"
-#include "src-gen/djinni/StorageType.hpp"
-#include "src-gen/djinni/SubscriptionStorage.hpp"
-#include "src-gen/djinni/ClientImpl.hpp"
 
 namespace rocketspeed {
 
 class Client;
 
 namespace djinni {
+
+class PublishCallbackImpl;
 
 class Client : public ClientImpl {
  public:
@@ -52,5 +45,5 @@ class Client : public ClientImpl {
   std::unique_ptr<rocketspeed::Client> client_;
 };
 
-}  // namespace rocketspeed
 }  // namespace djinni
+}  // namespace rocketspeed

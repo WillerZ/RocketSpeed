@@ -18,6 +18,7 @@
 #include "NativeSubscribeCallbackImpl.hpp"
 #include "NativeSubscriptionRequestImpl.hpp"
 #include "NativeSubscriptionStorage.hpp"
+#include "NativeWakeLockImpl.hpp"
 
 namespace djinni_generated {
 
@@ -33,17 +34,19 @@ CJNIEXPORT void JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_nativeDest
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
 }
 
-CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_Open(JNIEnv* jniEnv, jobject /*this*/, jobject j_config, jstring j_clientId, jobject j_subscribeCallback, jobject j_receiveCallback, jobject j_storage)
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_Open(JNIEnv* jniEnv, jobject /*this*/, jobject j_config, jint j_tenantId, jstring j_clientId, jobject j_subscribeCallback, jobject j_receiveCallback, jobject j_storage, jobject j_wakeLock)
 {
     try {
         DJINNI_FUNCTION_PROLOGUE0(jniEnv);
         ::rocketspeed::djinni::ConfigurationImpl c_config = NativeConfigurationImpl::fromJava(jniEnv, j_config);
+        int32_t c_tenant_id = ::djinni::HI32::Unboxed::fromJava(jniEnv, j_tenantId);
         std::string c_client_id = ::djinni::HString::fromJava(jniEnv, j_clientId);
         std::shared_ptr<::rocketspeed::djinni::SubscribeCallbackImpl> c_subscribe_callback = NativeSubscribeCallbackImpl::fromJava(jniEnv, j_subscribeCallback);
         std::shared_ptr<::rocketspeed::djinni::ReceiveCallbackImpl> c_receive_callback = NativeReceiveCallbackImpl::fromJava(jniEnv, j_receiveCallback);
         ::rocketspeed::djinni::SubscriptionStorage c_storage = NativeSubscriptionStorage::fromJava(jniEnv, j_storage);
+        std::shared_ptr<::rocketspeed::djinni::WakeLockImpl> c_wake_lock = NativeWakeLockImpl::fromJava(jniEnv, j_wakeLock);
 
-        std::shared_ptr<::rocketspeed::djinni::ClientImpl> cr = ::rocketspeed::djinni::ClientImpl::Open(std::move(c_config), std::move(c_client_id), std::move(c_subscribe_callback), std::move(c_receive_callback), std::move(c_storage));
+        std::shared_ptr<::rocketspeed::djinni::ClientImpl> cr = ::rocketspeed::djinni::ClientImpl::Open(std::move(c_config), std::move(c_tenant_id), std::move(c_client_id), std::move(c_subscribe_callback), std::move(c_receive_callback), std::move(c_storage), std::move(c_wake_lock));
 
         return NativeClientImpl::toJava(jniEnv, cr);
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0  /* value doesn't matter */ )
