@@ -4,7 +4,6 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #pragma once
-#pragma GCC diagnostic ignored "-Wshadow"
 
 #include <chrono>
 #include <condition_variable>
@@ -13,9 +12,13 @@
 #include <string>
 #include <vector>
 #include "src/port/Env.h"
+#include "src/util/storage.h"
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
 #include "logdevice/include/AsyncReader.h"
 #include "logdevice/include/Client.h"
-#include "src/util/storage.h"
+#pragma GCC diagnostic pop
 
 namespace rocketspeed {
 
