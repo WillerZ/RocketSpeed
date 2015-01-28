@@ -1,27 +1,42 @@
 # create the rocketspeed binary
+cpp_library(
+  name = 'rocketspeed_library',
+  srcs = [
+    'server.cc',
+  ],
+  preprocessor_flags = [
+    '-Irocketspeed/github/include',
+    '-Irocketspeed/github',
+    '-DROCKETSPEED_PLATFORM_POSIX=1',
+    '-DOS_LINUX=1',
+    '-DGFLAGS=google',
+  ],
+  deps = [
+    '@/external/gflags',
+    '@/rocketspeed/github/src/pilot:pilot_library',
+    '@/rocketspeed/github/src/copilot:copilot_library',
+    '@/rocketspeed/github/src/controltower:control_tower_library',
+    '@/rocketspeed/github/src/port',
+    '@/rocketspeed/github/src/util',
+    '@/rocketspeed/github/src/util/common',
+    '@/rocketspeed/github/src/messages',
+  ],
+)
+
 cpp_binary(
-    name = 'rocketspeed',
-    srcs = [
-        'main.cc',
-    ],
-    preprocessor_flags = [
-      '-Irocketspeed/github/include',
-      '-Irocketspeed/github',
-      '-DROCKETSPEED_PLATFORM_POSIX=1',
-      '-DOS_LINUX=1',
-      '-DGFLAGS=google',
-      '-DUSE_LOGDEVICE=1',
-    ],
-    deps = [
-        '@/external/gflags',
-        '@/rocketspeed/github/src/pilot:pilot_library',
-        '@/rocketspeed/github/src/copilot:copilot_library',
-        '@/rocketspeed/github/src/controltower:control_tower_library',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/messages',
-        '@/rocketspeed/github/src/logdevice:logdevice_storage',
-    ],
+  name = 'rocketspeed',
+  srcs = [
+    'main.cc',
+  ],
+  preprocessor_flags = [
+    '-Irocketspeed/github',
+    '-DROCKETSPEED_PLATFORM_POSIX=1',
+    '-DOS_LINUX=1',
+    '-DGFLAGS=google',
+  ],
+  deps = [
+    ':rocketspeed_library',
+    '@/rocketspeed/github/src/logdevice:logdevice_storage',
+  ],
 )
 
