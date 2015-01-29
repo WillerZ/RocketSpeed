@@ -27,6 +27,8 @@ namespaceid=`id -u`
 # called DBG=dbg. By default, pick the optimized build.
 part=${DBG:-opt}
 
+server=${SERVER:-_build/$part/rocketspeed/github/src/server/rocketspeed}
+
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
              -l size:,client-threads:,deploy,messages:,rate:,remote,topics:,pilots:,copilots:,towers: \
@@ -110,11 +112,9 @@ stop_servers
 if [ $deploy ]; then
   # Setup remote server
   # Check the binary is built
-  if [ -f _build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench ]; then
-    server=_build/$part/rocketspeed/github/src/server/rocketspeed
-  else
+  if [ ! -f $server ]; then
     echo "Must have: "
-    echo "  _build/$part/rocketspeed/github/src/server/rocketspeed"
+    echo "  $server"
     echo "from current directory"
     exit 1
   fi
