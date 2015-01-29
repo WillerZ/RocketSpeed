@@ -6,6 +6,7 @@
 #include "client.h"
 
 #include <cassert>
+#include <stdexcept>
 #include <memory>
 #include <limits>
 #include <string>
@@ -174,14 +175,17 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
                            fromSlice(message->GetContents()));
   };
 
-  rocketspeed::Client* client;
-  auto status = rocketspeed::Client::Open(std::move(options), &client);
-
-  if (status.ok()) {
-    return std::make_shared<Client>(client);
-  } else {
-    return std::shared_ptr<Client>();
+  std::shared_ptr<ClientImpl> client;
+  { // Create the RocketSpeed client and wrap it in Djinni handler.
+    rocketspeed::Client* client_raw;
+    auto status = rocketspeed::Client::Open(std::move(options), &client_raw);
+    if (!status.ok()) {
+      throw std::runtime_error(status.ToString());
+    }
+    client.reset(new Client(client_raw));
   }
+
+  return client;
 }
 
 PublishStatus Client::Publish(

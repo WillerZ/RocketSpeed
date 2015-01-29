@@ -29,6 +29,7 @@ java_unittest(
         '@/rocketspeed/github/src/test:test_cluster_proc',
     ],
     test_classes = [
+        'org.rocketspeed.BuilderTest',
         'org.rocketspeed.IntegrationTest',
         'org.rocketspeed.LocalTestClusterTest',
         'org.rocketspeed.tests.VisibilityTest',

@@ -73,9 +73,9 @@ public final class Builder {
     return this;
   }
 
-  public Client build() {
-    ClientImpl client =
-        ClientImpl.Open(config, clientID, subscribeCallback, receiveCallback, storage);
+  public Client build() throws RuntimeException {
+    ClientImpl client = ClientImpl.Open(config, clientID, subscribeCallback, receiveCallback,
+                                        storage);
     reset();
     return new Client(client);
   }
