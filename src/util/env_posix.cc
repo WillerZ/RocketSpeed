@@ -1338,6 +1338,8 @@ class PosixEnv : public Env {
 
   virtual ThreadId GetCurrentThreadId() const;
 
+  virtual int GetNumberOfThreads() const;
+
   virtual void WaitForJoin();
 
   virtual void WaitForJoin(ThreadId tid);
@@ -1800,18 +1802,23 @@ Env::ThreadId PosixEnv::StartThread(std::function<void()> f,
     f();
   };
   std::function<void()>* state = new std::function<void()>(std::move(named_f));
-  pthread_t t;
+  pthread_t t = 0;
   PthreadCall("start thread",
               pthread_create(&t, nullptr, &StartThreadWrapper, state));
   PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 
+  // TODO: validate the return code from pthread_create
   return static_cast<Env::ThreadId>(t);
 }
 
 Env::ThreadId PosixEnv::GetCurrentThreadId() const {
   return static_cast<Env::ThreadId>(pthread_self());
+}
+
+int PosixEnv::GetNumberOfThreads() const {
+  return threads_to_join_.size();
 }
 
 void PosixEnv::WaitForJoin() {

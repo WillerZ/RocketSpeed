@@ -45,6 +45,9 @@ class ControlRoom {
   // Forwards a message to this Room
   Status Forward(std::unique_ptr<Message> msg, LogID logid, int worker_id);
 
+  // Stop the room worker loop
+  void Stop() { room_loop_.Stop();}
+
   // The Commands sent to the ControlRoom.
   // The ControlTower sends subscribe/unsubscribe messages to ControlRoom.
   // The Tailer sends data messages to ControlRoom.

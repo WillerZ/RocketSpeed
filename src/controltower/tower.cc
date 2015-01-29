@@ -59,8 +59,14 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
 }
 
 ControlTower::~ControlTower() {
-  // The ControlRooms use the msg_loop.MsgClient to send messages.
-  // Shutdown all the ControlRooms before shutting down msg_loop.
+  // Shutdown room loops
+  for (auto& r: rooms_) {
+    r->Stop();
+  }
+  // delete rooms
+  for (auto& r: room_thread_id_) {
+    options_.env->WaitForJoin(r);
+  }
   rooms_.clear();
   options_.info_log->Flush();
 }
@@ -110,8 +116,9 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   unsigned int numrooms = opt.number_of_rooms;
   for (unsigned int i = 0; i < numrooms; i++) {
     ControlRoom* room = (*ct)->rooms_[i].get();
-    opt.env->StartThread(ControlRoom::Run, room,
+    BaseEnv::ThreadId t = opt.env->StartThread(ControlRoom::Run, room,
                   "rooms-" + std::to_string(room->GetRoomNumber()));
+    (*ct)->room_thread_id_.push_back(t);
   }
   // Wait for all the Rooms to be ready to process events
   for (unsigned int i = 0; i < numrooms; i++) {

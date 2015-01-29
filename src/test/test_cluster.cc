@@ -31,13 +31,16 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
                                    bool start_controltower,
                                    bool start_copilot,
                                    bool start_pilot,
-                                   const std::string& storage_url)
+                                   const std::string& storage_url,
+                                   Env* env)
     : logdevice_(new LogDevice)
-    , env_(Env::Default())
+    , env_(env)
     , info_log_(info_log)
     , pilot_(nullptr)
     , copilot_(nullptr)
     , control_tower_(nullptr) {
+  cockpit_thread_ = 0;
+  control_tower_thread_ = 0;
   if (start_copilot && !start_controltower) {
     status_ = Status::InvalidArgument("Copilot needs ControlTower.");
     return;
@@ -123,8 +126,12 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
     }
 
     // Start threads.
-    control_tower_thread_ =
-        std::thread([this]() { control_tower_loop_->Run(); });
+    auto entry_point = [] (void* arg) {
+      LocalTestCluster* cluster = static_cast<LocalTestCluster*>(arg);
+      cluster->control_tower_loop_->Run();
+    };
+    control_tower_thread_ = env_->StartThread(entry_point, (void *)this,
+                                              "tower");
 
     // Wait for message loop to start.
     while (!control_tower_loop_->IsRunning()) {
@@ -165,7 +172,11 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
       }
     }
 
-    cockpit_thread_ = std::thread([this]() { cockpit_loop_->Run(); });
+    auto entry_point = [] (void* arg) {
+      LocalTestCluster* cluster = static_cast<LocalTestCluster*>(arg);
+      cluster->cockpit_loop_->Run();
+    };
+    cockpit_thread_ = env_->StartThread(entry_point, (void *)this, "cockpit");
 
     // Wait for message loop to start.
     while (!cockpit_loop_->IsRunning()) {
@@ -184,11 +195,11 @@ LocalTestCluster::~LocalTestCluster() {
   }
 
   // Join threads.
-  if (cockpit_thread_.joinable()) {
-    cockpit_thread_.join();
+  if (cockpit_thread_) {
+    env_->WaitForJoin(cockpit_thread_);
   }
-  if (control_tower_thread_.joinable()) {
-    control_tower_thread_.join();
+  if (control_tower_thread_) {
+    env_->WaitForJoin(control_tower_thread_);
   }
 
   // Delete all components (this stops their worker/room loops).

@@ -79,6 +79,9 @@ class ControlTower {
   // room number. Each room also has its own MsgLoop.
   std::vector<unique_ptr<ControlRoom>> rooms_;
 
+  // The Room worker threads
+  std::vector<BaseEnv::ThreadId> room_thread_id_;
+
   // The Tailer to feed in data from LogStorage to Rooms
   unique_ptr<Tailer> tailer_;
 

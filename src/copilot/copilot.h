@@ -66,7 +66,7 @@ class Copilot {
 
   // Worker objects and threads, these have their own message loops.
   std::vector<std::unique_ptr<CopilotWorker>> workers_;
-  std::vector<std::thread> worker_threads_;
+  std::vector<BaseEnv::ThreadId> worker_threads_;
 
   // Control tower router. Workers will access this, but don't own it.
   ControlTowerRouter control_tower_router_;

@@ -34,14 +34,18 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
 }
 
 void Copilot::StartWorkers() {
+  Env* env = options_.env;
+
   // Start worker threads.
   for (size_t i = 0; i < workers_.size(); ++i) {
+    std::string thread_name = "copilotw-" + std::to_string(i);
+    auto entry_point = [] (void* arg) {
+      CopilotWorker* worker = static_cast<CopilotWorker*>(arg);
+      worker->Run();
+    };
     worker_threads_.emplace_back(
-      [this, i] (CopilotWorker* worker) {
-        options_.env->SetCurrentThreadName("copilotw-" + std::to_string(i));
-        worker->Run();
-      },
-      workers_[i].get());
+      env->StartThread(entry_point, (void*)workers_[i].get(), thread_name)
+    );
   }
 
   // Wait for them to start.
@@ -76,6 +80,7 @@ Copilot::Copilot(CopilotOptions options):
 }
 
 Copilot::~Copilot() {
+  Env* env = options_.env;
   // Stop all the workers.
   for (auto& worker : workers_) {
     worker->Stop();
@@ -83,7 +88,7 @@ Copilot::~Copilot() {
 
   // Join their threads.
   for (auto& worker_thread : worker_threads_) {
-    worker_thread.join();
+    env->WaitForJoin(worker_thread);
   }
 
   options_.info_log->Flush();

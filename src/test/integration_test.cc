@@ -229,6 +229,40 @@ TEST(IntegrationTest, SequenceNumberZero) {
   }
 }
 
+/*
+ * Verify that we do not leak any threads
+ */
+TEST(IntegrationTest, ThreadLeaks) {
+  // Setup local RocketSpeed cluster with default environment.
+  Env* env = Env::Default();
+
+  // Verify that there are no threads associated with this env
+  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+
+  // Create and destroy a cluster with this env and then
+  // verify that we do not have threads associated with this env
+  // Create control tower,  pilot and copilot
+  {
+    LocalTestCluster cluster(info_log, true, true, true, "", env);
+    ASSERT_GE(env->GetNumberOfThreads(), 0);
+  }
+  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+
+  // Create control tower and pilot
+  {
+    LocalTestCluster cluster(info_log, true, true, false, "", env);
+    ASSERT_GE(env->GetNumberOfThreads(), 0);
+  }
+  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+
+  // Create control tower and copilot
+  {
+    LocalTestCluster cluster(info_log, true, false, true, "", env);
+    ASSERT_GE(env->GetNumberOfThreads(), 0);
+  }
+  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

@@ -42,7 +42,9 @@ class LocalTestCluster {
                             bool start_controltower = true,
                             bool start_copilot = true,
                             bool start_pilot = true,
-                            const std::string& storage_url = "");
+                            const std::string& storage_url = "",
+                            Env* env = Env::Default()
+                            );
 
   /**
    * Stops all parts of the test cluster.
@@ -75,6 +77,9 @@ class LocalTestCluster {
 
   Statistics GetStatistics() const;
 
+  // Returns the environment used by the TestCluster
+  Env* GetEnv() const { return env_; }
+
  private:
   struct LogDevice;
   std::unique_ptr<LogDevice> logdevice_;
@@ -100,9 +105,9 @@ class LocalTestCluster {
 
   // Message loops and threads
   std::unique_ptr<MsgLoop> cockpit_loop_;
-  std::thread cockpit_thread_;
+  BaseEnv::ThreadId cockpit_thread_;
   std::unique_ptr<MsgLoop> control_tower_loop_;
-  std::thread control_tower_thread_;
+  BaseEnv::ThreadId control_tower_thread_;
 };
 
 }  // namespace rocketspeed

@@ -152,6 +152,7 @@ TEST(CopilotTest, WorkerMapping) {
     ASSERT_LE(tower_to_workers[control_tower].size(),
               options.control_tower_connections);
   }
+  delete copilot;
 }
 
 }  // namespace rocketspeed

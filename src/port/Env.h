@@ -189,6 +189,9 @@ class Env : public BaseEnv {
   // Wait for all threads started by StartThread to terminate.
   virtual void WaitForJoin()  = 0;
 
+  // The number of threads created so far
+  virtual int GetNumberOfThreads() const = 0;
+
   // Get thread pool queue length for specific thread pool.
   virtual unsigned int GetThreadPoolQueueLen(Priority pri = LOW) const {
     return 0;
@@ -602,6 +605,9 @@ class EnvWrapper : public Env {
   }
   void WaitForJoin() { return target_->WaitForJoin(); }
   void WaitForJoin(ThreadId tid) { return target_->WaitForJoin(tid); }
+  virtual int GetNumberOfThreads() const {
+    return target_->GetNumberOfThreads();
+  }
 
   virtual unsigned int GetThreadPoolQueueLen(Priority pri = LOW) const {
     return target_->GetThreadPoolQueueLen(pri);
