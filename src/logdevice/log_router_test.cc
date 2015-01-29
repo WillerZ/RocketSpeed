@@ -7,7 +7,7 @@
 #include <map>
 #include <set>
 #include <string>
-#include "src/util/log_router.h"
+#include "src/logdevice/log_router.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
@@ -20,8 +20,8 @@ class LogRouterTest { };
 TEST(LogRouterTest, ConsistencyTest) {
   // Test that topic mapping changes minimally when increasing number of logs.
   int numLogs = 10000;
-  LogRouter router1(1, numLogs);
-  LogRouter router2(1, numLogs * 105 / 100);  // 5% more
+  LogDeviceLogRouter router1(1, numLogs);
+  LogDeviceLogRouter router2(1, numLogs * 105 / 100);  // 5% more
 
   // Count number of changed for 100k topics.
   int numChanged = 0;
@@ -45,7 +45,7 @@ TEST(LogRouterTest, ConsistencyTest) {
 TEST(LogRouterTest, LogDistribution) {
   // Test that topics are well distributed among logs
   int numLogs = 1000 * static_cast<int>(Retention::Total);
-  LogRouter router(1, numLogs);
+  LogDeviceLogRouter router(1, numLogs);
   std::vector<int> topicCount(numLogs, 0);
 
   // Count number of changed for 1 million topics.

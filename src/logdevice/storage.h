@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 #include "src/port/Env.h"
 #include "src/util/storage.h"
@@ -87,9 +88,6 @@ class LogDeviceStorage : public LogStorage {
 
   ~LogDeviceStorage() final {}
 
-  Status Append(LogID id,
-                const Slice& data) final;
-
   Status AppendAsync(LogID id,
                      const Slice& data,
                      AppendCallback callback) final;
@@ -105,6 +103,7 @@ class LogDeviceStorage : public LogStorage {
                       std::function<void(std::unique_ptr<LogRecord>)> record_cb,
                       std::function<void(const GapRecord&)> gap_cb,
                       std::vector<AsyncLogReader*>* readers);
+
  private:
   LogDeviceStorage(std::shared_ptr<facebook::logdevice::Client> client,
                    Env* env);

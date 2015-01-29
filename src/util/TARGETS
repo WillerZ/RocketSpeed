@@ -9,7 +9,6 @@ cpp_library(
         'env_posix.cc',
         'hostmap.cc',
         'log_buffer.cc',
-        'log_router.cc',
         'logging.cc',
         'parsing.cc',
         'scoped_file_lock.cc',

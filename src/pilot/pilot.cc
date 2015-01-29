@@ -52,8 +52,7 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
  * Private constructor for a Pilot
  */
 Pilot::Pilot(PilotOptions options):
-  options_(SanitizeOptions(std::move(options))),
-  log_router_(options_.log_range.first, options_.log_range.second) {
+  options_(SanitizeOptions(std::move(options))) {
 
   worker_data_.resize(options_.msg_loop->GetNumWorkers());
   log_storage_ = options_.storage;
@@ -82,6 +81,11 @@ Status Pilot::CreateNewInstance(PilotOptions options,
     return Status::InvalidArgument("Log storage must be provided");
   }
 
+  if (!options.log_router) {
+    assert(false);
+    return Status::InvalidArgument("Log router must be provided");
+  }
+
   *pilot = new Pilot(std::move(options));
 
   // Ensure we managed to connect to the log storage.
@@ -106,7 +110,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
   MessageData* msg_data = static_cast<MessageData*>(msg.release());
   LogID logid;
   Slice topic_name = msg_data->GetTopicName();
-  if (!log_router_.GetLogID(topic_name, &logid).ok()) {
+  if (!options_.log_router->GetLogID(topic_name, &logid).ok()) {
     assert(false);  // GetLogID should never fail.
     return;
   }

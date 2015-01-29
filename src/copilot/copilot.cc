@@ -61,7 +61,6 @@ void Copilot::StartWorkers() {
  */
 Copilot::Copilot(CopilotOptions options):
   options_(SanitizeOptions(std::move(options))),
-  log_router_(options_.log_range.first, options_.log_range.second),
   control_tower_router_(options_.control_towers,
                         options_.consistent_hash_replicas,
                         options_.control_towers_per_log) {
@@ -99,6 +98,11 @@ Copilot::~Copilot() {
  */
 Status Copilot::CreateNewInstance(CopilotOptions options,
                                   Copilot** copilot) {
+  if (!options.log_router) {
+    assert(false);
+    return Status::InvalidArgument("Log router must be provided");
+  }
+
   *copilot = new Copilot(std::move(options));
   (*copilot)->StartWorkers();
   return Status::OK();
@@ -119,7 +123,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
 
   // map the topic to a logid
   LogID logid;
-  Status st = log_router_.GetLogID(data->GetTopicName(), &logid);
+  Status st = options_.log_router->GetLogID(data->GetTopicName(), &logid);
   if (!st.ok()) {
     LOG_INFO(options_.info_log,
         "Unable to map msg to logid %s", st.ToString().c_str());
@@ -161,7 +165,7 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
       topic.seqno);
 
     LogID logid;
-    Status st = log_router_.GetLogID(topic.topic_name, &logid);
+    Status st = options_.log_router->GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {
       LOG_INFO(options_.info_log,
           "Unable to map msg to logid %s", st.ToString().c_str());

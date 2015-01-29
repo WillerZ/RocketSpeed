@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #include "src/logdevice/storage.h"
+#include "src/logdevice/log_router.h"
 
 #ifdef USE_LOGDEVICE
 #include "logdevice/include/debug.h"
@@ -25,6 +26,7 @@ struct LocalTestCluster::LogDevice {
   std::shared_ptr<facebook::logdevice::Client> client_;
 #endif  // USE_LOGDEVICE
   std::shared_ptr<LogStorage> storage_;
+  std::shared_ptr<LogRouter> log_router_;
 };
 
 LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
@@ -69,43 +71,51 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
 #endif  // USE_LOGDEVICE
 
   LogDeviceStorage* storage = nullptr;
+  if (start_pilot || start_controltower) {
 #ifdef USE_LOGDEVICE
-  if (storage_url.empty()) {
-    // Setup the local LogDevice cluster and create, client, and storage.
-    logdevice_->cluster_ =
-        facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(3);
-    logdevice_->client_ = logdevice_->cluster_->createClient();
-    status_ = LogDeviceStorage::Create(logdevice_->client_, env_, &storage);
-  } else {
-    status_ = LogDeviceStorage::Create("rocketspeed.logdevice.primary",
-                                       storage_url,
+    if (storage_url.empty()) {
+      // Setup the local LogDevice cluster and create, client, and storage.
+      logdevice_->cluster_ =
+          facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(3);
+      logdevice_->client_ = logdevice_->cluster_->createClient();
+      status_ = LogDeviceStorage::Create(logdevice_->client_,
+                                         env_,
+                                         &storage);
+    } else {
+      status_ = LogDeviceStorage::Create("rocketspeed.logdevice.primary",
+                                         storage_url,
+                                         "",
+                                         std::chrono::milliseconds(1000),
+                                         16,
+                                         env_,
+                                         &storage);
+    }
+#else
+    status_ = LogDeviceStorage::Create("",
+                                       "",
                                        "",
                                        std::chrono::milliseconds(1000),
                                        16,
                                        env_,
                                        &storage);
-  }
-#else
-  status_ = LogDeviceStorage::Create("",
-                                     "",
-                                     "",
-                                     std::chrono::milliseconds(1000),
-                                     16,
-                                     env_,
-                                     &storage);
 #endif  // USE_LOGDEVICE
 
-  if (!status_.ok() || !storage) {
-    LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
-    return;
+    if (!status_.ok() || !storage) {
+      LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
+      return;
+    }
+    logdevice_->storage_.reset(storage);
+    storage = nullptr;
   }
-  logdevice_->storage_.reset(storage);
-  storage = nullptr;
+  logdevice_->log_router_ =
+    std::make_shared<LogDeviceLogRouter>(log_range.first, log_range.second);
 
-  // Tell the pilot and control tower to use this storage interface instead
-  // of opening a new one.
+  // Tell rocketspeed to use this storage interface/router.
   pilot_options_.storage = logdevice_->storage_;
+  pilot_options_.log_router = logdevice_->log_router_;
+  copilot_options_.log_router = logdevice_->log_router_;
   control_tower_options_.storage = logdevice_->storage_;
+  control_tower_options_.log_router = logdevice_->log_router_;
 
   EnvOptions env_options;
 
@@ -114,7 +124,6 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
         env_, env_options, ControlTower::DEFAULT_PORT, 16, info_log_, "tower"));
 
     // Create ControlTower
-    control_tower_options_.log_range = log_range;
     control_tower_options_.info_log = info_log_;
     control_tower_options_.number_of_rooms = 16;
     control_tower_options_.msg_loop = control_tower_loop_.get();
@@ -162,7 +171,6 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
 
     if (start_pilot) {
       // Create Pilot
-      pilot_options_.log_range = log_range;
       pilot_options_.info_log = info_log_;
       pilot_options_.msg_loop = cockpit_loop_.get();
       status_ = Pilot::CreateNewInstance(pilot_options_, &pilot_);
@@ -221,6 +229,10 @@ Statistics LocalTestCluster::GetStatistics() const {
   }
   // TODO(pja) 1 : Add copilot and control tower once they have stats.
   return std::move(aggregated);
+}
+
+std::shared_ptr<LogRouter> LocalTestCluster::GetLogRouter() {
+  return logdevice_->log_router_;
 }
 
 }  // namespace rocketspeed

@@ -62,10 +62,6 @@ struct CopilotOptions {
   // Default: 0 (disabled)
   size_t log_file_time_to_roll;
 
-  // Range of log IDs to use.
-  // Warning: changing this range will change the mapping of topics to logs.
-  std::pair<LogID, LogID> log_range;
-
   // Control Tower host IDs.
   std::vector<ClientID> control_towers;
 
@@ -88,6 +84,9 @@ struct CopilotOptions {
   // Should be <= num_workers
   // Default: 4
   uint32_t control_tower_connections;
+
+  // Log router.
+  std::shared_ptr<LogRouter> log_router;
 
   // Create CopilotOptions with default values for all fields
   CopilotOptions();

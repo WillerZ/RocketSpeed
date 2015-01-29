@@ -17,7 +17,6 @@
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
-#include "src/util/log_router.h"
 #include "src/util/storage.h"
 #include "src/util/control_tower_router.h"
 
@@ -60,9 +59,6 @@ class Copilot {
  private:
   // The options used by the Copilot
   CopilotOptions options_;
-
-  // Log router for mapping topic names to logs.
-  LogRouter log_router_;
 
   // Worker objects and threads, these have their own message loops.
   std::vector<std::unique_ptr<CopilotWorker>> workers_;

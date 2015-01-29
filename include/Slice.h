@@ -100,6 +100,15 @@ class Slice {
             (memcmp(data_, x.data_, x.size_) == 0));
   }
 
+  // STL Iterators.
+  const char* begin() const {
+    return data_;
+  }
+
+  const char* end() const {
+    return data_ + size_;
+  }
+
  private:
   const char* data_;
   size_t size_;

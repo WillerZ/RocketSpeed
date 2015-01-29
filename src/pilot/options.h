@@ -65,9 +65,8 @@ struct PilotOptions {
   // Pointer to persistent log storage to use.
   std::shared_ptr<LogStorage> storage;
 
-  // Range of log IDs to use.
-  // Warning: changing this range will change the mapping of topics to logs.
-  std::pair<LogID, LogID> log_range;
+  // Log router.
+  std::shared_ptr<LogRouter> log_router;
 
   // Create PilotOptions with default values for all fields
   PilotOptions();

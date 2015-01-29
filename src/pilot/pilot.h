@@ -15,7 +15,6 @@
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
-#include "src/util/log_router.h"
 #include "src/util/storage.h"
 #include "src/pilot/options.h"
 
@@ -114,9 +113,6 @@ class Pilot {
 
   // Interface with LogDevice
   std::shared_ptr<LogStorage> log_storage_;
-
-  // Log router for mapping topic names to logs.
-  LogRouter log_router_;
 
   struct alignas(CACHE_LINE_SIZE) WorkerData {
     WorkerData()

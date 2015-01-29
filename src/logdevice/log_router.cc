@@ -3,23 +3,19 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 
-#include "src/util/log_router.h"
+#include "src/logdevice/log_router.h"
 #include <string>
 #include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
-LogRouter::LogRouter(LogID first, LogID last)
+LogDeviceLogRouter::LogDeviceLogRouter(LogID first, LogID last)
 : first_(first)
 , count_(last - first + 1) {
   assert(last >= first);
 }
 
-Status LogRouter::GetLogID(const Topic& topic, LogID* out) const {
-  return GetLogID(Slice(topic), out);
-}
-
-Status LogRouter::GetLogID(Slice topic, LogID* out) const {
+Status LogDeviceLogRouter::GetLogID(Slice topic, LogID* out) const {
   // Hash the topic name
   // Using MurmurHash instead of std::hash because std::hash is implementation
   // defined, meaning we cannot rely on it to have a good distribution.
@@ -32,7 +28,8 @@ Status LogRouter::GetLogID(Slice topic, LogID* out) const {
   return Status::OK();
 }
 
-uint64_t LogRouter::JumpConsistentHash(uint64_t key, uint64_t buckets) {
+uint64_t
+LogDeviceLogRouter::JumpConsistentHash(uint64_t key, uint64_t buckets) {
   // John Lamping, Eric Veach.
   // A Fast, Minimal Memory, Consistent Hash Algorithm.
   // http://arxiv.org/ftp/arxiv/papers/1406/1406.2294.pdf

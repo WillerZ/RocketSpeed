@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <utility>
 #include "src/util/storage.h"
@@ -15,8 +16,8 @@ namespace rocketspeed {
 // Run the RocketSpeed server.
 extern int Run(int argc,
                char** argv,
-               std::shared_ptr<LogStorage> storage,
-               std::pair<LogID, LogID> log_range,
+               std::function<std::shared_ptr<LogStorage>()> get_storage,
+               std::shared_ptr<LogRouter> log_router,
                Env* env,
                EnvOptions env_options);
 

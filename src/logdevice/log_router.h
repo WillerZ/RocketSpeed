@@ -19,10 +19,10 @@ namespace rocketspeed {
  * low memory way of mapping keys to an arbitrary number of buckets in a way
  * that shuffles the mapping minimally when the number of buckets increases.
  */
-class LogRouter {
+class LogDeviceLogRouter : public LogRouter {
  public:
   /**
-   * Constructs a new LogRouter.
+   * Constructs a new LogDeviceLogRouter.
    * All clients should use either the same LogRouter instance, or different
    * LogRouter instances created with identical parameters. Otherwise, topics
    * will not map to the same logs for different instances.
@@ -30,7 +30,7 @@ class LogRouter {
    * @param first The first log ID to map to (inclusive).
    * @param last The last log ID to map to (inclusive).
    */
-  explicit LogRouter(LogID first, LogID last);
+  explicit LogDeviceLogRouter(LogID first, LogID last);
 
   /**
    * Gets the Log ID where a topic's messages are to be stored.
@@ -39,8 +39,7 @@ class LogRouter {
    * @param out Where to place the resulting Log ID.
    * @return on success OK(), otherwise errorcode.
    */
-  Status GetLogID(const Topic& topic, LogID* out) const;
-  Status GetLogID(Slice topic, LogID* out) const;
+  Status GetLogID(Slice topic, LogID* out) const final;
 
  private:
   /**

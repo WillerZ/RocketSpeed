@@ -9,7 +9,6 @@
 #include <map>
 #include <vector>
 #include "src/messages/msg_loop.h"
-#include "src/util/log_router.h"
 #include "src/controltower/options.h"
 #include "src/controltower/room.h"
 #include "src/controltower/tailer.h"
@@ -36,9 +35,6 @@ class ControlTower {
   // Returns the HostId to HostNumber mapping
   HostMap& GetHostMap() { return hostmap_; }
 
-  // Returns the logic to map a topic name to a logid
-  const LogRouter& GetLogRouter() { return log_router_; }
-
   // The Storage Reader
   const Tailer* GetTailer() const { return tailer_.get(); }
 
@@ -64,9 +60,6 @@ class ControlTower {
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;
-
-  // Maps a topic to a log
-  const LogRouter log_router_;
 
   // Maps a HostId to a HostNumber.
   HostMap hostmap_;

@@ -73,10 +73,6 @@ struct ControlTowerOptions {
   // Size of the worker queue (number of commands in flight).
   uint32_t worker_queue_size;
 
-  // Range of log IDs to use.
-  // Warning: this should be picked up from Configuration
-  std::pair<LogID, LogID> log_range;
-
   // The maximum number of hosts that a machine can connect to. This
   // is used to optimize the mapping from a HostName to a simple
   // integer called the HostNumber
@@ -86,8 +82,8 @@ struct ControlTowerOptions {
   // Pointer to persistent log storage to use.
   std::shared_ptr<LogStorage> storage;
 
-  // Number of workers for the log storage.
-  uint32_t num_storage_workers;
+  // Log router.
+  std::shared_ptr<LogRouter> log_router;
 
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();

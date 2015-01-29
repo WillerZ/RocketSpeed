@@ -45,7 +45,6 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
  */
 ControlTower::ControlTower(const ControlTowerOptions& options):
   options_(SanitizeOptions(options)),
-  log_router_(options.log_range.first, options.log_range.second),
   hostmap_(options.max_number_of_hosts),
   hostworker_(new std::atomic<int>[options.max_number_of_hosts]),
   tower_id_(options_.msg_loop->GetHostId().ToClientId()) {
@@ -80,6 +79,11 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   if (!options.storage) {
     assert(false);
     return Status::InvalidArgument("Log storage must be provided");
+  }
+
+  if (!options.log_router) {
+    assert(false);
+    return Status::InvalidArgument("Log router must be provided");
   }
 
   *ct = new ControlTower(options);
@@ -148,7 +152,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
     // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
     LogID logid;
-    Status st = log_router_.GetLogID(topic.topic_name, &logid);
+    Status st = options_.log_router->GetLogID(topic.topic_name, &logid);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
           "Unable to map Topic(%s) to logid %s",

@@ -141,28 +141,6 @@ LogDeviceStorage::LogDeviceStorage(
 , env_(env) {
 }
 
-Status LogDeviceStorage::Append(LogID id,
-                                const Slice& data) {
-  // Check data isn't over the LogDevice maximum payload size.
-  const size_t maxSize = facebook::logdevice::Payload::maxSize();
-  if (data.size() >= maxSize) {
-    return Status::InvalidArgument("Payload is over LogDevice limit of 1MB.");
-  }
-
-  // Synchronously append the data.
-  facebook::logdevice::Payload payload(
-    reinterpret_cast<const void*>(data.data()),
-    data.size());
-  const auto lsn = client_->appendSync(facebook::logdevice::logid_t(id),
-                                       payload);
-
-  // Check for errors
-  if (lsn == facebook::logdevice::LSN_INVALID) {
-    return LogDeviceErrorToStatus(facebook::logdevice::err);
-  }
-  return Status::OK();
-}
-
 Status LogDeviceStorage::AppendAsync(LogID id,
                                      const Slice& data,
                                      AppendCallback callback) {

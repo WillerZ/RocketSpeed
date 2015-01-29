@@ -85,17 +85,7 @@ class LogStorage {
   virtual ~LogStorage() {}
 
   /**
-   * Appends data to a log. This call will block until the append is processed.
-   *
-   * @param id ID number of the log to write to.
-   * @param data the data to write.
-   * @return on success returns OK(), otherwise errorcode.
-   */
-  virtual Status Append(LogID id,
-                        const Slice& data) = 0;
-
-  /**
-   * Appends data to a log asynchronously. The call will return immediately,
+   * Appends data to a topic asynchronously. The call will return immediately,
    * with the return value indicating if the asynchronous request was made.
    * If AppendAsync returns success then at some point in the future the
    * callback will be called with a Status indicating if the append was
@@ -104,7 +94,7 @@ class LogStorage {
    * Important: the data slice must remain valid and unmodified until the
    * callback is called.
    *
-   * @param id ID number of the log to write to.
+   * @param topic_name the name of the topic to append to.
    * @param data the data to write.
    * @param callback Callback to process the append request.
    * @return on success returns OK(), otherwise errorcode.
@@ -190,6 +180,34 @@ class AsyncLogReader {
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status Close(LogID id) = 0;
+};
+
+/**
+ * Abstract Log Router.
+ */
+class LogRouter {
+ public:
+  /**
+   * Routes a topic to a log ID.
+   *
+   * @param topic the name of the topic to route.
+   * @param out output for logid.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  virtual Status GetLogID(Slice topic, LogID* out) const = 0;
+
+  /**
+   * Routes a topic to a log ID.
+   *
+   * @param topic the name of the topic to route.
+   * @param out output for logid.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  inline Status GetLogID(const Topic& topic, LogID* out) const {
+    return GetLogID(Slice(topic), out);
+  }
+
+  virtual ~LogRouter() {}
 };
 
 }  // namespace rocketspeed

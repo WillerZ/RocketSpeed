@@ -56,8 +56,8 @@ namespace rocketspeed {
 
 int Run(int argc,
         char** argv,
-        std::shared_ptr<LogStorage> storage,
-        std::pair<LogID, LogID> log_range,
+        std::function<std::shared_ptr<LogStorage>()> get_storage,
+        std::shared_ptr<LogRouter> log_router,
         Env* env,
         EnvOptions env_options) {
   Status st;
@@ -114,6 +114,16 @@ int Run(int argc,
                                    "tower"));
   }
 
+  std::shared_ptr<LogStorage> storage;
+  if (FLAGS_pilot || FLAGS_tower) {
+    // Only need storage for pilot and control tower.
+    storage = get_storage();
+    if (!storage) {
+      fprintf(stderr, "Failed to construct log storage");
+      return 1;
+    }
+  }
+
   if (FLAGS_pilot && FLAGS_copilot && FLAGS_pilot_port == FLAGS_copilot_port) {
     // Pilot + Copilot sharing message loop.
     int workers = std::max(FLAGS_pilot_workers, FLAGS_copilot_workers);
@@ -142,8 +152,8 @@ int Run(int argc,
     tower_opts.worker_queue_size = FLAGS_worker_queue_size;
     tower_opts.number_of_rooms = FLAGS_tower_rooms;
     tower_opts.info_log = info_log;
-    tower_opts.log_range = log_range;
     tower_opts.storage = storage;
+    tower_opts.log_router = log_router;
 
     st = ControlTower::CreateNewInstance(std::move(tower_opts),
                                                       &tower);
@@ -157,9 +167,9 @@ int Run(int argc,
   if (FLAGS_pilot) {
     PilotOptions pilot_opts;
     pilot_opts.msg_loop = pilot_loop.get();
-    pilot_opts.log_range = log_range;
     pilot_opts.info_log = info_log;
     pilot_opts.storage = storage;
+    pilot_opts.log_router = log_router;
 
     st = Pilot::CreateNewInstance(std::move(pilot_opts),
                                                &pilot);
@@ -174,10 +184,10 @@ int Run(int argc,
     CopilotOptions copilot_opts;
     copilot_opts.msg_loop = copilot_loop.get();
     copilot_opts.worker_queue_size = FLAGS_worker_queue_size;
-    copilot_opts.log_range = log_range;
     copilot_opts.num_workers = FLAGS_copilot_workers;
     copilot_opts.info_log = info_log;
     copilot_opts.control_tower_connections = FLAGS_copilot_connections;
+    copilot_opts.log_router = log_router;
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
     // Parse comma-separated control_towers hostname.

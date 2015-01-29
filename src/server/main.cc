@@ -9,6 +9,7 @@
 #include <utility>
 #include "src/server/server.h"
 #include "src/logdevice/storage.h"
+#include "src/logdevice/log_router.h"
 
 // Needed to set logdevice::dbg::currentLevel
 #include "external/logdevice/include/debug.h"
@@ -45,18 +46,30 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Create LogDevice storage.
-  rocketspeed::LogDeviceStorage* logdevice_storage = nullptr;
-  rocketspeed::LogDeviceStorage::Create(
-    "rocketspeed.logdevice.primary",
-    FLAGS_storage_url,
-    "",
-    std::chrono::milliseconds(1000),
-    FLAGS_storage_workers,
-    env,
-    &logdevice_storage);
-  std::shared_ptr<rocketspeed::LogStorage> storage(logdevice_storage);
+  // Create LogDevice log router.
+  std::shared_ptr<rocketspeed::LogRouter> log_router =
+    std::make_shared<rocketspeed::LogDeviceLogRouter>(log_range.first,
+                                                      log_range.second);
+
+  // Lambda to create LogDevice storage.
+  auto get_storage = [&] () {
+    rocketspeed::LogDeviceStorage* storage = nullptr;
+    rocketspeed::LogDeviceStorage::Create(
+      "rocketspeed.logdevice.primary",
+      FLAGS_storage_url,
+      "",
+      std::chrono::milliseconds(1000),
+      FLAGS_storage_workers,
+      env,
+      &storage);
+    return std::shared_ptr<rocketspeed::LogStorage>(storage);
+  };
 
   // Run the server.
-  return rocketspeed::Run(argc, argv, storage, log_range, env, env_options);
+  return rocketspeed::Run(argc,
+                          argv,
+                          get_storage,
+                          log_router,
+                          env,
+                          env_options);
 }

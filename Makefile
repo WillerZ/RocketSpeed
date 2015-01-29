@@ -269,8 +269,8 @@ copilotmessages_test: src/copilot/test/copilotmessages_test.o $(LIBOBJECTS) $(TE
 pilotmessages_test: src/pilot/test/pilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/pilot/test/pilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
-log_router_test: src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) src/util/tests/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+log_router_test: src/logdevice/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) src/logdevice/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 control_tower_router_test: src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)

@@ -19,8 +19,7 @@ PilotOptions::PilotOptions()
     log_dir(""),
     max_log_file_size(0),
     log_file_time_to_roll(0),
-    storage(nullptr),
-    log_range(1, 100000){
+    storage(nullptr) {
 }
 
 }  // namespace rocketspeed

@@ -122,7 +122,7 @@ TEST(CopilotTest, WorkerMapping) {
   MsgLoop loop(env_, EnvOptions(), port, num_workers, info_log_, "test");
 
   CopilotOptions options;
-  options.log_range = std::pair<LogID, LogID>(1, 10000);
+  auto log_range = std::pair<LogID, LogID>(1, 10000);
   options.info_log = info_log_;
   for (int i = 0; i < num_towers; ++i) {
     // Generate fake control towers.
@@ -130,6 +130,7 @@ TEST(CopilotTest, WorkerMapping) {
   }
   options.msg_loop = &loop;
   options.control_tower_connections = 4;
+  options.log_router = cluster.GetLogRouter();
   Copilot* copilot;
   Status st = Copilot::CreateNewInstance(options, &copilot);
   ASSERT_TRUE(st.ok());
@@ -137,8 +138,8 @@ TEST(CopilotTest, WorkerMapping) {
   // Now check that each control tower is mapped to one worker.
   std::unordered_map<const ClientID*, std::set<int>> tower_to_workers;
   const auto& router = copilot->GetControlTowerRouter();
-  for (LogID logid = options.log_range.first;
-       logid <= options.log_range.second;
+  for (LogID logid = log_range.first;
+       logid <= log_range.second;
        ++logid) {
     // Find the tower responsible for this log.
     ClientID const* control_tower = nullptr;

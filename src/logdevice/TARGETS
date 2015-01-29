@@ -24,6 +24,7 @@ cpp_library(
   name = 'logdevice_storage',
   srcs = [
     'storage.cc',
+    'log_router.cc',
   ],
   preprocessor_flags = [
     '-Irocketspeed/github/include',

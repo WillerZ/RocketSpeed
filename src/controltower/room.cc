@@ -171,7 +171,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
 
   // Check that the topic name do map to the specified logid
   LogID checkid __attribute__((unused)) = 0;
-  assert((ct->GetLogRouter().GetLogID(topic[0].topic_name, &checkid)).ok() &&
+  assert((options.log_router->GetLogID(topic[0].topic_name, &checkid)).ok() &&
          (logid == checkid));
 
   // Prefix the namespace id to the topic name
