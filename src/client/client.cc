@@ -123,7 +123,7 @@ Status Client::Open(ClientOptions options_tmp,
       options.config.GetPilotHostIds().front(),
       options.username,
       options.access_token,
-      true,
+      false,
       options.info_log);
 #endif
 
@@ -332,12 +332,12 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
   }
   for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers(); ++worker_id) {
     if (!subscribe[worker_id].empty()) {
-      IssueSubscriptions(subscribe[worker_id], worker_id);
+      IssueSubscriptions(std::move(subscribe[worker_id]), worker_id);
     }
   }
 }
 
-void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics,
+void ClientImpl::IssueSubscriptions(std::vector<TopicPair> topics,
                                     int worker_id) {
   const bool is_new_request = true;
   // Construct message.
@@ -364,7 +364,10 @@ void ClientImpl::IssueSubscriptions(const std::vector<TopicPair> &topics,
   if (!status.ok() && subscription_callback_) {
     SubscriptionStatus error_msg;
     error_msg.status = status;
-    subscription_callback_(error_msg);
+    for (const auto& elem : topics) {
+      error_msg.topic_name = std::move(elem.topic_name);
+      subscription_callback_(error_msg);
+    }
   }
 }
 
@@ -496,18 +499,20 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   std::vector<TopicPair> pairs = meta->GetTopicInfo();
   // This is the response ack of a subscription request sent earlier.
   for (auto& elem : pairs) {
-    // Record confirmed subscriptions
-    TopicID topic_id(elem.namespace_id, std::move(elem.topic_name));
-    // topic_map stores last received, so use -1 to say we want higher seqnos.
-    topic_map[topic_id] = elem.seqno - 1;
 
     // invoke application-registered callback
     if (subscription_callback_) {
       ret.status = Status::OK();
       ret.seqno = elem.seqno;  // start seqno of this subscription
       ret.subscribed = true;   // subscribed to this topic
+      ret.topic_name = elem.topic_name;
       subscription_callback_(ret);
     }
+    // Record confirmed subscriptions
+    TopicID topic_id(elem.namespace_id, std::move(elem.topic_name));
+    // topic_map stores last received, so use -1 to say we want higher seqnos.
+    topic_map[topic_id] = elem.seqno - 1;
+
   }
 }
 
@@ -537,6 +542,7 @@ void ClientImpl::ProcessRestoredSubscription(
     } else {
       // Inform the user that subscription restoring failed.
       if (subscription_callback_) {
+        failed_restore.topic_name = elem.topic_name;
         subscription_callback_(failed_restore);
       }
     }

@@ -72,7 +72,7 @@ class ClientImpl : public Client {
   void ProcessRestoredSubscription(
       const std::vector<SubscriptionRequest>& restored);
 
-  void IssueSubscriptions(const std::vector<TopicPair> &topics, int worker_id);
+  void IssueSubscriptions(std::vector<TopicPair> topics, int worker_id);
 
   int GetWorkerForTopic(const Topic& name) const;
 
