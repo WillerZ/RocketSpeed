@@ -64,7 +64,10 @@ public class IntegrationTest {
     final Semaphore subscribeSemaphore = new Semaphore(0);
     SubscribeCallback subscribeCallback = new SubscribeCallback() {
       @Override
-      public void call(Status status, long sequenceNumber, boolean subscribed) {
+      public void call(Status status, int namespaceId, String topicName, long sequenceNumber,
+                       boolean subscribed) {
+        assertEquals(ns, namespaceId);
+        assertEquals(topic, topicName);
         assertEquals(true, subscribed);
         statuses.append(status);
         subscribeSemaphore.release();
@@ -138,7 +141,10 @@ public class IntegrationTest {
     final Semaphore subscribeSemaphore = new Semaphore(0);
     SubscribeCallback subscribeCallback = new SubscribeCallback() {
       @Override
-      public void call(Status status, long sequenceNumber, boolean subscribed) {
+      public void call(Status status, int namespaceId, String topicName, long sequenceNumber,
+                       boolean subscribed) {
+        assertEquals(ns, namespaceId);
+        assertEquals(topic, topicName);
         statuses.append(status);
         subscribeSemaphore.release();
       }

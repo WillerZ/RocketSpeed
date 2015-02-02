@@ -182,6 +182,8 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
   options.subscription_callback =
       [subscribe_callback](SubscriptionStatus status) {
     subscribe_callback->Call(fromStatus(status.status),
+                             fromNamespaceID(status.namespace_id),
+                             std::move(status.topic_name),
                              fromSequenceNumber(status.seqno),
                              status.subscribed);
   };

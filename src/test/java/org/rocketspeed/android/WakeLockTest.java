@@ -71,7 +71,8 @@ public class WakeLockTest {
     };
     SubscribeCallback subscribeCallback = new SubscribeCallback() {
       @Override
-      public void call(Status status, long sequenceNumber, boolean subscribed) {
+      public void call(Status status, int namespaceId, String topicName, long sequenceNumber,
+                       boolean subscribed) {
         // We sent a message, and that was the first (and last) time a wake lock should be acquired.
         verify(wakeLock).acquire(eq(1000L));
         // And received a response.

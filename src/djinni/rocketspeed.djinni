@@ -59,6 +59,8 @@ PublishStatus = record {
 
 SubscribeCallbackImpl = interface +j +o {
   Call(status: Status,
+       namespace_id: i32,
+       topic_name: string,
        sequence_number: i64,
        subscribed: bool);
 }

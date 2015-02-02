@@ -22,7 +22,8 @@ public class VisibilityTest {
         .clientID("client-id-123")
         .subscribeCallback(new SubscribeCallback() {
           @Override
-          public void call(Status status, long sequenceNumber, boolean subscribed) {
+          public void call(Status status, int namespaceId, String topicName, long sequenceNumber,
+                           boolean subscribed) {
           }
         })
         .receiveCallback(new ReceiveCallback() {

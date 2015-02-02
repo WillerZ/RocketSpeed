@@ -63,9 +63,10 @@ public final class Builder {
   public Builder subscribeCallback(final SubscribeCallback callback) {
     this.subscribeCallback = new SubscribeCallbackImpl() {
       @Override
-      public void Call(final Status status, final long sequenceNumber, final boolean subscribed) {
+      public void Call(final Status status, final int namespaceId, final String topicName,
+                       final long sequenceNumber, final boolean subscribed) {
         try {
-          callback.call(status, sequenceNumber, subscribed);
+          callback.call(status, namespaceId, topicName, sequenceNumber, subscribed);
         } catch (Throwable e) {
           Client.LOGGER.log(Level.WARNING, "Exception thrown in subscribe callback", e);
         }
