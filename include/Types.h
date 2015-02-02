@@ -188,11 +188,15 @@ class ResultStatus {
  */
 class SubscriptionStatus {
  public:
-  SubscriptionStatus() : seqno(0), subscribed(false), topic_name("") {}
+  SubscriptionStatus() : seqno(0),
+                         subscribed(false),
+                         topic_name(""),
+                         namespace_id(0) {}
   Status status;
   SequenceNumber seqno;  // the start seqno of a subscription
   bool   subscribed;     // true for subscription, false for unsubscription
   Topic topic_name;
+  NamespaceID namespace_id;
 };
 
 /**

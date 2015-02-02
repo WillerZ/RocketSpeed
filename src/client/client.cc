@@ -362,11 +362,12 @@ void ClientImpl::IssueSubscriptions(std::vector<TopicPair> topics,
 
   // If there was any error, invoke callback with appropriate status
   if (!status.ok() && subscription_callback_) {
-    SubscriptionStatus error_msg;
-    error_msg.status = status;
-    for (const auto& elem : topics) {
+    for (auto& elem : topics) {
+      SubscriptionStatus error_msg;
+      error_msg.status = status;
+      error_msg.namespace_id = elem.namespace_id;
       error_msg.topic_name = std::move(elem.topic_name);
-      subscription_callback_(error_msg);
+      subscription_callback_(std::move(error_msg));
     }
   }
 }
@@ -486,7 +487,6 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
 void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
-  SubscriptionStatus ret;
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());
 
   // The client should receive only responses to subscribe/unsubscribe.
@@ -502,11 +502,13 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
 
     // invoke application-registered callback
     if (subscription_callback_) {
+      SubscriptionStatus ret;
       ret.status = Status::OK();
       ret.seqno = elem.seqno;  // start seqno of this subscription
       ret.subscribed = true;   // subscribed to this topic
       ret.topic_name = elem.topic_name;
-      subscription_callback_(ret);
+      ret.namespace_id = elem.namespace_id;
+      subscription_callback_(std::move(ret));
     }
     // Record confirmed subscriptions
     TopicID topic_id(elem.namespace_id, std::move(elem.topic_name));
@@ -521,9 +523,6 @@ void ClientImpl::ProcessRestoredSubscription(
   // Vector of subscriptions for each worker loop.
   // (subscriptions are sharded on topic to worker loops).
   std::vector<std::vector<TopicPair>> subscribe(msg_loop_->GetNumWorkers());
-  // This is the status returned when we failed to restore subscription.
-  SubscriptionStatus failed_restore;
-  failed_restore.status = Status::NotFound();
 
   for (const auto& elem : restored) {
     if (!elem.subscribe) {
@@ -542,8 +541,12 @@ void ClientImpl::ProcessRestoredSubscription(
     } else {
       // Inform the user that subscription restoring failed.
       if (subscription_callback_) {
+        SubscriptionStatus failed_restore;
+        // This is the status returned when we failed to restore subscription.
+        failed_restore.status = Status::NotFound();
+        failed_restore.namespace_id = elem.namespace_id;
         failed_restore.topic_name = elem.topic_name;
-        subscription_callback_(failed_restore);
+        subscription_callback_(std::move(failed_restore));
       }
     }
   }

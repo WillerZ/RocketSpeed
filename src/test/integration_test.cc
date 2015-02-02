@@ -58,6 +58,7 @@ TEST(IntegrationTest, OneMessage) {
 
   auto subscription_callback = [&] (SubscriptionStatus ss) {
     ASSERT_TRUE(ss.topic_name == topic);
+    ASSERT_TRUE(ss.namespace_id == namespace_id);
     printf("subscribe -- %s\n", ss.status.ToString().c_str());
   };
 

@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
+#include "include/WakeLock.h"
 #include "src/port/port_posix.h"
 #include "src/messages/messages.h"
 #include "src/test/test_cluster.h"
@@ -491,6 +492,7 @@ int main(int argc, char** argv) {
 
     clients.emplace_back(
       new rocketspeed::ClientImpl(env,
+                                  rocketspeed::WakeLock::GetNull(),
                                   pilots[i % pilots.size()],
                                   copilots[i % copilots.size()],
                                   rocketspeed::Tenant(102),
