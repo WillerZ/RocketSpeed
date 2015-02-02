@@ -5,20 +5,22 @@
 //
 #pragma once
 
-#include <functional>
 #include <memory>
-#include <utility>
 #include "src/util/storage.h"
 #include "src/port/Env.h"
 
 namespace rocketspeed {
 
-// Run the RocketSpeed server.
-extern int Run(int argc,
-               char** argv,
-               std::function<std::shared_ptr<LogStorage>(Env*)> get_storage,
-               std::function<std::shared_ptr<LogRouter>()> get_router,
-               Env* env,
-               EnvOptions env_options);
+/**
+ * Creates the storage LogStorage.
+ * Should be implemented by the storage library.
+ */
+extern std::shared_ptr<LogStorage> CreateLogStorage(Env* env);
+
+/**
+ * Create the storage LogRouter.
+ * Should be implemented by the storage library.
+ */
+extern std::shared_ptr<LogRouter> CreateLogRouter();
 
 }  // namespace rocketspeed

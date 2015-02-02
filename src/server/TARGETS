@@ -23,6 +23,24 @@ cpp_library(
   ],
 )
 
+cpp_library(
+  name = 'logdevice_setup',
+  srcs = [
+    'logdevice.cc',
+  ],
+  preprocessor_flags = [
+    '-Irocketspeed/github/include',
+    '-Irocketspeed/github',
+    '-DROCKETSPEED_PLATFORM_POSIX=1',
+    '-DOS_LINUX=1',
+    '-DUSE_LOGDEVICE',
+    '-DGFLAGS=google',
+  ],
+  deps = [
+    '@/rocketspeed/github/src/logdevice:logdevice_storage',
+  ],
+)
+
 cpp_binary(
   name = 'rocketspeed',
   srcs = [
@@ -36,7 +54,6 @@ cpp_binary(
   ],
   deps = [
     ':rocketspeed_library',
-    '@/rocketspeed/github/src/logdevice:logdevice_storage',
+    ':logdevice_setup',
   ],
 )
-

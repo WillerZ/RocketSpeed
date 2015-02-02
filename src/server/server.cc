@@ -56,11 +56,12 @@ namespace rocketspeed {
 
 int Run(int argc,
         char** argv,
-        std::function<std::shared_ptr<LogStorage>()> get_storage,
-        std::shared_ptr<LogRouter> log_router,
+        std::function<std::shared_ptr<LogStorage>(Env*)> get_storage,
+        std::function<std::shared_ptr<LogRouter>()> get_router,
         Env* env,
         EnvOptions env_options) {
   Status st;
+  std::shared_ptr<LogRouter> log_router = get_router();
 
   // As a special case, if no components are specified then all of them
   // are started.
@@ -117,7 +118,7 @@ int Run(int argc,
   std::shared_ptr<LogStorage> storage;
   if (FLAGS_pilot || FLAGS_tower) {
     // Only need storage for pilot and control tower.
-    storage = get_storage();
+    storage = get_storage(env);
     if (!storage) {
       fprintf(stderr, "Failed to construct log storage");
       return 1;

@@ -175,8 +175,8 @@ controltower: src/controltower/main.o $(LIBOBJECTS)
 	$(CXX) src/controltower/main.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the rocketspeed server
-rocketspeed: src/server/main.o src/server/server.o $(LIBOBJECTS)
-	$(CXX) src/server/main.o src/server/server.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+rocketspeed: src/server/main.o src/server/server.o src/server/logdevice.o $(LIBOBJECTS)
+	$(CXX) src/server/main.o src/server/server.o src/server/logdevice.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the rocketbench tool
 rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCLUSTER)

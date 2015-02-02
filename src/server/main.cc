@@ -4,72 +4,20 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include <gflags/gflags.h>
-#include <stdio.h>
-#include <memory>
-#include <utility>
+#include <string>
 #include "src/server/server.h"
-#include "src/logdevice/storage.h"
-#include "src/logdevice/log_router.h"
-
-// Needed to set logdevice::dbg::currentLevel
-#include "external/logdevice/include/debug.h"
-
-// LogDevice settings.
-DEFINE_string(logs, "1..100000", "range of logs");
-DEFINE_string(storage_url,
-              "configerator:logdevice/rocketspeed.logdevice.primary.conf",
-              "Storage service url");
-DEFINE_int32(storage_workers, 16, "number of logdevice storage workers");
-
+#include "src/server/storage_setup.h"
 
 int main(int argc, char** argv) {
   GFLAGS::SetUsageMessage(std::string("\nUSAGE:\n") + std::string(argv[0]) +
                                       " [OPTIONS]...");
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
 
-  // Environment.
-  rocketspeed::Env* env = rocketspeed::Env::Default();
-  rocketspeed::EnvOptions env_options;
-
-#ifdef NDEBUG
-  // Disable LogDevice info logging in release.
-  facebook::logdevice::dbg::currentLevel =
-    facebook::logdevice::dbg::Level::WARNING;
-#endif
-
-  // Parse and validate log range.
-  std::pair<rocketspeed::LogID, rocketspeed::LogID> log_range;
-  int ret = sscanf(FLAGS_logs.c_str(), "%lu..%lu",
-    &log_range.first, &log_range.second);
-  if (ret != 2) {
-    printf("Error: log_range option must be in the form of \"a..b\"");
-    return 1;
-  }
-
-  // Create LogDevice log router.
-  std::shared_ptr<rocketspeed::LogRouter> log_router =
-    std::make_shared<rocketspeed::LogDeviceLogRouter>(log_range.first,
-                                                      log_range.second);
-
-  // Lambda to create LogDevice storage.
-  auto get_storage = [&] () {
-    rocketspeed::LogDeviceStorage* storage = nullptr;
-    rocketspeed::LogDeviceStorage::Create(
-      "rocketspeed.logdevice.primary",
-      FLAGS_storage_url,
-      "",
-      std::chrono::milliseconds(1000),
-      FLAGS_storage_workers,
-      env,
-      &storage);
-    return std::shared_ptr<rocketspeed::LogStorage>(storage);
-  };
-
   // Run the server.
   return rocketspeed::Run(argc,
                           argv,
-                          get_storage,
-                          log_router,
-                          env,
-                          env_options);
+                          &rocketspeed::CreateLogStorage,
+                          &rocketspeed::CreateLogRouter,
+                          rocketspeed::Env::Default(),
+                          rocketspeed::EnvOptions());
 }
