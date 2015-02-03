@@ -11,6 +11,13 @@
 #include "src/util/storage.h"
 #include "src/port/Env.h"
 
+// These ones are in server.cc
+DECLARE_bool(tower);
+DECLARE_bool(pilot);
+DECLARE_bool(copilot);
+DECLARE_int32(pilot_port);
+DECLARE_int32(copilot_port);
+
 namespace rocketspeed {
 
 // Run the RocketSpeed server.
