@@ -6,6 +6,7 @@
 #include "src/client/client.h"
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -178,6 +179,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
 , storage_(std::move(storage))
 , info_log_(info_log)
 , next_worker_id_(0) {
+  using std::placeholders::_1;
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
@@ -195,17 +197,10 @@ ClientImpl::ClientImpl(BaseEnv* env,
   msg_loop_->RegisterCallbacks(callbacks);
 
   if (storage_) {
-    // Initialize subscription storage
-    auto load_callback = [this](
-        const std::vector<SubscriptionRequest>& restored) {
-      ProcessRestoredSubscription(restored);
-    };
-    auto update_callback = [](const SubscriptionRequest& request) {};
-    auto snapshot_callback = [](Status status) {};
-    storage_->Initialize(load_callback,
-                         update_callback,
-                         snapshot_callback,
-                         msg_loop_);
+    // Initialize subscription storage.
+    storage_->Initialize(
+        std::bind(&ClientImpl::ProcessRestoredSubscription, this, _1),
+        msg_loop_);
   }
 
   msg_loop_thread_ = env_->StartThread([this] () {

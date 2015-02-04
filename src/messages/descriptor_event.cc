@@ -7,46 +7,38 @@
 
 namespace rocketspeed {
 
-DescriptorEvent::DescriptorEvent(std::shared_ptr<Logger> info_log,
-                                 int fd)
-    : info_log_(std::move(info_log)),
-      fd_(fd) {
-  thread_check_.Check();
+DescriptorEvent::DescriptorEvent(std::shared_ptr<Logger> info_log, int fd)
+    : info_log_(std::move(info_log)), fd_(fd) {
+  // It can be moved between threads before the first write is performed.
 }
 
 DescriptorEvent::~DescriptorEvent() {
   thread_check_.Check();
-
-  LOG_INFO(info_log_,
-           "Removing descriptor event and closing fd(%d)", fd_);
-  info_log_->Flush();
-
   close(fd_);
 }
 
-void DescriptorEvent::Enqueue(std::string&& data, WriteCallbackType callback) {
+Status DescriptorEvent::Write(std::string&& data) {
   thread_check_.Check();
 
-  // TODO(stupaq #5930219) make it asynchronous on linux
-  Status status;
   ssize_t count = write(fd_, data.data(), data.size());
   if (count == -1) {
-    LOG_WARN(
-        info_log_,
-        "Wanted to write %zd bytes to fd(%d) but encountered (%d) \"%s\".",
-        data.size(), fd_, errno, strerror(errno));
+    LOG_WARN(info_log_,
+             "Wanted to write %zd bytes to fd(%d) but encountered (%d) \"%s\".",
+             data.size(),
+             fd_,
+             errno,
+             strerror(errno));
     info_log_->Flush();
-    status = Status::IOError(strerror(errno));
+    return Status::IOError(strerror(errno));
   } else if (static_cast<size_t>(count) != data.size()) {
-    LOG_WARN(
-        info_log_,
-        "Wanted to write %zu bytes to fd(%d) but written (%zd).",
-        data.size(), fd_, count);
-    status = Status::IOError("Partial write.");
-  } else {
-    status = Status::OK();
+    LOG_WARN(info_log_,
+             "Wanted to write %zu bytes to fd(%d) but written (%zd).",
+             data.size(),
+             fd_,
+             count);
+    return Status::IOError("Partial write.");
   }
-  callback(status);
+  return Status::OK();
 }
 
 }  // namespace rocketspeed

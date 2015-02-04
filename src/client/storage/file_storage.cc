@@ -6,6 +6,8 @@
 #include "file_storage.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -30,30 +32,24 @@ Status SubscriptionStorage::File(BaseEnv* env,
                                  const std::string& file_path,
                                  std::shared_ptr<Logger> info_log,
                                  std::unique_ptr<SubscriptionStorage>* out) {
-  out->reset(new FileStorage(env,
-                             file_path,
-                             info_log));
+  out->reset(new FileStorage(env, file_path, info_log));
   return Status::OK();
 }
 
 FileStorage::FileStorage(BaseEnv* env,
                          std::string read_path,
                          std::shared_ptr<Logger> info_log)
-    : env_(env),
-      info_log_(std::move(info_log)),
-      write_path_(read_path + ".tmp"),
-      // Field write_path_ will be initialized first, so we do not need
-      // read_path anymore.
-      read_path_(std::move(read_path)),
-      msg_loop_(nullptr),
-      running_(false) {};
+    : env_(env)
+    , info_log_(std::move(info_log))
+    , read_path_(std::move(read_path))
+    , msg_loop_(nullptr) {
+}
 
-FileStorage::~FileStorage() {};
+FileStorage::~FileStorage(){};
 
 void FileStorage::Initialize(LoadCallback load_callback,
-                             UpdateCallback update_callback,
-                             SnapshotCallback write_snapshot_callback,
                              MsgLoopBase* msg_loop) {
+  using std::placeholders::_1;
   assert(!msg_loop_);
   msg_loop_ = msg_loop;
   assert(msg_loop_);
@@ -62,8 +58,6 @@ void FileStorage::Initialize(LoadCallback load_callback,
   assert(!msg_loop_->IsRunning());
 
   load_callback_ = std::move(load_callback);
-  update_callback_ = std::move(update_callback);
-  write_snapshot_callback_ = std::move(write_snapshot_callback);
 
   // Empty subscription state, so that c'tor leaves the object in valid state.
   const int num_workers = msg_loop_->GetNumWorkers();
@@ -82,19 +76,16 @@ void FileStorage::Initialize(LoadCallback load_callback,
   msg_loop_->RegisterCommandCallback(CommandType::kStorageLoadCommand,
                                      load_handler);
 
-  auto snapshot_handler = [this](std::unique_ptr<Command> command) {
-    InitiateSnapshot();
-  };
-  msg_loop_->RegisterCommandCallback(CommandType::kStorageSnapshotCommand,
-                                     snapshot_handler);
+  msg_loop_->RegisterCommandCallback(
+      CommandType::kStorageSnapshotCommand,
+      std::bind(&FileStorage::HandleSnapshotCommand, this, _1));
 }
 
-void FileStorage::Update(SubscriptionRequest request) {
+Status FileStorage::Update(SubscriptionRequest request) {
   const int worker_id = GetWorkerForTopic(request.topic_name);
   std::unique_ptr<Command> command(
-      new StorageUpdateCommand(env_->NowMicros(),
-                               std::move(request)));
-  msg_loop_->SendCommand(std::move(command), worker_id);
+      new StorageUpdateCommand(env_->NowMicros(), std::move(request)));
+  return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
 void FileStorage::Load(std::vector<SubscriptionRequest> requests) {
@@ -110,9 +101,8 @@ void FileStorage::Load(std::vector<SubscriptionRequest> requests) {
 
   for (int worker_id = 0; worker_id < num_workers; ++worker_id) {
     if (!sharded[worker_id].empty()) {
-      std::unique_ptr<Command> command(
-          new StorageLoadCommand(env_->NowMicros(),
-                                 std::move(sharded[worker_id])));
+      std::unique_ptr<Command> command(new StorageLoadCommand(
+          env_->NowMicros(), std::move(sharded[worker_id])));
       msg_loop_->SendCommand(std::move(command), worker_id);
     }
   }
@@ -124,19 +114,65 @@ void FileStorage::LoadAll() {
     // Default c'tor is guaranteed to do no allocations.
     std::vector<SubscriptionRequest> empty;
     std::unique_ptr<Command> command(
-        new StorageLoadCommand(env_->NowMicros(),
-                               std::move(empty)));
+        new StorageLoadCommand(env_->NowMicros(), std::move(empty)));
     msg_loop_->SendCommand(std::move(command), worker_id);
   }
 }
 
-void FileStorage::WriteSnapshot() {
-  if (!running_.exchange(true)) {
-    // Snapshot thread inherits a critical section.
+namespace {
+
+/**
+ * A helper function which creates and opens a new file whose name starts with
+ * given prefix. The file is guaranteed to be opened exclusively for the caller.
+ * Returns file descriptor of the file and updates path with actual file path
+ * when completed successfully or returns -1 and does not modify path on error.
+ */
+int OpenNewTempFile(std::string prefix, std::string* path) {
+  prefix += "XXXXXX";
+  std::unique_ptr<char[]> path_c(new char[prefix.size() + 1]);
+  std::copy(prefix.begin(), prefix.end(), path_c.get());
+  path_c[prefix.size()] = '\0';
+  int fd = mkstemp(path_c.get());
+  if (fd < 0) {
+    return -1;
+  }
+  path->assign(path_c.get());
+  return fd;
+}
+
+}  // namespace
+
+void FileStorage::WriteSnapshot(SnapshotCallback callback) {
+  // Create a new temporary file for writing.
+  // Note that O_NOBLOCK has absolutely no effect on reguar file descriptors.
+  // Regular files are always readable and writable, therefor we're fine with
+  // default flags here.
+  std::string write_path;
+  int fd = OpenNewTempFile(read_path_, &write_path);
+  if (fd < 0) {
+    // Abort the snapshot.
+    callback(Status::IOError("Cannot open: " + write_path, strerror(errno)));
+    return;
+  }
+  // Assert: nothrow guarantee until fd is owned by snapshot_state.
+  auto snapshot_state =
+      std::make_shared<SnapshotState>(std::move(callback),
+                                      info_log_,
+                                      msg_loop_->GetNumWorkers(),
+                                      std::move(write_path),
+                                      read_path_,
+                                      fd);
+  // Fan-out to every worker.
+  const int num_workers = msg_loop_->GetNumWorkers();
+  for (int worker_id = 0; worker_id < num_workers; ++worker_id) {
     std::unique_ptr<Command> command(
-        new StorageSnapshotCommand(env_->NowMicros()));
-    msg_loop_->SendCommand(std::move(command),
-                           msg_loop_->LoadBalancedWorkerId());
+        new StorageSnapshotCommand(env_->NowMicros(), snapshot_state));
+    auto status = msg_loop_->SendCommand(std::move(command), worker_id);
+    if (!status.ok()) {
+      // Fail the snapshot.
+      snapshot_state->SnapshotFailed(status);
+      return;
+    }
   }
 }
 
@@ -226,9 +262,6 @@ void FileStorage::HandleUpdateCommand(std::unique_ptr<Command> command) {
       if (iter == worker_data.topics_subscribed.end()) {
         // We're missing entry for this topic.
         SubscriptionState state(new_seqno);
-        // We have to acquire lock, since we will be modifying the map, possibly
-        // reallocating memory.
-        std::lock_guard<std::mutex> lock(worker_data.topics_subscribed_mutex);
         TopicID topic_id(request.namespace_id, request.topic_name);
         worker_data.topics_subscribed.emplace(std::move(topic_id), state);
       } else {
@@ -245,8 +278,6 @@ void FileStorage::HandleUpdateCommand(std::unique_ptr<Command> command) {
     // Remove subscription.
     if (iter != worker_data.topics_subscribed.end()) {
       // We have to remove an entry.
-      // We have to acquire lock, since we will be modifying the map.
-      std::lock_guard<std::mutex> lock(worker_data.topics_subscribed_mutex);
       worker_data.topics_subscribed.erase(iter);
     } else {
       LOG_WARN(info_log_,
@@ -254,12 +285,8 @@ void FileStorage::HandleUpdateCommand(std::unique_ptr<Command> command) {
                request.namespace_id,
                request.topic_name.c_str());
       info_log_->Flush();
-      assert(0);
     }
   }
-
-  // Fire the callback
-  update_callback_(request);
 }
 
 void FileStorage::HandleLoadCommand(std::unique_ptr<Command> command) {
@@ -272,14 +299,14 @@ void FileStorage::HandleLoadCommand(std::unique_ptr<Command> command) {
       load->query.emplace_back(pair.first.namespace_id,
                                pair.first.topic_name,
                                true,
-                               pair.second.GetSequenceNumberRelaxed());
+                               pair.second.GetSequenceNumber());
     }
   } else {
     for (auto& request : load->query) {
       // Find an entry for the topic if it exists.
       auto iter = worker_data.Find(&request);
       if (iter != worker_data.topics_subscribed.end()) {
-        request.start = iter->second.GetSequenceNumberRelaxed();
+        request.start = iter->second.GetSequenceNumber();
       } else {
         // No state found for this topic.
         request.start = SubscriptionStart();
@@ -291,86 +318,21 @@ void FileStorage::HandleLoadCommand(std::unique_ptr<Command> command) {
   load_callback_(load->query);
 }
 
-void FileStorage::InitiateSnapshot() {
-  // A single snapshot should be handled by a single thread, but different
-  // snapshots might be performed by different threads.
-  thread_check_.Reset();
-
-  status_ = Status::OK();
-  // Create a new file for writing.
-  // Note that O_NOBLOCK has absolutely no effect on reguar file descriptors,
-  // as stated in POSIX documentation. Regular files are always readable and
-  // writable. The writes might be arbitrarily slow though.
-  int fd = open(write_path_.c_str(),
-                O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NONBLOCK,
-                S_IRUSR | S_IWUSR);
-  if (fd < 0) {
-    status_ = Status::IOError("Cannot open: " + write_path_, strerror(errno));
-    // Abort the snapshot.
-    FinalizeSnapshot();
-    return;
+void FileStorage::HandleSnapshotCommand(std::unique_ptr<Command> command) {
+  StorageSnapshotCommand* snapshot =
+      static_cast<StorageSnapshotCommand*>(command.get());
+  const int worker_id = msg_loop_->GetThreadWorkerIndex();
+  auto& worker_data = worker_data_[worker_id];
+  std::string buffer;
+  // Write topics in this part.
+  for (auto& it : worker_data.topics_subscribed) {
+    PutFixed64(&buffer, it.second.GetSequenceNumber());
+    PutFixed16(&buffer, it.first.namespace_id);
+    PutFixed32(&buffer, it.first.topic_name.size());
+    buffer.append(it.first.topic_name);
   }
-
-  // Setup descriptor event.
-  descriptor_.reset(new DescriptorEvent(info_log_, fd));
-  const int num_workers = msg_loop_->GetNumWorkers();
-  remaining_writes_ = num_workers;
-  auto callback = [this](Status status) {
-    thread_check_.Check();
-    if (!status_.ok()) {
-      status_ = status;
-    }
-    if (--remaining_writes_ == 0) {
-      FinalizeSnapshot();
-    }
-  };
-
-  // Serialize and write parts.
-  for (int i = 0; i < num_workers; ++i) {
-    auto& data = worker_data_[i];
-    // TODO(stupaq #5930245)
-    // Get rid of all allocations under the lock by estimating buffer size after
-    // each insert/remove and storing it in an atomic.
-    // If we misallocate outside of the lock, we can do single reallocation
-    // inside, but that will not be a common case (hopefully).
-    std::string buffer;
-    {
-      // We have to acquire lock, there might be concurrent insertion/removal.
-      std::lock_guard<std::mutex> lock(data.topics_subscribed_mutex);
-      // Write topics in this part.
-      for (auto& it : data.topics_subscribed) {
-        PutFixed64(&buffer, it.second.GetSequenceNumber());
-        PutFixed16(&buffer, it.first.namespace_id);
-        PutFixed32(&buffer, it.first.topic_name.size());
-        buffer.append(it.first.topic_name);
-      }
-    }
-    // Enqueue write outside of the lock.
-    descriptor_->Enqueue(std::move(buffer), callback);
-  }
-}
-
-void FileStorage::FinalizeSnapshot() {
-  thread_check_.Check();
-
-  // Close file descriptor.
-  descriptor_.reset();
-  // Commit snapshot if was successful.
-  if (!status_.ok()) {
-    LOG_WARN(info_log_,
-             "Snapshot failed (%s)",
-             status_.ToString().c_str());
-    info_log_->Flush();
-  } else if (std::rename(write_path_.c_str(), read_path_.c_str()) != 0) {
-    LOG_WARN(info_log_,
-             "Snapshot failed when substituting files (%s)",
-             strerror(errno));
-    info_log_->Flush();
-  }
-
-  // Snapshot is done now.
-  running_ = false;
-  write_snapshot_callback_(status_);
+  // Append to snapshot state.
+  snapshot->snapshot_state->ChunkSucceeded(worker_id, std::move(buffer));
 }
 
 int FileStorage::GetWorkerForTopic(const Topic& topic_name) const {

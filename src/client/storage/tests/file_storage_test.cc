@@ -29,9 +29,9 @@ class FileStorageTest {
   std::shared_ptr<rocketspeed::Logger> info_log;
   std::unique_ptr<FileStorage> storage;
   std::unique_ptr<MsgLoopBase> msg_loop;
-  std::thread msg_loop_thread;
 
-  port::Semaphore updated_sem;
+  SnapshotCallback snapshot_callback;
+
   port::Semaphore loaded_sem;
   port::Semaphore loaded_empty_sem;
   port::Semaphore snapshot_sem;
@@ -43,9 +43,7 @@ class FileStorageTest {
       : timeout(5)
       , file_path(test::TmpDir() + "/FileStorageTest-file_storage_data")
       , env(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env,
-                                 "FileStorageTest",
-                                 &info_log));
+    ASSERT_OK(test::CreateLogger(env, "FileStorageTest", &info_log));
 
     env->DeleteFile(file_path);
 
@@ -57,19 +55,17 @@ class FileStorageTest {
   }
 
   void SetupStorage() {
-    storage.reset(new FileStorage(env,
-                                  file_path,
-                                  info_log));
+    storage.reset(new FileStorage(env, file_path, info_log));
 
-    msg_loop.reset(new MsgLoop(env,
-                               EnvOptions(),
-                               0,
-                               3,
-                               info_log,
-                               "client"));
+    msg_loop.reset(new MsgLoop(env, EnvOptions(), 0, 3, info_log, "client"));
 
-    auto load_callback = [this](
-        const std::vector<SubscriptionRequest>& restored) {
+    snapshot_callback = [this](Status status) {
+      ASSERT_OK(status);
+      snapshot_sem.Post();
+    };
+
+    auto load_callback =
+        [this](const std::vector<SubscriptionRequest>& restored) {
       if (restored.empty()) {
         loaded_empty_sem.Post();
       } else {
@@ -87,21 +83,11 @@ class FileStorageTest {
         }
       }
     };
-    auto update_callback = [this] (const SubscriptionRequest& request) {
-      updated_sem.Post();
-    };
-    auto snapshot_callback = [this] (Status status) {
-      ASSERT_OK(status);
-      snapshot_sem.Post();
-    };
-    storage->Initialize(load_callback,
-                        update_callback,
-                        snapshot_callback,
-                        msg_loop.get());
+    storage->Initialize(load_callback, msg_loop.get());
   }
 
   void StartMsgLoop() {
-    msg_loop_thread = std::thread([&]() {
+    env->StartThread([this]() {
       msg_loop->Run();
     });
 
@@ -112,9 +98,7 @@ class FileStorageTest {
 
   void StopMsgLoop() {
     msg_loop.reset();
-    if (msg_loop_thread.joinable()) {
-      msg_loop_thread.join();
-    }
+    env->WaitForJoin();
   }
 
   bool WaitForLoad(size_t count) {
@@ -134,15 +118,6 @@ class FileStorageTest {
     }
     return true;
   }
-
-  bool WaitForUpdate(size_t count) {
-    for (; count > 0; --count) {
-      if (!updated_sem.TimedWait(timeout)) {
-        return false;
-      }
-    }
-    return true;
-  }
 };
 
 TEST(FileStorageTest, UpdatesAndLoads) {
@@ -152,24 +127,22 @@ TEST(FileStorageTest, UpdatesAndLoads) {
   TopicID topic1(101, "StoreAndLoad_1");
   TopicID topic2(102, "StoreAndLoad_2");
 
-   // Generate some state.
-  storage->Update(
-      SubscriptionRequest(topic1.namespace_id, topic1.topic_name, true, 100));
-  storage->Update(
-      SubscriptionRequest(topic2.namespace_id, topic2.topic_name, true, 101));
-  ASSERT_TRUE(WaitForUpdate(2));
+  // Generate some state.
+  ASSERT_OK(storage->Update(
+      SubscriptionRequest(topic1.namespace_id, topic1.topic_name, true, 100)));
+  ASSERT_OK(storage->Update(
+      SubscriptionRequest(topic2.namespace_id, topic2.topic_name, true, 101)));
 
-  { // Load one subscription from the storage.
+  {  // Load one subscription from the storage.
     std::vector<SubscriptionRequest> requests = {
-        SubscriptionRequest(topic1.namespace_id,
-                            topic1.topic_name,
-                            true,
-                            SubscriptionStart()), };
+        SubscriptionRequest(
+            topic1.namespace_id, topic1.topic_name, true, SubscriptionStart()),
+    };
     storage->Load(requests);
     ASSERT_TRUE(WaitForLoad(1));
   }
 
-  { // Verify state.
+  {  // Verify state.
     std::lock_guard<std::mutex> lock(loaded_entries_mutex);
     ASSERT_EQ(1, loaded_entries.size());
     ASSERT_EQ(100, loaded_entries[topic1]);
@@ -180,7 +153,7 @@ TEST(FileStorageTest, UpdatesAndLoads) {
   storage->LoadAll();
   ASSERT_TRUE(WaitForLoad(2));
 
-  { // Verify state.
+  {  // Verify state.
     std::lock_guard<std::mutex> lock(loaded_entries_mutex);
     ASSERT_EQ(2, loaded_entries.size());
     ASSERT_EQ(100, loaded_entries[topic1]);
@@ -189,17 +162,16 @@ TEST(FileStorageTest, UpdatesAndLoads) {
   }
 
   // Remove one subscription and bump seqno in the other.
-  storage->Update(
-      SubscriptionRequest(topic1.namespace_id, topic1.topic_name, false, 0));
-  storage->Update(
-      SubscriptionRequest(topic2.namespace_id, topic2.topic_name, true, 102));
-  ASSERT_TRUE(WaitForUpdate(2));
+  ASSERT_OK(storage->Update(
+      SubscriptionRequest(topic1.namespace_id, topic1.topic_name, false, 0)));
+  ASSERT_OK(storage->Update(
+      SubscriptionRequest(topic2.namespace_id, topic2.topic_name, true, 102)));
 
   // Load all subscriptions.
   storage->LoadAll();
   ASSERT_TRUE(WaitForLoad(1));
 
-  { // Verify state.
+  {  // Verify state.
     std::lock_guard<std::mutex> lock(loaded_entries_mutex);
     ASSERT_EQ(1, loaded_entries.size());
     ASSERT_EQ(102, loaded_entries[topic2]);
@@ -212,9 +184,9 @@ TEST(FileStorageTest, SnapshotAndRead) {
 
   // Test scenario.
   std::vector<SubscriptionRequest> requests = {
-    SubscriptionRequest(101, "SnapshotAndRead_1", true, 101),
-    SubscriptionRequest(101, "SnapshotAndRead_2", true, 102),
-    SubscriptionRequest(102, "SnapshotAndRead_2", true, 103),
+      SubscriptionRequest(101, "SnapshotAndRead_1", true, 101),
+      SubscriptionRequest(101, "SnapshotAndRead_2", true, 102),
+      SubscriptionRequest(102, "SnapshotAndRead_2", true, 103),
   };
 
   auto verify_state = [this, &requests]() {
@@ -230,9 +202,8 @@ TEST(FileStorageTest, SnapshotAndRead) {
 
   // Generate some state.
   for (auto& request : requests) {
-    storage->Update(request);
+    ASSERT_OK(storage->Update(request));
   }
-  ASSERT_TRUE(WaitForUpdate(requests.size()));
 
   // Load all subscriptions.
   storage->LoadAll();
@@ -241,7 +212,7 @@ TEST(FileStorageTest, SnapshotAndRead) {
   verify_state();
 
   // Persist the state.
-  storage->WriteSnapshot();
+  storage->WriteSnapshot(snapshot_callback);
   ASSERT_TRUE(snapshot_sem.TimedWait(timeout));
 
   // Restart the storage and retrieve state from a file.
@@ -264,13 +235,14 @@ TEST(FileStorageTest, MissingSubscription) {
 
   // What if we ask for a nonexistent subscription?
   std::vector<SubscriptionRequest> requests = {
-    SubscriptionRequest(101, "MissingSubscription", true, SubscriptionStart()),
+      SubscriptionRequest(
+          101, "MissingSubscription", true, SubscriptionStart()),
   };
 
   storage->Load(requests);
   ASSERT_TRUE(WaitForLoad(requests.size()));
 
-  { // Verify state.
+  {  // Verify state.
     std::lock_guard<std::mutex> lock(loaded_entries_mutex);
     ASSERT_EQ(0, loaded_entries.size());
   }
@@ -322,7 +294,7 @@ TEST(FileStorageTest, CorruptedFile) {
   storage->LoadAll();
   ASSERT_TRUE(WaitForLoadEmpty(msg_loop->GetNumWorkers()));
 
-  { // Verify state
+  {  // Verify state
     std::lock_guard<std::mutex> lock(loaded_entries_mutex);
     ASSERT_EQ(0, loaded_entries.size());
   }

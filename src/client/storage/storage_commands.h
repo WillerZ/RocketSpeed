@@ -5,6 +5,9 @@
 //
 #pragma once
 
+#include <memory>
+
+#include "src/client/storage/snapshot_state.h"
 #include "src/messages/commands.h"
 
 namespace rocketspeed {
@@ -45,8 +48,11 @@ class StorageLoadCommand final : public Command {
  */
 class StorageSnapshotCommand final : public Command {
  public:
-  explicit StorageSnapshotCommand(uint64_t issued_time)
-      : Command(issued_time) {}
+   std::shared_ptr<SnapshotState> snapshot_state;
+
+  StorageSnapshotCommand(uint64_t issued_time,
+                         std::shared_ptr<SnapshotState> _snapshot_state)
+      : Command(issued_time), snapshot_state(std::move(_snapshot_state)) {}
 
   CommandType GetCommandType() const { return kStorageSnapshotCommand; }
 };

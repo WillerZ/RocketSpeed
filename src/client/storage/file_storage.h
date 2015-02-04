@@ -36,20 +36,17 @@ class FileStorage final : public SubscriptionStorage {
 
   virtual ~FileStorage();
 
-  void Initialize(LoadCallback load_callback,
-                  UpdateCallback update_callback,
-                  SnapshotCallback write_snapshot_callback,
-                  MsgLoopBase* msg_loop);
+  void Initialize(LoadCallback load_callback, MsgLoopBase* msg_loop);
 
-  void Update(SubscriptionRequest message) override;
+  Status ReadSnapshot() override;
+
+  Status Update(SubscriptionRequest message) override;
 
   void Load(std::vector<SubscriptionRequest> requests) override;
 
   void LoadAll() override;
 
-  void WriteSnapshot() override;
-
-  Status ReadSnapshot() override;
+  void WriteSnapshot(SnapshotCallback callback) override;
 
  private:
   // Client's environment.
@@ -59,66 +56,46 @@ class FileStorage final : public SubscriptionStorage {
   // Logger for info messages.
   const std::shared_ptr<Logger> info_log_;
 
-  // Path to the write file.
-  const std::string write_path_;
   // Path to the read file.
   const std::string read_path_;
 
-  // Client's message loop, storage does not own this.
+  // Client's message loop, storage does not own it.
   MsgLoopBase* msg_loop_;
   // Callback to be invoked with loaded subscription data.
   LoadCallback load_callback_;
-  // Callback to be invoked with updated subscription data.
-  UpdateCallback update_callback_;
-  // Callback to be invoked when snapshot has been written or failed.
-  SnapshotCallback write_snapshot_callback_;
-
-  // Ensures that only one snapshot is taking place at the moment.
-  std::atomic<bool> running_;
 
   class SubscriptionState {
    public:
-    explicit SubscriptionState(SequenceNumber seqno) : seqno_(seqno) {}
+    explicit SubscriptionState(SequenceNumber seqno) : seqno_(seqno) {
+    }
 
-    explicit SubscriptionState(const SubscriptionState& other)
-        : seqno_(other.seqno_.load()) {}
+    explicit SubscriptionState(const SubscriptionState& state)
+        : seqno_(state.seqno_) {
+    }
 
-    inline void IncreaseSequenceNumber(SequenceNumber new_seqno) {
+    void IncreaseSequenceNumber(SequenceNumber new_seqno) {
       thread_check_.Check();
-      // We can use relaxed memory order, since this thread is the only writer.
-      SequenceNumber stored_seqno = seqno_.load(std::memory_order_relaxed);
-      if (stored_seqno < new_seqno) {
-        // Writer releases the value.
-        seqno_.store(new_seqno, std::memory_order_release);
+      if (seqno_ < new_seqno) {
+        seqno_ = new_seqno;
       }
     }
 
-    inline SequenceNumber GetSequenceNumber() const {
-      // Reader performs consume operation, since we do not want to order
-      // operations on all memory locations, just this one.
-      return seqno_.load(std::memory_order_consume);
-    }
-
-    inline SequenceNumber GetSequenceNumberRelaxed() const {
+    SequenceNumber GetSequenceNumber() const {
       thread_check_.Check();
-      // The only modifications to the sequence number come from this thread.
-      return seqno_.load(std::memory_order_relaxed);
+      return seqno_;
     }
 
    private:
-    // Thread check, which asserts that atomic operations with relaxed memory
-    // ordering are correct.
+    // Thread check, which asserts that only one thread is accessing this data.
     ThreadCheck thread_check_;
     // Last acknowledged sequence number.
-    std::atomic<SequenceNumber> seqno_;
+    SequenceNumber seqno_;
   };
 
   struct alignas(CACHE_LINE_SIZE) WorkerData {
     typedef std::unordered_map<TopicID, SubscriptionState> SubscriptionStateMap;
     // Topics serviced by this worker.
     SubscriptionStateMap topics_subscribed;
-    // Mututal exclusion between writers and a threads doing scans.
-    std::mutex topics_subscribed_mutex;
 
     // Lookups subscription state for given request.
     // Provided request might be modified during the call, but will be
@@ -133,26 +110,14 @@ class FileStorage final : public SubscriptionStorage {
     }
   };
 
+  // Holds state of a worker responsible for handling a subset of subscriptions.
   std::unique_ptr<WorkerData[]> worker_data_;
-
-  // Asserts no concurrent access to the following fields.
-  ThreadCheck thread_check_;
-  // Holds status of a snapshot if one is running.
-  Status status_;
-  // Number of writes to be completed before we can close a descriptor.
-  int remaining_writes_;
-  // File that we persist state to.
-  std::unique_ptr<DescriptorEvent> descriptor_;
 
   void HandleUpdateCommand(std::unique_ptr<Command> command);
 
   void HandleLoadCommand(std::unique_ptr<Command> command);
 
-  // Creates temp file to write snapshot, and starts writing.
-  void InitiateSnapshot();
-
-  // Finalizes disk snapshot after all data has been written to a temp file.
-  void FinalizeSnapshot();
+  void HandleSnapshotCommand(std::unique_ptr<Command> command);
 
   // Returns index of a MsgLoop worker, which handles updates for given topic.
   int GetWorkerForTopic(const Topic& topic_name) const;

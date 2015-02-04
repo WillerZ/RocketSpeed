@@ -19,17 +19,19 @@ namespace rocketspeed {
 
 class EventLoop;
 
-typedef std::function<void(Status)> WriteCallbackType;
-
+// TODO(stupaq #5930219) make it asynchronous on linux
 class DescriptorEvent {
  public:
-  DescriptorEvent(std::shared_ptr<Logger> info_log,
-                  int fd);
+  DescriptorEvent(std::shared_ptr<Logger> info_log, int fd);
 
   ~DescriptorEvent();
 
-  // Enqueues a write operation.
-  void Enqueue(std::string&& data, WriteCallbackType callback);
+  // Performs a write operation.
+  Status Write(std::string&& data);
+
+  // Noncopyable
+  DescriptorEvent(const DescriptorEvent&) = delete;
+  void operator=(const DescriptorEvent&) = delete;
 
  private:
   // This class is not thread safe, unless external synchronization is provided.

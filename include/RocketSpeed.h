@@ -155,13 +155,13 @@ class Client {
   virtual void ListenTopics(const std::vector<SubscriptionRequest>& names) = 0;
 
   /**
-   * Asynchronously acknowledges message to the client.
+   * Acknowledges message to the client.
    *
    * All sequence numbers no later than the sequence number of given message
    * are considered to be processed by the application.
-   * Consequently, when application closes the client and then attempts to
-   * renew subscription on the same topic, it will be restarted from the next
-   * sequence number.
+   * Consequently, when application closes the client saving subsciption state
+   * and then attempts to renew subscription on the same topic, it will be
+   * restarted from the next sequence number.
    *
    * @param message the message to be acknowledged.
    */
