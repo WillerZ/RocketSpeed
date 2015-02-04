@@ -76,16 +76,18 @@ class SubscriptionStorage {
   virtual Status Update(SubscriptionRequest message) = 0;
 
   /**
-   * Loads subscription data for given topics, appropriate
-   * callback is invoked with all retrieved subscriptions.
+   * Loads subscription data for given topics.
+   * If the status is OK, then appropriate callback will be invoked with
+   * restored subscriptions state.
    */
-  virtual void Load(std::vector<SubscriptionRequest> requests) = 0;
+  virtual Status Load(std::vector<SubscriptionRequest> requests) = 0;
 
   /**
-   * Loads all subscription data, appropriate callback is invoked with all
-   * retrieved subscriptions.
+   * Loads all subscription data
+   * If the status is OK, then appropriate callback will be invoked with
+   * restored subscriptions state.
    */
-  virtual void LoadAll() = 0;
+  virtual Status LoadAll() = 0;
 
   /**
    * Creates snapshot and writes it to persistent storage. Appropriate callback

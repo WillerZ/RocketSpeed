@@ -19,10 +19,8 @@ class StorageUpdateCommand final : public Command {
  public:
   SubscriptionRequest request;
 
-  explicit StorageUpdateCommand(uint64_t issued_time,
-                                SubscriptionRequest _request)
-      : Command(issued_time),
-        request(_request) {}
+  StorageUpdateCommand(uint64_t issued_time, SubscriptionRequest _request)
+      : Command(issued_time), request(_request) {}
 
   CommandType GetCommandType() const { return kStorageUpdateCommand; }
 };
@@ -35,10 +33,11 @@ class StorageLoadCommand final : public Command {
  public:
   std::vector<SubscriptionRequest> query;
 
-  explicit StorageLoadCommand(uint64_t issued_time,
-                              std::vector<SubscriptionRequest> _query)
-      : Command(issued_time),
-        query(_query) {}
+  explicit StorageLoadCommand(uint64_t issued_time) : Command(issued_time) {}
+
+  StorageLoadCommand(uint64_t issued_time,
+                     std::vector<SubscriptionRequest> _query)
+      : Command(issued_time), query(_query) {}
 
   CommandType GetCommandType() const { return kStorageLoadCommand; }
 };

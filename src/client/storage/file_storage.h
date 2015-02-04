@@ -42,9 +42,9 @@ class FileStorage final : public SubscriptionStorage {
 
   Status Update(SubscriptionRequest message) override;
 
-  void Load(std::vector<SubscriptionRequest> requests) override;
+  Status Load(std::vector<SubscriptionRequest> requests) override;
 
-  void LoadAll() override;
+  Status LoadAll() override;
 
   void WriteSnapshot(SnapshotCallback callback) override;
 

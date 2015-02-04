@@ -88,7 +88,7 @@ Status FileStorage::Update(SubscriptionRequest request) {
   return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
-void FileStorage::Load(std::vector<SubscriptionRequest> requests) {
+Status FileStorage::Load(std::vector<SubscriptionRequest> requests) {
   assert(!requests.empty());
 
   const int num_workers = msg_loop_->GetNumWorkers();
@@ -99,24 +99,28 @@ void FileStorage::Load(std::vector<SubscriptionRequest> requests) {
     sharded[worker_id].push_back(std::move(request));
   }
 
-  for (int worker_id = 0; worker_id < num_workers; ++worker_id) {
-    if (!sharded[worker_id].empty()) {
-      std::unique_ptr<Command> command(new StorageLoadCommand(
-          env_->NowMicros(), std::move(sharded[worker_id])));
-      msg_loop_->SendCommand(std::move(command), worker_id);
+  Status status;
+  for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
+    if (sharded[worker_id].empty()) {
+      continue;
     }
+    std::unique_ptr<Command> command(new StorageLoadCommand(
+        env_->NowMicros(), std::move(sharded[worker_id])));
+    status = msg_loop_->SendCommand(std::move(command), worker_id);
   }
+  // TODO(t6161065) If status != OK then abort command on all threads.
+  return status;
 }
 
-void FileStorage::LoadAll() {
+Status FileStorage::LoadAll() {
   const int num_workers = msg_loop_->GetNumWorkers();
-  for (int worker_id = 0; worker_id < num_workers; ++worker_id) {
-    // Default c'tor is guaranteed to do no allocations.
-    std::vector<SubscriptionRequest> empty;
-    std::unique_ptr<Command> command(
-        new StorageLoadCommand(env_->NowMicros(), std::move(empty)));
-    msg_loop_->SendCommand(std::move(command), worker_id);
+  Status status;
+  for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
+    std::unique_ptr<Command> command(new StorageLoadCommand(env_->NowMicros()));
+    status = msg_loop_->SendCommand(std::move(command), worker_id);
   }
+  // TODO(t6161065) If status != OK then abort command on all threads.
+  return status;
 }
 
 namespace {
@@ -164,15 +168,15 @@ void FileStorage::WriteSnapshot(SnapshotCallback callback) {
                                       fd);
   // Fan-out to every worker.
   const int num_workers = msg_loop_->GetNumWorkers();
-  for (int worker_id = 0; worker_id < num_workers; ++worker_id) {
+  Status status;
+  for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
     std::unique_ptr<Command> command(
         new StorageSnapshotCommand(env_->NowMicros(), snapshot_state));
-    auto status = msg_loop_->SendCommand(std::move(command), worker_id);
-    if (!status.ok()) {
-      // Fail the snapshot.
-      snapshot_state->SnapshotFailed(status);
-      return;
-    }
+    status = msg_loop_->SendCommand(std::move(command), worker_id);
+  }
+  if (!status.ok()) {
+    // Fail the snapshot, call back will be invoked by SnapshotState.
+    snapshot_state->SnapshotFailed(status);
   }
 }
 

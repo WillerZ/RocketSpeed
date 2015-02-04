@@ -138,7 +138,7 @@ TEST(FileStorageTest, UpdatesAndLoads) {
         SubscriptionRequest(
             topic1.namespace_id, topic1.topic_name, true, SubscriptionStart()),
     };
-    storage->Load(requests);
+    ASSERT_OK(storage->Load(requests));
     ASSERT_TRUE(WaitForLoad(1));
   }
 
@@ -150,7 +150,7 @@ TEST(FileStorageTest, UpdatesAndLoads) {
   }
 
   // Load all subscriptions from the storage.
-  storage->LoadAll();
+  ASSERT_OK(storage->LoadAll());
   ASSERT_TRUE(WaitForLoad(2));
 
   {  // Verify state.
@@ -168,7 +168,7 @@ TEST(FileStorageTest, UpdatesAndLoads) {
       SubscriptionRequest(topic2.namespace_id, topic2.topic_name, true, 102)));
 
   // Load all subscriptions.
-  storage->LoadAll();
+  ASSERT_OK(storage->LoadAll());
   ASSERT_TRUE(WaitForLoad(1));
 
   {  // Verify state.
@@ -206,7 +206,7 @@ TEST(FileStorageTest, SnapshotAndRead) {
   }
 
   // Load all subscriptions.
-  storage->LoadAll();
+  ASSERT_OK(storage->LoadAll());
   ASSERT_TRUE(WaitForLoad(requests.size()));
 
   verify_state();
@@ -224,7 +224,7 @@ TEST(FileStorageTest, SnapshotAndRead) {
   StartMsgLoop();
 
   // Load all subscriptions.
-  storage->LoadAll();
+  ASSERT_OK(storage->LoadAll());
   ASSERT_TRUE(WaitForLoad(requests.size()));
 
   verify_state();
@@ -239,7 +239,7 @@ TEST(FileStorageTest, MissingSubscription) {
           101, "MissingSubscription", true, SubscriptionStart()),
   };
 
-  storage->Load(requests);
+  ASSERT_OK(storage->Load(requests));
   ASSERT_TRUE(WaitForLoad(requests.size()));
 
   {  // Verify state.
@@ -291,7 +291,7 @@ TEST(FileStorageTest, CorruptedFile) {
   // Verify that nothing got added.
   StartMsgLoop();
 
-  storage->LoadAll();
+  ASSERT_OK(storage->LoadAll());
   ASSERT_TRUE(WaitForLoadEmpty(msg_loop->GetNumWorkers()));
 
   {  // Verify state
