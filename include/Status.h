@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #pragma once
+#pragma GCC visibility push(default)
 
 #include <string>
 
@@ -96,3 +97,5 @@ class Status {
 };
 
 } // namespace
+
+#pragma GCC visibility pop

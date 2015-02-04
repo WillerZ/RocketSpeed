@@ -13,6 +13,25 @@ ndk_library(
   ]
 )
 
+#
+# Build rocketspeed for debugging and tests
+#
+ndk_library(
+  name = 'rocketspeed-test',
+  deps = [
+    '//native/third-party/libevent-2.0.21:libevent-test',
+    '//native:base',
+  ],
+  flags = [
+    'NDK_APPLICATION_MK=${PWD}/native/Application.mk',
+    'ROCKETSPEED_RELEASE_BUILD=false', 
+  ],
+  visibility = [
+    '//native/third-party/rocketspeed/...',
+  ],
+)
+
 project_config(
   src_target = ':rocketspeed',
 )
+

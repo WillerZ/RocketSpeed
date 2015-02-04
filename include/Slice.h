@@ -12,9 +12,8 @@
 // external synchronization, but if any of the threads may call a
 // non-const method, all threads accessing the same Slice must use
 // external synchronization.
-
-#ifndef STORAGE_ROCKETSPEED_INCLUDE_SLICE_H_
-#define STORAGE_ROCKETSPEED_INCLUDE_SLICE_H_
+#pragma once
+#pragma GCC visibility push(default)
 
 #include <assert.h>
 #include <stddef.h>
@@ -147,4 +146,4 @@ inline int Slice::compare(const Slice& b) const {
 
 }  // namespace rocketspeed
 
-#endif  // STORAGE_ROCKETSPEED_INCLUDE_SLICE_H_
+#pragma GCC visibility pop

@@ -4,7 +4,7 @@ ROCKETSPEED_CFLAGS := \
 	-std=c++11 \
 	-Wall \
 	-Werror \
-	-DGFLAGS=google \
+	-DGFLAGS=gflags \
         -DROCKETSPEED_PLATFORM_POSIX \
 	-DOS_ANDROID \
 	-DUSE_UPSTREAM_LIBEVENT
@@ -46,8 +46,11 @@ LOCAL_STATIC_LIBRARIES := libevent2_static
 
 include $(BUILD_SHARED_LIBRARY)
 
-########### Build rocketbench now
-# This is work in progress
+# If we are not doing a release-build, then build unit tests,
+# debugging utilities, benchmark binaries, etc
+
+ifeq ($(ROCKETSPEED_RELEASE_BUILD),false)
+
 include $(CLEAR_VARS)
 LOCAL_MODULE := rocketbench
 
@@ -75,6 +78,8 @@ LOCAL_CPPFLAGS := $(ROCKETSPEED_CFLAGS)
 LOCAL_SHARED_LIBRARIES := rocketspeed
 
 include $(BUILD_EXECUTABLE)
+
+endif
 
 $(call import-module,libevent-2.0.21)
 
