@@ -1369,9 +1369,14 @@ class PosixEnv : public Env {
     } else {
       int fd = fileno(f);
       SetFD_CLOEXEC(fd, nullptr);
-      result->reset(new PosixLogger(f, this));
+      result->reset(new PosixLogger(f, true, this));
       return Status::OK();
     }
+  }
+
+  virtual Status StdErrLogger(shared_ptr<Logger>* result) {
+    result->reset(new PosixLogger(stderr, false, this));
+    return Status::OK();
   }
 
   virtual uint64_t NowMicros() {

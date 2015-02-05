@@ -25,6 +25,7 @@
 
 // Common settings
 DEFINE_int32(worker_queue_size, 1000000, "number of worker commands in flight");
+DEFINE_bool(log_to_stderr, false, "log to stderr (otherwise LOG file)");
 
 // Control tower settings
 DEFINE_bool(tower, false, "start the control tower");
@@ -74,19 +75,28 @@ int Run(int argc,
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
 
+#ifdef NDEBUG
+  auto log_level = WARN_LEVEL;
+#else
+  auto log_level = INFO_LEVEL;
+#endif
+
   // Create info log
   std::shared_ptr<Logger> info_log;
-  st = CreateLoggerFromOptions(env,
-                               "",
-                               "LOG",
-                               0,
-                               0,
-#ifdef NDEBUG
-                               WARN_LEVEL,
-#else
-                               INFO_LEVEL,
-#endif
-                               &info_log);
+  if (FLAGS_log_to_stderr) {
+    st = env->StdErrLogger(&info_log);
+    if (info_log) {
+      info_log->SetInfoLogLevel(log_level);
+    }
+  } else {
+    st = CreateLoggerFromOptions(env,
+                                 "",
+                                 "LOG",
+                                 0,
+                                 0,
+                                 log_level,
+                                 &info_log);
+  }
   if (!st.ok()) {
     info_log = std::make_shared<NullLogger>();
   }

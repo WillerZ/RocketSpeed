@@ -34,8 +34,10 @@ class PosixLogger : public Logger {
   std::atomic_uint_fast64_t last_flush_micros_;
   Env* env_;
   bool flush_pending_;
+  bool close_on_free_;
  public:
   PosixLogger(FILE* f,
+              bool close_on_free,
               Env* env,
               const InfoLogLevel log_level = InfoLogLevel::ERROR_LEVEL)
       : Logger(log_level),
@@ -44,9 +46,12 @@ class PosixLogger : public Logger {
         fd_(fileno(f)),
         last_flush_micros_(0),
         env_(env),
-        flush_pending_(false) {}
+        flush_pending_(false),
+        close_on_free_(close_on_free) {}
   virtual ~PosixLogger() {
-    fclose(file_);
+    if (close_on_free_) {
+      fclose(file_);
+    }
   }
   virtual void Flush() {
     if (flush_pending_) {
