@@ -15,9 +15,8 @@
 #include "external/logdevice/include/debug.h"
 
 DEFINE_string(logs, "1..100000", "range of logs");
-DEFINE_string(storage_url,
-              "configerator:logdevice/rocketspeed.logdevice.primary.conf",
-              "Storage service url");
+DEFINE_string(storage_url, "", "Storage config url");
+DEFINE_string(logdevice_cluster, "", "LogDevice cluster tier name");
 DEFINE_int32(storage_workers, 16, "number of logdevice storage workers");
 
 namespace rocketspeed {
@@ -31,7 +30,7 @@ std::shared_ptr<LogStorage> CreateLogStorage(Env* env) {
 
   rocketspeed::LogDeviceStorage* storage = nullptr;
   rocketspeed::LogDeviceStorage::Create(
-    "rocketspeed.logdevice.primary",
+    FLAGS_logdevice_cluster,
     FLAGS_storage_url,
     "",
     std::chrono::milliseconds(1000),
