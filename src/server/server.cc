@@ -52,6 +52,7 @@ DEFINE_string(control_towers,
               "comma-separated control tower hostnames");
 DEFINE_int32(copilot_connections, 8,
              "num connections between one copilot and one control tower");
+DEFINE_string(rs_log_dir, "", "directory for server logs");
 
 namespace rocketspeed {
 
@@ -90,7 +91,7 @@ int Run(int argc,
     }
   } else {
     st = CreateLoggerFromOptions(env,
-                                 "",
+                                 FLAGS_rs_log_dir,
                                  "LOG",
                                  0,
                                  0,
