@@ -111,6 +111,27 @@ TEST(PilotTest, Publish) {
             std::string::npos);
 }
 
+TEST(PilotTest, NoLogger) {
+  // Create cluster with pilot only (only need this for the log storage).
+  LocalTestCluster cluster(info_log_, false, false, true);
+  ASSERT_OK(cluster.GetStatus());
+
+  MsgLoop loop(env_,
+               env_options_,
+               58499,
+               1,
+               std::make_shared<NullLogger>(),
+               "test");
+  Pilot* pilot = nullptr;
+  PilotOptions options;
+  options.msg_loop = &loop;
+  options.log_dir = "///";  // invalid dir, will fail to create LOG file.
+  options.storage = cluster.GetLogStorage();
+  options.log_router = cluster.GetLogRouter();
+  ASSERT_OK(Pilot::CreateNewInstance(options, &pilot));
+  delete pilot;
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

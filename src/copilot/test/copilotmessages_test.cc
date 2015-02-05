@@ -156,6 +156,26 @@ TEST(CopilotTest, WorkerMapping) {
   delete copilot;
 }
 
+TEST(CopilotTest, NoLogger) {
+  // Create cluster with tower+copilot (only need this for the log router).
+  LocalTestCluster cluster(info_log_, true, true, false);
+  ASSERT_OK(cluster.GetStatus());
+
+  MsgLoop loop(env_,
+               env_options_,
+               58499,
+               1,
+               std::make_shared<NullLogger>(),
+               "test");
+  Copilot* copilot = nullptr;
+  CopilotOptions options;
+  options.msg_loop = &loop;
+  options.log_dir = "///";  // invalid dir, will fail to create LOG file.
+  options.log_router = cluster.GetLogRouter();
+  ASSERT_OK(Copilot::CreateNewInstance(options, &copilot));
+  delete copilot;
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

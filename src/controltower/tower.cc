@@ -34,7 +34,7 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
                                        &result.info_log);
     if (!s.ok()) {
       // No place suitable for logging
-      result.info_log = nullptr;
+      result.info_log = std::make_shared<NullLogger>();
     }
   }
   return result;

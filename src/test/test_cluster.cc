@@ -231,6 +231,10 @@ Statistics LocalTestCluster::GetStatistics() const {
   return std::move(aggregated);
 }
 
+std::shared_ptr<LogStorage> LocalTestCluster::GetLogStorage() {
+  return logdevice_->storage_;
+}
+
 std::shared_ptr<LogRouter> LocalTestCluster::GetLogRouter() {
   return logdevice_->log_router_;
 }

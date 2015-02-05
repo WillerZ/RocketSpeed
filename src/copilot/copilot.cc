@@ -26,7 +26,7 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
                                        &options.info_log);
     if (!s.ok()) {
       // No place suitable for logging
-      options.info_log = nullptr;
+      options.info_log = std::make_shared<NullLogger>();
     }
   }
 

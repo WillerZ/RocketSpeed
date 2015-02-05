@@ -325,6 +325,28 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   ASSERT_EQ(0, GetNumOpenLogs(ct));
 }
 
+
+TEST(ControlTowerTest, NoLogger) {
+  // Create cluster with tower only (only need this for the log storage).
+  LocalTestCluster cluster(info_log_, true, false, false);
+  ASSERT_OK(cluster.GetStatus());
+
+  MsgLoop loop(env_,
+               env_options_,
+               58499,
+               1,
+               std::make_shared<NullLogger>(),
+               "test");
+  ControlTower* tower = nullptr;
+  ControlTowerOptions options;
+  options.msg_loop = &loop;
+  options.log_dir = "///";  // invalid dir, will fail to create LOG file.
+  options.storage = cluster.GetLogStorage();
+  options.log_router = cluster.GetLogRouter();
+  ASSERT_OK(ControlTower::CreateNewInstance(options, &tower));
+  delete tower;
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

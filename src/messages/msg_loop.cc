@@ -60,6 +60,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   info_log_(info_log),
   name_(std::move(name)),
   next_worker_id_(0) {
+  assert(info_log);
   assert(num_workers >= 1);
 
   // Setup host id

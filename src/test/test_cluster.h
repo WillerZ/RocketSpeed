@@ -75,6 +75,8 @@ class LocalTestCluster {
     return control_tower_;
   }
 
+  std::shared_ptr<LogStorage> GetLogStorage();
+
   std::shared_ptr<LogRouter> GetLogRouter();
 
   Statistics GetStatistics() const;

@@ -88,7 +88,7 @@ int Run(int argc,
 #endif
                                &info_log);
   if (!st.ok()) {
-    info_log = nullptr;
+    info_log = std::make_shared<NullLogger>();
   }
 
   // Utility for creating a message loop.
