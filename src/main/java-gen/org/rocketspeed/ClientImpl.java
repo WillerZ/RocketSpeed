@@ -7,11 +7,15 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ClientImpl {
+    public abstract Status Start(boolean restoreSubscriptions, boolean resubscribeFromStorage);
+
     public abstract PublishStatus Publish(int namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
     public abstract void ListenTopics(ArrayList<SubscriptionRequestImpl> names);
 
     public abstract void Acknowledge(int namespaceId, String topicName, long sequenceNumber);
+
+    public abstract void SaveSubscriptions(SnapshotCallbackImpl snapshotCallback);
 
     public abstract void Close();
 
@@ -41,6 +45,14 @@ public abstract class ClientImpl {
         }
 
         @Override
+        public Status Start(boolean restoreSubscriptions, boolean resubscribeFromStorage)
+        {
+            assert !this.destroyed.get() : "trying to use a destroyed object";
+            return native_Start(this.nativeRef, restoreSubscriptions, resubscribeFromStorage);
+        }
+        private native Status native_Start(long _nativeRef, boolean restoreSubscriptions, boolean resubscribeFromStorage);
+
+        @Override
         public PublishStatus Publish(int namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
@@ -63,6 +75,14 @@ public abstract class ClientImpl {
             native_Acknowledge(this.nativeRef, namespaceId, topicName, sequenceNumber);
         }
         private native void native_Acknowledge(long _nativeRef, int namespaceId, String topicName, long sequenceNumber);
+
+        @Override
+        public void SaveSubscriptions(SnapshotCallbackImpl snapshotCallback)
+        {
+            assert !this.destroyed.get() : "trying to use a destroyed object";
+            native_SaveSubscriptions(this.nativeRef, snapshotCallback);
+        }
+        private native void native_SaveSubscriptions(long _nativeRef, SnapshotCallbackImpl snapshotCallback);
 
         @Override
         public void Close()

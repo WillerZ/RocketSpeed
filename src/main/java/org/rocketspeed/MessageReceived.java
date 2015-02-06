@@ -2,31 +2,38 @@ package org.rocketspeed;
 
 public class MessageReceived {
 
-  private final int mNamespaceId;
-  private final String mTopicName;
-  private final long mSequenceNumber;
-  private final byte[] mContents;
+  private final ClientImpl clientImpl;
+  private final int namespaceId;
+  private final String topicName;
+  private final long sequenceNumber;
+  private final byte[] contents;
 
-  public MessageReceived(int namespaceId, String topicName, long sequenceNumber, byte[] contents) {
-    this.mNamespaceId = namespaceId;
-    this.mTopicName = topicName;
-    this.mSequenceNumber = sequenceNumber;
-    this.mContents = contents;
+  /* package */ MessageReceived(ClientImpl clientImpl, int namespaceId, String topicName,
+                                long sequenceNumber, byte[] contents) {
+    this.clientImpl = clientImpl;
+    this.namespaceId = namespaceId;
+    this.topicName = topicName;
+    this.sequenceNumber = sequenceNumber;
+    this.contents = contents;
   }
 
   public int getNamespaceId() {
-    return mNamespaceId;
+    return namespaceId;
   }
 
   public String getTopicName() {
-    return mTopicName;
+    return topicName;
   }
 
   public long getSequenceNumber() {
-    return mSequenceNumber;
+    return sequenceNumber;
   }
 
   public byte[] getContents() {
-    return mContents;
+    return contents;
+  }
+
+  public void acknowledge() {
+    clientImpl.Acknowledge(namespaceId, topicName, sequenceNumber);
   }
 }

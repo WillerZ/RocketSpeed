@@ -9,13 +9,14 @@ public class BuilderTest {
 
   @Test
   public void testExceptionOnClientOpen() {
-    Configuration config = new Configuration();
-    // The configuration has no pilots or copilots, creation of a client must fail.
-    Builder builder = new Builder().tenantID(123).clientID("client-id-123").configuration(config);
+    Builder builder = new Builder().tenantID(23)
+        .clientID("client-id-123")
+        .configuration(new Configuration())
+        .resubscribeFromStorage();
     try {
       builder.build();
     } catch (Exception e) {
-      assertEquals("Invalid argument: Must have at least one pilot.", e.getMessage());
+      assertEquals("Invalid argument: TenantId must be greater than 100.", e.getMessage());
       return;
     }
     fail("Exception expected");

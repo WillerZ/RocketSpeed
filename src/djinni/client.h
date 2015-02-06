@@ -11,19 +11,26 @@
 #include "src-gen/djinni/MsgIdImpl.hpp"
 #include "src-gen/djinni/PublishStatus.hpp"
 #include "src-gen/djinni/RetentionBase.hpp"
+#include "src-gen/djinni/Status.hpp"
 #include "src-gen/djinni/SubscriptionRequestImpl.hpp"
 
 namespace rocketspeed {
 
-class Client;
+class ClientImpl;
 
 namespace djinni {
 
 class PublishCallbackImpl;
+class SnapshotCallbackImpl;
 
 class Client : public ClientImpl {
  public:
-  explicit Client(rocketspeed::Client* client) : client_(client) {}
+  explicit Client(std::unique_ptr<rocketspeed::ClientImpl> client)
+      : client_(std::move(client)) {
+  }
+
+  Status Start(bool restore_subscriptions,
+               bool resubscribe_from_storage) override;
 
   PublishStatus Publish(
       int32_t namespace_id,
@@ -39,10 +46,13 @@ class Client : public ClientImpl {
                    std::string topic_name,
                    int64_t sequence_number) override;
 
+  void SaveSubscriptions(
+      std::shared_ptr<SnapshotCallbackImpl> subscriptions_callback) override;
+
   void Close() override;
 
  private:
-  std::unique_ptr<rocketspeed::Client> client_;
+  std::unique_ptr<rocketspeed::ClientImpl> client_;
 };
 
 }  // namespace djinni

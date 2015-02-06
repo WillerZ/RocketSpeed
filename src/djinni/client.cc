@@ -14,6 +14,7 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
+#include "src/client/client.h"
 #include "src/djinni/jvm_env.h"
 #include "src/djinni/wake_lock.h"
 
@@ -22,6 +23,7 @@
 #include "src-gen/djinni/PublishCallbackImpl.hpp"
 #include "src-gen/djinni/ReceiveCallbackImpl.hpp"
 #include "src-gen/djinni/StorageType.hpp"
+#include "src-gen/djinni/SnapshotCallbackImpl.hpp"
 #include "src-gen/djinni/SubscribeCallbackImpl.hpp"
 #include "src-gen/djinni/SubscriptionStorage.hpp"
 #include "src-gen/djinni/WakeLockImpl.hpp"
@@ -169,8 +171,9 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
     std::shared_ptr<ReceiveCallbackImpl> receive_callback,
     SubscriptionStorage storage,
     std::shared_ptr<WakeLockImpl> wake_lock) {
-  auto config1 = toConfiguration(config, tenant_id);
+  rocketspeed::Status status;
 
+  auto config1 = toConfiguration(config, tenant_id);
   rocketspeed::ClientOptions options(*config1, client_id);
 
   options.env = JvmEnv::Default();
@@ -179,34 +182,55 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
     options.wake_lock = std::make_shared<WakeLock>(wake_lock);
   }
 
-  options.subscription_callback =
-      [subscribe_callback](SubscriptionStatus status) {
-    subscribe_callback->Call(fromStatus(status.status),
-                             fromNamespaceID(status.namespace_id),
-                             std::move(status.topic_name),
-                             fromSequenceNumber(status.seqno),
-                             status.subscribed);
-  };
+  if (subscribe_callback) {
+    options.subscription_callback =
+        [subscribe_callback](SubscriptionStatus status) {
+      subscribe_callback->Call(fromStatus(status.status),
+                               fromNamespaceID(status.namespace_id),
+                               std::move(status.topic_name),
+                               fromSequenceNumber(status.seqno),
+                               status.subscribed);
+    };
+  }
 
-  options.receive_callback =
-      [receive_callback](std::unique_ptr<MessageReceived> message) {
-    receive_callback->Call(fromNamespaceID(message->GetNamespaceId()),
-                           message->GetTopicName().ToString(),
-                           fromSequenceNumber(message->GetSequenceNumber()),
-                           fromSlice(message->GetContents()));
-  };
+  if (receive_callback) {
+    options.receive_callback =
+        [receive_callback](std::unique_ptr<MessageReceived> message) {
+      receive_callback->Call(fromNamespaceID(message->GetNamespaceId()),
+                             message->GetTopicName().ToString(),
+                             fromSequenceNumber(message->GetSequenceNumber()),
+                             fromSlice(message->GetContents()));
+    };
+  }
 
-  std::shared_ptr<ClientImpl> client;
-  { // Create the RocketSpeed client and wrap it in Djinni handler.
-    std::unique_ptr<rocketspeed::Client> client_raw;
-    auto status = rocketspeed::Client::Open(std::move(options), &client_raw);
+  if (storage.type == StorageType::NONE) {
+    // Do nothing.
+  } else if (storage.type == StorageType::FILE) {
+    assert(storage.file_path);
+    status = rocketspeed::SubscriptionStorage::File(options.env,
+                                                    storage.file_path.value(),
+                                                    options.info_log,
+                                                    &options.storage);
     if (!status.ok()) {
       throw std::runtime_error(status.ToString());
     }
-    client.reset(new Client(client_raw.release()));
+  } else {
+    assert(false);
   }
 
-  return client;
+  // Create the RocketSpeed client and wrap it in Djinni handler.
+  std::unique_ptr<rocketspeed::ClientImpl> client_raw;
+  status = rocketspeed::ClientImpl::Create(std::move(options), &client_raw);
+  if (!status.ok()) {
+    throw std::runtime_error(status.ToString());
+  }
+  return std::make_shared<Client>(std::move(client_raw));
+}
+
+Status Client::Start(bool restore_subscriptions,
+                     bool resubscribe_from_storage) {
+  auto status = client_->Start(restore_subscriptions, resubscribe_from_storage);
+  return fromStatus(status);
 }
 
 PublishStatus Client::Publish(
@@ -297,7 +321,18 @@ void Client::Acknowledge(int32_t namespace_id,
   client_->Acknowledge(*message);
 }
 
-void Client::Close() { client_.reset(); }
+void Client::SaveSubscriptions(
+    std::shared_ptr<SnapshotCallbackImpl> subscriptions_callback) {
+  auto subscriptions_callback1 =
+      [subscriptions_callback](rocketspeed::Status status) {
+    subscriptions_callback->Call(fromStatus(status));
+  };
+  client_->SaveSubscriptions(subscriptions_callback1);
+}
+
+void Client::Close() {
+  client_.reset();
+}
 
 }  // namespace djinni
 }  // namespace rocketspeed

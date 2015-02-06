@@ -13,6 +13,7 @@ public class LocalTestCluster implements AutoCloseable {
   private static final int COMMAND_QUIT = 'Q';
   private static final int PILOT_DEFAULT_PORT = 58600;
   private static final int COPILOT_DEFAULT_PORT = 58600;
+  private static final int STARTUP_RETRIES = 200;
   private static final int SHUTDOWN_RETRIES = 100;
   private Process cluster;
   private OutputStreamWriter clusterIn;
@@ -34,6 +35,16 @@ public class LocalTestCluster implements AutoCloseable {
         clusterIn = new OutputStreamWriter(cluster.getOutputStream());
         clusterOut = new InputStreamReader(cluster.getInputStream());
         // Wait for cluster to start.
+        int i;
+        for (i = 0; i < STARTUP_RETRIES; ++i) {
+          if (clusterOut.ready()) {
+            break;
+          }
+          Thread.sleep(5);
+        }
+        if (i == STARTUP_RETRIES) {
+          throw new IOException("Cluster took too long to start.");
+        }
         if (COMMAND_READY != clusterOut.read()) {
           throw new IOException("Unexpected command.");
         }

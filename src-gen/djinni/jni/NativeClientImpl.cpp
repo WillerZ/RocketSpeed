@@ -3,6 +3,7 @@
 
 #include "NativeClientImpl.hpp"  // my header
 #include "HBinary.hpp"
+#include "HBool.hpp"
 #include "HI32.hpp"
 #include "HI64.hpp"
 #include "HList.hpp"
@@ -15,6 +16,8 @@
 #include "NativePublishStatus.hpp"
 #include "NativeReceiveCallbackImpl.hpp"
 #include "NativeRetentionBase.hpp"
+#include "NativeSnapshotCallbackImpl.hpp"
+#include "NativeStatus.hpp"
 #include "NativeSubscribeCallbackImpl.hpp"
 #include "NativeSubscriptionRequestImpl.hpp"
 #include "NativeSubscriptionStorage.hpp"
@@ -50,6 +53,20 @@ CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_Open(JNIEnv* jniEnv, 
 
         return NativeClientImpl::toJava(jniEnv, cr);
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0  /* value doesn't matter */ )
+}
+
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Start(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jboolean j_restoreSubscriptions, jboolean j_resubscribeFromStorage)
+{
+    try {
+        DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
+        const std::shared_ptr<::rocketspeed::djinni::ClientImpl> & ref = djinni::CppProxyHandle<::rocketspeed::djinni::ClientImpl>::get(nativeRef);
+        bool c_restore_subscriptions = ::djinni::HBool::Unboxed::fromJava(jniEnv, j_restoreSubscriptions);
+        bool c_resubscribe_from_storage = ::djinni::HBool::Unboxed::fromJava(jniEnv, j_resubscribeFromStorage);
+
+        ::rocketspeed::djinni::Status cr = ref->Start(std::move(c_restore_subscriptions), std::move(c_resubscribe_from_storage));
+
+        return NativeStatus::toJava(jniEnv, cr);
+    } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)
 }
 
 CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Publish(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jint j_namespaceId, jstring j_topicName, jobject j_retention, jbyteArray j_data, jobject j_messageId, jobject j_publishCallback)
@@ -91,6 +108,17 @@ CJNIEXPORT void JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Ac
         int64_t c_sequence_number = ::djinni::HI64::Unboxed::fromJava(jniEnv, j_sequenceNumber);
 
         ref->Acknowledge(std::move(c_namespace_id), std::move(c_topic_name), std::move(c_sequence_number));
+    } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
+}
+
+CJNIEXPORT void JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1SaveSubscriptions(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jobject j_snapshotCallback)
+{
+    try {
+        DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
+        const std::shared_ptr<::rocketspeed::djinni::ClientImpl> & ref = djinni::CppProxyHandle<::rocketspeed::djinni::ClientImpl>::get(nativeRef);
+        std::shared_ptr<::rocketspeed::djinni::SnapshotCallbackImpl> c_snapshot_callback = NativeSnapshotCallbackImpl::fromJava(jniEnv, j_snapshotCallback);
+
+        ref->SaveSubscriptions(std::move(c_snapshot_callback));
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
 }
 

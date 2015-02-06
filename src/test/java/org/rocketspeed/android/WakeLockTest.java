@@ -89,7 +89,9 @@ public class WakeLockTest {
 
   @After
   public void tearDown() throws Exception {
-    client.close();
+    if (client != null) {
+      client.close();
+    }
   }
 
   @Test

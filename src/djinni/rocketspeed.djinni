@@ -72,6 +72,10 @@ ReceiveCallbackImpl = interface +j +o {
        contents: binary);
 }
 
+SnapshotCallbackImpl = interface +j +o {
+  Call(status: Status);
+}
+
 StorageType = enum {
   None;
   File;
@@ -98,6 +102,9 @@ ClientImpl = interface +c {
               storage: SubscriptionStorage,
               wake_lock: WakeLockImpl): ClientImpl;
 
+  Start(restore_subscriptions: bool,
+        resubscribe_from_storage: bool): Status;
+
   Publish(namespace_id: i32,
           topic_name: string,
           retention: RetentionBase,
@@ -110,6 +117,8 @@ ClientImpl = interface +c {
   Acknowledge(namespace_id: i32,
               topic_name: string,
               sequence_number: i64);
+
+  SaveSubscriptions(snapshot_callback: SnapshotCallbackImpl);
 
   Close();
 }

@@ -2,7 +2,6 @@ package org.rocketspeed;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Client implements AutoCloseable {
@@ -37,17 +36,7 @@ public class Client implements AutoCloseable {
   public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data,
                        MsgId messageId, final PublishCallback callback) throws Exception {
     MsgIdImpl messageId1 = messageId == null ? null : messageId.djinni();
-    PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackImpl() {
-      @Override
-      public void Call(Status status, int namespaceId, String topicName, MsgIdImpl messageId,
-                       long sequenceNumber) {
-        try {
-          callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber);
-        } catch (Throwable e) {
-          LOGGER.log(Level.WARNING, "Exception thrown in publish callback", e);
-        }
-      }
-    };
+    PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackAdaptor(callback);
     PublishStatus status = client.Publish(namespaceID, topicName, options.getRetention().djinni(),
                                           data, messageId1, callback1);
     status.getStatus().checkExceptions();
@@ -62,9 +51,8 @@ public class Client implements AutoCloseable {
     client.ListenTopics(requests1);
   }
 
-  public void acknowledge(MessageReceived message) {
-    client.Acknowledge(message.getNamespaceId(), message.getTopicName(),
-                       message.getSequenceNumber());
+  public void saveSubscriptions(SnapshotCallback callback) {
+    client.SaveSubscriptions(new SnapshotCallbackAdapter(callback));
   }
 
   @Override

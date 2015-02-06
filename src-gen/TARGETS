@@ -21,6 +21,7 @@ cpp_library(
         'djinni/jni/NativeReceiveCallbackImpl.cpp',
         'djinni/jni/NativeStatus.cpp',
         'djinni/jni/NativeSubscribeCallbackImpl.cpp',
+        'djinni/jni/NativeSnapshotCallbackImpl.cpp',
         'djinni/jni/NativeSubscriptionRequestImpl.cpp',
         'djinni/jni/NativeSubscriptionStorage.cpp',
         'djinni/jni/NativeWakeLockImpl.cpp',

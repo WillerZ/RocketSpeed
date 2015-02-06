@@ -3,6 +3,7 @@ package org.rocketspeed;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.rocketspeed.util.StatusMonoidFirst;
 
 import java.util.ArrayList;
@@ -26,14 +27,18 @@ public class IntegrationTest {
   public static final long TIMEOUT = 5L;
   public static final TimeUnit TIMEOUT_UNIT = TimeUnit.SECONDS;
   public LocalTestCluster testCluster;
+  public TemporaryFolder testFolder;
 
   @Before
   public void setUp() throws Exception {
     testCluster = new LocalTestCluster();
+    testFolder = new TemporaryFolder();
+    testFolder.create();
   }
 
   @After
   public void tearDown() throws Exception {
+    testFolder.delete();
     testCluster.close();
   }
 
@@ -218,5 +223,119 @@ public class IntegrationTest {
 
     // Assert that all statuses were OK.
     statuses.checkExceptions();
+  }
+
+  @Test
+  public void testWithSubscriptionStorage() throws Exception {
+    // Message setup.
+    final int ns = 102;
+    final String topic = "test_topic-ResubscribeFromStorage";
+    final TopicOptions options = new TopicOptions(Retention.ONE_DAY);
+
+    // For asserting that all async callbacks carried successful statuses.
+    final StatusMonoidFirst statuses = new StatusMonoidFirst();
+
+    // Callbacks.
+    final Semaphore receiveSemaphore = new Semaphore(0);
+    final List<String> receivedMessages = synchronizedList(new ArrayList<String>());
+    ReceiveCallback receiveCallback = new ReceiveCallback() {
+      @Override
+      public void call(MessageReceived message) {
+        assertEquals(ns, message.getNamespaceId());
+        assertEquals(topic, message.getTopicName());
+        message.acknowledge();
+        receivedMessages.add(new String(message.getContents()));
+        receiveSemaphore.release();
+      }
+    };
+    final Semaphore snapshotSemaphore = new Semaphore(0);
+    SnapshotCallback snapshotCallback = new SnapshotCallback() {
+      @Override
+      public void call(Status status) {
+        statuses.append(status);
+        snapshotSemaphore.release();
+      }
+    };
+
+    // Client setup.
+    String clientId = "test_topic-ResubscribeFromStorage";
+    int tenantId = 102;
+    String snapshotFile = testFolder.getRoot().getAbsolutePath() + "/ResubscribeFromStorage.bin";
+    Builder builder = new Builder().configuration(testCluster.createConfiguration());
+
+    // Create a client.
+    try (Client client = builder.clientID(clientId)
+        .tenantID(tenantId)
+        .receiveCallback(receiveCallback)
+        .usingFileStorage(snapshotFile, false)
+        .build()) {
+      // Subscribe starting from the first sequence number.
+      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, BEGINNING)));
+      // Send some messages and wait for the ACKs.
+      for (int i = 0; i < 3; ++i) {
+        client.publish(ns, topic, options, valueOf(i).getBytes());
+        assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
+      }
+      // Should receive all of the first three messages.
+      assertEquals(asList("0", "1", "2"), receivedMessages);
+      // Save snapshot and wait for it to succeed.
+      client.saveSubscriptions(snapshotCallback);
+      assertTrue(snapshotSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
+      // Destroy the client.
+    }
+    // Assert that all statuses were OK.
+    statuses.checkExceptions();
+    // Clear received messages.
+    receivedMessages.clear();
+
+    // Create a client again.
+    try (Client client = builder.clientID(clientId)
+        .tenantID(tenantId)
+        .receiveCallback(receiveCallback)
+        .usingFileStorage(snapshotFile, true)
+        .build()) {
+      // Subscribe starting from unknown sequence number, a subscription storage is expected to
+      // provide this information.
+      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, UNKNOWN)));
+      // Send some different messages and wait for the ACKs.
+      for (int i = 3; i < 6; ++i) {
+        client.publish(ns, topic, options, valueOf(i).getBytes());
+        assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
+      }
+      // Should receive none of the first three messages and all from the second batch.
+      assertEquals(asList("3", "4", "5"), receivedMessages);
+      // Save snapshot and wait for it to succeed.
+      client.saveSubscriptions(snapshotCallback);
+      assertTrue(snapshotSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
+    }
+    // Assert that all statuses were OK.
+    statuses.checkExceptions();
+    // Clear received messages.
+    receivedMessages.clear();
+
+    // Create a client once again.
+    try (Client client = builder.clientID(clientId)
+        .tenantID(tenantId)
+        .receiveCallback(receiveCallback)
+        .usingFileStorage(snapshotFile, true)
+        .resubscribeFromStorage()
+        .build()) {
+      // We will not resubscribe explicitly this time, subscription storage should do it
+      // automatically.
+      // Send some different messages and wait for the ACKs.
+      for (int i = 6; i < 9; ++i) {
+        client.publish(ns, topic, options, valueOf(i).getBytes());
+        assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
+      }
+      // Should receive none of the first three messages and all from the second batch.
+      assertEquals(asList("6", "7", "8"), receivedMessages);
+      // Save snapshot and wait for it to succeed.
+      client.saveSubscriptions(snapshotCallback);
+      assertTrue(snapshotSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
+    }
+    // Assert that all statuses were OK.
+    statuses.checkExceptions();
+    // Clear received messages.
+    receivedMessages.clear();
   }
 }
