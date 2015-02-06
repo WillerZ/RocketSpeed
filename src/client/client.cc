@@ -27,6 +27,7 @@
 #include "src/messages/msg_loop.h"
 #else
 #include "rocketspeed/mqttclient/mqtt_msg_loop.h"
+#include "rocketspeed/mqttclient/proxygen_mqtt.h"
 #endif
 
 namespace rocketspeed {
@@ -140,12 +141,13 @@ Status ClientImpl::Create(ClientOptions options,
                                    options.client_id);
 #else
   MQTTMsgLoop* msg_loop_ = new MQTTMsgLoop(
+      options.env,
       options.client_id,
       options.config.GetPilotHostIds().front(),
       options.username,
       options.access_token,
       false,
-      options.info_log);
+      &ProxygenMQTTClient::Create);
 #endif
 
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
