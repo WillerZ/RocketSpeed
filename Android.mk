@@ -21,6 +21,7 @@ LOCAL_MODULE := rocketspeed
 
 LOCAL_SRC_FILES := \
        src/client/client.cc \
+       src/client/options.cc \
        src/client/client_env.cc \
        src/messages/event_loop.cc \
        src/messages/messages.cc \
@@ -28,6 +29,7 @@ LOCAL_SRC_FILES := \
        src/port/port_android.cc \
        src/util/build_version.cc \
        src/util/common/guid_generator.cc \
+       src/util/common/configuration.cc \
        src/util/common/coding.cc \
        src/util/common/statistics.cc \
        src/util/common/base_env.cc \
