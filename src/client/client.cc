@@ -147,6 +147,7 @@ Status ClientImpl::Create(ClientOptions options,
       options.username,
       options.access_token,
       false,
+      options.info_log,
       &ProxygenMQTTClient::Create);
 #endif
 
