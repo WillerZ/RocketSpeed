@@ -874,6 +874,10 @@ EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
   int fd;
   Status status =  create_connection(host, false, &fd);
   if (!status.ok()) {
+    LOG_WARN(info_log_,
+             "create_connection to %s failed: %s",
+             host.ToString().c_str(),
+             status.ToString().c_str());
     return nullptr;
   }
 
@@ -898,6 +902,7 @@ EventLoop::create_connection(const HostId& host,
   int rv;
   std::string port_string(std::to_string(host.port));
   int sockfd;
+  int last_errno = 0;
 
   // handle both IPV4 and IPV6 addresses.
   memset(&hints, 0, sizeof hints);
@@ -909,10 +914,12 @@ EventLoop::create_connection(const HostId& host,
       return Status::IOError("getaddrinfo: " + host.hostname +
                              ":" + port_string);
   }
+
   // loop through all the results and connect to the first we can
   for (p = servinfo; p != nullptr; p = p->ai_next) {
       if ((sockfd = socket(p->ai_family, p->ai_socktype,
               p->ai_protocol)) == -1) {
+          last_errno = errno;
           continue;
       }
 
@@ -921,6 +928,7 @@ EventLoop::create_connection(const HostId& host,
       if (!blocking) {
         auto flags = fcntl(sockfd, F_GETFL, 0);
         if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK)) {
+          last_errno = errno;
           close(sockfd);
           continue;
         }
@@ -940,6 +948,7 @@ EventLoop::create_connection(const HostId& host,
       }
 
       if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+          last_errno = errno;
           if (!blocking && errno == EINPROGRESS) {
             // if this is a nonblocking socket, then connect might
             // not be successful immediately. This is not a problem
@@ -953,7 +962,8 @@ EventLoop::create_connection(const HostId& host,
   }
   if (p == nullptr) {
       return Status::IOError("failed to connect: " + host.hostname +
-                             ":" + port_string);
+                             ":" + port_string +
+                             "last_errno:" + std::to_string(last_errno));
   }
   freeaddrinfo(servinfo);
   *fd = sockfd;

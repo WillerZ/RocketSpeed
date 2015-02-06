@@ -10,9 +10,9 @@ ROCKETSPEED_CFLAGS := \
 	-DUSE_UPSTREAM_LIBEVENT
 
 ifeq ($(ROCKETSPEED_RELEASE_BUILD),true)
-  ROCKETSPEED_CFLAGS += -fvisibility=hidden
+  ROCKETSPEED_CFLAGS += -fvisibility=hidden -DNDEBUG
 else
-  ROCKETSPEED_CFLAGS += -O0 -ggdb -g -gdwarf-2
+  ROCKETSPEED_CFLAGS += -O0 -ggdb -g -gdwarf-2 -UNDEBUG
 endif
 
 include $(CLEAR_VARS)

@@ -56,8 +56,10 @@ DEFINE_int64(topics_mean, 0,
 "Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
 DEFINE_int64(topics_stddev, 0,
 "Standard Deviation for Normal topic distribution (rounded to nearest int64)");
+DEFINE_int32(wait_for_debugger, 0, "wait for debugger to attach to me");
 
 std::shared_ptr<rocketspeed::Logger> info_log;
+
 
 typedef std::pair<rocketspeed::MsgId, uint64_t> MsgTime;
 
@@ -66,6 +68,10 @@ struct Result {
 };
 
 static const Result failed = { false };
+
+// wait for 5 seconds of inactivity before declaring that something is
+// not working.
+static int idle_timeout = 5;
 
 struct ProducerArgs {
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* producers;
@@ -249,7 +255,7 @@ static void DoProduce(void* params) {
   if (FLAGS_await_ack) {
     // Wait for the all_ack_messages_received semaphore to be posted.
     // Keep waiting as long as a message was received in the last 5 seconds.
-    auto timeout = std::chrono::seconds(5);
+    auto timeout = std::chrono::seconds(idle_timeout);
     do {
       all_ack_messages_received->TimedWait(timeout);
     } while (ack_messages_received->load() != FLAGS_num_messages &&
@@ -319,7 +325,7 @@ static void DoConsume(void* param) {
     args->last_data_message;
   // Wait for the all_messages_received semaphore to be posted.
   // Keep waiting as long as a message was received in the last 5 seconds.
-  auto timeout = std::chrono::seconds(5);
+  auto timeout = std::chrono::seconds(idle_timeout);
   do {
     all_messages_received->TimedWait(timeout);
   } while (messages_received->load() != FLAGS_num_messages &&
@@ -333,6 +339,12 @@ static void DoConsume(void* param) {
 int main(int argc, char** argv) {
   rocketspeed::Env* env = rocketspeed::Env::Default();
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
+
+  // This loop is needed so that we can attach to this process via
+  // the remote gdb debugger on Android systems.
+  while (FLAGS_wait_for_debugger) {
+    sleep(1);
+  }
 
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
