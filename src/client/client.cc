@@ -397,10 +397,12 @@ void ClientImpl::IssueSubscriptions(std::vector<TopicPair> topics,
 
 void ClientImpl::Acknowledge(const MessageReceived& message) {
   if (storage_) {
+    // Note the +1. We store the next sequence number we want, but the
+    // acknowledged message carries the number that we already know about.
     SubscriptionRequest request(message.GetNamespaceId(),
                                 message.GetTopicName().ToString(),
                                 true,
-                                message.GetSequenceNumber());
+                                message.GetSequenceNumber() + 1);
     wake_lock_.AcquireForUpdatingSubscriptions();
     storage_->Update(std::move(request));
   }
