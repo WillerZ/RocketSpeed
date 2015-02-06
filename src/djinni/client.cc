@@ -198,12 +198,12 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
 
   std::shared_ptr<ClientImpl> client;
   { // Create the RocketSpeed client and wrap it in Djinni handler.
-    rocketspeed::Client* client_raw;
+    std::unique_ptr<rocketspeed::Client> client_raw;
     auto status = rocketspeed::Client::Open(std::move(options), &client_raw);
     if (!status.ok()) {
       throw std::runtime_error(status.ToString());
     }
-    client.reset(new Client(client_raw));
+    client.reset(new Client(client_raw.release()));
   }
 
   return client;

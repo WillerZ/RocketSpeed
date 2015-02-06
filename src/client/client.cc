@@ -86,19 +86,39 @@ struct ClientResultStatus : public ResultStatus {
   SequenceNumber seqno_;
 };
 
-Client::~Client() {
+Status Client::Open(ClientOptions options,
+                    std::unique_ptr<Client>* client) {
+  Status status;
+  std::unique_ptr<ClientImpl> client_impl;
+  status = ClientImpl::Create(std::move(options), &client_impl);
+  if (!status.ok()) {
+    return status;
+  }
+  status = client_impl->Start(options.restore_subscriptions,
+                              options.resubscribe_from_storage);
+  if (!status.ok()) {
+    return status;
+  }
+  *client = std::move(client_impl);
+  return Status::OK();
 }
 
-// Implementation of Client::Open from RocketSpeed.h
-Status Client::Open(ClientOptions options_tmp,
-                    Client** producer) {
-  ClientOptions options(std::move(options_tmp));
+Status ClientImpl::Create(ClientOptions options,
+                          std::unique_ptr<ClientImpl>* client) {
   // Validate arguments.
-  if (producer == nullptr) {
-    return Status::InvalidArgument("producer must not be null.");
+  if (client == nullptr) {
+    return Status::InvalidArgument("Client pointer must not be null.");
   }
   if (options.config.GetTenantID() <= 100) {
     return Status::InvalidArgument("TenantId must be greater than 100.");
+  }
+  if (!options.storage && options.resubscribe_from_storage) {
+    return Status::InvalidArgument(
+        "Cannot resubscribe without subscriptions storage strategy.");
+  }
+  if (!options.restore_subscriptions && options.resubscribe_from_storage) {
+    return Status::InvalidArgument(
+        "Cannot resubscribe without restored subscriptions state.");
   }
   if (options.config.GetPilotHostIds().empty()) {
     return Status::InvalidArgument("Must have at least one pilot.");
@@ -128,34 +148,18 @@ Status Client::Open(ClientOptions options_tmp,
       options.info_log);
 #endif
 
-  // Construct new Client client.
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
-  *producer = new ClientImpl(options.env,
-                             options.wake_lock,
-                             options.config.GetPilotHostIds().front(),
-                             options.config.GetCopilotHostIds().front(),
-                             options.config.GetTenantID(),
-                             msg_loop_,
-                             options.subscription_callback,
-                             options.receive_callback,
-                             std::move(options.storage),
-                             options.info_log);
+  client->reset(new ClientImpl(options.env,
+                               options.wake_lock,
+                               options.config.GetPilotHostIds().front(),
+                               options.config.GetCopilotHostIds().front(),
+                               options.config.GetTenantID(),
+                               msg_loop_,
+                               options.subscription_callback,
+                               options.receive_callback,
+                               std::move(options.storage),
+                               options.info_log));
   return Status::OK();
-}
-
-Status Client::Open(ClientOptions client_options,
-                    std::unique_ptr<Client>* client) {
-  // Validate arguments that we hide from undelying Open call.
-  if (client == nullptr) {
-    return Status::InvalidArgument("producer must not be null.");
-  }
-
-  Client* client_ptr;
-  Status status = Client::Open(std::move(client_options), &client_ptr);
-  if (status.ok()) {
-    client->reset(client_ptr);
-  }
-  return status;
 }
 
 ClientImpl::ClientImpl(BaseEnv* env,
@@ -174,12 +178,14 @@ ClientImpl::ClientImpl(BaseEnv* env,
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
 , msg_loop_(msg_loop)
+, msg_loop_thread_spawned_(false)
 , subscription_callback_(subscription_callback)
 , receive_callback_(receive_callback)
 , storage_(std::move(storage))
 , info_log_(info_log)
 , next_worker_id_(0) {
   using std::placeholders::_1;
+
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
@@ -202,15 +208,32 @@ ClientImpl::ClientImpl(BaseEnv* env,
         std::bind(&ClientImpl::ProcessRestoredSubscription, this, _1),
         msg_loop_);
   }
+}
 
-  msg_loop_thread_ = env_->StartThread([this] () {
-    env_->SetCurrentThreadName("client");
+Status ClientImpl::Start(bool restore_subscriptions,
+                         bool resubscribe_from_storage) {
+  if (storage_ && restore_subscriptions) {
+    // Read initial state from snapshot.
+    Status status = storage_->ReadSnapshot();
+    if (!status.ok()) {
+      return status;
+    }
+  }
+
+  msg_loop_thread_ = env_->StartThread([this]() {
     msg_loop_->Run();
-  });
+  }, "client");
+  msg_loop_thread_spawned_ = true;
 
   while (!msg_loop_->IsRunning()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
+
+  if (storage_ && resubscribe_from_storage) {
+    // Resubscribe to previously subscribed topics.
+    storage_->LoadAll();
+  }
+  return Status::OK();
 }
 
 ClientImpl::~ClientImpl() {
@@ -218,8 +241,10 @@ ClientImpl::~ClientImpl() {
   // This stops the event loop, which may block.
   delete msg_loop_;
 
-  // Wait for thread to join.
-  env_->WaitForJoin(msg_loop_thread_);
+  if (msg_loop_thread_spawned_) {
+    // Wait for thread to join.
+    env_->WaitForJoin(msg_loop_thread_);
+  }
 }
 
 PublishStatus ClientImpl::Publish(const Topic& name,
@@ -375,6 +400,15 @@ void ClientImpl::Acknowledge(const MessageReceived& message) {
                                 message.GetSequenceNumber());
     wake_lock_.AcquireForUpdatingSubscriptions();
     storage_->Update(std::move(request));
+  }
+}
+
+void ClientImpl::SaveSubscriptions(SnapshotCallback snapshot_callback) {
+  if (storage_) {
+    storage_->WriteSnapshot(snapshot_callback);
+  } else {
+    snapshot_callback(Status::InternalError(
+        "Cannot save subscriptions without subscription storage."));
   }
 }
 

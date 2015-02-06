@@ -95,11 +95,10 @@ class SubscriptionStorage {
    * data which was included in the snapshot, must be available after the
    * application restarts.
    *
-   * Implementation must ensure that all update operations that were ordered
+   * Implementation must ensure that all update operations that were sheduled
    * before this method is called, are included in the snapshot. In other words,
-   * if an update callback was invoked for a certain operation, then
-   * corresponding changes to subscription state will be included in the
-   * snapshot.
+   * if update method was invoked before this method, corresponding changes to
+   * subscription state will be included in the snapshot.
    */
   virtual void WriteSnapshot(SnapshotCallback snapshot_callback) = 0;
 };

@@ -541,29 +541,32 @@ int main(int argc, char** argv) {
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;
   size_t num_clients = std::max(pilots.size(), copilots.size());
   for (size_t i = 0; i < num_clients; ++i) {
-    std::string clientid = rocketspeed::GUIDGenerator().GenerateString();
-
-    rocketspeed::MsgLoop* msg_loop =
-          new rocketspeed::MsgLoop(rocketspeed::ClientEnv::Default(),
-                                   rocketspeed::EnvOptions(),
-                                   0,
-                                   FLAGS_client_workers,
-                                   info_log,
-                                   "client",
-                                   clientid);
-
-
-    clients.emplace_back(
-      new rocketspeed::ClientImpl(env,
-                                  rocketspeed::WakeLock::GetNull(),
-                                  pilots[i % pilots.size()],
-                                  copilots[i % copilots.size()],
-                                  rocketspeed::Tenant(102),
-                                  msg_loop,
-                                  subscribe_callback,
-                                  receive_callback,
-                                  nullptr,
-                                  info_log));
+    // Create config for this client by picking pilot and copilot in a round
+    // robin fashion.
+    std::unique_ptr<rocketspeed::Configuration> config(
+        rocketspeed::Configuration::Create({pilots[i % pilots.size()]},
+                                           {copilots[i % copilots.size()]},
+                                           rocketspeed::Tenant(102),
+                                           FLAGS_client_workers));
+    // Configure the client.
+    rocketspeed::ClientOptions options(
+        *config, rocketspeed::GUIDGenerator().GenerateString());
+    options.subscription_callback = subscribe_callback;
+    options.receive_callback = receive_callback;
+    options.info_log = info_log;
+    std::unique_ptr<rocketspeed::ClientImpl> client;
+    // Create the client.
+    auto st = rocketspeed::ClientImpl::Create(std::move(options), &client);
+    if (!st.ok()) {
+      LOG_ERROR(info_log, "Failed to open client: %s.", st.ToString().c_str());
+      return 1;
+    }
+    st = client->Start();
+    if (!st.ok()) {
+      LOG_ERROR(info_log, "Failed to start client: %s.", st.ToString().c_str());
+      return 1;
+    }
+    clients.emplace_back(client.release());
   }
   rocketspeed::NamespaceID nsid =
     static_cast<rocketspeed::NamespaceID>(FLAGS_namespaceid);

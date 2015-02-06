@@ -82,13 +82,14 @@ TEST(IntegrationTest, OneMessage) {
   ClientOptions options(*config, GUIDGenerator().GenerateString());
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
+  options.restore_subscriptions = false;
   options.info_log = info_log;
   ASSERT_OK(SubscriptionStorage::File(env_,
                                       file_path,
                                       info_log,
                                       &options.storage));
   std::unique_ptr<Client> client;
-  ASSERT_TRUE((Client::Open(std::move(options), &client).ok()));
+  ASSERT_OK(Client::Open(std::move(options), &client));
 
   // Send a message.
   auto ps = client->Publish(topic,
@@ -153,13 +154,14 @@ TEST(IntegrationTest, SequenceNumberZero) {
   ClientOptions options(*config, GUIDGenerator().GenerateString());
   options.subscription_callback = subscription_callback;
   options.receive_callback = receive_callback;
+  options.restore_subscriptions = false;
   options.info_log = info_log;
   ASSERT_OK(SubscriptionStorage::File(env_,
                                       file_path,
                                       info_log,
                                       &options.storage));
   std::unique_ptr<Client> client;
-  ASSERT_TRUE((Client::Open(std::move(options), &client).ok()));
+  ASSERT_OK(Client::Open(std::move(options), &client));
 
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {

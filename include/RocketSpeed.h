@@ -75,6 +75,15 @@ struct ClientOptions {
   // Default: nullptr.
   std::unique_ptr<SubscriptionStorage> storage;
 
+  // Determines whether subscription state should be restored.
+  // Default: true.
+  bool restore_subscriptions;
+
+  // Determines whether Client should automatically resubscribe according to
+  // restored state.
+  // Default: false.
+  bool resubscribe_from_storage;
+
   // Logger that is used for info messages.
   // Default: nullptr.
   std::shared_ptr<Logger> info_log;
@@ -92,9 +101,9 @@ struct ClientOptions {
                 ClientID _client_id);
 };
 
-/*
- * The Client is used to produce and consumer messages for a single topic
- * or multiple topics.
+/**
+ * The Client is used to produce and consume messages for a single topic or
+ * multiple topics.
  */
 class Client {
  public:
@@ -106,19 +115,12 @@ class Client {
    * @return on success returns OK(), otherwise errorcode
    */
   static Status Open(ClientOptions client_options,
-                     Client** client);
-
-  /**
-   * See above for doumentation, this is a wrapper which uses smart pointer to
-   * return Client object.
-   */
-  static Status Open(ClientOptions client_options,
                      std::unique_ptr<Client>* client);
 
   /**
    * Closes this Client's connection to the Cloud Service Provider.
    */
-  virtual ~Client();
+  virtual ~Client() = default;
 
   /**
    * Asynchronously publishes a new message to the Topic. The return parameter
@@ -166,6 +168,17 @@ class Client {
    * @param message the message to be acknowledged.
    */
   virtual void Acknowledge(const MessageReceived& message) = 0;
+
+  /**
+   * Saves state of subscriptions according to strategy selected when opening
+   * the client. Appropriate callback is invoked to inform whether state of
+   * subscriptions was saved successfully.
+   *
+   * All messages acknowledged before this call will be included in the saved
+   * state, which means that if a client is restarted and its state is restored
+   * from saved state, if will remember these messages as acknowledged.
+   */
+  virtual void SaveSubscriptions(SnapshotCallback snapshot_callback) = 0;
 };
 
 }  // namespace rocketspeed

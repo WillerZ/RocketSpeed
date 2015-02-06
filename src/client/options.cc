@@ -18,6 +18,8 @@ ClientOptions::ClientOptions(const Configuration& _config, ClientID _client_id)
     , subscription_callback(nullptr)
     , receive_callback(nullptr)
     , storage(nullptr)
+    , restore_subscriptions(true)
+    , resubscribe_from_storage(false)
     , info_log(nullptr)
     , env(ClientEnv::Default())
     , wake_lock(nullptr) {

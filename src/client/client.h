@@ -32,6 +32,9 @@ class WakeLock;
 // Internal implementation of the Client API.
 class ClientImpl : public Client {
  public:
+  static Status Create(ClientOptions client_options,
+                       std::unique_ptr<ClientImpl>* client);
+
   virtual ~ClientImpl();
 
   virtual PublishStatus Publish(const Topic& name,
@@ -45,6 +48,8 @@ class ClientImpl : public Client {
 
   virtual void Acknowledge(const MessageReceived& message);
 
+  virtual void SaveSubscriptions(SnapshotCallback snapshot_callback);
+
   ClientImpl(BaseEnv* env,
              std::shared_ptr<WakeLock> wake_lock,
              const HostId& pilot_host_id,
@@ -55,6 +60,9 @@ class ClientImpl : public Client {
              MessageReceivedCallback receive_callback,
              std::unique_ptr<SubscriptionStorage> storage,
              std::shared_ptr<Logger> info_log);
+
+  Status Start(bool restore_subscriptions = true,
+               bool resubscribe_from_storage = false);
 
   Statistics GetStatistics() const;
 
@@ -92,6 +100,7 @@ class ClientImpl : public Client {
   // Incoming message loop object.
   MsgLoopBase* msg_loop_ = nullptr;
   BaseEnv::ThreadId msg_loop_thread_;
+  bool msg_loop_thread_spawned_;
 
   // callback for incoming ack message for a subscription/unsubscription
   SubscribeCallback subscription_callback_;
