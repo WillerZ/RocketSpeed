@@ -203,7 +203,7 @@ class SocketEvent {
         if ((unsigned int)count != partial_.size()) {
           LOG_WARN(event_loop_->info_log_,
               "Wanted to write %d bytes to remote host fd(%d) but only "
-              "%d success.",
+              "%d bytes written successfully.",
               (int)partial_.size(), fd_, (int)count);
           event_loop_->info_log_->Flush();
           // update partial data pointers

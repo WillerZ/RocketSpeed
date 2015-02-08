@@ -23,7 +23,7 @@ controltower_host=''
 pilot_port=''
 copilot_port=''
 controltower_port=''
-log_dir=''
+log_dir="/tmp"
 collect_logs=''
 
 # Use the 2 lower order bytes from the UID to generate a namespace id.
