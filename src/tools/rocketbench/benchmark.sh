@@ -160,6 +160,9 @@ function start_servers {
       if [ $copilot_port ]; then
         cmd="${cmd} --copilot_port=$copilot_port"
       fi
+      if [ $controltower_port ]; then
+        cmd="${cmd} --tower_port=$controltower_port"
+      fi
       if [ $log_dir ]; then
         cmd="${cmd} --rs_log_dir=$log_dir"
       fi
