@@ -5,6 +5,10 @@
 //
 #include "descriptor_event.h"
 
+#include <cstddef>
+#include <cerrno>
+#include <cstring>
+
 namespace rocketspeed {
 
 DescriptorEvent::DescriptorEvent(std::shared_ptr<Logger> info_log, int fd)
@@ -32,10 +36,10 @@ Status DescriptorEvent::Write(std::string&& data) {
     return Status::IOError(strerror(errno));
   } else if (static_cast<size_t>(count) != data.size()) {
     LOG_WARN(info_log_,
-             "Wanted to write %zu bytes to fd(%d) but written (%zd).",
+             "Wanted to write %zu bytes to fd(%d) but written (%zu).",
              data.size(),
              fd_,
-             count);
+             static_cast<size_t>(count));
     return Status::IOError("Partial write.");
   }
   return Status::OK();
