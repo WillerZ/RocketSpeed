@@ -92,7 +92,7 @@ int RunAllTests() {
 std::string TmpDir() {
   std::string dir;
   Status s = Env::Default()->GetTestDirectory(&dir);
-  ASSERT_TRUE(s.ok()) << s.ToString();
+  ASSERT_OK(s);
   return dir;
 }
 

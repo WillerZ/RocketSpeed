@@ -51,25 +51,18 @@ extern int RandomSeed();
 // the execution of an assertion.
 class Tester {
  private:
-  bool ok_;
   const char* fname_;
   int line_;
   std::stringstream ss_;
 
  public:
   Tester(const char* f, int l)
-      : ok_(true), fname_(f), line_(l) {
-  }
-
-  ~Tester() {
-    if (!ok_) {
-      fprintf(stderr, "%s:%d:%s\n", fname_, line_, ss_.str().c_str());
-      port::PrintStack(2);
-    }
+      : fname_(f), line_(l) {
   }
 
   void Fail() {
-    ok_ = false;
+    fprintf(stderr, "%s:%d:%s\n", fname_, line_, ss_.str().c_str());
+    port::PrintStack(2);
     throw std::logic_error("test failed");
   }
 
@@ -106,15 +99,6 @@ class Tester {
   BINARY_OP(IsLe, <=)
   BINARY_OP(IsLt, <)
 #undef BINARY_OP
-
-  // Attach the specified value to the error message if an error has occurred
-  template <class V>
-  Tester& operator<<(const V& value) {
-    if (!ok_) {
-      ss_ << " " << value;
-    }
-    return *this;
-  }
 };
 
 #define ASSERT_TRUE(c) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
