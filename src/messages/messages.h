@@ -101,17 +101,22 @@ class Message : public Serializer {
    * @return The message Tupe
    */
   MessageType GetMessageType() const { return type_; }
+
   /**
    * @return The tenant ID.
    */
   TenantID GetTenantID() const { return tenantid_; }
+
   /**
-   * @return The Origin host.
+   * The origin is the client that originated a request.
+   * @return The Origin client ID.
    */
   const ClientID& GetOrigin() const { return origin_; }
+
   /**
-   * Set the origin host ID.
+   * Set the origin client ID.
    */
+
   void SetOrigin(const ClientID& client_id) {
     origin_ = client_id;
   }

@@ -103,34 +103,24 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
   // Get the list of subscriptions for this topic.
   auto it = subscriptions_.find(request.topic_name);
   if (it != subscriptions_.end()) {
-    std::vector<std::pair<ClientID, int>> destinations;
-
-    // serialize message
-    std::string serial;
-    msg->SerializeToString(&serial);
-
     for (auto& subscription : it->second) {
       // If the subscription is awaiting a response.
       if (subscription.awaiting_ack) {
-        destinations.emplace_back(subscription.client_id,
-                                  subscription.worker_id);
-        LOG_INFO(options_.info_log,
-          "Sending %ssubscribe response for Topic(%s) to %s on worker %d",
-          request.topic_type == MetadataType::mSubscribe ? "" : "un",
-          request.topic_name.c_str(),
-          subscription.client_id.c_str(),
-          subscription.worker_id);
-      }
-    }
+        // Serialize message.
+        msg->SetOrigin(subscription.client_id);
+        std::string serial;
+        msg->SerializeToString(&serial);
 
-    if (destinations.size() > 0) {
-      DistributeCommand(std::move(serial), std::move(destinations));
-
-      // Successful, don't send any more acks.
-      // (if the response didn't actually make it then the client
-      // will resubscribe anyway).
-      for (auto& subscription : it->second) {
-        if (subscription.awaiting_ack) {
+        // Send to client's worker.
+        const bool is_new_request = false;
+        std::unique_ptr<Command> cmd(
+          new SerializedSendCommand(std::move(serial),
+                                    subscription.client_id,
+                                    options_.env->NowMicros(),
+                                    is_new_request));
+        Status status = copilot_->SendCommand(std::move(cmd),
+                                              subscription.worker_id);
+        if (status.ok()) {
           subscription.awaiting_ack = false;
 
           // When the subscription seqno is 0, it was waiting on the correct
@@ -138,6 +128,17 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
           if (subscription.seqno == 0) {
             subscription.seqno = request.seqno;
           }
+
+          LOG_INFO(options_.info_log,
+            "Sending %ssubscribe response for Topic(%s) to %s on worker %d",
+            request.topic_type == MetadataType::mSubscribe ? "" : "un",
+            request.topic_name.c_str(),
+            subscription.client_id.c_str(),
+            subscription.worker_id);
+        } else {
+          LOG_WARN(options_.info_log,
+            "Failed to send metadata response to %s",
+            subscription.client_id.c_str());
         }
       }
     }
@@ -157,11 +158,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
     auto seqno = msg->GetSequenceNumber();
     std::vector<std::pair<ClientID, int>> destinations;
 
-    // serialize message
-    std::string serial;
-    msg->SerializeToString(&serial);
-
-    // accumulate all possible recipients
+    // Send to all subscribers.
     for (auto& subscription : it->second) {
       const ClientID& recipient = subscription.client_id;
 
@@ -180,21 +177,35 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
           recipient.c_str(), subscription.seqno);
         continue;
       }
-      destinations.emplace_back(recipient, subscription.worker_id);
-    }
 
-    DistributeCommand(std::move(serial), std::move(destinations));
+      // Serialize message
+      msg->SetOrigin(recipient);
+      std::string serial;
+      msg->SerializeToString(&serial);
 
-    int count = 0;
-    for (auto& subscription : it->second) {
-      LOG_INFO(options_.info_log,
-               "Sent data (%.16s)@%lu for Topic(%s) to %s",
-               msg->GetPayload().ToString().c_str(),
-               msg->GetSequenceNumber(),
-               msg->GetTopicName().ToString().c_str(),
-               subscription.client_id.c_str());
-      subscription.seqno = seqno + 1;
-      count++;
+      // Send to worker loop.
+      const bool is_new_request = false;
+      std::unique_ptr<Command> cmd(
+        new SerializedSendCommand(std::move(serial),
+                                  recipient,
+                                  options_.env->NowMicros(),
+                                  is_new_request));
+      Status status = copilot_->SendCommand(std::move(cmd),
+                                            subscription.worker_id);
+      if (status.ok()) {
+        subscription.seqno = seqno + 1;
+
+        LOG_INFO(options_.info_log,
+          "Sent data (%.16s)@%lu for Topic(%s) to %s",
+          msg->GetPayload().ToString().c_str(),
+          msg->GetSequenceNumber(),
+          msg->GetTopicName().ToString().c_str(),
+          recipient.c_str());
+      } else {
+        LOG_WARN(options_.info_log,
+          "Failed to distribute message to %s",
+          recipient.c_str());
+      }
     }
   }
 }
@@ -333,6 +344,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   if (notify_origin) {
     // Send response to origin to notify that subscription has been processed.
     msg->SetMetaType(MessageMetadata::MetaType::Response);
+    msg->SetOrigin(subscriber);
     // serialize
     const bool is_new_request = false;
     std::string serial;
@@ -456,7 +468,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
   }
 
   // Send response to origin to notify that subscription has been processed.
-  msg->SetOrigin(copilot_->GetClientId(worker_id));
+  msg->SetOrigin(subscriber);
   msg->SetMetaType(MessageMetadata::MetaType::Response);
   const bool is_new_request = false;
   std::string serial;
@@ -481,39 +493,5 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         subscriber.c_str());
   }
 }
-
-void CopilotWorker::DistributeCommand(
-    std::string msg,
-    std::vector<std::pair<ClientID, int>> destinations) {
-  // Destinations per worker.
-  std::unordered_map<int, SendCommand::Recipients> sub_destinations;
-  const bool is_new_request = false;
-
-  // Find which worker the command needs to be sent to for each client.
-  for (auto& elem : destinations) {
-    sub_destinations[elem.second].push_back(std::move(elem.first));
-  }
-
-  // Send the command to each worker.
-  for (auto it = sub_destinations.begin(); it != sub_destinations.end(); ++it) {
-    int worker_id = it->first;
-    SendCommand::Recipients& recipients = it->second;
-
-    // Send the response.
-    // TODO(pja) 1 : Find way to avoid msg copy.
-    std::unique_ptr<Command> cmd(
-      new SerializedSendCommand(msg,
-                                std::move(recipients),
-                                options_.env->NowMicros(),
-                                is_new_request));
-    Status status = copilot_->SendCommand(std::move(cmd), worker_id);
-    if (!status.ok()) {
-      LOG_WARN(options_.info_log,
-        "Failed to distribute message to %s",
-        HostMap::ToString(recipients).c_str());
-    }
-  }
-}
-
 
 }  // namespace rocketspeed

@@ -87,6 +87,7 @@ class MsgLoop : public MsgLoopBase {
     for (const auto& event_loop : event_loops_) {
       stats.Aggregate(event_loop->GetStatistics());
     }
+    stats.Aggregate(stats_.all);
     return stats;
   }
 
@@ -109,6 +110,9 @@ class MsgLoop : public MsgLoopBase {
     assert(worker_id_ != -1);
     return worker_id_;
   }
+
+  // Checks that the message origin matches this worker loop.
+  bool CheckMessageOrigin(const Message* msg);
 
  private:
   // Stores the worker_id for this thread.
@@ -144,6 +148,15 @@ class MsgLoop : public MsgLoopBase {
 
   // Client ID per event loop.
   std::unique_ptr<ClientID[]> worker_client_ids_;
+
+  struct Stats {
+    explicit Stats(const std::string& prefix) {
+      bad_origin = all.AddCounter(prefix + ".bad_origin");
+    }
+
+    Statistics all;
+    Counter* bad_origin;  // number of messages with bad origin
+  } stats_;
 
   // The EventLoop callback.
   void EventCallback(std::unique_ptr<Message> msg);

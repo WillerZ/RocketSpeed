@@ -113,10 +113,6 @@ class CopilotWorker {
   // Forward data to subscribers.
   void ProcessDeliver(std::unique_ptr<Message> msg);
 
-  // Duplicates and distributes a command to different copilot event loops.
-  void DistributeCommand(std::string msg,
-                         std::vector<std::pair<ClientID, int>> destinations);
-
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;
 

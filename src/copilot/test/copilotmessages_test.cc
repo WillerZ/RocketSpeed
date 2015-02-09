@@ -27,7 +27,7 @@ class CopilotTest {
   // Create a new instance of the copilot
   CopilotTest() : env_(Env::Default()) {
     // Create Logger
-    ASSERT_OK(test::CreateLogger(env_, "PilotTest", &info_log_));
+    ASSERT_OK(test::CreateLogger(env_, "CopilotTest", &info_log_));
   }
 
   virtual ~CopilotTest() {
@@ -40,6 +40,7 @@ class CopilotTest {
   std::shared_ptr<Logger> info_log_;
   std::set<Topic> sent_msgs_;
   std::set<Topic> acked_msgs_;
+  ClientID client_id_ = "client1";
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
@@ -53,6 +54,7 @@ class CopilotTest {
     MessageMetadata* metadata = static_cast<MessageMetadata*>(msg.get());
     ASSERT_EQ(metadata->GetMetaType(), MessageMetadata::MetaType::Response);
     ASSERT_EQ(metadata->GetTopicInfo().size(), 1);
+    ASSERT_EQ(metadata->GetOrigin(), client_id_);
     acked_msgs_.insert(metadata->GetTopicInfo()[0].topic_name);
   }
 };
@@ -93,7 +95,7 @@ TEST(CopilotTest, Publish) {
     std::string serial;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        ClientID("client1"),
+                        client_id_,
                         { TopicPair(0, topic, type, ns) });
     msg.SerializeToString(&serial);
     std::unique_ptr<Command> cmd(new SerializedSendCommand(

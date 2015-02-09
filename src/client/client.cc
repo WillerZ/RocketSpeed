@@ -423,6 +423,12 @@ void ClientImpl::SaveSubscriptions(SnapshotCallback snapshot_callback) {
 void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
+
+  // Check that message has correct origin.
+  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
+    return;
+  }
+
   const MessageData* data = static_cast<const MessageData*>(msg.get());
 
   LOG_INFO(info_log_, "Received data (%.16s)",
@@ -474,6 +480,12 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
 void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
+
+  // Check that message has correct origin.
+  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
+    return;
+  }
+
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
   int worker_id = msg_loop_->GetThreadWorkerIndex();
@@ -521,6 +533,12 @@ void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
 void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
+
+  // Check that message has correct origin.
+  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
+    return;
+  }
+
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());
 
   // The client should receive only responses to subscribe/unsubscribe.

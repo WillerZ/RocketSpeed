@@ -58,8 +58,9 @@ MsgLoop::MsgLoop(BaseEnv* env,
   env_(env),
   env_options_(env_options),
   info_log_(info_log),
-  name_(std::move(name)),
-  next_worker_id_(0) {
+  name_(name),
+  next_worker_id_(0),
+  stats_("rocketspeed." + name) {
   assert(info_log);
   assert(num_workers >= 1);
 
@@ -233,6 +234,21 @@ int MsgLoop::LoadBalancedWorkerId() const {
     }
   }*/
   return worker_id;
+}
+
+bool MsgLoop::CheckMessageOrigin(const Message* msg) {
+  const int worker_id = GetThreadWorkerIndex();
+  if (msg->GetOrigin() != GetClientId(worker_id)) {
+    stats_.bad_origin->Add(1);
+    LOG_ERROR(info_log_,
+      "Received message with incorrect origin. Expected '%s', received '%s'",
+      GetClientId(worker_id).c_str(),
+      msg->GetOrigin().c_str());
+    info_log_->Flush();
+    assert(false);
+    return false;
+  }
+  return true;
 }
 
 }  // namespace rocketspeed

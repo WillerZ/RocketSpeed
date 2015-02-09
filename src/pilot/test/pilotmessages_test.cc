@@ -34,9 +34,11 @@ class PilotTest {
   std::shared_ptr<Logger> info_log_;
   std::set<MsgId> sent_msgs_;
   std::set<MsgId> acked_msgs_;
+  ClientID client_id_ = "client1";
 
   void ProcessDataAck(std::unique_ptr<Message> msg) {
     const MessageDataAck* acks = static_cast<const MessageDataAck*>(msg.get());
+    ASSERT_EQ(acks->GetOrigin(), client_id_);
     for (const auto& ack : acks->GetAcks()) {
       ASSERT_EQ(ack.status, MessageDataAck::AckStatus::Success);
       acked_msgs_.insert(ack.msgid);  // mark msgid as ack'd
@@ -83,7 +85,7 @@ TEST(PilotTest, Publish) {
     std::string serial;
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
-                     ClientID("client1"),
+                     client_id_,
                      Slice(topic),
                      nsid,
                      Slice(payload));
@@ -108,6 +110,8 @@ TEST(PilotTest, Publish) {
   ASSERT_NE(stats_report.find("rocketspeed.pilot.failed_appends:         0"),
             std::string::npos);
   ASSERT_NE(stats_report.find("rocketspeed.pilot.append_latency_us"),
+            std::string::npos);
+  ASSERT_NE(stats_report.find("rocketspeed.cockpit.bad_origin:           0"),
             std::string::npos);
 }
 

@@ -95,7 +95,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   // splits every topic into a distinct separate messages per ControlRoom.
   const std::vector<TopicPair>& topic = request->GetTopicInfo();
   assert(topic.size() == 1);
-  const ClientID& origin = request->GetOrigin();
+  const ClientID origin = request->GetOrigin();
 
   // Handle to 0 sequence number special case.
   // Zero means to start reading from the latest records, so we first need
@@ -203,6 +203,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
 
   // serialize message
   const bool is_new_request = false;
+  request->SetOrigin(origin);
   std::string out;
   request->SerializeToString(&out);
 
@@ -268,7 +269,6 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   // serialize msg
   const bool is_new_request = false;
   std::string serial;
-  request->SerializeToString(&serial);
 
   // map the topic to a list of subscribers
   TopicList* list = topic_map_.GetSubscribers(topic_name);
@@ -286,36 +286,30 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
       assert(hostid != nullptr);
       assert(worker_id != -1);
       if (hostid != nullptr && worker_id != -1) {
-        destinations[worker_id].push_back(*hostid);
-      }
-    }
+        request->SetOrigin(*hostid);
+        request->SerializeToString(&serial);
+        std::unique_ptr<Command> cmd(
+          new SerializedSendCommand(serial,  // TODO(pja) 1 : avoid copy here
+                                    *hostid,
+                                    options.env->NowMicros(),
+                                    is_new_request));
 
-    // Send command to each worker loop.
-    for (auto it = destinations.begin(); it != destinations.end(); ++it) {
-      int worker_id = it->first;
-      SendCommand::Recipients& recipients = it->second;
+        // Send to correct worker loop.
+        st = ct->SendCommand(std::move(cmd), worker_id);
 
-      std::unique_ptr<Command> cmd(
-        new SerializedSendCommand(serial,  // TODO(pja) 1 : avoid copy here
-                                  std::move(recipients),
-                                  options.env->NowMicros(),
-                                  is_new_request));
-
-      // Send to correct worker loop.
-      st = ct->SendCommand(std::move(cmd), worker_id);
-
-      if (st.ok()) {
-        LOG_INFO(options.info_log,
-                "Sent data (%.16s)@%lu for Topic(%s) to %s",
-                request->GetPayload().ToString().c_str(),
-                request->GetSequenceNumber(),
-                request->GetTopicName().ToString().c_str(),
-                HostMap::ToString(recipients).c_str());
-      } else {
-        LOG_WARN(options.info_log,
-                "Unable to forward Data message to subscriber %s",
-                HostMap::ToString(recipients).c_str());
-        options.info_log->Flush();
+        if (st.ok()) {
+          LOG_INFO(options.info_log,
+                  "Sent data (%.16s)@%lu for Topic(%s) to %s",
+                  request->GetPayload().ToString().c_str(),
+                  request->GetSequenceNumber(),
+                  request->GetTopicName().ToString().c_str(),
+                  hostid->c_str());
+        } else {
+          LOG_WARN(options.info_log,
+                  "Unable to forward Data message to subscriber %s",
+                  hostid->c_str());
+          options.info_log->Flush();
+        }
       }
     }
   } else {

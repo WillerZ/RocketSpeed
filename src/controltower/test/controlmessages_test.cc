@@ -35,6 +35,8 @@ class ControlTowerTest {
   EnvOptions env_options_;
   std::shared_ptr<Logger> info_log_;
   port::Semaphore subscribe_sem_;
+  ClientID client_id1_ = "clientid1";
+  ClientID client_id2_ = "clientid2";
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
@@ -77,8 +79,9 @@ TEST(ControlTowerTest, Ping) {
   // Define a callback to process the Ping response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
   client_callback[MessageType::mPing] =
-      [&ping_sem](std::unique_ptr<Message> msg) {
+      [this, &ping_sem](std::unique_ptr<Message> msg) {
     ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
+    ASSERT_EQ(msg->GetOrigin(), client_id1_);
     MessagePing* m = static_cast<MessagePing*>(msg.get());
     ASSERT_EQ(m->GetPingType(), MessagePing::PingType::Response);
     ping_sem.Post();
@@ -98,7 +101,7 @@ TEST(ControlTowerTest, Ping) {
   auto ct_client_id = cluster.GetControlTower()->GetClientId(0);
   MessagePing msg(Tenant::GuestTenant,
                   MessagePing::PingType::Request,
-                  ClientID("clientid1:100"));
+                  client_id1_);
   std::string serial;
   msg.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(
@@ -117,7 +120,7 @@ TEST(ControlTowerTest, Ping) {
   for (int i = 0; i < num_msgs; i++) {
     MessagePing newmsg(Tenant::GuestTenant,
                        MessagePing::PingType::Request,
-                       ClientID("clientidx:100"));
+                       client_id1_);
     msg.SerializeToString(&serial);  // serialize msg
     std::unique_ptr<Command> cmd2(
       new SerializedSendCommand(std::move(serial),
@@ -152,7 +155,10 @@ TEST(ControlTowerTest, Subscribe) {
   // Define a callback to process the subscribe response at the client
   std::map<MessageType, MsgCallbackType> client_callback;
   client_callback[MessageType::mMetadata] =
-      [this](std::unique_ptr<Message> msg) { ProcessMetadata(std::move(msg)); };
+    [this](std::unique_ptr<Message> msg) {
+      ASSERT_EQ(msg->GetOrigin(), client_id1_);
+      ProcessMetadata(std::move(msg));
+    };
 
   // create a client to communicate with the ControlTower
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
@@ -169,7 +175,7 @@ TEST(ControlTowerTest, Subscribe) {
   const bool is_new_request = true;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        ClientID("clientid100:100"),
+                        client_id1_,
                         topics);
   meta1.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(new SerializedSendCommand(std::move(serial),
@@ -201,13 +207,23 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   }
 
   // Define a callback to process the subscribe response at the client
-  std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mMetadata] =
-      [this](std::unique_ptr<Message> msg) { ProcessMetadata(std::move(msg)); };
+  std::map<MessageType, MsgCallbackType> client_callback1;
+  client_callback1[MessageType::mMetadata] =
+    [this](std::unique_ptr<Message> msg) {
+      ASSERT_EQ(msg->GetOrigin(), client_id1_);
+      ProcessMetadata(std::move(msg));
+    };
+
+  std::map<MessageType, MsgCallbackType> client_callback2;
+  client_callback2[MessageType::mMetadata] =
+    [this](std::unique_ptr<Message> msg) {
+      ASSERT_EQ(msg->GetOrigin(), client_id2_);
+      ProcessMetadata(std::move(msg));
+    };
 
   // create a client to communicate with the ControlTower
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "test");
-  loop1.RegisterCallbacks(client_callback);
+  loop1.RegisterCallbacks(client_callback1);
   env_->StartThread(ControlTowerTest::MsgLoopStart,
                     &loop1,
                     "testc-" + std::to_string(loop1.GetHostId().port));
@@ -220,7 +236,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   const bool is_new_request = true;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        ClientID("clientid100:100"),
+                        client_id1_,
                         topics);
   meta1.SerializeToString(&serial);
   std::unique_ptr<Command> cmd(new SerializedSendCommand(std::move(serial),
@@ -242,7 +258,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 
   // create second client to communicate with the ControlTower
   MsgLoop loop2(env_, env_options_, 58489, 1, info_log_, "test");
-  loop2.RegisterCallbacks(client_callback);
+  loop2.RegisterCallbacks(client_callback2);
   env_->StartThread(ControlTowerTest::MsgLoopStart,
                     &loop2,
                     "testc-" + std::to_string(loop2.GetHostId().port));
@@ -254,7 +270,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::string serial2;
   MessageMetadata meta2(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        ClientID("clientid200:200"),
+                        client_id2_,
                         topics);
   meta2.SerializeToString(&serial2);
   std::unique_ptr<Command> cmd2(new SerializedSendCommand(std::move(serial2),
@@ -284,7 +300,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::string serial3;
   MessageMetadata meta3(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        ClientID("clientid100:100"),
+                        client_id1_,
                         topics);
   meta3.SerializeToString(&serial3);
   std::unique_ptr<Command> cmd3(new SerializedSendCommand(std::move(serial3),
@@ -306,7 +322,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::string serial4;
   MessageMetadata meta4(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        ClientID("clientid200:200"),
+                        client_id2_,
                         topics);
   meta4.SerializeToString(&serial4);
   std::unique_ptr<Command> cmd4(new SerializedSendCommand(std::move(serial4),
