@@ -106,6 +106,7 @@ ifeq ($(LIBNAME),)
         LIBNAME=librocketspeed
 endif
 LIBRARY = ${LIBNAME}.a
+CLIENT_LIBRARY_STATIC = ${LIBNAME}client.a
 
 default: all
 
@@ -142,7 +143,7 @@ endif  # PLATFORM_SHARED_EXT
 	release tags valgrind_check whitebox_crash_test format static_lib shared_lib all \
 	dbg
 
-all: $(LIBRARY) $(PROGRAMS) $(TESTS)
+all: $(LIBRARY) $(PROGRAMS) $(TESTS) $(CLIENT_LIBRARY_STATIC)
 
 static_lib: $(LIBRARY)
 
@@ -221,7 +222,7 @@ valgrind_check: all $(PROGRAMS) $(TESTS)
 	done
 
 clean:
-	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(JAVA_LIBRARY) build_config.mk
+	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(JAVA_LIBRARY) $(CLIENT_LIBRARY_STATIC) build_config.mk
 	-rm -rf ios-x86/* ios-arm/*
 	-rm -rf _mock_logdevice_logs test_times LOG.*
 	-find src -name "*.[od]" -exec rm {} \;
@@ -313,32 +314,33 @@ rs_stress: tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL)
 	$(CXX) tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
-#  	Java and JNI specific compilation
+#  	Build client-only library
 # ---------------------------------------------------------------------------
-CLIENTSOURCES = $(SOURCES_DJINNI) $(SOURCES_DJINNI_CPP)
-CLIENTOBJECTS = $(SOURCES_DJINNI:.cc=.o)
-CLIENTOBJECTS += $(SOURCES_DJINNI_CPP:.cpp=.o)
+CLIENTSOURCES =        src/client/client.cc \
+                       src/client/client_env.cc \
+                       src/client/options.cc \
+                       src/client/storage/file_storage.cc \
+                       src/messages/descriptor_event.cc \
+                       src/messages/event_loop.cc \
+                       src/messages/messages.cc \
+                       src/messages/msg_loop.cc \
+                       src/port/port_posix.cc \
+                       src/util/build_version.cc \
+                       src/util/common/base_env.cc \
+                       src/util/common/coding.cc \
+                       src/util/common/configuration.cc \
+                       src/util/common/guid_generator.cc \
+                       src/util/common/host.cc \
+                       src/util/common/statistics.cc \
+                       src/util/common/status.cc
 
-LIBRARY = ${LIBNAME}.a
-CLIENT_LIBRARY_STATIC = librocketspeedclient.a
-CLIENT_LIBRARY_SHARED = librocketspeedclient.so
+CLIENTOBJECTS = $(CLIENTSOURCES:.cc=.o)
 
-rocketspeed.jar: RocketSpeedClient.class
-	$(JAR) $(JARFLAGS) RocketSpeed.jar src/java/org/rocketspeed/RocketSpeedClient.class
-
-RocketSpeedClient.class: src/java/org/rocketspeed/RocketSpeedClient.java
-	$(JC) src/java/org/rocketspeed/RocketSpeedClient.java
-
-client: rocketspeed.jar
-	LDFLAGS+="$(JAVA_LDFLAGS)" CFLAGS="$(JAVA_CFLAGS)" CXXFLAGS="$(JAVA_CXXFLAGS)" $(MAKE) $(CLIENT_LIBRARY_STATIC) $(CLIENT_LIBRARY_SHARED)
+client: $(CLIENT_LIBRARY_STATIC)
 
 $(CLIENT_LIBRARY_STATIC): $(CLIENTOBJECTS)
 	rm -f $@
 	$(AR) -rs $@ $(CLIENTOBJECTS)
-
-$(CLIENT_LIBRARY_SHARED): $(CLIENTOBJECTS)
-	rm -f $@
-	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED2) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(CLIENTSOURCES) $(LDFLAGS) -o $@
 
 # ---------------------------------------------------------------------------
 #  	Platform-specific compilation
