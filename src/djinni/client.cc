@@ -17,15 +17,15 @@
 #include "src/djinni/jvm_env.h"
 #include "src/djinni/wake_lock.h"
 
-#include "src-gen/djinni/HostId.hpp"
-#include "src-gen/djinni/ConfigurationImpl.hpp"
-#include "src-gen/djinni/PublishCallbackImpl.hpp"
-#include "src-gen/djinni/ReceiveCallbackImpl.hpp"
-#include "src-gen/djinni/StorageType.hpp"
-#include "src-gen/djinni/SnapshotCallbackImpl.hpp"
-#include "src-gen/djinni/SubscribeCallbackImpl.hpp"
-#include "src-gen/djinni/SubscriptionStorage.hpp"
-#include "src-gen/djinni/WakeLockImpl.hpp"
+#include "src-gen/djinni/cpp/HostId.hpp"
+#include "src-gen/djinni/cpp/ConfigurationImpl.hpp"
+#include "src-gen/djinni/cpp/PublishCallbackImpl.hpp"
+#include "src-gen/djinni/cpp/ReceiveCallbackImpl.hpp"
+#include "src-gen/djinni/cpp/StorageType.hpp"
+#include "src-gen/djinni/cpp/SnapshotCallbackImpl.hpp"
+#include "src-gen/djinni/cpp/SubscribeCallbackImpl.hpp"
+#include "src-gen/djinni/cpp/SubscriptionStorage.hpp"
+#include "src-gen/djinni/cpp/WakeLockImpl.hpp"
 
 namespace rocketspeed {
 namespace djinni {

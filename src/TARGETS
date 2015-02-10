@@ -2,10 +2,8 @@ JAVA_VERSION = '7'
 
 java_library(
     name = 'client_java',
-    srcs =
-        util.files('main/java/org/rocketspeed/*.java') +
-        util.files('main/java/org/rocketspeed/android/*.java') +
-        util.files('main/java-gen/org/rocketspeed/*.java'),
+    srcs = util.files('main/java/**/*.java')
+         + util.files('../src-gen/djinni/java/**/*.java'),
     deps = [
         '@/rocketspeed/github/src/djinni:librocketspeedjni.so',
     ],
@@ -14,19 +12,19 @@ java_library(
 java_unittest(
     name = 'client_java_test',
     srcs = util.files('test/java/**/*.java'),
-    deps = [
-        ':client_java',
-        '@/rocketspeed/github/src/test:test_cluster_proc',
-    ],
-    aether_deps = [
-        'org.mockito:mockito-all:1.9.5',
-    ],
     test_classes = [
         'org.rocketspeed.BuilderTest',
         'org.rocketspeed.IntegrationTest',
         'org.rocketspeed.LocalTestClusterTest',
         'org.rocketspeed.android.WakeLockTest',
         'org.rocketspeed.tests.VisibilityTest',
+    ],
+    deps = [
+        ':client_java',
+        '@/rocketspeed/github/src/test:test_cluster_proc',
+    ],
+    aether_deps = [
+        'org.mockito:mockito-all:1.9.5',
     ],
     tags = [
         'serialize',

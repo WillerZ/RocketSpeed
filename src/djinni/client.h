@@ -7,12 +7,12 @@
 
 #include <memory>
 
-#include "src-gen/djinni/ClientImpl.hpp"
-#include "src-gen/djinni/MsgIdImpl.hpp"
-#include "src-gen/djinni/PublishStatus.hpp"
-#include "src-gen/djinni/RetentionBase.hpp"
-#include "src-gen/djinni/Status.hpp"
-#include "src-gen/djinni/SubscriptionRequestImpl.hpp"
+#include "src-gen/djinni/cpp/ClientImpl.hpp"
+#include "src-gen/djinni/cpp/MsgIdImpl.hpp"
+#include "src-gen/djinni/cpp/PublishStatus.hpp"
+#include "src-gen/djinni/cpp/RetentionBase.hpp"
+#include "src-gen/djinni/cpp/Status.hpp"
+#include "src-gen/djinni/cpp/SubscriptionRequestImpl.hpp"
 
 namespace rocketspeed {
 

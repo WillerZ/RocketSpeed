@@ -1,0 +1,25 @@
+cpp_library(
+    name = 'interface',
+    srcs = util.files('cpp/*.cpp'),
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+    ],
+)
+
+cpp_library(
+    name = 'jni',
+    srcs = util.files('cpp/jni/*.cpp'),
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
+        '-Irocketspeed/github/external/Optional',
+    ],
+    deps = [
+        ':interface',
+        '@/rocketspeed/github/external/djinni/support-lib/jni',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    link_whole = True,
+)

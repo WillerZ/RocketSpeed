@@ -37,7 +37,8 @@
                         </goals>
                         <configuration>
                             <sources>
-                                <source>src/main/java-gen</source>
+                                <source>src/main/java</source>
+                                <source>src-gen/djinni/java</source>
                             </sources>
                         </configuration>
                     </execution>

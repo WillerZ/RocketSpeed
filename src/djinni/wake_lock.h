@@ -9,7 +9,7 @@
 
 #include "include/WakeLock.h"
 
-#include "src-gen/djinni/WakeLockImpl.hpp"
+#include "src-gen/djinni/cpp/WakeLockImpl.hpp"
 
 namespace rocketspeed {
 namespace djinni {
