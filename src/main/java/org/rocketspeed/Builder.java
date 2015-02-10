@@ -104,13 +104,14 @@ public final class Builder {
       assertInvalidState(clientID != null, "Missing ClientID.");
       assertInvalidState(tenantID >= 0, "Missing TenantID.");
       ClientImpl clientImpl = ClientImpl.Open(config, tenantID, clientID, subscribeCallback,
-                                              receiveCallback, storage, wrapWakeLock(wakeLock));
+                                              storage, wrapWakeLock(wakeLock));
       try {
         // Note that until we call Start method on ClientImpl, no client threads are running.
         // Consequently, no callback can be issued by the client until it is started, therefore
         // it is safe to finish initialisation of receive callback now.
         receiveCallback.setClientImpl(clientImpl);
-        clientImpl.Start(restoreSubscriptions, resubscribeFromStorage).checkExceptions();
+        clientImpl.Start(receiveCallback, restoreSubscriptions, resubscribeFromStorage)
+            .checkExceptions();
         return new Client(clientImpl);
       } catch (Exception e) {
         clientImpl.Close();

@@ -24,15 +24,13 @@ class IntegrationTest {
 
   IntegrationTest()
       : timeout(5)
-      , env_(Env::Default())
-      , file_path(test::TmpDir() + "/IntegrationTest/FileStorage.bin") {
+      , env_(Env::Default()) {
     ASSERT_OK(test::CreateLogger(env_, "IntegrationTest", &info_log));
   }
 
  protected:
   Env* env_;
   std::shared_ptr<rocketspeed::Logger> info_log;
-  std::string file_path;
 };
 
 TEST(IntegrationTest, OneMessage) {
@@ -81,15 +79,10 @@ TEST(IntegrationTest, OneMessage) {
   //TODO(ranji42) Try to use the same integration_test for mqttclient.
   ClientOptions options(*config, GUIDGenerator().GenerateString());
   options.subscription_callback = subscription_callback;
-  options.receive_callback = receive_callback;
-  options.restore_subscriptions = false;
   options.info_log = info_log;
-  ASSERT_OK(SubscriptionStorage::File(env_,
-                                      file_path,
-                                      info_log,
-                                      &options.storage));
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Open(std::move(options), &client));
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(receive_callback));
 
   // Send a message.
   auto ps = client->Publish(topic,
@@ -153,15 +146,10 @@ TEST(IntegrationTest, SequenceNumberZero) {
                             4));
   ClientOptions options(*config, GUIDGenerator().GenerateString());
   options.subscription_callback = subscription_callback;
-  options.receive_callback = receive_callback;
-  options.restore_subscriptions = false;
   options.info_log = info_log;
-  ASSERT_OK(SubscriptionStorage::File(env_,
-                                      file_path,
-                                      info_log,
-                                      &options.storage));
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Open(std::move(options), &client));
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(receive_callback));
 
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {

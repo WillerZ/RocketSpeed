@@ -47,7 +47,7 @@ class BaseEnv;
 class WakeLock;
 
 /**
- * Describes the Client object to be created by Client::Open() call.
+ * Describes the Client object to be created.
  */
 struct ClientOptions {
   // Configuration of this service provider.
@@ -66,22 +66,9 @@ struct ClientOptions {
   // Default: nullptr.
   SubscribeCallback subscription_callback;
 
-  // Invoked when a message is received.
-  // Default: nullptr.
-  MessageReceivedCallback receive_callback;
-
   // Strategy for storing subscription state.
   // Default: nullptr.
   std::unique_ptr<SubscriptionStorage> storage;
-
-  // Determines whether subscription state should be restored.
-  // Default: true.
-  bool restore_subscriptions;
-
-  // Determines whether Client should automatically resubscribe according to
-  // restored state.
-  // Default: false.
-  bool resubscribe_from_storage;
 
   // Logger that is used for info messages.
   // Default: nullptr.
@@ -106,20 +93,40 @@ struct ClientOptions {
  */
 class Client {
  public:
+  /** Controls how client restores subscription state. */
+  enum RestoreStrategy {
+    /** Starts with clean in-memory subscription state. */
+    kDontRestore,
+    /** Restores state from snapshot, but doesn't automatically resubscribe. */
+    kRestoreOnly,
+    /** Restores state and resubscribes to all topics found in the storage. */
+    kResubscribe,
+  };
+
   /**
-   * Opens a Client. This can create connections to the Cloud Service
+   * Creates a Client. This can create connections to the Cloud Service
    * Provider, validate credentials, etc.
    *
    * @param options The description of client object to be created
    * @return on success returns OK(), otherwise errorcode
    */
-  static Status Open(ClientOptions client_options,
-                     std::unique_ptr<Client>* client);
+  static Status Create(ClientOptions client_options,
+                       std::unique_ptr<Client>* client);
 
   /**
    * Closes this Client's connection to the Cloud Service Provider.
    */
   virtual ~Client() = default;
+
+  /**
+   * Starts the client and restores subscription data according to provided
+   * strategy.
+   * @param receive_callback Invoed on each received message.
+   * @param restore_strategy Controls how client restores subscription state.
+   */
+  virtual Status Start(
+      MessageReceivedCallback receive_callback = nullptr,
+      RestoreStrategy restore_strategy = RestoreStrategy::kDontRestore) = 0;
 
   /**
    * Asynchronously publishes a new message to the Topic. The return parameter

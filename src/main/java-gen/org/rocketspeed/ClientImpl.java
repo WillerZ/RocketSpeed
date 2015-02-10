@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ClientImpl {
-    public abstract Status Start(boolean restoreSubscriptions, boolean resubscribeFromStorage);
+    public abstract Status Start(ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
 
     public abstract PublishStatus Publish(int namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
@@ -19,7 +19,7 @@ public abstract class ClientImpl {
 
     public abstract void Close();
 
-    public static native ClientImpl Open(ConfigurationImpl config, int tenantId, String clientId, SubscribeCallbackImpl subscribeCallback, ReceiveCallbackImpl receiveCallback, SubscriptionStorage storage, WakeLockImpl wakeLock);
+    public static native ClientImpl Open(ConfigurationImpl config, int tenantId, String clientId, SubscribeCallbackImpl subscribeCallback, SubscriptionStorage storage, WakeLockImpl wakeLock);
 
     public static final class CppProxy extends ClientImpl
     {
@@ -45,12 +45,12 @@ public abstract class ClientImpl {
         }
 
         @Override
-        public Status Start(boolean restoreSubscriptions, boolean resubscribeFromStorage)
+        public Status Start(ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Start(this.nativeRef, restoreSubscriptions, resubscribeFromStorage);
+            return native_Start(this.nativeRef, receiveCallback, restoreSubscriptions, resubscribeFromStorage);
         }
-        private native Status native_Start(long _nativeRef, boolean restoreSubscriptions, boolean resubscribeFromStorage);
+        private native Status native_Start(long _nativeRef, ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
 
         @Override
         public PublishStatus Publish(int namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)

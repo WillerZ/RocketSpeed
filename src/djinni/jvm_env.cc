@@ -18,7 +18,11 @@ pthread_key_t detach_thread_key;
 
 jint AttachCurrentThread() {
   JNIEnv* env;
+#if defined(OS_ANDROID)
   jint err = java_vm_->AttachCurrentThreadAsDaemon(&env, nullptr);
+#else
+  jint err = java_vm_->AttachCurrentThreadAsDaemon((void**)&env, nullptr);
+#endif
   if (err != JNI_OK) {
     return err;
   } else if (!env) {

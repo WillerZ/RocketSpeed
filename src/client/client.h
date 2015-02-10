@@ -23,7 +23,6 @@
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
 
-#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 class Logger;
@@ -37,6 +36,9 @@ class ClientImpl : public Client {
                        std::unique_ptr<ClientImpl>* client);
 
   virtual ~ClientImpl();
+
+  virtual Status Start(MessageReceivedCallback receive_callback,
+                       RestoreStrategy restore_strategy);
 
   virtual PublishStatus Publish(const Topic& name,
                                 const NamespaceID namespaceId,
@@ -58,12 +60,8 @@ class ClientImpl : public Client {
              TenantID tenant_id,
              MsgLoopBase* msg_loop,
              SubscribeCallback subscription_callback,
-             MessageReceivedCallback receive_callback,
              std::unique_ptr<SubscriptionStorage> storage,
              std::shared_ptr<Logger> info_log);
-
-  Status Start(bool restore_subscriptions = true,
-               bool resubscribe_from_storage = false);
 
   Statistics GetStatistics() const;
 
@@ -145,4 +143,3 @@ class ClientImpl : public Client {
 };
 
 }  // namespace rocketspeed
-#pragma GCC visibility pop

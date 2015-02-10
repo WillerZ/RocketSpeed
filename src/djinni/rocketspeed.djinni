@@ -98,11 +98,11 @@ ClientImpl = interface +c {
               tenant_id: i32,
               client_id: string,
               subscribe_callback: SubscribeCallbackImpl,
-              receive_callback: ReceiveCallbackImpl,
               storage: SubscriptionStorage,
               wake_lock: WakeLockImpl): ClientImpl;
 
-  Start(restore_subscriptions: bool,
+  Start(receive_callback: ReceiveCallbackImpl,
+        restore_subscriptions: bool,
         resubscribe_from_storage: bool): Status;
 
   Publish(namespace_id: i32,

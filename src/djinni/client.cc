@@ -14,7 +14,6 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
-#include "src/client/client.h"
 #include "src/djinni/jvm_env.h"
 #include "src/djinni/wake_lock.h"
 
@@ -168,7 +167,6 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
     int32_t tenant_id,
     std::string client_id,
     std::shared_ptr<SubscribeCallbackImpl> subscribe_callback,
-    std::shared_ptr<ReceiveCallbackImpl> receive_callback,
     SubscriptionStorage storage,
     std::shared_ptr<WakeLockImpl> wake_lock) {
   rocketspeed::Status status;
@@ -193,16 +191,6 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
     };
   }
 
-  if (receive_callback) {
-    options.receive_callback =
-        [receive_callback](std::unique_ptr<MessageReceived> message) {
-      receive_callback->Call(fromNamespaceID(message->GetNamespaceId()),
-                             message->GetTopicName().ToString(),
-                             fromSequenceNumber(message->GetSequenceNumber()),
-                             fromSlice(message->GetContents()));
-    };
-  }
-
   if (storage.type == StorageType::NONE) {
     // Do nothing.
   } else if (storage.type == StorageType::FILE) {
@@ -219,17 +207,37 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
   }
 
   // Create the RocketSpeed client and wrap it in Djinni handler.
-  std::unique_ptr<rocketspeed::ClientImpl> client_raw;
-  status = rocketspeed::ClientImpl::Create(std::move(options), &client_raw);
+  std::unique_ptr<rocketspeed::Client> client_raw;
+  status = rocketspeed::Client::Create(std::move(options), &client_raw);
   if (!status.ok()) {
     throw std::runtime_error(status.ToString());
   }
   return std::make_shared<Client>(std::move(client_raw));
 }
 
-Status Client::Start(bool restore_subscriptions,
+Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
+                     bool restore_subscriptions,
                      bool resubscribe_from_storage) {
-  auto status = client_->Start(restore_subscriptions, resubscribe_from_storage);
+  using Restore = rocketspeed::Client::RestoreStrategy;
+  rocketspeed::MessageReceivedCallback receive_callback1;
+  if (receive_callback) {
+    receive_callback1 =
+        [receive_callback](std::unique_ptr<MessageReceived> message) {
+      receive_callback->Call(fromNamespaceID(message->GetNamespaceId()),
+                             message->GetTopicName().ToString(),
+                             fromSequenceNumber(message->GetSequenceNumber()),
+                             fromSlice(message->GetContents()));
+    };
+  }
+  if (!restore_subscriptions && resubscribe_from_storage) {
+    return fromStatus(rocketspeed::Status::InvalidArgument(
+        "Cannot resubscribe from storage without subscription state."));
+  }
+  auto restore_strategy = resubscribe_from_storage
+                              ? Restore::kResubscribe
+                              : (restore_subscriptions ? Restore::kRestoreOnly
+                                                       : Restore::kDontRestore);
+  auto status = client_->Start(receive_callback1, restore_strategy);
   return fromStatus(status);
 }
 

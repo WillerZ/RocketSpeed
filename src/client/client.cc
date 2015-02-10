@@ -87,21 +87,13 @@ struct ClientResultStatus : public ResultStatus {
   SequenceNumber seqno_;
 };
 
-Status Client::Open(ClientOptions options,
-                    std::unique_ptr<Client>* client) {
-  Status status;
-  std::unique_ptr<ClientImpl> client_impl;
-  status = ClientImpl::Create(std::move(options), &client_impl);
-  if (!status.ok()) {
-    return status;
+Status Client::Create(ClientOptions options, std::unique_ptr<Client>* client) {
+  std::unique_ptr<ClientImpl> client_ptr;
+  auto st = ClientImpl::Create(std::move(options), &client_ptr);
+  if (st.ok()) {
+    *client = std::move(client_ptr);
   }
-  status = client_impl->Start(options.restore_subscriptions,
-                              options.resubscribe_from_storage);
-  if (!status.ok()) {
-    return status;
-  }
-  *client = std::move(client_impl);
-  return Status::OK();
+  return st;
 }
 
 Status ClientImpl::Create(ClientOptions options,
@@ -112,14 +104,6 @@ Status ClientImpl::Create(ClientOptions options,
   }
   if (options.config.GetTenantID() <= 100) {
     return Status::InvalidArgument("TenantId must be greater than 100.");
-  }
-  if (!options.storage && options.resubscribe_from_storage) {
-    return Status::InvalidArgument(
-        "Cannot resubscribe without subscriptions storage strategy.");
-  }
-  if (!options.restore_subscriptions && options.resubscribe_from_storage) {
-    return Status::InvalidArgument(
-        "Cannot resubscribe without restored subscriptions state.");
   }
   if (options.config.GetPilotHostIds().empty()) {
     return Status::InvalidArgument("Must have at least one pilot.");
@@ -159,7 +143,6 @@ Status ClientImpl::Create(ClientOptions options,
                                options.config.GetTenantID(),
                                msg_loop_,
                                options.subscription_callback,
-                               options.receive_callback,
                                std::move(options.storage),
                                options.info_log));
   return Status::OK();
@@ -172,7 +155,6 @@ ClientImpl::ClientImpl(BaseEnv* env,
                        TenantID tenant_id,
                        MsgLoopBase* msg_loop,
                        SubscribeCallback subscription_callback,
-                       MessageReceivedCallback receive_callback,
                        std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log)
 : env_(env)
@@ -183,7 +165,6 @@ ClientImpl::ClientImpl(BaseEnv* env,
 , msg_loop_(msg_loop)
 , msg_loop_thread_spawned_(false)
 , subscription_callback_(subscription_callback)
-, receive_callback_(receive_callback)
 , storage_(std::move(storage))
 , info_log_(info_log)
 , next_worker_id_(0) {
@@ -213,9 +194,19 @@ ClientImpl::ClientImpl(BaseEnv* env,
   }
 }
 
-Status ClientImpl::Start(bool restore_subscriptions,
-                         bool resubscribe_from_storage) {
-  if (storage_ && restore_subscriptions) {
+Status ClientImpl::Start(MessageReceivedCallback receive_callback,
+                         RestoreStrategy restore_strategy) {
+  receive_callback_ = std::move(receive_callback);
+  if (!storage_ && restore_strategy == RestoreStrategy::kRestoreOnly) {
+    return Status::InvalidArgument(
+        "Cannot restore subscriptions without subscription storage strategy.");
+  }
+  if (!storage_ && restore_strategy == RestoreStrategy::kResubscribe) {
+    return Status::InvalidArgument(
+        "Cannot resubscribe without subscription storage startegy.");
+  }
+  if (restore_strategy == RestoreStrategy::kRestoreOnly ||
+      restore_strategy == RestoreStrategy::kResubscribe) {
     // Read initial state from snapshot.
     Status status = storage_->ReadSnapshot();
     if (!status.ok()) {
@@ -232,7 +223,7 @@ Status ClientImpl::Start(bool restore_subscriptions,
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  if (storage_ && resubscribe_from_storage) {
+  if (restore_strategy == RestoreStrategy::kResubscribe) {
     // Resubscribe to previously subscribed topics.
     storage_->LoadAll();
   }

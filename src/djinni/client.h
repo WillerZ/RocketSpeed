@@ -16,7 +16,7 @@
 
 namespace rocketspeed {
 
-class ClientImpl;
+class Client;
 
 namespace djinni {
 
@@ -25,11 +25,12 @@ class SnapshotCallbackImpl;
 
 class Client : public ClientImpl {
  public:
-  explicit Client(std::unique_ptr<rocketspeed::ClientImpl> client)
+  explicit Client(std::unique_ptr<rocketspeed::Client> client)
       : client_(std::move(client)) {
   }
 
-  Status Start(bool restore_subscriptions,
+  Status Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
+               bool restore_subscriptions,
                bool resubscribe_from_storage) override;
 
   PublishStatus Publish(
@@ -52,7 +53,7 @@ class Client : public ClientImpl {
   void Close() override;
 
  private:
-  std::unique_ptr<rocketspeed::ClientImpl> client_;
+  std::unique_ptr<rocketspeed::Client> client_;
 };
 
 }  // namespace djinni
