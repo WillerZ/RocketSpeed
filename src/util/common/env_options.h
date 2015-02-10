@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 // Options while opening a file to read/write
@@ -41,3 +42,4 @@ class EnvOptions {
 };
 
 }  // namespace rocketspeed
+#pragma GCC visibility pop

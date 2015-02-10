@@ -4,7 +4,6 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #pragma once
-#pragma GCC visibility push(default)
 
 #include <functional>
 #include <memory>
@@ -26,7 +25,7 @@
  * arriving on a subscribed topic causes the MessageReceivedCallback
  * to be invoked.
  */
-
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 /*
@@ -182,5 +181,4 @@ class Client {
 };
 
 }  // namespace rocketspeed
-
 #pragma GCC visibility pop

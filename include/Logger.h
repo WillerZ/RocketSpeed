@@ -37,6 +37,7 @@
   RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 enum InfoLogLevel : unsigned char {
@@ -135,3 +136,4 @@ class NullLogger : public Logger {
 };
 
 }  // namespace rocketspeed
+#pragma GCC visibility pop

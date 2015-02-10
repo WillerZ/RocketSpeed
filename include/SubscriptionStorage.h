@@ -4,17 +4,19 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #pragma once
-#pragma GCC visibility push(default)
 
 #include <functional>
 #include <memory>
 #include <vector>
 
-#include "include/Logger.h"
 #include "include/Status.h"
 #include "include/Types.h"
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
+
+/** An opaque logger type. */
+class Logger;
 
 class MsgLoopBase;
 

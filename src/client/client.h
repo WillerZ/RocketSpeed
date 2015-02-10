@@ -23,6 +23,7 @@
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 class Logger;
@@ -144,3 +145,4 @@ class ClientImpl : public Client {
 };
 
 }  // namespace rocketspeed
+#pragma GCC visibility pop

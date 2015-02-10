@@ -16,6 +16,7 @@
 #include "include/Status.h"
 #include "src/util/common/base_env.h"
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 class ClientEnv : public BaseEnv {
@@ -52,3 +53,4 @@ class ClientEnv : public BaseEnv {
 };
 
 }  // namespace rocketspeed
+#pragma GCC visibility pop

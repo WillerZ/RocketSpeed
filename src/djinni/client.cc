@@ -68,9 +68,9 @@ MsgIdImpl fromMsgId(const rocketspeed::MsgId& message_id) {
 int64_t fromSequenceNumber(rocketspeed::SequenceNumber seqno) {
   using Limits = std::numeric_limits<int64_t>;
   // I'm unaware of any better conversion that avoids undefined behaviours.
-  if (seqno <= Limits::min())
+  if (seqno <= static_cast<rocketspeed::SequenceNumber>(Limits::min()))
     return static_cast<int64_t>(seqno);
-  if (seqno >= Limits::min())
+  if (seqno >= static_cast<rocketspeed::SequenceNumber>(Limits::min()))
     return static_cast<int64_t>(seqno - Limits::min()) + Limits::min();
   assert(false);
   return 0;
@@ -89,7 +89,7 @@ int64_t fromNamespaceID(rocketspeed::NamespaceID namespace_id) {
 rocketspeed::NamespaceID toNamespaceID(int64_t namespace_id) {
   auto namespace_id1 = static_cast<rocketspeed::NamespaceID>(namespace_id);
   assert(namespace_id == namespace_id1);
-  return namespace_id;
+  return namespace_id1;
 }
 
 rocketspeed::Retention toRetention(RetentionBase retention) {

@@ -18,7 +18,7 @@ pthread_key_t detach_thread_key;
 
 jint AttachCurrentThread() {
   JNIEnv* env;
-  jint err = java_vm_->AttachCurrentThreadAsDaemon((void**)&env, nullptr);
+  jint err = java_vm_->AttachCurrentThreadAsDaemon(&env, nullptr);
   if (err != JNI_OK) {
     return err;
   } else if (!env) {
@@ -69,6 +69,7 @@ BaseEnv::ThreadId JvmEnv::StartThread(void (*function)(void* arg),
   auto call = [function, arg]() {
     jint err = AttachCurrentThread();
     assert(err == JNI_OK);
+    (void)err;
     (*function)(arg);
   };
   return ClientEnv::StartThread(std::move(call), thread_name);
@@ -79,6 +80,7 @@ BaseEnv::ThreadId JvmEnv::StartThread(std::function<void()> function,
   auto call = [function]() {
     jint err = AttachCurrentThread();
     assert(err == JNI_OK);
+    (void)err;
     function();
   };
   return ClientEnv::StartThread(std::move(call), thread_name);

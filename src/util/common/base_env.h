@@ -14,6 +14,7 @@
 #include "include/Slice.h"
 #include "src/util/common/env_options.h"
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 class SequentialFile;
@@ -122,3 +123,4 @@ class SequentialFile {
 };
 
 }  // namespace rocketspeed
+#pragma GCC visibility pop

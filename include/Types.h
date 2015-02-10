@@ -4,7 +4,6 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #pragma once
-#pragma GCC visibility push(default)
 
 #include <cstring>
 #include <cstdlib>
@@ -14,6 +13,7 @@
 #include "include/Status.h"
 #include "include/Slice.h"
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 /**
@@ -272,7 +272,7 @@ class SubscriptionStart {
   /* implicit */ SubscriptionStart(SequenceNumber seqno)
       : seqno_(seqno), present_(true) {}
 
-  SubscriptionStart() : present_(false) {}
+  SubscriptionStart() : seqno_(0), present_(false) {}
 
   explicit operator bool() const {
     return present_;
