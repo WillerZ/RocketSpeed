@@ -117,9 +117,7 @@ class SocketEvent {
       event_free(ev_);
     }
     // remove the socket from the connection cache
-    bool removed  __attribute__((__unused__)) =
-      event_loop_->remove_connection_cache(remote_host_, this);
-    assert(!event_loop_->running_ || removed || !known_remote_);
+    event_loop_->remove_connection_cache(remote_host_, this);
     event_free(write_ev_);
     close(fd_);
 
@@ -580,6 +578,7 @@ EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
 
 void
 EventLoop::Run(void) {
+  thread_check_.Reset();
   base_ = event_base_new();
   if (!base_) {
     LOG_WARN(info_log_,
@@ -777,24 +776,26 @@ EventLoop::insert_connection_cache(const ClientID& host, SocketEvent* sev) {
 
   // There exists a mapping about this host
   if (iter != connection_cache_.end()) {
-    for (auto item: iter->second) {
-      if (item == sev) {
-        return false;   // pre-existing object
-      }
+    if (iter->second == sev) {
+      return false;  // pre-existing object
     }
-    iter->second.push_back(sev);  // add new object into cache
-    return true;                  // new object added
+    // Destroy existing socket, client is communicating on a new socket.
+    SocketEvent* old_socket = iter->second;
+    iter->second = sev;
+
+    // Important: deleting old_socket needs to be done after updating the
+    // connection_cache_, otherwise the destructor will try to remove the
+    // host from the connection cache.
+    delete old_socket;
+
+    return true;  // new object added
   }
 
   // There isn't any mapping for this host.
-  std::vector<SocketEvent*> newarray;
-  newarray.push_back(sev);
-
   // Create first mapping for this host.
-  auto ret = connection_cache_.insert(
-    std::pair<ClientID, std::vector<SocketEvent*>>(host, newarray));
+  auto ret = connection_cache_.emplace(host, sev);
   if (!ret.second) {
-    return false;   // object already existed
+    return false;  // object already existed
   }
   active_connections_.fetch_add(1, std::memory_order_acq_rel);
   assert(active_connections_ == connection_cache_.size());
@@ -809,17 +810,12 @@ EventLoop::remove_connection_cache(const ClientID& host, SocketEvent* sev) {
   thread_check_.Check();
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
-    for (unsigned int i = 0; i < iter->second.size(); i++) {
-      if (iter->second[i] == sev) {
-        iter->second.erase(iter->second.begin() + i);
-        if (iter->second.empty()) {
-          // No more SocketEvents for this host, so remove the entry.
-          connection_cache_.erase(host);
-          active_connections_.fetch_sub(1, std::memory_order_acq_rel);
-          assert(active_connections_ == connection_cache_.size());
-        }
-        return true;    // deleted successfully
-      }
+    if (iter->second == sev) {
+      // Remove the entry.
+      connection_cache_.erase(iter);
+      active_connections_.fetch_sub(1, std::memory_order_acq_rel);
+      assert(active_connections_ == connection_cache_.size());
+      return true;    // deleted successfully
     }
   }
   return false;     // not found
@@ -834,10 +830,7 @@ EventLoop::lookup_connection_cache(const ClientID& host) const {
   thread_check_.Check();
   auto iter = connection_cache_.find(host);
   if (iter != connection_cache_.end()) {
-    assert(!iter->second.empty());
-    if (!iter->second.empty()) {
-      return iter->second.back();  // return the last element for now
-    }
+    return iter->second;
   }
   return nullptr;     // not found
 }
@@ -849,10 +842,8 @@ EventLoop::clear_connection_cache() {
   std::vector<SocketEvent*> socks;
   for (auto iter = connection_cache_.begin();
        iter != connection_cache_.end(); ++iter) {
-    for (auto sev : iter->second) {
-      assert(sev);
-      socks.push_back(sev);
-    }
+    assert(iter->second);
+    socks.push_back(iter->second);
   }
   // Clears the connection cache.
   connection_cache_.clear();

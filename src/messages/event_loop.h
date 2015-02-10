@@ -198,7 +198,7 @@ class EventLoop {
   int command_ready_eventfd_ = -1;
 
   // a cache of ClientIds to connections
-  std::map<ClientID, std::vector<SocketEvent*>> connection_cache_;
+  std::map<ClientID, SocketEvent*> connection_cache_;
 
   // connection_cache_.size(), but atomic
   std::atomic<uint64_t> active_connections_;

@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "src/messages/messages.h"
+#include "src/messages/msg_loop.h"
 #include "src/util/testharness.h"
+#include "src/port/port.h"
 
 namespace rocketspeed {
 
@@ -152,6 +154,63 @@ TEST(Messaging, ErrorHandling) {
 
   MessageGap msg4(tenant, client, kBenign, 100, 200);
   TestMessage(msg4);
+}
+
+TEST(Messaging, ClientOnNewSocket) {
+  // Tests that a client can reconnect seamlessly on a new socket.
+  Env* env = Env::Default();
+  EnvOptions env_options;
+  std::shared_ptr<Logger> info_log;
+  ASSERT_OK(test::CreateLogger(env, "MessagesTest", &info_log));
+
+  // Receiver loop.
+  MsgLoop loop1(env, env_options, 58499, 1, info_log, "loop1");
+  env->StartThread([&] () { loop1.Run(); }, "loop1");
+
+  // Post to the checkpoint when receiving a ping.
+  port::Semaphore checkpoint;
+  std::map<MessageType, MsgCallbackType> callbacks;
+  callbacks[MessageType::mPing] =
+    [&](std::unique_ptr<Message> msg) {
+      checkpoint.Post();
+    };
+
+  // Sender loop.
+  MsgLoop loop2(env, env_options, 0, 1, info_log, "loop2");
+  loop2.RegisterCallbacks(callbacks);
+  env->StartThread([&] () { loop2.Run(); }, "loop2");
+  while (!loop1.IsRunning() || !loop2.IsRunning()) {
+    std::this_thread::yield();
+  }
+
+  // Send a ping from loop2 to loop1.
+  MessagePing msg(Tenant::GuestTenant,
+                  MessagePing::PingType::Request,
+                  "sender");
+  std::string serial;
+  msg.SerializeToString(&serial);
+  std::unique_ptr<Command> cmd1(
+      new SerializedSendCommand(serial,
+                                loop1.GetClientId(0),
+                                env->NowMicros(),
+                                true));
+  ASSERT_OK(loop2.SendCommand(std::move(cmd1)));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+
+  // Start a new loop and communicate with the same client ID.
+  MsgLoop loop3(env, env_options, 0, 1, info_log, "loop3");
+  loop3.RegisterCallbacks(callbacks);
+  env->StartThread([&] () { loop3.Run(); }, "loop3");
+  while (!loop3.IsRunning()) {
+    std::this_thread::yield();
+  }
+  std::unique_ptr<Command> cmd2(
+      new SerializedSendCommand(serial,  // same msg, same client ID
+                                loop1.GetClientId(0),
+                                env->NowMicros(),
+                                true));
+  ASSERT_OK(loop3.SendCommand(std::move(cmd2)));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
 }  // namespace rocketspeed
