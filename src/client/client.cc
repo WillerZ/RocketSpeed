@@ -111,9 +111,6 @@ Status ClientImpl::Create(ClientOptions options,
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();
   }
-  if (!options.wake_lock) {
-    options.wake_lock = WakeLock::GetNull();
-  }
 
 #ifndef USE_MQTTMSGLOOP
   MsgLoop* msg_loop_ = new MsgLoop(options.env,

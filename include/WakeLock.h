@@ -18,13 +18,6 @@ namespace rocketspeed {
  */
 class WakeLock {
  public:
-  /**
-   * Creates a no-op wake lock.
-   */
-  static std::shared_ptr<WakeLock> GetNull() {
-    return std::make_shared<WakeLock>();
-  }
-
   virtual ~WakeLock() {}
 
   /**
