@@ -16,6 +16,8 @@
 #include <functional>
 #include <memory>
 #include <map>
+#include <unordered_map>
+#include <list>
 
 #include "include/Logger.h"
 #include "src/messages/commands.h"
@@ -198,7 +200,10 @@ class EventLoop {
   int command_ready_eventfd_ = -1;
 
   // a cache of ClientIds to connections
-  std::map<ClientID, SocketEvent*> connection_cache_;
+  std::unordered_map<ClientID, SocketEvent*> connection_cache_;
+
+  // List of all sockets.
+  std::list<std::unique_ptr<SocketEvent>> all_sockets_;
 
   // connection_cache_.size(), but atomic
   std::atomic<uint64_t> active_connections_;
@@ -231,7 +236,7 @@ class EventLoop {
 
   // connection cache updates
   bool insert_connection_cache(const ClientID& host, SocketEvent* ev);
-  bool remove_connection_cache(const ClientID& host, SocketEvent* ev);
+  void remove_connection_cache(SocketEvent* ev);
   SocketEvent* lookup_connection_cache(const ClientID& host) const;
   SocketEvent* setup_connection(const HostId& host, const ClientID& clientid);
   Status create_connection(const HostId& host, bool block, int* fd);

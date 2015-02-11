@@ -13,6 +13,7 @@
 #include <deque>
 #include <functional>
 #include <thread>
+#include <unordered_set>
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -37,74 +38,56 @@ const int EventLoop::kLogSeverityErr = _EVENT_LOG_ERR;
 
 class SocketEvent {
  public:
-  SocketEvent(EventLoop* event_loop, int fd, event_base* base)
-  : hdr_idx_(0)
-  , msg_idx_(0)
-  , msg_size_(0)
-  , fd_(fd)
-  , ev_(nullptr)
-  , write_ev_(nullptr)
-  , event_loop_(event_loop)
-  , known_remote_(false)
-  , write_ev_added_(false) {
-    event_loop->thread_check_.Check();
-
-    // create read and write events
-    ev_ = event_new(base, fd, EV_READ|EV_PERSIST,
-                       EventCallback, this);
-    write_ev_ = event_new(base, fd, EV_WRITE|EV_PERSIST,
-                       EventCallback, this);
+  static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
+                                             int fd,
+                                             event_base* base) {
+    std::unique_ptr<SocketEvent>
+      sev(new SocketEvent(event_loop, fd, base, false));
 
     // register only the read callback
-    if (ev_ == nullptr || write_ev_ == nullptr ||
-        event_add(ev_, nullptr)) {
-      LOG_WARN(event_loop_->GetLog(),
+    if (sev->ev_ == nullptr ||
+        sev->write_ev_ == nullptr ||
+        event_add(sev->ev_, nullptr)) {
+      LOG_ERROR(event_loop->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
-      delete this;
+      return nullptr;
     }
+    return sev;
   }
 
   // this constructor is used by server-side connection initiation
-  SocketEvent(EventLoop* event_loop, int fd, event_base* base,
-              const ClientID& remote)
-  : hdr_idx_(0)
-  , msg_idx_(0)
-  , msg_size_(0)
-  , fd_(fd)
-  , ev_(nullptr)
-  , event_loop_(event_loop)
-  , known_remote_(true)
-  , remote_host_(remote)
-  , write_ev_added_(false) {
-    event_loop_->thread_check_.Check();
+  static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
+                                             int fd,
+                                             event_base* base,
+                                             const ClientID& remote) {
+    std::unique_ptr<SocketEvent>
+        sev(new SocketEvent(event_loop, fd, base, true));
 
-    // create read and write events
-    ev_ = event_new(base, fd, EV_READ|EV_PERSIST,
-                       EventCallback, this);
-    write_ev_ = event_new(base, fd, EV_WRITE|EV_PERSIST,
-                       EventCallback, this);
     // register only the read callback
-    if (ev_ == nullptr || write_ev_  == nullptr ||
-        event_add(ev_, nullptr)) {
-      LOG_WARN(event_loop_->GetLog(),
+    if (sev->ev_ == nullptr ||
+        sev->write_ev_ == nullptr ||
+        event_add(sev->ev_, nullptr)) {
+      LOG_ERROR(event_loop->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
-      delete this;
+      return nullptr;
     }
 
     // Insert the write_ev_ into the connection cache. This is
     // necessary so that further outgoing messages get queued up
     // on this write event.
-    bool inserted = event_loop_->insert_connection_cache(remote_host_, this);
+    sev->clients_.insert(remote);
+    bool inserted = event_loop->insert_connection_cache(remote, sev.get());
     if (inserted) {
-      LOG_INFO(event_loop_->GetLog(),
+      LOG_INFO(event_loop->GetLog(),
           "Server Socket fd(%d) to %s inserted into connection_cache_.",
-          fd_, remote_host_.c_str());
+          fd, remote.c_str());
     } else {
-      LOG_WARN(event_loop_->GetLog(),
+      LOG_ERROR(event_loop->GetLog(),
           "Failed to insert server socket fd(%d) connected to %s into cache",
-          fd_, remote_host_.c_str());
-      delete this;
+          fd, remote.c_str());
+      return nullptr;
     }
+    return sev;
   }
 
   ~SocketEvent() {
@@ -117,7 +100,7 @@ class SocketEvent {
       event_free(ev_);
     }
     // remove the socket from the connection cache
-    event_loop_->remove_connection_cache(remote_host_, this);
+    clients_.clear();
     event_free(write_ev_);
     close(fd_);
 
@@ -160,22 +143,67 @@ class SocketEvent {
     return status;
   }
 
-  evutil_socket_t GetFd() {
+  evutil_socket_t GetFd() const {
     return fd_;
   }
 
+  const std::unordered_set<ClientID>& GetClients() const {
+    return clients_;
+  }
+
+  void RemoveClient(const ClientID& host) {
+    clients_.erase(host);
+  }
+
+  std::list<std::unique_ptr<SocketEvent>>::iterator GetListHandle() const {
+    return list_handle_;
+  }
+
+  void SetListHandle(std::list<std::unique_ptr<SocketEvent>>::iterator it) {
+    list_handle_ = it;
+  }
+
  private:
+  SocketEvent(EventLoop* event_loop, int fd, event_base* base, bool initiated)
+  : hdr_idx_(0)
+  , msg_idx_(0)
+  , msg_size_(0)
+  , fd_(fd)
+  , ev_(nullptr)
+  , write_ev_(nullptr)
+  , event_loop_(event_loop)
+  , write_ev_added_(false)
+  , was_initiated_(initiated) {
+    // Can only add events from the event loop thread.
+    event_loop->thread_check_.Check();
+
+    // Create read and write events
+    ev_ = event_new(base, fd, EV_READ|EV_PERSIST, EventCallback, this);
+    write_ev_ = event_new(base, fd, EV_WRITE|EV_PERSIST, EventCallback, this);
+  }
+
   static void EventCallback(evutil_socket_t fd, short what, void* arg) {
+    SocketEvent* sev = static_cast<SocketEvent*>(arg);
     if (what & EV_READ) {
-      static_cast<SocketEvent*>(arg)->ReadCallback(fd);
+      Status st = sev->ReadCallback(fd);
+      if (!st.ok()) {
+        // Note: this call will delete sev.
+        sev->event_loop_->remove_connection_cache(sev);
+        sev = nullptr;
+      }
     } else if (what & EV_WRITE) {
-      static_cast<SocketEvent*>(arg)->WriteCallback(fd);
+      Status st = sev->WriteCallback(fd);
+      if (!st.ok()) {
+        // Note: this call will delete sev.
+        sev->event_loop_->remove_connection_cache(sev);
+        sev = nullptr;
+      }
     } else if (what & EV_TIMEOUT) {
     } else if (what & EV_SIGNAL) {
     }
   }
 
-  void WriteCallback(evutil_socket_t fd) {
+  Status WriteCallback(evutil_socket_t fd) {
     event_loop_->thread_check_.Check();
     assert(send_queue_.size() > 0);
 
@@ -194,9 +222,9 @@ class SocketEvent {
           event_loop_->info_log_->Flush();
           if (errno != EAGAIN && errno != EWOULDBLOCK) {
             // write error, close connection.
-            delete this;
+            return Status::IOError("write call failed ", std::to_string(errno));
           }
-          return;
+          return Status::OK();
         }
         if ((unsigned int)count != partial_.size()) {
           LOG_WARN(event_loop_->info_log_,
@@ -206,7 +234,7 @@ class SocketEvent {
           event_loop_->info_log_->Flush();
           // update partial data pointers
           partial_ = Slice(partial_.data() + count, partial_.size() - count);
-          return;
+          return Status::OK();
         } else {
           LOG_INFO(event_loop_->info_log_,
               "Successfully wrote %d bytes to remote host fd(%d)",
@@ -238,9 +266,10 @@ class SocketEvent {
         }
       }
     }
+    return Status::OK();
   }
 
-  void ReadCallback(evutil_socket_t fd) {
+  Status ReadCallback(evutil_socket_t fd) {
     event_loop_->thread_check_.Check();
     // This will keep reading while there is data to be read,
     // but not more than 1MB to give other sockets a chance to read.
@@ -256,15 +285,15 @@ class SocketEvent {
         if (n == -1 || (n == 0 && total_read == 0)) {
           if (!(n == -1 && errno == EAGAIN)) {
             // Read error, close connection.
-            delete this;
+            return Status::IOError("read call failed ", std::to_string(errno));
           }
-          return;
+          return Status::OK();
         }
         total_read += n;
         hdr_idx_ += n;
         if (n < count) {
           // Still more header to be read, wait for next event.
-          return;
+          return Status::OK();
         }
 
         // Now have read header, prepare msg buffer.
@@ -273,8 +302,7 @@ class SocketEvent {
         msg_size_ = hdr.msgsize_;
         if (msg_size_ <= sizeof(hdr_buf_)) {
           // Message size too small, bad data. Close connection.
-          delete this;
-          return;
+          return Status::IOError("Message size too small");
         }
         msg_buf_.reset(new char[msg_size_]);
 
@@ -292,15 +320,15 @@ class SocketEvent {
       if (n == -1 || (n == 0 && total_read == 0)) {
         if (!(n == -1 && errno == EAGAIN)) {
           // Read error, close connection.
-          delete this;
+          return Status::IOError("read call failed ", std::to_string(errno));
         }
-        return;
+        return Status::OK();
       }
       total_read += n;
       msg_idx_ += n;
       if (n < count) {
         // Still more message to be read, wait for next event.
-        return;
+        return Status::OK();
       }
 
       // Now have whole message, process it.
@@ -308,18 +336,26 @@ class SocketEvent {
         Message::CreateNewInstance(std::move(msg_buf_), msg_size_);
 
       if (msg) {
-        // If this is the first complete message received on this socket,
-        // then insert this connection into the connection cache_.
-        if (!known_remote_) {
-          known_remote_ = true;
-          remote_host_ = msg.get()->GetOrigin();
-          bool inserted = event_loop_->insert_connection_cache(
-                            remote_host_, this);
-          if (inserted) {
-            LOG_INFO(event_loop_->GetLog(),
-                "Client Socket fd(%d) connected to %s "
-                "inserted into connection_cache_.",
-                fd_, remote_host_.c_str());
+        if (!was_initiated_) {
+          // Attempt to add this client/socket pair to the connection cache.
+          // Multiple clients may communicate on the same socket, so this check
+          // is necessary on every message received.
+          const ClientID& remote = msg->GetOrigin();
+          if (clients_.insert(remote).second) {
+            // New client on this socket.
+            bool inserted = event_loop_->insert_connection_cache(remote, this);
+            assert(inserted);
+            if (inserted) {
+              LOG_INFO(event_loop_->GetLog(),
+                  "Client Socket fd(%d) connected to %s "
+                  "inserted into connection_cache_.",
+                  fd_, remote.c_str());
+            } else {
+              LOG_ERROR(event_loop_->GetLog(),
+                  "First time client %s has communicated on fd(%d), but was "
+                  "already in the connection cache!",
+                  remote.c_str(), fd_);
+            }
           }
         }
 
@@ -335,6 +371,7 @@ class SocketEvent {
       hdr_idx_ = 0;
       msg_idx_ = 0;
     }
+    return Status::OK();
   }
 
   size_t hdr_idx_;
@@ -346,9 +383,12 @@ class SocketEvent {
   event* ev_;
   event* write_ev_;
   EventLoop* event_loop_;
-  bool known_remote_;      // we know the remote identity
-  ClientID remote_host_;   // id of remote entity
   bool write_ev_added_;    // is the write event added?
+  bool was_initiated_;   // was this connection initiated by us?
+  std::unordered_set<ClientID> clients_;
+
+  // Handle into the EventLoop's socket event list (for fast removal).
+  std::list<std::unique_ptr<SocketEvent>>::iterator list_handle_;
 
   // The list of outgoing messages.
   // partial_ records the next valid offset in the earliest message.
@@ -448,9 +488,17 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
 void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
   // This object is managed by the event that it creates, and will destroy
   // itself during an EOF callback.
+  thread_check_.Check();
   AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
-  new SocketEvent(this, accept_cmd->GetFD(), this->base_);
-  stats_.accepts->Add(1);
+  std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
+                                                         accept_cmd->GetFD(),
+                                                         base_);
+  if (sev) {
+    all_sockets_.emplace_front(std::move(sev));
+    all_sockets_.front()->SetListHandle(all_sockets_.begin());
+    active_connections_.fetch_add(1, std::memory_order_acq_rel);
+    stats_.accepts->Add(1);
+  }
 }
 
 //
@@ -779,51 +827,36 @@ EventLoop::insert_connection_cache(const ClientID& host, SocketEvent* sev) {
     if (iter->second == sev) {
       return false;  // pre-existing object
     }
-    // Destroy existing socket, client is communicating on a new socket.
-    SocketEvent* old_socket = iter->second;
+    // Update the socket event for this client.
+    SocketEvent* old_sev = iter->second;
     iter->second = sev;
 
-    // Important: deleting old_socket needs to be done after updating the
-    // connection_cache_, otherwise the destructor will try to remove the
-    // host from the connection cache.
-    delete old_socket;
-
+    // Remove client from old socket event.
+    old_sev->RemoveClient(host);
     return true;  // new object added
   }
 
   // There isn't any mapping for this host.
   // Create first mapping for this host.
   auto ret = connection_cache_.emplace(host, sev);
-  if (!ret.second) {
-    return false;  // object already existed
-  }
-  active_connections_.fetch_add(1, std::memory_order_acq_rel);
-  assert(active_connections_ == connection_cache_.size());
+  (void)ret;
+  assert(ret.second);
   return true;  // successfully inserted
 }
 
 // Removes an entry from the connection cache.
-// Returns true if the object existed before this call,
-// otherwise returns false if the object was not found.
-bool
-EventLoop::remove_connection_cache(const ClientID& host, SocketEvent* sev) {
+void
+EventLoop::remove_connection_cache(SocketEvent* sev) {
   thread_check_.Check();
-  auto iter = connection_cache_.find(host);
-  if (iter != connection_cache_.end()) {
-    if (iter->second == sev) {
-      // Remove the entry.
-      connection_cache_.erase(iter);
-      active_connections_.fetch_sub(1, std::memory_order_acq_rel);
-      assert(active_connections_ == connection_cache_.size());
-      return true;    // deleted successfully
-    }
+  for (const ClientID& client : sev->GetClients()) {
+    assert(connection_cache_[client] == sev);
+    connection_cache_.erase(client);
   }
-  return false;     // not found
+  all_sockets_.erase(sev->GetListHandle());
+  active_connections_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 // Finds an entry from the connection cache.
-// If there are multiple socket connections to the specified host,
-// then returns the latest connection to that host.
 // Returns null if the host does not have any connected socket.
 SocketEvent*
 EventLoop::lookup_connection_cache(const ClientID& host) const {
@@ -832,28 +865,18 @@ EventLoop::lookup_connection_cache(const ClientID& host) const {
   if (iter != connection_cache_.end()) {
     return iter->second;
   }
-  return nullptr;     // not found
+  return nullptr;  // not found
 }
 
 // Clears out the connection cache
 void
 EventLoop::clear_connection_cache() {
-  // accumulate all the pending SocketEvents in temporary vector
-  std::vector<SocketEvent*> socks;
-  for (auto iter = connection_cache_.begin();
-       iter != connection_cache_.end(); ++iter) {
-    assert(iter->second);
-    socks.push_back(iter->second);
+  while (!all_sockets_.empty()) {
+    remove_connection_cache(all_sockets_.front().get());
   }
-  // Clears the connection cache.
-  connection_cache_.clear();
 
-  // Delete all pending SocketEvents. This is done after cleaning the
-  // connect_cache_ because the destructor of SocketEvent checks to see
-  // if the SocketEvent being destroyed is part of the connect_cache_.
-  for(SocketEvent* sev : socks) {
-    delete sev;
-  }
+  // Deleting all SocketEvents should have removed all client->socket mappings.
+  assert(connection_cache_.empty());
 }
 
 // Creates a socket connection to specified host and
@@ -863,7 +886,7 @@ SocketEvent*
 EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
   thread_check_.Check();
   int fd;
-  Status status =  create_connection(host, false, &fd);
+  Status status = create_connection(host, false, &fd);
   if (!status.ok()) {
     LOG_WARN(info_log_,
              "create_connection to %s failed: %s",
@@ -874,12 +897,21 @@ EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
 
   // This object is managed by the event that it creates, and will destroy
   // itself during an EOF callback.
-  SocketEvent* sev = new SocketEvent(this, fd, base_, remote_client);
+  std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
+                                                         fd,
+                                                         base_,
+                                                         remote_client);
+  if (!sev) {
+    return nullptr;
+  }
+  all_sockets_.emplace_front(std::move(sev));
+  all_sockets_.front()->SetListHandle(all_sockets_.begin());
+  active_connections_.fetch_add(1, std::memory_order_acq_rel);
 
   LOG_INFO(info_log_,
       "Connect to %s scheduled on socket fd(%d)",
       host.ToString().c_str(), fd);
-  return sev;
+  return all_sockets_.front().get();
 }
 
 

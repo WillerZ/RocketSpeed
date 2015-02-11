@@ -213,6 +213,56 @@ TEST(Messaging, ClientOnNewSocket) {
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
+TEST(Messaging, MultipleClientsOneSocket) {
+  // Tests that multiple clients can communicate over the same socket.
+  Env* env = Env::Default();
+  EnvOptions env_options;
+  std::shared_ptr<Logger> info_log;
+  ASSERT_OK(test::CreateLogger(env, "MessagesTest", &info_log));
+
+  // Server loop.
+  MsgLoop server(env, env_options, 58499, 1, info_log, "server");
+  env->StartThread([&] () { server.Run(); }, "server");
+
+  // Post to the checkpoint when receiving a ping.
+  port::Semaphore checkpoint;
+  std::map<MessageType, MsgCallbackType> callbacks;
+
+  std::atomic<int> message_num{0};
+  callbacks[MessageType::mPing] =
+    [&](std::unique_ptr<Message> msg) {
+      // Origin should be set to the client ID that initiated.
+      ClientID expected = "client" + std::to_string(message_num++ % 10);
+      ASSERT_EQ(msg->GetOrigin(), expected);
+      checkpoint.Post();
+    };
+
+  // Clients loop.
+  MsgLoop client(env, env_options, 0, 1, info_log, "client");
+  client.RegisterCallbacks(callbacks);
+  env->StartThread([&] () { client.Run(); }, "client");
+  while (!server.IsRunning() || !client.IsRunning()) {
+    std::this_thread::yield();
+  }
+
+  // Send a pings from client to server.
+  for (int i = 0; i < 100; ++i) {
+    ClientID client_id = "client" + std::to_string(i % 10);
+    MessagePing msg(Tenant::GuestTenant,
+                    MessagePing::PingType::Request,
+                    client_id);
+    std::string serial;
+    msg.SerializeToString(&serial);
+    std::unique_ptr<Command> cmd(
+        new SerializedSendCommand(serial,
+                                  server.GetClientId(0),
+                                  env->NowMicros(),
+                                  true));
+    ASSERT_OK(client.SendCommand(std::move(cmd)));
+    ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+  }
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
