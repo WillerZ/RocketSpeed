@@ -17,8 +17,9 @@
 #include "src/djinni/jvm_env.h"
 #include "src/djinni/wake_lock.h"
 
-#include "src-gen/djinni/cpp/HostId.hpp"
 #include "src-gen/djinni/cpp/ConfigurationImpl.hpp"
+#include "src-gen/djinni/cpp/HostId.hpp"
+#include "src-gen/djinni/cpp/LogLevel.hpp"
 #include "src-gen/djinni/cpp/PublishCallbackImpl.hpp"
 #include "src-gen/djinni/cpp/ReceiveCallbackImpl.hpp"
 #include "src-gen/djinni/cpp/StorageType.hpp"
@@ -160,9 +161,21 @@ PublishStatus fromPublishStatus(rocketspeed::PublishStatus status) {
   return PublishStatus(fromStatus(status.status), fromMsgId(status.msgid));
 }
 
+rocketspeed::InfoLogLevel toInfoLogLevel(LogLevel log_level) {
+  using rocketspeed::InfoLogLevel;
+  static_assert(InfoLogLevel::DEBUG_LEVEL ==
+                    static_cast<InfoLogLevel>(LogLevel::DEBUG_LEVEL),
+                "Enum representations do not match.");
+  static_assert(InfoLogLevel::NUM_INFO_LOG_LEVELS ==
+                    static_cast<InfoLogLevel>(LogLevel::NUM_INFO_LOG_LEVELS),
+                "Enum representations do not match.");
+  return static_cast<InfoLogLevel>(log_level);
+}
+
 }  // namespace
 
 std::shared_ptr<ClientImpl> ClientImpl::Open(
+    LogLevel log_level,
     ConfigurationImpl config,
     int32_t tenant_id,
     std::string client_id,
@@ -174,7 +187,11 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
   auto config1 = toConfiguration(config, tenant_id);
   rocketspeed::ClientOptions options(*config1, client_id);
 
-  options.env = JvmEnv::Default();
+  auto jvm_env = JvmEnv::Default();
+  options.env = jvm_env;
+
+  options.info_log = jvm_env->CreatePlatformLogger(toInfoLogLevel(log_level));
+  LOG_DEBUG(options.info_log, "Created logger for RocketSpeed Client.");
 
   if (wake_lock) {
     options.wake_lock = std::make_shared<WakeLock>(wake_lock);

@@ -72,6 +72,7 @@ BaseEnv::ThreadId JvmEnv::StartThread(void (*function)(void* arg),
                                       const std::string& thread_name) {
   auto call = [function, arg]() {
     jint err = AttachCurrentThread();
+    // TODO(stupaq) this should not crash JVM, but rather pop up as an exception
     assert(err == JNI_OK);
     (void)err;
     (*function)(arg);
@@ -83,6 +84,7 @@ BaseEnv::ThreadId JvmEnv::StartThread(std::function<void()> function,
                                       const std::string& thread_name) {
   auto call = [function]() {
     jint err = AttachCurrentThread();
+    // TODO(stupaq) this should not crash JVM, but rather pop up as an exception
     assert(err == JNI_OK);
     (void)err;
     function();

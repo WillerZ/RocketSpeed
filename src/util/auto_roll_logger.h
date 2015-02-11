@@ -40,7 +40,7 @@ class AutoRollLogger : public Logger {
     ResetLogger();
   }
 
-  void Logv(const char* format, va_list ap);
+  void Append(const char* format, va_list ap);
 
   // check if the logger has encountered any problem.
   Status GetStatus() {

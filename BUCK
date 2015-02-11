@@ -81,6 +81,7 @@ for build in [('', FLAGS_RELEASE), ('_debug', FLAGS_DEBUG)]:
             'src/djinni/client.cc',
             'src/djinni/main.cc',
             'src/djinni/jvm_env.cc',
+            'src/djinni/jvm_logger.cc',
             'src-gen/djinni/cpp/HostId.cpp',
             'src-gen/djinni/cpp/MsgIdImpl.cpp',
             'src-gen/djinni/cpp/jni/NativeClientImpl.cpp',
@@ -107,6 +108,7 @@ for build in [('', FLAGS_RELEASE), ('_debug', FLAGS_DEBUG)]:
         compiler_flags = build[1],
         deps = [
             ':rocketspeed',
+            '//native/third-party/android-ndk:log',
         ],
         visibility = [
             '//native/third-party/rocketspeed/...',

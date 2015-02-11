@@ -7,15 +7,16 @@
 
 #include <memory>
 
+#include "include/Logger.h"
 #include "src/client/client_env.h"
 
 #include "djinni_support.hpp"
 
 namespace rocketspeed {
 
-class JvmEnv : public ClientEnv {
+class JvmEnv final : public ClientEnv {
  public:
-   /** Initializes JvmEnv, must be called in JNI_OnLoad method. */
+  /** Initializes JvmEnv, must be called in JNI_OnLoad method. */
   static jint Init(JavaVM* java_vm);
 
   /**
@@ -27,12 +28,18 @@ class JvmEnv : public ClientEnv {
 
   static JvmEnv* Default();
 
-  virtual ThreadId StartThread(void (*function)(void* arg),
+  ThreadId StartThread(void (*function)(void* arg),
                                void* arg,
                                const std::string& thread_name = "");
 
-  virtual ThreadId StartThread(std::function<void()> f,
+  ThreadId StartThread(std::function<void()> f,
                                const std::string& thread_name = "");
+
+  /**
+   * Selects logger implementation based on target platform.
+   */
+  std::shared_ptr<Logger> CreatePlatformLogger(InfoLogLevel log_level);
+
  private:
   JvmEnv() {}
 };

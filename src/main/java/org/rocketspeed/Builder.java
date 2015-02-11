@@ -11,6 +11,7 @@ public final class Builder {
   }
 
   private WakeLock wakeLock;
+  private LogLevel level;
   private ConfigurationImpl config;
   private int tenantID;
   private String clientID;
@@ -41,6 +42,8 @@ public final class Builder {
 
   private void reset() {
     wakeLock = null;
+    // Default log level includes warning messages.
+    level = LogLevel.WARN_LEVEL;
     // We do not reset config, as it can be reused by multiple clients.
     tenantID = -1;
     clientID = null;
@@ -51,6 +54,11 @@ public final class Builder {
     storage = new SubscriptionStorage(StorageType.NONE, "");
     restoreSubscriptions = false;
     resubscribeFromStorage = false;
+  }
+
+  public Builder logLevel(LogLevel level) {
+    this.level = level;
+    return this;
   }
 
   public Builder configuration(Configuration config) {
@@ -103,7 +111,7 @@ public final class Builder {
       assertInvalidState(config != null, "Missing Configuration.");
       assertInvalidState(clientID != null, "Missing ClientID.");
       assertInvalidState(tenantID >= 0, "Missing TenantID.");
-      ClientImpl clientImpl = ClientImpl.Open(config, tenantID, clientID, subscribeCallback,
+      ClientImpl clientImpl = ClientImpl.Open(level, config, tenantID, clientID, subscribeCallback,
                                               storage, wrapWakeLock(wakeLock));
       try {
         // Note that until we call Start method on ClientImpl, no client threads are running.

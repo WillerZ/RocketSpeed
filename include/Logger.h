@@ -58,44 +58,39 @@ class Logger {
  public:
   enum { DO_NOT_SUPPORT_GET_LOG_FILE_SIZE = -1 };
 
-  explicit Logger(const InfoLogLevel log_level = InfoLogLevel::INFO_LEVEL)
+  explicit Logger(InfoLogLevel log_level = InfoLogLevel::INFO_LEVEL)
       : log_level_(log_level) {}
 
   virtual ~Logger() {}
 
-  // Write an entry to the log file with the specified format.
-  virtual void Logv(const char* format, va_list ap) = 0;
-
-  // Write an entry to the log file with the specified log level
-  // and format.  Any log with level under the internal log level
-  // of *this (see @SetInfoLogLevel and @GetInfoLogLevel) will not be
-  // printed.
-  void Logv(const InfoLogLevel log_level, const char* format, va_list ap) {
-    static const char* kInfoLogLevelNames[5] = {"DEBUG", "INFO", "WARN",
-                                                "ERROR", "FATAL"};
+  /**
+   * Write an entry to the log file with the specified log level and format.
+   * Default implementation ensures that log statement with level under the
+   * internal log level will not be appended.
+   * By default entries are appended using pure virtual Append function.
+   */
+  virtual void Logv(const InfoLogLevel log_level,
+                    const char* format,
+                    va_list ap) {
+    static const char* kInfoLogLevelNames[5] = {
+        "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
     if (log_level < log_level_) {
       return;
     }
 
-    if (log_level == InfoLogLevel::INFO_LEVEL) {
-      // Doesn't print log level if it is INFO level.
-      // This is to avoid unexpected performance regression after we add
-      // the feature of log level. All the logs before we add the feature
-      // are INFO level. We don't want to add extra costs to those existing
-      // logging.
-      Logv(format, ap);
-    } else {
-      char new_format[500];
-      snprintf(new_format, sizeof(new_format) - 1, "[%s] %s",
-               kInfoLogLevelNames[log_level], format);
-      Logv(new_format, ap);
-    }
+    char new_format[500];
+    snprintf(new_format,
+             sizeof(new_format) - 1,
+             "[%s] %s",
+             kInfoLogLevelNames[log_level],
+             format);
+    Append(new_format, ap);
   }
 
-  void Log(const InfoLogLevel log_level, const char* format, ...)
-#   if defined(__GNUC__) || defined(__clang__)
-      __attribute__((__format__ (__printf__, 3, 4)))
-#   endif
+  virtual void Log(const InfoLogLevel log_level, const char* format, ...) final
+#if defined(__GNUC__) || defined(__clang__)
+      __attribute__((__format__(__printf__, 3, 4)))
+#endif
   {
     va_list ap;
     va_start(ap, format);
@@ -107,7 +102,10 @@ class Logger {
     return DO_NOT_SUPPORT_GET_LOG_FILE_SIZE;
   }
 
-  // Flush to the OS buffers
+  /** Write an entry to the log file with the specified format. */
+  virtual void Append(const char* format, va_list ap) = 0;
+
+  /** Flush to the OS buffers. */
   virtual void Flush() {}
 
   virtual InfoLogLevel GetInfoLogLevel() const { return log_level_; }
@@ -124,15 +122,18 @@ class Logger {
   InfoLogLevel log_level_;
 };
 
-// "Blackhole" logger implementation - doesn't log anything.
-// Used when a Logger object is needed, but no logging is desired.
-class NullLogger : public Logger {
+/**
+ * "Blackhole" logger implementation - doesn't log anything.
+ * Used when a Logger object is needed, but no logging is desired.
+ */
+class NullLogger final : public Logger {
  public:
   NullLogger() : Logger(NONE_LEVEL) {}
 
-  virtual void Logv(const char* format, va_list ap) {}
+  void SetInfoLogLevel(const InfoLogLevel log_level) {}
 
-  virtual void SetInfoLogLevel(const InfoLogLevel log_level) {}
+ protected:
+  void Append(const char* format, va_list ap) {}
 };
 
 }  // namespace rocketspeed

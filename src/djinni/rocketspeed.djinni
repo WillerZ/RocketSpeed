@@ -26,6 +26,16 @@ HostId = record {
   port: i32;
 } deriving (eq)
 
+LogLevel = enum {
+  DEBUG_LEVEL;
+  INFO_LEVEL;
+  WARN_LEVEL;
+  ERROR_LEVEL;
+  FATAL_LEVEL;
+  NONE_LEVEL;
+  NUM_INFO_LOG_LEVELS;
+}
+
 RetentionBase = enum {
   OneHour;
   OneDay;
@@ -94,7 +104,8 @@ SubscriptionStorage = record {
 }
 
 ClientImpl = interface +c {
-  static Open(config: ConfigurationImpl,
+  static Open(log_level: LogLevel,
+              config: ConfigurationImpl,
               tenant_id: i32,
               client_id: string,
               subscribe_callback: SubscribeCallbackImpl,

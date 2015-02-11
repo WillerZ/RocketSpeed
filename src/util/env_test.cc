@@ -658,7 +658,7 @@ TEST(EnvPosixTest, PosixRandomRWFileTest) {
 
 class TestLogger : public Logger {
  public:
-  virtual void Logv(const char* format, va_list ap) override {
+  virtual void Append(const char* format, va_list ap) override {
     log_count++;
 
     char new_format[550];

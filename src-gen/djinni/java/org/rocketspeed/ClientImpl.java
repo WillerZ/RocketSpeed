@@ -19,7 +19,7 @@ public abstract class ClientImpl {
 
     public abstract void Close();
 
-    public static native ClientImpl Open(ConfigurationImpl config, int tenantId, String clientId, SubscribeCallbackImpl subscribeCallback, SubscriptionStorage storage, WakeLockImpl wakeLock);
+    public static native ClientImpl Open(LogLevel logLevel, ConfigurationImpl config, int tenantId, String clientId, SubscribeCallbackImpl subscribeCallback, SubscriptionStorage storage, WakeLockImpl wakeLock);
 
     public static final class CppProxy extends ClientImpl
     {

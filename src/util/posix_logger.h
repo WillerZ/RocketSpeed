@@ -60,7 +60,7 @@ class PosixLogger : public Logger {
     }
     last_flush_micros_ = env_->NowMicros();
   }
-  virtual void Logv(const char* format, va_list ap) {
+  virtual void Append(const char* format, va_list ap) {
     const uint64_t thread_id = env_->GetCurrentThreadId();
     const std::string& tname_ = env_->GetCurrentThreadName();
 

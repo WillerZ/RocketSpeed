@@ -36,7 +36,7 @@ void AutoRollLogger::RollLogFile() {
   env_->RenameFile(log_fname_, old_fname);
 }
 
-void AutoRollLogger::Logv(const char* format, va_list ap) {
+void AutoRollLogger::Append(const char* format, va_list ap) {
   assert(GetStatus().ok());
 
   std::shared_ptr<Logger> logger;
@@ -62,7 +62,7 @@ void AutoRollLogger::Logv(const char* format, va_list ap) {
   // deleted while we are accessing it.
   // Note that logv itself is not mutex protected to allow maximum concurrency,
   // as thread safety should have been handled by the underlying logger.
-  logger->Logv(format, ap);
+  logger->Append(format, ap);
 }
 
 bool AutoRollLogger::LogExpired() {
