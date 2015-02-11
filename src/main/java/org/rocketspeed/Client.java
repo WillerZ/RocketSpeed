@@ -56,7 +56,7 @@ public class Client implements AutoCloseable {
   }
 
   @Override
-  public void close() throws Exception {
+  public void close() {
     client.Close();
   }
 }

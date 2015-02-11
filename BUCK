@@ -167,6 +167,6 @@ project_config(
     src_target = ':rocketspeed-java',
     src_roots = [
         'src/main/java',
-        'src/main/java-gen',
+        'src-gen/djinni/java',
     ],
 )

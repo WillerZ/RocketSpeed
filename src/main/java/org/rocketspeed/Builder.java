@@ -117,7 +117,9 @@ public final class Builder {
         // Note that until we call Start method on ClientImpl, no client threads are running.
         // Consequently, no callback can be issued by the client until it is started, therefore
         // it is safe to finish initialisation of receive callback now.
-        receiveCallback.setClientImpl(clientImpl);
+        if (receiveCallback != null) {
+          receiveCallback.setClientImpl(clientImpl);
+        }
         clientImpl.Start(receiveCallback, restoreSubscriptions, resubscribeFromStorage)
             .checkExceptions();
         return new Client(clientImpl);
