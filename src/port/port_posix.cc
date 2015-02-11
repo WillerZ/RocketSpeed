@@ -169,5 +169,68 @@ static struct SignalHandlerInstaller {
 } installer;  // this runs the constructor before main to install the handler
 #endif
 
+#if defined(OS_MACOSX)
+Eventfd::Eventfd(bool nonblock, bool close_on_exec) {
+  int flags = 0;
+  if (nonblock) flags |= O_NONBLOCK;
+  if (close_on_exec) flags |= O_CLOEXEC;
+
+  // Create a pipe
+  status_ = pipe(fd_);
+
+  // Set attributes on both the pipe descriptors
+  if (!flags) {
+    if (!status_) {
+      status_ =  fcntl(fd_[0], F_SETFL, flags);
+    }
+    if (!status_) {
+      status_ =  fcntl(fd_[1], F_SETFL, flags);
+    }
+  }
+}
+int Eventfd::status() const { return status_; }
+int Eventfd::closefd() { int tmp = close(fd_[0]); return close(fd_[1]) || tmp; }
+int Eventfd::readfd() const { return fd_[0]; }
+int Eventfd::writefd() const { return fd_[1]; }
+
+int Eventfd::read_event(eventfd_t *value) {
+  ssize_t num = read(fd_[0], static_cast<void *>(value),
+                     sizeof(eventfd_t));
+  if (num == -1) {
+    return -1;   // error
+  }
+  if (static_cast<unsigned int>(num) == sizeof(eventfd_t)) {
+    return 0;   // success
+  }
+  return -1;    // error
+}
+int Eventfd::write_event(eventfd_t value) {
+  ssize_t num = write(fd_[1], static_cast<void *>(&value), sizeof(eventfd_t));
+  if (num == -1) {
+    return -1;   // error
+  }
+  if (static_cast<unsigned int>(num) == sizeof(eventfd_t)) {
+    return 0;   // success
+  }
+  return -1;    // error
+}
+
+#else
+
+Eventfd::Eventfd(bool nonblock, bool close_on_exec) {
+  int initial_value = 0;
+  int flags = 0;
+  if (nonblock) flags |= EFD_NONBLOCK;
+  if (close_on_exec) flags |= EFD_CLOEXEC;
+  fd_[0] = eventfd(initial_value, flags);
+}
+int Eventfd::status() const { return fd_[0]; }
+int Eventfd::closefd() { return close(fd_[0]); }
+int Eventfd::readfd() const { return fd_[0]; }
+int Eventfd::writefd() const { return fd_[0]; }
+int Eventfd::read_event(eventfd_t *value) { return eventfd_read(fd_[0], value);}
+int Eventfd::write_event(eventfd_t value) { return eventfd_write(fd_[0],value);}
+#endif
+
 }  // namespace port
 }  // namespace rocketspeed

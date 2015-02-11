@@ -9,6 +9,28 @@
 #include <algorithm>
 
 #include "src/util/common/coding.h"
+#include "src/util/common/thread_local.h"
+
+namespace {
+void free_thread_local(void* ptr) {
+  rocketspeed::GUIDGenerator *guid =
+    static_cast<rocketspeed::GUIDGenerator *>(ptr);
+  delete guid;
+}
+// A thread-local pointer that caches a thread-specific generator
+rocketspeed::ThreadLocalPtr tgenerator_ =
+    rocketspeed::ThreadLocalPtr(free_thread_local);
+
+// Returns the generator for this thread
+void* get_thread_generator() {
+  void* ptr = static_cast<void *>(tgenerator_.Get());
+  if (ptr == nullptr) {
+    ptr = new rocketspeed::GUIDGenerator();
+    tgenerator_.Reset(ptr);
+  }
+  return ptr;
+}
+}
 
 namespace rocketspeed {
 
@@ -45,5 +67,10 @@ std::string GUIDGenerator::GenerateString() {
   PutFixed64(&buf, rng_());
   PutFixed64(&buf, rng_());
   return buf;
+}
+
+// Returns a thread-safe GUID Generator
+GUIDGenerator* GUIDGenerator::ThreadLocalGUIDGenerator() {
+  return static_cast<GUIDGenerator *>(get_thread_generator());
 }
 }

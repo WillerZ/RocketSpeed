@@ -11,7 +11,7 @@
 
 namespace rocketspeed {
 
-// Generates random GUIDs. Not thread safe.
+// Generates random GUIDs.
 class GUIDGenerator {
  public:
   GUIDGenerator();
@@ -19,6 +19,9 @@ class GUIDGenerator {
   GUID Generate();
 
   std::string GenerateString();
+
+  // Returns a thread-safe GUIDGenerator
+  static GUIDGenerator* ThreadLocalGUIDGenerator();
  private:
   std::mt19937_64 rng_;
 };

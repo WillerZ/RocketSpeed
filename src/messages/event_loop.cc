@@ -7,7 +7,6 @@
 #include "event_loop.h"
 
 #include <limits.h>
-#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <deque>
@@ -524,7 +523,7 @@ void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
 
   // Read the value from the eventfd to find out how many commands are ready.
   uint64_t available;
-  if (eventfd_read(obj->command_ready_eventfd_, &available)) {
+  if (obj->command_ready_eventfd_.read_event(&available)) {
     LOG_WARN(obj->info_log_, "Failed to read eventfd value, errno=%d", errno);
     obj->info_log_->Flush();
     return;
@@ -685,6 +684,13 @@ EventLoop::Run(void) {
     return;
   }
 
+  // An event that signals new commands in the command queue.
+  if (shutdown_eventfd_.status() < 0) {
+    LOG_WARN(info_log_, "Failed to create eventfd for shutdown commands");
+    info_log_->Flush();
+    return;
+  }
+
   // Create a shutdown event that will run when we want to stop the loop.
   // It creates an eventfd that the loop listens for reads on. When a read
   // is available, that indicates that the loop should stop.
@@ -692,7 +698,7 @@ EventLoop::Run(void) {
   // safely without locks.
   shutdown_event_ = event_new(
     base_,
-    eventfd(0, 0),
+    shutdown_eventfd_.readfd(),
     EV_PERSIST|EV_READ,
     this->do_shutdown,
     reinterpret_cast<void*>(this));
@@ -709,15 +715,14 @@ EventLoop::Run(void) {
   }
 
   // An event that signals new commands in the command queue.
-  command_ready_eventfd_ = eventfd(0, 0);
-  if (command_ready_eventfd_ < 0) {
+  if (command_ready_eventfd_.status() < 0) {
     LOG_WARN(info_log_, "Failed to create eventfd for waiting commands");
     info_log_->Flush();
     return;
   }
   command_ready_event_ = event_new(
     base_,
-    command_ready_eventfd_,
+    command_ready_eventfd_.readfd(),
     EV_PERSIST|EV_READ,
     this->do_command,
     reinterpret_cast<void*>(this));
@@ -759,23 +764,24 @@ void EventLoop::Stop() {
       while (running_) {
         std::this_thread::yield();
       }
-
-      // Shutdown everything
-      if (listener_) {
-        evconnlistener_free(listener_);
-      }
-      event_free(startup_event_);
-      event_free(shutdown_event_);
-      event_free(command_ready_event_);
-      event_base_free(base_);
-      close(shutdown_fd);
-      close(command_ready_eventfd_);
-
-      // Reset the thread checker for clear_connection_cache since the
-      // event loop thread is no longer running.
-      thread_check_.Reset();
-      clear_connection_cache();
     }
+
+    // Shutdown everything
+    if (listener_) {
+      evconnlistener_free(listener_);
+    }
+    if (startup_event_) event_free(startup_event_);
+    if (shutdown_event_) event_free(shutdown_event_);
+    if (command_ready_event_) event_free(command_ready_event_);
+    event_base_free(base_);
+    close(shutdown_fd);
+    command_ready_eventfd_.closefd();
+    shutdown_eventfd_.closefd();
+
+    // Reset the thread checker for clear_connection_cache since the
+    // event loop thread is no longer running.
+    thread_check_.Reset();
+    clear_connection_cache();
     LOG_INFO(info_log_, "Stopped EventLoop at port %d", port_number_);
     info_log_->Flush();
     base_ = nullptr;
@@ -793,7 +799,7 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
   }
 
   // Write to the command_ready_eventfd_ to send an event to the reader.
-  if (eventfd_write(command_ready_eventfd_, 1)) {
+  if (command_ready_eventfd_.write_event(1)) {
     // Some internal error happened.
     LOG_WARN(info_log_,
         "Error writing a notification to eventfd, errno=%d", errno);
@@ -1021,7 +1027,9 @@ EventLoop::EventLoop(BaseEnv* env,
   event_callback_(std::move(event_callback)),
   accept_callback_(std::move(accept_callback)),
   listener_(nullptr),
+  shutdown_eventfd_(rocketspeed::port::Eventfd(true, true)),
   command_queue_(command_queue_size),
+  command_ready_eventfd_(rocketspeed::port::Eventfd(true, true)),
   active_connections_(0),
   stats_(stats_prefix) {
 

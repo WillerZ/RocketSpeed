@@ -93,6 +93,7 @@ TESTS = \
   statistics_test \
   thread_check_test \
   file_storage_test \
+  thread_local_test \
   port_android_to_string_test
 
 TOOLS = \
@@ -294,6 +295,9 @@ statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
 thread_check_test: src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
+thread_local_test: src/util/tests/thread_local_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
 file_storage_test: src/client/storage/tests/file_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
@@ -332,7 +336,8 @@ CLIENTSOURCES =        src/client/client.cc \
                        src/util/common/guid_generator.cc \
                        src/util/common/host.cc \
                        src/util/common/statistics.cc \
-                       src/util/common/status.cc
+                       src/util/common/status.cc \
+                       src/util/common/thread_local.cc
 
 CLIENTOBJECTS = $(CLIENTSOURCES:.cc=.o)
 

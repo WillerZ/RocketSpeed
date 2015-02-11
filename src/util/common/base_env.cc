@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <thread>
 #include "src/port/port.h"
+#include "src/util/common/thread_local.h"
 
 namespace {
 std::string gettname() {
@@ -22,23 +23,44 @@ std::string gettname() {
   return "";
 }
 
-thread_local std::string thread_name = gettname();
+// This is called at thread exit time
+void cache_release(void* ptr) {
+  std::string* str = static_cast<std::string *>(ptr);
+  delete str;
+}
+
+// A thread-local pointer that caches a thread-specific generator
+rocketspeed::ThreadLocalPtr thread_names =
+  rocketspeed::ThreadLocalPtr(cache_release);
+
+// Returns the thread name from a thread-local variable
+std::string* thread_name() {
+  void* ptr = static_cast<void *>(thread_names.Get());
+  if (ptr == nullptr) {
+    ptr = new std::string(gettname());
+    thread_names.Reset(ptr);
+  }
+  return static_cast<std::string *>(ptr);
+}
 }
 
 namespace rocketspeed {
+
 
 void BaseEnv::SetCurrentThreadName(const std::string& name) {
 #if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 12)
   {
-    thread_name = name.c_str();
+    thread_name()->assign(name);
     pthread_setname_np(pthread_self(), name.c_str());
   }
 #endif
 #endif
 }
 
-const std::string& BaseEnv::GetCurrentThreadName() { return thread_name; }
+const std::string& BaseEnv::GetCurrentThreadName() {
+  return *thread_name();
+}
 
 class SequentialFileImpl : public SequentialFile {
  private:

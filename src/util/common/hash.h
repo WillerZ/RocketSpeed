@@ -21,12 +21,31 @@ struct MurmurHash2;
 // Hash combining for multiple objects.
 template <typename T, typename... Ts>
 struct MurmurHash2<T, Ts...> {
-  inline size_t operator()(const T& x, const Ts&... xs) {
+  inline size_t operator()(const T& x, const Ts&... xs) const {
     // Based on boost::hash_combine
     // http://www.boost.org/doc/libs/1_56_0/boost/functional/hash/hash.hpp
     size_t hash = MurmurHash2<Ts...>()(xs...);
     hash ^= MurmurHash2<T>()(x) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     return hash;
+  }
+};
+
+template <>
+struct MurmurHash2<unsigned long long> {
+  size_t operator()(unsigned long long xa) const {
+    uint64_t x = xa;
+    const uint64_t m = 0xc6a4a7935bd1e995;
+    const unsigned int r = 47;
+    uint64_t h = 0xfacec0defacec0de;
+    x *= m;
+    x ^= x >> r;
+    x *= m;
+    h ^= x;
+    h *= m;
+    h ^= h >> r;
+    h *= m;
+    h ^= h >> r;
+    return static_cast<size_t>(h);
   }
 };
 

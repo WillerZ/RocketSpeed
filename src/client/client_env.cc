@@ -68,7 +68,7 @@ void ClientEnv::WaitForJoin(ThreadId tid) {
 }
 
 BaseEnv::ThreadId ClientEnv::GetCurrentThreadId() const {
-  return static_cast<BaseEnv::ThreadId>(pthread_self());
+  return reinterpret_cast<BaseEnv::ThreadId>(pthread_self());
 }
 
 uint64_t ClientEnv::NowMicros() {

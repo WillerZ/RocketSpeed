@@ -228,8 +228,6 @@ Status MessagePing::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-thread_local GUIDGenerator msgid_generator;
-
 MessageData::MessageData(MessageType type,
                          TenantID tenantID,
                          const ClientID& origin,
@@ -244,7 +242,7 @@ MessageData::MessageData(MessageType type,
   namespaceid_(namespace_id) {
   assert(type == mPublish || type == mDeliver);
   seqno_ = 0;
-  msgid_ = msgid_generator.Generate();
+  msgid_ = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
 }
 
 MessageData::MessageData(MessageType type):

@@ -56,6 +56,14 @@
 
 #include <string>
 
+#if defined(OS_MACOSX)
+typedef uint64_t eventfd_t;
+#else
+#include <sys/eventfd.h>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
+
 #include "src/port/atomic_pointer.h"
 
 #ifndef PLATFORM_IS_LITTLE_ENDIAN
@@ -211,7 +219,7 @@ class Semaphore {
    *         be decremented before @param deadline.
    */
   bool TimedWait(std::chrono::system_clock::time_point deadline) {
-    int rv;
+#if !defined(OS_MACOSX)
     std::chrono::milliseconds deadline_ms {
       std::chrono::duration_cast<std::chrono::milliseconds>(
                                              deadline.time_since_epoch())
@@ -220,8 +228,13 @@ class Semaphore {
       static_cast<time_t>(deadline_ms.count() / 1000),
       static_cast<long>(deadline_ms.count() % 1000 * 1000000),
     };
+#endif
     for (;;) {
-      rv = sem_timedwait(rawsem(), &abs_timeout);
+#if defined(OS_MACOSX)
+      int rv = sem_trywait(rawsem());
+#else
+      int rv = sem_timedwait(rawsem(), &abs_timeout);
+#endif
       if (rv == 0) {
         return true;
       }
@@ -230,7 +243,18 @@ class Semaphore {
       case ETIMEDOUT:
         break;
       case EINTR:
-        continue;
+        continue;          // try again
+#if defined(OS_MACOSX)
+      case EAGAIN:
+        {
+          auto now = std::chrono::system_clock::now();
+          if (deadline < now) {
+            break;
+          }
+          usleep(100);       // this is used only by unit tests
+          continue;          // try again
+        }
+#endif
       default:
         assert(false);
       }
@@ -271,6 +295,41 @@ class Semaphore {
   sem_t* rawsem() const {
     return &(sem_->sem_);
   }
+};
+
+/*
+ * Port of Linux's eventfd() on various platforms.
+ */
+class Eventfd {
+ public:
+  // Create an eventfd descriptor. If nonblock is true,
+  // then the underling socket is marked as non-blocking.
+  Eventfd(bool non_block, bool close_on_exec);
+
+  // Return the current status of the eventfd.
+  // Returns -1 on error, otherwise valid.
+  int status() const;
+
+  // Close the eventfd. Returns 0 on success, otherwise error.
+  int closefd();
+
+  // Returns the read descriptor of this eventfd
+  int readfd() const;
+
+  // Returns the write descriptor of this eventfd
+  int writefd() const;
+
+  // Read an event.  Returns 0 if the correct number of bytes
+  // was transferred, or -1 otherwise.
+  int read_event(eventfd_t *value);
+
+  // Write an event.  Returns 0 if the correct number of bytes
+  // was transferred, or -1 otherwise.
+  int write_event(eventfd_t value);
+
+ private:
+  int fd_[2];
+  int status_;
 };
 
 typedef pthread_once_t OnceType;

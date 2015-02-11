@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cerrno>
 #include <cstring>
+#include <errno.h>
 
 namespace rocketspeed {
 

@@ -188,6 +188,7 @@ class EventLoop {
 
   // Shutdown event
   event* shutdown_event_ = nullptr;
+  rocketspeed::port::Eventfd shutdown_eventfd_;
 
   // Startup event
   event* startup_event_ = nullptr;
@@ -197,7 +198,7 @@ class EventLoop {
 
   // Command queue and its associated event
   MultiProducerQueue<std::unique_ptr<Command>> command_queue_;
-  int command_ready_eventfd_ = -1;
+  rocketspeed::port::Eventfd command_ready_eventfd_;
 
   // a cache of ClientIds to connections
   std::unordered_map<ClientID, SocketEvent*> connection_cache_;

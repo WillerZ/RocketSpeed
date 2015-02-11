@@ -12,9 +12,15 @@
 #include "src/messages/messages.h"
 #include "src/util/common/base_env.h"
 
-namespace rocketspeed {
+namespace {
+// free up any thread local storage for worker_ids.
+void free_thread_local(void *ptr) {
+  int* intp = static_cast<int *>(ptr);
+  delete intp;
+}
+}
 
-thread_local int MsgLoop::worker_id_ = -1;
+namespace rocketspeed {
 
 //
 // This is registered with the event loop. The event loop invokes
@@ -55,6 +61,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  const std::shared_ptr<Logger>& info_log,
                  std::string name,
                  ClientID client_id):
+  worker_id_(new ThreadLocalPtr(free_thread_local)),
   env_(env),
   env_options_(env_options),
   info_log_(info_log),
@@ -150,9 +157,13 @@ void MsgLoop::Run() {
   for (size_t i = 1; i < event_loops_.size(); ++i) {
     BaseEnv::ThreadId tid = env_->StartThread(
       [this, i] () {
-        worker_id_ = i;  // Set this thread's worker index.
+        // Set this thread's worker index.
+        worker_id_->Reset(new int(i));
+
         event_loops_[i]->Run();
-        worker_id_ = -1;  // No longer running an event loop.
+
+        //No longer running event loop.
+        worker_id_->Reset(new int(-1));
       },
       name_ + "-" + std::to_string(i));
     worker_threads_.push_back(tid);
@@ -161,9 +172,9 @@ void MsgLoop::Run() {
   // Main loop run on this thread.
   assert(event_loops_.size() >= 1);
 
-  worker_id_ = 0;  // This thread is worker 0.
+  worker_id_->Reset(new int(0)); // This thread is worker 0.
   event_loops_[0]->Run();
-  worker_id_ = -1;  // No longer running the event loop.
+  worker_id_->Reset(new int(-1)); // No longer running event loop.
 }
 
 void MsgLoop::Stop() {

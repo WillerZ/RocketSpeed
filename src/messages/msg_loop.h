@@ -14,6 +14,7 @@
 #include "src/messages/msg_loop_base.h"
 #include "src/messages/event_loop.h"
 #include "src/util/common/base_env.h"
+#include "src/util/common/thread_local.h"
 #include "src/port/Env.h"
 
 namespace rocketspeed {
@@ -93,7 +94,7 @@ class MsgLoop : public MsgLoopBase {
 
   // Checks that we are running on any EventLoop thread.
   void ThreadCheck() const {
-    assert(worker_id_ != -1);
+    assert(*static_cast<int *>(worker_id_->Get()) != -1);
   }
 
   // Retrieves the number of EventLoop threads.
@@ -107,8 +108,8 @@ class MsgLoop : public MsgLoopBase {
   // Retrieves the worker ID for the currently running thread.
   // Will assert if called from a non-EventLoop thread.
   int GetThreadWorkerIndex() const {
-    assert(worker_id_ != -1);
-    return worker_id_;
+    assert(*static_cast<int *>(worker_id_->Get()) != -1);
+    return *static_cast<int *>(worker_id_->Get());
   }
 
   // Checks that the message origin matches this worker loop.
@@ -118,7 +119,7 @@ class MsgLoop : public MsgLoopBase {
   // Stores the worker_id for this thread.
   // Reading this is only valid within an EventLoop callback. It is used to
   // define affinities between workers and messages.
-  static thread_local int worker_id_;
+  std::unique_ptr<ThreadLocalPtr> worker_id_;
 
   // The Environment
   BaseEnv* env_;
