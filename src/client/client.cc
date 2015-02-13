@@ -108,6 +108,9 @@ Status ClientImpl::Create(ClientOptions options,
   if (options.config.GetPilotHostIds().empty()) {
     return Status::InvalidArgument("Must have at least one pilot.");
   }
+  if (options.config.GetCopilotHostIds().empty()) {
+    return Status::InvalidArgument("Must have at least one copilot.");
+  }
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();
   }

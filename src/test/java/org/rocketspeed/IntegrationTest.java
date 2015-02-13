@@ -31,15 +31,19 @@ public class IntegrationTest {
 
   @Before
   public void setUp() throws Exception {
-    testCluster = new LocalTestCluster();
     testFolder = new TemporaryFolder();
     testFolder.create();
+    testCluster = new LocalTestCluster();
   }
 
   @After
   public void tearDown() throws Exception {
-    testFolder.delete();
-    testCluster.close();
+    if (testCluster != null) {
+      testCluster.close();
+    }
+    if (testFolder != null) {
+      testFolder.delete();
+    }
   }
 
   @Test
