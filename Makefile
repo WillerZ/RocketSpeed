@@ -94,7 +94,8 @@ TESTS = \
   thread_check_test \
   file_storage_test \
   thread_local_test \
-  port_android_to_string_test
+  port_android_to_string_test \
+  proxy_test
 
 TOOLS = \
 	rocketbench
@@ -303,6 +304,10 @@ file_storage_test: src/client/storage/tests/file_storage_test.o $(LIBOBJECTS) $(
 
 port_android_to_string_test: src/port/tests/port_android_to_string_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) src/port/tests/port_android_to_string_test.o $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+proxy_test: src/proxy/test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test
