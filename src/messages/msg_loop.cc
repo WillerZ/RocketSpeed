@@ -27,7 +27,6 @@ namespace rocketspeed {
 // this call on every message received.
 void
 MsgLoop::EventCallback(std::unique_ptr<Message> msg) {
-  // find the MsgLoop that we are working for
   assert(msg);
 
   // what message have we received?
@@ -153,6 +152,18 @@ void MsgLoop::Run() {
     };
   }
 
+  // Add goodbye callback if it hasn't already been added.
+  if (msg_callbacks_.find(MessageType::mGoodbye) == msg_callbacks_.end()) {
+    msg_callbacks_[MessageType::mGoodbye] =
+      [this] (std::unique_ptr<Message> msg) {
+        // Ignore, just log it.
+        MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
+        LOG_INFO(info_log_, "Goodbye %d received for client %s",
+          static_cast<int>(goodbye->GetCode()),
+          goodbye->GetOrigin().c_str());
+      };
+  }
+
   // Starting from 1, run worker loops on new threads.
   for (size_t i = 1; i < event_loops_.size(); ++i) {
     BaseEnv::ThreadId tid = env_->StartThread(
@@ -203,34 +214,37 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   // get the ping request message
   ThreadCheck();
   MessagePing* request = static_cast<MessagePing*>(msg.get());
-  const ClientID origin = request->GetOrigin();
-  const bool is_new_request = false;
-
-  // change it to a ping response message
-  request->SetPingType(MessagePing::Response);
-
-  // serialize response
-  std::string serial;
-  request->SerializeToString(&serial);
-
-  // send reponse
-  std::unique_ptr<Command> cmd(
-    new SerializedSendCommand(std::move(serial),
-                              origin,
-                              env_->NowMicros(),
-                              is_new_request));
-  Status st = SendCommand(std::move(cmd), GetThreadWorkerIndex());
-
-  if (!st.ok()) {
-    LOG_INFO(info_log_,
-        "Unable to send ping response to %s",
-        origin.c_str());
+  if (request->GetPingType() == MessagePing::Response) {
+    LOG_INFO(info_log_, "Received ping response");
   } else {
-    LOG_INFO(info_log_,
-        "Send ping response to %s",
-        origin.c_str());
+    const ClientID& origin = request->GetOrigin();
+    const bool is_new_request = false;
+
+    // change it to a ping response message
+    request->SetPingType(MessagePing::Response);
+
+    // serialize response
+    std::string serial;
+    request->SerializeToString(&serial);
+
+    // send reponse
+    std::unique_ptr<Command> cmd(
+      new SerializedSendCommand(std::move(serial),
+                                origin,
+                                env_->NowMicros(),
+                                is_new_request));
+    Status st = SendCommand(std::move(cmd), GetThreadWorkerIndex());
+
+    if (!st.ok()) {
+      LOG_WARN(info_log_,
+          "Unable to send ping response to %s",
+          origin.c_str());
+    } else {
+      LOG_INFO(info_log_,
+          "Send ping response to %s",
+          origin.c_str());
+    }
   }
-  info_log_->Flush();
 }
 
 int MsgLoop::LoadBalancedWorkerId() const {

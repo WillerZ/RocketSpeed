@@ -160,6 +160,10 @@ void BackTraceHandler(int sig) {
 
 static struct SignalHandlerInstaller {
   SignalHandlerInstaller() {
+    // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
+    signal(SIGPIPE, SIG_IGN);
+
+    // Print backtrace on these.
     signal(SIGABRT, BackTraceHandler);
     signal(SIGSEGV, BackTraceHandler);
     signal(SIGILL, BackTraceHandler);

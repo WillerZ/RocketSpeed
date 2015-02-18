@@ -183,22 +183,29 @@ class SocketEvent {
 
   static void EventCallback(evutil_socket_t fd, short what, void* arg) {
     SocketEvent* sev = static_cast<SocketEvent*>(arg);
+    Status st;
     if (what & EV_READ) {
-      Status st = sev->ReadCallback(fd);
-      if (!st.ok()) {
-        // Note: this call will delete sev.
-        sev->event_loop_->remove_connection_cache(sev);
-        sev = nullptr;
-      }
+      st = sev->ReadCallback(fd);
     } else if (what & EV_WRITE) {
-      Status st = sev->WriteCallback(fd);
-      if (!st.ok()) {
-        // Note: this call will delete sev.
-        sev->event_loop_->remove_connection_cache(sev);
-        sev = nullptr;
-      }
+      st = sev->WriteCallback(fd);
     } else if (what & EV_TIMEOUT) {
     } else if (what & EV_SIGNAL) {
+    }
+
+    if (!st.ok()) {
+      // Inform MsgLoop that clients have disconnected.
+      EventLoop* event_loop = sev->event_loop_;
+      std::unordered_set<ClientID> clients = sev->GetClients();  // copy
+      sev->event_loop_->remove_connection_cache(sev);  // deletes sev
+      sev = nullptr;
+
+      for (ClientID client : clients) {
+        std::unique_ptr<Message> msg(
+          new MessageGoodbye(Tenant::InvalidTenant,
+                             std::move(client),
+                             MessageGoodbye::Code::SocketError));
+        event_loop->Dispatch(std::move(msg));
+      }
     }
   }
 
@@ -355,6 +362,17 @@ class SocketEvent {
                   "already in the connection cache!",
                   remote.c_str(), fd_);
             }
+          }
+
+          // EventLoop needs to process goodbye messages.
+          if (msg->GetMessageType() == MessageType::mGoodbye) {
+            MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
+            RemoveClient(goodbye->GetOrigin());
+            event_loop_->remove_host(goodbye->GetOrigin());
+            LOG_INFO(event_loop_->GetLog(),
+              "Received goodbye message (code %d) for client '%s'",
+              static_cast<int>(goodbye->GetCode()),
+              goodbye->GetOrigin().c_str());
           }
         }
 
@@ -573,7 +591,6 @@ EventLoop::do_accept(evconnlistener *listener,
   event_loop->thread_check_.Check();
   setup_fd(fd, event_loop);
   event_loop->accept_callback_(fd);
-  LOG_INFO(event_loop->info_log_, "Accept successful on socket fd(%d)", fd);
 }
 
 //
@@ -850,7 +867,7 @@ EventLoop::insert_connection_cache(const ClientID& host, SocketEvent* sev) {
   return true;  // successfully inserted
 }
 
-// Removes an entry from the connection cache.
+// Removes an socket entry from the connection cache.
 void
 EventLoop::remove_connection_cache(SocketEvent* sev) {
   thread_check_.Check();
@@ -860,6 +877,12 @@ EventLoop::remove_connection_cache(SocketEvent* sev) {
   }
   all_sockets_.erase(sev->GetListHandle());
   active_connections_.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+// Removes a host entry from the connection cache.
+void EventLoop::remove_host(const ClientID& host) {
+  thread_check_.Check();
+  connection_cache_.erase(host);
 }
 
 // Finds an entry from the connection cache.

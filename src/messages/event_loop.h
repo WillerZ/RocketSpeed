@@ -238,6 +238,7 @@ class EventLoop {
   // connection cache updates
   bool insert_connection_cache(const ClientID& host, SocketEvent* ev);
   void remove_connection_cache(SocketEvent* ev);
+  void remove_host(const ClientID& host);
   SocketEvent* lookup_connection_cache(const ClientID& host) const;
   SocketEvent* setup_connection(const HostId& host, const ClientID& clientid);
   Status create_connection(const HostId& host, bool block, int* fd);

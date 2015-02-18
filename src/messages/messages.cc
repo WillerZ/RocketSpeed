@@ -47,6 +47,7 @@ Message::CreateNewInstance(Slice* in) {
   MessageMetadata* msg2 = nullptr;
   MessageDataAck* msg3 = nullptr;
   MessageGap* msg4 = nullptr;
+  MessageGoodbye* msg5 = nullptr;
   MessageType mtype;
 
   // make a temporary copy of the input slice
@@ -101,6 +102,14 @@ Message::CreateNewInstance(Slice* in) {
       st = msg4->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg4);
+      }
+      break;
+
+    case mGoodbye:
+      msg5 = new MessageGoodbye();
+      st = msg5->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg5);
       }
       break;
 
@@ -664,6 +673,66 @@ Status MessageGap::DeSerialize(Slice* in) {
   if (!GetVarint64(in, &gap_to_)) {
     return Status::InvalidArgument("Bad gap log ID");
   }
+  return Status::OK();
+}
+
+MessageGoodbye::MessageGoodbye(TenantID tenant_id,
+                               ClientID origin,
+                               Code code)
+: code_(code) {
+  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
+  type_ = mGoodbye;
+  tenantid_ = tenant_id;
+  origin_ = std::move(origin);
+}
+
+Slice MessageGoodbye::Serialize() const {
+  // serialize common header
+  msghdr_.msgsize_ = 0;
+  serialize_buffer__.clear();
+  serializeMessageHeader();
+
+  // Type, tenantId and origin
+  PutFixedEnum8(&serialize_buffer__, type_);
+  PutFixed16(&serialize_buffer__, tenantid_);
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
+
+  // MessageGoodbye specifics
+  PutFixedEnum8(&serialize_buffer__, code_);
+
+  // compute the size of this message
+  serializeMessageSize();
+  return Slice(serialize_buffer__);
+}
+
+Status MessageGoodbye::DeSerialize(Slice* in) {
+  Status msghdrStatus = deserializeMessageHeader(in);
+  if (!msghdrStatus.ok()) {
+    return msghdrStatus;
+  }
+  // extract type
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
+
+  // extrant tenant ID
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
+  }
+
+  // extract host id
+  Slice sl;
+  if (!GetLengthPrefixedSlice(in, &sl)) {
+    return Status::InvalidArgument("Bad HostName");
+  }
+  origin_.clear();
+  origin_.append(sl.data(), sl.size());
+
+  // extract code
+  if (!GetFixedEnum8(in, &code_)) {
+    return Status::InvalidArgument("Bad code");
+  }
+
   return Status::OK();
 }
 

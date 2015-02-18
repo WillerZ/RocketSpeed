@@ -39,6 +39,7 @@ enum MessageType : uint8_t {
   mDataAck = 0x04,            // ack for user data
   mGap = 0x05,                // gap in the log
   mDeliver = 0x06,            // data delivery
+  mGoodbye = 0x07,            // goodbye
 };
 
 /*
@@ -536,6 +537,44 @@ class MessageGap : public Message {
   GapType gap_type_;
   SequenceNumber gap_from_;
   SequenceNumber gap_to_;
+};
+
+/**
+ * This message indicating a client will no longer accept messages.
+ * These will be generated automatically when a socket disconnects, but can
+ * also be sent explicitly by clients if they no longer wish to communicate.
+ */
+class MessageGoodbye : public Message {
+ public:
+  enum Code : char {
+    SocketError = 0x00,
+    Graceful = 0x01,
+  };
+
+  /**
+   * Creates a goodbye message.
+   *
+   * @param tenant_id The tenant ID of the origin.
+   * @param origin The originator of the communication.
+   * @param code The error code.
+   */
+  explicit MessageGoodbye(TenantID tenant_id,
+                          ClientID origin,
+                          Code code);
+
+  MessageGoodbye() {}
+  virtual ~MessageGoodbye() {}
+
+  Code GetCode() const {
+    return code_;
+  }
+
+  virtual Slice Serialize() const;
+  virtual Status DeSerialize(Slice* in);
+
+ private:
+  // type of this message: mGoodbye
+  Code code_;
 };
 
 
