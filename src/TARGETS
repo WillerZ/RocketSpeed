@@ -16,6 +16,7 @@ java_unittest(
         'org.rocketspeed.BuilderTest',
         'org.rocketspeed.IntegrationTest',
         'org.rocketspeed.LocalTestClusterTest',
+        'org.rocketspeed.ProxyBindingsLinkTest',
         'org.rocketspeed.android.WakeLockTest',
         'org.rocketspeed.tests.VisibilityTest',
     ],

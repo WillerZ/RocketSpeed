@@ -104,13 +104,13 @@ SubscriptionStorage = record {
 }
 
 ClientImpl = interface +c {
-  static Open(log_level: LogLevel,
-              config: ConfigurationImpl,
-              tenant_id: i32,
-              client_id: string,
-              subscribe_callback: SubscribeCallbackImpl,
-              storage: SubscriptionStorage,
-              wake_lock: WakeLockImpl): ClientImpl;
+  static Create(log_level: LogLevel,
+                config: ConfigurationImpl,
+                tenant_id: i32,
+                client_id: string,
+                subscribe_callback: SubscribeCallbackImpl,
+                storage: SubscriptionStorage,
+                wake_lock: WakeLockImpl): ClientImpl;
 
   Start(receive_callback: ReceiveCallbackImpl,
         restore_subscriptions: bool,
@@ -132,4 +132,31 @@ ClientImpl = interface +c {
   SaveSubscriptions(snapshot_callback: SnapshotCallbackImpl);
 
   Close();
+}
+
+
+MessageCallback = interface +j {
+  call(client_id: string,
+       message: binary);
+}
+
+DisconnectCallback = interface +j {
+  call(client_ids: list<string>);
+}
+
+ProxyImpl = interface +c {
+  static create(log_level: LogLevel,
+                config: ConfigurationImpl,
+                num_workers: i32): ProxyImpl;
+
+  start(message_callback: MessageCallback,
+        disconnect_callback: DisconnectCallback): Status;
+
+  forward(message: binary,
+          session: i64,
+          sequence: i32);
+
+  destroySession(session: i64);
+
+  close();
 }

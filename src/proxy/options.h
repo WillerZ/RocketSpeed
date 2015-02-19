@@ -10,6 +10,7 @@
 #include <utility>
 #include "src/port/Env.h"
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 class Logger;
@@ -39,3 +40,4 @@ struct ProxyOptions {
 };
 
 }  // namespace rocketspeed
+#pragma GCC visibility pop

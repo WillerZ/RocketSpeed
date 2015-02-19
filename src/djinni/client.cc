@@ -14,11 +14,11 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
+#include "src/djinni/conversions.h"
 #include "src/djinni/jvm_env.h"
 #include "src/djinni/wake_lock.h"
 
 #include "src-gen/djinni/cpp/ConfigurationImpl.hpp"
-#include "src-gen/djinni/cpp/HostId.hpp"
 #include "src-gen/djinni/cpp/LogLevel.hpp"
 #include "src-gen/djinni/cpp/PublishCallbackImpl.hpp"
 #include "src-gen/djinni/cpp/ReceiveCallbackImpl.hpp"
@@ -32,23 +32,6 @@ namespace rocketspeed {
 namespace djinni {
 
 namespace {
-
-std::unique_ptr<rocketspeed::Configuration> toConfiguration(
-    ConfigurationImpl config,
-    int32_t tenant_id) {
-  std::vector<rocketspeed::HostId> pilots, copilots;
-  for (auto& host_id : config.pilots) {
-    pilots.emplace_back(std::move(host_id.hostname), host_id.port);
-  }
-  for (auto& host_id : config.copilots) {
-    copilots.emplace_back(std::move(host_id.hostname), host_id.port);
-  }
-  auto tenant_id1 = static_cast<rocketspeed::TenantID>(tenant_id);
-  assert(tenant_id == tenant_id1);
-  std::unique_ptr<Configuration> config1(
-      Configuration::Create(pilots, copilots, tenant_id1));
-  return std::move(config1);
-}
 
 rocketspeed::MsgId toMsgId(const MsgIdImpl& message_id) {
   assert(MsgIdImpl::SIZE == sizeof(static_cast<rocketspeed::MsgId>(0).id));
@@ -131,50 +114,13 @@ Slice toSlice(const std::vector<uint8_t>& data) {
   return Slice(first, data.size());
 }
 
-Status fromStatus(rocketspeed::Status status) {
-  StatusCode code = StatusCode::INTERNAL;
-  if (status.ok()) {
-    code = StatusCode::OK;
-  } else if (status.IsNotFound()) {
-    code = StatusCode::NOTFOUND;
-  } else if (status.IsNotSupported()) {
-    code = StatusCode::NOTSUPPORTED;
-  } else if (status.IsInvalidArgument()) {
-    code = StatusCode::INVALIDARGUMENT;
-  } else if (status.IsIOError()) {
-    code = StatusCode::IOERROR;
-  } else if (status.IsNotInitialized()) {
-    code = StatusCode::NOTINITIALIZED;
-  } else if (status.IsUnauthorized()) {
-    code = StatusCode::UNAUTHORIZED;
-  } else if (status.IsTimedOut()) {
-    code = StatusCode::TIMEDOUT;
-  } else if (status.IsInternal()) {
-    code = StatusCode::INTERNAL;
-  } else {
-    assert(false);
-  }
-  return Status(code, std::move(status.ToString()));
-}
-
 PublishStatus fromPublishStatus(rocketspeed::PublishStatus status) {
-  return PublishStatus(fromStatus(status.status), fromMsgId(status.msgid));
-}
-
-rocketspeed::InfoLogLevel toInfoLogLevel(LogLevel log_level) {
-  using rocketspeed::InfoLogLevel;
-  static_assert(InfoLogLevel::DEBUG_LEVEL ==
-                    static_cast<InfoLogLevel>(LogLevel::DEBUG_LEVEL),
-                "Enum representations do not match.");
-  static_assert(InfoLogLevel::NUM_INFO_LOG_LEVELS ==
-                    static_cast<InfoLogLevel>(LogLevel::NUM_INFO_LOG_LEVELS),
-                "Enum representations do not match.");
-  return static_cast<InfoLogLevel>(log_level);
+  return PublishStatus(FromStatus(status.status), fromMsgId(status.msgid));
 }
 
 }  // namespace
 
-std::shared_ptr<ClientImpl> ClientImpl::Open(
+std::shared_ptr<ClientImpl> ClientImpl::Create(
     LogLevel log_level,
     ConfigurationImpl config,
     int32_t tenant_id,
@@ -184,13 +130,13 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
     std::shared_ptr<WakeLockImpl> wake_lock) {
   rocketspeed::Status status;
 
-  auto config1 = toConfiguration(config, tenant_id);
+  auto config1 = ToConfiguration(config, tenant_id);
   rocketspeed::ClientOptions options(*config1, client_id);
 
   auto jvm_env = JvmEnv::Default();
   options.env = jvm_env;
 
-  options.info_log = jvm_env->CreatePlatformLogger(toInfoLogLevel(log_level));
+  options.info_log = jvm_env->CreatePlatformLogger(ToInfoLogLevel(log_level));
   LOG_DEBUG(options.info_log, "Created logger for RocketSpeed Client.");
 
   if (wake_lock) {
@@ -200,7 +146,7 @@ std::shared_ptr<ClientImpl> ClientImpl::Open(
   if (subscribe_callback) {
     options.subscription_callback =
         [subscribe_callback](SubscriptionStatus status) {
-      subscribe_callback->Call(fromStatus(status.status),
+      subscribe_callback->Call(FromStatus(status.status),
                                fromNamespaceID(status.namespace_id),
                                std::move(status.topic_name),
                                fromSequenceNumber(status.seqno),
@@ -247,7 +193,7 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
     };
   }
   if (!restore_subscriptions && resubscribe_from_storage) {
-    return fromStatus(rocketspeed::Status::InvalidArgument(
+    return FromStatus(rocketspeed::Status::InvalidArgument(
         "Cannot resubscribe from storage without subscription state."));
   }
   auto restore_strategy = resubscribe_from_storage
@@ -255,7 +201,7 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
                               : (restore_subscriptions ? Restore::kRestoreOnly
                                                        : Restore::kDontRestore);
   auto status = client_->Start(receive_callback1, restore_strategy);
-  return fromStatus(status);
+  return FromStatus(status);
 }
 
 PublishStatus Client::Publish(
@@ -269,7 +215,7 @@ PublishStatus Client::Publish(
   if (publish_callback) {
     publish_callback1 =
         [publish_callback](std::unique_ptr<ResultStatus> status) {
-      publish_callback->Call(fromStatus(status->GetStatus()),
+      publish_callback->Call(FromStatus(status->GetStatus()),
                              status->GetNamespaceId(),
                              status->GetTopicName().ToString(),
                              fromMsgId(status->GetMessageId()),
@@ -350,7 +296,7 @@ void Client::SaveSubscriptions(
     std::shared_ptr<SnapshotCallbackImpl> subscriptions_callback) {
   auto subscriptions_callback1 =
       [subscriptions_callback](rocketspeed::Status status) {
-    subscriptions_callback->Call(fromStatus(status));
+    subscriptions_callback->Call(FromStatus(status));
   };
   client_->SaveSubscriptions(subscriptions_callback1);
 }

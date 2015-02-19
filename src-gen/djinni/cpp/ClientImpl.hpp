@@ -29,7 +29,7 @@ class ClientImpl {
 public:
     virtual ~ClientImpl() {}
 
-    static std::shared_ptr<ClientImpl> Open(LogLevel log_level, ConfigurationImpl config, int32_t tenant_id, std::string client_id, std::shared_ptr<SubscribeCallbackImpl> subscribe_callback, SubscriptionStorage storage, std::shared_ptr<WakeLockImpl> wake_lock);
+    static std::shared_ptr<ClientImpl> Create(LogLevel log_level, ConfigurationImpl config, int32_t tenant_id, std::string client_id, std::shared_ptr<SubscribeCallbackImpl> subscribe_callback, SubscriptionStorage storage, std::shared_ptr<WakeLockImpl> wake_lock);
 
     virtual Status Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback, bool restore_subscriptions, bool resubscribe_from_storage) = 0;
 

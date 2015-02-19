@@ -38,7 +38,7 @@ CJNIEXPORT void JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_nativeDest
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
 }
 
-CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_Open(JNIEnv* jniEnv, jobject /*this*/, jobject j_logLevel, jobject j_config, jint j_tenantId, jstring j_clientId, jobject j_subscribeCallback, jobject j_storage, jobject j_wakeLock)
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_Create(JNIEnv* jniEnv, jobject /*this*/, jobject j_logLevel, jobject j_config, jint j_tenantId, jstring j_clientId, jobject j_subscribeCallback, jobject j_storage, jobject j_wakeLock)
 {
     try {
         DJINNI_FUNCTION_PROLOGUE0(jniEnv);
@@ -50,7 +50,7 @@ CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_Open(JNIEnv* jniEnv, 
         ::rocketspeed::djinni::SubscriptionStorage c_storage = NativeSubscriptionStorage::fromJava(jniEnv, j_storage);
         std::shared_ptr<::rocketspeed::djinni::WakeLockImpl> c_wake_lock = NativeWakeLockImpl::fromJava(jniEnv, j_wakeLock);
 
-        std::shared_ptr<::rocketspeed::djinni::ClientImpl> cr = ::rocketspeed::djinni::ClientImpl::Open(std::move(c_log_level), std::move(c_config), std::move(c_tenant_id), std::move(c_client_id), std::move(c_subscribe_callback), std::move(c_storage), std::move(c_wake_lock));
+        std::shared_ptr<::rocketspeed::djinni::ClientImpl> cr = ::rocketspeed::djinni::ClientImpl::Create(std::move(c_log_level), std::move(c_config), std::move(c_tenant_id), std::move(c_client_id), std::move(c_subscribe_callback), std::move(c_storage), std::move(c_wake_lock));
 
         return NativeClientImpl::toJava(jniEnv, cr);
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0  /* value doesn't matter */ )

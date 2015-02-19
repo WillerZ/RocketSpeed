@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/proxy/proxy.h"
+
 #include <thread>
 
 namespace rocketspeed {
@@ -67,8 +68,8 @@ Proxy::Proxy(ProxyOptions options)
   msg_loop_->RegisterCallbacks(callbacks);
 }
 
-void Proxy::Start(OnMessageCallback on_message,
-                  OnDisconnectCallback on_disconnect) {
+Status Proxy::Start(OnMessageCallback on_message,
+                    OnDisconnectCallback on_disconnect) {
   on_message_ = std::move(on_message);
   on_disconnect_ = std::move(on_disconnect);
   msg_thread_ = env_->StartThread([this] () { msg_loop_->Run(); },
@@ -76,6 +77,7 @@ void Proxy::Start(OnMessageCallback on_message,
   while (!msg_loop_->IsRunning()) {
     std::this_thread::yield();
   }
+  return Status::OK();
 }
 
 Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {

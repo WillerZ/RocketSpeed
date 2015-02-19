@@ -26,6 +26,13 @@ find "$JAVA_DIR" "$CPP_DIR" -type f ! -name 'TARGETS' -delete || true
   --cpp-namespace rocketspeed::djinni \
   --cpp-optional-header "\"optional.hpp\"" \
   --cpp-optional-template "std::experimental::optional" \
+  --ident-cpp-field foo_bar \
+  --ident-cpp-method FooBar \
+  --ident-cpp-type FooBar \
+  --ident-cpp-enum-type FooBar \
+  --ident-cpp-type-param FooBar \
+  --ident-cpp-local foo_bar \
+  --ident-cpp-file FooBar \
   \
   --jni-out "$CPP_DIR/jni" \
   --jni-include-prefix "$CPP_DIR_REL/jni/" \

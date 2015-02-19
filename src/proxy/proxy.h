@@ -14,6 +14,7 @@
 #include "src/util/common/statistics.h"
 #include "src/proxy/options.h"
 
+#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 /**
@@ -52,9 +53,10 @@ class Proxy {
    *                      service breaks. The arguments are the list of
    *                      affected client IDs. Those clients should re-issue
    *                      any subscriptions sent through the proxy.
+   * @return ok() if successful, otherwise an error status.
    */
-  void Start(OnMessageCallback on_message,
-             OnDisconnectCallback on_disconnect);
+  Status Start(OnMessageCallback on_message,
+               OnDisconnectCallback on_disconnect);
 
   /**
    * Sends a message to a RocketSpeed pilot or copilot on behalf of a client.
@@ -126,3 +128,4 @@ class Proxy {
 };
 
 }  // namespace rocketspeed
+#pragma GCC visibility pop
