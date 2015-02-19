@@ -62,7 +62,9 @@ TEST(ProxyTest, Publish) {
 
   // Send through proxy to pilot. Pilot should respond and proxy will send
   // serialized response to on_message defined above.
-  proxy->Forward(serial);
+  const int64_t session = 123;
+  ASSERT_OK(proxy->Forward(serial, session, -1));
+  ASSERT_OK(proxy->DestroySession(session));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 

@@ -78,7 +78,7 @@ void Proxy::Start(OnMessageCallback on_message,
   }
 }
 
-Status Proxy::Forward(std::string msg) {
+Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
   stats_.forwards->Add(1);
 
   // TODO(pja) 1 : Really inefficient. Only need to deserialize header,
@@ -130,6 +130,10 @@ Status Proxy::Forward(std::string msg) {
   // Send to loop.
   // TODO(pja) 1 : Use other threads based on client ID.
   return msg_loop_->SendCommand(std::move(cmd), 0);
+}
+
+Status Proxy::DestroySession(int64_t session) {
+  return Status::OK();
 }
 
 Proxy::~Proxy() {

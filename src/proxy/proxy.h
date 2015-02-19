@@ -61,10 +61,33 @@ class Proxy {
    * Data messages are sent to a pilot, while metadata messages are sent to a
    * copilot.
    *
+   * If the proxy has sent all messages before the provided sequence number,
+   * then the message is forwarded immediately. If not, then it is buffered
+   * and sent later. If not enough buffer space is available then an error
+   * status will be returned.
+   *
+   * Sequence numbers must start at 0.
+   *
+   * If a sequence number of -1 is provided, the message will
+   * be sent immediately. This should be used if the caller
+   * can guarantee ordering.
+   *
    * @param msg The serialized RocketSpeed message.
+   * @param session Unique session ID. Messages are ordered per session.
+   * @param sequence Sequence ID of messages per session.
    * @return ok() if successful, otherwise an error status.
    */
-  Status Forward(std::string msg);
+  Status Forward(std::string msg, int64_t session, int32_t sequence);
+
+  /**
+   * Instructs the proxy to reset the next expected sequence number for a
+   * session to 0, effectively removing all state for that session. Failure
+   * to destroy sessions will result in space leaks within the proxy.
+   *
+   * @param session Unique session ID to destroy.
+   * @return ok() if successful, otherwise an error status.
+   */
+  Status DestroySession(int64_t session);
 
   /**
    * Stops the proxy service. May block while waiting for the event loop
