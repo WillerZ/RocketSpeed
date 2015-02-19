@@ -154,7 +154,7 @@ ProxyImpl = interface +c {
 
   forward(message: binary,
           session: i64,
-          sequence: i32);
+          sequence: i32): Status;
 
   destroySession(session: i64);
 

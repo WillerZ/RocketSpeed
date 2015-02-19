@@ -54,7 +54,7 @@ CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)
 }
 
-CJNIEXPORT void JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1forward(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jbyteArray j_message, jlong j_session, jint j_sequence)
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1forward(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jbyteArray j_message, jlong j_session, jint j_sequence)
 {
     try {
         DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
@@ -63,8 +63,10 @@ CJNIEXPORT void JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1for
         int64_t c_session = ::djinni::HI64::Unboxed::fromJava(jniEnv, j_session);
         int32_t c_sequence = ::djinni::HI32::Unboxed::fromJava(jniEnv, j_sequence);
 
-        ref->Forward(std::move(c_message), std::move(c_session), std::move(c_sequence));
-    } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
+        ::rocketspeed::djinni::Status cr = ref->Forward(std::move(c_message), std::move(c_session), std::move(c_sequence));
+
+        return NativeStatus::toJava(jniEnv, cr);
+    } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)
 }
 
 CJNIEXPORT void JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1destroySession(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jlong j_session)

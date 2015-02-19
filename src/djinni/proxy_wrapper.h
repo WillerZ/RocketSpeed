@@ -29,9 +29,9 @@ class ProxyWrapper final : public ProxyImpl {
       std::shared_ptr<MessageCallback> message_callback,
       std::shared_ptr<DisconnectCallback> disconnect_callback) override;
 
-  void Forward(std::vector<uint8_t> message,
-               int64_t session,
-               int32_t sequence) override;
+  Status Forward(std::vector<uint8_t> message,
+                 int64_t session,
+                 int32_t sequence) override;
 
   void DestroySession(int64_t session) override;
 

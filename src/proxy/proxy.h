@@ -83,13 +83,11 @@ class Proxy {
 
   /**
    * Instructs the proxy to reset the next expected sequence number for a
-   * session to 0, effectively removing all state for that session. Failure
-   * to destroy sessions will result in space leaks within the proxy.
+   * session to 0, effectively removing all state for that session.
    *
    * @param session Unique session ID to destroy.
-   * @return ok() if successful, otherwise an error status.
    */
-  Status DestroySession(int64_t session);
+  void DestroySession(int64_t session);
 
   /**
    * Stops the proxy service. May block while waiting for the event loop

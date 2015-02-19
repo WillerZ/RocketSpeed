@@ -23,7 +23,7 @@ public:
 
     virtual Status Start(std::shared_ptr<MessageCallback> message_callback, std::shared_ptr<DisconnectCallback> disconnect_callback) = 0;
 
-    virtual void Forward(std::vector<uint8_t> message, int64_t session, int32_t sequence) = 0;
+    virtual Status Forward(std::vector<uint8_t> message, int64_t session, int32_t sequence) = 0;
 
     virtual void DestroySession(int64_t session) = 0;
 

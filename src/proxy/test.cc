@@ -64,7 +64,7 @@ TEST(ProxyTest, Publish) {
   // serialized response to on_message defined above.
   const int64_t session = 123;
   ASSERT_OK(proxy->Forward(serial, session, -1));
-  ASSERT_OK(proxy->DestroySession(session));
+  proxy->DestroySession(session);
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 

@@ -134,8 +134,7 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
   return msg_loop_->SendCommand(std::move(cmd), 0);
 }
 
-Status Proxy::DestroySession(int64_t session) {
-  return Status::OK();
+void Proxy::DestroySession(int64_t session) {
 }
 
 Proxy::~Proxy() {

@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class ProxyImpl {
     public abstract Status start(MessageCallback messageCallback, DisconnectCallback disconnectCallback);
 
-    public abstract void forward(byte[] message, long session, int sequence);
+    public abstract Status forward(byte[] message, long session, int sequence);
 
     public abstract void destroySession(long session);
 
@@ -48,12 +48,12 @@ public abstract class ProxyImpl {
         private native Status native_start(long _nativeRef, MessageCallback messageCallback, DisconnectCallback disconnectCallback);
 
         @Override
-        public void forward(byte[] message, long session, int sequence)
+        public Status forward(byte[] message, long session, int sequence)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_forward(this.nativeRef, message, session, sequence);
+            return native_forward(this.nativeRef, message, session, sequence);
         }
-        private native void native_forward(long _nativeRef, byte[] message, long session, int sequence);
+        private native Status native_forward(long _nativeRef, byte[] message, long session, int sequence);
 
         @Override
         public void destroySession(long session)
