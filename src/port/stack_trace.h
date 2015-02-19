@@ -4,12 +4,14 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #pragma once
+
 #include <thread>
+
 namespace rocketspeed {
 namespace port {
 
 // Install a signal handler to print callstack on the following signals:
-// SIGILL SIGSEGV SIGBUS SIGABRT
+// SIGABRT SIGBUS SIGFPE SIGILL SIGSEGV SIGUSR1
 // Currently supports linux only. No-op otherwise.
 void InstallStackTraceHandler();
 

@@ -8,21 +8,11 @@
 #include <stdio.h>
 #include <assert.h>
 #include <errno.h>
-#if !defined(OS_ANDROID)
-#include <execinfo.h>
-#endif
 #include <sys/time.h>
 #include <unistd.h>
 #include <string.h>
 #include <cstdlib>
 #include "src/util/logging.h"
-
-// Getting odd shadowing errors within the standard library when including
-// signal.h, so temporarily disabling -Wshadow.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-#include <signal.h>
-#pragma GCC diagnostic pop
 
 namespace rocketspeed {
 namespace port {
@@ -139,39 +129,6 @@ void RWMutex::WriteUnlock() { PthreadCall("write unlock", pthread_rwlock_unlock(
 void InitOnce(OnceType* once, void (*initializer)()) {
   PthreadCall("once", pthread_once(once, initializer));
 }
-
-#if !defined(OS_ANDROID)
-void BackTraceHandler(int sig) {
-  void* callstack[256];
-  size_t entries = backtrace(callstack, 10);
-  fprintf(stderr, "Received signal %d (%s)\n", sig, strsignal(sig));
-  backtrace_symbols_fd(callstack, entries, STDERR_FILENO);
-
-  switch (sig) {
-    case SIGUSR1:
-      // Do nothing, we just want the stack trace.
-      break;
-
-    default:
-      // Terminal signal, just exit.
-      exit(1);
-  }
-}
-
-static struct SignalHandlerInstaller {
-  SignalHandlerInstaller() {
-    // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
-    signal(SIGPIPE, SIG_IGN);
-
-    // Print backtrace on these.
-    signal(SIGABRT, BackTraceHandler);
-    signal(SIGSEGV, BackTraceHandler);
-    signal(SIGILL, BackTraceHandler);
-    signal(SIGFPE, BackTraceHandler);
-    signal(SIGUSR1, BackTraceHandler);
-  }
-} installer;  // this runs the constructor before main to install the handler
-#endif
 
 #if defined(OS_MACOSX)
 Eventfd::Eventfd(bool nonblock, bool close_on_exec) {

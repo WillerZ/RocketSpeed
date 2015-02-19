@@ -5,13 +5,25 @@
 //
 
 #include <sys/time.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#include <signal.h>
+#pragma GCC diagnostic pop
 
 #include "include/Slice.h"
 #include "src/port/Env.h"
+#include "src/port/stack_trace.h"
 #include "src/util/arena.h"
 #include "src/util/common/autovector.h"
 
 namespace rocketspeed {
+
+void Env::InstallSignalHandlers() {
+  // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
+  signal(SIGPIPE, SIG_IGN);
+  // Print backtrace on these.
+  port::InstallStackTraceHandler();
+}
 
 Env::~Env() {
 }

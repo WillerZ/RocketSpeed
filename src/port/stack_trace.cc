@@ -10,8 +10,6 @@ namespace port {
 
 #if defined(ROCKETSPEED_LITE) || !(defined(OS_LINUX) || defined(OS_MACOSX))
 
-// noop
-
 void InstallStackTraceHandler() {}
 void PrintStack(int first_frames_to_skip) {}
 
@@ -66,6 +64,7 @@ void PrintStackTraceLine(const char* symbol, void* frame) {
 
   fprintf(stderr, "\n");
 }
+
 #elif OS_MACOSX
 
 void PrintStackTraceLine(const char* symbol, void* frame) {
@@ -91,6 +90,15 @@ void PrintStackTraceLine(const char* symbol, void* frame) {
 
 #endif
 
+static void StackTraceHandler(int sig) {
+  // reset to default handler
+  signal(sig, SIG_DFL);
+  fprintf(stderr, "Received signal %d (%s)\n", sig, strsignal(sig));
+  PrintStack(0);
+  // re-signal to default handler (so we still get core dump if needed...)
+  raise(sig);
+}
+
 }  // namespace
 
 void PrintStack(int first_frames_to_skip) {
@@ -106,23 +114,15 @@ void PrintStack(int first_frames_to_skip) {
   }
 }
 
-static void StackTraceHandler(int sig) {
-  // reset to default handler
-  signal(sig, SIG_DFL);
-  fprintf(stderr, "Received signal %d (%s)\n", sig, strsignal(sig));
-  // skip the top three signal handler related frames
-  PrintStack(3);
-  // re-signal to default handler (so we still get core dump if needed...)
-  raise(sig);
-}
-
 void InstallStackTraceHandler() {
   // just use the plain old signal as it's simple and sufficient
   // for this use case
+  signal(SIGABRT, StackTraceHandler);
+  signal(SIGBUS, StackTraceHandler);
+  signal(SIGFPE, StackTraceHandler);
   signal(SIGILL, StackTraceHandler);
   signal(SIGSEGV, StackTraceHandler);
-  signal(SIGBUS, StackTraceHandler);
-  signal(SIGABRT, StackTraceHandler);
+  signal(SIGUSR1, StackTraceHandler);
 }
 
 #endif

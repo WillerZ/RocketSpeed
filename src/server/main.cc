@@ -3,12 +3,18 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-#include <gflags/gflags.h>
+
 #include <string>
+
+#include <gflags/gflags.h>
+
+#include "src/port/Env.h"
 #include "src/server/server.h"
 #include "src/server/storage_setup.h"
 
 int main(int argc, char** argv) {
+  rocketspeed::Env::InstallSignalHandlers();
+
   GFLAGS::SetUsageMessage(std::string("\nUSAGE:\n") + std::string(argv[0]) +
                                       " [OPTIONS]...");
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);

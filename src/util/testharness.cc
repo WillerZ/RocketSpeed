@@ -4,11 +4,14 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/util/testharness.h"
+
 #include <chrono>
 #include <string>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include "src/port/Env.h"
 #include "src/port/stack_trace.h"
 #include "src/util/auto_roll_logger.h"
 
@@ -37,7 +40,7 @@ bool RegisterTest(const char* base, const char* name, void (*func)()) {
 }
 
 int RunAllTests() {
-  port::InstallStackTraceHandler();
+  rocketspeed::Env::InstallSignalHandlers();
 
   const char* matcher = getenv("ROCKETSPEED_TESTS");
 

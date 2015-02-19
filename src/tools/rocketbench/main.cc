@@ -337,6 +337,7 @@ static void DoConsume(void* param) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
+  rocketspeed::Env::InstallSignalHandlers();
   rocketspeed::Env* env = rocketspeed::Env::Default();
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
 

@@ -40,6 +40,9 @@ class Env : public BaseEnv {
   Env() { }
   virtual ~Env();
 
+  // Install signal handlers required by server side code.
+  static void InstallSignalHandlers();
+
   // Return a default environment suitable for the current operating
   // system.  Sophisticated users may wish to provide their own Env
   // implementation instead of relying on this default environment.
