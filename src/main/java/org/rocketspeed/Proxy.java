@@ -52,7 +52,7 @@ public class Proxy implements AutoCloseable {
     status.checkExceptions();
   }
 
-  public void destroySession(long sessionId) throws Exception {
+  public void destroySession(long sessionId) {
     proxyImpl.destroySession(sessionId);
   }
 
