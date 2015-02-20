@@ -56,6 +56,10 @@ Status Status::TimedOut() {
   return Status(Code::kTimedOut);
 }
 
+Status Status::NoBuffer() {
+  return Status(Code::kNoBuffer);
+}
+
 // Returns true iff the status indicates success.
 bool Status::ok() const { return code_ == Code::kOk; }
 
@@ -87,31 +91,37 @@ bool Status::IsUnauthorized() const { return code_ == Code::kUnauthorized; }
 // Returns true iff the status indicates a time out.
 bool Status::IsTimedOut() const { return code_ == Code::kTimedOut; }
 
+// Returns true iff the status indicates buffer full.
+bool Status::IsNoBuffer() const { return code_ == Code::kNoBuffer; }
+
 // Return a string representation of this status suitable for printing.
 // Returns the string "OK" for success.
 std::string Status::ToString() const {
-    int code = static_cast<int>(code_);
-    switch (code_) {
-      case Code::kOk:
-        return "OK";
-      case Code::kNotFound:
-        return "NotFound: " + state_;
-      case Code::kNotSupported:
-        return "Not implemented: " + state_;
-      case Code::kInvalidArgument:
-        return "Invalid argument: " + state_;
-      case Code::kIOError:
-        return "IO error: " + state_;
-      case Code::kNotInitialized:
-        return "Not initialized: " + state_;
-      case Code::kInternal:
-        return "Internal error: " + state_;
-      case Code::kUnauthorized:
-        return "Unauthorized: " + state_;
-      case Code::kTimedOut:
-        return "Timed out: " + state_;
-      default:
-        return "Unknown code " + std::to_string(code);
-    }
+  int code = static_cast<int>(code_);
+  switch (code_) {
+    case Code::kOk:
+      return "OK";
+    case Code::kNotFound:
+      return "NotFound: " + state_;
+    case Code::kNotSupported:
+      return "Not implemented: " + state_;
+    case Code::kInvalidArgument:
+      return "Invalid argument: " + state_;
+    case Code::kIOError:
+      return "IO error: " + state_;
+    case Code::kNotInitialized:
+      return "Not initialized: " + state_;
+    case Code::kInternal:
+      return "Internal error: " + state_;
+    case Code::kUnauthorized:
+      return "Unauthorized: " + state_;
+    case Code::kTimedOut:
+      return "Timed out: " + state_;
+    case Code::kNoBuffer:
+      return "No buffer: " + state_;
+    default:
+      return "Unknown code " + std::to_string(code);
   }
+}
+
 } // namespace

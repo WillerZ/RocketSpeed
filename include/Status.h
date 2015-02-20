@@ -43,6 +43,8 @@ class Status {
 
   static Status TimedOut();
 
+  static Status NoBuffer();
+
   /// Returns true iff the status indicates success.
   bool ok() const;
 
@@ -70,6 +72,9 @@ class Status {
   /// Returns true iff the status indicates a time out.
   bool IsTimedOut() const;
 
+  /// Returns true iff the status indicates buffer full.
+  bool IsNoBuffer() const;
+
   /// Return a string representation of this status suitable for printing.
   /// Returns the string "OK" for success.
   std::string ToString() const;
@@ -85,6 +90,7 @@ class Status {
     kInternal = 6,
     kUnauthorized = 7,
     kTimedOut = 8,
+    kNoBuffer = 9,
   };
 
   Code code_;
