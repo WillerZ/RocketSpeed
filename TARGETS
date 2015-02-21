@@ -2,16 +2,16 @@ JAVA_VERSION = '7'
 
 java_library(
     name = 'client_java',
-    srcs = util.files('main/java/**/*.java')
-         + util.files('../src-gen/djinni/java/**/*.java'),
+    srcs = util.files('src/main/java/**/*.java')
+         + util.files('src-gen/djinni/java/**/*.java'),
     deps = [
-        '@/rocketspeed/github/src/djinni:librocketspeedjni.so',
+        '@/rocketspeed/github/src/djinni:rocketspeedjni',
     ],
 )
 
 java_unittest(
     name = 'client_java_test',
-    srcs = util.files('test/java/**/*.java'),
+    srcs = util.files('src/test/java/**/*.java'),
     test_classes = [
         'org.rocketspeed.BuilderTest',
         'org.rocketspeed.IntegrationTest',
@@ -33,7 +33,6 @@ java_unittest(
     ],
     env = {
         'RS_CLUSTER_BIN_PATH' : '_bin/rocketspeed/github/src/test/test_cluster_proc',
-        'LD_LIBRARY_PATH' : '_bin/rocketspeed/github/src/djinni',
     },
     java_version = JAVA_VERSION,
     openjdk = True,

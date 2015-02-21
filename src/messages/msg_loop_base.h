@@ -20,7 +20,7 @@
 namespace rocketspeed {
 
 // Application callback are invoked with messages of this type
-typedef std::function<void(std::unique_ptr<Message> msg)> MsgCallbackType;
+typedef std::function<void(std::unique_ptr<Message>)> MsgCallbackType;
 
 //
 class MsgLoopBase {

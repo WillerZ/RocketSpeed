@@ -24,8 +24,8 @@ cpp_library(
     link_whole = True,
 )
 
-cpp_binary(
-    name = 'librocketspeedjni.so',
+cpp_java_extension(
+    name = 'rocketspeedjni',
     srcs = [
         'main.cc',
     ],
@@ -37,8 +37,4 @@ cpp_binary(
         ':implementation',
         '@/rocketspeed/github/src-gen/djinni:jni',
     ],
-    external_deps = [
-        ('openjdk', None, 'jvm'),
-    ],
-    dlopen_enabled = True,
 )
