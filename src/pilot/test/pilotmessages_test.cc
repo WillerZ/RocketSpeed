@@ -78,7 +78,6 @@ TEST(PilotTest, Publish) {
 
   // send messages to pilot
   NamespaceID nsid = 101;
-  const bool is_new_request = true;
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test" + std::to_string(i);
@@ -89,14 +88,9 @@ TEST(PilotTest, Publish) {
                      Slice(topic),
                      nsid,
                      Slice(payload));
-    data.SerializeToString(&serial);
     sent_msgs_.insert(data.GetMessageId());
-    std::unique_ptr<Command> cmd(new SerializedSendCommand(
-        std::move(serial),
-        cluster.GetPilotHostIds().front().ToClientId(),
-        env_->NowMicros(),
-        is_new_request));
-    ASSERT_OK(loop.SendCommand(std::move(cmd)));
+    ClientID host = cluster.GetPilotHostIds().front().ToClientId();
+    ASSERT_OK(loop.SendRequest(data, host));
   }
 
   // Ensure all messages were ack'd

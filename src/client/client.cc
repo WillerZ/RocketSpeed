@@ -272,24 +272,14 @@ PublishStatus ClientImpl::Publish(const Topic& name,
     message.SetMessageId(messageId);
   }
   const MsgId msgid = message.GetMessageId();
-  const bool is_new_request = true;
 
   // Get a serialized version of the message
+  // TODO(pja) 1 : Figure out what to do with shared strings.
   std::string serialized;
   message.SerializeToString(&serialized);
 
-  // TODO(pja) 1 : Figure out what to do with shared strings.
-  std::string dup = serialized;
-
-  // Construct command.
-  std::unique_ptr<Command> command(
-    new SerializedSendCommand(std::move(serialized),
-                              pilot_host_id_.ToClientId(),
-                              env_->NowMicros(),
-                              is_new_request));
-
   // Add message to the sent list.
-  PendingAck pending_ack(std::move(callback), std::move(dup));
+  PendingAck pending_ack(std::move(callback), std::move(serialized));
   std::unique_lock<std::mutex> lock(worker_data.message_sent_mutex);
   bool added =
     worker_data.messages_sent.emplace(msgid, std::move(pending_ack)).second;
@@ -299,7 +289,9 @@ PublishStatus ClientImpl::Publish(const Topic& name,
 
   // Send to event loop for processing (the loop will free it).
   wake_lock_.AcquireForSending();
-  Status status = msg_loop_->SendCommand(std::move(command), worker_id);
+  Status status = msg_loop_->SendRequest(message,
+                                         pilot_host_id_.ToClientId(),
+                                         worker_id);
   if (!status.ok() && added) {
     std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
     worker_data.messages_sent.erase(msgid);
@@ -353,26 +345,17 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
 
 void ClientImpl::IssueSubscriptions(std::vector<TopicPair> topics,
                                     int worker_id) {
-  const bool is_new_request = true;
   // Construct message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
                           msg_loop_->GetClientId(worker_id),
                           topics);
 
-  // Get a serialized version of the message
-  std::string serialized;
-  message.SerializeToString(&serialized);
-
-  // Construct command.
-  std::unique_ptr<Command> command(
-    new SerializedSendCommand(std::move(serialized),
-                              copilot_host_id_.ToClientId(),
-                              env_->NowMicros(),
-                              is_new_request));
   // Send to event loop for processing (the loop will free it).
   wake_lock_.AcquireForSending();
-  Status status = msg_loop_->SendCommand(std::move(command), worker_id);
+  Status status = msg_loop_->SendRequest(message,
+                                         copilot_host_id_.ToClientId(),
+                                         worker_id);
 
   // If there was any error, invoke callback with appropriate status
   if (!status.ok() && subscription_callback_) {

@@ -201,19 +201,9 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   // change it to a response ack message
   request->SetMetaType(MessageMetadata::MetaType::Response);
 
-  // serialize message
-  const bool is_new_request = false;
-  request->SetOrigin(origin);
-  std::string out;
-  request->SerializeToString(&out);
-
   // send response back to copilot
-  std::unique_ptr<Command> cmd(
-    new SerializedSendCommand(std::move(out),
-                              origin,
-                              options.env->NowMicros(),
-                              is_new_request));
-  st = ct->SendCommand(std::move(cmd), worker_id);
+  request->SetOrigin(origin);
+  st = options.msg_loop->SendResponse(*request, origin, worker_id);
   if (!st.ok()) {
     LOG_WARN(options.info_log,
         "Unable to send %s response for Topic(%s)@%lu to tower for %s",
@@ -267,7 +257,6 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   topic_name.append(request->GetTopicName().ToString());
 
   // serialize msg
-  const bool is_new_request = false;
   std::string serial;
 
   // map the topic to a list of subscribers
@@ -286,16 +275,9 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
       assert(hostid != nullptr);
       assert(worker_id != -1);
       if (hostid != nullptr && worker_id != -1) {
-        request->SetOrigin(*hostid);
-        request->SerializeToString(&serial);
-        std::unique_ptr<Command> cmd(
-          new SerializedSendCommand(serial,  // TODO(pja) 1 : avoid copy here
-                                    *hostid,
-                                    options.env->NowMicros(),
-                                    is_new_request));
-
         // Send to correct worker loop.
-        st = ct->SendCommand(std::move(cmd), worker_id);
+        request->SetOrigin(*hostid);
+        st = options.msg_loop->SendResponse(*request, *hostid, worker_id);
 
         if (st.ok()) {
           LOG_INFO(options.info_log,

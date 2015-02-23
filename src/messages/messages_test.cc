@@ -213,14 +213,7 @@ TEST(Messaging, ClientOnNewSocket) {
   MessagePing msg(Tenant::GuestTenant,
                   MessagePing::PingType::Request,
                   "sender");
-  std::string serial;
-  msg.SerializeToString(&serial);
-  std::unique_ptr<Command> cmd1(
-      new SerializedSendCommand(serial,
-                                loop1.GetClientId(0),
-                                env_->NowMicros(),
-                                true));
-  ASSERT_OK(loop2.SendCommand(std::move(cmd1)));
+  ASSERT_OK(loop2.SendRequest(msg, loop1.GetClientId(0)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
   // Start a new loop and communicate with the same client ID.
@@ -230,12 +223,7 @@ TEST(Messaging, ClientOnNewSocket) {
   while (!loop3.IsRunning()) {
     std::this_thread::yield();
   }
-  std::unique_ptr<Command> cmd2(
-      new SerializedSendCommand(serial,  // same msg, same client ID
-                                loop1.GetClientId(0),
-                                env_->NowMicros(),
-                                true));
-  ASSERT_OK(loop3.SendCommand(std::move(cmd2)));
+  ASSERT_OK(loop3.SendRequest(msg, loop1.GetClientId(0)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
@@ -272,14 +260,7 @@ TEST(Messaging, MultipleClientsOneSocket) {
     MessagePing msg(Tenant::GuestTenant,
                     MessagePing::PingType::Request,
                     client_id);
-    std::string serial;
-    msg.SerializeToString(&serial);
-    std::unique_ptr<Command> cmd(
-        new SerializedSendCommand(serial,
-                                  server.GetClientId(0),
-                                  env_->NowMicros(),
-                                  true));
-    ASSERT_OK(client.SendCommand(std::move(cmd)));
+    ASSERT_OK(client.SendRequest(msg, server.GetClientId(0)));
     ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
   }
 }
@@ -326,71 +307,32 @@ TEST(Messaging, GracefulGoodbye) {
 
   // Create messages
   MessagePing ping1_req(Tenant::GuestTenant, MessagePing::Request, "c1");
-  std::string ping1_req_serial;
-  ping1_req.SerializeToString(&ping1_req_serial);
-
   MessagePing ping2_req(Tenant::GuestTenant, MessagePing::Request, "c2");
-  std::string ping2_req_serial;
-  ping2_req.SerializeToString(&ping2_req_serial);
-
   MessageGoodbye goodbye1(Tenant::GuestTenant,
                           "c1",
                           MessageGoodbye::Code::Graceful);
-  std::string goodbye1_serial;
-  goodbye1.SerializeToString(&goodbye1_serial);
-
   MessagePing ping1_resp(Tenant::GuestTenant, MessagePing::Response, "c1");
-  std::string ping1_resp_serial;
-  ping1_resp.SerializeToString(&ping1_resp_serial);
-
   MessagePing ping2_resp(Tenant::GuestTenant, MessagePing::Response, "c2");
-  std::string ping2_resp_serial;
-  ping2_resp.SerializeToString(&ping2_resp_serial);
 
   // Ping request c1 -> server
-  std::unique_ptr<Command> cmd1(
-      new SerializedSendCommand(ping1_req_serial,
-                                server.GetClientId(0),
-                                env_->NowMicros(),
-                                true));
-  ASSERT_OK(client.SendCommand(std::move(cmd1)));
+  ASSERT_OK(client.SendRequest(ping1_req, server.GetClientId(0)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
   // Ping request c2 -> server
-  std::unique_ptr<Command> cmd2(
-      new SerializedSendCommand(ping2_req_serial,
-                                server.GetClientId(0),
-                                env_->NowMicros(),
-                                true));
-  ASSERT_OK(client.SendCommand(std::move(cmd2)));
+  ASSERT_OK(client.SendRequest(ping2_req, server.GetClientId(0)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
   // Goodbye c1 -> server
-  std::unique_ptr<Command> cmd3(
-      new SerializedSendCommand(goodbye1_serial,
-                                server.GetClientId(0),
-                                env_->NowMicros(),
-                                true));
-  ASSERT_OK(client.SendCommand(std::move(cmd3)));
+  ASSERT_OK(client.SendRequest(goodbye1, server.GetClientId(0)));
   ASSERT_TRUE(goodbye_checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
   // Ping response server -> c1
-  std::unique_ptr<Command> cmd4(
-      new SerializedSendCommand(ping1_resp_serial,
-                                "c1",
-                                env_->NowMicros(),
-                                false));
-  ASSERT_OK(server.SendCommand(std::move(cmd4)));
+  ASSERT_OK(server.SendResponse(ping1_resp, "c1", 0));
   // Should NOT get response -- c1 has said goodbye
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
   // Ping response server -> c2
-  std::unique_ptr<Command> cmd5(
-      new SerializedSendCommand(ping2_resp_serial,
-                                "c2",
-                                env_->NowMicros(),
-                                false));
-  ASSERT_OK(server.SendCommand(std::move(cmd5)));
+  ASSERT_OK(server.SendResponse(ping2_resp, "c2", 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
 }
 

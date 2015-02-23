@@ -129,7 +129,7 @@ std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
   return std::move(msg);
 }
 
-void Message::SerializeToString(std::string* out) {
+void Message::SerializeToString(std::string* out) const {
   Serialize();  // serialize into local buffer
   out->assign(std::move(serialize_buffer__));
 }

@@ -134,7 +134,7 @@ class Message : public Serializer {
    * Inherited from Serializer
    */
   virtual Status DeSerialize(Slice* in) = 0;
-  virtual void SerializeToString(std::string* out);
+  void SerializeToString(std::string* out) const;
 
  protected:
   Message(MessageType type, TenantID tenantid, const ClientID& origin) :

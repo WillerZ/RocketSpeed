@@ -52,10 +52,66 @@ class MsgLoopBase {
   // The client ID of a specific event loop.
   virtual const ClientID& GetClientId(int worker_id) const = 0;
 
-  // Send a command to a specific event loop for processing.
-  // This call is thread-safe.
+  /**
+   * Send a command to a specific event loop for processing.
+   *
+   * This call is thread-safe.
+   *
+   * @param command The command to send for processing.
+   * @param worker_id The index of the worker thread.
+   * @return OK if enqueued.
+   *         NoBuffer if queue is full.
+   */
   virtual Status SendCommand(std::unique_ptr<Command> command,
                              int worker_id) = 0;
+
+  /**
+   * Sends a request message to a recipient. The message will be sent to an
+   * unspecified event loop to dispatch, so will not be ordered with respect to
+   * other requests. If this is the first message sent to the recipient,
+   * communication will be initiated.
+   *
+   * @param msg The message to send to the recipient.
+   * @param recipient Client to send message to.
+   * @return OK if enqueued.
+   *         NoBuffer if queue is full.
+   */
+  Status SendRequest(const Message& msg, ClientID recipient) {
+    return SendRequest(msg, std::move(recipient), LoadBalancedWorkerId());
+  }
+
+  /**
+   * Sends a request message to a recipient via a specific event loop specified
+   * by worker_id. Requests on the same worker_id from the same thread will
+   * be ordered with respect to each other. If this is the first message sent
+   * to the recipient, communication will be initiated.
+   *
+   * @param msg The message to send to the recipient.
+   * @param recipient Client to send message to.
+   * @param worker_id The index of the worker thread.
+   * @return OK if enqueued.
+   *         NoBuffer if queue is full.
+   */
+  Status SendRequest(const Message& msg, ClientID recipient, int worker_id) {
+    return SendMessage(msg, std::move(recipient), worker_id, true);
+  }
+
+  /**
+   * Sends a response message to a recipient via a specific event loop
+   * specified by worker_id. Responses on the same worker_id from the same
+   * thread will be ordered with respect to each other. If no messages have
+   * been received from the recipient (or the recipient has sent a goodbye
+   * message) then the response will asyncronously fail to send.
+   *
+   * @param msg The message to send to the recipient.
+   * @param recipient Client to send message to.
+   * @param worker_id The index of the worker thread.
+   * @return OK if enqueued.
+   *         NoBuffer if queue is full.
+   */
+  Status SendResponse(const Message& msg, ClientID recipient, int worker_id) {
+    return SendMessage(msg, std::move(recipient), worker_id, false);
+  }
 
   virtual Statistics GetStatistics() const = 0;
 
@@ -73,6 +129,13 @@ class MsgLoopBase {
 
   // Checks that the message origin matches this worker loop.
   virtual bool CheckMessageOrigin(const Message* msg) = 0;
+
+ private:
+  // Sends msg to recipient on event loop worker_id.
+  virtual Status SendMessage(const Message& msg,
+                             ClientID recipient,
+                             int worker_id,
+                             bool is_new_request) = 0;
 };
 
 }  // namespace rocketspeed

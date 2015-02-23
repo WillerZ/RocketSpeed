@@ -206,6 +206,20 @@ MsgLoop::~MsgLoop() {
   Stop();
 }
 
+Status MsgLoop::SendMessage(const Message& msg,
+                            ClientID recipient,
+                            int worker_id,
+                            bool is_new_request) {
+  std::string serial;
+  msg.SerializeToString(&serial);
+  std::unique_ptr<Command> cmd(
+    new SerializedSendCommand(std::move(serial),
+                              std::move(recipient),
+                              env_->NowMicros(),
+                              is_new_request));
+  return SendCommand(std::move(cmd), worker_id);
+}
+
 //
 // This is the system's handling of the ping message.
 // Applications can override this behaviour if desired.

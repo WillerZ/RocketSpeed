@@ -86,7 +86,6 @@ TEST(CopilotTest, Publish) {
 
   // send messages to copilot
   int num_msg = 100;
-  const bool is_new_request = true;
   for (int i = 0; i < num_msg; ++i) {
     NamespaceID ns = 101 + i % 50;
     std::string topic = "copilot_test_" + std::to_string(i % 50);
@@ -97,13 +96,8 @@ TEST(CopilotTest, Publish) {
                         MessageMetadata::MetaType::Request,
                         client_id_,
                         { TopicPair(0, topic, type, ns) });
-    msg.SerializeToString(&serial);
-    std::unique_ptr<Command> cmd(new SerializedSendCommand(
-        std::move(serial),
-        cluster.GetCopilotHostIds().front().ToClientId(),
-        env_->NowMicros(),
-        is_new_request));
-    ASSERT_EQ(loop.SendCommand(std::move(cmd)).ok(), true);
+    ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
+    ASSERT_EQ(loop.SendRequest(msg, host).ok(), true);
     sent_msgs_.insert(topic);
   }
 

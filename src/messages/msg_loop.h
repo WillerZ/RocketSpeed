@@ -67,14 +67,29 @@ class MsgLoop : public MsgLoopBase {
     return worker_client_ids_[worker_id];
   }
 
-  // Send a command to an unspecified event loop for processing.
-  // This call is thread-safe.
+  /**
+   * Send a command to an unspecified event loop for processing.
+   *
+   * This call is thread-safe.
+   *
+   * @param command The command to send for processing.
+   * @return OK if enqueued.
+   *         NoBuffer if queue is full.
+   */
   Status SendCommand(std::unique_ptr<Command> command) {
     return SendCommand(std::move(command), LoadBalancedWorkerId());
   }
 
-  // Send a command to a specific event loop for processing.
-  // This call is thread-safe.
+  /**
+   * Send a command to a specific event loop for processing.
+   *
+   * This call is thread-safe.
+   *
+   * @param command The command to send for processing.
+   * @param worker_id The index of the worker thread.
+   * @return OK if enqueued.
+   *         NoBuffer if queue is full.
+   */
   Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
     assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
     return event_loops_[worker_id]->SendCommand(std::move(command));
@@ -113,6 +128,11 @@ class MsgLoop : public MsgLoopBase {
   bool CheckMessageOrigin(const Message* msg);
 
  private:
+  Status SendMessage(const Message& msg,
+                     ClientID recipient,
+                     int worker_id,
+                     bool is_new_request);
+
   // Stores the worker_id for this thread.
   // Reading this is only valid within an EventLoop callback. It is used to
   // define affinities between workers and messages.

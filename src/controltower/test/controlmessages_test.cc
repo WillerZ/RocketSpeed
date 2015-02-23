@@ -102,14 +102,7 @@ TEST(ControlTowerTest, Ping) {
   MessagePing msg(Tenant::GuestTenant,
                   MessagePing::PingType::Request,
                   client_id1_);
-  std::string serial;
-  msg.SerializeToString(&serial);
-  std::unique_ptr<Command> cmd(
-      new SerializedSendCommand(serial,
-                                ct_client_id,
-                                env_->NowMicros(),
-                                true));
-  ASSERT_OK(loop.SendCommand(std::move(cmd)));
+  ASSERT_OK(loop.SendRequest(msg, ct_client_id));
 
   info_log_->Flush();
   // Verify that the ping response was received by the client.
@@ -121,13 +114,7 @@ TEST(ControlTowerTest, Ping) {
     MessagePing newmsg(Tenant::GuestTenant,
                        MessagePing::PingType::Request,
                        client_id1_);
-    msg.SerializeToString(&serial);  // serialize msg
-    std::unique_ptr<Command> cmd2(
-      new SerializedSendCommand(std::move(serial),
-                                ct_client_id,
-                                env_->NowMicros(),
-                                true));
-    ASSERT_EQ(loop.SendCommand(std::move(cmd2)).ok(), true);
+    ASSERT_OK(loop.SendRequest(msg, ct_client_id));
   }
 
   // Check that all responses were received.
@@ -171,20 +158,13 @@ TEST(ControlTowerTest, Subscribe) {
   }
 
   // create a message
-  std::string serial;
-  const bool is_new_request = true;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         client_id1_,
                         topics);
-  meta1.SerializeToString(&serial);
-  std::unique_ptr<Command> cmd(new SerializedSendCommand(std::move(serial),
-                                                         ct->GetClientId(0),
-                                                         env_->NowMicros(),
-                                                         is_new_request));
 
   // send message to control tower
-  ASSERT_OK(loop.SendCommand(std::move(cmd)));
+  ASSERT_OK(loop.SendRequest(meta1, ct->GetClientId(0)));
 
   // verify that the subscribe response was received by the client
   ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
@@ -232,20 +212,13 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   }
 
   // first subscriber *******
-  std::string serial;
-  const bool is_new_request = true;
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         client_id1_,
                         topics);
-  meta1.SerializeToString(&serial);
-  std::unique_ptr<Command> cmd(new SerializedSendCommand(std::move(serial),
-                                                         ct->GetClientId(0),
-                                                         env_->NowMicros(),
-                                                         is_new_request));
 
   // send message to control tower
-  ASSERT_OK(loop1.SendCommand(std::move(cmd)));
+  ASSERT_OK(loop1.SendRequest(meta1, ct->GetClientId(0)));
 
   // verify that the subscribe response was received by the client
   ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
@@ -267,19 +240,13 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   }
 
   // The second subscriber subscribes to the same topics.
-  std::string serial2;
   MessageMetadata meta2(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         client_id2_,
                         topics);
-  meta2.SerializeToString(&serial2);
-  std::unique_ptr<Command> cmd2(new SerializedSendCommand(std::move(serial2),
-                                                          ct->GetClientId(0),
-                                                          env_->NowMicros(),
-                                                          is_new_request));
 
   // send message to control tower
-  ASSERT_OK(loop2.SendCommand(std::move(cmd2)));
+  ASSERT_OK(loop2.SendRequest(meta2, ct->GetClientId(0)));
 
   // verify that the subscribe response was received by the client
   ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
@@ -297,19 +264,13 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   }
 
   // Unsubscribe all the topics from the first client.
-  std::string serial3;
   MessageMetadata meta3(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         client_id1_,
                         topics);
-  meta3.SerializeToString(&serial3);
-  std::unique_ptr<Command> cmd3(new SerializedSendCommand(std::move(serial3),
-                                                          ct->GetClientId(0),
-                                                          env_->NowMicros(),
-                                                          is_new_request));
 
   // send message to control tower
-  ASSERT_OK(loop1.SendCommand(std::move(cmd3)));
+  ASSERT_OK(loop1.SendRequest(meta3, ct->GetClientId(0)));
 
   // verify that the subscribe response was received by the client
   ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
@@ -319,19 +280,13 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   ASSERT_EQ(numopenlogs1, GetNumOpenLogs(ct));
 
   // Finally, unsubscribe from the second client too.
-  std::string serial4;
   MessageMetadata meta4(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         client_id2_,
                         topics);
-  meta4.SerializeToString(&serial4);
-  std::unique_ptr<Command> cmd4(new SerializedSendCommand(std::move(serial4),
-                                                          ct->GetClientId(0),
-                                                          env_->NowMicros(),
-                                                          is_new_request));
 
   // send message to control tower
-  ASSERT_OK(loop2.SendCommand(std::move(cmd4)));
+  ASSERT_OK(loop2.SendRequest(meta4, ct->GetClientId(0)));
 
   // verify that the subscribe response was received by the client
   ASSERT_EQ(CheckSubscribeResponse(num_topics), true);
