@@ -290,4 +290,15 @@ bool MsgLoop::CheckMessageOrigin(const Message* msg) {
   return true;
 }
 
+Status MsgLoop::WaitUntilRunning(std::chrono::seconds timeout) {
+  for (auto& event_loop : event_loops_) {
+    Status st = event_loop->WaitUntilRunning(timeout);
+    if (!st.ok()) {
+      return st;
+    }
+  }
+  return Status::OK();
+}
+
+
 }  // namespace rocketspeed

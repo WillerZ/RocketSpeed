@@ -80,9 +80,7 @@ TEST(CopilotTest, Publish) {
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
-  while (!loop.IsRunning()) {
-    env_->SleepForMicroseconds(1000);
-  }
+  ASSERT_OK(loop.WaitUntilRunning());
 
   // send messages to copilot
   int num_msg = 100;

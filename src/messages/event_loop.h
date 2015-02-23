@@ -130,6 +130,16 @@ class EventLoop {
     return active_connections_.load(std::memory_order_acquire);
   }
 
+  /**
+   * Waits until the event loop is running.
+   *
+   * @param timeout Maximum time to wait.
+   * @return OK if the loop is running, otherwise an error if the loop failed
+   *         to start.
+   */
+  Status WaitUntilRunning(std::chrono::seconds timeout =
+                            std::chrono::seconds(10));
+
   // Debug logging severity levels.
   static const int kLogSeverityDebug;
   static const int kLogSeverityMsg;
@@ -167,13 +177,15 @@ class EventLoop {
   EnvOptions env_options_;
 
   // Port nuber of accept loop (in network byte order)
-  int port_number_;
+  int port_number_ = -1;
 
   // Is the EventLoop all setup and running?
   std::atomic<bool> running_;
+  port::Semaphore start_signal_;
+  Status start_status_;
 
   // The event loop base.
-  event_base *base_;
+  event_base *base_ = nullptr;
 
   // debug message go here
   const std::shared_ptr<Logger> info_log_;

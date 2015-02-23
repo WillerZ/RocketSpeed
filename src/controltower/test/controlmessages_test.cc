@@ -93,9 +93,7 @@ TEST(ControlTowerTest, Ping) {
   env_->StartThread(ControlTowerTest::MsgLoopStart,
                     &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
-  while (!loop.IsRunning()) {
-    env_->SleepForMicroseconds(1000);
-  }
+  ASSERT_OK(loop.WaitUntilRunning());
 
   // create a message
   auto ct_client_id = cluster.GetControlTower()->GetClientId(0);
@@ -153,9 +151,7 @@ TEST(ControlTowerTest, Subscribe) {
   env_->StartThread(ControlTowerTest::MsgLoopStart,
                     &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
-  while (!loop.IsRunning()) {
-    env_->SleepForMicroseconds(1000);
-  }
+  ASSERT_OK(loop.WaitUntilRunning());
 
   // create a message
   MessageMetadata meta1(Tenant::GuestTenant,
@@ -207,9 +203,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   env_->StartThread(ControlTowerTest::MsgLoopStart,
                     &loop1,
                     "testc-" + std::to_string(loop1.GetHostId().port));
-  while (!loop1.IsRunning()) {
-    env_->SleepForMicroseconds(1000);
-  }
+  ASSERT_OK(loop1.WaitUntilRunning());
 
   // first subscriber *******
   MessageMetadata meta1(Tenant::GuestTenant,
@@ -235,9 +229,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   env_->StartThread(ControlTowerTest::MsgLoopStart,
                     &loop2,
                     "testc-" + std::to_string(loop2.GetHostId().port));
-  while (!loop2.IsRunning()) {
-    env_->SleepForMicroseconds(1000);
-  }
+  ASSERT_OK(loop2.WaitUntilRunning());
 
   // The second subscriber subscribes to the same topics.
   MessageMetadata meta2(Tenant::GuestTenant,

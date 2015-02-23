@@ -525,7 +525,9 @@ void
 EventLoop::do_startevent(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   obj->thread_check_.Check();
+  obj->start_status_ = Status::OK();
   obj->running_ = true;
+  obj->start_signal_.Post();
 }
 
 void
@@ -641,13 +643,18 @@ EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
 }
 
 void
-EventLoop::Run(void) {
+EventLoop::Run() {
+  auto start_error = [&] (const std::string& error) {
+    LOG_ERROR(info_log_, error.c_str());
+    info_log_->Flush();
+    start_status_ = Status::InternalError(error);
+    start_signal_.Post();
+  };
+
   thread_check_.Reset();
   base_ = event_base_new();
   if (!base_) {
-    LOG_WARN(info_log_,
-      "Failed to create an event base for an EventLoop thread");
-    info_log_->Flush();
+    start_error("Failed to create an event base for an EventLoop thread");
     return;
   }
 
@@ -670,9 +677,8 @@ EventLoop::Run(void) {
       sizeof(sin));
 
     if (listener_ == nullptr) {
-      LOG_WARN(info_log_,
-          "Failed to create connection listener on port %d", port_number_);
-      info_log_->Flush();
+      start_error("Failed to create connection listener on port " +
+        std::to_string(port_number_));
       return;
     }
 
@@ -689,22 +695,19 @@ EventLoop::Run(void) {
     reinterpret_cast<void*>(this));
 
   if (startup_event_ == nullptr) {
-    LOG_WARN(info_log_, "Failed to create first startup event");
-    info_log_->Flush();
+    start_error("Failed to create first startup event");
     return;
   }
   timeval zero_seconds = {0, 0};
   int rv = evtimer_add(startup_event_, &zero_seconds);
   if (rv != 0) {
-    LOG_WARN(info_log_, "Failed to add startup event to event base");
-    info_log_->Flush();
+    start_error("Failed to add startup event to event base");
     return;
   }
 
   // An event that signals new commands in the command queue.
   if (shutdown_eventfd_.status() < 0) {
-    LOG_WARN(info_log_, "Failed to create eventfd for shutdown commands");
-    info_log_->Flush();
+    start_error("Failed to create eventfd for shutdown commands");
     return;
   }
 
@@ -720,21 +723,18 @@ EventLoop::Run(void) {
     this->do_shutdown,
     reinterpret_cast<void*>(this));
   if (shutdown_event_ == nullptr) {
-    LOG_WARN(info_log_, "Failed to create shutdown event");
-    info_log_->Flush();
+    start_error("Failed to create shutdown event");
     return;
   }
   rv = event_add(shutdown_event_, nullptr);
   if (rv != 0) {
-    LOG_WARN(info_log_, "Failed to add shutdown event to event base");
-    info_log_->Flush();
+    start_error("Failed to add shutdown event to event base");
     return;
   }
 
   // An event that signals new commands in the command queue.
   if (command_ready_eventfd_.status() < 0) {
-    LOG_WARN(info_log_, "Failed to create eventfd for waiting commands");
-    info_log_->Flush();
+    start_error("Failed to create eventfd for waiting commands");
     return;
   }
   command_ready_event_ = event_new(
@@ -744,14 +744,12 @@ EventLoop::Run(void) {
     this->do_command,
     reinterpret_cast<void*>(this));
   if (command_ready_event_ == nullptr) {
-    LOG_WARN(info_log_, "Failed to create command queue event");
-    info_log_->Flush();
+    start_error("Failed to create command queue event");
     return;
   }
   rv = event_add(command_ready_event_, nullptr);
   if (rv != 0) {
-    LOG_WARN(info_log_, "Failed to add command event to event base");
-    info_log_->Flush();
+    start_error("Failed to add command event to event base");
     return;
   }
 
@@ -767,8 +765,9 @@ EventLoop::Run(void) {
 
 void EventLoop::Stop() {
   if (base_ != nullptr) {
-    int shutdown_fd = event_get_fd(shutdown_event_);
+    int shutdown_fd = shutdown_event_ ? event_get_fd(shutdown_event_) : 0;
     if (running_) {
+      assert(shutdown_fd);
       // Write to the shutdown event FD to signal the event loop thread
       // to shutdown and stop looping.
       uint64_t value = 1;
@@ -791,7 +790,7 @@ void EventLoop::Stop() {
     if (shutdown_event_) event_free(shutdown_event_);
     if (command_ready_event_) event_free(command_ready_event_);
     event_base_free(base_);
-    close(shutdown_fd);
+    if (shutdown_fd) close(shutdown_fd);
     command_ready_eventfd_.closefd();
     shutdown_eventfd_.closefd();
 
@@ -835,6 +834,15 @@ void EventLoop::Accept(int fd) {
 
 void EventLoop::Dispatch(std::unique_ptr<Message> message) {
   event_callback_(std::move(message));
+}
+
+Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
+  if (!running_) {
+    if (!start_signal_.TimedWait(timeout)) {
+      return Status::TimedOut();
+    }
+  }
+  return start_status_;
 }
 
 // Adds an entry into the connection cache

@@ -74,10 +74,7 @@ Status Proxy::Start(OnMessageCallback on_message,
   on_disconnect_ = std::move(on_disconnect);
   msg_thread_ = env_->StartThread([this] () { msg_loop_->Run(); },
                                           "proxy");
-  while (!msg_loop_->IsRunning()) {
-    std::this_thread::yield();
-  }
-  return Status::OK();
+  return msg_loop_->WaitUntilRunning();
 }
 
 Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {

@@ -143,8 +143,11 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
                                               "tower");
 
     // Wait for message loop to start.
-    while (!control_tower_loop_->IsRunning()) {
-      std::this_thread::yield();
+    status_ = control_tower_loop_->WaitUntilRunning();
+    if (!status_.ok()) {
+      LOG_ERROR(info_log_, "Failed to start ControlTower (%s)",
+        status_.ToString().c_str());
+      return;
     }
   }
 
@@ -187,8 +190,11 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
     cockpit_thread_ = env_->StartThread(entry_point, (void *)this, "cockpit");
 
     // Wait for message loop to start.
-    while (!cockpit_loop_->IsRunning()) {
-      std::this_thread::yield();
+    status_ = cockpit_loop_->WaitUntilRunning();
+    if (!status_.ok()) {
+      LOG_ERROR(info_log_, "Failed to start cockpit (%s)",
+        status_.ToString().c_str());
+      return;
     }
   }
 }

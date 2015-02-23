@@ -72,9 +72,7 @@ TEST(PilotTest, Publish) {
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
   loop.RegisterCallbacks(client_callback);
   env_->StartThread(MsgLoopStart, &loop, "client");
-  while (!loop.IsRunning()) {
-    std::this_thread::yield();
-  }
+  ASSERT_OK(loop.WaitUntilRunning());
 
   // send messages to pilot
   NamespaceID nsid = 101;

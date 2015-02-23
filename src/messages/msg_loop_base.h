@@ -130,6 +130,16 @@ class MsgLoopBase {
   // Checks that the message origin matches this worker loop.
   virtual bool CheckMessageOrigin(const Message* msg) = 0;
 
+  /**
+   * Waits until the message loop has run, or failed to start. If the loop
+   * started and has subsequently stopped, the status will still be OK().
+   *
+   * @param time Maximum time to wait.
+   * @return OK if loop successfully started, error otherwise.
+   */
+  virtual Status WaitUntilRunning(std::chrono::seconds timeout =
+                                    std::chrono::seconds(10)) = 0;
+
  private:
   // Sends msg to recipient on event loop worker_id.
   virtual Status SendMessage(const Message& msg,

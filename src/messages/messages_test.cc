@@ -205,9 +205,8 @@ TEST(Messaging, ClientOnNewSocket) {
   MsgLoop loop2(env_, env_options_, 0, 1, info_log_, "loop2");
   loop2.RegisterCallbacks(callbacks);
   env_->StartThread([&] () { loop2.Run(); }, "loop2");
-  while (!loop1.IsRunning() || !loop2.IsRunning()) {
-    std::this_thread::yield();
-  }
+  ASSERT_OK(loop1.WaitUntilRunning());
+  ASSERT_OK(loop2.WaitUntilRunning());
 
   // Send a ping from loop2 to loop1.
   MessagePing msg(Tenant::GuestTenant,
@@ -220,9 +219,7 @@ TEST(Messaging, ClientOnNewSocket) {
   MsgLoop loop3(env_, env_options_, 0, 1, info_log_, "loop3");
   loop3.RegisterCallbacks(callbacks);
   env_->StartThread([&] () { loop3.Run(); }, "loop3");
-  while (!loop3.IsRunning()) {
-    std::this_thread::yield();
-  }
+  ASSERT_OK(loop3.WaitUntilRunning());
   ASSERT_OK(loop3.SendRequest(msg, loop1.GetClientId(0)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
@@ -250,9 +247,8 @@ TEST(Messaging, MultipleClientsOneSocket) {
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client");
   client.RegisterCallbacks(callbacks);
   env_->StartThread([&] () { client.Run(); }, "client");
-  while (!server.IsRunning() || !client.IsRunning()) {
-    std::this_thread::yield();
-  }
+  ASSERT_OK(server.WaitUntilRunning());
+  ASSERT_OK(client.WaitUntilRunning());
 
   // Send a pings from client to server.
   for (int i = 0; i < 100; ++i) {
@@ -301,9 +297,8 @@ TEST(Messaging, GracefulGoodbye) {
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client");
   client.RegisterCallbacks(callbacks);
   env_->StartThread([&] () { client.Run(); }, "client");
-  while (!server.IsRunning() || !client.IsRunning()) {
-    std::this_thread::yield();
-  }
+  ASSERT_OK(server.WaitUntilRunning());
+  ASSERT_OK(client.WaitUntilRunning());
 
   // Create messages
   MessagePing ping1_req(Tenant::GuestTenant, MessagePing::Request, "c1");
@@ -334,6 +329,18 @@ TEST(Messaging, GracefulGoodbye) {
   // Ping response server -> c2
   ASSERT_OK(server.SendResponse(ping2_resp, "c2", 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
+}
+
+TEST(Messaging, WaitUntilRunningFailure) {
+  // Check that WaitUntilRunning returns failure.
+  MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
+  env_->StartThread([&] () { loop1.Run(); }, "loop1");
+  ASSERT_OK(loop1.WaitUntilRunning());
+
+  // now start another on same port, should fail.
+  MsgLoop loop2(env_, env_options_, 58499, 1, info_log_, "loop2");
+  env_->StartThread([&] () { loop2.Run(); }, "loop2");
+  ASSERT_TRUE(!loop2.WaitUntilRunning().ok());
 }
 
 }  // namespace rocketspeed

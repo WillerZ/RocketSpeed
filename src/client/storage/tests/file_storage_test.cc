@@ -86,14 +86,12 @@ class FileStorageTest {
     storage->Initialize(load_callback, msg_loop.get());
   }
 
-  void StartMsgLoop() {
+  Status StartMsgLoop() {
     env->StartThread([this]() {
       msg_loop->Run();
     });
 
-    while (!msg_loop->IsRunning()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    return msg_loop->WaitUntilRunning();
   }
 
   void StopMsgLoop() {
@@ -121,7 +119,7 @@ class FileStorageTest {
 };
 
 TEST(FileStorageTest, UpdatesAndLoads) {
-  StartMsgLoop();
+  ASSERT_OK(StartMsgLoop());
 
   // Test scenario.
   TopicID topic1(101, "StoreAndLoad_1");
@@ -180,7 +178,7 @@ TEST(FileStorageTest, UpdatesAndLoads) {
 }
 
 TEST(FileStorageTest, SnapshotAndRead) {
-  StartMsgLoop();
+  ASSERT_OK(StartMsgLoop());
 
   // Test scenario.
   std::vector<SubscriptionRequest> requests = {
@@ -221,7 +219,7 @@ TEST(FileStorageTest, SnapshotAndRead) {
 
   ASSERT_OK(storage->ReadSnapshot());
 
-  StartMsgLoop();
+  ASSERT_OK(StartMsgLoop());
 
   // Load all subscriptions.
   ASSERT_OK(storage->LoadAll());
@@ -231,7 +229,7 @@ TEST(FileStorageTest, SnapshotAndRead) {
 }
 
 TEST(FileStorageTest, MissingSubscription) {
-  StartMsgLoop();
+  ASSERT_OK(StartMsgLoop());
 
   // What if we ask for a nonexistent subscription?
   std::vector<SubscriptionRequest> requests = {
@@ -289,7 +287,7 @@ TEST(FileStorageTest, CorruptedFile) {
   ASSERT_TRUE(storage->ReadSnapshot().IsInternal());
 
   // Verify that nothing got added.
-  StartMsgLoop();
+  ASSERT_OK(StartMsgLoop());
 
   ASSERT_OK(storage->LoadAll());
   ASSERT_TRUE(WaitForLoadEmpty(msg_loop->GetNumWorkers()));

@@ -127,6 +127,9 @@ class MsgLoop : public MsgLoopBase {
   // Checks that the message origin matches this worker loop.
   bool CheckMessageOrigin(const Message* msg);
 
+  Status WaitUntilRunning(std::chrono::seconds timeout =
+                            std::chrono::seconds(10));
+
  private:
   Status SendMessage(const Message& msg,
                      ClientID recipient,

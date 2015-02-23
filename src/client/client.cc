@@ -219,8 +219,9 @@ Status ClientImpl::Start(MessageReceivedCallback receive_callback,
   }, "client");
   msg_loop_thread_spawned_ = true;
 
-  while (!msg_loop_->IsRunning()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  Status st = msg_loop_->WaitUntilRunning();
+  if (!st.ok()) {
+    return st;
   }
 
   if (restore_strategy == RestoreStrategy::kResubscribe) {
