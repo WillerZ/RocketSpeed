@@ -23,6 +23,7 @@ namespace rocketspeed {
  *
  * Unprocessed objects are stored in a bounded circular buffer, so only events
  * that are up to N seqnos into the future can be store.
+ * User must provide external synchronisation.
  *
  * Future implementation could use a priority queue.
  */
@@ -87,6 +88,17 @@ struct OrderedProcessor {
     buffer_[index].seqno = seqno;
     buffer_[index].object = std::move(object);
     return Status::OK();
+  }
+
+  /**
+   * Resets processor to initial state, preserving buffer size (no
+   * reallocations) and processor functor.
+   */
+  void Reset() {
+    next_seqno_ = 0;
+    for (int i = 0; i < buffer_size_; ++i) {
+      buffer_[i] = Unprocessed();
+    }
   }
 
  private:

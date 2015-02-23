@@ -48,6 +48,13 @@ TEST(OrderedProcessorTest, Basic) {
   // seqno 3, should process all.
   ASSERT_OK(p.Process(400, 3));
   ASSERT_TRUE(processed == (Ints{100, 200, 300, 400, 500, 600, 700}));
+
+  // reset processor without changing processor functor
+  p.Reset();
+
+  // seqno 0, should process immediately
+  ASSERT_OK(p.Process(800, 0));
+  ASSERT_TRUE(processed == (Ints{100, 200, 300, 400, 500, 600, 700, 800}));
 }
 
 TEST(OrderedProcessorTest, Randomized) {
