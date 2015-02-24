@@ -811,13 +811,13 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
     // The queue was full and the write failed.
     LOG_WARN(info_log_, "The command queue is full");
     info_log_->Flush();
-    return Status::InternalError("Full command queue");
+    return Status::NoBuffer();
   }
 
   // Write to the command_ready_eventfd_ to send an event to the reader.
   if (command_ready_eventfd_.write_event(1)) {
     // Some internal error happened.
-    LOG_WARN(info_log_,
+    LOG_ERROR(info_log_,
         "Error writing a notification to eventfd, errno=%d", errno);
     info_log_->Flush();
     return Status::InternalError("eventfd_write returned error");

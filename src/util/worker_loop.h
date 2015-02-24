@@ -11,7 +11,6 @@
 #include <utility>
 #include "src/util/common/multi_producer_queue.h"
 #include "src/port/port.h"
-#include "src/port/Env.h"
 
 namespace rocketspeed {
 
@@ -21,12 +20,10 @@ class WorkerLoop {
   /**
    * Constructs a WorkerLoop with a specific queue size.
    *
-   * @param env Environment context
    * @param size The size of the worker queue. Due to the queue implementation,
    *             the maximum number of items in the queue will be size - 1.
    */
-  explicit WorkerLoop(Env* env,
-                      uint32_t size);
+  explicit WorkerLoop(uint32_t size);
 
   /**
    * Destroys the worker loop, and waits for it to stop.
@@ -74,7 +71,7 @@ class WorkerLoop {
 };
 
 template <typename Command>
-WorkerLoop<Command>::WorkerLoop(Env* env, uint32_t size)
+WorkerLoop<Command>::WorkerLoop(uint32_t size)
 : command_queue_(size)
 , stop_(false)
 , running_(false) {

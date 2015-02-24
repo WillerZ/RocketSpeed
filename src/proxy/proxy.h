@@ -17,6 +17,8 @@
 #pragma GCC visibility push(default)
 namespace rocketspeed {
 
+class ProxyWorker;
+
 /**
  * The RocketSpeed Proxy is a library that appears as Pilot and Copilot to the
  * outside, but internally forwards all messages to a real RocketSpeed service.
@@ -26,10 +28,10 @@ namespace rocketspeed {
  */
 class Proxy {
  public:
-  typedef std::function<void(const ClientID&, std::string)>
+  typedef std::function<void(int64_t, std::string)>
     OnMessageCallback;
 
-  typedef std::function<void(const std::vector<ClientID>&)>
+  typedef std::function<void(const std::vector<int64_t>&)>
     OnDisconnectCallback;
 
   /**
@@ -74,6 +76,8 @@ class Proxy {
    * be sent immediately. This should be used if the caller
    * can guarantee ordering.
    *
+   * Forward is thread safe.
+   *
    * @param msg The serialized RocketSpeed message.
    * @param session Unique session ID. Messages are ordered per session.
    * @param sequence Sequence ID of messages per session.
@@ -84,6 +88,8 @@ class Proxy {
   /**
    * Instructs the proxy to reset the next expected sequence number for a
    * session to 0, effectively removing all state for that session.
+   *
+   * DestroySession is thread safe.
    *
    * @param session Unique session ID to destroy.
    */
@@ -109,12 +115,15 @@ class Proxy {
   std::shared_ptr<Configuration> config_;
   std::unique_ptr<MsgLoop> msg_loop_;
   Env::ThreadId msg_thread_;
+  std::unique_ptr<ProxyWorker> worker_;
+  Env::ThreadId worker_thread_;
 
   struct Stats {
     Stats() {
       forwards = all.AddCounter("rocketspeed.proxy.forwards");
       forward_errors = all.AddCounter("rocketspeed.proxy.forward_errors");
       on_message_calls = all.AddCounter("rocketspeed.proxy.on_message_calls");
+      bad_origins = all.AddCounter("rocketspeed.proxy.bad_origins");
     }
 
     Statistics all;
@@ -122,6 +131,7 @@ class Proxy {
     Counter* forwards;
     Counter* forward_errors;
     Counter* on_message_calls;
+    Counter* bad_origins;
   } stats_;
 };
 

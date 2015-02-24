@@ -22,8 +22,7 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
   control_tower_(control_tower),
   room_number_(room_number),
   topic_map_(control_tower->GetTailer()),
-  room_loop_(options.env,
-             options.worker_queue_size) {
+  room_loop_(options.worker_queue_size) {
 }
 
 ControlRoom::~ControlRoom() {
