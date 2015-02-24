@@ -3,7 +3,7 @@
 
 #include "src-gen/djinni/cpp/jni/NativeMessageCallback.hpp"  // my header
 #include "HBinary.hpp"
-#include "HString.hpp"
+#include "HI64.hpp"
 
 namespace djinni_generated {
 
@@ -11,13 +11,13 @@ NativeMessageCallback::NativeMessageCallback() : djinni::JniInterface<::rocketsp
 
 NativeMessageCallback::JavaProxy::JavaProxy(jobject obj) : JavaProxyCacheEntry(obj) {}
 
-void NativeMessageCallback::JavaProxy::JavaProxy::Call(std::string c_client_id, std::vector<uint8_t> c_message) {
+void NativeMessageCallback::JavaProxy::JavaProxy::Call(int64_t c_session_id, std::vector<uint8_t> c_message) {
     JNIEnv * const jniEnv = djinni::jniGetThreadEnv();
     djinni::JniLocalScope jscope(jniEnv, 10);
-    djinni::LocalRef<jstring> j_client_id(jniEnv, ::djinni::HString::toJava(jniEnv, c_client_id));
+    jlong j_session_id = ::djinni::HI64::Unboxed::toJava(jniEnv, c_session_id);
     djinni::LocalRef<jbyteArray> j_message(jniEnv, ::djinni::HBinary::toJava(jniEnv, c_message));
     const auto & data = djinni::JniClass<::djinni_generated::NativeMessageCallback>::get();
-    jniEnv->CallVoidMethod(getGlobalRef(), data.method_call, j_client_id.get(), j_message.get());
+    jniEnv->CallVoidMethod(getGlobalRef(), data.method_call, j_session_id, j_message.get());
     djinni::jniExceptionCheck(jniEnv);
 };
 

@@ -51,14 +51,14 @@ Status ProxyWrapper::Start(
     std::shared_ptr<MessageCallback> message_callback,
     std::shared_ptr<DisconnectCallback> disconnect_callback) {
   auto message_callback1 =
-      [message_callback](const ClientID& client_id, std::string message) {
+      [message_callback](int64_t session_id, std::string message) {
     auto first = reinterpret_cast<const uint8_t*>(message.data());
     std::vector<uint8_t> message1(first, first + message.size());
-    message_callback->Call(client_id, std::move(message1));
+    message_callback->Call(session_id, std::move(message1));
   };
   auto disconnect_callback1 =
-      [disconnect_callback](const std::vector<ClientID>& client_ids) {
-    disconnect_callback->Call(std::move(client_ids));
+      [disconnect_callback](const std::vector<int64_t>& session_ids) {
+    disconnect_callback->Call(session_ids);
   };
   return FromStatus(proxy_->Start(message_callback1, disconnect_callback1));
 }

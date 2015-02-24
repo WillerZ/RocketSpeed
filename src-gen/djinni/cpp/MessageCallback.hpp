@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 #include <vector>
 
 namespace rocketspeed { namespace djinni {
@@ -13,7 +12,7 @@ class MessageCallback {
 public:
     virtual ~MessageCallback() {}
 
-    virtual void Call(std::string client_id, std::vector<uint8_t> message) = 0;
+    virtual void Call(int64_t session_id, std::vector<uint8_t> message) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

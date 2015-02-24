@@ -4,5 +4,5 @@
 package org.rocketspeed;
 
 public abstract class MessageCallback {
-    public abstract void call(String clientId, byte[] message);
+    public abstract void call(long sessionId, byte[] message);
 }

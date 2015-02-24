@@ -17,12 +17,12 @@ public:
     static std::shared_ptr<::rocketspeed::djinni::MessageCallback> fromJava(JNIEnv* jniEnv, jobject j) { return djinni::JniClass<::djinni_generated::NativeMessageCallback>::get()._fromJava(jniEnv, j); }
 
     const djinni::GlobalRef<jclass> clazz { djinni::jniFindClass("org/rocketspeed/MessageCallback") };
-    const jmethodID method_call { djinni::jniGetMethodID(clazz.get(), "call", "(Ljava/lang/String;[B)V") };
+    const jmethodID method_call { djinni::jniGetMethodID(clazz.get(), "call", "(J[B)V") };
 
     class JavaProxy final : djinni::JavaProxyCacheEntry, public ::rocketspeed::djinni::MessageCallback {
     public:
         JavaProxy(jobject obj);
-        virtual void Call(std::string client_id, std::vector<uint8_t> message) override;
+        virtual void Call(int64_t session_id, std::vector<uint8_t> message) override;
 
     private:
         using djinni::JavaProxyCacheEntry::getGlobalRef;

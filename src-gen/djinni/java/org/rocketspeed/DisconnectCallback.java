@@ -6,5 +6,5 @@ package org.rocketspeed;
 import java.util.ArrayList;
 
 public abstract class DisconnectCallback {
-    public abstract void call(ArrayList<String> clientIds);
+    public abstract void call(ArrayList<Long> sessionIds);
 }

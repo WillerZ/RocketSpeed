@@ -136,12 +136,12 @@ ClientImpl = interface +c {
 
 
 MessageCallback = interface +j {
-  call(client_id: string,
+  call(session_id: i64,
        message: binary);
 }
 
 DisconnectCallback = interface +j {
-  call(client_ids: list<string>);
+  call(session_ids: list<i64>);
 }
 
 ProxyImpl = interface +c {

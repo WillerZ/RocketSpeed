@@ -22,7 +22,7 @@ public:
     class JavaProxy final : djinni::JavaProxyCacheEntry, public ::rocketspeed::djinni::DisconnectCallback {
     public:
         JavaProxy(jobject obj);
-        virtual void Call(std::vector<std::string> client_ids) override;
+        virtual void Call(std::vector<int64_t> session_ids) override;
 
     private:
         using djinni::JavaProxyCacheEntry::getGlobalRef;

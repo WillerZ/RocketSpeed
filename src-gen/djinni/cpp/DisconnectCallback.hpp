@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <string>
+#include <cstdint>
 #include <vector>
 
 namespace rocketspeed { namespace djinni {
@@ -12,7 +12,7 @@ class DisconnectCallback {
 public:
     virtual ~DisconnectCallback() {}
 
-    virtual void Call(std::vector<std::string> client_ids) = 0;
+    virtual void Call(std::vector<int64_t> session_ids) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

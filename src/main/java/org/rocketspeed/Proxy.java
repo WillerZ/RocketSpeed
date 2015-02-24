@@ -22,9 +22,9 @@ public class Proxy implements AutoCloseable {
                     final DisconnectCallback disconnectCallback) throws Exception {
     MessageCallback messageCallback1 = new MessageCallback() {
       @Override
-      public void call(String clientId, byte[] message) {
+      public void call(long sessionId, byte[] message) {
         try {
-          messageCallback.call(clientId, message);
+          messageCallback.call(sessionId, message);
         } catch (Throwable e) {
           LOGGER.log(Level.WARNING, "Exception thrown in disconnect callback", e);
         }
@@ -32,9 +32,9 @@ public class Proxy implements AutoCloseable {
     };
     DisconnectCallback disconnectCallback1 = new DisconnectCallback() {
       @Override
-      public void call(ArrayList<String> clientIds) {
+      public void call(ArrayList<Long> sessionIds) {
         try {
-          disconnectCallback.call(clientIds);
+          disconnectCallback.call(sessionIds);
         } catch (Throwable e) {
           LOGGER.log(Level.WARNING, "Exception thrown in disconnect callback", e);
         }
