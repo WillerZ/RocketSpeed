@@ -3,9 +3,11 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/controltower/tailer.h"
 #include "src/util/storage.h"
 #include <vector>
+#include <inttypes.h>
 
 namespace rocketspeed {
 
@@ -58,7 +60,8 @@ Status Tailer::Initialize() {
         info_log_->Flush();
     } else {
       LOG_INFO(info_log_,
-        "Tailer received data (%.16s)@%lu for Topic(%s) in Log(%lu).",
+        "Tailer received data (%.16s)@%" PRIu64
+        " for Topic(%s) in Log(%" PRIu64 ").",
         msg->GetPayload().ToString().c_str(),
         msg->GetSequenceNumber(),
         msg->GetTopicName().ToString().c_str(),
@@ -77,19 +80,19 @@ Status Tailer::Initialize() {
     switch (record.type) {
       case GapType::kDataLoss:
         LOG_WARN(info_log_,
-            "Data Loss in Log(%lu) from %lu-%lu.",
+            "Data Loss in Log(%" PRIu64 ") from %" PRIu64 " -%" PRIu64 ".",
             record.log_id, record.from, record.to);
         break;
 
       case GapType::kRetention:
         LOG_INFO(info_log_,
-            "Retention gap in Log(%lu) from %lu-%lu.",
+            "Retention gap in Log(%" PRIu64 ") from %" PRIu64 "-%" PRIu64 ".",
             record.log_id, record.from, record.to);
         break;
 
       case GapType::kBenign:
         LOG_INFO(info_log_,
-            "Benign gap in Log(%lu) from %lu-%lu.",
+            "Benign gap in Log(%" PRIu64 ") from %" PRIu64 "-%" PRIu64 ".",
             record.log_id, record.from, record.to);
         break;
     }
@@ -151,7 +154,7 @@ Status Tailer::StartReading(LogID logid,
   Status st = r->Open(logid, start);
   if (st.ok()) {
     LOG_INFO(info_log_,
-             "AsyncReader %u start reading Log(%lu)@%lu.",
+             "AsyncReader %u start reading Log(%" PRIu64 ")@%" PRIu64 ".",
              room_id,
              logid,
              start);
@@ -160,7 +163,8 @@ Status Tailer::StartReading(LogID logid,
     }
   } else {
     LOG_WARN(info_log_,
-             "AsyncReader %u failed to start reading Log(%lu)@%lu (%s).",
+             "AsyncReader %u failed to start reading Log(%" PRIu64
+             ")@%" PRIu64 "(%s).",
              room_id,
              logid,
              start,
@@ -179,12 +183,12 @@ Tailer::StopReading(LogID logid, unsigned int room_id) const {
   Status st = r->Close(logid);
   if (st.ok()) {
     LOG_INFO(info_log_,
-        "AsyncReader %u stopped reading Log(%lu).",
+        "AsyncReader %u stopped reading Log(%" PRIu64 ").",
         room_id, logid);
     num_open_logs_per_reader_[room_id]--;
   } else {
     LOG_WARN(info_log_,
-        "AsyncReader %u failed to stop reading Log(%lu) (%s).",
+        "AsyncReader %u failed to stop reading Log(%" PRIu64 ") (%s).",
         room_id, logid, st.ToString().c_str());
   }
   return st;

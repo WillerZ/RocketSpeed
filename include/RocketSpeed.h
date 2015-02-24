@@ -14,6 +14,9 @@
 #include "include/Types.h"
 #include "include/SubscriptionStorage.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC visibility push(default)
+#endif
 /**
  * This is the RocketSpeed interface. The interface is partitioned
  * into two parts, the Publish and the Listen.
@@ -25,7 +28,6 @@
  * arriving on a subscribed topic causes the MessageReceivedCallback
  * to be invoked.
  */
-#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 /*
@@ -188,4 +190,6 @@ class Client {
 };
 
 }  // namespace rocketspeed
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
+#endif

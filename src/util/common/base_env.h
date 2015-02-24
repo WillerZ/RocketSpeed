@@ -14,7 +14,10 @@
 #include "include/Slice.h"
 #include "src/util/common/env_options.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
+#endif
+
 namespace rocketspeed {
 
 class SequentialFile;
@@ -123,4 +126,6 @@ class SequentialFile {
 };
 
 }  // namespace rocketspeed
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
+#endif

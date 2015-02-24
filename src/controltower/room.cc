@@ -3,6 +3,7 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/controltower/room.h"
 
 #include <map>
@@ -110,7 +111,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
       std::unique_ptr<Message> message(request);
       if (!status.ok()) {
         LOG_WARN(control_tower_->GetOptions().info_log,
-                 "Failed to find latest sequence number in Log(%lu)",
+                 "Failed to find latest sequence number in Log(%" PRIu64 ")",
                  logid);
         return;
       }
@@ -129,7 +130,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
       } else {
         const std::vector<TopicPair>& req_topic = request->GetTopicInfo();
         LOG_INFO(control_tower_->GetOptions().info_log,
-                 "Subscribing %s at latest seqno for Topic(%s)@%lu",
+                 "Subscribing %s at latest seqno for Topic(%s)@%" PRIu64,
                  request->GetOrigin().c_str(),
                  req_topic[0].topic_name.c_str(),
                  req_topic[0].seqno);
@@ -184,7 +185,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
                              topic[0].seqno,
                              logid, hostnum, room_number_);
     LOG_INFO(options.info_log,
-        "Added subscriber %s for Topic(%s)@%lu",
+        "Added subscriber %s for Topic(%s)@%" PRIu64,
         origin.c_str(),
         topic[0].topic_name.c_str(),
         topic[0].seqno);
@@ -205,7 +206,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   st = options.msg_loop->SendResponse(*request, origin, worker_id);
   if (!st.ok()) {
     LOG_WARN(options.info_log,
-        "Unable to send %s response for Topic(%s)@%lu to tower for %s",
+        "Unable to send %s response for Topic(%s)@%" PRIu64 " to tower for %s",
         topic[0].topic_type == MetadataType::mSubscribe
           ? "subscribe" : "unsubscribe",
         topic[0].topic_name.c_str(),
@@ -213,7 +214,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
         origin.c_str());
   } else {
     LOG_INFO(options.info_log,
-        "Sent %s response for Topic(%s)@%lu to tower for %s",
+        "Sent %s response for Topic(%s)@%" PRIu64 " to tower for %s",
         topic[0].topic_type == MetadataType::mSubscribe
           ? "subscribe" : "unsubscribe",
         topic[0].topic_name.c_str(),
@@ -234,7 +235,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   MessageData* request = static_cast<MessageData*>(msg.get());
 
   LOG_INFO(options.info_log,
-      "Received data (%.16s)@%lu for Topic(%s)",
+      "Received data (%.16s)@%" PRIu64 " for Topic(%s)",
       request->GetPayload().ToString().c_str(),
       request->GetSequenceNumber(),
       request->GetTopicName().ToString().c_str());
@@ -243,7 +244,8 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   if (topic_map_.GetLastRead(logid) + 1 != request->GetSequenceNumber()) {
     // Out of order sequence number, skip!
     LOG_INFO(options.info_log,
-      "Out of order seqno on Log(%lu). Received:%lu Expected:%lu.",
+      "Out of order seqno on Log(%" PRIu64 "). Received:%" PRIu64
+      "Expected:%" PRIu64 ".",
       logid,
       request->GetSequenceNumber(),
       topic_map_.GetLastRead(logid) + 1);
@@ -280,7 +282,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
 
         if (st.ok()) {
           LOG_INFO(options.info_log,
-                  "Sent data (%.16s)@%lu for Topic(%s) to %s",
+                  "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %s",
                   request->GetPayload().ToString().c_str(),
                   request->GetSequenceNumber(),
                   request->GetTopicName().ToString().c_str(),

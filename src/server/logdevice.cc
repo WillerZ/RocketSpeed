@@ -43,7 +43,7 @@ std::shared_ptr<LogStorage> CreateLogStorage(Env* env) {
 std::shared_ptr<LogRouter> CreateLogRouter() {
   // Parse and validate log range.
   LogID first_log, last_log;
-  int ret = sscanf(FLAGS_logs.c_str(), "%lu..%lu",
+  int ret = sscanf(FLAGS_logs.c_str(), "%" PRIu64 "..%" PRIu64,
     &first_log, &last_log);
   if (ret != 2) {
     fprintf(stderr, "Error: log_range option must be in the form of \"a..b\"");

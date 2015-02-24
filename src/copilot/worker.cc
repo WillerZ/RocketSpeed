@@ -3,6 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/copilot/worker.h"
 #include <vector>
 #include "include/Status.h"
@@ -139,7 +140,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
   MessageData* msg = static_cast<MessageData*>(message.get());
   // Get the list of subscriptions for this topic.
   LOG_INFO(options_.info_log,
-      "Copilot received data (%.16s)@%lu for Topic(%s)",
+      "Copilot received data (%.16s)@%" PRIu64 " for Topic(%s)",
       msg->GetPayload().ToString().c_str(),
       msg->GetSequenceNumber(),
       msg->GetTopicName().ToString().c_str());
@@ -163,7 +164,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       // Also do not send a response if the seqno is too low.
       if (subscription.seqno > seqno) {
         LOG_INFO(options_.info_log,
-          "Data not delivered to %s (seqno too low, currently @%lu)",
+          "Data not delivered to %s (seqno too low, currently @%" PRIu64 ")",
           recipient.c_str(), subscription.seqno);
         continue;
       }
@@ -177,7 +178,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
         subscription.seqno = seqno + 1;
 
         LOG_INFO(options_.info_log,
-          "Sent data (%.16s)@%lu for Topic(%s) to %s",
+          "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %s",
           msg->GetPayload().ToString().c_str(),
           msg->GetSequenceNumber(),
           msg->GetTopicName().ToString().c_str(),
@@ -196,7 +197,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
                                      LogID logid,
                                      int worker_id) {
   LOG_INFO(options_.info_log,
-      "Received subscribe request for Topic(%s)@%lu for %s",
+      "Received subscribe request for Topic(%s)@%" PRIu64 " for %s",
       request.topic_name.c_str(),
       request.seqno,
       message->GetOrigin().c_str());
@@ -302,13 +303,13 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
           recipient->c_str());
       } else {
         LOG_INFO(options_.info_log,
-          "Sent subscription for Topic(%s)@%lu to %s",
+          "Sent subscription for Topic(%s)@%" PRIu64 " to %s",
           request.topic_name.c_str(), request.seqno, recipient->c_str());
       }
     } else {
       // This should only ever happen if all control towers are offline.
       LOG_WARN(options_.info_log,
-        "Failed to find control tower for log ID %lu",
+        "Failed to find control tower for log ID %" PRIu64,
         static_cast<uint64_t>(logid));
     }
   }
@@ -410,8 +411,8 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
       } else {
         // This should only ever happen if all control towers are offline.
         LOG_WARN(options_.info_log,
-          "Failed to find control tower for log ID %llu",
-          static_cast<unsigned long long>(logid));
+          "Failed to find control tower for log ID %" PRIu64,
+          logid);
       }
     }
   }

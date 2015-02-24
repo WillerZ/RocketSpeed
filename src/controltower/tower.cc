@@ -177,7 +177,8 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
     st = room->Forward(std::move(newmessage), logid, worker_id);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
-          "Unable to forward %ssubscription for Topic(%s)@%lu to rooms-%u (%s)",
+          "Unable to forward %ssubscription for Topic(%s)@%" PRIu64
+          " to rooms-%u (%s)",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.topic_name.c_str(),
           topic.seqno,
@@ -185,7 +186,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
           st.ToString().c_str());
     } else {
       LOG_INFO(options_.info_log,
-          "Forwarded %ssubscription for Topic(%s)@%lu to rooms-%u",
+          "Forwarded %ssubscription for Topic(%s)@%" PRIu64 " to rooms-%u",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.topic_name.c_str(),
           topic.seqno,

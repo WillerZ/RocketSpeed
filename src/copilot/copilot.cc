@@ -3,6 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/copilot/copilot.h"
 #include <map>
 #include <string>
@@ -123,7 +124,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
   MessageData* data = static_cast<MessageData*>(msg.get());
 
   LOG_INFO(options_.info_log,
-      "Received data (%.16s)@%lu for Topic(%s)",
+      "Received data (%.16s)@%" PRIu64 " for Topic(%s)",
       data->GetPayload().ToString().c_str(),
       data->GetSequenceNumber(),
       data->GetTopicName().ToString().c_str());
@@ -169,7 +170,7 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
     const TopicPair& topic = request->GetTopicInfo()[i];
 
     LOG_INFO(options_.info_log,
-      "Received %s %s for Topic(%s)@%lu",
+      "Received %s %s for Topic(%s)@%" PRIu64,
       topic.topic_type == MetadataType::mSubscribe
         ? "subscribe" : "unsubscribe",
       request->GetMetaType() == MessageMetadata::MetaType::Request
@@ -223,7 +224,7 @@ int Copilot::GetLogWorker(LogID logid) const {
   Status st = control_tower_router_.GetControlTower(logid, &control_tower);
   if (!st.ok()) {
     LOG_WARN(options_.info_log,
-      "Failed to map log ID %lu to a control tower",
+      "Failed to map log ID %" PRIu64 " to a control tower",
       logid);
 
     // Fallback to log ID-based allocation.

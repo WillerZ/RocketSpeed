@@ -3,6 +3,7 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/pilot/pilot.h"
 #include <map>
 #include <string>
@@ -141,7 +142,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
     // Append call failed, log and send failure ack.
     worker_data_[worker_id].stats_.failed_appends->Add(1);
     LOG_WARN(options_.info_log,
-      "Failed to append to Log(%lu) (%s)",
+      "Failed to append to Log(%" PRIu64 ") (%s)",
       static_cast<uint64_t>(logid), status.ToString().c_str());
     options_.info_log->Flush();
 
@@ -162,7 +163,8 @@ void Pilot::AppendCallback(Status append_status,
     // Append successful, send success ack.
     SendAck(msg.get(), seqno, MessageDataAck::AckStatus::Success, worker_id);
     LOG_INFO(options_.info_log,
-        "Appended (%.16s) successfully to Topic(%s) in Log(%lu)@%lu",
+        "Appended (%.16s) successfully to Topic(%s) in Log(%" PRIu64
+        ")@%" PRIu64,
         msg->GetPayload().ToString().c_str(),
         msg->GetTopicName().ToString().c_str(),
         logid,

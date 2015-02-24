@@ -3,10 +3,12 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/util/testharness.h"
 
 #include <chrono>
 #include <string>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -75,7 +77,7 @@ int RunAllTests() {
       }
       auto end = clock::now();
       if (times_file) {
-        fprintf(times_file, "%7lums %s.%s\n",
+        fprintf(times_file, "%7" PRIu64 "ms %s.%s\n",
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                   end - start).count(),
                 t.base, t.name);

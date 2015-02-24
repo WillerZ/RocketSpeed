@@ -8,8 +8,8 @@
 
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
-#include "src/util/testharness.h"
 #include "src/port/port.h"
+#include "src/util/testharness.h"
 
 namespace rocketspeed {
 
@@ -50,7 +50,7 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
-  ASSERT_EQ(data2.GetTenantID(), Tenant::GuestTenant);
+  ASSERT_EQ(data2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(data2.GetNamespaceId(), nsid1);
 }
 
@@ -81,7 +81,7 @@ TEST(Messaging, Metadata) {
 
   // verify that the new message is the same as original
   ASSERT_EQ(clid1, data2.GetOrigin());
-  ASSERT_EQ(Tenant::GuestTenant, data2.GetTenantID());
+  ASSERT_EQ((TenantID)Tenant::GuestTenant, data2.GetTenantID());
 
   // verify that the new message is the same as original
   std::vector<TopicPair> nt = data2.GetTopicInfo();
@@ -154,7 +154,7 @@ TEST(Messaging, Goodbye) {
 
   // verify that the new message is the same as original
   ASSERT_TRUE(goodbye2.GetOrigin() == origin);
-  ASSERT_EQ(goodbye2.GetTenantID(), Tenant::GuestTenant);
+  ASSERT_EQ(goodbye2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(goodbye2.GetCode(), goodbye1.GetCode());
 }
 

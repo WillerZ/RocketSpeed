@@ -1247,7 +1247,7 @@ class PosixEnv : public Env {
     return result;
   };
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
   virtual Status DeleteDirRecursive(const std::string& name) {
     return Status::NotSupported("DeleteDirRecursive is not suported");
   }
@@ -1815,11 +1815,12 @@ Env::ThreadId PosixEnv::StartThread(std::function<void()> f,
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 
   // TODO: validate the return code from pthread_create
-  return static_cast<Env::ThreadId>(t);
+  assert(sizeof(t) <= sizeof(Env::ThreadId));
+  return reinterpret_cast<Env::ThreadId>(t);
 }
 
 Env::ThreadId PosixEnv::GetCurrentThreadId() const {
-  return static_cast<Env::ThreadId>(pthread_self());
+  return reinterpret_cast<Env::ThreadId>(pthread_self());
 }
 
 int PosixEnv::GetNumberOfThreads() const {
@@ -1837,7 +1838,8 @@ void PosixEnv::WaitForJoin() {
 
 void PosixEnv::WaitForJoin(Env::ThreadId tid) {
   PthreadCall("lock", pthread_mutex_lock(&mu_));
-  auto it = std::remove(threads_to_join_.begin(), threads_to_join_.end(), tid);
+  auto it = std::remove(threads_to_join_.begin(), threads_to_join_.end(),
+                        reinterpret_cast<pthread_t>(tid));
   assert(it != threads_to_join_.end());
   threads_to_join_.erase(it);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));

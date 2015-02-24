@@ -16,7 +16,10 @@
 #include "include/Status.h"
 #include "src/util/common/base_env.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
+#endif
+
 namespace rocketspeed {
 
 class ClientEnv : public BaseEnv {
@@ -53,4 +56,6 @@ class ClientEnv : public BaseEnv {
 };
 
 }  // namespace rocketspeed
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
+#endif

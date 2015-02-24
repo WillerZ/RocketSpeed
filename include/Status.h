@@ -7,7 +7,10 @@
 
 #include <string>
 
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
+#endif
+
 namespace rocketspeed {
 
 class Status {
@@ -103,4 +106,6 @@ class Status {
 };
 
 } // namespace
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
+#endif

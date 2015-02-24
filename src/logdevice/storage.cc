@@ -254,8 +254,7 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
   std::function<void(std::unique_ptr<LogRecord>)> record_cb,
   std::function<void(const GapRecord&)> gap_cb,
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
-: storage_(*storage)
-, reader_(std::move(reader)) {
+: reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
   reader_->setRecordCallback(
     [this, record_cb] (std::unique_ptr<facebook::logdevice::DataRecord> data) {

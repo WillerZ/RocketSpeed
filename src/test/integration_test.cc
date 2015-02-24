@@ -3,7 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-
+#define __STDC_FORMAT_MACROS
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -63,7 +63,7 @@ TEST(IntegrationTest, OneMessage) {
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
     ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
     ASSERT_TRUE(mr->GetContents().ToString() == data);
-    printf("received (topic='%s', contents='%s', seqno=%ld)\n",
+    printf("received (topic='%s', contents='%s', seqno=%" PRIu64 ")\n",
       mr->GetTopicName().ToString().c_str(),
       mr->GetContents().ToString().c_str(),
       mr->GetSequenceNumber());

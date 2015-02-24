@@ -37,7 +37,9 @@
   RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
+#endif
 namespace rocketspeed {
 
 enum InfoLogLevel : unsigned char {
@@ -137,4 +139,6 @@ class NullLogger final : public Logger {
 };
 
 }  // namespace rocketspeed
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
+#endif

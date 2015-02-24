@@ -11,6 +11,9 @@
 #include <memory>
 #include <string>
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC visibility push(default)
+#endif
 /**
  * Slice is a simple structure containing a pointer into some external
  * storage and a size.  The user of a Slice must ensure that the slice
@@ -22,7 +25,6 @@
  * non-const method, all threads accessing the same Slice must use
  * external synchronization.
  */
-#pragma GCC visibility push(default)
 namespace rocketspeed {
 
 class Slice {
@@ -147,4 +149,6 @@ inline int Slice::compare(const Slice& b) const {
 }
 
 }  // namespace rocketspeed
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
+#endif

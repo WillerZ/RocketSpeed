@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <memory>
+#include <functional>
 #include <limits>
 #include <vector>
 #include "include/Slice.h"

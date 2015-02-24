@@ -131,7 +131,6 @@ class AsyncLogDeviceReader : public AsyncLogReader {
   Status Close(LogID id) final;
 
  private:
-  LogDeviceStorage& storage_;
   std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
 };
 
