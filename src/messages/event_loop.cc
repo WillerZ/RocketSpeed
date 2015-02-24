@@ -644,12 +644,20 @@ EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
 
 void
 EventLoop::Run() {
+
+/**
+ * gcc complains that a format string that is not constant is
+ * a security risk. Switch off security check for this piece of code.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-security"
   auto start_error = [&] (const std::string& error) {
     LOG_ERROR(info_log_, error.c_str());
     info_log_->Flush();
     start_status_ = Status::InternalError(error);
     start_signal_.Post();
   };
+#pragma GCC diagnostic pop
 
   thread_check_.Reset();
   base_ = event_base_new();

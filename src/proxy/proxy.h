@@ -14,7 +14,10 @@
 #include "src/util/common/statistics.h"
 #include "src/proxy/options.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
+#endif
+
 namespace rocketspeed {
 
 class ProxyWorker;
@@ -136,4 +139,6 @@ class Proxy {
 };
 
 }  // namespace rocketspeed
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
+#endif
