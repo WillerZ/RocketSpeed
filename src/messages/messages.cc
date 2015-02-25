@@ -678,8 +678,10 @@ Status MessageGap::DeSerialize(Slice* in) {
 
 MessageGoodbye::MessageGoodbye(TenantID tenant_id,
                                ClientID origin,
-                               Code code)
-: code_(code) {
+                               Code code,
+                               OriginType origin_type)
+: code_(code)
+, origin_type_(origin_type) {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mGoodbye;
   tenantid_ = tenant_id;
@@ -699,6 +701,7 @@ Slice MessageGoodbye::Serialize() const {
 
   // MessageGoodbye specifics
   PutFixedEnum8(&serialize_buffer__, code_);
+  PutFixedEnum8(&serialize_buffer__, origin_type_);
 
   // compute the size of this message
   serializeMessageSize();
@@ -731,6 +734,11 @@ Status MessageGoodbye::DeSerialize(Slice* in) {
   // extract code
   if (!GetFixedEnum8(in, &code_)) {
     return Status::InvalidArgument("Bad code");
+  }
+
+  // extract origin type
+  if (!GetFixedEnum8(in, &origin_type_)) {
+    return Status::InvalidArgument("Bad origin type");
   }
 
   return Status::OK();

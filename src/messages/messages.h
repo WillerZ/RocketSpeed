@@ -551,6 +551,11 @@ class MessageGoodbye : public Message {
     Graceful = 0x01,
   };
 
+  enum OriginType : char {
+    Client = 0x00,
+    Server = 0x01,
+  };
+
   /**
    * Creates a goodbye message.
    *
@@ -560,7 +565,8 @@ class MessageGoodbye : public Message {
    */
   explicit MessageGoodbye(TenantID tenant_id,
                           ClientID origin,
-                          Code code);
+                          Code code,
+                          OriginType origin_type);
 
   MessageGoodbye() {}
   virtual ~MessageGoodbye() {}
@@ -569,12 +575,17 @@ class MessageGoodbye : public Message {
     return code_;
   }
 
+  OriginType GetOriginType() const {
+    return origin_type_;
+  }
+
   virtual Slice Serialize() const;
   virtual Status DeSerialize(Slice* in);
 
  private:
   // type of this message: mGoodbye
   Code code_;
+  OriginType origin_type_;
 };
 
 

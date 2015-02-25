@@ -207,19 +207,22 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg) {
   options_.msg_loop->ThreadCheck();
 
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
-  LOG_INFO(options_.info_log,
-    "Received goodbye for client %s",
-    goodbye->GetOrigin().c_str());
+  if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Client) {
+    LOG_INFO(options_.info_log,
+      "Received goodbye for client %s",
+      goodbye->GetOrigin().c_str());
 
-  // Inform all workers.
-  for (uint32_t i = 0; i < options_.num_workers; ++i) {
-    std::unique_ptr<Message> new_msg(
-      new MessageGoodbye(goodbye->GetTenantID(),
-                         goodbye->GetOrigin(),
-                         goodbye->GetCode()));
-    LogID logid = 0;  // unused
-    int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
-    workers_[i]->Forward(logid, std::move(new_msg), event_loop_worker);
+    // Inform all workers.
+    for (uint32_t i = 0; i < options_.num_workers; ++i) {
+      std::unique_ptr<Message> new_msg(
+        new MessageGoodbye(goodbye->GetTenantID(),
+                           goodbye->GetOrigin(),
+                           goodbye->GetCode(),
+                           goodbye->GetOriginType()));
+      LogID logid = 0;  // unused
+      int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
+      workers_[i]->Forward(logid, std::move(new_msg), event_loop_worker);
+    }
   }
 }
 

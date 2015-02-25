@@ -294,7 +294,8 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   // Now say goodbye.
   MessageGoodbye goodbye(Tenant::GuestTenant,
                          "client",
-                         MessageGoodbye::Code::Graceful);
+                         MessageGoodbye::Code::Graceful,
+                         MessageGoodbye::OriginType::Client);
   ASSERT_OK(client.SendRequest(goodbye, host));
   env_->SleepForMicroseconds(100 * 1000);  // allow goodbye to process
 

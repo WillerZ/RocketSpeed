@@ -194,6 +194,10 @@ class SocketEvent {
 
     if (!st.ok()) {
       // Inform MsgLoop that clients have disconnected.
+      auto origin_type = sev->was_initiated_ ?
+                         MessageGoodbye::OriginType::Server :
+                         MessageGoodbye::OriginType::Client;
+
       EventLoop* event_loop = sev->event_loop_;
       std::unordered_set<ClientID> clients = sev->GetClients();  // copy
       sev->event_loop_->remove_connection_cache(sev);  // deletes sev
@@ -203,7 +207,8 @@ class SocketEvent {
         std::unique_ptr<Message> msg(
           new MessageGoodbye(Tenant::InvalidTenant,
                              std::move(client),
-                             MessageGoodbye::Code::SocketError));
+                             MessageGoodbye::Code::SocketError,
+                             origin_type));
         event_loop->Dispatch(std::move(msg));
       }
     }

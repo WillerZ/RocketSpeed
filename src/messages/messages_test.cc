@@ -143,7 +143,8 @@ TEST(Messaging, Goodbye) {
   // create a message
   MessageGoodbye goodbye1(Tenant::GuestTenant,
                           origin,
-                          MessageGoodbye::Code::Graceful);
+                          MessageGoodbye::Code::Graceful,
+                          MessageGoodbye::Server);
 
   // serialize the message
   Slice original = goodbye1.Serialize();
@@ -156,6 +157,7 @@ TEST(Messaging, Goodbye) {
   ASSERT_TRUE(goodbye2.GetOrigin() == origin);
   ASSERT_EQ(goodbye2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(goodbye2.GetCode(), goodbye1.GetCode());
+  ASSERT_EQ(goodbye2.GetOriginType(), goodbye1.GetOriginType());
 }
 
 TEST(Messaging, ErrorHandling) {
@@ -305,7 +307,8 @@ TEST(Messaging, GracefulGoodbye) {
   MessagePing ping2_req(Tenant::GuestTenant, MessagePing::Request, "c2");
   MessageGoodbye goodbye1(Tenant::GuestTenant,
                           "c1",
-                          MessageGoodbye::Code::Graceful);
+                          MessageGoodbye::Code::Graceful,
+                          MessageGoodbye::OriginType::Client);
   MessagePing ping1_resp(Tenant::GuestTenant, MessagePing::Response, "c1");
   MessagePing ping2_resp(Tenant::GuestTenant, MessagePing::Response, "c2");
 
