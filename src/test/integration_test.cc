@@ -255,6 +255,61 @@ TEST(IntegrationTest, ThreadLeaks) {
   ASSERT_EQ(env->GetNumberOfThreads(), 0);
 }
 
+/**
+ * Check that sending goodbye message removes subscriptions.
+ */
+TEST(IntegrationTest, UnsubscribeOnGoodbye) {
+  LocalTestCluster cluster(info_log, true, true, true);
+  ASSERT_OK(cluster.GetStatus());
+
+  port::Semaphore subscribed;
+  port::Semaphore received_data;
+
+  // Start client loop.
+  MsgLoop client(env_, EnvOptions(), 58499, 1, info_log, "client");
+  std::map<MessageType, MsgCallbackType> callbacks;
+  callbacks[MessageType::mMetadata] =
+    [&] (std::unique_ptr<Message> msg) {
+      subscribed.Post();
+    };
+  callbacks[MessageType::mDeliver] =
+    [&] (std::unique_ptr<Message> msg) {
+      received_data.Post();
+    };
+  callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>) {};
+  client.RegisterCallbacks(callbacks);
+  env_->StartThread([&] () { client.Run(); }, "client");
+  client.WaitUntilRunning();
+
+  // Subscribe.
+  NamespaceID ns = 101;
+  MessageMetadata sub(Tenant::GuestTenant,
+                      MessageMetadata::MetaType::Request,
+                      "client",
+                      { TopicPair(1, "topic", MetadataType::mSubscribe, ns) });
+  ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
+  ASSERT_OK(client.SendRequest(sub, host));
+  ASSERT_TRUE(subscribed.TimedWait(std::chrono::milliseconds(100)));
+
+  // Now say goodbye.
+  MessageGoodbye goodbye(Tenant::GuestTenant,
+                         "client",
+                         MessageGoodbye::Code::Graceful);
+  ASSERT_OK(client.SendRequest(goodbye, host));
+  env_->SleepForMicroseconds(100 * 1000);  // allow goodbye to process
+
+  // Now publish to pilot.
+  // We shouldn't get the message.
+  MessageData publish(MessageType::mPublish,
+                      Tenant::GuestTenant,
+                      "client",
+                      "topic",
+                      ns,
+                      Slice("data"));
+  ASSERT_OK(client.SendRequest(publish, host));
+  ASSERT_TRUE(!received_data.TimedWait(std::chrono::milliseconds(100)));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

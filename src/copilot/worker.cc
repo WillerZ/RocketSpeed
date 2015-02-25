@@ -82,6 +82,11 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
     }
     break;
 
+  case MessageType::mGoodbye: {
+      ProcessGoodbye(std::move(message));
+    }
+    break;
+
   default: {
       LOG_WARN(options_.info_log,
           "Unexpected message type in copilot worker %d",
@@ -208,6 +213,10 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
 
   // Intentionally making copy since msg->SetOrigin may be called later.
   const ClientID subscriber = msg->GetOrigin();
+
+  // Insert into client-topic map. Doesn't matter if it was already there.
+  TopicInfo topic_info { request.topic_name, request.namespace_id, logid };
+  client_topics_[subscriber].insert(topic_info);
 
   auto topic_iter = subscriptions_.find(request.topic_name);
   if (topic_iter == subscriptions_.end()) {
@@ -340,10 +349,50 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
 
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
 
-  // Intentionally making copy since msg->SetOrigin may be called later.
-  const ClientID subscriber = msg->GetOrigin();
+  const ClientID& subscriber = msg->GetOrigin();
 
-  auto topic_iter = subscriptions_.find(request.topic_name);
+  RemoveSubscription(msg->GetTenantID(),
+                     subscriber,
+                     request.namespace_id,
+                     request.topic_name,
+                     logid);
+
+  // Send response to origin to notify that subscription has been processed.
+  msg->SetMetaType(MessageMetadata::MetaType::Response);
+  const bool is_new_request = false;
+  std::string serial;
+  msg->SerializeToString(&serial);
+  std::unique_ptr<Command> cmd(
+    new SerializedSendCommand(std::move(serial),
+                              subscriber,
+                              options_.env->NowMicros(),
+                              is_new_request));
+  Status status = copilot_->SendCommand(std::move(cmd), worker_id);
+  if (!status.ok()) {
+    // Failed to send response. The origin will re-send the subscription
+    // again in the future, and we'll try to immediately respond again.
+    LOG_WARN(options_.info_log,
+        "Failed to send unsubscribe response on Topic(%s) to %s",
+        request.topic_name.c_str(),
+        subscriber.c_str());
+  } else {
+    LOG_INFO(options_.info_log,
+        "Send unsubscribe response on Topic(%s) to %s",
+        request.topic_name.c_str(),
+        subscriber.c_str());
+  }
+}
+
+void CopilotWorker::RemoveSubscription(TenantID tenant_id,
+                                       const ClientID& subscriber,
+                                       NamespaceID namespace_id,
+                                       const Topic& topic_name,
+                                       LogID logid) {
+  // Remove from client-topic map. Doesn't matter if it was already there.
+  TopicInfo topic_info { topic_name, namespace_id, logid };
+  client_topics_[subscriber].erase(topic_info);
+
+  auto topic_iter = subscriptions_.find(topic_name);
   if (topic_iter != subscriptions_.end()) {
     // Find our subscription and remove it.
     SequenceNumber earliest_other_seqno = 0;
@@ -369,13 +418,13 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
         // Forward unsubscribe request to control tower, with this copilot
         // worker as the subscriber.
         int outgoing_worker_id = copilot_->GetLogWorker(logid);
-        MessageMetadata newmsg(msg->GetTenantID(),
+        MessageMetadata newmsg(tenant_id,
                                MessageMetadata::MetaType::Request,
                                copilot_->GetClientId(outgoing_worker_id),
-                               { TopicPair(request.seqno,
-                                           request.topic_name,
+                               { TopicPair(0,  // seqno doesnt matter
+                                           topic_name,
                                            MetadataType::mUnSubscribe,
-                                           request.namespace_id) });
+                                           namespace_id) });
 
         Status status = options_.msg_loop->SendRequest(newmsg,
                                                        *recipient,
@@ -392,18 +441,18 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Re subscribe our control tower subscription with the later seqno.
         int outgoing_worker_id = copilot_->GetLogWorker(logid);
-        MessageMetadata newmsg(msg->GetTenantID(),
+        MessageMetadata newmsg(tenant_id,
                                MessageMetadata::MetaType::Request,
                                copilot_->GetClientId(outgoing_worker_id),
                                { TopicPair(earliest_other_seqno,
-                                           request.topic_name,
+                                           topic_name,
                                            MetadataType::mSubscribe,
-                                           request.namespace_id) });
+                                           namespace_id) });
 
         Status status = options_.msg_loop->SendRequest(newmsg,
                                                        *recipient,
                                                        outgoing_worker_id);
-        if (!status.ok()) {
+          if (!status.ok()) {
           LOG_INFO(options_.info_log,
               "Failed to send unsubscribe request to %s",
               recipient->c_str());
@@ -416,23 +465,29 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
       }
     }
   }
+}
 
-  // Send response to origin to notify that subscription has been processed.
-  msg->SetOrigin(subscriber);
-  msg->SetMetaType(MessageMetadata::MetaType::Response);
-  Status status = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
-  if (!status.ok()) {
-    // Failed to send response. The origin will re-send the subscription
-    // again in the future, and we'll try to immediately respond again.
-    LOG_WARN(options_.info_log,
-        "Failed to send unsubscribe response on Topic(%s) to %s",
-        request.topic_name.c_str(),
-        subscriber.c_str());
-  } else {
-    LOG_INFO(options_.info_log,
-        "Send unsubscribe response on Topic(%s) to %s",
-        request.topic_name.c_str(),
-        subscriber.c_str());
+void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message) {
+  MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(message.get());
+  const ClientID& client_id = goodbye->GetOrigin();
+
+  LOG_INFO(options_.info_log,
+      "Copilot received goodbye for client %s",
+      client_id.c_str());
+
+  auto it = client_topics_.find(client_id);
+  if (it != client_topics_.end()) {
+    // Unsubscribe from all topics.
+    // Making a copy because RemoveSubscription will modify client_topics_;
+    auto topics_copy = it->second;
+    for (const TopicInfo& info : topics_copy) {
+      RemoveSubscription(goodbye->GetTenantID(),
+                         client_id,
+                         info.namespace_id,
+                         info.topic_name,
+                         info.logid);
+    }
+    client_topics_.erase(it);
   }
 }
 

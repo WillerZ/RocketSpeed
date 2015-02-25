@@ -203,6 +203,26 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
   }
 }
 
+void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg) {
+  options_.msg_loop->ThreadCheck();
+
+  MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
+  LOG_INFO(options_.info_log,
+    "Received goodbye for client %s",
+    goodbye->GetOrigin().c_str());
+
+  // Inform all workers.
+  for (uint32_t i = 0; i < options_.num_workers; ++i) {
+    std::unique_ptr<Message> new_msg(
+      new MessageGoodbye(goodbye->GetTenantID(),
+                         goodbye->GetOrigin(),
+                         goodbye->GetCode()));
+    LogID logid = 0;  // unused
+    int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
+    workers_[i]->Forward(logid, std::move(new_msg), event_loop_worker);
+  }
+}
+
 // A static method to initialize the callback map
 std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   // create a temporary map and initialize it
@@ -212,6 +232,9 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   };
   cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
     ProcessMetadata(std::move(msg));
+  };
+  cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg) {
+    ProcessGoodbye(std::move(msg));
   };
   return cb;
 }

@@ -79,6 +79,7 @@ class Copilot {
   // callbacks to process incoming messages
   void ProcessDeliver(std::unique_ptr<Message> msg);
   void ProcessMetadata(std::unique_ptr<Message> msg);
+  void ProcessGoodbye(std::unique_ptr<Message> msg);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };

@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "include/Types.h"
 #include "src/copilot/options.h"
@@ -16,6 +17,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/worker_loop.h"
+#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
@@ -113,6 +115,18 @@ class CopilotWorker {
   // Forward data to subscribers.
   void ProcessDeliver(std::unique_ptr<Message> msg);
 
+  // Remove all subscriptions for a client.
+  void ProcessGoodbye(std::unique_ptr<Message> msg);
+
+  // Removes a single subscription.
+  // May update subscription to control tower.
+  // Does not send response to subscriber.
+  void RemoveSubscription(TenantID tenant_id,
+                          const ClientID& subscriber,
+                          NamespaceID namespace_id,
+                          const Topic& topic_name,
+                          LogID logid);
+
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;
 
@@ -144,6 +158,27 @@ class CopilotWorker {
 
   // Map of topics to active subscriptions.
   std::unordered_map<Topic, std::vector<Subscription>> subscriptions_;
+
+  // Map of client to topics subscribed to.
+  struct TopicInfo {
+    struct Hash {
+      size_t operator()(const TopicInfo& t) const {
+        // Don't need to include logid, because it is a function of topic_name.
+        return MurmurHash2<Topic, size_t>()(t.topic_name, t.namespace_id);
+      }
+    };
+
+    bool operator==(const TopicInfo& rhs) const {
+      // Don't need to include logid, because it is a function of topic_name.
+      return topic_name == rhs.topic_name && namespace_id == rhs.namespace_id;
+    }
+
+    Topic topic_name;
+    NamespaceID namespace_id;
+    LogID logid;
+  };
+  typedef std::unordered_set<TopicInfo, TopicInfo::Hash> TopicInfoSet;
+  std::unordered_map<ClientID, TopicInfoSet> client_topics_;
 };
 
 }  // namespace rocketspeed
