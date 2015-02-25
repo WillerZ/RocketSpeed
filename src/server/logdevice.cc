@@ -3,16 +3,21 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-#include <gflags/gflags.h>
-#include <stdio.h>
+
+#define __STDC_FORMAT_MACROS
+#include <cinttypes>
+#include <cstdio>
 #include <memory>
 #include <utility>
+
 #include "src/server/storage_setup.h"
 #include "src/logdevice/storage.h"
 #include "src/logdevice/log_router.h"
 
 // Needed to set logdevice::dbg::currentLevel
 #include "external/logdevice/include/debug.h"
+
+#include <gflags/gflags.h>
 
 DEFINE_string(logs, "1..100000", "range of logs");
 DEFINE_string(storage_url, "", "Storage config url");
