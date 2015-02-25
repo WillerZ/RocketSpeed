@@ -14,6 +14,9 @@
     const auto& _info_log = (info_log_expr); \
     if (_info_log && _log_level >= _info_log->GetInfoLogLevel()) { \
       _info_log->Log(_log_level, __VA_ARGS__); \
+      if (_log_level >= ::rocketspeed::InfoLogLevel::FATAL_LEVEL) { \
+        _info_log->Flush(); \
+      } \
     } \
   } while (0)
 
@@ -123,6 +126,7 @@ class Logger {
 
   InfoLogLevel log_level_;
 };
+
 
 /**
  * "Blackhole" logger implementation - doesn't log anything.
