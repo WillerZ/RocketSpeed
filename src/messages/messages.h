@@ -546,11 +546,25 @@ class MessageGap : public Message {
  */
 class MessageGoodbye : public Message {
  public:
+  /**
+   * Extra context for the goodbye message, i.e. what caused the goodbye.
+   */
   enum Code : char {
     SocketError = 0x00,
     Graceful = 0x01,
   };
 
+  /**
+   * Type of the origin sending the message. From the perspective of the
+   * recipient, a Client origin is a node that has initiated communication with
+   * the recipient. A Server origin is a node that we initiated communication
+   * with.
+   *
+   * If a goodbye message is received from a Client, then all state for that
+   * client should be discarded. If a goodbye message is received from a Server,
+   * then it should be assumed that the server has lost all state about this
+   * client.
+   */
   enum OriginType : char {
     Client = 0x00,
     Server = 0x01,
