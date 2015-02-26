@@ -36,7 +36,7 @@ HostMap::Insert(const ClientID& clientid,
 
   // generate a hash
   unsigned int hashval = XXH32(clientid.c_str(),
-                               clientid.size(), 0);
+                               static_cast<int>(clientid.size()), 0);
   hashval = hashval % number_buckets_;
 
   // The hash value gives us the starting point of our search
@@ -81,7 +81,7 @@ HostNumber
 HostMap::Lookup(const ClientID& clientid) const {
   // generate a hash
   unsigned int hashval = XXH32(clientid.c_str(),
-                               clientid.size(), 0);
+                               static_cast<int>(clientid.size()), 0);
   hashval = hashval % number_buckets_;
 
   // The hash value gives us the starting point of our search

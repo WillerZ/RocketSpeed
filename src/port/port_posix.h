@@ -106,7 +106,9 @@ extern string to_string(float value);
 extern string to_string(double value);
 extern string to_string(long double value);
 }
+#endif
 
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 // libevent_global_shutdown not available in libevent 2.0.*
 extern void libevent_global_shutdown(void);
 #endif
@@ -189,99 +191,37 @@ class CondVar {
 
 namespace detail {
 // Internal wrapper that we can use with an std::shared_ptr
-struct RawSemaphore {
-  explicit RawSemaphore(unsigned initial_value) {
-    sem_init(&sem_, 0, initial_value);
-  }
-  ~RawSemaphore() {
-    sem_destroy(&sem_);
-  }
-  sem_t sem_;
+class RawSemaphore {
+ public:
+  explicit RawSemaphore(unsigned initial_value);
+  ~RawSemaphore();
+  sem_t* sem_;
+ private:
+#if !defined(OS_MACOSX)
+  sem_t buffer_;
+#endif
+  std::string name_;
 };
 }  // namespace detail
 
 class Semaphore {
  public:
-  explicit Semaphore(unsigned int initial_value = 0) :
-      sem_(std::make_shared<detail::RawSemaphore>(initial_value)) { }
+  explicit Semaphore(unsigned int initial_value = 0);
 
-  void Wait() {
-    int rv;
-
-    do {
-      rv = sem_wait(rawsem());
-      assert(rv == 0 || errno == EINTR);
-    } while (rv != 0);
-  }
+  void Wait();
 
   /**
    * @return true on success, false if semaphore could not
    *         be decremented before @param deadline.
    */
-  bool TimedWait(std::chrono::system_clock::time_point deadline) {
-#if !defined(OS_MACOSX)
-    std::chrono::milliseconds deadline_ms {
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             deadline.time_since_epoch())
-    };
-    struct timespec abs_timeout {
-      static_cast<time_t>(deadline_ms.count() / 1000),
-      static_cast<long>(deadline_ms.count() % 1000 * 1000000),
-    };
-#endif
-    for (;;) {
-#if defined(OS_MACOSX)
-      int rv = sem_trywait(rawsem());
-#else
-      int rv = sem_timedwait(rawsem(), &abs_timeout);
-#endif
-      if (rv == 0) {
-        return true;
-      }
-
-      switch (errno) {
-      case ETIMEDOUT:
-        break;
-      case EINTR:
-        continue;          // try again
-#if defined(OS_MACOSX)
-      case EAGAIN:
-        {
-          auto now = std::chrono::system_clock::now();
-          if (deadline < now) {
-            break;
-          }
-          usleep(100);       // this is used only by unit tests
-          continue;          // try again
-        }
-#endif
-      default:
-        assert(false);
-      }
-      return false;
-    }
-  }
+  bool TimedWait(std::chrono::system_clock::time_point deadline);
 
   template <typename Duration>
   bool TimedWait(Duration timeout) {
     return TimedWait(std::chrono::system_clock::now() + timeout);
   }
-
-  void Post() {
-    // This is the critical part of working around glibc #12674.  post() pins
-    // the sem_t to ensure it continues to exist until the post completes.
-    std::shared_ptr<detail::RawSemaphore> pin(sem_);
-    sem_post(rawsem());
-    // NOTE: `this' is no longer safe to use here because waiter may have
-    // destroyed it
-  }
-
-  int Value() {
-    int val;
-    int rv __attribute__((__unused__)) = sem_getvalue(rawsem(), &val);
-    assert(rv == 0);
-    return val;
-  }
+  void Post();
+  int Value();
 
   // Not copyable but movable
   Semaphore(const Semaphore &other) = delete;
@@ -293,7 +233,7 @@ class Semaphore {
   std::shared_ptr<detail::RawSemaphore> sem_;
 
   sem_t* rawsem() const {
-    return &(sem_->sem_);
+    return sem_->sem_;
   }
 };
 
@@ -378,6 +318,10 @@ inline bool Snappy_Uncompress(const char* input, size_t length,
 #endif
 }
 
+#if defined(SHORTEN64_32)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshorten-64-to-32"
+#endif
 inline bool Zlib_Compress(const CompressionOptions& opts, const char* input,
                           size_t length, ::std::string* output) {
 #ifdef ZLIB
@@ -679,6 +623,10 @@ inline bool LZ4HC_Compress(const CompressionOptions &opts, const char* input,
 #endif
   return false;
 }
+#if defined(SHORTEN64_32)
+#pragma GCC diagnostic pop
+#endif
+
 
 void BackTraceHandler(int sig);
 

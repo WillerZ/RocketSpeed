@@ -1,0 +1,60 @@
+cxx_library(
+  name = 'libevent-2.0.21',
+  soname = 'liblibevent-2.0.21.so',
+  srcs = [
+    'buffer.c',
+    'bufferevent.c',
+    'bufferevent_filter.c',
+    'bufferevent_pair.c',
+    'bufferevent_ratelim.c',
+    'bufferevent_sock.c',
+    'epoll.c',
+    'epoll_sub.c',
+    'evdns.c',
+    'event.c',
+    'event_tagging.c',
+    'evmap.c',
+    'evrpc.c',
+    'evthread.c',
+    'evthread_pthread.c',
+    'evutil.c',
+    'evutil_rand.c',
+    'http.c',
+    'listener.c',
+    'log.c',
+    'poll.c',
+    'select.c',
+    'signal.c',
+    'strlcpy.c',
+  ],
+  header_namespace = '',
+  exported_headers = subdir_glob([
+    ('', '*.h'),
+    ('include', '**/*.h'),
+    ('android', '**/*.h'),
+  ]),
+  preprocessor_flags = [
+    '-DHAVE_CONFIG_H',
+    '-DOS_ANDROID',
+  ],
+  visibility = [
+    '//native/third-party/rocketspeed/...',
+  ],
+)
+
+#
+# Build the libevent library for debugging and tests
+#
+ndk_library(
+  name = 'libevent-test',
+  flags = [
+    'NDK_APPLICATION_MK=${PWD}/native/Application.mk',
+    'LIBEVENT_RELEASE_BUILD=false',
+  ],
+  deps = [
+    '//native:base',
+  ],
+  visibility = [
+    '//native/third-party/rocketspeed/...',
+  ],
+)

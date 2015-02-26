@@ -1651,7 +1651,8 @@ class PosixEnv : public Env {
         void (*function)(void*) = queue_.front().function;
         void* arg = queue_.front().arg;
         queue_.pop_front();
-        queue_len_.store(queue_.size(), std::memory_order_relaxed);
+        queue_len_.store(static_cast<unsigned int>(queue_.size()),
+                         std::memory_order_relaxed);
 
         PthreadCall("unlock", pthread_mutex_unlock(&mu_));
         (*function)(arg);
@@ -1731,7 +1732,8 @@ class PosixEnv : public Env {
       queue_.push_back(BGItem());
       queue_.back().function = function;
       queue_.back().arg = arg;
-      queue_len_.store(queue_.size(), std::memory_order_relaxed);
+      queue_len_.store(static_cast<unsigned int>(queue_.size()),
+                       std::memory_order_relaxed);
 
       if (!HasExcessiveThread()) {
         // Wake up at least one waiting thread.
@@ -1824,7 +1826,7 @@ Env::ThreadId PosixEnv::GetCurrentThreadId() const {
 }
 
 int PosixEnv::GetNumberOfThreads() const {
-  return threads_to_join_.size();
+  return static_cast<int>(threads_to_join_.size());
 }
 
 void PosixEnv::WaitForJoin() {

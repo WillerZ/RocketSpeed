@@ -266,7 +266,7 @@ TEST(FileStorageTest, CorruptedFile) {
     PutFixed64(&buffer, 101);
     PutFixed16(&buffer, 101);
     std::string name = "CorruptedFile";
-    PutFixed32(&buffer, name.size());
+    PutFixed32(&buffer, static_cast<uint32_t>(name.size()));
     buffer.append(name);
     // But no topic name at all :(
     ASSERT_OK(file_handle->Append(Slice(buffer)));

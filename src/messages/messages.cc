@@ -149,7 +149,7 @@ void Message::serializeMessageHeader() const {
  * Inserts the message size in serialize_buffer__ at the appropriate position
  */
 void Message::serializeMessageSize() const {
-  msghdr_.msgsize_ = serialize_buffer__.size();
+  msghdr_.msgsize_ = static_cast<uint32_t>(serialize_buffer__.size());
   serializeMessageSize(msghdr_.msgsize_);
 }
 
@@ -168,7 +168,7 @@ void Message::serializeMessageSize(int msgsize) const {
  *  Status::OK() on success
  */
 Status Message::deserializeMessageHeader(Slice* in){
-  const unsigned int len = in->size();
+  const size_t len = in->size();
   if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
       sizeof(type_)) {
     return Status::InvalidArgument("Bad Message Version/Type");
@@ -425,7 +425,7 @@ Slice MessageMetadata::Serialize() const {
   //  origin
 
   // Topics and metadata state
-  PutVarint32(&serialize_buffer__, topics_.size());
+  PutVarint32(&serialize_buffer__, static_cast<uint32_t>(topics_.size()));
   for (TopicPair p : topics_) {
     PutVarint64(&serialize_buffer__, p.seqno);
     PutLengthPrefixedSlice(&serialize_buffer__, Slice(p.topic_name));
@@ -531,7 +531,7 @@ Slice MessageDataAck::Serialize() const {
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // serialize message specific contents
-  PutVarint32(&serialize_buffer__, acks_.size());
+  PutVarint32(&serialize_buffer__, static_cast<uint32_t>(acks_.size()));
   for (const Ack& ack : acks_) {
     PutFixedEnum8(&serialize_buffer__, ack.status);
     PutBytes(&serialize_buffer__, ack.msgid.id, sizeof(ack.msgid.id));

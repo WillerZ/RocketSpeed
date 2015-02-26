@@ -332,7 +332,7 @@ void FileStorage::HandleSnapshotCommand(std::unique_ptr<Command> command) {
   for (auto& it : worker_data.topics_subscribed) {
     PutFixed64(&buffer, it.second.GetSequenceNumber());
     PutFixed16(&buffer, it.first.namespace_id);
-    PutFixed32(&buffer, it.first.topic_name.size());
+    PutFixed32(&buffer, static_cast<uint32_t>(it.first.topic_name.size()));
     buffer.append(it.first.topic_name);
   }
   // Append to snapshot state.

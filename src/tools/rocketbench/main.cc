@@ -3,6 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include <future>
 #include <random>
 #include <string>
@@ -66,8 +67,6 @@ typedef std::pair<rocketspeed::MsgId, uint64_t> MsgTime;
 struct Result {
   bool succeeded;
 };
-
-static const Result failed = { false };
 
 // wait for 5 seconds of inactivity before declaring that something is
 // not working.
@@ -697,10 +696,10 @@ int main(int argc, char** argv) {
       total_ms = 1;
     }
 
-    uint32_t msg_per_sec = 1000 *
+    uint64_t msg_per_sec = 1000 *
                            FLAGS_num_messages /
                            total_ms;
-    uint32_t bytes_per_sec = 1000 *
+    uint64_t bytes_per_sec = 1000 *
                              FLAGS_num_messages *
                              FLAGS_message_size /
                              total_ms;
@@ -754,7 +753,7 @@ int main(int argc, char** argv) {
     if (ret == 0) {
       printf("\n");
       printf("Throughput\n");
-      printf("%u messages/s\n", msg_per_sec);
+      printf("%" PRIu64 " messages/s\n", msg_per_sec);
       printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
 
 #if !defined(OS_ANDROID)

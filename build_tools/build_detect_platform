@@ -79,8 +79,15 @@ fi
 
 # Detect location of libevent
 if test -z "$EVENTDIR"; then
+  if [ "$TARGET_OS" = "Darwin" ]; then
+    EVENTDIR="external/libevent-2.0.21"
+    EVENTINCLUDE="-I${EVENTDIR}/include -I${EVENTDIR}/macos"
+    PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -L${EVENTDIR}/macos/lib"
+  else
     EVENTDIR="external/libevent"
-    PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -L$EVENTDIR/lib"
+    EVENTINCLUDE=-I${EVENTDIR}/include
+    PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -L${EVENTDIR}/lib"
+  fi
 fi
 
 # Detect location of djinni
@@ -88,7 +95,7 @@ if test -z "$DJINNIDIR"; then
     DJINNIDIR="external/djinni"
 fi
 
-COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS} -I${EVENTDIR}/include -Iexternal"
+COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS} ${EVENTINCLUDE} -Iexternal"
 COMMON_FLAGS="$COMMON_FLAGS -I ${DJINNIDIR}/support-lib/jni -Isrc/djinni/generated/c++"
 CROSS_COMPILE=
 PLATFORM_CCFLAGS=
@@ -106,10 +113,10 @@ GENERIC_PORT_FILES=`cd "$ROCKETSPEED_ROOT"; find src/port -name '*.cc' ! -name '
 case "$TARGET_OS" in
     Darwin)
         PLATFORM=OS_MACOSX
-        COMMON_FLAGS="$COMMON_FLAGS -DOS_MACOSX"
+        COMMON_FLAGS="$COMMON_FLAGS -DOS_MACOSX -DUSE_UPSTREAM_LIBEVENT"
         PLATFORM_SHARED_EXT=dylib
         PLATFORM_SHARED_LDFLAGS="-dynamiclib -install_name "
-        # PORT_FILES=port/darwin/darwin_specific.cc
+        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -levent"
         ;;
     IOS)
         PLATFORM=IOS
@@ -313,6 +320,14 @@ EOF
     if [ "$?" = 0 ]; then
         PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -ltcmalloc"
     fi
+fi
+
+# Test whether -Wshorten-64-to-32 is available
+$CXX $CFLAGS -x c++ - -o /dev/null -Wshorten-64-to-32 2>/dev/null  <<EOF
+  int main() {}
+EOF
+if [ "$?" = 0 ]; then
+    COMMON_FLAGS="$COMMON_FLAGS -Wshorten-64-to-32 -DSHORTEN64_32"
 fi
 
 # We need java for JNI

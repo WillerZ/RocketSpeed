@@ -124,6 +124,7 @@ class ThreadLocalPtr {
     void RemoveThreadData(ThreadData* d);
 
     static ThreadData* GetThreadLocal();
+    static void mutexinit(void);
 
     uint32_t next_instance_id_;
     // Used to recycle Ids in case ThreadLocalPtr is instantiated and destroyed
@@ -138,8 +139,13 @@ class ThreadLocalPtr {
     std::unordered_map<uint32_t, UnrefHandler> handler_map_;
 
     // protect inst, next_instance_id_, free_instance_ids_, head_,
-    // ThreadData.entries
-    static port::Mutex mutex_;
+    // ThreadData.entries. This is a raw pointer so that we can
+    // manually initialize it via pthread_once. This is done to avoid
+    // relying on the compiler to invoke the constructor of static
+    // objects in any guaranteed order. This is a raw pointer
+    // (and the mutex memory leaks) but we do not want to rely on
+    // any ordering guarantees of destructor invocations of static objects.
+    static port::Mutex* mutex_;
 #if !defined(OS_MACOSX)
     // Thread local storage
     static __thread ThreadData* tls_;

@@ -193,5 +193,112 @@ int Eventfd::read_event(eventfd_t *value) { return eventfd_read(fd_[0], value);}
 int Eventfd::write_event(eventfd_t value) { return eventfd_write(fd_[0],value);}
 #endif
 
+#if defined(OS_MACOSX)
+static std::atomic<int> sem_generator_(1);
+
+detail::RawSemaphore::RawSemaphore(unsigned initial_value) {
+  assert(initial_value <= SEM_VALUE_MAX);
+  name_ = std::to_string(sem_generator_++);
+
+  sem_close(sem_);
+  sem_unlink(name_.c_str());
+
+  sem_ = sem_open(name_.c_str(), O_CREAT|O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO,
+                  initial_value);
+  assert(sem_ != SEM_FAILED);
+}
+detail::RawSemaphore::~RawSemaphore() {
+  sem_close(sem_);
+  sem_unlink(name_.c_str());
+}
+#else
+detail::RawSemaphore::RawSemaphore(unsigned initial_value) {
+  sem_ = &buffer_; // point to a precreated semaphore
+  name_ = "";      // unnamed
+  sem_init(sem_, 0, initial_value);
+}
+
+detail::RawSemaphore::~RawSemaphore() {
+  sem_destroy(sem_);
+}
+#endif /* OS_MACOSX */
+
+Semaphore::Semaphore(unsigned initial_value) :
+      sem_(std::make_shared<detail::RawSemaphore>(initial_value)) { }
+
+void Semaphore::Wait() {
+  int rv;
+
+  do {
+    rv = sem_wait(rawsem());
+    assert(rv == 0 || errno == EINTR);
+  } while (rv != 0);
+}
+
+/**
+ * @return true on success, false if semaphore could not
+ *         be decremented before @param deadline.
+ */
+bool Semaphore::TimedWait(std::chrono::system_clock::time_point deadline) {
+#if !defined(OS_MACOSX)
+  std::chrono::milliseconds deadline_ms {
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           deadline.time_since_epoch())
+  };
+  struct timespec abs_timeout {
+    static_cast<time_t>(deadline_ms.count() / 1000),
+    static_cast<long>(deadline_ms.count() % 1000 * 1000000),
+  };
+#endif
+  for (;;) {
+#if defined(OS_MACOSX)
+    int rv = sem_trywait(rawsem());
+#else
+    int rv = sem_timedwait(rawsem(), &abs_timeout);
+#endif
+    if (rv == 0) {
+      return true;
+    }
+
+    switch (errno) {
+    case ETIMEDOUT:
+      break;
+    case EINTR:
+      continue;          // try again
+#if defined(OS_MACOSX)
+    case EAGAIN:
+      {
+        auto now = std::chrono::system_clock::now();
+        if (deadline < now) {
+          break;
+        }
+        usleep(100000L);   // 100 ms, this is used only by unit tests
+        continue;          // try again
+      }
+#endif
+    default:
+      assert(false);
+    }
+    return false;
+  }
+}
+
+void Semaphore::Post() {
+  // This is the critical part of working around glibc #12674.  post() pins
+  // the sem_t to ensure it continues to exist until the post completes.
+  std::shared_ptr<detail::RawSemaphore> pin(sem_);
+  int ret __attribute__((__unused__)) = sem_post(rawsem());
+  assert(ret == 0);
+  // NOTE: `this' is no longer safe to use here because waiter may have
+  // destroyed it
+}
+
+int Semaphore::Value() {
+  int val;
+  int rv __attribute__((__unused__)) = sem_getvalue(rawsem(), &val);
+  assert(rv == 0);
+  return val;
+}
+
 }  // namespace port
 }  // namespace rocketspeed

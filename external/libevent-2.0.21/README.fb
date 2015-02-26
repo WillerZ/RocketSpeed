@@ -1,0 +1,2 @@
+The libevent 2.0.21 is used by both Macos Android.
+You can run "make" on this directory to create macos/lib/libevent.a

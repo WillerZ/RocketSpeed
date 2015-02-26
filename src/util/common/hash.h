@@ -127,7 +127,7 @@ struct MurmurHash2_32;
 template <>
 struct MurmurHash2_32<size_t> {
   size_t operator()(size_t xa) const {
-    uint32_t x = xa;
+    uint32_t x = static_cast<uint32_t>(xa);
     const uint32_t m = 0x5bd1e995;
     const int r = 24;
     uint32_t h = 0xfacec0de;
@@ -154,7 +154,7 @@ struct MurmurHash2_32<Slice> {
     const int r = 24;
 
     // Initialize the hash to a 'random' value
-    uint32_t h = seed ^ len;
+    uint32_t h = static_cast<uint32_t>(seed ^ len);
 
     // Mix 4 bytes at a time into the hash
     const uint32_t* data = reinterpret_cast<const uint32_t*>(x.data());

@@ -126,13 +126,13 @@ TEST(ConsistentHashTest, Consistency) {
   string newHosts[] = { "host1", "host2", "host3" };
   for (const string& host : newHosts) {
     hash.Add(host);
-    int changed = 0;
+    uint64_t changed = 0;
     for (size_t key = 0; key < num; ++key) {
       if (hash.Get(key) != original[key]) {
         changed++;
       }
     }
-    int expected = num / hash.SlotCount();
+    uint64_t expected = num / hash.SlotCount();
     ASSERT_LT(changed, expected * 2);
     ASSERT_GT(changed, expected / 2);
     hash.Remove(host);

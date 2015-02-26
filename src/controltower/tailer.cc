@@ -47,7 +47,7 @@ Status Tailer::Initialize() {
   // define a lambda for callback
   auto record_cb = [this] (std::unique_ptr<LogRecord> record) {
     LogID log_id = record->log_id;
-    int room_number = log_id % rooms_.size();
+    int room_number = static_cast<int>(log_id % rooms_.size());
     ControlRoom* room = rooms_[room_number].get();
 
     // Convert storage record into RocketSpeed message.
@@ -106,17 +106,18 @@ Status Tailer::Initialize() {
                                                 record.from,
                                                 record.to));
 
-    int room_number = record.log_id % rooms_.size();
+    int room_number = static_cast<int>(record.log_id % rooms_.size());
     ControlRoom* room = rooms_[room_number].get();
     room->Forward(std::move(msg), record.log_id, -1);
   };
 
   // create log reader. There is one reader per ControlRoom.
   std::vector<AsyncLogReader*> handle;
-  Status st = storage_->CreateAsyncReaders(rooms_.size(),
-                                           record_cb,
-                                           gap_cb,
-                                           &handle);
+  Status st = storage_->CreateAsyncReaders(
+                           static_cast<unsigned int>(rooms_.size()),
+                           record_cb,
+                           gap_cb,
+                           &handle);
   if (!st.ok()) {
     return st;
   }

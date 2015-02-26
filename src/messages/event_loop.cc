@@ -224,7 +224,7 @@ class SocketEvent {
       // partial-message, then send it.
       if (partial_.size() > 0) {
         assert(send_queue_.size() > 0);
-        int count = write(fd_, (const void *)partial_.data(), partial_.size());
+        ssize_t count = write(fd_, (const void *)partial_.data(), partial_.size());
         if (count == -1) {
           LOG_WARN(event_loop_->info_log_,
               "Wanted to write %d bytes to remote host fd(%d) but encountered "
@@ -248,7 +248,7 @@ class SocketEvent {
           return Status::OK();
         } else {
           LOG_INFO(event_loop_->info_log_,
-              "Successfully wrote %d bytes to remote host fd(%d)",
+              "Successfully wrote %ld bytes to remote host fd(%d)",
               count, fd_);
         }
         // The partial message is completely sent out. Remove it from queue.
@@ -464,7 +464,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
   send_cmd->GetMessage(&out);
   assert(out.size() > 0);
   SharedString* msg = AllocString(std::move(out),
-                                  remote.size(),
+                                  static_cast<int>(remote.size()),
                                   send_cmd->GetIssuedTime());
 
   // Increment ref count again in case it is deleted inside Enqueue.
@@ -784,7 +784,7 @@ void EventLoop::Stop() {
       // Write to the shutdown event FD to signal the event loop thread
       // to shutdown and stop looping.
       uint64_t value = 1;
-      int result;
+      ssize_t result;
       do {
         result = write(shutdown_fd, &value, sizeof(value));
       } while (running_ && (result < 0 || errno == EAGAIN));
@@ -985,7 +985,7 @@ EventLoop::create_connection(const HostId& host,
   if ((rv = getaddrinfo(host.hostname.c_str(), port_string.c_str(),
                         &hints, &servinfo)) != 0) {
       return Status::IOError("getaddrinfo: " + host.hostname +
-                             ":" + port_string);
+                             ":" + port_string + ":" + gai_strerror(rv));
   }
 
   // loop through all the results and connect to the first we can

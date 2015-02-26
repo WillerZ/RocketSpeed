@@ -12,11 +12,20 @@
 #include <stdlib.h>
 
 namespace rocketspeed {
+port::Mutex* rocketspeed::ThreadLocalPtr::StaticMeta::mutex_;
 
-port::Mutex ThreadLocalPtr::StaticMeta::mutex_;
 #if !defined(OS_MACOSX)
 __thread ThreadLocalPtr::ThreadData* ThreadLocalPtr::StaticMeta::tls_ = nullptr;
 #endif
+
+/*
+ * Initialize the mutex inside the singleton ThreadLocalPtr::StaticMeta.
+ * Do not rely on the order of invocation of constructors for static objects,
+ * so this is done via pthread_once.
+ */
+void ThreadLocalPtr::StaticMeta::mutexinit(void) {
+  ThreadLocalPtr::StaticMeta::mutex_ = new port::Mutex();
+}
 
 ThreadLocalPtr::StaticMeta* ThreadLocalPtr::Instance() {
   static ThreadLocalPtr::StaticMeta inst;
@@ -30,7 +39,7 @@ void ThreadLocalPtr::StaticMeta::OnThreadExit(void* ptr) {
   auto* inst = Instance();
   pthread_setspecific(inst->pthread_key_, nullptr);
 
-  MutexLock l(&mutex_);
+  MutexLock l(mutex_);
   inst->RemoveThreadData(tls);
   // Unref stored pointers of current thread from all instances
   uint32_t id = 0;
@@ -49,6 +58,10 @@ void ThreadLocalPtr::StaticMeta::OnThreadExit(void* ptr) {
 }
 
 ThreadLocalPtr::StaticMeta::StaticMeta() : next_instance_id_(0) {
+  // Initialize the mutex inside StaticMeta
+  static port::OnceType init_control = ROCKETSPEED_ONCE_INIT;
+  port::InitOnce(&init_control, mutexinit);
+
   if (pthread_key_create(&pthread_key_, &OnThreadExit) != 0) {
     abort();
   }
@@ -57,7 +70,7 @@ ThreadLocalPtr::StaticMeta::StaticMeta() : next_instance_id_(0) {
 }
 
 void ThreadLocalPtr::StaticMeta::AddThreadData(ThreadLocalPtr::ThreadData* d) {
-  mutex_.AssertHeld();
+  mutex_->AssertHeld();
   d->next = &head_;
   d->prev = head_.prev;
   head_.prev->next = d;
@@ -66,7 +79,7 @@ void ThreadLocalPtr::StaticMeta::AddThreadData(ThreadLocalPtr::ThreadData* d) {
 
 void ThreadLocalPtr::StaticMeta::RemoveThreadData(
     ThreadLocalPtr::ThreadData* d) {
-  mutex_.AssertHeld();
+  mutex_->AssertHeld();
   d->next->prev = d->prev;
   d->prev->next = d->next;
   d->next = d->prev = d;
@@ -86,14 +99,14 @@ ThreadLocalPtr::ThreadData* ThreadLocalPtr::StaticMeta::GetThreadLocal() {
     {
       // Register it in the global chain, needs to be done before thread exit
       // handler registration
-      MutexLock l(&mutex_);
+      MutexLock l(mutex_);
       inst->AddThreadData(tls_);
     }
     // Even it is not OS_MACOSX, need to register value for pthread_key_ so that
     // its exit handler will be triggered.
     if (pthread_setspecific(inst->pthread_key_, tls_) != 0) {
       {
-        MutexLock l(&mutex_);
+        MutexLock l(mutex_);
         inst->RemoveThreadData(tls_);
       }
       delete tls_;
@@ -115,7 +128,7 @@ void ThreadLocalPtr::StaticMeta::Reset(uint32_t id, void* ptr) {
   auto* tls = GetThreadLocal();
   if (UNLIKELY(id >= tls->entries.size())) {
     // Need mutex to protect entries access within ReclaimId
-    MutexLock l(&mutex_);
+    MutexLock l(mutex_);
     tls->entries.resize(id + 1);
   }
   tls->entries[id].ptr.store(ptr, std::memory_order_release);
@@ -125,7 +138,7 @@ void* ThreadLocalPtr::StaticMeta::Swap(uint32_t id, void* ptr) {
   auto* tls = GetThreadLocal();
   if (UNLIKELY(id >= tls->entries.size())) {
     // Need mutex to protect entries access within ReclaimId
-    MutexLock l(&mutex_);
+    MutexLock l(mutex_);
     tls->entries.resize(id + 1);
   }
   return tls->entries[id].ptr.exchange(ptr, std::memory_order_acquire);
@@ -136,7 +149,7 @@ bool ThreadLocalPtr::StaticMeta::CompareAndSwap(uint32_t id, void* ptr,
   auto* tls = GetThreadLocal();
   if (UNLIKELY(id >= tls->entries.size())) {
     // Need mutex to protect entries access within ReclaimId
-    MutexLock l(&mutex_);
+    MutexLock l(mutex_);
     tls->entries.resize(id + 1);
   }
   return tls->entries[id].ptr.compare_exchange_strong(
@@ -144,12 +157,12 @@ bool ThreadLocalPtr::StaticMeta::CompareAndSwap(uint32_t id, void* ptr,
 }
 
 void ThreadLocalPtr::StaticMeta::SetHandler(uint32_t id, UnrefHandler handler) {
-  MutexLock l(&mutex_);
+  MutexLock l(mutex_);
   handler_map_[id] = handler;
 }
 
 UnrefHandler ThreadLocalPtr::StaticMeta::GetHandler(uint32_t id) {
-  mutex_.AssertHeld();
+  mutex_->AssertHeld();
   auto iter = handler_map_.find(id);
   if (iter == handler_map_.end()) {
     return nullptr;
@@ -158,7 +171,7 @@ UnrefHandler ThreadLocalPtr::StaticMeta::GetHandler(uint32_t id) {
 }
 
 uint32_t ThreadLocalPtr::StaticMeta::GetId() {
-  MutexLock l(&mutex_);
+  MutexLock l(mutex_);
   if (free_instance_ids_.empty()) {
     return next_instance_id_++;
   }
@@ -169,7 +182,7 @@ uint32_t ThreadLocalPtr::StaticMeta::GetId() {
 }
 
 uint32_t ThreadLocalPtr::StaticMeta::PeekId() const {
-  MutexLock l(&mutex_);
+  MutexLock l(mutex_);
   if (!free_instance_ids_.empty()) {
     return free_instance_ids_.back();
   }
@@ -179,7 +192,7 @@ uint32_t ThreadLocalPtr::StaticMeta::PeekId() const {
 void ThreadLocalPtr::StaticMeta::ReclaimId(uint32_t id) {
   // This id is not used, go through all thread local data and release
   // corresponding value
-  MutexLock l(&mutex_);
+  MutexLock l(mutex_);
   auto unref = GetHandler(id);
   for (ThreadData* t = head_.next; t != &head_; t = t->next) {
     if (id < t->entries.size()) {

@@ -169,7 +169,7 @@ void MsgLoop::Run() {
     BaseEnv::ThreadId tid = env_->StartThread(
       [this, i] () {
         // Set this thread's worker index.
-        worker_id_->Reset(new int(i));
+        worker_id_->Reset(new int(static_cast<int>(i)));
 
         event_loops_[i]->Run();
 
