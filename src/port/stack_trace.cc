@@ -72,7 +72,7 @@ void PrintStackTraceLine(const char* symbol, void* frame) {
   // out source to atos, for the address translation
   const int kLineMax = 256;
   char cmd[kLineMax];
-  snprintf(cmd, kLineMax, "xcrun atos %p -p %d  2>&1", frame, pid);
+  snprintf(cmd, kLineMax, "xcrun atos -d %p -p %d  2>&1", frame, pid);
   auto f = popen(cmd, "r");
   if (f) {
     char line[kLineMax];
@@ -94,7 +94,8 @@ static void StackTraceHandler(int sig) {
   // reset to default handler
   signal(sig, SIG_DFL);
   fprintf(stderr, "Received signal %d (%s)\n", sig, strsignal(sig));
-  PrintStack(0);
+  // skip the top three signal handler related frames
+  PrintStack(3);
   // re-signal to default handler (so we still get core dump if needed...)
   raise(sig);
 }
