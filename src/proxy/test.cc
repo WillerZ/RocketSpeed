@@ -114,7 +114,7 @@ TEST(ProxyTest, SeqnoError) {
   // Send to proxy on seqno 999999999. Will be out of buffer space and fail.
   // Should get the on_disconnect_ error.
   ASSERT_OK(proxy->Forward(serial, session, 999999999));
-  ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
 TEST(ProxyTest, DestroySession) {
@@ -142,6 +142,42 @@ TEST(ProxyTest, DestroySession) {
   proxy->DestroySession(session);
   ASSERT_OK(proxy->Forward(serial, session, 1));
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
+}
+
+TEST(ProxyTest, ServerDown) {
+  // Start the proxy.
+  // We're going to ping and expect an error.
+  port::Semaphore checkpoint;
+  auto on_message = [&] (int64_t session, std::string data) {
+    checkpoint.Post();
+  };
+  port::Semaphore disconnect_checkpoint;
+  auto on_disconnect = [&] (std::vector<int64_t> sessions) {
+    disconnect_checkpoint.Post();
+    std::sort(sessions.begin(), sessions.end());
+    ASSERT_EQ(sessions.size(), 2);
+    ASSERT_EQ(sessions[0], 123);
+    ASSERT_EQ(sessions[1], 456);
+  };
+  proxy->Start(on_message, on_disconnect);
+
+  std::string serial;
+  MessagePing ping(Tenant::GuestTenant,
+                   MessagePing::PingType::Request,
+                   "client");
+  ping.SerializeToString(&serial);
+
+  // Send to proxy then await response.
+  ASSERT_OK(proxy->Forward(serial, 123, 0));
+  ASSERT_OK(proxy->Forward(serial, 456, 0));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+
+  // Now destroy cluster.
+  cluster.reset(nullptr);
+
+  // Should get disconnect message.
+  ASSERT_TRUE(disconnect_checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
 }  // namespace rocketspeed
