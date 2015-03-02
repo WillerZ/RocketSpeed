@@ -76,6 +76,17 @@ struct HostSessionMatrix {
   std::unordered_map<int64_t, std::vector<ClientID>> session_to_hosts_;
 };
 
+/**
+ * Maps a session ID to a worker, given the number of workers available.
+ *
+ * @param session The session ID to map.
+ * @param num_workers The total number of workers.
+ * @return A worker ID for the session, between 0 and num_workers - 1 inclusive.
+ */
+static int WorkerForSession(int session, int num_workers) {
+  return session % num_workers;
+}
+
 // Worker thread for processing forwarded messages.
 class ProxyWorker {
  public:
@@ -122,8 +133,9 @@ class ProxyWorker {
               // Need to check if session is still there. Previous command
               // processed may have caused it to drop.s
               if (sessions_.find(session) != sessions_.end()) {
-                // TODO(pja) 1 : Use other threads based on session.
-                Status st = msg_loop_->SendCommand(std::move(command));
+                int worker = WorkerForSession(session,
+                                              msg_loop_->GetNumWorkers());
+                Status st = msg_loop_->SendCommand(std::move(command), worker);
                 if (!st.ok() && on_disconnect_) {
                   on_disconnect_( { session } );
                   sessions_.erase(session);
@@ -364,8 +376,8 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
 
   if (sequence == -1) {
     // Send directly to loop.
-    // TODO(pja) 1 : Use other threads based on session.
-    return msg_loop_->SendCommand(std::move(cmd), 0);
+    int worker = WorkerForSession(session, msg_loop_->GetNumWorkers());
+    return msg_loop_->SendCommand(std::move(cmd), worker);
   } else {
     // Process in order using seqno and session.
     return worker_->EnqueueCommand(session,
