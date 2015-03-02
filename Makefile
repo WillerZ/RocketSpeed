@@ -57,6 +57,7 @@ LDFLAGS += $(PLATFORM_LDFLAGS)
 
 LIBOBJECTS = $(SOURCES:.cc=.o)
 LIBOBJECTS += $(SOURCESCPP:.cpp=.o)
+LIBOBJECTS += $(SOURCESC:.c=.o)
 
 TESTUTIL = ./src/util/testutil.o
 TESTCLUSTER = ./src/test/test_cluster.o
@@ -229,6 +230,7 @@ clean:
 	-rm -rf ios-x86/* ios-arm/*
 	-rm -rf _mock_logdevice_logs test_times LOG.*
 	-find src -name "*.[od]" -exec rm {} \;
+	-find external/libevent-2.0.21/ldevent -name "*.[od]" -exec rm {} \;
 	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
 	-find src/java -name "*.class" -exec rm {} \;
 	-rm -f *.jar

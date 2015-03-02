@@ -108,9 +108,13 @@ extern string to_string(long double value);
 }
 #endif
 
-#if defined(OS_ANDROID) || defined(OS_MACOSX)
+#if defined(OS_ANDROID)
 // libevent_global_shutdown not available in libevent 2.0.*
 extern void libevent_global_shutdown(void);
+#endif
+#if defined(OS_MACOSX)
+// libevent_global_shutdown not available in libevent 2.0.*
+extern void ld_libevent_global_shutdown(void);
 #endif
 
 namespace rocketspeed {

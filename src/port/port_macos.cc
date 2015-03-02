@@ -11,7 +11,7 @@
 ** the method libevent_global_shutdown.
 ** https://raw.githubusercontent.com/libevent/libevent/master/whatsnew-2.1.txt
 */
-void libevent_global_shutdown(void) {
+void ld_libevent_global_shutdown(void) {
 }
 
 #endif /* OS_ANDROID */

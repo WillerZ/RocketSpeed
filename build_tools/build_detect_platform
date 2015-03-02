@@ -82,7 +82,6 @@ if test -z "$EVENTDIR"; then
   if [ "$TARGET_OS" = "Darwin" ]; then
     EVENTDIR="external/libevent-2.0.21"
     EVENTINCLUDE="-I${EVENTDIR}/include -I${EVENTDIR}/macos"
-    PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -L${EVENTDIR}/macos/lib"
   else
     EVENTDIR="external/libevent"
     EVENTINCLUDE=-I${EVENTDIR}/include
@@ -113,17 +112,11 @@ GENERIC_PORT_FILES=`cd "$ROCKETSPEED_ROOT"; find src/port -name '*.cc' ! -name '
 case "$TARGET_OS" in
     Darwin)
         PLATFORM=OS_MACOSX
-        COMMON_FLAGS="$COMMON_FLAGS -DOS_MACOSX -DUSE_UPSTREAM_LIBEVENT"
+        COMMON_FLAGS="$COMMON_FLAGS -DOS_MACOSX "
         PLATFORM_SHARED_EXT=dylib
         PLATFORM_SHARED_LDFLAGS="-dynamiclib -install_name "
-        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -levent"
-        ;;
-    IOS)
-        PLATFORM=IOS
-        COMMON_FLAGS="$COMMON_FLAGS -DOS_MACOSX -DIOS_CROSS_COMPILE -DROCKETSPEED_LITE"
-        PLATFORM_SHARED_EXT=dylib
-        PLATFORM_SHARED_LDFLAGS="-dynamiclib -install_name "
-        CROSS_COMPILE=true
+        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS"
+        LIBEVENT_FILES=`cd "$ROCKETSPEED_ROOT"; find $EVENTDIR/ldevent -name '*.c' | tr "\n" " "`
         ;;
     Linux)
         PLATFORM=OS_LINUX
@@ -208,6 +201,7 @@ echo "SOURCES=$PORTABLE_FILES $GENERIC_PORT_FILES $PORT_FILES" >> "$OUTPUT"
 echo "SOURCESCPP=$PORTABLE_CPP" >> "$OUTPUT"
 echo "SOURCES_DJINNI=$DJINNI_FILES" >> "$OUTPUT"
 echo "SOURCES_DJINNI_CPP=$DJINNI_CPP" >> "$OUTPUT"
+echo "SOURCESC=$LIBEVENT_FILES" >> "$OUTPUT"
 
 if [ "$CROSS_COMPILE" = "true" -o "$FBCODE_BUILD" = "true" ]; then
     # Cross-compiling; do not try any compilation tests.
