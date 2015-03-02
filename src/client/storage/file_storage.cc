@@ -64,21 +64,26 @@ void FileStorage::Initialize(LoadCallback load_callback,
   worker_data_.reset(new WorkerData[num_workers]);
 
   // Setup handlers for our custom commands.
-  auto update_handler = [this](std::unique_ptr<Command> command) {
+  auto update_handler = [this](std::unique_ptr<Command> command,
+                               uint64_t issued_time) {
     HandleUpdateCommand(std::move(command));
   };
   msg_loop_->RegisterCommandCallback(CommandType::kStorageUpdateCommand,
                                      update_handler);
 
-  auto load_handler = [this](std::unique_ptr<Command> command) {
+  auto load_handler = [this](std::unique_ptr<Command> command,
+                             uint64_t issued_time) {
     HandleLoadCommand(std::move(command));
   };
   msg_loop_->RegisterCommandCallback(CommandType::kStorageLoadCommand,
                                      load_handler);
 
-  msg_loop_->RegisterCommandCallback(
-      CommandType::kStorageSnapshotCommand,
-      std::bind(&FileStorage::HandleSnapshotCommand, this, _1));
+  auto snapshot_handler = [this](std::unique_ptr<Command> command,
+                                 uint64_t issued_time) {
+    HandleSnapshotCommand(std::move(command));
+  };
+  msg_loop_->RegisterCommandCallback(CommandType::kStorageSnapshotCommand,
+                                     snapshot_handler);
 }
 
 Status FileStorage::Update(SubscriptionRequest request) {

@@ -36,17 +36,6 @@ class Command {
 
   // Get type of the command.
   virtual CommandType GetCommandType() const = 0;
-
-  // Get the time when this command was issued by the sender.
-  uint64_t GetIssuedTime() const { return issued_time_; }
-
-  /** Set the time when this command was sent to the event loop. */
-  void SetIssuedTime(uint64_t issued_time) {
-    issued_time_ = issued_time;
-  }
-
- private:
-  uint64_t issued_time_ = 0;
 };
 
 /**

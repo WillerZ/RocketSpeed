@@ -439,6 +439,7 @@ void EventLoop::RegisterCallback(CommandType type,
   // Cannnot modify internal callbacks.
   assert(type != CommandType::kAcceptCommand);
   assert(type != CommandType::kSendCommand);
+  assert(type != CommandType::kExecuteCommand);
 
   // We do not allow any duplicates.
   assert(command_callbacks_.find(type) == command_callbacks_.end());
@@ -446,7 +447,8 @@ void EventLoop::RegisterCallback(CommandType type,
   command_callbacks_[type] = callbacks;
 }
 
-void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
+void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
+                                  uint64_t issued_time) {
   // Need using otherwise SendCommand is confused with the member function.
   using rocketspeed::SendCommand;
   SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
@@ -463,7 +465,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
   assert(out.size() > 0);
   SharedString* msg = AllocString(std::move(out),
                                   static_cast<int>(remote.size()),
-                                  send_cmd->GetIssuedTime());
+                                  issued_time);
 
   // Increment ref count again in case it is deleted inside Enqueue.
   msg->refcount++;
@@ -505,7 +507,8 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
   }
 }
 
-void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
+void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command,
+                                    uint64_t issued_time) {
   // This object is managed by the event that it creates, and will destroy
   // itself during an EOF callback.
   thread_check_.Check();
@@ -555,18 +558,20 @@ void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
   // Read commands from the queue (there might have been multiple
   // commands added since we have received the last notification).
   while (available--) {
-    std::unique_ptr<Command> command;
+    TimestampedCommand ts_cmd;
 
     // Read a command from the queue.
-    if (!obj->command_queue_.read(command)) {
+    if (!obj->command_queue_.read(ts_cmd)) {
       // This should not happen.
       LOG_WARN(obj->info_log_, "Wrong number of available commands reported");
       obj->info_log_->Flush();
       return;
     }
 
+    std::unique_ptr<Command> command = std::move(ts_cmd.command);
+
     uint64_t now = obj->env_->NowMicros();
-    obj->stats_.command_latency->Record(now - command->GetIssuedTime());
+    obj->stats_.command_latency->Record(now - ts_cmd.issued_time);
     obj->stats_.commands_processed->Add(1);
 
     // Search for callback registered for this command type.
@@ -574,7 +579,7 @@ void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
     const auto type = command->GetCommandType();
     auto iter = obj->command_callbacks_.find(type);
     if (iter != obj->command_callbacks_.end()) {
-      iter->second(std::move(command));
+      iter->second(std::move(command), ts_cmd.issued_time);
     } else {
       // If the user has not registered a callback for this command type, then
       // the command will be droped silently.
@@ -816,8 +821,8 @@ void EventLoop::Stop() {
 }
 
 Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
-  command->SetIssuedTime(env_->NowMicros());
-  bool success = command_queue_.write(std::move(command));
+  TimestampedCommand ts_cmd { std::move(command), env_->NowMicros() };
+  bool success = command_queue_.write(std::move(ts_cmd));
 
   if (!success) {
     // The queue was full and the write failed.
@@ -1078,15 +1083,15 @@ EventLoop::EventLoop(BaseEnv* env,
 
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
-      std::unique_ptr<Command> command) {
-    HandleAcceptCommand(std::move(command));
+      std::unique_ptr<Command> command, uint64_t issued_time) {
+    HandleAcceptCommand(std::move(command), issued_time);
   };
   command_callbacks_[CommandType::kSendCommand] = [this](
-      std::unique_ptr<Command> command) {
-    HandleSendCommand(std::move(command));
+      std::unique_ptr<Command> command, uint64_t issued_time) {
+    HandleSendCommand(std::move(command), issued_time);
   };
   command_callbacks_[CommandType::kExecuteCommand] = [](
-      std::unique_ptr<Command> command) {
+      std::unique_ptr<Command> command, uint64_t issued_time) {
     static_cast<ExecuteCommand*>(command.get())->Execute();
   };
 

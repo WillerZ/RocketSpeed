@@ -43,7 +43,8 @@ typedef std::function<void(int fd)> AcceptCallbackType;
 
 // Callback registered for a command type is invoked for all commands of the
 // type.
-typedef std::function<void(std::unique_ptr<Command> command)>
+typedef std::function<void(std::unique_ptr<Command> command,
+                           uint64_t issued_time)>
   CommandCallbackType;
 
 class SocketEvent;
@@ -215,7 +216,11 @@ class EventLoop {
   event* command_ready_event_ = nullptr;
 
   // Command queue and its associated event
-  MultiProducerQueue<std::unique_ptr<Command>> command_queue_;
+  struct TimestampedCommand {
+    std::unique_ptr<Command> command;
+    uint64_t issued_time;
+  };
+  MultiProducerQueue<TimestampedCommand> command_queue_;
   rocketspeed::port::Eventfd command_ready_eventfd_;
 
   // a cache of ClientIds to connections
@@ -249,9 +254,11 @@ class EventLoop {
   } stats_;
 
   // A callback for handling SendCommands.
-  void HandleSendCommand(std::unique_ptr<Command> command);
+  void HandleSendCommand(std::unique_ptr<Command> command,
+                         uint64_t issued_time);
   // A callback for handling AcceptCommands.
-  void HandleAcceptCommand(std::unique_ptr<Command> command);
+  void HandleAcceptCommand(std::unique_ptr<Command> command,
+                           uint64_t issued_time);
 
   // connection cache updates
   bool insert_connection_cache(const ClientID& host, SocketEvent* ev);
