@@ -420,10 +420,8 @@ class SocketEvent {
 
 class AcceptCommand : public Command {
  public:
-  explicit AcceptCommand(int fd,
-                         uint64_t issued_time)
-      : Command(issued_time),
-        fd_(fd) {}
+  explicit AcceptCommand(int fd)
+      : fd_(fd) {}
 
   CommandType GetCommandType() const { return kAcceptCommand; }
 
@@ -818,6 +816,7 @@ void EventLoop::Stop() {
 }
 
 Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
+  command->SetIssuedTime(env_->NowMicros());
   bool success = command_queue_.write(std::move(command));
 
   if (!success) {
@@ -841,7 +840,7 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
 
 void EventLoop::Accept(int fd) {
   // May be called from another thread, so must add to the command queue.
-  std::unique_ptr<Command> command(new AcceptCommand(fd, env_->NowMicros()));
+  std::unique_ptr<Command> command(new AcceptCommand(fd));
   SendCommand(std::move(command));
 }
 

@@ -360,7 +360,6 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(msg),
                               host,
-                              env_->NowMicros(),
                               is_new_request));
 
   if (sequence == -1) {

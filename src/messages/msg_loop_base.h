@@ -198,8 +198,7 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
           // Don't need lock here since all workers are done.
           gather(std::move(context->second));
         }
-      },
-      env_->NowMicros()));
+      }));
     Status st = SendCommand(std::move(command), i);
     if (!st.ok()) {
       return st;

@@ -217,7 +217,6 @@ Status MsgLoop::SendMessage(const Message& msg,
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(serial),
                               std::move(recipient),
-                              env_->NowMicros(),
                               is_new_request));
   return SendCommand(std::move(cmd), worker_id);
 }
@@ -234,22 +233,12 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
     LOG_INFO(info_log_, "Received ping response");
   } else {
     const ClientID& origin = request->GetOrigin();
-    const bool is_new_request = false;
 
     // change it to a ping response message
     request->SetPingType(MessagePing::Response);
 
-    // serialize response
-    std::string serial;
-    request->SerializeToString(&serial);
-
-    // send reponse
-    std::unique_ptr<Command> cmd(
-      new SerializedSendCommand(std::move(serial),
-                                origin,
-                                env_->NowMicros(),
-                                is_new_request));
-    Status st = SendCommand(std::move(cmd), GetThreadWorkerIndex());
+    // send response to origin.
+    Status st = SendResponse(*request, origin, GetThreadWorkerIndex());
 
     if (!st.ok()) {
       LOG_WARN(info_log_,

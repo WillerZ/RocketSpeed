@@ -19,8 +19,8 @@ class StorageUpdateCommand final : public Command {
  public:
   SubscriptionRequest request;
 
-  StorageUpdateCommand(uint64_t issued_time, SubscriptionRequest _request)
-      : Command(issued_time), request(_request) {}
+  explicit StorageUpdateCommand(SubscriptionRequest _request)
+      : request(_request) {}
 
   CommandType GetCommandType() const { return kStorageUpdateCommand; }
 };
@@ -33,11 +33,10 @@ class StorageLoadCommand final : public Command {
  public:
   std::vector<SubscriptionRequest> query;
 
-  explicit StorageLoadCommand(uint64_t issued_time) : Command(issued_time) {}
+  explicit StorageLoadCommand() {}
 
-  StorageLoadCommand(uint64_t issued_time,
-                     std::vector<SubscriptionRequest> _query)
-      : Command(issued_time), query(_query) {}
+  explicit StorageLoadCommand(std::vector<SubscriptionRequest> _query)
+      : query(_query) {}
 
   CommandType GetCommandType() const { return kStorageLoadCommand; }
 };
@@ -49,9 +48,9 @@ class StorageSnapshotCommand final : public Command {
  public:
    std::shared_ptr<SnapshotState> snapshot_state;
 
-  StorageSnapshotCommand(uint64_t issued_time,
-                         std::shared_ptr<SnapshotState> _snapshot_state)
-      : Command(issued_time), snapshot_state(std::move(_snapshot_state)) {}
+  explicit StorageSnapshotCommand(
+    std::shared_ptr<SnapshotState> _snapshot_state)
+      : snapshot_state(std::move(_snapshot_state)) {}
 
   CommandType GetCommandType() const { return kStorageSnapshotCommand; }
 };

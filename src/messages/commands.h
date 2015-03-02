@@ -30,7 +30,7 @@ enum CommandType : uint8_t {
  */
 class Command {
  public:
-  explicit Command(uint64_t issued_time) : issued_time_(issued_time) {}
+  explicit Command() {}
 
   virtual ~Command() {}
 
@@ -40,8 +40,13 @@ class Command {
   // Get the time when this command was issued by the sender.
   uint64_t GetIssuedTime() const { return issued_time_; }
 
+  /** Set the time when this command was sent to the event loop. */
+  void SetIssuedTime(uint64_t issued_time) {
+    issued_time_ = issued_time;
+  }
+
  private:
-  uint64_t issued_time_;
+  uint64_t issued_time_ = 0;
 };
 
 /**
@@ -55,8 +60,7 @@ class SendCommand : public Command {
   // Allocate one ClientID in-place for the common case.
   typedef autovector<ClientID, 1> Recipients;
 
-  explicit SendCommand(uint64_t issued_time, bool is_new_request) :
-                       Command(issued_time),
+  explicit SendCommand(bool is_new_request) :
                        is_new_request_(is_new_request) {}
 
   virtual ~SendCommand() {}
@@ -89,9 +93,8 @@ class SerializedSendCommand : public SendCommand {
 
   SerializedSendCommand(std::string message,
                         const ClientID& host,
-                        uint64_t issued_time,
                         bool is_new_request):
-    SendCommand(issued_time, is_new_request),
+    SendCommand(is_new_request),
     message_(std::move(message)) {
     recipient_.push_back(host);
     assert(message_.size() > 0);
@@ -99,9 +102,8 @@ class SerializedSendCommand : public SendCommand {
 
   SerializedSendCommand(std::string message,
                         Recipients hosts,
-                        uint64_t issued_time,
                         bool is_new_request):
-    SendCommand(issued_time, is_new_request),
+    SendCommand(is_new_request),
     recipient_(std::move(hosts)),
     message_(std::move(message)) {
     assert(message_.size() > 0);
@@ -129,13 +131,9 @@ class ExecuteCommand : public Command {
    * Executes a function within the event loop thread.
    *
    * @param func The function to execute.
-   * @param issued_time The time when the command was sent to the loop. This is
-   *                    used to track the latency in processing commands.
    */
-  explicit ExecuteCommand(std::function<void()> func,
-                          uint64_t issued_time)
-  : Command(issued_time)
-  , func_(std::move(func)) {}
+  explicit ExecuteCommand(std::function<void()> func)
+  : func_(std::move(func)) {}
 
   virtual ~ExecuteCommand() {}
 

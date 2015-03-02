@@ -359,15 +359,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
 
   // Send response to origin to notify that subscription has been processed.
   msg->SetMetaType(MessageMetadata::MetaType::Response);
-  const bool is_new_request = false;
-  std::string serial;
-  msg->SerializeToString(&serial);
-  std::unique_ptr<Command> cmd(
-    new SerializedSendCommand(std::move(serial),
-                              subscriber,
-                              options_.env->NowMicros(),
-                              is_new_request));
-  Status status = copilot_->SendCommand(std::move(cmd), worker_id);
+  Status status = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
   if (!status.ok()) {
     // Failed to send response. The origin will re-send the subscription
     // again in the future, and we'll try to immediately respond again.

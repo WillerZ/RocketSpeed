@@ -84,7 +84,7 @@ void FileStorage::Initialize(LoadCallback load_callback,
 Status FileStorage::Update(SubscriptionRequest request) {
   const int worker_id = GetWorkerForTopic(request.topic_name);
   std::unique_ptr<Command> command(
-      new StorageUpdateCommand(env_->NowMicros(), std::move(request)));
+      new StorageUpdateCommand(std::move(request)));
   return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
@@ -105,7 +105,7 @@ Status FileStorage::Load(std::vector<SubscriptionRequest> requests) {
       continue;
     }
     std::unique_ptr<Command> command(new StorageLoadCommand(
-        env_->NowMicros(), std::move(sharded[worker_id])));
+        std::move(sharded[worker_id])));
     status = msg_loop_->SendCommand(std::move(command), worker_id);
   }
   // TODO(t6161065) If status != OK then abort command on all threads.
@@ -116,7 +116,7 @@ Status FileStorage::LoadAll() {
   const int num_workers = msg_loop_->GetNumWorkers();
   Status status;
   for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
-    std::unique_ptr<Command> command(new StorageLoadCommand(env_->NowMicros()));
+    std::unique_ptr<Command> command(new StorageLoadCommand());
     status = msg_loop_->SendCommand(std::move(command), worker_id);
   }
   // TODO(t6161065) If status != OK then abort command on all threads.
@@ -171,7 +171,7 @@ void FileStorage::WriteSnapshot(SnapshotCallback callback) {
   Status status;
   for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
     std::unique_ptr<Command> command(
-        new StorageSnapshotCommand(env_->NowMicros(), snapshot_state));
+        new StorageSnapshotCommand(snapshot_state));
     status = msg_loop_->SendCommand(std::move(command), worker_id);
   }
   if (!status.ok()) {
