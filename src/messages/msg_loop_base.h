@@ -5,8 +5,11 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <map>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
@@ -14,6 +17,7 @@
 #include "src/messages/event_loop.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
+#include "src/util/mutexlock.h"
 #include "src/port/Env.h"
 
 
@@ -26,11 +30,17 @@ typedef std::function<void(std::unique_ptr<Message>)> MsgCallbackType;
 class MsgLoopBase {
  public:
 
-  MsgLoopBase(){
-  };
+  explicit MsgLoopBase(BaseEnv* env)
+  : env_(env) {
+  }
 
-  virtual ~MsgLoopBase() {
-  };
+  MsgLoopBase() = delete;
+  MsgLoopBase(const MsgLoopBase&) = delete;
+  MsgLoopBase(MsgLoopBase&&) = delete;
+  MsgLoopBase& operator=(const MsgLoopBase&) = delete;
+  MsgLoopBase& operator=(MsgLoopBase&&) = delete;
+
+  virtual ~MsgLoopBase() = default;
 
   // Register callback for a command in all underlying EventLoops.
   virtual void RegisterCommandCallback(CommandType type,
@@ -140,6 +150,22 @@ class MsgLoopBase {
   virtual Status WaitUntilRunning(std::chrono::seconds timeout =
                                     std::chrono::seconds(10)) = 0;
 
+  /**
+   * Asynchronously computes per_worker(worker_index) on each worker thread
+   * then calls gather with the results from an unspecified worker thread.
+   *
+   * @param per_worker Will be called with each worker index and may return
+   *                   a value of any type.
+   * @param gather Function to call with a vector of the results of calling
+   *               per_worker with each worker index.
+   * @return ok() if successful, error otherwise.
+   */
+  template <typename PerWorkerFunc, typename GatherFunc>
+  Status Gather(PerWorkerFunc per_worker, GatherFunc callback);
+
+ protected:
+  BaseEnv* env_;
+
  private:
   // Sends msg to recipient on event loop worker_id.
   virtual Status SendMessage(const Message& msg,
@@ -147,5 +173,39 @@ class MsgLoopBase {
                              int worker_id,
                              bool is_new_request) = 0;
 };
+
+template <typename PerWorkerFunc, typename GatherFunc>
+Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
+  using T = decltype(per_worker(0));
+
+  // Accumulated results and mutex for access.
+  using Context = std::pair<port::Mutex, std::vector<T>>;
+  auto context = std::make_shared<Context>();
+
+  const int n = GetNumWorkers();
+  for (int i = 0; i < n; ++i) {
+    // Schedule the per_worker function to be called on each worker.
+    // Results will be accumulated in context->second.
+    std::unique_ptr<Command> command(
+      new ExecuteCommand([this, i, n, context, per_worker, gather] () {
+        bool done;
+        {
+          MutexLock lock(&context->first);
+          context->second.push_back(per_worker(i));
+          done = context->second.size() == n;
+        }
+        if (done) {
+          // Don't need lock here since all workers are done.
+          gather(std::move(context->second));
+        }
+      },
+      env_->NowMicros()));
+    Status st = SendCommand(std::move(command), i);
+    if (!st.ok()) {
+      return st;
+    }
+  }
+  return Status::OK();
+}
 
 }  // namespace rocketspeed

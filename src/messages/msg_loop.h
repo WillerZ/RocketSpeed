@@ -130,6 +130,15 @@ class MsgLoop : public MsgLoopBase {
   Status WaitUntilRunning(std::chrono::seconds timeout =
                             std::chrono::seconds(10));
 
+  /**
+   * Synchronously finds the total number of active clients on each event
+   * loop. Will block until all event loops are able to asynchronously process
+   * the request.
+   *
+   * @return The total number of clients.
+   */
+  int GetNumClientsSync();
+
  private:
   Status SendMessage(const Message& msg,
                      ClientID recipient,
@@ -140,9 +149,6 @@ class MsgLoop : public MsgLoopBase {
   // Reading this is only valid within an EventLoop callback. It is used to
   // define affinities between workers and messages.
   std::unique_ptr<ThreadLocalPtr> worker_id_;
-
-  // The Environment
-  BaseEnv* env_;
 
   // The Environment Options
   const EnvOptions env_options_;

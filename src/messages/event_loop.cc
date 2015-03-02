@@ -1086,6 +1086,10 @@ EventLoop::EventLoop(BaseEnv* env,
       std::unique_ptr<Command> command) {
     HandleSendCommand(std::move(command));
   };
+  command_callbacks_[CommandType::kExecuteCommand] = [](
+      std::unique_ptr<Command> command) {
+    static_cast<ExecuteCommand*>(command.get())->Execute();
+  };
 
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }
@@ -1111,6 +1115,11 @@ const char* EventLoop::SeverityToString(int severity) {
 
 void EventLoop::GlobalShutdown() {
   libevent_global_shutdown();
+}
+
+int EventLoop::GetNumClients() const {
+  thread_check_.Check();
+  return static_cast<int>(connection_cache_.size());
 }
 
 }  // namespace rocketspeed

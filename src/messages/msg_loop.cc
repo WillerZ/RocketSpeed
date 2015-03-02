@@ -6,6 +6,8 @@
 #define __STDC_FORMAT_MACROS
 #include "msg_loop.h"
 
+#include <chrono>
+#include <thread>
 #include "include/Logger.h"
 #include "src/port/port.h"
 #include "src/messages/serializer.h"
@@ -60,8 +62,8 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  const std::shared_ptr<Logger>& info_log,
                  std::string name,
                  ClientID client_id):
+  MsgLoopBase(env),
   worker_id_(new ThreadLocalPtr(free_thread_local)),
-  env_(env),
   env_options_(env_options),
   info_log_(info_log),
   name_(name),
@@ -298,6 +300,27 @@ Status MsgLoop::WaitUntilRunning(std::chrono::seconds timeout) {
     }
   }
   return Status::OK();
+}
+
+int MsgLoop::GetNumClientsSync() {
+  int result = 0;
+  port::Semaphore done;
+  Status st;
+  do {
+    // Attempt to gather num clients from each event loop.
+    st = Gather([this] (int i) { return event_loops_[i]->GetNumClients(); },
+                [&done, &result] (std::vector<int> clients) {
+                  result = std::accumulate(clients.begin(), clients.end(), 0);
+                  done.Post();
+                });
+    if (!st.ok()) {
+      // Failed, delay for a while.
+      /* sleep override */
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  } while (!st.ok());
+  done.Wait();
+  return result;
 }
 
 

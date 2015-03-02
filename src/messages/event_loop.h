@@ -131,6 +131,12 @@ class EventLoop {
   }
 
   /**
+   * Returns the number of active clients on this event loop.
+   * Not thread safe,
+   */
+  int GetNumClients() const;
+
+  /**
    * Waits until the event loop is running.
    *
    * @param timeout Maximum time to wait.

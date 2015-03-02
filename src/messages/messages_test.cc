@@ -315,23 +315,28 @@ TEST(Messaging, GracefulGoodbye) {
   // Ping request c1 -> server
   ASSERT_OK(client.SendRequest(ping1_req, server.GetClientId(0)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
+  ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping request c2 -> server
   ASSERT_OK(client.SendRequest(ping2_req, server.GetClientId(0)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
+  ASSERT_EQ(server.GetNumClientsSync(), 2);
 
   // Goodbye c1 -> server
   ASSERT_OK(client.SendRequest(goodbye1, server.GetClientId(0)));
   ASSERT_TRUE(goodbye_checkpoint.TimedWait(std::chrono::milliseconds(100)));
+  ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping response server -> c1
   ASSERT_OK(server.SendResponse(ping1_resp, "c1", 0));
   // Should NOT get response -- c1 has said goodbye
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
+  ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping response server -> c2
   ASSERT_OK(server.SendResponse(ping2_resp, "c2", 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
+  ASSERT_EQ(server.GetNumClientsSync(), 1);
 }
 
 TEST(Messaging, WaitUntilRunningFailure) {
@@ -344,6 +349,24 @@ TEST(Messaging, WaitUntilRunningFailure) {
   MsgLoop loop2(env_, env_options_, 58499, 1, info_log_, "loop2");
   env_->StartThread([&] () { loop2.Run(); }, "loop2");
   ASSERT_TRUE(!loop2.WaitUntilRunning().ok());
+}
+
+TEST(Messaging, GatherTest) {
+  MsgLoop loop(env_, env_options_, -1, 10, info_log_, "loop");
+  env_->StartThread([&] () { loop.Run(); }, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  port::Semaphore done;
+  int n = 0;
+
+  // Simple gather test that simple sums up the worker indices.
+  ASSERT_OK(loop.Gather([] (int i) { return i; },
+                        [&] (std::vector<int> v) {
+                          n = std::accumulate(v.begin(), v.end(), 0);
+                          done.Post();
+                        }));
+  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(1)));
+  ASSERT_EQ(n, 45); // 45 = 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9
 }
 
 }  // namespace rocketspeed

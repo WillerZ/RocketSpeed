@@ -21,6 +21,7 @@ enum CommandType : uint8_t {
   kStorageUpdateCommand = 0x03,
   kStorageLoadCommand = 0x04,
   kStorageSnapshotCommand = 0x05,
+  kExecuteCommand = 0x06,
 };
 
 /**
@@ -117,6 +118,37 @@ class SerializedSendCommand : public SendCommand {
  private:
   Recipients recipient_;      // the list of destinations
   std::string message_;       // the message itself
+};
+
+/**
+ * Command that executes a function from within the event loop.
+ */
+class ExecuteCommand : public Command {
+ public:
+  /**
+   * Executes a function within the event loop thread.
+   *
+   * @param func The function to execute.
+   * @param issued_time The time when the command was sent to the loop. This is
+   *                    used to track the latency in processing commands.
+   */
+  explicit ExecuteCommand(std::function<void()> func,
+                          uint64_t issued_time)
+  : Command(issued_time)
+  , func_(std::move(func)) {}
+
+  virtual ~ExecuteCommand() {}
+
+  virtual CommandType GetCommandType() const {
+    return kExecuteCommand;
+  }
+
+  void Execute() {
+    func_();
+  }
+
+ private:
+  std::function<void()> func_;
 };
 
 }  // namespace rocketspeed
