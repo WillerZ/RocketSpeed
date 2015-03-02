@@ -189,9 +189,10 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
     std::unique_ptr<Command> command(
       new ExecuteCommand([this, i, n, context, per_worker, gather] () {
         bool done;
+        T result = per_worker(i);
         {
           MutexLock lock(&context->first);
-          context->second.push_back(per_worker(i));
+          context->second.push_back(std::move(result));
           done = context->second.size() == n;
         }
         if (done) {
