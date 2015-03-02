@@ -132,7 +132,6 @@ cxx_binary(
     ],
     header_namespace = '',
     headers = subdir_glob([
-        ('external/gflags/include', '*.h'),
         ('external/gflags/include', 'gflags/*.h'),
         ('external/gflags/include/gflags', '*.h'),
     ]),
