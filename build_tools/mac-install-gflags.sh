@@ -6,7 +6,7 @@ set -e
 DIR=`mktemp -d /tmp/rocketspeed_gflags_XXXX`
 
 cd $DIR
-wget https://gflags.googlecode.com/files/gflags-2.0.tar.gz
+curl -O https://gflags.googlecode.com/files/gflags-2.0.tar.gz
 tar xvfz gflags-2.0.tar.gz
 cd gflags-2.0
 
