@@ -57,6 +57,10 @@ class ControlTower {
   // Add a new client ID and worker ID then return its host number
   HostNumber InsertHost(const ClientID& client_id, int worker_id);
 
+  MsgLoop* GetMsgLoop() {
+    return options_.msg_loop;
+  }
+
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;

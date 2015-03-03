@@ -58,13 +58,15 @@ struct HostSessionMatrix {
    * Remove a session row from matrix.
    *
    * @param session The session to remove.
+   * @return The hosts for the removed session.
    */
-  void RemoveSession(int64_t session) {
-    const auto& hosts = session_to_hosts_[session];
+  std::vector<ClientID> RemoveSession(int64_t session) {
+    auto hosts = std::move(session_to_hosts_[session]);
     for (const ClientID& host : hosts) {
       host_to_sessions_[host].erase(session);
     }
     session_to_hosts_.erase(session);
+    return hosts;
   }
 
  private:
@@ -114,13 +116,27 @@ class ProxyWorker {
           if (it != sessions_.end()) {
             sessions_.erase(it);
           }
-          host_session_matrix_.RemoveSession(session);
+          auto hosts = host_session_matrix_.RemoveSession(session);
+
+          // Send goodbye to all hosts.
+          MessageGoodbye goodbye(Tenant::GuestTenant,
+                                 std::to_string(session),
+                                 MessageGoodbye::Code::Graceful,
+                                 MessageGoodbye::OriginType::Client);
+
+          // OK if this fails. Server will garbage collect client.
+          int worker = WorkerForSession(session, msg_loop_->GetNumWorkers());
+          for (const ClientID& host : hosts) {
+            msg_loop_->SendRequest(goodbye, host, worker);
+          }
         } else {
           // Remove host.
-          auto sessions = host_session_matrix_.RemoveHost(task.host);
-          std::vector<int64_t> sessions_vec(sessions.begin(), sessions.end());
-          if (on_disconnect_) {
-            on_disconnect_(std::move(sessions_vec));
+          for (const ClientID& host : task.hosts) {
+            auto sessions = host_session_matrix_.RemoveHost(host);
+            std::vector<int64_t> sessions_vec(sessions.begin(), sessions.end());
+            if (on_disconnect_) {
+              on_disconnect_(std::move(sessions_vec));
+            }
           }
         }
       } else {
@@ -147,7 +163,9 @@ class ProxyWorker {
           assert(result.second);
           it = result.first;
         }
-        host_session_matrix_.Add(session, task.host);
+        for (const ClientID& host : task.hosts) {
+          host_session_matrix_.Add(session, host);
+        }
         Status st = it->second.Process(std::move(task.command), task.seqno);
         if (!st.ok() && on_disconnect_) {
           on_disconnect_( { session } );
@@ -164,18 +182,20 @@ class ProxyWorker {
   Status EnqueueCommand(int64_t session,
                         int32_t seqno,
                         std::unique_ptr<Command> cmd,
-                        ClientID host) {
-    return worker_loop_.Send(session, seqno, std::move(cmd), std::move(host)) ?
+                        SendCommand::Recipients hosts) {
+    return worker_loop_.Send(session, seqno, std::move(cmd), std::move(hosts)) ?
            Status::OK() : Status::NoBuffer();
   }
 
   Status EnqueueRemoveSession(int64_t session) {
-    return worker_loop_.Send(session, 0, nullptr, ClientID("")) ?
+    return worker_loop_.Send(session, 0, nullptr, SendCommand::Recipients()) ?
            Status::OK() : Status::NoBuffer();
   }
 
   Status EnqueueRemoveHost(ClientID host) {
-    return worker_loop_.Send(-1, 0, nullptr, std::move(host)) ?
+    SendCommand::Recipients hosts;
+    hosts.emplace_back(std::move(host));
+    return worker_loop_.Send(-1, 0, nullptr, std::move(hosts)) ?
            Status::OK() : Status::NoBuffer();
   }
 
@@ -186,18 +206,18 @@ class ProxyWorker {
     Task(int64_t _session,
          int32_t _seqno,
          std::unique_ptr<Command> _cmd,
-         ClientID _host)
+         SendCommand::Recipients _hosts)
     : session(_session)
     , seqno(_seqno)
     , command(std::move(_cmd))
-    , host(std::move(_host)) {}
+    , hosts(std::move(_hosts)) {}
 
     Task() {}
 
     int64_t session;
     int32_t seqno;
     std::unique_ptr<Command> command;
-    ClientID host;
+    SendCommand::Recipients hosts;
   };
 
   std::unordered_map<int64_t, SessionProcessor> sessions_;
@@ -341,15 +361,21 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
   }
 
   // Select destination based on message type.
-  HostId const* host_id = nullptr;
+  SendCommand::Recipients hosts;
   switch (message->GetMessageType()) {
     case MessageType::mPing:  // could go to either
     case MessageType::mPublish:
-      host_id = &config_->GetPilotHostIds().front();
+      hosts.push_back(config_->GetPilotHostIds().front().ToClientId());
       break;
 
     case MessageType::mMetadata:
-      host_id = &config_->GetCopilotHostIds().front();
+      hosts.push_back(config_->GetCopilotHostIds().front().ToClientId());
+      break;
+
+    case MessageType::mGoodbye:
+      // Goodbye messages need to be sent to both.
+      hosts.push_back(config_->GetPilotHostIds().front().ToClientId());
+      hosts.push_back(config_->GetCopilotHostIds().front().ToClientId());
       break;
 
     case MessageType::mDataAck:
@@ -368,10 +394,9 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
 
   // Create command.
   const bool is_new_request = true;
-  ClientID host = host_id->ToClientId();
   std::unique_ptr<Command> cmd(
     new SerializedSendCommand(std::move(msg),
-                              host,
+                              hosts,
                               is_new_request));
 
   if (sequence == -1) {
@@ -383,12 +408,11 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
     return worker_->EnqueueCommand(session,
                                    sequence,
                                    std::move(cmd),
-                                   std::move(host));
+                                   hosts);
   }
 }
 
 void Proxy::DestroySession(int64_t session) {
-  // TODO (pja) 1 : Handle full worker loop queue.
   worker_->EnqueueRemoveSession(session);
 }
 

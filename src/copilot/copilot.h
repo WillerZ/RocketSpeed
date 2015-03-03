@@ -56,6 +56,10 @@ class Copilot {
     return control_tower_router_;
   }
 
+  MsgLoop* GetMsgLoop() {
+    return options_.msg_loop;
+  }
+
  private:
   // The options used by the Copilot
   CopilotOptions options_;

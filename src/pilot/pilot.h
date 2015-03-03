@@ -80,6 +80,10 @@ class Pilot {
                       uint64_t append_time,
                       int worker_id);
 
+  MsgLoop* GetMsgLoop() {
+    return options_.msg_loop;
+  }
+
  private:
   friend struct AppendClosure;
 

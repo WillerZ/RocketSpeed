@@ -18,7 +18,8 @@ namespace rocketspeed {
 class ProxyTest {
  public:
   ProxyTest() {
-    ASSERT_OK(test::CreateLogger(Env::Default(), "ProxyTest", &info_log));
+    env = Env::Default();
+    ASSERT_OK(test::CreateLogger(env, "ProxyTest", &info_log));
     cluster.reset(new LocalTestCluster(info_log, true, true, true));
     ASSERT_OK(cluster->GetStatus());
 
@@ -32,6 +33,7 @@ class ProxyTest {
     ASSERT_OK(Proxy::CreateNewInstance(std::move(opts), &proxy));
   }
 
+  Env* env;
   std::shared_ptr<Logger> info_log;
   std::unique_ptr<LocalTestCluster> cluster;
   std::unique_ptr<Proxy> proxy;
@@ -138,10 +140,18 @@ TEST(ProxyTest, DestroySession) {
   ASSERT_OK(proxy->Forward(serial, session, 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
+  // Check that pilot and copilot have at least one client.
+  ASSERT_NE(cluster->GetPilot()->GetMsgLoop()->GetNumClientsSync(), 0);
+  ASSERT_NE(cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync(), 0);
+
   // Now destroy, and send at seqno 1. Should not get response.
   proxy->DestroySession(session);
   ASSERT_OK(proxy->Forward(serial, session, 1));
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
+
+  // Check that pilot and copilot have no clients.
+  ASSERT_EQ(cluster->GetPilot()->GetMsgLoop()->GetNumClientsSync(), 0);
+  ASSERT_EQ(cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync(), 0);
 }
 
 TEST(ProxyTest, ServerDown) {
@@ -178,6 +188,64 @@ TEST(ProxyTest, ServerDown) {
 
   // Should get disconnect message.
   ASSERT_TRUE(disconnect_checkpoint.TimedWait(std::chrono::seconds(1)));
+}
+
+TEST(ProxyTest, ForwardGoodbye) {
+  // Start the proxy.
+  // We're going to talk to pilot and copilot, then say goodbye.
+  port::Semaphore checkpoint;
+  auto on_message = [&] (int64_t session, std::string data) {
+    checkpoint.Post();
+  };
+  proxy->Start(on_message, nullptr);
+
+  // Send a publish message.
+  std::string publish_serial;
+  MessageData publish(MessageType::mPublish,
+                      Tenant::GuestTenant,
+                      "client",
+                      Slice("topic"),
+                      101,
+                      Slice("payload"));
+  publish.SerializeToString(&publish_serial);
+
+  const int64_t session = 123;
+  ASSERT_OK(proxy->Forward(publish_serial, session, 0));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+
+  // Send subscribe message.
+  NamespaceID ns = 101;
+  std::string sub_serial;
+  MessageMetadata sub(Tenant::GuestTenant,
+                      MessageMetadata::MetaType::Request,
+                      "client",
+                      { TopicPair(1, "topic", MetadataType::mSubscribe, ns) });
+  sub.SerializeToString(&sub_serial);
+  ASSERT_OK(proxy->Forward(sub_serial, session, 1));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+
+  // Check that pilot and copilot have at least one client.
+  // Copilot may have more due to control tower connections.
+  int npilot = cluster->GetPilot()->GetMsgLoop()->GetNumClientsSync();
+  int ncopilot = cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync();
+  ASSERT_NE(npilot, 0);
+  ASSERT_NE(ncopilot, 0);
+
+  // Send goodbye message.
+  std::string goodbye_serial;
+  MessageGoodbye goodbye(Tenant::GuestTenant,
+                         "client",
+                         MessageGoodbye::Code::Graceful,
+                         MessageGoodbye::OriginType::Client);
+  goodbye.SerializeToString(&goodbye_serial);
+  ASSERT_OK(proxy->Forward(goodbye_serial, session, 2));
+  env->SleepForMicroseconds(10000);  // time to propagate
+
+  // Check that pilot and copilot have one fewer clients each.
+  ASSERT_EQ(cluster->GetPilot()->GetMsgLoop()->GetNumClientsSync(),
+            npilot - 1);
+  ASSERT_EQ(cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync(),
+            ncopilot - 1);
 }
 
 }  // namespace rocketspeed

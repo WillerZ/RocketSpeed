@@ -71,6 +71,14 @@ class LocalTestCluster {
     return std::vector<HostId>{ copilot_->GetHostId() };
   }
 
+  Pilot* GetPilot() {
+    return pilot_;
+  }
+
+  Copilot* GetCopilot() {
+    return copilot_;
+  }
+
   ControlTower* GetControlTower() {
     return control_tower_;
   }
