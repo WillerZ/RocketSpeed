@@ -7,6 +7,7 @@
 #include "msg_loop.h"
 
 #include <chrono>
+#include <numeric>
 #include <thread>
 #include "include/Logger.h"
 #include "src/port/port.h"

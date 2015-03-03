@@ -85,7 +85,7 @@ struct HostSessionMatrix {
  * @param num_workers The total number of workers.
  * @return A worker ID for the session, between 0 and num_workers - 1 inclusive.
  */
-static int WorkerForSession(int session, int num_workers) {
+static int WorkerForSession(int64_t session, int num_workers) {
   return session % num_workers;
 }
 
