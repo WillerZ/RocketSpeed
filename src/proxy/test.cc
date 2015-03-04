@@ -29,7 +29,7 @@ class ProxyTest {
     opts.conf.reset(Configuration::Create(cluster->GetPilotHostIds(),
                                           cluster->GetCopilotHostIds(),
                                           Tenant::GuestTenant,
-                                          1));
+                                          4));
     ASSERT_OK(Proxy::CreateNewInstance(std::move(opts), &proxy));
   }
 

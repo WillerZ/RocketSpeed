@@ -80,156 +80,27 @@ struct HostSessionMatrix {
   std::unordered_map<int64_t, std::vector<ClientID>> session_to_hosts_;
 };
 
-/**
- * Maps a session ID to a worker, given the number of workers available.
- *
- * @param session The session ID to map.
- * @param num_workers The total number of workers.
- * @return A worker ID for the session, between 0 and num_workers - 1 inclusive.
- */
-static int WorkerForSession(int64_t session, int num_workers) {
-  return session % num_workers;
-}
+typedef OrderedProcessor<std::unique_ptr<Command>> SessionProcessor;
 
-// Worker thread for processing forwarded messages.
-class ProxyWorker {
- public:
-  ProxyWorker(MsgLoop* msg_loop,
-              Proxy::OnDisconnectCallback on_disconnect,
-              uint32_t max_tasks,
-              int buffer_size)
-  : worker_loop_(max_tasks)
-  , buffer_size_(buffer_size)
-  , msg_loop_(msg_loop) {
-    on_disconnect_ = on_disconnect ? std::move(on_disconnect)
-                                   : [](const std::vector<int64_t>&) {};
-    assert(on_disconnect_);
-  }
+/** Represents per message loop worker data. */
+struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
+  ProxyWorkerData() = default;
+  ProxyWorkerData(const ProxyWorkerData&) = delete;
+  ProxyWorkerData& operator=(const ProxyWorkerData&) = delete;
 
-  void Start() {
-    // Worker loop processes a serialized stream of tasks.
-    // A task is a (session, seqno, command).
-    // Each task is processed by an OrderedProcessor per session.
-    worker_loop_.Run([this] (Task task) {
-      // Find session in map.
-      int64_t session = task.session;
-      auto it = sessions_.find(session);
-      if (task.command == nullptr) {
-        if (task.session != -1) {
-          // Remove session.
-          if (it != sessions_.end()) {
-            sessions_.erase(it);
-          }
-          auto hosts = host_session_matrix_.RemoveSession(session);
+  /** The data can only be accessed from a single and the same thread. */
+  ThreadCheck thread_check_;
 
-          // Send goodbye to all hosts.
-          MessageGoodbye goodbye(Tenant::GuestTenant,
-                                 std::to_string(session),
-                                 MessageGoodbye::Code::Graceful,
-                                 MessageGoodbye::OriginType::Client);
-
-          // OK if this fails. Server will garbage collect client.
-          int worker = WorkerForSession(session, msg_loop_->GetNumWorkers());
-          for (const ClientID& host : hosts) {
-            msg_loop_->SendRequest(goodbye, host, worker);
-          }
-        } else {
-          // Remove host.
-          for (const ClientID& host : task.hosts) {
-            auto sessions = host_session_matrix_.RemoveHost(host);
-            std::vector<int64_t> sessions_vec(sessions.begin(), sessions.end());
-            on_disconnect_(std::move(sessions_vec));
-          }
-        }
-      } else {
-        if (it == sessions_.end()) {
-          // Not there, so create it.
-          SessionProcessor processor(
-            buffer_size_,
-            [this, session] (std::unique_ptr<Command> command) {
-              // Process command by sending it to the event loop.
-              // Need to check if session is still there. Previous command
-              // processed may have caused it to drop.s
-              if (sessions_.find(session) != sessions_.end()) {
-                int worker = WorkerForSession(session,
-                                              msg_loop_->GetNumWorkers());
-                Status st = msg_loop_->SendCommand(std::move(command), worker);
-                if (!st.ok()) {
-                  on_disconnect_({session});
-                  sessions_.erase(session);
-                }
-              }
-            });
-
-          auto result = sessions_.emplace(task.session, std::move(processor));
-          assert(result.second);
-          it = result.first;
-        }
-        for (const ClientID& host : task.hosts) {
-          host_session_matrix_.Add(session, host);
-        }
-        Status st = it->second.Process(std::move(task.command), task.seqno);
-        if (!st.ok()) {
-          on_disconnect_({session});
-          sessions_.erase(it);
-        }
-      }
-    });
-  }
-
-  void Stop() {
-    worker_loop_.Stop();
-  }
-
-  Status EnqueueCommand(int64_t session,
-                        int32_t seqno,
-                        std::unique_ptr<Command> cmd,
-                        SendCommand::Recipients hosts) {
-    return worker_loop_.Send(session, seqno, std::move(cmd), std::move(hosts)) ?
-           Status::OK() : Status::NoBuffer();
-  }
-
-  Status EnqueueRemoveSession(int64_t session) {
-    return worker_loop_.Send(session, 0, nullptr, SendCommand::Recipients()) ?
-           Status::OK() : Status::NoBuffer();
-  }
-
-  Status EnqueueRemoveHost(ClientID host) {
-    SendCommand::Recipients hosts;
-    hosts.emplace_back(std::move(host));
-    return worker_loop_.Send(-1, 0, nullptr, std::move(hosts)) ?
-           Status::OK() : Status::NoBuffer();
-  }
-
- private:
-  typedef OrderedProcessor<std::unique_ptr<Command>> SessionProcessor;
-
-  struct Task {
-    Task(int64_t _session,
-         int32_t _seqno,
-         std::unique_ptr<Command> _cmd,
-         SendCommand::Recipients _hosts)
-    : session(_session)
-    , seqno(_seqno)
-    , command(std::move(_cmd))
-    , hosts(std::move(_hosts)) {}
-
-    Task() {}
-
-    int64_t session;
-    int32_t seqno;
-    std::unique_ptr<Command> command;
-    SendCommand::Recipients hosts;
-  };
+  /**
+   * Mapping from internal client IDs, which happen to be sessions, into
+   * client IDs presented by the clients connected to the proxy.
+   */
+  std::unordered_map<int64_t, ClientID> session_to_client_;
 
   std::unordered_map<int64_t, SessionProcessor> sessions_;
-  WorkerLoop<Task> worker_loop_;
-  const int buffer_size_;
-  MsgLoop* msg_loop_;
-  Proxy::OnDisconnectCallback on_disconnect_;
+
   HostSessionMatrix host_session_matrix_;
 };
-
 
 Status Proxy::CreateNewInstance(ProxyOptions options,
                                 std::unique_ptr<Proxy>* proxy) {
@@ -255,8 +126,8 @@ Proxy::Proxy(ProxyOptions options)
 : info_log_(std::move(options.info_log))
 , env_(options.env)
 , config_(std::move(options.conf))
-, msg_thread_(0)
-, worker_thread_(0) {
+, ordering_buffer_size_(options.ordering_buffer_size)
+, msg_thread_(0) {
   using std::placeholders::_1;
 
   msg_loop_.reset(new MsgLoop(env_,
@@ -281,28 +152,23 @@ Proxy::Proxy(ProxyOptions options)
   callbacks[MessageType::mGoodbye] = goodbye_callback;
   msg_loop_->RegisterCallbacks(callbacks);
 
-  worker_data_.reset(new WorkerData[options.num_workers]);
+  worker_data_.reset(new ProxyWorkerData[options.num_workers]);
 }
 
 Status Proxy::Start(OnMessageCallback on_message,
                     OnDisconnectCallback on_disconnect) {
   on_message_ = std::move(on_message);
-  on_disconnect_ = std::move(on_disconnect);
+  on_disconnect_ = on_disconnect ? std::move(on_disconnect)
+                                 : [](const std::vector<int64_t>&) {};
+
   msg_thread_ = env_->StartThread([this] () { msg_loop_->Run(); },
                                   "proxy");
 
-  worker_.reset(new ProxyWorker(msg_loop_.get(),
-                                on_disconnect_,
-                                1 << 20,  // proxy worker queue size
-                                16));     // max out of order messages
-
-  worker_thread_ = env_->StartThread([this] () { worker_->Start(); },
-                                     "proxyw");
   return msg_loop_->WaitUntilRunning();
 }
 
 Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
-  int worker_id = WorkerForSession(session, msg_loop_->GetNumWorkers());
+  int worker_id = WorkerForSession(session);
   std::unique_ptr<Command> command(
       new ExecuteCommand(std::bind(&Proxy::HandleMessageForwarded,
                                    this,
@@ -313,9 +179,7 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
 }
 
 void Proxy::DestroySession(int64_t session) {
-  worker_->EnqueueRemoveSession(session);
-
-  int worker_id = WorkerForSession(session, msg_loop_->GetNumWorkers());
+  int worker_id = WorkerForSession(session);
   std::unique_ptr<Command> command(new ExecuteCommand(
       std::bind(&Proxy::HandleDestroySession, this, session)));
   auto st = msg_loop_->SendCommand(std::move(command), worker_id);
@@ -327,18 +191,18 @@ void Proxy::DestroySession(int64_t session) {
 }
 
 Proxy::~Proxy() {
-  if (worker_thread_) {
-    worker_->Stop();
-    env_->WaitForJoin(worker_thread_);
-  }
   if (msg_loop_->IsRunning()) {
     msg_loop_->Stop();
     env_->WaitForJoin(msg_thread_);
   }
 }
 
-Proxy::WorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
-  const auto worker_id = WorkerForSession(session, msg_loop_->GetNumWorkers());
+int Proxy::WorkerForSession(int64_t session) const {
+  return session % msg_loop_->GetNumWorkers();
+}
+
+ProxyWorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
+  const auto worker_id = WorkerForSession(session);
   // This way we do not reach into the thread local in production code.
   assert(worker_id == msg_loop_->GetThreadWorkerIndex());
   worker_data_[worker_id].thread_check_.Check();
@@ -351,7 +215,16 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
     LOG_WARN(info_log_,
              "Received goodbye from server %s.",
              goodbye->GetOrigin().c_str());
-    worker_->EnqueueRemoveHost(goodbye->GetOrigin());
+    // Arbitrary subset of sessions might have been mapped to this host, we have
+    // to fan out to all workers.
+    for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers();
+         ++worker_id) {
+      std::unique_ptr<Command> command(new ExecuteCommand(
+          std::bind(&Proxy::HandleRemoveHost, this, goodbye->GetOrigin())));
+      msg_loop_->SendCommand(std::move(command), worker_id);
+      // TODO(stupaq) scary things can happen if we fail to append command to
+      // all queues
+    }
   } else {
     LOG_WARN(info_log_,
              "Proxy received client goodbye from %s, but has no clients.",
@@ -360,7 +233,39 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
 }
 
 void Proxy::HandleDestroySession(int64_t session) {
-  GetWorkerDataForSession(session).session_to_client_.erase(session);
+  auto& data = GetWorkerDataForSession(session);
+
+  // Find session in map.
+  auto it = data.sessions_.find(session);
+  // Remove session.
+  if (it != data.sessions_.end()) {
+    data.sessions_.erase(it);
+  }
+  auto hosts = data.host_session_matrix_.RemoveSession(session);
+
+  // Send goodbye to all hosts.
+  MessageGoodbye goodbye(Tenant::GuestTenant,
+                         std::to_string(session),
+                         MessageGoodbye::Code::Graceful,
+                         MessageGoodbye::OriginType::Client);
+
+  // OK if this fails. Server will garbage collect client.
+  int worker = WorkerForSession(session);
+  for (const ClientID& host : hosts) {
+    msg_loop_->SendRequest(goodbye, host, worker);
+  }
+
+  // Remove the session to client ID mapping.
+  data.session_to_client_.erase(session);
+}
+
+void Proxy::HandleRemoveHost(ClientID host) {
+  auto& data = worker_data_[msg_loop_->GetThreadWorkerIndex()];
+  data.thread_check_.Check();
+  // Remove host.
+  auto sessions = data.host_session_matrix_.RemoveHost(host);
+  std::vector<int64_t> sessions_vec(sessions.begin(), sessions.end());
+  on_disconnect_(std::move(sessions_vec));
 }
 
 void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
@@ -411,6 +316,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
                                    int64_t session,
                                    int32_t sequence) {
   stats_.forwards->Add(1);
+  auto& data = GetWorkerDataForSession(session);
 
   // TODO(pja) 1 : Really inefficient. Only need to deserialize header,
   // not entire message, and don't need to copy entire message.
@@ -419,7 +325,6 @@ void Proxy::HandleMessageForwarded(std::string msg,
     Message::CreateNewInstance(std::move(buffer), msg.size());
 
   {  // Save origin presented by client.
-    auto& data = GetWorkerDataForSession(session);
     auto it = data.session_to_client_.find(session);
     // We save unnecessary copy.
     if (it == data.session_to_client_.end()) {
@@ -481,19 +386,48 @@ void Proxy::HandleMessageForwarded(std::string msg,
 
   if (sequence == -1) {
     // Send directly to loop.
-    int worker = WorkerForSession(session, msg_loop_->GetNumWorkers());
+    int worker = WorkerForSession(session);
     auto st = msg_loop_->SendCommand(std::move(cmd), worker);
     if (!st.ok()) {
       on_disconnect_({session});
       return;
     }
-  } else {
-    // Process in order using seqno and session.
-    auto st = worker_->EnqueueCommand(session, sequence, std::move(cmd), hosts);
-    if (!st.ok()) {
-      on_disconnect_({session});
-      return;
-    }
+  }
+
+  auto it = data.sessions_.find(session);
+  if (it == data.sessions_.end()) {
+    // Not there, so create it.
+    SessionProcessor processor(
+        ordering_buffer_size_,
+        [this, session, &data](std::unique_ptr<Command> command) {
+          // It's safe to capture data reference.
+          // Process command by sending it to the event loop.
+          // Need to check if session is still there. Previous command
+          // processed may have caused it to drop.
+          if (data.sessions_.find(session) != data.sessions_.end()) {
+            int worker = WorkerForSession(session);
+            Status st = msg_loop_->SendCommand(std::move(command), worker);
+            if (!st.ok()) {
+              on_disconnect_({session});
+              data.sessions_.erase(session);
+            }
+          }
+        });
+
+    auto result = data.sessions_.emplace(session, std::move(processor));
+    assert(result.second);
+    it = result.first;
+  }
+
+  for (const ClientID& host : hosts) {
+    data.host_session_matrix_.Add(session, host);
+  }
+
+  Status st = it->second.Process(std::move(cmd), sequence);
+  if (!st.ok()) {
+    on_disconnect_({session});
+    data.sessions_.erase(it);
+    return;
   }
 }
 

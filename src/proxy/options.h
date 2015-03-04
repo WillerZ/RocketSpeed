@@ -37,6 +37,10 @@ struct ProxyOptions {
   // Default: 1
   int num_workers;
 
+  // An upper bound on the number of messages that arrived out of order.
+  // Default: 16
+  int ordering_buffer_size;
+
   // Create PilotOptions with default values for all fields
   ProxyOptions();
 };

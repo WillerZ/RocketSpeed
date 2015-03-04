@@ -11,7 +11,8 @@ ProxyOptions::ProxyOptions()
 : env(Env::Default())
 , conf(nullptr)
 , info_log(nullptr)
-, num_workers(1) {
+, num_workers(1)
+, ordering_buffer_size(16) {
 }
 
 }  // namespace rocketspeed
