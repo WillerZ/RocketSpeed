@@ -57,7 +57,11 @@ TEST(ProxyTest, Publish) {
     ASSERT_EQ(our_client, msg->GetOrigin());
     checkpoint.Post();
   };
-  proxy->Start(on_message, nullptr);
+  std::atomic<size_t> forcibly_disconnected(0);
+  auto on_disconnect = [&](const std::vector<int64_t>& sessions) {
+    forcibly_disconnected += sessions.size();
+  };
+  proxy->Start(on_message, on_disconnect);
 
   // Send a publish message.
   std::string serial;
@@ -97,6 +101,11 @@ TEST(ProxyTest, Publish) {
   ASSERT_OK(proxy->Forward(serial, session + 1, 0));
   // different session, should arrive
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
+
+  // It doesn't mean that on_disconnect would not eventually be called, but if
+  // called, it is always a thread that handles one of the messages that we were
+  // waiting for.
+  ASSERT_EQ(0, forcibly_disconnected.load());
 }
 
 TEST(ProxyTest, SeqnoError) {

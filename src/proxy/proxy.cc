@@ -387,48 +387,39 @@ void Proxy::HandleMessageForwarded(std::string msg,
 
   if (sequence == -1) {
     // Send directly to loop.
-    int worker = WorkerForSession(session);
-    auto st = msg_loop_->SendCommand(std::move(cmd), worker);
+    msg_loop_->SendCommandToSelf(std::move(cmd));
+  } else {
+    // Handle reordering.
+    auto it = data.sessions_.find(session);
+    if (it == data.sessions_.end()) {
+      // Not there, so create it.
+      SessionProcessor processor(
+          ordering_buffer_size_,
+          [this, session, &data](std::unique_ptr<Command> command) {
+            // It's safe to capture data reference.
+            // Process command by sending it to the event loop.
+            // Need to check if session is still there. Previous command
+            // processed may have caused it to drop.
+            if (data.sessions_.find(session) != data.sessions_.end()) {
+              msg_loop_->SendCommandToSelf(std::move(command));
+            }
+          });
+
+      auto result = data.sessions_.emplace(session, std::move(processor));
+      assert(result.second);
+      it = result.first;
+    }
+
+    for (const ClientID& host : hosts) {
+      data.host_session_matrix_.Add(session, host);
+    }
+
+    Status st = it->second.Process(std::move(cmd), sequence);
     if (!st.ok()) {
       on_disconnect_({session});
+      data.sessions_.erase(it);
       return;
     }
-  }
-
-  auto it = data.sessions_.find(session);
-  if (it == data.sessions_.end()) {
-    // Not there, so create it.
-    SessionProcessor processor(
-        ordering_buffer_size_,
-        [this, session, &data](std::unique_ptr<Command> command) {
-          // It's safe to capture data reference.
-          // Process command by sending it to the event loop.
-          // Need to check if session is still there. Previous command
-          // processed may have caused it to drop.
-          if (data.sessions_.find(session) != data.sessions_.end()) {
-            int worker = WorkerForSession(session);
-            Status st = msg_loop_->SendCommand(std::move(command), worker);
-            if (!st.ok()) {
-              on_disconnect_({session});
-              data.sessions_.erase(session);
-            }
-          }
-        });
-
-    auto result = data.sessions_.emplace(session, std::move(processor));
-    assert(result.second);
-    it = result.first;
-  }
-
-  for (const ClientID& host : hosts) {
-    data.host_session_matrix_.Add(session, host);
-  }
-
-  Status st = it->second.Process(std::move(cmd), sequence);
-  if (!st.ok()) {
-    on_disconnect_({session});
-    data.sessions_.erase(it);
-    return;
   }
 }
 
