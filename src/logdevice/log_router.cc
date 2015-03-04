@@ -37,8 +37,10 @@ LogDeviceLogRouter::JumpConsistentHash(uint64_t key, uint64_t buckets) {
   do {
     b = j;
     key = key * 2862933555777941757ULL + 1;
-    j = (b + 1) * (static_cast<double>(1LL << 31) /
-                   static_cast<double>((key >> 33) + 1));
+    j = static_cast<uint64_t>(
+          static_cast<double>(b + 1) *
+          (static_cast<double>(1LL << 31) /
+          (static_cast<double>((key >> 33) + 1))));
   } while (j < buckets);
   return b;
 }

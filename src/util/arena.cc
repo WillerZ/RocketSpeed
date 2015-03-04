@@ -13,7 +13,7 @@ namespace rocketspeed {
 const size_t Arena::kInlineSize;
 const size_t Arena::kMinBlockSize = 4096;
 const size_t Arena::kMaxBlockSize = 2 << 30;
-static const int kAlignUnit = sizeof(void*);
+static const int kAlignUnit = static_cast<int>(sizeof(void*));
 
 size_t OptimizeBlockSize(size_t block_size) {
   // Make sure block_size is in optimal range

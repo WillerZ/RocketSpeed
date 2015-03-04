@@ -24,11 +24,11 @@ if test "$USE_HDFS"; then
 fi
 
 # location of libgcc
-LIBGCC_INCLUDE=" -I $TOOLCHAIN_LIB_BASE/libgcc/libgcc-4.8.1/8aac7fc/include"
+LIBGCC_INCLUDE=" -isystem $TOOLCHAIN_LIB_BASE/libgcc/libgcc-4.8.1/8aac7fc/include"
 LIBGCC_LIBS=" -L $TOOLCHAIN_LIB_BASE/libgcc/libgcc-4.8.1/8aac7fc/libs"
 
 # location of glibc
-GLIBC_INCLUDE=" -I $TOOLCHAIN_LIB_BASE/glibc/glibc-2.17/99df8fc/include"
+GLIBC_INCLUDE=" -isystem $TOOLCHAIN_LIB_BASE/glibc/glibc-2.17/99df8fc/include"
 GLIBC_LIBS=" -L $TOOLCHAIN_LIB_BASE/glibc/glibc-2.17/99df8fc/lib"
 
 # location of snappy headers and libraries

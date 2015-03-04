@@ -346,7 +346,7 @@ void FileStorage::HandleSnapshotCommand(std::unique_ptr<Command> command) {
 
 int FileStorage::GetWorkerForTopic(const Topic& topic_name) const {
   const int num_workers = msg_loop_->GetNumWorkers();
-  return MurmurHash2<std::string>()(topic_name) % num_workers;
+  return static_cast<int>(MurmurHash2<std::string>()(topic_name) % num_workers);
 }
 
 FileStorage::WorkerData& FileStorage::GetCurrentWorkerData() {

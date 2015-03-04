@@ -47,28 +47,28 @@ TEST(StatisticsTest, Basic) {
   ASSERT_EQ(count_c1->Get(), 30);
 
   // All in 2nd bucket.
-  histo_a1->Record(50);
-  histo_a1->Record(11);
-  histo_a1->Record(99);
+  histo_a1->Record(50.0);
+  histo_a1->Record(11.0);
+  histo_a1->Record(99.0);
   ASSERT_GT(histo_a1->Percentile(0.5), 10);
   ASSERT_LT(histo_a1->Percentile(0.5), 100);
 
   // All in 3rd bucket.
-  histo_b1->Record(14);
-  histo_b1->Record(15);
-  histo_b1->Record(16);
+  histo_b1->Record(14.0);
+  histo_b1->Record(15.0);
+  histo_b1->Record(16.0);
   ASSERT_GT(histo_b1->Percentile(0.5), 13);
   ASSERT_LT(histo_b1->Percentile(0.5), 17);
 
   count_a2->Add(100);
   count_b2->Add(200);
-  histo_a2->Record(1);
-  histo_a2->Record(101);
-  histo_b2->Record(10);
-  histo_b2->Record(20);
-  histo_c2->Record(50);
-  histo_c2->Record(11);
-  histo_c2->Record(99);
+  histo_a2->Record(1.0);
+  histo_a2->Record(101.0);
+  histo_b2->Record(10.0);
+  histo_b2->Record(20.0);
+  histo_c2->Record(50.0);
+  histo_c2->Record(11.0);
+  histo_c2->Record(99.0);
 
   ASSERT_EQ(stats1.Report(),
     "count1:                                   10\n"
@@ -141,7 +141,7 @@ TEST(StatisticsTest, HistogramPercentilesOneBucket) {
   Histogram histogram(0.0, 1000.0, 1.0, 10.0);
 
   // Add sample to the 100-1000 bucket.
-  histogram.Record(150);
+  histogram.Record(150.0);
 
   // With a ratio of 10, the interface only guarantees between 100-1000.
   ASSERT_GE(histogram.Percentile(0.0), 100.0);
@@ -152,7 +152,7 @@ TEST(StatisticsTest, HistogramPercentilesOneBucket) {
   ASSERT_LE(histogram.Percentile(1.0), 1000.0);
 
   // But it should also interpolate for different percentiles.
-  histogram.Record(250);
+  histogram.Record(250.0);
   ASSERT_LT(histogram.Percentile(0.1), histogram.Percentile(0.9));
 }
 

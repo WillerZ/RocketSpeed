@@ -30,7 +30,7 @@ class AutoRollLogger : public Logger {
         status_(Status::OK()),
         kMaxLogFileSize(log_max_size),
         kLogFileTimeToRoll(log_file_time_to_roll),
-        cached_now(static_cast<uint64_t>(env_->NowMicros() * 1e-6)),
+        cached_now(static_cast<uint64_t>(env_->NowMicros() / 1000000)),
         ctime_(cached_now),
         cached_now_access_count(0),
         call_NowMicros_every_N_records_(100),

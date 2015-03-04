@@ -113,7 +113,10 @@ static void ProducerWorker(void* param) {
   std::mt19937_64 rng;
   std::unique_ptr<rocketspeed::RandomDistributionBase>
     distr(GetDistributionByName(FLAGS_topics_distribution,
-    0, FLAGS_num_topics - 1, FLAGS_topics_mean, FLAGS_topics_stddev));
+                                0,
+                                FLAGS_num_topics - 1,
+                                static_cast<double>(FLAGS_topics_mean),
+                                static_cast<double>(FLAGS_topics_stddev)));
 
   // Generate some dummy data.
   std::vector<char> data(FLAGS_message_size);
@@ -460,7 +463,7 @@ int main(int argc, char** argv) {
     rocketspeed::Slice data = rs->GetContents();
     unsigned long long int message_index, send_time;
     std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
-    ack_latency->Record(now - send_time);
+    ack_latency->Record(static_cast<uint64_t>(now - send_time));
 
     if (FLAGS_delay_subscribe) {
       if (rs->GetStatus().ok()) {
@@ -515,7 +518,7 @@ int main(int argc, char** argv) {
           "Received message %llu with timestamp %llu",
           static_cast<long long unsigned int>(message_index),
           static_cast<long long unsigned int>(send_time));
-      recv_latency->Record(now - send_time);
+      recv_latency->Record(static_cast<uint64_t>(now - send_time));
       std::lock_guard<std::mutex> lock(is_received_mutex);
       if (is_received[message_index]) {
         LOG_WARN(info_log,
@@ -754,7 +757,7 @@ int main(int argc, char** argv) {
       printf("\n");
       printf("Throughput\n");
       printf("%" PRIu64 " messages/s\n", msg_per_sec);
-      printf("%.2lf MB/s\n", bytes_per_sec * 1e-6);
+      printf("%.2lf MB/s\n", static_cast<double>(bytes_per_sec) * 1e-6);
 
 #if !defined(OS_ANDROID)
       if (FLAGS_start_local_server) {

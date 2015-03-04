@@ -1505,16 +1505,19 @@ class PosixEnv : public Env {
         }
 
         int one = 1;
-        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        socklen_t sizeof_one = static_cast<socklen_t>(sizeof(one));
+        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof_one);
 
         if (options.tcp_send_buffer_size) {
           int sz = options.tcp_send_buffer_size;
-          setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
+          socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+          setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof_sz);
         }
 
         if (options.tcp_recv_buffer_size) {
           int sz = options.tcp_recv_buffer_size;
-          setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
+          socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+          setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof_sz);
         }
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {

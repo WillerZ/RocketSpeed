@@ -114,13 +114,13 @@ TEST(ArenaTest, Simple) {
 
     for (unsigned int b = 0; b < s; b++) {
       // Fill the "i"th allocation with a known bit pattern
-      r[b] = i % 256;
+      r[b] = static_cast<char>(i % 256);
     }
     bytes += s;
     allocated.push_back(std::make_pair(s, r));
     ASSERT_GE(arena.ApproximateMemoryUsage(), bytes);
     if (i > N / 10) {
-      ASSERT_LE(arena.ApproximateMemoryUsage(), bytes * 1.10);
+      ASSERT_LE(arena.ApproximateMemoryUsage(), bytes * 11 / 10);
     }
   }
   for (unsigned int i = 0; i < allocated.size(); i++) {

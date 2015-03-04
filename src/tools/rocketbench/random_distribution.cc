@@ -17,11 +17,11 @@ double StandardDeviation(uint64_t a, uint64_t b, double mean) {
     //square the results and add them
     for (uint64_t i = a; i <= b; i++)
     {
-        sumsqrs += pow(i - mean, 2.0);
+        sumsqrs += pow(static_cast<double>(i) - mean, 2.0);
     }
     //finally return the sqrt of the sum of squares
     //divided by the total number of numbers
-    return sqrt(sumsqrs / (b-a+1));
+    return sqrt(sumsqrs / static_cast<double>(b-a+1));
 
 }
 //get a pointer to the distribution instance based on the distribution name
@@ -35,7 +35,8 @@ RandomDistributionBase* GetDistributionByName(
     RandomDistributionBase* pDistribution = nullptr;
     //mean: if not provided, this is close enough as the range
     //of number [a,b] is in ascending sequential and consecutive order
-    double mean = (amean > 0.0 && amean > a && amean < b) ? amean : (a+b) / 2;
+    double mean = (amean > 0.0 && amean > a && amean < b) ?
+                   amean : static_cast<double>(a+b) / 2;
 
     if (dist_name.compare("normal") == 0) {
         double stddev = (stdd > 0.0) ? stdd : StandardDeviation(a, b, mean);

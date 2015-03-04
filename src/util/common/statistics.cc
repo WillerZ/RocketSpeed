@@ -92,7 +92,7 @@ double Histogram::Percentile(double p) const {
     return min_;
   }
 
-  size_t index = static_cast<size_t>(n * p);
+  size_t index = static_cast<size_t>(static_cast<double>(n) * p);
   if (index >= n) {
     index = n - 1;
   }
@@ -104,9 +104,10 @@ double Histogram::Percentile(double p) const {
       index -= count;
     } else {
       // Percentile lies in this bucket.
-      double end = smallest_bucket_ * pow(ratio_, bucket);
-      double start = bucket == 0 ? 0.0 : end / ratio_;
-      double t = (index + 1.0) / (count + 1.0);  // interpolant
+      double end = smallest_bucket_ * pow(ratio_, static_cast<double>(bucket));
+      double start = static_cast<double>(bucket) == 0 ? 0.0 : end / ratio_;
+      double t = (static_cast<double>(index) + 1.0) /
+                 (static_cast<double>(count) + 1.0);  // interpolant
       return min_ + start + (end - start) * t;
     }
   }

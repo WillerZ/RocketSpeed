@@ -54,7 +54,7 @@ TEST(ControlTowerRouterTest, ConsistencyTest) {
       hosts2.begin(), hosts2.end(),
       intersection.begin(),
       host_less);
-    numRelocations += intersection.end() - intersection_end;
+    numRelocations += static_cast<int>(intersection.end() - intersection_end);
   }
 
   // Ideally ~5% should change, but allow for up to 2-8% margin of error.

@@ -235,13 +235,13 @@ class MessageData : public Message {
     namespaceid_(in->GetNamespaceId()) {
 
     // allocate buffer to copy the slices to owned buffer
-    ssize_t size = in->GetTopicName().size() + in->GetPayload().size();
+    size_t size = in->GetTopicName().size() + in->GetPayload().size();
     buffer_.reset(new char[size]);
 
     // copy topic name
     memcpy(buffer_.get(), in->GetTopicName().data(), in->GetTopicName().size());
     topic_name_ = Slice(buffer_.get(), in->GetTopicName().size());
-    ssize_t offset = in->GetTopicName().size();
+    size_t offset = in->GetTopicName().size();
 
     // copy payload
     memcpy(buffer_.get() + offset, in->GetPayload().data(),

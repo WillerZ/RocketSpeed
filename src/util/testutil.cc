@@ -26,7 +26,7 @@ std::string RandomKey(Random* rnd, int len) {
   };
   std::string result;
   for (int i = 0; i < len; i++) {
-    result += kTestChars[rnd->Uniform(sizeof(kTestChars))];
+    result += kTestChars[rnd->Uniform(static_cast<int>(sizeof(kTestChars)))];
   }
   return result;
 }

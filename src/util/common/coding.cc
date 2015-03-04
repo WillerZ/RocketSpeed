@@ -16,25 +16,25 @@ char* EncodeVarint32(char* dst, uint32_t v) {
   unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
   static const int B = 128;
   if (v < (1 << 7)) {
-    *(ptr++) = v;
+    *(ptr++) = static_cast<char>(v);
   } else if (v < (1 << 14)) {
-    *(ptr++) = v | B;
-    *(ptr++) = v >> 7;
+    *(ptr++) = static_cast<char>(v | B);
+    *(ptr++) = static_cast<char>(v >> 7);
   } else if (v < (1 << 21)) {
-    *(ptr++) = v | B;
-    *(ptr++) = (v >> 7) | B;
-    *(ptr++) = v >> 14;
+    *(ptr++) = static_cast<char>(v | B);
+    *(ptr++) = static_cast<char>((v >> 7) | B);
+    *(ptr++) = static_cast<char>(v >> 14);
   } else if (v < (1 << 28)) {
-    *(ptr++) = v | B;
-    *(ptr++) = (v >> 7) | B;
-    *(ptr++) = (v >> 14) | B;
-    *(ptr++) = v >> 21;
+    *(ptr++) = static_cast<char>(v | B);
+    *(ptr++) = static_cast<char>((v >> 7) | B);
+    *(ptr++) = static_cast<char>((v >> 14) | B);
+    *(ptr++) = static_cast<char>(v >> 21);
   } else {
-    *(ptr++) = v | B;
-    *(ptr++) = (v >> 7) | B;
-    *(ptr++) = (v >> 14) | B;
-    *(ptr++) = (v >> 21) | B;
-    *(ptr++) = v >> 28;
+    *(ptr++) = static_cast<char>(v | B);
+    *(ptr++) = static_cast<char>((v >> 7) | B);
+    *(ptr++) = static_cast<char>((v >> 14) | B);
+    *(ptr++) = static_cast<char>((v >> 21) | B);
+    *(ptr++) = static_cast<char>(v >> 28);
   }
   return reinterpret_cast<char*>(ptr);
 }
@@ -93,15 +93,16 @@ void BitStreamPutInt(char* dst, size_t dstlen, size_t offset,
 
   while (bits > 0) {
     size_t bitsToGet = std::min<size_t>(bits, 8 - bitOffset);
-    unsigned char mask = ((1 << bitsToGet) - 1);
+    unsigned char mask = static_cast<unsigned char>((1 << bitsToGet) - 1);
 
-    ptr[byteOffset] = (ptr[byteOffset] & ~(mask << bitOffset)) +
-                      ((value & mask) << bitOffset);
+    ptr[byteOffset] =
+      static_cast<unsigned char>((ptr[byteOffset] & ~(mask << bitOffset)) +
+                                 ((value & mask) << bitOffset));
 
     value >>= bitsToGet;
     byteOffset += 1;
     bitOffset = 0;
-    bits -= bitsToGet;
+    bits -= static_cast<uint32_t>(bitsToGet);
   }
 
   assert(origValue == BitStreamGetInt(dst, dstlen, offset, origBits));
@@ -122,14 +123,14 @@ uint64_t BitStreamGetInt(const char* src, size_t srclen, size_t offset,
 
   while (bits > 0) {
     size_t bitsToGet = std::min<size_t>(bits, 8 - bitOffset);
-    unsigned char mask = ((1 << bitsToGet) - 1);
+    unsigned char mask = static_cast<unsigned char>((1 << bitsToGet) - 1);
 
     result += (uint64_t)((ptr[byteOffset] >> bitOffset) & mask) << shift;
 
     shift += bitsToGet;
     byteOffset += 1;
     bitOffset = 0;
-    bits -= bitsToGet;
+    bits -= static_cast<uint32_t>(bitsToGet);
   }
 
   return result;

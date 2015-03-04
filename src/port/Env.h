@@ -410,8 +410,8 @@ class WritableFile {
     if (new_last_preallocated_block > last_preallocated_block_) {
       size_t num_spanned_blocks =
         new_last_preallocated_block - last_preallocated_block_;
-      Allocate(block_size * last_preallocated_block_,
-               block_size * num_spanned_blocks);
+      Allocate(static_cast<off_t>(block_size * last_preallocated_block_),
+               static_cast<off_t>(block_size * num_spanned_blocks));
       last_preallocated_block_ = new_last_preallocated_block;
     }
   }

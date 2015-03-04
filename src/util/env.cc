@@ -5,10 +5,7 @@
 //
 
 #include <sys/time.h>
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
 #include <signal.h>
-#pragma GCC diagnostic pop
 
 #include "include/Slice.h"
 #include "src/port/Env.h"

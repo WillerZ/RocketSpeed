@@ -161,7 +161,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
       continue;
     }
     // calculate the destination room number
-    int room_number = logid % options_.number_of_rooms;
+    int room_number = static_cast<int>(logid % options_.number_of_rooms);
 
     // Copy out only the ith topic into a new message.
     MessageMetadata* newmsg = new MessageMetadata(

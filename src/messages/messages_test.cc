@@ -64,7 +64,8 @@ TEST(Messaging, Metadata) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    topics.push_back(TopicPair(3 + i, std::to_string(i), type, 200 + i));
+    NamespaceID ns = static_cast<NamespaceID>(200 + i);
+    topics.push_back(TopicPair(3 + i, std::to_string(i), type, ns));
   }
 
   // create a message

@@ -52,7 +52,7 @@ void PrintStackTraceLine(const char* symbol, void* frame) {
     auto f = popen(cmd, "r");
     if (f) {
       char line[kLineMax];
-      while (fgets(line, sizeof(line), f)) {
+      while (fgets(line, static_cast<int>(sizeof(line)), f)) {
         line[strlen(line) - 1] = 0;  // remove newline
         fprintf(stderr, "%s\t", line);
       }

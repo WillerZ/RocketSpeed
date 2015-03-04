@@ -81,6 +81,7 @@ class Histogram {
    * [min, max] then it will be clamped.
    */
   void Record(double sample);
+  void Record(uint64_t sample) { Record(static_cast<double>(sample)); }
 
   /**
    * Computes an approximate percentile from the sampled data.

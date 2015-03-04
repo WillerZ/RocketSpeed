@@ -69,7 +69,7 @@ class PosixLogger : public Logger {
     char buffer[500];
     for (int iter = 0; iter < 2; iter++) {
       char* base;
-      int bufsize;
+      size_t bufsize;
       if (iter == 0) {
         bufsize = sizeof(buffer);
         base = buffer;
@@ -126,9 +126,9 @@ class PosixLogger : public Logger {
       // space, pre-allocate more space to avoid overly large
       // allocations from filesystem allocsize options.
       const size_t log_size = log_size_;
-      const int last_allocation_chunk =
+      const size_t last_allocation_chunk =
         ((kDebugLogChunkSize - 1 + log_size) / kDebugLogChunkSize);
-      const int desired_allocation_chunk =
+      const size_t desired_allocation_chunk =
         ((kDebugLogChunkSize - 1 + log_size + write_size) /
            kDebugLogChunkSize);
       if (last_allocation_chunk != desired_allocation_chunk) {

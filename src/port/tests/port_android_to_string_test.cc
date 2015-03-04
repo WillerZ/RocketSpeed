@@ -18,7 +18,7 @@ public:
   static const long double LONG_DOUBLE_EPSILON;
 };
 
-const float ToStringTest::FLOAT_EPSILON = 0.000001;
+const float ToStringTest::FLOAT_EPSILON = 0.000001f;
 const double ToStringTest::DOUBLE_EPSILON = 0.000001;
 const long double ToStringTest::LONG_DOUBLE_EPSILON = 0.000001;
 
@@ -37,11 +37,11 @@ TEST(ToStringTest, Simple) {
   ASSERT_EQ(std::to_string(-752338274752338274LL), "-752338274752338274");
   ASSERT_EQ(std::to_string(18446744073709551614ULL), "18446744073709551614");
 
-  float floatVal = 22.00001;
+  float floatVal = 22.00001f;
   ASSERT_TRUE(fabs(std::stof(std::to_string(floatVal)) - floatVal)
     < ToStringTest::FLOAT_EPSILON);
 
-  floatVal = -22487.124;
+  floatVal = -22487.124f;
   ASSERT_TRUE(fabs(std::stof(std::to_string(floatVal)) - floatVal)
     < ToStringTest::FLOAT_EPSILON);
 
@@ -53,12 +53,12 @@ TEST(ToStringTest, Simple) {
   ASSERT_TRUE(fabs(std::stod(std::to_string(doubleVal)) - doubleVal)
     < ToStringTest::DOUBLE_EPSILON);
 
-  long double longDoubleVal = 22.00001L;
-  ASSERT_TRUE(fabs(std::stold(std::to_string(longDoubleVal)) - longDoubleVal)
+  long double lDoubleVal = 22.00001L;
+  ASSERT_TRUE(std::fabs(std::stold(std::to_string(lDoubleVal)) - lDoubleVal)
     < ToStringTest::LONG_DOUBLE_EPSILON);
 
-  longDoubleVal = -22.487263856643L;
-  ASSERT_TRUE(fabs(std::stold(std::to_string(longDoubleVal)) - longDoubleVal)
+  lDoubleVal = -22.487263856643L;
+  ASSERT_TRUE(std::fabs(std::stold(std::to_string(lDoubleVal)) - lDoubleVal)
     < ToStringTest::LONG_DOUBLE_EPSILON);
 }
 

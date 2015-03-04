@@ -316,14 +316,6 @@ EOF
     fi
 fi
 
-# Test whether -Wshorten-64-to-32 is available
-$CXX $CFLAGS -x c++ - -o /dev/null -Wshorten-64-to-32 2>/dev/null  <<EOF
-  int main() {}
-EOF
-if [ "$?" = 0 ]; then
-    COMMON_FLAGS="$COMMON_FLAGS -Wshorten-64-to-32 -DSHORTEN64_32"
-fi
-
 # We need java for JNI
 
 JAVA_CCFLAGS="-I$JAVA_HOME/include -I$JAVA_HOME/include/linux"

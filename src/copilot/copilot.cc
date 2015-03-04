@@ -139,7 +139,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
   }
 
   // calculate the destination worker
-  int worker_id = logid % options_.num_workers;
+  int worker_id = static_cast<int>(logid % options_.num_workers);
   auto& worker = workers_[worker_id];
 
   // forward message to worker
@@ -186,7 +186,7 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
       continue;
     }
     // calculate the destination worker
-    int worker_id = logid % options_.num_workers;
+    int worker_id = static_cast<int>(logid % options_.num_workers);
     auto& worker = workers_[worker_id];
 
     // Copy out only the ith topic into a new message.
@@ -256,7 +256,7 @@ int Copilot::GetLogWorker(LogID logid) const {
     // Fallback to log ID-based allocation.
     // This is less efficient (multiple workers talking to same tower)
     // but no less correct.
-    return logid % num_workers;
+    return static_cast<int>(logid % num_workers);
   }
   assert(control_tower);
 

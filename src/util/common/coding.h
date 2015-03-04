@@ -83,8 +83,8 @@ inline uint16_t DecodeFixed16(const char* ptr) {
     memcpy(&result, ptr, sizeof(result));  // gcc optimizes this to a plain load
     return result;
   } else {
-    return (static_cast<uint16_t>(static_cast<unsigned char>(ptr[0]))
-        | (static_cast<uint16_t>(static_cast<unsigned char>(ptr[1])) << 8));
+    return static_cast<uint16_t>(static_cast<unsigned char>(ptr[0])
+                               | static_cast<unsigned char>(ptr[1]) << 8);
   }
 }
 
@@ -226,7 +226,7 @@ inline char* EncodeVarint64(char* dst, uint64_t v) {
   static const unsigned int B = 128;
   unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
   while (v >= B) {
-    *(ptr++) = (v & (B - 1)) | B;
+    *(ptr++) = static_cast<char>((v & (B - 1)) | B);
     v >>= 7;
   }
   *(ptr++) = static_cast<unsigned char>(v);
@@ -248,7 +248,7 @@ inline void PutLengthPrefixedSliceParts(std::string* dst,
                                         const SliceParts& slice_parts) {
   uint32_t total_bytes = 0;
   for (int i = 0; i < slice_parts.num_parts; ++i) {
-    total_bytes += slice_parts.parts[i].size();
+    total_bytes += static_cast<uint32_t>(slice_parts.parts[i].size());
   }
   PutVarint32(dst, total_bytes);
   for (int i = 0; i < slice_parts.num_parts; ++i) {

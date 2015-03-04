@@ -85,7 +85,7 @@ TEST(CopilotTest, Publish) {
   // send messages to copilot
   int num_msg = 100;
   for (int i = 0; i < num_msg; ++i) {
-    NamespaceID ns = 101 + i % 50;
+    NamespaceID ns = static_cast<NamespaceID>(101 + i % 50);
     std::string topic = "copilot_test_" + std::to_string(i % 50);
     auto type = i < num_msg/2 ? MetadataType::mSubscribe :
                                 MetadataType::mUnSubscribe;

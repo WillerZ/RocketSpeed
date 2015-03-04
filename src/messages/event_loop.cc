@@ -618,7 +618,8 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
   // Set buffer sizes.
   if (event_loop->env_options_.tcp_send_buffer_size) {
     int sz = event_loop->env_options_.tcp_send_buffer_size;
-    int r = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
+    socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+    int r = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof_sz);
     if (r) {
       LOG_WARN(event_loop->info_log_,
           "Failed to set send buffer size on socket fd(%d)", fd);
@@ -628,7 +629,8 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
 
   if (event_loop->env_options_.tcp_recv_buffer_size) {
     int sz = event_loop->env_options_.tcp_recv_buffer_size;
-    int r = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
+    socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+    int r = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof_sz);
     if (r) {
       LOG_WARN(event_loop->info_log_,
           "Failed to set receive buffer size on socket fd(%d)", fd);
@@ -690,7 +692,7 @@ EventLoop::Run() {
       LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE,
       -1,  // backlog
       reinterpret_cast<sockaddr*>(&sin),
-      sizeof(sin));
+      static_cast<int>(sizeof(sin)));
 
     if (listener_ == nullptr) {
       start_error("Failed to create connection listener on port " +
@@ -1008,16 +1010,19 @@ EventLoop::create_connection(const HostId& host,
       }
 
       int one = 1;
-      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+      socklen_t sizeof_one = static_cast<socklen_t>(sizeof(one));
+      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof_one);
 
       if (env_options_.tcp_send_buffer_size) {
         int sz = env_options_.tcp_send_buffer_size;
-        setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
+        socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+        setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof_sz);
       }
 
       if (env_options_.tcp_recv_buffer_size) {
         int sz = env_options_.tcp_recv_buffer_size;
-        setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
+        socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+        setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof_sz);
       }
 
       if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {

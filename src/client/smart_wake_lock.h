@@ -41,16 +41,16 @@ class SmartWakeLock final {
  private:
   std::shared_ptr<WakeLock> wake_lock_;
   std::atomic_flag acquire_mutex_;
-  uint64_t last_acquired_;
+  int64_t last_acquired_;
 
   void Acquire() {
     if (wake_lock_) {
-      int64_t acquire_timeout = 1000;
+      uint64_t acquire_timeout = 1000;
       int64_t best_before = 500;
       if (!acquire_mutex_.test_and_set(std::memory_order_acquire)) {
         // We'll be checking whether the wake lock is good for all threads that
         // find this mutex closed.
-        uint64_t now = NowTimestamp();
+        int64_t now = NowTimestamp();
         int64_t elapsed = now - last_acquired_;
         if (elapsed > best_before) {
           // We have to reacquire.
@@ -65,7 +65,7 @@ class SmartWakeLock final {
     }
   }
 
-  uint64_t NowTimestamp() {
+  int64_t NowTimestamp() {
     namespace chrono = std::chrono;
     auto ts = chrono::steady_clock::now().time_since_epoch();
     return chrono::duration_cast<chrono::milliseconds>(ts).count();

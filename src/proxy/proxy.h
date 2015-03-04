@@ -22,7 +22,7 @@
 
 namespace rocketspeed {
 
-class ProxyWorkerData;
+struct ProxyWorkerData;
 
 /**
  * The RocketSpeed Proxy is a library that appears as Pilot and Copilot to the

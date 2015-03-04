@@ -590,7 +590,8 @@ Statistics ClientImpl::GetStatistics() const {
 }
 
 int ClientImpl::GetWorkerForTopic(const Topic& name) const {
-  return MurmurHash2<std::string>()(name) % msg_loop_->GetNumWorkers();
+  return static_cast<int>(MurmurHash2<std::string>()(name) %
+                          msg_loop_->GetNumWorkers());
 }
 
 MessageReceivedClient::~MessageReceivedClient() {

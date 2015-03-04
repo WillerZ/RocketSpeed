@@ -322,10 +322,9 @@ inline bool Snappy_Uncompress(const char* input, size_t length,
 #endif
 }
 
-#if defined(SHORTEN64_32)
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshorten-64-to-32"
-#endif
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
 inline bool Zlib_Compress(const CompressionOptions& opts, const char* input,
                           size_t length, ::std::string* output) {
 #ifdef ZLIB
@@ -627,9 +626,7 @@ inline bool LZ4HC_Compress(const CompressionOptions &opts, const char* input,
 #endif
   return false;
 }
-#if defined(SHORTEN64_32)
 #pragma GCC diagnostic pop
-#endif
 
 
 void BackTraceHandler(int sig);

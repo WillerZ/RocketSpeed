@@ -11,11 +11,11 @@ TOOL_JEMALLOC=jemalloc-3.3.1/9202ce3
 GLIBC_RUNTIME_PATH=/usr/local/fbcode/gcc-4.7.1-glibc-2.14.1
 
 # location of libgcc
-LIBGCC_INCLUDE=" -I $TOOLCHAIN_LIB_BASE/libgcc/libgcc-4.7.1/afc21dc/include"
+LIBGCC_INCLUDE=" -isystem $TOOLCHAIN_LIB_BASE/libgcc/libgcc-4.7.1/afc21dc/include"
 LIBGCC_LIBS=" -L $TOOLCHAIN_LIB_BASE/libgcc/libgcc-4.7.1/afc21dc/libs"
 
 # location of glibc
-GLIBC_INCLUDE=" -I $TOOLCHAIN_LIB_BASE/glibc/glibc-2.14.1/99df8fc/include"
+GLIBC_INCLUDE=" -isystem $TOOLCHAIN_LIB_BASE/glibc/glibc-2.14.1/99df8fc/include"
 GLIBC_LIBS=" -L $TOOLCHAIN_LIB_BASE/glibc/glibc-2.14.1/99df8fc/lib"
 
 # location of snappy headers and libraries
@@ -71,4 +71,4 @@ PLATFORM_LDFLAGS="$LIBGCC_LIBS $GLIBC_LIBS "
 
 EXEC_LDFLAGS_SHARED="$SNAPPY_LIBS $ZLIB_LIBS $GFLAGS_LIBS"
 
-export CC CXX AR RANLIB CFLAGS EXEC_LDFLAGS EXEC_LDFLAGS_SHARED 
+export CC CXX AR RANLIB CFLAGS EXEC_LDFLAGS EXEC_LDFLAGS_SHARED

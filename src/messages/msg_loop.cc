@@ -255,7 +255,7 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
 
 int MsgLoop::LoadBalancedWorkerId() const {
   // Find the event loop with minimum load.
-  int worker_id = next_worker_id_++ % event_loops_.size();
+  int worker_id = static_cast<int>(next_worker_id_++ % event_loops_.size());
   /*uint64_t load_factor = event_loops_[worker_id]->GetLoadFactor();
   for (int i = 0; i < static_cast<int>(event_loops_.size()); ++i) {
     uint64_t next_load_factor = event_loops_[i]->GetLoadFactor();

@@ -3,6 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/proxy/proxy.h"
 
 #include <climits>
@@ -198,7 +199,7 @@ Proxy::~Proxy() {
 }
 
 int Proxy::WorkerForSession(int64_t session) const {
-  return session % msg_loop_->GetNumWorkers();
+  return static_cast<int>(session % msg_loop_->GetNumWorkers());
 }
 
 ProxyWorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
@@ -298,7 +299,7 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
   auto it = data.session_to_client_.find(session);
   if (it == data.session_to_client_.end()) {
     LOG_ERROR(info_log_,
-              "Could find client ID for session '%ld'.",
+              "Could find client ID for session '%" PRIi64 "'.",
               session);
     stats_.bad_origins->Add(1);
     return;
