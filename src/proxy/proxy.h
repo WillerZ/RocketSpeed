@@ -8,10 +8,12 @@
 #include <memory>
 #include <string>
 #include <vector>
+
 #include "include/Types.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/statistics.h"
+#include "src/util/common/thread_check.h"
 #include "src/proxy/options.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -121,6 +123,21 @@ class Proxy {
   std::unique_ptr<ProxyWorker> worker_;
   Env::ThreadId worker_thread_;
 
+  /** Represents per message loop worker data. */
+  struct alignas(CACHE_LINE_SIZE) WorkerData {
+    /** The data can only be accessed from a single and the same thread. */
+    ThreadCheck thread_check_;
+
+    /**
+     * Mapping from internal client IDs, which happen to be sessions, into
+     * client IDs presented by the clients connected to the proxy.
+     */
+    std::unordered_map<int64_t, ClientID> session_to_client_;
+  };
+
+  /** Worker data sharded by session. */
+  std::unique_ptr<WorkerData[]> worker_data_;
+
   struct Stats {
     Stats() {
       forwards = all.AddCounter("rocketspeed.proxy.forwards");
@@ -137,7 +154,11 @@ class Proxy {
     Counter* bad_origins;
   } stats_;
 
+  WorkerData& GetWorkerDataForSession(int64_t session);
+
   void HandleGoodbyeMessage(std::unique_ptr<Message> msg);
+
+  void HandleDestroySession(int64_t session);
 
   void HandleMessageReceived(std::unique_ptr<Message> msg);
 

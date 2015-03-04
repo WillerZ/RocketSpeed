@@ -280,6 +280,8 @@ Proxy::Proxy(ProxyOptions options)
   // Except goodbye. Goodbye needs to be handled separately.
   callbacks[MessageType::mGoodbye] = goodbye_callback;
   msg_loop_->RegisterCallbacks(callbacks);
+
+  worker_data_.reset(new WorkerData[options.num_workers]);
 }
 
 Status Proxy::Start(OnMessageCallback on_message,
@@ -300,12 +302,28 @@ Status Proxy::Start(OnMessageCallback on_message,
 }
 
 Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
-  HandleMessageForwarded(std::move(msg), session, sequence);
-  return Status::OK();
+  int worker_id = WorkerForSession(session, msg_loop_->GetNumWorkers());
+  std::unique_ptr<Command> command(
+      new ExecuteCommand(std::bind(&Proxy::HandleMessageForwarded,
+                                   this,
+                                   std::move(msg),
+                                   session,
+                                   sequence)));
+  return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
 void Proxy::DestroySession(int64_t session) {
   worker_->EnqueueRemoveSession(session);
+
+  int worker_id = WorkerForSession(session, msg_loop_->GetNumWorkers());
+  std::unique_ptr<Command> command(new ExecuteCommand(
+      std::bind(&Proxy::HandleDestroySession, this, session)));
+  auto st = msg_loop_->SendCommand(std::move(command), worker_id);
+  if (!st.ok()) {
+    LOG_ERROR(info_log_,
+              "Could not schedule session deletion: %s, leaking resources.",
+              st.ToString().c_str());
+  }
 }
 
 Proxy::~Proxy() {
@@ -317,6 +335,14 @@ Proxy::~Proxy() {
     msg_loop_->Stop();
     env_->WaitForJoin(msg_thread_);
   }
+}
+
+Proxy::WorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
+  const auto worker_id = WorkerForSession(session, msg_loop_->GetNumWorkers());
+  // This way we do not reach into the thread local in production code.
+  assert(worker_id == msg_loop_->GetThreadWorkerIndex());
+  worker_data_[worker_id].thread_check_.Check();
+  return worker_data_[worker_id];
 }
 
 void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
@@ -333,6 +359,10 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
   }
 }
 
+void Proxy::HandleDestroySession(int64_t session) {
+  GetWorkerDataForSession(session).session_to_client_.erase(session);
+}
+
 void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
   if (!on_message_) {
     return;
@@ -342,14 +372,9 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
            "Received message from RocketSpeed, type %d",
            static_cast<int>(msg->GetMessageType()));
 
-  // TODO(pja) 1 : ideally we wouldn't reserialize here.
-  std::string serial;
-  msg->SerializeToString(&serial);
-
   // Parse origin as session.
   const char* origin = msg->GetOrigin().c_str();
   int64_t session = strtoll(origin, nullptr, 10);
-
   // strtoll failure modes are:
   // return 0LL if could not convert.
   // return LLONG_MIN/MAX if out of range, with errno set to ERANGE.
@@ -363,6 +388,21 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
     return;
   }
 
+  // Translate origin back.
+  const auto& data = GetWorkerDataForSession(session);
+  auto it = data.session_to_client_.find(session);
+  if (it == data.session_to_client_.end()) {
+    LOG_ERROR(info_log_,
+              "Could find client ID for session '%ld'.",
+              session);
+    stats_.bad_origins->Add(1);
+    return;
+  }
+  msg->SetOrigin(it->second);
+
+  // TODO(pja) 1 : ideally we wouldn't reserialize here.
+  std::string serial;
+  msg->SerializeToString(&serial);
   on_message_(session, std::move(serial));
   stats_.on_message_calls->Add(1);
 }
@@ -377,6 +417,15 @@ void Proxy::HandleMessageForwarded(std::string msg,
   std::unique_ptr<char[]> buffer = Slice(msg).ToUniqueChars();
   std::unique_ptr<Message> message =
     Message::CreateNewInstance(std::move(buffer), msg.size());
+
+  {  // Save origin presented by client.
+    auto& data = GetWorkerDataForSession(session);
+    auto it = data.session_to_client_.find(session);
+    // We save unnecessary copy.
+    if (it == data.session_to_client_.end()) {
+      data.session_to_client_.emplace_hint(it, session, message->GetOrigin());
+    }
+  }
 
   // Internally the session is out client ID.
   message->SetOrigin(std::to_string(session));

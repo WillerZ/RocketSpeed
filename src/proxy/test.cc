@@ -51,7 +51,10 @@ TEST(ProxyTest, Publish) {
     std::unique_ptr<Message> msg =
       Message::CreateNewInstance(Slice(data).ToUniqueChars(), data.size());
     ASSERT_TRUE(msg != nullptr);
-    ASSERT_TRUE(msg->GetMessageType() == MessageType::mDataAck);
+    ASSERT_EQ(MessageType::mDataAck, msg->GetMessageType());
+    // Proxy is free to rewrite client ids, but any change should be invisible
+    // to the clients.
+    ASSERT_EQ(our_client, msg->GetOrigin());
     checkpoint.Post();
   };
   proxy->Start(on_message, nullptr);
