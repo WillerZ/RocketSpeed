@@ -136,6 +136,14 @@ class Proxy {
     Counter* on_message_calls;
     Counter* bad_origins;
   } stats_;
+
+  void HandleGoodbyeMessage(std::unique_ptr<Message> msg);
+
+  void HandleMessageReceived(std::unique_ptr<Message> msg);
+
+  void HandleMessageForwarded(std::string msg,
+                              int64_t session,
+                              int32_t sequence);
 };
 
 }  // namespace rocketspeed

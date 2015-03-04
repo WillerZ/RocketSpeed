@@ -6,9 +6,11 @@
 #include "src/proxy/proxy.h"
 
 #include <climits>
+#include <functional>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+
 #include "src/util/common/ordered_processor.h"
 #include "src/util/worker_loop.h"
 
@@ -98,8 +100,10 @@ class ProxyWorker {
               int buffer_size)
   : worker_loop_(max_tasks)
   , buffer_size_(buffer_size)
-  , msg_loop_(msg_loop)
-  , on_disconnect_(std::move(on_disconnect)) {
+  , msg_loop_(msg_loop) {
+    on_disconnect_ = on_disconnect ? std::move(on_disconnect)
+                                   : [](const std::vector<int64_t>&) {};
+    assert(on_disconnect_);
   }
 
   void Start() {
@@ -134,9 +138,7 @@ class ProxyWorker {
           for (const ClientID& host : task.hosts) {
             auto sessions = host_session_matrix_.RemoveHost(host);
             std::vector<int64_t> sessions_vec(sessions.begin(), sessions.end());
-            if (on_disconnect_) {
-              on_disconnect_(std::move(sessions_vec));
-            }
+            on_disconnect_(std::move(sessions_vec));
           }
         }
       } else {
@@ -152,8 +154,8 @@ class ProxyWorker {
                 int worker = WorkerForSession(session,
                                               msg_loop_->GetNumWorkers());
                 Status st = msg_loop_->SendCommand(std::move(command), worker);
-                if (!st.ok() && on_disconnect_) {
-                  on_disconnect_( { session } );
+                if (!st.ok()) {
+                  on_disconnect_({session});
                   sessions_.erase(session);
                 }
               }
@@ -167,8 +169,8 @@ class ProxyWorker {
           host_session_matrix_.Add(session, host);
         }
         Status st = it->second.Process(std::move(task.command), task.seqno);
-        if (!st.ok() && on_disconnect_) {
-          on_disconnect_( { session } );
+        if (!st.ok()) {
+          on_disconnect_({session});
           sessions_.erase(it);
         }
       }
@@ -255,6 +257,8 @@ Proxy::Proxy(ProxyOptions options)
 , config_(std::move(options.conf))
 , msg_thread_(0)
 , worker_thread_(0) {
+  using std::placeholders::_1;
+
   msg_loop_.reset(new MsgLoop(env_,
                               options.env_options,
                               0,  // port
@@ -262,53 +266,8 @@ Proxy::Proxy(ProxyOptions options)
                               info_log_,
                               "proxy"));
 
-  // Message callback.
-  // Regardless of type, just forward back to the host.
-  auto callback = [this] (std::unique_ptr<Message> msg) {
-    if (on_message_) {
-      LOG_INFO(info_log_,
-        "Received message from RocketSpeed, type %d",
-        static_cast<int>(msg->GetMessageType()));
-
-      // TODO(pja) 1 : ideally we wouldn't reserialize here.
-      std::string serial;
-      msg->SerializeToString(&serial);
-
-      // Parse origin as session.
-      const char* origin = msg->GetOrigin().c_str();
-      int64_t session = strtoll(origin, nullptr, 10);
-
-      // strtoll failure modes are:
-      // return 0LL if could not convert.
-      // return LLONG_MIN/MAX if out of range, with errno set to ERANGE.
-      if ((session == 0 && strcmp(origin, "0")) ||
-          (session == LLONG_MIN && errno == ERANGE) ||
-          (session == LLONG_MAX && errno == ERANGE)) {
-        LOG_ERROR(info_log_,
-          "Could not parse message origin '%s' into a session ID.",
-          origin);
-        stats_.bad_origins->Add(1);
-      } else {
-        on_message_(session, std::move(serial));
-        stats_.on_message_calls->Add(1);
-      }
-    }
-  };
-
-  // Need to handle goodbyes specially.
-  auto goodbye_callback = [this] (std::unique_ptr<Message> msg) {
-    MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
-    if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Server) {
-      LOG_WARN(info_log_,
-        "Received goodbye from server %s.",
-        goodbye->GetOrigin().c_str());
-      worker_->EnqueueRemoveHost(goodbye->GetOrigin());
-    } else {
-      LOG_WARN(info_log_,
-        "Proxy received client goodbye from %s, but has no clients.",
-        goodbye->GetOrigin().c_str());
-    }
-  };
+  auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1);
+  auto goodbye_callback = std::bind(&Proxy::HandleGoodbyeMessage, this, _1);
 
   // Use same callback for all server-generated messages.
   std::map<MessageType, MsgCallbackType> callbacks;
@@ -341,6 +300,76 @@ Status Proxy::Start(OnMessageCallback on_message,
 }
 
 Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
+  HandleMessageForwarded(std::move(msg), session, sequence);
+  return Status::OK();
+}
+
+void Proxy::DestroySession(int64_t session) {
+  worker_->EnqueueRemoveSession(session);
+}
+
+Proxy::~Proxy() {
+  if (worker_thread_) {
+    worker_->Stop();
+    env_->WaitForJoin(worker_thread_);
+  }
+  if (msg_loop_->IsRunning()) {
+    msg_loop_->Stop();
+    env_->WaitForJoin(msg_thread_);
+  }
+}
+
+void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
+  MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
+  if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Server) {
+    LOG_WARN(info_log_,
+             "Received goodbye from server %s.",
+             goodbye->GetOrigin().c_str());
+    worker_->EnqueueRemoveHost(goodbye->GetOrigin());
+  } else {
+    LOG_WARN(info_log_,
+             "Proxy received client goodbye from %s, but has no clients.",
+             goodbye->GetOrigin().c_str());
+  }
+}
+
+void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
+  if (!on_message_) {
+    return;
+  }
+
+  LOG_INFO(info_log_,
+           "Received message from RocketSpeed, type %d",
+           static_cast<int>(msg->GetMessageType()));
+
+  // TODO(pja) 1 : ideally we wouldn't reserialize here.
+  std::string serial;
+  msg->SerializeToString(&serial);
+
+  // Parse origin as session.
+  const char* origin = msg->GetOrigin().c_str();
+  int64_t session = strtoll(origin, nullptr, 10);
+
+  // strtoll failure modes are:
+  // return 0LL if could not convert.
+  // return LLONG_MIN/MAX if out of range, with errno set to ERANGE.
+  if ((session == 0 && strcmp(origin, "0")) ||
+      (session == LLONG_MIN && errno == ERANGE) ||
+      (session == LLONG_MAX && errno == ERANGE)) {
+    LOG_ERROR(info_log_,
+              "Could not parse message origin '%s' into a session ID.",
+              origin);
+    stats_.bad_origins->Add(1);
+    return;
+  }
+
+  on_message_(session, std::move(serial));
+  stats_.on_message_calls->Add(1);
+}
+
+void Proxy::HandleMessageForwarded(std::string msg,
+                                   int64_t session,
+                                   int32_t sequence) {
   stats_.forwards->Add(1);
 
   // TODO(pja) 1 : Really inefficient. Only need to deserialize header,
@@ -357,7 +386,8 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
     LOG_ERROR(info_log_,
       "Failed to deserialize message forwarded to proxy.");
     stats_.forward_errors->Add(1);
-    return Status::InvalidArgument("Message failed to deserialize");
+    on_disconnect_({session});
+    return;
   }
 
   // Select destination based on message type.
@@ -389,7 +419,8 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
         message->GetOrigin().c_str(),
         static_cast<int>(message->GetMessageType()));
       stats_.forward_errors->Add(1);
-      return Status::InvalidArgument("Invalid message type");
+      on_disconnect_({session});
+      return;
   }
 
   // Create command.
@@ -402,28 +433,18 @@ Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
   if (sequence == -1) {
     // Send directly to loop.
     int worker = WorkerForSession(session, msg_loop_->GetNumWorkers());
-    return msg_loop_->SendCommand(std::move(cmd), worker);
+    auto st = msg_loop_->SendCommand(std::move(cmd), worker);
+    if (!st.ok()) {
+      on_disconnect_({session});
+      return;
+    }
   } else {
     // Process in order using seqno and session.
-    return worker_->EnqueueCommand(session,
-                                   sequence,
-                                   std::move(cmd),
-                                   hosts);
-  }
-}
-
-void Proxy::DestroySession(int64_t session) {
-  worker_->EnqueueRemoveSession(session);
-}
-
-Proxy::~Proxy() {
-  if (worker_thread_) {
-    worker_->Stop();
-    env_->WaitForJoin(worker_thread_);
-  }
-  if (msg_loop_->IsRunning()) {
-    msg_loop_->Stop();
-    env_->WaitForJoin(msg_thread_);
+    auto st = worker_->EnqueueCommand(session, sequence, std::move(cmd), hosts);
+    if (!st.ok()) {
+      on_disconnect_({session});
+      return;
+    }
   }
 }
 
