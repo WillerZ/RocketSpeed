@@ -200,7 +200,6 @@ detail::RawSemaphore::RawSemaphore(unsigned initial_value) {
   assert(initial_value <= SEM_VALUE_MAX);
   name_ = std::to_string(sem_generator_++);
 
-  sem_close(sem_);
   sem_unlink(name_.c_str());
 
   sem_ = sem_open(name_.c_str(), O_CREAT|O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO,
@@ -249,6 +248,8 @@ bool Semaphore::TimedWait(std::chrono::system_clock::time_point deadline) {
     static_cast<time_t>(deadline_ms.count() / 1000),
     static_cast<long>(deadline_ms.count() % 1000 * 1000000),
   };
+#else
+  useconds_t sleep_time = 100;  // start at 100 micros.
 #endif
   for (;;) {
 #if defined(OS_MACOSX)
@@ -272,7 +273,12 @@ bool Semaphore::TimedWait(std::chrono::system_clock::time_point deadline) {
         if (deadline < now) {
           break;
         }
-        usleep(100000L);   // 100 ms, this is used only by unit tests
+        /* sleep override */
+        usleep(sleep_time);  // max 100 ms, this is used only by unit tests
+        sleep_time <<= 1;  // exponential increase
+        if (sleep_time > 100000L) {
+          sleep_time = 100000L;
+        }
         continue;          // try again
       }
 #endif

@@ -781,15 +781,12 @@ EventLoop::Run() {
 
 void EventLoop::Stop() {
   if (base_ != nullptr) {
-    int shutdown_fd = shutdown_event_ ? event_get_fd(shutdown_event_) : 0;
     if (running_) {
-      assert(shutdown_fd);
       // Write to the shutdown event FD to signal the event loop thread
       // to shutdown and stop looping.
-      uint64_t value = 1;
-      ssize_t result;
+      int result;
       do {
-        result = write(shutdown_fd, &value, sizeof(value));
+        result = shutdown_eventfd_.write_event(1);
       } while (running_ && (result < 0 || errno == EAGAIN));
 
       // Wait for event loop to exit on the loop thread.
@@ -806,7 +803,6 @@ void EventLoop::Stop() {
     if (shutdown_event_) event_free(shutdown_event_);
     if (command_ready_event_) event_free(command_ready_event_);
     event_base_free(base_);
-    if (shutdown_fd) close(shutdown_fd);
     command_ready_eventfd_.closefd();
     shutdown_eventfd_.closefd();
 

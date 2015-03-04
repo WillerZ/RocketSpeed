@@ -132,6 +132,7 @@ TEST(MockLogDeviceTest, Basic) {
   // Stop reading and check that no more messages are received on reader 1.
   reader1->stopReading(logid);
   ASSERT_NE(client->appendSync(logid, payload("test8")), LSN_INVALID);
+  /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(count1, 8);
 }
@@ -145,8 +146,10 @@ TEST(MockLogDeviceTest, FindTime) {
   logid_t logid(1);
   lsn_t lsn[3];
   ASSERT_NE(lsn[0] = client->appendSync(logid, payload("test0")), LSN_INVALID);
+  /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   ASSERT_NE(lsn[1] = client->appendSync(logid, payload("test1")), LSN_INVALID);
+  /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   ASSERT_NE(lsn[2] = client->appendSync(logid, payload("test2")), LSN_INVALID);
 
@@ -209,10 +212,13 @@ TEST(MockLogDeviceTest, Trim) {
   logid_t logid(1);
   lsn_t lsn[4];
   ASSERT_NE(lsn[0] = client->appendSync(logid, payload("test0")), LSN_INVALID);
+  /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   ASSERT_NE(lsn[1] = client->appendSync(logid, payload("test1")), LSN_INVALID);
+  /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   ASSERT_NE(lsn[2] = client->appendSync(logid, payload("test2")), LSN_INVALID);
+  /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   ASSERT_NE(lsn[3] = client->appendSync(logid, payload("test3")), LSN_INVALID);
 
@@ -286,6 +292,7 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
   for (int i = 0; i < numMessages; ++i) {
     ASSERT_NE(client->appendSync(logid, payload("test" + std::to_string(i))),
               LSN_INVALID);
+    /* sleep override */
     std::this_thread::sleep_for(std::chrono::microseconds(100));
     if (i % 25 == 0) {
       // Trim the log every so often to test reading while trimming also.
@@ -303,5 +310,8 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
+#if !defined(OS_MACOSX)
+  // Does not work on OS X due to lack of DeleteDirRecursive.
   return rocketspeed::test::RunAllTests();
+#endif
 }
