@@ -109,6 +109,14 @@ class EventLoop {
   // Dispatches a message to the event callback.
   void Dispatch(std::unique_ptr<Message> message);
 
+  /**
+   * Invokes callback for provided command in the calling thread.
+   * Can only be called from the message loop thread.
+   *
+   * @param command A command to be executed
+   */
+  void Dispatch(std::unique_ptr<Command> command, int64_t issued_time);
+
   // Get the info log.
   const std::shared_ptr<Logger>& GetLog() { return info_log_; }
 

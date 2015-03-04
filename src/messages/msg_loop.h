@@ -95,6 +95,14 @@ class MsgLoop : public MsgLoopBase {
     return event_loops_[worker_id]->SendCommand(std::move(command));
   }
 
+  /**
+   * Send a command to the event loop running on the same thread as the caller.
+   * Calling from non event loop thread is an undefined behaviour.
+   *
+   * @param command The command to send for processing.
+   */
+  void SendCommandToSelf(std::unique_ptr<Command> command);
+
   Statistics GetStatistics() const {
     Statistics stats;
     for (const auto& event_loop : event_loops_) {

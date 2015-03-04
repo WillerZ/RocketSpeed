@@ -209,6 +209,11 @@ MsgLoop::~MsgLoop() {
   Stop();
 }
 
+void MsgLoop::SendCommandToSelf(std::unique_ptr<Command> command) {
+  event_loops_[GetThreadWorkerIndex()]->Dispatch(std::move(command),
+                                                 env_->NowMicros());
+}
+
 Status MsgLoop::SendMessage(const Message& msg,
                             ClientID recipient,
                             int worker_id,
@@ -269,6 +274,7 @@ int MsgLoop::LoadBalancedWorkerId() const {
 
 bool MsgLoop::CheckMessageOrigin(const Message* msg) {
   const int worker_id = GetThreadWorkerIndex();
+
   if (msg->GetOrigin() != GetClientId(worker_id)) {
     stats_.bad_origin->Add(1);
     LOG_ERROR(info_log_,

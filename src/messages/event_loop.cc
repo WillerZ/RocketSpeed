@@ -568,26 +568,8 @@ void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
       return;
     }
 
-    std::unique_ptr<Command> command = std::move(ts_cmd.command);
-
-    uint64_t now = obj->env_->NowMicros();
-    obj->stats_.command_latency->Record(now - ts_cmd.issued_time);
-    obj->stats_.commands_processed->Add(1);
-
-    // Search for callback registered for this command type.
-    // Command ownership will be passed along to the callback.
-    const auto type = command->GetCommandType();
-    auto iter = obj->command_callbacks_.find(type);
-    if (iter != obj->command_callbacks_.end()) {
-      iter->second(std::move(command), ts_cmd.issued_time);
-    } else {
-      // If the user has not registered a callback for this command type, then
-      // the command will be droped silently.
-      LOG_WARN(obj->info_log_,
-               "No registered command callback for command type %d",
-               type);
-      obj->info_log_->Flush();
-    }
+    // Call registered callback.
+    obj->Dispatch(std::move(ts_cmd.command), ts_cmd.issued_time);
   }
 }
 
@@ -849,6 +831,27 @@ void EventLoop::Accept(int fd) {
 
 void EventLoop::Dispatch(std::unique_ptr<Message> message) {
   event_callback_(std::move(message));
+}
+
+void EventLoop::Dispatch(std::unique_ptr<Command> command,
+                         int64_t issued_time) {
+  uint64_t now = env_->NowMicros();
+  stats_.command_latency->Record(now - issued_time);
+  stats_.commands_processed->Add(1);
+
+  // Search for callback registered for this command type.
+  // Command ownership will be passed along to the callback.
+  const auto type = command->GetCommandType();
+  auto iter = command_callbacks_.find(type);
+  if (iter != command_callbacks_.end()) {
+    iter->second(std::move(command), issued_time);
+  } else {
+    // If the user has not registered a callback for this command type, then
+    // the command will be droped silently.
+    LOG_WARN(
+        info_log_, "No registered command callback for command type %d", type);
+    info_log_->Flush();
+  }
 }
 
 Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
