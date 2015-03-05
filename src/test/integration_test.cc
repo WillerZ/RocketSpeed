@@ -311,6 +311,57 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   ASSERT_TRUE(!received_data.TimedWait(std::chrono::milliseconds(100)));
 }
 
+/**
+ * Unsubscribe callback.
+ */
+TEST(IntegrationTest, UnsubscribeCallback) {
+    // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Message setup.
+  Topic topic = "test_topic";
+  NamespaceID namespace_id = 102;
+
+  port::Semaphore sub_checkpoint;
+  std::atomic<bool> expected_subscribed{true};  // first message is a subscribe.
+  auto subscription_callback = [&] (SubscriptionStatus ss) {
+    ASSERT_OK(ss.status);
+    ASSERT_TRUE(ss.topic_name == topic);
+    ASSERT_TRUE(ss.namespace_id == namespace_id);
+    ASSERT_EQ(ss.subscribed, expected_subscribed.load());
+    expected_subscribed.store(false);  // next message should be unsub.
+    sub_checkpoint.Post();
+  };
+
+  // Create RocketSpeed client.
+  std::unique_ptr<Configuration> config(
+      Configuration::Create(cluster.GetPilotHostIds(),
+                            cluster.GetCopilotHostIds(),
+                            Tenant(102),
+                            1));
+  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  options.subscription_callback = subscription_callback;
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(nullptr));
+
+  // Subscribe.
+  std::vector<SubscriptionRequest> subscriptions1 = {
+    SubscriptionRequest(namespace_id, topic, true, 1)
+  };
+  client->ListenTopics(subscriptions1);
+  sub_checkpoint.TimedWait(std::chrono::seconds(1));
+
+  // Unsubscribe.
+  std::vector<SubscriptionRequest> subscriptions2 = {
+    SubscriptionRequest(namespace_id, topic, false, 1)
+  };
+  client->ListenTopics(subscriptions2);
+  sub_checkpoint.TimedWait(std::chrono::seconds(1));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

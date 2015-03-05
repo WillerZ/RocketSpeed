@@ -198,7 +198,7 @@ class SubscriptionStatus {
                          namespace_id(0) {}
   Status status;
   SequenceNumber seqno;  // the start seqno of a subscription
-  bool   subscribed;     // true for subscription, false for unsubscription
+  bool subscribed;       // true for subscription, false for unsubscription
   Topic topic_name;
   NamespaceID namespace_id;
 };

@@ -532,7 +532,7 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
       SubscriptionStatus ret;
       ret.status = Status::OK();
       ret.seqno = elem.seqno;  // start seqno of this subscription
-      ret.subscribed = true;   // subscribed to this topic
+      ret.subscribed = (elem.topic_type == MetadataType::mSubscribe);
       ret.topic_name = elem.topic_name;
       ret.namespace_id = elem.namespace_id;
       subscription_callback_(std::move(ret));
