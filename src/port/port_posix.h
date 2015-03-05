@@ -273,7 +273,9 @@ class Eventfd {
 
  private:
   int fd_[2];
+#if defined(OS_MACOSX)
   int status_;
+#endif
 };
 
 typedef pthread_once_t OnceType;
