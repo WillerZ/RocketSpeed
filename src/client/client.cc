@@ -131,12 +131,15 @@ Status Client::Create(ClientOptions options, std::unique_ptr<Client>* client) {
 }
 
 Status ClientImpl::Create(ClientOptions options,
-                          std::unique_ptr<ClientImpl>* client) {
-  // Validate arguments.
+                          std::unique_ptr<ClientImpl>* client,
+                          bool is_internal) {
   assert (client);
-  if (options.config.GetTenantID() <= 100) {
-    return Status::InvalidArgument("TenantId must be greater than 100.");
+  if (!is_internal) {
+    if (options.config.GetTenantID() <= 100) {
+      return Status::InvalidArgument("TenantId must be greater than 100.");
+    }
   }
+  // Validate arguments.
   if (options.config.GetPilotHostIds().empty()) {
     return Status::InvalidArgument("Must have at least one pilot.");
   }
@@ -175,7 +178,8 @@ Status ClientImpl::Create(ClientOptions options,
                                options.config.GetTenantID(),
                                msg_loop_,
                                std::move(options.storage),
-                               options.info_log));
+                               options.info_log,
+                               is_internal));
   return Status::OK();
 }
 
@@ -186,7 +190,8 @@ ClientImpl::ClientImpl(BaseEnv* env,
                        TenantID tenant_id,
                        MsgLoopBase* msg_loop,
                        std::unique_ptr<SubscriptionStorage> storage,
-                       std::shared_ptr<Logger> info_log)
+                       std::shared_ptr<Logger> info_log,
+                       bool is_internal)
 : env_(env)
 , wake_lock_(std::move(wake_lock))
 , pilot_host_id_(pilot_host_id)
@@ -196,7 +201,8 @@ ClientImpl::ClientImpl(BaseEnv* env,
 , msg_loop_thread_spawned_(false)
 , storage_(std::move(storage))
 , info_log_(info_log)
-, next_worker_id_(0) {
+, next_worker_id_(0)
+, is_internal_(is_internal) {
   using std::placeholders::_1;
 
   // Setup callbacks.
@@ -279,12 +285,13 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                                   const Slice& data,
                                   PublishCallback callback,
                                   const MsgId messageId) {
-  if (namespaceId <= 100) {       // Namespace <= 100 are reserved
-    return PublishStatus(Status::InvalidArgument(
-                         "NamespaceID must be greater than 100."),
-                         messageId);
+  if (!is_internal_) {
+    if (namespaceId <= 100) {       // Namespace <= 100 are reserved
+      return PublishStatus(Status::InvalidArgument(
+                           "NamespaceID must be greater than 100."),
+                           messageId);
+    }
   }
-
   // Find the worker ID for this topic.
   int worker_id = GetWorkerForTopic(name);
   auto& worker_data = worker_data_[worker_id];

@@ -157,6 +157,14 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
     cockpit_loop_.reset(new MsgLoop(
         env_, env_options, Copilot::DEFAULT_PORT, 16, info_log_, "cockpit"));
 
+    // If we need to start the copilot, then it is better to start the
+    // pilot too. Any subscribe/unsubscribe requests to the copilot needs
+    // to write to the rollcall topic (via the pilot).
+    start_pilot = true;
+    HostId pilot_host("localhost", Pilot::DEFAULT_PORT);
+    configuration_.reset(Configuration::Create({pilot_host}, {pilot_host},
+                                                SystemTenant));
+
     if (start_copilot) {
       // Create Copilot
       copilot_options_.control_towers.push_back(control_tower_->GetClientId(0));
@@ -165,6 +173,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
       copilot_options_.msg_loop = cockpit_loop_.get();
       copilot_options_.control_tower_connections =
           cockpit_loop_->GetNumWorkers();
+      copilot_options_.pilots.push_back(pilot_host);
       status_ = Copilot::CreateNewInstance(copilot_options_, &copilot_);
       if (!status_.ok()) {
         LOG_ERROR(info_log_, "Failed to create Copilot.");
@@ -197,6 +206,17 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
       return;
     }
   }
+}
+
+Status
+LocalTestCluster::CreateClient(const ClientID& id,
+                               std::unique_ptr<ClientImpl>* client,
+                               bool is_internal) {
+  std::unique_ptr<ClientImpl> cl;
+  ClientOptions client_options(*configuration_.get(), id);
+  Status status = ClientImpl::Create(std::move(client_options),
+                                     client, is_internal);
+  return status;
 }
 
 LocalTestCluster::~LocalTestCluster() {
@@ -233,7 +253,10 @@ Statistics LocalTestCluster::GetStatistics() const {
   if (cockpit_loop_) {
     aggregated.Aggregate(cockpit_loop_->GetStatistics());
   }
-  // TODO(pja) 1 : Add copilot and control tower once they have stats.
+  if (copilot_) {
+    aggregated.Aggregate(copilot_->GetStatistics());
+  }
+  // TODO(pja) 1 : Add control tower once they have stats.
   return std::move(aggregated);
 }
 

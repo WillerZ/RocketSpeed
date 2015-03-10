@@ -254,10 +254,13 @@ TEST(ProxyTest, ForwardGoodbye) {
   env->SleepForMicroseconds(10000);  // time to propagate
 
   // Check that pilot and copilot have one fewer clients each.
+  // Account for one extra client used by the copilot to write
+  // to the rollcall topic.
+  int num_rollcall_clients = 1;
   ASSERT_EQ(cluster->GetPilot()->GetMsgLoop()->GetNumClientsSync(),
-            npilot - 1);
+            npilot - 1 + num_rollcall_clients);
   ASSERT_EQ(cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync(),
-            ncopilot - 1);
+            ncopilot - 1 + num_rollcall_clients);
 }
 
 }  // namespace rocketspeed

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "include/Types.h"
+#include "src/client/client.h"
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
 #include "src/copilot/copilot.h"
@@ -92,6 +93,11 @@ class LocalTestCluster {
   // Returns the environment used by the TestCluster
   Env* GetEnv() const { return env_; }
 
+  // Create a new client for the test cluster.
+  Status CreateClient(const ClientID& id,
+                      std::unique_ptr<ClientImpl>* client,
+                      bool is_internal);
+
  private:
   struct LogDevice;
   std::unique_ptr<LogDevice> logdevice_;
@@ -114,6 +120,9 @@ class LocalTestCluster {
   // Control Tower
   ControlTowerOptions control_tower_options_;
   ControlTower* control_tower_;
+
+  // Configuration generated here
+  std::unique_ptr<Configuration> configuration_;
 
   // Message loops and threads
   std::unique_ptr<MsgLoop> cockpit_loop_;

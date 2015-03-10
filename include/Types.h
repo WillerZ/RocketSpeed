@@ -262,6 +262,11 @@ enum Tenant : TenantID {
    * TenantIds 2-100 are reserved for system usage. Real users should be
    * assigned ids larger than 100
    */
+  /**
+   * The System Tenant ID is used for work that is done to keep the entire
+   * RocketSpeed system up, alive and running well.
+   */
+  SystemTenant = 2,
 };
 
 /**

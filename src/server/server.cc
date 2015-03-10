@@ -176,6 +176,7 @@ int Run(int argc,
   }
 
   // Create Pilot.
+  HostId pilot_host("localhost", FLAGS_pilot_port);
   if (FLAGS_pilot) {
     PilotOptions pilot_opts;
     pilot_opts.msg_loop = pilot_loop.get();
@@ -208,6 +209,9 @@ int Run(int argc,
       copilot_opts.control_towers.push_back(host.ToClientId());
       LOG_INFO(info_log, "Adding control tower '%s'",
         host.ToString().c_str());
+    }
+    if (FLAGS_pilot) {
+      copilot_opts.pilots.push_back(pilot_host);
     }
     st = Copilot::CreateNewInstance(std::move(copilot_opts),
                                     &copilot);

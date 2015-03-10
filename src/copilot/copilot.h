@@ -14,6 +14,7 @@
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
+#include "src/rollcall/rollcall_impl.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
@@ -21,6 +22,8 @@
 #include "src/util/control_tower_router.h"
 
 namespace rocketspeed {
+
+class Stats;
 
 class Copilot {
  public:
@@ -60,7 +63,21 @@ class Copilot {
     return options_.msg_loop;
   }
 
+  // Get the client used for logging into rollcall topic
+  RollcallImpl* GetRollcallLogger() {
+    return rollcall_.get();
+  }
+
+  // Returns an aggregated statistics object from the copilot
+  Statistics GetStatistics() const;
+
+  // Get a reference to an individual worker's data
+  Stats* GetStats(int id) {
+    return &stats_[id];
+  }
+
  private:
+
   // The options used by the Copilot
   CopilotOptions options_;
 
@@ -71,8 +88,15 @@ class Copilot {
   // Control tower router. Workers will access this, but don't own it.
   ControlTowerRouter control_tower_router_;
 
+  // A client to write rollcall topic
+  std::unique_ptr<RollcallImpl> rollcall_;
+
+  // Per-thread statistics data.
+  std::vector<Stats> stats_;
+
+
   // private Constructor
-  explicit Copilot(CopilotOptions options);
+  Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client);
 
   // Sanitize input options if necessary
   CopilotOptions SanitizeOptions(CopilotOptions options);
@@ -86,6 +110,25 @@ class Copilot {
   void ProcessGoodbye(std::unique_ptr<Message> msg);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
+};
+
+// Statistics collected by copilot
+struct Stats {
+  Stats() {
+    numwrites_rollcall_total = all.AddCounter(
+                             "rocketspeed.copilot.numwrites_rollcall_total");
+    numwrites_rollcall_failed = all.AddCounter(
+                             "rocketspeed.copilot.numwrites_rollcall_failed");
+  }
+  // all statistics about a copilot
+  Statistics all;
+
+  // Number of writes attempted to rollcall topic
+  Counter* numwrites_rollcall_total;
+
+  // Number of subscription writes to rollcall topic that failed and
+  // resulted in an automatic forced unsubscription request.
+  Counter* numwrites_rollcall_failed;
 };
 
 }  // namespace rocketspeed

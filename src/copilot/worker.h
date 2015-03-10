@@ -63,6 +63,7 @@ class CopilotWorker {
   // Constructs a new CopilotWorker (does not start a thread).
   CopilotWorker(const CopilotOptions& options,
                 const ControlTowerRouter* control_tower_router,
+                const int myid,
                 Copilot* copilot);
 
   // Forward a message to this worker for processing.
@@ -110,7 +111,9 @@ class CopilotWorker {
 
   // Process a metadata response from control tower.
   void ProcessMetadataResponse(std::unique_ptr<Message> msg,
-                               const TopicPair& request);
+                               const TopicPair& request,
+                               LogID logid,
+                               int worker_id);
 
   // Forward data to subscribers.
   void ProcessDeliver(std::unique_ptr<Message> msg);
@@ -125,7 +128,16 @@ class CopilotWorker {
                           const ClientID& subscriber,
                           NamespaceID namespace_id,
                           const Topic& topic_name,
-                          LogID logid);
+                          LogID logid,
+                          int worker_id);
+
+  // Write to Rollcall topic
+  void RollcallWrite(std::unique_ptr<Message> msg,
+                     const Topic& topic_name,
+                     const NamespaceID& namespace_id,
+                     const MetadataType type,
+                     const LogID logid,
+                     int worker_id);
 
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;
@@ -138,6 +150,9 @@ class CopilotWorker {
 
   // Reference to the copilot
   Copilot* copilot_;
+
+  // My worker id
+  int myid_;
 
   // Subscription metadata
   struct Subscription {
@@ -180,5 +195,4 @@ class CopilotWorker {
   typedef std::unordered_set<TopicInfo, TopicInfo::Hash> TopicInfoSet;
   std::unordered_map<ClientID, TopicInfoSet> client_topics_;
 };
-
 }  // namespace rocketspeed

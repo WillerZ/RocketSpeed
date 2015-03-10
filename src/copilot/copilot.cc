@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "src/client/client.h"
 #include "src/util/memory.h"
 
 namespace rocketspeed {
@@ -60,20 +61,27 @@ void Copilot::StartWorkers() {
 /**
  * Private constructor for a Copilot
  */
-Copilot::Copilot(CopilotOptions options):
+Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
   options_(SanitizeOptions(std::move(options))),
   control_tower_router_(options_.control_towers,
                         options_.consistent_hash_replicas,
                         options_.control_towers_per_log) {
 
+  stats_.resize(options_.msg_loop->GetNumWorkers());
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
   // Create workers.
   for (uint32_t i = 0; i < options_.num_workers; ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
                                             &control_tower_router_,
+                                            i,
                                             this));
   }
+  // Create Rollcall topic writer
+  rollcall_.reset(new RollcallImpl(std::move(client),
+                                   Namespace::InvalidNamespace,
+                                   SubscriptionStart(0),
+                                   nullptr));
 
   LOG_INFO(options_.info_log, "Created a new Copilot");
   options_.info_log->Flush();
@@ -103,8 +111,29 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
     assert(false);
     return Status::InvalidArgument("Log router must be provided");
   }
+  // Publishing to the rollcall topic needs a pilot.
+  if (options.pilots.size() <= 0) {
+    assert(options.pilots.size());
+    return Status::InvalidArgument("At least one pilot much be provided.");
+  }
+  // Create a configuration to determine the identity of a pilot.
+  // Use a dummy copilot identifier, this is not needed and can be
+  // removed in the future.
+  std::unique_ptr<Configuration> conf(Configuration::Create(
+                                      options.pilots,
+                                      { HostId() },
+                                      SystemTenant));
+  ClientOptions client_options(*conf.get(), "DummyClientId");
 
-  *copilot = new Copilot(std::move(options));
+  // Create a client to write rollcall topic.
+  std::unique_ptr<ClientImpl> client;
+  Status status = ClientImpl::Create(std::move(client_options),
+                                     &client,
+                                     true);
+  if (!status.ok()) {
+    return status;
+  }
+  *copilot = new Copilot(std::move(options), std::move(client));
   (*copilot)->StartWorkers();
   return Status::OK();
 }
@@ -264,6 +293,14 @@ int Copilot::GetLogWorker(LogID logid) const {
   size_t connection = logid % options_.control_tower_connections;
   size_t hash = MurmurHash2<std::string>()(*control_tower);
   return static_cast<int>((hash + connection) % num_workers);
+}
+
+Statistics Copilot::GetStatistics() const {
+  Statistics aggr;
+  for (const Stats& s : stats_) {
+    aggr.Aggregate(s.all);
+  }
+  return aggr;
 }
 
 }  // namespace rocketspeed

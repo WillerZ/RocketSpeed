@@ -65,6 +65,9 @@ struct CopilotOptions {
   // Control Tower host IDs.
   std::vector<ClientID> control_towers;
 
+  // Pilot hostids (needed for writing rollcall topic).
+  std::vector<HostId> pilots;
+
   // Number of worker loops for the pilot.
   uint32_t num_workers;
 

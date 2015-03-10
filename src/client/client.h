@@ -33,7 +33,8 @@ class WakeLock;
 class ClientImpl : public Client {
  public:
   static Status Create(ClientOptions client_options,
-                       std::unique_ptr<ClientImpl>* client);
+                       std::unique_ptr<ClientImpl>* client,
+                       bool is_internal = false);
 
   virtual ~ClientImpl();
 
@@ -61,7 +62,8 @@ class ClientImpl : public Client {
              TenantID tenant_id,
              MsgLoopBase* msg_loop,
              std::unique_ptr<SubscriptionStorage> storage,
-             std::shared_ptr<Logger> info_log);
+             std::shared_ptr<Logger> info_log,
+             bool is_internal);
 
   Statistics GetStatistics() const;
 
@@ -140,6 +142,10 @@ class ClientImpl : public Client {
   // Worker ID to send next message from.
   // This loops in a round robin fashion.
   std::atomic<int> next_worker_id_;
+
+  // If this is an internal client, then we will skip TenantId
+  // checks and namespaceid checks.
+  const bool is_internal_;
 };
 
 }  // namespace rocketspeed

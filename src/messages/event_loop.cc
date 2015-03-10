@@ -664,7 +664,7 @@ EventLoop::Run() {
     memset(&sin, 0, sizeof(sin));
     sin.sin6_family = AF_INET6;
     sin.sin6_addr = in6addr_any;
-    sin.sin6_port = htons(port_number_);
+    sin.sin6_port = htons(static_cast<uint16_t>(port_number_));
 
     // Create libevent connection listener.
     listener_ = evconnlistener_new_bind(

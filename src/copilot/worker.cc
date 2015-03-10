@@ -15,11 +15,13 @@ namespace rocketspeed {
 
 CopilotWorker::CopilotWorker(const CopilotOptions& options,
                              const ControlTowerRouter* control_tower_router,
+                             const int myid,
                              Copilot* copilot)
 : worker_loop_(options.worker_queue_size)
 , options_(options)
 , control_tower_router_(control_tower_router)
-, copilot_(copilot) {
+, copilot_(copilot)
+, myid_(myid) {
   // copilot is required.
   assert(copilot_);
 
@@ -70,7 +72,10 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
       } else {
         if (request.topic_type == MetadataType::mSubscribe) {
           // Response from Control Tower.
-          ProcessMetadataResponse(std::move(message), request);
+          ProcessMetadataResponse(std::move(message),
+                                  request,
+                                  command.GetLogID(),
+                                  command.GetWorkerId());
         }
       }
     }
@@ -97,7 +102,9 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
 }
 
 void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
-                                            const TopicPair& request) {
+                                            const TopicPair& request,
+                                            LogID logid,
+                                            int worker_id) {
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
 
   LOG_INFO(options_.info_log,
@@ -124,17 +131,23 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
           if (subscription.seqno == 0) {
             subscription.seqno = request.seqno;
           }
-
           LOG_INFO(options_.info_log,
             "Sending %ssubscribe response for Topic(%s) to %s on worker %d",
             request.topic_type == MetadataType::mSubscribe ? "" : "un",
             request.topic_name.c_str(),
             subscription.client_id.c_str(),
             subscription.worker_id);
+          // Update rollcall topic.
+          RollcallWrite(std::move(message), request.topic_name,
+                        request.namespace_id, request.topic_type,
+                        logid, worker_id);
         } else {
           LOG_WARN(options_.info_log,
             "Failed to send metadata response to %s",
             subscription.client_id.c_str());
+          // We were unable to forward the subscribe-response to the client
+          // so the client is unaware that it has a confirmed subscription.
+          // There is no need to write the rollcall topic.
         }
       }
     }
@@ -335,6 +348,9 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
           "Failed to send subscribe response to %s",
           subscriber.c_str());
     }
+    // Update rollcall topic.
+    RollcallWrite(std::move(message), request.topic_name, request.namespace_id,
+                  request.topic_type, logid, worker_id);
   }
 }
 
@@ -355,7 +371,8 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                      subscriber,
                      request.namespace_id,
                      request.topic_name,
-                     logid);
+                     logid,
+                     worker_id);
 
   // Send response to origin to notify that subscription has been processed.
   msg->SetMetaType(MessageMetadata::MetaType::Response);
@@ -379,7 +396,8 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
                                        const ClientID& subscriber,
                                        NamespaceID namespace_id,
                                        const Topic& topic_name,
-                                       LogID logid) {
+                                       LogID logid,
+                                       int worker_id) {
   // Remove from client-topic map. Doesn't matter if it was already there.
   TopicInfo topic_info { topic_name, namespace_id, logid };
   client_topics_[subscriber].erase(topic_info);
@@ -456,6 +474,10 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
           logid);
       }
     }
+    // Update rollcall topic.
+    RollcallWrite(nullptr, topic_name,
+                  namespace_id, MetadataType::mUnSubscribe,
+                  logid, worker_id);
   }
 }
 
@@ -477,9 +499,78 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message) {
                          client_id,
                          info.namespace_id,
                          info.topic_name,
-                         info.logid);
+                         info.logid,
+                         0); // The worked id is a dummy because we do not
+                             //  need to send any response back to the client
     }
     client_topics_.erase(it);
+  }
+}
+
+//
+// Inserts an entry into the rollcall topic.
+//
+void
+CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
+                             const Topic& topic_name,
+                             const NamespaceID& namespace_id,
+                             const MetadataType type,
+                             const LogID logid, int worker_id) {
+  assert(msg || type == MetadataType::mUnSubscribe);
+
+  // Write to rollcall topic failed. If this was a 'subscription' event,
+  // then send unsubscribe message to copilot worker. This will send an
+  // unsubscribe response to appropriate client.
+  auto process_error = [&, this] () {
+    this->copilot_->GetStats(myid_)->numwrites_rollcall_failed->Add(1);
+    std::vector<TopicPair> topics = { TopicPair(0, topic_name,
+                                              MetadataType::mUnSubscribe,
+                                              namespace_id) };
+    std::unique_ptr<Message> newmsg(new MessageMetadata(
+                                      msg->GetTenantID(),
+                                      MessageMetadata::MetaType::Request,
+                                      msg->GetOrigin(),
+                                      topics));
+    // Start the automatic unsubscribe process. We rely on the assumption
+    // that the unsubscribe request can fail only if the client is
+    // un-communicable, in which case the client's subscritions are reaped.
+    this->Forward(logid, std::move(newmsg), worker_id);
+  };
+
+  // This callback is called when the write to the rollcall topic is complete
+  auto publish_callback = [&, this, process_error]
+                          (std::unique_ptr<ResultStatus> status) {
+    if (!status->GetStatus().ok() && type == MetadataType::mSubscribe) {
+      process_error();
+    }
+  };
+
+  // Issue the write to rollcall topic
+  Status status =  copilot_->GetRollcallLogger()->WriteEntry(topic_name,
+                               namespace_id,
+                               type == MetadataType::mSubscribe ?  true: false,
+                               publish_callback);
+  copilot_->GetStats(myid_)->numwrites_rollcall_total->Add(1);
+  if (status.ok()) {
+    LOG_INFO(options_.info_log,
+             "Send rollcall write (%ssubscribe) for Topic(%s) in "
+             "namespace %d",
+             type == MetadataType::mSubscribe ? "" : "un",
+             topic_name.c_str(),
+             namespace_id);
+  } else {
+    LOG_INFO(options_.info_log,
+             "Failed to send rollcall write (%ssubscribe) for Topic(%s) in "
+             "namespace %d status %s",
+             type == MetadataType::mSubscribe ? "" : "un",
+             topic_name.c_str(),
+             namespace_id,
+             status.ToString().c_str());
+    // If we are unable to write to the rollcall topic and it is a subscription
+    // request, then we need to terminate that subscription.
+    if (type == MetadataType::mSubscribe) {
+      process_error();
+    }
   }
 }
 
