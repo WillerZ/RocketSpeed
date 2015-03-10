@@ -54,6 +54,8 @@ class Client : public ClientImpl {
 
  private:
   std::unique_ptr<rocketspeed::Client> client_;
+  /** Stores callback pointer between client creation and startup. */
+  rocketspeed::SubscribeCallback subscription_callback_;
 };
 
 }  // namespace djinni

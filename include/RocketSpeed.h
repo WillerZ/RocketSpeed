@@ -64,10 +64,6 @@ struct ClientOptions {
   // Access Token for authentication.
   std::string access_token;
 
-  // Invoked when a subscription is confirmed.
-  // Default: nullptr.
-  SubscribeCallback subscription_callback;
-
   // Strategy for storing subscription state.
   // Default: nullptr.
   std::unique_ptr<SubscriptionStorage> storage;
@@ -123,10 +119,13 @@ class Client {
   /**
    * Starts the client and restores subscription data according to provided
    * strategy.
-   * @param receive_callback Invoed on each received message.
+   * @param subscribe_callback Invoked on successfull or failed attempt to
+   * subscribe.
+   * @param receive_callback Invoked on each received message.
    * @param restore_strategy Controls how client restores subscription state.
    */
   virtual Status Start(
+      SubscribeCallback subscribe_callback = nullptr,
       MessageReceivedCallback receive_callback = nullptr,
       RestoreStrategy restore_strategy = RestoreStrategy::kDontRestore) = 0;
 

@@ -142,7 +142,6 @@ Status ClientImpl::Create(ClientOptions options,
                                options.config.GetCopilotHostIds().front(),
                                options.config.GetTenantID(),
                                msg_loop_,
-                               options.subscription_callback,
                                std::move(options.storage),
                                options.info_log));
   return Status::OK();
@@ -154,7 +153,6 @@ ClientImpl::ClientImpl(BaseEnv* env,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
                        MsgLoopBase* msg_loop,
-                       SubscribeCallback subscription_callback,
                        std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log)
 : env_(env)
@@ -164,7 +162,6 @@ ClientImpl::ClientImpl(BaseEnv* env,
 , tenant_id_(tenant_id)
 , msg_loop_(msg_loop)
 , msg_loop_thread_spawned_(false)
-, subscription_callback_(subscription_callback)
 , storage_(std::move(storage))
 , info_log_(info_log)
 , next_worker_id_(0) {
@@ -194,8 +191,10 @@ ClientImpl::ClientImpl(BaseEnv* env,
   }
 }
 
-Status ClientImpl::Start(MessageReceivedCallback receive_callback,
+Status ClientImpl::Start(SubscribeCallback subscribe_callback,
+                         MessageReceivedCallback receive_callback,
                          RestoreStrategy restore_strategy) {
+  subscription_callback_ = std::move(subscribe_callback);
   receive_callback_ = std::move(receive_callback);
   if (!storage_ && restore_strategy == RestoreStrategy::kRestoreOnly) {
     return Status::InvalidArgument(

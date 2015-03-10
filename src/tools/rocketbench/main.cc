@@ -566,7 +566,6 @@ int main(int argc, char** argv) {
     // Configure the client.
     rocketspeed::ClientOptions options(
         *config, rocketspeed::GUIDGenerator().GenerateString());
-    options.subscription_callback = subscribe_callback;
     options.info_log = info_log;
     std::unique_ptr<rocketspeed::ClientImpl> client;
     // Create the client.
@@ -575,7 +574,8 @@ int main(int argc, char** argv) {
       LOG_ERROR(info_log, "Failed to open client: %s.", st.ToString().c_str());
       return 1;
     }
-    st = client->Start(receive_callback,
+    st = client->Start(subscribe_callback,
+                       receive_callback,
                        rocketspeed::Client::RestoreStrategy::kDontRestore);
     if (!st.ok()) {
       LOG_ERROR(info_log, "Failed to start client: %s.", st.ToString().c_str());

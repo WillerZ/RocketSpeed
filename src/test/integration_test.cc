@@ -78,11 +78,10 @@ TEST(IntegrationTest, OneMessage) {
                             1));
   //TODO(ranji42) Try to use the same integration_test for mqttclient.
   ClientOptions options(*config, GUIDGenerator().GenerateString());
-  options.subscription_callback = subscription_callback;
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(receive_callback));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
 
   // Send a message.
   auto ps = client->Publish(topic,
@@ -145,11 +144,10 @@ TEST(IntegrationTest, SequenceNumberZero) {
                             Tenant(102),
                             4));
   ClientOptions options(*config, GUIDGenerator().GenerateString());
-  options.subscription_callback = subscription_callback;
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(receive_callback));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
 
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {
@@ -341,11 +339,10 @@ TEST(IntegrationTest, UnsubscribeCallback) {
                             Tenant(102),
                             1));
   ClientOptions options(*config, GUIDGenerator().GenerateString());
-  options.subscription_callback = subscription_callback;
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(nullptr));
+  ASSERT_OK(client->Start(subscription_callback, nullptr));
 
   // Subscribe.
   std::vector<SubscriptionRequest> subscriptions1 = {

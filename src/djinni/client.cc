@@ -144,7 +144,7 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(
   }
 
   if (subscribe_callback) {
-    options.subscription_callback =
+    subscription_callback_ =
         [subscribe_callback](SubscriptionStatus status) {
       subscribe_callback->Call(FromStatus(status.status),
                                fromNamespaceID(status.namespace_id),
@@ -200,7 +200,8 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
                               ? Restore::kResubscribe
                               : (restore_subscriptions ? Restore::kRestoreOnly
                                                        : Restore::kDontRestore);
-  auto status = client_->Start(receive_callback1, restore_strategy);
+  auto status = client_->Start(
+      std::move(subscription_callback_), receive_callback1, restore_strategy);
   return FromStatus(status);
 }
 

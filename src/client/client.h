@@ -37,7 +37,8 @@ class ClientImpl : public Client {
 
   virtual ~ClientImpl();
 
-  virtual Status Start(MessageReceivedCallback receive_callback,
+  virtual Status Start(SubscribeCallback subscription_callback,
+                       MessageReceivedCallback receive_callback,
                        RestoreStrategy restore_strategy);
 
   virtual PublishStatus Publish(const Topic& name,
@@ -59,7 +60,6 @@ class ClientImpl : public Client {
              const HostId& copilot_host_id,
              TenantID tenant_id,
              MsgLoopBase* msg_loop,
-             SubscribeCallback subscription_callback,
              std::unique_ptr<SubscriptionStorage> storage,
              std::shared_ptr<Logger> info_log);
 
