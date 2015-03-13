@@ -411,7 +411,7 @@ else
 	@sed -i -e 's,.*:,$*.o:,' $@
 endif
 
-DEPFILES = $(filter-out src/util/build_version.d,$(SOURCES:.cc=.d))
+DEPFILES = $(filter-out src/util/build_version.d,$(ALL_SOURCES:.cc=.d) $(ALL_SOURCES_CPP:.cpp=.d))
 
 depend: $(DEPFILES)
 
