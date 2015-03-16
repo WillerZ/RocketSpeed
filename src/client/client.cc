@@ -5,6 +5,7 @@
 //
 #include "src/client/client.h"
 
+#include <cassert>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -87,11 +88,44 @@ struct ClientResultStatus : public ResultStatus {
   SequenceNumber seqno_;
 };
 
+// An implementation of the Client API that represents a creation error.
+class ClientCreationError : public Client {
+ public:
+  explicit ClientCreationError(const Status& creationStatus)
+    : creationStatus_(creationStatus)
+  {}
+
+  virtual Status Start(SubscribeCallback,
+                       MessageReceivedCallback,
+                       RestoreStrategy) {
+    return creationStatus_;
+  }
+
+  virtual PublishStatus Publish(const Topic&,
+                                const NamespaceID,
+                                const TopicOptions&,
+                                const Slice&,
+                                PublishCallback,
+                                const MsgId messageId) {
+    return PublishStatus(creationStatus_, messageId);
+  }
+
+  virtual void ListenTopics(const std::vector<SubscriptionRequest>&) {}
+  virtual void Acknowledge(const MessageReceived&) {}
+  virtual void SaveSubscriptions(SnapshotCallback) {}
+
+ private:
+  Status creationStatus_;
+};
+
 Status Client::Create(ClientOptions options, std::unique_ptr<Client>* client) {
-  std::unique_ptr<ClientImpl> client_ptr;
-  auto st = ClientImpl::Create(std::move(options), &client_ptr);
+  assert (client);
+  std::unique_ptr<ClientImpl> clientImpl;
+  auto st = ClientImpl::Create(std::move(options), &clientImpl);
   if (st.ok()) {
-    *client = std::move(client_ptr);
+    client->reset(clientImpl.release());
+  } else {
+    client->reset(new ClientCreationError(st));
   }
   return st;
 }
@@ -99,9 +133,7 @@ Status Client::Create(ClientOptions options, std::unique_ptr<Client>* client) {
 Status ClientImpl::Create(ClientOptions options,
                           std::unique_ptr<ClientImpl>* client) {
   // Validate arguments.
-  if (client == nullptr) {
-    return Status::InvalidArgument("Client pointer must not be null.");
-  }
+  assert (client);
   if (options.config.GetTenantID() <= 100) {
     return Status::InvalidArgument("TenantId must be greater than 100.");
   }

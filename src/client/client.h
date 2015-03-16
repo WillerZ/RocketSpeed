@@ -46,7 +46,7 @@ class ClientImpl : public Client {
                                 const TopicOptions& options,
                                 const Slice& data,
                                 PublishCallback callback,
-                                const MsgId messageId = MsgId());
+                                const MsgId messageId);
 
   virtual void ListenTopics(const std::vector<SubscriptionRequest>& names);
 
