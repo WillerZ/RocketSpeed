@@ -143,8 +143,9 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(
     options.wake_lock = std::make_shared<WakeLock>(wake_lock);
   }
 
+  rocketspeed::SubscribeCallback subscribe_callback1;
   if (subscribe_callback) {
-    subscription_callback_ =
+    subscribe_callback1 =
         [subscribe_callback](SubscriptionStatus status) {
       subscribe_callback->Call(FromStatus(status.status),
                                fromNamespaceID(status.namespace_id),
@@ -175,7 +176,8 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(
   if (!status.ok()) {
     throw std::runtime_error(status.ToString());
   }
-  return std::make_shared<Client>(std::move(client_raw));
+  return std::make_shared<Client>(std::move(client_raw),
+                                  std::move(subscribe_callback1));
 }
 
 Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
@@ -201,7 +203,7 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
                               : (restore_subscriptions ? Restore::kRestoreOnly
                                                        : Restore::kDontRestore);
   auto status = client_->Start(
-      std::move(subscription_callback_), receive_callback1, restore_strategy);
+      std::move(subscribe_callback_), receive_callback1, restore_strategy);
   return FromStatus(status);
 }
 

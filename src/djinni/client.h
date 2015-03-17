@@ -7,6 +7,8 @@
 
 #include <memory>
 
+#include "include/RocketSpeed.h"
+
 #include "src-gen/djinni/cpp/ClientImpl.hpp"
 #include "src-gen/djinni/cpp/MsgIdImpl.hpp"
 #include "src-gen/djinni/cpp/PublishStatus.hpp"
@@ -15,9 +17,6 @@
 #include "src-gen/djinni/cpp/SubscriptionRequestImpl.hpp"
 
 namespace rocketspeed {
-
-class Client;
-
 namespace djinni {
 
 class PublishCallbackImpl;
@@ -25,8 +24,10 @@ class SnapshotCallbackImpl;
 
 class Client : public ClientImpl {
  public:
-  explicit Client(std::unique_ptr<rocketspeed::Client> client)
-      : client_(std::move(client)) {
+  explicit Client(std::unique_ptr<rocketspeed::Client> client,
+                  rocketspeed::SubscribeCallback subscribe_callback)
+      : client_(std::move(client))
+      , subscribe_callback_(std::move(subscribe_callback)) {
   }
 
   Status Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
@@ -55,7 +56,7 @@ class Client : public ClientImpl {
  private:
   std::unique_ptr<rocketspeed::Client> client_;
   /** Stores callback pointer between client creation and startup. */
-  rocketspeed::SubscribeCallback subscription_callback_;
+  rocketspeed::SubscribeCallback subscribe_callback_;
 };
 
 }  // namespace djinni
