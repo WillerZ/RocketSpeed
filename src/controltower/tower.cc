@@ -17,6 +17,7 @@
 #include "src/util/storage.h"
 
 namespace rocketspeed {
+
 /**
  * Sanitize user-specified options
  */
@@ -86,32 +87,47 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
     return Status::InvalidArgument("Log router must be provided");
   }
 
-  *ct = new ControlTower(options);
-  const ControlTowerOptions opt = (*ct)->GetOptions();
+  ControlTower* tower = new ControlTower(options);
+  const ControlTowerOptions opt = tower->GetOptions();
 
   // Start the LogTailer first.
   Tailer* tailer;
-  Status st = Tailer::CreateNewInstance(opt.env, (*ct)->rooms_,
+  Status st = Tailer::CreateNewInstance(opt.env,
                                         options.storage,
                                         opt.info_log,
                                         &tailer);
   if (!st.ok()) {
-    delete *ct;
+    delete tower;
     return st;
   }
-  (*ct)->tailer_.reset(tailer);
+  tower->tailer_.reset(tailer);
 
   // The ControlRooms keep a pointer to the Tailer, so create
   // these after the Tailer is created. The port numbers for
   // the rooms are adjacent to the port number of the ControlTower.
   for (unsigned int i = 0; i < opt.number_of_rooms; i++) {
-    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, *ct, i));
-    (*ct)->rooms_.push_back(std::move(newroom));
+    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, tower, i));
+    tower->rooms_.push_back(std::move(newroom));
   }
 
   // Initialize the tailer
   // Needs to be done after constructing rooms.
-  st = (*ct)->tailer_->Initialize();
+  auto on_message = [tower] (std::unique_ptr<Message> msg, LogID log_id) {
+    // Process message from the tailer.
+    // Find room to handle this log ID.
+    int room_number = static_cast<int>(log_id % tower->rooms_.size());
+    ControlRoom* room = tower->rooms_[room_number].get();
+    Status status = room->Forward(std::move(msg), log_id, -1);
+    if (!status.ok()) {
+      LOG_WARN(tower->options_.info_log,
+        "Failed to forward message to room %d",
+        room_number);
+    }
+  };
+
+  // One reader per room.
+  unsigned int num_readers = static_cast<unsigned int>(tower->rooms_.size());
+  st = tower->tailer_->Initialize(std::move(on_message), num_readers);
   if (!st.ok()) {
     return st;
   }
@@ -119,17 +135,18 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
   // Start background threads for Room msg loops
   unsigned int numrooms = opt.number_of_rooms;
   for (unsigned int i = 0; i < numrooms; i++) {
-    ControlRoom* room = (*ct)->rooms_[i].get();
+    ControlRoom* room = tower->rooms_[i].get();
     BaseEnv::ThreadId t = opt.env->StartThread(ControlRoom::Run, room,
                   "rooms-" + std::to_string(room->GetRoomNumber()));
-    (*ct)->room_thread_id_.push_back(t);
+    tower->room_thread_id_.push_back(t);
   }
   // Wait for all the Rooms to be ready to process events
   for (unsigned int i = 0; i < numrooms; i++) {
-    while (!(*ct)->rooms_[i].get()->IsRunning()) {
+    while (!tower->rooms_[i].get()->IsRunning()) {
       std::this_thread::yield();
     }
   }
+  *ct = tower;
   return Status::OK();
 }
 

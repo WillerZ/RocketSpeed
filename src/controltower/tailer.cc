@@ -29,10 +29,8 @@ struct LogRecordMessageData : public MessageData {
   std::unique_ptr<LogRecord> record_;
 };
 
-Tailer::Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
-               std::shared_ptr<LogStorage> storage,
+Tailer::Tailer(std::shared_ptr<LogStorage> storage,
                std::shared_ptr<Logger> info_log) :
-  rooms_(rooms),
   storage_(storage),
   info_log_(info_log) {
 }
@@ -40,15 +38,20 @@ Tailer::Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
 Tailer::~Tailer() {
 }
 
-Status Tailer::Initialize() {
+Status Tailer::Initialize(
+    std::function<void(std::unique_ptr<Message>, LogID)> on_message,
+    unsigned int num_readers) {
   if (reader_.size() != 0) {
     return Status::OK();  // already initialized, nothing more to do
   }
+
+  if (!on_message) {
+    return Status::InvalidArgument("on_message must not be null");
+  }
+
   // define a lambda for callback
-  auto record_cb = [this] (std::unique_ptr<LogRecord> record) {
+  auto record_cb = [this, on_message] (std::unique_ptr<LogRecord> record) {
     LogID log_id = record->log_id;
-    int room_number = static_cast<int>(log_id % rooms_.size());
-    ControlRoom* room = rooms_[room_number].get();
 
     // Convert storage record into RocketSpeed message.
     Status st;
@@ -69,13 +72,13 @@ Status Tailer::Initialize() {
     }
     assert(st.ok());
 
-    // forward to appropriate room
+    // Invoke message callback.
     std::unique_ptr<Message> m(msg);
-    st = room->Forward(std::move(m), log_id, -1);
+    on_message(std::move(m), log_id);
     assert(st.ok());
   };
 
-  auto gap_cb = [this] (const GapRecord& record) {
+  auto gap_cb = [this, on_message] (const GapRecord& record) {
     // Log the gap.
     switch (record.type) {
       case GapType::kDataLoss:
@@ -97,31 +100,28 @@ Status Tailer::Initialize() {
         break;
     }
 
-    // Create message to send to control room.
+    // Create message to send downstream.
     // We don't know the tenant ID at this point, or the host ID. These will
-    // have to be set in the control room.
+    // have to be set later.
     std::unique_ptr<Message> msg(new MessageGap(Tenant::InvalidTenant,
                                                 ClientID(),
                                                 record.type,
                                                 record.from,
                                                 record.to));
-
-    int room_number = static_cast<int>(record.log_id % rooms_.size());
-    ControlRoom* room = rooms_[room_number].get();
-    room->Forward(std::move(msg), record.log_id, -1);
+    on_message(std::move(msg), record.log_id);
   };
 
   // create log reader. There is one reader per ControlRoom.
   std::vector<AsyncLogReader*> handle;
   Status st = storage_->CreateAsyncReaders(
-                           static_cast<unsigned int>(rooms_.size()),
+                           num_readers,
                            record_cb,
                            gap_cb,
                            &handle);
   if (!st.ok()) {
     return st;
   }
-  assert(handle.size() == rooms_.size());
+  assert(handle.size() == num_readers);
 
   // store all the Readers
   for (unsigned int i = 0; i < handle.size(); i++) {
@@ -129,44 +129,43 @@ Status Tailer::Initialize() {
   }
 
   // initialize the number of open logs per reader to zero.
-  num_open_logs_per_reader_.resize(rooms_.size(), 0);
+  num_open_logs_per_reader_.resize(num_readers, 0);
   return Status::OK();
 }
 
 // Create a new instance of the LogStorage
 Status
 Tailer::CreateNewInstance(Env* env,
-                          const std::vector<unique_ptr<ControlRoom>>& rooms,
                           std::shared_ptr<LogStorage> storage,
                           std::shared_ptr<Logger> info_log,
                           Tailer** tailer) {
-  *tailer = new Tailer(rooms, storage, info_log);
+  *tailer = new Tailer(storage, info_log);
   return Status::OK();
 }
 
 Status Tailer::StartReading(LogID logid,
                             SequenceNumber start,
-                            unsigned int room_id,
+                            unsigned int reader_id,
                             bool first_open) const {
   if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
-  AsyncLogReader* r = reader_[room_id].get();
+  AsyncLogReader* r = reader_[reader_id].get();
   Status st = r->Open(logid, start);
   if (st.ok()) {
     LOG_INFO(info_log_,
              "AsyncReader %u start reading Log(%" PRIu64 ")@%" PRIu64 ".",
-             room_id,
+             reader_id,
              logid,
              start);
     if (first_open) {
-      num_open_logs_per_reader_[room_id]++;
+      num_open_logs_per_reader_[reader_id]++;
     }
   } else {
     LOG_WARN(info_log_,
              "AsyncReader %u failed to start reading Log(%" PRIu64
              ")@%" PRIu64 "(%s).",
-             room_id,
+             reader_id,
              logid,
              start,
              st.ToString().c_str());
@@ -176,21 +175,21 @@ Status Tailer::StartReading(LogID logid,
 
 // Stop reading from this log
 Status
-Tailer::StopReading(LogID logid, unsigned int room_id) const {
+Tailer::StopReading(LogID logid, unsigned int reader_id) const {
   if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
-  AsyncLogReader* r = reader_[room_id].get();
+  AsyncLogReader* r = reader_[reader_id].get();
   Status st = r->Close(logid);
   if (st.ok()) {
     LOG_INFO(info_log_,
         "AsyncReader %u stopped reading Log(%" PRIu64 ").",
-        room_id, logid);
-    num_open_logs_per_reader_[room_id]--;
+        reader_id, logid);
+    num_open_logs_per_reader_[reader_id]--;
   } else {
     LOG_WARN(info_log_,
         "AsyncReader %u failed to stop reading Log(%" PRIu64 ") (%s).",
-        room_id, logid, st.ToString().c_str());
+        reader_id, logid, st.ToString().c_str());
   }
   return st;
 }
@@ -213,7 +212,7 @@ Tailer::FindLatestSeqno(LogID logid,
 int
 Tailer::NumberOpenLogs() const {
   int count = 0;
-  for (unsigned int i = 0; i < rooms_.size(); i++) {
+  for (size_t i = 0; i < num_open_logs_per_reader_.size(); i++) {
     count += num_open_logs_per_reader_[i];
   }
   return count;

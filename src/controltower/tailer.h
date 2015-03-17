@@ -10,7 +10,6 @@
 #include "./Types.h"
 #include "src/port/Env.h"
 #include "src/util/storage.h"
-#include "src/controltower/room.h"
 
 namespace rocketspeed {
 
@@ -26,13 +25,20 @@ class Tailer {
   // create a Tailer
   static Status CreateNewInstance(
                            Env* env,
-                           const std::vector<unique_ptr<ControlRoom>>& rooms,
                            std::shared_ptr<LogStorage> storage,
                            std::shared_ptr<Logger> info_log,
                            Tailer** tailer);
 
-  // Initialize the Tailer first before using it
-  Status Initialize();
+  /**
+   * Initialize the Tailer first before using it.
+   *
+   * @param on_message Callback for when a record or gap is received.
+   * @param num_readers Number of reader IDs to allocate.
+   * @return ok if successful, otherwise error code.
+   */
+  Status Initialize(
+    std::function<void(std::unique_ptr<Message>, LogID)> on_message,
+    unsigned int num_readers);
 
   /**
    * Opens the specified log at specified position or reseeks to the position if
@@ -40,12 +46,12 @@ class Tailer {
    */
   Status StartReading(LogID logid,
                       SequenceNumber start,
-                      unsigned int roomid,
+                      unsigned int reader_id,
                       bool first_open) const;
 
   // No more records from this log anymore
   // This call is not thread-safe.
-  Status StopReading(LogID logid, unsigned int roomid) const;
+  Status StopReading(LogID logid, unsigned int reader_id) const;
 
   // Asynchronously finds the latest seqno then
   // invokes the callback.
@@ -56,12 +62,8 @@ class Tailer {
 
  private:
   // private constructor
-  Tailer(const std::vector<unique_ptr<ControlRoom>>& rooms,
-         std::shared_ptr<LogStorage> storage,
+  Tailer(std::shared_ptr<LogStorage> storage,
          std::shared_ptr<Logger> info_log);
-
-  // A pointer to all the rooms
-  const std::vector<unique_ptr<ControlRoom>>& rooms_;
 
   // The Storage device
   const std::shared_ptr<LogStorage> storage_;
