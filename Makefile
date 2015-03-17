@@ -74,9 +74,9 @@ JARFLAGS = -cf
 JAR = jar
 
 TESTS = \
-	autovector_test \
 	arena_test \
 	coding_test \
+	autovector_test \
 	env_test \
 	consistent_hash_test \
 	guid_generator_test \

@@ -2,345 +2,264 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
-
-#include <atomic>
-#include <iostream>
-#include <memory>
-
-#include "src/port/Env.h"
+//
 #include "src/util/common/autovector.h"
+#include "src/util/random.h"
 #include "src/util/testharness.h"
-#include "src/util/testutil.h"
+#include <string>
+#include <random>
+#include <vector>
 
 namespace rocketspeed {
 
-using namespace std;
+class AutoVectorTest {};
 
-class AutoVectorTest { };
-
-const unsigned long kSize = 8;
-TEST(AutoVectorTest, PushBackAndPopBack) {
-  autovector<size_t, kSize> vec;
-  ASSERT_TRUE(vec.empty());
-  ASSERT_EQ(0ul, vec.size());
-
-  for (size_t i = 0; i < 1000 * kSize; ++i) {
-    vec.push_back(i);
-    ASSERT_TRUE(!vec.empty());
-    if (i < kSize) {
-      ASSERT_TRUE(vec.only_in_stack());
-    } else {
-      ASSERT_TRUE(!vec.only_in_stack());
-    }
-    ASSERT_EQ(i + 1, vec.size());
-    ASSERT_EQ(i, vec[i]);
-    ASSERT_EQ(i, vec.at(i));
-  }
-
-  size_t size = vec.size();
-  while (size != 0) {
-    vec.pop_back();
-    // will always be in heap
-    ASSERT_TRUE(!vec.only_in_stack());
-    ASSERT_EQ(--size, vec.size());
-  }
-
-  ASSERT_TRUE(vec.empty());
+template <class AutoVector>
+inline bool IsOnStack(const AutoVector& autoVector)
+{
+  const void *begin = &autoVector;
+  const void *end = &autoVector + 1;
+  return begin <= autoVector.data() && autoVector.data() < end;
 }
 
-TEST(AutoVectorTest, EmplaceBack) {
-  typedef std::pair<size_t, std::string> ValueType;
-  autovector<ValueType, kSize> vec;
-
-  for (size_t i = 0; i < 1000 * kSize; ++i) {
-    vec.emplace_back(i, std::to_string(i + 123));
-    ASSERT_TRUE(!vec.empty());
-    if (i < kSize) {
-      ASSERT_TRUE(vec.only_in_stack());
-    } else {
-      ASSERT_TRUE(!vec.only_in_stack());
-    }
-
-    ASSERT_EQ(i + 1, vec.size());
-    ASSERT_EQ(i, vec[i].first);
-    ASSERT_EQ(std::to_string(i + 123), vec[i].second);
-  }
-
-  vec.clear();
-  ASSERT_TRUE(vec.empty());
-  ASSERT_TRUE(!vec.only_in_stack());
+TEST(AutoVectorTest, DefaultCapacity) {
+  ASSERT_EQ(autovector<int>().capacity(), 8);
 }
 
-TEST(AutoVectorTest, Resize) {
-  autovector<size_t, kSize> vec;
-
-  vec.resize(kSize);
-  ASSERT_TRUE(vec.only_in_stack());
-  for (size_t i = 0; i < kSize; ++i) {
-    vec[i] = i;
-  }
-
-  vec.resize(kSize * 2);
-  ASSERT_TRUE(!vec.only_in_stack());
-  for (size_t i = 0; i < kSize; ++i) {
-    ASSERT_EQ(vec[i], i);
-  }
-  for (size_t i = 0; i < kSize; ++i) {
-    vec[i + kSize] = i;
-  }
-
-  vec.resize(1);
-  ASSERT_EQ(1U, vec.size());
+TEST(AutoVectorTest, DefaultConstructor) {
+  autovector<int, 3> vec;
+  ASSERT_TRUE(IsOnStack(vec));
+  ASSERT_EQ(vec.size(), 0);
+  ASSERT_EQ(vec.capacity(), 3);
 }
 
-namespace {
-void AssertEqual(
-    const autovector<size_t, kSize>& a, const autovector<size_t, kSize>& b) {
-  ASSERT_EQ(a.size(), b.size());
-  ASSERT_EQ(a.empty(), b.empty());
-  ASSERT_EQ(a.only_in_stack(), b.only_in_stack());
-  for (size_t i = 0; i < a.size(); ++i) {
-    ASSERT_EQ(a[i], b[i]);
+TEST(AutoVectorTest, ConstructorWithSize) {
+  { // on stack
+    autovector<int, 3> vec(2);
+    ASSERT_TRUE(IsOnStack(vec));
+    ASSERT_EQ(vec.size(), 2);
+    ASSERT_EQ(vec.capacity(), 3);
+    ASSERT_EQ(vec[0], 0);
+    ASSERT_EQ(vec[1], 0);
   }
-}
-}  // namespace
-
-TEST(AutoVectorTest, CopyAndAssignment) {
-  // Test both heap-allocated and stack-allocated cases.
-  for (auto size : { kSize / 2, kSize * 1000 }) {
-    autovector<size_t, kSize> vec;
-    for (size_t i = 0; i < size; ++i) {
-      vec.push_back(i);
-    }
-
-    {
-      autovector<size_t, kSize> other;
-      other = vec;
-      AssertEqual(other, vec);
-    }
-
-    {
-      autovector<size_t, kSize> other(vec);
-      AssertEqual(other, vec);
-    }
+  { // in heap
+    autovector<int, 3> vec(4);
+    ASSERT_TRUE(!IsOnStack(vec));
+    ASSERT_EQ(vec.size(), 4);
+    ASSERT_EQ(vec.capacity(), 4);
+    ASSERT_EQ(vec[0], 0);
+    ASSERT_EQ(vec[1], 0);
+    ASSERT_EQ(vec[2], 0);
+    ASSERT_EQ(vec[3], 0);
   }
 }
 
-TEST(AutoVectorTest, Iterators) {
-  autovector<std::string, kSize> vec;
-  for (size_t i = 0; i < kSize * 1000; ++i) {
-    vec.push_back(std::to_string(i));
+TEST(AutoVectorTest, ConstructorWithSizeAndValue) {
+  { // on stack
+    autovector<int, 3> vec(2, -1);
+    ASSERT_TRUE(IsOnStack(vec));
+    ASSERT_EQ(vec.size(), 2);
+    ASSERT_EQ(vec.capacity(), 3);
+    ASSERT_EQ(vec[0], -1);
+    ASSERT_EQ(vec[1], -1);
   }
-
-  // basic operator test
-  ASSERT_EQ(vec.front(), *vec.begin());
-  ASSERT_EQ(vec.back(), *(vec.end() - 1));
-  ASSERT_TRUE(vec.begin() < vec.end());
-
-  // non-const iterator
-  size_t index = 0;
-  for (const auto& item : vec) {
-    ASSERT_EQ(vec[index++], item);
-  }
-
-  index = vec.size() - 1;
-  for (auto pos = vec.rbegin(); pos != vec.rend(); ++pos) {
-    ASSERT_EQ(vec[index--], *pos);
-  }
-
-  // const iterator
-  const auto& cvec = vec;
-  index = 0;
-  for (const auto& item : cvec) {
-    ASSERT_EQ(cvec[index++], item);
-  }
-
-  index = vec.size() - 1;
-  for (auto pos = cvec.rbegin(); pos != cvec.rend(); ++pos) {
-    ASSERT_EQ(cvec[index--], *pos);
-  }
-
-  // forward and backward
-  auto pos = vec.begin();
-  while (pos != vec.end()) {
-    auto old_val = *pos;
-    auto old = pos++;
-    // HACK: make sure -> works
-    ASSERT_TRUE(!old->empty());
-    ASSERT_EQ(old_val, *old);
-    ASSERT_TRUE(pos == vec.end() || old_val != *pos);
-  }
-
-  pos = vec.begin();
-  for (size_t i = 0; i < vec.size(); i += 2) {
-    // Cannot use ASSERT_EQ since that macro depends on iostream serialization
-    ASSERT_TRUE(pos + 2 - 2 == pos);
-    pos += 2;
-    ASSERT_TRUE(pos >= vec.begin());
-    ASSERT_TRUE(pos <= vec.end());
-
-    size_t diff = static_cast<size_t>(pos - vec.begin());
-    ASSERT_EQ(i + 2, diff);
+  { // in heap
+    autovector<int, 3> vec(4, -1);
+    ASSERT_TRUE(!IsOnStack(vec));
+    ASSERT_EQ(vec.size(), 4);
+    ASSERT_EQ(vec.capacity(), 4);
+    ASSERT_EQ(vec[0], -1);
+    ASSERT_EQ(vec[1], -1);
+    ASSERT_EQ(vec[2], -1);
+    ASSERT_EQ(vec[3], -1);
   }
 }
 
-TEST(AutoVectorTest, InitializerList) {
-  autovector<int, 3> v1 = {1, 2, 3};
-  ASSERT_EQ(v1[0], 1);
-  ASSERT_EQ(v1[1], 2);
-  ASSERT_EQ(v1[2], 3);
-  ASSERT_EQ(v1.size(), 3);
-
-  autovector<int, 3> v2 = {1, 2, 3, 4};
-  ASSERT_EQ(v2[0], 1);
-  ASSERT_EQ(v2[1], 2);
-  ASSERT_EQ(v2[2], 3);
-  ASSERT_EQ(v2[3], 4);
-  ASSERT_EQ(v2.size(), 4);
+TEST(AutoVectorTest, CopyConstructor) {
+  { // on stack
+    const autovector<int, 3> vec = { 0, 1 };
+    auto copy = vec;
+    ASSERT_TRUE(IsOnStack(copy));
+    ASSERT_EQ(copy.size(), 2);
+    ASSERT_EQ(copy.capacity(), 3);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[1], 1);
+  }
+  { // in heap
+    const autovector<int, 3> vec = { 0, 1, 2, 3 };
+    auto copy = vec;
+    ASSERT_TRUE(!IsOnStack(copy));
+    ASSERT_EQ(copy.size(), 4);
+    ASSERT_EQ(copy.capacity(), 4);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[3], 3);
+  }
 }
 
-TEST(AutoVectorTest, MoveOperators) {
-  autovector<std::unique_ptr<int>, 2> v1;
-  v1.emplace_back(new int(123));
-  v1.emplace_back(new int(456));
-  v1.emplace_back(new int(789));
+TEST(AutoVectorTest, MoveConstructor) {
+  { // on stack
+    autovector<int, 3> vec = { 0, 1 };
+    auto copy = std::move(vec);
+    ASSERT_TRUE(IsOnStack(copy));
+    ASSERT_EQ(vec.size(), 2);
+    ASSERT_EQ(copy.size(), 2);
+    ASSERT_EQ(copy.capacity(), 3);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[1], 1);
+  }
+  { // in heap
+    autovector<int, 3> vec = { 0, 1, 2, 3 };
+    auto copy = std::move(vec);
+    ASSERT_TRUE(!IsOnStack(copy));
+    ASSERT_EQ(vec.size(), 0); // Elements were stolen.
+    ASSERT_EQ(copy.size(), 4);
+    ASSERT_EQ(copy.capacity(), 4);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[3], 3);
+  }
+}
 
-  autovector<std::unique_ptr<int>, 2> v2(std::move(v1));
-  ASSERT_TRUE(v1.empty());
-  ASSERT_EQ(v2.size(), 3);
-  ASSERT_TRUE(v2[0] != nullptr && *v2[0] == 123);
-  ASSERT_TRUE(v2[1] != nullptr && *v2[1] == 456);
-  ASSERT_TRUE(v2[2] != nullptr && *v2[2] == 789);
+TEST(AutoVectorTest, ConstructorWithInitializerList) {
+  { // on stack
+    autovector<int, 3> vec = { 0, 1 };
+    ASSERT_TRUE(IsOnStack(vec));
+    ASSERT_EQ(vec.size(), 2);
+    ASSERT_EQ(vec.capacity(), 3);
+    ASSERT_EQ(vec[0], 0);
+    ASSERT_EQ(vec[1], 1);
+  }
+  { // in heap
+    autovector<int, 3> vec = { 0, 1, 2, 3 };
+    ASSERT_TRUE(!IsOnStack(vec));
+    ASSERT_EQ(vec.size(), 4);
+    ASSERT_EQ(vec.capacity(), 4);
+    ASSERT_EQ(vec[0], 0);
+    ASSERT_EQ(vec[3], 3);
+  }
+}
+
+TEST(AutoVectorTest, CopyOperator) {
+  using AutoVector = autovector<int, 3>;
+  { // stack to stack
+    AutoVector vec = { 0, 1 };
+    AutoVector copy = { 2 };
+    copy = std::move(vec);
+    ASSERT_TRUE(IsOnStack(copy));
+    ASSERT_EQ(copy.size(), 2);
+    ASSERT_EQ(copy.capacity(), 3);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[1], 1);
+  }
+  { // stack to heap
+    AutoVector vec = { 0, 1 };
+    AutoVector copy = { 2, 3, 4, 5 };
+    copy = std::move(vec);
+    ASSERT_TRUE(!IsOnStack(copy));
+    ASSERT_EQ(copy.size(), 2);
+    ASSERT_EQ(copy.capacity(), 4);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[1], 1);
+  }
+  { // heap to stack
+    AutoVector vec = { 0, 1, 2, 3 };
+    AutoVector copy = { 2 };
+    copy = std::move(vec);
+    ASSERT_TRUE(!IsOnStack(copy));
+    ASSERT_EQ(copy.size(), 4);
+    ASSERT_EQ(copy.capacity(), 4);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[3], 3);
+  }
+  { // heap to heap
+    AutoVector vec = { 0, 1, 2, 3 };
+    AutoVector copy = { 2, 3, 4, 5, 6 };
+    copy = std::move(vec);
+    ASSERT_TRUE(!IsOnStack(copy));
+    ASSERT_EQ(vec.size(), 5); // Vectors were swaped.
+    ASSERT_EQ(vec.capacity(), 5);
+    ASSERT_EQ(copy.size(), 4);
+    ASSERT_EQ(copy.capacity(), 4);
+    ASSERT_EQ(copy[0], 0);
+    ASSERT_EQ(copy[3], 3);
+  }
 }
 
 namespace {
-vector<string> GetTestKeys(size_t size) {
-  vector<string> keys;
-  keys.resize(size);
 
-  int index = 0;
-  for (auto& key : keys) {
-    key = "item-" + to_string(index++);
+template <class RandomGenerator>
+std::string RandomString(RandomGenerator& random_generator) {
+  std::uniform_int_distribution<size_t> size(0, 64);
+  std::uniform_int_distribution<char> chr('A', 'Z');
+  std::string result(size(random_generator), '\0');
+  for (char& c : result) {
+    c = chr(random_generator);
   }
-  return keys;
+  return result;
 }
-}  // namespace
 
-template<class TVector>
-void BenchmarkVectorCreationAndInsertion(
-    string name, size_t ops, size_t item_size,
-    const std::vector<typename TVector::value_type>& items) {
-  auto env = Env::Default();
+template <class StringVector, class RandomGenerator>
+StringVector RandomStringVector(
+    RandomGenerator& random_generator,
+    const size_t max_size
+) {
+  std::bernoulli_distribution should_erase(0.4);
+  StringVector result;
+  for (size_t i = 0; i < 100 * max_size; ++i) {
+    std::uniform_int_distribution<size_t> position(0, result.size());
 
-  int index = 0;
-  auto start_time = env->NowNanos();
-  auto ops_remaining = ops;
-  while(ops_remaining--) {
-    TVector v;
-    for (size_t i = 0; i < item_size; ++i) {
-      v.push_back(items[index++]);
+    if ((!result.empty() && should_erase(random_generator)) ||
+        result.size() == max_size)
+    {
+      result.erase(result.begin() + position(random_generator));
+    } else {
+      result.insert(result.begin() + position(random_generator),
+                    RandomString(random_generator));
     }
   }
-  auto elapsed = env->NowNanos() - start_time;
-  cout << "created " << ops << " " << name << " instances:\n\t"
-       << "each was inserted with " << item_size << " elements\n\t"
-       << "total time elapsed: " << elapsed << " (ns)" << endl;
+  return result;
 }
 
-template <class TVector>
-size_t BenchmarkSequenceAccess(string name, size_t ops, size_t elem_size) {
-  TVector v;
-  for (const auto& item : GetTestKeys(elem_size)) {
-    v.push_back(item);
-  }
-  auto env = Env::Default();
+} // namespace
 
-  auto ops_remaining = ops;
-  auto start_time = env->NowNanos();
-  size_t total = 0;
-  while (ops_remaining--) {
-    auto end = v.end();
-    for (auto pos = v.begin(); pos != end; ++pos) {
-      total += pos->size();
-    }
-  }
-  auto elapsed = env->NowNanos() - start_time;
-  cout << "performed " << ops << " sequence access against " << name << "\n\t"
-       << "size: " << elem_size << "\n\t"
-       << "total time elapsed: " << elapsed << " (ns)" << endl;
-  // HACK avoid compiler's optimization to ignore total
-  return total;
+
+TEST(AutoVectorTest, SmallRandomTest) {
+  using Vector = std::vector<std::string>;
+  using AutoVector = autovector<std::string, 8>;
+
+  const int seed = 5757;
+  const size_t max_size = 8;
+
+  std::mt19937 vector_generator(seed);
+  const auto vector =
+    RandomStringVector<Vector>(vector_generator, max_size);
+
+  std::mt19937 autovector_generator(seed);
+  const auto autovector =
+    RandomStringVector<AutoVector>(autovector_generator, max_size);
+
+  ASSERT_TRUE(IsOnStack(autovector));
+  ASSERT_TRUE(vector == Vector(autovector.begin(), autovector.end()));
 }
 
-// This test case only reports the performance between std::vector<string>
-// and autovector<string>. We chose string for comparison because in most
-// o our use cases we used std::vector<string>.
-TEST(AutoVectorTest, PerfBench) {
-  // We run same operations for kOps times in order to get a more fair result.
-  size_t kOps = 100000;
+TEST(AutoVectorTest, BigRandomTest) {
+  using Vector = std::vector<std::string>;
+  using AutoVector = autovector<std::string, 8>;
 
-  // Creation and insertion test
-  // Test the case when there is:
-  //  * no element inserted: internal array of std::vector may not really get
-  //    initialize.
-  //  * one element inserted: internal array of std::vector must have
-  //    initialized.
-  //  * kSize elements inserted. This shows the most time we'll spend if we
-  //    keep everything in stack.
-  //  * 2 * kSize elements inserted. The internal vector of
-  //    autovector must have been initialized.
-  cout << "=====================================================" << endl;
-  cout << "Creation and Insertion Test (value type: std::string)" << endl;
-  cout << "=====================================================" << endl;
+  const int seed = 5757;
+  const size_t max_size = 512;
 
-  // pre-generated unique keys
-  auto string_keys = GetTestKeys(kOps * 2 * kSize);
-  for (auto insertions : { 0ul, 1ul, kSize / 2, kSize, 2 * kSize }) {
-    BenchmarkVectorCreationAndInsertion<vector<string>>(
-      "vector<string>", kOps, insertions, string_keys
-    );
-    BenchmarkVectorCreationAndInsertion<autovector<string, kSize>>(
-      "autovector<string>", kOps, insertions, string_keys
-    );
-    cout << "-----------------------------------" << endl;
-  }
+  std::mt19937 vector_generator(seed);
+  const auto vector =
+    RandomStringVector<Vector>(vector_generator, max_size);
 
-  cout << "=====================================================" << endl;
-  cout << "Creation and Insertion Test (value type: uint64_t)" << endl;
-  cout << "=====================================================" << endl;
+  std::mt19937 autovector_generator(seed);
+  const auto autovector =
+    RandomStringVector<AutoVector>(autovector_generator, max_size);
 
-  // pre-generated unique keys
-  vector<uint64_t> int_keys(kOps * 2 * kSize);
-  for (size_t i = 0; i < kOps * 2 * kSize; ++i) {
-    int_keys[i] = i;
-  }
-  for (auto insertions : { 0ul, 1ul, kSize / 2, kSize, 2 * kSize }) {
-    BenchmarkVectorCreationAndInsertion<vector<uint64_t>>(
-      "vector<uint64_t>", kOps, insertions, int_keys
-    );
-    BenchmarkVectorCreationAndInsertion<autovector<uint64_t, kSize>>(
-      "autovector<uint64_t>", kOps, insertions, int_keys
-    );
-    cout << "-----------------------------------" << endl;
-  }
-
-  // Sequence Access Test
-  cout << "=====================================================" << endl;
-  cout << "Sequence Access Test" << endl;
-  cout << "=====================================================" << endl;
-  for (auto elem_size : { kSize / 2, kSize, 2 * kSize }) {
-    BenchmarkSequenceAccess<vector<string>>(
-        "vector", kOps, elem_size
-    );
-    BenchmarkSequenceAccess<autovector<string, kSize>>(
-        "autovector", kOps, elem_size
-    );
-    cout << "-----------------------------------" << endl;
-  }
+  ASSERT_TRUE(!IsOnStack(autovector));
+  ASSERT_TRUE(vector == Vector(autovector.begin(), autovector.end()));
 }
 
 }  // namespace rocketspeed
 
-int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
-}
+int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(); }

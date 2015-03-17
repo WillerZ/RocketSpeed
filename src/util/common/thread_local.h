@@ -12,8 +12,8 @@
 
 #include "src/port/port_posix.h"
 #include "src/util/mutexlock.h"
-#include "src/util/common/thread_local.h"
 #include "src/util/common/autovector.h"
+#include "src/util/common/thread_local.h"
 
 namespace rocketspeed {
 

@@ -6,6 +6,7 @@
 #define __STDC_FORMAT_MACROS
 #include "src/proxy/proxy.h"
 
+#include <algorithm>
 #include <climits>
 #include <functional>
 #include <thread>

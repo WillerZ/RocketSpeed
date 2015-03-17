@@ -2,356 +2,209 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
-//
+
 #pragma once
 
-#include <cassert>
-#include <algorithm>
-#include <stdexcept>
 #include <iterator>
+#include <memory>
+#include <utility>
 #include <vector>
 
 namespace rocketspeed {
 
 #ifdef ROCKETSPEED_LITE
-template <class T, size_t kSize = 8>
+template <class T, size_t kCapacity = 8>
 class autovector : public std::vector<T> {};
 #else
-// A vector that leverages pre-allocated stack-based array to achieve better
-// performance for array with small amount of items.
+
+// autovector<T,Int=1> is a sequence container that implements small buffer
+// optimization. It behaves similarly to std::vector, except until a certain
+// number of elements are reserved it does not use the heap.
 //
-// The interface resembles that of vector, but with less features since we aim
-// to solve the problem that we have in hand, rather than implementing a
-// full-fledged generic container.
+// Like standard vector, it is guaranteed to use contiguous memory. (So, after
+// it spills to the heap all the elements live in the heap buffer.)
 //
-// Currently we don't support:
-//  * reserve()/shrink_to_fit()
-//     If used correctly, in most cases, people should not touch the
-//     underlying vector at all.
-//  * random insert()/erase(), please only use push_back()/pop_back().
+// Simple usage example:
 //
-// Naming style of public methods almost follows that of the STL's.
-template <class T, size_t kSize = 8>
-class autovector {
+//   autovector<int,2> vec;
+//   vec.push_back(0); // Stored in-place on stack
+//   vec.push_back(1); // Still on the stack
+//   vec.push_back(2); // Switches to heap buffer.
+//
+template <typename T, size_t kCapacity = 8>
+class autovector;
+
+namespace detail {
+
+template <typename T, size_t kCapacity>
+class AutoVectorAllocator {
  public:
-  // General STL-style container member types.
-  typedef T value_type;
-  typedef typename std::vector<T>::difference_type difference_type;
-  typedef typename std::vector<T>::size_type size_type;
-  typedef value_type& reference;
-  typedef const value_type& const_reference;
-  typedef value_type* pointer;
-  typedef const value_type* const_pointer;
+  using value_type = T;
 
-  // This class is the base for regular/const iterator
-  template <class TAutoVector, class TValueType>
-  class iterator_impl {
-   public:
-    // -- iterator traits
-    typedef iterator_impl<TAutoVector, TValueType> self_type;
-    typedef TValueType value_type;
-    typedef TValueType& reference;
-    typedef TValueType* pointer;
-    typedef typename TAutoVector::difference_type difference_type;
-    typedef std::random_access_iterator_tag iterator_category;
-
-    iterator_impl(TAutoVector* vect, size_t index)
-        : vect_(vect), index_(index) {};
-    iterator_impl(const iterator_impl&) = default;
-    ~iterator_impl() {}
-    iterator_impl& operator=(const iterator_impl&) = default;
-
-    // -- Advancement
-    // iterator++
-    self_type& operator++() {
-      ++index_;
-      return *this;
-    }
-
-    // ++iterator
-    self_type operator++(int) {
-      auto old = *this;
-      ++index_;
-      return old;
-    }
-
-    // iterator--
-    self_type& operator--() {
-      --index_;
-      return *this;
-    }
-
-    // --iterator
-    self_type operator--(int) {
-      auto old = *this;
-      --index_;
-      return old;
-    }
-
-    self_type operator-(difference_type len) {
-      return self_type(vect_, index_ - len);
-    }
-
-    difference_type operator-(const self_type& other) {
-      assert(vect_ == other.vect_);
-      return index_ - other.index_;
-    }
-
-    self_type operator+(difference_type len) {
-      return self_type(vect_, index_ + len);
-    }
-
-    self_type& operator+=(difference_type len) {
-      index_ += len;
-      return *this;
-    }
-
-    self_type& operator-=(difference_type len) {
-      index_ -= len;
-      return *this;
-    }
-
-    // -- Reference
-    reference operator*() {
-      assert(vect_->size() >= index_);
-      return (*vect_)[index_];
-    }
-    const reference operator*() const {
-      assert(vect_->size() >= index_);
-      return (*vect_)[index_];
-    }
-    pointer operator->() {
-      assert(vect_->size() >= index_);
-      return &(*vect_)[index_];
-    }
-
-    // -- Logical Operators
-    bool operator==(const self_type& other) const {
-      assert(vect_ == other.vect_);
-      return index_ == other.index_;
-    }
-
-    bool operator!=(const self_type& other) const { return !(*this == other); }
-
-    bool operator>(const self_type& other) const {
-      assert(vect_ == other.vect_);
-      return index_ > other.index_;
-    }
-
-    bool operator<(const self_type& other) const {
-      assert(vect_ == other.vect_);
-      return index_ < other.index_;
-    }
-
-    bool operator>=(const self_type& other) const {
-      assert(vect_ == other.vect_);
-      return index_ >= other.index_;
-    }
-
-    bool operator<=(const self_type& other) const {
-      assert(vect_ == other.vect_);
-      return index_ <= other.index_;
-    }
-
-   private:
-    TAutoVector* vect_ = nullptr;
-    size_t index_ = 0;
+  template <typename U>
+  struct rebind {
+    typedef AutoVectorAllocator<U, kCapacity> other;
   };
 
-  typedef iterator_impl<autovector, value_type> iterator;
-  typedef iterator_impl<const autovector, const value_type> const_iterator;
-  typedef std::reverse_iterator<iterator> reverse_iterator;
-  typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
+  AutoVectorAllocator() = default;
 
-  autovector() = default;
-  ~autovector() = default;
+  AutoVectorAllocator(const AutoVectorAllocator&) = delete;
 
-  // -- Immutable operations
-  // Indicate if all data resides in in-stack data structure.
-  bool only_in_stack() const {
-    // If no element was inserted at all, the vector's capacity will be `0`.
-    return vect_.capacity() == 0;
-  }
+  AutoVectorAllocator& operator= (const AutoVectorAllocator&) = delete;
 
-  size_type size() const { return num_stack_items_ + vect_.size(); }
-
-  // resize does not guarantee anything about the contents of the newly
-  // available elements
-  void resize(size_type n) {
-    if (n > kSize) {
-      vect_.resize(n - kSize);
-      num_stack_items_ = kSize;
+  T* allocate(size_t n, void* hint = nullptr) {
+    if (n <= kCapacity) {
+      return buffer();
     } else {
-      vect_.clear();
-      num_stack_items_ = n;
+      return std::allocator<T>().allocate(n, hint);
     }
   }
 
-  bool empty() const { return size() == 0; }
-
-  // will not check boundry
-  const_reference operator[](size_type n) const {
-    return n < kSize ? values_[n] : vect_[n - kSize];
-  }
-
-  reference operator[](size_type n) {
-    return n < kSize ? values_[n] : vect_[n - kSize];
-  }
-
-  // will check boundry
-  const_reference at(size_type n) const {
-    if (n >= size()) {
-      throw std::out_of_range("autovector: index out of range");
+  void deallocate(T* ptr, size_t n) {
+    if (ptr != buffer()) {
+      std::allocator<T>().deallocate(ptr, n);
     }
-    return (*this)[n];
-  }
-
-  reference at(size_type n) {
-    if (n >= size()) {
-      throw std::out_of_range("autovector: index out of range");
-    }
-    return (*this)[n];
-  }
-
-  reference front() {
-    assert(!empty());
-    return *begin();
-  }
-
-  const_reference front() const {
-    assert(!empty());
-    return *begin();
-  }
-
-  reference back() {
-    assert(!empty());
-    return *(end() - 1);
-  }
-
-  const_reference back() const {
-    assert(!empty());
-    return *(end() - 1);
-  }
-
-  // -- Mutable Operations
-  void push_back(T&& item) {
-    if (num_stack_items_ < kSize) {
-      values_[num_stack_items_++] = std::move(item);
-    } else {
-      vect_.push_back(item);
-    }
-  }
-
-  void push_back(const T& item) { push_back(value_type(item)); }
-
-  template <class... Args>
-  void emplace_back(Args&&... args) {
-    if (num_stack_items_ < kSize) {
-      values_[num_stack_items_++] =
-        std::move(value_type(std::forward<Args>(args)...));
-    } else {
-      vect_.emplace_back(std::forward<Args>(args)...);
-    }
-  }
-
-  void pop_back() {
-    assert(!empty());
-    if (!vect_.empty()) {
-      vect_.pop_back();
-    } else {
-      --num_stack_items_;
-    }
-  }
-
-  void clear() {
-    num_stack_items_ = 0;
-    vect_.clear();
-  }
-
-  // -- Copy and Assignment
-  autovector& assign(const autovector& other);
-
-  autovector& assign(autovector&& other) {
-    vect_ = std::move(other.vect_);
-    num_stack_items_ = other.num_stack_items_;
-    other.num_stack_items_ = 0;
-    std::move(other.values_, other.values_ + num_stack_items_, values_);
-    return *this;
-  }
-
-  autovector(const autovector& other) { assign(other); }
-
-  autovector& operator=(const autovector& other) { return assign(other); }
-
-  autovector& operator=(autovector&& other) {
-    return assign(other);
-  }
-
-  autovector(autovector&& other) noexcept {
-    assign(std::move(other));
-  }
-
-  autovector(std::initializer_list<T> init) {
-    if (init.size() > kSize) {
-      vect_.reserve(init.size() - kSize);
-    }
-    for (const T& e : init) {
-      push_back(e);
-    }
-  }
-
-  explicit autovector(size_type count, const value_type& value = value_type()) {
-    if (count > kSize) {
-      vect_.reserve(count - kSize);
-    }
-    while (count--) {
-      push_back(value);
-    }
-  }
-
-  // -- Iterator Operations
-  iterator begin() { return iterator(this, 0); }
-
-  const_iterator begin() const { return const_iterator(this, 0); }
-
-  iterator end() { return iterator(this, this->size()); }
-
-  const_iterator end() const { return const_iterator(this, this->size()); }
-
-  reverse_iterator rbegin() { return reverse_iterator(end()); }
-
-  const_reverse_iterator rbegin() const {
-    return const_reverse_iterator(end());
-  }
-
-  reverse_iterator rend() { return reverse_iterator(begin()); }
-
-  const_reverse_iterator rend() const {
-    return const_reverse_iterator(begin());
-  }
-
-  // -- Comparisons
-  bool operator==(const autovector& rhs) const {
-    return size() == rhs.size() && std::equal(begin(), end(), rhs.begin());
   }
 
  private:
-  size_type num_stack_items_ = 0;  // current number of items
-  value_type values_[kSize];       // the first `kSize` items
-  // used only if there are more than `kSize` items.
-  std::vector<T> vect_;
+  T* buffer() {
+    return static_cast<T*>(static_cast<void*>(buffer_));
+  }
+
+  using Placeholder =
+      typename std::aligned_storage<sizeof(T), alignof(T)>::type;
+
+  Placeholder buffer_[kCapacity];
 };
 
-template <class T, size_t kSize>
-autovector<T, kSize>& autovector<T, kSize>::assign(const autovector& other) {
-  // copy the internal vector
-  vect_.assign(other.vect_.begin(), other.vect_.end());
+} // namespace detail
 
-  // copy array
-  num_stack_items_ = other.num_stack_items_;
-  std::copy(other.values_, other.values_ + num_stack_items_, values_);
 
-  return *this;
-}
-#endif  // ROCKETSPEED_LITE
+template <typename T, size_t kCapacity>
+class autovector :
+       private std::vector<T, detail::AutoVectorAllocator<T, kCapacity>>
+{
+ public:
+  using Base = std::vector<T, detail::AutoVectorAllocator<T, kCapacity>>;
+  using Base::value_type;
+  using Base::iterator;
+  using Base::const_iterator;
+  using Base::reverse_iterator;
+  using Base::const_reverse_iterator;
+
+  autovector() {
+    reserve(kCapacity);
+  }
+
+  explicit autovector(size_t count, const T& value = T()) {
+    reserve(kCapacity);
+    resize(count, value);
+  }
+
+  autovector(const autovector& other) {
+    reserve(kCapacity);
+    assign(other.begin(), other.end());
+  }
+
+  autovector(autovector&& other)
+    noexcept(noexcept(T(std::move(other[0]))) &&
+             noexcept(other[0] = std::move(other[0])))
+  {
+    if (other.capacity() > kCapacity) {
+      other.swap(*this);
+      other.reserve(kCapacity);
+    } else {
+      reserve(kCapacity);
+      assign(std::make_move_iterator(other.begin()),
+             std::make_move_iterator(other.end()));
+    }
+  }
+
+  autovector(std::initializer_list<T> list) {
+    reserve(kCapacity);
+    assign(list.begin(), list.end());
+  }
+
+  autovector& operator= (const autovector& other) {
+    if (this != &other) {
+      assign(other.begin(), other.end());
+    }
+    return *this;
+  }
+
+  autovector& operator= (autovector&& other) {
+    if (this != &other) {
+      if (other.capacity() > kCapacity && capacity() > kCapacity) {
+        other.swap(*this);
+      } else {
+        assign(std::make_move_iterator(other.begin()),
+               std::make_move_iterator(other.end()));
+      }
+    }
+    return *this;
+  }
+
+  autovector& operator= (std::initializer_list<T> list) {
+    assign(list.begin(), list.end());
+  }
+
+  using Base::begin;
+  using Base::end;
+  using Base::rbegin;
+  using Base::rend;
+  using Base::cbegin;
+  using Base::cend;
+  using Base::crbegin;
+  using Base::crend;
+
+  using Base::size;
+  using Base::resize;
+  using Base::capacity;
+  using Base::empty;
+  using Base::reserve;
+  //using Base::shrink_to_fit(); // Hard to implement.
+
+  using Base::operator[];
+  using Base::at;
+  using Base::front;
+  using Base::back;
+  using Base::data;
+
+  using Base::assign;
+  using Base::push_back;
+  using Base::pop_back;
+  using Base::insert;
+  using Base::erase;
+  using Base::clear;
+  using Base::emplace_back;
+  using Base::emplace;
+  //using Base::swap; // It can't fully comply with the standard.
+
+  bool operator== (const autovector& other) const {
+    return static_cast<const Base&>(*this) == static_cast<const Base&>(other);
+  }
+
+  bool operator!= (const autovector& other) const {
+    return static_cast<const Base&>(*this) != static_cast<const Base&>(other);
+  }
+
+  bool operator< (const autovector& other) const {
+    return static_cast<const Base&>(*this) < static_cast<const Base&>(other);
+  }
+
+  bool operator> (const autovector& other) const {
+    return static_cast<const Base&>(*this) > static_cast<const Base&>(other);
+  }
+
+  bool operator<= (const autovector& other) const {
+    return static_cast<const Base&>(*this) <= static_cast<const Base&>(other);
+  }
+
+  bool operator>= (const autovector& other) const {
+    return static_cast<const Base&>(*this) >= static_cast<const Base&>(other);
+  }
+};
+
+#endif // ROCKETSPEED_LITE
+
 }  // namespace rocketspeed

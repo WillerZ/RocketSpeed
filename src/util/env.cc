@@ -11,7 +11,6 @@
 #include "src/port/Env.h"
 #include "src/port/stack_trace.h"
 #include "src/util/arena.h"
-#include "src/util/common/autovector.h"
 
 namespace rocketspeed {
 

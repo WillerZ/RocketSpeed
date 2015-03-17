@@ -7,9 +7,9 @@
 
 #include <ctime>
 
-#include "src/util/common/autovector.h"
-#include "src/util/arena.h"
 #include "src/port/Env.h"
+#include "src/util/arena.h"
+#include "src/util/common/autovector.h"
 
 namespace rocketspeed {
 

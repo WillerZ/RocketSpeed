@@ -5,9 +5,9 @@
 //
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 
 #include "include/Slice.h"
 #include "include/Status.h"
