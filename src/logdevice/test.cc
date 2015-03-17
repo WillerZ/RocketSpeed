@@ -181,7 +181,8 @@ TEST(MockLogDeviceTest, FindTime) {
     facebook::logdevice::Status status;
     lsn_t result = client->findTimeSync(logid, timestamps[i], &status);
     ASSERT_EQ(result, lsn[i]);
-    ASSERT_TRUE(status == facebook::logdevice::E::OK);
+    ASSERT_TRUE(status == facebook::logdevice::E::OK ||
+                status == facebook::logdevice::E::PARTIAL);
   }
 
   // Check using findTime as well
@@ -190,7 +191,8 @@ TEST(MockLogDeviceTest, FindTime) {
     client->findTime(logid, timestamps[i],
       [i, &count, &lsn, &checkpoint](facebook::logdevice::Status err, lsn_t l) {
         ASSERT_EQ(l, lsn[i]);
-        ASSERT_TRUE(err == facebook::logdevice::E::OK);
+        ASSERT_TRUE(err == facebook::logdevice::E::OK ||
+                    err == facebook::logdevice::E::PARTIAL);
         ++count;
         if (count == 3) {
           checkpoint.Post();

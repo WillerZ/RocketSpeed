@@ -8,9 +8,10 @@
 #include "logdevice/include/Client.h"
 #include <assert.h>
 #include <algorithm>
-#include <future>
 #include <chrono>
+#include <future>
 #include <memory>
+#include <random>
 #include <string>
 #include <thread>
 #include "include/Slice.h"
@@ -34,6 +35,7 @@ class ClientImpl : public Client {
   rocketspeed::Env* env_;
   std::unique_ptr<ClientSettings> settings_;
   std::chrono::milliseconds timeout_;
+  std::default_random_engine rng_;
 };
 
 lsn_t ClientImpl::GetLogSeqno(logid_t logid) {
@@ -270,7 +272,9 @@ lsn_t Client::findTimeSync(logid_t logid,
     ++lsn;
   }
   if (status_out) {
-    *status_out = E::OK;
+    // E::PARTIAL should be accepted as success also.
+    // Fuzzing here to get more code coverage.
+    *status_out = impl()->rng_() & 1 ? E::OK : E::PARTIAL;
   }
   return lsn;
 }

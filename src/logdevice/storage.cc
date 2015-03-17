@@ -35,6 +35,9 @@ static Status LogDeviceErrorToStatus(facebook::logdevice::Status error) {
     case facebook::logdevice::E::INVALID_CONFIG:
       return Status::IOError("LogDevice INVALID_CONFIG");
 
+    case facebook::logdevice::E::PARTIAL:
+      return Status::IOError("LogDevice PARTIAL");
+
     case facebook::logdevice::E::PREEMPTED:
       return Status::IOError("LogDevice PREEMPTED");
 
@@ -211,6 +214,13 @@ Status LogDeviceStorage::FindTimeAsync(
   // Construct callback adapted for the logdevice interface.
   auto adapted_callback = [callback] (facebook::logdevice::Status err,
                                       facebook::logdevice::lsn_t lsn) {
+    if (err == facebook::logdevice::E::PARTIAL) {
+      // Change error to E::OK.
+      // E::PARTIAL means that not all storage nodes responded, but we still
+      // have enough information for a conservative sequence number estimate.
+      // findTime is always an approximation anyway, since it uses wall time.
+      err = facebook::logdevice::E::OK;
+    }
     callback(LogDeviceErrorToStatus(err), SequenceNumber(lsn));
   };
 
