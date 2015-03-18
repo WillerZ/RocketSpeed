@@ -38,3 +38,22 @@ cpp_java_extension(
         '@/rocketspeed/github/src-gen/djinni:jni',
     ],
 )
+
+cpp_binary(
+    name = 'librocketspeedjni.so',
+    srcs = [
+        'main.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
+    ],
+    deps = [
+        ':implementation',
+        '@/rocketspeed/github/src-gen/djinni:jni',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    dlopen_enabled = True,
+)
