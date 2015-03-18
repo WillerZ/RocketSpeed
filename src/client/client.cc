@@ -165,7 +165,7 @@ Status ClientImpl::Create(ClientOptions options,
       options.config.GetPilotHostIds().front(),
       options.username,
       options.access_token,
-      false,
+      true, // We enable SSL when talking over MQTT.
       options.info_log,
       &ProxygenMQTTClient::Create);
 #endif
