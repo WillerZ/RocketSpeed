@@ -1,0 +1,20 @@
+cpp_library(
+    name = 'rollcall',
+    srcs = [
+        'rollcall.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github/include',
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/client',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:configuration',
+    ],
+    warp = False,
+)

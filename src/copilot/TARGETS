@@ -15,6 +15,7 @@ cpp_library(
     ],
     deps = [
         '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/rollcall',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',

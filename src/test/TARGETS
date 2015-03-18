@@ -56,7 +56,6 @@ cpp_unittest(
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/util/common:configuration',
         '@/rocketspeed/github/src/messages',
     ],
     tags = [
