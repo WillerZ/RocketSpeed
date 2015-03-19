@@ -18,7 +18,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
   rs_client_(std::move(client)),
   nsid_(nsid),
   start_point_(start_point),
-  callback_(callback),
+  callback_(std::move(callback)),
   state_(ReaderState::SubscriptionRequestSent),
   rollcall_topic_(GetRollcallTopicName(nsid)),
   rollcall_topic_options_(Retention::OneHour),
@@ -40,7 +40,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
     }
   };
 
-  if (callback != nullptr) {
+  if (callback_ != nullptr) {
     // If we are tailing the log, then set it up here.
     // Callback invoked on every message received from storage.
     // It converts the incoming record into a RollcallEntry record
@@ -86,7 +86,7 @@ RollcallImpl::WriteEntry(const Topic& topic_name, const NamespaceID& nsid,
                              rollcall_namespace_,
                              rollcall_topic_options_,
                              sl,
-                             publish_callback,
+                             std::move(publish_callback),
                              msgid_).status;
 }
 
