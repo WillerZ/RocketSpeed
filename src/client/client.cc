@@ -136,6 +136,8 @@ Status ClientImpl::Create(ClientOptions options,
  * sharing.
  */
 struct alignas(CACHE_LINE_SIZE) ClientWorkerData {
+  /** Asserts that this part of a state is accessed from a single thread. */
+  ThreadCheck thread_check;
   /** Map a subscribed topic to the last sequence number received. */
   std::unordered_map<TopicID, SequenceNumber> topic_map;
 };
@@ -255,11 +257,7 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                             message_id);
 }
 
-// Subscribe to a specific topics.
 void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
-  // Vector of subscriptions for each worker loop.
-  // (subscriptions are sharded on topic to worker loops).
-  std::vector<std::vector<TopicPair>> subscribe(msg_loop_->GetNumWorkers());
   std::vector<SubscriptionRequest> restore;
 
   // Determine which requests can be executed right away and which
@@ -276,10 +274,19 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
                                  : MetadataType::mUnSubscribe;
       auto start = elem.subscribe ? elem.start.get() : 0;
       int worker_id = GetWorkerForTopic(elem.topic_name);
-      subscribe[worker_id].emplace_back(start,
-                                        elem.topic_name,
-                                        type,
-                                        elem.namespace_id);
+      TopicPair topic(start, elem.topic_name, type, elem.namespace_id);
+      std::unique_ptr<Command> command(
+          new ExecuteCommand([this, topic, worker_id]() {
+            IssueSubscriptions(topic, worker_id);
+          }));
+      auto st = msg_loop_->SendCommand(std::move(command), worker_id);
+      if (!st.ok() && subscription_callback_) {
+        SubscriptionStatus error_msg;
+        error_msg.status = std::move(st);
+        error_msg.namespace_id = topic.namespace_id;
+        error_msg.topic_name = std::move(topic.topic_name);
+        subscription_callback_(std::move(error_msg));
+      }
     } else {
       restore.push_back(elem);
     }
@@ -289,36 +296,28 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
     wake_lock_.AcquireForLoadingSubscriptions();
     storage_->Load(std::move(restore));
   }
-  for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers(); ++worker_id) {
-    if (!subscribe[worker_id].empty()) {
-      IssueSubscriptions(std::move(subscribe[worker_id]), worker_id);
-    }
-  }
 }
 
-void ClientImpl::IssueSubscriptions(std::vector<TopicPair> topics,
-                                    int worker_id) {
+void ClientImpl::IssueSubscriptions(TopicPair topic, int worker_id) {
+  worker_data_[worker_id].thread_check.Check();
   // Construct message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
                           msg_loop_->GetClientId(worker_id),
-                          topics);
+                          {std::move(topic)});
 
   // Send to event loop for processing (the loop will free it).
   wake_lock_.AcquireForSending();
-  Status status = msg_loop_->SendRequest(message,
-                                         copilot_host_id_.ToClientId(),
-                                         worker_id);
+  Status status =
+      msg_loop_->SendRequest(message, copilot_host_id_.ToClientId(), worker_id);
 
   // If there was any error, invoke callback with appropriate status
   if (!status.ok() && subscription_callback_) {
-    for (auto& elem : topics) {
-      SubscriptionStatus error_msg;
-      error_msg.status = status;
-      error_msg.namespace_id = elem.namespace_id;
-      error_msg.topic_name = std::move(elem.topic_name);
-      subscription_callback_(std::move(error_msg));
-    }
+    SubscriptionStatus error_msg;
+    error_msg.status = status;
+    error_msg.namespace_id = topic.namespace_id;
+    error_msg.topic_name = std::move(topic.topic_name);
+    subscription_callback_(std::move(error_msg));
   }
 }
 
@@ -445,12 +444,9 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
 }
 
 void ClientImpl::ProcessRestoredSubscription(
-    const std::vector<SubscriptionRequest> &restored) {
-  // Vector of subscriptions for each worker loop.
-  // (subscriptions are sharded on topic to worker loops).
-  std::vector<std::vector<TopicPair>> subscribe(msg_loop_->GetNumWorkers());
-
+    const std::vector<SubscriptionRequest>& restored) {
   for (const auto& elem : restored) {
+    Status st;
     if (!elem.subscribe) {
       // We shouldn't ever restore unsubscribe request.
       LOG_WARN(info_log_,
@@ -458,28 +454,31 @@ void ClientImpl::ProcessRestoredSubscription(
                elem.namespace_id,
                elem.topic_name.c_str());
       assert(0);
+      st = Status::InternalError("Restored unsubscribe request");
     } else if (elem.start) {
       int worker_id = GetWorkerForTopic(elem.topic_name);
-      subscribe[worker_id].emplace_back(elem.start.get(),
-                                        elem.topic_name,
-                                        MetadataType::mSubscribe,
-                                        elem.namespace_id);
+      TopicPair topic(elem.start.get(),
+                      elem.topic_name,
+                      MetadataType::mSubscribe,
+                      elem.namespace_id);
+      std::unique_ptr<Command> command(
+          new ExecuteCommand([this, topic, worker_id]() {
+            IssueSubscriptions(topic, worker_id);
+          }));
+      st = msg_loop_->SendCommand(std::move(command), worker_id);
     } else {
-      // Inform the user that subscription restoring failed.
-      if (subscription_callback_) {
-        SubscriptionStatus failed_restore;
-        // This is the status returned when we failed to restore subscription.
-        failed_restore.status = Status::NotFound();
-        failed_restore.namespace_id = elem.namespace_id;
-        failed_restore.topic_name = elem.topic_name;
-        subscription_callback_(std::move(failed_restore));
-      }
+      // We couldn't restore
+      st = Status::NotFound();
     }
-  }
 
-  for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers(); ++worker_id) {
-    if (!subscribe[worker_id].empty()) {
-      IssueSubscriptions(subscribe[worker_id], worker_id);
+    if (!st.ok() && subscription_callback_) {
+      // Inform the user that subscription restoring failed.
+      SubscriptionStatus failed_restore;
+      // This is the status returned when we failed to restore subscription.
+      failed_restore.status = std::move(st);
+      failed_restore.namespace_id = elem.namespace_id;
+      failed_restore.topic_name = elem.topic_name;
+      subscription_callback_(std::move(failed_restore));
     }
   }
 }

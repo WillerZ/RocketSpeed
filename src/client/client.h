@@ -81,8 +81,6 @@ class ClientImpl : public Client {
   void ProcessRestoredSubscription(
       const std::vector<SubscriptionRequest>& restored);
 
-  void IssueSubscriptions(std::vector<TopicPair> topics, int worker_id);
-
   int GetWorkerForTopic(const Topic& name) const;
 
   /** A non-owning pointer to the environment. */
@@ -123,6 +121,8 @@ class ClientImpl : public Client {
 
   /** The publisher object, which handles write path in the client. */
   PublisherImpl publisher_;
+
+  void IssueSubscriptions(TopicPair topic, int worker_id);
 };
 
 }  // namespace rocketspeed
