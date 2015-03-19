@@ -5,9 +5,9 @@
 //
 #pragma once
 
-#include <atomic>
-#include <memory>
+#include <deque>
 #include <mutex>
+#include <type_traits>
 
 namespace rocketspeed {
 
@@ -45,18 +45,16 @@ namespace rocketspeed {
  */
 
 template <typename T>
-struct PooledObjectList;
+class PooledObjectList;
 
 /**
  * Objects that are to be pool allocated should inherit from PooledObject.
  */
 template <typename T>
-struct PooledObject {
- private:
+class PooledObject {
   // Only the pool list can access the tail.
   friend struct PooledObjectList<T>;
-
-  PooledObject<T>* tail_ = nullptr;
+  T* tail_ = nullptr;
 };
 
 /**
@@ -64,40 +62,36 @@ struct PooledObject {
  * Not thread safe.
  */
 template <typename T>
-struct PooledObjectList {
+class PooledObjectList {
+  static_assert(std::is_base_of<PooledObject<T>, T>::value,
+                "T should be a subclass of PooledObject<T>.");
  public:
+  PooledObjectList() = default;
+
   template <typename... Args>
   T* Allocate(Args&&... args) {
-    if (T* obj = static_cast<T*>(head_.release())) {
-      // List has an object, so use that memory.
-      // Just construct a new object with it.
-      head_.reset(obj->tail_);
-      obj->tail_ = nullptr;
+    if (T* obj = head_) {
+      head_ = head_->tail_;
       *obj = T(std::forward<Args>(args)...);
       return obj;
+    } else {
+      pool_.emplace_back(std::forward<Args>(args)...);
+      return &pool_.back();
     }
-    // Free list is empty, so construct a new object.
-    return new T(std::forward<Args>(args)...);
   }
 
   void Deallocate(T* obj) {
-    obj->tail_ = head_.release();
-    head_.reset(obj);
+    obj->tail_ = head_;
+    head_ = obj;
   }
 
-  ~PooledObjectList() {
-    // Delete in a loop.
-    // Doing this recursively can cause stack overflow.
-    PooledObject<T>* head = head_.release();
-    while (head) {
-      PooledObject<T>* next = head->tail_;
-      delete head;
-      head = next;
-    }
-  }
+  // Noncopyable
+  PooledObjectList(const PooledObjectList&) = delete;
+  PooledObjectList operator= (const PooledObjectList&) = delete;
 
  private:
-  std::unique_ptr<PooledObject<T>> head_;
+  T* head_ = nullptr;
+  std::deque<T> pool_;
 };
 
 /**
@@ -121,8 +115,8 @@ struct SharedPooledObjectList {
   }
 
  private:
-  PooledObjectList<T> list_;
   std::mutex mutex_;
+  PooledObjectList<T> list_;
 };
 
 }  // namespace
