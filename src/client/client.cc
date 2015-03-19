@@ -33,61 +33,6 @@
 
 namespace rocketspeed {
 
-struct ClientResultStatus : public ResultStatus {
- public:
-  ClientResultStatus(Status status,
-                     std::string serialized_message,
-                     SequenceNumber seqno)
-  : status_(status)
-  , serialized_(std::move(serialized_message))
-  , seqno_(seqno) {
-    Slice in(serialized_);
-    if (!message_.DeSerialize(&in).ok()) {
-      // Failed to deserialize a message after it has been serialized?
-      assert(false);
-      status_ = Status::InternalError("Message corrupt.");
-    }
-  }
-
-  virtual Status GetStatus() const {
-    return status_;
-  }
-
-  virtual MsgId GetMessageId() const {
-    assert(status_.ok());
-    return message_.GetMessageId();
-  }
-
-  virtual SequenceNumber GetSequenceNumber() const {
-    // Sequence number comes from the ack, not the original message.
-    assert(status_.ok());
-    return seqno_;
-  }
-
-  virtual Slice GetTopicName() const {
-    assert(status_.ok());
-    return message_.GetTopicName();
-  }
-
-  virtual NamespaceID GetNamespaceId() const {
-    assert(status_.ok());
-    return message_.GetNamespaceId();
-  }
-
-  virtual Slice GetContents() const {
-    assert(status_.ok());
-    return message_.GetPayload();
-  }
-
-  ~ClientResultStatus() {}
-
- private:
-  Status status_;
-  MessageData message_;
-  std::string serialized_;
-  SequenceNumber seqno_;
-};
-
 // An implementation of the Client API that represents a creation error.
 class ClientCreationError : public Client {
  public:
@@ -106,8 +51,8 @@ class ClientCreationError : public Client {
                                 const TopicOptions&,
                                 const Slice&,
                                 PublishCallback,
-                                const MsgId messageId) {
-    return PublishStatus(creationStatus_, messageId);
+                                const MsgId message_id) {
+    return PublishStatus(creationStatus_, message_id);
   }
 
   virtual void ListenTopics(const std::vector<SubscriptionRequest>&) {}
@@ -194,24 +139,20 @@ ClientImpl::ClientImpl(BaseEnv* env,
                        bool is_internal)
 : env_(env)
 , wake_lock_(std::move(wake_lock))
-, pilot_host_id_(pilot_host_id)
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
 , msg_loop_(msg_loop)
 , msg_loop_thread_spawned_(false)
 , storage_(std::move(storage))
 , info_log_(info_log)
-, next_worker_id_(0)
-, is_internal_(is_internal) {
+, is_internal_(is_internal)
+, publisher_(env, info_log, msg_loop, &wake_lock_, std::move(pilot_host_id)) {
   using std::placeholders::_1;
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
     ProcessData(std::move(msg));
-  };
-  callbacks[MessageType::mDataAck] = [this] (std::unique_ptr<Message> msg) {
-    ProcessDataAck(std::move(msg));
   };
   callbacks[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
     ProcessMetadata(std::move(msg));
@@ -280,65 +221,26 @@ ClientImpl::~ClientImpl() {
 }
 
 PublishStatus ClientImpl::Publish(const Topic& name,
-                                  const NamespaceID namespaceId,
+                                  const NamespaceID namespace_id,
                                   const TopicOptions& options,
                                   const Slice& data,
                                   PublishCallback callback,
-                                  const MsgId messageId) {
+                                  const MsgId message_id) {
   if (!is_internal_) {
-    if (namespaceId <= 100) {       // Namespace <= 100 are reserved
-      return PublishStatus(Status::InvalidArgument(
-                           "NamespaceID must be greater than 100."),
-                           messageId);
+    if (namespace_id <= 100) {
+      return PublishStatus(
+          Status::InvalidArgument(
+              "NamespaceIDs <= 100 are reserver for internal usage."),
+          message_id);
     }
   }
-  // Find the worker ID for this topic.
-  int worker_id = GetWorkerForTopic(name);
-  auto& worker_data = worker_data_[worker_id];
-
-  // Construct message.
-  MessageData message(MessageType::mPublish,
-                      tenant_id_,
-                      msg_loop_->GetClientId(worker_id),
-                      Slice(name),
-                      namespaceId,
-                      data,
-                      options.retention);
-
-  // Take note of message ID before we move into the command.
-  const MsgId empty_msgid = MsgId();
-  if (!(messageId == empty_msgid)) {
-    message.SetMessageId(messageId);
-  }
-  const MsgId msgid = message.GetMessageId();
-
-  // Get a serialized version of the message
-  // TODO(pja) 1 : Figure out what to do with shared strings.
-  std::string serialized;
-  message.SerializeToString(&serialized);
-
-  // Add message to the sent list.
-  PendingAck pending_ack(std::move(callback), std::move(serialized));
-  std::unique_lock<std::mutex> lock(worker_data.message_sent_mutex);
-  bool added =
-    worker_data.messages_sent.emplace(msgid, std::move(pending_ack)).second;
-  lock.unlock();
-
-  assert(added);
-
-  // Send to event loop for processing (the loop will free it).
-  wake_lock_.AcquireForSending();
-  Status status = msg_loop_->SendRequest(message,
-                                         pilot_host_id_.ToClientId(),
-                                         worker_id);
-  if (!status.ok() && added) {
-    std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
-    worker_data.messages_sent.erase(msgid);
-    lock1.unlock();
-  }
-
-  // Return status with the generated message ID.
-  return PublishStatus(status, msgid);
+  return publisher_.Publish(tenant_id_,
+                            namespace_id,
+                            name,
+                            options,
+                            data,
+                            std::move(callback),
+                            message_id);
 }
 
 // Subscribe to a specific topics.
@@ -487,59 +389,6 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
 
   // deliver message to application
   receive_callback_(std::move(newmsg));
-}
-
-// Process the Ack message for a Data Message
-void ClientImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
-  wake_lock_.AcquireForReceiving();
-  msg_loop_->ThreadCheck();
-
-  // Check that message has correct origin.
-  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
-    return;
-  }
-
-  const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
-
-  int worker_id = msg_loop_->GetThreadWorkerIndex();
-  auto& worker_data = worker_data_[worker_id];
-
-  // For each ack'd message, if it was waiting for an ack then remove it
-  // from the waiting list and let the application know about the ack.
-  for (const auto& ack : ackMsg->GetAcks()) {
-    // Find the message ID from the messages_sent list.
-    std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
-    auto it = worker_data.messages_sent.find(ack.msgid);
-    bool successful_ack = it != worker_data.messages_sent.end();
-    lock1.unlock();
-
-    // If successful, invoke callback.
-    if (successful_ack) {
-      if (it->second.callback) {
-        Status st;
-        SequenceNumber seqno = 0;
-        if (ack.status == MessageDataAck::AckStatus::Success) {
-          st = Status::OK();
-          seqno = ack.seqno;
-        } else {
-          st = Status::IOError("Publish failed");
-        }
-
-        std::unique_ptr<ClientResultStatus> result_status(
-          new ClientResultStatus(st, std::move(it->second.data), seqno));
-        it->second.callback(std::move(result_status));
-      }
-
-      // Remove sent message from list.
-      std::unique_lock<std::mutex> lock2(worker_data.message_sent_mutex);
-      worker_data.messages_sent.erase(it);
-      lock2.unlock();
-    } else {
-      // We've received an ack for a message that has already been acked
-      // (or was never sent). This is possible if a message was sent twice
-      // before the first ack arrived, so just ignore.
-    }
-  }
 }
 
 // Process Metadata response messages arriving from the Cloud.

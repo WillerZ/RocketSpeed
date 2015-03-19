@@ -19,6 +19,7 @@
 #include "include/RocketSpeed.h"
 #include "src/client/topic_id.h"
 #include "src/client/message_received.h"
+#include "src/client/publisher.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
@@ -71,9 +72,6 @@ class ClientImpl : public Client {
   // Callback for a Data message
   void ProcessData(std::unique_ptr<Message> msg);
 
-  // Callback for MessageDataAck message.
-  void ProcessDataAck(std::unique_ptr<Message> msg);
-
   // Callback for MessageMetadata message.
   void ProcessMetadata(std::unique_ptr<Message> msg);
 
@@ -91,8 +89,7 @@ class ClientImpl : public Client {
   // A wake lock used on mobile devices.
   SmartWakeLock wake_lock_;
 
-  // HostId of pilot/copilot machines to send messages to.
-  HostId pilot_host_id_;
+  // HostId of copilot machines to send messages to.
   HostId copilot_host_id_;
 
   // Tenant ID of this producer.
@@ -115,37 +112,21 @@ class ClientImpl : public Client {
   // Main logger for the client
   const std::shared_ptr<Logger> info_log_;
 
-  // Published message awaiting response.
-  struct PendingAck {
-    PendingAck(PublishCallback _callback, std::string _data)
-    : callback(std::move(_callback))
-    , data(std::move(_data)) {}
-
-    PublishCallback callback;
-    std::string data;
-  };
-
   // Data per worker thread.
   // Aligned to avoid false sharing.
   struct alignas(CACHE_LINE_SIZE) WorkerData {
     // Map a subscribed topic name to the last sequence number
     // received for this topic (one per worker thread).
     std::unordered_map<TopicID, SequenceNumber> topic_map;
-
-    // Messages sent, awaiting ack.
-    // Maps message ID -> pre-serialized message.
-    std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent;
-    std::mutex message_sent_mutex;  // mutex for operators on messages_sent_
   };
   std::unique_ptr<WorkerData[]> worker_data_;
-
-  // Worker ID to send next message from.
-  // This loops in a round robin fashion.
-  std::atomic<int> next_worker_id_;
 
   // If this is an internal client, then we will skip TenantId
   // checks and namespaceid checks.
   const bool is_internal_;
+
+  /** The publisher object, which handles write path in the client. */
+  PublisherImpl publisher_;
 };
 
 }  // namespace rocketspeed
