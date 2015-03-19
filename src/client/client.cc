@@ -22,6 +22,8 @@
 #include "include/WakeLock.h"
 #include "src/client/message_received.h"
 #include "src/client/smart_wake_lock.h"
+#include "src/messages/msg_loop_base.h"
+#include "src/port/port.h"
 #include "src/util/common/hash.h"
 
 #ifndef USE_MQTTMSGLOOP
@@ -33,7 +35,7 @@
 
 namespace rocketspeed {
 
-// An implementation of the Client API that represents a creation error.
+/** An implementation of the Client API that represents a creation error. */
 class ClientCreationError : public Client {
  public:
   explicit ClientCreationError(const Status& creationStatus)
@@ -128,6 +130,16 @@ Status ClientImpl::Create(ClientOptions options,
   return Status::OK();
 }
 
+/**
+ * State of a client. We have one such structure per worker thread, a single
+ * topic can have its state in only one such structure. Aligned to avoid false
+ * sharing.
+ */
+struct alignas(CACHE_LINE_SIZE) ClientWorkerData {
+  /** Map a subscribed topic to the last sequence number received. */
+  std::unordered_map<TopicID, SequenceNumber> topic_map;
+};
+
 ClientImpl::ClientImpl(BaseEnv* env,
                        std::shared_ptr<WakeLock> wake_lock,
                        const HostId& pilot_host_id,
@@ -158,7 +170,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
     ProcessMetadata(std::move(msg));
   };
 
-  worker_data_.reset(new WorkerData[msg_loop_->GetNumWorkers()]);
+  worker_data_.reset(new ClientWorkerData[msg_loop_->GetNumWorkers()]);
 
   msg_loop_->RegisterCallbacks(callbacks);
 

@@ -18,19 +18,21 @@
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
 #include "src/client/topic_id.h"
-#include "src/client/message_received.h"
 #include "src/client/publisher.h"
 #include "src/client/smart_wake_lock.h"
-#include "src/messages/msg_loop_base.h"
-#include "src/port/port.h"
+#include "src/messages/messages.h"
+#include "src/util/common/base_env.h"
+#include "src/util/common/statistics.h"
 
 namespace rocketspeed {
 
-class Logger;
 class ClientEnv;
+class ClientWorkerData;
+class MessageReceived;
+class Logger;
 class WakeLock;
 
-// Internal implementation of the Client API.
+/** Implementation of the client interface. */
 class ClientImpl : public Client {
  public:
   static Status Create(ClientOptions client_options,
@@ -83,7 +85,7 @@ class ClientImpl : public Client {
 
   int GetWorkerForTopic(const Topic& name) const;
 
-  // The environment
+  /** A non-owning pointer to the environment. */
   BaseEnv* env_;
 
   // A wake lock used on mobile devices.
@@ -112,14 +114,8 @@ class ClientImpl : public Client {
   // Main logger for the client
   const std::shared_ptr<Logger> info_log_;
 
-  // Data per worker thread.
-  // Aligned to avoid false sharing.
-  struct alignas(CACHE_LINE_SIZE) WorkerData {
-    // Map a subscribed topic name to the last sequence number
-    // received for this topic (one per worker thread).
-    std::unordered_map<TopicID, SequenceNumber> topic_map;
-  };
-  std::unique_ptr<WorkerData[]> worker_data_;
+  /** State of the Client, sharded by workers. */
+  std::unique_ptr<ClientWorkerData[]> worker_data_;
 
   // If this is an internal client, then we will skip TenantId
   // checks and namespaceid checks.
