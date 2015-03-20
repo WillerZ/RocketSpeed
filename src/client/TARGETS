@@ -4,6 +4,7 @@ cpp_library(
         'client.cc',
         'client_env.cc',
         'options.cc',
+        'publisher.cc',
         'storage/file_storage.cc',
     ],
     preprocessor_flags = [
