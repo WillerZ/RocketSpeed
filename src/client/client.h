@@ -71,17 +71,9 @@ class ClientImpl : public Client {
   Statistics GetStatistics() const;
 
  private:
-  // Callback for a Data message
-  void ProcessData(std::unique_ptr<Message> msg);
-
-  // Callback for MessageMetadata message.
-  void ProcessMetadata(std::unique_ptr<Message> msg);
-
   // Handler for SubscriptionStorage load all events.
   void ProcessRestoredSubscription(
       const std::vector<SubscriptionRequest>& restored);
-
-  int GetWorkerForTopic(const Topic& name) const;
 
   /** A non-owning pointer to the environment. */
   BaseEnv* env_;
@@ -122,7 +114,20 @@ class ClientImpl : public Client {
   /** The publisher object, which handles write path in the client. */
   PublisherImpl publisher_;
 
-  void IssueSubscriptions(TopicPair topic, int worker_id);
+  /** Shards topics into workers */
+  int GetWorkerForTopic(const Topic& name) const;
+
+  /** Informs the client about a status of a subscription request. */
+  void AnnounceSubscriptionStatus(TopicPair request, Status status);
+
+  /** Handles subscription requests from the client. */
+  void HandleSubscription(TopicPair request, int worker_id);
+
+  /** Handler for messages received on some topic. */
+  void ProcessData(std::unique_ptr<Message> msg);
+
+  /** Handler for metadata messages received. */
+  void ProcessMetadata(std::unique_ptr<Message> msg);
 };
 
 }  // namespace rocketspeed

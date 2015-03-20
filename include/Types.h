@@ -196,6 +196,18 @@ class SubscriptionStatus {
                          subscribed(false),
                          topic_name(""),
                          namespace_id(0) {}
+
+  SubscriptionStatus(NamespaceID _namespace_id,
+                     Topic _topic_name,
+                     SequenceNumber _seqno,
+                     bool _subscribe,
+                     Status _status)
+      : status(std::move(_status))
+      , seqno(_seqno)
+      , subscribed(_subscribe)
+      , topic_name(std::move(_topic_name))
+      , namespace_id(_namespace_id) {}
+
   Status status;
   SequenceNumber seqno;  // the start seqno of a subscription
   bool subscribed;       // true for subscription, false for unsubscription

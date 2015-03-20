@@ -130,16 +130,153 @@ Status ClientImpl::Create(ClientOptions options,
   return Status::OK();
 }
 
+/** State of a single subscription. */
+class SubscriptionState {
+ public:
+  SubscriptionState() : acks_to_skip(-1) {}
+
+  bool IsSubscribed() const {
+    return !!expected_seqno;
+  }
+
+  bool ArrivedInOrder(const MessageData& msg) {
+    assert(acks_to_skip >= -1);
+    // We currently cannot reorder an ACK with a message on the topic, we also
+    // cannot lose it, therefore we can drop any messages before the last ACK
+    // we're waiting for arrives.
+    if (acks_to_skip >= 0) {
+      return false;
+    }
+    SequenceNumber expected = expected_seqno.get(),
+                   current = msg.GetSequenceNumber();
+    // Update last seqno received for this topic, only if there is no pending
+    // request on the topic.
+    assert(acks_to_skip < 0);
+    expected_seqno = current + 1;
+    return expected <= current;
+  }
+
+  SequenceNumber GetExpected() const {
+    return expected_seqno.get();
+  }
+
+  bool Issue(TopicPair* request) {
+    assert(acks_to_skip >= -1);
+    // If there is a pending request, we'll have to skip corresponding ACK,
+    // otherwise we just note that we have one now.
+    acks_to_skip++;
+    // Update expected sequence number.
+    expected_seqno = request->topic_type == MetadataType::mSubscribe
+                         ? request->seqno
+                         : SubscriptionStart();
+    // If we had a pending before, we need to communicate its status to the
+    // client, that's why we swap requests.
+    if (acks_to_skip > 0) {
+      std::swap(pending_request, *request);
+      return true;
+    } else {
+      pending_request = std::move(*request);
+      return false;
+    }
+  }
+
+  bool Acknowledge(const TopicPair& request) {
+    assert(acks_to_skip >= -1);
+    if (acks_to_skip < 0) {
+      // There is no pending request, don't announce status.
+      return false;
+    } else {
+      // We're waiting for one less now.
+      acks_to_skip--;
+      // If that was the last one (the one currently ACKed)...
+      if (acks_to_skip < 0) {
+        // Pending request and current request must match, as we cannot lose or
+        // reorder ACKs without losing entire subscription state, in which case
+        // pending request will be the only one that we reissue on reconnection.
+        assert(pending_request.namespace_id == request.namespace_id);
+        assert(pending_request.topic_name == request.topic_name);
+        assert(pending_request.seqno == 0 ||
+               pending_request.seqno == request.seqno);
+        assert(pending_request.topic_type == request.topic_type);
+        assert(pending_request.topic_type == MetadataType::mUnSubscribe ||
+               expected_seqno.get() == pending_request.seqno);
+        // If the request was to start reading from tail of the topic, the
+        // response carries the first seqno.
+        if (pending_request.seqno == 0) {
+          expected_seqno = request.seqno;
+        }
+        return true;
+      }
+      return false;
+    }
+  }
+
+  void MarkAsLost() {
+    acks_to_skip = -1;
+  }
+
+ private:
+  /**
+   * Next expected sequence number on this topic according to the most recently
+   * issued request.
+   * This is set when we issue subscription and advances on every message if
+   * there is no pending request, otherwise remains unchanged.
+   * In case we need to resubscribe to all topics (e.g. after reconnection),
+   * this is the information that we use.
+   * If the user requested to unsubscribe from the topic, this is absent.
+   */
+  SubscriptionStart expected_seqno;
+  /**
+   * The number of ACKs that should be handled silently, because corresponding
+   * requests were replaced and the fact was communicated to the user.
+   * Nonnegative value indicates presence of pending request.
+   */
+  int acks_to_skip;
+  /**
+   * Unacked subscription request.
+   * We only keep the last pending request for each topic, and when the new one
+   * is issued by the client before the previous one is acknowledged, we invoke
+   * callback telling user that we replaced pending with the new one. ACK for
+   * replaced request will be handled silently.
+   */
+  TopicPair pending_request;
+
+  // Noncopyable
+  SubscriptionState(const SubscriptionState&) = delete;
+  SubscriptionState& operator=(const SubscriptionState&) = delete;
+};
+
 /**
  * State of a client. We have one such structure per worker thread, a single
  * topic can have its state in only one such structure. Aligned to avoid false
  * sharing.
  */
-struct alignas(CACHE_LINE_SIZE) ClientWorkerData {
+class alignas(CACHE_LINE_SIZE) ClientWorkerData {
+ public:
   /** Asserts that this part of a state is accessed from a single thread. */
   ThreadCheck thread_check;
-  /** Map a subscribed topic to the last sequence number received. */
-  std::unordered_map<TopicID, SequenceNumber> topic_map;
+  /** Contains a shard of subscriptions requested by the user. */
+  typedef std::unordered_map<TopicID, SubscriptionState> SubscriptionStateMap;
+  SubscriptionStateMap subscriptions;
+  /**
+   * Looks up subscription state for given topic.
+   * Provided request might be modified during the call, but will be reverted to
+   * original state, without invalidating any pointers.
+   */
+  SubscriptionStateMap::iterator Find(TopicPair* key) {
+    // We do this to avoid copying topic name when doing the lookup.
+    TopicID topic_id(key->namespace_id, std::move(key->topic_name));
+    auto iter = subscriptions.find(topic_id);
+    key->topic_name = std::move(topic_id.topic_name);
+    return iter;
+  }
+
+  ClientWorkerData() = default;
+
+ private:
+  // Noncopyable
+  ClientWorkerData(const ClientWorkerData&) = delete;
+  ClientWorkerData& operator=(const ClientWorkerData&) = delete;
 };
 
 ClientImpl::ClientImpl(BaseEnv* env,
@@ -277,7 +414,7 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
       TopicPair topic(start, elem.topic_name, type, elem.namespace_id);
       std::unique_ptr<Command> command(
           new ExecuteCommand([this, topic, worker_id]() {
-            IssueSubscriptions(topic, worker_id);
+            HandleSubscription(topic, worker_id);
           }));
       auto st = msg_loop_->SendCommand(std::move(command), worker_id);
       if (!st.ok() && subscription_callback_) {
@@ -298,26 +435,45 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
   }
 }
 
-void ClientImpl::IssueSubscriptions(TopicPair topic, int worker_id) {
-  worker_data_[worker_id].thread_check.Check();
-  // Construct message.
+void ClientImpl::AnnounceSubscriptionStatus(TopicPair request, Status status) {
+  assert(request.topic_type != MetadataType::mNotinitialized);
+  if (subscription_callback_) {
+    bool subscribe = request.topic_type == MetadataType::mSubscribe;
+    subscription_callback_(SubscriptionStatus(request.namespace_id,
+                                              std::move(request.topic_name),
+                                              request.seqno,
+                                              subscribe,
+                                              std::move(status)));
+  }
+}
+
+void ClientImpl::HandleSubscription(TopicPair request, int worker_id) {
+  auto& worker_data = worker_data_[worker_id];
+  worker_data.thread_check.Check();
+
+  {  // Update state of this subscription.
+    TopicID topic_id(request.namespace_id, request.topic_name);
+    auto& state = worker_data.subscriptions[std::move(topic_id)];
+    // Announce previous pending request if any.
+    TopicPair request_inout = request;
+    if (state.Issue(&request_inout)) {
+      AnnounceSubscriptionStatus(std::move(request_inout),
+                                 Status::NotInitialized());
+    }
+  }
+
+  // Construct a message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
                           msg_loop_->GetClientId(worker_id),
-                          {std::move(topic)});
+                          {std::move(request)});
 
-  // Send to event loop for processing (the loop will free it).
+  // Send to event loop for processing.
   wake_lock_.AcquireForSending();
-  Status status =
+  auto st =
       msg_loop_->SendRequest(message, copilot_host_id_.ToClientId(), worker_id);
-
-  // If there was any error, invoke callback with appropriate status
-  if (!status.ok() && subscription_callback_) {
-    SubscriptionStatus error_msg;
-    error_msg.status = status;
-    error_msg.namespace_id = topic.namespace_id;
-    error_msg.topic_name = std::move(topic.topic_name);
-    subscription_callback_(std::move(error_msg));
+  if (!st.ok()) {
+    AnnounceSubscriptionStatus(std::move(request), std::move(st));
   }
 }
 
@@ -343,103 +499,105 @@ void ClientImpl::SaveSubscriptions(SnapshotCallback snapshot_callback) {
   }
 }
 
-/*
-** Process a received data message and deliver it to application.
-*/
 void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
 
   // Check that message has correct origin.
   if (!msg_loop_->CheckMessageOrigin(msg.get())) {
+    LOG_WARN(info_log_, "Message origin does not match client ID.");
     return;
   }
 
   const MessageData* data = static_cast<const MessageData*>(msg.get());
-
-  LOG_INFO(info_log_, "Received data (%.16s)",
-    data->GetPayload().ToString().c_str());
-
-  // Extract topic id from message.
+  // Extract topic from message.
   TopicID topic_id(data->GetNamespaceId(), data->GetTopicName().ToString());
+  LOG_INFO(info_log_, "Received data (%.16s)", topic_id.topic_name.c_str());
 
-  // Get the topic map for this thread.
-  int worker_id = msg_loop_->GetThreadWorkerIndex();
-  auto& topic_map = worker_data_[worker_id].topic_map;
+  // Get worker data that this topic is assigned to.
+  int worker_id = GetWorkerForTopic(topic_id.topic_name);
+  assert(msg_loop_->GetThreadWorkerIndex() == worker_id);
+  auto& worker_data = worker_data_[worker_id];
+  worker_data.thread_check.Check();
 
-  // verify that we are subscribed to this topic
-  auto iter = topic_map.find(topic_id);
-  // No active subscription to this topic, ignore message
-  if (iter == topic_map.end()) {
+  // Check if we are subscribed to this topic.
+  auto iter = worker_data.subscriptions.find(topic_id);
+  if (iter == worker_data.subscriptions.end() ||
+      !iter->second.IsSubscribed()) {
+    // No active subscription to this topic, ignore message
     LOG_INFO(info_log_,
-      "Discarded message (%.16s) due to missing subcription for Topic(%d, %s)",
-      data->GetPayload().ToString().c_str(),
-      data->GetNamespaceId(),
-      topic_id.topic_name.c_str());
+             "Discarded message (%.16s) due to missing subcription for "
+             "Topic(%d, %s)",
+             data->GetPayload().ToString().c_str(),
+             topic_id.namespace_id,
+             topic_id.topic_name.c_str());
     return;
   }
-  SequenceNumber last_msg_received = iter->second;
+  auto& state = iter->second;
 
-  // Old message, ignore iter
-  if (data->GetSequenceNumber() <= last_msg_received) {
+  // Check if this is not a duplicate or an old message.
+  if (!state.ArrivedInOrder(*data)) {
     LOG_INFO(info_log_,
-      "Message (%.16s)@%llu received out of order on Topic(%d, %s)@%llu",
-      data->GetPayload().ToString().c_str(),
-      static_cast<long long unsigned int>(data->GetSequenceNumber()),
-      data->GetNamespaceId(),
-      topic_id.topic_name.c_str(),
-      static_cast<long long unsigned int>(last_msg_received));
+             "Message (%.16s)@%llu received out of order on Topic(%d, %s)@%llu",
+             data->GetPayload().ToString().c_str(),
+             static_cast<long long unsigned int>(data->GetSequenceNumber()),
+             topic_id.namespace_id,
+             topic_id.topic_name.c_str(),
+             static_cast<long long unsigned int>(state.GetExpected()));
     return;
   }
-  // update last seqno received for this topic
-  iter->second = data->GetSequenceNumber();
 
-  // Create message wrapper for client (do not copy payload)
+  // Create message wrapper for client (do not copy payload).
   std::unique_ptr<MessageReceivedClient> newmsg(
-                                     new MessageReceivedClient(std::move(msg)));
-
-  // deliver message to application
+      new MessageReceivedClient(std::move(msg)));
+  // Deliver message to application.
   receive_callback_(std::move(newmsg));
 }
 
-// Process Metadata response messages arriving from the Cloud.
 void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
   msg_loop_->ThreadCheck();
 
   // Check that message has correct origin.
   if (!msg_loop_->CheckMessageOrigin(msg.get())) {
+    LOG_WARN(info_log_, "Message origin does not match client ID.");
     return;
   }
 
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());
-
   // The client should receive only responses to subscribe/unsubscribe.
-  assert(meta->GetMetaType() == MessageMetadata::MetaType::Response);
+  if (meta->GetMetaType() != MessageMetadata::MetaType::Response) {
+    LOG_WARN(info_log_,
+             "Received message type, which is not a response to "
+             "subscribe/unsubscribe");
+    return;
+  }
 
-  // Get the topic map for this thread.
-  int worker_id = msg_loop_->GetThreadWorkerIndex();
-  auto& topic_map = worker_data_[worker_id].topic_map;
+  // Acknowledge subscription requests.
+  std::vector<TopicPair> requests = meta->GetTopicInfo();
+  for (auto& request : requests) {
+    // Get worker data that this topic is assigned to.
+    int worker_id = GetWorkerForTopic(request.topic_name);
+    assert(msg_loop_->GetThreadWorkerIndex() == worker_id);
+    auto& worker_data = worker_data_[worker_id];
+    worker_data.thread_check.Check();
 
-  std::vector<TopicPair> pairs = meta->GetTopicInfo();
-  // This is the response ack of a subscription request sent earlier.
-  for (auto& elem : pairs) {
-
-    // invoke application-registered callback
-    if (subscription_callback_) {
-      SubscriptionStatus ret;
-      ret.status = Status::OK();
-      ret.seqno = elem.seqno;  // start seqno of this subscription
-      ret.subscribed = (elem.topic_type == MetadataType::mSubscribe);
-      ret.topic_name = elem.topic_name;
-      ret.namespace_id = elem.namespace_id;
-      subscription_callback_(std::move(ret));
+    // Find state for this subscriptions
+    auto iter = worker_data.Find(&request);
+    if (iter == worker_data.subscriptions.end()) {
+      LOG_WARN(info_log_,
+               "Dropping unexpected subscription ACK for Topic(%d, %s)",
+               request.namespace_id,
+               request.topic_name.c_str());
+      return;
     }
-    // Record confirmed subscriptions
-    TopicID topic_id(elem.namespace_id, std::move(elem.topic_name));
-    // topic_map stores last received, so use -1 to say we want higher seqnos.
-    topic_map[topic_id] = elem.seqno - 1;
+    auto& state = iter->second;
 
+    // If the ACK matches pending request, release the latter one.
+    if (state.Acknowledge(request)) {
+      // We will not be using pending request anymore, so we can move it.
+      AnnounceSubscriptionStatus(std::move(request), Status::OK());
+    }
   }
 }
 
@@ -463,7 +621,7 @@ void ClientImpl::ProcessRestoredSubscription(
                       elem.namespace_id);
       std::unique_ptr<Command> command(
           new ExecuteCommand([this, topic, worker_id]() {
-            IssueSubscriptions(topic, worker_id);
+            HandleSubscription(topic, worker_id);
           }));
       st = msg_loop_->SendCommand(std::move(command), worker_id);
     } else {
