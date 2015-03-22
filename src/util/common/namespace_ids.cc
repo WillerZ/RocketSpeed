@@ -11,8 +11,10 @@ bool IsReserved(const NamespaceID& ns) {
   return !ns.empty() && ns[0] == '_';
 }
 
-const NamespaceID InvalidNamespace { "" };
+const NamespaceID InvalidNamespace("");
 
-const NamespaceID GuestNamespace { "guest" };
+const NamespaceID GuestNamespace("guest");
+
+const NamespaceID SytemNamespacePermanent("_sys/perm");
 
 }  // namespace rocketspeed

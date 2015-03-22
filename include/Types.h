@@ -50,6 +50,20 @@ extern const NamespaceID InvalidNamespace;
 extern const NamespaceID GuestNamespace;
 
 /**
+ * The System Namespace ID is used by the RocketSpeed system internally
+ * to store various transient pieces of metadata. It is possible that
+ * data stored in this namespace automatically get purged out after
+ * some configured period of time.
+ */
+extern const NamespaceID SytemNamespaceTransient;
+
+/**
+ * The System Namespace ID is used by the RocketSpeed system internally
+ * to store various permanent pieces of metadata.
+ */
+extern const NamespaceID SytemNamespacePermanent;
+
+/**
  * Each Topic is a string
  */
 typedef std::string Topic;

@@ -98,7 +98,8 @@ TESTS = \
   thread_local_test \
   port_android_to_string_test \
   proxy_test \
-  ordered_processor_test
+  ordered_processor_test \
+  datastore_test
 
 TOOLS = \
 	rocketbench
@@ -316,6 +317,9 @@ proxy_test: src/proxy/test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 ordered_processor_test: src/util/tests/ordered_processor_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+datastore_test: src/datastore/test/datastore_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 
