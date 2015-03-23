@@ -3,12 +3,12 @@ package org.rocketspeed;
 public class MessageReceived {
 
   private final ClientImpl clientImpl;
-  private final int namespaceId;
+  private final String namespaceId;
   private final String topicName;
   private final long sequenceNumber;
   private final byte[] contents;
 
-  /* package */ MessageReceived(ClientImpl clientImpl, int namespaceId, String topicName,
+  /* package */ MessageReceived(ClientImpl clientImpl, String namespaceId, String topicName,
                                 long sequenceNumber, byte[] contents) {
     this.clientImpl = clientImpl;
     this.namespaceId = namespaceId;
@@ -17,7 +17,7 @@ public class MessageReceived {
     this.contents = contents;
   }
 
-  public int getNamespaceId() {
+  public String getNamespaceId() {
     return namespaceId;
   }
 

@@ -35,7 +35,7 @@ class Client : public ClientImpl {
                bool resubscribe_from_storage) override;
 
   PublishStatus Publish(
-      int32_t namespace_id,
+      std::string namespace_id,
       std::string topic_name,
       RetentionBase retention,
       std::vector<uint8_t> data,
@@ -44,7 +44,7 @@ class Client : public ClientImpl {
 
   void ListenTopics(std::vector<SubscriptionRequestImpl> names) override;
 
-  void Acknowledge(int32_t namespace_id,
+  void Acknowledge(std::string namespace_id,
                    std::string topic_name,
                    int64_t sequence_number) override;
 

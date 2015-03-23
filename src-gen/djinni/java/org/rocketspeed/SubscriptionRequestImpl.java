@@ -6,7 +6,7 @@ package org.rocketspeed;
 public final class SubscriptionRequestImpl {
 
 
-    /*package*/ final int namespaceId;
+    /*package*/ final String namespaceId;
 
     /*package*/ final String topicName;
 
@@ -15,7 +15,7 @@ public final class SubscriptionRequestImpl {
     /*package*/ final Long start;
 
     public SubscriptionRequestImpl(
-            int namespaceId,
+            String namespaceId,
             String topicName,
             boolean subscribe,
             Long start) {
@@ -25,7 +25,7 @@ public final class SubscriptionRequestImpl {
         this.start = start;
     }
 
-    public int getNamespaceId() {
+    public String getNamespaceId() {
         return namespaceId;
     }
 

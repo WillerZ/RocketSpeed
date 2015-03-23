@@ -17,8 +17,8 @@ public:
     static ::rocketspeed::djinni::SubscriptionRequestImpl fromJava(JNIEnv*, jobject);
 
     const djinni::GlobalRef<jclass> clazz { djinni::jniFindClass("org/rocketspeed/SubscriptionRequestImpl") };
-    const jmethodID jconstructor { djinni::jniGetMethodID(clazz.get(), "<init>", "(ILjava/lang/String;ZLjava/lang/Long;)V") };
-    const jfieldID field_namespaceId { djinni::jniGetFieldID(clazz.get(), "namespaceId", "I") };
+    const jmethodID jconstructor { djinni::jniGetMethodID(clazz.get(), "<init>", "(Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;)V") };
+    const jfieldID field_namespaceId { djinni::jniGetFieldID(clazz.get(), "namespaceId", "Ljava/lang/String;") };
     const jfieldID field_topicName { djinni::jniGetFieldID(clazz.get(), "topicName", "Ljava/lang/String;") };
     const jfieldID field_subscribe { djinni::jniGetFieldID(clazz.get(), "subscribe", "Z") };
     const jfieldID field_start { djinni::jniGetFieldID(clazz.get(), "start", "Ljava/lang/Long;") };

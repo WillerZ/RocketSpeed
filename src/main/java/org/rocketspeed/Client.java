@@ -18,22 +18,22 @@ public class Client implements AutoCloseable {
     this.client = client;
   }
 
-  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data)
+  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data)
       throws Exception {
     return publish(namespaceID, topicName, options, data, null, null);
   }
 
-  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data,
+  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data,
                        final PublishCallback callback) throws Exception {
     return publish(namespaceID, topicName, options, data, null, callback);
   }
 
-  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data,
+  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data,
                        MsgId messageId) throws Exception {
     return publish(namespaceID, topicName, options, data, messageId, null);
   }
 
-  public MsgId publish(int namespaceID, String topicName, TopicOptions options, byte[] data,
+  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data,
                        MsgId messageId, final PublishCallback callback) throws Exception {
     MsgIdImpl messageId1 = messageId == null ? null : messageId.djinni();
     PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackAdaptor(callback);

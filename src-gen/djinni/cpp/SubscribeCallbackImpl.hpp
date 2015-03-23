@@ -13,7 +13,7 @@ class SubscribeCallbackImpl {
 public:
     virtual ~SubscribeCallbackImpl() {}
 
-    virtual void Call(Status status, int32_t namespace_id, std::string topic_name, int64_t sequence_number, bool subscribed) = 0;
+    virtual void Call(Status status, std::string namespace_id, std::string topic_name, int64_t sequence_number, bool subscribed) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

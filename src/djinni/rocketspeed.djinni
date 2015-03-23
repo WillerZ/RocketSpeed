@@ -43,7 +43,7 @@ RetentionBase = enum {
 }
 
 SubscriptionRequestImpl = record {
-  namespace_id: i32;
+  namespace_id: string;
   topic_name: string;
   subscribe: bool;
   start: optional<i64>;
@@ -56,7 +56,7 @@ ConfigurationImpl = record {
 
 PublishCallbackImpl = interface +j +o {
   Call(status: Status,
-       namespace_id: i32,
+       namespace_id: string,
        topic_name: string,
        message_id: MsgIdImpl,
        sequence_number: i64);
@@ -69,14 +69,14 @@ PublishStatus = record {
 
 SubscribeCallbackImpl = interface +j +o {
   Call(status: Status,
-       namespace_id: i32,
+       namespace_id: string,
        topic_name: string,
        sequence_number: i64,
        subscribed: bool);
 }
 
 ReceiveCallbackImpl = interface +j +o {
-  Call(namespace_id: i32,
+  Call(namespace_id: string,
        topic_name: string,
        sequence_number: i64,
        contents: binary);
@@ -116,7 +116,7 @@ ClientImpl = interface +c {
         restore_subscriptions: bool,
         resubscribe_from_storage: bool): Status;
 
-  Publish(namespace_id: i32,
+  Publish(namespace_id: string,
           topic_name: string,
           retention: RetentionBase,
           data: binary,
@@ -125,7 +125,7 @@ ClientImpl = interface +c {
 
   ListenTopics(names: list<SubscriptionRequestImpl>);
 
-  Acknowledge(namespace_id: i32,
+  Acknowledge(namespace_id: string,
               topic_name: string,
               sequence_number: i64);
 

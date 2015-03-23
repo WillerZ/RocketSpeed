@@ -4,7 +4,7 @@ public class SubscriptionRequest {
 
   private final SubscriptionRequestImpl impl;
 
-  public SubscriptionRequest(int namespaceId, String topicName, boolean subscribe,
+  public SubscriptionRequest(String namespaceId, String topicName, boolean subscribe,
                              SubscriptionStart start) {
     impl = new SubscriptionRequestImpl(namespaceId, topicName, subscribe, start.djinni());
   }

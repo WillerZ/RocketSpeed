@@ -57,7 +57,7 @@ public class WakeLockTest {
     calledBack = new Semaphore(0);
     publishCallback = new PublishCallback() {
       @Override
-      public void call(Status status, int namespaceId, String topicName, MsgId messageId,
+      public void call(Status status, String namespaceId, String topicName, MsgId messageId,
                        long sequenceNumber) {
         calledBack.release();
       }
@@ -71,7 +71,7 @@ public class WakeLockTest {
     };
     SubscribeCallback subscribeCallback = new SubscribeCallback() {
       @Override
-      public void call(Status status, int namespaceId, String topicName, long sequenceNumber,
+      public void call(Status status, String namespaceId, String topicName, long sequenceNumber,
                        boolean subscribed) {
         // We sent a message, and that was the first (and last) time a wake lock should be acquired.
         verify(wakeLock).acquire(eq(1000L));
@@ -96,7 +96,7 @@ public class WakeLockTest {
 
   @Test
   public void testLockedInCallbacks() throws Exception {
-    int ns = 101;
+    String ns = "guest";
     String topic = "test_topic-LockedInCallbacks";
 
     // This test is fishy... to make it less flaky, we'll compare timestamps and if the

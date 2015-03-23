@@ -12,7 +12,7 @@ import java.util.logging.Level;
   }
 
   @Override
-  public void Call(final int namespaceId, final String topicName, final long sequenceNumber,
+  public void Call(final String namespaceId, final String topicName, final long sequenceNumber,
                    final byte[] contents) {
     assert clientImpl != null;
     try {

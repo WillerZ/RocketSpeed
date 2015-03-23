@@ -71,12 +71,12 @@ CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)
 }
 
-CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Publish(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jint j_namespaceId, jstring j_topicName, jobject j_retention, jbyteArray j_data, jobject j_messageId, jobject j_publishCallback)
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Publish(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jstring j_namespaceId, jstring j_topicName, jobject j_retention, jbyteArray j_data, jobject j_messageId, jobject j_publishCallback)
 {
     try {
         DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
         const std::shared_ptr<::rocketspeed::djinni::ClientImpl> & ref = djinni::CppProxyHandle<::rocketspeed::djinni::ClientImpl>::get(nativeRef);
-        int32_t c_namespace_id = ::djinni::HI32::Unboxed::fromJava(jniEnv, j_namespaceId);
+        std::string c_namespace_id = ::djinni::HString::fromJava(jniEnv, j_namespaceId);
         std::string c_topic_name = ::djinni::HString::fromJava(jniEnv, j_topicName);
         ::rocketspeed::djinni::RetentionBase c_retention = NativeRetentionBase::fromJava(jniEnv, j_retention);
         std::vector<uint8_t> c_data = ::djinni::HBinary::fromJava(jniEnv, j_data);
@@ -100,12 +100,12 @@ CJNIEXPORT void JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Li
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, )
 }
 
-CJNIEXPORT void JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Acknowledge(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jint j_namespaceId, jstring j_topicName, jlong j_sequenceNumber)
+CJNIEXPORT void JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Acknowledge(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jstring j_namespaceId, jstring j_topicName, jlong j_sequenceNumber)
 {
     try {
         DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
         const std::shared_ptr<::rocketspeed::djinni::ClientImpl> & ref = djinni::CppProxyHandle<::rocketspeed::djinni::ClientImpl>::get(nativeRef);
-        int32_t c_namespace_id = ::djinni::HI32::Unboxed::fromJava(jniEnv, j_namespaceId);
+        std::string c_namespace_id = ::djinni::HString::fromJava(jniEnv, j_namespaceId);
         std::string c_topic_name = ::djinni::HString::fromJava(jniEnv, j_topicName);
         int64_t c_sequence_number = ::djinni::HI64::Unboxed::fromJava(jniEnv, j_sequenceNumber);
 

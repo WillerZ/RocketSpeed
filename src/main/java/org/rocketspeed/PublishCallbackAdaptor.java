@@ -11,7 +11,7 @@ import java.util.logging.Level;
   }
 
   @Override
-  public void Call(Status status, int namespaceId, String topicName, MsgIdImpl messageId,
+  public void Call(Status status, String namespaceId, String topicName, MsgIdImpl messageId,
                    long sequenceNumber) {
     try {
       callback.call(status, namespaceId, topicName, new MsgId(messageId), sequenceNumber);

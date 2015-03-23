@@ -49,7 +49,7 @@ public class IntegrationTest {
   @Test
   public void testOneMessage() throws Exception {
     // Message setup.
-    final int ns = 101;
+    final String ns = "guest";
     final String topic = "test_topic-OneMessage";
     final byte[] data = "test_data-OneMessage".getBytes();
 
@@ -60,7 +60,7 @@ public class IntegrationTest {
     final Semaphore publishSemaphore = new Semaphore(0);
     PublishCallback publishCallback = new PublishCallback() {
       @Override
-      public void call(Status status, int namespaceId, String topicName, MsgId messageId,
+      public void call(Status status, String namespaceId, String topicName, MsgId messageId,
                        long sequenceNumber) {
         assertEquals(ns, namespaceId);
         assertEquals(topic, topicName);
@@ -73,7 +73,7 @@ public class IntegrationTest {
     final Semaphore subscribeSemaphore = new Semaphore(0);
     SubscribeCallback subscribeCallback = new SubscribeCallback() {
       @Override
-      public void call(Status status, int namespaceId, String topicName, long sequenceNumber,
+      public void call(Status status, String namespaceId, String topicName, long sequenceNumber,
                        boolean subscribed) {
         assertEquals(ns, namespaceId);
         assertEquals(topic, topicName);
@@ -128,7 +128,7 @@ public class IntegrationTest {
   @Test
   public void testSequenceNumberZero() throws Exception {
     // Message setup.
-    final int ns = 102;
+    final String ns = "guest";
     final String topic = "test_topic-SequenceNumberZero";
     final TopicOptions options = new TopicOptions(Retention.ONE_DAY);
 
@@ -139,7 +139,7 @@ public class IntegrationTest {
     final Semaphore publishSemaphore = new Semaphore(0);
     PublishCallback publishCallback = new PublishCallback() {
       @Override
-      public void call(Status status, int namespaceId, String topicName, MsgId messageId,
+      public void call(Status status, String namespaceId, String topicName, MsgId messageId,
                        long sequenceNumber) {
         assertEquals(ns, namespaceId);
         assertEquals(topic, topicName);
@@ -150,7 +150,7 @@ public class IntegrationTest {
     final Semaphore subscribeSemaphore = new Semaphore(0);
     SubscribeCallback subscribeCallback = new SubscribeCallback() {
       @Override
-      public void call(Status status, int namespaceId, String topicName, long sequenceNumber,
+      public void call(Status status, String namespaceId, String topicName, long sequenceNumber,
                        boolean subscribed) {
         assertEquals(ns, namespaceId);
         assertEquals(topic, topicName);
@@ -232,7 +232,7 @@ public class IntegrationTest {
   @Test
   public void testWithSubscriptionStorage() throws Exception {
     // Message setup.
-    final int ns = 102;
+    final String ns = "guest";
     final String topic = "test_topic-ResubscribeFromStorage";
     final TopicOptions options = new TopicOptions(Retention.ONE_DAY);
 

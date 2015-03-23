@@ -14,7 +14,7 @@ class PublishCallbackImpl {
 public:
     virtual ~PublishCallbackImpl() {}
 
-    virtual void Call(Status status, int32_t namespace_id, std::string topic_name, MsgIdImpl message_id, int64_t sequence_number) = 0;
+    virtual void Call(Status status, std::string namespace_id, std::string topic_name, MsgIdImpl message_id, int64_t sequence_number) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

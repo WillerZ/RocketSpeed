@@ -4,5 +4,5 @@
 package org.rocketspeed;
 
 public abstract class SubscribeCallbackImpl {
-    public abstract void Call(Status status, int namespaceId, String topicName, long sequenceNumber, boolean subscribed);
+    public abstract void Call(Status status, String namespaceId, String topicName, long sequenceNumber, boolean subscribed);
 }

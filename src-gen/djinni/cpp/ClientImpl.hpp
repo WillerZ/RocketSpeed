@@ -33,11 +33,11 @@ public:
 
     virtual Status Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback, bool restore_subscriptions, bool resubscribe_from_storage) = 0;
 
-    virtual PublishStatus Publish(int32_t namespace_id, std::string topic_name, RetentionBase retention, std::vector<uint8_t> data, std::experimental::optional<MsgIdImpl> message_id, std::shared_ptr<PublishCallbackImpl> publish_callback) = 0;
+    virtual PublishStatus Publish(std::string namespace_id, std::string topic_name, RetentionBase retention, std::vector<uint8_t> data, std::experimental::optional<MsgIdImpl> message_id, std::shared_ptr<PublishCallbackImpl> publish_callback) = 0;
 
     virtual void ListenTopics(std::vector<SubscriptionRequestImpl> names) = 0;
 
-    virtual void Acknowledge(int32_t namespace_id, std::string topic_name, int64_t sequence_number) = 0;
+    virtual void Acknowledge(std::string namespace_id, std::string topic_name, int64_t sequence_number) = 0;
 
     virtual void SaveSubscriptions(std::shared_ptr<SnapshotCallbackImpl> snapshot_callback) = 0;
 

@@ -65,16 +65,6 @@ rocketspeed::SequenceNumber toSequenceNumber(int64_t seqno) {
   return static_cast<uint64_t>(seqno - Limits::min());
 }
 
-int64_t fromNamespaceID(rocketspeed::NamespaceID namespace_id) {
-  return namespace_id;
-}
-
-rocketspeed::NamespaceID toNamespaceID(int64_t namespace_id) {
-  auto namespace_id1 = static_cast<rocketspeed::NamespaceID>(namespace_id);
-  assert(namespace_id == namespace_id1);
-  return namespace_id1;
-}
-
 rocketspeed::Retention toRetention(RetentionBase retention) {
   switch (retention) {
     case RetentionBase::ONEHOUR:
@@ -94,7 +84,7 @@ rocketspeed::SubscriptionRequest toSubscriptionRequest(
   SubscriptionStart start = request.start
                                 ? toSequenceNumber(request.start.value())
                                 : SubscriptionStart();
-  return SubscriptionRequest(toNamespaceID(request.namespace_id),
+  return SubscriptionRequest(std::move(request.namespace_id),
                              std::move(request.topic_name),
                              request.subscribe,
                              start);
@@ -148,7 +138,7 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(
     subscribe_callback1 =
         [subscribe_callback](SubscriptionStatus status) {
       subscribe_callback->Call(FromStatus(status.status),
-                               fromNamespaceID(status.namespace_id),
+                               std::move(status.namespace_id),
                                std::move(status.topic_name),
                                fromSequenceNumber(status.seqno),
                                status.subscribed);
@@ -188,7 +178,7 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
   if (receive_callback) {
     receive_callback1 =
         [receive_callback](std::unique_ptr<MessageReceived> message) {
-      receive_callback->Call(fromNamespaceID(message->GetNamespaceId()),
+      receive_callback->Call(message->GetNamespaceId().ToString(),
                              message->GetTopicName().ToString(),
                              fromSequenceNumber(message->GetSequenceNumber()),
                              fromSlice(message->GetContents()));
@@ -208,7 +198,7 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
 }
 
 PublishStatus Client::Publish(
-    int32_t namespace_id,
+    std::string namespace_id,
     std::string topic_name,
     RetentionBase retention,
     std::vector<uint8_t> data,
@@ -219,7 +209,7 @@ PublishStatus Client::Publish(
     publish_callback1 =
         [publish_callback](std::unique_ptr<ResultStatus> status) {
       publish_callback->Call(FromStatus(status->GetStatus()),
-                             status->GetNamespaceId(),
+                             status->GetNamespaceId().ToString(),
                              status->GetTopicName().ToString(),
                              fromMsgId(status->GetMessageId()),
                              fromSequenceNumber(status->GetSequenceNumber()));
@@ -258,18 +248,18 @@ namespace {
 
 class MessageForAcknowledgement : public rocketspeed::MessageReceived {
  public:
-  MessageForAcknowledgement(rocketspeed::NamespaceID namespace_id,
+  MessageForAcknowledgement(rocketspeed::Slice namespace_id,
                             rocketspeed::Slice topic_name,
                             rocketspeed::SequenceNumber seqno)
       : namespace_id_(namespace_id), topic_name_(topic_name), seqno_(seqno) {}
 
-  NamespaceID GetNamespaceId() const { return namespace_id_; }
+  Slice GetNamespaceId() const { return namespace_id_; }
 
-  const Slice GetTopicName() const { return topic_name_; }
+  Slice GetTopicName() const { return topic_name_; }
 
   SequenceNumber GetSequenceNumber() const { return seqno_; }
 
-  const Slice GetContents() const {
+  Slice GetContents() const {
     assert(false);
     return Slice();
   }
@@ -277,18 +267,18 @@ class MessageForAcknowledgement : public rocketspeed::MessageReceived {
   ~MessageForAcknowledgement() {}
 
  private:
-  rocketspeed::NamespaceID namespace_id_;
+  rocketspeed::Slice namespace_id_;
   rocketspeed::Slice topic_name_;
   rocketspeed::SequenceNumber seqno_;
 };
 
 }  // namespace
 
-void Client::Acknowledge(int32_t namespace_id,
+void Client::Acknowledge(std::string namespace_id,
                          std::string topic_name,
                          int64_t sequence_number) {
   std::unique_ptr<MessageReceived> message(
-      new MessageForAcknowledgement(fromNamespaceID(namespace_id),
+      new MessageForAcknowledgement(toSlice(namespace_id),
                                     toSlice(topic_name),
                                     fromSequenceNumber(sequence_number)));
   // This call never looks at message content.
