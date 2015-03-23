@@ -30,7 +30,7 @@ TEST(Messaging, Data) {
   Slice payload1("Payload1");
   HostId host1("host.id", 1234);
   ClientID clid1("client1");
-  NamespaceID nsid1 = 200;
+  NamespaceID nsid1 = GuestNamespace;
 
   // create a message
   MessageData data1(MessageType::mPublish,
@@ -51,7 +51,7 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
   ASSERT_EQ(data2.GetTenantID(), (TenantID)Tenant::GuestTenant);
-  ASSERT_EQ(data2.GetNamespaceId(), nsid1);
+  ASSERT_EQ(data2.GetNamespaceId().ToString(), nsid1);
 }
 
 TEST(Messaging, Metadata) {
@@ -64,7 +64,7 @@ TEST(Messaging, Metadata) {
   for (int i = 0; i < num_topics; i++)  {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    NamespaceID ns = static_cast<NamespaceID>(200 + i);
+    NamespaceID ns = "test" + std::to_string(i);
     topics.push_back(TopicPair(3 + i, std::to_string(i), type, ns));
   }
 
@@ -165,7 +165,7 @@ TEST(Messaging, ErrorHandling) {
   // Test that Message::CreateNewInstance handles bad messages.
   TenantID tenant = Tenant::GuestTenant;
   ClientID client = "client1";
-  NamespaceID nsid = 200;
+  NamespaceID nsid = GuestNamespace;
 
   MessagePing msg0(tenant, MessagePing::Request, client);
   TestMessage(msg0);
@@ -183,7 +183,7 @@ TEST(Messaging, ErrorHandling) {
   TestMessage(msg2);
 
   MessageDataAck::AckVector acks(1);
-  MessageDataAck msg3(nsid, client, acks);
+  MessageDataAck msg3(100, client, acks);
   TestMessage(msg3);
 
   MessageGap msg4(tenant, client, kBenign, 100, 200);

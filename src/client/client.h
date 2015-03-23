@@ -46,7 +46,7 @@ class ClientImpl : public Client {
                        RestoreStrategy restore_strategy);
 
   virtual PublishStatus Publish(const Topic& name,
-                                const NamespaceID namespaceId,
+                                const NamespaceID& namespaceId,
                                 const TopicOptions& options,
                                 const Slice& data,
                                 PublishCallback callback,

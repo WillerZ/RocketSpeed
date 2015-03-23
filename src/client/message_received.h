@@ -27,17 +27,17 @@ class MessageReceivedClient : public MessageReceived {
   }
 
   // The namespace id of this message
-  virtual NamespaceID GetNamespaceId() const {
+  virtual Slice GetNamespaceId() const {
     return data_->GetNamespaceId();
   }
 
   // The Topic name
-  virtual const Slice GetTopicName() const {
+  virtual Slice GetTopicName() const {
     return data_->GetTopicName();
   }
 
   // The contents of the message
-  virtual const Slice GetContents() const {
+  virtual Slice GetContents() const {
     return data_->GetPayload();
   }
 

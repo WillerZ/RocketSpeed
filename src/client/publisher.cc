@@ -59,7 +59,7 @@ class ClientResultStatus : public ResultStatus {
     return message_.GetTopicName();
   }
 
-  virtual NamespaceID GetNamespaceId() const {
+  virtual Slice GetNamespaceId() const {
     assert(status_.ok());
     return message_.GetNamespaceId();
   }
@@ -133,7 +133,7 @@ PublisherImpl::~PublisherImpl() {
 }
 
 PublishStatus PublisherImpl::Publish(TenantID tenant_id,
-                                     NamespaceID namespace_id,
+                                     const NamespaceID& namespace_id,
                                      const Topic& name,
                                      const TopicOptions& options,
                                      const Slice& data,

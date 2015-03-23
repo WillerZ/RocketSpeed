@@ -72,8 +72,8 @@ class FileStorageTest {
         std::lock_guard<std::mutex> lock(loaded_entries_mutex);
         for (const auto& request : restored) {
           LOG_INFO(info_log,
-                   "Loaded request for topic (%d, %s)",
-                   request.namespace_id,
+                   "Loaded request for topic (%s, %s)",
+                   request.namespace_id.c_str(),
                    request.topic_name.c_str());
           if (request.start) {
             TopicID topic_id(request.namespace_id, request.topic_name);
@@ -122,8 +122,8 @@ TEST(FileStorageTest, UpdatesAndLoads) {
   ASSERT_OK(StartMsgLoop());
 
   // Test scenario.
-  TopicID topic1(101, "StoreAndLoad_1");
-  TopicID topic2(102, "StoreAndLoad_2");
+  TopicID topic1("ns1", "StoreAndLoad_1");
+  TopicID topic2("ns2", "StoreAndLoad_2");
 
   // Generate some state.
   ASSERT_OK(storage->Update(
@@ -182,9 +182,9 @@ TEST(FileStorageTest, SnapshotAndRead) {
 
   // Test scenario.
   std::vector<SubscriptionRequest> requests = {
-      SubscriptionRequest(101, "SnapshotAndRead_1", true, 101),
-      SubscriptionRequest(101, "SnapshotAndRead_2", true, 102),
-      SubscriptionRequest(102, "SnapshotAndRead_2", true, 103),
+      SubscriptionRequest("ns1", "SnapshotAndRead_1", true, 101),
+      SubscriptionRequest("ns1", "SnapshotAndRead_2", true, 102),
+      SubscriptionRequest("ns2", "SnapshotAndRead_2", true, 103),
   };
 
   auto verify_state = [this, &requests]() {
@@ -234,7 +234,7 @@ TEST(FileStorageTest, MissingSubscription) {
   // What if we ask for a nonexistent subscription?
   std::vector<SubscriptionRequest> requests = {
       SubscriptionRequest(
-          101, "MissingSubscription", true, SubscriptionStart()),
+          "ns1", "MissingSubscription", true, SubscriptionStart()),
   };
 
   ASSERT_OK(storage->Load(requests));
@@ -264,21 +264,19 @@ TEST(FileStorageTest, CorruptedFile) {
 
     // Some proper subscription
     PutFixed64(&buffer, 101);
-    PutFixed16(&buffer, 101);
-    std::string name = "CorruptedFile";
-    PutFixed32(&buffer, static_cast<uint32_t>(name.size()));
-    buffer.append(name);
+    std::string topic_id;
+    PutTopicID(&topic_id, "ns1", "CorruptedFile");
+    PutFixed32(&buffer, static_cast<uint32_t>(topic_id.size()));
+    buffer.append(topic_id);
     // But no topic name at all :(
     ASSERT_OK(file_handle->Append(Slice(buffer)));
 
     // And some corrupted one.
     // Sequence number.
     PutFixed64(&buffer, 101);
-    // Namespace id.
-    PutFixed16(&buffer, 101);
-    // Non-zero topic name size.
+    // Non-zero topic ID size.
     PutFixed32(&buffer, 11);
-    // But no topic name at all :(
+    // But no topic ID at all :(
 
     ASSERT_OK(file_handle->Append(Slice(buffer)));
   }

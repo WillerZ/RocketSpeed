@@ -75,7 +75,7 @@ TEST(PilotTest, Publish) {
   ASSERT_OK(loop.WaitUntilRunning());
 
   // send messages to pilot
-  NamespaceID nsid = 101;
+  NamespaceID nsid = GuestNamespace;
   for (int i = 0; i < 100; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test" + std::to_string(i);

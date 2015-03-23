@@ -47,7 +47,7 @@ class PublisherImpl {
    * Publishes a message on behalf of an arbitrary tenant.
    */
   PublishStatus Publish(TenantID tenant_id,
-                        NamespaceID namespaceId,
+                        const NamespaceID& namespaceId,
                         const Topic& name,
                         const TopicOptions& options,
                         const Slice& data,

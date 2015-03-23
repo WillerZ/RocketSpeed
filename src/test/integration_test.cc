@@ -43,7 +43,7 @@ TEST(IntegrationTest, OneMessage) {
 
   // Message setup.
   Topic topic = "test_topic";
-  NamespaceID namespace_id = 102;
+  NamespaceID namespace_id = GuestNamespace;
   TopicOptions topic_options(Retention::OneDay);
   std::string data = "test_message";
   GUIDGenerator msgid_generator;
@@ -116,7 +116,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
 
   // Message setup.
   Topic topic = "SequenceNumberZero";
-  NamespaceID ns = 102;
+  NamespaceID ns = GuestNamespace;
   TopicOptions opts(Retention::OneDay);
 
   // RocketSpeed callbacks;
@@ -280,7 +280,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   client.WaitUntilRunning();
 
   // Subscribe.
-  NamespaceID ns = 101;
+  NamespaceID ns = GuestNamespace;
   MessageMetadata sub(Tenant::GuestTenant,
                       MessageMetadata::MetaType::Request,
                       "client",
@@ -319,7 +319,7 @@ TEST(IntegrationTest, UnsubscribeCallback) {
 
   // Message setup.
   Topic topic = "test_topic";
-  NamespaceID namespace_id = 102;
+  NamespaceID namespace_id = GuestNamespace;
 
   port::Semaphore sub_checkpoint;
   std::atomic<bool> expected_subscribed{true};  // first message is a subscribe.

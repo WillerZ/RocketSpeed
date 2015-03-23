@@ -176,8 +176,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
 
   // Prefix the namespace id to the topic name
   NamespaceTopic topic_name;
-  PutNamespaceId(&topic_name, topic[0].namespace_id);
-  topic_name.append(topic[0].topic_name);
+  PutTopicID(&topic_name, topic[0].namespace_id, topic[0].topic_name);
 
   // Remember this subscription request
   if (topic[0].topic_type == MetadataType::mSubscribe) {
@@ -254,8 +253,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
 
   // Prefix the namespace id to the topic name
   NamespaceTopic topic_name;
-  PutNamespaceId(&topic_name, request->GetNamespaceId());
-  topic_name.append(request->GetTopicName().ToString());
+  PutTopicID(&topic_name, request->GetNamespaceId(), request->GetTopicName());
 
   // serialize msg
   std::string serial;

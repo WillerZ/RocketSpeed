@@ -204,7 +204,7 @@ Status FileStorage::ReadSnapshot() {
 
   // Read.
   const size_t kHeaderSize =
-      sizeof(uint64_t) + sizeof(uint16_t) + sizeof(uint32_t);
+      sizeof(uint64_t) + sizeof(uint32_t);
   std::vector<char> buffer(kHeaderSize);
   Slice chunk;
   do {
@@ -223,12 +223,6 @@ Status FileStorage::ReadSnapshot() {
       return Status::InternalError("Bad sequence number");
     }
 
-    // Namespace id.
-    NamespaceID namespace_id;
-    if (!GetFixed16(&chunk, &namespace_id)) {
-      return Status::InternalError("Bad namespace id");
-    }
-
     // Topic name.
     uint32_t name_size;
     if (!GetFixed32(&chunk, &name_size)) {
@@ -239,9 +233,17 @@ Status FileStorage::ReadSnapshot() {
     }
     status = file->Read(name_size, &chunk, &buffer[0]);
     if (name_size != chunk.size()) {
-      return Status::InternalError("Bad topic");
+      return Status::InternalError("Bad topic ID");
     }
-    TopicID topic_id(namespace_id, std::string(&buffer[0], buffer.size()));
+
+    // Namespace id and topic name.
+    Slice buffer_in(buffer.data(), buffer.size());
+    NamespaceID namespace_id;
+    Topic topic;
+    if (!GetTopicID(&buffer_in, &namespace_id, &topic)) {
+      return Status::InternalError("Bad topic ID");
+    }
+    TopicID topic_id(namespace_id, topic);
 
     // Assign entry to the right worker.
     const int worker_id = GetWorkerForTopic(topic_id.topic_name);
@@ -290,8 +292,8 @@ void FileStorage::HandleUpdateCommand(std::unique_ptr<Command> command) {
       worker_data.topics_subscribed.erase(iter);
     } else {
       LOG_WARN(info_log_,
-               "Attempt to unsubscribe from already unsubscribed Topic(%d, %s)",
-               request.namespace_id,
+               "Attempt to unsubscribe from already unsubscribed Topic(%s, %s)",
+               request.namespace_id.c_str(),
                request.topic_name.c_str());
       info_log_->Flush();
     }
@@ -336,9 +338,10 @@ void FileStorage::HandleSnapshotCommand(std::unique_ptr<Command> command) {
   // Write topics in this part.
   for (auto& it : worker_data.topics_subscribed) {
     PutFixed64(&buffer, it.second.GetSequenceNumber());
-    PutFixed16(&buffer, it.first.namespace_id);
-    PutFixed32(&buffer, static_cast<uint32_t>(it.first.topic_name.size()));
-    buffer.append(it.first.topic_name);
+    std::string topic_id;
+    PutTopicID(&topic_id, it.first.namespace_id, it.first.topic_name);
+    PutFixed32(&buffer, static_cast<uint32_t>(topic_id.size()));
+    buffer.append(topic_id);
   }
   // Append to snapshot state.
   snapshot->snapshot_state->ChunkSucceeded(worker_id, std::move(buffer));

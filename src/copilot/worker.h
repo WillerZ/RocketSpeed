@@ -126,7 +126,7 @@ class CopilotWorker {
   // Does not send response to subscriber.
   void RemoveSubscription(TenantID tenant_id,
                           const ClientID& subscriber,
-                          NamespaceID namespace_id,
+                          const NamespaceID& namespace_id,
                           const Topic& topic_name,
                           LogID logid,
                           int worker_id);
@@ -179,7 +179,7 @@ class CopilotWorker {
     struct Hash {
       size_t operator()(const TopicInfo& t) const {
         // Don't need to include logid, because it is a function of topic_name.
-        return MurmurHash2<Topic, size_t>()(t.topic_name, t.namespace_id);
+        return MurmurHash2<Topic, NamespaceID>()(t.topic_name, t.namespace_id);
       }
     };
 

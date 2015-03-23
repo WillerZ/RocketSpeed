@@ -394,7 +394,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
 
 void CopilotWorker::RemoveSubscription(TenantID tenant_id,
                                        const ClientID& subscriber,
-                                       NamespaceID namespace_id,
+                                       const NamespaceID& namespace_id,
                                        const Topic& topic_name,
                                        LogID logid,
                                        int worker_id) {
@@ -554,17 +554,17 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
   if (status.ok()) {
     LOG_INFO(options_.info_log,
              "Send rollcall write (%ssubscribe) for Topic(%s) in "
-             "namespace %d",
+             "namespace %s",
              type == MetadataType::mSubscribe ? "" : "un",
              topic_name.c_str(),
-             namespace_id);
+             namespace_id.c_str());
   } else {
     LOG_INFO(options_.info_log,
              "Failed to send rollcall write (%ssubscribe) for Topic(%s) in "
-             "namespace %d status %s",
+             "namespace %s status %s",
              type == MetadataType::mSubscribe ? "" : "un",
              topic_name.c_str(),
-             namespace_id,
+             namespace_id.c_str(),
              status.ToString().c_str());
     // If we are unable to write to the rollcall topic and it is a subscription
     // request, then we need to terminate that subscription.

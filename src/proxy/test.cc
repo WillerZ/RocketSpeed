@@ -69,7 +69,7 @@ TEST(ProxyTest, Publish) {
                       Tenant::GuestTenant,
                       our_client,
                       Slice("topic"),
-                      101,
+                      GuestNamespace,
                       Slice("payload"));
   publish.SerializeToString(&serial);
 
@@ -217,7 +217,7 @@ TEST(ProxyTest, ForwardGoodbye) {
                       Tenant::GuestTenant,
                       "client",
                       Slice("topic"),
-                      101,
+                      GuestNamespace,
                       Slice("payload"));
   publish.SerializeToString(&publish_serial);
 
@@ -226,7 +226,7 @@ TEST(ProxyTest, ForwardGoodbye) {
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
   // Send subscribe message.
-  NamespaceID ns = 101;
+  NamespaceID ns = GuestNamespace;
   std::string sub_serial;
   MessageMetadata sub(Tenant::GuestTenant,
                       MessageMetadata::MetaType::Request,

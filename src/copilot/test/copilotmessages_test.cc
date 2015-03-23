@@ -92,7 +92,7 @@ TEST(CopilotTest, Subscribe) {
   // send subscribe/unsubscribe messages to copilot
   int num_msg = 100;
   for (int i = 0; i < num_msg; ++i) {
-    NamespaceID ns = static_cast<NamespaceID>(101 + i % 50);
+    NamespaceID ns = "test" + std::to_string(i % 50);
     std::string topic = "copilot_test_" + std::to_string(i % 50);
     auto type = i < num_msg/2 ? MetadataType::mSubscribe :
                                 MetadataType::mUnSubscribe;
@@ -208,7 +208,7 @@ TEST(CopilotTest, Rollcall) {
   ASSERT_EQ(rollcall_entries_.size(), 0);
 
   // Create a rollcall client
-  NamespaceID ns = static_cast<NamespaceID>(101);
+  NamespaceID ns = GuestNamespace;
   std::unique_ptr<ClientImpl> client;
   ASSERT_OK(cluster.CreateClient("ClientId1", &client, true));
   auto rollcall_callback = [this, &checkpoint2, &num_msg]

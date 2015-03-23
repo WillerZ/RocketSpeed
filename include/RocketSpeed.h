@@ -145,7 +145,7 @@ class Client {
    * @return the status and message ID of the published message.
    */
   virtual PublishStatus Publish(const Topic& topic_name,
-                                const NamespaceID topic_namespace,
+                                const NamespaceID& topic_namespace,
                                 const TopicOptions& options,
                                 const Slice& data,
                                 PublishCallback callback,

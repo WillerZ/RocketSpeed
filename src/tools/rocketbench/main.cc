@@ -50,7 +50,7 @@ DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(delay_subscribe, false, "start reading after publishing");
 DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
-DEFINE_int32(namespaceid, 101, "namespace id");
+DEFINE_string(namespaceid, rocketspeed::GuestNamespace, "namespace id");
 DEFINE_string(topics_distribution, "uniform",
 "uniform, normal, poisson, fixed");
 DEFINE_int64(topics_mean, 0,

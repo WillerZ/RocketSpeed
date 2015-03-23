@@ -228,12 +228,9 @@ Status MessagePing::DeSerialize(Slice* in) {
   }
 
   // extract origin
-  Slice sl;
-  if (!GetLengthPrefixedSlice(in, &sl)) {
+  if (!GetLengthPrefixedSlice(in, &origin_)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.clear();
-  origin_.append(sl.data(), sl.size());
   return Status::OK();
 }
 
@@ -241,7 +238,7 @@ MessageData::MessageData(MessageType type,
                          TenantID tenantID,
                          const ClientID& origin,
                          const Slice& topic_name,
-                         const NamespaceID namespace_id,
+                         const Slice& namespace_id,
                          const Slice& payload,
                          Retention retention):
   Message(type, tenantID, origin),
@@ -256,7 +253,7 @@ MessageData::MessageData(MessageType type,
 
 MessageData::MessageData(MessageType type):
   MessageData(type, Tenant::InvalidTenant, "", Slice(),
-              Namespace::InvalidNamespace, Slice()) {
+              InvalidNamespace, Slice()) {
 }
 
 MessageData::MessageData():
@@ -300,12 +297,9 @@ Status MessageData::DeSerialize(Slice* in) {
   }
 
   // extract origin
-  Slice sl;
-  if (!GetLengthPrefixedSlice(in, &sl)) {
+  if (!GetLengthPrefixedSlice(in, &origin_)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.clear();
-  origin_.append(sl.data(), sl.size());
 
   // extract sequence number of message
   if (!GetVarint64(in, &seqno_)) {
@@ -326,7 +320,7 @@ Slice MessageData::GetStorageSlice() const {
 
 void MessageData::SerializeInternal() const {
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, topic_name_);
+  PutTopicID(&serialize_buffer__, namespaceid_, topic_name_);
   // miscellaneous flags
   uint16_t flags = 0;
   switch (retention_) {
@@ -335,7 +329,6 @@ void MessageData::SerializeInternal() const {
     case Retention::OneWeek: flags |= 0x2; break;
   }
   PutFixed16(&serialize_buffer__, flags);
-  PutFixed16(&serialize_buffer__, namespaceid_);
 
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
@@ -350,8 +343,8 @@ Status MessageData::DeSerializeStorage(Slice* in) {
   }
 
   // extract message topic
-  if (!GetLengthPrefixedSlice(in, &topic_name_)) {
-    return Status::InvalidArgument("Bad Message Topic name");
+  if (!GetTopicID(in, &namespaceid_, &topic_name_)) {
+    return Status::InvalidArgument("Bad Message Topic ID");
   }
 
   // miscellaneous flags
@@ -365,10 +358,6 @@ Status MessageData::DeSerializeStorage(Slice* in) {
     case 0x2: retention_ = Retention::OneWeek; break;
     default:
       return Status::InvalidArgument("Bad flags");
-  }
-  // namespace id
-  if (!GetFixed16(in, &namespaceid_)) {
-    return Status::InvalidArgument("Bad namespace id");
   }
 
   // extract message id
@@ -428,8 +417,7 @@ Slice MessageMetadata::Serialize() const {
   PutVarint32(&serialize_buffer__, static_cast<uint32_t>(topics_.size()));
   for (TopicPair p : topics_) {
     PutVarint64(&serialize_buffer__, p.seqno);
-    PutLengthPrefixedSlice(&serialize_buffer__, Slice(p.topic_name));
-    PutFixed16(&serialize_buffer__, p.namespace_id);
+    PutTopicID(&serialize_buffer__, p.namespace_id, p.topic_name);
     PutFixedEnum8(&serialize_buffer__, p.topic_type);
   }
   // compute msg size
@@ -454,12 +442,9 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   }
 
   // extract host id
-  Slice sl;
-  if (!GetLengthPrefixedSlice(in, &sl)) {
+  if (!GetLengthPrefixedSlice(in, &origin_)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.clear();
-  origin_.append(sl.data(), sl.size());
 
   // extract metadata type
   if (!GetFixedEnum8(in, &metatype_)) {
@@ -482,14 +467,8 @@ Status MessageMetadata::DeSerialize(Slice* in) {
     }
 
     // extract one topic name
-    if (!GetLengthPrefixedSlice(in, &sl)) {
-      return Status::InvalidArgument("Bad Message Payload");
-    }
-    p.topic_name.append(sl.data(), sl.size());
-
-    // extract namespaceid
-    if (!GetFixed16(in, &p.namespace_id)) {
-      return Status::InvalidArgument("Bad Namespace id");
+    if (!GetTopicID(in, &p.namespace_id, &p.topic_name)) {
+      return Status::InvalidArgument("Bad Namespace/Topic");
     }
 
     // extract one topic type
@@ -561,12 +540,9 @@ Status MessageDataAck::DeSerialize(Slice* in) {
   }
 
   // extract host id
-  Slice sl;
-  if (!GetLengthPrefixedSlice(in, &sl)) {
+  if (!GetLengthPrefixedSlice(in, &origin_)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.clear();
-  origin_.append(sl.data(), sl.size());
 
   // extract number of acks
   uint32_t num_acks;
@@ -652,12 +628,9 @@ Status MessageGap::DeSerialize(Slice* in) {
   }
 
   // extract host id
-  Slice sl;
-  if (!GetLengthPrefixedSlice(in, &sl)) {
+  if (!GetLengthPrefixedSlice(in, &origin_)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.clear();
-  origin_.append(sl.data(), sl.size());
 
   // Read gap type
   if (!GetFixedEnum8(in, &gap_type_)) {
@@ -724,12 +697,9 @@ Status MessageGoodbye::DeSerialize(Slice* in) {
   }
 
   // extract host id
-  Slice sl;
-  if (!GetLengthPrefixedSlice(in, &sl)) {
+  if (!GetLengthPrefixedSlice(in, &origin_)) {
     return Status::InvalidArgument("Bad HostName");
   }
-  origin_.clear();
-  origin_.append(sl.data(), sl.size());
 
   // extract code
   if (!GetFixedEnum8(in, &code_)) {

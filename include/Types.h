@@ -23,27 +23,31 @@ namespace rocketspeed {
  * A unique ID for this RocketSpeed namespace. Each namespace can have its own
  * set of topic names. Namespaces are a way to partition the set of topics in
  * a single instance of RocketSpeed.
+ *
  * A Tenant can access topics from any number of namespaces.
+ *
+ * Namespace beginning with an underscore (_) are reserved for system usage.
  */
-typedef uint16_t NamespaceID;
+typedef std::string NamespaceID;
 
-enum Namespace : NamespaceID {
-  /**
-   * The invalid namespaceID should never be used. It is here to catch cases
-   * when the client fails to set the tenant ID.
-   */
-  InvalidNamespace = 0,
+/**
+ * Tests if a namespace is reserved.
+ *
+ * @param ns The namespace to test.
+ * @return true iff the namespace is reserved for system usage.
+ */
+bool IsReserved(const NamespaceID& ns);
 
-  /**
-   * The Guest Namespace ID may be used by applications during development.
-   */
-  GuestNamespace = 1,
+/**
+ * The invalid namespaceID should never be used. It is here to catch cases
+ * when the client fails to set the tenant ID.
+ */
+extern const NamespaceID InvalidNamespace;
 
-  /**
-   * NamespaceIds 2-100 are reserved for system usage. Real users should be
-   * using namespaces larger than 100
-   */
-};
+/**
+ * The Guest Namespace ID may be used by applications during development.
+ */
+extern const NamespaceID GuestNamespace;
 
 /**
  * Each Topic is a string
@@ -175,7 +179,7 @@ class ResultStatus {
   /**
    * Namespace of the published message.
    */
-  virtual NamespaceID GetNamespaceId() const = 0;
+  virtual Slice GetNamespaceId() const = 0;
 
   /**
    * Payload of the published message.
@@ -195,7 +199,7 @@ class SubscriptionStatus {
   SubscriptionStatus() : seqno(0),
                          subscribed(false),
                          topic_name(""),
-                         namespace_id(0) {}
+                         namespace_id("") {}
 
   SubscriptionStatus(NamespaceID _namespace_id,
                      Topic _topic_name,
@@ -206,7 +210,7 @@ class SubscriptionStatus {
       , seqno(_seqno)
       , subscribed(_subscribe)
       , topic_name(std::move(_topic_name))
-      , namespace_id(_namespace_id) {}
+      , namespace_id(std::move(_namespace_id)) {}
 
   Status status;
   SequenceNumber seqno;  // the start seqno of a subscription
@@ -224,13 +228,13 @@ class MessageReceived {
   virtual SequenceNumber GetSequenceNumber() const = 0;
 
   // The namespace id of this message
-  virtual NamespaceID GetNamespaceId() const = 0;
+  virtual Slice GetNamespaceId() const = 0;
 
   // The Topic name
-  virtual const Slice GetTopicName() const = 0;
+  virtual Slice GetTopicName() const = 0;
 
   // The contents of the message
-  virtual const Slice GetContents() const = 0;
+  virtual Slice GetContents() const = 0;
 
   virtual ~MessageReceived()  {}
 };
@@ -329,8 +333,8 @@ class SubscriptionRequest {
                       Topic _topic_name,
                       bool _subscribe,
                       SubscriptionStart _start)
-      : namespace_id(_namespace_id),
-        topic_name(_topic_name),
+      : namespace_id(std::move(_namespace_id)),
+        topic_name(std::move(_topic_name)),
         subscribe(_subscribe),
         start(_start) {}
 

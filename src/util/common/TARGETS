@@ -5,6 +5,7 @@ cpp_library(
         'coding.cc',
         'guid_generator.cc',
         'host.cc',
+        'namespace_ids.cc',
         'statistics.cc',
         'status.cc',
         'thread_local.cc',

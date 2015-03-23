@@ -10,6 +10,7 @@
 #include "include/RocketSpeed.h"
 #include "src/rollcall/RollCall.h"
 #include "src/client/client.h"
+#include "src/util/common/coding.h"
 
 /**
  * This is the Rollcall interface. Applications can use this interface
@@ -48,7 +49,10 @@ class RollcallImpl : public RollcallStream {
 
   // Create the rollcall topic name for a namespace
   static Topic GetRollcallTopicName(const NamespaceID& nsid) {
-    return "r" + std::to_string(nsid) + ".";
+    std::string topic = "r";
+    PutLengthPrefixedSlice(&topic, Slice(nsid));
+    topic.append(".");
+    return topic;
   }
 
  private:
@@ -61,8 +65,8 @@ class RollcallImpl : public RollcallStream {
   const TopicOptions rollcall_topic_options_;
   const MsgId msgid_;
 
-  // The rollcall topic resides in namespace 2.
-  static const NamespaceID rollcall_namespace_ = 2;
+  // The rollcall topic resides in namespace '_rollcall'.
+  static const NamespaceID rollcall_namespace_;
 
   void Serialize(std::string* buffer);
   Status DeSerialize(const Slice& in);

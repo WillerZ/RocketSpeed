@@ -49,7 +49,7 @@ class ClientCreationError : public Client {
   }
 
   virtual PublishStatus Publish(const Topic&,
-                                const NamespaceID,
+                                const NamespaceID&,
                                 const TopicOptions&,
                                 const Slice&,
                                 PublishCallback,
@@ -372,16 +372,16 @@ ClientImpl::~ClientImpl() {
 }
 
 PublishStatus ClientImpl::Publish(const Topic& name,
-                                  const NamespaceID namespace_id,
+                                  const NamespaceID& namespace_id,
                                   const TopicOptions& options,
                                   const Slice& data,
                                   PublishCallback callback,
                                   const MsgId message_id) {
   if (!is_internal_) {
-    if (namespace_id <= 100) {
+    if (IsReserved(namespace_id)) {
       return PublishStatus(
           Status::InvalidArgument(
-              "NamespaceIDs <= 100 are reserver for internal usage."),
+              "NamespaceID is reserved for internal usage."),
           message_id);
     }
   }
@@ -481,7 +481,7 @@ void ClientImpl::Acknowledge(const MessageReceived& message) {
   if (storage_) {
     // Note the +1. We store the next sequence number we want, but the
     // acknowledged message carries the number that we already know about.
-    SubscriptionRequest request(message.GetNamespaceId(),
+    SubscriptionRequest request(message.GetNamespaceId().ToString(),
                                 message.GetTopicName().ToString(),
                                 true,
                                 message.GetSequenceNumber() + 1);
@@ -511,7 +511,8 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
 
   const MessageData* data = static_cast<const MessageData*>(msg.get());
   // Extract topic from message.
-  TopicID topic_id(data->GetNamespaceId(), data->GetTopicName().ToString());
+  TopicID topic_id(data->GetNamespaceId().ToString(),
+                   data->GetTopicName().ToString());
   LOG_INFO(info_log_, "Received data (%.16s)", topic_id.topic_name.c_str());
 
   // Get worker data that this topic is assigned to.
@@ -527,9 +528,9 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
     // No active subscription to this topic, ignore message
     LOG_INFO(info_log_,
              "Discarded message (%.16s) due to missing subcription for "
-             "Topic(%d, %s)",
+             "Topic(%s, %s)",
              data->GetPayload().ToString().c_str(),
-             topic_id.namespace_id,
+             topic_id.namespace_id.c_str(),
              topic_id.topic_name.c_str());
     return;
   }
@@ -538,10 +539,10 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   // Check if this is not a duplicate or an old message.
   if (!state.ArrivedInOrder(*data)) {
     LOG_INFO(info_log_,
-             "Message (%.16s)@%llu received out of order on Topic(%d, %s)@%llu",
+             "Message (%.16s)@%llu received out of order on Topic(%s, %s)@%llu",
              data->GetPayload().ToString().c_str(),
              static_cast<long long unsigned int>(data->GetSequenceNumber()),
-             topic_id.namespace_id,
+             topic_id.namespace_id.c_str(),
              topic_id.topic_name.c_str(),
              static_cast<long long unsigned int>(state.GetExpected()));
     return;
@@ -586,8 +587,8 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
     auto iter = worker_data.Find(&request);
     if (iter == worker_data.subscriptions.end()) {
       LOG_WARN(info_log_,
-               "Dropping unexpected subscription ACK for Topic(%d, %s)",
-               request.namespace_id,
+               "Dropping unexpected subscription ACK for Topic(%s, %s)",
+               request.namespace_id.c_str(),
                request.topic_name.c_str());
       return;
     }
@@ -608,8 +609,8 @@ void ClientImpl::ProcessRestoredSubscription(
     if (!elem.subscribe) {
       // We shouldn't ever restore unsubscribe request.
       LOG_WARN(info_log_,
-               "Restored unsubscribe request for namespace %d topic %s",
-               elem.namespace_id,
+               "Restored unsubscribe request for namespace %s topic %s",
+               elem.namespace_id.c_str(),
                elem.topic_name.c_str());
       assert(0);
       st = Status::InternalError("Restored unsubscribe request");

@@ -11,6 +11,8 @@
 
 namespace rocketspeed {
 
+const NamespaceID RollcallImpl::rollcall_namespace_ = "_rollcall";
+
 RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
   const NamespaceID& nsid,
   const SubscriptionStart& start_point,

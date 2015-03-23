@@ -82,7 +82,7 @@ class TopicPair {
             NamespaceID namespaceId) :
     seqno(s),
     topic_name(std::move(name)),
-    namespace_id(namespaceId),
+    namespace_id(std::move(namespaceId)),
     topic_type(type) {
   }
   TopicPair() {}
@@ -220,34 +220,9 @@ class MessageData : public Message {
               TenantID tenantID,
               const ClientID& origin,
               const Slice& topic_name,
-              const NamespaceID namespace_id,
+              const Slice& namespace_id,
               const Slice& payload,
               Retention retention = Retention::OneWeek);
-
-  /*
-   * copy constructor
-   */
-  explicit MessageData(MessageData* in) :
-    Message(in->GetMessageType(), in->GetTenantID(), in->GetOrigin()),
-    seqno_(in->GetSequenceNumber()),
-    msgid_(in->GetMessageId()),
-    retention_(in->GetRetention()),
-    namespaceid_(in->GetNamespaceId()) {
-
-    // allocate buffer to copy the slices to owned buffer
-    size_t size = in->GetTopicName().size() + in->GetPayload().size();
-    buffer_.reset(new char[size]);
-
-    // copy topic name
-    memcpy(buffer_.get(), in->GetTopicName().data(), in->GetTopicName().size());
-    topic_name_ = Slice(buffer_.get(), in->GetTopicName().size());
-    size_t offset = in->GetTopicName().size();
-
-    // copy payload
-    memcpy(buffer_.get() + offset, in->GetPayload().data(),
-           in->GetPayload().size());
-    payload_ = Slice(buffer_.get() + offset, in->GetPayload().size());
-  }
 
   /*
    * constructor with type
@@ -292,7 +267,7 @@ class MessageData : public Message {
   /**
    * @return The namespace of this topic
    */
-  NamespaceID GetNamespaceId() const { return namespaceid_; }
+  Slice GetNamespaceId() const { return namespaceid_; }
 
   /**
    * @return The Message payload
@@ -333,8 +308,9 @@ class MessageData : public Message {
   Slice topic_name_;         // name of topic
   Slice payload_;            // user data of message
   Retention retention_;      // message retention
-  NamespaceID namespaceid_;  // message namespace
-  Slice storage_slice_;       // slice starting from tenantid from buffer_
+  Slice namespaceid_;        // message namespace
+  Slice storage_slice_;      // slice starting from tenantid from buffer_
+  Slice topic_id_;           // slice of encoded namespace + topic name
 };
 
 /*

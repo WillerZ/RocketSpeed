@@ -336,6 +336,16 @@ inline bool GetLengthPrefixedSlice(Slice* input, Slice* result) {
   }
 }
 
+inline bool GetLengthPrefixedSlice(Slice* input, std::string* value) {
+  Slice slice;
+  if (!GetLengthPrefixedSlice(input, &slice)) {
+    return false;
+  }
+  value->clear();
+  value->append(slice.data(), slice.size());
+  return true;
+}
+
 inline Slice GetLengthPrefixedSlice(const char* data) {
   uint32_t len = 0;
   // +5: we assume "data" is not corrupted
@@ -364,16 +374,22 @@ inline uint64_t BitStreamGetInt(const Slice* src, size_t offset,
   return BitStreamGetInt(src->data(), src->size(), offset, bits);
 }
 
-// helper methods to serialize and de-serialize a namespace id
-// to a 2 byte string.
-inline void PutNamespaceId(std::string* dst, NamespaceID id) {
-  assert(sizeof(id) == sizeof(uint16_t));
-  PutFixed16(dst, id);
+// helper methods to serialize and de-serialize a topic id.
+inline void PutTopicID(std::string* dst,
+                       const Slice& namespace_id,
+                       const Slice& topic) {
+  PutLengthPrefixedSlice(dst, namespace_id);
+  PutLengthPrefixedSlice(dst, topic);
 }
 
-inline bool GetNamespaceId(Slice* input, NamespaceID* value) {
-  assert(sizeof(*value) == sizeof(uint16_t));
-  return GetFixed16(input, value);
+inline bool GetTopicID(Slice* input, NamespaceID* namespace_id, Topic* topic) {
+  return GetLengthPrefixedSlice(input, namespace_id) &&
+         GetLengthPrefixedSlice(input, topic);
+}
+
+inline bool GetTopicID(Slice* input, Slice* namespace_id, Slice* topic) {
+  return GetLengthPrefixedSlice(input, namespace_id) &&
+         GetLengthPrefixedSlice(input, topic);
 }
 
 inline void PutBytes(std::string* output, const char* data, size_t size) {

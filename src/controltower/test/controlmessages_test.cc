@@ -134,7 +134,7 @@ TEST(ControlTowerTest, Subscribe) {
   for (int i = 0; i < num_topics; i++) {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    NamespaceID ns = static_cast<NamespaceID>(101 + i);
+    NamespaceID ns = "test" + std::to_string(i);
     topics.push_back(TopicPair(4 + i, std::to_string(i), type, ns));
   }
 
@@ -180,7 +180,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   for (int i = 0; i < num_topics; i++) {
     // alternate between types
     MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    NamespaceID ns = static_cast<NamespaceID>(101 + i);
+    NamespaceID ns = "test" + std::to_string(i);
     topics.push_back(TopicPair(4 + i, std::to_string(i), type, ns));
   }
 
@@ -254,7 +254,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   for (int i = 0; i < num_topics; i++) {
     // alternate between types
     MetadataType type = mUnSubscribe;
-    NamespaceID ns = static_cast<NamespaceID>(101 + i);
+    NamespaceID ns = "test" + std::to_string(i);
     topics.push_back(TopicPair(4 + i, std::to_string(i), type, ns));
   }
 
