@@ -44,7 +44,7 @@ TEST(IntegrationTest, OneMessage) {
   // Message setup.
   Topic topic = "test_topic";
   NamespaceID namespace_id = GuestNamespace;
-  TopicOptions topic_options(Retention::OneDay);
+  TopicOptions topic_options;
   std::string data = "test_message";
   GUIDGenerator msgid_generator;
   MsgId message_id = msgid_generator.Generate();
@@ -117,7 +117,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   // Message setup.
   Topic topic = "SequenceNumberZero";
   NamespaceID ns = GuestNamespace;
-  TopicOptions opts(Retention::OneDay);
+  TopicOptions opts;
 
   // RocketSpeed callbacks;
   auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {

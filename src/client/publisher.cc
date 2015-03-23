@@ -150,8 +150,7 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
                       msg_loop_->GetClientId(worker_id),
                       Slice(name),
                       namespace_id,
-                      data,
-                      options.retention);
+                      data);
 
   // Take note of message ID before we move into the command.
   const MsgId empty_msgid = MsgId();

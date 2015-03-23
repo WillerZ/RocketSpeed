@@ -239,12 +239,10 @@ MessageData::MessageData(MessageType type,
                          const ClientID& origin,
                          const Slice& topic_name,
                          const Slice& namespace_id,
-                         const Slice& payload,
-                         Retention retention):
+                         const Slice& payload) :
   Message(type, tenantID, origin),
   topic_name_(topic_name),
   payload_(payload),
-  retention_(retention),
   namespaceid_(namespace_id) {
   assert(type == mPublish || type == mDeliver);
   seqno_ = 0;
@@ -321,15 +319,6 @@ Slice MessageData::GetStorageSlice() const {
 void MessageData::SerializeInternal() const {
   PutFixed16(&serialize_buffer__, tenantid_);
   PutTopicID(&serialize_buffer__, namespaceid_, topic_name_);
-  // miscellaneous flags
-  uint16_t flags = 0;
-  switch (retention_) {
-    case Retention::OneHour: flags |= 0x0; break;
-    case Retention::OneDay: flags |= 0x1; break;
-    case Retention::OneWeek: flags |= 0x2; break;
-  }
-  PutFixed16(&serialize_buffer__, flags);
-
   PutLengthPrefixedSlice(&serialize_buffer__,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
 
@@ -345,19 +334,6 @@ Status MessageData::DeSerializeStorage(Slice* in) {
   // extract message topic
   if (!GetTopicID(in, &namespaceid_, &topic_name_)) {
     return Status::InvalidArgument("Bad Message Topic ID");
-  }
-
-  // miscellaneous flags
-  uint16_t flags;
-  if (!GetFixed16(in, &flags)) {
-    return Status::InvalidArgument("Bad flags");
-  }
-  switch (flags & 0x3) {
-    case 0x0: retention_ = Retention::OneHour; break;
-    case 0x1: retention_ = Retention::OneDay; break;
-    case 0x2: retention_ = Retention::OneWeek; break;
-    default:
-      return Status::InvalidArgument("Bad flags");
   }
 
   // extract message id

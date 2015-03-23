@@ -143,20 +143,7 @@ static void ProducerWorker(void* param) {
              "benchmark.%llu",
              static_cast<long long unsigned int>(topic_num));
 
-    // Random topic options
     TopicOptions topic_options;
-    switch (rng() % Retention::Total) {
-      case 0:
-        topic_options.retention = Retention::OneHour;
-        break;
-      case 1:
-        topic_options.retention = Retention::OneDay;
-        break;
-      case 2:
-        topic_options.retention = Retention::OneWeek;
-        break;
-    }
-
     // Add ID and timestamp to message ID.
     static std::atomic<uint64_t> message_index;
     uint64_t send_time = env->NowMicros();

@@ -34,8 +34,7 @@ TEST(Messaging, Data) {
 
   // create a message
   MessageData data1(MessageType::mPublish,
-                    Tenant::GuestTenant, clid1, name1, nsid1, payload1,
-                    Retention::OneDay);
+                    Tenant::GuestTenant, clid1, name1, nsid1, payload1);
 
   // serialize the message
   Slice original = data1.Serialize();
@@ -49,7 +48,6 @@ TEST(Messaging, Data) {
   ASSERT_TRUE(data2.GetOrigin() == clid1);
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
-  ASSERT_EQ(data2.GetRetention(), Retention::OneDay);
   ASSERT_EQ(data2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(data2.GetNamespaceId().ToString(), nsid1);
 }
@@ -171,8 +169,7 @@ TEST(Messaging, ErrorHandling) {
   TestMessage(msg0);
 
   MessageData msg1(MessageType::mPublish,
-                   tenant, client, "topic", nsid, "payload",
-                   Retention::OneDay);
+                   tenant, client, "topic", nsid, "payload");
   TestMessage(msg1);
 
   std::vector<TopicPair> topics = {{ 100, "topic", mSubscribe, nsid }};

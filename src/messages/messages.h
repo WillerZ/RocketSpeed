@@ -221,8 +221,7 @@ class MessageData : public Message {
               const ClientID& origin,
               const Slice& topic_name,
               const Slice& namespace_id,
-              const Slice& payload,
-              Retention retention = Retention::OneWeek);
+              const Slice& payload);
 
   /*
    * constructor with type
@@ -275,11 +274,6 @@ class MessageData : public Message {
   Slice GetPayload() const { return payload_; }
 
   /**
-   * @return The retention of this message.
-   */
-  Retention GetRetention() const { return retention_; }
-
-  /**
    * @return the slice containing tenant ID, topic_name and paylodad from
    * buffer_
    */
@@ -307,7 +301,6 @@ class MessageData : public Message {
   MsgId msgid_;              // globally unique id for message
   Slice topic_name_;         // name of topic
   Slice payload_;            // user data of message
-  Retention retention_;      // message retention
   Slice namespaceid_;        // message namespace
   Slice storage_slice_;      // slice starting from tenantid from buffer_
   Slice topic_id_;           // slice of encoded namespace + topic name

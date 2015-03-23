@@ -23,7 +23,6 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
   callback_(std::move(callback)),
   state_(ReaderState::SubscriptionRequestSent),
   rollcall_topic_(GetRollcallTopicName(nsid)),
-  rollcall_topic_options_(Retention::OneHour),
   msgid_(MsgId()) {
 
   // If the subscription request was successful, then mark

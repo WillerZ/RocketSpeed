@@ -420,19 +420,15 @@ enum Retention : char {
 };
 
 /**
- * These are the options associated with a Topic
- *
- *  @param retention The amount of time a message would remain in RocketSpeed
+ * These are the options associated with publishing to a Topic.
+ * These parameters can be message-specific compression type,
+ * message-specific checksum, or could be hints (e.g. is this
+ * message a json blob, etc.) that makes the system handle
+ * messages more efficiently.
  */
 class TopicOptions {
  public:
-  TopicOptions()
-  : retention(Retention::OneWeek) {}
-
-  explicit TopicOptions(Retention retentionp)
-  : retention(retentionp) {}
-
-  Retention retention;
+  TopicOptions() {}
 };
 
 }  // namespace rocketspeed
