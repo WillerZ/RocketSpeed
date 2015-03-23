@@ -59,6 +59,9 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
 }
 
 ControlTower::~ControlTower() {
+  // Stop tailer before shutting down rooms
+  tailer_.reset();
+
   // Shutdown room loops
   for (auto& r: rooms_) {
     r->Stop();
