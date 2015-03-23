@@ -12,8 +12,10 @@ cpp_library(
         'logging.cc',
         'parsing.cc',
         'scoped_file_lock.cc',
+        'storage.cc',
         'testharness.cc',
         'testutil.cc',
+        'topic_uuid.cc',
         'xxhash.cc',
     ],
     preprocessor_flags = [

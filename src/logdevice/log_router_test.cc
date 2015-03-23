@@ -30,8 +30,8 @@ TEST(LogRouterTest, ConsistencyTest) {
     Topic topic = std::to_string(i);
     LogID logID1;
     LogID logID2;
-    ASSERT_TRUE(router1.GetLogID(topic, &logID1).ok());
-    ASSERT_TRUE(router2.GetLogID(topic, &logID2).ok());
+    ASSERT_TRUE(router1.GetLogID("guest", topic, &logID1).ok());
+    ASSERT_TRUE(router2.GetLogID("guest", topic, &logID2).ok());
     if (logID1 != logID2) {
       ++numChanged;
     }
@@ -53,7 +53,7 @@ TEST(LogRouterTest, LogDistribution) {
   for (int i = 0; i < numTopics; ++i) {
     Topic topic = std::to_string(i);
     LogID logID;
-    ASSERT_TRUE(router.GetLogID(topic, &logID).ok());
+    ASSERT_TRUE(router.GetLogID("guest", topic, &logID).ok());
     topicCount[logID - 1]++;  // LogIDs start at 1, not 0.
   }
 

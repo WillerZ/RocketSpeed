@@ -24,6 +24,8 @@ enum SequencePoint : SequenceNumber {
   kEndOfTimeSeqno = std::numeric_limits<SequenceNumber>::max()
 };
 
+struct TopicUUID;
+
 /**
  * Abstract raw log record entry.
  */
@@ -191,24 +193,22 @@ class LogRouter {
   /**
    * Routes a topic to a log ID.
    *
-   * @param topic the name of the topic to route.
+   * @param namespace_id the namespace of the topic to route.
+   * @param topic_name the topic to route.
    * @param out output for logid.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status GetLogID(Slice topic, LogID* out) const = 0;
-
-  /**
-   * Routes a topic to a log ID.
-   *
-   * @param topic the name of the topic to route.
-   * @param out output for logid.
-   * @return on success returns OK(), otherwise errorcode.
-   */
-  inline Status GetLogID(const Topic& topic, LogID* out) const {
-    return GetLogID(Slice(topic), out);
-  }
+  virtual Status GetLogID(Slice namespace_id,
+                          Slice topic_name,
+                          LogID* out) const = 0;
 
   virtual ~LogRouter() {}
+
+ protected:
+  /**
+   * Produces a hash, which should be used for routing a namespace + topic.
+   */
+  static size_t TopicHash(Slice namespace_id, Slice topic_name);
 };
 
 }  // namespace rocketspeed

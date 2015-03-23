@@ -21,12 +21,11 @@ TopicManager::~TopicManager() {
 // start sequence number from where to start the subscription is
 // specified by the caller.
 Status
-TopicManager::AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
+TopicManager::AddSubscriber(const TopicUUID& topic, SequenceNumber start,
                             LogID logid, HostNumber subscriber,
                             unsigned int roomnum) {
   bool newsubscriber = true;
-  std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
-                                      topic_map_.find(topic);
+  auto iter = topic_map_.find(topic);
   // This is the first time we are receiving any subscription
   // request for this topic
   if (iter == topic_map_.end()) {
@@ -34,9 +33,7 @@ TopicManager::AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
     std::unique_ptr<TopicList> list(ll);
     ll->insert(subscriber);
 
-    auto ret = topic_map_.insert(
-                 std::pair<NamespaceTopic, std::unique_ptr<TopicList>>
-                 (topic, std::move(list)));
+    auto ret = topic_map_.emplace(topic, std::move(list));
     assert(ret.second);  // inserted successfully
     if (!ret.second) {
       return Status::InternalError("TopicManager::AddSubscriber "
@@ -55,13 +52,12 @@ TopicManager::AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
 
 // remove a subscriber to the topic
 Status
-TopicManager::RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
+TopicManager::RemoveSubscriber(const TopicUUID& topic, LogID logid,
                                HostNumber subscriber,
                                unsigned int roomnum) {
   Status status;
   // find list of subscribers for this topic
-  std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
-                                      topic_map_.find(topic);
+  auto iter = topic_map_.find(topic);
   if (iter != topic_map_.end()) {
     // remove this subscriber from list
     TopicList* list = iter->second.get();
@@ -74,8 +70,7 @@ TopicManager::RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
       list->erase(list_iter);
 
       // Update the number of subscribers of this log
-      std::unordered_map<LogID, LogData>::iterator it =
-                                      logdata_.find(logid);
+      auto it = logdata_.find(logid);
       assert(it != logdata_.end() &&
              it->second.num_subscribers > 0);
       it->second.num_subscribers--;
@@ -96,8 +91,7 @@ TopicManager::ReseekIfNeeded(LogID logid, SequenceNumber start,
                              unsigned int roomnum, bool newsubscriber) {
   Status st;
   SequenceNumber current = 0;
-  std::unordered_map<LogID, LogData>::iterator iter =
-                                      logdata_.find(logid);
+  auto iter = logdata_.find(logid);
   assert((iter != logdata_.end()) || newsubscriber);
 
   if (iter != logdata_.end()) {
@@ -137,9 +131,8 @@ TopicManager::SetLastRead(LogID logid, SequenceNumber seqno) {
 // Returns the list of subscribers for a specified topic.
 // Returns null if there are no subscribers.
 TopicList*
-TopicManager::GetSubscribers(const NamespaceTopic& topic) {
-  std::unordered_map<NamespaceTopic, unique_ptr<TopicList>>::iterator iter =
-                                      topic_map_.find(topic);
+TopicManager::GetSubscribers(const TopicUUID& topic) {
+  auto iter = topic_map_.find(topic);
   if (iter != topic_map_.end()) {
     return iter->second.get();
   }

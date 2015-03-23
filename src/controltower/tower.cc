@@ -172,7 +172,9 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
     // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
     LogID logid;
-    Status st = options_.log_router->GetLogID(topic.topic_name, &logid);
+    Status st = options_.log_router->GetLogID(topic.namespace_id,
+                                              topic.topic_name,
+                                              &logid);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
           "Unable to map Topic(%s) to logid %s",

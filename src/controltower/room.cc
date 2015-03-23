@@ -14,6 +14,7 @@
 
 #include "src/controltower/tower.h"
 #include "src/util/common/coding.h"
+#include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
 
@@ -169,18 +170,18 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   }
   assert(hostnum >= 0);
 
+
   // Check that the topic name do map to the specified logid
   LogID checkid __attribute__((unused)) = 0;
-  assert((options.log_router->GetLogID(topic[0].topic_name, &checkid)).ok() &&
+  assert((options.log_router->GetLogID(topic[0].namespace_id,
+                                       topic[0].topic_name,
+                                       &checkid)).ok() &&
          (logid == checkid));
 
-  // Prefix the namespace id to the topic name
-  NamespaceTopic topic_name;
-  PutTopicID(&topic_name, topic[0].namespace_id, topic[0].topic_name);
-
   // Remember this subscription request
+  TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
   if (topic[0].topic_type == MetadataType::mSubscribe) {
-    topic_map_.AddSubscriber(topic_name,
+    topic_map_.AddSubscriber(uuid,
                              topic[0].seqno,
                              logid, hostnum, room_number_);
     LOG_INFO(options.info_log,
@@ -189,8 +190,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
         topic[0].topic_name.c_str(),
         topic[0].seqno);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
-    topic_map_.RemoveSubscriber(topic_name,
-                                logid, hostnum, room_number_);
+    topic_map_.RemoveSubscriber(uuid, logid, hostnum, room_number_);
     LOG_INFO(options.info_log,
         "Removed subscriber %s from Topic(%s)",
         origin.c_str(),
@@ -251,15 +251,12 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
     return;
   }
 
-  // Prefix the namespace id to the topic name
-  NamespaceTopic topic_name;
-  PutTopicID(&topic_name, request->GetNamespaceId(), request->GetTopicName());
-
   // serialize msg
   std::string serial;
 
   // map the topic to a list of subscribers
-  TopicList* list = topic_map_.GetSubscribers(topic_name);
+  TopicUUID uuid(request->GetNamespaceId(), request->GetTopicName());
+  TopicList* list = topic_map_.GetSubscribers(uuid);
 
   // send the messages to subscribers
   if (list != nullptr && !list->empty()) {

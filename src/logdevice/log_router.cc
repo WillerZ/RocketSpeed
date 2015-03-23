@@ -5,7 +5,6 @@
 
 #include "src/logdevice/log_router.h"
 #include <string>
-#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
@@ -15,16 +14,12 @@ LogDeviceLogRouter::LogDeviceLogRouter(LogID first, LogID last)
   assert(last >= first);
 }
 
-Status LogDeviceLogRouter::GetLogID(Slice topic, LogID* out) const {
-  // Hash the topic name
-  // Using MurmurHash instead of std::hash because std::hash is implementation
-  // defined, meaning we cannot rely on it to have a good distribution.
-  MurmurHash2<Slice> hasher;
-  size_t hash = hasher(topic);
-
+Status LogDeviceLogRouter::GetLogID(Slice namespace_id,
+                                    Slice topic_name,
+                                    LogID* out) const {
   // Find the Log ID for this topic hash key.
-  *out = JumpConsistentHash(hash, count_) + first_;
-
+  const size_t key = TopicHash(namespace_id, topic_name);
+  *out = JumpConsistentHash(key, count_) + first_;
   return Status::OK();
 }
 

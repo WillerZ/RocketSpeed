@@ -110,8 +110,9 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
   // Route topic to log ID.
   MessageData* msg_data = static_cast<MessageData*>(msg.release());
   LogID logid;
-  Slice topic_name = msg_data->GetTopicName();
-  if (!options_.log_router->GetLogID(topic_name, &logid).ok()) {
+  if (!options_.log_router->GetLogID(msg_data->GetNamespaceId(),
+                                     msg_data->GetTopicName(),
+                                     &logid).ok()) {
     assert(false);  // GetLogID should never fail.
     return;
   }

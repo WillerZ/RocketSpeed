@@ -39,7 +39,7 @@ class LogDeviceLogRouter : public LogRouter {
    * @param out Where to place the resulting Log ID.
    * @return on success OK(), otherwise errorcode.
    */
-  Status GetLogID(Slice topic, LogID* out) const final;
+  Status GetLogID(Slice namespace_id, Slice topic_name, LogID* out) const final;
 
  private:
   /**

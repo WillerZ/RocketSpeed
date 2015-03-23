@@ -10,12 +10,12 @@
 #include "./Types.h"
 #include "src/util/storage.h"
 #include "src/util/hostmap.h"
+#include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
 
 class Tailer;
 typedef std::unordered_set<HostNumber> TopicList;
-typedef std::string NamespaceTopic;  // namespaceid + topicname
 
 //
 // The Topic Manager maintains information between topics
@@ -32,12 +32,12 @@ class TopicManager {
   virtual ~TopicManager();
 
   // Add a new subscriber to the topic.
-  Status AddSubscriber(const NamespaceTopic& topic, SequenceNumber start,
+  Status AddSubscriber(const TopicUUID& topic, SequenceNumber start,
                        LogID logid,
                        HostNumber subscriber, unsigned int roomnum);
 
   // Remove an existing subscriber for a topic
-  Status RemoveSubscriber(const NamespaceTopic& topic, LogID logid,
+  Status RemoveSubscriber(const TopicUUID& topic, LogID logid,
                           HostNumber subscriber, unsigned int roomnum);
 
   // Get the seqno last read from log
@@ -47,11 +47,11 @@ class TopicManager {
   void SetLastRead(LogID logid, SequenceNumber seqno);
 
   // Returns the list of subscribers for a specific topic
-  TopicList* GetSubscribers(const NamespaceTopic& topic_name);
+  TopicList* GetSubscribers(const TopicUUID& topic_name);
 
  private:
   // Map a topic name to a list of TopicEntries.
-  std::unordered_map<NamespaceTopic, std::unique_ptr<TopicList>>  topic_map_;
+  std::unordered_map<TopicUUID, std::unique_ptr<TopicList>>  topic_map_;
 
   // Information stored about each open logid
   class LogData {

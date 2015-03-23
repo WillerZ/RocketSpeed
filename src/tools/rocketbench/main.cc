@@ -604,6 +604,7 @@ int main(int argc, char** argv) {
   // Start producing messages
   if (FLAGS_start_producer) {
     printf("Publishing messages.\n");
+    fflush(stdout);
     pargs.producers = &clients;
     pargs.nsid = nsid;
     pargs.all_ack_messages_received = &all_ack_messages_received;
@@ -619,6 +620,7 @@ int main(int argc, char** argv) {
   // topics, simply starts threads to consume
   if (FLAGS_start_consumer && !FLAGS_delay_subscribe) {
     printf("Waiting for messages.\n");
+    fflush(stdout);
     cargs.all_messages_received = &all_messages_received;
     cargs.messages_received = &messages_received;
     cargs.last_data_message = &last_data_message;
@@ -634,9 +636,11 @@ int main(int argc, char** argv) {
     ret = pargs.result;
     if (ack_messages_received.load() != FLAGS_num_messages) {
       printf("Time out awaiting publish acks.\n");
+      fflush(stdout);
       ret = 1;
     } else {
       printf("All messages published.\n");
+      fflush(stdout);
     }
   }
 
@@ -645,6 +649,7 @@ int main(int argc, char** argv) {
   if (FLAGS_delay_subscribe) {
     assert(FLAGS_start_consumer);
     printf("Subscribing (delayed) to topics.\n");
+    fflush(stdout);
 
     // Start the clock.
     start = std::chrono::steady_clock::now();
@@ -654,6 +659,7 @@ int main(int argc, char** argv) {
 
     // Wait for all messages to be received
     printf("Waiting (delayed) for messages.\n");
+    fflush(stdout);
     cargs.all_messages_received = &all_messages_received;
     cargs.messages_received = &messages_received;
     cargs.last_data_message = &last_data_message;
@@ -668,8 +674,10 @@ int main(int argc, char** argv) {
     ret = cargs.result;
     if (messages_received.load() != FLAGS_num_messages) {
       printf("Time out awaiting messages.\n");
+      fflush(stdout);
     } else {
       printf("All messages received.\n");
+      fflush(stdout);
     }
   }
 
