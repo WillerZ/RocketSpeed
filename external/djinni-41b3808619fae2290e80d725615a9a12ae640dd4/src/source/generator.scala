@@ -305,8 +305,8 @@ abstract class Generator(spec: Spec)
   def toCppParamType(f: Field): String = toCppParamType(f, None, "")
   def toCppParamType(f: Field, namespace: Option[String] = None, prefix: String = ""): String = {
     val cppType = toCppType(f.ty, namespace)
-    val localName = prefix + idCpp.local(f.ident);
-    val refType = "const " + cppType + " & " + localName
+    val localName = prefix + idCpp.local(f.ident)
+    val refType = cppType + " " + localName
     val valueType = cppType + " " + localName
 
     def toType(expr: MExpr): String = expr.base match {
