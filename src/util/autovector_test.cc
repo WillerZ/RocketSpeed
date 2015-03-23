@@ -46,7 +46,7 @@ TEST(AutoVectorTest, ConstructorWithSize) {
     autovector<int, 3> vec(4);
     ASSERT_TRUE(!IsOnStack(vec));
     ASSERT_EQ(vec.size(), 4);
-    ASSERT_EQ(vec.capacity(), 4);
+    ASSERT_GE(vec.capacity(), 4);
     ASSERT_EQ(vec[0], 0);
     ASSERT_EQ(vec[1], 0);
     ASSERT_EQ(vec[2], 0);
@@ -67,7 +67,7 @@ TEST(AutoVectorTest, ConstructorWithSizeAndValue) {
     autovector<int, 3> vec(4, -1);
     ASSERT_TRUE(!IsOnStack(vec));
     ASSERT_EQ(vec.size(), 4);
-    ASSERT_EQ(vec.capacity(), 4);
+    ASSERT_GE(vec.capacity(), 4);
     ASSERT_EQ(vec[0], -1);
     ASSERT_EQ(vec[1], -1);
     ASSERT_EQ(vec[2], -1);

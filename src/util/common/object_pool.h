@@ -53,7 +53,7 @@ class PooledObjectList;
 template <typename T>
 class PooledObject {
   // Only the pool list can access the tail.
-  friend struct PooledObjectList<T>;
+  friend class PooledObjectList<T>;
   T* tail_ = nullptr;
 };
 

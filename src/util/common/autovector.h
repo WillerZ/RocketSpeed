@@ -86,11 +86,12 @@ class autovector :
 {
  public:
   using Base = std::vector<T, detail::AutoVectorAllocator<T, kCapacity>>;
-  using Base::value_type;
-  using Base::iterator;
-  using Base::const_iterator;
-  using Base::reverse_iterator;
-  using Base::const_reverse_iterator;
+
+  typedef typename Base::value_type value_type;
+  typedef typename Base::iterator iterator;
+  typedef typename Base::const_iterator const_iterator;
+  typedef typename Base::reverse_iterator reverse_iterator;
+  typedef typename Base::const_reverse_iterator const_reverse_iterator;
 
   autovector() {
     reserve(kCapacity);

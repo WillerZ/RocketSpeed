@@ -80,7 +80,8 @@ class ClientResultStatus : public ResultStatus {
 };
 
 /** Describes published message awaiting response. */
-struct PendingAck {
+class PendingAck {
+ public:
   PendingAck(PublishCallback _callback, std::string _data)
       : callback(std::move(_callback)), data(std::move(_data)) {
   }
@@ -94,7 +95,8 @@ struct PendingAck {
  * messages on a single topic are handled by a single thread to avoid
  * contention. Aligned to avoid false sharing.
  */
-struct alignas(CACHE_LINE_SIZE) PublisherWorkerData {
+class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
+ public:
   /**
    * Map a subscribed topic name to the last sequence number received for this
    * topic.
@@ -111,8 +113,7 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
                              MsgLoopBase* msg_loop,
                              SmartWakeLock* wake_lock,
                              HostId pilot_host)
-    : env_(env)
-    , info_log_(std::move(info_log))
+    : info_log_(std::move(info_log))
     , msg_loop_(msg_loop)
     , wake_lock_(wake_lock)
     , pilot_host_(std::move(pilot_host)) {

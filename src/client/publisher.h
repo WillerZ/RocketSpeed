@@ -55,8 +55,6 @@ class PublisherImpl {
                         const MsgId messageId);
 
  private:
-  /** A non-owning pointer to the environment. */
-  BaseEnv* env_;
   const std::shared_ptr<Logger> info_log_;
   /** A non-owning pointer to the message loop. */
   MsgLoopBase* msg_loop_;

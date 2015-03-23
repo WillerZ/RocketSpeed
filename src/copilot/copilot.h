@@ -113,7 +113,8 @@ class Copilot {
 };
 
 // Statistics collected by copilot
-struct Stats {
+class Stats {
+ public:
   Stats() {
     numwrites_rollcall_total = all.AddCounter(
                              "rocketspeed.copilot.numwrites_rollcall_total");
