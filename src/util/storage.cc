@@ -14,7 +14,7 @@ Status LogRouter::GetLogID(Slice namespace_id,
   return RouteToLog(TopicUUID::RoutingHash(namespace_id, topic_name), out);
 }
 
-Status LogRouter::GetLogID(TopicUUID& topic,
+Status LogRouter::GetLogID(const TopicUUID& topic,
                            LogID* out) const {
   return RouteToLog(topic.RoutingHash(), out);
 }

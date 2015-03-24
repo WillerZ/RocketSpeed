@@ -209,7 +209,7 @@ class LogRouter {
    * @param out output for logid.
    * @return on success returns OK(), otherwise errorcode.
    */
-  Status GetLogID(TopicUUID& topic,
+  Status GetLogID(const TopicUUID& topic,
                   LogID* out) const;
 
   virtual ~LogRouter() {}
