@@ -30,12 +30,28 @@ struct TopicUUID {
   }
 
   /**
-   * @return Hash of the UUID.
+   * @return Hash of the UUID, suitable for using in general hash tables.
    */
   size_t Hash() const;
 
+  /**
+   * @return Hash that should be used for routing to logs / control towers.
+   */
+  size_t RoutingHash() const;
+
+  /**
+   * Equivalent to TopicUUID(namespace_id, topic).RoutingHash(), but
+   * potentially faster.
+   *
+   * @param namespace_id namespace of topic to route.
+   * @param topic_name name of topic to route.
+   * @return Hash that should be used for routing to logs / control towers.
+   */
+  static size_t RoutingHash(Slice namespace_id, Slice topic_name);
+
  private:
   std::string uuid_;
+  size_t routing_hash_;
 };
 
 }  // namespace rocketspeed

@@ -32,6 +32,7 @@ class LogDeviceLogRouter : public LogRouter {
    */
   explicit LogDeviceLogRouter(LogID first, LogID last);
 
+ private:
   /**
    * Gets the Log ID where a topic's messages are to be stored.
    *
@@ -39,9 +40,8 @@ class LogDeviceLogRouter : public LogRouter {
    * @param out Where to place the resulting Log ID.
    * @return on success OK(), otherwise errorcode.
    */
-  Status GetLogID(Slice namespace_id, Slice topic_name, LogID* out) const final;
+  Status RouteToLog(size_t routing_hash, LogID* out) const final;
 
- private:
   /**
    * Assigns the key into a bucket index (< buckets) in a well distributed
    * manner, and also minimally changes the assigned bucket of a key when the

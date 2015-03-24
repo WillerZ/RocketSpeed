@@ -4,17 +4,19 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/util/storage.h"
-#include "src/util/xxhash.h"
+#include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
 
-size_t LogRouter::TopicHash(Slice namespace_id, Slice topic_name) {
-  const uint64_t seed = 0x9ee8fcef51dbffe8;
-  XXH64_state_t state;
-  XXH64_reset(&state, seed);
-  XXH64_update(&state, namespace_id.data(), namespace_id.size());
-  XXH64_update(&state, topic_name.data(), topic_name.size());
-  return XXH64_digest(&state);
+Status LogRouter::GetLogID(Slice namespace_id,
+                           Slice topic_name,
+                           LogID* out) const {
+  return RouteToLog(TopicUUID::RoutingHash(namespace_id, topic_name), out);
+}
+
+Status LogRouter::GetLogID(TopicUUID& topic,
+                           LogID* out) const {
+  return RouteToLog(topic.RoutingHash(), out);
 }
 
 }

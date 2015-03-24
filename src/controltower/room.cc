@@ -172,14 +172,12 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
 
 
   // Check that the topic name do map to the specified logid
+  TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
   LogID checkid __attribute__((unused)) = 0;
-  assert((options.log_router->GetLogID(topic[0].namespace_id,
-                                       topic[0].topic_name,
-                                       &checkid)).ok() &&
+  assert((options.log_router->GetLogID(uuid, &checkid)).ok() &&
          (logid == checkid));
 
   // Remember this subscription request
-  TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
   if (topic[0].topic_type == MetadataType::mSubscribe) {
     topic_map_.AddSubscriber(uuid,
                              topic[0].seqno,

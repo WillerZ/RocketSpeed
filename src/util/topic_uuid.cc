@@ -11,11 +11,27 @@ namespace rocketspeed {
 
 TopicUUID::TopicUUID(Slice namespace_id, Slice topic) {
   PutTopicID(&uuid_, namespace_id, topic);
+  routing_hash_ = RoutingHash(namespace_id, topic);
 }
 
 size_t TopicUUID::Hash() const {
-  const uint64_t seed = 0x91bef3a00e490a92;
-  return XXH64(uuid_.data(), uuid_.size(), seed);
+  return routing_hash_;
+}
+
+size_t TopicUUID::RoutingHash() const {
+  return routing_hash_;
+}
+
+size_t TopicUUID::RoutingHash(Slice namespace_id, Slice topic_name) {
+  // *******************************************************************
+  // * WARNING: changing this hash will redistribute topics into logs. *
+  // *******************************************************************
+  const uint64_t seed = 0x9ee8fcef51dbffe8;
+  XXH64_state_t state;
+  XXH64_reset(&state, seed);
+  XXH64_update(&state, namespace_id.data(), namespace_id.size());
+  XXH64_update(&state, topic_name.data(), topic_name.size());
+  return XXH64_digest(&state);
 }
 
 }  // namespace rocketspeed

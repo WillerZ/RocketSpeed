@@ -14,12 +14,10 @@ LogDeviceLogRouter::LogDeviceLogRouter(LogID first, LogID last)
   assert(last >= first);
 }
 
-Status LogDeviceLogRouter::GetLogID(Slice namespace_id,
-                                    Slice topic_name,
-                                    LogID* out) const {
+Status LogDeviceLogRouter::RouteToLog(size_t routing_hash,
+                                      LogID* out) const {
   // Find the Log ID for this topic hash key.
-  const size_t key = TopicHash(namespace_id, topic_name);
-  *out = JumpConsistentHash(key, count_) + first_;
+  *out = JumpConsistentHash(routing_hash, count_) + first_;
   return Status::OK();
 }
 

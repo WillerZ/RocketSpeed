@@ -198,17 +198,25 @@ class LogRouter {
    * @param out output for logid.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status GetLogID(Slice namespace_id,
-                          Slice topic_name,
-                          LogID* out) const = 0;
+  Status GetLogID(Slice namespace_id,
+                  Slice topic_name,
+                  LogID* out) const;
+
+  /**
+   * Routes a topic to a log ID.
+   *
+   * @param topic the UUID of the topic to route.
+   * @param out output for logid.
+   * @return on success returns OK(), otherwise errorcode.
+   */
+  Status GetLogID(TopicUUID& topic,
+                  LogID* out) const;
 
   virtual ~LogRouter() {}
 
- protected:
-  /**
-   * Produces a hash, which should be used for routing a namespace + topic.
-   */
-  static size_t TopicHash(Slice namespace_id, Slice topic_name);
+ private:
+  // Internal: Maps a routing hash to a log.
+  virtual Status RouteToLog(size_t routing_hash, LogID* out) const = 0;
 };
 
 }  // namespace rocketspeed
