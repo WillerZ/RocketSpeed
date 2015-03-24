@@ -51,16 +51,14 @@ It depends on successfully passing SMHasher test set.
 
 #pragma once
 
-#if defined (__cplusplus)
-extern "C" {
-#endif
-
-
 /*****************************
    Includes
 *****************************/
 #include <stddef.h>   /* size_t */
 
+#if defined (__cplusplus)
+namespace rocketspeed {
+#endif
 
 /*****************************
    Type
@@ -138,5 +136,5 @@ When you are done, don't forget to free XXH state space, using typically XXHnn_f
 
 
 #if defined (__cplusplus)
-}
+}  // namespace rocketspeed
 #endif
