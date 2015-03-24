@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class ClientImpl {
     public abstract Status Start(ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
 
-    public abstract PublishStatus Publish(String namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+    public abstract PublishStatus Publish(String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
     public abstract void ListenTopics(ArrayList<SubscriptionRequestImpl> names);
 
@@ -53,12 +53,12 @@ public abstract class ClientImpl {
         private native Status native_Start(long _nativeRef, ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
 
         @Override
-        public PublishStatus Publish(String namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
+        public PublishStatus Publish(String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Publish(this.nativeRef, namespaceId, topicName, retention, data, messageId, publishCallback);
+            return native_Publish(this.nativeRef, namespaceId, topicName, data, messageId, publishCallback);
         }
-        private native PublishStatus native_Publish(long _nativeRef, String namespaceId, String topicName, RetentionBase retention, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+        private native PublishStatus native_Publish(long _nativeRef, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
         @Override
         public void ListenTopics(ArrayList<SubscriptionRequestImpl> names)

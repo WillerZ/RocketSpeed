@@ -18,27 +18,26 @@ public class Client implements AutoCloseable {
     this.client = client;
   }
 
-  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data)
+  public MsgId publish(String namespaceID, String topicName, byte[] data) throws Exception {
+    return publish(namespaceID, topicName, data, null);
+  }
+
+  public MsgId publish(String namespaceID, String topicName, byte[] data, PublishCallback callback)
       throws Exception {
-    return publish(namespaceID, topicName, options, data, null, null);
+    return publish(namespaceID, topicName, data, callback, new TopicOptions());
   }
 
-  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data,
-                       final PublishCallback callback) throws Exception {
-    return publish(namespaceID, topicName, options, data, null, callback);
+  public MsgId publish(String namespaceID, String topicName, byte[] data, PublishCallback callback,
+                       TopicOptions options) throws Exception {
+    return publish(namespaceID, topicName, data, callback, options, null);
   }
 
-  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data,
-                       MsgId messageId) throws Exception {
-    return publish(namespaceID, topicName, options, data, messageId, null);
-  }
-
-  public MsgId publish(String namespaceID, String topicName, TopicOptions options, byte[] data,
-                       MsgId messageId, final PublishCallback callback) throws Exception {
+  public MsgId publish(String namespaceID, String topicName, byte[] data, PublishCallback callback,
+                       TopicOptions options, MsgId messageId) throws Exception {
+    assert options != null;
     MsgIdImpl messageId1 = messageId == null ? null : messageId.djinni();
     PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackAdaptor(callback);
-    PublishStatus status = client.Publish(namespaceID, topicName, options.getRetention().djinni(),
-                                          data, messageId1, callback1);
+    PublishStatus status = client.Publish(namespaceID, topicName, data, messageId1, callback1);
     status.getStatus().checkExceptions();
     return new MsgId(status.getMessageId());
   }

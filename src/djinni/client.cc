@@ -65,20 +65,6 @@ rocketspeed::SequenceNumber toSequenceNumber(int64_t seqno) {
   return static_cast<uint64_t>(seqno - Limits::min());
 }
 
-rocketspeed::Retention toRetention(RetentionBase retention) {
-  switch (retention) {
-    case RetentionBase::ONEHOUR:
-      return rocketspeed::Retention::OneHour;
-    case RetentionBase::ONEDAY:
-      return rocketspeed::Retention::OneDay;
-    case RetentionBase::ONEWEEK:
-      return rocketspeed::Retention::OneWeek;
-    default:
-      assert(false);
-      return rocketspeed::Retention::OneWeek;
-  }
-}
-
 rocketspeed::SubscriptionRequest toSubscriptionRequest(
     SubscriptionRequestImpl request) {
   SubscriptionStart start = request.start
@@ -200,7 +186,6 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
 PublishStatus Client::Publish(
     std::string namespace_id,
     std::string topic_name,
-    RetentionBase retention,
     std::vector<uint8_t> data,
     std::experimental::optional<MsgIdImpl> message_id,
     std::shared_ptr<PublishCallbackImpl> publish_callback) {
@@ -216,7 +201,7 @@ PublishStatus Client::Publish(
     };
   }
 
-  TopicOptions topic_options(toRetention(retention));
+  TopicOptions topic_options;
   rocketspeed::PublishStatus status;
   if (message_id) {
     status = client_->Publish(topic_name,

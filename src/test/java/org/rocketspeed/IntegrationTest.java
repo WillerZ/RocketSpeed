@@ -108,7 +108,7 @@ public class IntegrationTest {
 
     try (Client client = builder.build()) {
       // Send a message.
-      client.publish(ns, topic, new TopicOptions(Retention.ONE_DAY), data, publishCallback);
+      client.publish(ns, topic, data, publishCallback);
 
       // Listen for the topic from the beginning of time.
       client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, BEGINNING)));
@@ -130,7 +130,6 @@ public class IntegrationTest {
     // Message setup.
     final String ns = "guest";
     final String topic = "test_topic-SequenceNumberZero";
-    final TopicOptions options = new TopicOptions(Retention.ONE_DAY);
 
     // For asserting that all async callbacks carried successful statuses.
     final StatusMonoidFirst statuses = new StatusMonoidFirst();
@@ -182,7 +181,7 @@ public class IntegrationTest {
     try (Client client = builder.build()) {
       // Send some messages and wait for the ACKs.
       for (int i = 1; i < 4; ++i) {
-        client.publish(ns, topic, options, valueOf(i).getBytes(), publishCallback);
+        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
 
@@ -192,7 +191,7 @@ public class IntegrationTest {
 
       // Send 3 more different messages.
       for (int i = 3; i < 6; ++i) {
-        client.publish(ns, topic, options, valueOf(i).getBytes(), publishCallback);
+        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
@@ -206,7 +205,7 @@ public class IntegrationTest {
 
       // Send some messages and wait for the ACKs.
       for (int i = 6; i < 9; ++i) {
-        client.publish(ns, topic, options, valueOf(i).getBytes(), publishCallback);
+        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
 
@@ -216,7 +215,7 @@ public class IntegrationTest {
 
       // Send 3 more messages again.
       for (int i = 9; i < 12; ++i) {
-        client.publish(ns, topic, options, valueOf(i).getBytes(), publishCallback);
+        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
@@ -234,7 +233,6 @@ public class IntegrationTest {
     // Message setup.
     final String ns = "guest";
     final String topic = "test_topic-ResubscribeFromStorage";
-    final TopicOptions options = new TopicOptions(Retention.ONE_DAY);
 
     // For asserting that all async callbacks carried successful statuses.
     final StatusMonoidFirst statuses = new StatusMonoidFirst();
@@ -277,7 +275,7 @@ public class IntegrationTest {
       client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, BEGINNING)));
       // Send some messages and wait for the ACKs.
       for (int i = 0; i < 3; ++i) {
-        client.publish(ns, topic, options, valueOf(i).getBytes());
+        client.publish(ns, topic, valueOf(i).getBytes());
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
       // Should receive all of the first three messages.
@@ -303,7 +301,7 @@ public class IntegrationTest {
       client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, UNKNOWN)));
       // Send some different messages and wait for the ACKs.
       for (int i = 3; i < 6; ++i) {
-        client.publish(ns, topic, options, valueOf(i).getBytes());
+        client.publish(ns, topic, valueOf(i).getBytes());
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
       // Should receive none of the first three messages and all from the second batch.
@@ -328,7 +326,7 @@ public class IntegrationTest {
       // automatically.
       // Send some different messages and wait for the ACKs.
       for (int i = 6; i < 9; ++i) {
-        client.publish(ns, topic, options, valueOf(i).getBytes());
+        client.publish(ns, topic, valueOf(i).getBytes());
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
       // Should receive none of the first three messages and all from the second batch.

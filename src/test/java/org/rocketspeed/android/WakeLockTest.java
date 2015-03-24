@@ -12,11 +12,9 @@ import org.rocketspeed.MessageReceived;
 import org.rocketspeed.MsgId;
 import org.rocketspeed.PublishCallback;
 import org.rocketspeed.ReceiveCallback;
-import org.rocketspeed.Retention;
 import org.rocketspeed.Status;
 import org.rocketspeed.SubscribeCallback;
 import org.rocketspeed.SubscriptionRequest;
-import org.rocketspeed.TopicOptions;
 
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -109,7 +107,7 @@ public class WakeLockTest {
     assertTrue(calledBack.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
 
     // Publish to the topic.
-    client.publish(ns, topic, new TopicOptions(Retention.ONE_DAY), new byte[3], publishCallback);
+    client.publish(ns, topic, new byte[3], publishCallback);
     // Wait for confirmation...
     assertTrue(calledBack.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
     // ...and message.

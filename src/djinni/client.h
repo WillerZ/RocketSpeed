@@ -37,7 +37,6 @@ class Client : public ClientImpl {
   PublishStatus Publish(
       std::string namespace_id,
       std::string topic_name,
-      RetentionBase retention,
       std::vector<uint8_t> data,
       std::experimental::optional<MsgIdImpl> message_id,
       std::shared_ptr<PublishCallbackImpl> publish_callback) override;

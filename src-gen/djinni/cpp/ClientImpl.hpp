@@ -8,7 +8,6 @@
 #include "src-gen/djinni/cpp/LogLevel.hpp"
 #include "src-gen/djinni/cpp/MsgIdImpl.hpp"
 #include "src-gen/djinni/cpp/PublishStatus.hpp"
-#include "src-gen/djinni/cpp/RetentionBase.hpp"
 #include "src-gen/djinni/cpp/Status.hpp"
 #include "src-gen/djinni/cpp/SubscriptionRequestImpl.hpp"
 #include "src-gen/djinni/cpp/SubscriptionStorage.hpp"
@@ -33,7 +32,7 @@ public:
 
     virtual Status Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback, bool restore_subscriptions, bool resubscribe_from_storage) = 0;
 
-    virtual PublishStatus Publish(std::string namespace_id, std::string topic_name, RetentionBase retention, std::vector<uint8_t> data, std::experimental::optional<MsgIdImpl> message_id, std::shared_ptr<PublishCallbackImpl> publish_callback) = 0;
+    virtual PublishStatus Publish(std::string namespace_id, std::string topic_name, std::vector<uint8_t> data, std::experimental::optional<MsgIdImpl> message_id, std::shared_ptr<PublishCallbackImpl> publish_callback) = 0;
 
     virtual void ListenTopics(std::vector<SubscriptionRequestImpl> names) = 0;
 

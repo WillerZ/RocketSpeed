@@ -16,7 +16,6 @@
 #include "src-gen/djinni/cpp/jni/NativePublishCallbackImpl.hpp"
 #include "src-gen/djinni/cpp/jni/NativePublishStatus.hpp"
 #include "src-gen/djinni/cpp/jni/NativeReceiveCallbackImpl.hpp"
-#include "src-gen/djinni/cpp/jni/NativeRetentionBase.hpp"
 #include "src-gen/djinni/cpp/jni/NativeSnapshotCallbackImpl.hpp"
 #include "src-gen/djinni/cpp/jni/NativeStatus.hpp"
 #include "src-gen/djinni/cpp/jni/NativeSubscribeCallbackImpl.hpp"
@@ -71,19 +70,18 @@ CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)
 }
 
-CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Publish(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jstring j_namespaceId, jstring j_topicName, jobject j_retention, jbyteArray j_data, jobject j_messageId, jobject j_publishCallback)
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ClientImpl_00024CppProxy_native_1Publish(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jstring j_namespaceId, jstring j_topicName, jbyteArray j_data, jobject j_messageId, jobject j_publishCallback)
 {
     try {
         DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
         const std::shared_ptr<::rocketspeed::djinni::ClientImpl> & ref = djinni::CppProxyHandle<::rocketspeed::djinni::ClientImpl>::get(nativeRef);
         std::string c_namespace_id = ::djinni::HString::fromJava(jniEnv, j_namespaceId);
         std::string c_topic_name = ::djinni::HString::fromJava(jniEnv, j_topicName);
-        ::rocketspeed::djinni::RetentionBase c_retention = NativeRetentionBase::fromJava(jniEnv, j_retention);
         std::vector<uint8_t> c_data = ::djinni::HBinary::fromJava(jniEnv, j_data);
         std::experimental::optional<::rocketspeed::djinni::MsgIdImpl> c_message_id = ::djinni::HOptional<std::experimental::optional, NativeMsgIdImpl>::fromJava(jniEnv, j_messageId);
         std::shared_ptr<::rocketspeed::djinni::PublishCallbackImpl> c_publish_callback = NativePublishCallbackImpl::fromJava(jniEnv, j_publishCallback);
 
-        ::rocketspeed::djinni::PublishStatus cr = ref->Publish(std::move(c_namespace_id), std::move(c_topic_name), std::move(c_retention), std::move(c_data), std::move(c_message_id), std::move(c_publish_callback));
+        ::rocketspeed::djinni::PublishStatus cr = ref->Publish(std::move(c_namespace_id), std::move(c_topic_name), std::move(c_data), std::move(c_message_id), std::move(c_publish_callback));
 
         return NativePublishStatus::toJava(jniEnv, cr);
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)

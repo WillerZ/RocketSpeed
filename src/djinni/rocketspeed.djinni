@@ -118,7 +118,6 @@ ClientImpl = interface +c {
 
   Publish(namespace_id: string,
           topic_name: string,
-          retention: RetentionBase,
           data: binary,
           message_id: optional<MsgIdImpl>,
           publish_callback: PublishCallbackImpl): PublishStatus;
