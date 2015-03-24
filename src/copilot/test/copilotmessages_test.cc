@@ -186,14 +186,13 @@ TEST(CopilotTest, Rollcall) {
   port::Semaphore checkpoint;
   port::Semaphore checkpoint2;
 
-  unsigned int num_msg = 100;
-  unsigned int half = num_msg/2;
-  unsigned int expected = 0;
+  size_t num_msg = 100;
+  size_t expected = num_msg / 2;
 
   // create a client to communicate with the Copilot
   std::map<MessageType, MsgCallbackType> client_callback;
   client_callback[MessageType::mMetadata] =
-    [this, &checkpoint, &expected] (std::unique_ptr<Message> msg) {
+    [this, &checkpoint, expected] (std::unique_ptr<Message> msg) {
       ProcessMetadata(std::move(msg));
       if (expected == acked_msgs_.size()) {
         checkpoint.Post();
@@ -224,8 +223,7 @@ TEST(CopilotTest, Rollcall) {
                          SubscriptionStart(0), rollcall_callback);
 
   // send subscribe messages to copilot
-  expected = half; // we expect these many ack messages
-  for (unsigned int i = 0; i < half; ++i) {
+  for (size_t i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
     auto type = MetadataType::mSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
@@ -238,15 +236,14 @@ TEST(CopilotTest, Rollcall) {
   }
   // Ensure that subscriptions were acked from server.
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
-  ASSERT_EQ(half, acked_msgs_.size());
+  ASSERT_EQ(expected, acked_msgs_.size());
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
-  expected = half; // we expect these many ack messages
   acked_msgs_.clear();
   sent_msgs_.clear();
 
   // send unsubscribe messages to copilot
-  for (unsigned int i = 0; i < half; ++i) {
+  for (size_t i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
     auto type = MetadataType::mUnSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
@@ -263,20 +260,20 @@ TEST(CopilotTest, Rollcall) {
   ASSERT_EQ(expected, acked_msgs_.size());
 
   // Ensure that all subscriptions were found in the rollcall log
-  ASSERT_TRUE(checkpoint2.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(checkpoint2.TimedWait(std::chrono::seconds(5)));
 
   // Verify that all entries in the rollcall log match our
   // subscription and unsubscription request
   ASSERT_EQ(rollcall_entries_.size(), num_msg);
-  for (unsigned int i = 0; i < num_msg; ++i) {
-    std::string topic = "copilot_test_" + std::to_string(i % half);
+  for (size_t i = 0; i < num_msg; ++i) {
+    std::string topic = "copilot_test_" + std::to_string(i % expected);
     auto type = i < num_msg/2 ?
                   RollcallEntry::EntryType::SubscriptionRequest :
                   RollcallEntry::EntryType::UnSubscriptionRequest;
 
     // find this entry in the rollcall topic
     bool found = false;
-    for (unsigned int j = 0; j < rollcall_entries_.size(); j++) {
+    for (size_t j = 0; j < rollcall_entries_.size(); j++) {
       if (rollcall_entries_[j].GetType() == type &&
           rollcall_entries_[j].GetTopicName() == topic) {
         found = true;
