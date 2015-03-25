@@ -36,7 +36,7 @@ class LogDeviceLogRouter : public LogRouter {
   /**
    * Gets the Log ID where a topic's messages are to be stored.
    *
-   * @param topic A topic to lookup.
+   * @param routing_hash The topic routing information to route to a log.
    * @param out Where to place the resulting Log ID.
    * @return on success OK(), otherwise errorcode.
    */
