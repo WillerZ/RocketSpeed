@@ -50,7 +50,7 @@ for build in [('', FLAGS_RELEASE), ('_debug', FLAGS_DEBUG)]:
             'src/util/common/status.cc',
         ],
         header_namespace = '',
-        headers = subdir_glob([
+        exported_headers = subdir_glob([
             ('', 'include/*.h'),
             ('', 'src/**/*.h'),
             ('', 'external/folly/*.h'),
@@ -100,7 +100,7 @@ for build in [('', FLAGS_RELEASE), ('_debug', FLAGS_DEBUG)]:
             'external/djinni/support-lib/jni/djinni_support.cpp',
         ],
         header_namespace = '',
-        headers = subdir_glob([
+        exported_headers = subdir_glob([
             ('', 'src-gen/djinni/**/*.hpp'),
             ('external/djinni/support-lib/jni', '*.hpp'),
             ('external/Optional', 'optional.hpp'),
