@@ -65,7 +65,9 @@ AsyncReaderImpl::AsyncReaderImpl()
                 log.from_,
                 std::min(log.until_, lsn)
               };
-              gap_cb_(record);
+              if (gap_cb_) {
+                gap_cb_(record);
+              }
             }
           }
         } else if (env_->GetFileModificationTime(fname, &modTime).ok()) {
@@ -144,7 +146,9 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
         expected_lsn,
         std::min(until, current_lsn - 1)
       };
-      gap_cb_(record);
+      if (gap_cb_) {
+        gap_cb_(record);
+      }
 
       // We are now proccessing from current_lsn.
       expected_lsn = current_lsn;
