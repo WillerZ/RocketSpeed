@@ -104,6 +104,259 @@ TEST(IntegrationTest, OneMessage) {
   ASSERT_TRUE(result);
 }
 
+/**
+ * Publishes 1 message. Trims message. Attempts to read
+ * message and ensures that one gap is received.
+ */
+TEST(IntegrationTest, TrimAll) {
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Message read semaphore.
+  port::Semaphore publish_sem;
+  port::Semaphore read_sem;
+
+  // Message setup.
+  Topic topic = "test_topic";
+  NamespaceID namespace_id = GuestNamespace;
+  TopicOptions topic_options;
+  std::string data = "test_message";
+  GUIDGenerator msgid_generator;
+  MsgId message_id = msgid_generator.Generate();
+
+  // Callbacks.
+  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
+    printf("publish -- %s\n", rs->GetStatus().ToString().c_str());
+
+    // Number of gaps received from reader. Should be 1.
+    int num_gaps = 0;
+
+    // Trim setup.
+    auto router = cluster.GetLogRouter();
+    LogID log_id;
+    auto st = router->GetLogID(Slice(namespace_id), Slice(topic), &log_id);
+    ASSERT_OK(st);
+
+    // Trim whole file.
+    auto seqno = rs->GetSequenceNumber();
+    auto storage = cluster.GetLogStorage();
+    st = storage->Trim(log_id, seqno);
+    ASSERT_OK(st);
+
+    // Reader callbacks
+    auto record_cb = [&] (std::unique_ptr<LogRecord> r) {
+      // We should not be reading any records as they have been trimmed.
+      ASSERT_TRUE(false);
+    };
+
+    auto gap_cb = [&] (const GapRecord &r) {
+      // We expect a Gap, and we expect the low seqno should be our
+      // previously published publish lsn.
+      printf("received gap from %lu to %lu\n", r.from, r.to);
+      ASSERT_TRUE(r.from == seqno);
+      num_gaps++;
+      read_sem.Post();
+    };
+
+    // Create readers.
+    std::vector<AsyncLogReader *> readers;
+    st = storage->CreateAsyncReaders(1, record_cb, gap_cb, &readers);
+    ASSERT_OK(st);
+
+    // Attempt to read trimmed message.
+    auto reader = readers.front();
+    st = reader->Open(log_id, seqno, seqno);
+    ASSERT_OK(st);
+
+    // Wait on read.
+    ASSERT_TRUE(read_sem.TimedWait(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(num_gaps == 1);
+
+    // Delete readers
+    for (auto r : readers) {
+      delete r;
+    }
+    publish_sem.Post();
+  };
+
+  auto subscription_callback = [&] (SubscriptionStatus ss) {};
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {};
+
+  // Create RocketSpeed client.
+  std::unique_ptr<Configuration> config(
+      Configuration::Create(cluster.GetPilotHostIds(),
+                            cluster.GetCopilotHostIds(),
+                            Tenant(102),
+                            1));
+
+  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+
+  // Send a message.
+  auto ps = client->Publish(topic,
+                           namespace_id,
+                           topic_options,
+                           Slice(data),
+                           publish_callback,
+                           message_id);
+  ASSERT_OK(ps.status);
+  ASSERT_TRUE(ps.msgid == message_id);
+
+  // Wait on publish
+  ASSERT_TRUE(publish_sem.TimedWait(timeout));
+}
+
+/**
+ * Publishes n messages. Trims the first. Attempts to read
+ * range [0, n-1] and ensures that one gap is received and
+ * n-1 records are read.
+ */
+TEST(IntegrationTest, TrimFirst) {
+  int num_publish = 3;
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Message read semaphore.
+  port::Semaphore publish_sem;
+  port::Semaphore read_sem;
+
+  // Message setup.
+  Topic topic = "test_topic";
+  NamespaceID namespace_id = GuestNamespace;
+  TopicOptions topic_options;
+  std::string data = "test_message";
+  GUIDGenerator msgid_generator;
+
+  // Callbacks.
+  // Basic callback simply notifies that publish was received.
+  auto norm_pub_cb = [&] (std::unique_ptr<ResultStatus> rs) {
+    printf("publish -- %s -- %lu\n",
+      rs->GetStatus().ToString().c_str(),
+      rs->GetSequenceNumber());
+    publish_sem.Post();
+  };
+
+  // Last callback trims first log and attempts to read from deleted
+  // log to final log published. Gap should be received as well as
+  // n-1 messges.
+  auto last_pub_cb = [&] (std::unique_ptr<ResultStatus> rs) {
+    printf("publish -- %s -- %lu\n",
+      rs->GetStatus().ToString().c_str(),
+      rs->GetSequenceNumber());
+
+    // Number of gaps and logs received from reader. Should be
+    // 1 and n - 1 respectively.
+    int num_gaps = 0;
+    int num_logs = 0;
+
+    // Trim setup.
+    auto router = cluster.GetLogRouter();
+    LogID log_id;
+    auto st = router->GetLogID(Slice(namespace_id), Slice(topic), &log_id);
+    ASSERT_OK(st);
+
+    // Trim first log.
+    auto seqno = rs->GetSequenceNumber();
+    auto first_seqno = seqno - num_publish + 1;
+    auto storage = cluster.GetLogStorage();
+    // Trim only the first log.
+    // This is assuming logids will increment by one with every publish.
+    st = storage->Trim(log_id, first_seqno);
+    ASSERT_OK(st);
+
+    // Reader callbacks.
+    auto record_cb = [&] (std::unique_ptr<LogRecord> r) {
+      // We should not be reading any records as they have been trimmed.
+      printf("received log record\n");
+      num_logs++;
+      read_sem.Post();
+    };
+
+    auto gap_cb = [&] (const GapRecord &r) {
+      // We expect a Gap, and we expect the low seqno should be our
+      // previously published publish lsn.
+      printf("received gap from %lu to %lu\n", r.from, r.to);
+      num_gaps++;
+      read_sem.Post();
+    };
+
+    // Create readers.
+    std::vector<AsyncLogReader *> readers;
+    st = storage->CreateAsyncReaders(1, record_cb, gap_cb, &readers);
+    ASSERT_OK(st);
+
+    // Attempt to read trimmed message.
+    auto reader = readers.front();
+    st = reader->Open(log_id, first_seqno);
+    ASSERT_OK(st);
+
+    // Wait on n reads.
+    for (int i = 0; i < num_publish; ++i) {
+      ASSERT_TRUE(read_sem.TimedWait(std::chrono::milliseconds(100)));
+    }
+    // Assert that num gaps and num logs is what we expected.
+    ASSERT_TRUE(num_gaps == 1);
+    ASSERT_TRUE(num_logs == num_publish - 1);
+
+    // Delete readers
+    for (auto r : readers) {
+      delete r;
+    }
+
+    publish_sem.Post();
+  };
+
+  auto subscription_callback = [&] (SubscriptionStatus ss) {};
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {};
+
+  // Create RocketSpeed client.
+  std::unique_ptr<Configuration> config(
+      Configuration::Create(cluster.GetPilotHostIds(),
+                            cluster.GetCopilotHostIds(),
+                            Tenant(102),
+                            1));
+
+  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+
+  // Publish messages.
+  for (int i = 1; i < num_publish; ++i) {
+    auto msgid = msgid_generator.Generate();
+    auto ps = client->Publish(topic,
+                             namespace_id,
+                             topic_options,
+                             Slice(data),
+                             norm_pub_cb,
+                             msgid);
+    ASSERT_TRUE(ps.status.ok());
+    ASSERT_TRUE(ps.msgid == msgid);
+  }
+
+  auto msgid = msgid_generator.Generate();
+  auto ps = client->Publish(topic,
+                           namespace_id,
+                           topic_options,
+                           Slice(data),
+                           last_pub_cb,
+                           msgid);
+  ASSERT_TRUE(ps.status.ok());
+  ASSERT_TRUE(ps.msgid == msgid);
+
+  // Wait on published messages.
+  for (int i = 0; i < num_publish; ++i) {
+    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+  }
+}
+
 TEST(IntegrationTest, SequenceNumberZero) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);

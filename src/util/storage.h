@@ -110,11 +110,13 @@ class LogStorage {
    * Trims all messages from the log that are older than age.
    *
    * @param id ID number of the log to trim.
-   * @param age the age of logs to trim.
+   * @param seqno Trim the log up to this sequence number (inclusive), should
+   *              not be larger than the sequence number of the most recent
+   *              record available to readers.
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status Trim(LogID id,
-                      std::chrono::microseconds age) = 0;
+                      SequenceNumber seqno) = 0;
 
   /**
    * Finds the sequence number for a point in time for a particular log

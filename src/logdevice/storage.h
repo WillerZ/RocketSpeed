@@ -93,7 +93,7 @@ class LogDeviceStorage : public LogStorage {
                      AppendCallback callback) final;
 
   Status Trim(LogID id,
-              std::chrono::microseconds age) final;
+              SequenceNumber seqno) final;
 
   Status FindTimeAsync(LogID id,
                        std::chrono::milliseconds timestamp,

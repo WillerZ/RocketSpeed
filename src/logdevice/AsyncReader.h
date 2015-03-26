@@ -41,6 +41,9 @@ class AsyncReaderImpl : public AsyncReader {
   // supplied range. Returns the last LSN read.
   lsn_t ReadFile(logid_t logid, lsn_t from, lsn_t until);
 
+  // Gets the last sequence number written to a file
+  lsn_t LastSequenceNumber(logid_t logid);
+
   // Callbacks
   std::function<void(std::unique_ptr<DataRecord>)> data_cb_;
   std::function<void(const GapRecord&)> gap_cb_;

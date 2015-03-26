@@ -58,23 +58,11 @@ lsn_t ClientImpl::GetLogSeqno(logid_t logid) {
   }
 
   // Get the file size to use as the write offset (to append).
-  lsn_t lsn = LSN_OLDEST;
-  uint8_t buff[sizeof(lsn_t)];
-  uint64_t size;
-  if (impl()->env_->GetFileSize(fname, &size).ok() && size == sizeof(lsn_t)) {
-    // Get last seqno.
-    rocketspeed::Slice sl(reinterpret_cast<char*>(buff), sizeof(buff));
-    if (file->Read(0, sizeof(buff), &sl, reinterpret_cast<char*>(buff)).ok()) {
-      lsn = 0;
-      for (int i = 0; i < static_cast<int>(sizeof(buff)); ++i) {
-        lsn <<= 8;
-        lsn |= buff[i];
-      }
-    }
-  }
+  lsn_t lsn = LastSeqnoWritten(fname, file, env_);
 
   // Write new seqno.
   lsn_t newlsn = lsn + 1;
+  uint8_t buff[sizeof(lsn_t)];
   for (int i = static_cast<int>(sizeof(buff)) - 1; i >= 0; --i) {
     buff[i] = newlsn & 0xff;
     newlsn >>= 8;

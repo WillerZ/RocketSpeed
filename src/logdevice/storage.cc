@@ -177,30 +177,8 @@ Status LogDeviceStorage::AppendAsync(LogID id,
 }
 
 Status LogDeviceStorage::Trim(LogID id,
-                              std::chrono::microseconds age) {
-  // Compute the time in milliseconds using current time subtract age.
-  auto now = std::chrono::microseconds(env_->NowMicros());
-  auto threshold = now - age;
-  auto thresholdMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-    threshold);
-
-  // Find the LSN for that time.
-  facebook::logdevice::Status findTimeStatus;
-  auto lsn = client_->findTimeSync(facebook::logdevice::logid_t(id),
-                                   thresholdMs,
-                                   &findTimeStatus);
-  if (lsn == facebook::logdevice::LSN_INVALID) {
-    return LogDeviceErrorToStatus(findTimeStatus);
-  }
-  // NOTE: findTimeStatus may be E::PARTIAL at this point, which means the LSN
-  // may be incorrect. However, LogDevice guarantees that it will not be *later*
-  // than the correct LSN, so it is good enough for RocketSpeed as a
-  // conservative result.
-
-  // Now do the trim.
-  // findTimeSync returns the *next* LSN after that time, so we trim up to
-  // (lsn - 1), otherwise this will trim the next message to be issued also.
-  int result = client_->trim(facebook::logdevice::logid_t(id), lsn - 1);
+                              SequenceNumber seqno) {
+  int result = client_->trim(facebook::logdevice::logid_t(id), seqno);
   if (result != 0) {
     return LogDeviceErrorToStatus(facebook::logdevice::err);
   }

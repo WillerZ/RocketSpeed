@@ -110,5 +110,27 @@ Payload LogFile::GetData() {
   return Payload(data_.data(), data_.size());
 }
 
+lsn_t LastSeqnoWritten(
+  const std::string& fname,
+  const std::unique_ptr<rocketspeed::RandomRWFile>& file,
+  rocketspeed::Env* env) {
+  // Get the file size to determine final lsn.
+  lsn_t lsn = LSN_OLDEST;
+  uint8_t buff[sizeof(lsn_t)];
+  uint64_t size;
+  if (env->GetFileSize(fname, &size).ok() && size == sizeof(lsn_t)) {
+    // Get last seqno.
+    rocketspeed::Slice sl(reinterpret_cast<char*>(buff), sizeof(buff));
+    if (file->Read(0, sizeof(buff), &sl, reinterpret_cast<char*>(buff)).ok()) {
+      lsn = 0;
+      for (int i = 0; i < static_cast<int>(sizeof(buff)); ++i) {
+        lsn <<= 8;
+        lsn |= buff[i];
+      }
+    }
+  }
+  return lsn;
+}
+
 }  // namespace logdevice
 }  // namespace facebook

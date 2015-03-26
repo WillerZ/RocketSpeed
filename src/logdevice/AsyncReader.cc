@@ -5,6 +5,7 @@
 //
 #pragma GCC diagnostic ignored "-Wshadow"
 #include "src/logdevice/AsyncReader.h"
+#include "src/logdevice/Common.h"
 #include <assert.h>
 #include <algorithm>
 #include <mutex>
@@ -48,7 +49,26 @@ AsyncReaderImpl::AsyncReaderImpl()
         Log& log = tailer.second;
         std::string fname = LogFilename(tailer.first);
         uint64_t modTime;
-        if (env_->GetFileModificationTime(fname, &modTime).ok()) {
+        // Check if file exists
+        if (!env_->FileExists(fname)) {
+          // Determine whether or not file deleted due to trimming
+          auto lsn = LastSequenceNumber(tailer.first);
+          if (lsn != LSN_INVALID) {
+            // File has been written to at some point and deleted due to
+            // trimming.
+            if (log.from_ <= lsn) {
+              // If the from_ is before or up to final lsn
+              // and the file doesn't exist, then we need to send a gap
+              GapRecord record {
+                tailer.first,
+                GapType::TRIM,
+                log.from_,
+                std::min(log.until_, lsn)
+              };
+              gap_cb_(record);
+            }
+          }
+        } else if (env_->GetFileModificationTime(fname, &modTime).ok()) {
           // Has the file been modified since last successful read?
           if (modTime > tailer.second.last_mod_) {
             auto newLSN = ReadFile(tailer.first, log.from_, log.until_);
@@ -72,6 +92,35 @@ AsyncReaderImpl::AsyncReaderImpl()
   });
 }
 
+// Returns the last sequence number written by a file
+// Possibly could be moved to env_posix as a duplicate
+// piece of code exists in Client.cc
+lsn_t AsyncReaderImpl::LastSequenceNumber(logid_t logid) {
+  // Seqno is stored in its own file.
+  std::string fname = SeqnoFilename(logid);
+  rocketspeed::FileLock* fileLock;
+
+  while (!(env_->LockFile(fname, &fileLock).ok() && fileLock)) {
+    // Another thread or process has the lock, so yield to let them finish.
+    std::this_thread::yield();
+  }
+
+  // Lock acquired, now try to open the file.
+  rocketspeed::EnvOptions opts;
+  opts.use_mmap_writes = false;  // PosixRandomRWFile doesn't support this
+  std::unique_ptr<rocketspeed::RandomRWFile> file;
+  if (!(env_->NewRandomRWFile(fname, &file, opts).ok() && file)) {
+    env_->UnlockFile(fileLock);
+    return LSN_INVALID;
+  }
+
+  lsn_t lsn = LastSeqnoWritten(fname, file, env_);
+  env_->UnlockFile(fileLock);
+
+  // Return last lsn written
+  return lsn - 1;
+}
+
 // Process a log file, calling the callback for each record in the LSN range.
 // Returns the next LSN to begin reading from.
 lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
@@ -80,24 +129,43 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
   bool opened = false;
   lsn_t last_lsn = 0;
   (void)last_lsn;
+  auto expected_lsn = from;
   while (file.Next()) {
     opened = true;
-    lsn_t lsn = file.GetLSN();
-    assert(lsn > last_lsn);
-    last_lsn = lsn;
-    if (lsn > until) {
-      // Past the end of our LSN range, so exit now.
-      return lsn;
+    lsn_t current_lsn = file.GetLSN();
+    assert(current_lsn > last_lsn);
+    last_lsn = current_lsn;
+    if (current_lsn > expected_lsn) {
+      // There is a gap from expected lsn to the minimum
+      // of current lsn or until.
+      GapRecord record {
+        logid,
+        GapType::TRIM,
+        expected_lsn,
+        std::min(until, current_lsn - 1)
+      };
+      gap_cb_(record);
+
+      // We are now proccessing from current_lsn.
+      expected_lsn = current_lsn;
     }
-    if (lsn >= from) {
-      // In range, so call the callback and adjust the return LSN.
-      from = lsn + 1;
+    if (current_lsn > until) {
+      // Past the end of our LSN range, so exit now.
+      return current_lsn;
+    }
+    if (current_lsn == expected_lsn) {
+      // In range, so call callback and adjust the return LSN.
+      expected_lsn++;
       std::unique_ptr<DataRecord> dataRecord(
-        new MockDataRecord(logid, file.GetData(), lsn, file.GetTimestamp()));
+        new MockDataRecord(
+          logid,
+          file.GetData(),
+          current_lsn,
+          file.GetTimestamp()));
       data_cb_(std::move(dataRecord));
     }
   }
-  return opened ? from : LSN_INVALID;
+  return opened ? expected_lsn : LSN_INVALID;
 }
 
 void AsyncReader::setRecordCallback(

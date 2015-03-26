@@ -26,6 +26,14 @@ inline std::string SeqnoFilename(logid_t logid) {
   return MOCK_LOG_DIR + "/" + std::to_string((int64_t)logid) + ".seqno";
 }
 
+// Returns the last sequence number written to file.
+// File is expected to be file returned by SeqnoFilename call.
+// Locking of file is also expected to be done by client.
+lsn_t LastSeqnoWritten(
+  const std::string& fname,
+  const std::unique_ptr<rocketspeed::RandomRWFile>& file,
+  rocketspeed::Env* env);
+
 /* Log File Format:
 
 +-Record-+-Field------+-Size--------+
