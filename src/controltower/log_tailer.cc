@@ -4,7 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
-#include "src/controltower/tailer.h"
+#include "src/controltower/log_tailer.h"
 #include "src/util/storage.h"
 #include <vector>
 #include <inttypes.h>
@@ -22,40 +22,65 @@ struct LogRecordMessageData : public MessageData {
     // Deserialize
     Slice payload = record_->payload;
     *status = DeSerializeStorage(&payload);
-    SetSequenceNumber(record_->seqno);
+    SetSequenceNumbers(record_->seqno - 1, record_->seqno);
   }
 
  private:
   std::unique_ptr<LogRecord> record_;
 };
 
-Tailer::Tailer(std::shared_ptr<LogStorage> storage,
+LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
                std::shared_ptr<Logger> info_log) :
   storage_(storage),
   info_log_(info_log) {
 }
 
-Tailer::~Tailer() {
+LogTailer::~LogTailer() {
 }
 
-Status Tailer::Initialize(
-    std::function<void(std::unique_ptr<Message>, LogID)> on_message,
-    unsigned int num_readers) {
+Status LogTailer::Initialize(OnRecordCallback on_record,
+                             OnGapCallback on_gap,
+                             size_t num_readers) {
   if (reader_.size() != 0) {
     return Status::OK();  // already initialized, nothing more to do
   }
 
-  if (!on_message) {
-    return Status::InvalidArgument("on_message must not be null");
+  if (!on_record) {
+    return Status::InvalidArgument("on_record must not be null");
   }
 
-  // define a lambda for callback
-  auto record_cb = [this, on_message] (std::unique_ptr<LogRecord> record) {
+  if (!on_gap) {
+    return Status::InvalidArgument("on_gap must not be null");
+  }
+
+  for (unsigned int reader_id = 0; reader_id < num_readers; ++reader_id) {
+    AsyncLogReader* reader = nullptr;
+    Status st = CreateReader(reader_id, on_record, on_gap, &reader);
+    if (!st.ok()) {
+      return st;
+    }
+    reader_.emplace_back(reader);
+  }
+  assert(reader_.size() == num_readers);
+
+  // initialize the number of open logs per reader to zero.
+  num_open_logs_per_reader_.resize(num_readers, 0);
+  return Status::OK();
+}
+
+Status LogTailer::CreateReader(size_t reader_id,
+                               OnRecordCallback on_record,
+                               OnGapCallback on_gap,
+                               AsyncLogReader** out) {
+  // Define a lambda for callback
+  auto record_cb = [this, reader_id, on_record] (
+      std::unique_ptr<LogRecord> record) {
     LogID log_id = record->log_id;
 
     // Convert storage record into RocketSpeed message.
     Status st;
-    MessageData* msg = new LogRecordMessageData(std::move(record), &st);
+    std::unique_ptr<MessageData> msg(
+      new LogRecordMessageData(std::move(record), &st));
     if (!st.ok()) {
       LOG_WARN(info_log_,
         "Failed to deserialize message (%s).",
@@ -63,7 +88,7 @@ Status Tailer::Initialize(
         info_log_->Flush();
     } else {
       LOG_INFO(info_log_,
-        "Tailer received data (%.16s)@%" PRIu64
+        "LogTailer received data (%.16s)@%" PRIu64
         " for Topic(%s) in Log(%" PRIu64 ").",
         msg->GetPayload().ToString().c_str(),
         msg->GetSequenceNumber(),
@@ -73,12 +98,10 @@ Status Tailer::Initialize(
     assert(st.ok());
 
     // Invoke message callback.
-    std::unique_ptr<Message> m(msg);
-    on_message(std::move(m), log_id);
-    assert(st.ok());
+    on_record(std::move(msg), log_id, reader_id);
   };
 
-  auto gap_cb = [this, on_message] (const GapRecord& record) {
+  auto gap_cb = [this, reader_id, on_gap] (const GapRecord& record) {
     // Log the gap.
     switch (record.type) {
       case GapType::kDataLoss:
@@ -100,53 +123,33 @@ Status Tailer::Initialize(
         break;
     }
 
-    // Create message to send downstream.
-    // We don't know the tenant ID at this point, or the host ID. These will
-    // have to be set later.
-    std::unique_ptr<Message> msg(new MessageGap(Tenant::InvalidTenant,
-                                                ClientID(),
-                                                record.type,
-                                                record.from,
-                                                record.to));
-    on_message(std::move(msg), record.log_id);
+    on_gap(record.log_id, record.type, record.from, record.to, reader_id);
   };
 
-  // create log reader. There is one reader per ControlRoom.
-  std::vector<AsyncLogReader*> handle;
-  Status st = storage_->CreateAsyncReaders(
-                           num_readers,
-                           record_cb,
-                           gap_cb,
-                           &handle);
-  if (!st.ok()) {
-    return st;
+  // Create log reader.
+  std::vector<AsyncLogReader*> readers;
+  Status st = storage_->CreateAsyncReaders(1, record_cb, gap_cb, &readers);
+  if (st.ok()) {
+    assert(readers.size() == 1);
+    *out = readers[0];
   }
-  assert(handle.size() == num_readers);
-
-  // store all the Readers
-  for (unsigned int i = 0; i < handle.size(); i++) {
-    reader_.emplace_back(handle[i]);
-  }
-
-  // initialize the number of open logs per reader to zero.
-  num_open_logs_per_reader_.resize(num_readers, 0);
-  return Status::OK();
+  return st;
 }
 
 // Create a new instance of the LogStorage
 Status
-Tailer::CreateNewInstance(Env* env,
+LogTailer::CreateNewInstance(Env* env,
                           std::shared_ptr<LogStorage> storage,
                           std::shared_ptr<Logger> info_log,
-                          Tailer** tailer) {
-  *tailer = new Tailer(storage, info_log);
+                          LogTailer** tailer) {
+  *tailer = new LogTailer(storage, info_log);
   return Status::OK();
 }
 
-Status Tailer::StartReading(LogID logid,
+Status LogTailer::StartReading(LogID logid,
                             SequenceNumber start,
-                            unsigned int reader_id,
-                            bool first_open) const {
+                            size_t reader_id,
+                            bool first_open) {
   if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
@@ -154,7 +157,7 @@ Status Tailer::StartReading(LogID logid,
   Status st = r->Open(logid, start);
   if (st.ok()) {
     LOG_INFO(info_log_,
-             "AsyncReader %u start reading Log(%" PRIu64 ")@%" PRIu64 ".",
+             "AsyncReader %zu start reading Log(%" PRIu64 ")@%" PRIu64 ".",
              reader_id,
              logid,
              start);
@@ -163,7 +166,7 @@ Status Tailer::StartReading(LogID logid,
     }
   } else {
     LOG_WARN(info_log_,
-             "AsyncReader %u failed to start reading Log(%" PRIu64
+             "AsyncReader %zu failed to start reading Log(%" PRIu64
              ")@%" PRIu64 "(%s).",
              reader_id,
              logid,
@@ -175,7 +178,7 @@ Status Tailer::StartReading(LogID logid,
 
 // Stop reading from this log
 Status
-Tailer::StopReading(LogID logid, unsigned int reader_id) const {
+LogTailer::StopReading(LogID logid, size_t reader_id) {
   if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
@@ -183,12 +186,12 @@ Tailer::StopReading(LogID logid, unsigned int reader_id) const {
   Status st = r->Close(logid);
   if (st.ok()) {
     LOG_INFO(info_log_,
-        "AsyncReader %u stopped reading Log(%" PRIu64 ").",
+        "AsyncReader %zu stopped reading Log(%" PRIu64 ").",
         reader_id, logid);
     num_open_logs_per_reader_[reader_id]--;
   } else {
     LOG_WARN(info_log_,
-        "AsyncReader %u failed to stop reading Log(%" PRIu64 ") (%s).",
+        "AsyncReader %zu failed to stop reading Log(%" PRIu64 ") (%s).",
         reader_id, logid, st.ToString().c_str());
   }
   return st;
@@ -196,9 +199,9 @@ Tailer::StopReading(LogID logid, unsigned int reader_id) const {
 
 // find latest seqno then invoke callback
 Status
-Tailer::FindLatestSeqno(LogID logid,
-                        std::function<void(Status, SequenceNumber)> callback)
-    const {
+LogTailer::FindLatestSeqno(
+  LogID logid,
+  std::function<void(Status, SequenceNumber)> callback) {
   // LogDevice treats std::chrono::milliseconds::max() specially, avoiding
   // a binary search and just returning the next LSN.
   return storage_->FindTimeAsync(logid,
@@ -210,7 +213,7 @@ Tailer::FindLatestSeqno(LogID logid,
 // ok because it is used only by unit tests when there is no
 // tailer activity.
 int
-Tailer::NumberOpenLogs() const {
+LogTailer::NumberOpenLogs() const {
   int count = 0;
   for (size_t i = 0; i < num_open_logs_per_reader_.size(); i++) {
     count += num_open_logs_per_reader_[i];

@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "src/controltower/log_tailer.h"
 #include "src/controltower/room.h"
 #include "src/controltower/tower.h"
 #include "src/port/port.h"
@@ -65,7 +66,7 @@ class ControlTowerTest {
 
   // gets the number of open logs
   int GetNumOpenLogs(ControlTower* ct) const {
-    return ct->GetTailer()->NumberOpenLogs();
+    return ct->GetLogTailer()->NumberOpenLogs();
   }
 };
 
@@ -96,6 +97,7 @@ TEST(ControlTowerTest, Ping) {
   ASSERT_OK(loop.WaitUntilRunning());
 
   // create a message
+  assert(cluster.GetControlTower());
   auto ct_client_id = cluster.GetControlTower()->GetClientId(0);
   MessagePing msg(Tenant::GuestTenant,
                   MessagePing::PingType::Request,

@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "src/controltower/topic_tailer.h"
 #include "src/controltower/tower.h"
 #include "src/util/common/coding.h"
 #include "src/util/topic_uuid.h"
@@ -23,7 +24,7 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
                          unsigned int room_number) :
   control_tower_(control_tower),
   room_number_(room_number),
-  topic_map_(control_tower->GetTailer()),
+  topic_map_(control_tower->GetTopicTailer(room_number), options.info_log),
   room_loop_(options.worker_queue_size) {
 }
 
@@ -140,7 +141,8 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
 
     // Ownership of message is in the callback.
     msg.release();
-    st = ct->GetTailer()->FindLatestSeqno(logid, callback);
+    TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
+    st = ct->GetTopicTailer(room_number_)->FindLatestSeqno(uuid, callback);
     if (!st.ok()) {
       // If call to FindLatestSeqno failed then callback will not be called,
       // so delete now.
@@ -171,24 +173,17 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   assert(hostnum >= 0);
 
 
-  // Check that the topic name do map to the specified logid
-  TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
-  LogID checkid __attribute__((unused)) = 0;
-  assert((options.log_router->GetLogID(uuid, &checkid)).ok() &&
-         (logid == checkid));
-
   // Remember this subscription request
+  TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
   if (topic[0].topic_type == MetadataType::mSubscribe) {
-    topic_map_.AddSubscriber(uuid,
-                             topic[0].seqno,
-                             logid, hostnum, room_number_);
+    topic_map_.AddSubscriber(uuid, topic[0].seqno, hostnum);
     LOG_INFO(options.info_log,
         "Added subscriber %s for Topic(%s)@%" PRIu64,
         origin.c_str(),
         topic[0].topic_name.c_str(),
         topic[0].seqno);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
-    topic_map_.RemoveSubscriber(uuid, logid, hostnum, room_number_);
+    topic_map_.RemoveSubscriber(uuid, hostnum);
     LOG_INFO(options.info_log,
         "Removed subscriber %s from Topic(%s)",
         origin.c_str(),
@@ -231,41 +226,26 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   // get the request message
   MessageData* request = static_cast<MessageData*>(msg.get());
 
+  const SequenceNumber prev_seqno = request->GetPrevSequenceNumber();
+  const SequenceNumber next_seqno = request->GetSequenceNumber();
   LOG_INFO(options.info_log,
-      "Received data (%.16s)@%" PRIu64 " for Topic(%s)",
+      "Received data (%.16s)@%" PRIu64 "-%" PRIu64 " for Topic(%s)",
       request->GetPayload().ToString().c_str(),
-      request->GetSequenceNumber(),
+      prev_seqno,
+      next_seqno,
       request->GetTopicName().ToString().c_str());
-
-  // Check that seqno is as expected.
-  if (topic_map_.GetLastRead(logid) + 1 != request->GetSequenceNumber()) {
-    // Out of order sequence number, skip!
-    LOG_INFO(options.info_log,
-      "Out of order seqno on Log(%" PRIu64 "). Received:%" PRIu64
-      "Expected:%" PRIu64 ".",
-      logid,
-      request->GetSequenceNumber(),
-      topic_map_.GetLastRead(logid) + 1);
-    return;
-  }
 
   // serialize msg
   std::string serial;
 
-  // map the topic to a list of subscribers
+  // For each subscriber on this topic at prev_seqno, deliver the message and
+  // advance the subscription to next_seqno.
   TopicUUID uuid(request->GetNamespaceId(), request->GetTopicName());
-  TopicList* list = topic_map_.GetSubscribers(uuid);
-
-  // send the messages to subscribers
-  if (list != nullptr && !list->empty()) {
-    // Recipients for each control tower event loop worker.
-    std::unordered_map<int, SendCommand::Recipients> destinations;
-
-    // find all subscribers
-    for (const auto& hostnum : *list) {
+  topic_map_.VisitSubscribers(uuid, prev_seqno, next_seqno,
+    [&] (TopicSubscription* sub) {
       // convert HostNumber to ClientID
       int worker_id = -1;
-      const ClientID* hostid = ct->LookupHost(hostnum, &worker_id);
+      const ClientID* hostid = ct->LookupHost(sub->GetHostNum(), &worker_id);
       assert(hostid != nullptr);
       assert(worker_id != -1);
       if (hostid != nullptr && worker_id != -1) {
@@ -287,26 +267,23 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
           options.info_log->Flush();
         }
       }
-    }
-  } else {
-    LOG_INFO(options.info_log,
-      "No subscribers for Topic(%s)",
-      request->GetTopicName().ToString().c_str());
-  }
-
-  // update the last message received for this log
-  topic_map_.SetLastRead(logid, request->GetSequenceNumber());
+      sub->SetSequenceNumber(next_seqno);
+    });
 }
 
 // Process Gap messages that are coming in from Tailer.
 void
 ControlRoom::ProcessGap(std::unique_ptr<Message> msg, LogID logid) {
-  MessageGap* request = static_cast<MessageGap*>(msg.get());
+  /*MessageGap* gap = static_cast<MessageGap*>(msg.get());
 
-  if (topic_map_.GetLastRead(logid) + 1 == request->GetStartSequenceNumber()) {
-    topic_map_.SetLastRead(logid, request->GetEndSequenceNumber());
-    // TODO(pja) 1 : Forward data loss gap to copilot to notify consumer.
-  }
+  // Advance all subscribers past the gap.
+  TopicUUID uuid(gap->GetNamespaceId(), gap->GetTopicName());
+  SequenceNumber prev_seqno = gap->GetStartSequenceNumber();
+  SequenceNumber next_seqno = gap->GetEndSequenceNumber();
+  topic_map_.VisitSubscribers(uuid, prev_seqno, next_seqno,
+    [&] (TopicSubscription* sub) {
+      sub->SetSequenceNumber(next_seqno);
+    });*/
 }
 
 }  // namespace rocketspeed

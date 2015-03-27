@@ -2,10 +2,11 @@
 cpp_library(
     name = 'control_tower_library',
     srcs = [
+        'log_tailer.cc',
         'options.cc',
         'room.cc',
-        'tailer.cc',
         'topic.cc',
+        'topic_tailer.cc',
         'tower.cc',
     ],
     preprocessor_flags = [

@@ -246,6 +246,7 @@ MessageData::MessageData(MessageType type,
   namespaceid_(namespace_id) {
   assert(type == mPublish || type == mDeliver);
   seqno_ = 0;
+  seqno_prev_ = 0;
   msgid_ = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
 }
 
@@ -273,6 +274,7 @@ Slice MessageData::Serialize() const {
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // seqno
+  PutVarint64(&serialize_buffer__, seqno_prev_);
   PutVarint64(&serialize_buffer__, seqno_);
 
   // The rest of the message is what goes into log storage.
@@ -299,7 +301,11 @@ Status MessageData::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad HostName");
   }
 
-  // extract sequence number of message
+  // extract sequence numbers of message
+  if (!GetVarint64(in, &seqno_prev_)) {
+    return Status::InvalidArgument("Bad Previous Sequence Number");
+  }
+
   if (!GetVarint64(in, &seqno_)) {
     return Status::InvalidArgument("Bad Sequence Number");
   }

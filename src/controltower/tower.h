@@ -10,10 +10,13 @@
 #include <vector>
 #include "src/messages/msg_loop.h"
 #include "src/controltower/options.h"
-#include "src/controltower/room.h"
-#include "src/controltower/tailer.h"
+#include "src/util/hostmap.h"
 
 namespace rocketspeed {
+
+class ControlRoom;
+class LogTailer;
+class TopicTailer;
 
 class ControlTower {
  public:
@@ -36,7 +39,14 @@ class ControlTower {
   HostMap& GetHostMap() { return hostmap_; }
 
   // The Storage Reader
-  const Tailer* GetTailer() const { return tailer_.get(); }
+  LogTailer* GetLogTailer() {
+    return log_tailer_.get();
+  }
+
+  TopicTailer* GetTopicTailer(int room_number) {
+    assert(room_number < static_cast<int>(topic_tailer_.size()));
+    return topic_tailer_[room_number].get();
+  }
 
   // Get HostID
   const HostId& GetHostId() const {
@@ -74,13 +84,14 @@ class ControlTower {
   // A control tower has multiple ControlRooms.
   // Each Room handles its own set of topics. Each room has its own
   // room number. Each room also has its own MsgLoop.
-  std::vector<unique_ptr<ControlRoom>> rooms_;
+  std::vector<std::unique_ptr<ControlRoom>> rooms_;
 
   // The Room worker threads
   std::vector<BaseEnv::ThreadId> room_thread_id_;
 
   // The Tailer to feed in data from LogStorage to Rooms
-  unique_ptr<Tailer> tailer_;
+  std::unique_ptr<LogTailer> log_tailer_;
+  std::vector<std::unique_ptr<TopicTailer>> topic_tailer_;
 
   // The id of this control tower
   const ClientID tower_id_;
@@ -94,6 +105,10 @@ class ControlTower {
   // callbacks to process incoming messages
   void ProcessMetadata(std::unique_ptr<Message> msg);
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
+
+  Status Initialize();
+
+  int LogIDToRoom(LogID log_id) const;
 };
 
 }  // namespace rocketspeed

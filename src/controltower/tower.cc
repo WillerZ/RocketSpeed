@@ -16,6 +16,10 @@
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"
 
+#include "src/controltower/log_tailer.h"
+#include "src/controltower/room.h"
+#include "src/controltower/topic_tailer.h"
+
 namespace rocketspeed {
 
 /**
@@ -60,7 +64,8 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
 
 ControlTower::~ControlTower() {
   // Stop tailer before shutting down rooms
-  tailer_.reset();
+  log_tailer_.reset();
+  topic_tailer_.clear();
 
   // Shutdown room loops
   for (auto& r: rooms_) {
@@ -90,66 +95,114 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
     return Status::InvalidArgument("Log router must be provided");
   }
 
-  ControlTower* tower = new ControlTower(options);
-  const ControlTowerOptions opt = tower->GetOptions();
-
-  // Start the LogTailer first.
-  Tailer* tailer;
-  Status st = Tailer::CreateNewInstance(opt.env,
-                                        options.storage,
-                                        opt.info_log,
-                                        &tailer);
+  std::unique_ptr<ControlTower> tower(new ControlTower(options));
+  Status st = tower->Initialize();
   if (!st.ok()) {
-    delete tower;
+    tower.reset();
+  }
+  *ct = tower.release();
+  return st;
+}
+
+Status ControlTower::Initialize() {
+  const ControlTowerOptions opt = GetOptions();
+
+  // Create the LogTailer first.
+  LogTailer* log_tailer;
+  Status st = LogTailer::CreateNewInstance(opt.env,
+                                           opt.storage,
+                                           opt.info_log,
+                                           &log_tailer);
+  if (!st.ok()) {
     return st;
   }
-  tower->tailer_.reset(tailer);
+  log_tailer_.reset(log_tailer);
 
-  // The ControlRooms keep a pointer to the Tailer, so create
-  // these after the Tailer is created. The port numbers for
-  // the rooms are adjacent to the port number of the ControlTower.
-  for (unsigned int i = 0; i < opt.number_of_rooms; i++) {
-    unique_ptr<ControlRoom> newroom(new ControlRoom(opt, tower, i));
-    tower->rooms_.push_back(std::move(newroom));
-  }
-
-  // Initialize the tailer
-  // Needs to be done after constructing rooms.
-  auto on_message = [tower] (std::unique_ptr<Message> msg, LogID log_id) {
-    // Process message from the tailer.
-    // Find room to handle this log ID.
-    int room_number = static_cast<int>(log_id % tower->rooms_.size());
-    ControlRoom* room = tower->rooms_[room_number].get();
-    Status status = room->Forward(std::move(msg), log_id, -1);
-    if (!status.ok()) {
-      LOG_WARN(tower->options_.info_log,
-        "Failed to forward message to room %d",
-        room_number);
-    }
+  // Initialize the LogTailer.
+  auto on_record = [this] (std::unique_ptr<MessageData> msg,
+                           LogID log_id,
+                           size_t reader_id) {
+    // Process message from the log tailer.
+    const int room_number = LogIDToRoom(log_id);
+    topic_tailer_[room_number]->SendLogRecord(
+      std::move(msg),
+      log_id,
+      reader_id);
   };
 
-  // One reader per room.
-  unsigned int num_readers = static_cast<unsigned int>(tower->rooms_.size());
-  st = tower->tailer_->Initialize(std::move(on_message), num_readers);
+  auto on_gap = [this] (LogID log_id,
+                        GapType type,
+                        SequenceNumber from,
+                        SequenceNumber to,
+                        size_t reader_id) {
+    // Process message from the log tailer.
+    const int room_number = LogIDToRoom(log_id);
+    topic_tailer_[room_number]->SendGapRecord(
+      log_id,
+      type,
+      from,
+      to,
+      reader_id);
+  };
+
+  size_t num_readers = opt.number_of_rooms;
+  st = log_tailer_->Initialize(std::move(on_record),
+                               std::move(on_gap),
+                               num_readers);
   if (!st.ok()) {
     return st;
+  }
+
+  auto on_message =
+    [this] (std::unique_ptr<Message> msg, LogID log_id) {
+      const int room_number = LogIDToRoom(log_id);
+      Status status = rooms_[room_number]->Forward(std::move(msg), log_id, -1);
+      if (!status.ok()) {
+        LOG_WARN(options_.info_log,
+          "Failed to forward record to room %d",
+          room_number);
+      }
+    };
+
+  // Now create the TopicTailer.
+  // One per room with one reader each.
+  for (size_t i = 0; i < opt.number_of_rooms; ++i) {
+    TopicTailer* topic_tailer;
+    st = TopicTailer::CreateNewInstance(opt.env,
+                                        log_tailer_.get(),
+                                        opt.log_router,
+                                        opt.info_log,
+                                        on_message,
+                                        &topic_tailer);
+    if (st.ok()) {
+      // Topic tailer i uses reader i in log tailer.
+      const size_t reader_id = i;
+      st = topic_tailer->Initialize(reader_id);
+    }
+    if (!st.ok()) {
+      return st;
+    }
+    topic_tailer_.emplace_back(topic_tailer);
+  }
+
+  for (unsigned int i = 0; i < opt.number_of_rooms; i++) {
+    rooms_.emplace_back(new ControlRoom(opt, this, i));
   }
 
   // Start background threads for Room msg loops
   unsigned int numrooms = opt.number_of_rooms;
   for (unsigned int i = 0; i < numrooms; i++) {
-    ControlRoom* room = tower->rooms_[i].get();
+    ControlRoom* room = rooms_[i].get();
     BaseEnv::ThreadId t = opt.env->StartThread(ControlRoom::Run, room,
                   "rooms-" + std::to_string(room->GetRoomNumber()));
-    tower->room_thread_id_.push_back(t);
+    room_thread_id_.push_back(t);
   }
   // Wait for all the Rooms to be ready to process events
   for (unsigned int i = 0; i < numrooms; i++) {
-    while (!tower->rooms_[i].get()->IsRunning()) {
+    while (!rooms_[i].get()->IsRunning()) {
       std::this_thread::yield();
     }
   }
-  *ct = tower;
   return Status::OK();
 }
 
@@ -168,7 +221,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
   }
 
   // Process each topic
-  for (unsigned int i = 0; i < request->GetTopicInfo().size(); i++) {
+  for (size_t i = 0; i < request->GetTopicInfo().size(); i++) {
     // map the topic to a logid
     TopicPair topic = request->GetTopicInfo()[i];
     LogID logid;
@@ -183,7 +236,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
       continue;
     }
     // calculate the destination room number
-    int room_number = static_cast<int>(logid % options_.number_of_rooms);
+    int room_number = LogIDToRoom(logid);
 
     // Copy out only the ith topic into a new message.
     MessageMetadata* newmsg = new MessageMetadata(
@@ -258,6 +311,10 @@ HostNumber ControlTower::InsertHost(const ClientID& client_id,
     assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
   }
   return hostnum;
+}
+
+int ControlTower::LogIDToRoom(LogID log_id) const {
+  return static_cast<int>(log_id % rooms_.size());
 }
 
 }  // namespace rocketspeed

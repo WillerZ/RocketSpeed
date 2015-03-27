@@ -244,9 +244,17 @@ class MessageData : public Message {
   SequenceNumber GetSequenceNumber() const { return seqno_; }
 
   /**
-   * @Sets the Sequence Number.
+   * @return The message previous Sequence Number.
    */
-  void SetSequenceNumber(SequenceNumber n) { seqno_ = n; }
+  SequenceNumber GetPrevSequenceNumber() const { return seqno_prev_; }
+
+  /**
+   * @Sets the Sequence Numbers.
+   */
+  void SetSequenceNumbers(SequenceNumber prev, SequenceNumber seqno) {
+    seqno_prev_ = prev;
+    seqno_ = seqno;
+  }
 
   /**
    * @return The Message ID.
@@ -297,13 +305,13 @@ class MessageData : public Message {
   void SerializeInternal() const;
 
   // type of this message: mPublish or mDeliver
-  SequenceNumber seqno_;     // sequence number of message
-  MsgId msgid_;              // globally unique id for message
-  Slice topic_name_;         // name of topic
-  Slice payload_;            // user data of message
-  Slice namespaceid_;        // message namespace
-  Slice storage_slice_;      // slice starting from tenantid from buffer_
-  Slice topic_id_;           // slice of encoded namespace + topic name
+  SequenceNumber seqno_prev_; // previous sequence number on topic
+  SequenceNumber seqno_;      // sequence number of message
+  MsgId msgid_;               // globally unique id for message
+  Slice topic_name_;          // name of topic
+  Slice payload_;             // user data of message
+  Slice namespaceid_;         // message namespace
+  Slice storage_slice_;       // slice starting from tenantid from buffer_
 };
 
 /*

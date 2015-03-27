@@ -35,6 +35,7 @@ TEST(Messaging, Data) {
   // create a message
   MessageData data1(MessageType::mPublish,
                     Tenant::GuestTenant, clid1, name1, nsid1, payload1);
+  data1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   // serialize the message
   Slice original = data1.Serialize();
@@ -50,6 +51,8 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(data2.GetNamespaceId().ToString(), nsid1);
+  ASSERT_EQ(data2.GetPrevSequenceNumber(), 1000100010001000ULL);
+  ASSERT_EQ(data2.GetSequenceNumber(), 2000200020002000ULL);
 }
 
 TEST(Messaging, Metadata) {
