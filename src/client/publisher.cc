@@ -97,6 +97,9 @@ class PendingAck {
  */
 class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
  public:
+  /** Stream socket used by this worker to talk to the pilot. */
+  StreamSocket pilot_socket;
+
   /**
    * Map a subscribed topic name to the last sequence number received for this
    * topic.
@@ -119,6 +122,12 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
     , pilot_host_(std::move(pilot_host)) {
   // Prepare sharded state.
   worker_data_.reset(new PublisherWorkerData[msg_loop_->GetNumWorkers()]);
+
+  // Initialise stream socket for each worker, each of them is independent.
+  for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
+    worker_data_[i].pilot_socket = StreamSocket(
+        pilot_host_.ToClientId(), msg_loop_->GetClientId(i) + 'P');
+  }
 
   // Register our callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
@@ -176,7 +185,7 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   // Send to event loop for processing (the loop will free it).
   wake_lock_->AcquireForSending();
   Status status =
-      msg_loop_->SendRequest(message, pilot_host_.ToClientId(), worker_id);
+      msg_loop_->SendRequest(message, &worker_data.pilot_socket, worker_id);
   if (!status.ok() && added) {
     std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
     worker_data.messages_sent.erase(msgid);

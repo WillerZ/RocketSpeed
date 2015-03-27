@@ -195,7 +195,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
 
   // send response back to copilot
   request->SetOrigin(origin);
-  st = options.msg_loop->SendResponse(*request, origin, worker_id);
+  st = options.msg_loop->SendResponse(*request, "", origin, worker_id);
   if (!st.ok()) {
     LOG_WARN(options.info_log,
         "Unable to send %s response for Topic(%s)@%" PRIu64 " to tower for %s",
@@ -251,7 +251,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
       if (hostid != nullptr && worker_id != -1) {
         // Send to correct worker loop.
         request->SetOrigin(*hostid);
-        st = options.msg_loop->SendResponse(*request, *hostid, worker_id);
+        st = options.msg_loop->SendResponse(*request, "", *hostid, worker_id);
 
         if (st.ok()) {
           LOG_INFO(options.info_log,

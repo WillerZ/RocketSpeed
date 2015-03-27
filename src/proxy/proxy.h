@@ -23,6 +23,7 @@
 namespace rocketspeed {
 
 struct ProxyWorkerData;
+class StreamSocket;
 
 /**
  * The RocketSpeed Proxy is a library that appears as Pilot and Copilot to the

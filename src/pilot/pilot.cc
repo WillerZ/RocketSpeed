@@ -195,7 +195,7 @@ void Pilot::SendAck(MessageData* msg,
   MessageDataAck newmsg(msg->GetTenantID(), client, { ack });
 
   // send message
-  Status st = options_.msg_loop->SendResponse(newmsg, client, worker_id);
+  Status st = options_.msg_loop->SendResponse(newmsg, "", client, worker_id);
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.

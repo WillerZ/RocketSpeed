@@ -329,13 +329,13 @@ TEST(Messaging, GracefulGoodbye) {
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping response server -> c1
-  ASSERT_OK(server.SendResponse(ping1_resp, "c1", 0));
+  ASSERT_OK(server.SendResponse(ping1_resp, "", "c1", 0));
   // Should NOT get response -- c1 has said goodbye
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping response server -> c2
-  ASSERT_OK(server.SendResponse(ping2_resp, "c2", 0));
+  ASSERT_OK(server.SendResponse(ping2_resp, "", "c2", 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 }

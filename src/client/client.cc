@@ -262,6 +262,9 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
  public:
   typedef std::unordered_map<TopicID, SubscriptionState> SubscriptionStateMap;
 
+  /** Stream socket used by this worker to talk to the copilot. */
+  StreamSocket copilot_socket;
+
   ClientWorkerData() = default;
   // Noncopyable
   ClientWorkerData(const ClientWorkerData&) = delete;
@@ -343,7 +346,14 @@ ClientImpl::ClientImpl(BaseEnv* env,
     ProcessMetadata(std::move(msg));
   };
 
+  // Create sharded state.
   worker_data_.reset(new ClientWorkerData[msg_loop_->GetNumWorkers()]);
+
+  // Initialise stream socket for each worker, each of them is independent.
+  for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
+    worker_data_[i].copilot_socket = StreamSocket(
+        copilot_host_id_.ToClientId(), msg_loop_->GetClientId(i) + 'C');
+  }
 
   msg_loop_->RegisterCallbacks(callbacks);
 
@@ -502,7 +512,7 @@ void ClientImpl::HandleSubscription(TopicPair request, int worker_id) {
   // Send to event loop for processing.
   wake_lock_.AcquireForSending();
   auto st =
-      msg_loop_->SendRequest(message, copilot_host_id_.ToClientId(), worker_id);
+      msg_loop_->SendRequest(message, &worker_data.copilot_socket, worker_id);
   if (!st.ok()) {
     AnnounceSubscriptionStatus(std::move(request), std::move(st));
   }

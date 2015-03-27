@@ -68,40 +68,37 @@ class MsgLoop : public MsgLoopBase {
   }
 
   /**
-   * Send a command to an unspecified event loop for processing.
-   *
-   * This call is thread-safe.
-   *
-   * @param command The command to send for processing.
-   * @return OK if enqueued.
-   *         NoBuffer if queue is full.
-   */
-  Status SendCommand(std::unique_ptr<Command> command) {
-    return SendCommand(std::move(command), LoadBalancedWorkerId());
-  }
-
-  /**
-   * Send a command to a specific event loop for processing.
-   *
-   * This call is thread-safe.
-   *
-   * @param command The command to send for processing.
-   * @param worker_id The index of the worker thread.
-   * @return OK if enqueued.
-   *         NoBuffer if queue is full.
-   */
-  Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
-    assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
-    return event_loops_[worker_id]->SendCommand(std::move(command));
-  }
-
-  /**
-   * Send a command to the event loop running on the same thread as the caller.
-   * Calling from non event loop thread is an undefined behaviour.
+   * Send a command to the event loop that the thread is currently running on.
+   * Calling from non event loop thread has undefined behaviour.
+   * This method might be implemented in such a way, that it processes command
+   * inline, in which case it's rather easy to overflow stack if one wants to
+   * call the method from execute command functor.
    *
    * @param command The command to send for processing.
    */
   void SendCommandToSelf(std::unique_ptr<Command> command);
+
+  Status SendCommand(std::unique_ptr<Command> command, int worker_id) override;
+
+  // TODO(stupaq) remove it once we get numeric sequence ids & allocators
+  Status SendRequest(const Message& msg, ClientID recipient) {
+    return SendRequest(msg, recipient, LoadBalancedWorkerId());
+  }
+
+  // TODO(stupaq) remove it once we get numeric sequence ids & allocators
+  Status SendRequest(const Message& msg, ClientID recipient, int worker_id) {
+    StreamSocket socket(recipient, GetClientId(worker_id) + '|' + recipient);
+    return SendRequest(msg, &socket, worker_id);
+  }
+
+  Status SendRequest(const Message& msg,
+                     StreamSocket* socket,
+                     int worker_id) override;
+
+  Status SendResponse(const Message& msg,
+                      StreamID stream, // TODO(stupaq) remove
+                      ClientID recipient,
+                      int worker_id) override;
 
   Statistics GetStatistics() const {
     Statistics stats;
@@ -148,11 +145,6 @@ class MsgLoop : public MsgLoopBase {
   int GetNumClientsSync();
 
  private:
-  Status SendMessage(const Message& msg,
-                     ClientID recipient,
-                     int worker_id,
-                     bool is_new_request);
-
   // Stores the worker_id for this thread.
   // Reading this is only valid within an EventLoop callback. It is used to
   // define affinities between workers and messages.

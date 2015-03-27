@@ -29,6 +29,8 @@ namespace rocketspeed {
  */
 template <typename T>
 struct OrderedProcessor {
+  typedef T EventType;
+
   struct Unprocessed {
     Unprocessed()
     : seqno(-1) {}

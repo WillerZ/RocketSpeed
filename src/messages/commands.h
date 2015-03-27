@@ -11,6 +11,7 @@
 
 #include "include/Types.h"
 #include "src/messages/messages.h"
+#include "src/messages/streams.h"
 #include "src/util/common/autovector.h"
 
 namespace rocketspeed {
@@ -35,7 +36,7 @@ class Command {
 
   virtual ~Command() {}
 
-  // Get type of the command.
+  /** Get type of the command. */
   virtual CommandType GetCommandType() const = 0;
 };
 
@@ -47,31 +48,37 @@ class Command {
  */
 class SendCommand : public Command {
  public:
-  // Allocate one ClientID in-place for the common case.
+  /** Allocate one ClientID in-place for the common case. */
   typedef autovector<ClientID, 1> Recipients;
 
-  explicit SendCommand(bool is_new_request) :
-                       is_new_request_(is_new_request) {}
+  SendCommand(StreamID stream, bool new_request)
+      : stream_(stream), new_request_(new_request) {}
 
   virtual ~SendCommand() {}
 
   CommandType GetCommandType() const { return kSendCommand; }
 
+  /** Writes a serialised form of a message to provided string. */
   virtual void GetMessage(std::string* out) = 0;
 
-  // If this is a command to send a mesage to remote hosts, then returns the
-  // list of destination HostIds.
+  /**
+   * If this is a command to send a mesage to remote hosts, then returns the
+   * list of destination HostIds.
+   */
   virtual const Recipients& GetDestination() const = 0;
 
-  // Returns true if this is a new request. If this is not a new
-  // request (but is a response to an earlier request), then the
-  // underlying transport can possibly skip establishing new
-  // connection/authentication.
-  bool IsNewRequest() const { return is_new_request_; }
+  /** Returns identifier of the stream this message belongs to. */
+  StreamID GetStream() const { return stream_; }
+
+  /**
+   * Returns true iff this is a new request. Responses shall not trigger
+   * reestablishment of a stream if it broke.
+   */
+  bool IsNewRequest() const { return new_request_; }
 
  private:
-  // This is a new request and is not a response to an earlier request
-  const bool is_new_request_;
+  StreamID stream_;
+  bool new_request_;
 };
 
 /**
@@ -79,23 +86,25 @@ class SendCommand : public Command {
  */
 class SerializedSendCommand : public SendCommand {
  public:
+  static std::unique_ptr<SerializedSendCommand> CreateRequest(
+      std::string serialized,
+      StreamSocket* socket) {
+    return std::unique_ptr<SerializedSendCommand>(
+        new SerializedSendCommand(std::move(serialized),
+                                  socket->GetDestination(),
+                                  socket->GetStreamID(),
+                                  true));
+  }
+
   SerializedSendCommand() = default;
 
   SerializedSendCommand(std::string message,
-                        const ClientID& host,
-                        bool is_new_request):
-    SendCommand(is_new_request),
-    message_(std::move(message)) {
-    recipient_.push_back(host);
-    assert(message_.size() > 0);
-  }
-
-  SerializedSendCommand(std::string message,
-                        Recipients hosts,
-                        bool is_new_request):
-    SendCommand(is_new_request),
-    recipient_(std::move(hosts)),
-    message_(std::move(message)) {
+                        ClientID recipient,
+                        StreamID stream,
+                        bool new_request)
+      : SendCommand(stream, new_request)
+      , message_(std::move(message)) {
+    recipient_.push_back(std::move(recipient));
     assert(message_.size() > 0);
   }
 

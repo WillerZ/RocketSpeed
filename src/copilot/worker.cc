@@ -121,6 +121,7 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
         // Send to client's worker.
         msg->SetOrigin(subscription.client_id);
         Status status = options_.msg_loop->SendResponse(*msg,
+                                                        "",
                                                         subscription.client_id,
                                                         subscription.worker_id);
         if (status.ok()) {
@@ -190,6 +191,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       // Send to worker loop.
       msg->SetOrigin(recipient);
       Status status = options_.msg_loop->SendResponse(*msg,
+                                                      "",
                                                       recipient,
                                                       subscription.worker_id);
       if (status.ok()) {
@@ -314,10 +316,13 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
       int outgoing_worker_id = copilot_->GetLogWorker(logid);
 
+      // Find or open a new stream socket to this control tower.
+      auto socket = GetControlTowerSocket(*recipient, outgoing_worker_id);
+
       // Forward request to control tower to update the copilot subscription.
       msg->SetOrigin(copilot_->GetClientId(outgoing_worker_id));
       Status status = options_.msg_loop->SendRequest(*msg,
-                                                     *recipient,
+                                                     socket,
                                                      outgoing_worker_id);
       if (!status.ok()) {
         LOG_INFO(options_.info_log,
@@ -340,7 +345,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // Send response to origin to notify that subscription has been processed.
     msg->SetMetaType(MessageMetadata::MetaType::Response);
     msg->SetOrigin(subscriber);
-    Status st = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
+    Status st =
+        options_.msg_loop->SendResponse(*msg, "", subscriber, worker_id);
     if (!st.ok()) {
       // Failed to send response. The origin will re-send the subscription
       // again in the future, and we'll try to immediately respond again.
@@ -376,7 +382,8 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
 
   // Send response to origin to notify that subscription has been processed.
   msg->SetMetaType(MessageMetadata::MetaType::Response);
-  Status status = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
+  Status status =
+      options_.msg_loop->SendResponse(*msg, "", subscriber, worker_id);
   if (!status.ok()) {
     // Failed to send response. The origin will re-send the subscription
     // again in the future, and we'll try to immediately respond again.
@@ -436,8 +443,12 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
                                            MetadataType::mUnSubscribe,
                                            namespace_id) });
 
+        // Find or open a new stream socket to this control tower.
+        auto socket = GetControlTowerSocket(*recipient, outgoing_worker_id);
+
+        // Send the message.
         Status status = options_.msg_loop->SendRequest(newmsg,
-                                                       *recipient,
+                                                       socket,
                                                        outgoing_worker_id);
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
@@ -459,8 +470,12 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
                                            MetadataType::mSubscribe,
                                            namespace_id) });
 
+        // Find or open a new stream socket to this control tower.
+        auto socket = GetControlTowerSocket(*recipient, outgoing_worker_id);
+
+        // Send the message.
         Status status = options_.msg_loop->SendRequest(newmsg,
-                                                       *recipient,
+                                                       socket,
                                                        outgoing_worker_id);
           if (!status.ok()) {
           LOG_INFO(options_.info_log,
@@ -489,21 +504,28 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message) {
       "Copilot received goodbye for client %s",
       client_id.c_str());
 
-  auto it = client_topics_.find(client_id);
-  if (it != client_topics_.end()) {
-    // Unsubscribe from all topics.
-    // Making a copy because RemoveSubscription will modify client_topics_;
-    auto topics_copy = it->second;
-    for (const TopicInfo& info : topics_copy) {
-      RemoveSubscription(goodbye->GetTenantID(),
-                         client_id,
-                         info.namespace_id,
-                         info.topic_name,
-                         info.logid,
-                         0); // The worked id is a dummy because we do not
-                             //  need to send any response back to the client
+  if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Client) {
+    // This is a goodbye from one of the clients.
+    auto it = client_topics_.find(client_id);
+    if (it != client_topics_.end()) {
+      // Unsubscribe from all topics.
+      // Making a copy because RemoveSubscription will modify client_topics_;
+      auto topics_copy = it->second;
+      for (const TopicInfo& info : topics_copy) {
+        RemoveSubscription(goodbye->GetTenantID(),
+                           client_id,
+                           info.namespace_id,
+                           info.topic_name,
+                           info.logid,
+                           0);  // The worked id is a dummy because we do not
+                                //  need to send any response back to the client
+      }
+      client_topics_.erase(it);
     }
-    client_topics_.erase(it);
+  } else {
+    // This is a goodbye from one of the control towers.
+    // We'll just remove corresponding sockets.
+    control_tower_sockets_.erase(client_id);
   }
 }
 
@@ -572,6 +594,19 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
       process_error();
     }
   }
+}
+
+StreamSocket* CopilotWorker::GetControlTowerSocket(const ClientID& tower,
+                                                   int outgoing_worker_id) {
+  auto& tower_sockets = control_tower_sockets_[tower];
+  tower_sockets.resize(options_.msg_loop->GetNumWorkers());
+  auto& socket = tower_sockets[outgoing_worker_id];
+  if (!socket.IsValid()) {
+    socket = StreamSocket(tower,
+                          std::to_string(myid_) + '|' + tower + '|' +
+                              std::to_string(outgoing_worker_id));
+  }
+  return &socket;
 }
 
 }  // namespace rocketspeed

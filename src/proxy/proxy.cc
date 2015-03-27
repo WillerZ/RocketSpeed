@@ -20,22 +20,29 @@ namespace rocketspeed {
 
 /**
  * Bidirectional map between hosts and sessions, i.e. what pilots and
- * copilots a session is communicating with.
+ * copilots a session is communicating with and on which socket.
  * This is used to inform clients when the host goes down.
  */
 struct HostSessionMatrix {
   /**
-   * Add a (session, host) into the matrix. Has no effect if the pair
-   * has already been inserted.
+   * Finds or inserts a (session, host) into the matrix and create a new socket
+   * for the stream. Does not modify the matrix if the pair has already been
+   * inserted.
    *
    * @param session The session communicating with a host.
    * @param host The host the session is communicating with.
+   * @return found or inserted socket pointer
    */
-  void Add(int64_t session, const ClientID& host) {
+  StreamSocket* Add(int64_t session, const ClientID& host) {
     host_to_sessions_[host].insert(session);
-    auto& hosts = session_to_hosts_[session];
-    if (std::find(hosts.begin(), hosts.end(), host) == hosts.end()) {
-      hosts.push_back(host);
+    auto& sockets = session_to_sockets_[session];
+    auto it = std::find_if(
+        sockets.begin(), sockets.end(), StreamSocket::Equals(host));
+    if (it == sockets.end()) {
+      sockets.push_back(StreamSocket(host, std::to_string(session) + host));
+      return &sockets.back();
+    } else {
+      return &*it;
     }
   }
 
@@ -49,10 +56,11 @@ struct HostSessionMatrix {
     auto sessions = std::move(host_to_sessions_[host]);
     host_to_sessions_.erase(host);
     for (int64_t session : sessions) {
-      auto& hosts = session_to_hosts_[session];
-      auto it = std::find(hosts.begin(), hosts.end(), host);
-      if (it != hosts.end()) {
-        hosts.erase(it);
+      auto& sockets = session_to_sockets_[session];
+      auto it = std::find_if(
+          sockets.begin(), sockets.end(), StreamSocket::Equals(host));
+      if (it != sockets.end()) {
+        sockets.erase(it);
       }
     }
     return sessions;
@@ -62,27 +70,28 @@ struct HostSessionMatrix {
    * Remove a session row from matrix.
    *
    * @param session The session to remove.
-   * @return The hosts for the removed session.
+   * @return The sockets for the removed session.
    */
-  std::vector<ClientID> RemoveSession(int64_t session) {
-    auto hosts = std::move(session_to_hosts_[session]);
-    for (const ClientID& host : hosts) {
-      host_to_sessions_[host].erase(session);
+  std::vector<StreamSocket> RemoveSession(int64_t session) {
+    auto sockets = std::move(session_to_sockets_[session]);
+    for (const StreamSocket& stream : sockets) {
+      host_to_sessions_[stream.GetDestination()].erase(session);
     }
-    session_to_hosts_.erase(session);
-    return hosts;
+    session_to_sockets_.erase(session);
+    return sockets;
   }
 
  private:
   // Maps host to sessions communicating with this host.
   std::unordered_map<ClientID, std::unordered_set<int64_t>> host_to_sessions_;
 
-  // Maps sessions to the hosts they are communicating with.
+  // Maps sessions to the sockets they are communicating on.
   // Each session should only communicate with up to two hosts (pilot, copilot).
-  std::unordered_map<int64_t, std::vector<ClientID>> session_to_hosts_;
+  std::unordered_map<int64_t, std::vector<StreamSocket>> session_to_sockets_;
 };
 
-typedef OrderedProcessor<std::unique_ptr<Command>> SessionProcessor;
+typedef OrderedProcessor<std::pair<SendCommand::Recipients, std::string>>
+    SessionProcessor;
 
 /** Represents per message loop worker data. */
 struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
@@ -158,7 +167,7 @@ Proxy::Proxy(ProxyOptions options)
 }
 
 Status Proxy::Start(OnMessageCallback on_message,
-                    OnDisconnectCallback on_disconnect) {
+                    Proxy::OnDisconnectCallback on_disconnect) {
   on_message_ = std::move(on_message);
   on_disconnect_ = on_disconnect ? std::move(on_disconnect)
                                  : [](const std::vector<int64_t>&) {};
@@ -243,7 +252,7 @@ void Proxy::HandleDestroySession(int64_t session) {
   if (it != data.sessions_.end()) {
     data.sessions_.erase(it);
   }
-  auto hosts = data.host_session_matrix_.RemoveSession(session);
+  auto sockets = data.host_session_matrix_.RemoveSession(session);
 
   // Send goodbye to all hosts.
   MessageGoodbye goodbye(Tenant::GuestTenant,
@@ -251,10 +260,10 @@ void Proxy::HandleDestroySession(int64_t session) {
                          MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
 
-  // OK if this fails. Server will garbage collect client.
   int worker = WorkerForSession(session);
-  for (const ClientID& host : hosts) {
-    msg_loop_->SendRequest(goodbye, host, worker);
+  for (StreamSocket& socket : sockets) {
+    // OK if this fails. Server will garbage collect client.
+    msg_loop_->SendRequest(goodbye, &socket, worker);
   }
 
   // Remove the session to client ID mapping.
@@ -371,24 +380,22 @@ void Proxy::HandleMessageForwarded(std::string msg,
     default:
       // Client shouldn't be sending us these kinds of messages.
       LOG_ERROR(info_log_,
-        "Client %s attempting to send invalid message type through proxy (%d)",
-        message->GetOrigin().c_str(),
-        static_cast<int>(message->GetMessageType()));
+                "Client %s attempting to send invalid message type through "
+                "proxy (%d)",
+                message->GetOrigin().c_str(),
+                static_cast<int>(message->GetMessageType()));
       stats_.forward_errors->Add(1);
       on_disconnect_({session});
       return;
   }
 
-  // Create command.
-  const bool is_new_request = true;
-  std::unique_ptr<Command> cmd(
-    new SerializedSendCommand(std::move(msg),
-                              hosts,
-                              is_new_request));
-
   if (sequence == -1) {
     // Send directly to loop.
-    msg_loop_->SendCommandToSelf(std::move(cmd));
+    for (auto& host : hosts) {
+      auto socket = data.host_session_matrix_.Add(session, host);
+      msg_loop_->SendCommandToSelf(
+          SerializedSendCommand::CreateRequest(msg, socket));
+    }
   } else {
     // Handle reordering.
     auto it = data.sessions_.find(session);
@@ -396,13 +403,20 @@ void Proxy::HandleMessageForwarded(std::string msg,
       // Not there, so create it.
       SessionProcessor processor(
           ordering_buffer_size_,
-          [this, session, &data](std::unique_ptr<Command> command) {
+          [this, session, &data](SessionProcessor::EventType event) {
             // It's safe to capture data reference.
+            auto& recipients = event.first;
+            auto& serialized = event.second;
             // Process command by sending it to the event loop.
             // Need to check if session is still there. Previous command
             // processed may have caused it to drop.
-            if (data.sessions_.find(session) != data.sessions_.end()) {
-              msg_loop_->SendCommandToSelf(std::move(command));
+            if (data.sessions_.find(session) == data.sessions_.end()) {
+              return;
+            }
+            for (auto& host : recipients) {
+              auto socket = data.host_session_matrix_.Add(session, host);
+              msg_loop_->SendCommandToSelf(
+                  SerializedSendCommand::CreateRequest(serialized, socket));
             }
           });
 
@@ -411,11 +425,8 @@ void Proxy::HandleMessageForwarded(std::string msg,
       it = result.first;
     }
 
-    for (const ClientID& host : hosts) {
-      data.host_session_matrix_.Add(session, host);
-    }
-
-    Status st = it->second.Process(std::move(cmd), sequence);
+    Status st = it->second.Process(
+        std::make_pair(std::move(hosts), std::move(msg)), sequence);
     if (!st.ok()) {
       on_disconnect_({session});
       data.sessions_.erase(it);

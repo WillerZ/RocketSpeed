@@ -20,13 +20,18 @@
 #include "src/util/mutexlock.h"
 #include "src/port/Env.h"
 
-
 namespace rocketspeed {
 
-// Application callback are invoked with messages of this type
+/**
+ * Type of an application callback that is invoked with meassage of appropriate
+ * type (depending on what type the callback was registered for).
+ */
 typedef std::function<void(std::unique_ptr<Message>)> MsgCallbackType;
 
-//
+/**
+ * An interface of message passing style communication between components,
+ * processes and machines.
+ */
 class MsgLoopBase {
  public:
 
@@ -76,52 +81,40 @@ class MsgLoopBase {
                              int worker_id) = 0;
 
   /**
-   * Sends a request message to a recipient. The message will be sent to an
-   * unspecified event loop to dispatch, so will not be ordered with respect to
-   * other requests. If this is the first message sent to the recipient,
-   * communication will be initiated.
+   * Sends a request message to a recipient.
+   * If this request is the first on on a stream represented by the socket,
+   * communication on a stream will be initiated. Requests to the same stream
+   * sent from the same thread will be ordered with respect to each other.
+   * This call is thread-safe.
    *
    * @param msg The message to send to the recipient.
-   * @param recipient Client to send message to.
-   * @return OK if enqueued.
+   * @param socket A socket for the stream.
+   * @param worker_id The index of the event loop that should process request.
+   * @return OK if enqueued,
    *         NoBuffer if queue is full.
    */
-  Status SendRequest(const Message& msg, ClientID recipient) {
-    return SendRequest(msg, std::move(recipient), LoadBalancedWorkerId());
-  }
+  virtual Status SendRequest(const Message& msg,
+                             StreamSocket* socket,
+                             int worker_id) = 0;
 
   /**
-   * Sends a request message to a recipient via a specific event loop specified
-   * by worker_id. Requests on the same worker_id from the same thread will
-   * be ordered with respect to each other. If this is the first message sent
-   * to the recipient, communication will be initiated.
+   * Sends a response message on a given stream. Responses to the same stream
+   * sent from the same thread will be ordered with respect to each other.
+   * If no messages have been received from the recipient, the recipient has
+   * sent a goodbye message, or the stream broke, then the response will be
+   * dropped silently.
+   * This call is thread-safe.
    *
    * @param msg The message to send to the recipient.
-   * @param recipient Client to send message to.
-   * @param worker_id The index of the worker thread.
-   * @return OK if enqueued.
+   * @param stream Stream that this message belongs to.
+   * @param worker_id The index of the worker that received a matching request.
+   * @return OK if enqueued,
    *         NoBuffer if queue is full.
    */
-  Status SendRequest(const Message& msg, ClientID recipient, int worker_id) {
-    return SendMessage(msg, std::move(recipient), worker_id, true);
-  }
-
-  /**
-   * Sends a response message to a recipient via a specific event loop
-   * specified by worker_id. Responses on the same worker_id from the same
-   * thread will be ordered with respect to each other. If no messages have
-   * been received from the recipient (or the recipient has sent a goodbye
-   * message) then the response will asyncronously fail to send.
-   *
-   * @param msg The message to send to the recipient.
-   * @param recipient Client to send message to.
-   * @param worker_id The index of the worker thread.
-   * @return OK if enqueued.
-   *         NoBuffer if queue is full.
-   */
-  Status SendResponse(const Message& msg, ClientID recipient, int worker_id) {
-    return SendMessage(msg, std::move(recipient), worker_id, false);
-  }
+  virtual Status SendResponse(const Message& msg,
+                              StreamID stream,
+                              ClientID recipient,
+                              int worker_id) = 0;
 
   virtual Statistics GetStatistics() const = 0;
 
@@ -165,13 +158,6 @@ class MsgLoopBase {
 
  protected:
   BaseEnv* env_;
-
- private:
-  // Sends msg to recipient on event loop worker_id.
-  virtual Status SendMessage(const Message& msg,
-                             ClientID recipient,
-                             int worker_id,
-                             bool is_new_request) = 0;
 };
 
 template <typename PerWorkerFunc, typename GatherFunc>

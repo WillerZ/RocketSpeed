@@ -214,16 +214,37 @@ void MsgLoop::SendCommandToSelf(std::unique_ptr<Command> command) {
                                                  env_->NowMicros());
 }
 
-Status MsgLoop::SendMessage(const Message& msg,
-                            ClientID recipient,
-                            int worker_id,
-                            bool is_new_request) {
+Status MsgLoop::SendCommand(std::unique_ptr<Command> command, int worker_id) {
+  assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
+  return event_loops_[worker_id]->SendCommand(std::move(command));
+}
+
+Status MsgLoop::SendRequest(const Message& msg,
+                            StreamSocket* socket,
+                            int worker_id) {
+  // Serialise the message.
   std::string serial;
   msg.SerializeToString(&serial);
-  std::unique_ptr<Command> cmd(
-    new SerializedSendCommand(std::move(serial),
-                              std::move(recipient),
-                              is_new_request));
+  // Create command and append it to the proper event loop.
+  Status st = SendCommand(
+      SerializedSendCommand::CreateRequest(std::move(serial), socket),
+      worker_id);
+  if (st.ok()) {
+    socket->Open();
+  }
+  return st;
+}
+
+Status MsgLoop::SendResponse(const Message& msg,
+                             StreamID stream,
+                             ClientID recipient,
+                             int worker_id) {
+  // Serialise the message.
+  std::string serial;
+  msg.SerializeToString(&serial);
+  // Create command and append it to the proper event loop.
+  std::unique_ptr<Command> cmd(new SerializedSendCommand(
+      std::move(serial), recipient, stream, false));
   return SendCommand(std::move(cmd), worker_id);
 }
 
@@ -244,7 +265,7 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
     request->SetPingType(MessagePing::Response);
 
     // send response to origin.
-    Status st = SendResponse(*request, origin, GetThreadWorkerIndex());
+    Status st = SendResponse(*request, "", origin, GetThreadWorkerIndex());
 
     if (!st.ok()) {
       LOG_WARN(info_log_,

@@ -139,6 +139,10 @@ class CopilotWorker {
                      const LogID logid,
                      int worker_id);
 
+  /** Gets or (re)open socket to control tower. */
+  StreamSocket* GetControlTowerSocket(const ClientID& tower,
+                                      int outgoing_worker_id);
+
   // Main worker loop for this worker.
   WorkerLoop<CopilotWorkerCommand> worker_loop_;
 
@@ -194,5 +198,13 @@ class CopilotWorker {
   };
   typedef std::unordered_set<TopicInfo, TopicInfo::Hash> TopicInfoSet;
   std::unordered_map<ClientID, TopicInfoSet> client_topics_;
+
+  /**
+   * Keeps track of all opened stream sockets to control towers, the index in
+   * this array corresponds to message loop worker id.
+   */
+  std::unordered_map<ClientID, std::vector<StreamSocket>>
+      control_tower_sockets_;
 };
+
 }  // namespace rocketspeed
