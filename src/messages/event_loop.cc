@@ -120,12 +120,15 @@ class SocketEvent {
     send_queue_.push_back(msg);
     assert(msg->refcount);
 
-    // If the write-ready event was not currently registered, then
-    // register it now. The enqueued message will be sent out when the
-    // socket is ready to be written.
+    // If the write-ready event is not currently registered, and the socket
+    // is ready for writing, then we'll try to write immediately. If the
+    // socket isn't ready for writing, we'll queue up the message, add a write
+    // event and wait until its ready.
     if (!write_ev_added_) {
-      // Try to write everything now.
-      WriteCallback(fd_);
+      if (ready_for_writing_) {
+        // Try to write everything now.
+        WriteCallback(fd_);
+      }
 
       if (!send_queue_.empty()) {
         // Failed to write everything, so add a write event to notify us
@@ -172,7 +175,8 @@ class SocketEvent {
   , write_ev_(nullptr)
   , event_loop_(event_loop)
   , write_ev_added_(false)
-  , was_initiated_(initiated) {
+  , was_initiated_(initiated)
+  , ready_for_writing_(false) {
     // Can only add events from the event loop thread.
     event_loop->thread_check_.Check();
 
@@ -187,6 +191,7 @@ class SocketEvent {
     if (what & EV_READ) {
       st = sev->ReadCallback(fd);
     } else if (what & EV_WRITE) {
+      sev->ready_for_writing_ = true;
       st = sev->WriteCallback(fd);
     } else if (what & EV_TIMEOUT) {
     } else if (what & EV_SIGNAL) {
@@ -407,6 +412,7 @@ class SocketEvent {
   EventLoop* event_loop_;
   bool write_ev_added_;    // is the write event added?
   bool was_initiated_;   // was this connection initiated by us?
+  bool ready_for_writing_;  // is the socket ready for writing?
   std::unordered_set<ClientID> clients_;
 
   // Handle into the EventLoop's socket event list (for fast removal).
