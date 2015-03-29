@@ -64,7 +64,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  std::string name,
                  ClientID client_id):
   MsgLoopBase(env),
-  worker_id_(new ThreadLocalPtr(free_thread_local)),
+  worker_index_(&free_thread_local),
   env_options_(env_options),
   info_log_(info_log),
   name_(name),
@@ -144,6 +144,23 @@ MsgLoop::RegisterCallbacks(
   }
 }
 
+int MsgLoop::GetThreadWorkerIndex() const {
+  const int* ptr = static_cast<int*>(worker_index_.Get());
+  if (ptr && *ptr != -1) {
+    return *ptr;
+  }
+  assert (false);
+  return -1;
+}
+
+void MsgLoop::SetThreadWorkerIndex(int worker_index) {
+  if (int* ptr = static_cast<int*>(worker_index_.Get())) {
+    *ptr = worker_index;
+  } else {
+    worker_index_.Reset(new int(worker_index));
+  }
+}
+
 void MsgLoop::Run() {
   LOG_INFO(info_log_, "Starting Message Loop at port %ld", (long)hostid_.port);
   env_->SetCurrentThreadName(name_ + "-0");
@@ -172,12 +189,12 @@ void MsgLoop::Run() {
     BaseEnv::ThreadId tid = env_->StartThread(
       [this, i] () {
         // Set this thread's worker index.
-        worker_id_->Reset(new int(static_cast<int>(i)));
+        SetThreadWorkerIndex(static_cast<int>(i));
 
         event_loops_[i]->Run();
 
-        //No longer running event loop.
-        worker_id_->Reset(new int(-1));
+        // No longer running event loop.
+        SetThreadWorkerIndex(-1);
       },
       name_ + "-" + std::to_string(i));
     worker_threads_.push_back(tid);
@@ -186,9 +203,9 @@ void MsgLoop::Run() {
   // Main loop run on this thread.
   assert(event_loops_.size() >= 1);
 
-  worker_id_->Reset(new int(0)); // This thread is worker 0.
+  SetThreadWorkerIndex(0);  // This thread is worker 0.
   event_loops_[0]->Run();
-  worker_id_->Reset(new int(-1)); // No longer running event loop.
+  SetThreadWorkerIndex(-1); // No longer running event loop.
 }
 
 void MsgLoop::Stop() {

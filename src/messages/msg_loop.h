@@ -111,7 +111,7 @@ class MsgLoop : public MsgLoopBase {
 
   // Checks that we are running on any EventLoop thread.
   void ThreadCheck() const {
-    assert(*static_cast<int *>(worker_id_->Get()) != -1);
+    GetThreadWorkerIndex();
   }
 
   // Retrieves the number of EventLoop threads.
@@ -124,10 +124,7 @@ class MsgLoop : public MsgLoopBase {
 
   // Retrieves the worker ID for the currently running thread.
   // Will assert if called from a non-EventLoop thread.
-  int GetThreadWorkerIndex() const {
-    assert(*static_cast<int *>(worker_id_->Get()) != -1);
-    return *static_cast<int *>(worker_id_->Get());
-  }
+  int GetThreadWorkerIndex() const;
 
   // Checks that the message origin matches this worker loop.
   bool CheckMessageOrigin(const Message* msg);
@@ -145,10 +142,12 @@ class MsgLoop : public MsgLoopBase {
   int GetNumClientsSync();
 
  private:
-  // Stores the worker_id for this thread.
+  void SetThreadWorkerIndex(int worker_index);
+
+  // Stores index of the worker for this thread.
   // Reading this is only valid within an EventLoop callback. It is used to
   // define affinities between workers and messages.
-  std::unique_ptr<ThreadLocalPtr> worker_id_;
+  ThreadLocalPtr worker_index_;
 
   // The Environment Options
   const EnvOptions env_options_;
