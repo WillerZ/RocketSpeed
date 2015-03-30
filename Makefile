@@ -77,6 +77,7 @@ TESTS = \
 	arena_test \
 	coding_test \
 	autovector_test \
+	linked_map_test \
 	env_test \
 	consistent_hash_test \
 	guid_generator_test \
@@ -249,6 +250,9 @@ arena_test: src/util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 autovector_test: src/util/autovector_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+linked_map_test: src/util/linked_map_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 env_test: src/util/env_test.o $(LIBOBJECTS) $(TESTHARNESS)
