@@ -41,8 +41,7 @@ class StreamSocket {
   };
 
   /** Creates socket which doesn't point to any stream. */
-  StreamSocket() : is_open_(false) {
-  }
+  StreamSocket() : is_open_(false) {}
 
   /**
    * Creates a socket representing a stream.
@@ -72,6 +71,7 @@ class StreamSocket {
   }
 
   void Open() {
+    assert(IsValid());
     is_open_ = true;
   }
 

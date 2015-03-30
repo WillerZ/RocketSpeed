@@ -113,7 +113,6 @@ class MsgLoopBase {
    */
   virtual Status SendResponse(const Message& msg,
                               StreamID stream,
-                              ClientID recipient,
                               int worker_id) = 0;
 
   virtual Statistics GetStatistics() const = 0;

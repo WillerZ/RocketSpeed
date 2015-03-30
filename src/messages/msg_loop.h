@@ -96,8 +96,7 @@ class MsgLoop : public MsgLoopBase {
                      int worker_id) override;
 
   Status SendResponse(const Message& msg,
-                      StreamID stream, // TODO(stupaq) remove
-                      ClientID recipient,
+                      StreamID stream,
                       int worker_id) override;
 
   Statistics GetStatistics() const {

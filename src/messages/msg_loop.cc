@@ -244,8 +244,7 @@ Status MsgLoop::SendRequest(const Message& msg,
   msg.SerializeToString(&serial);
   // Create command and append it to the proper event loop.
   Status st = SendCommand(
-      SerializedSendCommand::CreateRequest(std::move(serial), socket),
-      worker_id);
+      SerializedSendCommand::Request(std::move(serial), {socket}), worker_id);
   if (st.ok()) {
     socket->Open();
   }
@@ -254,15 +253,13 @@ Status MsgLoop::SendRequest(const Message& msg,
 
 Status MsgLoop::SendResponse(const Message& msg,
                              StreamID stream,
-                             ClientID recipient,
                              int worker_id) {
   // Serialise the message.
   std::string serial;
   msg.SerializeToString(&serial);
   // Create command and append it to the proper event loop.
-  std::unique_ptr<Command> cmd(new SerializedSendCommand(
-      std::move(serial), recipient, stream, false));
-  return SendCommand(std::move(cmd), worker_id);
+  return SendCommand(
+      SerializedSendCommand::Response(std::move(serial), {stream}), worker_id);
 }
 
 //
@@ -276,22 +273,19 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
   if (request->GetPingType() == MessagePing::Response) {
     LOG_INFO(info_log_, "Received ping response");
   } else {
-    const ClientID& origin = request->GetOrigin();
-
-    // change it to a ping response message
+    // Change it to a ping response message
     request->SetPingType(MessagePing::Response);
 
-    // send response to origin.
-    Status st = SendResponse(*request, "", origin, GetThreadWorkerIndex());
+    // Send response back to the stream.
+    StreamID stream = request->GetOrigin();
+    Status st = SendResponse(*request, stream, GetThreadWorkerIndex());
 
     if (!st.ok()) {
       LOG_WARN(info_log_,
-          "Unable to send ping response to %s",
-          origin.c_str());
+               "Unable to send ping response to stream (%s)",
+               stream.c_str());
     } else {
-      LOG_INFO(info_log_,
-          "Send ping response to %s",
-          origin.c_str());
+      LOG_INFO(info_log_, "Send ping response to stream (%s)", stream.c_str());
     }
   }
 }

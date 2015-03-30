@@ -44,81 +44,93 @@ class Command {
  * Command for sending a message to remote recipients.
  * The SendCommand is special because the event loop processes it inline
  * instead of invoking the application callback. The message associated with
- * this command is sent to the host specified via a call to GetDestination().
+ * this command is sent to the streams specified via a call to GetDestination().
  */
 class SendCommand : public Command {
  public:
-  /** Allocate one ClientID in-place for the common case. */
-  typedef autovector<ClientID, 1> Recipients;
+  /**
+   * Denotes stream and, if this is a first message on the stream, destination
+   * client ID.
+   */
+  struct StreamSpec {
+    StreamSpec(StreamID _stream, ClientID _destination)
+        : stream(_stream), destination(std::move(_destination)) {
+      assert(!stream.empty());
+    }
+    StreamID stream;
+    ClientID destination;
+  };
+  /** Allocate one stream spec in-place for the common case. */
+  typedef autovector<StreamSpec, 1> Recipients;
+  /** Denotes sockets that this message shall be sent to. */
+  typedef autovector<StreamSocket*, 1> SocketList;
+  /** Denotes streams that this message shall be sent to. */
+  typedef autovector<StreamID, 1> StreamList;
 
-  SendCommand(StreamID stream, bool new_request)
-      : stream_(stream), new_request_(new_request) {}
+  explicit SendCommand(Recipients recipients)
+      : recipients_(std::move(recipients)) {}
 
   virtual ~SendCommand() {}
 
   CommandType GetCommandType() const { return kSendCommand; }
 
-  /** Writes a serialised form of a message to provided string. */
+  /**
+   * Writes a serialised form of a message to provided string.
+   * Depending on implementation, this call might perform a move of message
+   * content into provided string.
+   */
   virtual void GetMessage(std::string* out) = 0;
 
   /**
    * If this is a command to send a mesage to remote hosts, then returns the
-   * list of destination HostIds.
+   * list of destination stream specs.
    */
-  virtual const Recipients& GetDestination() const = 0;
-
-  /** Returns identifier of the stream this message belongs to. */
-  StreamID GetStream() const { return stream_; }
-
-  /**
-   * Returns true iff this is a new request. Responses shall not trigger
-   * reestablishment of a stream if it broke.
-   */
-  bool IsNewRequest() const { return new_request_; }
+  const Recipients& GetDestinations() const { return recipients_; }
 
  private:
-  StreamID stream_;
-  bool new_request_;
+  Recipients recipients_;
 };
 
-/**
- * SendCommand where message is serialized before sending.
- */
+/** SendCommand where message is passed in a serialized form. */
 class SerializedSendCommand : public SendCommand {
  public:
-  static std::unique_ptr<SerializedSendCommand> CreateRequest(
+  static std::unique_ptr<SerializedSendCommand> Request(
       std::string serialized,
-      StreamSocket* socket) {
-    return std::unique_ptr<SerializedSendCommand>(
-        new SerializedSendCommand(std::move(serialized),
-                                  socket->GetDestination(),
-                                  socket->GetStreamID(),
-                                  true));
+      const SocketList& sockets) {
+    Recipients recipients;
+    for (const auto& socket : sockets) {
+      recipients.emplace_back(socket->GetStreamID(),
+                              socket->IsOpen() ? "" : socket->GetDestination());
+    }
+    return std::unique_ptr<SerializedSendCommand>(new SerializedSendCommand(
+        std::move(serialized), std::move(recipients)));
   }
 
-  SerializedSendCommand() = default;
-
-  SerializedSendCommand(std::string message,
-                        ClientID recipient,
-                        StreamID stream,
-                        bool new_request)
-      : SendCommand(stream, new_request)
-      , message_(std::move(message)) {
-    recipient_.push_back(std::move(recipient));
-    assert(message_.size() > 0);
+  static std::unique_ptr<SerializedSendCommand> Response(
+      std::string serialized,
+      const StreamList& streams) {
+    Recipients recipients;
+    for (auto stream : streams) {
+      recipients.emplace_back(stream, "");
+    }
+    return std::unique_ptr<SerializedSendCommand>(new SerializedSendCommand(
+        std::move(serialized), std::move(recipients)));
   }
 
   void GetMessage(std::string* out) {
     out->assign(std::move(message_));
   }
 
-  const Recipients& GetDestination() const {
-    return recipient_;
-  }
-
  private:
-  Recipients recipient_;      // the list of destinations
-  std::string message_;       // the message itself
+  // Hiding, as it's not super convenient to work with this class without
+  // std::make_unique.
+  SerializedSendCommand(std::string message, Recipients recipients)
+      : SendCommand(std::move(recipients)), message_(std::move(message)) {
+    assert(message_.size() > 0);
+  }
+  // Buffer with the message. It's content is moved away on first attempt to get
+  // serialized message.
+  std::string message_;
 };
 
 /**

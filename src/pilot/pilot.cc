@@ -191,17 +191,17 @@ void Pilot::SendAck(MessageData* msg,
   ack.seqno = seqno;
 
   // create new message
-  const ClientID& client = msg->GetOrigin();
-  MessageDataAck newmsg(msg->GetTenantID(), client, { ack });
+  StreamID stream = msg->GetOrigin();
+  MessageDataAck newmsg(msg->GetTenantID(), stream, {ack});
 
   // send message
-  Status st = options_.msg_loop->SendResponse(newmsg, "", client, worker_id);
+  Status st = options_.msg_loop->SendResponse(newmsg, stream, worker_id);
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.
     LOG_INFO(options_.info_log,
-      "Failed to send ack to %s",
-      client.c_str());
+             "Failed to send ack to stream (%s)",
+             stream.c_str());
   }
 }
 

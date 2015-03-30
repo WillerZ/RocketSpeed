@@ -121,7 +121,6 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
         // Send to client's worker.
         msg->SetOrigin(subscription.client_id);
         Status status = options_.msg_loop->SendResponse(*msg,
-                                                        "",
                                                         subscription.client_id,
                                                         subscription.worker_id);
         if (status.ok()) {
@@ -191,7 +190,6 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       // Send to worker loop.
       msg->SetOrigin(recipient);
       Status status = options_.msg_loop->SendResponse(*msg,
-                                                      "",
                                                       recipient,
                                                       subscription.worker_id);
       if (status.ok()) {
@@ -345,8 +343,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // Send response to origin to notify that subscription has been processed.
     msg->SetMetaType(MessageMetadata::MetaType::Response);
     msg->SetOrigin(subscriber);
-    Status st =
-        options_.msg_loop->SendResponse(*msg, "", subscriber, worker_id);
+    Status st = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
     if (!st.ok()) {
       // Failed to send response. The origin will re-send the subscription
       // again in the future, and we'll try to immediately respond again.
@@ -382,8 +379,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
 
   // Send response to origin to notify that subscription has been processed.
   msg->SetMetaType(MessageMetadata::MetaType::Response);
-  Status status =
-      options_.msg_loop->SendResponse(*msg, "", subscriber, worker_id);
+  Status status = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
   if (!status.ok()) {
     // Failed to send response. The origin will re-send the subscription
     // again in the future, and we'll try to immediately respond again.

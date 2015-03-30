@@ -58,7 +58,7 @@ class SocketEvent {
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
                                              int fd,
                                              event_base* base,
-                                             const ClientID& remote) {
+                                             const ClientID& destination) {
     std::unique_ptr<SocketEvent>
         sev(new SocketEvent(event_loop, fd, base, true));
 
@@ -71,21 +71,8 @@ class SocketEvent {
       return nullptr;
     }
 
-    // Insert the write_ev_ into the connection cache. This is
-    // necessary so that further outgoing messages get queued up
-    // on this write event.
-    sev->clients_.insert(remote);
-    bool inserted = event_loop->insert_connection_cache(remote, sev.get());
-    if (inserted) {
-      LOG_INFO(event_loop->GetLog(),
-          "Server Socket fd(%d) to %s inserted into connection_cache_.",
-          fd, remote.c_str());
-    } else {
-      LOG_ERROR(event_loop->GetLog(),
-          "Failed to insert server socket fd(%d) connected to %s into cache",
-          fd, remote.c_str());
-      return nullptr;
-    }
+    // Set destination of the socket, so that it can be reused.
+    sev->destination_ = std::move(destination);
     return sev;
   }
 
@@ -98,8 +85,6 @@ class SocketEvent {
     if (ev_) {
       event_free(ev_);
     }
-    // remove the socket from the connection cache
-    clients_.clear();
     event_free(write_ev_);
     close(fd_);
 
@@ -149,12 +134,8 @@ class SocketEvent {
     return fd_;
   }
 
-  const std::unordered_set<ClientID>& GetClients() const {
-    return clients_;
-  }
-
-  void RemoveClient(const ClientID& host) {
-    clients_.erase(host);
+  const ClientID& GetDestination() const {
+    return destination_;
   }
 
   std::list<std::unique_ptr<SocketEvent>>::iterator GetListHandle() const {
@@ -199,22 +180,35 @@ class SocketEvent {
 
     if (!st.ok()) {
       // Inform MsgLoop that clients have disconnected.
-      auto origin_type = sev->was_initiated_ ?
-                         MessageGoodbye::OriginType::Server :
-                         MessageGoodbye::OriginType::Client;
+      auto origin_type = sev->was_initiated_
+                             ? MessageGoodbye::OriginType::Server
+                             : MessageGoodbye::OriginType::Client;
 
       EventLoop* event_loop = sev->event_loop_;
-      std::unordered_set<ClientID> clients = sev->GetClients();  // copy
-      sev->event_loop_->remove_connection_cache(sev);  // deletes sev
+      // TODO(stupaq) this is a hack for now to preserve semantics of goodbye
+      ClientID destination = sev->GetDestination();
+      // Remove and close streams that were assigned to this connection.
+      auto streams = event_loop->stream_router_.RemoveConnection(sev);
+      // Delete the socket event.
+      event_loop->teardown_connection(sev);
       sev = nullptr;
 
-      for (ClientID client : clients) {
+      if (origin_type == MessageGoodbye::OriginType::Server) {
         std::unique_ptr<Message> msg(
-          new MessageGoodbye(Tenant::InvalidTenant,
-                             std::move(client),
-                             MessageGoodbye::Code::SocketError,
-                             origin_type));
+            new MessageGoodbye(Tenant::InvalidTenant,
+                               destination,
+                               MessageGoodbye::Code::SocketError,
+                               origin_type));
         event_loop->Dispatch(std::move(msg));
+      } else {
+        for (StreamID stream : streams) {
+          std::unique_ptr<Message> msg(
+              new MessageGoodbye(Tenant::InvalidTenant,
+                                 stream,
+                                 MessageGoodbye::Code::SocketError,
+                                 origin_type));
+          event_loop->Dispatch(std::move(msg));
+        }
       }
     }
   }
@@ -353,36 +347,55 @@ class SocketEvent {
 
       if (msg) {
         if (!was_initiated_) {
-          // Attempt to add this client/socket pair to the connection cache.
-          // Multiple clients may communicate on the same socket, so this check
-          // is necessary on every message received.
-          const ClientID& remote = msg->GetOrigin();
-          if (clients_.insert(remote).second) {
-            // New client on this socket.
-            bool inserted = event_loop_->insert_connection_cache(remote, this);
-            assert(inserted);
-            if (inserted) {
+          // Attempt to add this stream/socket pair to the stream map.
+          StreamID stream = msg->GetOrigin();
+          // TODO(stupaq) we will perform remapping of stream IDs here as well
+          auto result =
+              event_loop_->stream_router_.InsertConnection(stream, this);
+          SocketEvent* old_sev = result.second;
+          switch (result.first) {
+            case StreamRouter::InsertStatus::kExists:
+              assert(old_sev == this);
+              break;
+            case StreamRouter::InsertStatus::kNew:
               LOG_INFO(event_loop_->GetLog(),
-                  "Client Socket fd(%d) connected to %s "
-                  "inserted into connection_cache_.",
-                  fd_, remote.c_str());
-            } else {
+                       "Stream (%s) was associated with socket fd(%d)",
+                       stream.c_str(),
+                       fd_);
+              break;
+            case StreamRouter::InsertStatus::kReplaced:
+            case StreamRouter::InsertStatus::kReplacedLast:
+              assert(old_sev && old_sev != this);
               LOG_ERROR(event_loop_->GetLog(),
-                  "First time client %s has communicated on fd(%d), but was "
-                  "already in the connection cache!",
-                  remote.c_str(), fd_);
-            }
+                        "Stream (%s) changed connection from fd(%d) to fd(%d)",
+                        stream.c_str(),
+                        fd_,
+                        old_sev->fd_);
+              if (result.first == StreamRouter::InsertStatus::kReplacedLast) {
+                LOG_INFO(event_loop_->GetLog(),
+                         "Socket fd(%d) has no more streams on it.",
+                         old_sev->fd_);
+              }
+              event_loop_->GetLog()->Flush();
+              break;
+            default:
+              assert(false);
           }
 
           // EventLoop needs to process goodbye messages.
           if (msg->GetMessageType() == MessageType::mGoodbye) {
             MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
-            RemoveClient(goodbye->GetOrigin());
-            event_loop_->remove_host(goodbye->GetOrigin());
             LOG_INFO(event_loop_->GetLog(),
-              "Received goodbye message (code %d) for client '%s'",
-              static_cast<int>(goodbye->GetCode()),
-              goodbye->GetOrigin().c_str());
+                     "Received goodbye message (code %d) for stream (%s)",
+                     static_cast<int>(goodbye->GetCode()),
+                     stream.c_str());
+            // Update stream router.
+            SocketEvent* sev = event_loop_->stream_router_.RemoveStream(stream);
+            if (sev) {
+              LOG_INFO(event_loop_->GetLog(),
+                       "Socket fd(%d) has no more streams on it.",
+                       sev->fd_);
+            }
           }
         }
 
@@ -413,7 +426,11 @@ class SocketEvent {
   bool write_ev_added_;    // is the write event added?
   bool was_initiated_;   // was this connection initiated by us?
   bool ready_for_writing_;  // is the socket ready for writing?
-  std::unordered_set<ClientID> clients_;
+  /**
+   * A remote destination, if non-empty the socket can be reused by anyone, who
+   * wants to talk the remote host.
+   */
+  ClientID destination_;
 
   // Handle into the EventLoop's socket event list (for fast removal).
   std::list<std::unique_ptr<SocketEvent>>::iterator list_handle_;
@@ -436,6 +453,154 @@ class AcceptCommand : public Command {
  private:
   int fd_;
 };
+
+Status StreamRouter::GetConnection(
+    const SendCommand::StreamSpec& spec,
+    EventLoop* event_loop,
+    SocketEvent** out) {
+  thread_check_.Check();
+  assert(out);
+
+  const StreamID& stream = spec.stream;
+  const ClientID& destination = spec.destination;
+  {  // Firstly check if we know about the stream already.
+    const auto it_s = open_streams_.find(stream);
+    if (it_s != open_streams_.end()) {
+      *out = it_s->second;
+      return Status::OK();
+    }
+  }
+  // If the destination was not provided, we have to drop the message.
+  if (destination.empty()) {
+    return Status::InternalError(
+        "Stream is not opened and destination was not provided.");
+  }
+  {  // Secondly look for connection based on destination.
+    const auto it_c = open_connections_.find(destination);
+    if (it_c != open_connections_.end()) {
+      SocketEvent* found_sev = it_c->second;
+      // Open the stream, reusing the socket.
+      open_streams_[stream] = found_sev;
+      streams_on_connection_[found_sev].insert(stream);
+      *out = found_sev;
+      return Status::OK();
+    }
+  }
+  // We know the destination, but cannot reuse connection. Create a new one.
+  HostId host = HostId::ToHostId(destination);
+  SocketEvent* new_sev = event_loop->setup_connection(host, destination);
+  if (!new_sev) {
+    return Status::InternalError("Failed to create a new connection.");
+  }
+  // Open the stream, using the new socket.
+  open_connections_[destination] = new_sev;
+  open_streams_[stream] = new_sev;
+  streams_on_connection_[new_sev].insert(stream);
+  *out = new_sev;
+  return Status::OK();
+}
+
+std::pair<StreamRouter::InsertStatus, SocketEvent*>
+StreamRouter::InsertConnection(StreamID stream, SocketEvent* new_sev) {
+  thread_check_.Check();
+
+  SocketEvent* old_sev = nullptr;
+  {  // Fast path if new and old connections are the same.
+    // By not updating destination -> connection mapping, we assume that
+    // destination of a socket cannot change.
+    const auto it_s = open_streams_.find(stream);
+    if (it_s != open_streams_.end()) {
+      old_sev = it_s->second;
+      if (old_sev == new_sev) {
+        return std::make_pair(InsertStatus::kExists, old_sev);
+      }
+    }
+  }
+  // Remove first.
+  SocketEvent* removed_sev = RemoveStream(stream);
+  // Insert later.
+  const ClientID& destination = new_sev->GetDestination();
+  if (!destination.empty()) {
+    // This connection has a known remote endpoint, we can reuse it later on.
+    open_connections_[destination] = new_sev;
+  }
+  open_streams_[stream] = new_sev;
+  streams_on_connection_[new_sev].insert(stream);
+  // Figure out what actually happened.
+  if (old_sev == nullptr) {
+    assert(removed_sev == nullptr);
+    return std::make_pair(InsertStatus::kNew, old_sev);
+  } else {
+    return std::make_pair(removed_sev == nullptr ? InsertStatus::kReplaced
+                                                 : InsertStatus::kReplacedLast,
+                          old_sev);
+  }
+}
+
+SocketEvent* StreamRouter::RemoveStream(StreamID stream) {
+  thread_check_.Check();
+
+  SocketEvent* sev;
+  {  // Remove stream -> connection mapping.
+    const auto it_s = open_streams_.find(stream);
+    if (it_s == open_streams_.end()) {
+      return nullptr;
+    }
+    sev = it_s->second;
+    open_streams_.erase(it_s);
+  }
+  {  // Remove stream from the list of streams on this connection.
+    const auto it_l = streams_on_connection_.find(sev);
+    if (it_l == streams_on_connection_.end()) {
+      // This should never happen, as this is the inverse relation to stream ->
+      // connection mapping and we've found element of the latter.
+      assert(false);
+      // Proceed to the next step.
+    } else {
+      // Remove the stream.
+      it_l->second.erase(stream);
+      if (!it_l->second.empty()) {
+        // We still have streams on the connection, so we keep it around.
+        return nullptr;
+      }
+      // If the list became empty, remove it as well and proceed.
+      streams_on_connection_.erase(it_l);
+    }
+  }
+  {  // We don't have streams on this connection.
+    // Remove destination -> connection mapping and return the pointer, so
+    // the connection can be closed.
+    const auto it_c = open_connections_.find(sev->GetDestination());
+    if (it_c != open_connections_.end() && it_c->second == sev) {
+      open_connections_.erase(it_c);
+    }
+  }
+  return sev;
+}
+
+std::unordered_set<StreamID> StreamRouter::RemoveConnection(
+    SocketEvent* sev) {
+  thread_check_.Check();
+
+  std::unordered_set<StreamID> list;
+  {  // Remove entry from connection to streams map.
+    const auto it_l = streams_on_connection_.find(sev);
+    if (it_l != streams_on_connection_.end()) {
+      list = std::move(it_l->second);
+      // For each stream, unmap it from map of open streams.
+      for (StreamID stream : list) {
+        open_streams_.erase(stream);
+      }
+      streams_on_connection_.erase(it_l);
+    }
+  }
+  // Remove mapping from destination to the connection.
+  const auto it_c = open_connections_.find(sev->GetDestination());
+  if (it_c != open_connections_.end() && it_c->second == sev) {
+    open_connections_.erase(it_c);
+  }
+  return list;
+}
 
 void EventLoop::RegisterCallback(CommandType type,
                                  CommandCallbackType callbacks) {
@@ -461,7 +626,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
 
   // Have to handle the case when the message-send failed to write
   // to output socket and have to invoke *some* callback to the app.
-  const SendCommand::Recipients& remote = send_cmd->GetDestination();
+  const SendCommand::Recipients& remote = send_cmd->GetDestinations();
 
   // Move the message payload into a ref-counted string. The string
   // will be deallocated only when all the remote destinations
@@ -475,39 +640,27 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
 
   // Increment ref count again in case it is deleted inside Enqueue.
   msg->refcount++;
-  for (const ClientID& clientid : remote) {
-    Status status;
-    SocketEvent* sev = lookup_connection_cache(clientid);
-
-    // If the remote side has not yet established a connection, and
-    // this is a new request then create a new connection and insert
-    // into connection cache. if this is not a new request but is a
-    // response to some other request, then the connection to the
-    // remote side should already exist.
-    if (sev == nullptr && send_cmd->IsNewRequest()) {
-      HostId host = HostId::ToHostId(clientid);
-      sev = setup_connection(host, clientid);
-    }
-    if (sev != nullptr) {
+  for (const SendCommand::StreamSpec& spec : remote) {
+    SocketEvent* sev = nullptr;
+    Status st = stream_router_.GetConnection(spec, this, &sev);
+    if (st.ok()) {
+      assert(sev);
       // Enqueue data to SocketEvent queue. This message will be sent out
       // when the output socket is ready to write.
-      status = sev->Enqueue(msg);
+      st = sev->Enqueue(msg);
     }
-    if (sev == nullptr || !status.ok()) {
-      if (sev == nullptr) {
-        LOG_WARN(info_log_,
-                 "No Socket to send msg to host %s, msg dropped...",
-                 clientid.c_str());
-      } else {
-        LOG_WARN(info_log_,
-                 "Failed to enqueue message (%s) to host %s",
-                 status.ToString().c_str(),
-                 clientid.c_str());
-      }
+    // No else, so we catch error on adding to queue as well.
+    if (!st.ok()) {
+      LOG_WARN(info_log_,
+               "Failed to send message on stream (%s) to host '%s': %s",
+               spec.stream.c_str(),
+               spec.destination.c_str(),
+               st.ToString().c_str());
       info_log_->Flush();
       msg->refcount--;  // unable to queue msg, decrement refcount
     }
-  }  // for loop
+  }
+
   if (--msg->refcount == 0) {
     FreeString(msg);
   }
@@ -796,10 +949,10 @@ void EventLoop::Stop() {
     command_ready_eventfd_.closefd();
     shutdown_eventfd_.closefd();
 
-    // Reset the thread checker for clear_connection_cache since the
-    // event loop thread is no longer running.
+    // Reset the thread checker since the event loop thread is exiting.
     thread_check_.Reset();
-    clear_connection_cache();
+    stream_router_.CloseAll();
+    teardown_all_connections();
     LOG_INFO(info_log_, "Stopped EventLoop at port %d", port_number_);
     info_log_->Flush();
     base_ = nullptr;
@@ -869,80 +1022,21 @@ Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
   return start_status_;
 }
 
-// Adds an entry into the connection cache
-// Returns true if the object was inserted successfully,
-// otherwise returns false if the object already existed.
-bool
-EventLoop::insert_connection_cache(const ClientID& host, SocketEvent* sev) {
+// Removes an socket event created by setup_connection.
+void EventLoop::teardown_connection(SocketEvent* sev) {
   thread_check_.Check();
-  auto iter = connection_cache_.find(host);
-
-  // There exists a mapping about this host
-  if (iter != connection_cache_.end()) {
-    if (iter->second == sev) {
-      return false;  // pre-existing object
-    }
-    // Update the socket event for this client.
-    SocketEvent* old_sev = iter->second;
-    iter->second = sev;
-
-    // Remove client from old socket event.
-    old_sev->RemoveClient(host);
-    return true;  // new object added
-  }
-
-  // There isn't any mapping for this host.
-  // Create first mapping for this host.
-  auto ret = connection_cache_.emplace(host, sev);
-  (void)ret;
-  assert(ret.second);
-  return true;  // successfully inserted
-}
-
-// Removes an socket entry from the connection cache.
-void
-EventLoop::remove_connection_cache(SocketEvent* sev) {
-  thread_check_.Check();
-  for (const ClientID& client : sev->GetClients()) {
-    assert(connection_cache_[client] == sev);
-    connection_cache_.erase(client);
-  }
   all_sockets_.erase(sev->GetListHandle());
   active_connections_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
-// Removes a host entry from the connection cache.
-void EventLoop::remove_host(const ClientID& host) {
-  thread_check_.Check();
-  connection_cache_.erase(host);
-}
-
-// Finds an entry from the connection cache.
-// Returns null if the host does not have any connected socket.
-SocketEvent*
-EventLoop::lookup_connection_cache(const ClientID& host) const {
-  thread_check_.Check();
-  auto iter = connection_cache_.find(host);
-  if (iter != connection_cache_.end()) {
-    return iter->second;
-  }
-  return nullptr;  // not found
-}
-
 // Clears out the connection cache
-void
-EventLoop::clear_connection_cache() {
+void EventLoop::teardown_all_connections() {
   while (!all_sockets_.empty()) {
-    remove_connection_cache(all_sockets_.front().get());
+    teardown_connection(all_sockets_.front().get());
   }
-
-  // Deleting all SocketEvents should have removed all client->socket mappings.
-  assert(connection_cache_.empty());
 }
 
-// Creates a socket connection to specified host and
-// inserts it into connection cache.
-// Returns null on error.
+// Creates a socket connection to specified host, returns null on error.
 SocketEvent*
 EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
   thread_check_.Check();
@@ -1132,8 +1226,7 @@ void EventLoop::GlobalShutdown() {
 }
 
 int EventLoop::GetNumClients() const {
-  thread_check_.Check();
-  return static_cast<int>(connection_cache_.size());
+  return static_cast<int>(stream_router_.GetNumStreams());
 }
 
 }  // namespace rocketspeed

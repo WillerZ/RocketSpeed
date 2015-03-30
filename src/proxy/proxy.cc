@@ -6,13 +6,14 @@
 #define __STDC_FORMAT_MACROS
 #include "src/proxy/proxy.h"
 
-#include <algorithm>
 #include <climits>
+#include <algorithm>
 #include <functional>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
+#include "src/util/common/autovector.h"
 #include "src/util/common/ordered_processor.h"
 #include "src/util/worker_loop.h"
 
@@ -90,7 +91,8 @@ struct HostSessionMatrix {
   std::unordered_map<int64_t, std::vector<StreamSocket>> session_to_sockets_;
 };
 
-typedef OrderedProcessor<std::pair<SendCommand::Recipients, std::string>>
+typedef autovector<ClientID, 2> ForwardingDestinations;
+typedef OrderedProcessor<std::pair<ForwardingDestinations, std::string>>
     SessionProcessor;
 
 /** Represents per message loop worker data. */
@@ -111,6 +113,15 @@ struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
   std::unordered_map<int64_t, SessionProcessor> sessions_;
 
   HostSessionMatrix host_session_matrix_;
+
+  SendCommand::SocketList MatrixBulkAdd(int64_t session,
+                                        const ForwardingDestinations& hosts) {
+    SendCommand::SocketList sockets;
+    for (auto& host : hosts) {
+      sockets.push_back(host_session_matrix_.Add(session, host));
+    }
+    return sockets;
+  }
 };
 
 Status Proxy::CreateNewInstance(ProxyOptions options,
@@ -356,7 +367,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
   }
 
   // Select destination based on message type.
-  SendCommand::Recipients hosts;
+  ForwardingDestinations hosts;
   switch (message->GetMessageType()) {
     case MessageType::mPing:  // could go to either
     case MessageType::mPublish:
@@ -391,10 +402,11 @@ void Proxy::HandleMessageForwarded(std::string msg,
 
   if (sequence == -1) {
     // Send directly to loop.
-    for (auto& host : hosts) {
-      auto socket = data.host_session_matrix_.Add(session, host);
-      msg_loop_->SendCommandToSelf(
-          SerializedSendCommand::CreateRequest(msg, socket));
+    auto sockets = data.MatrixBulkAdd(session, hosts);
+    msg_loop_->SendCommandToSelf(
+        SerializedSendCommand::Request(std::move(msg), sockets));
+    for (auto socket : sockets) {
+      socket->Open();
     }
   } else {
     // Handle reordering.
@@ -406,17 +418,18 @@ void Proxy::HandleMessageForwarded(std::string msg,
           [this, session, &data](SessionProcessor::EventType event) {
             // It's safe to capture data reference.
             auto& recipients = event.first;
-            auto& serialized = event.second;
+            auto& serial = event.second;
             // Process command by sending it to the event loop.
             // Need to check if session is still there. Previous command
             // processed may have caused it to drop.
             if (data.sessions_.find(session) == data.sessions_.end()) {
               return;
             }
-            for (auto& host : recipients) {
-              auto socket = data.host_session_matrix_.Add(session, host);
-              msg_loop_->SendCommandToSelf(
-                  SerializedSendCommand::CreateRequest(serialized, socket));
+            auto sockets = data.MatrixBulkAdd(session, recipients);
+            msg_loop_->SendCommandToSelf(
+                SerializedSendCommand::Request(std::move(serial), sockets));
+            for (auto socket : sockets) {
+              socket->Open();
             }
           });
 

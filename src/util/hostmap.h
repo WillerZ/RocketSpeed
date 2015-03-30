@@ -2,13 +2,14 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
 #include <vector>
+
 #include "include/Types.h"
 #include "src/port/port.h"
 #include "src/port/atomic_pointer.h"
-#include "src/messages/commands.h"
 
 namespace rocketspeed {
 
@@ -39,9 +40,6 @@ class HostMap {
   // Looks up a host given its HostNumber. If the host does
   // not exist, then return nullptr;
   const ClientID* Lookup(HostNumber num) const;
-
-  // Utility method to convert a list of Hostids to a printable string
-  static std::string ToString(const SendCommand::Recipients& hostlist);
 
  private:
   // size of the store

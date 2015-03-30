@@ -16,8 +16,9 @@
 #include <functional>
 #include <memory>
 #include <map>
-#include <unordered_map>
 #include <list>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "include/Logger.h"
 #include "src/messages/commands.h"
@@ -47,6 +48,7 @@ typedef std::function<void(std::unique_ptr<Command> command,
                            uint64_t issued_time)>
   CommandCallbackType;
 
+class EventLoop;
 class SocketEvent;
 
 // A refcounted, pooled version of a serialized message string
@@ -60,6 +62,80 @@ struct SharedString : public PooledObject<SharedString> {
   std::string store;
   int refcount;
   uint64_t command_issue_time;  // time the associated command was issued
+};
+
+/**
+ * Maintains open streams and connections and mapping between them. All stream
+ * IDs used by this class are assumed to be unique per instance of the class,
+ * that means unique per EventLoop.
+ */
+class StreamRouter {
+ public:
+  /**
+   * Finds a connection for given stream, if none is assigned, assigns or
+   * creates one based on destination provided in the spec. If a new connection
+   * needs to be created, delegates this responsibility back to event loop via
+   * provided non-owning pointer.
+   */
+  Status GetConnection(const SendCommand::StreamSpec& spec,
+                       EventLoop* event_loop,
+                       SocketEvent** out);
+
+  enum InsertStatus {
+    kExists,
+    kNew,
+    kReplaced,
+    kReplacedLast,
+  };
+
+  /**
+   * Associates provided stream and connection.
+   * If no association for a stream exists, inserts it and returns kNew.
+   * If association already exists with the same connection, returns kExists.
+   * If association already exists with different connection, performs removal
+   * and then insertion. If after removal there was no stream associated with
+   * the connection, returns kReplacedLast otherwise kReplaced. In either case
+   * returns old mapping as well.
+   */
+  std::pair<InsertStatus, SocketEvent*> InsertConnection(StreamID stream,
+                                                         SocketEvent* new_sev);
+
+  /**
+   * Called when stream shall be closed for whatever reason. If it was the only
+   * stream on its connection, returns the connection, otherwise returns null.
+   */
+  SocketEvent* RemoveStream(StreamID stream);
+
+  /**
+   * Called when connection fails, returns a list of all stream IDs mapped to
+   * the connection and removes these entries from internal map, effectively
+   * marking streams as closed-broken.
+   */
+  std::unordered_set<StreamID> RemoveConnection(SocketEvent* sev);
+
+  /** Returns mappings for all connections. */
+  void CloseAll() {
+    // This will typically be called after the event loop thread terminates.
+    thread_check_.Reset();
+    open_streams_.clear();
+    open_connections_.clear();
+  }
+
+  /** Returns number of open streams. */
+  size_t GetNumStreams() const {
+    thread_check_.Check();
+    return open_streams_.size();
+  }
+
+ private:
+  ThreadCheck thread_check_;
+  /** A mapping from destination to corresponding connection. */
+  std::unordered_map<ClientID, SocketEvent*> open_connections_;
+  /** A mapping from opened streams to corresponding connection. */
+  std::unordered_map<StreamID, SocketEvent*> open_streams_;
+  /** A mapping from connection to all open streams that use it. */
+  std::unordered_map<SocketEvent*, std::unordered_set<StreamID>>
+      streams_on_connection_;
 };
 
 class EventLoop {
@@ -178,6 +254,7 @@ class EventLoop {
 
  private:
   friend class SocketEvent;
+  friend class StreamRouter;
 
   SharedString* AllocString(std::string s, int c, uint64_t t) {
     return string_pool_.Allocate(std::move(s), c, t);
@@ -231,13 +308,13 @@ class EventLoop {
   MultiProducerQueue<TimestampedCommand> command_queue_;
   rocketspeed::port::Eventfd command_ready_eventfd_;
 
-  // a cache of ClientIds to connections
-  std::unordered_map<ClientID, SocketEvent*> connection_cache_;
+  StreamRouter stream_router_;
 
   // List of all sockets.
   std::list<std::unique_ptr<SocketEvent>> all_sockets_;
 
-  // connection_cache_.size(), but atomic
+  // Number of open connections, including accepted connections, that we haven't
+  // received any data on.
   std::atomic<uint64_t> active_connections_;
 
   // Object pool of SharedStrings
@@ -269,13 +346,11 @@ class EventLoop {
                            uint64_t issued_time);
 
   // connection cache updates
-  bool insert_connection_cache(const ClientID& host, SocketEvent* ev);
-  void remove_connection_cache(SocketEvent* ev);
   void remove_host(const ClientID& host);
-  SocketEvent* lookup_connection_cache(const ClientID& host) const;
   SocketEvent* setup_connection(const HostId& host, const ClientID& clientid);
   Status create_connection(const HostId& host, bool block, int* fd);
-  void clear_connection_cache();
+  void teardown_connection(SocketEvent* ev);
+  void teardown_all_connections();
 
   // callbacks needed by libevent
   static void do_accept(evconnlistener *listener,

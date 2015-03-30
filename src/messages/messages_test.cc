@@ -329,13 +329,13 @@ TEST(Messaging, GracefulGoodbye) {
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping response server -> c1
-  ASSERT_OK(server.SendResponse(ping1_resp, "", "c1", 0));
+  ASSERT_OK(server.SendResponse(ping1_resp, "c1", 0));
   // Should NOT get response -- c1 has said goodbye
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping response server -> c2
-  ASSERT_OK(server.SendResponse(ping2_resp, "", "c2", 0));
+  ASSERT_OK(server.SendResponse(ping2_resp, "c2", 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 }
@@ -350,6 +350,65 @@ TEST(Messaging, WaitUntilRunningFailure) {
   MsgLoop loop2(env_, env_options_, 58499, 1, info_log_, "loop2");
   env_->StartThread([&] () { loop2.Run(); }, "loop2");
   ASSERT_TRUE(!loop2.WaitUntilRunning().ok());
+}
+
+TEST(Messaging, SocketDeath) {
+  // Tests that a client cannot unwillingly send messages on the same logical
+  // stream, if the stream has broken during transmission.
+  MsgLoop receiver_loop(
+      env_, env_options_, 58499, 1, info_log_, "receiver_loop0");
+  env_->StartThread([&]() { receiver_loop.Run(); }, "receiver_loop0");
+
+  // Post to the checkpoint when receiving a ping.
+  port::Semaphore checkpoint;
+  std::map<MessageType, MsgCallbackType> callbacks;
+  callbacks[MessageType::mPing] = [&](std::unique_ptr<Message> msg) {
+    ASSERT_EQ("expected", msg->GetOrigin());
+    checkpoint.Post();
+  };
+
+  // Sender loop.
+  MsgLoop sender_loop(env_, env_options_, 0, 1, info_log_, "sender_loop");
+  sender_loop.RegisterCallbacks(callbacks);
+  env_->StartThread([&]() { sender_loop.Run(); }, "sender_loop");
+  ASSERT_OK(sender_loop.WaitUntilRunning());
+  ASSERT_OK(receiver_loop.WaitUntilRunning());
+
+  // Receiver client ID.
+  auto receiver_client_id = receiver_loop.GetClientId(0);
+
+  // Create logical stream and corresponding socket1.
+  StreamSocket socket1(receiver_client_id, "socket1");
+
+  // Send a ping from sender_loop on socket1.
+  MessagePing ping0(
+      Tenant::GuestTenant, MessagePing::PingType::Request, "expected");
+  ASSERT_OK(sender_loop.SendRequest(ping0, &socket1, 0));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+
+  // Kill the receiver loop
+  receiver_loop.Stop();
+  // Restart receiver_loop with the same parameters.
+  MsgLoop receiver_loop1(
+      env_, env_options_, 58499, 1, info_log_, "receiver_loop1");
+  env_->StartThread([&]() { receiver_loop1.Run(); }, "receiver_loop1");
+  receiver_loop1.RegisterCallbacks(callbacks);
+  ASSERT_OK(receiver_loop1.WaitUntilRunning());
+
+  // Send a ping from sender_loop on socket1.
+  MessagePing ping1(Tenant::GuestTenant, MessagePing::PingType::Request, "bad");
+  ASSERT_OK(sender_loop.SendRequest(ping1, &socket1, 0));
+
+  // Create logical stream and corresponding socket2 with.
+  StreamSocket socket2(receiver_client_id, "socket2");
+
+  // Send a ping from sender_loop on socket2.
+  MessagePing ping2(
+      Tenant::GuestTenant, MessagePing::PingType::Request, "expected");
+  ASSERT_OK(sender_loop.SendRequest(ping2, &socket2, 0));
+
+  // Only the last ping shall get through.
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
 TEST(Messaging, GatherTest) {
