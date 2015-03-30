@@ -35,6 +35,11 @@ const int EventLoop::kLogSeverityMsg = _EVENT_LOG_MSG;
 const int EventLoop::kLogSeverityWarn = _EVENT_LOG_WARN;
 const int EventLoop::kLogSeverityErr = _EVENT_LOG_ERR;
 
+struct TimestampedString {
+  std::string string;
+  uint64_t issued_time;
+};
+
 class SocketEvent {
  public:
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
@@ -87,23 +92,12 @@ class SocketEvent {
     }
     event_free(write_ev_);
     close(fd_);
-
-    // free up unsent pending messages
-    for (const auto msg : send_queue_) {
-      msg->refcount--;
-      if (msg->refcount == 0) {
-        event_loop_->FreeString(msg);
-      }
-    }
   }
 
   // One message to be sent out.
-  Status Enqueue(SharedString* msg) {
+  Status Enqueue(const std::shared_ptr<TimestampedString>& msg) {
     event_loop_->thread_check_.Check();
-    Status status;
-    // insert into outgoing queue
-    send_queue_.push_back(msg);
-    assert(msg->refcount);
+    send_queue_.emplace_back(msg);
 
     // If the write-ready event is not currently registered, and the socket
     // is ready for writing, then we'll try to write immediately. If the
@@ -121,13 +115,12 @@ class SocketEvent {
         if (event_add(write_ev_, nullptr)) {
           LOG_WARN(event_loop_->GetLog(),
               "Failed to add write event for fd(%d)", fd_);
-          status = Status::InternalError("Failed to enqueue write message");
-        } else {
-          write_ev_added_ = true;
+          return Status::InternalError("Failed to enqueue write message");
         }
+        write_ev_added_ = true;
       }
     }
-    return status;
+    return Status::OK();
   }
 
   evutil_socket_t GetFd() const {
@@ -223,7 +216,7 @@ class SocketEvent {
       // partial-message, then send it.
       if (partial_.size() > 0) {
         assert(send_queue_.size() > 0);
-        ssize_t count = write(fd_, (const void *)partial_.data(), partial_.size());
+        ssize_t count = write(fd_, partial_.data(), partial_.size());
         if (count == -1) {
           LOG_WARN(event_loop_->info_log_,
               "Wanted to write %d bytes to remote host fd(%d) but encountered "
@@ -251,20 +244,17 @@ class SocketEvent {
               count, fd_);
         }
         // The partial message is completely sent out. Remove it from queue.
-        partial_ = Slice();
-        SharedString* str = send_queue_.front();
-        if (--(str->refcount) == 0) {
-          event_loop_->FreeString(str);
-        }
-        send_queue_.pop_front();
+        partial_.clear();
+
         event_loop_->stats_.write_latency->Record(
-          event_loop_->env_->NowMicros() - str->command_issue_time);
+            event_loop_->env_->NowMicros() - send_queue_.front()->issued_time);
+        send_queue_.pop_front();
       }
 
       // No more partial data to be sent out.
       if (send_queue_.size() > 0) {
         // If there are any new pending messages, start processing it.
-        partial_ = Slice(send_queue_.front()->store);
+        partial_ = send_queue_.front()->string;
         assert(partial_.size() > 0);
       } else if (write_ev_added_) {
         // No more queued messages. Switch off ready-to-write event on socket.
@@ -437,7 +427,7 @@ class SocketEvent {
 
   // The list of outgoing messages.
   // partial_ records the next valid offset in the earliest message.
-  std::deque<SharedString*> send_queue_;
+  std::deque<std::shared_ptr<TimestampedString>> send_queue_;
   Slice partial_;
 };
 
@@ -624,23 +614,14 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
   using rocketspeed::SendCommand;
   SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
 
+  auto msg = std::make_shared<TimestampedString>();
+  send_cmd->GetMessage(&msg->string);
+  msg->issued_time = issued_time;
+  assert (!msg->string.empty());
+
   // Have to handle the case when the message-send failed to write
   // to output socket and have to invoke *some* callback to the app.
-  const SendCommand::Recipients& remote = send_cmd->GetDestinations();
-
-  // Move the message payload into a ref-counted string. The string
-  // will be deallocated only when all the remote destinations
-  // have been served.
-  std::string out;
-  send_cmd->GetMessage(&out);
-  assert(out.size() > 0);
-  SharedString* msg = AllocString(std::move(out),
-                                  static_cast<int>(remote.size()),
-                                  issued_time);
-
-  // Increment ref count again in case it is deleted inside Enqueue.
-  msg->refcount++;
-  for (const SendCommand::StreamSpec& spec : remote) {
+  for (const SendCommand::StreamSpec& spec : send_cmd->GetDestinations()) {
     SocketEvent* sev = nullptr;
     Status st = stream_router_.GetConnection(spec, this, &sev);
     if (st.ok()) {
@@ -657,12 +638,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
                spec.destination.c_str(),
                st.ToString().c_str());
       info_log_->Flush();
-      msg->refcount--;  // unable to queue msg, decrement refcount
     }
-  }
-
-  if (--msg->refcount == 0) {
-    FreeString(msg);
   }
 }
 

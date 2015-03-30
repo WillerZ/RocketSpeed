@@ -51,19 +51,6 @@ typedef std::function<void(std::unique_ptr<Command> command,
 class EventLoop;
 class SocketEvent;
 
-// A refcounted, pooled version of a serialized message string
-struct SharedString : public PooledObject<SharedString> {
- public:
-  explicit SharedString(std::string s, int c, uint64_t t)
-  : store(std::move(s))
-  , refcount(c)
-  , command_issue_time(t) {}
-
-  std::string store;
-  int refcount;
-  uint64_t command_issue_time;  // time the associated command was issued
-};
-
 /**
  * Maintains open streams and connections and mapping between them. All stream
  * IDs used by this class are assumed to be unique per instance of the class,
@@ -256,14 +243,6 @@ class EventLoop {
   friend class SocketEvent;
   friend class StreamRouter;
 
-  SharedString* AllocString(std::string s, int c, uint64_t t) {
-    return string_pool_.Allocate(std::move(s), c, t);
-  }
-
-  void FreeString(SharedString* s) {
-    string_pool_.Deallocate(s);
-  }
-
   BaseEnv* env_;
 
   EnvOptions env_options_;
@@ -316,9 +295,6 @@ class EventLoop {
   // Number of open connections, including accepted connections, that we haven't
   // received any data on.
   std::atomic<uint64_t> active_connections_;
-
-  // Object pool of SharedStrings
-  PooledObjectList<SharedString> string_pool_;
 
   // Thread check
   rocketspeed::ThreadCheck thread_check_;
