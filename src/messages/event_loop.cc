@@ -42,11 +42,8 @@ struct TimestampedString {
 
 class SocketEvent {
  public:
-  static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
-                                             int fd,
-                                             event_base* base) {
-    std::unique_ptr<SocketEvent>
-      sev(new SocketEvent(event_loop, fd, base, false));
+  static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop, int fd) {
+    std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, false));
 
     // register only the read callback
     if (sev->ev_ == nullptr ||
@@ -62,10 +59,8 @@ class SocketEvent {
   // this constructor is used by server-side connection initiation
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
                                              int fd,
-                                             event_base* base,
                                              const ClientID& destination) {
-    std::unique_ptr<SocketEvent>
-        sev(new SocketEvent(event_loop, fd, base, true));
+    std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, true));
 
     // register only the read callback
     if (sev->ev_ == nullptr ||
@@ -106,7 +101,7 @@ class SocketEvent {
     if (!write_ev_added_) {
       if (ready_for_writing_) {
         // Try to write everything now.
-        WriteCallback(fd_);
+        WriteCallback();
       }
 
       if (!send_queue_.empty()) {
@@ -123,10 +118,6 @@ class SocketEvent {
     return Status::OK();
   }
 
-  evutil_socket_t GetFd() const {
-    return fd_;
-  }
-
   const ClientID& GetDestination() const {
     return destination_;
   }
@@ -140,7 +131,7 @@ class SocketEvent {
   }
 
  private:
-  SocketEvent(EventLoop* event_loop, int fd, event_base* base, bool initiated)
+  SocketEvent(EventLoop* event_loop, int fd, bool initiated)
   : hdr_idx_(0)
   , msg_idx_(0)
   , msg_size_(0)
@@ -155,18 +146,20 @@ class SocketEvent {
     event_loop->thread_check_.Check();
 
     // Create read and write events
-    ev_ = event_new(base, fd, EV_READ|EV_PERSIST, EventCallback, this);
-    write_ev_ = event_new(base, fd, EV_WRITE|EV_PERSIST, EventCallback, this);
+    ev_ = event_new(
+        event_loop->base_, fd, EV_READ|EV_PERSIST, EventCallback, this);
+    write_ev_ = event_new(
+        event_loop->base_, fd, EV_WRITE|EV_PERSIST, EventCallback, this);
   }
 
-  static void EventCallback(evutil_socket_t fd, short what, void* arg) {
+  static void EventCallback(evutil_socket_t /*fd*/, short what, void* arg) {
     SocketEvent* sev = static_cast<SocketEvent*>(arg);
     Status st;
     if (what & EV_READ) {
-      st = sev->ReadCallback(fd);
+      st = sev->ReadCallback();
     } else if (what & EV_WRITE) {
       sev->ready_for_writing_ = true;
-      st = sev->WriteCallback(fd);
+      st = sev->WriteCallback();
     } else if (what & EV_TIMEOUT) {
     } else if (what & EV_SIGNAL) {
     }
@@ -206,7 +199,7 @@ class SocketEvent {
     }
   }
 
-  Status WriteCallback(evutil_socket_t fd) {
+  Status WriteCallback() {
     event_loop_->thread_check_.Check();
     assert(send_queue_.size() > 0);
 
@@ -269,7 +262,7 @@ class SocketEvent {
     return Status::OK();
   }
 
-  Status ReadCallback(evutil_socket_t fd) {
+  Status ReadCallback() {
     event_loop_->thread_check_.Check();
     // This will keep reading while there is data to be read,
     // but not more than 1MB to give other sockets a chance to read.
@@ -649,8 +642,7 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command,
   thread_check_.Check();
   AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
   std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
-                                                         accept_cmd->GetFD(),
-                                                         base_);
+                                                         accept_cmd->GetFD());
   if (sev) {
     all_sockets_.emplace_front(std::move(sev));
     all_sockets_.front()->SetListHandle(all_sockets_.begin());
@@ -1030,7 +1022,6 @@ EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
   // itself during an EOF callback.
   std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
                                                          fd,
-                                                         base_,
                                                          remote_client);
   if (!sev) {
     return nullptr;
