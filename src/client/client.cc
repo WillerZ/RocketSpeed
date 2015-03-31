@@ -153,12 +153,13 @@ class SubscriptionState {
       return ReceiveStatus::kNotSubscribed;
     }
     SequenceNumber expected = expected_seqno.get(),
-                   current = data->GetSequenceNumber();
+                   current = data->GetSequenceNumber(),
+                   prev = data->GetPrevSequenceNumber();
     // Update last seqno received for this topic, only if there is no pending
     // request on the topic.
     assert(acks_to_skip < 0);
     expected_seqno = current + 1;
-    if (expected > current) {
+    if (expected > current || expected < prev) {
       return ReceiveStatus::kDuplicate;
     }
     return ReceiveStatus::kOk;

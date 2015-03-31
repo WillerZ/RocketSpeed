@@ -165,6 +165,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
   auto it = subscriptions_.find(msg->GetTopicName().ToString());
   if (it != subscriptions_.end()) {
     auto seqno = msg->GetSequenceNumber();
+    auto prev_seqno = msg->GetPrevSequenceNumber();
     std::vector<std::pair<ClientID, int>> destinations;
 
     // Send to all subscribers.
@@ -182,8 +183,22 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       // Also do not send a response if the seqno is too low.
       if (subscription.seqno > seqno) {
         LOG_INFO(options_.info_log,
-          "Data not delivered to %s (seqno too low, currently @%" PRIu64 ")",
-          recipient.c_str(), subscription.seqno);
+          "Data not delivered to %s"
+          " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
+          recipient.c_str(),
+          seqno,
+          subscription.seqno);
+        continue;
+      }
+
+      // or too high.
+      if (subscription.seqno < prev_seqno) {
+        LOG_INFO(options_.info_log,
+          "Data not delivered to %s"
+          " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
+          recipient.c_str(),
+          prev_seqno,
+          subscription.seqno);
         continue;
       }
 
