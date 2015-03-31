@@ -124,6 +124,32 @@ TEST(Messaging, DataAck) {
   ASSERT_TRUE(ack1.GetAcks() == ack2.GetAcks());
 }
 
+TEST(Messaging, DataGap) {
+  // create a message
+  MessageGap gap1(Tenant::GuestTenant,
+                  "client",
+                  "guest",
+                  "topic",
+                  GapType::kDataLoss,
+                  100,
+                  200);
+
+  // serialize the message
+  Slice original = gap1.Serialize();
+
+  // un-serialize to a new message
+  MessageGap gap2;
+  gap2.DeSerialize(&original);
+
+  // verify that the new message is the same as original
+  ASSERT_TRUE(gap2.GetOrigin() == "client");
+  ASSERT_EQ(gap2.GetTopicName().ToString(), "topic");
+  ASSERT_EQ(gap2.GetTenantID(), (TenantID)Tenant::GuestTenant);
+  ASSERT_EQ(gap2.GetNamespaceId().ToString(), "guest");
+  ASSERT_EQ(gap2.GetStartSequenceNumber(), 100);
+  ASSERT_EQ(gap2.GetEndSequenceNumber(), 200);
+}
+
 static void TestMessage(const Serializer& msg) {
   Slice slice = msg.Serialize();
 
@@ -186,7 +212,7 @@ TEST(Messaging, ErrorHandling) {
   MessageDataAck msg3(100, client, acks);
   TestMessage(msg3);
 
-  MessageGap msg4(tenant, client, kBenign, 100, 200);
+  MessageGap msg4(tenant, client, "guest", "topic", kBenign, 100, 200);
   TestMessage(msg4);
 }
 

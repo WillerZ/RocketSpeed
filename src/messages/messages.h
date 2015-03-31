@@ -475,6 +475,8 @@ class MessageGap : public Message {
    */
   explicit MessageGap(TenantID tenantID,
                       const ClientID& origin,
+                      Slice namespace_id,
+                      Slice topic_name,
                       GapType gap_type,
                       SequenceNumber gap_from,
                       SequenceNumber gap_to);
@@ -491,6 +493,14 @@ class MessageGap : public Message {
   /**
    * Get the gap information.
    */
+  Slice GetNamespaceId() const {
+    return namespace_id_;
+  }
+
+  Slice GetTopicName() const {
+    return topic_name_;
+  }
+
   GapType GetType() const {
     return gap_type_;
   }
@@ -511,6 +521,8 @@ class MessageGap : public Message {
 
  private:
   // type of this message: mGap
+  Slice namespace_id_;
+  Slice topic_name_;
   GapType gap_type_;
   SequenceNumber gap_from_;
   SequenceNumber gap_to_;

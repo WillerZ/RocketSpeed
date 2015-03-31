@@ -29,6 +29,16 @@ namespace rocketspeed {
  */
 class LocalTestCluster {
  public:
+  struct Options {
+    std::shared_ptr<Logger> info_log;
+    bool start_controltower = true;
+    bool start_copilot = true;
+    bool start_pilot = true;
+    bool single_log = false;
+    std::string storage_url;
+    Env* env = Env::Default();
+  };
+
   /**
    * Constructs a new test cluster. Once this has finished constructing, the
    * pilot, copilot, and control tower will be running.
@@ -46,6 +56,13 @@ class LocalTestCluster {
                             const std::string& storage_url = "",
                             Env* env = Env::Default()
                             );
+
+  /**
+   * Create a new test cluster using provided options.
+   *
+   * @param opts Options for construction.
+   */
+  explicit LocalTestCluster(Options opts);
 
   /**
    * Stops all parts of the test cluster.
@@ -99,6 +116,8 @@ class LocalTestCluster {
                       bool is_internal);
 
  private:
+  void Initialize(Options opts);
+
   struct LogDevice;
   std::unique_ptr<LogDevice> logdevice_;
 

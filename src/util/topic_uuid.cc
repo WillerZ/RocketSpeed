@@ -22,6 +22,22 @@ size_t TopicUUID::RoutingHash() const {
   return routing_hash_;
 }
 
+void TopicUUID::GetTopicID(Slice* namespace_id, Slice* topic_name) const {
+  assert(namespace_id);
+  assert(topic_name);
+  Slice in(uuid_);
+  if (!rocketspeed::GetTopicID(&in, namespace_id, topic_name)) {
+    assert(false);
+  }
+}
+
+std::string TopicUUID::ToString() const {
+  Slice namespace_id;
+  Slice topic_name;
+  GetTopicID(&namespace_id, &topic_name);
+  return "Topic(" + namespace_id.ToString() + "," + topic_name.ToString() + ")";
+}
+
 size_t TopicUUID::RoutingHash(Slice namespace_id, Slice topic_name) {
   // *******************************************************************
   // * WARNING: changing this hash will redistribute topics into logs. *

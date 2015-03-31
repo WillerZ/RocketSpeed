@@ -25,12 +25,15 @@ class LogReader {
   /**
    * Create a LogReader.
    *
+   * @param info_log Logger.
    * @param tailer LogTailer to read from.
    * @param reader_id LogTailer reader ID.
    */
-  explicit LogReader(LogTailer* tailer,
+  explicit LogReader(std::shared_ptr<Logger> info_log,
+                     LogTailer* tailer,
                      size_t reader_id)
-  : tailer_(tailer)
+  : info_log_(info_log)
+  , tailer_(tailer)
   , reader_id_(reader_id) {
     assert(tailer);
   }
@@ -53,18 +56,32 @@ class LogReader {
                        SequenceNumber* prev_seqno);
 
   /**
-   * Updates internal state on a gap.
+   * Checks that a gap is valid for processing.
    *
    * @param log_id Log ID of gap.
+   * @param from Starting sequence number of gap.
+   * @return ok() if valid.
+   */
+  Status ValidateGap(LogID log_id, SequenceNumber from);
+
+  /**
+   * Updates internal state on a gap, and provides gap messages for each
+   * affected topic.
+   *
+   * Pre-condition: ValidateGap(log_id, from).ok()
+   *
+   * @param log_id Log ID of gap.
+   * @param topic Topic of gap.
    * @param from First sequence number of gap.
    * @param to Last sequence number of gap.
    * @param type Type of gap.
-   * @return ok() if successful, otherwise error.
    */
-  Status ProcessGap(LogID log_id,
-                    SequenceNumber from,
-                    SequenceNumber to,
-                    GapType type);
+  void ProcessGap(LogID log_id,
+                  const TopicUUID& topic,
+                  GapType type,
+                  SequenceNumber from,
+                  SequenceNumber to,
+                  SequenceNumber* prev_seqno);
 
   /**
    * Initialize reader state for log.
@@ -82,6 +99,14 @@ class LogReader {
    * @return ok() if successful, otherwise error.
    */
   Status StopReading(LogID log_id);
+
+  /**
+   * Flushes the log state for a log.
+   *
+   * @param log_id Log state to flush.
+   * @param seqno Sequence number to flush before.
+   */
+  void FlushHistory(LogID log_id, SequenceNumber seqno);
 
   /**
    * Returns the log reader ID.
@@ -106,6 +131,7 @@ class LogReader {
   };
 
   ThreadCheck thread_check_;
+  std::shared_ptr<Logger> info_log_;
   LogTailer* tailer_;
   size_t reader_id_;
   std::unordered_map<LogID, LogState> log_state_;
@@ -122,6 +148,10 @@ Status LogReader::ProcessRecord(LogID log_id,
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
     if (seqno != log_state.last_read + 1) {
+      LOG_INFO(info_log_,
+        "Record received out of order. Expected:%" PRIu64 " Received:%" PRIu64,
+        log_state.last_read + 1,
+        seqno);
       return Status::NotFound();
     }
     log_state.last_read = seqno;
@@ -147,23 +177,64 @@ Status LogReader::ProcessRecord(LogID log_id,
   }
 }
 
-Status LogReader::ProcessGap(LogID log_id,
-                             SequenceNumber from,
-                             SequenceNumber to,
-                             GapType type) {
+Status LogReader::ValidateGap(LogID log_id, SequenceNumber from) {
+  auto log_it = log_state_.find(log_id);
+  if (log_it != log_state_.end()) {
+    LogState& log_state = log_it->second;
+    if (from != log_state.last_read + 1) {
+      LOG_INFO(info_log_,
+        "Gap received out of order. Expected:%" PRIu64 " Received:%" PRIu64,
+        log_state.last_read + 1,
+        from);
+      return Status::NotFound();
+    }
+  } else {
+    LOG_INFO(info_log_,
+      "Gap received on unopened Log(%" PRIu64 ")",
+      log_id);
+    return Status::NotFound();
+  }
+  return Status::OK();
+}
+
+void LogReader::ProcessGap(
+    LogID log_id,
+    const TopicUUID& topic,
+    GapType type,
+    SequenceNumber from,
+    SequenceNumber to,
+    SequenceNumber* prev_seqno) {
   thread_check_.Check();
 
   auto log_it = log_state_.find(log_id);
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
     if (from != log_state.last_read + 1) {
-      // Ignore out-of-order records.
-      return Status::NotFound();
+      assert(false);  // should have been validated before calling this.
     }
-    log_state.last_read = to;
-    return Status::OK();
+
+    // Find previous seqno for topic.
+    auto seq_it = log_state.prev_seqno.find(topic);
+    if (seq_it == log_state.prev_seqno.end()) {
+      *prev_seqno = log_state.start_seqno;
+      log_state.prev_seqno.emplace(topic, to);
+    } else {
+      *prev_seqno = seq_it->second;
+      seq_it->second = to;
+    }
   } else {
-    return Status::NotFound();
+    assert(false);  // should have been validated before calling this.
+  }
+}
+
+void LogReader::FlushHistory(LogID log_id, SequenceNumber seqno) {
+  thread_check_.Check();
+  auto log_it = log_state_.find(log_id);
+  if (log_it != log_state_.end()) {
+    LogState& log_state = log_it->second;
+    log_state.start_seqno = seqno;
+    log_state.last_read = seqno - 1;
+    log_state.prev_seqno.clear();
   }
 }
 
@@ -237,7 +308,8 @@ TopicTailer::TopicTailer(
     LogTailer* log_tailer,
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
-    std::function<void(std::unique_ptr<Message>, LogID)> on_message) :
+    std::function<void(std::unique_ptr<Message>,
+                       const std::vector<HostNumber>&)> on_message) :
   env_(env),
   log_tailer_(log_tailer),
   log_router_(std::move(log_router)),
@@ -267,18 +339,40 @@ Status TopicTailer::SendLogRecord(
     // Process message from the log tailer.
     std::unique_ptr<MessageData> data(data_raw);
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
-    SequenceNumber seqno = data->GetSequenceNumber();
+    SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno;
     Status st = log_reader_->ProcessRecord(log_id,
-                                           seqno,
+                                           next_seqno,
                                            uuid,
                                            &prev_seqno);
 
     if (st.ok()) {
-      data->SetSequenceNumbers(prev_seqno, seqno);
-      on_message_(std::unique_ptr<Message>(data.release()), log_id);
+      // Find subscribed hosts.
+      std::vector<HostNumber> hosts;
+      topic_map_[log_id].VisitSubscribers(
+        uuid, prev_seqno, next_seqno,
+        [this, &hosts, next_seqno, &uuid] (TopicSubscription* sub) {
+          hosts.emplace_back(sub->GetHostNum());
+          sub->SetSequenceNumber(next_seqno + 1);
+          LOG_INFO(info_log_,
+            "Hostnum(%d) advanced to %s@%" PRIu64,
+            int(sub->GetHostNum()),
+            uuid.ToString().c_str(),
+            next_seqno);
+        });
+
+      // Send message downstream.
+      data->SetSequenceNumbers(prev_seqno, next_seqno);
+      on_message_(std::unique_ptr<Message>(data.release()), hosts);
     } else {
       // We don't have log open, so drop.
+      LOG_WARN(info_log_,
+        "Failed to process message on Log(%" PRIu64 ")@%" PRIu64 "-%" PRIu64
+        ": %s",
+        log_id,
+        prev_seqno,
+        next_seqno,
+        st.ToString().c_str());
     }
   });
 
@@ -301,14 +395,55 @@ Status TopicTailer::SendGapRecord(
 
   // Send to worker loop.
   bool sent = worker_loop_.Send([this, log_id, type, from, to] () {
-    Status st = log_reader_->ProcessGap(log_id, from, to, type);
-    if (st.ok()) {
-      // Create message to send downstream.
-      // We don't know the tenant ID at this point, or the host ID. These will
-      // have to be set later.
-      std::unique_ptr<Message> msg(
-        new MessageGap(Tenant::InvalidTenant, ClientID(), type, from, to));
-      on_message_(std::move(msg), log_id);
+    // Check for out-of-order gap messages, or gaps received on log that
+    // we're not reading on.
+    Status st = log_reader_->ValidateGap(log_id, from);
+    if (!st.ok()) {
+      return;
+    }
+
+    // Send per-topic gap messages for subscribed topics.
+    topic_map_[log_id].VisitTopics(
+      [&] (const TopicUUID& topic) {
+        // Get the last known seqno for topic.
+        SequenceNumber prev_seqno;
+        log_reader_->ProcessGap(log_id, topic, type, from, to, &prev_seqno);
+
+        // Find subscribed hosts.
+        std::vector<HostNumber> hosts;
+        topic_map_[log_id].VisitSubscribers(
+          topic, prev_seqno, to,
+          [this, &hosts, to, &topic] (TopicSubscription* sub) {
+            hosts.emplace_back(sub->GetHostNum());
+            sub->SetSequenceNumber(to + 1);
+            LOG_INFO(info_log_,
+              "Hostnum(%d) advanced to %s@%" PRIu64,
+              int(sub->GetHostNum()),
+              topic.ToString().c_str(),
+              to);
+          });
+
+        // Send message.
+        Slice namespace_id;
+        Slice topic_name;
+        topic.GetTopicID(&namespace_id, &topic_name);
+        std::unique_ptr<Message> msg(
+          new MessageGap(Tenant::GuestTenant,
+                         "",
+                         namespace_id,
+                         topic_name,
+                         type,
+                         prev_seqno,
+                         to));
+        on_message_(std::move(msg), hosts);
+      });
+
+    if (type != GapType::kBenign) {
+      // For malignant gaps (retention or data loss), we've lost information
+      // about the history of topics in the log, so we need to flush the
+      // log reader history to avoid it claiming to know something about topics
+      // that it doesn't.
+      log_reader_->FlushHistory(log_id, to + 1);
     }
   });
 
@@ -317,7 +452,7 @@ Status TopicTailer::SendGapRecord(
 
 Status TopicTailer::Initialize(size_t reader_id) {
   // Initialize log_reader_.
-  log_reader_.reset(new LogReader(log_tailer_, reader_id));
+  log_reader_.reset(new LogReader(info_log_, log_tailer_, reader_id));
   worker_thread_ = env_->StartThread(
     [this] () {
       worker_loop_.Run([this] (TopicTailerCommand command) {
@@ -336,7 +471,8 @@ TopicTailer::CreateNewInstance(
     LogTailer* log_tailer,
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
-    std::function<void(std::unique_ptr<Message>, LogID)> on_message,
+    std::function<void(std::unique_ptr<Message>,
+                       const std::vector<HostNumber>&)> on_message,
     TopicTailer** tailer) {
   *tailer = new TopicTailer(env,
                             log_tailer,
@@ -346,9 +482,9 @@ TopicTailer::CreateNewInstance(
   return Status::OK();
 }
 
-Status TopicTailer::StartReading(const TopicUUID& topic,
-                                 SequenceNumber start,
-                                 HostNumber hostnum) {
+Status TopicTailer::AddSubscriber(const TopicUUID& topic,
+                                  SequenceNumber start,
+                                  HostNumber hostnum) {
   thread_check_.Check();
 
   // Map topic to log.
@@ -358,15 +494,27 @@ Status TopicTailer::StartReading(const TopicUUID& topic,
     return st;
   }
 
-  bool sent = worker_loop_.Send([this, logid, start] () {
+  bool was_added = topic_map_[logid].AddSubscriber(topic, start, hostnum);
+  LOG_INFO(info_log_,
+    "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s)",
+    int(hostnum),
+    topic.ToString().c_str(),
+    start,
+    was_added ? "new" : "update");
+  bool sent = worker_loop_.Send([this, logid, start, was_added] () {
+    if (!was_added) {
+      // Was update, so remove old subscription first.
+      log_reader_->StopReading(logid);
+    }
     log_reader_->StartReading(logid, start);
   });
+
   return sent ? Status::OK() : Status::NoBuffer();
 }
 
 // Stop reading from this log
 Status
-TopicTailer::StopReading(const TopicUUID& topic, HostNumber hostnum) {
+TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
   thread_check_.Check();
 
   // Map topic to log.
@@ -376,9 +524,20 @@ TopicTailer::StopReading(const TopicUUID& topic, HostNumber hostnum) {
     return st;
   }
 
+  bool was_removed = topic_map_[logid].RemoveSubscriber(topic, hostnum);
+  if (!was_removed) {
+    return Status::OK();
+  }
+
+  LOG_INFO(info_log_,
+    "Hostnum(%d) unsubscribed for %s",
+    int(hostnum),
+    topic.ToString().c_str());
+
   bool sent = worker_loop_.Send([this, logid] () {
     log_reader_->StopReading(logid);
   });
+
   return sent ? Status::OK() : Status::NoBuffer();
 }
 

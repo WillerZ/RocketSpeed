@@ -124,10 +124,16 @@ Status ControlTower::Initialize() {
                            size_t reader_id) {
     // Process message from the log tailer.
     const int room_number = LogIDToRoom(log_id);
-    topic_tailer_[room_number]->SendLogRecord(
+    Status status = topic_tailer_[room_number]->SendLogRecord(
       std::move(msg),
       log_id,
       reader_id);
+    if (!status.ok()) {
+      LOG_WARN(options_.info_log,
+        "Failed to SendLogRecord to topic tailer %d (%s)",
+        room_number,
+        status.ToString().c_str());
+    }
   };
 
   auto on_gap = [this] (LogID log_id,
@@ -137,12 +143,18 @@ Status ControlTower::Initialize() {
                         size_t reader_id) {
     // Process message from the log tailer.
     const int room_number = LogIDToRoom(log_id);
-    topic_tailer_[room_number]->SendGapRecord(
+    Status status = topic_tailer_[room_number]->SendGapRecord(
       log_id,
       type,
       from,
       to,
       reader_id);
+    if (!status.ok()) {
+      LOG_WARN(options_.info_log,
+        "Failed to SendGapRecord to topic tailer %d (%s)",
+        room_number,
+        status.ToString().c_str());
+    }
   };
 
   size_t num_readers = opt.number_of_rooms;
@@ -153,26 +165,20 @@ Status ControlTower::Initialize() {
     return st;
   }
 
-  auto on_message =
-    [this] (std::unique_ptr<Message> msg, LogID log_id) {
-      const int room_number = LogIDToRoom(log_id);
-      Status status = rooms_[room_number]->Forward(std::move(msg), log_id, -1);
-      if (!status.ok()) {
-        LOG_WARN(options_.info_log,
-          "Failed to forward record to room %d",
-          room_number);
-      }
-    };
-
   // Now create the TopicTailer.
   // One per room with one reader each.
   for (size_t i = 0; i < opt.number_of_rooms; ++i) {
+    auto on_message =
+      [this, i] (std::unique_ptr<Message> msg,
+                 const std::vector<HostNumber>& hosts) {
+        rooms_[i]->OnTailerMessage(std::move(msg), hosts);
+      };
     TopicTailer* topic_tailer;
     st = TopicTailer::CreateNewInstance(opt.env,
                                         log_tailer_.get(),
                                         opt.log_router,
                                         opt.info_log,
-                                        on_message,
+                                        std::move(on_message) ,
                                         &topic_tailer);
     if (st.ok()) {
       // Topic tailer i uses reader i in log tailer.
@@ -249,7 +255,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
     // forward message to the destination room
     ControlRoom* room = rooms_[room_number].get();
     int worker_id = options_.msg_loop->GetThreadWorkerIndex();
-    st = room->Forward(std::move(newmessage), logid, worker_id);
+    st = room->Forward(std::move(newmessage), worker_id);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
           "Unable to forward %ssubscription for Topic(%s)@%" PRIu64

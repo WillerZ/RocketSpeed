@@ -557,11 +557,15 @@ Status MessageDataAck::DeSerialize(Slice* in) {
 }
 
 MessageGap::MessageGap(TenantID tenantID,
-                      const ClientID& origin,
-                      GapType gap_type,
-                      SequenceNumber gap_from,
-                      SequenceNumber gap_to)
-: gap_type_(gap_type)
+                       const ClientID& origin,
+                       Slice namespace_id,
+                       Slice topic_name,
+                       GapType gap_type,
+                       SequenceNumber gap_from,
+                       SequenceNumber gap_to)
+: namespace_id_(namespace_id)
+, topic_name_(topic_name)
+, gap_type_(gap_type)
 , gap_from_(gap_from)
 , gap_to_(gap_to) {
   msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
@@ -585,6 +589,7 @@ Slice MessageGap::Serialize() const {
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // Write the gap information.
+  PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
   PutFixedEnum8(&serialize_buffer__, gap_type_);
   PutVarint64(&serialize_buffer__, gap_from_);
   PutVarint64(&serialize_buffer__, gap_to_);
@@ -612,6 +617,11 @@ Status MessageGap::DeSerialize(Slice* in) {
   // extract host id
   if (!GetLengthPrefixedSlice(in, &origin_)) {
     return Status::InvalidArgument("Bad HostName");
+  }
+
+  // Read topic ID.
+  if (!GetTopicID(in, &namespace_id_, &topic_name_)) {
+    return Status::InvalidArgument("Invalid topic ID");
   }
 
   // Read gap type

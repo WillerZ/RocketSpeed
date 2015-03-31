@@ -16,6 +16,7 @@
 #include "src/util/topic_uuid.h"
 #include "src/util/worker_loop.h"
 #include "src/util/common/thread_check.h"
+#include "src/controltower/topic.h"
 
 namespace rocketspeed {
 
@@ -32,7 +33,8 @@ class TopicTailer {
    LogTailer* log_tailer,
    std::shared_ptr<LogRouter> log_router,
    std::shared_ptr<Logger> info_log,
-   std::function<void(std::unique_ptr<Message>, LogID)> on_message,
+   std::function<void(std::unique_ptr<Message>,
+                      const std::vector<HostNumber>&)> on_message,
    TopicTailer** tailer);
 
   /**
@@ -44,17 +46,17 @@ class TopicTailer {
   Status Initialize(size_t reader_id);
 
   /**
-   * Opens the specified log at specified position or reseeks to the position if
-   * the log was opened. This call is not thread-safe.
+   * Adds a subscriber to a topic. This call is not thread-safe.
    */
-  Status StartReading(const TopicUUID& topic,
-                      SequenceNumber start,
-                      HostNumber hostnum);
+  Status AddSubscriber(const TopicUUID& topic,
+                       SequenceNumber start,
+                       HostNumber hostnum);
 
-  // No more records from this log anymore
-  // This call is not thread-safe.
-  Status StopReading(const TopicUUID& topic,
-                     HostNumber hostnum);
+  /**
+   * Removes a subscriber from a topic. This call is not thread-safe.
+   */
+  Status RemoveSubscriber(const TopicUUID& topic,
+                          HostNumber hostnum);
 
   // Asynchronously finds the latest seqno then
   // invokes the callback.
@@ -102,7 +104,8 @@ class TopicTailer {
               LogTailer* log_tailer,
               std::shared_ptr<LogRouter> log_router,
               std::shared_ptr<Logger> info_log,
-              std::function<void(std::unique_ptr<Message>, LogID)> on_message);
+              std::function<void(std::unique_ptr<Message>,
+                                 const std::vector<HostNumber>&)> on_message);
 
   ThreadCheck thread_check_;
 
@@ -120,10 +123,14 @@ class TopicTailer {
   std::unique_ptr<LogReader> log_reader_;
 
   // Callback for outgoing messages.
-  std::function<void(std::unique_ptr<Message>, LogID)> on_message_;
+  std::function<void(std::unique_ptr<Message>,
+                     const std::vector<HostNumber>&)> on_message_;
 
   WorkerLoop<TopicTailerCommand> worker_loop_;
   BaseEnv::ThreadId worker_thread_;
+
+  // Subscription information per topic
+  std::unordered_map<LogID, TopicManager> topic_map_;
 };
 
 }  // namespace rocketspeed

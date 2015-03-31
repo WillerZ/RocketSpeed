@@ -24,7 +24,7 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
                          unsigned int room_number) :
   control_tower_(control_tower),
   room_number_(room_number),
-  topic_map_(control_tower->GetTopicTailer(room_number), options.info_log),
+  topic_tailer_(control_tower->GetTopicTailer(room_number)),
   room_loop_(options.worker_queue_size) {
 }
 
@@ -42,20 +42,11 @@ void ControlRoom::Run(void* arg) {
   auto command_callback = [room] (RoomCommand command) {
     std::unique_ptr<Message> message = command.GetMessage();
     MessageType type = message->GetMessageType();
-    LogID logid = command.GetLogId();
     int worker_id = command.GetWorkerId();
-    if (type == MessageType::mDeliver) {
-      // data message from Tailer
-      assert(worker_id == -1);  // from tailer
-      room->ProcessDeliver(std::move(message), logid);
-    } else if (type == MessageType::mMetadata) {
+    if (type == MessageType::mMetadata) {
       // subscription message from ControlTower
       assert(worker_id != -1);  // from tower
-      room->ProcessMetadata(std::move(message), logid, worker_id);
-    } else if (type == MessageType::mGap) {
-      // gap message from Tailer
-      assert(worker_id == -1);  // from tailer
-      room->ProcessGap(std::move(message), logid);
+      room->ProcessMetadata(std::move(message), worker_id);
     }
   };
 
@@ -66,8 +57,8 @@ void ControlRoom::Run(void* arg) {
 // The Control Room forwards some messages (those with seqno = 0) to
 // itself by using this method.
 Status
-ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid, int worker_id) {
-  if (room_loop_.Send(std::move(msg), logid, worker_id)) {
+ControlRoom::Forward(std::unique_ptr<Message> msg, int worker_id) {
+  if (room_loop_.Send(std::move(msg), worker_id)) {
     return Status::OK();
   } else {
     return Status::InternalError("Worker queue full");
@@ -77,7 +68,6 @@ ControlRoom::Forward(std::unique_ptr<Message> msg, LogID logid, int worker_id) {
 // Process Metadata messages that are coming in from ControlTower.
 void
 ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
-                             LogID logid,
                              int worker_id) {
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
@@ -108,13 +98,14 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
     // Create a callback to enqueue a subscribe command.
     // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
     // when converted to an std::function - could use an alloc pool for this.
-    auto callback = [this, logid, request, worker_id] (Status status,
-                                                       SequenceNumber seqno) {
+    auto callback = [this, request, worker_id] (Status status,
+                                                SequenceNumber seqno) {
       std::unique_ptr<Message> message(request);
       if (!status.ok()) {
         LOG_WARN(control_tower_->GetOptions().info_log,
-                 "Failed to find latest sequence number in Log(%" PRIu64 ")",
-                 logid);
+                 "Failed to find latest sequence number in Topc(%s, %s)",
+                 request->GetTopicInfo()[0].namespace_id.c_str(),
+                 request->GetTopicInfo()[0].topic_name.c_str());
         return;
       }
 
@@ -122,7 +113,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
       // send message back to this Room with the seqno appropriately
       // filled up in the message.
       assert(seqno != 0);
-      status = Forward(std::move(message), logid, worker_id);
+      status = Forward(std::move(message), worker_id);
       if (!status.ok()) {
         // TODO(pja) 1: may need to do some flow control if this is due
         // to receiving too many subscriptions.
@@ -176,14 +167,14 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   // Remember this subscription request
   TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
   if (topic[0].topic_type == MetadataType::mSubscribe) {
-    topic_map_.AddSubscriber(uuid, topic[0].seqno, hostnum);
+    topic_tailer_->AddSubscriber(uuid, topic[0].seqno, hostnum);
     LOG_INFO(options.info_log,
         "Added subscriber %s for Topic(%s)@%" PRIu64,
         origin.c_str(),
         topic[0].topic_name.c_str(),
         topic[0].seqno);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
-    topic_map_.RemoveSubscriber(uuid, hostnum);
+    topic_tailer_->RemoveSubscriber(uuid, hostnum);
     LOG_INFO(options.info_log,
         "Removed subscriber %s from Topic(%s)",
         origin.c_str(),
@@ -216,9 +207,33 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   options.info_log->Flush();
 }
 
+void
+ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
+                             const std::vector<HostNumber>& hosts) {
+  ControlTower* ct = control_tower_;
+  ControlTowerOptions& options = ct->GetOptions();
+
+  switch (msg->GetMessageType()) {
+    case MessageType::mDeliver:
+      ProcessDeliver(std::move(msg), hosts);
+      break;
+
+    case MessageType::mGap:
+      ProcessGap(std::move(msg), hosts);
+      break;
+
+    default:
+      LOG_ERROR(options.info_log, "Unexpected message type from tailer.");
+      break;
+  }
+}
+
+
 // Process Data messages that are coming in from Tailer.
 void
-ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
+ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
+                            const std::vector<HostNumber>& hosts) {
+  // Must be thread safe.
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
   Status st;
@@ -241,49 +256,59 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg, LogID logid) {
   // For each subscriber on this topic at prev_seqno, deliver the message and
   // advance the subscription to next_seqno.
   TopicUUID uuid(request->GetNamespaceId(), request->GetTopicName());
-  topic_map_.VisitSubscribers(uuid, prev_seqno, next_seqno,
-    [&] (TopicSubscription* sub) {
-      // convert HostNumber to ClientID
-      int worker_id = -1;
-      const ClientID* hostid = ct->LookupHost(sub->GetHostNum(), &worker_id);
-      assert(hostid != nullptr);
-      assert(worker_id != -1);
-      if (hostid != nullptr && worker_id != -1) {
-        // Send to correct worker loop.
-        request->SetOrigin(*hostid);
-        st = options.msg_loop->SendResponse(*request, *hostid, worker_id);
+  for (HostNumber hostnum : hosts) {
+    // convert HostNumber to ClientID
+    int worker_id = -1;
+    const ClientID* hostid = ct->LookupHost(hostnum, &worker_id);
+    assert(hostid != nullptr);
+    assert(worker_id != -1);
+    if (hostid != nullptr && worker_id != -1) {
+      // Send to correct worker loop.
+      request->SetOrigin(*hostid);
+      st = options.msg_loop->SendResponse(*request, *hostid, worker_id);
 
-        if (st.ok()) {
-          LOG_INFO(options.info_log,
-                  "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %s",
-                  request->GetPayload().ToString().c_str(),
-                  request->GetSequenceNumber(),
-                  request->GetTopicName().ToString().c_str(),
-                  hostid->c_str());
-        } else {
-          LOG_WARN(options.info_log,
-                  "Unable to forward Data message to subscriber %s",
-                  hostid->c_str());
-          options.info_log->Flush();
-        }
+      if (st.ok()) {
+        LOG_INFO(options.info_log,
+                "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %s",
+                request->GetPayload().ToString().c_str(),
+                request->GetSequenceNumber(),
+                request->GetTopicName().ToString().c_str(),
+                hostid->c_str());
+      } else {
+        LOG_WARN(options.info_log,
+                "Unable to forward Data message to subscriber %s",
+                hostid->c_str());
       }
-      sub->SetSequenceNumber(next_seqno);
-    });
+    }
+  }
+
+  if (hosts.empty()) {
+    LOG_WARN(options.info_log, "No hosts for record: no message sent.");
+  }
 }
 
 // Process Gap messages that are coming in from Tailer.
 void
-ControlRoom::ProcessGap(std::unique_ptr<Message> msg, LogID logid) {
-  /*MessageGap* gap = static_cast<MessageGap*>(msg.get());
+ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
+                        const std::vector<HostNumber>& hosts) {
+  // Must be thread safe.
+  MessageGap* gap = static_cast<MessageGap*>(msg.get());
 
-  // Advance all subscribers past the gap.
-  TopicUUID uuid(gap->GetNamespaceId(), gap->GetTopicName());
   SequenceNumber prev_seqno = gap->GetStartSequenceNumber();
   SequenceNumber next_seqno = gap->GetEndSequenceNumber();
-  topic_map_.VisitSubscribers(uuid, prev_seqno, next_seqno,
-    [&] (TopicSubscription* sub) {
-      sub->SetSequenceNumber(next_seqno);
-    });*/
+
+  ControlTowerOptions& options = control_tower_->GetOptions();
+  LOG_INFO(options.info_log,
+      "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
+      prev_seqno,
+      next_seqno,
+      gap->GetTopicName().ToString().c_str());
+
+  if (hosts.empty()) {
+    LOG_WARN(options.info_log, "No hosts for gap: no message sent.");
+  }
+
+  // TODO(pja) 1 : Send to copilots.
 }
 
 }  // namespace rocketspeed

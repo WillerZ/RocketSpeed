@@ -357,6 +357,99 @@ TEST(IntegrationTest, TrimFirst) {
   }
 }
 
+TEST(IntegrationTest, TrimGapHandling) {
+  // Test to ensure that correct records are received when subscribing to
+  // trimmed sections of log.
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.single_log = true;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Constants.
+  const NamespaceID ns = GuestNamespace;
+  const Topic topics[2] = { "topic1", "topic2" };
+  const int num_messages = 10;
+
+  port::Semaphore sub_sem[2];
+  auto subscription_callback = [&] (SubscriptionStatus ss) {
+    int index = ss.topic_name == topics[0] ? 0 : 1;
+    sub_sem[index].Post();
+  };
+
+  port::Semaphore recv_sem[2];
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
+    int index = mr->GetTopicName().ToString() == topics[0] ? 0 : 1;
+    recv_sem[index].Post();
+  };
+
+  // Create RocketSpeed client.
+  std::unique_ptr<Configuration> config(
+      Configuration::Create(cluster.GetPilotHostIds(),
+                            cluster.GetCopilotHostIds(),
+                            Tenant(102),
+                            1));
+  ClientOptions options(*config, "client");
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+
+  // Publish messages.
+  SequenceNumber seqnos[num_messages];
+  for (int i = 0; i < num_messages; ++i) {
+    port::Semaphore publish_sem;
+    auto publish_callback = [&, i] (std::unique_ptr<ResultStatus> rs) {
+      seqnos[i] = rs->GetSequenceNumber();
+      publish_sem.Post();
+    };
+    // Even messages to topics[0], odd to topics[1].
+    auto ps = client->Publish(topics[i & 1],
+                              ns,
+                              TopicOptions(),
+                              std::to_string(i),
+                              publish_callback);
+    ASSERT_TRUE(ps.status.ok());
+    ASSERT_TRUE(publish_sem.TimedWait(std::chrono::seconds(1)));
+  }
+
+  // Find topic log (for trimming).
+  LogID log_id;
+  LogID log_id2;
+  ASSERT_OK(cluster.GetLogRouter()->GetLogID(ns, topics[0], &log_id));
+  ASSERT_OK(cluster.GetLogRouter()->GetLogID(ns, topics[1], &log_id2));
+  ASSERT_EQ(log_id, log_id2);  // opts.single_log = true; should ensure this.
+
+  auto test_receipt = [&] (int topic, SequenceNumber seqno, int expected) {
+    // Tests that subscribing to topic@seqno results in 'expected' messages.
+    printf("Waiting for %d messages on %s@%lu...\n",
+      expected, topics[topic].c_str(), seqno);
+    client->ListenTopics({{ ns, topics[topic], true, seqno }});
+    ASSERT_TRUE(sub_sem[topic].TimedWait(std::chrono::seconds(1)));
+    while (expected--) {
+      ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
+      printf("received\n");
+    }
+    ASSERT_TRUE(!recv_sem[topic].TimedWait(std::chrono::milliseconds(100)));
+  };
+
+  test_receipt(0, seqnos[0], 5);
+  test_receipt(1, seqnos[0], 5);
+
+  // Trim first 6, so should be 2 of each left.
+  ASSERT_OK(cluster.GetLogStorage()->Trim(log_id, seqnos[5]));
+  test_receipt(0, seqnos[0], 2);
+  test_receipt(1, seqnos[0], 2);
+
+  // Check at edges of gap.
+  test_receipt(0, seqnos[5], 2);
+  test_receipt(1, seqnos[5], 2);
+  test_receipt(0, seqnos[6], 2);
+  test_receipt(1, seqnos[6], 2);
+}
+
 TEST(IntegrationTest, SequenceNumberZero) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);

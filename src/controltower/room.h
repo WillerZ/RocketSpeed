@@ -10,14 +10,14 @@
 #include "src/port/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
-#include "src/util/storage.h"
+#include "src/util/hostmap.h"
 #include "src/util/worker_loop.h"
 #include "src/controltower/options.h"
-#include "src/controltower/topic.h"
 
 namespace rocketspeed {
 
 class ControlTower;
+class TopicTailer;
 
 //
 // A single instance of a ControlRoom.
@@ -43,7 +43,11 @@ class ControlRoom {
   unsigned int GetRoomNumber() const { return room_number_; }
 
   // Forwards a message to this Room
-  Status Forward(std::unique_ptr<Message> msg, LogID logid, int worker_id);
+  Status Forward(std::unique_ptr<Message> msg, int worker_id);
+
+  // Processes a message from the tailer.
+  void OnTailerMessage(std::unique_ptr<Message> msg,
+                       const std::vector<HostNumber>& hosts);
 
   // Stop the room worker loop
   void Stop() { room_loop_.Stop();}
@@ -55,18 +59,13 @@ class ControlRoom {
    public:
     RoomCommand() = default;
 
-    RoomCommand(std::unique_ptr<Message> message, LogID logid, int worker_id):
+    RoomCommand(std::unique_ptr<Message> message, int worker_id):
       message_(std::move(message)),
-      logid_(logid),
       worker_id_(worker_id) {
     }
 
     std::unique_ptr<Message> GetMessage() {
       return std::move(message_);
-    }
-
-    const LogID GetLogId() const {
-      return logid_;
     }
 
     int GetWorkerId() const {
@@ -75,7 +74,6 @@ class ControlRoom {
 
    private:
     std::unique_ptr<Message> message_;
-    LogID logid_;
     int worker_id_;
   };
 
@@ -86,8 +84,8 @@ class ControlRoom {
   // My room number
   unsigned int room_number_;
 
-  // Subscription information per topic
-  TopicManager topic_map_;
+  // Per-topic tailer
+  TopicTailer* topic_tailer_;
 
   // The message loop base.
   // This is used to receive subscribe/unsubscribe/data messages
@@ -98,11 +96,11 @@ class ControlRoom {
   std::unordered_map<HostNumber, int> hostnum_to_worker_id_;
 
   // callbacks to process incoming messages
-  void ProcessMetadata(std::unique_ptr<Message> msg,
-                       LogID logid,
-                       int worker_id);
-  void ProcessDeliver(std::unique_ptr<Message> msg, LogID logid);
-  void ProcessGap(std::unique_ptr<Message> msg, LogID logid);
+  void ProcessMetadata(std::unique_ptr<Message> msg, int worker_id);
+  void ProcessDeliver(std::unique_ptr<Message> msg,
+                      const std::vector<HostNumber>& hosts);
+  void ProcessGap(std::unique_ptr<Message> msg,
+                  const std::vector<HostNumber>& hosts);
 };
 
 }  // namespace rocketspeed

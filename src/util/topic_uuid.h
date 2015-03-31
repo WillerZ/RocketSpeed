@@ -40,6 +40,17 @@ struct TopicUUID {
   size_t RoutingHash() const;
 
   /**
+   * @param namespace_id Output for namespace ID.
+   * @param topic_name Output for topic name.
+   */
+  void GetTopicID(Slice* namespace_id, Slice* topic_name) const;
+
+  /**
+   * Converts to string for logging.
+   */
+  std::string ToString() const;
+
+  /**
    * Equivalent to TopicUUID(namespace_id, topic).RoutingHash(), but
    * potentially faster.
    *

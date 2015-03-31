@@ -34,16 +34,32 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
                                    bool start_copilot,
                                    bool start_pilot,
                                    const std::string& storage_url,
-                                   Env* env)
-    : logdevice_(new LogDevice)
-    , env_(env)
-    , info_log_(info_log)
-    , pilot_(nullptr)
-    , copilot_(nullptr)
-    , control_tower_(nullptr) {
+                                   Env* env) {
+  Options opts;
+  opts.info_log = info_log;
+  opts.start_controltower = start_controltower;
+  opts.start_copilot = start_copilot;
+  opts.start_pilot = start_pilot;
+  opts.storage_url = storage_url;
+  opts.env = env;
+  Initialize(opts);
+}
+
+LocalTestCluster::LocalTestCluster(Options opts) {
+  Initialize(opts);
+}
+
+void LocalTestCluster::Initialize(Options opts) {
+  logdevice_.reset(new LogDevice);
+  env_ = opts.env;
+  info_log_ = opts.info_log;
+  pilot_ = nullptr;
+  copilot_ = nullptr;
+  control_tower_ = nullptr;
   cockpit_thread_ = 0;
   control_tower_thread_ = 0;
-  if (start_copilot && !start_controltower) {
+
+  if (opts.start_copilot && !opts.start_controltower) {
     status_ = Status::InvalidArgument("Copilot needs ControlTower.");
     return;
   }
@@ -57,23 +73,27 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
 
   // Range of logs to use.
   std::pair<LogID, LogID> log_range;
-#ifdef USE_LOGDEVICE
-  if (storage_url.empty()) {
-    // Can only use one log as the logdevice test utils only supports that.
-    // See T4894216
+  if (opts.single_log) {
     log_range = std::pair<LogID, LogID>(1, 1);
   } else {
-    log_range = std::pair<LogID, LogID>(1, 100000);
-  }
+#ifdef USE_LOGDEVICE
+    if (opts.storage_url.empty()) {
+      // Can only use one log as the logdevice test utils only supports that.
+      // See T4894216
+      log_range = std::pair<LogID, LogID>(1, 1);
+    } else {
+      log_range = std::pair<LogID, LogID>(1, 100000);
+    }
 #else
-  // Something more substantial for the mock logdevice.
-  log_range = std::pair<LogID, LogID>(1, 1000);
+    // Something more substantial for the mock logdevice.
+    log_range = std::pair<LogID, LogID>(1, 1000);
 #endif  // USE_LOGDEVICE
+  }
 
   LogDeviceStorage* storage = nullptr;
-  if (start_pilot || start_controltower) {
+  if (opts.start_pilot || opts.start_controltower) {
 #ifdef USE_LOGDEVICE
-    if (storage_url.empty()) {
+    if (opts.storage_url.empty()) {
       // Setup the local LogDevice cluster and create, client, and storage.
       logdevice_->cluster_ =
           facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(3);
@@ -83,7 +103,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
                                          &storage);
     } else {
       status_ = LogDeviceStorage::Create("rocketspeed.logdevice.primary",
-                                         storage_url,
+                                         opts.storage_url,
                                          "",
                                          std::chrono::milliseconds(1000),
                                          16,
@@ -119,7 +139,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
 
   EnvOptions env_options;
 
-  if (start_controltower) {
+  if (opts.start_controltower) {
     control_tower_loop_.reset(new MsgLoop(
         env_, env_options, ControlTower::DEFAULT_PORT, 16, info_log_, "tower"));
 
@@ -151,7 +171,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
     }
   }
 
-  if (start_copilot || start_pilot) {
+  if (opts.start_copilot || opts.start_pilot) {
     static_assert(Copilot::DEFAULT_PORT == Pilot::DEFAULT_PORT,
                   "Default port for pilot and copilot differ.");
     cockpit_loop_.reset(new MsgLoop(
@@ -160,12 +180,12 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
     // If we need to start the copilot, then it is better to start the
     // pilot too. Any subscribe/unsubscribe requests to the copilot needs
     // to write to the rollcall topic (via the pilot).
-    start_pilot = true;
+    opts.start_pilot = true;
     HostId pilot_host("localhost", Pilot::DEFAULT_PORT);
     configuration_.reset(Configuration::Create({pilot_host}, {pilot_host},
                                                 SystemTenant));
 
-    if (start_copilot) {
+    if (opts.start_copilot) {
       // Create Copilot
       copilot_options_.control_towers.push_back(control_tower_->GetClientId(0));
       copilot_options_.info_log = info_log_;
@@ -181,7 +201,7 @@ LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
       }
     }
 
-    if (start_pilot) {
+    if (opts.start_pilot) {
       // Create Pilot
       pilot_options_.info_log = info_log_;
       pilot_options_.msg_loop = cockpit_loop_.get();

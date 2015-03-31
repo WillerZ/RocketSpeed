@@ -14,9 +14,6 @@
 
 namespace rocketspeed {
 
-class Logger;
-class TopicTailer;
-
 class TopicSubscription {
  public:
   TopicSubscription(HostNumber hostnum, SequenceNumber seqno)
@@ -38,7 +35,7 @@ class TopicSubscription {
 
  private:
   HostNumber hostnum_;
-  SequenceNumber seqno_;
+  SequenceNumber seqno_;  // next expected seqno
 };
 
 // Set of subscriptions for a topic.
@@ -58,31 +55,29 @@ typedef autovector<TopicSubscription, 1> TopicList;
 //
 class TopicManager {
  public:
+  TopicManager() = default;
+  ~TopicManager() = default;
+
   /**
-   * The Topic Manager does not own the TopicTailer. But it needs to
-   * interact with the TopicTailer to be able to seek to appropriate
-   * sequence numbered messages stored in the Storage.
+   * Add a new subscriber to the topic.
    *
-   * @param tailer Controlled (but not owned) tailer to serve subscriptions.
-   * @param info_log For logging.
+   * @return true iff new subscriber.
    */
-  explicit TopicManager(TopicTailer* tailer,
-                        std::shared_ptr<Logger> info_log);
+  bool AddSubscriber(const TopicUUID& topic,
+                     SequenceNumber start,
+                     HostNumber subscriber);
 
-  virtual ~TopicManager();
-
-  // Add a new subscriber to the topic.
-  Status AddSubscriber(const TopicUUID& topic,
-                       SequenceNumber start,
-                       HostNumber subscriber);
-
-  // Remove an existing subscriber for a topic
-  Status RemoveSubscriber(const TopicUUID& topic,
-                          HostNumber subscriber);
+  /**
+   * Remove an existing subscriber for a topic.
+   *
+   * @return true iff removed.
+   */
+  bool RemoveSubscriber(const TopicUUID& topic,
+                        HostNumber subscriber);
 
   /**
    * Visits the list of subscribers for a specific topic and sequence number
-   * range. The visitor will be called for all subscription where the sequence
+   * range. The visitor will be called for all subscriptions where the sequence
    * number is not less than 'from', and not greater than 'to'. The visitation
    * order is unspecified.
    *
@@ -90,21 +85,22 @@ class TopicManager {
    * @param from Lower threshold of subscriptions.
    * @param to Upper threshold of subscriptions.
    * @param visitor Visiting function for subscriptions. Mutation is allowed.
-   * @return List of subscribers on that topic at that sequence number, or
-   *         null if there are no subscribers.
    */
   void VisitSubscribers(const TopicUUID& topic,
                         SequenceNumber from,
                         SequenceNumber to,
                         std::function<void(TopicSubscription*)> visitor);
 
+  /**
+   * Visits the list of topics with subscribers.
+   *
+   * @param visitor Visiting function for topics.
+   */
+  void VisitTopics(std::function<void(const TopicUUID& topic)> visitor);
+
  private:
   // Map a topic name to a list of TopicEntries.
   std::unordered_map<TopicUUID, TopicList> topic_map_;
-
-  TopicTailer* tailer_;
-
-  std::shared_ptr<Logger> info_log_;
 };
 
 }  // namespace rocketspeed
