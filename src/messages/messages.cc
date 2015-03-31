@@ -24,17 +24,6 @@
  */
 namespace rocketspeed {
 
-/**
- * Given a serialized header, convert it to a real object
- */
-MessageHeader::MessageHeader(Slice* in) {
-  assert(in->size() >= GetSize());
-  memcpy(&version_, in->data(), sizeof(version_));  // extract version
-  in->remove_prefix(sizeof(version_));
-  assert(version_ <= ROCKETSPEED_CURRENT_MSG_VERSION);
-  GetFixed32(in, &msgsize_);                       // extract msg size
-}
-
  /**
   * Creates a Message of the appropriate subtype by looking at the
   * MessageType. Returns nullptr on error. It is the responsibility
@@ -50,17 +39,11 @@ Message::CreateNewInstance(Slice* in) {
   MessageGoodbye* msg5 = nullptr;
   MessageType mtype;
 
-  // make a temporary copy of the input slice
-  Slice tmp(*in);
-  if (in->size() < MessageHeader::GetSize()) {
+  // extract msg type
+  if (in->size() < sizeof(mtype)) {
     return nullptr;
   }
-
-  // remove msg header
-  tmp.remove_prefix(MessageHeader::GetSize());
-
-  // extract msg type
-  memcpy(&mtype, tmp.data(), sizeof(mtype));
+  memcpy(&mtype, in->data(), sizeof(mtype));
 
   Status st;
   switch (mtype) {
@@ -134,66 +117,7 @@ void Message::SerializeToString(std::string* out) const {
   out->assign(std::move(serialize_buffer__));
 }
 
-/*
- * Fills the first bytes serialize_buffer__ with the messageHeader attributes
- */
-void Message::serializeMessageHeader() const {
-  if (serialize_buffer__.size() < MessageHeader::GetSize()) {
-    serialize_buffer__.resize(MessageHeader::GetSize());
-  }
-  serialize_buffer__[0] = msghdr_.version_;
-  serializeMessageSize();
-}
-
-/*
- * Inserts the message size in serialize_buffer__ at the appropriate position
- */
-void Message::serializeMessageSize() const {
-  msghdr_.msgsize_ = static_cast<uint32_t>(serialize_buffer__.size());
-  serializeMessageSize(msghdr_.msgsize_);
-}
-
-void Message::serializeMessageSize(int msgsize) const {
-  if (serialize_buffer__.size() < MessageHeader::GetSize()) {
-    serialize_buffer__.resize(MessageHeader::GetSize());
-  }
-  std::string mlength;
-  PutFixed32(&mlength, msgsize);
-  assert(mlength.size() == sizeof(msghdr_.msgsize_));
-  serialize_buffer__.replace(1, sizeof(msghdr_.msgsize_), mlength);
-}
-
-/*
- *  Extracts message header from first few bytes of in and returns
- *  Status::OK() on success
- */
-Status Message::deserializeMessageHeader(Slice* in){
-  const size_t len = in->size();
-  if (len < sizeof(msghdr_.msgsize_) + sizeof(msghdr_.version_) +
-      sizeof(type_)) {
-    return Status::InvalidArgument("Bad Message Version/Type");
-  }
-  // extract msg version
-  memcpy(&msghdr_.version_, in->data(), sizeof(msghdr_.version_));
-  in->remove_prefix(sizeof(msghdr_.version_));
-
-  // If we do not support this version, then return error
-  if (msghdr_.version_ > ROCKETSPEED_CURRENT_MSG_VERSION) {
-    return Status::NotSupported("Bad Message Version");
-  }
-  // extract msg size
-  if (!GetFixed32(in, &msghdr_.msgsize_)) {
-    return Status::InvalidArgument("Bad msg size");
-  }
-  return Status::OK();
-}
-
 Slice MessagePing::Serialize() const {
-  // serialize common header
-  msghdr_.msgsize_ = 0;
-  serialize_buffer__.clear();
-  serializeMessageHeader();
-
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
 
@@ -202,17 +126,10 @@ Slice MessagePing::Serialize() const {
   //  origin
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
-  // compute the size of this message
-  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessagePing::DeSerialize(Slice* in) {
-  Status msghdrStatus = deserializeMessageHeader(in);
-  if (!msghdrStatus.ok()) {
-    return msghdrStatus;
-  }
-
   // extract type
   if (!GetFixedEnum8(in, &type_)) {
     return Status::InvalidArgument("Bad type");
@@ -263,11 +180,6 @@ MessageData::~MessageData() {
 }
 
 Slice MessageData::Serialize() const {
-  // serialize common header
-  msghdr_.msgsize_ = 0;
-  serialize_buffer__.clear();
-  serializeMessageHeader();
-
   PutFixedEnum8(&serialize_buffer__, type_);
 
   // origin
@@ -279,18 +191,10 @@ Slice MessageData::Serialize() const {
 
   // The rest of the message is what goes into log storage.
   SerializeInternal();
-
-  // compute the size of this message
-  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageData::DeSerialize(Slice* in) {
-  Status msghdrStatus = deserializeMessageHeader(in);
-  if (!msghdrStatus.ok()) {
-    return msghdrStatus;
-  }
-
   // extract type
   if (!GetFixedEnum8(in, &type_)) {
     return Status::InvalidArgument("Bad type");
@@ -364,14 +268,12 @@ MessageMetadata::MessageMetadata(TenantID tenantID,
   const std::vector<TopicPair>& topics):
   metatype_(metatype),
   topics_(topics) {
-  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mMetadata;
   tenantid_ = tenantID;
   origin_ = origin;
 }
 
 MessageMetadata::MessageMetadata() {
-  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mMetadata;
   tenantid_ = Tenant::InvalidTenant;
   metatype_ = MetaType::NotInitialized;
@@ -381,11 +283,6 @@ MessageMetadata::~MessageMetadata() {
 }
 
 Slice MessageMetadata::Serialize() const {
-  // serialize common header
-  msghdr_.msgsize_ = 0;
-  serialize_buffer__.clear();
-  serializeMessageHeader();
-
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
@@ -402,17 +299,10 @@ Slice MessageMetadata::Serialize() const {
     PutTopicID(&serialize_buffer__, p.namespace_id, p.topic_name);
     PutFixedEnum8(&serialize_buffer__, p.topic_type);
   }
-  // compute msg size
-  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageMetadata::DeSerialize(Slice* in) {
-  Status msghdrStatus = deserializeMessageHeader(in);
-  if (!msghdrStatus.ok()) {
-    return msghdrStatus;
-  }
-
   // extract type
   if (!GetFixedEnum8(in, &type_)) {
     return Status::InvalidArgument("Bad type");
@@ -467,7 +357,6 @@ MessageDataAck::MessageDataAck(TenantID tenantID,
                                const ClientID& origin,
                                AckVector acks)
 : acks_(std::move(acks)) {
-  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mDataAck;
   tenantid_ = tenantID;
   origin_ = origin;
@@ -481,11 +370,6 @@ const MessageDataAck::AckVector& MessageDataAck::GetAcks() const {
 }
 
 Slice MessageDataAck::Serialize() const {
-  // serialize common header
-  msghdr_.msgsize_ = 0;
-  serialize_buffer__.clear();
-  serializeMessageHeader();
-
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
@@ -499,18 +383,10 @@ Slice MessageDataAck::Serialize() const {
     PutVarint64(&serialize_buffer__, ack.seqno);
   }
 
-  // compute the size of this message
-  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageDataAck::DeSerialize(Slice* in) {
-  // extract message header from in
-  Status msghdrStatus = deserializeMessageHeader(in);
-  if (!msghdrStatus.ok()) {
-    return msghdrStatus;
-  }
-
   // extract type
   if (!GetFixedEnum8(in, &type_)) {
     return Status::InvalidArgument("Bad type");
@@ -568,7 +444,6 @@ MessageGap::MessageGap(TenantID tenantID,
 , gap_type_(gap_type)
 , gap_from_(gap_from)
 , gap_to_(gap_to) {
-  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mGap;
   tenantid_ = tenantID;
   origin_ = origin;
@@ -578,11 +453,6 @@ MessageGap::~MessageGap() {
 }
 
 Slice MessageGap::Serialize() const {
-  // serialize common header
-  msghdr_.msgsize_ = 0;
-  serialize_buffer__.clear();
-  serializeMessageHeader();
-
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
@@ -594,16 +464,10 @@ Slice MessageGap::Serialize() const {
   PutVarint64(&serialize_buffer__, gap_from_);
   PutVarint64(&serialize_buffer__, gap_to_);
 
-  // compute the size of this message
-  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageGap::DeSerialize(Slice* in) {
-  Status msghdrStatus = deserializeMessageHeader(in);
-  if (!msghdrStatus.ok()) {
-    return msghdrStatus;
-  }
   // extract type
   if (!GetFixedEnum8(in, &type_)) {
     return Status::InvalidArgument("Bad type");
@@ -647,18 +511,12 @@ MessageGoodbye::MessageGoodbye(TenantID tenant_id,
                                OriginType origin_type)
 : code_(code)
 , origin_type_(origin_type) {
-  msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   type_ = mGoodbye;
   tenantid_ = tenant_id;
   origin_ = std::move(origin);
 }
 
 Slice MessageGoodbye::Serialize() const {
-  // serialize common header
-  msghdr_.msgsize_ = 0;
-  serialize_buffer__.clear();
-  serializeMessageHeader();
-
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
@@ -668,16 +526,10 @@ Slice MessageGoodbye::Serialize() const {
   PutFixedEnum8(&serialize_buffer__, code_);
   PutFixedEnum8(&serialize_buffer__, origin_type_);
 
-  // compute the size of this message
-  serializeMessageSize();
   return Slice(serialize_buffer__);
 }
 
 Status MessageGoodbye::DeSerialize(Slice* in) {
-  Status msghdrStatus = deserializeMessageHeader(in);
-  if (!msghdrStatus.ok()) {
-    return msghdrStatus;
-  }
   // extract type
   if (!GetFixedEnum8(in, &type_)) {
     return Status::InvalidArgument("Bad type");

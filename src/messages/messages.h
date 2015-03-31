@@ -24,7 +24,6 @@
  * in include/RocketSpeed.h to interact with RocketSpeed.
  * All messages have to implement the Serializer interface.
  */
-#define ROCKETSPEED_CURRENT_MSG_VERSION 1
 
 namespace rocketspeed {
 
@@ -139,16 +138,9 @@ class Message : public Serializer {
  protected:
   Message(MessageType type, TenantID tenantid, const ClientID& origin) :
           type_(type), tenantid_(tenantid), origin_(origin) {
-    msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   }
   Message() : type_(MessageType::NotInitialized) {
-    msghdr_.version_ = ROCKETSPEED_CURRENT_MSG_VERSION;
   }
-  void serializeMessageHeader() const;
-  void serializeMessageSize() const;
-  void serializeMessageSize(int msgsize) const;
-  Status deserializeMessageHeader(Slice* in);
-
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant

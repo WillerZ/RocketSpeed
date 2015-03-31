@@ -24,6 +24,7 @@
 
 #include "src/port/port.h"
 #include "src/messages/serializer.h"
+#include "src/util/common/coding.h"
 
 static_assert(std::is_same<evutil_socket_t, int>::value,
   "EventLoop assumes evutil_socket_t is int.");
@@ -34,6 +35,44 @@ const int EventLoop::kLogSeverityDebug = _EVENT_LOG_DEBUG;
 const int EventLoop::kLogSeverityMsg = _EVENT_LOG_MSG;
 const int EventLoop::kLogSeverityWarn = _EVENT_LOG_WARN;
 const int EventLoop::kLogSeverityErr = _EVENT_LOG_ERR;
+
+#define ROCKETSPEED_CURRENT_MSG_VERSION 1
+
+struct MessageHeader {
+  /**
+   * Attempts to parse slice into a MessageHeader.
+   *
+   * @param in Input bytes (will be advanced past header).
+   * @param header Output header.
+   * @return ok() if fully parsed, error otherwise.
+   */
+  static Status Parse(Slice* in, MessageHeader* header) {
+    if (!GetFixed8(in, &header->version)) {
+      return Status::InvalidArgument("Bad version");
+    }
+    if (!GetFixed32(in, &header->size)) {
+      return Status::InvalidArgument("Bad size");
+    }
+    return Status::OK();
+  }
+
+  /**
+   * @return Header encoded as string.
+   */
+  std::string ToString() {
+    std::string result;
+    result.reserve(encoding_size);
+    PutFixed8(&result, version);
+    PutFixed32(&result, size);
+    return result;
+  }
+
+  uint8_t version;
+  uint32_t size;
+
+  /** Size of MessageHeader encoding */
+  static constexpr size_t encoding_size = sizeof(version) + sizeof(size);
+};
 
 struct TimestampedString {
   std::string string;
@@ -92,6 +131,7 @@ class SocketEvent {
   // One message to be sent out.
   Status Enqueue(const std::shared_ptr<TimestampedString>& msg) {
     event_loop_->thread_check_.Check();
+
     send_queue_.emplace_back(msg);
 
     // If the write-ready event is not currently registered, and the socket
@@ -291,17 +331,14 @@ class SocketEvent {
 
         // Now have read header, prepare msg buffer.
         Slice hdr_slice(hdr_buf_, sizeof(hdr_buf_));
-        MessageHeader hdr(&hdr_slice);
-        msg_size_ = hdr.msgsize_;
-        if (msg_size_ <= sizeof(hdr_buf_)) {
-          // Message size too small, bad data. Close connection.
-          return Status::IOError("Message size too small");
+        MessageHeader hdr;
+        Status st = MessageHeader::Parse(&hdr_slice, &hdr);
+        if (!st.ok()) {
+          return st;
         }
+        msg_size_ = hdr.size;
         msg_buf_.reset(new char[msg_size_]);
-
-        // Copy in header data.
-        memcpy(msg_buf_.get(), hdr_buf_, sizeof(hdr_buf_));
-        msg_idx_ = sizeof(hdr_buf_);
+        msg_idx_ = 0;
       }
       assert(msg_idx_ < msg_size_);
 
@@ -398,7 +435,7 @@ class SocketEvent {
   }
 
   size_t hdr_idx_;
-  char hdr_buf_[MessageHeader::size];
+  char hdr_buf_[MessageHeader::encoding_size];
   size_t msg_idx_;
   size_t msg_size_;
   std::unique_ptr<char[]> msg_buf_;  // receive buffer
@@ -621,7 +658,17 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
       assert(sev);
       // Enqueue data to SocketEvent queue. This message will be sent out
       // when the output socket is ready to write.
-      st = sev->Enqueue(msg);
+      MessageHeader header { ROCKETSPEED_CURRENT_MSG_VERSION,
+                             static_cast<uint32_t>(msg->string.size()) };
+      auto hdr = std::make_shared<TimestampedString>();
+      hdr->string = header.ToString();
+      hdr->issued_time = issued_time;
+
+      // Add message header and contents.
+      st = sev->Enqueue(hdr);
+      if (st.ok()) {
+        st = sev->Enqueue(msg);
+      }
     }
     // No else, so we catch error on adding to queue as well.
     if (!st.ok()) {
