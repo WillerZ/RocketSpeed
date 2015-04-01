@@ -126,6 +126,9 @@ class ClientImpl : public Client {
   /** Handler for messages received on some topic. */
   void ProcessData(std::unique_ptr<Message> msg);
 
+   /** Handler for messages received on some topic. */
+  void ProcessGap(std::unique_ptr<Message> msg);
+
   /** Handler for metadata messages received. */
   void ProcessMetadata(std::unique_ptr<Message> msg);
 };

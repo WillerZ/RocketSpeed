@@ -118,6 +118,9 @@ class CopilotWorker {
   // Forward data to subscribers.
   void ProcessDeliver(std::unique_ptr<Message> msg);
 
+  // Fprward gap to subscribers.
+  void ProcessGap(std::unique_ptr<Message> msg);
+
   // Remove all subscriptions for a client.
   void ProcessGoodbye(std::unique_ptr<Message> msg);
 

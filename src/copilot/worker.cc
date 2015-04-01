@@ -87,6 +87,12 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
     }
     break;
 
+  case MessageType::mGap: {
+      // Data to forward to client.
+      ProcessGap(std::move(message));
+    }
+    break;
+
   case MessageType::mGoodbye: {
       ProcessGoodbye(std::move(message));
     }
@@ -219,6 +225,76 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       } else {
         LOG_WARN(options_.info_log,
           "Failed to distribute message to %s",
+          recipient.c_str());
+      }
+    }
+  }
+}
+
+void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
+  MessageGap* msg = static_cast<MessageGap*>(message.get());
+  // Get the list of subscriptions for this topic.
+  LOG_INFO(options_.info_log,
+      "Copilot received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
+      msg->GetStartSequenceNumber(),
+      msg->GetEndSequenceNumber(),
+      msg->GetTopicName().ToString().c_str());
+  auto it = subscriptions_.find(msg->GetTopicName().ToString());
+  if (it != subscriptions_.end()) {
+    auto prev_seqno = msg->GetStartSequenceNumber();
+    auto next_seqno = msg->GetEndSequenceNumber();
+
+    // Send to all subscribers.
+    for (auto& subscription : it->second) {
+      const ClientID& recipient = subscription.client_id;
+
+      // If the subscription is awaiting a response, do not forward.
+      if (subscription.awaiting_ack) {
+        LOG_INFO(options_.info_log,
+          "Gap ignored for %s (awaiting ack)",
+          recipient.c_str());
+        continue;
+      }
+
+      // Also ignore if the seqno is too low.
+      if (subscription.seqno > next_seqno) {
+        LOG_INFO(options_.info_log,
+          "Gap ignored for %s"
+          " (next_seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
+          recipient.c_str(),
+          next_seqno,
+          subscription.seqno);
+        continue;
+      }
+
+      // or too high.
+      if (subscription.seqno < prev_seqno) {
+        LOG_INFO(options_.info_log,
+          "Gap ignored for %s"
+          " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
+          recipient.c_str(),
+          prev_seqno,
+          subscription.seqno);
+        continue;
+      }
+
+      // Send to worker loop.
+      msg->SetOrigin(recipient);
+      Status status = options_.msg_loop->SendResponse(*msg,
+                                                      recipient,
+                                                      subscription.worker_id);
+      if (status.ok()) {
+        subscription.seqno = next_seqno + 1;
+
+        LOG_INFO(options_.info_log,
+          "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %s",
+          msg->GetStartSequenceNumber(),
+          msg->GetEndSequenceNumber(),
+          msg->GetTopicName().ToString().c_str(),
+          recipient.c_str());
+      } else {
+        LOG_WARN(options_.info_log,
+          "Failed to distribute gap to %s",
           recipient.c_str());
       }
     }

@@ -297,12 +297,39 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
   SequenceNumber prev_seqno = gap->GetStartSequenceNumber();
   SequenceNumber next_seqno = gap->GetEndSequenceNumber();
 
+  ControlTower* ct = control_tower_;
   ControlTowerOptions& options = control_tower_->GetOptions();
   LOG_INFO(options.info_log,
       "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
       prev_seqno,
       next_seqno,
       gap->GetTopicName().ToString().c_str());
+
+  for (HostNumber hostnum : hosts) {
+    // convert HostNumber to ClientID
+    int worker_id = -1;
+    const ClientID* hostid = ct->LookupHost(hostnum, &worker_id);
+    assert(hostid != nullptr);
+    assert(worker_id != -1);
+    if (hostid != nullptr && worker_id != -1) {
+      // Send to correct worker loop.
+      gap->SetOrigin(*hostid);
+      Status st = options.msg_loop->SendResponse(*gap, *hostid, worker_id);
+
+      if (st.ok()) {
+        LOG_INFO(options.info_log,
+                "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %s",
+                prev_seqno,
+                next_seqno,
+                gap->GetTopicName().ToString().c_str(),
+                hostid->c_str());
+      } else {
+        LOG_WARN(options.info_log,
+                "Unable to forward Gap message to subscriber %s",
+                hostid->c_str());
+      }
+    }
+  }
 
   if (hosts.empty()) {
     LOG_WARN(options.info_log, "No hosts for gap: no message sent.");

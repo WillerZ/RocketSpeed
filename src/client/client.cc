@@ -3,6 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
+#define __STDC_FORMAT_MACROS
 #include "src/client/client.h"
 
 #include <cassert>
@@ -134,7 +135,6 @@ Status ClientImpl::Create(ClientOptions options,
 enum ReceiveStatus {
   kNotSubscribed = 0,
   kDuplicate,
-  kGap,
   kOk,
 };
 
@@ -144,7 +144,7 @@ class SubscriptionState {
   SubscriptionState() : acks_to_skip(-1) {
   }
 
-  ReceiveStatus ReceiveMessage(const MessageData* data) {
+  ReceiveStatus ReceiveMessage(SequenceNumber current, SequenceNumber prev) {
     assert(acks_to_skip >= -1);
     // We currently cannot reorder an ACK with a message on the topic, we also
     // cannot lose it, therefore we can drop any messages before the last ACK
@@ -152,9 +152,7 @@ class SubscriptionState {
     if (acks_to_skip >= 0) {
       return ReceiveStatus::kNotSubscribed;
     }
-    SequenceNumber expected = expected_seqno.get(),
-                   current = data->GetSequenceNumber(),
-                   prev = data->GetPrevSequenceNumber();
+    SequenceNumber expected = expected_seqno.get();
     // Update last seqno received for this topic, only if there is no pending
     // request on the topic.
     assert(acks_to_skip < 0);
@@ -280,7 +278,21 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
     if (iter == subscriptions_.end()) {
       return ReceiveStatus::kNotSubscribed;
     }
-    return iter->second.ReceiveMessage(data);
+    return iter->second.ReceiveMessage(data->GetSequenceNumber(),
+                                       data->GetPrevSequenceNumber());
+  }
+
+  ReceiveStatus ReceiveMessage(const MessageGap* gap) {
+    thread_check_.Check();
+
+    TopicID topic_id(gap->GetNamespaceId().ToString(),
+                     gap->GetTopicName().ToString());
+    auto iter = subscriptions_.find(topic_id);
+    if (iter == subscriptions_.end()) {
+      return ReceiveStatus::kNotSubscribed;
+    }
+    return iter->second.ReceiveMessage(gap->GetEndSequenceNumber(),
+                                       gap->GetStartSequenceNumber());
   }
 
   bool IssueRequest(TopicPair* request_inout) {
@@ -342,6 +354,9 @@ ClientImpl::ClientImpl(BaseEnv* env,
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
     ProcessData(std::move(msg));
+  };
+  callbacks[MessageType::mGap] = [this] (std::unique_ptr<Message> msg) {
+    ProcessGap(std::move(msg));
   };
   callbacks[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
     ProcessMetadata(std::move(msg));
@@ -581,20 +596,61 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
                topic_id.namespace_id.c_str(),
                topic_id.topic_name.c_str());
     } break;
-    case ReceiveStatus::kGap: {
-      LOG_INFO(info_log_,
-               "Gap detected Topic(%s, %s) when received message (%.16s)@%llu",
-               topic_id.namespace_id.c_str(),
-               topic_id.topic_name.c_str(),
-               data->GetPayload().ToString().c_str(),
-               static_cast<long long unsigned int>(data->GetSequenceNumber()));
-    } break;
     case ReceiveStatus::kOk: {
       // Create message wrapper for client (do not copy payload).
       std::unique_ptr<MessageReceivedClient> newmsg(
           new MessageReceivedClient(std::move(msg)));
       // Deliver message to application.
       receive_callback_(std::move(newmsg));
+    } break;
+    default:
+      LOG_ERROR(
+          info_log_, "Unhandled ReceiveStatus: %d", static_cast<int>(rcv_st));
+      assert(0);
+  }
+}
+
+void ClientImpl::ProcessGap(std::unique_ptr<Message> msg) {
+  wake_lock_.AcquireForReceiving();
+
+  // Check that message has correct origin.
+  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
+    LOG_WARN(info_log_, "Message origin does not match client ID.");
+    return;
+  }
+
+  const MessageGap* gap = static_cast<const MessageGap*>(msg.get());
+  // Extract topic from message.
+  TopicID topic_id(gap->GetNamespaceId().ToString(),
+                   gap->GetTopicName().ToString());
+  LOG_INFO(info_log_,
+           "Received gap on Topic(%s, %.16s)",
+           topic_id.namespace_id.c_str(),
+           topic_id.topic_name.c_str());
+
+  // Get worker data that this topic is assigned to.
+  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
+  auto& worker_data = worker_data_[worker_id];
+
+  // Check if we can deliver the message.
+  auto rcv_st = worker_data.ReceiveMessage(gap);
+  switch (rcv_st) {
+    case ReceiveStatus::kNotSubscribed: {
+      LOG_INFO(info_log_,
+               "Not subscribed to Topic(%s, %s), dropping gap",
+               topic_id.namespace_id.c_str(),
+               topic_id.topic_name.c_str());
+    } break;
+    case ReceiveStatus::kDuplicate: {
+      LOG_INFO(info_log_,
+               "Duplicate gap %" PRIu64 "-%" PRIu64 " on Topic(%s, %s)",
+               gap->GetStartSequenceNumber(),
+               gap->GetEndSequenceNumber(),
+               topic_id.namespace_id.c_str(),
+               topic_id.topic_name.c_str());
+    } break;
+    case ReceiveStatus::kOk: {
+      // Do nothing. Internal.
     } break;
     default:
       LOG_ERROR(

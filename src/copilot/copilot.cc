@@ -236,6 +236,48 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
   }
 }
 
+void Copilot::ProcessGap(std::unique_ptr<Message> msg) {
+  options_.msg_loop->ThreadCheck();
+
+  const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
+
+  // Check that message has correct origin.
+  if (!options_.msg_loop->CheckMessageOrigin(msg.get())) {
+    return;
+  }
+
+  // get the gap message
+  MessageGap* gap = static_cast<MessageGap*>(msg.get());
+
+  LOG_INFO(options_.info_log,
+      "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
+      gap->GetStartSequenceNumber(),
+      gap->GetEndSequenceNumber(),
+      gap->GetTopicName().ToString().c_str());
+
+  // map the topic to a logid
+  LogID logid;
+  Status st = options_.log_router->GetLogID(gap->GetNamespaceId(),
+                                            gap->GetTopicName(),
+                                            &logid);
+  if (!st.ok()) {
+    LOG_INFO(options_.info_log,
+        "Unable to map msg to logid %s", st.ToString().c_str());
+    return;
+  }
+
+  // calculate the destination worker
+  int worker_id = static_cast<int>(logid % options_.num_workers);
+  auto& worker = workers_[worker_id];
+
+  // forward message to worker
+  if (!worker->Forward(logid, std::move(msg), event_loop_worker)) {
+    LOG_WARN(options_.info_log,
+        "Worker %d queue is full.",
+        static_cast<int>(worker_id));
+  }
+}
+
 void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg) {
   options_.msg_loop->ThreadCheck();
 
@@ -268,6 +310,9 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   };
   cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
     ProcessMetadata(std::move(msg));
+  };
+  cb[MessageType::mGap] = [this] (std::unique_ptr<Message> msg) {
+    ProcessGap(std::move(msg));
   };
   cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg) {
     ProcessGoodbye(std::move(msg));
