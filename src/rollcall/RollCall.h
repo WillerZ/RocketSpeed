@@ -23,7 +23,7 @@ namespace rocketspeed {
  * rollcall stream.
  */
 class RollcallEntry;
-typedef std::function<void(const RollcallEntry&)> RollCallback;
+typedef std::function<void(RollcallEntry)> RollCallback;
 
 /*
  * The reader that is used to tail the rollcall entries for a namespace.
@@ -84,7 +84,7 @@ class RollcallEntry {
   /*
    * @return the topic name that some client is subscribed to.
    */
-  const Topic& GetTopicName() {
+  const Topic& GetTopicName() const {
     return topic_name_;
   }
 
@@ -95,7 +95,7 @@ class RollcallEntry {
    *                    represents a unsubscription request,
    *         EntryType::Error if the stream encountered an error
    */
-  EntryType GetType() {
+  EntryType GetType() const {
     return entry_type_;
   }
 

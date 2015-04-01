@@ -36,8 +36,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
       state_ = ReaderState::SubscriptionConfirmed;
     } else {
       // invoke user-specified callback with error status
-      RollcallEntry entry;
-      callback_(entry);
+      callback_(RollcallEntry());
     }
   };
 
@@ -51,7 +50,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
       assert(msg->GetNamespaceId() == rollcall_namespace_);
       RollcallEntry rmsg;
       rmsg.DeSerialize(msg->GetContents());
-      callback_(rmsg);
+      callback_(std::move(rmsg));
     };
     rs_client_->Start(subscribe_callback, receive_callback,
                       Client::RestoreStrategy::kDontRestore);// start client

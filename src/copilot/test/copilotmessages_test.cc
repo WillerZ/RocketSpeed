@@ -213,7 +213,7 @@ TEST(CopilotTest, Rollcall) {
   std::unique_ptr<ClientImpl> client;
   ASSERT_OK(cluster.CreateClient("ClientId1", &client, true));
   auto rollcall_callback = [this, &checkpoint2, &num_msg]
-    (const RollcallEntry& entry) {
+    (RollcallEntry entry) {
     ProcessRollcall(entry);
     if (rollcall_entries_.size() == num_msg) {
       checkpoint2.Post();
