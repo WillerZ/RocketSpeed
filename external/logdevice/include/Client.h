@@ -125,7 +125,7 @@ public:
    *    PEER_CLOSED    Sequencer closed connection after we sent the append
    *                   request but before we got a reply. Record may or
    *                   may not be appended.
-   *    TOOBIG         Payload is too big (see Payload::maxSize())
+   *    TOOBIG         Payload is too big (see Client::getMaxPayloadSize())
    *    NOBUFS         request could not be enqueued because a buffer
    *                   space limit was reached in this Client object. Request
    *                   was not sent
@@ -193,7 +193,8 @@ public:
    *
    * @return  0 is returned if the request was successfully enqueued for
    *          delivery. On failure -1 is returned and logdevice::err is set to
-   *             TOOBIG      if payload is too big (see Payload::maxSize())
+   *             TOOBIG      if payload is too big (see
+   *                         Client::getMaxPayloadSize())
    *             NOBUFS      if request could not be enqueued because a buffer
    *                         space limit was reached
    *      INVALID_PARAM      logid is invalid
@@ -362,11 +363,17 @@ public:
    * Looks up the boundaries of a log range by its name as specified
    * in this Client's configuration.
    *
-   * @return  if configuration has a JSON object in the "logs" section
-   *          with "name" attribute @param name, returns a pair containing
-   *          the lowest and  highest log ids in the range (this may be the
-   *          same id for log ranges of size 1). Otherwise returns a pair
-   *          where both ids are set to LOGID_INVALID.
+   * If configuration has a JSON object in the "logs" section with "name"
+   * attribute @param name and without "layout" attribute, returns the lowest
+   * and highest log ids in the range. If a JSON object in the "logs"
+   * section has "layout" attribute with value "AxB@C", it produces A ranges,
+   * each of length C, named "<name>", "<name>#1", "<name>#2", ...,
+   * "<name>#<A-1>", where <name> is the value of "name" attribute.
+   *
+   * @return  If there's a range with name @param name, returns a pair
+   *          containing the lowest and  highest log ids in the range
+   *          (this may be the same id for log ranges of size 1).
+   *          Otherwise returns a pair where both ids are set to LOGID_INVALID.
    */
   std::pair<logid_t, logid_t> getLogRangeByName(const std::string& name)
                                                                      noexcept;
@@ -374,6 +381,7 @@ public:
   /**
    * @return  on success returns the log id at offset @param offset in log
    *          range identified in the cluster config by @param range_name.
+   *          See getLogRangeByName() for description of "layout" attribute.
    *          On failure returns LOGID_INVALID and sets logdevice::err to:
    *
    *            NOTFOUND if no range with @param name is present in the config
@@ -382,6 +390,12 @@ public:
   logid_t getLogIdFromRange(const std::string& range_name,
                             off_t offset) noexcept;
 
+  /**
+   * @return  returns the maximum permitted payload size for this client. The
+   *          default is 1MB, but this can be increased via changing the
+   *          max-payload-size setting.
+   */
+  size_t getMaxPayloadSize() noexcept;
 
   /**
    * Exposes a ClientSettings instance that can be used to change settings

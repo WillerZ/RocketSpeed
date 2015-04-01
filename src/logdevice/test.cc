@@ -130,7 +130,7 @@ TEST(MockLogDeviceTest, Basic) {
   ASSERT_EQ(count2, 4);
 
   // Stop reading and check that no more messages are received on reader 1.
-  reader1->stopReading(logid);
+  reader1->stopReading(logid, nullptr);
   ASSERT_NE(client->appendSync(logid, payload("test8")), LSN_INVALID);
   /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(100));

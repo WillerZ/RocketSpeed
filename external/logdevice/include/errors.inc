@@ -63,6 +63,9 @@ ERROR_CODE(FAILED,      ,"request failed")
 ERROR_CODE(SEQSYSLIMIT, ,"sequencer process has reached a limit set by the OS "
                          "or runtime")
 ERROR_CODE(REBUILDING,  ,"rebuilding is in progress")
+ERROR_CODE(REDIRECTED,  ,"writer has been redirected to a different node")
+ERROR_CODE(RETRY,       ,"operation will be retried")
+ERROR_CODE(BADPAYLOAD,  ,"payload is invalid")
 
 // Errors about invalid entities
 
@@ -76,6 +79,7 @@ ERROR_CODE(INVALID_OPERATION, ,"invalid operation for mode")
 ERROR_CODE(UNKNOWN_SETTING,   ,"unrecognized setting name")
 ERROR_CODE(INVALID_SETTING_VALUE, ,"invalid value of a setting")
 ERROR_CODE(UPTODATE,          ,"value was already up to date")
+ERROR_CODE(EMPTY,             ,"value was empty/uninitialized")
 
 // Configuration errors
 

@@ -1,8 +1,8 @@
-This version of logdevice was fetched from git commit number
-e87f956d45d6c592f80389726a42d9cf581e2128 Date:   Tue Dec 02 05:41:54 2014 -0800
+This version of logdevice was fetched from git commit:
 
-The 'lib' directory contains the binaries that are compiled in fbcode.
-rocketspeed will link against these libraries. The rocketspeed code should
-include the header files in the 'include' directory to access logdevice.
+$ git rev-list --format=format:'%ci' -1 `git rev-parse HEAD`
+commit 85e72e21ad781af7ad3e5c21a83e45f7fb9f7a47
+2015-03-31 08:37:04 -0700
 
-
+The rocketspeed code should include the header files in the 'include'
+directory to access logdevice.

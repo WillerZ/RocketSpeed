@@ -56,6 +56,12 @@ class Reader {
   int stopReading(logid_t log_id);
 
   /**
+   * Checks if a log is being read.  Can be used to find out if the end of the
+   * log was reached (for a log that was being read).
+   */
+  bool isReading(logid_t log_id) const;
+
+  /**
    * Sets the limit on how long read() calls may wait for records to become
    * available.  A timeout of -1 means no limit (infinite timeout).  A timeout
    * of 0 means no waiting (nonblocking reads).
@@ -150,6 +156,17 @@ class Reader {
   void withoutPayload();
 
   /**
+   * If called, disable the single copy delivery optimization even if the log is
+   * configured to support it. Each data record will be sent by all storage
+   * nodes that have a copy instead of exactly one.
+   * This greatly increases read availability at the cost of higher network
+   * bandwith and cpu usage.
+   *
+   * Only affects subsequent startReading() calls.
+   */
+  void forceNoSingleCopyDelivery();
+
+  /**
    * Checks if the connection to the LogDevice cluster for a log appears
    * healthy.  When a read() call times out, this can be used to make an
    * informed guess whether this is because there is no data or because there
@@ -163,6 +180,17 @@ class Reader {
    * err to NOTFOUND (not reading given log).
    */
   int isConnectionHealthy(logid_t) const;
+
+  /**
+   * Instructs the Reader instance to pass through blobs created by
+   * BufferedWriter.
+   *
+   * By default (if this method is not called), Reader automatically decodes
+   * blobs written by BufferedWriter and yields original records as passed to
+   * BufferedWriter::append().  If this method is called, BufferedWriteDecoder
+   * can be used to decode the blobs.
+   */
+  void doNotDecodeBufferedWrites();
 
   /**
    * Note that, unless all reading is stopped prior to destruction, the

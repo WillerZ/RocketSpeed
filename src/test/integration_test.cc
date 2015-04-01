@@ -620,6 +620,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
     [&] (std::unique_ptr<Message> msg) {
       received_data.Post();
     };
+  callbacks[MessageType::mGap] = [](std::unique_ptr<Message> msg) {};
   callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>) {};
   client.RegisterCallbacks(callbacks);
   env_->StartThread([&] () { client.Run(); }, "client");

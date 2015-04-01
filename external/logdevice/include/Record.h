@@ -34,8 +34,10 @@ struct Payload {
   size_t size;
 
   // returns maximum payload size supported by this implementation of
-  // LogDevice client
-  static constexpr size_t maxSize() { return 1024*1024; }
+  // LogDevice client.
+  // DEPRECATED! use Client::getMaxPayloadSize() instead. Appends that exceed
+  // Client::getMaxPayloadSize() will fail.
+  static constexpr size_t maxSize() { return 32*1024*1024; }
 };
 
 

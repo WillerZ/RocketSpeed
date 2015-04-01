@@ -198,6 +198,8 @@ TEST(CopilotTest, Rollcall) {
         checkpoint.Post();
       }
     };
+  client_callback[MessageType::mDeliver] = [](std::unique_ptr<Message>){};
+  client_callback[MessageType::mGap] = [](std::unique_ptr<Message>){};
 
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
   loop.RegisterCallbacks(client_callback);

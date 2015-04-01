@@ -181,6 +181,10 @@ void AsyncReader::setGapCallback(std::function<void(const GapRecord&)> cb) {
   impl()->gap_cb_ = cb;
 }
 
+void AsyncReader::setDoneCallback(std::function<void(logid_t)>) {
+  assert(false);  // not implemented
+}
+
 int AsyncReader::startReading(logid_t log_id, lsn_t from, lsn_t until) {
   assert(impl()->data_cb_);  // must set CB before starting to read
   std::lock_guard<std::mutex> lock(impl()->mutex_);
@@ -188,7 +192,8 @@ int AsyncReader::startReading(logid_t log_id, lsn_t from, lsn_t until) {
   return 0;
 }
 
-int AsyncReader::stopReading(logid_t log_id) {
+int AsyncReader::stopReading(logid_t log_id, std::function<void()> cb) {
+  assert(!cb);  // callback not supported
   std::lock_guard<std::mutex> lock(impl()->mutex_);
   impl()->logs_.erase(log_id);
   return 0;
@@ -198,9 +203,17 @@ void AsyncReader::withoutPayload() {
   assert(false);  // not implemented
 }
 
+void AsyncReader::forceNoSingleCopyDelivery() {
+  assert(false);  // not implemented
+}
+
 int AsyncReader::isConnectionHealthy(logid_t) const {
   // Not relevant for the mock log. Always return healthy.
   return 1;
+}
+
+void AsyncReader::doNotDecodeBufferedWrites() {
+  assert(false);  // not implemented
 }
 
 AsyncReaderImpl *AsyncReader::impl() {

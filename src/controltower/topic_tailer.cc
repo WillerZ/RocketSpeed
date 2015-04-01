@@ -109,6 +109,17 @@ class LogReader {
   void FlushHistory(LogID log_id, SequenceNumber seqno);
 
   /**
+   * Processes benign gap by advancing log reader state beyond gap.
+   *
+   * @param log_id Log to advance.
+   * @param from Start sequence number of gap.
+   * @param to End sequence number of gap.
+   */
+  void ProcessBenignGap(LogID log_id,
+                        SequenceNumber from,
+                        SequenceNumber to);
+
+  /**
    * Returns the log reader ID.
    */
   size_t GetReaderId() const {
@@ -235,6 +246,17 @@ void LogReader::FlushHistory(LogID log_id, SequenceNumber seqno) {
     log_state.start_seqno = seqno;
     log_state.last_read = seqno - 1;
     log_state.prev_seqno.clear();
+  }
+}
+
+void LogReader::ProcessBenignGap(LogID log_id,
+                                 SequenceNumber from,
+                                 SequenceNumber to) {
+  thread_check_.Check();
+  auto log_it = log_state_.find(log_id);
+  if (log_it != log_state_.end()) {
+    LogState& log_state = log_it->second;
+    log_state.last_read = to;
   }
 }
 
@@ -367,10 +389,9 @@ Status TopicTailer::SendLogRecord(
     } else {
       // We don't have log open, so drop.
       LOG_WARN(info_log_,
-        "Failed to process message on Log(%" PRIu64 ")@%" PRIu64 "-%" PRIu64
+        "Failed to process message on Log(%" PRIu64 ")@%" PRIu64
         ": %s",
         log_id,
-        prev_seqno,
         next_seqno,
         st.ToString().c_str());
     }
@@ -438,7 +459,12 @@ Status TopicTailer::SendGapRecord(
         on_message_(std::move(msg), hosts);
       });
 
-    if (type != GapType::kBenign) {
+    if (type == GapType::kBenign) {
+      // For benign gaps, we haven't lost any information, but we need to
+      // advance the state of the log reader so that it expects the next
+      // records.
+      log_reader_->ProcessBenignGap(log_id, from, to);
+    } else {
       // For malignant gaps (retention or data loss), we've lost information
       // about the history of topics in the log, so we need to flush the
       // log reader history to avoid it claiming to know something about topics

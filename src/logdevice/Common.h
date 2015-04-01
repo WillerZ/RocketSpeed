@@ -19,11 +19,11 @@ namespace facebook { namespace logdevice {
 extern std::string MOCK_LOG_DIR;
 
 inline std::string LogFilename(logid_t logid) {
-  return MOCK_LOG_DIR + "/" + std::to_string((int64_t)logid) + ".log";
+  return MOCK_LOG_DIR + "/" + std::to_string((uint64_t)logid) + ".log";
 }
 
 inline std::string SeqnoFilename(logid_t logid) {
-  return MOCK_LOG_DIR + "/" + std::to_string((int64_t)logid) + ".seqno";
+  return MOCK_LOG_DIR + "/" + std::to_string((uint64_t)logid) + ".seqno";
 }
 
 // Returns the last sequence number written to file.

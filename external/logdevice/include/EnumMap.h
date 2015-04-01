@@ -30,6 +30,12 @@ public:
     return (*this)[static_cast<int>(n)];
   }
 
+  // Only used in tests. In production maps are initialized at startup and never
+  // changed.
+  void set(Enum n, Val val) {
+    map_[static_cast<int>(n)] = val;
+  }
+
 private:
 
   // sets map values. This function gets specialized in each class

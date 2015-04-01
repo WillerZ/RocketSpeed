@@ -72,7 +72,7 @@ static Status LogDeviceErrorToStatus(facebook::logdevice::Status error) {
 }
 
 static LogID CastLogID(facebook::logdevice::logid_t logid) {
-  return static_cast<LogID>(static_cast<int64_t>(logid));
+  return static_cast<LogID>(static_cast<uint64_t>(logid));
 }
 
 LogDeviceRecord::LogDeviceRecord(
@@ -303,7 +303,7 @@ Status AsyncLogDeviceReader::Open(LogID id,
 
 Status AsyncLogDeviceReader::Close(LogID id) {
   // Simple forward to LogDevice
-  if (reader_->stopReading(facebook::logdevice::logid_t(id))) {
+  if (reader_->stopReading(facebook::logdevice::logid_t(id), nullptr)) {
     return LogDeviceErrorToStatus(facebook::logdevice::err);
   }
   return Status::OK();

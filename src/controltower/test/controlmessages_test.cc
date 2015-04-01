@@ -193,6 +193,8 @@ TEST(ControlTowerTest, MultipleSubscribers) {
       ASSERT_EQ(msg->GetOrigin(), client_id1_);
       ProcessMetadata(std::move(msg));
     };
+  client_callback1[MessageType::mDeliver] = [](std::unique_ptr<Message>){};
+  client_callback1[MessageType::mGap] = [](std::unique_ptr<Message>){};
 
   std::map<MessageType, MsgCallbackType> client_callback2;
   client_callback2[MessageType::mMetadata] =
@@ -200,6 +202,8 @@ TEST(ControlTowerTest, MultipleSubscribers) {
       ASSERT_EQ(msg->GetOrigin(), client_id2_);
       ProcessMetadata(std::move(msg));
     };
+  client_callback2[MessageType::mDeliver] = [](std::unique_ptr<Message>){};
+  client_callback2[MessageType::mGap] = [](std::unique_ptr<Message>){};
 
   // create a client to communicate with the ControlTower
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "test");
@@ -223,6 +227,9 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 
   // The number of distinct logs that are opened cannot be more than
   // the number of topics.
+  // Wait a little, since log opening is async.
+  /* sleep override */
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
   int numopenlogs1 = GetNumOpenLogs(ct);
   ASSERT_LE(numopenlogs1, num_topics);
   ASSERT_NE(numopenlogs1, 0);

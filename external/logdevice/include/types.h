@@ -8,11 +8,13 @@
 
 namespace facebook { namespace logdevice {
 
-// Logs are uniquely identified by 64-bit ints
-LOGDEVICE_STRONG_TYPEDEF(int64_t, logid_t);
+// Logs are uniquely identified by 64-bit unsigned ints
+LOGDEVICE_STRONG_TYPEDEF(uint64_t, logid_t);
 
 constexpr logid_t LOGID_INVALID(0);
-constexpr logid_t LOGID_MAX((1ull<<48)-1); //48 bits
+
+constexpr size_t LOGID_BITS (62);         // maximum number of bits in a log id
+constexpr logid_t LOGID_MAX((1ull<<LOGID_BITS)-1);  //maximum valid logid value
 
 // Log sequence numbers are 48-bit unsigned ints.
 typedef uint64_t lsn_t;

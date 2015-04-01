@@ -53,13 +53,18 @@ class AsyncReader {
   void setGapCallback(std::function<void(const GapRecord&)>);
 
   /**
-   * Start reading records from a log in a specified range of LSNs. This call
-   * involves synchronous interthread communication and may block until a
-   * Client thread is able to process the request.  The function will return
-   * as soon as the request is put on a local queue.  This method is used to
-   * both start reading a newly opened log, and to continue reading from a
-   * different LSN. Upon successful return, the next record to be delivered to
-   * a callback will be as described in @param from below.
+   * Sets a callback that the LogDevice client library will call when it has
+   * finished reading the requested range of LSNs.
+   */
+  void setDoneCallback(std::function<void(logid_t)>);
+
+  /**
+   * Start reading records from a log in a specified range of LSNs.  The
+   * function will return as soon as the request is put on a local queue.
+   * This method is used to both start reading a newly opened log, and to
+   * continue reading from a different LSN. Upon successful return, the next
+   * record to be delivered to a callback will be as described in @param from
+   * below.
    *
    * @param log_id log ID to start reading
    *
@@ -77,7 +82,8 @@ class AsyncReader {
    *              next record delivered to this reader will be the gap record.
    *
    * @param until  the highest LSN the LogDevice cluster will deliver to this
-   *               AsyncReader object.  Once this LSN is reached, the client
+   *               AsyncReader object.  Once this LSN is reached, the LogDevice
+   *               client library will call the done callback. The client
    *               must call startReading() again in order to continue
    *               delivery. If the read pointer comes across a sequence gap
    *               that includes this LSN, the delivery stops after the gap
@@ -105,19 +111,23 @@ class AsyncReader {
    * from this log will stop receiving this log's records until one of
    * startReading() methods is called again.
    *
-   * This call involves synchronous interthread communication and may block
-   * until a Client thread is able to process the request.  It is guaranteed
-   * that callbacks will no longer be called for the log after this call
-   * returns.
+   * The function returns as soon as the request is put on a local queue.
+   * However, record/gap callbacks may continue to be called for the log until
+   * a Client thread is able to process the stop request.  It is not safe to
+   * destroy the AsyncReader during that time.  After the optional callback is
+   * called (on the Client thread), it is guaranted that no further records or
+   * gaps will be delivered.
    *
    * @param log_id log ID to stop reading
+   * @param callback optional callback to invoke when the request has taken
+   *                 effect and no more records will be delivered
    *
    * @return  0 is returned if a stop request was successfully enqueued for
    *          delivery. On failure -1 is returned and logdevice::err is set to
    *             NOBUFS  if request could not be enqueued because a buffer
    *                     space limit was reached
    */
-  int stopReading(logid_t log_id);
+  int stopReading(logid_t log_id, std::function<void()> callback);
 
   /**
    * If called, data records read by this AsyncReader will not include payloads.
@@ -128,6 +138,17 @@ class AsyncReader {
    * Only affects subsequent startReading() calls.
    */
   void withoutPayload();
+
+  /**
+   * If called, disable the single copy delivery optimization even if the log is
+   * configured to support it. Each data record will be sent by all storage
+   * nodes that have a copy instead of exactly one.
+   * This greatly increases read availability at the cost of higher network
+   * bandwith and cpu usage.
+   *
+   * Only affects subsequent startReading() calls.
+   */
+  void forceNoSingleCopyDelivery();
 
   /**
    * Checks if the connection to the LogDevice cluster for a log appears
@@ -143,6 +164,17 @@ class AsyncReader {
    * err to NOTFOUND (not reading given log).
    */
   int isConnectionHealthy(logid_t) const;
+
+  /**
+   * Instructs the Reader instance to pass through blobs created by
+   * BufferedWriter.
+   *
+   * By default (if this method is not called), AsyncReader automatically
+   * decodes blobs written by BufferedWriter and yields original records as
+   * passed to BufferedWriter::append(). If this method is called,
+   * BufferedWriteDecoder can be used to decode the blobs.
+   */
+  void doNotDecodeBufferedWrites();
 
   virtual ~AsyncReader() { }
 
