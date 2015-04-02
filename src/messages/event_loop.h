@@ -24,6 +24,7 @@
 #include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
+#include "src/messages/unique_stream_map.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/object_pool.h"

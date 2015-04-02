@@ -20,6 +20,20 @@
 namespace rocketspeed {
 
 /**
+ * Identifies a stream, which is a pair of unidirectional channels, one in each
+ * direction. Messages flowing in one direction within given stream are linearly
+ * ordered. Two messages flowing in opposite directions have no ordering
+ * guarantees.
+ * The ID uniquely identifies a stream within a single physical connection only,
+ * that means if streams are multiplexed on the same connection and have the
+ * same IDs, the IDs need to be remapped. The IDs do not need to be unique
+ * system-wide.
+ */
+// TODO(stupaq) move to stream sockets, once we drop dependency on stream
+// allocator
+typedef std::string StreamID;
+
+/**
  * A unique ID for this RocketSpeed namespace. Each namespace can have its own
  * set of topic names. Namespaces are a way to partition the set of topics in
  * a single instance of RocketSpeed.

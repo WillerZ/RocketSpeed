@@ -11,7 +11,7 @@
 
 #include "include/Types.h"
 #include "src/messages/messages.h"
-#include "src/messages/streams.h"
+#include "src/messages/stream_socket.h"
 #include "src/util/common/autovector.h"
 
 namespace rocketspeed {
