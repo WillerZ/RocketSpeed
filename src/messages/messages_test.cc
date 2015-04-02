@@ -18,11 +18,12 @@ namespace rocketspeed {
 
 class Messaging {
  public:
-  Messaging() {
+  Messaging() : timeout_(1) {
     env_ = Env::Default();
     ASSERT_OK(test::CreateLogger(env_, "MessagesTest", &info_log_));
   }
 
+  const std::chrono::seconds timeout_;
   Env* env_;
   EnvOptions env_options_;
   std::shared_ptr<Logger> info_log_;
@@ -219,6 +220,51 @@ TEST(Messaging, ErrorHandling) {
   TestMessage(msg4);
 }
 
+TEST(Messaging, PingPong) {
+  // Create server loop.
+  MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  env_->StartThread([&]() { server.Run(); }, "server");
+
+  // Posted on every ping message received.
+  port::Semaphore ping_sem;
+
+  // Create client to communicate with the server.
+  MsgLoop loop(env_, env_options_, 58498, 1, info_log_, "client");
+  StreamSocket socket(server.GetClientId(0), loop.GetOutboundAllocator());
+  loop.RegisterCallbacks({
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+        ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
+        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        MessagePing* ping = static_cast<MessagePing*>(msg.get());
+        ASSERT_EQ(ping->GetPingType(), MessagePing::PingType::Response);
+        ASSERT_EQ(ping->GetCookie(), "cookie");
+        ping_sem.Post();
+      }},
+  });
+  env_->StartThread([&]() { loop.Run(); }, "client");
+
+  ASSERT_OK(server.WaitUntilRunning());
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  // Create a message, we'll be sending.
+  MessagePing msg(
+      Tenant::GuestTenant, MessagePing::PingType::Request, "cookie");
+
+  // Send a single ping first.
+  ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+  ASSERT_TRUE(ping_sem.TimedWait(timeout_));
+
+  // Now send multiple ping messages to server back-to-back.
+  const int num_msgs = 100;
+  for (int i = 0; i < num_msgs; i++) {
+    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+  }
+  // Check that all responses were received.
+  for (int i = 0; i < num_msgs; ++i) {
+    ASSERT_TRUE(ping_sem.TimedWait(timeout_));
+  }
+}
+
 TEST(Messaging, SameStreamsOnDifferentSockets) {
   // Posted on any ping message received by the server.
   port::Semaphore server_ping;
@@ -273,13 +319,13 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
     MessagePing ping(
         Tenant::GuestTenant, MessagePing::PingType::Request, "stream1");
     ASSERT_OK(client1.SendRequest(ping, &socket1, 0));
-    ASSERT_TRUE(server_ping.TimedWait(std::chrono::seconds(1)));
+    ASSERT_TRUE(server_ping.TimedWait(timeout_));
   }
   {  // Send a ping from client2 to server.
     MessagePing ping(
         Tenant::GuestTenant, MessagePing::PingType::Request, "stream2");
     ASSERT_OK(client2.SendRequest(ping, &socket2, 0));
-    ASSERT_TRUE(server_ping.TimedWait(std::chrono::seconds(1)));
+    ASSERT_TRUE(server_ping.TimedWait(timeout_));
   }
 
   // Used to assert how many clients the server has seen.
@@ -293,7 +339,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
     // Send back reponse.
     pong->SetPingType(MessagePing::PingType::Response);
     server.SendResponse(*pong, pong->GetOrigin(), 0);
-    ASSERT_TRUE(client_ping.TimedWait(std::chrono::seconds(1)));
+    ASSERT_TRUE(client_ping.TimedWait(timeout_));
   }
   {  // Send back pong to client2.
     std::unique_ptr<MessagePing> pong;
@@ -303,7 +349,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
     // Send back reponse.
     pong->SetPingType(MessagePing::PingType::Response);
     server.SendResponse(*pong, pong->GetOrigin(), 0);
-    ASSERT_TRUE(client_ping.TimedWait(std::chrono::seconds(1)));
+    ASSERT_TRUE(client_ping.TimedWait(timeout_));
   }
 
   ASSERT_EQ(2, seen_by_server.size());
@@ -354,7 +400,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
                     MessagePing::PingType::Request,
                     std::to_string(i % kNumStreams));
     ASSERT_OK(client.SendRequest(msg, &sockets[i % sockets.size()], 0));
-    ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+    ASSERT_TRUE(checkpoint.TimedWait(timeout_));
   }
 }
 
@@ -503,7 +549,7 @@ TEST(Messaging, SocketDeath) {
   MessagePing ping0(
       Tenant::GuestTenant, MessagePing::PingType::Request, "expected");
   ASSERT_OK(sender_loop.SendRequest(ping0, &socket1, 0));
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(checkpoint.TimedWait(timeout_));
 
   // Kill the receiver loop
   receiver_loop.Stop();
@@ -527,7 +573,7 @@ TEST(Messaging, SocketDeath) {
   ASSERT_OK(sender_loop.SendRequest(ping2, &socket2, 0));
 
   // Only the last ping shall get through.
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(checkpoint.TimedWait(timeout_));
 }
 
 TEST(Messaging, GatherTest) {
@@ -544,7 +590,7 @@ TEST(Messaging, GatherTest) {
                           n = std::accumulate(v.begin(), v.end(), 0);
                           done.Post();
                         }));
-  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(done.TimedWait(timeout_));
   ASSERT_EQ(n, 45); // 45 = 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9
 }
 

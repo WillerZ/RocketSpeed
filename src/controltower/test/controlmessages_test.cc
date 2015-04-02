@@ -68,51 +68,6 @@ class ControlTowerTest {
   }
 };
 
-// TODO(stupaq) remove? what does it test exactly?
-TEST(ControlTowerTest, Ping) {
-  // Create cluster with controltower only.
-  LocalTestCluster cluster(info_log_, true, false, false);
-  ASSERT_OK(cluster.GetStatus());
-
-  // Posted on every ping message received.
-  port::Semaphore ping_sem;
-
-  // Create client to communicate with control tower.
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "client");
-  StreamSocket socket(cluster.GetControlTower()->GetClientId(0),
-                      loop.GetOutboundAllocator());
-  loop.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
-        ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
-        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
-        MessagePing* ping = static_cast<MessagePing*>(msg.get());
-        ASSERT_EQ(ping->GetPingType(), MessagePing::PingType::Response);
-        ASSERT_EQ(ping->GetCookie(), "cookie");
-        ping_sem.Post();
-      }},
-  });
-  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop, "client");
-  ASSERT_OK(loop.WaitUntilRunning());
-
-  // Create a message, we'll be sending.
-  MessagePing msg(
-      Tenant::GuestTenant, MessagePing::PingType::Request, "cookie");
-
-  // Send a single ping first.
-  ASSERT_OK(loop.SendRequest(msg, &socket, 0));
-  ASSERT_TRUE(ping_sem.TimedWait(timeout));
-
-  // Now send multiple ping messages to server back-to-back.
-  const int num_msgs = 100;
-  for (int i = 0; i < num_msgs; i++) {
-    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
-  }
-  // Check that all responses were received.
-  for (int i = 0; i < num_msgs; ++i) {
-    ASSERT_TRUE(ping_sem.TimedWait(timeout));
-  }
-}
-
 TEST(ControlTowerTest, Subscribe) {
   // Create cluster with copilot and controltower.
   LocalTestCluster cluster(info_log_, true, true, false);

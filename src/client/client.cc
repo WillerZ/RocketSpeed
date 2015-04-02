@@ -572,6 +572,15 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
+  // Check that message arrived on correct stream.
+  if (worker_data.copilot_socket.GetStreamID() != msg->GetOrigin()) {
+    LOG_WARN(info_log_,
+             "Incorrect message stream: (%s) expected: (%s)",
+             msg->GetOrigin().c_str(),
+             worker_data.copilot_socket.GetStreamID().c_str());
+    return;
+  }
+
   // Check if we can deliver the message.
   auto rcv_st = worker_data.ReceiveMessage(data);
   switch (rcv_st) {
@@ -620,6 +629,15 @@ void ClientImpl::ProcessGap(std::unique_ptr<Message> msg) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
+  // Check that message arrived on correct stream.
+  if (worker_data.copilot_socket.GetStreamID() != msg->GetOrigin()) {
+    LOG_WARN(info_log_,
+             "Incorrect message stream: (%s) expected: (%s)",
+             msg->GetOrigin().c_str(),
+             worker_data.copilot_socket.GetStreamID().c_str());
+    return;
+  }
+
   // Check if we can deliver the message.
   auto rcv_st = worker_data.ReceiveMessage(gap);
   switch (rcv_st) {
@@ -662,6 +680,15 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   // Get worker data that all topics in the message are assigned to.
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
+
+  // Check that message arrived on correct stream.
+  if (worker_data.copilot_socket.GetStreamID() != msg->GetOrigin()) {
+    LOG_WARN(info_log_,
+             "Incorrect message stream: (%s) expected: (%s)",
+             msg->GetOrigin().c_str(),
+             worker_data.copilot_socket.GetStreamID().c_str());
+    return;
+  }
 
   // Acknowledge subscription requests.
   const std::vector<TopicPair>& requests = meta->GetTopicInfo();

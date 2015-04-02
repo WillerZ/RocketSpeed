@@ -200,10 +200,19 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   wake_lock_->AcquireForReceiving();
   msg_loop_->ThreadCheck();
 
-  const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
-
   int worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
+
+  // Check that message arrived on correct stream.
+  if (worker_data.pilot_socket.GetStreamID() != msg->GetOrigin()) {
+    LOG_WARN(info_log_,
+             "Incorrect message stream: (%s) expected: (%s)",
+             msg->GetOrigin().c_str(),
+             worker_data.pilot_socket.GetStreamID().c_str());
+    return;
+  }
+
+  const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
