@@ -9,10 +9,13 @@
 #include <chrono>
 #include <numeric>
 #include <thread>
+
 #include "include/Logger.h"
 #include "src/port/port.h"
-#include "src/messages/serializer.h"
+#include "src/messages/event_loop.h"
+#include "src/messages/stream_allocator.h"
 #include "src/messages/messages.h"
+#include "src/messages/serializer.h"
 #include "src/util/common/base_env.h"
 
 namespace {
@@ -68,7 +71,6 @@ MsgLoop::MsgLoop(BaseEnv* env,
     , env_options_(env_options)
     , info_log_(info_log)
     , name_(name)
-    , inbound_alloc_(outbound_alloc_.Split())
     , next_worker_id_(0)
     , stats_("rocketspeed." + name) {
   assert(info_log);
@@ -104,7 +106,8 @@ MsgLoop::MsgLoop(BaseEnv* env,
     event_loops_[LoadBalancedWorkerId()]->Accept(fd);
   };
 
-  auto allocs = inbound_alloc_.Divide(num_workers);
+  // Create a stream allocator for the entire stream ID space.
+  auto allocs = StreamAllocator().Divide(num_workers);
   for (int i = 0; i < num_workers; ++i) {
     EventLoop* event_loop = new EventLoop(env,
                                           env_options,
@@ -227,6 +230,15 @@ void MsgLoop::Stop() {
 
 MsgLoop::~MsgLoop() {
   Stop();
+}
+
+StreamSocket MsgLoop::CreateOutboundStream(ClientID destination,
+                                           int worker_id) {
+  assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
+  // Corresponding call in event loop is not thread safe, so we need to provide
+  // external synchronisation.
+  std::lock_guard<std::mutex> lock(stream_allocation_mutex_);
+  return event_loops_[worker_id]->CreateOutboundStream(std::move(destination));
 }
 
 void MsgLoop::SendCommandToSelf(std::unique_ptr<Command> command) {

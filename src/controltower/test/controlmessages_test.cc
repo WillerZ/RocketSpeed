@@ -86,8 +86,8 @@ TEST(ControlTowerTest, Subscribe) {
 
   // create a client to communicate with the ControlTower
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "client");
-  StreamSocket socket(cluster.GetControlTower()->GetClientId(0),
-                      loop.GetOutboundAllocator());
+  StreamSocket socket(
+      loop.CreateOutboundStream(cluster.GetControlTower()->GetClientId(0), 0));
   // Define a callback to process the subscribe response at the client
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
@@ -129,7 +129,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 
   // create a client to communicate with the ControlTower
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
-  StreamSocket socket1(ct->GetClientId(0), loop1.GetOutboundAllocator());
+  StreamSocket socket1(loop1.CreateOutboundStream(ct->GetClientId(0), 0));
   loop1.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
         ASSERT_EQ(socket1.GetStreamID(), msg->GetOrigin());
@@ -163,7 +163,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 
   // create second client to communicate with the ControlTower
   MsgLoop loop2(env_, env_options_, 58489, 1, info_log_, "loop2");
-  StreamSocket socket2(ct->GetClientId(0), loop2.GetOutboundAllocator());
+  StreamSocket socket2(loop2.CreateOutboundStream(ct->GetClientId(0), 0));
   loop2.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
         ASSERT_EQ(socket2.GetStreamID(), msg->GetOrigin());

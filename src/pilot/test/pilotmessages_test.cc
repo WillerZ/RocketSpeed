@@ -59,8 +59,8 @@ TEST(PilotTest, Publish) {
 
   // create a client to communicate with the Pilot
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  StreamSocket socket(cluster.GetPilotHostIds().front().ToClientId(),
-                      loop.GetOutboundAllocator());
+  StreamSocket socket(loop.CreateOutboundStream(
+      cluster.GetPilotHostIds().front().ToClientId(), 0));
   loop.RegisterCallbacks({
       {MessageType::mDataAck, [&](std::unique_ptr<Message> msg) {
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());

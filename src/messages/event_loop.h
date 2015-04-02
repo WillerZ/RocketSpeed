@@ -24,6 +24,7 @@
 #include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
+#include "src/messages/stream_allocator.h"
 #include "src/messages/unique_stream_map.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
@@ -137,7 +138,7 @@ class EventLoop {
  public:
   static void EnableDebug();
 
-  /*
+  /**
    * Create an EventLoop at the specified port.
    * @param port The port on which the EventLoop is running.
    *             Set to <= 0 to have no accept loop.
@@ -145,7 +146,7 @@ class EventLoop {
    * @param event_callback Callback invoked when Dispatch is called
    * @param accept_callback Callback invoked when a new client connects
    * @param command_queue_size The size of the internal command queue
-   * @param inbound_alloc Stream ID allocator for remapping inbound streams.
+   * @param allocator Represents a set of stream IDs available to this loop.
    */
   EventLoop(BaseEnv* env,
             EnvOptions env_options,
@@ -153,7 +154,7 @@ class EventLoop {
             const std::shared_ptr<Logger>& info_log,
             EventCallbackType event_callback,
             AcceptCallbackType accept_callback,
-            StreamAllocator inbound_alloc,
+            StreamAllocator allocator,
             const std::string& stats_prefix = "",
             uint32_t command_queue_size = 1000000);
 
@@ -170,6 +171,15 @@ class EventLoop {
 
   // Registers callback for certain command types.
   void RegisterCallback(CommandType type, CommandCallbackType callbacks);
+
+  /**
+   * Returns a new outbound socket. Returned socket is closed (not yet opened)
+   * and its stream is allocated using stream ID space available to this loop.
+   * This call is not thread-safe.
+   * @param destination A destination for the stream.
+   * @return A brand new stream socket.
+   */
+  StreamSocket CreateOutboundStream(ClientID destination);
 
   // Send a command to the event loop for processing.
   // This call is thread-safe.
@@ -298,6 +308,8 @@ class EventLoop {
   rocketspeed::port::Eventfd command_ready_eventfd_;
 
   StreamRouter stream_router_;
+  /** Allocator for outboung streams. */
+  StreamAllocator outbound_allocator_;
 
   // List of all sockets.
   std::list<std::unique_ptr<SocketEvent>> all_sockets_;

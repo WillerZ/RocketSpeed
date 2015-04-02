@@ -2,6 +2,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
 #include <atomic>
@@ -12,9 +13,10 @@
 #include <vector>
 
 #include "src/messages/commands.h"
-#include "src/messages/serializer.h"
-#include "src/messages/messages.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/messages.h"
+#include "src/messages/serializer.h"
+#include "src/messages/stream_socket.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
 #include "src/util/mutexlock.h"
@@ -66,6 +68,15 @@ class MsgLoopBase {
 
   // The client ID of a specific event loop.
   virtual const ClientID& GetClientId(int worker_id) const = 0;
+
+  /**
+   * Returns a new outbound socket. Returned socket is closed (not yet opened)
+   * and its stream is bound to given worker thread of the message loop.
+   * @param worker_id An ID of a worker that this stream will be assigned to.
+   * @return A brand new stream socket.
+   */
+  virtual StreamSocket CreateOutboundStream(ClientID destination,
+                                            int worker_id) = 0;
 
   /**
    * Send a command to a specific event loop for processing.
@@ -122,12 +133,6 @@ class MsgLoopBase {
 
   // Retrieves the number of EventLoop threads.
   virtual int GetNumWorkers() const = 0;
-
-  /**
-   * Returns an allocator, owned by the loop, which can be used to create
-   * outbound streams.
-   */
-  virtual StreamAllocator* GetOutboundAllocator() = 0;
 
   // Get the worker ID of the least busy event loop.
   virtual int LoadBalancedWorkerId() const = 0;

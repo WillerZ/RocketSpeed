@@ -1014,6 +1014,10 @@ void EventLoop::Stop() {
   }
 }
 
+StreamSocket EventLoop::CreateOutboundStream(ClientID destination) {
+  return StreamSocket(destination, outbound_allocator_.Next());
+}
+
 Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
   TimestampedCommand ts_cmd { std::move(command), env_->NowMicros() };
   bool success = command_queue_.write(std::move(ts_cmd));
@@ -1222,7 +1226,7 @@ EventLoop::EventLoop(BaseEnv* env,
                      const std::shared_ptr<Logger>& info_log,
                      EventCallbackType event_callback,
                      AcceptCallbackType accept_callback,
-                     StreamAllocator inbound_alloc,
+                     StreamAllocator allocator,
                      const std::string& stats_prefix,
                      uint32_t command_queue_size) :
   env_(env),
@@ -1237,7 +1241,8 @@ EventLoop::EventLoop(BaseEnv* env,
   shutdown_eventfd_(rocketspeed::port::Eventfd(true, true)),
   command_queue_(command_queue_size),
   command_ready_eventfd_(rocketspeed::port::Eventfd(true, true)),
-  stream_router_(std::move(inbound_alloc)),
+  stream_router_(allocator.Split()),
+  outbound_allocator_(std::move(allocator)),
   active_connections_(0),
   stats_(stats_prefix) {
 

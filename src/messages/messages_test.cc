@@ -217,7 +217,7 @@ TEST(Messaging, PingPong) {
 
   // Create client to communicate with the server.
   MsgLoop loop(env_, env_options_, 58498, 1, info_log_, "client");
-  StreamSocket socket(server.GetClientId(0), loop.GetOutboundAllocator());
+  StreamSocket socket(loop.CreateOutboundStream(server.GetClientId(0), 0));
   loop.RegisterCallbacks({
       {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
         ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
@@ -297,8 +297,8 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   ASSERT_OK(client2.WaitUntilRunning());
 
   // Create two streams on different loops...
-  StreamSocket socket1(server.GetClientId(0), client1.GetOutboundAllocator());
-  StreamSocket socket2(server.GetClientId(0), client2.GetOutboundAllocator());
+  StreamSocket socket1(client1.CreateOutboundStream(server.GetClientId(0), 0));
+  StreamSocket socket2(client2.CreateOutboundStream(server.GetClientId(0), 0));
   // ...that have the same stream ID.
   ASSERT_EQ(socket1.GetStreamID(), socket2.GetStreamID());
 
@@ -355,7 +355,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
   // Create a bunch of sockets for different streams.
   std::vector<StreamSocket> sockets;
   for (int i = 0; i < kNumStreams; ++i) {
-    sockets.emplace_back(server.GetClientId(0), client.GetOutboundAllocator());
+    sockets.emplace_back(client.CreateOutboundStream(server.GetClientId(0), 0));
   }
 
   // Post to the checkpoint when receiving a ping.
@@ -444,8 +444,8 @@ TEST(Messaging, GracefulGoodbye) {
   ASSERT_OK(client.WaitUntilRunning());
 
   // Two streams.
-  StreamSocket c1(server.GetClientId(0), client.GetOutboundAllocator());
-  StreamSocket c2(server.GetClientId(0), client.GetOutboundAllocator());
+  StreamSocket c1(client.CreateOutboundStream(server.GetClientId(0), 0));
+  StreamSocket c2(client.CreateOutboundStream(server.GetClientId(0), 0));
 
   // Ping request c1 -> server
   MessagePing ping1_req(Tenant::GuestTenant, MessagePing::Request, "c1");
@@ -529,7 +529,7 @@ TEST(Messaging, SocketDeath) {
   auto receiver_client_id = receiver_loop.GetClientId(0);
 
   // Create logical stream and corresponding socket1.
-  StreamSocket socket1(receiver_client_id, "socket1");
+  StreamSocket socket1(sender_loop.CreateOutboundStream(receiver_client_id, 0));
 
   // Send a ping from sender_loop on socket1.
   MessagePing ping0(
@@ -546,12 +546,15 @@ TEST(Messaging, SocketDeath) {
   receiver_loop1.RegisterCallbacks(callbacks);
   ASSERT_OK(receiver_loop1.WaitUntilRunning());
 
+  // It has to listen on the same address.
+  ASSERT_EQ(receiver_loop1.GetClientId(0), receiver_client_id);
+
   // Send a ping from sender_loop on socket1.
   MessagePing ping1(Tenant::GuestTenant, MessagePing::PingType::Request, "bad");
   ASSERT_OK(sender_loop.SendRequest(ping1, &socket1, 0));
 
   // Create logical stream and corresponding socket2 with.
-  StreamSocket socket2(receiver_client_id, "socket2");
+  StreamSocket socket2(sender_loop.CreateOutboundStream(receiver_client_id, 0));
 
   // Send a ping from sender_loop on socket2.
   MessagePing ping2(

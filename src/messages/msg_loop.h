@@ -2,6 +2,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
 #include <atomic>
@@ -9,16 +10,15 @@
 #include <memory>
 
 #include "src/messages/commands.h"
-#include "src/messages/serializer.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop_base.h"
-#include "src/messages/event_loop.h"
+#include "src/port/Env.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/thread_local.h"
-#include "src/port/Env.h"
 
 namespace rocketspeed {
 
+class EventLoop;
 class Logger;
 
 class MsgLoop : public MsgLoopBase {
@@ -67,6 +67,9 @@ class MsgLoop : public MsgLoopBase {
     return worker_client_ids_[worker_id];
   }
 
+  StreamSocket CreateOutboundStream(ClientID destination,
+                                    int worker_id) override;
+
   /**
    * Send a command to the event loop that the thread is currently running on.
    * Calling from non event loop thread has undefined behaviour.
@@ -105,10 +108,6 @@ class MsgLoop : public MsgLoopBase {
   // Retrieves the number of EventLoop threads.
   int GetNumWorkers() const {
     return static_cast<int>(event_loops_.size());
-  }
-
-  virtual StreamAllocator* GetOutboundAllocator() {
-    return &outbound_alloc_;
   }
 
   // Get the worker ID of the least busy event loop.
@@ -158,10 +157,8 @@ class MsgLoop : public MsgLoopBase {
   // Used for stats and thread naming.
   std::string name_;
 
-  /** The set of stream IDs for outbound connections. */
-  StreamAllocator outbound_alloc_;
-  /** The set of stream IDs for inbound connections. */
-  const StreamAllocator inbound_alloc_;
+  /** External synchronisation for getting sockets. */
+  std::mutex stream_allocation_mutex_;
 
   // Looping counter to distribute load on the message loop.
   mutable std::atomic<int> next_worker_id_;

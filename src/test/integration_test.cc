@@ -623,8 +623,8 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   callbacks[MessageType::mGap] = [](std::unique_ptr<Message> msg) {};
   callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>) {};
   client.RegisterCallbacks(callbacks);
-  StreamSocket socket(cluster.GetCopilotHostIds().front().ToClientId(),
-                      client.GetOutboundAllocator());
+  StreamSocket socket(client.CreateOutboundStream(
+      cluster.GetCopilotHostIds().front().ToClientId(), 0));
   env_->StartThread([&] () { client.Run(); }, "client");
   client.WaitUntilRunning();
 

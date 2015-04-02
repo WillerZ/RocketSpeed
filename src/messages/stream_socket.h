@@ -8,9 +8,22 @@
 #include <string>
 
 #include "include/Types.h"
-#include "src/messages/stream_allocator.h"
 
 namespace rocketspeed {
+
+class EventLoop;
+
+/**
+ * Identifies a stream, which is a pair of unidirectional channels, one in each
+ * direction. Messages flowing in one direction within given stream are linearly
+ * ordered. Two messages flowing in opposite directions have no ordering
+ * guarantees.
+ * The ID uniquely identifies a stream within a single physical connection only,
+ * that means if streams are multiplexed on the same connection and have the
+ * same IDs, the IDs need to be remapped. The IDs do not need to be unique
+ * system-wide.
+ */
+typedef std::string StreamID;
 
 /** Keeps state of the stream as seen by its creator. */
 class StreamSocket {
@@ -39,25 +52,13 @@ class StreamSocket {
    * @param destination The destination client ID.
    * @param stream_id ID of the stream.
    */
-  // TODO(stupaq) remove once everyone can allocate stream IDs
+  // TODO(stupaq) make private (event loop is our friend)
   StreamSocket(ClientID destination, StreamID stream_id)
       : destination_(std::move(destination))
       , stream_id_(stream_id)
       , is_open_(false) {
   }
 
-  /**
-   * Creates a socket representing a stream.
-   * @param destination The destination client ID.
-   * @param alloc Allocator, which will provide stream ID.
-   */
-  StreamSocket(ClientID destination, StreamAllocator* alloc)
-      : destination_(std::move(destination))
-      , stream_id_(alloc->Next())
-      , is_open_(false) {
-  }
-
-  // Noncopyable
   StreamSocket(const StreamSocket&) = delete;
   StreamSocket& operator=(const StreamSocket&) = delete;
   // Movable
@@ -89,6 +90,9 @@ class StreamSocket {
   }
 
  private:
+  /** For constructor from the outside world. */
+  friend class EventLoop;
+
   ClientID destination_;
   StreamID stream_id_;
   bool is_open_;

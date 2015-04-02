@@ -8,7 +8,7 @@
 #include <limits>
 #include <string>
 
-#include "include/Types.h"
+#include "src/messages/stream_socket.h"
 
 namespace rocketspeed {
 
@@ -44,6 +44,13 @@ class StreamAllocator {
   bool IsEmpty() const {
     CheckValid();
     return first_ == end_;
+  }
+
+  bool IsSourceOf(StreamID str) const {
+    CheckValid();
+    StreamIDNumeric stream = strtoul(str.c_str(), nullptr, 10);
+    assert(std::to_string(stream) == str);
+    return (first_ <= stream) && (stream < end_);
   }
 
   /**
@@ -86,6 +93,7 @@ class StreamAllocator {
   }
 
  private:
+  /** For hiding constructors from the outside world. */
   friend class MsgLoop;
 
   static const StreamIDNumeric kGlobalFirst =

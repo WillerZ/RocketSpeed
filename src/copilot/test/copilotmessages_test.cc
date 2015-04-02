@@ -73,8 +73,8 @@ TEST(CopilotTest, Subscribe) {
 
   // create a client to communicate with the Copilot
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  StreamSocket socket(cluster.GetCopilotHostIds().front().ToClientId(),
-                      loop.GetOutboundAllocator());
+  StreamSocket socket(loop.CreateOutboundStream(
+      cluster.GetCopilotHostIds().front().ToClientId(), 0));
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
@@ -188,8 +188,8 @@ TEST(CopilotTest, Rollcall) {
 
   // create a client to communicate with the Copilot
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  StreamSocket socket(cluster.GetCopilotHostIds().front().ToClientId(),
-                      loop.GetOutboundAllocator());
+  StreamSocket socket(loop.CreateOutboundStream(
+      cluster.GetCopilotHostIds().front().ToClientId(), 0));
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
