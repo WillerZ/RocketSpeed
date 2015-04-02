@@ -304,22 +304,6 @@ int MsgLoop::LoadBalancedWorkerId() const {
   return worker_id;
 }
 
-bool MsgLoop::CheckMessageOrigin(const Message* msg) {
-  const int worker_id = GetThreadWorkerIndex();
-
-  if (msg->GetOrigin() != GetClientId(worker_id)) {
-    stats_.bad_origin->Add(1);
-    LOG_ERROR(info_log_,
-      "Received message with incorrect origin. Expected '%s', received '%s'",
-      GetClientId(worker_id).c_str(),
-      msg->GetOrigin().c_str());
-    info_log_->Flush();
-    assert(false);
-    return false;
-  }
-  return true;
-}
-
 Status MsgLoop::WaitUntilRunning(std::chrono::seconds timeout) {
   for (auto& event_loop : event_loops_) {
     Status st = event_loop->WaitUntilRunning(timeout);

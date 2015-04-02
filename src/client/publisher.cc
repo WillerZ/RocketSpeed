@@ -200,11 +200,6 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   wake_lock_->AcquireForReceiving();
   msg_loop_->ThreadCheck();
 
-  // Check that message has correct origin.
-  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
-    return;
-  }
-
   const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
 
   int worker_id = msg_loop_->GetThreadWorkerIndex();

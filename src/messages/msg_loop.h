@@ -125,9 +125,6 @@ class MsgLoop : public MsgLoopBase {
   // Will assert if called from a non-EventLoop thread.
   int GetThreadWorkerIndex() const;
 
-  // Checks that the message origin matches this worker loop.
-  bool CheckMessageOrigin(const Message* msg);
-
   Status WaitUntilRunning(std::chrono::seconds timeout =
                             std::chrono::seconds(10));
 

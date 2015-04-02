@@ -129,9 +129,6 @@ class MsgLoopBase {
   // Retrieves the worker ID for the currently running thread.
   virtual int GetThreadWorkerIndex() const = 0;
 
-  // Checks that the message origin matches this worker loop.
-  virtual bool CheckMessageOrigin(const Message* msg) = 0;
-
   /**
    * Waits until the message loop has run, or failed to start. If the loop
    * started and has subsequently stopped, the status will still be OK().

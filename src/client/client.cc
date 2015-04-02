@@ -559,12 +559,6 @@ void ClientImpl::SaveSubscriptions(SnapshotCallback snapshot_callback) {
 void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
 
-  // Check that message has correct origin.
-  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
-    LOG_WARN(info_log_, "Message origin does not match client ID.");
-    return;
-  }
-
   const MessageData* data = static_cast<const MessageData*>(msg.get());
   // Extract topic from message.
   TopicID topic_id(data->GetNamespaceId().ToString(),
@@ -613,12 +607,6 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
 void ClientImpl::ProcessGap(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
 
-  // Check that message has correct origin.
-  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
-    LOG_WARN(info_log_, "Message origin does not match client ID.");
-    return;
-  }
-
   const MessageGap* gap = static_cast<const MessageGap*>(msg.get());
   // Extract topic from message.
   TopicID topic_id(gap->GetNamespaceId().ToString(),
@@ -661,12 +649,6 @@ void ClientImpl::ProcessGap(std::unique_ptr<Message> msg) {
 
 void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
   wake_lock_.AcquireForReceiving();
-
-  // Check that message has correct origin.
-  if (!msg_loop_->CheckMessageOrigin(msg.get())) {
-    LOG_WARN(info_log_, "Message origin does not match client ID.");
-    return;
-  }
 
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());
   // The client should receive only responses to subscribe/unsubscribe.

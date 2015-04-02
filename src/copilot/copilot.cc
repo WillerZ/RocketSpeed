@@ -144,11 +144,6 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
 
   const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
 
-  // Check that message has correct origin.
-  if (!options_.msg_loop->CheckMessageOrigin(msg.get())) {
-    return;
-  }
-
   // get the request message
   MessageData* data = static_cast<MessageData*>(msg.get());
 
@@ -187,13 +182,6 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
 
   // get the request message
   MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
-
-  if (request->GetMetaType() == MessageMetadata::MetaType::Response) {
-    // Check that message has correct origin.
-    if (!options_.msg_loop->CheckMessageOrigin(msg.get())) {
-      return;
-    }
-  }
 
   // Process each topic
   for (size_t i = 0; i < request->GetTopicInfo().size(); i++) {
@@ -240,11 +228,6 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg) {
   options_.msg_loop->ThreadCheck();
 
   const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
-
-  // Check that message has correct origin.
-  if (!options_.msg_loop->CheckMessageOrigin(msg.get())) {
-    return;
-  }
 
   // get the gap message
   MessageGap* gap = static_cast<MessageGap*>(msg.get());
