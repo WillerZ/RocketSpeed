@@ -267,9 +267,9 @@ void Proxy::HandleDestroySession(int64_t session) {
 
   // Send goodbye to all hosts.
   MessageGoodbye goodbye(Tenant::GuestTenant,
-                         std::to_string(session),
                          MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
+  goodbye.SetOrigin(std::to_string(session));
 
   int worker = WorkerForSession(session);
   for (StreamSocket& socket : sockets) {

@@ -105,6 +105,11 @@ Message::CreateNewInstance(Slice* in) {
 std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
                                                     size_t size) {
   Slice slice(in.get(), size);
+  return CreateNewInstance(std::move(in), slice);
+}
+
+std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
+                                                    Slice slice) {
   std::unique_ptr<Message> msg = Message::CreateNewInstance(&slice);
   if (msg) {
     msg->buffer_ = std::move(in);
@@ -126,9 +131,6 @@ Slice MessagePing::Serialize() const {
   PutFixedEnum8(&serialize_buffer__, pingtype_);
   // cookie
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(cookie_));
-
-  //  origin
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   return Slice(serialize_buffer__);
 }
@@ -152,21 +154,15 @@ Status MessagePing::DeSerialize(Slice* in) {
   if (!GetLengthPrefixedSlice(in, &cookie_)) {
     return Status::InvalidArgument("Bad cookie");
   }
-
-  // extract origin
-  if (!GetLengthPrefixedSlice(in, &origin_)) {
-    return Status::InvalidArgument("Bad HostName");
-  }
   return Status::OK();
 }
 
 MessageData::MessageData(MessageType type,
                          TenantID tenantID,
-                         const ClientID& origin,
                          const Slice& topic_name,
                          const Slice& namespace_id,
                          const Slice& payload) :
-  Message(type, tenantID, origin),
+  Message(type, tenantID),
   topic_name_(topic_name),
   payload_(payload),
   namespaceid_(namespace_id) {
@@ -177,7 +173,7 @@ MessageData::MessageData(MessageType type,
 }
 
 MessageData::MessageData(MessageType type):
-  MessageData(type, Tenant::InvalidTenant, "", Slice(),
+  MessageData(type, Tenant::InvalidTenant, Slice(),
               InvalidNamespace, Slice()) {
 }
 
@@ -190,9 +186,6 @@ MessageData::~MessageData() {
 
 Slice MessageData::Serialize() const {
   PutFixedEnum8(&serialize_buffer__, type_);
-
-  // origin
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // seqno
   PutVarint64(&serialize_buffer__, seqno_prev_);
@@ -207,11 +200,6 @@ Status MessageData::DeSerialize(Slice* in) {
   // extract type
   if (!GetFixedEnum8(in, &type_)) {
     return Status::InvalidArgument("Bad type");
-  }
-
-  // extract origin
-  if (!GetLengthPrefixedSlice(in, &origin_)) {
-    return Status::InvalidArgument("Bad HostName");
   }
 
   // extract sequence numbers of message
@@ -273,13 +261,11 @@ Status MessageData::DeSerializeStorage(Slice* in) {
 
 MessageMetadata::MessageMetadata(TenantID tenantID,
   const MetaType metatype,
-  const ClientID& origin,
   const std::vector<TopicPair>& topics):
   metatype_(metatype),
   topics_(topics) {
   type_ = mMetadata;
   tenantid_ = tenantID;
-  origin_ = origin;
 }
 
 MessageMetadata::MessageMetadata() {
@@ -295,7 +281,6 @@ Slice MessageMetadata::Serialize() const {
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // Now serialize message specific data
   PutFixedEnum8(&serialize_buffer__, metatype_);
@@ -320,11 +305,6 @@ Status MessageMetadata::DeSerialize(Slice* in) {
   // extrant tenant ID
   if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
-  }
-
-  // extract host id
-  if (!GetLengthPrefixedSlice(in, &origin_)) {
-    return Status::InvalidArgument("Bad HostName");
   }
 
   // extract metadata type
@@ -363,12 +343,10 @@ Status MessageMetadata::DeSerialize(Slice* in) {
 }
 
 MessageDataAck::MessageDataAck(TenantID tenantID,
-                               const ClientID& origin,
                                AckVector acks)
 : acks_(std::move(acks)) {
   type_ = mDataAck;
   tenantid_ = tenantID;
-  origin_ = origin;
 }
 
 MessageDataAck::~MessageDataAck() {
@@ -382,7 +360,6 @@ Slice MessageDataAck::Serialize() const {
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // serialize message specific contents
   PutVarint32(&serialize_buffer__, static_cast<uint32_t>(acks_.size()));
@@ -404,11 +381,6 @@ Status MessageDataAck::DeSerialize(Slice* in) {
   // extrant tenant ID
   if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
-  }
-
-  // extract host id
-  if (!GetLengthPrefixedSlice(in, &origin_)) {
-    return Status::InvalidArgument("Bad HostName");
   }
 
   // extract number of acks
@@ -442,7 +414,6 @@ Status MessageDataAck::DeSerialize(Slice* in) {
 }
 
 MessageGap::MessageGap(TenantID tenantID,
-                       const ClientID& origin,
                        Slice namespace_id,
                        Slice topic_name,
                        GapType gap_type,
@@ -455,7 +426,6 @@ MessageGap::MessageGap(TenantID tenantID,
 , gap_to_(gap_to) {
   type_ = mGap;
   tenantid_ = tenantID;
-  origin_ = origin;
 }
 
 MessageGap::~MessageGap() {
@@ -465,7 +435,6 @@ Slice MessageGap::Serialize() const {
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // Write the gap information.
   PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
@@ -485,11 +454,6 @@ Status MessageGap::DeSerialize(Slice* in) {
   // extrant tenant ID
   if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
-  }
-
-  // extract host id
-  if (!GetLengthPrefixedSlice(in, &origin_)) {
-    return Status::InvalidArgument("Bad HostName");
   }
 
   // Read topic ID.
@@ -515,21 +479,18 @@ Status MessageGap::DeSerialize(Slice* in) {
 }
 
 MessageGoodbye::MessageGoodbye(TenantID tenant_id,
-                               ClientID origin,
                                Code code,
                                OriginType origin_type)
 : code_(code)
 , origin_type_(origin_type) {
   type_ = mGoodbye;
   tenantid_ = tenant_id;
-  origin_ = std::move(origin);
 }
 
 Slice MessageGoodbye::Serialize() const {
   // Type, tenantId and origin
   PutFixedEnum8(&serialize_buffer__, type_);
   PutFixed16(&serialize_buffer__, tenantid_);
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
   // MessageGoodbye specifics
   PutFixedEnum8(&serialize_buffer__, code_);
@@ -547,11 +508,6 @@ Status MessageGoodbye::DeSerialize(Slice* in) {
   // extrant tenant ID
   if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
-  }
-
-  // extract host id
-  if (!GetLengthPrefixedSlice(in, &origin_)) {
-    return Status::InvalidArgument("Bad HostName");
   }
 
   // extract code

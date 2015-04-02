@@ -129,6 +129,15 @@ class Message : public Serializer {
   static std::unique_ptr<Message> CreateNewInstance(std::unique_ptr<char[]> in,
                                                     size_t size);
 
+  /**
+   * Creates a Message of the appropriate subtype by looking at the
+   * MessageType. Returns nullptr on error.  The memory ownership is passed
+   * to the message itself, and will be discarded once the message is destroyed.
+   * Uses a subslice of `in` to parse the message.
+   */
+  static std::unique_ptr<Message> CreateNewInstance(std::unique_ptr<char[]> in,
+                                                    Slice slice);
+
   /*
    * Inherited from Serializer
    */
@@ -136,15 +145,15 @@ class Message : public Serializer {
   void SerializeToString(std::string* out) const;
 
  protected:
-  Message(MessageType type, TenantID tenantid, const ClientID& origin) :
-          type_(type), tenantid_(tenantid), origin_(origin) {
+  Message(MessageType type, TenantID tenantid) :
+          type_(type), tenantid_(tenantid) {
   }
   Message() : type_(MessageType::NotInitialized) {
   }
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
-  ClientID origin_;                 // sender's id
+  ClientID origin_;                 // origin stream
   std::unique_ptr<char[]> buffer_;  // owned memory for slices
 
  private:
@@ -171,7 +180,7 @@ class MessagePing : public Message {
   MessagePing() : pingtype_(PingType::NotInitialized) {}
 
   MessagePing(TenantID tenantid, PingType pingtype, std::string cookie)
-      : Message(MessageType::mPing, tenantid, "origin shouldn't matter")
+      : Message(MessageType::mPing, tenantid)
       , pingtype_(pingtype)
       , cookie_(std::move(cookie)) {}
 
@@ -218,7 +227,6 @@ class MessageData : public Message {
    */
   MessageData(MessageType type,
               TenantID tenantID,
-              const ClientID& origin,
               const Slice& topic_name,
               const Slice& namespace_id,
               const Slice& payload);
@@ -296,8 +304,8 @@ class MessageData : public Message {
   /**
    * @return Deserializes the message from the log storage format.
    *         Only the tenant ID, topic_name, and payload are deserialized.
-   *         The seqno_ and origin_ are not deserialized. Sequence number is
-   *         stored by the log storage, and origin_ is not stored at all.
+   *         The seqno_ is not deserialized. Sequence number is
+   *         stored by the log storage.
    */
   Status DeSerializeStorage(Slice* in);
 
@@ -328,12 +336,11 @@ class MessageMetadata : public Message {
   /**
    * Creates a message by specifying its contents.
    * @param seqno The client-supplied sequence number of this metadata msg
-   * @param hostid The identifier of the client
+   * @param metatype Request or response.
    * @param topics The list of topics to subscribe-to/unsubscribe-from
    */
   MessageMetadata(TenantID tenantID,
                   const MetaType metatype,
-                  const ClientID& origin,
                   const std::vector<TopicPair>& topics);
 
   /*
@@ -345,7 +352,7 @@ class MessageMetadata : public Message {
    * copy constructor
    */
   explicit MessageMetadata(MessageMetadata* in) :
-    Message(MessageType::mMetadata, in->GetTenantID(), in->GetOrigin()),
+    Message(MessageType::mMetadata, in->GetTenantID()),
     metatype_(in->GetMetaType()),
     topics_(in->GetTopicInfo()) {
   }
@@ -435,7 +442,6 @@ class MessageDataAck : public Message {
    * @param msgid The MsgIds of the messages that have been ack'd
    */
   explicit MessageDataAck(TenantID tenantID,
-                          const ClientID& origin,
                           AckVector acks);
   /**
    * default constructor
@@ -474,7 +480,6 @@ class MessageGap : public Message {
    * @param msgid The MsgIds of the messages that have been ack'd
    */
   explicit MessageGap(TenantID tenantID,
-                      const ClientID& origin,
                       Slice namespace_id,
                       Slice topic_name,
                       GapType gap_type,
@@ -563,11 +568,9 @@ class MessageGoodbye : public Message {
    * Creates a goodbye message.
    *
    * @param tenant_id The tenant ID of the origin.
-   * @param origin The originator of the communication.
    * @param code The error code.
    */
   explicit MessageGoodbye(TenantID tenant_id,
-                          ClientID origin,
                           Code code,
                           OriginType origin_type);
 

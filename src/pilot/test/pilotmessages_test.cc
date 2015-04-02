@@ -81,7 +81,6 @@ TEST(PilotTest, Publish) {
     std::string serial;
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
-                     "",
                      Slice(topic),
                      nsid,
                      Slice(payload));

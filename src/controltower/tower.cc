@@ -248,8 +248,8 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
     MessageMetadata* newmsg = new MessageMetadata(
                             request->GetTenantID(),
                             request->GetMetaType(),
-                            request->GetOrigin(),
                             std::vector<TopicPair> {topic});
+    newmsg->SetOrigin(request->GetOrigin());
     std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to the destination room

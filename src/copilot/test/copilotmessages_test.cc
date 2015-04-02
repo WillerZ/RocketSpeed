@@ -97,7 +97,6 @@ TEST(CopilotTest, Subscribe) {
                                 MetadataType::mUnSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         { TopicPair(0, topic, type, ns) });
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
     sent_msgs_.insert(topic);
@@ -229,7 +228,6 @@ TEST(CopilotTest, Rollcall) {
     auto type = MetadataType::mSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         { TopicPair(0, topic, type, ns) });
     sent_msgs_.insert(topic);
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
@@ -248,7 +246,6 @@ TEST(CopilotTest, Rollcall) {
     auto type = MetadataType::mUnSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         { TopicPair(0, topic, type, ns) });
     ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
     sent_msgs_.insert(topic);

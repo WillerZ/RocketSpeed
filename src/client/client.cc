@@ -522,7 +522,6 @@ void ClientImpl::HandleSubscription(TopicPair request, int worker_id) {
   // Construct a message.
   MessageMetadata message(tenant_id_,
                           MessageMetadata::MetaType::Request,
-                          msg_loop_->GetClientId(worker_id),
                           {std::move(request)});
 
   // Send to event loop for processing.

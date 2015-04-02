@@ -75,6 +75,46 @@ struct MessageHeader {
   static constexpr size_t encoding_size = sizeof(version) + sizeof(size);
 };
 
+/**
+ * Encodes stream recipients into wire format.
+ *
+ * @param stream Pointer to start of stream array.
+ * @param num_streams Number of streams in array.
+ * @return Encoded stream recipients.
+ */
+static std::string EncodeRecipients(const StreamID* stream,
+                                    size_t num_streams) {
+  std::string encoded;
+  PutVarint32(&encoded, static_cast<uint32_t>(num_streams));
+  while (num_streams--) {
+    PutLengthPrefixedSlice(&encoded, *stream++);
+  }
+  return encoded;
+}
+
+/**
+ * Decodes wire format of stream recipients.
+ *
+ * @param in Input slice of encoded stream spec. Will be advanced beyond spec.
+ * @param streams Output parameter for decoded streams.
+ * @return ok() if successfully decoded, otherwise error.
+ */
+static Status DecodeRecipients(Slice* in, autovector<StreamID, 1>* streams) {
+  assert(streams);
+  uint32_t num_streams;
+  if (!GetVarint32(in, &num_streams)) {
+    return Status::InvalidArgument("Bad number of streams");
+  }
+  while (num_streams--) {
+    StreamID stream;
+    if (!GetLengthPrefixedSlice(in, &stream)) {
+      return Status::InvalidArgument("Bad stream ID");
+    }
+    streams->push_back(stream);
+  }
+  return Status::OK();
+}
+
 struct TimestampedString {
   std::string string;
   uint64_t issued_time;
@@ -223,9 +263,9 @@ class SocketEvent {
       if (origin_type == MessageGoodbye::OriginType::Server) {
         std::unique_ptr<Message> msg(
             new MessageGoodbye(Tenant::InvalidTenant,
-                               destination,
                                MessageGoodbye::Code::SocketError,
                                origin_type));
+        msg->SetOrigin(destination);
         event_loop->Dispatch(std::move(msg));
       } else {
         for (StreamID global : globals) {
@@ -233,9 +273,9 @@ class SocketEvent {
           // known by the entity using the loop.
           std::unique_ptr<Message> msg(
               new MessageGoodbye(Tenant::InvalidTenant,
-                                 global,
                                  MessageGoodbye::Code::SocketError,
                                  origin_type));
+          msg->SetOrigin(global);
           event_loop->Dispatch(std::move(msg));
         }
       }
@@ -365,13 +405,28 @@ class SocketEvent {
       }
 
       // Now have whole message, process it.
-      std::unique_ptr<Message> msg =
-        Message::CreateNewInstance(std::move(msg_buf_), msg_size_);
+      Slice in(msg_buf_.get(), msg_size_);
+
+      // Decode the recipients.
+      autovector<StreamID, 1> streams;
+      Status st = DecodeRecipients(&in, &streams);
+      assert(streams.size() == 1);  // only 1 destination supported for now.
+
+      // Decode the rest of the message.
+      std::unique_ptr<Message> msg;
+      if (st.ok()) {
+        msg = Message::CreateNewInstance(std::move(msg_buf_), in);
+      }
 
       if (msg) {
-        if (!was_initiated_) {
+        // Apply origin.
+        StreamID local = streams[0];
+        if (was_initiated_) {
+          // Initiated socket responses will have the correct stream ID.
+          // Overwrite stream ID in the message.
+          msg->SetOrigin(local);
+        } else {
           // Attempt to add this stream/socket pair to the stream map.
-          StreamID local = msg->GetOrigin();
           // Insert connection and remap stream ID.
           bool inserted;
           StreamID global;
@@ -628,14 +683,22 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
 
       // Enqueue data to SocketEvent queue. This message will be sent out
       // when the output socket is ready to write.
+      auto destinations = std::make_shared<TimestampedString>();
+      destinations->string = EncodeRecipients(&local, 1);
+      destinations->issued_time = issued_time;
+
+      size_t frame_size = destinations->string.size() + msg->string.size();
       MessageHeader header { ROCKETSPEED_CURRENT_MSG_VERSION,
-                             static_cast<uint32_t>(msg->string.size()) };
+                             static_cast<uint32_t>(frame_size) };
       auto hdr = std::make_shared<TimestampedString>();
       hdr->string = header.ToString();
       hdr->issued_time = issued_time;
 
-      // Add message header and contents.
+      // Add message header, destinations, and contents.
       st = sev->Enqueue(hdr);
+      if (st.ok()) {
+        st = sev->Enqueue(destinations);
+      }
       if (st.ok()) {
         st = sev->Enqueue(msg);
       }

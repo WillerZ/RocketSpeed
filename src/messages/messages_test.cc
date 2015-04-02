@@ -33,12 +33,11 @@ TEST(Messaging, Data) {
   Slice name1("Topic1");
   Slice payload1("Payload1");
   HostId host1("host.id", 1234);
-  ClientID clid1("client1");
   NamespaceID nsid1 = GuestNamespace;
 
   // create a message
   MessageData data1(MessageType::mPublish,
-                    Tenant::GuestTenant, clid1, name1, nsid1, payload1);
+                    Tenant::GuestTenant, name1, nsid1, payload1);
   data1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   // serialize the message
@@ -50,7 +49,6 @@ TEST(Messaging, Data) {
 
   // verify that the new message is the same as original
   ASSERT_TRUE(data2.GetMessageId() == data1.GetMessageId());
-  ASSERT_TRUE(data2.GetOrigin() == clid1);
   ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
   ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
   ASSERT_EQ(data2.GetTenantID(), (TenantID)Tenant::GuestTenant);
@@ -61,7 +59,6 @@ TEST(Messaging, Data) {
 
 TEST(Messaging, Metadata) {
   std::string mymachine = "machine.com";
-  ClientID clid1("client1");
   std::vector<TopicPair> topics;
   int num_topics = 5;
 
@@ -76,7 +73,7 @@ TEST(Messaging, Metadata) {
   // create a message
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        clid1, topics);
+                        topics);
 
   // serialize the message
   Slice original = meta1.Serialize();
@@ -86,7 +83,6 @@ TEST(Messaging, Metadata) {
   data2.DeSerialize(&original);
 
   // verify that the new message is the same as original
-  ASSERT_EQ(clid1, data2.GetOrigin());
   ASSERT_EQ((TenantID)Tenant::GuestTenant, data2.GetTenantID());
 
   // verify that the new message is the same as original
@@ -104,7 +100,6 @@ TEST(Messaging, DataAck) {
   int port = 200;
   std::string mymachine = "machine.com";
   HostId hostid(mymachine, port);
-  ClientID clid = hostid.ToClientId();
 
   // create a message
   MessageDataAck::AckVector acks(10);
@@ -115,7 +110,7 @@ TEST(Messaging, DataAck) {
       ack.seqno = i;
     }
   }
-  MessageDataAck ack1(101, clid, acks);
+  MessageDataAck ack1(101, acks);
 
   // serialize the message
   Slice original = ack1.Serialize();
@@ -131,7 +126,6 @@ TEST(Messaging, DataAck) {
 TEST(Messaging, DataGap) {
   // create a message
   MessageGap gap1(Tenant::GuestTenant,
-                  "client",
                   "guest",
                   "topic",
                   GapType::kDataLoss,
@@ -146,7 +140,6 @@ TEST(Messaging, DataGap) {
   gap2.DeSerialize(&original);
 
   // verify that the new message is the same as original
-  ASSERT_TRUE(gap2.GetOrigin() == "client");
   ASSERT_EQ(gap2.GetTopicName().ToString(), "topic");
   ASSERT_EQ(gap2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(gap2.GetNamespaceId().ToString(), "guest");
@@ -170,11 +163,8 @@ static void TestMessage(const Serializer& msg) {
 }
 
 TEST(Messaging, Goodbye) {
-  ClientID origin("client1");
-
   // create a message
   MessageGoodbye goodbye1(Tenant::GuestTenant,
-                          origin,
                           MessageGoodbye::Code::Graceful,
                           MessageGoodbye::Server);
 
@@ -186,7 +176,6 @@ TEST(Messaging, Goodbye) {
   goodbye2.DeSerialize(&original);
 
   // verify that the new message is the same as original
-  ASSERT_TRUE(goodbye2.GetOrigin() == origin);
   ASSERT_EQ(goodbye2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(goodbye2.GetCode(), goodbye1.GetCode());
   ASSERT_EQ(goodbye2.GetOriginType(), goodbye1.GetOriginType());
@@ -195,28 +184,26 @@ TEST(Messaging, Goodbye) {
 TEST(Messaging, ErrorHandling) {
   // Test that Message::CreateNewInstance handles bad messages.
   TenantID tenant = Tenant::GuestTenant;
-  ClientID client = "client1";
   NamespaceID nsid = GuestNamespace;
 
-  MessagePing msg0(tenant, MessagePing::Request, client);
+  MessagePing msg0(tenant, MessagePing::Request, "cookie");
   TestMessage(msg0);
 
   MessageData msg1(MessageType::mPublish,
-                   tenant, client, "topic", nsid, "payload");
+                   tenant, "topic", nsid, "payload");
   TestMessage(msg1);
 
   std::vector<TopicPair> topics = {{ 100, "topic", mSubscribe, nsid }};
   MessageMetadata msg2(tenant,
                        MessageMetadata::MetaType::Request,
-                       client,
                        topics);
   TestMessage(msg2);
 
   MessageDataAck::AckVector acks(1);
-  MessageDataAck msg3(100, client, acks);
+  MessageDataAck msg3(100, acks);
   TestMessage(msg3);
 
-  MessageGap msg4(tenant, client, "guest", "topic", kBenign, 100, 200);
+  MessageGap msg4(tenant, "guest", "topic", kBenign, 100, 200);
   TestMessage(msg4);
 }
 
@@ -474,7 +461,6 @@ TEST(Messaging, GracefulGoodbye) {
 
   // Goodbye c1 -> server
   MessageGoodbye goodbye(Tenant::GuestTenant,
-                         "",
                          MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
   ASSERT_OK(client.SendRequest(goodbye, &c1, 0));

@@ -524,7 +524,6 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
         int outgoing_worker_id = copilot_->GetLogWorker(logid);
         MessageMetadata newmsg(tenant_id,
                                MessageMetadata::MetaType::Request,
-                               copilot_->GetClientId(outgoing_worker_id),
                                { TopicPair(0,  // seqno doesnt matter
                                            topic_name,
                                            MetadataType::mUnSubscribe,
@@ -551,7 +550,6 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
         int outgoing_worker_id = copilot_->GetLogWorker(logid);
         MessageMetadata newmsg(tenant_id,
                                MessageMetadata::MetaType::Request,
-                               copilot_->GetClientId(outgoing_worker_id),
                                { TopicPair(earliest_other_seqno,
                                            topic_name,
                                            MetadataType::mSubscribe,
@@ -638,8 +636,8 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
     std::unique_ptr<Message> newmsg(new MessageMetadata(
                                       msg->GetTenantID(),
                                       MessageMetadata::MetaType::Request,
-                                      msg->GetOrigin(),
                                       topics));
+    newmsg->SetOrigin(msg->GetOrigin());
     // Start the automatic unsubscribe process. We rely on the assumption
     // that the unsubscribe request can fail only if the client is
     // un-communicable, in which case the client's subscritions are reaped.

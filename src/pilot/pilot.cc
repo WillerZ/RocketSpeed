@@ -192,7 +192,7 @@ void Pilot::SendAck(MessageData* msg,
 
   // create new message
   StreamID stream = msg->GetOrigin();
-  MessageDataAck newmsg(msg->GetTenantID(), stream, {ack});
+  MessageDataAck newmsg(msg->GetTenantID(), {ack});
 
   // send message
   Status st = options_.msg_loop->SendResponse(newmsg, stream, worker_id);

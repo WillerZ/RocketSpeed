@@ -101,7 +101,6 @@ TEST(ControlTowerTest, Subscribe) {
   // create a message
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         topics);
 
   // send message to control tower
@@ -145,7 +144,6 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   // first subscriber *******
   MessageMetadata meta1(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         topics);
 
   // send message to control tower
@@ -180,7 +178,6 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   // The second subscriber subscribes to the same topics.
   MessageMetadata meta2(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         topics);
 
   // send message to control tower
@@ -205,7 +202,6 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   // Unsubscribe all the topics from the first client.
   MessageMetadata meta3(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         topics);
 
   // send message to control tower
@@ -221,7 +217,6 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   // Finally, unsubscribe from the second client too.
   MessageMetadata meta4(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        "",
                         topics);
 
   // send message to control tower

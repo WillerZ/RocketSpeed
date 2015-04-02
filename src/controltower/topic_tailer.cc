@@ -450,7 +450,6 @@ Status TopicTailer::SendGapRecord(
         topic.GetTopicID(&namespace_id, &topic_name);
         std::unique_ptr<Message> msg(
           new MessageGap(Tenant::GuestTenant,
-                         "",
                          namespace_id,
                          topic_name,
                          type,

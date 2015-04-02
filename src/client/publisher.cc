@@ -156,7 +156,6 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   // Construct message.
   MessageData message(MessageType::mPublish,
                       tenant_id,
-                      msg_loop_->GetClientId(worker_id),
                       Slice(name),
                       namespace_id,
                       data);

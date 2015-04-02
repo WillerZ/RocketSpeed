@@ -214,8 +214,8 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
     MessageMetadata* newmsg = new MessageMetadata(
                             request->GetTenantID(),
                             request->GetMetaType(),
-                            request->GetOrigin(),
                             std::vector<TopicPair> {topic});
+    newmsg->SetOrigin(request->GetOrigin());
     std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to worker
@@ -274,9 +274,9 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg) {
     for (uint32_t i = 0; i < options_.num_workers; ++i) {
       std::unique_ptr<Message> new_msg(
         new MessageGoodbye(goodbye->GetTenantID(),
-                           goodbye->GetOrigin(),
                            goodbye->GetCode(),
                            goodbye->GetOriginType()));
+      new_msg->SetOrigin(goodbye->GetOrigin());
       LogID logid = 0;  // unused
       int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
       workers_[i]->Forward(logid, std::move(new_msg), event_loop_worker);

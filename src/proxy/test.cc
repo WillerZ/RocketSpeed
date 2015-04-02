@@ -52,9 +52,6 @@ TEST(ProxyTest, Publish) {
       Message::CreateNewInstance(Slice(data).ToUniqueChars(), data.size());
     ASSERT_TRUE(msg != nullptr);
     ASSERT_EQ(MessageType::mDataAck, msg->GetMessageType());
-    // Proxy is free to rewrite client ids, but any change should be invisible
-    // to the clients.
-    ASSERT_EQ(our_client, msg->GetOrigin());
     checkpoint.Post();
   };
   std::atomic<size_t> forcibly_disconnected(0);
@@ -67,7 +64,6 @@ TEST(ProxyTest, Publish) {
   std::string serial;
   MessageData publish(MessageType::mPublish,
                       Tenant::GuestTenant,
-                      our_client,
                       Slice("topic"),
                       GuestNamespace,
                       Slice("payload"));
@@ -120,7 +116,7 @@ TEST(ProxyTest, SeqnoError) {
   std::string serial;
   MessagePing ping(Tenant::GuestTenant,
                    MessagePing::PingType::Request,
-                   "client");
+                   "cookie");
   ping.SerializeToString(&serial);
 
   const int64_t session = 123;
@@ -143,7 +139,7 @@ TEST(ProxyTest, DestroySession) {
   std::string serial;
   MessagePing ping(Tenant::GuestTenant,
                    MessagePing::PingType::Request,
-                   "client");
+                   "cookie");
   ping.SerializeToString(&serial);
 
   const int64_t session = 123;
@@ -194,7 +190,7 @@ TEST(ProxyTest, ServerDown) {
   std::string serial;
   MessagePing ping(Tenant::GuestTenant,
                    MessagePing::PingType::Request,
-                   "client");
+                   "cookie");
   ping.SerializeToString(&serial);
 
   // Send to proxy then await response.
@@ -223,7 +219,6 @@ TEST(ProxyTest, ForwardGoodbye) {
   std::string publish_serial;
   MessageData publish(MessageType::mPublish,
                       Tenant::GuestTenant,
-                      "client",
                       Slice("topic"),
                       GuestNamespace,
                       Slice("payload"));
@@ -238,7 +233,6 @@ TEST(ProxyTest, ForwardGoodbye) {
   std::string sub_serial;
   MessageMetadata sub(Tenant::GuestTenant,
                       MessageMetadata::MetaType::Request,
-                      "client",
                       { TopicPair(1, "topic", MetadataType::mSubscribe, ns) });
   sub.SerializeToString(&sub_serial);
   ASSERT_OK(proxy->Forward(sub_serial, session, 1));
@@ -254,7 +248,6 @@ TEST(ProxyTest, ForwardGoodbye) {
   // Send goodbye message.
   std::string goodbye_serial;
   MessageGoodbye goodbye(Tenant::GuestTenant,
-                         "client",
                          MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
   goodbye.SerializeToString(&goodbye_serial);

@@ -632,14 +632,12 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   NamespaceID ns = GuestNamespace;
   MessageMetadata sub(Tenant::GuestTenant,
                       MessageMetadata::MetaType::Request,
-                      "client",
                       { TopicPair(1, "topic", MetadataType::mSubscribe, ns) });
   ASSERT_OK(client.SendRequest(sub, &socket, 0));
   ASSERT_TRUE(subscribed.TimedWait(std::chrono::milliseconds(100)));
 
   // Now say goodbye.
   MessageGoodbye goodbye(Tenant::GuestTenant,
-                         "client",
                          MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
   ASSERT_OK(client.SendRequest(goodbye, &socket, 0));
@@ -649,7 +647,6 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   // We shouldn't get the message.
   MessageData publish(MessageType::mPublish,
                       Tenant::GuestTenant,
-                      "client",
                       "topic",
                       ns,
                       Slice("data"));
