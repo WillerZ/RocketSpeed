@@ -623,6 +623,8 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   callbacks[MessageType::mGap] = [](std::unique_ptr<Message> msg) {};
   callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>) {};
   client.RegisterCallbacks(callbacks);
+  StreamSocket socket(cluster.GetCopilotHostIds().front().ToClientId(),
+                      client.GetOutboundAllocator());
   env_->StartThread([&] () { client.Run(); }, "client");
   client.WaitUntilRunning();
 
@@ -632,8 +634,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
                       MessageMetadata::MetaType::Request,
                       "client",
                       { TopicPair(1, "topic", MetadataType::mSubscribe, ns) });
-  ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
-  ASSERT_OK(client.SendRequest(sub, host));
+  ASSERT_OK(client.SendRequest(sub, &socket, 0));
   ASSERT_TRUE(subscribed.TimedWait(std::chrono::milliseconds(100)));
 
   // Now say goodbye.
@@ -641,7 +642,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
                          "client",
                          MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
-  ASSERT_OK(client.SendRequest(goodbye, host));
+  ASSERT_OK(client.SendRequest(goodbye, &socket, 0));
   env_->SleepForMicroseconds(100 * 1000);  // allow goodbye to process
 
   // Now publish to pilot.
@@ -652,7 +653,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
                       "topic",
                       ns,
                       Slice("data"));
-  ASSERT_OK(client.SendRequest(publish, host));
+  ASSERT_OK(client.SendRequest(publish, &socket, 0));
   ASSERT_TRUE(!received_data.TimedWait(std::chrono::milliseconds(100)));
 }
 

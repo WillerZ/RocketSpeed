@@ -3,13 +3,16 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
+
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
 #include "src/util/testharness.h"
+#include "src/util/common/multi_producer_queue.h"
 
 namespace rocketspeed {
 
@@ -216,76 +219,141 @@ TEST(Messaging, ErrorHandling) {
   TestMessage(msg4);
 }
 
-TEST(Messaging, ClientOnNewSocket) {
-  // Tests that a client can reconnect seamlessly on a new socket.
-  // Receiver loop.
-  MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
-  env_->StartThread([&] () { loop1.Run(); }, "loop1");
+TEST(Messaging, SameStreamsOnDifferentSockets) {
+  // Posted on any ping message received by the server.
+  port::Semaphore server_ping;
+  MultiProducerQueue<std::unique_ptr<MessagePing>> server_pings(3);
 
-  // Post to the checkpoint when receiving a ping.
-  port::Semaphore checkpoint;
-  std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mPing] =
-    [&](std::unique_ptr<Message> msg) {
-      checkpoint.Post();
-    };
+  MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  server.RegisterCallbacks({
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+        ASSERT_TRUE(
+            server_pings.write(static_cast<MessagePing*>(msg.release())));
+        server_ping.Post();
+      }},
+  });
+  env_->StartThread([&]() { server.Run(); }, "server");
 
-  // Sender loop.
-  MsgLoop loop2(env_, env_options_, 0, 1, info_log_, "loop2");
-  loop2.RegisterCallbacks(callbacks);
-  env_->StartThread([&] () { loop2.Run(); }, "loop2");
-  ASSERT_OK(loop1.WaitUntilRunning());
-  ASSERT_OK(loop2.WaitUntilRunning());
+  // Posted on any ping message received by any client.
+  port::Semaphore client_ping;
 
-  // Send a ping from loop2 to loop1.
-  MessagePing msg(Tenant::GuestTenant,
-                  MessagePing::PingType::Request,
-                  "sender");
-  ASSERT_OK(loop2.SendRequest(msg, loop1.GetClientId(0)));
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+  // First client loop.
+  MsgLoop client1(env_, env_options_, 0, 1, info_log_, "client1");
+  client1.RegisterCallbacks({
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+        auto ping = static_cast<MessagePing*>(msg.get());
+        ASSERT_EQ("stream1", ping->GetCookie());
+        client_ping.Post();
+      }},
+  });
+  env_->StartThread([&]() { client1.Run(); }, "client1");
 
-  // Start a new loop and communicate with the same client ID.
-  MsgLoop loop3(env_, env_options_, 0, 1, info_log_, "loop3");
-  loop3.RegisterCallbacks(callbacks);
-  env_->StartThread([&] () { loop3.Run(); }, "loop3");
-  ASSERT_OK(loop3.WaitUntilRunning());
-  ASSERT_OK(loop3.SendRequest(msg, loop1.GetClientId(0)));
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+  // Second client loop.
+  MsgLoop client2(env_, env_options_, 0, 1, info_log_, "client2");
+  client2.RegisterCallbacks({
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+        auto ping = static_cast<MessagePing*>(msg.get());
+        ASSERT_EQ("stream2", ping->GetCookie());
+        client_ping.Post();
+      }},
+  });
+  env_->StartThread([&]() { client2.Run(); }, "client2");
+
+  ASSERT_OK(server.WaitUntilRunning());
+  ASSERT_OK(client1.WaitUntilRunning());
+  ASSERT_OK(client2.WaitUntilRunning());
+
+  // Create two streams on different loops...
+  StreamSocket socket1(server.GetClientId(0), client1.GetOutboundAllocator());
+  StreamSocket socket2(server.GetClientId(0), client2.GetOutboundAllocator());
+  // ...that have the same stream ID.
+  ASSERT_EQ(socket1.GetStreamID(), socket2.GetStreamID());
+
+  {  // Send a ping from client1 to server.
+    MessagePing ping(
+        Tenant::GuestTenant, MessagePing::PingType::Request, "stream1");
+    ASSERT_OK(client1.SendRequest(ping, &socket1, 0));
+    ASSERT_TRUE(server_ping.TimedWait(std::chrono::seconds(1)));
+  }
+  {  // Send a ping from client2 to server.
+    MessagePing ping(
+        Tenant::GuestTenant, MessagePing::PingType::Request, "stream2");
+    ASSERT_OK(client2.SendRequest(ping, &socket2, 0));
+    ASSERT_TRUE(server_ping.TimedWait(std::chrono::seconds(1)));
+  }
+
+  // Used to assert how many clients the server has seen.
+  std::unordered_set<StreamID> seen_by_server;
+
+  {  // Send back pong to client1.
+    std::unique_ptr<MessagePing> pong;
+    ASSERT_TRUE(server_pings.read(pong));
+    ASSERT_EQ("stream1", pong->GetCookie());
+    seen_by_server.insert(pong->GetOrigin());
+    // Send back reponse.
+    pong->SetPingType(MessagePing::PingType::Response);
+    server.SendResponse(*pong, pong->GetOrigin(), 0);
+    ASSERT_TRUE(client_ping.TimedWait(std::chrono::seconds(1)));
+  }
+  {  // Send back pong to client2.
+    std::unique_ptr<MessagePing> pong;
+    ASSERT_TRUE(server_pings.read(pong));
+    ASSERT_EQ("stream2", pong->GetCookie());
+    seen_by_server.insert(pong->GetOrigin());
+    // Send back reponse.
+    pong->SetPingType(MessagePing::PingType::Response);
+    server.SendResponse(*pong, pong->GetOrigin(), 0);
+    ASSERT_TRUE(client_ping.TimedWait(std::chrono::seconds(1)));
+  }
+
+  ASSERT_EQ(2, seen_by_server.size());
 }
 
-TEST(Messaging, MultipleClientsOneSocket) {
-  // Tests that multiple clients can communicate over the same socket.
+TEST(Messaging, MultipleStreamsOneSocket) {
+  static const int kNumStreams = 10;
+
   // Server loop.
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
-  env_->StartThread([&] () { server.Run(); }, "server");
-
-  // Post to the checkpoint when receiving a ping.
-  port::Semaphore checkpoint;
-  std::map<MessageType, MsgCallbackType> callbacks;
-
-  std::atomic<int> message_num{0};
-  callbacks[MessageType::mPing] =
-    [&](std::unique_ptr<Message> msg) {
-      // Origin should be set to the client ID that initiated.
-      ClientID expected = "client" + std::to_string(message_num++ % 10);
-      ASSERT_EQ(msg->GetOrigin(), expected);
-      checkpoint.Post();
-    };
+  env_->StartThread([&]() { server.Run(); }, "server");
 
   // Clients loop.
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client");
-  client.RegisterCallbacks(callbacks);
-  env_->StartThread([&] () { client.Run(); }, "client");
+
+  // Create a bunch of sockets for different streams.
+  std::vector<StreamSocket> sockets;
+  for (int i = 0; i < kNumStreams; ++i) {
+    sockets.emplace_back(server.GetClientId(0), client.GetOutboundAllocator());
+  }
+
+  // Post to the checkpoint when receiving a ping.
+  port::Semaphore checkpoint;
+  {
+    // Callback uses (a copy of) this to count messages.
+    int message_num = 0;
+    client.RegisterCallbacks({
+        {MessageType::mPing,
+         [&checkpoint, &sockets, message_num](
+             std::unique_ptr<Message> msg) mutable {
+          int i = message_num++ % kNumStreams;
+          ASSERT_LT(i, kNumStreams);
+          auto ping = static_cast<MessagePing*>(msg.get());
+          ASSERT_EQ(std::to_string(i), ping->GetCookie());
+          ASSERT_EQ(sockets[i].GetStreamID(), msg->GetOrigin());
+          checkpoint.Post();
+        }},
+    });
+  }
+  env_->StartThread([&]() { client.Run(); }, "loop-client");
+
   ASSERT_OK(server.WaitUntilRunning());
   ASSERT_OK(client.WaitUntilRunning());
 
   // Send a pings from client to server.
-  for (int i = 0; i < 100; ++i) {
-    ClientID client_id = "client" + std::to_string(i % 10);
+  for (int i = 0; i < 10 * kNumStreams; ++i) {
     MessagePing msg(Tenant::GuestTenant,
                     MessagePing::PingType::Request,
-                    client_id);
-    ASSERT_OK(client.SendRequest(msg, server.GetClientId(0)));
+                    std::to_string(i % kNumStreams));
+    ASSERT_OK(client.SendRequest(msg, &sockets[i % sockets.size()], 0));
     ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
   }
 }
@@ -298,70 +366,94 @@ TEST(Messaging, GracefulGoodbye) {
   // Second client will send a ping, and should receive response.
 
   port::Semaphore goodbye_checkpoint;
-  std::map<MessageType, MsgCallbackType> server_cb;
-  server_cb[MessageType::mGoodbye] =
-    [&](std::unique_ptr<Message> msg) {
-      goodbye_checkpoint.Post();
-    };
+  // Records streams of ping messages received by the control tower.
+  std::vector<StreamID> inbound_stream;
+  std::mutex inbound_stream_mutex;
 
   // Server loop.
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
-  server.RegisterCallbacks(server_cb);
-  env_->StartThread([&] () { server.Run(); }, "server");
+  server.RegisterCallbacks({
+      {MessageType::mGoodbye,
+       [&](std::unique_ptr<Message> msg) { goodbye_checkpoint.Post(); }},
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+        {
+          std::lock_guard<std::mutex> lock(inbound_stream_mutex);
+          inbound_stream.push_back(msg->GetOrigin());
+        }
+        auto ping = static_cast<MessagePing*>(msg.get());
+        ping->SetPingType(MessagePing::PingType::Response);
+        server.SendResponse(
+            *ping, msg->GetOrigin(), server.GetThreadWorkerIndex());
+      }},
+  });
+  env_->StartThread([&]() { server.Run(); }, "loop-server");
 
   // Post to the checkpoint when receiving a ping.
   port::Semaphore checkpoint;
-  std::map<MessageType, MsgCallbackType> callbacks;
   std::atomic<int> message_num{0};
-  ClientID expected_clients[] = { "c1", "c2", "c2" };
-  callbacks[MessageType::mPing] =
-    [&](std::unique_ptr<Message> msg) {
-      int n = message_num++;
-      ASSERT_LT(n, 3);
-      ASSERT_EQ(msg->GetOrigin(), expected_clients[n]);
-      checkpoint.Post();
-    };
+  std::string expected_cookies[] = {"c1", "c2", "c2"};
+  std::map<MessageType, MsgCallbackType> callbacks = {
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+        int n = message_num++;
+        ASSERT_LT(n, 3);
+        auto ping = static_cast<MessagePing*>(msg.get());
+        ASSERT_EQ(expected_cookies[n], ping->GetCookie());
+        checkpoint.Post();
+      }},
+  };
 
   // Clients loop.
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client");
   client.RegisterCallbacks(callbacks);
-  env_->StartThread([&] () { client.Run(); }, "client");
+  env_->StartThread([&]() { client.Run(); }, "client");
+
   ASSERT_OK(server.WaitUntilRunning());
   ASSERT_OK(client.WaitUntilRunning());
 
-  // Create messages
-  MessagePing ping1_req(Tenant::GuestTenant, MessagePing::Request, "c1");
-  MessagePing ping2_req(Tenant::GuestTenant, MessagePing::Request, "c2");
-  MessageGoodbye goodbye1(Tenant::GuestTenant,
-                          "c1",
-                          MessageGoodbye::Code::Graceful,
-                          MessageGoodbye::OriginType::Client);
-  MessagePing ping1_resp(Tenant::GuestTenant, MessagePing::Response, "c1");
-  MessagePing ping2_resp(Tenant::GuestTenant, MessagePing::Response, "c2");
+  // Two streams.
+  StreamSocket c1(server.GetClientId(0), client.GetOutboundAllocator());
+  StreamSocket c2(server.GetClientId(0), client.GetOutboundAllocator());
 
   // Ping request c1 -> server
-  ASSERT_OK(client.SendRequest(ping1_req, server.GetClientId(0)));
+  MessagePing ping1_req(Tenant::GuestTenant, MessagePing::Request, "c1");
+  ASSERT_OK(client.SendRequest(ping1_req, &c1, 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping request c2 -> server
-  ASSERT_OK(client.SendRequest(ping2_req, server.GetClientId(0)));
+  MessagePing ping2_req(Tenant::GuestTenant, MessagePing::Request, "c2");
+  ASSERT_OK(client.SendRequest(ping2_req, &c2, 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 2);
 
   // Goodbye c1 -> server
-  ASSERT_OK(client.SendRequest(goodbye1, server.GetClientId(0)));
+  MessageGoodbye goodbye(Tenant::GuestTenant,
+                         "",
+                         MessageGoodbye::Code::Graceful,
+                         MessageGoodbye::OriginType::Client);
+  ASSERT_OK(client.SendRequest(goodbye, &c1, 0));
   ASSERT_TRUE(goodbye_checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 
+  StreamID c1_remote, c2_remote;
+  {  // When sending back responses, we have to use stream IDs seen by the
+     // server loop.
+    std::lock_guard<std::mutex> lock(inbound_stream_mutex);
+    ASSERT_EQ(2, inbound_stream.size());
+    c1_remote = inbound_stream[0];
+    c2_remote = inbound_stream[1];
+  }
+
   // Ping response server -> c1
-  ASSERT_OK(server.SendResponse(ping1_resp, "c1", 0));
+  MessagePing ping1_res(Tenant::GuestTenant, MessagePing::Response, "c1");
+  ASSERT_OK(server.SendResponse(ping1_res, c1_remote, 0));
   // Should NOT get response -- c1 has said goodbye
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 
   // Ping response server -> c2
-  ASSERT_OK(server.SendResponse(ping2_resp, "c2", 0));
+  MessagePing ping2_res(Tenant::GuestTenant, MessagePing::Response, "c2");
+  ASSERT_OK(server.SendResponse(ping2_res, c2_remote, 0));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 }
@@ -369,12 +461,12 @@ TEST(Messaging, GracefulGoodbye) {
 TEST(Messaging, WaitUntilRunningFailure) {
   // Check that WaitUntilRunning returns failure.
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
-  env_->StartThread([&] () { loop1.Run(); }, "loop1");
+  env_->StartThread([&]() { loop1.Run(); }, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
 
   // now start another on same port, should fail.
   MsgLoop loop2(env_, env_options_, 58499, 1, info_log_, "loop2");
-  env_->StartThread([&] () { loop2.Run(); }, "loop2");
+  env_->StartThread([&]() { loop2.Run(); }, "loop2");
   ASSERT_TRUE(!loop2.WaitUntilRunning().ok());
 }
 
@@ -389,7 +481,8 @@ TEST(Messaging, SocketDeath) {
   port::Semaphore checkpoint;
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mPing] = [&](std::unique_ptr<Message> msg) {
-    ASSERT_EQ("expected", msg->GetOrigin());
+    auto ping = static_cast<MessagePing*>(msg.get());
+    ASSERT_EQ("expected", ping->GetCookie());
     checkpoint.Post();
   };
 

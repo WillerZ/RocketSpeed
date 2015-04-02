@@ -123,6 +123,12 @@ class MsgLoopBase {
   // Retrieves the number of EventLoop threads.
   virtual int GetNumWorkers() const = 0;
 
+  /**
+   * Returns an allocator, owned by the loop, which can be used to create
+   * outbound streams.
+   */
+  virtual StreamAllocator* GetOutboundAllocator() = 0;
+
   // Get the worker ID of the least busy event loop.
   virtual int LoadBalancedWorkerId() const = 0;
 

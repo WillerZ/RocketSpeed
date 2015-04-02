@@ -42,7 +42,6 @@ class CopilotTest {
   std::set<Topic> sent_msgs_;
   std::set<Topic> acked_msgs_;
   std::vector<RollcallEntry> rollcall_entries_;
-  ClientID client_id_ = "client1";
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
@@ -56,7 +55,6 @@ class CopilotTest {
     MessageMetadata* metadata = static_cast<MessageMetadata*>(msg.get());
     ASSERT_EQ(metadata->GetMetaType(), MessageMetadata::MetaType::Response);
     ASSERT_EQ(metadata->GetTopicInfo().size(), 1);
-    ASSERT_EQ(metadata->GetOrigin(), client_id_);
     acked_msgs_.insert(metadata->GetTopicInfo()[0].topic_name);
   }
 
@@ -74,17 +72,18 @@ TEST(CopilotTest, Subscribe) {
   port::Semaphore checkpoint;
 
   // create a client to communicate with the Copilot
-  std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mMetadata] =
-    [this, &checkpoint] (std::unique_ptr<Message> msg) {
-      ProcessMetadata(std::move(msg));
-      if (sent_msgs_.size() == acked_msgs_.size()) {
-        checkpoint.Post();
-      }
-    };
-
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  loop.RegisterCallbacks(client_callback);
+  StreamSocket socket(cluster.GetCopilotHostIds().front().ToClientId(),
+                      loop.GetOutboundAllocator());
+  loop.RegisterCallbacks({
+      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
+        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ProcessMetadata(std::move(msg));
+        if (sent_msgs_.size() == acked_msgs_.size()) {
+          checkpoint.Post();
+        }
+      }},
+  });
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
   ASSERT_OK(loop.WaitUntilRunning());
@@ -98,10 +97,9 @@ TEST(CopilotTest, Subscribe) {
                                 MetadataType::mUnSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        client_id_,
+                        "",
                         { TopicPair(0, topic, type, ns) });
-    ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
-    ASSERT_EQ(loop.SendRequest(msg, host).ok(), true);
+    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
     sent_msgs_.insert(topic);
   }
 
@@ -190,19 +188,20 @@ TEST(CopilotTest, Rollcall) {
   size_t expected = num_msg / 2;
 
   // create a client to communicate with the Copilot
-  std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mMetadata] =
-    [this, &checkpoint, expected] (std::unique_ptr<Message> msg) {
-      ProcessMetadata(std::move(msg));
-      if (expected == acked_msgs_.size()) {
-        checkpoint.Post();
-      }
-    };
-  client_callback[MessageType::mDeliver] = [](std::unique_ptr<Message>){};
-  client_callback[MessageType::mGap] = [](std::unique_ptr<Message>){};
-
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  loop.RegisterCallbacks(client_callback);
+  StreamSocket socket(cluster.GetCopilotHostIds().front().ToClientId(),
+                      loop.GetOutboundAllocator());
+  loop.RegisterCallbacks({
+      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
+        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ProcessMetadata(std::move(msg));
+        if (expected == acked_msgs_.size()) {
+          checkpoint.Post();
+        }
+      }},
+      {MessageType::mDeliver, [](std::unique_ptr<Message>) {}},
+      {MessageType::mGap, [](std::unique_ptr<Message>) {}},
+  });
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
   ASSERT_OK(loop.WaitUntilRunning());
@@ -230,11 +229,10 @@ TEST(CopilotTest, Rollcall) {
     auto type = MetadataType::mSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        client_id_,
+                        "",
                         { TopicPair(0, topic, type, ns) });
-    ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
     sent_msgs_.insert(topic);
-    ASSERT_EQ(loop.SendRequest(msg, host).ok(), true);
+    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }
   // Ensure that subscriptions were acked from server.
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
@@ -250,11 +248,11 @@ TEST(CopilotTest, Rollcall) {
     auto type = MetadataType::mUnSubscribe;
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
-                        client_id_,
+                        "",
                         { TopicPair(0, topic, type, ns) });
     ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
     sent_msgs_.insert(topic);
-    ASSERT_EQ(loop.SendRequest(msg, host).ok(), true);
+    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }
   // Ensure that unsubscriptions were acked from server.
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));

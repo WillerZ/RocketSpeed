@@ -12,7 +12,8 @@
 #include <deque>
 #include <functional>
 #include <thread>
-#include <unordered_set>
+#include <tuple>
+#include <vector>
 
 #include "src/messages/event2_version.h"
 #include <event2/event.h>
@@ -214,7 +215,7 @@ class SocketEvent {
       // TODO(stupaq) this is a hack for now to preserve semantics of goodbye
       ClientID destination = sev->GetDestination();
       // Remove and close streams that were assigned to this connection.
-      auto streams = event_loop->stream_router_.RemoveConnection(sev);
+      auto globals = event_loop->stream_router_.RemoveConnection(sev);
       // Delete the socket event.
       event_loop->teardown_connection(sev);
       sev = nullptr;
@@ -227,10 +228,12 @@ class SocketEvent {
                                origin_type));
         event_loop->Dispatch(std::move(msg));
       } else {
-        for (StreamID stream : streams) {
+        for (StreamID global : globals) {
+          // We send goodbye using the global stream IDs, as these are only
+          // known by the entity using the loop.
           std::unique_ptr<Message> msg(
               new MessageGoodbye(Tenant::InvalidTenant,
-                                 stream,
+                                 global,
                                  MessageGoodbye::Code::SocketError,
                                  origin_type));
           event_loop->Dispatch(std::move(msg));
@@ -368,38 +371,21 @@ class SocketEvent {
       if (msg) {
         if (!was_initiated_) {
           // Attempt to add this stream/socket pair to the stream map.
-          StreamID stream = msg->GetOrigin();
-          // TODO(stupaq) we will perform remapping of stream IDs here as well
-          auto result =
-              event_loop_->stream_router_.InsertConnection(stream, this);
-          SocketEvent* old_sev = result.second;
-          switch (result.first) {
-            case StreamRouter::InsertStatus::kExists:
-              assert(old_sev == this);
-              break;
-            case StreamRouter::InsertStatus::kNew:
-              LOG_INFO(event_loop_->GetLog(),
-                       "Stream (%s) was associated with socket fd(%d)",
-                       stream.c_str(),
-                       fd_);
-              break;
-            case StreamRouter::InsertStatus::kReplaced:
-            case StreamRouter::InsertStatus::kReplacedLast:
-              assert(old_sev && old_sev != this);
-              LOG_ERROR(event_loop_->GetLog(),
-                        "Stream (%s) changed connection from fd(%d) to fd(%d)",
-                        stream.c_str(),
-                        fd_,
-                        old_sev->fd_);
-              if (result.first == StreamRouter::InsertStatus::kReplacedLast) {
-                LOG_INFO(event_loop_->GetLog(),
-                         "Socket fd(%d) has no more streams on it.",
-                         old_sev->fd_);
-              }
-              event_loop_->GetLog()->Flush();
-              break;
-            default:
-              assert(false);
+          StreamID local = msg->GetOrigin();
+          // Insert connection and remap stream ID.
+          bool inserted;
+          StreamID global;
+          std::tie(inserted, global) =
+              event_loop_->stream_router_.InsertInboundStream(this, local);
+          // Overwrite stream ID in the message.
+          msg->SetOrigin(global);
+
+          // Log a new inbound stream.
+          if (inserted) {
+            LOG_INFO(event_loop_->GetLog(),
+                     "New stream (%s) was associated with socket fd(%d)",
+                     global.c_str(),
+                     fd_);
           }
 
           // EventLoop needs to process goodbye messages.
@@ -408,10 +394,15 @@ class SocketEvent {
             LOG_INFO(event_loop_->GetLog(),
                      "Received goodbye message (code %d) for stream (%s)",
                      static_cast<int>(goodbye->GetCode()),
-                     stream.c_str());
+                     global.c_str());
             // Update stream router.
-            SocketEvent* sev = event_loop_->stream_router_.RemoveStream(stream);
+            bool removed;
+            SocketEvent* sev;
+            std::tie(removed, sev, std::ignore) =
+                event_loop_->stream_router_.RemoveStream(global);
+            assert(removed);
             if (sev) {
+              assert(sev == this);
               LOG_INFO(event_loop_->GetLog(),
                        "Socket fd(%d) has no more streams on it.",
                        sev->fd_);
@@ -474,35 +465,35 @@ class AcceptCommand : public Command {
   int fd_;
 };
 
-Status StreamRouter::GetConnection(
-    const SendCommand::StreamSpec& spec,
-    EventLoop* event_loop,
-    SocketEvent** out) {
+Status StreamRouter::GetOutboundStream(const SendCommand::StreamSpec& spec,
+                                       EventLoop* event_loop,
+                                       SocketEvent** out_sev,
+                                       StreamID* out_local) {
   thread_check_.Check();
-  assert(out);
 
-  const StreamID& stream = spec.stream;
+  assert(out_sev);
+  assert(out_local);
+  StreamID global = spec.stream;
   const ClientID& destination = spec.destination;
-  {  // Firstly check if we know about the stream already.
-    const auto it_s = open_streams_.find(stream);
-    if (it_s != open_streams_.end()) {
-      *out = it_s->second;
-      return Status::OK();
-    }
+
+  // Find global -> (connection, local).
+  if (open_streams_.FindLocalAndContext(global, out_sev, out_local)) {
+    return Status::OK();
   }
-  // If the destination was not provided, we have to drop the message.
+  // We don't know about the stream, so if the destination was not provided, we
+  // have to drop the message.
   if (destination.empty()) {
     return Status::InternalError(
         "Stream is not opened and destination was not provided.");
   }
-  {  // Secondly look for connection based on destination.
+  {  // Look for connection based on destination.
     const auto it_c = open_connections_.find(destination);
     if (it_c != open_connections_.end()) {
       SocketEvent* found_sev = it_c->second;
       // Open the stream, reusing the socket.
-      open_streams_[stream] = found_sev;
-      streams_on_connection_[found_sev].insert(stream);
-      *out = found_sev;
+      open_streams_.InsertGlobal(global, found_sev);
+      *out_sev = found_sev;
+      *out_local = global;
       return Status::OK();
     }
   }
@@ -513,105 +504,64 @@ Status StreamRouter::GetConnection(
     return Status::InternalError("Failed to create a new connection.");
   }
   // Open the stream, using the new socket.
-  open_connections_[destination] = new_sev;
-  open_streams_[stream] = new_sev;
-  streams_on_connection_[new_sev].insert(stream);
-  *out = new_sev;
+  open_streams_.InsertGlobal(global, new_sev);
+  *out_sev = new_sev;
+  *out_local = global;
   return Status::OK();
 }
 
-std::pair<StreamRouter::InsertStatus, SocketEvent*>
-StreamRouter::InsertConnection(StreamID stream, SocketEvent* new_sev) {
+std::pair<bool, StreamID> StreamRouter::InsertInboundStream(
+    SocketEvent* new_sev,
+    StreamID local) {
   thread_check_.Check();
 
-  SocketEvent* old_sev = nullptr;
-  {  // Fast path if new and old connections are the same.
-    // By not updating destination -> connection mapping, we assume that
-    // destination of a socket cannot change.
-    const auto it_s = open_streams_.find(stream);
-    if (it_s != open_streams_.end()) {
-      old_sev = it_s->second;
-      if (old_sev == new_sev) {
-        return std::make_pair(InsertStatus::kExists, old_sev);
-      }
-    }
-  }
-  // Remove first.
-  SocketEvent* removed_sev = RemoveStream(stream);
-  // Insert later.
+  // Insert into global <-> (connection, local) map and allocate global.
+  auto result = open_streams_.GetGlobal(new_sev, local);
+  StreamID global = result.second;
+  // Insert into destination -> connection cache.
   const ClientID& destination = new_sev->GetDestination();
   if (!destination.empty()) {
     // This connection has a known remote endpoint, we can reuse it later on.
+    // In case of any conflicts, just remove the old connection mapping, it
+    // will not disturb existing streams, but can only affect future choice
+    // of connection for that destination.
     open_connections_[destination] = new_sev;
   }
-  open_streams_[stream] = new_sev;
-  streams_on_connection_[new_sev].insert(stream);
-  // Figure out what actually happened.
-  if (old_sev == nullptr) {
-    assert(removed_sev == nullptr);
-    return std::make_pair(InsertStatus::kNew, old_sev);
-  } else {
-    return std::make_pair(removed_sev == nullptr ? InsertStatus::kReplaced
-                                                 : InsertStatus::kReplacedLast,
-                          old_sev);
-  }
+  return result;
 }
 
-SocketEvent* StreamRouter::RemoveStream(StreamID stream) {
+std::tuple<StreamRouter::RemovalStatus, SocketEvent*, StreamID>
+StreamRouter::RemoveStream(StreamID global) {
   thread_check_.Check();
 
+  RemovalStatus status;
   SocketEvent* sev;
-  {  // Remove stream -> connection mapping.
-    const auto it_s = open_streams_.find(stream);
-    if (it_s == open_streams_.end()) {
-      return nullptr;
-    }
-    sev = it_s->second;
-    open_streams_.erase(it_s);
-  }
-  {  // Remove stream from the list of streams on this connection.
-    const auto it_l = streams_on_connection_.find(sev);
-    if (it_l == streams_on_connection_.end()) {
-      // This should never happen, as this is the inverse relation to stream ->
-      // connection mapping and we've found element of the latter.
-      assert(false);
-      // Proceed to the next step.
-    } else {
-      // Remove the stream.
-      it_l->second.erase(stream);
-      if (!it_l->second.empty()) {
-        // We still have streams on the connection, so we keep it around.
-        return nullptr;
-      }
-      // If the list became empty, remove it as well and proceed.
-      streams_on_connection_.erase(it_l);
-    }
-  }
-  {  // We don't have streams on this connection.
+  StreamID local;
+  status = open_streams_.RemoveGlobal(global, &sev, &local);
+  if (status == RemovalStatus::kRemovedLast) {
+    // We don't have streams on this connection.
     // Remove destination -> connection mapping and return the pointer, so
     // the connection can be closed.
     const auto it_c = open_connections_.find(sev->GetDestination());
+    // Note that we skip removal from destination cache if the connections do
+    // not match, as we could potentially replace connection with another one to
+    // the same destination.
     if (it_c != open_connections_.end() && it_c->second == sev) {
       open_connections_.erase(it_c);
     }
   }
-  return sev;
+  return std::make_tuple(status, sev, local);
 }
 
-std::unordered_set<StreamID> StreamRouter::RemoveConnection(
-    SocketEvent* sev) {
+std::vector<StreamID> StreamRouter::RemoveConnection(SocketEvent* sev) {
   thread_check_.Check();
 
-  std::unordered_set<StreamID> list;
-  {  // Remove entry from connection to streams map.
-    const auto it_l = streams_on_connection_.find(sev);
-    if (it_l != streams_on_connection_.end()) {
-      list = std::move(it_l->second);
-      // For each stream, unmap it from map of open streams.
-      for (StreamID stream : list) {
-        open_streams_.erase(stream);
-      }
-      streams_on_connection_.erase(it_l);
+  std::vector<StreamID> result;
+  {  // Remove all open streams for this connection.
+    auto removed = open_streams_.RemoveContext(sev);
+    for (const auto& entry : removed) {
+      StreamID global = entry.second;
+      result.push_back(global);
     }
   }
   // Remove mapping from destination to the connection.
@@ -619,7 +569,7 @@ std::unordered_set<StreamID> StreamRouter::RemoveConnection(
   if (it_c != open_connections_.end() && it_c->second == sev) {
     open_connections_.erase(it_c);
   }
-  return list;
+  return result;
 }
 
 void EventLoop::RegisterCallback(CommandType type,
@@ -652,10 +602,30 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
   // Have to handle the case when the message-send failed to write
   // to output socket and have to invoke *some* callback to the app.
   for (const SendCommand::StreamSpec& spec : send_cmd->GetDestinations()) {
+    // Find or create a connection and original stream ID.
     SocketEvent* sev = nullptr;
-    Status st = stream_router_.GetConnection(spec, this, &sev);
+    StreamID local;
+    Status st = stream_router_.GetOutboundStream(spec, this, &sev, &local);
+
     if (st.ok()) {
       assert(sev);
+      assert(!local.empty());
+
+      if (spec.stream != local) {
+        LOG_DEBUG(info_log_,
+                  "Stream ID (%s) converted to local (%s)",
+                  spec.stream.c_str(),
+                  local.c_str());
+      }
+      // Use stream ID local to the socket when sending back the message.
+      {  // TODO(stupaq, pja) take origin out of the message
+        std::unique_ptr<char[]> buffer = Slice(msg->string).ToUniqueChars();
+        std::unique_ptr<Message> message =
+            Message::CreateNewInstance(std::move(buffer), msg->string.size());
+        message->SetOrigin(local);
+        message->SerializeToString(&msg->string);
+      }
+
       // Enqueue data to SocketEvent queue. This message will be sent out
       // when the output socket is ready to write.
       MessageHeader header { ROCKETSPEED_CURRENT_MSG_VERSION,
@@ -671,6 +641,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
       }
     }
     // No else, so we catch error on adding to queue as well.
+
     if (!st.ok()) {
       LOG_WARN(info_log_,
                "Failed to send message on stream (%s) to host '%s': %s",
@@ -678,6 +649,12 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
                spec.destination.c_str(),
                st.ToString().c_str());
       info_log_->Flush();
+    } else {
+      LOG_DEBUG(info_log_,
+                "Enqueued message on stream (%s) to host '%s': %s",
+                spec.stream.c_str(),
+                spec.destination.c_str(),
+                st.ToString().c_str());
     }
   }
 }
@@ -1182,6 +1159,7 @@ EventLoop::EventLoop(BaseEnv* env,
                      const std::shared_ptr<Logger>& info_log,
                      EventCallbackType event_callback,
                      AcceptCallbackType accept_callback,
+                     StreamAllocator inbound_alloc,
                      const std::string& stats_prefix,
                      uint32_t command_queue_size) :
   env_(env),
@@ -1196,6 +1174,7 @@ EventLoop::EventLoop(BaseEnv* env,
   shutdown_eventfd_(rocketspeed::port::Eventfd(true, true)),
   command_queue_(command_queue_size),
   command_ready_eventfd_(rocketspeed::port::Eventfd(true, true)),
+  stream_router_(std::move(inbound_alloc)),
   active_connections_(0),
   stats_(stats_prefix) {
 

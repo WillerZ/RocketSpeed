@@ -80,17 +80,6 @@ class MsgLoop : public MsgLoopBase {
 
   Status SendCommand(std::unique_ptr<Command> command, int worker_id) override;
 
-  // TODO(stupaq) remove it once we get numeric sequence ids & allocators
-  Status SendRequest(const Message& msg, ClientID recipient) {
-    return SendRequest(msg, recipient, LoadBalancedWorkerId());
-  }
-
-  // TODO(stupaq) remove it once we get numeric sequence ids & allocators
-  Status SendRequest(const Message& msg, ClientID recipient, int worker_id) {
-    StreamSocket socket(recipient, GetClientId(worker_id) + '|' + recipient);
-    return SendRequest(msg, &socket, worker_id);
-  }
-
   Status SendRequest(const Message& msg,
                      StreamSocket* socket,
                      int worker_id) override;
@@ -116,6 +105,10 @@ class MsgLoop : public MsgLoopBase {
   // Retrieves the number of EventLoop threads.
   int GetNumWorkers() const {
     return static_cast<int>(event_loops_.size());
+  }
+
+  virtual StreamAllocator* GetOutboundAllocator() {
+    return &outbound_alloc_;
   }
 
   // Get the worker ID of the least busy event loop.
@@ -164,6 +157,11 @@ class MsgLoop : public MsgLoopBase {
   // Name of the message loop.
   // Used for stats and thread naming.
   std::string name_;
+
+  /** The set of stream IDs for outbound connections. */
+  StreamAllocator outbound_alloc_;
+  /** The set of stream IDs for inbound connections. */
+  const StreamAllocator inbound_alloc_;
 
   // Looping counter to distribute load on the message loop.
   mutable std::atomic<int> next_worker_id_;

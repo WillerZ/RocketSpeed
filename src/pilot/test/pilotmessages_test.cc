@@ -34,11 +34,9 @@ class PilotTest {
   std::shared_ptr<Logger> info_log_;
   std::set<MsgId> sent_msgs_;
   std::set<MsgId> acked_msgs_;
-  ClientID client_id_ = "client1";
 
   void ProcessDataAck(std::unique_ptr<Message> msg) {
     const MessageDataAck* acks = static_cast<const MessageDataAck*>(msg.get());
-    ASSERT_EQ(acks->GetOrigin(), client_id_);
     for (const auto& ack : acks->GetAcks()) {
       ASSERT_EQ(ack.status, MessageDataAck::AckStatus::Success);
       acked_msgs_.insert(ack.msgid);  // mark msgid as ack'd
@@ -60,17 +58,18 @@ TEST(PilotTest, Publish) {
   port::Semaphore checkpoint;
 
   // create a client to communicate with the Pilot
-  std::map<MessageType, MsgCallbackType> client_callback;
-  client_callback[MessageType::mDataAck] =
-      [this, &checkpoint](std::unique_ptr<Message> msg) {
-    ProcessDataAck(std::move(msg));
-    if (sent_msgs_.size() == acked_msgs_.size()) {
-      checkpoint.Post();
-    }
-  };
-
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  loop.RegisterCallbacks(client_callback);
+  StreamSocket socket(cluster.GetPilotHostIds().front().ToClientId(),
+                      loop.GetOutboundAllocator());
+  loop.RegisterCallbacks({
+      {MessageType::mDataAck, [&](std::unique_ptr<Message> msg) {
+        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ProcessDataAck(std::move(msg));
+        if (sent_msgs_.size() == acked_msgs_.size()) {
+          checkpoint.Post();
+        }
+      }},
+  });
   env_->StartThread(MsgLoopStart, &loop, "client");
   ASSERT_OK(loop.WaitUntilRunning());
 
@@ -82,13 +81,12 @@ TEST(PilotTest, Publish) {
     std::string serial;
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
-                     client_id_,
+                     "",
                      Slice(topic),
                      nsid,
                      Slice(payload));
     sent_msgs_.insert(data.GetMessageId());
-    ClientID host = cluster.GetPilotHostIds().front().ToClientId();
-    ASSERT_OK(loop.SendRequest(data, host));
+    ASSERT_OK(loop.SendRequest(data, &socket, 0));
   }
 
   // Ensure all messages were ack'd

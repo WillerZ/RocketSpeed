@@ -170,11 +170,10 @@ class MessagePing : public Message {
 
   MessagePing() : pingtype_(PingType::NotInitialized) {}
 
-  MessagePing(TenantID tenantid,
-              PingType pingtype,
-              const ClientID& origin) :
-              Message(MessageType::mPing, tenantid, origin),
-              pingtype_(pingtype) {}
+  MessagePing(TenantID tenantid, PingType pingtype, std::string cookie)
+      : Message(MessageType::mPing, tenantid, "origin shouldn't matter")
+      , pingtype_(pingtype)
+      , cookie_(std::move(cookie)) {}
 
   PingType GetPingType() const {
     return pingtype_;
@@ -182,6 +181,14 @@ class MessagePing : public Message {
 
   void SetPingType(PingType type) {
     pingtype_ = type;
+  }
+
+  const std::string& GetCookie() const {
+    return cookie_;
+  }
+
+  void SetCookie(std::string cookie) {
+    cookie_ = std::move(cookie);
   }
 
   /*
@@ -192,6 +199,7 @@ class MessagePing : public Message {
 
  protected:
   PingType pingtype_;
+  std::string cookie_;
 };
 
 /*

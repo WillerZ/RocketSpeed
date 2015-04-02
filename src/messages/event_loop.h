@@ -17,8 +17,9 @@
 #include <memory>
 #include <map>
 #include <list>
+#include <tuple>
 #include <unordered_map>
-#include <unordered_set>
+#include <vector>
 
 #include "include/Logger.h"
 #include "src/messages/commands.h"
@@ -52,77 +53,83 @@ class EventLoop;
 class SocketEvent;
 
 /**
- * Maintains open streams and connections and mapping between them. All stream
- * IDs used by this class are assumed to be unique per instance of the class,
- * that means unique per EventLoop.
+ * Maintains open streams and connections and mapping between them.
+ * Performs remapping of stream IDs bewteen IDs which are unique per connection
+ * (local) and unique per instance of this class (global). All stream IDs used
+ * by this class are the global ones unless otherwise noted.
  */
 class StreamRouter {
  public:
   /**
-   * Finds a connection for given stream, if none is assigned, assigns or
-   * creates one based on destination provided in the spec. If a new connection
-   * needs to be created, delegates this responsibility back to event loop via
-   * provided non-owning pointer.
-   */
-  Status GetConnection(const SendCommand::StreamSpec& spec,
-                       EventLoop* event_loop,
-                       SocketEvent** out);
-
-  enum InsertStatus {
-    kExists,
-    kNew,
-    kReplaced,
-    kReplacedLast,
-  };
+  * Creates an empty router.
+  * @param inbound_alloc An allocator to be used when building a mapping
+  *                      between connection-local and global stream IDs.
+  */
+  explicit StreamRouter(StreamAllocator inbound_alloc)
+      : open_streams_(std::move(inbound_alloc)) {}
 
   /**
-   * Associates provided stream and connection.
-   * If no association for a stream exists, inserts it and returns kNew.
-   * If association already exists with the same connection, returns kExists.
-   * If association already exists with different connection, performs removal
-   * and then insertion. If after removal there was no stream associated with
-   * the connection, returns kReplacedLast otherwise kReplaced. In either case
-   * returns old mapping as well.
+   * Finds a local stream ID and connection for given stream (identified by
+   * global stream ID from the spec), if none is assigned, assigns or creates
+   * one based on destination provided in the spec.
+   * If a new connection needs to be created, delegates this responsibility back
+   * to event loop via provided non-owning pointer.
    */
-  std::pair<InsertStatus, SocketEvent*> InsertConnection(StreamID stream,
-                                                         SocketEvent* new_sev);
+  Status GetOutboundStream(const SendCommand::StreamSpec& spec,
+                           EventLoop* event_loop,
+                           SocketEvent** out_sev,
+                           StreamID* out_local);
 
   /**
-   * Called when stream shall be closed for whatever reason. If it was the only
-   * stream on its connection, returns the connection, otherwise returns null.
+   * Remaps provided local stream ID into global stream ID and associates it
+   * with provided connection.
+   * If no association for the stream in given context exists, inserts it and
+   * returns (true, new global ID), otherwise returns (false, currently assigned
+   * global ID).
    */
-  SocketEvent* RemoveStream(StreamID stream);
+  std::pair<bool, StreamID> InsertInboundStream(SocketEvent* new_sev,
+                                                StreamID local);
+
+  typedef UniqueStreamMap<SocketEvent*>::RemovalStatus RemovalStatus;
 
   /**
-   * Called when connection fails, returns a list of all stream IDs mapped to
-   * the connection and removes these entries from internal map, effectively
-   * marking streams as closed-broken.
+   * Called when stream (identified by global stream ID) shall be closed for
+   * whatever reason. Returns a tuple:
+   * - RemovalStatus, which indicates whether removal was performed and whether
+   * it was the last stream on the connection,
+   * - connection that this stream was using,
+   * - local stream ID for this global stream ID.
    */
-  std::unordered_set<StreamID> RemoveConnection(SocketEvent* sev);
+  std::tuple<RemovalStatus, SocketEvent*, StreamID> RemoveStream(
+      StreamID global);
+
+  /**
+   * Called when connection fails, returns a set of all streams (identified by
+   * global stream IDs) assigned to the connection and marks them as
+   * closed-broken.
+   */
+  std::vector<StreamID> RemoveConnection(SocketEvent* sev);
 
   /** Returns mappings for all connections. */
   void CloseAll() {
     // This will typically be called after the event loop thread terminates.
     thread_check_.Reset();
-    open_streams_.clear();
     open_connections_.clear();
+    open_streams_.Clear();
   }
 
   /** Returns number of open streams. */
   size_t GetNumStreams() const {
     thread_check_.Check();
-    return open_streams_.size();
+    return open_streams_.GetNumStreams();
   }
 
  private:
   ThreadCheck thread_check_;
   /** A mapping from destination to corresponding connection. */
   std::unordered_map<ClientID, SocketEvent*> open_connections_;
-  /** A mapping from opened streams to corresponding connection. */
-  std::unordered_map<StreamID, SocketEvent*> open_streams_;
-  /** A mapping from connection to all open streams that use it. */
-  std::unordered_map<SocketEvent*, std::unordered_set<StreamID>>
-      streams_on_connection_;
+  /** Maps global <-> (connection, local) for all open streams. */
+  UniqueStreamMap<SocketEvent*> open_streams_;
 };
 
 class EventLoop {
@@ -137,6 +144,7 @@ class EventLoop {
    * @param event_callback Callback invoked when Dispatch is called
    * @param accept_callback Callback invoked when a new client connects
    * @param command_queue_size The size of the internal command queue
+   * @param inbound_alloc Stream ID allocator for remapping inbound streams.
    */
   EventLoop(BaseEnv* env,
             EnvOptions env_options,
@@ -144,6 +152,7 @@ class EventLoop {
             const std::shared_ptr<Logger>& info_log,
             EventCallbackType event_callback,
             AcceptCallbackType accept_callback,
+            StreamAllocator inbound_alloc,
             const std::string& stats_prefix = "",
             uint32_t command_queue_size = 1000000);
 

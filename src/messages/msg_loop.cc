@@ -62,14 +62,15 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  int num_workers,
                  const std::shared_ptr<Logger>& info_log,
                  std::string name,
-                 ClientID client_id):
-  MsgLoopBase(env),
-  worker_index_(&free_thread_local),
-  env_options_(env_options),
-  info_log_(info_log),
-  name_(name),
-  next_worker_id_(0),
-  stats_("rocketspeed." + name) {
+                 ClientID client_id)
+    : MsgLoopBase(env)
+    , worker_index_(&free_thread_local)
+    , env_options_(env_options)
+    , info_log_(info_log)
+    , name_(name)
+    , inbound_alloc_(outbound_alloc_.Split())
+    , next_worker_id_(0)
+    , stats_("rocketspeed." + name) {
   assert(info_log);
   assert(num_workers >= 1);
 
@@ -103,6 +104,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
     event_loops_[LoadBalancedWorkerId()]->Accept(fd);
   };
 
+  auto allocs = inbound_alloc_.Divide(num_workers);
   for (int i = 0; i < num_workers; ++i) {
     EventLoop* event_loop = new EventLoop(env,
                                           env_options,
@@ -110,6 +112,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
                                           info_log,
                                           event_callback,
                                           accept_callback,
+                                          std::move(allocs[i]),
                                           "rocketspeed." + name);
     event_loops_.emplace_back(event_loop);
   }

@@ -122,7 +122,11 @@ Slice MessagePing::Serialize() const {
   PutFixed16(&serialize_buffer__, tenantid_);
 
   // serialize message specific contents
+  // pingtype
   PutFixedEnum8(&serialize_buffer__, pingtype_);
+  // cookie
+  PutLengthPrefixedSlice(&serialize_buffer__, Slice(cookie_));
+
   //  origin
   PutLengthPrefixedSlice(&serialize_buffer__, Slice(origin_));
 
@@ -142,6 +146,11 @@ Status MessagePing::DeSerialize(Slice* in) {
   // extract ping type
   if (!GetFixedEnum8(in, &pingtype_)) {
     return Status::InvalidArgument("Bad ping type");
+  }
+
+  // extract cookie
+  if (!GetLengthPrefixedSlice(in, &cookie_)) {
+    return Status::InvalidArgument("Bad cookie");
   }
 
   // extract origin
