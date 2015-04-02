@@ -76,41 +76,27 @@ struct MessageHeader {
 };
 
 /**
- * Encodes stream recipients into wire format.
+ * Encodes stream ID onto wire.
  *
- * @param stream Pointer to start of stream array.
- * @param num_streams Number of streams in array.
- * @return Encoded stream recipients.
+ * @param origin Origin stream ID.
+ * @return Encoded origin.
  */
-static std::string EncodeRecipients(const StreamID* stream,
-                                    size_t num_streams) {
+static std::string EncodeOrigin(const StreamID origin) {
   std::string encoded;
-  PutVarint32(&encoded, static_cast<uint32_t>(num_streams));
-  while (num_streams--) {
-    PutLengthPrefixedSlice(&encoded, *stream++);
-  }
+  PutLengthPrefixedSlice(&encoded, origin);
   return encoded;
 }
 
 /**
- * Decodes wire format of stream recipients.
+ * Decodes wire format of stream origin.
  *
  * @param in Input slice of encoded stream spec. Will be advanced beyond spec.
- * @param streams Output parameter for decoded streams.
+ * @param origin Output parameter for decoded stream.
  * @return ok() if successfully decoded, otherwise error.
  */
-static Status DecodeRecipients(Slice* in, autovector<StreamID, 1>* streams) {
-  assert(streams);
-  uint32_t num_streams;
-  if (!GetVarint32(in, &num_streams)) {
-    return Status::InvalidArgument("Bad number of streams");
-  }
-  while (num_streams--) {
-    StreamID stream;
-    if (!GetLengthPrefixedSlice(in, &stream)) {
-      return Status::InvalidArgument("Bad stream ID");
-    }
-    streams->push_back(stream);
+static Status DecodeOrigin(Slice* in, StreamID* origin) {
+  if (!GetLengthPrefixedSlice(in, origin)) {
+    return Status::InvalidArgument("Bad stream ID");
   }
   return Status::OK();
 }
@@ -266,7 +252,7 @@ class SocketEvent {
                                MessageGoodbye::Code::SocketError,
                                origin_type));
         msg->SetOrigin(destination);
-        event_loop->Dispatch(std::move(msg));
+        event_loop->Dispatch(std::move(msg), destination);
       } else {
         for (StreamID global : globals) {
           // We send goodbye using the global stream IDs, as these are only
@@ -276,7 +262,7 @@ class SocketEvent {
                                  MessageGoodbye::Code::SocketError,
                                  origin_type));
           msg->SetOrigin(global);
-          event_loop->Dispatch(std::move(msg));
+          event_loop->Dispatch(std::move(msg), global);
         }
       }
     }
@@ -408,9 +394,8 @@ class SocketEvent {
       Slice in(msg_buf_.get(), msg_size_);
 
       // Decode the recipients.
-      autovector<StreamID, 1> streams;
-      Status st = DecodeRecipients(&in, &streams);
-      assert(streams.size() == 1);  // only 1 destination supported for now.
+      StreamID origin;
+      Status st = DecodeOrigin(&in, &origin);
 
       // Decode the rest of the message.
       std::unique_ptr<Message> msg;
@@ -420,7 +405,7 @@ class SocketEvent {
 
       if (msg) {
         // Apply origin.
-        StreamID local = streams[0];
+        StreamID local = origin;
         if (was_initiated_) {
           // Initiated socket responses will have the correct stream ID.
           // Overwrite stream ID in the message.
@@ -466,7 +451,7 @@ class SocketEvent {
         }
 
         // Invoke the callback for this message.
-        event_loop_->Dispatch(std::move(msg));
+        event_loop_->Dispatch(std::move(msg), origin);
       } else {
         // Failed to decode message.
         LOG_WARN(event_loop_->GetLog(), "Failed to decode message");
@@ -684,7 +669,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
       // Enqueue data to SocketEvent queue. This message will be sent out
       // when the output socket is ready to write.
       auto destinations = std::make_shared<TimestampedString>();
-      destinations->string = EncodeRecipients(&local, 1);
+      destinations->string = EncodeOrigin(local);
       destinations->issued_time = issued_time;
 
       size_t frame_size = destinations->string.size() + msg->string.size();
@@ -1047,8 +1032,8 @@ void EventLoop::Accept(int fd) {
   SendCommand(std::move(command));
 }
 
-void EventLoop::Dispatch(std::unique_ptr<Message> message) {
-  event_callback_(std::move(message));
+void EventLoop::Dispatch(std::unique_ptr<Message> message, StreamID origin) {
+  event_callback_(std::move(message), origin);
 }
 
 void EventLoop::Dispatch(std::unique_ptr<Command> command,

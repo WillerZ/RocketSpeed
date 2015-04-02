@@ -32,7 +32,8 @@ namespace rocketspeed {
 // This is registered with the event loop. The event loop invokes
 // this call on every message received.
 void
-MsgLoop::EventCallback(std::unique_ptr<Message> msg) {
+MsgLoop::EventCallback(std::unique_ptr<Message> msg,
+                       StreamID origin) {
   assert(msg);
 
   // what message have we received?
@@ -97,8 +98,9 @@ MsgLoop::MsgLoop(BaseEnv* env,
     worker_client_ids_[i].back() = static_cast<char>('a' + i);
   }
 
-  auto event_callback = [this] (std::unique_ptr<Message> msg) {
-    EventCallback(std::move(msg));
+  auto event_callback = [this] (std::unique_ptr<Message> msg,
+                                StreamID origin) {
+    EventCallback(std::move(msg), origin);
   };
 
   auto accept_callback = [this] (int fd) {

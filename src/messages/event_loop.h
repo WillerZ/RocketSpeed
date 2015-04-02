@@ -40,7 +40,7 @@ struct sockaddr;
 
 namespace rocketspeed {
 
-typedef std::function<void(std::unique_ptr<Message> msg)>
+typedef std::function<void(std::unique_ptr<Message> msg, StreamID origin)>
   EventCallbackType;
 
 typedef std::function<void(int fd)> AcceptCallbackType;
@@ -190,7 +190,7 @@ class EventLoop {
   void Accept(int fd);
 
   // Dispatches a message to the event callback.
-  void Dispatch(std::unique_ptr<Message> message);
+  void Dispatch(std::unique_ptr<Message> message, StreamID origin);
 
   /**
    * Invokes callback for provided command in the calling thread.

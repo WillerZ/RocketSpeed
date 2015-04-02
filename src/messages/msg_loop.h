@@ -176,7 +176,7 @@ class MsgLoop : public MsgLoopBase {
   } stats_;
 
   // The EventLoop callback.
-  void EventCallback(std::unique_ptr<Message> msg);
+  void EventCallback(std::unique_ptr<Message> msg, StreamID origin);
 
   // method to provide default handling of ping message
   void ProcessPing(std::unique_ptr<Message> msg);
