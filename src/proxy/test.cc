@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "src/test/test_cluster.h"
@@ -169,21 +170,11 @@ TEST(ProxyTest, ServerDown) {
   auto on_message = [&] (int64_t session, std::string data) {
     checkpoint.Post();
   };
-  port::Semaphore disconnect_checkpoint;
-  // TODO(stupaq) until we fix semantics of Goodbye and merge messages that go
-  // to the same socket, we will be getting as many goodbye messages as we have
-  // streams, if the second happens to arrive before we close the proxy,
-  // unhandled exception from assertion will kill the test...
-  std::atomic_flag called = ATOMIC_FLAG_INIT;
+  port::Semaphore disconnected;
+  std::unordered_set<int64_t> disconnected_sessions;
   auto on_disconnect = [&](std::vector<int64_t> sessions) {
-    if (called.test_and_set()) {
-      return;
-    }
-    std::sort(sessions.begin(), sessions.end());
-    ASSERT_EQ(sessions.size(), 2);
-    ASSERT_EQ(sessions[0], 123);
-    ASSERT_EQ(sessions[1], 456);
-    disconnect_checkpoint.Post();
+    disconnected_sessions.insert(sessions.begin(), sessions.end());
+    disconnected.Post();
   };
   proxy->Start(on_message, on_disconnect);
 
@@ -202,8 +193,14 @@ TEST(ProxyTest, ServerDown) {
   // Now destroy cluster.
   cluster.reset(nullptr);
 
-  // Should get disconnect message.
-  ASSERT_TRUE(disconnect_checkpoint.TimedWait(std::chrono::seconds(1)));
+  // Disconnect callback should be called twice.
+  ASSERT_TRUE(disconnected.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(disconnected.TimedWait(std::chrono::seconds(1)));
+
+  // Verify that all sessions where disconnected.
+  ASSERT_EQ(disconnected_sessions.size(), 2);
+  ASSERT_EQ(1, disconnected_sessions.count(123));
+  ASSERT_EQ(1, disconnected_sessions.count(456));
 }
 
 TEST(ProxyTest, ForwardGoodbye) {

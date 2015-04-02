@@ -238,32 +238,21 @@ class SocketEvent {
                              : MessageGoodbye::OriginType::Client;
 
       EventLoop* event_loop = sev->event_loop_;
-      // TODO(stupaq) this is a hack for now to preserve semantics of goodbye
-      ClientID destination = sev->GetDestination();
       // Remove and close streams that were assigned to this connection.
       auto globals = event_loop->stream_router_.RemoveConnection(sev);
       // Delete the socket event.
       event_loop->teardown_connection(sev);
       sev = nullptr;
 
-      if (origin_type == MessageGoodbye::OriginType::Server) {
+      for (StreamID global : globals) {
+        // We send goodbye using the global stream IDs, as these are only
+        // known by the entity using the loop.
         std::unique_ptr<Message> msg(
             new MessageGoodbye(Tenant::InvalidTenant,
                                MessageGoodbye::Code::SocketError,
                                origin_type));
-        msg->SetOrigin(destination);
-        event_loop->Dispatch(std::move(msg), destination);
-      } else {
-        for (StreamID global : globals) {
-          // We send goodbye using the global stream IDs, as these are only
-          // known by the entity using the loop.
-          std::unique_ptr<Message> msg(
-              new MessageGoodbye(Tenant::InvalidTenant,
-                                 MessageGoodbye::Code::SocketError,
-                                 origin_type));
-          msg->SetOrigin(global);
-          event_loop->Dispatch(std::move(msg), global);
-        }
+        msg->SetOrigin(global);
+        event_loop->Dispatch(std::move(msg), global);
       }
     }
   }

@@ -234,19 +234,46 @@ ProxyWorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
 void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Server) {
-    LOG_WARN(info_log_,
-             "Received goodbye from server %s.",
+    LOG_INFO(info_log_,
+             "Received goodbye for stream (%s).",
              goodbye->GetOrigin().c_str());
-    // Arbitrary subset of sessions might have been mapped to this host, we have
-    // to fan out to all workers.
-    for (int worker_id = 0; worker_id < msg_loop_->GetNumWorkers();
-         ++worker_id) {
-      std::unique_ptr<Command> command(new ExecuteCommand(
-          std::bind(&Proxy::HandleRemoveHost, this, goodbye->GetOrigin())));
-      msg_loop_->SendCommand(std::move(command), worker_id);
-      // TODO(stupaq) scary things can happen if we fail to append command to
-      // all queues
+
+    // TODO(stupaq) remove once proxy turns into event loopish thing
+    // Parse origin as session.
+    const char* origin = msg->GetOrigin().c_str();
+    int64_t session = strtoll(origin, nullptr, 10);
+    // strtoll failure modes are:
+    // return 0LL if could not convert.
+    // return LLONG_MIN/MAX if out of range, with errno set to ERANGE.
+    if ((session == 0 && strcmp(origin, "0")) ||
+        (session == LLONG_MIN && errno == ERANGE) ||
+        (session == LLONG_MAX && errno == ERANGE)) {
+      LOG_ERROR(info_log_,
+                "Could not parse message origin '%s' into a session ID.",
+                origin);
+      stats_.bad_origins->Add(1);
+      return;
     }
+
+    // Translate origin back.
+    auto& data = GetWorkerDataForSession(session);
+    auto it = data.session_to_client_.find(session);
+    if (it == data.session_to_client_.end()) {
+      LOG_ERROR(info_log_,
+                "Could not find client ID for session '%" PRIi64 "'.",
+                session);
+      stats_.bad_origins->Add(1);
+      return;
+    }
+
+    // Remove original client ID.
+    data.session_to_client_.erase(session);
+    // Remove ordering processor.
+    data.sessions_.erase(session);
+    // Remove host mapping from the matrix.
+    data.host_session_matrix_.RemoveSession(session);
+
+    on_disconnect_({session});
   } else {
     LOG_WARN(info_log_,
              "Proxy received client goodbye from %s, but has no clients.",
@@ -279,15 +306,6 @@ void Proxy::HandleDestroySession(int64_t session) {
 
   // Remove the session to client ID mapping.
   data.session_to_client_.erase(session);
-}
-
-void Proxy::HandleRemoveHost(ClientID host) {
-  auto& data = worker_data_[msg_loop_->GetThreadWorkerIndex()];
-  data.thread_check_.Check();
-  // Remove host.
-  auto sessions = data.host_session_matrix_.RemoveHost(host);
-  std::vector<int64_t> sessions_vec(sessions.begin(), sessions.end());
-  on_disconnect_(std::move(sessions_vec));
 }
 
 void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
