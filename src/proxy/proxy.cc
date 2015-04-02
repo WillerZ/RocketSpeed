@@ -320,7 +320,7 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
   auto it = data.session_to_client_.find(session);
   if (it == data.session_to_client_.end()) {
     LOG_ERROR(info_log_,
-              "Could find client ID for session '%" PRIi64 "'.",
+              "Could not find client ID for session '%" PRIi64 "'.",
               session);
     stats_.bad_origins->Add(1);
     return;

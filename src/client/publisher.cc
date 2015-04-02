@@ -125,8 +125,8 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
 
   // Initialise stream socket for each worker, each of them is independent.
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    worker_data_[i].pilot_socket = StreamSocket(
-        pilot_host_.ToClientId(), msg_loop_->GetClientId(i) + 'P');
+    worker_data_[i].pilot_socket =
+        msg_loop_->CreateOutboundStream(pilot_host_.ToClientId(), i);
   }
 
   // Register our callbacks.

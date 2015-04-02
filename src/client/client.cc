@@ -368,7 +368,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
   // Initialise stream socket for each worker, each of them is independent.
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     worker_data_[i].copilot_socket = StreamSocket(
-        copilot_host_id_.ToClientId(), msg_loop_->GetClientId(i) + 'C');
+        msg_loop_->CreateOutboundStream(copilot_host_id_.ToClientId(), i));
   }
 
   msg_loop_->RegisterCallbacks(callbacks);

@@ -144,6 +144,7 @@ class CopilotWorker {
 
   /** Gets or (re)open socket to control tower. */
   StreamSocket* GetControlTowerSocket(const ClientID& tower,
+                                      MsgLoop* msg_loop,
                                       int outgoing_worker_id);
 
   // Main worker loop for this worker.

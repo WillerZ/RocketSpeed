@@ -406,7 +406,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       int outgoing_worker_id = copilot_->GetLogWorker(logid);
 
       // Find or open a new stream socket to this control tower.
-      auto socket = GetControlTowerSocket(*recipient, outgoing_worker_id);
+      auto socket = GetControlTowerSocket(
+          *recipient, options_.msg_loop, outgoing_worker_id);
 
       // Forward request to control tower to update the copilot subscription.
       msg->SetOrigin(copilot_->GetClientId(outgoing_worker_id));
@@ -530,7 +531,8 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
                                            namespace_id) });
 
         // Find or open a new stream socket to this control tower.
-        auto socket = GetControlTowerSocket(*recipient, outgoing_worker_id);
+        auto socket = GetControlTowerSocket(
+            *recipient, options_.msg_loop, outgoing_worker_id);
 
         // Send the message.
         Status status = options_.msg_loop->SendRequest(newmsg,
@@ -556,7 +558,8 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
                                            namespace_id) });
 
         // Find or open a new stream socket to this control tower.
-        auto socket = GetControlTowerSocket(*recipient, outgoing_worker_id);
+        auto socket = GetControlTowerSocket(
+            *recipient, options_.msg_loop, outgoing_worker_id);
 
         // Send the message.
         Status status = options_.msg_loop->SendRequest(newmsg,
@@ -682,14 +685,13 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
 }
 
 StreamSocket* CopilotWorker::GetControlTowerSocket(const ClientID& tower,
+                                                   MsgLoop* msg_loop,
                                                    int outgoing_worker_id) {
   auto& tower_sockets = control_tower_sockets_[tower];
   tower_sockets.resize(options_.msg_loop->GetNumWorkers());
   auto& socket = tower_sockets[outgoing_worker_id];
   if (!socket.IsValid()) {
-    socket = StreamSocket(tower,
-                          std::to_string(myid_) + '|' + tower + '|' +
-                              std::to_string(outgoing_worker_id));
+    socket = msg_loop->CreateOutboundStream(tower, outgoing_worker_id);
   }
   return &socket;
 }
