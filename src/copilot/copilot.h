@@ -105,10 +105,10 @@ class Copilot {
   void StartWorkers();
 
   // callbacks to process incoming messages
-  void ProcessDeliver(std::unique_ptr<Message> msg);
-  void ProcessMetadata(std::unique_ptr<Message> msg);
-  void ProcessGap(std::unique_ptr<Message> msg);
-  void ProcessGoodbye(std::unique_ptr<Message> msg);
+  void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessGap(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };

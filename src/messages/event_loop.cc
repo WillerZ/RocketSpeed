@@ -440,7 +440,7 @@ class SocketEvent {
         }
 
         // Invoke the callback for this message.
-        event_loop_->Dispatch(std::move(msg), origin);
+        event_loop_->Dispatch(std::move(msg), msg->GetOrigin());
       } else {
         // Failed to decode message.
         LOG_WARN(event_loop_->GetLog(), "Failed to decode message");

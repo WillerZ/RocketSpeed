@@ -103,7 +103,7 @@ class ControlTower {
   ControlTowerOptions SanitizeOptions(const ControlTowerOptions& src);
 
   // callbacks to process incoming messages
-  void ProcessMetadata(std::unique_ptr<Message> msg);
+  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 
   Status Initialize();

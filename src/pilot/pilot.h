@@ -29,12 +29,14 @@ struct AppendClosure : public PooledObject<AppendClosure> {
                 std::unique_ptr<MessageData> msg,
                 LogID logid,
                 uint64_t now,
-                int worker_id)
+                int worker_id,
+                StreamID origin)
   : pilot_(pilot)
   , msg_(std::move(msg))
   , logid_(logid)
   , append_time_(now)
-  , worker_id_(worker_id) {
+  , worker_id_(worker_id)
+  , origin_(origin) {
   }
 
   void operator()(Status append_status, SequenceNumber seqno);
@@ -47,6 +49,7 @@ struct AppendClosure : public PooledObject<AppendClosure> {
   LogID logid_;
   uint64_t append_time_;
   int worker_id_;
+  StreamID origin_;
 };
 
 class Pilot {
@@ -78,7 +81,8 @@ class Pilot {
                       std::unique_ptr<MessageData> msg,
                       LogID logid,
                       uint64_t append_time,
-                      int worker_id);
+                      int worker_id,
+                      StreamID origin);
 
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;
@@ -110,7 +114,8 @@ class Pilot {
   void SendAck(MessageData* msg,
                SequenceNumber seqno,
                MessageDataAck::AckStatus status,
-               int worker_id);
+               int worker_id,
+               StreamID origin);
 
   // The options used by the Pilot
   PilotOptions options_;
@@ -138,7 +143,7 @@ class Pilot {
   PilotOptions SanitizeOptions(PilotOptions options);
 
   // callbacks to process incoming messages
-  void ProcessPublish(std::unique_ptr<Message> msg);
+  void ProcessPublish(std::unique_ptr<Message> msg, StreamID origin);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };

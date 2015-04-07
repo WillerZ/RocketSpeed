@@ -215,7 +215,7 @@ Status ControlTower::Initialize() {
 // A callback method to process MessageMetadata
 // The message is forwarded to the appropriate ControlRoom
 void
-ControlTower::ProcessMetadata(std::unique_ptr<Message> msg) {
+ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
   // get the request message
@@ -281,8 +281,9 @@ std::map<MessageType, MsgCallbackType>
 ControlTower::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
-    ProcessMetadata(std::move(msg));
+  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg,
+                                       StreamID origin) {
+    ProcessMetadata(std::move(msg), origin);
   };
 
   // return the updated map

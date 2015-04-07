@@ -613,15 +613,15 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   MsgLoop client(env_, EnvOptions(), 58499, 1, info_log, "client");
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mMetadata] =
-    [&] (std::unique_ptr<Message> msg) {
+    [&] (std::unique_ptr<Message> msg, StreamID origin) {
       subscribed.Post();
     };
   callbacks[MessageType::mDeliver] =
-    [&] (std::unique_ptr<Message> msg) {
+    [&] (std::unique_ptr<Message> msg, StreamID origin) {
       received_data.Post();
     };
-  callbacks[MessageType::mGap] = [](std::unique_ptr<Message> msg) {};
-  callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>) {};
+  callbacks[MessageType::mGap] = [](std::unique_ptr<Message>, StreamID) {};
+  callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>, StreamID) {};
   client.RegisterCallbacks(callbacks);
   StreamSocket socket(client.CreateOutboundStream(
       cluster.GetCopilotHostIds().front().ToClientId(), 0));

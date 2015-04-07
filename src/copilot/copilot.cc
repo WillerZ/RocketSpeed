@@ -139,7 +139,7 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
 }
 
 // A static callback method to process MessageData
-void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
+void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
   const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
@@ -177,7 +177,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg) {
 }
 
 // A static callback method to process MessageMetadata
-void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
+void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
   // get the request message
@@ -224,7 +224,7 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg) {
   }
 }
 
-void Copilot::ProcessGap(std::unique_ptr<Message> msg) {
+void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
   const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
@@ -261,7 +261,7 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg) {
   }
 }
 
-void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg) {
+void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
@@ -288,17 +288,21 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg) {
 std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
-    ProcessDeliver(std::move(msg));
+  cb[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg,
+                                      StreamID origin) {
+    ProcessDeliver(std::move(msg), origin);
   };
-  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
-    ProcessMetadata(std::move(msg));
+  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg,
+                                       StreamID origin) {
+    ProcessMetadata(std::move(msg), origin);
   };
-  cb[MessageType::mGap] = [this] (std::unique_ptr<Message> msg) {
-    ProcessGap(std::move(msg));
+  cb[MessageType::mGap] = [this] (std::unique_ptr<Message> msg,
+                                  StreamID origin) {
+    ProcessGap(std::move(msg), origin);
   };
-  cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg) {
-    ProcessGoodbye(std::move(msg));
+  cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg,
+                                      StreamID origin) {
+    ProcessGoodbye(std::move(msg), origin);
   };
   return cb;
 }

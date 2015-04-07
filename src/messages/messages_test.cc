@@ -219,7 +219,8 @@ TEST(Messaging, PingPong) {
   MsgLoop loop(env_, env_options_, 58498, 1, info_log_, "client");
   StreamSocket socket(loop.CreateOutboundStream(server.GetClientId(0), 0));
   loop.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
+                               StreamID origin) {
         ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
         MessagePing* ping = static_cast<MessagePing*>(msg.get());
@@ -259,7 +260,8 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
 
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
   server.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
+                               StreamID origin) {
         ASSERT_TRUE(
             server_pings.write(static_cast<MessagePing*>(msg.release())));
         server_ping.Post();
@@ -273,7 +275,8 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   // First client loop.
   MsgLoop client1(env_, env_options_, 0, 1, info_log_, "client1");
   client1.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
+                               StreamID origin) {
         auto ping = static_cast<MessagePing*>(msg.get());
         ASSERT_EQ("stream1", ping->GetCookie());
         client_ping.Post();
@@ -284,7 +287,8 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   // Second client loop.
   MsgLoop client2(env_, env_options_, 0, 1, info_log_, "client2");
   client2.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
+                               StreamID origin) {
         auto ping = static_cast<MessagePing*>(msg.get());
         ASSERT_EQ("stream2", ping->GetCookie());
         client_ping.Post();
@@ -366,7 +370,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
     client.RegisterCallbacks({
         {MessageType::mPing,
          [&checkpoint, &sockets, message_num](
-             std::unique_ptr<Message> msg) mutable {
+             std::unique_ptr<Message> msg, StreamID origin) mutable {
           int i = message_num++ % kNumStreams;
           ASSERT_LT(i, kNumStreams);
           auto ping = static_cast<MessagePing*>(msg.get());
@@ -407,8 +411,10 @@ TEST(Messaging, GracefulGoodbye) {
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
   server.RegisterCallbacks({
       {MessageType::mGoodbye,
-       [&](std::unique_ptr<Message> msg) { goodbye_checkpoint.Post(); }},
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+       [&](std::unique_ptr<Message> msg,
+           StreamID origin) { goodbye_checkpoint.Post(); }},
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
+                               StreamID origin) {
         {
           std::lock_guard<std::mutex> lock(inbound_stream_mutex);
           inbound_stream.push_back(msg->GetOrigin());
@@ -426,7 +432,8 @@ TEST(Messaging, GracefulGoodbye) {
   std::atomic<int> message_num{0};
   std::string expected_cookies[] = {"c1", "c2", "c2"};
   std::map<MessageType, MsgCallbackType> callbacks = {
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
+                               StreamID origin) {
         int n = message_num++;
         ASSERT_LT(n, 3);
         auto ping = static_cast<MessagePing*>(msg.get());
@@ -512,7 +519,8 @@ TEST(Messaging, SocketDeath) {
   // Post to the checkpoint when receiving a ping.
   port::Semaphore checkpoint;
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mPing] = [&](std::unique_ptr<Message> msg) {
+  callbacks[MessageType::mPing] = [&](std::unique_ptr<Message> msg,
+                                      StreamID origin) {
     auto ping = static_cast<MessagePing*>(msg.get());
     ASSERT_EQ("expected", ping->GetCookie());
     checkpoint.Post();

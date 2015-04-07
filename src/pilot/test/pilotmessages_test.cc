@@ -35,7 +35,7 @@ class PilotTest {
   std::set<MsgId> sent_msgs_;
   std::set<MsgId> acked_msgs_;
 
-  void ProcessDataAck(std::unique_ptr<Message> msg) {
+  void ProcessDataAck(std::unique_ptr<Message> msg, StreamID origin) {
     const MessageDataAck* acks = static_cast<const MessageDataAck*>(msg.get());
     for (const auto& ack : acks->GetAcks()) {
       ASSERT_EQ(ack.status, MessageDataAck::AckStatus::Success);
@@ -62,9 +62,10 @@ TEST(PilotTest, Publish) {
   StreamSocket socket(loop.CreateOutboundStream(
       cluster.GetPilotHostIds().front().ToClientId(), 0));
   loop.RegisterCallbacks({
-      {MessageType::mDataAck, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mDataAck, [&](std::unique_ptr<Message> msg,
+                                  StreamID origin) {
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
-        ProcessDataAck(std::move(msg));
+        ProcessDataAck(std::move(msg), origin);
         if (sent_msgs_.size() == acked_msgs_.size()) {
           checkpoint.Post();
         }

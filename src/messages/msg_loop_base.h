@@ -26,9 +26,11 @@ namespace rocketspeed {
 
 /**
  * Type of an application callback that is invoked with meassage of appropriate
- * type (depending on what type the callback was registered for).
+ * type (depending on what type the callback was registered for), and the
+ * origin of the message.
  */
-typedef std::function<void(std::unique_ptr<Message>)> MsgCallbackType;
+typedef std::function<void(std::unique_ptr<Message>,
+                           StreamID)> MsgCallbackType;
 
 /**
  * An interface of message passing style communication between components,

@@ -352,14 +352,17 @@ ClientImpl::ClientImpl(BaseEnv* env,
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg) {
-    ProcessData(std::move(msg));
+  callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg,
+                                             StreamID origin) {
+    ProcessData(std::move(msg), origin);
   };
-  callbacks[MessageType::mGap] = [this] (std::unique_ptr<Message> msg) {
-    ProcessGap(std::move(msg));
+  callbacks[MessageType::mGap] = [this] (std::unique_ptr<Message> msg,
+                                         StreamID origin) {
+    ProcessGap(std::move(msg), origin);
   };
-  callbacks[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg) {
-    ProcessMetadata(std::move(msg));
+  callbacks[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg,
+                                              StreamID origin) {
+    ProcessMetadata(std::move(msg), origin);
   };
 
   // Create sharded state.
@@ -555,7 +558,7 @@ void ClientImpl::SaveSubscriptions(SnapshotCallback snapshot_callback) {
   }
 }
 
-void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
+void ClientImpl::ProcessData(std::unique_ptr<Message> msg, StreamID origin) {
   wake_lock_.AcquireForReceiving();
 
   const MessageData* data = static_cast<const MessageData*>(msg.get());
@@ -612,7 +615,7 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg) {
   }
 }
 
-void ClientImpl::ProcessGap(std::unique_ptr<Message> msg) {
+void ClientImpl::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   wake_lock_.AcquireForReceiving();
 
   const MessageGap* gap = static_cast<const MessageGap*>(msg.get());
@@ -664,7 +667,8 @@ void ClientImpl::ProcessGap(std::unique_ptr<Message> msg) {
   }
 }
 
-void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg) {
+void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg,
+                                 StreamID origin) {
   wake_lock_.AcquireForReceiving();
 
   const MessageMetadata* meta = static_cast<const MessageMetadata*>(msg.get());

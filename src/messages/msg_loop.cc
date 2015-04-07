@@ -46,7 +46,8 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
   std::map<MessageType, MsgCallbackType>::const_iterator iter =
     msg_callbacks_.find(type);
   if (iter != msg_callbacks_.end()) {
-    iter->second(std::move(msg));
+    assert(origin == msg->GetOrigin());
+    iter->second(std::move(msg), origin);
   } else {
     // If the user has not registered a message of this type,
     // then this msg will be droped silently.
@@ -175,15 +176,16 @@ void MsgLoop::Run() {
 
   // Add ping callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mPing) == msg_callbacks_.end()) {
-    msg_callbacks_[MessageType::mPing] = [this] (std::unique_ptr<Message> msg) {
-      ProcessPing(std::move(msg));
+    msg_callbacks_[MessageType::mPing] = [this] (std::unique_ptr<Message> msg,
+                                                 StreamID origin) {
+      ProcessPing(std::move(msg), origin);
     };
   }
 
   // Add goodbye callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mGoodbye) == msg_callbacks_.end()) {
     msg_callbacks_[MessageType::mGoodbye] =
-      [this] (std::unique_ptr<Message> msg) {
+      [this] (std::unique_ptr<Message> msg, StreamID origin) {
         // Ignore, just log it.
         MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
         LOG_INFO(info_log_, "Goodbye %d received for client %s",
@@ -283,7 +285,7 @@ Status MsgLoop::SendResponse(const Message& msg,
 // This is the system's handling of the ping message.
 // Applications can override this behaviour if desired.
 void
-MsgLoop::ProcessPing(std::unique_ptr<Message> msg) {
+MsgLoop::ProcessPing(std::unique_ptr<Message> msg, StreamID origin) {
   // get the ping request message
   ThreadCheck();
   MessagePing* request = static_cast<MessagePing*>(msg.get());

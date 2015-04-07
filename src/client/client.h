@@ -21,6 +21,7 @@
 #include "src/client/publisher.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/messages.h"
+#include "src/messages/stream_socket.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
 
@@ -124,13 +125,13 @@ class ClientImpl : public Client {
   void HandleSubscription(TopicPair request, int worker_id);
 
   /** Handler for messages received on some topic. */
-  void ProcessData(std::unique_ptr<Message> msg);
+  void ProcessData(std::unique_ptr<Message> msg, StreamID origin);
 
    /** Handler for messages received on some topic. */
-  void ProcessGap(std::unique_ptr<Message> msg);
+  void ProcessGap(std::unique_ptr<Message> msg, StreamID origin);
 
   /** Handler for metadata messages received. */
-  void ProcessMetadata(std::unique_ptr<Message> msg);
+  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
 };
 
 }  // namespace rocketspeed

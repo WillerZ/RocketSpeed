@@ -50,7 +50,7 @@ class CopilotTest {
   }
 
   // A method to process a subscribe response message
-  void ProcessMetadata(std::unique_ptr<Message> msg) {
+  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
     ASSERT_EQ(msg->GetMessageType(), MessageType::mMetadata);
     MessageMetadata* metadata = static_cast<MessageMetadata*>(msg.get());
     ASSERT_EQ(metadata->GetMetaType(), MessageMetadata::MetaType::Response);
@@ -76,9 +76,10 @@ TEST(CopilotTest, Subscribe) {
   StreamSocket socket(loop.CreateOutboundStream(
       cluster.GetCopilotHostIds().front().ToClientId(), 0));
   loop.RegisterCallbacks({
-      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
+                                   StreamID origin) {
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
-        ProcessMetadata(std::move(msg));
+        ProcessMetadata(std::move(msg), origin);
         if (sent_msgs_.size() == acked_msgs_.size()) {
           checkpoint.Post();
         }
@@ -191,15 +192,16 @@ TEST(CopilotTest, Rollcall) {
   StreamSocket socket(loop.CreateOutboundStream(
       cluster.GetCopilotHostIds().front().ToClientId(), 0));
   loop.RegisterCallbacks({
-      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
+                                   StreamID origin) {
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
-        ProcessMetadata(std::move(msg));
+        ProcessMetadata(std::move(msg), origin);
         if (expected == acked_msgs_.size()) {
           checkpoint.Post();
         }
       }},
-      {MessageType::mDeliver, [](std::unique_ptr<Message>) {}},
-      {MessageType::mGap, [](std::unique_ptr<Message>) {}},
+      {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
   });
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));

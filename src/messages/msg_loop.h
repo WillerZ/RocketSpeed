@@ -179,7 +179,7 @@ class MsgLoop : public MsgLoopBase {
   void EventCallback(std::unique_ptr<Message> msg, StreamID origin);
 
   // method to provide default handling of ping message
-  void ProcessPing(std::unique_ptr<Message> msg);
+  void ProcessPing(std::unique_ptr<Message> msg, StreamID origin);
   std::map<MessageType, MsgCallbackType> SanitizeCallbacks(
                   const std::map<MessageType, MsgCallbackType>& cb);
 };

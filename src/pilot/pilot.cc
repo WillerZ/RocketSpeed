@@ -24,7 +24,8 @@ void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
                          std::move(msg_),
                          logid_,
                          append_time_,
-                         worker_id_);
+                         worker_id_,
+                         origin_);
   pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
 }
 
@@ -100,7 +101,7 @@ Status Pilot::CreateNewInstance(PilotOptions options,
 }
 
 // A callback method to process MessageData
-void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
+void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   // Sanity checks.
   assert(msg);
   assert(msg->GetMessageType() == MessageType::mPublish);
@@ -131,7 +132,8 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
     std::move(msg_owned),
     logid,
     now,
-    worker_id);
+    worker_id,
+    origin);
 
   // Asynchronously append to log storage.
   auto append_callback = std::ref(*closure);
@@ -147,7 +149,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg) {
       static_cast<uint64_t>(logid), status.ToString().c_str());
     options_.info_log->Flush();
 
-    SendAck(msg_data, 0, MessageDataAck::AckStatus::Failure, worker_id);
+    SendAck(msg_data, 0, MessageDataAck::AckStatus::Failure, worker_id, origin);
 
     // If AppendAsync, the closure will never be invoked, so delete now.
     worker_data_[worker_id].append_closure_pool_->Deallocate(closure);
@@ -159,10 +161,15 @@ void Pilot::AppendCallback(Status append_status,
                            std::unique_ptr<MessageData> msg,
                            LogID logid,
                            uint64_t append_time,
-                           int worker_id) {
+                           int worker_id,
+                           StreamID origin) {
   if (append_status.ok()) {
     // Append successful, send success ack.
-    SendAck(msg.get(), seqno, MessageDataAck::AckStatus::Success, worker_id);
+    SendAck(msg.get(),
+            seqno,
+            MessageDataAck::AckStatus::Success,
+            worker_id,
+            origin);
     LOG_INFO(options_.info_log,
         "Appended (%.16s) successfully to Topic(%s) in Log(%" PRIu64
         ")@%" PRIu64,
@@ -177,31 +184,35 @@ void Pilot::AppendCallback(Status append_status,
         "AppendAsync failed (%s)",
         append_status.ToString().c_str());
     options_.info_log->Flush();
-    SendAck(msg.get(), 0, MessageDataAck::AckStatus::Failure, worker_id);
+    SendAck(msg.get(),
+            0,
+            MessageDataAck::AckStatus::Failure,
+            worker_id,
+            origin);
   }
 }
 
 void Pilot::SendAck(MessageData* msg,
                     SequenceNumber seqno,
                     MessageDataAck::AckStatus status,
-                    int worker_id) {
+                    int worker_id,
+                    StreamID origin) {
   MessageDataAck::Ack ack;
   ack.status = status;
   ack.msgid = msg->GetMessageId();
   ack.seqno = seqno;
 
   // create new message
-  StreamID stream = msg->GetOrigin();
   MessageDataAck newmsg(msg->GetTenantID(), {ack});
 
   // send message
-  Status st = options_.msg_loop->SendResponse(newmsg, stream, worker_id);
+  Status st = options_.msg_loop->SendResponse(newmsg, origin, worker_id);
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.
     LOG_INFO(options_.info_log,
              "Failed to send ack to stream (%s)",
-             stream.c_str());
+             origin.c_str());
   }
 }
 
@@ -209,8 +220,9 @@ void Pilot::SendAck(MessageData* msg,
 std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mPublish] = [this] (std::unique_ptr<Message> msg) {
-    ProcessPublish(std::move(msg));
+  cb[MessageType::mPublish] = [this] (std::unique_ptr<Message> msg,
+                                      StreamID origin) {
+    ProcessPublish(std::move(msg), origin);
   };
 
   // return the updated map

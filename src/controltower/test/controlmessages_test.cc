@@ -44,7 +44,7 @@ class ControlTowerTest {
   }
 
   // A method to process a subscribe response message
-  void ProcessMetadata(std::unique_ptr<Message> msg) {
+  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
     ASSERT_EQ(msg->GetMessageType(), MessageType::mMetadata);
     MessageMetadata* m = static_cast<MessageMetadata*>(msg.get());
     ASSERT_EQ(m->GetMetaType(), MessageMetadata::MetaType::Response);
@@ -90,9 +90,10 @@ TEST(ControlTowerTest, Subscribe) {
       loop.CreateOutboundStream(cluster.GetControlTower()->GetClientId(0), 0));
   // Define a callback to process the subscribe response at the client
   loop.RegisterCallbacks({
-      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
+                                   StreamID origin) {
         ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
-        ProcessMetadata(std::move(msg));
+        ProcessMetadata(std::move(msg), origin);
       }},
   });
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop, "client");
@@ -131,12 +132,13 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
   StreamSocket socket1(loop1.CreateOutboundStream(ct->GetClientId(0), 0));
   loop1.RegisterCallbacks({
-      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
+                                   StreamID origin) {
         ASSERT_EQ(socket1.GetStreamID(), msg->GetOrigin());
-        ProcessMetadata(std::move(msg));
+        ProcessMetadata(std::move(msg), origin);
       }},
-      {MessageType::mDeliver, [](std::unique_ptr<Message>) {}},
-      {MessageType::mGap, [](std::unique_ptr<Message>){}},
+      {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop1, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
@@ -165,12 +167,13 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   MsgLoop loop2(env_, env_options_, 58489, 1, info_log_, "loop2");
   StreamSocket socket2(loop2.CreateOutboundStream(ct->GetClientId(0), 0));
   loop2.RegisterCallbacks({
-      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg) {
+      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
+                                   StreamID origin) {
         ASSERT_EQ(socket2.GetStreamID(), msg->GetOrigin());
-        ProcessMetadata(std::move(msg));
+        ProcessMetadata(std::move(msg), origin);
       }},
-      {MessageType::mDeliver, [](std::unique_ptr<Message>) {}},
-      {MessageType::mGap, [](std::unique_ptr<Message>){}},
+      {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop2, "loop2");
   ASSERT_OK(loop2.WaitUntilRunning());
