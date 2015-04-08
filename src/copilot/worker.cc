@@ -628,33 +628,41 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
   // Write to rollcall topic failed. If this was a 'subscription' event,
   // then send unsubscribe message to copilot worker. This will send an
   // unsubscribe response to appropriate client.
-  auto process_error = [&, this] () {
-    this->copilot_->GetStats(myid_)->numwrites_rollcall_failed->Add(1);
-    std::vector<TopicPair> topics = { TopicPair(0, topic_name,
-                                              MetadataType::mUnSubscribe,
-                                              namespace_id) };
-    std::unique_ptr<Message> newmsg(new MessageMetadata(
-                                      msg->GetTenantID(),
-                                      MessageMetadata::MetaType::Request,
-                                      topics));
-    // Start the automatic unsubscribe process. We rely on the assumption
-    // that the unsubscribe request can fail only if the client is
-    // un-communicable, in which case the client's subscritions are reaped.
-    this->Forward(logid, std::move(newmsg), worker_id, origin);
-  };
+  //
+  // If the write fails, process_error will be called asynchronously, so it
+  // cannot reference local variables.
+  std::function<void()> process_error;
+  if (type == MetadataType::mSubscribe) {
+    TenantID tenant = msg->GetTenantID();
+    process_error =
+      [this, topic_name, namespace_id, logid, worker_id, origin, tenant] () {
+        copilot_->GetStats(myid_)->numwrites_rollcall_failed->Add(1);
+        std::vector<TopicPair> topics = { TopicPair(0, topic_name,
+                                                  MetadataType::mUnSubscribe,
+                                                  namespace_id) };
+        std::unique_ptr<Message> newmsg(new MessageMetadata(
+                                          tenant,
+                                          MessageMetadata::MetaType::Request,
+                                          topics));
+        // Start the automatic unsubscribe process. We rely on the assumption
+        // that the unsubscribe request can fail only if the client is
+        // un-communicable, in which case the client's subscritions are reaped.
+        Forward(logid, std::move(newmsg), worker_id, origin);
+      };
+  }
 
   // This callback is called when the write to the rollcall topic is complete
-  auto publish_callback = [&, this, process_error]
+  auto publish_callback = [this, process_error]
                           (std::unique_ptr<ResultStatus> status) {
-    if (!status->GetStatus().ok() && type == MetadataType::mSubscribe) {
+    if (!status->GetStatus().ok() && process_error) {
       process_error();
     }
   };
 
   // Issue the write to rollcall topic
-  Status status =  copilot_->GetRollcallLogger()->WriteEntry(topic_name,
+  Status status = copilot_->GetRollcallLogger()->WriteEntry(topic_name,
                                namespace_id,
-                               type == MetadataType::mSubscribe ?  true: false,
+                               type == MetadataType::mSubscribe ? true : false,
                                publish_callback);
   copilot_->GetStats(myid_)->numwrites_rollcall_total->Add(1);
   if (status.ok()) {
@@ -674,7 +682,7 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
              status.ToString().c_str());
     // If we are unable to write to the rollcall topic and it is a subscription
     // request, then we need to terminate that subscription.
-    if (type == MetadataType::mSubscribe) {
+    if (process_error) {
       process_error();
     }
   }
