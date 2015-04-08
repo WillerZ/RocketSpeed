@@ -169,7 +169,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker = workers_[worker_id];
 
   // forward message to worker
-  if (!worker->Forward(logid, std::move(msg), event_loop_worker)) {
+  if (!worker->Forward(logid, std::move(msg), event_loop_worker, origin)) {
     LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
@@ -215,12 +215,11 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
                             request->GetTenantID(),
                             request->GetMetaType(),
                             std::vector<TopicPair> {topic});
-    newmsg->SetOrigin(request->GetOrigin());
     std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to worker
     int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
-    worker->Forward(logid, std::move(newmessage), event_loop_worker);
+    worker->Forward(logid, std::move(newmessage), event_loop_worker, origin);
   }
 }
 
@@ -254,7 +253,7 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker = workers_[worker_id];
 
   // forward message to worker
-  if (!worker->Forward(logid, std::move(msg), event_loop_worker)) {
+  if (!worker->Forward(logid, std::move(msg), event_loop_worker, origin)) {
     LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
@@ -268,7 +267,7 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Client) {
     LOG_INFO(options_.info_log,
       "Received goodbye for client %s",
-      goodbye->GetOrigin().c_str());
+      origin.c_str());
 
     // Inform all workers.
     for (uint32_t i = 0; i < options_.num_workers; ++i) {
@@ -276,10 +275,12 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
         new MessageGoodbye(goodbye->GetTenantID(),
                            goodbye->GetCode(),
                            goodbye->GetOriginType()));
-      new_msg->SetOrigin(goodbye->GetOrigin());
       LogID logid = 0;  // unused
       int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
-      workers_[i]->Forward(logid, std::move(new_msg), event_loop_worker);
+      workers_[i]->Forward(logid,
+                           std::move(new_msg),
+                           event_loop_worker,
+                           origin);
     }
   }
 }

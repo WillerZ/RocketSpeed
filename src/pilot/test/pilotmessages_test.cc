@@ -64,7 +64,7 @@ TEST(PilotTest, Publish) {
   loop.RegisterCallbacks({
       {MessageType::mDataAck, [&](std::unique_ptr<Message> msg,
                                   StreamID origin) {
-        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ASSERT_EQ(socket.GetStreamID(), origin);
         ProcessDataAck(std::move(msg), origin);
         if (sent_msgs_.size() == acked_msgs_.size()) {
           checkpoint.Post();

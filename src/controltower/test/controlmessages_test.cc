@@ -92,7 +92,7 @@ TEST(ControlTowerTest, Subscribe) {
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
                                    StreamID origin) {
-        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ASSERT_EQ(socket.GetStreamID(), origin);
         ProcessMetadata(std::move(msg), origin);
       }},
   });
@@ -134,7 +134,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   loop1.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
                                    StreamID origin) {
-        ASSERT_EQ(socket1.GetStreamID(), msg->GetOrigin());
+        ASSERT_EQ(socket1.GetStreamID(), origin);
         ProcessMetadata(std::move(msg), origin);
       }},
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
@@ -169,7 +169,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   loop2.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
                                    StreamID origin) {
-        ASSERT_EQ(socket2.GetStreamID(), msg->GetOrigin());
+        ASSERT_EQ(socket2.GetStreamID(), origin);
         ProcessMetadata(std::move(msg), origin);
       }},
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},

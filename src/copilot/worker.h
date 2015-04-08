@@ -28,10 +28,14 @@ class CopilotWorkerCommand {
  public:
   CopilotWorkerCommand() = default;
 
-  CopilotWorkerCommand(LogID logid, std::unique_ptr<Message> msg, int worker_id)
+  CopilotWorkerCommand(LogID logid,
+                       std::unique_ptr<Message> msg,
+                       int worker_id,
+                       StreamID origin)
   : logid_(logid)
   , msg_(std::move(msg))
-  , worker_id_(worker_id) {
+  , worker_id_(worker_id)
+  , origin_(origin) {
   }
 
   // Get log ID where topic lives to subscribe to
@@ -48,10 +52,15 @@ class CopilotWorkerCommand {
     return worker_id_;
   }
 
+  StreamID GetOrigin() const {
+    return origin_;
+  }
+
  private:
   LogID logid_;
   std::unique_ptr<Message> msg_;
   int worker_id_;
+  StreamID origin_;
 };
 
 /**
@@ -67,7 +76,10 @@ class CopilotWorker {
                 Copilot* copilot);
 
   // Forward a message to this worker for processing.
-  bool Forward(LogID logid, std::unique_ptr<Message> msg, int worker_id);
+  bool Forward(LogID logid,
+               std::unique_ptr<Message> msg,
+               int worker_id,
+               StreamID origin);
 
   // Start the worker loop on this thread.
   // Blocks until the worker loop ends.
@@ -101,13 +113,15 @@ class CopilotWorker {
   void ProcessSubscribe(std::unique_ptr<Message> msg,
                         const TopicPair& request,
                         LogID logid,
-                        int worker_id);
+                        int worker_id,
+                        StreamID subscriber);
 
   // Remove a subscriber from a topic.
   void ProcessUnsubscribe(std::unique_ptr<Message> msg,
                           const TopicPair& request,
                           LogID logid,
-                          int worker_id);
+                          int worker_id,
+                          StreamID subscriber);
 
   // Process a metadata response from control tower.
   void ProcessMetadataResponse(std::unique_ptr<Message> msg,
@@ -122,13 +136,14 @@ class CopilotWorker {
   void ProcessGap(std::unique_ptr<Message> msg);
 
   // Remove all subscriptions for a client.
-  void ProcessGoodbye(std::unique_ptr<Message> msg);
+  void ProcessGoodbye(std::unique_ptr<Message> msg,
+                      StreamID origin);
 
   // Removes a single subscription.
   // May update subscription to control tower.
   // Does not send response to subscriber.
   void RemoveSubscription(TenantID tenant_id,
-                          const ClientID& subscriber,
+                          const StreamID subscriber,
                           const NamespaceID& namespace_id,
                           const Topic& topic_name,
                           LogID logid,
@@ -140,7 +155,8 @@ class CopilotWorker {
                      const NamespaceID& namespace_id,
                      const MetadataType type,
                      const LogID logid,
-                     int worker_id);
+                     int worker_id,
+                     StreamID origin);
 
   /** Gets or (re)open socket to control tower. */
   StreamSocket* GetControlTowerSocket(const ClientID& tower,
@@ -164,16 +180,16 @@ class CopilotWorker {
 
   // Subscription metadata
   struct Subscription {
-    Subscription(ClientID const& id,
+    Subscription(StreamID id,
                  SequenceNumber seq_no,
                  bool await_ack,
                  int _worker_id)
-    : client_id(id)
+    : stream_id(id)
     , seqno(seq_no)
     , awaiting_ack(await_ack)
     , worker_id(_worker_id) {}
 
-    ClientID client_id;    // The subscriber
+    StreamID stream_id;    // The subscriber
     SequenceNumber seqno;  // Lowest seqno to accept
     bool awaiting_ack;     // Is the subscriber awaiting an subscribe response?
     int worker_id;         // The event loop worker for client.

@@ -249,13 +249,12 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
                             request->GetTenantID(),
                             request->GetMetaType(),
                             std::vector<TopicPair> {topic});
-    newmsg->SetOrigin(request->GetOrigin());
     std::unique_ptr<Message> newmessage(newmsg);
 
     // forward message to the destination room
     ControlRoom* room = rooms_[room_number].get();
     int worker_id = options_.msg_loop->GetThreadWorkerIndex();
-    st = room->Forward(std::move(newmessage), worker_id);
+    st = room->Forward(std::move(newmessage), worker_id, origin);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
           "Unable to forward %ssubscription for Topic(%s)@%" PRIu64

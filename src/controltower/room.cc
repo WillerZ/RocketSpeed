@@ -43,10 +43,11 @@ void ControlRoom::Run(void* arg) {
     std::unique_ptr<Message> message = command.GetMessage();
     MessageType type = message->GetMessageType();
     int worker_id = command.GetWorkerId();
+    StreamID origin = command.GetOrigin();
     if (type == MessageType::mMetadata) {
       // subscription message from ControlTower
       assert(worker_id != -1);  // from tower
-      room->ProcessMetadata(std::move(message), worker_id);
+      room->ProcessMetadata(std::move(message), worker_id, origin);
     }
   };
 
@@ -57,8 +58,10 @@ void ControlRoom::Run(void* arg) {
 // The Control Room forwards some messages (those with seqno = 0) to
 // itself by using this method.
 Status
-ControlRoom::Forward(std::unique_ptr<Message> msg, int worker_id) {
-  if (room_loop_.Send(std::move(msg), worker_id)) {
+ControlRoom::Forward(std::unique_ptr<Message> msg,
+                     int worker_id,
+                     StreamID origin) {
+  if (room_loop_.Send(std::move(msg), worker_id, origin)) {
     return Status::OK();
   } else {
     return Status::InternalError("Worker queue full");
@@ -68,7 +71,8 @@ ControlRoom::Forward(std::unique_ptr<Message> msg, int worker_id) {
 // Process Metadata messages that are coming in from ControlTower.
 void
 ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
-                             int worker_id) {
+                             int worker_id,
+                             StreamID origin) {
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
   Status st;
@@ -87,7 +91,6 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   // splits every topic into a distinct separate messages per ControlRoom.
   const std::vector<TopicPair>& topic = request->GetTopicInfo();
   assert(topic.size() == 1);
-  const ClientID origin = request->GetOrigin();
 
   // Handle to 0 sequence number special case.
   // Zero means to start reading from the latest records, so we first need
@@ -98,8 +101,8 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
     // Create a callback to enqueue a subscribe command.
     // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
     // when converted to an std::function - could use an alloc pool for this.
-    auto callback = [this, request, worker_id] (Status status,
-                                                SequenceNumber seqno) {
+    auto callback = [this, request, worker_id, origin] (Status status,
+                                                        SequenceNumber seqno) {
       std::unique_ptr<Message> message(request);
       if (!status.ok()) {
         LOG_WARN(control_tower_->GetOptions().info_log,
@@ -113,7 +116,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
       // send message back to this Room with the seqno appropriately
       // filled up in the message.
       assert(seqno != 0);
-      status = Forward(std::move(message), worker_id);
+      status = Forward(std::move(message), worker_id, origin);
       if (!status.ok()) {
         // TODO(pja) 1: may need to do some flow control if this is due
         // to receiving too many subscriptions.
@@ -124,7 +127,7 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
         const std::vector<TopicPair>& req_topic = request->GetTopicInfo();
         LOG_INFO(control_tower_->GetOptions().info_log,
                  "Subscribing %s at latest seqno for Topic(%s)@%" PRIu64,
-                 request->GetOrigin().c_str(),
+                 origin.c_str(),
                  req_topic[0].topic_name.c_str(),
                  req_topic[0].seqno);
       }
@@ -185,7 +188,6 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   request->SetMetaType(MessageMetadata::MetaType::Response);
 
   // send response back to copilot
-  request->SetOrigin(origin);
   st = options.msg_loop->SendResponse(*request, origin, worker_id);
   if (!st.ok()) {
     LOG_WARN(options.info_log,
@@ -264,7 +266,6 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
     assert(worker_id != -1);
     if (hostid != nullptr && worker_id != -1) {
       // Send to correct worker loop.
-      request->SetOrigin(*hostid);
       st = options.msg_loop->SendResponse(*request, *hostid, worker_id);
 
       if (st.ok()) {
@@ -313,7 +314,6 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
     assert(worker_id != -1);
     if (hostid != nullptr && worker_id != -1) {
       // Send to correct worker loop.
-      gap->SetOrigin(*hostid);
       Status st = options.msg_loop->SendResponse(*gap, *hostid, worker_id);
 
       if (st.ok()) {

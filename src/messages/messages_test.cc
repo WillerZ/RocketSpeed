@@ -222,7 +222,7 @@ TEST(Messaging, PingPong) {
       {MessageType::mPing, [&](std::unique_ptr<Message> msg,
                                StreamID origin) {
         ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
-        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ASSERT_EQ(socket.GetStreamID(), origin);
         MessagePing* ping = static_cast<MessagePing*>(msg.get());
         ASSERT_EQ(ping->GetPingType(), MessagePing::PingType::Response);
         ASSERT_EQ(ping->GetCookie(), "cookie");
@@ -256,14 +256,18 @@ TEST(Messaging, PingPong) {
 TEST(Messaging, SameStreamsOnDifferentSockets) {
   // Posted on any ping message received by the server.
   port::Semaphore server_ping;
-  MultiProducerQueue<std::unique_ptr<MessagePing>> server_pings(3);
+
+  // Queue of messages + origins
+  MultiProducerQueue<std::pair<std::unique_ptr<MessagePing>, StreamID>>
+    server_pings(3);
 
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
   server.RegisterCallbacks({
       {MessageType::mPing, [&](std::unique_ptr<Message> msg,
                                StreamID origin) {
-        ASSERT_TRUE(
-            server_pings.write(static_cast<MessagePing*>(msg.release())));
+        std::unique_ptr<MessagePing> ping(
+          static_cast<MessagePing*>(msg.release()));
+        ASSERT_TRUE(server_pings.write(std::move(ping), origin));
         server_ping.Post();
       }},
   });
@@ -323,23 +327,23 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   std::unordered_set<StreamID> seen_by_server;
 
   {  // Send back pong to client1.
-    std::unique_ptr<MessagePing> pong;
+    std::pair<std::unique_ptr<MessagePing>, StreamID> pong;
     ASSERT_TRUE(server_pings.read(pong));
-    ASSERT_EQ("stream1", pong->GetCookie());
-    seen_by_server.insert(pong->GetOrigin());
+    ASSERT_EQ("stream1", pong.first->GetCookie());
+    seen_by_server.insert(pong.second);
     // Send back reponse.
-    pong->SetPingType(MessagePing::PingType::Response);
-    server.SendResponse(*pong, pong->GetOrigin(), 0);
+    pong.first->SetPingType(MessagePing::PingType::Response);
+    server.SendResponse(*pong.first, pong.second, 0);
     ASSERT_TRUE(client_ping.TimedWait(timeout_));
   }
   {  // Send back pong to client2.
-    std::unique_ptr<MessagePing> pong;
+    std::pair<std::unique_ptr<MessagePing>, StreamID> pong;
     ASSERT_TRUE(server_pings.read(pong));
-    ASSERT_EQ("stream2", pong->GetCookie());
-    seen_by_server.insert(pong->GetOrigin());
+    ASSERT_EQ("stream2", pong.first->GetCookie());
+    seen_by_server.insert(pong.second);
     // Send back reponse.
-    pong->SetPingType(MessagePing::PingType::Response);
-    server.SendResponse(*pong, pong->GetOrigin(), 0);
+    pong.first->SetPingType(MessagePing::PingType::Response);
+    server.SendResponse(*pong.first, pong.second, 0);
     ASSERT_TRUE(client_ping.TimedWait(timeout_));
   }
 
@@ -375,7 +379,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
           ASSERT_LT(i, kNumStreams);
           auto ping = static_cast<MessagePing*>(msg.get());
           ASSERT_EQ(std::to_string(i), ping->GetCookie());
-          ASSERT_EQ(sockets[i].GetStreamID(), msg->GetOrigin());
+          ASSERT_EQ(sockets[i].GetStreamID(), origin);
           checkpoint.Post();
         }},
     });
@@ -417,12 +421,11 @@ TEST(Messaging, GracefulGoodbye) {
                                StreamID origin) {
         {
           std::lock_guard<std::mutex> lock(inbound_stream_mutex);
-          inbound_stream.push_back(msg->GetOrigin());
+          inbound_stream.push_back(origin);
         }
         auto ping = static_cast<MessagePing*>(msg.get());
         ping->SetPingType(MessagePing::PingType::Response);
-        server.SendResponse(
-            *ping, msg->GetOrigin(), server.GetThreadWorkerIndex());
+        server.SendResponse(*ping, origin, server.GetThreadWorkerIndex());
       }},
   });
   env_->StartThread([&]() { server.Run(); }, "loop-server");

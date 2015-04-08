@@ -46,7 +46,6 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
   std::map<MessageType, MsgCallbackType>::const_iterator iter =
     msg_callbacks_.find(type);
   if (iter != msg_callbacks_.end()) {
-    assert(origin == msg->GetOrigin());
     iter->second(std::move(msg), origin);
   } else {
     // If the user has not registered a message of this type,
@@ -190,7 +189,7 @@ void MsgLoop::Run() {
         MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
         LOG_INFO(info_log_, "Goodbye %d received for client %s",
           static_cast<int>(goodbye->GetCode()),
-          goodbye->GetOrigin().c_str());
+          origin.c_str());
       };
   }
 
@@ -296,15 +295,14 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg, StreamID origin) {
     request->SetPingType(MessagePing::Response);
 
     // Send response back to the stream.
-    StreamID stream = request->GetOrigin();
-    Status st = SendResponse(*request, stream, GetThreadWorkerIndex());
+    Status st = SendResponse(*request, origin, GetThreadWorkerIndex());
 
     if (!st.ok()) {
       LOG_WARN(info_log_,
                "Unable to send ping response to stream (%s)",
-               stream.c_str());
+               origin.c_str());
     } else {
-      LOG_INFO(info_log_, "Send ping response to stream (%s)", stream.c_str());
+      LOG_INFO(info_log_, "Send ping response to stream (%s)", origin.c_str());
     }
   }
 }

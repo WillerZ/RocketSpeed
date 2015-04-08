@@ -87,9 +87,13 @@ class Proxy {
    * @param msg The serialized RocketSpeed message.
    * @param session Unique session ID. Messages are ordered per session.
    * @param sequence Sequence ID of messages per session.
+   * @param origin Origin stream ID of message.
    * @return ok() if successful, otherwise an error status.
    */
-  Status Forward(std::string msg, int64_t session, int32_t sequence);
+  Status Forward(std::string msg,
+                 int64_t session,
+                 int32_t sequence,
+                 StreamID origin);
 
   /**
    * Instructs the proxy to reset the next expected sequence number for a
@@ -147,17 +151,18 @@ class Proxy {
 
   ProxyWorkerData& GetWorkerDataForSession(int64_t session);
 
-  void HandleGoodbyeMessage(std::unique_ptr<Message> msg);
+  void HandleGoodbyeMessage(std::unique_ptr<Message> msg, StreamID origin);
 
   void HandleDestroySession(int64_t session);
 
   void HandleRemoveHost(ClientID host);
 
-  void HandleMessageReceived(std::unique_ptr<Message> msg);
+  void HandleMessageReceived(std::unique_ptr<Message> msg, StreamID origin);
 
   void HandleMessageForwarded(std::string msg,
                               int64_t session,
-                              int32_t sequence);
+                              int32_t sequence,
+                              StreamID origin);
 };
 
 }  // namespace rocketspeed

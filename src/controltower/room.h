@@ -43,7 +43,7 @@ class ControlRoom {
   unsigned int GetRoomNumber() const { return room_number_; }
 
   // Forwards a message to this Room
-  Status Forward(std::unique_ptr<Message> msg, int worker_id);
+  Status Forward(std::unique_ptr<Message> msg, int worker_id, StreamID origin);
 
   // Processes a message from the tailer.
   void OnTailerMessage(std::unique_ptr<Message> msg,
@@ -59,9 +59,12 @@ class ControlRoom {
    public:
     RoomCommand() = default;
 
-    RoomCommand(std::unique_ptr<Message> message, int worker_id):
+    RoomCommand(std::unique_ptr<Message> message,
+                int worker_id,
+                StreamID origin):
       message_(std::move(message)),
-      worker_id_(worker_id) {
+      worker_id_(worker_id),
+      origin_(origin) {
     }
 
     std::unique_ptr<Message> GetMessage() {
@@ -72,9 +75,14 @@ class ControlRoom {
       return worker_id_;
     }
 
+    StreamID GetOrigin() const {
+      return origin_;
+    }
+
    private:
     std::unique_ptr<Message> message_;
     int worker_id_;
+    StreamID origin_;
   };
 
  private:
@@ -96,7 +104,9 @@ class ControlRoom {
   std::unordered_map<HostNumber, int> hostnum_to_worker_id_;
 
   // callbacks to process incoming messages
-  void ProcessMetadata(std::unique_ptr<Message> msg, int worker_id);
+  void ProcessMetadata(std::unique_ptr<Message> msg,
+                       int worker_id,
+                       StreamID origin);
   void ProcessDeliver(std::unique_ptr<Message> msg,
                       const std::vector<HostNumber>& hosts);
   void ProcessGap(std::unique_ptr<Message> msg,

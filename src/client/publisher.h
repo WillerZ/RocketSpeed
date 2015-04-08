@@ -11,6 +11,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
+#include "src/messages/stream_socket.h"
 
 namespace rocketspeed {
 
@@ -66,7 +67,7 @@ class PublisherImpl {
   HostId pilot_host_;
 
   /** Handles acknowledgements for published messages. */
-  void ProcessDataAck(std::unique_ptr<Message> msg);
+  void ProcessDataAck(std::unique_ptr<Message> msg, StreamID origin);
 
   /** Decides how to shard requests into workers. */
   int GetWorkerForTopic(const Topic& name) const;

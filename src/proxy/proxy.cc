@@ -151,6 +151,7 @@ Proxy::Proxy(ProxyOptions options)
 , ordering_buffer_size_(options.ordering_buffer_size)
 , msg_thread_(0) {
   using std::placeholders::_1;
+  using std::placeholders::_2;
 
   msg_loop_.reset(new MsgLoop(env_,
                               options.env_options,
@@ -159,8 +160,8 @@ Proxy::Proxy(ProxyOptions options)
                               info_log_,
                               "proxy"));
 
-  auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1);
-  auto goodbye_callback = std::bind(&Proxy::HandleGoodbyeMessage, this, _1);
+  auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1, _2);
+  auto goodbye_callback = std::bind(&Proxy::HandleGoodbyeMessage, this, _1, _2);
 
   // Use same callback for all server-generated messages.
   std::map<MessageType, MsgCallbackType> callbacks;
@@ -189,14 +190,18 @@ Status Proxy::Start(OnMessageCallback on_message,
   return msg_loop_->WaitUntilRunning();
 }
 
-Status Proxy::Forward(std::string msg, int64_t session, int32_t sequence) {
+Status Proxy::Forward(std::string msg,
+                      int64_t session,
+                      int32_t sequence,
+                      StreamID origin) {
   int worker_id = WorkerForSession(session);
   std::unique_ptr<Command> command(
       new ExecuteCommand(std::bind(&Proxy::HandleMessageForwarded,
                                    this,
                                    std::move(msg),
                                    session,
-                                   sequence)));
+                                   sequence,
+                                   origin)));
   return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
@@ -231,31 +236,32 @@ ProxyWorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
   return worker_data_[worker_id];
 }
 
-void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
+void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
+                                 StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Server) {
     LOG_INFO(info_log_,
              "Received goodbye for stream (%s).",
-             goodbye->GetOrigin().c_str());
+             origin.c_str());
 
     // TODO(stupaq) remove once proxy turns into event loopish thing
     // Parse origin as session.
-    const char* origin = msg->GetOrigin().c_str();
-    int64_t session = strtoll(origin, nullptr, 10);
+    const char* origin_str = origin.c_str();
+    int64_t session = strtoll(origin_str, nullptr, 10);
     // strtoll failure modes are:
     // return 0LL if could not convert.
     // return LLONG_MIN/MAX if out of range, with errno set to ERANGE.
-    if ((session == 0 && strcmp(origin, "0")) ||
+    if ((session == 0 && strcmp(origin_str, "0")) ||
         (session == LLONG_MIN && errno == ERANGE) ||
         (session == LLONG_MAX && errno == ERANGE)) {
       LOG_ERROR(info_log_,
                 "Could not parse message origin '%s' into a session ID.",
-                origin);
+                origin_str);
       stats_.bad_origins->Add(1);
       return;
     }
 
-    // Translate origin back.
+    // Translate origin_str back.
     auto& data = GetWorkerDataForSession(session);
     auto it = data.session_to_client_.find(session);
     if (it == data.session_to_client_.end()) {
@@ -277,7 +283,7 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg) {
   } else {
     LOG_WARN(info_log_,
              "Proxy received client goodbye from %s, but has no clients.",
-             goodbye->GetOrigin().c_str());
+             origin.c_str());
   }
 }
 
@@ -296,8 +302,6 @@ void Proxy::HandleDestroySession(int64_t session) {
   MessageGoodbye goodbye(Tenant::GuestTenant,
                          MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
-  goodbye.SetOrigin(std::to_string(session));
-
   int worker = WorkerForSession(session);
   for (StreamSocket& socket : sockets) {
     // OK if this fails. Server will garbage collect client.
@@ -308,7 +312,8 @@ void Proxy::HandleDestroySession(int64_t session) {
   data.session_to_client_.erase(session);
 }
 
-void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
+void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
+                                  StreamID origin) {
   if (!on_message_) {
     return;
   }
@@ -318,17 +323,17 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
            static_cast<int>(msg->GetMessageType()));
 
   // Parse origin as session.
-  const char* origin = msg->GetOrigin().c_str();
-  int64_t session = strtoll(origin, nullptr, 10);
+  const char* origin_str = origin.c_str();
+  int64_t session = strtoll(origin_str, nullptr, 10);
   // strtoll failure modes are:
   // return 0LL if could not convert.
   // return LLONG_MIN/MAX if out of range, with errno set to ERANGE.
-  if ((session == 0 && strcmp(origin, "0")) ||
+  if ((session == 0 && strcmp(origin_str, "0")) ||
       (session == LLONG_MIN && errno == ERANGE) ||
       (session == LLONG_MAX && errno == ERANGE)) {
     LOG_ERROR(info_log_,
               "Could not parse message origin '%s' into a session ID.",
-              origin);
+              origin_str);
     stats_.bad_origins->Add(1);
     return;
   }
@@ -343,7 +348,6 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
     stats_.bad_origins->Add(1);
     return;
   }
-  msg->SetOrigin(it->second);
 
   // TODO(pja) 1 : ideally we wouldn't reserialize here.
   std::string serial;
@@ -354,7 +358,8 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg) {
 
 void Proxy::HandleMessageForwarded(std::string msg,
                                    int64_t session,
-                                   int32_t sequence) {
+                                   int32_t sequence,
+                                   StreamID origin) {
   stats_.forwards->Add(1);
   auto& data = GetWorkerDataForSession(session);
 
@@ -368,13 +373,9 @@ void Proxy::HandleMessageForwarded(std::string msg,
     auto it = data.session_to_client_.find(session);
     // We save unnecessary copy.
     if (it == data.session_to_client_.end()) {
-      data.session_to_client_.emplace_hint(it, session, message->GetOrigin());
+      data.session_to_client_.emplace_hint(it, session, origin);
     }
   }
-
-  // Internally the session is out client ID.
-  message->SetOrigin(std::to_string(session));
-  message->SerializeToString(&msg);
 
   if (!message) {
     LOG_ERROR(info_log_,
@@ -411,7 +412,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
       LOG_ERROR(info_log_,
                 "Client %s attempting to send invalid message type through "
                 "proxy (%d)",
-                message->GetOrigin().c_str(),
+                origin.c_str(),
                 static_cast<int>(message->GetMessageType()));
       stats_.forward_errors->Add(1);
       on_disconnect_({session});

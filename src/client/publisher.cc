@@ -132,7 +132,10 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
   // Register our callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDataAck] =
-      std::bind(&PublisherImpl::ProcessDataAck, this, std::placeholders::_1);
+      std::bind(&PublisherImpl::ProcessDataAck,
+                this,
+                std::placeholders::_1,
+                std::placeholders::_2);
   msg_loop_->RegisterCallbacks(std::move(callbacks));
 }
 
@@ -195,7 +198,8 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   return PublishStatus(status, msgid);
 }
 
-void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
+void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
+                                   StreamID origin) {
   wake_lock_->AcquireForReceiving();
   msg_loop_->ThreadCheck();
 
@@ -203,10 +207,10 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg) {
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (worker_data.pilot_socket.GetStreamID() != msg->GetOrigin()) {
+  if (worker_data.pilot_socket.GetStreamID() != origin) {
     LOG_WARN(info_log_,
              "Incorrect message stream: (%s) expected: (%s)",
-             msg->GetOrigin().c_str(),
+             origin.c_str(),
              worker_data.pilot_socket.GetStreamID().c_str());
     return;
   }

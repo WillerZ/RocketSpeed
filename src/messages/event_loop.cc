@@ -251,7 +251,6 @@ class SocketEvent {
             new MessageGoodbye(Tenant::InvalidTenant,
                                MessageGoodbye::Code::SocketError,
                                origin_type));
-        msg->SetOrigin(global);
         event_loop->Dispatch(std::move(msg), global);
       }
     }
@@ -394,20 +393,16 @@ class SocketEvent {
 
       if (msg) {
         // Apply origin.
-        StreamID local = origin;
+        StreamID global;
         if (was_initiated_) {
           // Initiated socket responses will have the correct stream ID.
-          // Overwrite stream ID in the message.
-          msg->SetOrigin(local);
+          global = origin;
         } else {
           // Attempt to add this stream/socket pair to the stream map.
           // Insert connection and remap stream ID.
           bool inserted;
-          StreamID global;
           std::tie(inserted, global) =
-              event_loop_->stream_router_.InsertInboundStream(this, local);
-          // Overwrite stream ID in the message.
-          msg->SetOrigin(global);
+              event_loop_->stream_router_.InsertInboundStream(this, origin);
 
           // Log a new inbound stream.
           if (inserted) {
@@ -440,7 +435,7 @@ class SocketEvent {
         }
 
         // Invoke the callback for this message.
-        event_loop_->Dispatch(std::move(msg), msg->GetOrigin());
+        event_loop_->Dispatch(std::move(msg), global);
       } else {
         // Failed to decode message.
         LOG_WARN(event_loop_->GetLog(), "Failed to decode message");
@@ -645,14 +640,6 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
                   "Stream ID (%s) converted to local (%s)",
                   spec.stream.c_str(),
                   local.c_str());
-      }
-      // Use stream ID local to the socket when sending back the message.
-      {  // TODO(stupaq, pja) take origin out of the message
-        std::unique_ptr<char[]> buffer = Slice(msg->string).ToUniqueChars();
-        std::unique_ptr<Message> message =
-            Message::CreateNewInstance(std::move(buffer), msg->string.size());
-        message->SetOrigin(local);
-        message->SerializeToString(&msg->string);
       }
 
       // Enqueue data to SocketEvent queue. This message will be sent out

@@ -78,7 +78,7 @@ TEST(CopilotTest, Subscribe) {
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
                                    StreamID origin) {
-        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ASSERT_EQ(socket.GetStreamID(), origin);
         ProcessMetadata(std::move(msg), origin);
         if (sent_msgs_.size() == acked_msgs_.size()) {
           checkpoint.Post();
@@ -194,7 +194,7 @@ TEST(CopilotTest, Rollcall) {
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
                                    StreamID origin) {
-        ASSERT_EQ(socket.GetStreamID(), msg->GetOrigin());
+        ASSERT_EQ(socket.GetStreamID(), origin);
         ProcessMetadata(std::move(msg), origin);
         if (expected == acked_msgs_.size()) {
           checkpoint.Post();

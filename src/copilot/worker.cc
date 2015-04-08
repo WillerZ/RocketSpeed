@@ -38,8 +38,9 @@ void CopilotWorker::Run() {
 
 bool CopilotWorker::Forward(LogID logid,
                             std::unique_ptr<Message> msg,
-                            int worker_id) {
-  return worker_loop_.Send(logid, std::move(msg), worker_id);
+                            int worker_id,
+                            StreamID origin) {
+  return worker_loop_.Send(logid, std::move(msg), worker_id, origin);
 }
 
 void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
@@ -61,13 +62,15 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
           ProcessSubscribe(std::move(message),
                            request,
                            command.GetLogID(),
-                           command.GetWorkerId());
+                           command.GetWorkerId(),
+                           command.GetOrigin());
         } else {
           // Unsubscribe
           ProcessUnsubscribe(std::move(message),
                              request,
                              command.GetLogID(),
-                             command.GetWorkerId());
+                             command.GetWorkerId(),
+                             command.GetOrigin());
         }
       } else {
         if (request.topic_type == MetadataType::mSubscribe) {
@@ -94,7 +97,7 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
     break;
 
   case MessageType::mGoodbye: {
-      ProcessGoodbye(std::move(message));
+      ProcessGoodbye(std::move(message), command.GetOrigin());
     }
     break;
 
@@ -125,9 +128,8 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
       // If the subscription is awaiting a response.
       if (subscription.awaiting_ack) {
         // Send to client's worker.
-        msg->SetOrigin(subscription.client_id);
         Status status = options_.msg_loop->SendResponse(*msg,
-                                                        subscription.client_id,
+                                                        subscription.stream_id,
                                                         subscription.worker_id);
         if (status.ok()) {
           subscription.awaiting_ack = false;
@@ -141,16 +143,16 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
             "Sending %ssubscribe response for Topic(%s) to %s on worker %d",
             request.topic_type == MetadataType::mSubscribe ? "" : "un",
             request.topic_name.c_str(),
-            subscription.client_id.c_str(),
+            subscription.stream_id.c_str(),
             subscription.worker_id);
           // Update rollcall topic.
           RollcallWrite(std::move(message), request.topic_name,
                         request.namespace_id, request.topic_type,
-                        logid, worker_id);
+                        logid, worker_id, subscription.stream_id);
         } else {
           LOG_WARN(options_.info_log,
             "Failed to send metadata response to %s",
-            subscription.client_id.c_str());
+            subscription.stream_id.c_str());
           // We were unable to forward the subscribe-response to the client
           // so the client is unaware that it has a confirmed subscription.
           // There is no need to write the rollcall topic.
@@ -176,7 +178,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
 
     // Send to all subscribers.
     for (auto& subscription : it->second) {
-      const ClientID& recipient = subscription.client_id;
+      const ClientID& recipient = subscription.stream_id;
 
       // If the subscription is awaiting a response, do not forward.
       if (subscription.awaiting_ack) {
@@ -209,7 +211,6 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       }
 
       // Send to worker loop.
-      msg->SetOrigin(recipient);
       Status status = options_.msg_loop->SendResponse(*msg,
                                                       recipient,
                                                       subscription.worker_id);
@@ -246,7 +247,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
 
     // Send to all subscribers.
     for (auto& subscription : it->second) {
-      const ClientID& recipient = subscription.client_id;
+      const ClientID& recipient = subscription.stream_id;
 
       // If the subscription is awaiting a response, do not forward.
       if (subscription.awaiting_ack) {
@@ -279,7 +280,6 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
       }
 
       // Send to worker loop.
-      msg->SetOrigin(recipient);
       Status status = options_.msg_loop->SendResponse(*msg,
                                                       recipient,
                                                       subscription.worker_id);
@@ -304,19 +304,17 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
 void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
                                      const TopicPair& request,
                                      LogID logid,
-                                     int worker_id) {
+                                     int worker_id,
+                                     StreamID subscriber) {
   LOG_INFO(options_.info_log,
       "Received subscribe request for Topic(%s)@%" PRIu64 " for %s",
       request.topic_name.c_str(),
       request.seqno,
-      message->GetOrigin().c_str());
+      subscriber.c_str());
 
   bool notify_origin = false;
   bool notify_control_tower = false;
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
-
-  // Intentionally making copy since msg->SetOrigin may be called later.
-  const ClientID subscriber = msg->GetOrigin();
 
   // Insert into client-topic map. Doesn't matter if it was already there.
   TopicInfo topic_info { request.topic_name, request.namespace_id, logid };
@@ -337,7 +335,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     bool found = false;
     SequenceNumber earliest_seqno = request.seqno + 1;
     for (auto& subscription : topic_iter->second) {
-      if (subscription.client_id == subscriber) {
+      if (subscription.stream_id == subscriber) {
         assert(!found);  // should never have a duplicate subscription
         // Already a subscriber. Do we need to update seqno?
         if (request.seqno == 0 || subscription.seqno == 0) {
@@ -410,7 +408,6 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
           *recipient, options_.msg_loop, outgoing_worker_id);
 
       // Forward request to control tower to update the copilot subscription.
-      msg->SetOrigin(copilot_->GetClientId(outgoing_worker_id));
       Status status = options_.msg_loop->SendRequest(*msg,
                                                      socket,
                                                      outgoing_worker_id);
@@ -434,7 +431,6 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   if (notify_origin) {
     // Send response to origin to notify that subscription has been processed.
     msg->SetMetaType(MessageMetadata::MetaType::Response);
-    msg->SetOrigin(subscriber);
     Status st = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
     if (!st.ok()) {
       // Failed to send response. The origin will re-send the subscription
@@ -445,22 +441,21 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     }
     // Update rollcall topic.
     RollcallWrite(std::move(message), request.topic_name, request.namespace_id,
-                  request.topic_type, logid, worker_id);
+                  request.topic_type, logid, worker_id, subscriber);
   }
 }
 
 void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                                        const TopicPair& request,
                                        LogID logid,
-                                       int worker_id) {
+                                       int worker_id,
+                                       StreamID subscriber) {
   LOG_INFO(options_.info_log,
       "Received unsubscribe request for Topic(%s) for %s",
       request.topic_name.c_str(),
-      message->GetOrigin().c_str());
+      subscriber.c_str());
 
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
-
-  const ClientID& subscriber = msg->GetOrigin();
 
   RemoveSubscription(msg->GetTenantID(),
                      subscriber,
@@ -488,7 +483,7 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
 }
 
 void CopilotWorker::RemoveSubscription(TenantID tenant_id,
-                                       const ClientID& subscriber,
+                                       const StreamID subscriber,
                                        const NamespaceID& namespace_id,
                                        const Topic& topic_name,
                                        LogID logid,
@@ -504,7 +499,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
     SequenceNumber our_seqno = 0;
     auto& subscriptions = topic_iter->second;
     for (auto it = subscriptions.begin(); it != subscriptions.end(); ) {
-      if (it->client_id == subscriber) {
+      if (it->stream_id == subscriber) {
         // This is our subscription, remove it.
         our_seqno = it->seqno;
         it = subscriptions.erase(it);
@@ -580,28 +575,28 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
     // Update rollcall topic.
     RollcallWrite(nullptr, topic_name,
                   namespace_id, MetadataType::mUnSubscribe,
-                  logid, worker_id);
+                  logid, worker_id, subscriber);
   }
 }
 
-void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message) {
+void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
+                                   StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(message.get());
-  const ClientID& client_id = goodbye->GetOrigin();
 
   LOG_INFO(options_.info_log,
       "Copilot received goodbye for client %s",
-      client_id.c_str());
+      origin.c_str());
 
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Client) {
     // This is a goodbye from one of the clients.
-    auto it = client_topics_.find(client_id);
+    auto it = client_topics_.find(origin);
     if (it != client_topics_.end()) {
       // Unsubscribe from all topics.
       // Making a copy because RemoveSubscription will modify client_topics_;
       auto topics_copy = it->second;
       for (const TopicInfo& info : topics_copy) {
         RemoveSubscription(goodbye->GetTenantID(),
-                           client_id,
+                           origin,
                            info.namespace_id,
                            info.topic_name,
                            info.logid,
@@ -613,7 +608,7 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message) {
   } else {
     // This is a goodbye from one of the control towers.
     // We'll just remove corresponding sockets.
-    control_tower_sockets_.erase(client_id);
+    control_tower_sockets_.erase(origin);
   }
 }
 
@@ -625,7 +620,9 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
                              const Topic& topic_name,
                              const NamespaceID& namespace_id,
                              const MetadataType type,
-                             const LogID logid, int worker_id) {
+                             const LogID logid,
+                             int worker_id,
+                             StreamID origin) {
   assert(msg || type == MetadataType::mUnSubscribe);
 
   // Write to rollcall topic failed. If this was a 'subscription' event,
@@ -640,11 +637,10 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
                                       msg->GetTenantID(),
                                       MessageMetadata::MetaType::Request,
                                       topics));
-    newmsg->SetOrigin(msg->GetOrigin());
     // Start the automatic unsubscribe process. We rely on the assumption
     // that the unsubscribe request can fail only if the client is
     // un-communicable, in which case the client's subscritions are reaped.
-    this->Forward(logid, std::move(newmsg), worker_id);
+    this->Forward(logid, std::move(newmsg), worker_id, origin);
   };
 
   // This callback is called when the write to the rollcall topic is complete

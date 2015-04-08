@@ -108,20 +108,6 @@ class Message : public Serializer {
   TenantID GetTenantID() const { return tenantid_; }
 
   /**
-   * The origin is the client that originated a request.
-   * @return The Origin client ID.
-   */
-  const ClientID& GetOrigin() const { return origin_; }
-
-  /**
-   * Set the origin client ID.
-   */
-
-  void SetOrigin(const ClientID& client_id) {
-    origin_ = client_id;
-  }
-
-  /**
    * Creates a Message of the appropriate subtype by looking at the
    * MessageType. Returns nullptr on error.  The memory ownership is passed
    * to the message itself, and will be discarded once the message is destroyed.
