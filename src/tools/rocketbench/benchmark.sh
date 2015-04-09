@@ -234,11 +234,10 @@ function deploy_servers {
   for host in ${all_hosts[@]}; do
     echo "$host"
     dest=root@$host:${remote_path}/rocketspeed
-    if ! scp -p $src $dest; then
+    if ! rsync -az $src $dest; then
       echo "Error deploying to $host"
       exit 1
     fi
-    src=$dest  # use previous dest as src (likely to be same DC/cluster)
   done
 }
 
