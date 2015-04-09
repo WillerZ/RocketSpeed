@@ -131,11 +131,11 @@ void LocalTestCluster::Initialize(Options opts) {
     std::make_shared<LogDeviceLogRouter>(log_range.first, log_range.second);
 
   // Tell rocketspeed to use this storage interface/router.
-  pilot_options_.storage = logdevice_->storage_;
-  pilot_options_.log_router = logdevice_->log_router_;
-  copilot_options_.log_router = logdevice_->log_router_;
-  control_tower_options_.storage = logdevice_->storage_;
-  control_tower_options_.log_router = logdevice_->log_router_;
+  opts.pilot.storage = logdevice_->storage_;
+  opts.pilot.log_router = logdevice_->log_router_;
+  opts.copilot.log_router = logdevice_->log_router_;
+  opts.tower.storage = logdevice_->storage_;
+  opts.tower.log_router = logdevice_->log_router_;
 
   EnvOptions env_options;
 
@@ -144,10 +144,10 @@ void LocalTestCluster::Initialize(Options opts) {
         env_, env_options, ControlTower::DEFAULT_PORT, 16, info_log_, "tower"));
 
     // Create ControlTower
-    control_tower_options_.info_log = info_log_;
-    control_tower_options_.number_of_rooms = 16;
-    control_tower_options_.msg_loop = control_tower_loop_.get();
-    status_ = ControlTower::CreateNewInstance(control_tower_options_,
+    opts.tower.info_log = info_log_;
+    opts.tower.number_of_rooms = 16;
+    opts.tower.msg_loop = control_tower_loop_.get();
+    status_ = ControlTower::CreateNewInstance(opts.tower,
                                               &control_tower_);
     if (!status_.ok()) {
       LOG_ERROR(info_log_, "Failed to create ControlTower.");
@@ -187,14 +187,14 @@ void LocalTestCluster::Initialize(Options opts) {
 
     if (opts.start_copilot) {
       // Create Copilot
-      copilot_options_.control_towers.push_back(control_tower_->GetClientId(0));
-      copilot_options_.info_log = info_log_;
-      copilot_options_.num_workers = 16;
-      copilot_options_.msg_loop = cockpit_loop_.get();
-      copilot_options_.control_tower_connections =
+      opts.copilot.control_towers.push_back(control_tower_->GetClientId(0));
+      opts.copilot.info_log = info_log_;
+      opts.copilot.num_workers = 16;
+      opts.copilot.msg_loop = cockpit_loop_.get();
+      opts.copilot.control_tower_connections =
           cockpit_loop_->GetNumWorkers();
-      copilot_options_.pilots.push_back(pilot_host);
-      status_ = Copilot::CreateNewInstance(copilot_options_, &copilot_);
+      opts.copilot.pilots.push_back(pilot_host);
+      status_ = Copilot::CreateNewInstance(opts.copilot, &copilot_);
       if (!status_.ok()) {
         LOG_ERROR(info_log_, "Failed to create Copilot.");
         return;
@@ -203,9 +203,9 @@ void LocalTestCluster::Initialize(Options opts) {
 
     if (opts.start_pilot) {
       // Create Pilot
-      pilot_options_.info_log = info_log_;
-      pilot_options_.msg_loop = cockpit_loop_.get();
-      status_ = Pilot::CreateNewInstance(pilot_options_, &pilot_);
+      opts.pilot.info_log = info_log_;
+      opts.pilot.msg_loop = cockpit_loop_.get();
+      status_ = Pilot::CreateNewInstance(opts.pilot, &pilot_);
       if (!status_.ok()) {
         LOG_ERROR(info_log_, "Failed to create Pilot.");
         return;

@@ -11,7 +11,7 @@ message_rate=$((50 * K))
 remote=''
 deploy=''
 client_workers=32
-num_topics=1000
+num_topics=1000000
 num_pilots=1
 num_copilots=1
 num_towers=1
@@ -26,6 +26,7 @@ controltower_port=''
 log_dir="/tmp"
 collect_logs=''
 strip=''
+rollcall='false'  # disable rollcall for benchmarks by default
 
 # Use the 2 lower order bytes from the UID to generate a namespace id.
 # The hope is that this will be sufficiently unique so that concurrent
@@ -40,7 +41,7 @@ server=${SERVER:-_build/$part/rocketspeed/github/src/server/rocketspeed}
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip, \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -91,6 +92,8 @@ while true; do
       log_dir="$2"; shift 2 ;;
     --strip )
       strip='true'; shift ;;
+    --rollcall )
+      rollcall="$2"; shift 2 ;;
     -- )
       shift; break ;;
     * )
@@ -173,7 +176,8 @@ function start_servers {
         --copilot \
         --control_towers=$towers_csv \
         --storage_url=$storage_url \
-        --logdevice_cluster=$logdevice_cluster "
+        --logdevice_cluster=$logdevice_cluster \
+        --rollcall=$rollcall"
       if [ $pilot_port ]; then
         cmd="${cmd} --pilot_port=$pilot_port"
       fi

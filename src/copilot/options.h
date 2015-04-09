@@ -91,6 +91,10 @@ struct CopilotOptions {
   // Log router.
   std::shared_ptr<LogRouter> log_router;
 
+  // Is RollCall enabled?
+  // Default: true
+  bool rollcall_enabled;
+
   // Create CopilotOptions with default values for all fields
   CopilotOptions();
 };

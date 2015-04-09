@@ -623,6 +623,10 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
                              const LogID logid,
                              int worker_id,
                              StreamID origin) {
+  if (!options_.rollcall_enabled) {
+    return;
+  }
+
   assert(msg || type == MetadataType::mUnSubscribe);
 
   // Write to rollcall topic failed. If this was a 'subscription' event,

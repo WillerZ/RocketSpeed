@@ -37,6 +37,9 @@ class LocalTestCluster {
     bool single_log = false;
     std::string storage_url;
     Env* env = Env::Default();
+    PilotOptions pilot;
+    CopilotOptions copilot;
+    ControlTowerOptions tower;
   };
 
   /**
@@ -128,16 +131,8 @@ class LocalTestCluster {
   // Logger.
   std::shared_ptr<Logger> info_log_;
 
-  // Pilot
-  PilotOptions pilot_options_;
   Pilot* pilot_;
-
-  // Copilot
-  CopilotOptions copilot_options_;
   Copilot* copilot_;
-
-  // Control Tower
-  ControlTowerOptions control_tower_options_;
   ControlTower* control_tower_;
 
   // Configuration generated here

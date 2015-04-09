@@ -51,22 +51,16 @@ TEST(IntegrationTest, OneMessage) {
 
   // RocketSpeed callbacks;
   auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
-    printf("publish -- %s\n", rs->GetStatus().ToString().c_str());
   };
 
   auto subscription_callback = [&] (SubscriptionStatus ss) {
     ASSERT_TRUE(ss.topic_name == topic);
     ASSERT_TRUE(ss.namespace_id == namespace_id);
-    printf("subscribe -- %s\n", ss.status.ToString().c_str());
   };
 
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
     ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
     ASSERT_TRUE(mr->GetContents().ToString() == data);
-    printf("received (topic='%s', contents='%s', seqno=%" PRIu64 ")\n",
-      mr->GetTopicName().ToString().c_str(),
-      mr->GetContents().ToString().c_str(),
-      mr->GetSequenceNumber());
     msg_received.Post();
   };
 
@@ -127,8 +121,6 @@ TEST(IntegrationTest, TrimAll) {
 
   // Callbacks.
   auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
-    printf("publish -- %s\n", rs->GetStatus().ToString().c_str());
-
     // Number of gaps received from reader. Should be 1.
     int num_gaps = 0;
 
@@ -153,7 +145,6 @@ TEST(IntegrationTest, TrimAll) {
     auto gap_cb = [&] (const GapRecord &r) {
       // We expect a Gap, and we expect the low seqno should be our
       // previously published publish lsn.
-      printf("received gap from %lu to %lu\n", r.from, r.to);
       ASSERT_TRUE(r.from == seqno);
       num_gaps++;
       read_sem.Post();
@@ -236,9 +227,6 @@ TEST(IntegrationTest, TrimFirst) {
   // Callbacks.
   // Basic callback simply notifies that publish was received.
   auto norm_pub_cb = [&] (std::unique_ptr<ResultStatus> rs) {
-    printf("publish -- %s -- %lu\n",
-      rs->GetStatus().ToString().c_str(),
-      rs->GetSequenceNumber());
     publish_sem.Post();
   };
 
@@ -246,10 +234,6 @@ TEST(IntegrationTest, TrimFirst) {
   // log to final log published. Gap should be received as well as
   // n-1 messges.
   auto last_pub_cb = [&] (std::unique_ptr<ResultStatus> rs) {
-    printf("publish -- %s -- %lu\n",
-      rs->GetStatus().ToString().c_str(),
-      rs->GetSequenceNumber());
-
     // Number of gaps and logs received from reader. Should be
     // 1 and n - 1 respectively.
     int num_gaps = 0;
@@ -273,7 +257,6 @@ TEST(IntegrationTest, TrimFirst) {
     // Reader callbacks.
     auto record_cb = [&] (std::unique_ptr<LogRecord> r) {
       // We should not be reading any records as they have been trimmed.
-      printf("received log record\n");
       num_logs++;
       read_sem.Post();
     };
@@ -281,7 +264,6 @@ TEST(IntegrationTest, TrimFirst) {
     auto gap_cb = [&] (const GapRecord &r) {
       // We expect a Gap, and we expect the low seqno should be our
       // previously published publish lsn.
-      printf("received gap from %lu to %lu\n", r.from, r.to);
       num_gaps++;
       read_sem.Post();
     };
@@ -424,13 +406,10 @@ TEST(IntegrationTest, TrimGapHandling) {
 
   auto test_receipt = [&] (int topic, SequenceNumber seqno, int expected) {
     // Tests that subscribing to topic@seqno results in 'expected' messages.
-    printf("Waiting for %d messages on %s@%lu...\n",
-      expected, topics[topic].c_str(), seqno);
     client->ListenTopics({{ ns, topics[topic], true, seqno }});
     ASSERT_TRUE(sub_sem[topic].TimedWait(std::chrono::seconds(1)));
     while (expected--) {
       ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
-      printf("received\n");
     }
     ASSERT_TRUE(!recv_sem[topic].TimedWait(std::chrono::milliseconds(100)));
   };
@@ -702,6 +681,78 @@ TEST(IntegrationTest, UnsubscribeCallback) {
   };
   client->ListenTopics(subscriptions2);
   sub_checkpoint.TimedWait(std::chrono::seconds(1));
+}
+
+TEST(IntegrationTest, OneMessageWithoutRollCall) {
+  // This test is a duplicate of OneMessage, just with RollCall disabled.
+  // The intention is just to be a quick check to ensure that things still
+  // function without RollCall.
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.copilot.rollcall_enabled = false;
+  opts.info_log = info_log;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Message read semaphore.
+  port::Semaphore msg_received;
+
+  // Message setup.
+  Topic topic = "test_topic";
+  NamespaceID namespace_id = GuestNamespace;
+  TopicOptions topic_options;
+  std::string data = "test_message";
+  GUIDGenerator msgid_generator;
+  MsgId message_id = msgid_generator.Generate();
+
+  // RocketSpeed callbacks;
+  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
+  };
+
+  auto subscription_callback = [&] (SubscriptionStatus ss) {
+    ASSERT_TRUE(ss.topic_name == topic);
+    ASSERT_TRUE(ss.namespace_id == namespace_id);
+  };
+
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
+    ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
+    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    msg_received.Post();
+  };
+
+  // Create RocketSpeed client.
+  std::unique_ptr<Configuration> config(
+      Configuration::Create(cluster.GetPilotHostIds(),
+                            cluster.GetCopilotHostIds(),
+                            Tenant(102),
+                            1));
+  //TODO(ranji42) Try to use the same integration_test for mqttclient.
+  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+
+  // Send a message.
+  auto ps = client->Publish(topic,
+                           namespace_id,
+                           topic_options,
+                           Slice(data),
+                           publish_callback,
+                           message_id);
+  ASSERT_TRUE(ps.status.ok());
+  ASSERT_TRUE(ps.msgid == message_id);
+
+  // Listen for the message.
+  std::vector<SubscriptionRequest> subscriptions = {
+    SubscriptionRequest(namespace_id, topic, true, 1)
+  };
+  client->ListenTopics(subscriptions);
+
+  // Wait for the message.
+  bool result = msg_received.TimedWait(timeout);
+  ASSERT_TRUE(result);
 }
 
 }  // namespace rocketspeed

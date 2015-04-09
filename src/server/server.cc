@@ -52,6 +52,8 @@ DEFINE_string(control_towers,
               "comma-separated control tower hostnames");
 DEFINE_int32(copilot_connections, 8,
              "num connections between one copilot and one control tower");
+DEFINE_bool(rollcall, true, "enable RollCall");
+
 DEFINE_string(rs_log_dir, "", "directory for server logs");
 
 namespace rocketspeed {
@@ -201,6 +203,7 @@ int Run(int argc,
     copilot_opts.info_log = info_log;
     copilot_opts.control_tower_connections = FLAGS_copilot_connections;
     copilot_opts.log_router = log_router;
+    copilot_opts.rollcall_enabled = FLAGS_rollcall;
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
     // Parse comma-separated control_towers hostname.

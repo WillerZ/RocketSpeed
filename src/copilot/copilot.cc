@@ -78,10 +78,12 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
                                             this));
   }
   // Create Rollcall topic writer
-  rollcall_.reset(new RollcallImpl(std::move(client),
-                                   InvalidNamespace,
-                                   SubscriptionStart(0),
-                                   nullptr));
+  if (options_.rollcall_enabled) {
+    rollcall_.reset(new RollcallImpl(std::move(client),
+                                     InvalidNamespace,
+                                     SubscriptionStart(0),
+                                     nullptr));
+  }
 
   LOG_INFO(options_.info_log, "Created a new Copilot");
   options_.info_log->Flush();
