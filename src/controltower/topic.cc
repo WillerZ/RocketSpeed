@@ -43,12 +43,14 @@ bool
 TopicManager::AddSubscriber(const TopicUUID& topic,
                             SequenceNumber start,
                             HostNumber subscriber) {
+  thread_check_.Check();
   return UpdateSubscription(topic_map_[topic], subscriber, start);
 }
 
 // remove a subscriber to the topic
 bool
 TopicManager::RemoveSubscriber(const TopicUUID& topic, HostNumber subscriber) {
+  thread_check_.Check();
   // find list of subscribers for this topic
   auto iter = topic_map_.find(topic);
   if (iter != topic_map_.end()) {
@@ -62,6 +64,7 @@ void TopicManager::VisitSubscribers(
     SequenceNumber from,
     SequenceNumber to,
     std::function<void(TopicSubscription*)> visitor) {
+  thread_check_.Check();
   auto iter = topic_map_.find(topic);
   if (iter != topic_map_.end()) {
     for (TopicSubscription& sub : iter->second) {
@@ -74,6 +77,7 @@ void TopicManager::VisitSubscribers(
 
 void TopicManager::VisitTopics(
     std::function<void(const TopicUUID& topic)> visitor) {
+  thread_check_.Check();
   for (auto& topic_sub : topic_map_) {
     visitor(topic_sub.first);
   }

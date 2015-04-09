@@ -383,6 +383,14 @@ Status TopicTailer::SendLogRecord(
             next_seqno);
         });
 
+      if (hosts.empty()) {
+        LOG_WARN(info_log_,
+          "No hosts found for message on %s@%" PRIu64 "-%" PRIu64,
+          uuid.ToString().c_str(),
+          prev_seqno,
+          next_seqno);
+      }
+
       // Send message downstream.
       data->SetSequenceNumbers(prev_seqno, next_seqno);
       on_message_(std::unique_ptr<Message>(data.release()), hosts);
@@ -519,14 +527,15 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
     return st;
   }
 
-  bool was_added = topic_map_[logid].AddSubscriber(topic, start, hostnum);
-  LOG_INFO(info_log_,
-    "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s)",
-    int(hostnum),
-    topic.ToString().c_str(),
-    start,
-    was_added ? "new" : "update");
-  bool sent = worker_loop_.Send([this, logid, start, was_added] () {
+  bool sent = worker_loop_.Send([this, logid, topic, start, hostnum] () {
+    bool was_added = topic_map_[logid].AddSubscriber(topic, start, hostnum);
+    LOG_INFO(info_log_,
+      "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s)",
+      int(hostnum),
+      topic.ToString().c_str(),
+      start,
+      was_added ? "new" : "update");
+
     if (!was_added) {
       // Was update, so remove old subscription first.
       log_reader_->StopReading(logid);
@@ -549,18 +558,16 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
     return st;
   }
 
-  bool was_removed = topic_map_[logid].RemoveSubscriber(topic, hostnum);
-  if (!was_removed) {
-    return Status::OK();
-  }
+  bool sent = worker_loop_.Send([this, logid, topic, hostnum] () {
+    bool was_removed = topic_map_[logid].RemoveSubscriber(topic, hostnum);
+    if (was_removed) {
+      LOG_INFO(info_log_,
+        "Hostnum(%d) unsubscribed for %s",
+        int(hostnum),
+        topic.ToString().c_str());
 
-  LOG_INFO(info_log_,
-    "Hostnum(%d) unsubscribed for %s",
-    int(hostnum),
-    topic.ToString().c_str());
-
-  bool sent = worker_loop_.Send([this, logid] () {
-    log_reader_->StopReading(logid);
+      log_reader_->StopReading(logid);
+    }
   });
 
   return sent ? Status::OK() : Status::NoBuffer();

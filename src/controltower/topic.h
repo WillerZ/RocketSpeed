@@ -11,6 +11,7 @@
 #include "src/util/hostmap.h"
 #include "src/util/topic_uuid.h"
 #include "src/util/common/autovector.h"
+#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
@@ -101,6 +102,7 @@ class TopicManager {
  private:
   // Map a topic name to a list of TopicEntries.
   std::unordered_map<TopicUUID, TopicList> topic_map_;
+  ThreadCheck thread_check_;
 };
 
 }  // namespace rocketspeed
