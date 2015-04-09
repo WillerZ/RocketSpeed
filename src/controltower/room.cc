@@ -284,7 +284,11 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
   }
 
   if (hosts.empty()) {
-    LOG_WARN(options.info_log, "No hosts for record: no message sent.");
+    LOG_WARN(options.info_log,
+      "No hosts for record in Topic(%s, %s)@%" PRIu64 ": no message sent.",
+      request->GetNamespaceId().ToString().c_str(),
+      request->GetTopicName().ToString().c_str(),
+      request->GetSequenceNumber());
   }
 }
 

@@ -11,13 +11,13 @@ message_rate=$((50 * K))
 remote=''
 deploy=''
 client_workers=32
-num_topics=1000000
+num_topics=1000
 num_pilots=1
 num_copilots=1
 num_towers=1
-storage_url=${STORAGE_URL:-\"configerator:logdevice/rocketspeed.logdevice.primary.conf\"}
-logdevice_cluster=${LOGDEVICE_CLUSTER:-\"rocketspeed.logdevice.primary\"}
-remote_path="/usr/local/bin"
+logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
+storage_url="configerator:logdevice/${logdevice_cluster}.conf"
+remote_path="/tmp"
 cockpit_host=''
 controltower_host=''
 pilot_port=''
@@ -25,6 +25,7 @@ copilot_port=''
 controltower_port=''
 log_dir="/tmp"
 collect_logs=''
+strip=''
 
 # Use the 2 lower order bytes from the UID to generate a namespace id.
 # The hope is that this will be sufficiently unique so that concurrent
@@ -39,7 +40,7 @@ server=${SERVER:-_build/$part/rocketspeed/github/src/server/rocketspeed}
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:, \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip, \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -88,6 +89,8 @@ while true; do
       remote_path="$2"; shift 2 ;;
     --log-dir )
       log_dir="$2"; shift 2 ;;
+    --strip )
+      strip='true'; shift ;;
     -- )
       shift; break ;;
     * )
@@ -95,13 +98,28 @@ while true; do
   esac
 done
 
-available_hosts=( rocketspeed001.11.lla1.facebook.com \
-                  rocketspeed002.11.lla1.facebook.com \
-                  rocketspeed003.11.lla1.facebook.com \
-                  rocketspeed004.11.lla1.facebook.com \
-                  rocketspeed005.11.lla1.facebook.com \
-                  rocketspeed006.11.lla1.facebook.com \
-                  rocketspeed007.11.lla1.facebook.com )
+if [ $strip ]; then
+  echo
+  echo "===== Stripping binary ====="
+  TMPFILE=`mktemp /tmp/rocketspeed.XXXXXXXX`
+  du -h $server
+  cp -p $server $TMPFILE
+  server=$TMPFILE
+  strip $TMPFILE
+  du -h $TMPFILE
+fi
+
+if [ $ROCKETSPEED_HOSTS ]; then
+  IFS=',' read -a available_hosts <<< "$ROCKETSPEED_HOSTS"
+else
+  available_hosts=( rocketspeed001.11.lla1.facebook.com \
+                    rocketspeed002.11.lla1.facebook.com \
+                    rocketspeed003.11.lla1.facebook.com \
+                    rocketspeed004.11.lla1.facebook.com \
+                    rocketspeed005.11.lla1.facebook.com \
+                    rocketspeed006.11.lla1.facebook.com \
+                    rocketspeed007.11.lla1.facebook.com )
+fi
 
 pilots=("${available_hosts[@]::num_pilots}")
 available_hosts=("${available_hosts[@]:num_pilots}")  # pop num_pilots off
@@ -136,7 +154,8 @@ towers_csv=$(join , ${control_towers[@]})
 
 function stop_servers {
   if [ $remote ]; then
-    echo "Stopping remote servers..."
+    echo
+    echo "===== Stopping remote servers ====="
     for host in ${all_hosts[@]}; do
       echo "Stopping server:" $host
       ssh root@$host 'pkill -f ${remote_path}/rocketspeed'
@@ -146,7 +165,8 @@ function stop_servers {
 
 function start_servers {
   if [ $remote ]; then
-    echo "Starting remote servers..."
+    echo
+    echo "===== Starting remote servers ====="
     for host in ${cockpits[@]}; do
       cmd="${remote_path}/rocketspeed \
         --pilot \
@@ -207,20 +227,25 @@ function deploy_servers {
   fi
 
   # Deploy to remote hosts
-  echo "Deploying $server to ${remote_path}..."
+  echo
+  echo "===== Deploying $server to ${remote_path} on remote hosts ====="
 
+  src=$server
   for host in ${all_hosts[@]}; do
     echo "$host"
-    if ! scp $server root@$host:${remote_path}; then
+    dest=root@$host:${remote_path}/rocketspeed
+    if ! scp -p $src $dest; then
       echo "Error deploying to $host"
       exit 1
     fi
+    src=$dest  # use previous dest as src (likely to be same DC/cluster)
   done
 }
 
 function collect_logs {
   if [ $remote ]; then
-    echo "Merging remote logs into LOG.remote..."
+    echo
+    echo "===== Merging remote logs into LOG.remote ====="
     rm -f LOG.remote
     rm -f LOG.tmp
     touch LOG.tmp
@@ -242,6 +267,7 @@ progress='false'
 # Do the server deployment if specified.
 if [ $deploy ]; then
   # Deploy new binaries to remote servers
+  stop_servers
   deploy_servers
   progress='true'
 fi
