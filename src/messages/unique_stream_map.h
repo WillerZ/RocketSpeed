@@ -33,6 +33,8 @@ class UniqueStreamMap {
   bool FindLocalAndContext(StreamID global,
                            Context* out_context,
                            StreamID* out_local) const {
+    assert(out_context);
+    assert(out_local);
     thread_check_.Check();
 
     // Try to find global -> (ctx, local).
@@ -54,7 +56,17 @@ class UniqueStreamMap {
     global_to_local_[global] = std::make_pair(std::move(context), global);
   }
 
-  std::pair<bool, StreamID> GetGlobal(const Context& context, StreamID local) {
+  enum GetGlobalStatus {
+    kInserted,
+    kFound,
+    kNotInserted,
+  };
+
+  GetGlobalStatus GetGlobal(const Context& context,
+                            StreamID local,
+                            bool allocate,
+                            StreamID* out_global) {
+    assert(out_global);
     thread_check_.Check();
 
     {  // Try to find (ctx, local) -> global.
@@ -63,9 +75,15 @@ class UniqueStreamMap {
         const auto& local_map = it_c->second;
         const auto it_l = local_map.find(local);
         if (it_l != local_map.end()) {
-          return std::make_pair(false, it_l->second);
+          *out_global = it_l->second;
+          return GetGlobalStatus::kFound;
         }
       }
+    }
+    // We've failed to find existing entry, proceed only if asked to allocate
+    // new global stream ID.
+    if (!allocate) {
+      return GetGlobalStatus::kInserted;
     }
     // Allocate new global stream ID if we don't have the mapping.
     StreamID global = allocator_.Next();
@@ -75,11 +93,12 @@ class UniqueStreamMap {
     assert(global_to_local_.find(global) == global_to_local_.end());
     global_to_local_.emplace(global, std::make_pair(std::move(context), local));
     // Return global stream ID.
-    return std::make_pair(true, global);
+    *out_global = global;
+    return GetGlobalStatus::kInserted;
   }
 
   enum RemovalStatus {
-    kNotFound,
+    kNotRemoved,
     kRemoved,
     kRemovedLast,
   };
@@ -87,6 +106,8 @@ class UniqueStreamMap {
   RemovalStatus RemoveGlobal(StreamID global,
                              Context* out_context,
                              StreamID* out_local) {
+    assert(out_context);
+    assert(out_local);
     thread_check_.Check();
 
     Context context;
@@ -94,7 +115,7 @@ class UniqueStreamMap {
     {  // Remove global -> (ctx, local)
       const auto it_g = global_to_local_.find(global);
       if (it_g == global_to_local_.end()) {
-        return RemovalStatus::kNotFound;
+        return RemovalStatus::kNotRemoved;
       }
       context = it_g->second.first;
       *out_context = context;

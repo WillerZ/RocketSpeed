@@ -377,74 +377,78 @@ class SocketEvent {
         // Still more message to be read, wait for next event.
         return Status::OK();
       }
+      // Now have whole message, reset state for next message.
+      hdr_idx_ = 0;
+      msg_idx_ = 0;
+      // No reader state modification shall happen after this point.
 
-      // Now have whole message, process it.
+      // Process received message.
       Slice in(msg_buf_.get(), msg_size_);
 
       // Decode the recipients.
-      StreamID origin;
-      Status st = DecodeOrigin(&in, &origin);
+      StreamID local;
+      Status st = DecodeOrigin(&in, &local);
+      if (!st.ok()) {
+        continue;
+      }
 
       // Decode the rest of the message.
-      std::unique_ptr<Message> msg;
-      if (st.ok()) {
-        msg = Message::CreateNewInstance(std::move(msg_buf_), in);
-      }
-
-      if (msg) {
-        // Apply origin.
-        StreamID global;
-        if (was_initiated_) {
-          // Initiated socket responses will have the correct stream ID.
-          global = origin;
-        } else {
-          // Attempt to add this stream/socket pair to the stream map.
-          // Insert connection and remap stream ID.
-          bool inserted;
-          std::tie(inserted, global) =
-              event_loop_->stream_router_.InsertInboundStream(this, origin);
-
-          // Log a new inbound stream.
-          if (inserted) {
-            LOG_INFO(event_loop_->GetLog(),
-                     "New stream (%s) was associated with socket fd(%d)",
-                     global.c_str(),
-                     fd_);
-          }
-
-          // EventLoop needs to process goodbye messages.
-          if (msg->GetMessageType() == MessageType::mGoodbye) {
-            MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
-            LOG_INFO(event_loop_->GetLog(),
-                     "Received goodbye message (code %d) for stream (%s)",
-                     static_cast<int>(goodbye->GetCode()),
-                     global.c_str());
-            // Update stream router.
-            bool removed;
-            SocketEvent* sev;
-            std::tie(removed, sev, std::ignore) =
-                event_loop_->stream_router_.RemoveStream(global);
-            assert(removed);
-            if (sev) {
-              assert(sev == this);
-              LOG_INFO(event_loop_->GetLog(),
-                       "Socket fd(%d) has no more streams on it.",
-                       sev->fd_);
-            }
-          }
-        }
-
-        // Invoke the callback for this message.
-        event_loop_->Dispatch(std::move(msg), global);
-      } else {
-        // Failed to decode message.
+      std::unique_ptr<Message> msg =
+          Message::CreateNewInstance(std::move(msg_buf_), in);
+      if (!msg) {
         LOG_WARN(event_loop_->GetLog(), "Failed to decode message");
-        event_loop_->GetLog()->Flush();
+        continue;
       }
 
-      // Reset state for next message.
-      hdr_idx_ = 0;
-      msg_idx_ = 0;
+      // We need to remap stream ID local to the connection into globally
+      // (within MsgLoop) unique stream ID.
+      StreamID global;
+      // We do not allow incoming streams on outgoing connections.
+      const bool do_insert = !was_initiated_;
+      // If this is a response on a stream initiated by this message loop, we
+      // will have the proper stream ID in a map, otherwise this is a request
+      // from the remote host and we have to remap stream ID.
+      auto remap = event_loop_->stream_router_.RemapInboundStream(
+          this, local, do_insert, &global);
+
+      // Proceed with a message only if remapping succeeded.
+      if (remap == StreamRouter::RemapStatus::kNotInserted) {
+        LOG_WARN(event_loop_->GetLog(),
+                 "Failed to remap stream ID (%s)",
+                 local.c_str());
+        continue;
+      }
+
+      // Log a new inbound stream.
+      if (remap == StreamRouter::RemapStatus::kInserted) {
+        LOG_INFO(event_loop_->GetLog(),
+                 "New stream (%s) was associated with socket fd(%d)",
+                 global.c_str(),
+                 fd_);
+      }
+
+      if (msg->GetMessageType() == MessageType::mGoodbye) {
+        MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
+        LOG_INFO(event_loop_->GetLog(),
+                 "Received goodbye message (code %d) for stream (%s)",
+                 static_cast<int>(goodbye->GetCode()),
+                 global.c_str());
+        // Update stream router.
+        bool removed;
+        SocketEvent* sev;
+        std::tie(removed, sev, std::ignore) =
+            event_loop_->stream_router_.RemoveStream(global);
+        assert(StreamRouter::RemovalStatus::kNotRemoved != removed);
+        if (sev) {
+          assert(sev == this);
+          LOG_INFO(event_loop_->GetLog(),
+                   "Socket fd(%d) has no more streams on it.",
+                   sev->fd_);
+        }
+      }
+
+      // Invoke the callback for this message.
+      event_loop_->Dispatch(std::move(msg), global);
     }
     return Status::OK();
   }
@@ -534,22 +538,29 @@ Status StreamRouter::GetOutboundStream(const SendCommand::StreamSpec& spec,
   return Status::OK();
 }
 
-std::pair<bool, StreamID> StreamRouter::InsertInboundStream(
-    SocketEvent* new_sev,
-    StreamID local) {
+StreamRouter::RemapStatus StreamRouter::RemapInboundStream(
+    SocketEvent* sev,
+    StreamID local,
+    bool insert,
+    StreamID* out_global) {
+  assert(out_global);
   thread_check_.Check();
 
-  // Insert into global <-> (connection, local) map and allocate global.
-  auto result = open_streams_.GetGlobal(new_sev, local);
-  StreamID global = result.second;
+  // Insert into global <-> (connection, local) map and allocate global if
+  // requested.
+  auto result = open_streams_.GetGlobal(sev, local, insert, out_global);
+  if (result == RemapStatus::kNotInserted) {
+    // Do not insert into connection cache if we cannot open the input stream.
+    return result;
+  }
   // Insert into destination -> connection cache.
-  const ClientID& destination = new_sev->GetDestination();
+  const ClientID& destination = sev->GetDestination();
   if (!destination.empty()) {
     // This connection has a known remote endpoint, we can reuse it later on.
     // In case of any conflicts, just remove the old connection mapping, it
     // will not disturb existing streams, but can only affect future choice
     // of connection for that destination.
-    open_connections_[destination] = new_sev;
+    open_connections_[destination] = sev;
   }
   return result;
 }

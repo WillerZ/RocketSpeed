@@ -82,15 +82,22 @@ class StreamRouter {
                            SocketEvent** out_sev,
                            StreamID* out_local);
 
+  typedef UniqueStreamMap<SocketEvent*>::GetGlobalStatus RemapStatus;
+
   /**
    * Remaps provided local stream ID into global stream ID and associates it
-   * with provided connection.
-   * If no association for the stream in given context exists, inserts it and
-   * returns (true, new global ID), otherwise returns (false, currently assigned
-   * global ID).
+   * with provided connection, if requested.
+   * If association exists, returns kFound and sets out parameter found
+   * global stream ID.
+   * If no association exists and caller requested insertion, returns
+   * kInserted and sets out parameter to newly assigned global stream ID.
+   * If no association exists and caller did not request insertion, returns
+   * kNotInserted.
    */
-  std::pair<bool, StreamID> InsertInboundStream(SocketEvent* new_sev,
-                                                StreamID local);
+  RemapStatus RemapInboundStream(SocketEvent* sev,
+                                 StreamID local,
+                                 bool insert,
+                                 StreamID* out_global);
 
   typedef UniqueStreamMap<SocketEvent*>::RemovalStatus RemovalStatus;
 
