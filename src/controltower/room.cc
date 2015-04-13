@@ -106,9 +106,10 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
       std::unique_ptr<Message> message(request);
       if (!status.ok()) {
         LOG_WARN(control_tower_->GetOptions().info_log,
-                 "Failed to find latest sequence number in Topc(%s, %s)",
+                 "Failed to find latest sequence number in Topic(%s, %s) (%s)",
                  request->GetTopicInfo()[0].namespace_id.c_str(),
-                 request->GetTopicInfo()[0].topic_name.c_str());
+                 request->GetTopicInfo()[0].topic_name.c_str(),
+                 status.ToString().c_str());
         return;
       }
 

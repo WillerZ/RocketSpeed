@@ -27,6 +27,7 @@ log_dir="/tmp"
 collect_logs=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
+remote_bench=''
 
 # Use the 2 lower order bytes from the UID to generate a namespace id.
 # The hope is that this will be sufficiently unique so that concurrent
@@ -38,10 +39,18 @@ namespaceid=`id -u`
 part=${DBG:-opt}
 
 server=${SERVER:-_build/$part/rocketspeed/github/src/server/rocketspeed}
+bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
+
+if [ ! -f $bench ]; then
+  echo "Must have: "
+  echo "  $bench"
+  echo "from current directory"
+  exit 1
+fi
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -94,23 +103,14 @@ while true; do
       strip='true'; shift ;;
     --rollcall )
       rollcall="$2"; shift 2 ;;
+    --rocketbench_host )
+      rocketbench_host="$2"; remote_bench='true'; shift 2 ;;
     -- )
       shift; break ;;
     * )
       exit 1 ;;
   esac
 done
-
-if [ $strip ]; then
-  echo
-  echo "===== Stripping binary ====="
-  TMPFILE=`mktemp /tmp/rocketspeed.XXXXXXXX`
-  du -h $server
-  cp -p $server $TMPFILE
-  server=$TMPFILE
-  strip $TMPFILE
-  du -h $TMPFILE
-fi
 
 if [ $ROCKETSPEED_HOSTS ]; then
   IFS=',' read -a available_hosts <<< "$ROCKETSPEED_HOSTS"
@@ -122,6 +122,33 @@ else
                     rocketspeed005.11.lla1.facebook.com \
                     rocketspeed006.11.lla1.facebook.com \
                     rocketspeed007.11.lla1.facebook.com )
+fi
+
+if [ $strip ]; then
+  echo
+  echo "===== Stripping binary ====="
+
+  TMPFILE=`mktemp /tmp/rocketspeed.XXXXXXXX`
+  du -h $server
+  cp -p $server $TMPFILE
+  server=$TMPFILE
+  strip $TMPFILE
+  du -h $TMPFILE
+
+  if [ $remote_bench ]; then
+    TMPFILE=`mktemp /tmp/rocketbench.XXXXXXXX`
+    du -h $bench
+    cp -p $bench $TMPFILE
+    bench=$TMPFILE
+    strip $TMPFILE
+    du -h $TMPFILE
+  fi
+fi
+
+if [ $remote_bench ]; then
+  bench_cmd="$remote_path/rocketbench"
+else
+  bench_cmd="$bench"
 fi
 
 pilots=("${available_hosts[@]::num_pilots}")
@@ -230,7 +257,7 @@ function deploy_servers {
     exit 1
   fi
 
-  # Deploy to remote hosts
+  # Deploy rocketspeed to remote hosts
   echo
   echo "===== Deploying $server to ${remote_path} on remote hosts ====="
 
@@ -243,6 +270,21 @@ function deploy_servers {
       exit 1
     fi
   done
+
+  if [ $remote_bench ]; then
+    # Deploy rocketbench to remote host
+    echo
+    echo "===== Deploying $bench to ${remote_path} on remote host ====="
+
+    src=$bench
+    host=$rocketbench_host
+    echo "$host"
+    dest=root@$host:${remote_path}/rocketbench
+    if ! rsync -az $src $dest; then
+      echo "Error deploying to $host"
+      exit 1
+    fi
+  fi
 }
 
 function collect_logs {
@@ -312,6 +354,9 @@ if [ $# -ne 1 ]; then
   echo "--controltower-host  The machine name that runs the control tower."
   echo "--remote-path        The directory where the rocketspeed binary is installed."
   echo "--log-dir            The directory for server logs."
+  echo "--strip              Strip rocketspeed (and rocketbench) binaries for deploying."
+  echo "--rollcall           Enable/disable RollCall."
+  echo "--rocketbench_host   Host to use for running rocketbench."
   exit 1
  fi
 fi
@@ -330,18 +375,6 @@ const_params="
   --client_workers=$client_workers \
   --num_topics=$num_topics"
 
-if [ -f rocketbench ]; then
-  bench=./rocketbench
-elif [ -f _build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench ]; then
-  bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
-else
-  echo "Must have either: "
-  echo "  rocketbench, or"
-  echo "  _build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench"
-  echo "from current directory"
-  exit 1
-fi
-
 # Setup const params
 if [ $remote ]; then
   const_params+=" --start_local_server=false"
@@ -359,11 +392,14 @@ fi
 
 function run_produce {
   echo "Burst writing $num_messages messages into log storage..."
-  cmd="$bench $const_params \
+  cmd="$bench_cmd $const_params \
        --start_producer=true \
        --start_consumer=false \
        --delay_subscribe=false \
        2>&1 | tee $output_dir/benchmark_produce.log"
+  if [ $remote_bench ]; then
+    cmd="ssh root@$rocketbench_host -- $cmd"
+  fi
   echo $cmd | tee $output_dir/benchmark_produce.log
   eval $cmd
   echo
@@ -371,11 +407,14 @@ function run_produce {
 
 function run_readwrite {
   echo "Writing and reading $num_messages simultaneously..."
-  cmd="$bench $const_params \
+  cmd="$bench_cmd $const_params \
        --start_producer=true \
        --start_consumer=true \
        --delay_subscribe=false \
        2>&1 | tee $output_dir/benchmark_readwrite.log"
+  if [ $remote_bench ]; then
+    cmd="ssh root@$rocketbench_host -- $cmd"
+  fi
   echo $cmd | tee $output_dir/benchmark_readwrite.log
   eval $cmd
   echo
@@ -383,11 +422,14 @@ function run_readwrite {
 
 function run_consume {
   echo "Reading a backlog of $num_messages..."
-  cmd="$bench $const_params \
+  cmd="$bench_cmd $const_params \
        --start_producer=true \
        --start_consumer=true \
        --delay_subscribe=true \
        2>&1 | tee $output_dir/benchmark_consume.log"
+  if [ $remote_bench ]; then
+    cmd="ssh root@$rocketbench_host -- $cmd"
+  fi
   echo $cmd | tee $output_dir/benchmark_consume.log
   eval $cmd
   echo
