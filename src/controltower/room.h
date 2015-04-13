@@ -46,8 +46,8 @@ class ControlRoom {
   Status Forward(std::unique_ptr<Message> msg, int worker_id, StreamID origin);
 
   // Processes a message from the tailer.
-  void OnTailerMessage(std::unique_ptr<Message> msg,
-                       const std::vector<HostNumber>& hosts);
+  Status OnTailerMessage(std::unique_ptr<Message> msg,
+                         std::vector<HostNumber> hosts);
 
   // Stop the room worker loop
   void Stop() { room_loop_.Stop();}
@@ -67,6 +67,12 @@ class ControlRoom {
       origin_(origin) {
     }
 
+    RoomCommand(std::unique_ptr<Message> message,
+                std::vector<HostNumber> hosts)
+    : message_(std::move(message))
+    , hosts_(std::move(hosts)) {
+    }
+
     std::unique_ptr<Message> GetMessage() {
       return std::move(message_);
     }
@@ -79,10 +85,15 @@ class ControlRoom {
       return origin_;
     }
 
+    const std::vector<HostNumber>& GetHosts() const {
+      return hosts_;
+    }
+
    private:
     std::unique_ptr<Message> message_;
     int worker_id_;
     StreamID origin_;
+    std::vector<HostNumber> hosts_;
   };
 
  private:

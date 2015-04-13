@@ -42,12 +42,16 @@ void ControlRoom::Run(void* arg) {
   auto command_callback = [room] (RoomCommand command) {
     std::unique_ptr<Message> message = command.GetMessage();
     MessageType type = message->GetMessageType();
-    int worker_id = command.GetWorkerId();
-    StreamID origin = command.GetOrigin();
     if (type == MessageType::mMetadata) {
       // subscription message from ControlTower
+      int worker_id = command.GetWorkerId();
+      StreamID origin = command.GetOrigin();
       assert(worker_id != -1);  // from tower
       room->ProcessMetadata(std::move(message), worker_id, origin);
+    } else if (type == MessageType::mDeliver) {
+      room->ProcessDeliver(std::move(message), command.GetHosts());
+    } else if (type == MessageType::mGap) {
+      room->ProcessGap(std::move(message), command.GetHosts());
     }
   };
 
@@ -64,7 +68,7 @@ ControlRoom::Forward(std::unique_ptr<Message> msg,
   if (room_loop_.Send(std::move(msg), worker_id, origin)) {
     return Status::OK();
   } else {
-    return Status::InternalError("Worker queue full");
+    return Status::NoBuffer();
   }
 }
 
@@ -210,24 +214,13 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   options.info_log->Flush();
 }
 
-void
+Status
 ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
-                             const std::vector<HostNumber>& hosts) {
-  ControlTower* ct = control_tower_;
-  ControlTowerOptions& options = ct->GetOptions();
-
-  switch (msg->GetMessageType()) {
-    case MessageType::mDeliver:
-      ProcessDeliver(std::move(msg), hosts);
-      break;
-
-    case MessageType::mGap:
-      ProcessGap(std::move(msg), hosts);
-      break;
-
-    default:
-      LOG_ERROR(options.info_log, "Unexpected message type from tailer.");
-      break;
+                             std::vector<HostNumber> hosts) {
+  if (room_loop_.Send(std::move(msg), std::move(hosts))) {
+    return Status::OK();
+  } else {
+    return Status::NoBuffer();
   }
 }
 
@@ -236,7 +229,6 @@ ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
 void
 ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
                             const std::vector<HostNumber>& hosts) {
-  // Must be thread safe.
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
   Status st;
@@ -297,7 +289,6 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
 void
 ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
                         const std::vector<HostNumber>& hosts) {
-  // Must be thread safe.
   MessageGap* gap = static_cast<MessageGap*>(msg.get());
 
   SequenceNumber prev_seqno = gap->GetStartSequenceNumber();

@@ -34,7 +34,7 @@ class TopicTailer {
    std::shared_ptr<LogRouter> log_router,
    std::shared_ptr<Logger> info_log,
    std::function<void(std::unique_ptr<Message>,
-                      const std::vector<HostNumber>&)> on_message,
+                      std::vector<HostNumber>)> on_message,
    TopicTailer** tailer);
 
   /**
@@ -105,7 +105,7 @@ class TopicTailer {
               std::shared_ptr<LogRouter> log_router,
               std::shared_ptr<Logger> info_log,
               std::function<void(std::unique_ptr<Message>,
-                                 const std::vector<HostNumber>&)> on_message);
+                                 std::vector<HostNumber>)> on_message);
 
   ThreadCheck thread_check_;
 
@@ -124,7 +124,7 @@ class TopicTailer {
 
   // Callback for outgoing messages.
   std::function<void(std::unique_ptr<Message>,
-                     const std::vector<HostNumber>&)> on_message_;
+                     std::vector<HostNumber>)> on_message_;
 
   WorkerLoop<TopicTailerCommand> worker_loop_;
   BaseEnv::ThreadId worker_thread_;

@@ -159,7 +159,7 @@ Status LogReader::ProcessRecord(LogID log_id,
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
     if (seqno != log_state.last_read + 1) {
-      LOG_INFO(info_log_,
+      LOG_WARN(info_log_,
         "Record received out of order. Expected:%" PRIu64 " Received:%" PRIu64,
         log_state.last_read + 1,
         seqno);
@@ -184,6 +184,9 @@ Status LogReader::ProcessRecord(LogID log_id,
     }
   } else {
     // This log isn't open.
+    LOG_WARN(info_log_,
+      "Record received for unopened Log(%" PRIu64 ")",
+      log_id);
     return Status::NotFound();
   }
 }
@@ -331,13 +334,13 @@ TopicTailer::TopicTailer(
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
-                       const std::vector<HostNumber>&)> on_message) :
+                       std::vector<HostNumber>)> on_message) :
   env_(env),
   log_tailer_(log_tailer),
   log_router_(std::move(log_router)),
   info_log_(std::move(info_log)),
   on_message_(std::move(on_message)),
-  worker_loop_(65536),
+  worker_loop_(1 << 20),
   worker_thread_(0) {
 }
 
@@ -384,21 +387,22 @@ Status TopicTailer::SendLogRecord(
         });
 
       if (hosts.empty()) {
-        LOG_WARN(info_log_,
+        LOG_INFO(info_log_,
           "No hosts found for message on %s@%" PRIu64 "-%" PRIu64,
           uuid.ToString().c_str(),
           prev_seqno,
           next_seqno);
+      } else {
+        // Send message downstream.
+        data->SetSequenceNumbers(prev_seqno, next_seqno);
+        on_message_(std::unique_ptr<Message>(data.release()), std::move(hosts));
       }
-
-      // Send message downstream.
-      data->SetSequenceNumbers(prev_seqno, next_seqno);
-      on_message_(std::unique_ptr<Message>(data.release()), hosts);
     } else {
       // We don't have log open, so drop.
       LOG_WARN(info_log_,
-        "Failed to process message on Log(%" PRIu64 ")@%" PRIu64
-        ": %s",
+        "Failed to process message (%.16s) on Log(%" PRIu64 ")@%" PRIu64
+        " (%s)",
+        data->GetPayload().ToString().c_str(),
         log_id,
         next_seqno,
         st.ToString().c_str());
@@ -463,7 +467,7 @@ Status TopicTailer::SendGapRecord(
                          type,
                          prev_seqno,
                          to));
-        on_message_(std::move(msg), hosts);
+        on_message_(std::move(msg), std::move(hosts));
       });
 
     if (type == GapType::kBenign) {
@@ -505,7 +509,7 @@ TopicTailer::CreateNewInstance(
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
-                       const std::vector<HostNumber>&)> on_message,
+                       std::vector<HostNumber>)> on_message,
     TopicTailer** tailer) {
   *tailer = new TopicTailer(env,
                             log_tailer,
