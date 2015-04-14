@@ -131,8 +131,8 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
       } else {
         const std::vector<TopicPair>& req_topic = request->GetTopicInfo();
         LOG_INFO(control_tower_->GetOptions().info_log,
-                 "Subscribing %s at latest seqno for Topic(%s)@%" PRIu64,
-                 origin.c_str(),
+                 "Subscribing (%llu) at latest seqno for Topic(%s)@%" PRIu64,
+                 origin,
                  req_topic[0].topic_name.c_str(),
                  req_topic[0].seqno);
       }
@@ -154,9 +154,9 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
                st.ToString().c_str());
     } else {
       LOG_INFO(options.info_log,
-        "Sent FindLatestSeqno request for %s for Topic(%s)",
-        origin.c_str(),
-        topic[0].topic_name.c_str());
+               "Sent FindLatestSeqno request for (%llu) for Topic(%s)",
+               origin,
+               topic[0].topic_name.c_str());
     }
     return;
   }
@@ -177,15 +177,15 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   if (topic[0].topic_type == MetadataType::mSubscribe) {
     topic_tailer_->AddSubscriber(uuid, topic[0].seqno, hostnum);
     LOG_INFO(options.info_log,
-        "Added subscriber %s for Topic(%s)@%" PRIu64,
-        origin.c_str(),
+        "Added subscriber %llu for Topic(%s)@%" PRIu64,
+        origin,
         topic[0].topic_name.c_str(),
         topic[0].seqno);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
     topic_tailer_->RemoveSubscriber(uuid, hostnum);
     LOG_INFO(options.info_log,
-        "Removed subscriber %s from Topic(%s)",
-        origin.c_str(),
+        "Removed subscriber %llu from Topic(%s)",
+        origin,
         topic[0].topic_name.c_str());
   }
 
@@ -196,20 +196,21 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   st = options.msg_loop->SendResponse(*request, origin, worker_id);
   if (!st.ok()) {
     LOG_WARN(options.info_log,
-        "Unable to send %s response for Topic(%s)@%" PRIu64 " to tower for %s",
-        topic[0].topic_type == MetadataType::mSubscribe
-          ? "subscribe" : "unsubscribe",
-        topic[0].topic_name.c_str(),
-        topic[0].seqno,
-        origin.c_str());
+             "Unable to send %s response for Topic(%s)@%" PRIu64
+             " to tower for %llu",
+             topic[0].topic_type == MetadataType::mSubscribe ? "subscribe"
+                                                             : "unsubscribe",
+             topic[0].topic_name.c_str(),
+             topic[0].seqno,
+             origin);
   } else {
     LOG_INFO(options.info_log,
-        "Sent %s response for Topic(%s)@%" PRIu64 " to tower for %s",
+        "Sent %s response for Topic(%s)@%" PRIu64 " to tower for %llu",
         topic[0].topic_type == MetadataType::mSubscribe
           ? "subscribe" : "unsubscribe",
         topic[0].topic_name.c_str(),
         topic[0].seqno,
-        origin.c_str());
+        origin);
   }
   options.info_log->Flush();
 }
@@ -252,26 +253,25 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
   // advance the subscription to next_seqno.
   TopicUUID uuid(request->GetNamespaceId(), request->GetTopicName());
   for (HostNumber hostnum : hosts) {
-    // convert HostNumber to ClientID
+    // Convert HostNumber to origin StreamID.
     int worker_id = -1;
-    const ClientID* hostid = ct->LookupHost(hostnum, &worker_id);
-    assert(hostid != nullptr);
+    StreamID origin = ct->LookupHost(hostnum, &worker_id);
     assert(worker_id != -1);
-    if (hostid != nullptr && worker_id != -1) {
+    if (worker_id != -1) {
       // Send to correct worker loop.
-      st = options.msg_loop->SendResponse(*request, *hostid, worker_id);
+      st = options.msg_loop->SendResponse(*request, origin, worker_id);
 
       if (st.ok()) {
         LOG_INFO(options.info_log,
-                "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %s",
-                request->GetPayload().ToString().c_str(),
-                request->GetSequenceNumber(),
-                request->GetTopicName().ToString().c_str(),
-                hostid->c_str());
+                 "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %llu",
+                 request->GetPayload().ToString().c_str(),
+                 request->GetSequenceNumber(),
+                 request->GetTopicName().ToString().c_str(),
+                 origin);
       } else {
         LOG_WARN(options.info_log,
-                "Unable to forward Data message to subscriber %s",
-                hostid->c_str());
+                 "Unable to forward Data message to subscriber %llu",
+                 origin);
       }
     }
   }
@@ -303,26 +303,25 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
       gap->GetTopicName().ToString().c_str());
 
   for (HostNumber hostnum : hosts) {
-    // convert HostNumber to ClientID
+    // Convert HostNumber to origin StreamID.
     int worker_id = -1;
-    const ClientID* hostid = ct->LookupHost(hostnum, &worker_id);
-    assert(hostid != nullptr);
+    StreamID origin = ct->LookupHost(hostnum, &worker_id);
     assert(worker_id != -1);
-    if (hostid != nullptr && worker_id != -1) {
+    if (worker_id != -1) {
       // Send to correct worker loop.
-      Status st = options.msg_loop->SendResponse(*gap, *hostid, worker_id);
+      Status st = options.msg_loop->SendResponse(*gap, origin, worker_id);
 
       if (st.ok()) {
         LOG_INFO(options.info_log,
-                "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %s",
-                prev_seqno,
-                next_seqno,
-                gap->GetTopicName().ToString().c_str(),
-                hostid->c_str());
+                 "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %llu",
+                 prev_seqno,
+                 next_seqno,
+                 gap->GetTopicName().ToString().c_str(),
+                 origin);
       } else {
         LOG_WARN(options.info_log,
-                "Unable to forward Gap message to subscriber %s",
-                hostid->c_str());
+                 "Unable to forward Gap message to subscriber %llu",
+                 origin);
       }
     }
   }

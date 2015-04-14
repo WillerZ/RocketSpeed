@@ -209,9 +209,9 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
   // Check that message arrived on correct stream.
   if (worker_data.pilot_socket.GetStreamID() != origin) {
     LOG_WARN(info_log_,
-             "Incorrect message stream: (%s) expected: (%s)",
-             origin.c_str(),
-             worker_data.pilot_socket.GetStreamID().c_str());
+             "Incorrect message stream: (%llu) expected: (%llu)",
+             origin,
+             worker_data.pilot_socket.GetStreamID());
     return;
   }
 

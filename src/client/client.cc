@@ -582,9 +582,9 @@ void ClientImpl::ProcessData(std::unique_ptr<Message> msg, StreamID origin) {
   // Check that message arrived on correct stream.
   if (worker_data.copilot_socket.GetStreamID() != origin) {
     LOG_WARN(info_log_,
-             "Incorrect message stream: (%s) expected: (%s)",
-             origin.c_str(),
-             worker_data.copilot_socket.GetStreamID().c_str());
+             "Incorrect message stream: (%llu) expected: (%llu)",
+             origin,
+             worker_data.copilot_socket.GetStreamID());
     return;
   }
 
@@ -639,9 +639,9 @@ void ClientImpl::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   // Check that message arrived on correct stream.
   if (worker_data.copilot_socket.GetStreamID() != origin) {
     LOG_WARN(info_log_,
-             "Incorrect message stream: (%s) expected: (%s)",
-             origin.c_str(),
-             worker_data.copilot_socket.GetStreamID().c_str());
+             "Incorrect message stream: (%llu) expected: (%llu)",
+             origin,
+             worker_data.copilot_socket.GetStreamID());
     return;
   }
 
@@ -692,9 +692,9 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg,
   // Check that message arrived on correct stream.
   if (worker_data.copilot_socket.GetStreamID() != origin) {
     LOG_WARN(info_log_,
-             "Incorrect message stream: (%s) expected: (%s)",
-             origin.c_str(),
-             worker_data.copilot_socket.GetStreamID().c_str());
+             "Incorrect message stream: (%llu) expected: (%llu)",
+             origin,
+             worker_data.copilot_socket.GetStreamID());
     return;
   }
 

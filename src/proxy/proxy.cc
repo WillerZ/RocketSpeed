@@ -165,7 +165,7 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
                                  StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Server) {
-    LOG_INFO(info_log_, "Received goodbye for stream (%s).", origin.c_str());
+    LOG_INFO(info_log_, "Received goodbye for stream (%llu).", origin);
 
     auto& data = *worker_data_[msg_loop_->GetThreadWorkerIndex()];
     data.thread_check_.Check();
@@ -177,8 +177,8 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
     if (status == decltype(status)::kNotRemoved) {
       // Session might have been closed while connection to pilot/copilot died.
       LOG_INFO(info_log_,
-               "Proxy received goodbye on non-existent stream (%s)",
-               origin.c_str());
+               "Proxy received goodbye on non-existent stream (%llu)",
+               origin);
       return;
     }
 
@@ -189,8 +189,8 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
     }
   } else {
     LOG_WARN(info_log_,
-             "Proxy received client goodbye from %s, but has no clients.",
-             origin.c_str());
+             "Proxy received client goodbye from %llu, but has no clients.",
+             origin);
   }
 }
 
@@ -236,8 +236,8 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
   bool found = data.open_streams_.FindLocalAndContext(origin, &session, &local);
   if (!found) {
     LOG_ERROR(info_log_,
-              "Could not find session for global stream ID (%s)",
-              origin.c_str());
+              "Could not find session for global stream ID (%llu)",
+              origin);
     stats_.bad_origins->Add(1);
     return;
   }

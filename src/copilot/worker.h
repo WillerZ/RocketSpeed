@@ -10,11 +10,13 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
 #include "include/Types.h"
 #include "src/copilot/options.h"
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
+#include "src/messages/stream_socket.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/worker_loop.h"
 #include "src/util/common/hash.h"
@@ -217,13 +219,13 @@ class CopilotWorker {
     LogID logid;
   };
   typedef std::unordered_set<TopicInfo, TopicInfo::Hash> TopicInfoSet;
-  std::unordered_map<ClientID, TopicInfoSet> client_topics_;
+  std::unordered_map<StreamID, TopicInfoSet> client_topics_;
 
   /**
    * Keeps track of all opened stream sockets to control towers, the index in
    * this array corresponds to message loop worker id.
    */
-  std::unordered_map<ClientID, std::vector<StreamSocket>>
+  std::unordered_map<ClientID, std::unordered_map<int, StreamSocket>>
       control_tower_sockets_;
 };
 

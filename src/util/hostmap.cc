@@ -4,8 +4,10 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/util/hostmap.h"
-#include <assert.h>
+
+#include <cassert>
 #include <map>
+
 #include "src/util/mutexlock.h"
 #include "src/util/xxhash.h"
 
@@ -21,22 +23,20 @@ HostMap::HostMap(unsigned int number_buckets) :
 HostMap::~HostMap() {
   MutexLock lock(&hostlock_);
   for (unsigned int i = 0; i < number_buckets_; i++) {
-    delete static_cast<ClientID*>(hostlist_[i].Acquire_Load());
+    delete static_cast<StreamID*>(hostlist_[i].Acquire_Load());
     hostlist_[i].Release_Store(nullptr);
   }
 }
 
-HostNumber
-HostMap::Insert(const ClientID& clientid,
-                std::atomic<int>* auxiliary_array,
-                int auxiliary_id) {
+HostNumber HostMap::Insert(StreamID clientid,
+                           std::atomic<int>* auxiliary_array,
+                           int auxiliary_id) {
   // acquire the lock so that conflicting inserts do not trample
   // one another
   MutexLock lock(&hostlock_);
 
   // generate a hash
-  unsigned int hashval = XXH32(clientid.c_str(),
-                               static_cast<int>(clientid.size()), 0);
+  unsigned int hashval = XXH32(&clientid, sizeof(clientid), 0);
   hashval = hashval % number_buckets_;
 
   // The hash value gives us the starting point of our search
@@ -47,7 +47,7 @@ HostMap::Insert(const ClientID& clientid,
     if (index == number_buckets_) {
       index = 0;                  // wrap around circular array
     }
-    ClientID* one = static_cast<ClientID*>(hostlist_[index].Acquire_Load());
+    auto one = static_cast<StreamID*>(hostlist_[index].Acquire_Load());
     if (one != nullptr) {
       if (*one == clientid) {
         return index;            // found it
@@ -61,7 +61,7 @@ HostMap::Insert(const ClientID& clientid,
     return -1;
   }
   // we found a free slot at offset 'index'
-  ClientID* newhost = new ClientID(clientid);
+  auto newhost = new StreamID(clientid);
 
   // insert into auxiliary data structure first
   if (auxiliary_array != nullptr) {
@@ -77,11 +77,9 @@ HostMap::Insert(const ClientID& clientid,
 // Returns the HostNumber for a specified host.
 // Lookups are entirely lock-free.
 //
-HostNumber
-HostMap::Lookup(const ClientID& clientid) const {
+HostNumber HostMap::Lookup(StreamID clientid) const {
   // generate a hash
-  unsigned int hashval = XXH32(clientid.c_str(),
-                               static_cast<int>(clientid.size()), 0);
+  unsigned int hashval = XXH32(&clientid, sizeof(clientid), 0);
   hashval = hashval % number_buckets_;
 
   // The hash value gives us the starting point of our search
@@ -92,8 +90,7 @@ HostMap::Lookup(const ClientID& clientid) const {
     if (index == number_buckets_) {
       index = 0;                  // wrap around circular array
     }
-    const ClientID* one =
-      static_cast<const ClientID*>(hostlist_[index].Acquire_Load());
+    auto one = static_cast<const StreamID*>(hostlist_[index].Acquire_Load());
     if (one != nullptr) {
       if (*one == clientid) {
         return index;        // found it
@@ -108,12 +105,10 @@ HostMap::Lookup(const ClientID& clientid) const {
 //
 // Returns the host for a specified HostNumber.
 //
-const ClientID*
-HostMap::Lookup(HostNumber number) const {
+StreamID HostMap::Lookup(HostNumber number) const {
   assert(number >= 0 && (unsigned int)number < number_buckets_);
-  const ClientID* one =
-    static_cast<const ClientID*>(hostlist_[number].Acquire_Load());
-  return  one;
+  auto one = static_cast<const StreamID*>(hostlist_[number].Acquire_Load());
+  return *one;
 }
 
 }  // namespace rocketspeed

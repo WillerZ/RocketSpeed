@@ -5,7 +5,7 @@
 //
 #pragma once
 
-#include <string>
+#include <cstdint>
 
 #include "include/Types.h"
 
@@ -24,58 +24,56 @@ class Proxy;
  * same IDs, the IDs need to be remapped. The IDs do not need to be unique
  * system-wide.
  */
-typedef std::string StreamID;
+typedef unsigned long long int StreamID;
+static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
 
 /** Keeps state of the stream as seen by its creator. */
 class StreamSocket {
  public:
-  /**
-   * A unary predicate which returns true iff destination of its argument equals
-   * given host. Note that it does not copy or take ownership of provided host,
-   * so caller must ensure that the referent has longer lifetime than returned
-   * predicate.
-   */
-  struct Equals {
-    const ClientID& host;
-    explicit Equals(const ClientID& _host) : host(_host) {
-    }
-    bool operator()(const StreamSocket& socket) const {
-      return socket.GetDestination() == host;
-    }
-  };
-
   /** Creates socket which doesn't point to any stream. */
   StreamSocket() : is_open_(false) {
+#ifndef NDEBUG
+    is_valid_ = false;
+#endif  // NDEBUG
   }
 
+  // Noncopyable
   StreamSocket(const StreamSocket&) = delete;
   StreamSocket& operator=(const StreamSocket&) = delete;
-  // Movable
-  StreamSocket(StreamSocket&&) = default;
-  StreamSocket& operator=(StreamSocket&&) = default;
 
-  bool IsValid() const {
-    return !stream_id_.empty();
+  // Movable
+  StreamSocket(StreamSocket&& other) noexcept {
+    *this = std::move(other);
+  }
+  StreamSocket& operator=(StreamSocket&& other) {
+    destination_ = std::move(other.destination_);
+    stream_id_ = other.stream_id_;
+    is_open_ = other.is_open_;
+#ifndef NDEBUG
+    is_valid_ = other.is_valid_;
+    other.is_valid_ = false;
+#endif  // NDEBUG
+    return *this;
   }
 
   const ClientID& GetDestination() const {
-    assert(IsValid());
+    assert(is_valid_);
     assert(!destination_.empty());
     return destination_;
   }
 
   void Open() {
-    assert(IsValid());
+    assert(is_valid_);
     is_open_ = true;
   }
 
   bool IsOpen() const {
-    assert(IsValid());
+    assert(is_valid_);
     return is_open_;
   }
 
   StreamID GetStreamID() const {
-    assert(IsValid());
+    assert(is_valid_);
     return stream_id_;
   }
 
@@ -93,6 +91,9 @@ class StreamSocket {
       : destination_(std::move(destination))
       , stream_id_(stream_id)
       , is_open_(false) {
+#ifndef NDEBUG
+    is_valid_ = true;
+#endif  // NDEBUG
   }
 
   /**
@@ -101,11 +102,17 @@ class StreamSocket {
    */
   explicit StreamSocket(StreamID stream_id)
       : stream_id_(stream_id), is_open_(true) {
+#ifndef NDEBUG
+    is_valid_ = true;
+#endif  // NDEBUG
   }
 
   ClientID destination_;
   StreamID stream_id_;
   bool is_open_;
+#ifndef NDEBUG
+  bool is_valid_;
+#endif  // NDEBUG
 };
 
 }  // namespace rocketspeed

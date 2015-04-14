@@ -6,7 +6,6 @@
 #pragma once
 
 #include <limits>
-#include <string>
 
 #include "src/messages/stream_socket.h"
 
@@ -16,24 +15,30 @@ class MsgLoop;
 
 /** An allocator for stream IDs. Wraps around if runs out of unique IDs. */
 class StreamAllocator {
-  // TODO(stupaq) remove once we migrate to nueric stream IDs
-  typedef uint64_t StreamIDNumeric;
-
  public:
   // Noncopyable
   StreamAllocator(const StreamAllocator&) = delete;
   StreamAllocator& operator=(const StreamAllocator&) = delete;
+
   // Movable
-  // TODO(stupaq) actually we can add an assertion here, so that no one uses
-  // allocator after it's been moved away from lvalue
-  StreamAllocator(StreamAllocator&&) = default;
-  StreamAllocator& operator=(StreamAllocator&&) = default;
+  StreamAllocator(StreamAllocator&& other) noexcept {
+    *this = std::move(other);
+  }
+  StreamAllocator& operator=(StreamAllocator&& other) {
+    first_ = other.first_;
+    end_ = other.end_;
+    next_ = other.next_;
+    // Invalidate other.
+    other.first_ = kGlobalEnd;
+    other.end_ = kGlobalFirst;
+    return *this;
+  }
 
   StreamID Next() {
     CheckValid();
-    StreamIDNumeric res = next_;
+    StreamID res = next_;
     next_ = IsLast() ? first_ : next_ + 1;
-    return std::to_string(res);
+    return res;
   }
 
   bool IsLast() const {
@@ -46,11 +51,9 @@ class StreamAllocator {
     return first_ == end_;
   }
 
-  bool IsSourceOf(StreamID str) const {
+  bool IsSourceOf(StreamID stream) const {
     CheckValid();
-    StreamIDNumeric stream = strtoul(str.c_str(), nullptr, 10);
-    assert(std::to_string(stream) == str);
-    return (first_ <= stream) && (stream < end_);
+    return first_ <= stream && stream < end_;
   }
 
   /**
@@ -59,7 +62,7 @@ class StreamAllocator {
    */
   StreamAllocator Split() {
     CheckValid();
-    StreamIDNumeric mid = next_ + (end_ - next_) / 2;
+    StreamID mid = next_ + (end_ - next_) / 2;
     StreamAllocator upper(mid, end_);
     upper.Next();
     end_ = mid;
@@ -79,8 +82,8 @@ class StreamAllocator {
     // allocator) to be quickly computable
     std::vector<StreamAllocator> allocs;
     allocs.reserve(num_pieces);
-    const StreamIDNumeric min_size = (end_ - first_) / num_pieces;
-    StreamIDNumeric first = first_, end;
+    const StreamID min_size = (end_ - first_) / num_pieces;
+    StreamID first = first_, end;
     for (size_t piece = 0; piece < num_pieces; ++piece) {
       end = first + min_size;
       assert(first_ <= first);
@@ -96,17 +99,15 @@ class StreamAllocator {
   /** For hiding constructors from the outside world. */
   friend class MsgLoop;
 
-  static const StreamIDNumeric kGlobalFirst =
-      std::numeric_limits<StreamIDNumeric>::min();
-  static const StreamIDNumeric kGlobalEnd =
-      std::numeric_limits<StreamIDNumeric>::max();
+  static const StreamID kGlobalFirst = std::numeric_limits<StreamID>::min();
+  static const StreamID kGlobalEnd = std::numeric_limits<StreamID>::max();
 
   /** Creates an allocator for entire stream ID space. */
   StreamAllocator() : StreamAllocator(kGlobalFirst, kGlobalEnd) {
   }
 
   /** Creates an allocator for given range of stream IDs. */
-  StreamAllocator(StreamIDNumeric first, StreamIDNumeric end)
+  StreamAllocator(StreamID first, StreamID end)
       : first_(first), end_(end), next_(first_) {
     CheckValid();
   }
@@ -117,11 +118,11 @@ class StreamAllocator {
   }
 
   /** First stream ID available for this allocator. */
-  StreamIDNumeric first_;
+  StreamID first_;
   /** The first stream ID not available for this allocator after first_. */
-  StreamIDNumeric end_;
+  StreamID end_;
   /** Next stream ID that can be allocated. */
-  StreamIDNumeric next_;
+  StreamID next_;
 };
 
 }  // namespace rocketspeed

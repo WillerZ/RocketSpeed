@@ -5,9 +5,10 @@
 //
 #pragma once
 
+#include <atomic>
 #include <vector>
 
-#include "include/Types.h"
+#include "src/messages/stream_socket.h"
 #include "src/port/port.h"
 #include "src/port/atomic_pointer.h"
 
@@ -27,7 +28,7 @@ class HostMap {
   // The auxiliary_array, which is a map from the HostNum to the
   // specified auxiliary_id, is updated atomically.
   // Returns -1 if error
-  HostNumber Insert(const ClientID& hostid,
+  HostNumber Insert(StreamID hostid,
                     std::atomic<int>* auxiliary_array = nullptr,
                     int auxiliary_id = 0);
 
@@ -35,11 +36,11 @@ class HostMap {
 
   // Looks up the id for a host. If the host does not
   // exist, then returns -1
-  HostNumber Lookup(const ClientID& hostid) const;
+  HostNumber Lookup(StreamID hostid) const;
 
   // Looks up a host given its HostNumber. If the host does
   // not exist, then return nullptr;
-  const ClientID* Lookup(HostNumber num) const;
+  StreamID Lookup(HostNumber num) const;
 
  private:
   // size of the store

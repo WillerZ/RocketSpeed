@@ -55,7 +55,6 @@ class SendCommand : public Command {
   struct StreamSpec {
     StreamSpec(StreamID _stream, ClientID _destination)
         : stream(_stream), destination(std::move(_destination)) {
-      assert(!stream.empty());
     }
     StreamID stream;
     ClientID destination;

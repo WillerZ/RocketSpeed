@@ -47,7 +47,7 @@ TEST(ProxyTest, Publish) {
   // Start the proxy.
   // We're going to publish a message and expect an ack in return.
   port::Semaphore checkpoint;
-  const StreamID expected_stream = "stream0";
+  const StreamID expected_stream = 0;
   std::atomic<int64_t> expected_session;
   auto on_message = [&](int64_t session, StreamID stream, std::string data) {
     ASSERT_EQ(session, expected_session.load());
@@ -109,7 +109,7 @@ TEST(ProxyTest, Publish) {
 }
 
 TEST(ProxyTest, SeqnoError) {
-  const StreamID expected_stream = "stream0";
+  const StreamID expected_stream = 0;
 
   // Start the proxy.
   // We're going to ping an expect an error.
@@ -134,7 +134,7 @@ TEST(ProxyTest, SeqnoError) {
 }
 
 TEST(ProxyTest, DestroySession) {
-  const StreamID expected_stream = "stream0";
+  const StreamID expected_stream = 0;
 
   // Start the proxy.
   // We're going to ping an expect an error.
@@ -172,7 +172,7 @@ TEST(ProxyTest, DestroySession) {
 }
 
 TEST(ProxyTest, ServerDown) {
-  const StreamID expected_stream = "stream0";
+  const StreamID expected_stream = 0;
 
   // Start the proxy.
   // We're going to ping and expect an error.
@@ -216,8 +216,8 @@ TEST(ProxyTest, ServerDown) {
 
 TEST(ProxyTest, ForwardGoodbye) {
   const int64_t expected_session = 123;
-  const StreamID pilot_stream = "stream0";
-  const StreamID copilot_stream = pilot_stream + "1";
+  const StreamID pilot_stream = 0;
+  const StreamID copilot_stream = 1;
   ASSERT_TRUE(pilot_stream != copilot_stream);
 
   // Start the proxy.

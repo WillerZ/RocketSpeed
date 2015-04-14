@@ -140,10 +140,10 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
             subscription.seqno = request.seqno;
           }
           LOG_INFO(options_.info_log,
-            "Sending %ssubscribe response for Topic(%s) to %s on worker %d",
+            "Sending %ssubscribe response for Topic(%s) to %llu on worker %d",
             request.topic_type == MetadataType::mSubscribe ? "" : "un",
             request.topic_name.c_str(),
-            subscription.stream_id.c_str(),
+            subscription.stream_id,
             subscription.worker_id);
           // Update rollcall topic.
           RollcallWrite(std::move(message), request.topic_name,
@@ -151,8 +151,8 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
                         logid, worker_id, subscription.stream_id);
         } else {
           LOG_WARN(options_.info_log,
-            "Failed to send metadata response to %s",
-            subscription.stream_id.c_str());
+            "Failed to send metadata response to %llu",
+            subscription.stream_id);
           // We were unable to forward the subscribe-response to the client
           // so the client is unaware that it has a confirmed subscription.
           // There is no need to write the rollcall topic.
@@ -178,35 +178,35 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
 
     // Send to all subscribers.
     for (auto& subscription : it->second) {
-      const ClientID& recipient = subscription.stream_id;
+      StreamID recipient = subscription.stream_id;
 
       // If the subscription is awaiting a response, do not forward.
       if (subscription.awaiting_ack) {
         LOG_INFO(options_.info_log,
-          "Data not delivered to %s (awaiting ack)",
-          recipient.c_str());
+                 "Data not delivered to %llu (awaiting ack)",
+                 recipient);
         continue;
       }
 
       // Also do not send a response if the seqno is too low.
       if (subscription.seqno > seqno) {
         LOG_INFO(options_.info_log,
-          "Data not delivered to %s"
-          " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
-          recipient.c_str(),
-          seqno,
-          subscription.seqno);
+                 "Data not delivered to %llu"
+                 " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
+                 recipient,
+                 seqno,
+                 subscription.seqno);
         continue;
       }
 
       // or too high.
       if (subscription.seqno < prev_seqno) {
         LOG_INFO(options_.info_log,
-          "Data not delivered to %s"
-          " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
-          recipient.c_str(),
-          prev_seqno,
-          subscription.seqno);
+                 "Data not delivered to %llu"
+                 " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
+                 recipient,
+                 prev_seqno,
+                 subscription.seqno);
         continue;
       }
 
@@ -218,15 +218,15 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
         subscription.seqno = seqno + 1;
 
         LOG_INFO(options_.info_log,
-          "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %s",
-          msg->GetPayload().ToString().c_str(),
-          msg->GetSequenceNumber(),
-          msg->GetTopicName().ToString().c_str(),
-          recipient.c_str());
+                 "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %llu",
+                 msg->GetPayload().ToString().c_str(),
+                 msg->GetSequenceNumber(),
+                 msg->GetTopicName().ToString().c_str(),
+                 recipient);
       } else {
         LOG_WARN(options_.info_log,
-          "Failed to distribute message to %s",
-          recipient.c_str());
+                 "Failed to distribute message to %llu",
+                 recipient);
       }
     }
   }
@@ -247,55 +247,53 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
 
     // Send to all subscribers.
     for (auto& subscription : it->second) {
-      const ClientID& recipient = subscription.stream_id;
+      StreamID recipient = subscription.stream_id;
 
       // If the subscription is awaiting a response, do not forward.
       if (subscription.awaiting_ack) {
         LOG_INFO(options_.info_log,
-          "Gap ignored for %s (awaiting ack)",
-          recipient.c_str());
+                 "Gap ignored for %llu (awaiting ack)",
+                 recipient);
         continue;
       }
 
       // Also ignore if the seqno is too low.
       if (subscription.seqno > next_seqno) {
         LOG_INFO(options_.info_log,
-          "Gap ignored for %s"
-          " (next_seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
-          recipient.c_str(),
-          next_seqno,
-          subscription.seqno);
+                 "Gap ignored for %llu"
+                 " (next_seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
+                 recipient,
+                 next_seqno,
+                 subscription.seqno);
         continue;
       }
 
       // or too high.
       if (subscription.seqno < prev_seqno) {
         LOG_INFO(options_.info_log,
-          "Gap ignored for %s"
-          " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
-          recipient.c_str(),
-          prev_seqno,
-          subscription.seqno);
+                 "Gap ignored for %llu"
+                 " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
+                 recipient,
+                 prev_seqno,
+                 subscription.seqno);
         continue;
       }
 
       // Send to worker loop.
-      Status status = options_.msg_loop->SendResponse(*msg,
-                                                      recipient,
-                                                      subscription.worker_id);
+      Status status = options_.msg_loop->SendResponse(
+          *msg, recipient, subscription.worker_id);
       if (status.ok()) {
         subscription.seqno = next_seqno + 1;
 
         LOG_INFO(options_.info_log,
-          "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %s",
-          msg->GetStartSequenceNumber(),
-          msg->GetEndSequenceNumber(),
-          msg->GetTopicName().ToString().c_str(),
-          recipient.c_str());
+                 "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %llu",
+                 msg->GetStartSequenceNumber(),
+                 msg->GetEndSequenceNumber(),
+                 msg->GetTopicName().ToString().c_str(),
+                 recipient);
       } else {
-        LOG_WARN(options_.info_log,
-          "Failed to distribute gap to %s",
-          recipient.c_str());
+        LOG_WARN(
+            options_.info_log, "Failed to distribute gap to %llu", recipient);
       }
     }
   }
@@ -307,10 +305,10 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
                                      int worker_id,
                                      StreamID subscriber) {
   LOG_INFO(options_.info_log,
-      "Received subscribe request for Topic(%s)@%" PRIu64 " for %s",
+      "Received subscribe request for Topic(%s)@%" PRIu64 " for %llu",
       request.topic_name.c_str(),
       request.seqno,
-      subscriber.c_str());
+      subscriber);
 
   bool notify_origin = false;
   bool notify_control_tower = false;
@@ -436,8 +434,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       // Failed to send response. The origin will re-send the subscription
       // again in the future, and we'll try to immediately respond again.
       LOG_INFO(options_.info_log,
-          "Failed to send subscribe response to %s",
-          subscriber.c_str());
+               "Failed to send subscribe response to %llu",
+               subscriber);
     }
     // Update rollcall topic.
     RollcallWrite(std::move(message), request.topic_name, request.namespace_id,
@@ -451,9 +449,9 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                                        int worker_id,
                                        StreamID subscriber) {
   LOG_INFO(options_.info_log,
-      "Received unsubscribe request for Topic(%s) for %s",
-      request.topic_name.c_str(),
-      subscriber.c_str());
+           "Received unsubscribe request for Topic(%s) for %llu",
+           request.topic_name.c_str(),
+           subscriber);
 
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
 
@@ -471,14 +469,14 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
     // Failed to send response. The origin will re-send the subscription
     // again in the future, and we'll try to immediately respond again.
     LOG_WARN(options_.info_log,
-        "Failed to send unsubscribe response on Topic(%s) to %s",
+        "Failed to send unsubscribe response on Topic(%s) to %llu",
         request.topic_name.c_str(),
-        subscriber.c_str());
+        subscriber);
   } else {
     LOG_INFO(options_.info_log,
-        "Send unsubscribe response on Topic(%s) to %s",
-        request.topic_name.c_str(),
-        subscriber.c_str());
+             "Send unsubscribe response on Topic(%s) to %llu",
+             request.topic_name.c_str(),
+             subscriber);
   }
 }
 
@@ -584,8 +582,8 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(message.get());
 
   LOG_INFO(options_.info_log,
-      "Copilot received goodbye for client %s",
-      origin.c_str());
+           "Copilot received goodbye for client %llu",
+           origin);
 
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Client) {
     // This is a goodbye from one of the clients.
@@ -606,9 +604,7 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
       client_topics_.erase(it);
     }
   } else {
-    // This is a goodbye from one of the control towers.
-    // We'll just remove corresponding sockets.
-    control_tower_sockets_.erase(origin);
+    // TODO(stupaq) resubscribe all lost subscriptions
   }
 }
 
@@ -696,12 +692,13 @@ StreamSocket* CopilotWorker::GetControlTowerSocket(const ClientID& tower,
                                                    MsgLoop* msg_loop,
                                                    int outgoing_worker_id) {
   auto& tower_sockets = control_tower_sockets_[tower];
-  tower_sockets.resize(options_.msg_loop->GetNumWorkers());
-  auto& socket = tower_sockets[outgoing_worker_id];
-  if (!socket.IsValid()) {
-    socket = msg_loop->CreateOutboundStream(tower, outgoing_worker_id);
+  auto it = tower_sockets.find(outgoing_worker_id);
+  if (it == tower_sockets.end()) {
+    it = tower_sockets.emplace(outgoing_worker_id,
+                               msg_loop->CreateOutboundStream(
+                                   tower, outgoing_worker_id)).first;
   }
-  return &socket;
+  return &it->second;
 }
 
 }  // namespace rocketspeed

@@ -210,9 +210,7 @@ void Pilot::SendAck(MessageData* msg,
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.
-    LOG_INFO(options_.info_log,
-             "Failed to send ack to stream (%s)",
-             origin.c_str());
+    LOG_INFO(options_.info_log, "Failed to send ack to stream (%llu)", origin);
   }
 }
 

@@ -59,13 +59,13 @@ class ControlTower {
   }
 
   // Find a host number and worker ID by client ID
-  HostNumber LookupHost(const ClientID& client_id, int* out_worker_id) const;
+  HostNumber LookupHost(StreamID origin, int* out_worker_id) const;
 
   // Find a client ID and worker ID by host number
-  const ClientID* LookupHost(HostNumber hostnum, int* out_worker_id) const;
+  StreamID LookupHost(HostNumber hostnum, int* out_worker_id) const;
 
   // Add a new client ID and worker ID then return its host number
-  HostNumber InsertHost(const ClientID& client_id, int worker_id);
+  HostNumber InsertHost(StreamID origin, int worker_id);
 
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;

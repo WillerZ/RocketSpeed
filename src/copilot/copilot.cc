@@ -267,9 +267,7 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
 
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Client) {
-    LOG_INFO(options_.info_log,
-      "Received goodbye for client %s",
-      origin.c_str());
+    LOG_INFO(options_.info_log, "Received goodbye for client %llu", origin);
 
     // Inform all workers.
     for (uint32_t i = 0; i < options_.num_workers; ++i) {

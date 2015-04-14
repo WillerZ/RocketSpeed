@@ -83,7 +83,7 @@ struct MessageHeader {
  */
 static std::string EncodeOrigin(const StreamID origin) {
   std::string encoded;
-  PutLengthPrefixedSlice(&encoded, origin);
+  PutFixed64(&encoded, static_cast<uint64_t>(origin));
   return encoded;
 }
 
@@ -95,9 +95,11 @@ static std::string EncodeOrigin(const StreamID origin) {
  * @return ok() if successfully decoded, otherwise error.
  */
 static Status DecodeOrigin(Slice* in, StreamID* origin) {
-  if (!GetLengthPrefixedSlice(in, origin)) {
+  uint64_t origin_fixed;
+  if (!GetFixed64(in, &origin_fixed)) {
     return Status::InvalidArgument("Bad stream ID");
   }
+  *origin = static_cast<StreamID>(origin_fixed);
   return Status::OK();
 }
 
@@ -386,7 +388,7 @@ class SocketEvent {
       Slice in(msg_buf_.get(), msg_size_);
 
       // Decode the recipients.
-      StreamID local;
+      StreamID local = 0;
       Status st = DecodeOrigin(&in, &local);
       if (!st.ok()) {
         continue;
@@ -414,25 +416,25 @@ class SocketEvent {
       // Proceed with a message only if remapping succeeded.
       if (remap == StreamRouter::RemapStatus::kNotInserted) {
         LOG_WARN(event_loop_->GetLog(),
-                 "Failed to remap stream ID (%s)",
-                 local.c_str());
+                 "Failed to remap stream ID (%llu)",
+                 local);
         continue;
       }
 
       // Log a new inbound stream.
       if (remap == StreamRouter::RemapStatus::kInserted) {
         LOG_INFO(event_loop_->GetLog(),
-                 "New stream (%s) was associated with socket fd(%d)",
-                 global.c_str(),
+                 "New stream (%llu) was associated with socket fd(%d)",
+                 global,
                  fd_);
       }
 
       if (msg->GetMessageType() == MessageType::mGoodbye) {
         MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
         LOG_INFO(event_loop_->GetLog(),
-                 "Received goodbye message (code %d) for stream (%s)",
+                 "Received goodbye message (code %d) for stream (%llu)",
                  static_cast<int>(goodbye->GetCode()),
-                 global.c_str());
+                 global);
         // Update stream router.
         StreamRouter::RemovalStatus removed;
         SocketEvent* sev;
@@ -644,13 +646,12 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
 
     if (st.ok()) {
       assert(sev);
-      assert(!local.empty());
 
       if (spec.stream != local) {
         LOG_DEBUG(info_log_,
-                  "Stream ID (%s) converted to local (%s)",
-                  spec.stream.c_str(),
-                  local.c_str());
+                  "Stream ID (%llu) converted to local (%llu)",
+                  spec.stream,
+                  local);
       }
 
       // Enqueue data to SocketEvent queue. This message will be sent out
@@ -679,15 +680,15 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
 
     if (!st.ok()) {
       LOG_WARN(info_log_,
-               "Failed to send message on stream (%s) to host '%s': %s",
-               spec.stream.c_str(),
+               "Failed to send message on stream (%llu) to host '%s': %s",
+               spec.stream,
                spec.destination.c_str(),
                st.ToString().c_str());
       info_log_->Flush();
     } else {
       LOG_DEBUG(info_log_,
-                "Enqueued message on stream (%s) to host '%s': %s",
-                spec.stream.c_str(),
+                "Enqueued message on stream (%llu) to host '%s': %s",
+                spec.stream,
                 spec.destination.c_str(),
                 st.ToString().c_str());
     }

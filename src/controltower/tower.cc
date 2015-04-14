@@ -295,9 +295,8 @@ ControlTower::InitializeCallbacks() {
   return cb;
 }
 
-HostNumber ControlTower::LookupHost(const ClientID& client_id,
-                                    int* out_worker_id) const {
-  HostNumber hostnum = hostmap_.Lookup(client_id);
+HostNumber ControlTower::LookupHost(StreamID origin, int* out_worker_id) const {
+  HostNumber hostnum = hostmap_.Lookup(origin);
   if (hostnum != -1) {
     assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
     *out_worker_id = hostworker_[hostnum].load(std::memory_order_acquire);
@@ -305,20 +304,18 @@ HostNumber ControlTower::LookupHost(const ClientID& client_id,
   return hostnum;
 }
 
-const ClientID* ControlTower::LookupHost(HostNumber hostnum,
-                                         int* out_worker_id) const {
-  const ClientID* client_id = hostmap_.Lookup(hostnum);
+StreamID ControlTower::LookupHost(HostNumber hostnum,
+                                  int* out_worker_id) const {
+  StreamID origin = hostmap_.Lookup(hostnum);
   if (hostnum != -1) {
     assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
     *out_worker_id = hostworker_[hostnum].load(std::memory_order_acquire);
   }
-  return client_id;
+  return origin;
 }
 
-HostNumber ControlTower::InsertHost(const ClientID& client_id,
-                                    int worker_id) {
-  HostNumber hostnum = hostmap_.Insert(client_id, hostworker_.get(),
-                                       worker_id);
+HostNumber ControlTower::InsertHost(StreamID origin, int worker_id) {
+  HostNumber hostnum = hostmap_.Insert(origin, hostworker_.get(), worker_id);
   if (hostnum != -1) {
     assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
   }

@@ -187,9 +187,10 @@ void MsgLoop::Run() {
       [this] (std::unique_ptr<Message> msg, StreamID origin) {
         // Ignore, just log it.
         MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
-        LOG_INFO(info_log_, "Goodbye %d received for client %s",
-          static_cast<int>(goodbye->GetCode()),
-          origin.c_str());
+        LOG_INFO(info_log_,
+                 "Goodbye %d received for client %llu",
+                 static_cast<int>(goodbye->GetCode()),
+                 origin);
       };
   }
 
@@ -303,11 +304,10 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg, StreamID origin) {
     Status st = SendResponse(*request, origin, GetThreadWorkerIndex());
 
     if (!st.ok()) {
-      LOG_WARN(info_log_,
-               "Unable to send ping response to stream (%s)",
-               origin.c_str());
+      LOG_WARN(
+          info_log_, "Unable to send ping response to stream (%llu)", origin);
     } else {
-      LOG_INFO(info_log_, "Send ping response to stream (%s)", origin.c_str());
+      LOG_INFO(info_log_, "Send ping response to stream (%llu)", origin);
     }
   }
 }
