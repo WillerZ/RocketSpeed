@@ -34,7 +34,7 @@ class StreamSocket;
  */
 class Proxy {
  public:
-  typedef std::function<void(int64_t, std::string)>
+  typedef std::function<void(int64_t, StreamID, std::string)>
     OnMessageCallback;
 
   typedef std::function<void(const std::vector<int64_t>&)>
@@ -129,7 +129,7 @@ class Proxy {
   Env::ThreadId msg_thread_;
 
   /** Worker data sharded by session. */
-  std::unique_ptr<ProxyWorkerData[]> worker_data_;
+  std::vector<std::unique_ptr<ProxyWorkerData>> worker_data_;
 
   struct Stats {
     Stats() {
@@ -162,7 +162,12 @@ class Proxy {
   void HandleMessageForwarded(std::string msg,
                               int64_t session,
                               int32_t sequence,
-                              StreamID origin);
+                              StreamID local);
+
+  void HandleMessageForwardedInorder(MessageType message_type,
+                                     std::string msg,
+                                     int64_t session,
+                                     StreamID local);
 };
 
 }  // namespace rocketspeed

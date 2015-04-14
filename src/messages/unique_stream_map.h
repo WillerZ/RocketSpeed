@@ -83,7 +83,7 @@ class UniqueStreamMap {
     // We've failed to find existing entry, proceed only if asked to allocate
     // new global stream ID.
     if (!allocate) {
-      return GetGlobalStatus::kInserted;
+      return GetGlobalStatus::kNotInserted;
     }
     // Allocate new global stream ID if we don't have the mapping.
     StreamID global = allocator_.Next();

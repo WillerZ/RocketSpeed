@@ -434,7 +434,7 @@ class SocketEvent {
                  static_cast<int>(goodbye->GetCode()),
                  global.c_str());
         // Update stream router.
-        bool removed;
+        StreamRouter::RemovalStatus removed;
         SocketEvent* sev;
         std::tie(removed, sev, std::ignore) =
             event_loop_->stream_router_.RemoveStream(global);

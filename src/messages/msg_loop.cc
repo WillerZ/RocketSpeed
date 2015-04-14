@@ -235,6 +235,11 @@ MsgLoop::~MsgLoop() {
   Stop();
 }
 
+StreamAllocator* MsgLoop::GetOutboundStreamAllocator(int worker_id) {
+  assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
+  return event_loops_[worker_id]->GetOutboundStreamAllocator();
+}
+
 StreamSocket MsgLoop::CreateOutboundStream(ClientID destination,
                                            int worker_id) {
   assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));

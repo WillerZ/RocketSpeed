@@ -18,6 +18,7 @@
 
 namespace rocketspeed {
 
+class StreamAllocator;
 class EventLoop;
 class Logger;
 
@@ -66,6 +67,15 @@ class MsgLoop : public MsgLoopBase {
   const ClientID& GetClientId(int worker_id) const {
     return worker_client_ids_[worker_id];
   }
+
+  /**
+   * Returns stream ID allocator used by given event loop to create outbound
+   * streams.
+   *
+   * @param worker_id Index of the event loop.
+   * @return Stream allocator which represents outbound stream ID space.
+   */
+  StreamAllocator* GetOutboundStreamAllocator(int worker_id);
 
   StreamSocket CreateOutboundStream(ClientID destination,
                                     int worker_id) override;

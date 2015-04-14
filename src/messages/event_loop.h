@@ -180,6 +180,16 @@ class EventLoop {
   void RegisterCallback(CommandType type, CommandCallbackType callbacks);
 
   /**
+   * Returns stream ID allocator used by this event loop to create outbound
+   * streams.
+   *
+   * @return Stream allocator which represents outbound stream ID space.
+   */
+  StreamAllocator* GetOutboundStreamAllocator() {
+    return &outbound_allocator_;
+  }
+
+  /**
    * Returns a new outbound socket. Returned socket is closed (not yet opened)
    * and its stream is allocated using stream ID space available to this loop.
    * This call is not thread-safe.

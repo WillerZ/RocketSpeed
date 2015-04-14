@@ -12,8 +12,7 @@
 namespace rocketspeed {
 
 class EventLoop;
-// TODO(stupaq) until proxy is unbroken
-class HostSessionMatrix;
+class Proxy;
 
 /**
  * Identifies a stream, which is a pair of unidirectional channels, one in each
@@ -61,6 +60,7 @@ class StreamSocket {
 
   const ClientID& GetDestination() const {
     assert(IsValid());
+    assert(!destination_.empty());
     return destination_;
   }
 
@@ -82,11 +82,10 @@ class StreamSocket {
  private:
   /** For constructor from the outside world. */
   friend class EventLoop;
-  // TODO(stupaq) until proxy is unbroken
-  friend class HostSessionMatrix;
+  friend class Proxy;
 
   /**
-   * Creates a socket representing a stream.
+   * Creates a closed socket representing a stream.
    * @param destination The destination client ID.
    * @param stream_id ID of the stream.
    */
@@ -94,6 +93,14 @@ class StreamSocket {
       : destination_(std::move(destination))
       , stream_id_(stream_id)
       , is_open_(false) {
+  }
+
+  /**
+   * Creates an open socket representing a stream.
+   * @param stream_id ID of the stream.
+   */
+  explicit StreamSocket(StreamID stream_id)
+      : stream_id_(stream_id), is_open_(true) {
   }
 
   ClientID destination_;
