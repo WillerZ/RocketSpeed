@@ -22,7 +22,7 @@
 
 namespace rocketspeed {
 
-static const int kDelayMicros = 10000;
+static const int kDelayMicros = 20000;
 
 class EnvPosixTest {
  private:

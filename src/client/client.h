@@ -64,7 +64,7 @@ class ClientImpl : public Client {
              const HostId& pilot_host_id,
              const HostId& copilot_host_id,
              TenantID tenant_id,
-             MsgLoopBase* msg_loop,
+             std::unique_ptr<MsgLoopBase> msg_loop,
              std::unique_ptr<SubscriptionStorage> storage,
              std::shared_ptr<Logger> info_log,
              bool is_internal);
@@ -89,7 +89,7 @@ class ClientImpl : public Client {
   TenantID tenant_id_;
 
   // Incoming message loop object.
-  MsgLoopBase* msg_loop_ = nullptr;
+  std::unique_ptr<MsgLoopBase> msg_loop_;
   BaseEnv::ThreadId msg_loop_thread_;
   bool msg_loop_thread_spawned_;
 

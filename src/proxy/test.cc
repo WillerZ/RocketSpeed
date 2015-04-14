@@ -21,7 +21,10 @@ class ProxyTest {
   ProxyTest() {
     env = Env::Default();
     ASSERT_OK(test::CreateLogger(env, "ProxyTest", &info_log));
-    cluster.reset(new LocalTestCluster(info_log, true, true, true));
+    LocalTestCluster::Options cluster_opts;
+    cluster_opts.info_log = info_log;
+    cluster_opts.copilot.rollcall_enabled = false;
+    cluster.reset(new LocalTestCluster(cluster_opts));
     ASSERT_OK(cluster->GetStatus());
 
     // Create proxy.
@@ -249,16 +252,13 @@ TEST(ProxyTest, ForwardGoodbye) {
                          MessageGoodbye::OriginType::Client);
   goodbye.SerializeToString(&goodbye_serial);
   ASSERT_OK(proxy->Forward(goodbye_serial, session, 2, "stream"));
-  env->SleepForMicroseconds(10000);  // time to propagate
+  env->SleepForMicroseconds(50000);  // time to propagate
 
   // Check that pilot and copilot have one fewer clients each.
-  // Account for one extra client used by the copilot to write
-  // to the rollcall topic.
-  int num_rollcall_clients = 1;
   ASSERT_EQ(cluster->GetPilot()->GetMsgLoop()->GetNumClientsSync(),
-            npilot - 1 + num_rollcall_clients);
+            npilot - 1);
   ASSERT_EQ(cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync(),
-            ncopilot - 1 + num_rollcall_clients);
+            ncopilot - 1);
 }
 
 }  // namespace rocketspeed

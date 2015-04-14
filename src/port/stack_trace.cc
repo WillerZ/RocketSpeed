@@ -113,6 +113,7 @@ void PrintStack(int first_frames_to_skip) {
     fprintf(stderr, "#%-2d  ", i - first_frames_to_skip);
     PrintStackTraceLine((symbols != nullptr) ? symbols[i] : nullptr, frames[i]);
   }
+  free(symbols);
 }
 
 void InstallStackTraceHandler() {

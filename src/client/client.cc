@@ -99,15 +99,17 @@ Status ClientImpl::Create(ClientOptions options,
   }
 
 #ifndef USE_MQTTMSGLOOP
-  MsgLoop* msg_loop_ = new MsgLoop(options.env,
-                                   EnvOptions(),
-                                   0,
-                                   options.config.GetNumWorkers(),
-                                   options.info_log,
-                                   "client",
-                                   options.client_id);
+  std::unique_ptr<MsgLoopBase> msg_loop_(
+    new MsgLoop(options.env,
+                EnvOptions(),
+                0,
+                options.config.GetNumWorkers(),
+                options.info_log,
+                "client",
+                options.client_id));
 #else
-  MQTTMsgLoop* msg_loop_ = new MQTTMsgLoop(
+  std::unique_ptr<MsgLoopBase> msg_loop_(
+    new MQTTMsgLoop(
       options.env,
       options.client_id,
       options.config.GetPilotHostIds().front(),
@@ -115,7 +117,7 @@ Status ClientImpl::Create(ClientOptions options,
       options.access_token,
       true, // We enable SSL when talking over MQTT.
       options.info_log,
-      &ProxygenMQTTClient::Create);
+      &ProxygenMQTTClient::Create));
 #endif
 
   // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
@@ -124,7 +126,7 @@ Status ClientImpl::Create(ClientOptions options,
                                options.config.GetPilotHostIds().front(),
                                options.config.GetCopilotHostIds().front(),
                                options.config.GetTenantID(),
-                               msg_loop_,
+                               std::move(msg_loop_),
                                std::move(options.storage),
                                options.info_log,
                                is_internal));
@@ -334,7 +336,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
                        const HostId& pilot_host_id,
                        const HostId& copilot_host_id,
                        TenantID tenant_id,
-                       MsgLoopBase* msg_loop,
+                       std::unique_ptr<MsgLoopBase> msg_loop,
                        std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log,
                        bool is_internal)
@@ -342,12 +344,16 @@ ClientImpl::ClientImpl(BaseEnv* env,
 , wake_lock_(std::move(wake_lock))
 , copilot_host_id_(copilot_host_id)
 , tenant_id_(tenant_id)
-, msg_loop_(msg_loop)
+, msg_loop_(std::move(msg_loop))
 , msg_loop_thread_spawned_(false)
 , storage_(std::move(storage))
 , info_log_(info_log)
 , is_internal_(is_internal)
-, publisher_(env, info_log, msg_loop, &wake_lock_, std::move(pilot_host_id)) {
+, publisher_(env,
+             info_log,
+             msg_loop_.get(),
+             &wake_lock_,
+             std::move(pilot_host_id)) {
   using std::placeholders::_1;
 
   // Setup callbacks.
@@ -380,7 +386,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
     // Initialize subscription storage.
     storage_->Initialize(
         std::bind(&ClientImpl::ProcessRestoredSubscription, this, _1),
-        msg_loop_);
+        msg_loop_.get());
   }
 }
 
@@ -424,9 +430,8 @@ Status ClientImpl::Start(SubscribeCallback subscribe_callback,
 }
 
 ClientImpl::~ClientImpl() {
-  // Delete the message loop.
-  // This stops the event loop, which may block.
-  delete msg_loop_;
+  // Stop the event loop. May block.
+  msg_loop_->Stop();
 
   if (msg_loop_thread_spawned_) {
     // Wait for thread to join.

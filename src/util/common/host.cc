@@ -15,7 +15,9 @@ HostId::HostId(std::string s, uint64_t p) :
   port(p) {
 }
 
-HostId::HostId() {}
+HostId::HostId() :
+  port(0) {
+}
 
 bool HostId::operator<(const HostId& rhs) const {
   if (port < rhs.port) {

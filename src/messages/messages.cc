@@ -31,12 +31,6 @@ namespace rocketspeed {
   **/
 std::unique_ptr<Message>
 Message::CreateNewInstance(Slice* in) {
-  MessagePing* msg0 = nullptr;
-  MessageData* msg1 = nullptr;
-  MessageMetadata* msg2 = nullptr;
-  MessageDataAck* msg3 = nullptr;
-  MessageGap* msg4 = nullptr;
-  MessageGoodbye* msg5 = nullptr;
   MessageType mtype;
 
   // extract msg type
@@ -47,54 +41,60 @@ Message::CreateNewInstance(Slice* in) {
 
   Status st;
   switch (mtype) {
-    case mPing:
-      msg0 = new MessagePing();
-      st = msg0->DeSerialize(in);
+    case mPing: {
+      std::unique_ptr<MessagePing> msg(new MessagePing());
+      st = msg->DeSerialize(in);
       if (st.ok()) {
-        return std::unique_ptr<Message>(msg0);
+        return std::unique_ptr<Message>(msg.release());
       }
       break;
+    }
 
     case mPublish:
-    case mDeliver:
-      msg1 = new MessageData();
-      st = msg1->DeSerialize(in);
+    case mDeliver: {
+      std::unique_ptr<MessageData> msg(new MessageData());
+      st = msg->DeSerialize(in);
       if (st.ok()) {
-        return std::unique_ptr<Message>(msg1);
+        return std::unique_ptr<Message>(msg.release());
       }
       break;
+    }
 
-    case mMetadata:
-      msg2 = new MessageMetadata();
-      st = msg2->DeSerialize(in);
+    case mMetadata: {
+      std::unique_ptr<MessageMetadata> msg(new MessageMetadata());
+      st = msg->DeSerialize(in);
       if (st.ok()) {
-        return std::unique_ptr<Message>(msg2);
+        return std::unique_ptr<Message>(msg.release());
       }
       break;
+    }
 
-    case mDataAck:
-      msg3 = new MessageDataAck();
-      st = msg3->DeSerialize(in);
+    case mDataAck: {
+      std::unique_ptr<MessageDataAck> msg(new MessageDataAck());
+      st = msg->DeSerialize(in);
       if (st.ok()) {
-        return std::unique_ptr<Message>(msg3);
+        return std::unique_ptr<Message>(msg.release());
       }
       break;
+    }
 
-    case mGap:
-      msg4 = new MessageGap();
-      st = msg4->DeSerialize(in);
+    case mGap: {
+      std::unique_ptr<MessageGap> msg(new MessageGap());
+      st = msg->DeSerialize(in);
       if (st.ok()) {
-        return std::unique_ptr<Message>(msg4);
+        return std::unique_ptr<Message>(msg.release());
       }
       break;
+    }
 
-    case mGoodbye:
-      msg5 = new MessageGoodbye();
-      st = msg5->DeSerialize(in);
+    case mGoodbye: {
+      std::unique_ptr<MessageGoodbye> msg(new MessageGoodbye());
+      st = msg->DeSerialize(in);
       if (st.ok()) {
-        return std::unique_ptr<Message>(msg5);
+        return std::unique_ptr<Message>(msg.release());
       }
       break;
+    }
 
     default:
       break;
