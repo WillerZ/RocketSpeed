@@ -92,6 +92,7 @@ Status LogDeviceStorage::Create(
   std::chrono::milliseconds timeout,
   int num_workers,
   Env* env,
+  std::shared_ptr<Logger> info_log,
   LogDeviceStorage** storage) {
 #ifdef USE_LOGDEVICE
   // Basic validation of parameters before sending to LogDevice.
@@ -125,23 +126,26 @@ Status LogDeviceStorage::Create(
   }
 
   // Successful, write out to the output parameter and return OK.
-  *storage = new LogDeviceStorage(client, env);
+  *storage = new LogDeviceStorage(client, env, std::move(info_log));
   return Status::OK();
 }
 
 Status LogDeviceStorage::Create(
   std::shared_ptr<facebook::logdevice::Client> client,
   Env* env,
+  std::shared_ptr<Logger> info_log,
   LogDeviceStorage** storage) {
-  *storage = new LogDeviceStorage(client, env);
+  *storage = new LogDeviceStorage(client, env, std::move(info_log));
   return Status::OK();
 }
 
 LogDeviceStorage::LogDeviceStorage(
   std::shared_ptr<facebook::logdevice::Client> client,
-  Env* env)
+  Env* env,
+  std::shared_ptr<Logger> info_log)
 : client_(client)
-, env_(env) {
+, env_(env)
+, info_log_(std::move(info_log)) {
 }
 
 Status LogDeviceStorage::AppendAsync(LogID id,

@@ -26,7 +26,8 @@ DEFINE_int32(storage_workers, 16, "number of logdevice storage workers");
 
 namespace rocketspeed {
 
-std::shared_ptr<LogStorage> CreateLogStorage(Env* env) {
+std::shared_ptr<LogStorage> CreateLogStorage(Env* env,
+                                             std::shared_ptr<Logger> info_log) {
 #ifdef NDEBUG
   // Disable LogDevice info logging in release.
   facebook::logdevice::dbg::currentLevel =
@@ -41,6 +42,7 @@ std::shared_ptr<LogStorage> CreateLogStorage(Env* env) {
     std::chrono::milliseconds(1000),
     FLAGS_storage_workers,
     env,
+    std::move(info_log),
     &storage);
   return std::shared_ptr<rocketspeed::LogStorage>(storage);
 }

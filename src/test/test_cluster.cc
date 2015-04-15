@@ -100,6 +100,7 @@ void LocalTestCluster::Initialize(Options opts) {
       logdevice_->client_ = logdevice_->cluster_->createClient();
       status_ = LogDeviceStorage::Create(logdevice_->client_,
                                          env_,
+                                         info_log_,
                                          &storage);
     } else {
       status_ = LogDeviceStorage::Create("rocketspeed.logdevice.primary",
@@ -108,6 +109,7 @@ void LocalTestCluster::Initialize(Options opts) {
                                          std::chrono::milliseconds(1000),
                                          16,
                                          env_,
+                                         info_log_,
                                          &storage);
     }
 #else
@@ -117,6 +119,7 @@ void LocalTestCluster::Initialize(Options opts) {
                                        std::chrono::milliseconds(1000),
                                        16,
                                        env_,
+                                       info_log_,
                                        &storage);
 #endif  // USE_LOGDEVICE
 

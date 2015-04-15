@@ -12,7 +12,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include "src/port/Env.h"
 #include "src/util/storage.h"
 
 #pragma GCC diagnostic push
@@ -22,6 +21,9 @@
 #pragma GCC diagnostic pop
 
 namespace rocketspeed {
+
+class Env;
+class Logger;
 
 /**
  * LogDevice log record entry.
@@ -59,6 +61,8 @@ class LogDeviceStorage : public LogStorage {
    * @param timeout        construction timeout. This value also serves as the
    *                       default timeout for methods on the created object
    * @param num_workers    number of client workers.
+   * @param env            environment.
+   * @param info_log       for logging.
    * @param storage        output parameter to store the constructed
    *                       LogDeviceStorage object.
    * @return on success returns OK(), otherwise errorcode.
@@ -70,6 +74,7 @@ class LogDeviceStorage : public LogStorage {
     std::chrono::milliseconds timeout,
     int num_workers,
     Env* env,
+    std::shared_ptr<Logger> info_log,
     LogDeviceStorage** storage);
 
   /**
@@ -79,11 +84,13 @@ class LogDeviceStorage : public LogStorage {
    * @param storage output parameter to store the constructed LogDeviceStorage
    *        object.
    * @param env Env object for platform specific operations.
+   * @param info_log For logging.
    * @return on success returns OK(), otherwise errorcode.
    */
   static Status Create(
     std::shared_ptr<facebook::logdevice::Client> client,
     Env* env,
+    std::shared_ptr<Logger> info_log,
     LogDeviceStorage** storage);
 
   ~LogDeviceStorage() final {}
@@ -106,10 +113,12 @@ class LogDeviceStorage : public LogStorage {
 
  private:
   LogDeviceStorage(std::shared_ptr<facebook::logdevice::Client> client,
-                   Env* env);
+                   Env* env,
+                   std::shared_ptr<Logger> info_log);
 
   std::shared_ptr<facebook::logdevice::Client> client_;
   Env* env_;
+  std::shared_ptr<Logger> info_log_;
 };
 
 /**

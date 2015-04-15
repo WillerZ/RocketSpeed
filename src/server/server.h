@@ -8,8 +8,6 @@
 #include <functional>
 #include <memory>
 #include <utility>
-#include "src/util/storage.h"
-#include "src/port/Env.h"
 
 // These ones are in server.cc
 DECLARE_bool(tower);
@@ -20,10 +18,17 @@ DECLARE_int32(copilot_port);
 
 namespace rocketspeed {
 
+class Env;
+class EnvOptions;
+class Logger;
+class LogRouter;
+class LogStorage;
+
 // Run the RocketSpeed server.
 extern int Run(int argc,
                char** argv,
-               std::function<std::shared_ptr<LogStorage>(Env*)> get_storage,
+               std::function<std::shared_ptr<LogStorage>(
+                 Env*, std::shared_ptr<Logger>)> get_storage,
                std::function<std::shared_ptr<LogRouter>()> get_router,
                Env* env,
                EnvOptions env_options);

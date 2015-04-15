@@ -6,16 +6,21 @@
 #pragma once
 
 #include <memory>
-#include "src/util/storage.h"
-#include "src/port/Env.h"
 
 namespace rocketspeed {
+
+class Env;
+class Logger;
+class LogRouter;
+class LogStorage;
 
 /**
  * Creates the storage LogStorage.
  * Should be implemented by the storage library.
  */
-extern std::shared_ptr<LogStorage> CreateLogStorage(Env* env);
+extern std::shared_ptr<LogStorage> CreateLogStorage(
+  Env* env,
+  std::shared_ptr<Logger> info_log);
 
 /**
  * Create the storage LogRouter.
