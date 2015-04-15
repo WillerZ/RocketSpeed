@@ -27,7 +27,7 @@ strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 remote_bench=''
 
-if [ -z $ROCKETSPEED_ARGS ]; then
+if [ -z "$ROCKETSPEED_ARGS" ]; then
   logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
   storage_url="configerator:logdevice/${logdevice_cluster}.conf"
   rocketspeed_args="--storage_url=$storage_url --logdevice_cluster=$logdevice_cluster"
