@@ -308,7 +308,9 @@ function collect_logs {
     for host in ${all_hosts[@]}; do
       cmd="cat ${log_dir}/LOG"
       # merge remote LOG file into LOG.remote
-      sort -m <(ssh root@$host "${cmd}") LOG.tmp > LOG.remote
+      # -k 2                       merge by second field (timestamp)
+      # sed "s/^/${host:0:22}: /   prefix 22 chars of hostname (ignored in sort)
+      sort -k 2 -m <(ssh root@$host "${cmd}" | sed "s/^/${host:0:22}: /") LOG.tmp > LOG.remote
       cmd="rm -f ${log_dir}/LOG*"
       ssh root@$host "${cmd}"  # tidy up
       cp LOG.remote LOG.tmp
