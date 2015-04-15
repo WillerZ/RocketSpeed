@@ -15,8 +15,6 @@ num_topics=1000000
 num_pilots=1
 num_copilots=1
 num_towers=1
-logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
-storage_url="configerator:logdevice/${logdevice_cluster}.conf"
 remote_path="/tmp"
 cockpit_host=''
 controltower_host=''
@@ -28,6 +26,14 @@ collect_logs=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 remote_bench=''
+
+if [ -z $ROCKETSPEED_ARGS ]; then
+  logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
+  storage_url="configerator:logdevice/${logdevice_cluster}.conf"
+  rocketspeed_args="--storage_url=$storage_url --logdevice_cluster=$logdevice_cluster"
+else
+  rocketspeed_args=$ROCKETSPEED_ARGS
+fi
 
 # Use the 2 lower order bytes from the UID to generate a namespace id.
 # The hope is that this will be sufficiently unique so that concurrent
@@ -128,6 +134,13 @@ if [ $strip ]; then
   echo
   echo "===== Stripping binary ====="
 
+  if [ ! -f $server ]; then
+    echo "Must have: "
+    echo "  $server"
+    echo "from current directory"
+    exit 1
+  fi
+
   TMPFILE=`mktemp /tmp/rocketspeed.XXXXXXXX`
   du -h $server
   cp -p $server $TMPFILE
@@ -199,11 +212,10 @@ function start_servers {
     echo "===== Starting remote servers ====="
     for host in ${cockpits[@]}; do
       cmd="${remote_path}/rocketspeed \
+        ${rocketspeed_args} \
         --pilot \
         --copilot \
         --control_towers=$towers_csv \
-        --storage_url=$storage_url \
-        --logdevice_cluster=$logdevice_cluster \
         --rollcall=$rollcall"
       if [ $pilot_port ]; then
         cmd="${cmd} --pilot_port=$pilot_port"
@@ -226,9 +238,8 @@ function start_servers {
     done
     for host in ${control_towers[@]}; do
       cmd="${remote_path}/rocketspeed \
-        --tower \
-        --storage_url=$storage_url \
-        --logdevice_cluster=$logdevice_cluster "
+        ${rocketspeed_args} \
+        --tower"
       if [ $controltower_port ]; then
         cmd="${cmd} --tower_port=$controltower_port"
       fi
@@ -367,7 +378,6 @@ if [ ! -d $output_dir ]; then
 fi
 
 const_params="
-  --storage_url=$storage_url \
   --namespaceid=$namespaceid \
   --message_size=$message_size \
   --num_messages=$num_messages \
