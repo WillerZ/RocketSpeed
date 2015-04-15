@@ -3,7 +3,7 @@ cpp_library(
     srcs = [
         'descriptor_event.cc',
         'messages.cc',
-        'msg_loop.cc'
+        'msg_loop.cc',
         'stream_socket.cc',
     ],
     preprocessor_flags = [
