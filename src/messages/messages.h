@@ -165,7 +165,7 @@ class MessagePing : public Message {
 
   MessagePing() : pingtype_(PingType::NotInitialized) {}
 
-  MessagePing(TenantID tenantid, PingType pingtype, std::string cookie)
+  MessagePing(TenantID tenantid, PingType pingtype, std::string cookie = "")
       : Message(MessageType::mPing, tenantid)
       , pingtype_(pingtype)
       , cookie_(std::move(cookie)) {}

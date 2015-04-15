@@ -961,7 +961,7 @@ void EventLoop::Stop() {
 }
 
 StreamSocket EventLoop::CreateOutboundStream(ClientID destination) {
-  return StreamSocket(destination, outbound_allocator_.Next());
+  return StreamSocket(std::move(destination), outbound_allocator_.Next());
 }
 
 Status EventLoop::SendCommand(std::unique_ptr<Command> command) {

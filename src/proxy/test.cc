@@ -124,9 +124,8 @@ TEST(ProxyTest, SeqnoError) {
   auto on_disconnect = [&](std::vector<int64_t> session) { checkpoint.Post(); };
   proxy->Start(nullptr, on_disconnect);
 
+  MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
   std::string serial;
-  MessagePing ping(
-      Tenant::GuestTenant, MessagePing::PingType::Request, "cookie");
   ping.SerializeToString(&serial);
   serial = EncodeOrigin(expected_stream).append(serial);
 
@@ -154,9 +153,8 @@ TEST(ProxyTest, DestroySession) {
   };
   proxy->Start(on_message, nullptr);
 
+  MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
   std::string serial;
-  MessagePing ping(
-      Tenant::GuestTenant, MessagePing::PingType::Request, "cookie");
   ping.SerializeToString(&serial);
   serial = EncodeOrigin(expected_stream).append(serial);
 
@@ -202,9 +200,8 @@ TEST(ProxyTest, ServerDown) {
   };
   proxy->Start(on_message, on_disconnect);
 
+  MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
   std::string serial;
-  MessagePing ping(
-      Tenant::GuestTenant, MessagePing::PingType::Request, "cookie");
   ping.SerializeToString(&serial);
   serial = EncodeOrigin(expected_stream).append(serial);
 

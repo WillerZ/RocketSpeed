@@ -12,6 +12,7 @@
 namespace rocketspeed {
 
 class MsgLoop;
+class MQTTMsgLoop;
 
 /** An allocator for stream IDs. Wraps around if runs out of unique IDs. */
 class StreamAllocator {
@@ -98,6 +99,7 @@ class StreamAllocator {
  private:
   /** For hiding constructors from the outside world. */
   friend class MsgLoop;
+  friend class MQTTMsgLoop;
 
   static const StreamID kGlobalFirst = std::numeric_limits<StreamID>::min();
   static const StreamID kGlobalEnd = std::numeric_limits<StreamID>::max();
