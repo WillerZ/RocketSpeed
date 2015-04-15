@@ -117,7 +117,14 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
         return;
       }
 
-      request->GetTopicInfo()[0].seqno = seqno;  // update seqno
+      std::vector<TopicPair>& req_topic = request->GetTopicInfo();
+      req_topic[0].seqno = seqno;  // update seqno
+      LOG_INFO(control_tower_->GetOptions().info_log,
+               "Subscribing (%llu) at latest seqno for Topic(%s)@%" PRIu64,
+               origin,
+               req_topic[0].topic_name.c_str(),
+               req_topic[0].seqno);
+
       // send message back to this Room with the seqno appropriately
       // filled up in the message.
       assert(seqno != 0);
@@ -128,35 +135,25 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
         LOG_WARN(control_tower_->GetOptions().info_log,
                  "Failed to enqueue subscription (%s)",
                  status.ToString().c_str());
-      } else {
-        const std::vector<TopicPair>& req_topic = request->GetTopicInfo();
-        LOG_INFO(control_tower_->GetOptions().info_log,
-                 "Subscribing (%llu) at latest seqno for Topic(%s)@%" PRIu64,
-                 origin,
-                 req_topic[0].topic_name.c_str(),
-                 req_topic[0].seqno);
       }
     };
 
-    // Ownership of message is in the callback.
-    msg.release();
     TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
     st = ct->GetTopicTailer(room_number_)->FindLatestSeqno(uuid, callback);
     if (!st.ok()) {
-      // If call to FindLatestSeqno failed then callback will not be called,
-      // so delete now.
-      delete request;
-
       // TODO(pja) 1: may need to do some flow control if this is due
       // to receiving too many subscriptions.
       LOG_WARN(options.info_log,
-               "Failed to find latest seqno (%s)",
-               st.ToString().c_str());
+               "Failed to find latest seqno (%s) for %s",
+               st.ToString().c_str(),
+               uuid.ToString().c_str());
     } else {
+      // Succeeded, so ownership of message is in the callback.
+      msg.release();
       LOG_INFO(options.info_log,
-               "Sent FindLatestSeqno request for (%llu) for Topic(%s)",
+               "Sent FindLatestSeqno request for (%llu) for %s",
                origin,
-               topic[0].topic_name.c_str());
+               uuid.ToString().c_str());
     }
     return;
   }
