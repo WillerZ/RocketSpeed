@@ -4,6 +4,7 @@ cpp_library(
         'descriptor_event.cc',
         'messages.cc',
         'msg_loop.cc'
+        'stream_socket.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',

@@ -25,6 +25,7 @@
 
 #include "src/port/port.h"
 #include "src/messages/serializer.h"
+#include "src/messages/stream_socket.h"
 #include "src/util/common/coding.h"
 
 static_assert(std::is_same<evutil_socket_t, int>::value,
@@ -74,34 +75,6 @@ struct MessageHeader {
   /** Size of MessageHeader encoding */
   static constexpr size_t encoding_size = sizeof(version) + sizeof(size);
 };
-
-/**
- * Encodes stream ID onto wire.
- *
- * @param origin Origin stream ID.
- * @return Encoded origin.
- */
-static std::string EncodeOrigin(const StreamID origin) {
-  std::string encoded;
-  PutFixed64(&encoded, static_cast<uint64_t>(origin));
-  return encoded;
-}
-
-/**
- * Decodes wire format of stream origin.
- *
- * @param in Input slice of encoded stream spec. Will be advanced beyond spec.
- * @param origin Output parameter for decoded stream.
- * @return ok() if successfully decoded, otherwise error.
- */
-static Status DecodeOrigin(Slice* in, StreamID* origin) {
-  uint64_t origin_fixed;
-  if (!GetFixed64(in, &origin_fixed)) {
-    return Status::InvalidArgument("Bad stream ID");
-  }
-  *origin = static_cast<StreamID>(origin_fixed);
-  return Status::OK();
-}
 
 struct TimestampedString {
   std::string string;

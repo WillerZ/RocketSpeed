@@ -34,7 +34,7 @@ class StreamSocket;
  */
 class Proxy {
  public:
-  typedef std::function<void(int64_t, StreamID, std::string)>
+  typedef std::function<void(int64_t, std::string)>
     OnMessageCallback;
 
   typedef std::function<void(const std::vector<int64_t>&)>
@@ -84,16 +84,16 @@ class Proxy {
    *
    * Forward is thread safe.
    *
-   * @param msg The serialized RocketSpeed message.
+   * @param data The serialized RocketSpeed message prefixed with serialized
+   *             origin stream.
    * @param session Unique session ID. Messages are ordered per session.
    * @param sequence Sequence ID of messages per session.
    * @param origin Origin stream ID of message.
    * @return ok() if successful, otherwise an error status.
    */
-  Status Forward(std::string msg,
+  Status Forward(std::string data,
                  int64_t session,
-                 int32_t sequence,
-                 StreamID origin);
+                 int32_t sequence);
 
   /**
    * Instructs the proxy to reset the next expected sequence number for a

@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "src/messages/stream_socket.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/ordered_processor.h"
 #include "src/util/worker_loop.h"
@@ -115,18 +116,24 @@ Status Proxy::Start(OnMessageCallback on_message,
   return msg_loop_->WaitUntilRunning();
 }
 
-Status Proxy::Forward(std::string msg,
-                      int64_t session,
-                      int32_t sequence,
-                      StreamID origin) {
+Status Proxy::Forward(std::string data, int64_t session, int32_t sequence) {
   int worker_id = WorkerForSession(session);
+  StreamID local;
+  {  // Deserialize origin of the message.
+    Slice in(data.data(), data.size());
+    Status st = DecodeOrigin(&in, &local);
+    if (!st.ok()) {
+      return st;
+    }
+    data.erase(0, data.size() - in.size());
+  }
   std::unique_ptr<Command> command(
       new ExecuteCommand(std::bind(&Proxy::HandleMessageForwarded,
                                    this,
-                                   std::move(msg),
+                                   std::move(data),
                                    session,
                                    sequence,
-                                   origin)));
+                                   local)));
   return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
@@ -245,7 +252,9 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
   // TODO(pja) 1 : ideally we wouldn't reserialize here.
   std::string serial;
   msg->SerializeToString(&serial);
-  on_message_(session, local, std::move(serial));
+  serial = EncodeOrigin(local).append(serial);
+  // Deliver message.
+  on_message_(session, std::move(serial));
   stats_.on_message_calls->Add(1);
 }
 

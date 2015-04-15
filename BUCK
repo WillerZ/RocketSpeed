@@ -40,6 +40,7 @@ for build in [('', FLAGS_RELEASE), ('_debug', FLAGS_DEBUG)]:
             'src/messages/event_loop.cc',
             'src/messages/messages.cc',
             'src/messages/msg_loop.cc',
+            'src/messages/stream_socket.cc',
             'src/port/port_android.cc',
             'src/port/port_posix.cc',
             'src/util/build_version.cc',

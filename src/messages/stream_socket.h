@@ -5,14 +5,14 @@
 //
 #pragma once
 
-#include <cstdint>
-
+#include "include/Status.h"
 #include "include/Types.h"
 
 namespace rocketspeed {
 
 class EventLoop;
 class Proxy;
+class Slice;
 
 /**
  * Identifies a stream, which is a pair of unidirectional channels, one in each
@@ -26,6 +26,23 @@ class Proxy;
  */
 typedef unsigned long long int StreamID;
 static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
+
+/**
+ * Encodes stream ID onto wire.
+ *
+ * @param origin Origin stream ID.
+ * @return Encoded origin.
+ */
+std::string EncodeOrigin(StreamID origin);
+
+/**
+ * Decodes wire format of stream origin.
+ *
+ * @param in Input slice of encoded stream spec. Will be advanced beyond spec.
+ * @param origin Output parameter for decoded stream.
+ * @return ok() if successfully decoded, otherwise error.
+ */
+Status DecodeOrigin(Slice* in, StreamID* origin);
 
 /** Keeps state of the stream as seen by its creator. */
 class StreamSocket {
