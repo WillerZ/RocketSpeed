@@ -122,7 +122,8 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
       request.topic_name.c_str());
 
   // Get the list of subscriptions for this topic.
-  auto it = subscriptions_.find(request.topic_name);
+  TopicUUID uuid(request.namespace_id, request.topic_name);
+  auto it = subscriptions_.find(uuid);
   if (it != subscriptions_.end()) {
     for (auto& subscription : it->second) {
       // If the subscription is awaiting a response.
@@ -170,7 +171,9 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       msg->GetPayload().ToString().c_str(),
       msg->GetSequenceNumber(),
       msg->GetTopicName().ToString().c_str());
-  auto it = subscriptions_.find(msg->GetTopicName().ToString());
+
+  TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
+  auto it = subscriptions_.find(uuid);
   if (it != subscriptions_.end()) {
     auto seqno = msg->GetSequenceNumber();
     auto prev_seqno = msg->GetPrevSequenceNumber();
@@ -240,7 +243,8 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
       msg->GetStartSequenceNumber(),
       msg->GetEndSequenceNumber(),
       msg->GetTopicName().ToString().c_str());
-  auto it = subscriptions_.find(msg->GetTopicName().ToString());
+  TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
+  auto it = subscriptions_.find(uuid);
   if (it != subscriptions_.end()) {
     auto prev_seqno = msg->GetStartSequenceNumber();
     auto next_seqno = msg->GetEndSequenceNumber();
@@ -318,14 +322,15 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   TopicInfo topic_info { request.topic_name, request.namespace_id, logid };
   client_topics_[subscriber].insert(topic_info);
 
-  auto topic_iter = subscriptions_.find(request.topic_name);
+  TopicUUID uuid(request.namespace_id, request.topic_name);
+  auto topic_iter = subscriptions_.find(uuid);
   if (topic_iter == subscriptions_.end()) {
     // No subscribers on this topic, create new topic entry.
     std::vector<Subscription> subscribers{ Subscription(subscriber,
                                                         request.seqno,
                                                         true,
                                                         worker_id) };
-    subscriptions_.emplace(request.topic_name, subscribers);
+    subscriptions_.emplace(uuid, subscribers);
     notify_control_tower = true;
   } else {
     // Already have subscriptions on this topic.
@@ -490,7 +495,8 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
   TopicInfo topic_info { topic_name, namespace_id, logid };
   client_topics_[subscriber].erase(topic_info);
 
-  auto topic_iter = subscriptions_.find(topic_name);
+  TopicUUID uuid(namespace_id, topic_name);
+  auto topic_iter = subscriptions_.find(uuid);
   if (topic_iter != subscriptions_.end()) {
     // Find our subscription and remove it.
     SequenceNumber earliest_other_seqno = 0;

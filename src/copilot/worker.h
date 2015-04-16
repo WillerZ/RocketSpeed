@@ -20,6 +20,7 @@
 #include "src/util/control_tower_router.h"
 #include "src/util/worker_loop.h"
 #include "src/util/common/hash.h"
+#include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
 
@@ -198,7 +199,7 @@ class CopilotWorker {
   };
 
   // Map of topics to active subscriptions.
-  std::unordered_map<Topic, std::vector<Subscription>> subscriptions_;
+  std::unordered_map<TopicUUID, std::vector<Subscription>> subscriptions_;
 
   // Map of client to topics subscribed to.
   struct TopicInfo {
@@ -218,6 +219,7 @@ class CopilotWorker {
     NamespaceID namespace_id;
     LogID logid;
   };
+
   typedef std::unordered_set<TopicInfo, TopicInfo::Hash> TopicInfoSet;
   std::unordered_map<StreamID, TopicInfoSet> client_topics_;
 
