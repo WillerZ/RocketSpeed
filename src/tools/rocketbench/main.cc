@@ -72,6 +72,9 @@ struct Result {
 // not working.
 static int idle_timeout = 5;
 
+// Number of topics to subscribe to at once.
+static const size_t kSubscribeBatchSize = 10000;
+
 struct ProducerArgs {
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* producers;
   rocketspeed::NamespaceID nsid;
@@ -262,7 +265,8 @@ static void DoProduce(void* params) {
  */
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
-                 std::unordered_map<std::string, SequenceNumber> first_seqno) {
+                 std::unordered_map<std::string, SequenceNumber> first_seqno,
+                 rocketspeed::port::Semaphore* batch_semaphore) {
   SequenceNumber start = 0;   // start sequence number (0 = only new records)
 
   // This needs to be low enough so that subscriptions are evenly distributed
@@ -271,9 +275,14 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
   unsigned int batch_size =
     std::min(100, std::max(1,
       static_cast<int>(FLAGS_num_topics / total_threads / 10)));
+  if (batch_size > static_cast<int>(kSubscribeBatchSize)) {
+    batch_size = static_cast<int>(kSubscribeBatchSize);
+  }
 
   std::vector<SubscriptionRequest> topics;
   topics.reserve(batch_size);
+
+  size_t sent = 0;
 
   // create all subscriptions from seqno 1
   SubscriptionRequest request(nsid, "", true, start);
@@ -294,6 +303,14 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
     if (i % batch_size == batch_size - 1) {
       // send a subscription request
       consumers[c++ % consumers.size()]->ListenTopics(topics);
+      sent += topics.size();
+      if (sent >= kSubscribeBatchSize) {
+        // Have sent the batch size now, wait for next batch.
+        if (!batch_semaphore->TimedWait(std::chrono::seconds(idle_timeout))) {
+          return;
+        }
+        sent -= kSubscribeBatchSize;
+      }
       topics.clear();
     }
   }
@@ -531,9 +548,14 @@ int main(int argc, char** argv) {
   // Subscribe callback.
   std::atomic<uint64_t> num_topics_subscribed{0};
   rocketspeed::port::Semaphore all_topics_subscribed;
+  rocketspeed::port::Semaphore batch_semaphore;
   auto subscribe_callback = [&] (rocketspeed::SubscriptionStatus ss) {
     if (ss.subscribed) {
-      if (++num_topics_subscribed == FLAGS_num_topics) {
+      auto num_subscribed = ++num_topics_subscribed;
+      if (num_subscribed % kSubscribeBatchSize == 0) {
+        batch_semaphore.Post();
+      }
+      if (num_subscribed == FLAGS_num_topics) {
         all_topics_subscribed.Post();
       }
     } else {
@@ -581,7 +603,7 @@ int main(int argc, char** argv) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
-      DoSubscribe(clients, nsid, std::move(first_seqno));
+      DoSubscribe(clients, nsid, std::move(first_seqno), &batch_semaphore);
       if (!all_topics_subscribed.TimedWait(std::chrono::seconds(5))) {
         printf("time out\n");
         LOG_WARN(info_log, "Failed to subscribe to all topics");
@@ -648,6 +670,7 @@ int main(int argc, char** argv) {
 
   // If we are delayed, then start subscriptions after all
   // publishers are completed.
+  uint64_t subscribe_time = 0;
   if (FLAGS_delay_subscribe) {
     assert(FLAGS_start_consumer);
     printf("Subscribing (delayed) to topics.\n");
@@ -657,7 +680,12 @@ int main(int argc, char** argv) {
     start = std::chrono::steady_clock::now();
 
     // Subscribe to topics
-    DoSubscribe(clients, nsid, std::move(first_seqno));
+    subscribe_time = env->NowMicros();
+    DoSubscribe(clients, nsid, std::move(first_seqno), &batch_semaphore);
+    subscribe_time = env->NowMicros() - subscribe_time;
+    printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics",
+      subscribe_time / 1000,
+      FLAGS_num_topics);
 
     // Wait for all messages to be received
     printf("Waiting (delayed) for messages.\n");
@@ -694,6 +722,19 @@ int main(int argc, char** argv) {
     if (total_ms == 0) {
       // To avoid divide-by-zero on near-instant benchmarks.
       total_ms = 1;
+    }
+
+    if (FLAGS_delay_subscribe) {
+      // Check that subscribe time wasn't a significant portion of total time.
+      uint32_t subscribe_ms = static_cast<uint32_t>(subscribe_time / 1000);
+      double subscribe_pct = double(subscribe_ms) / double(total_ms);
+      if (subscribe_pct > 0.01) {
+        printf(
+          "\n"
+          "WARNING: Time waiting for subscription was %.2lf%% of total time.\n"
+          "         Consider subscribing to fewer topics.\n",
+          100.0 * subscribe_pct);
+      }
     }
 
     uint64_t msg_per_sec = 1000 *
