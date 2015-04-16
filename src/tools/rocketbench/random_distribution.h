@@ -14,63 +14,71 @@
 namespace rocketspeed {
 
 class RandomDistributionBase {
-  public:
-    virtual uint64_t generateRandomInt() = 0;
-    virtual ~RandomDistributionBase(){};
+ public:
+  virtual uint64_t generateRandomInt() = 0;
+  virtual ~RandomDistributionBase() {}
 
-  protected:
-    std::mt19937_64 rng;
+ protected:
+  explicit RandomDistributionBase(uint64_t seed) : rng(seed) {}
+  std::mt19937_64 rng;
 };
 //Uniform distribution as per first version
 class UniformDistribution : public RandomDistributionBase
 {
-   public:
-    explicit UniformDistribution(uint64_t a=0,
-            uint64_t b= std::numeric_limits<uint64_t>::max()) : distr(a, b){};
+ public:
+  explicit UniformDistribution(uint64_t a, uint64_t b, uint64_t seed)
+  : RandomDistributionBase(seed)
+  , distr(a, b) {}
 
-    virtual uint64_t generateRandomInt() {
-       return distr(RandomDistributionBase::rng);
-    }
-    virtual ~UniformDistribution(){};
+  virtual uint64_t generateRandomInt() {
+    return distr(RandomDistributionBase::rng);
+  }
 
-   private:
-     std::uniform_int_distribution<uint64_t> distr;
+ private:
+  std::uniform_int_distribution<uint64_t> distr;
 };
 //Normal, or Gaussian, distribution
 class NormalDistribution : public RandomDistributionBase
 {
-   public:
-    explicit NormalDistribution(double mean=0.0,
-                                double stddev= 1.0) : distr(mean, stddev){};
+ public:
+  explicit NormalDistribution(double mean,
+                              double stddev,
+                              uint64_t seed)
+  : RandomDistributionBase(seed)
+  , distr(mean, stddev) {}
 
-    virtual uint64_t generateRandomInt() {
-        return static_cast<uint64_t>(round(distr(RandomDistributionBase::rng)));
-    }
-    virtual ~NormalDistribution(){};
+  virtual uint64_t generateRandomInt() {
+    return static_cast<uint64_t>(round(distr(RandomDistributionBase::rng)));
+  }
 
-   private:
-     std::normal_distribution<double> distr;
+ private:
+  std::normal_distribution<double> distr;
 };
 //Poisson distribution
 class PoissonDistribution : public RandomDistributionBase
 {
-   public:
-    explicit PoissonDistribution(double mean = 1.0) : distr(mean){};
-    virtual uint64_t generateRandomInt() {
-        return distr(RandomDistributionBase::rng);
-    }
-    virtual ~PoissonDistribution(){};
+ public:
+  explicit PoissonDistribution(double mean, uint64_t seed)
+  : RandomDistributionBase(seed)
+  , distr(mean) {}
 
-   private:
-    std::poisson_distribution<uint64_t> distr;
+  virtual uint64_t generateRandomInt() {
+    return distr(RandomDistributionBase::rng);
+  }
+
+ private:
+  std::poisson_distribution<uint64_t> distr;
 };
 
 //Calculate the standard deviation of the sequence of numbers, given the mean
 double StandardDeviation(uint64_t a, uint64_t b, double mean);
 //get a pointer to the distribution instance based on the distribution name
 RandomDistributionBase* GetDistributionByName(
-                        const std::string& dist_name, uint64_t a=0,
-                        uint64_t b=std::numeric_limits<uint64_t>::max(),
-                        double amean=0.0, double stdd=0.0);
+                        const std::string& dist_name,
+                        uint64_t a,
+                        uint64_t b,
+                        double amean,
+                        double stdd,
+                        uint64_t seed);
 
 };

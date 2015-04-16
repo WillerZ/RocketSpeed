@@ -30,7 +30,8 @@ double StandardDeviation(uint64_t a, uint64_t b, double mean) {
 //range of numbers in the range [a,b]
 RandomDistributionBase* GetDistributionByName(
                         const std::string& dist_name, uint64_t a,
-                        uint64_t b, double amean, double stdd) {
+                        uint64_t b, double amean, double stdd,
+                        uint64_t seed) {
 
     RandomDistributionBase* pDistribution = nullptr;
     //mean: if not provided, this is close enough as the range
@@ -40,13 +41,13 @@ RandomDistributionBase* GetDistributionByName(
 
     if (dist_name.compare("normal") == 0) {
         double stddev = (stdd > 0.0) ? stdd : StandardDeviation(a, b, mean);
-        pDistribution = new NormalDistribution(mean, stddev);
+        pDistribution = new NormalDistribution(mean, stddev, seed);
     }
     else if (dist_name.compare("poisson") == 0) {
-        pDistribution = new PoissonDistribution(mean);
+        pDistribution = new PoissonDistribution(mean, seed);
     }
     else if (dist_name.compare("uniform") == 0) {
-        pDistribution = new UniformDistribution(a, b);
+        pDistribution = new UniformDistribution(a, b, seed);
     } else if (dist_name.compare("fixed") == 0) {
         pDistribution = nullptr;
     }

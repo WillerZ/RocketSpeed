@@ -82,12 +82,13 @@ struct ProducerArgs {
   bool result;
 };
 
-struct  ProducerWorkerArgs {
+struct ProducerWorkerArgs {
   int64_t num_messages;
   rocketspeed::NamespaceID namespaceid;
   rocketspeed::Client* producer;
   rocketspeed::PublishCallback publish_callback;
   bool result;
+  uint64_t seed;
 };
 
 struct ConsumerArgs {
@@ -110,13 +111,13 @@ static void ProducerWorker(void* param) {
   Env* env = Env::Default();
 
   // Random number generator.
-  std::mt19937_64 rng;
   std::unique_ptr<rocketspeed::RandomDistributionBase>
     distr(GetDistributionByName(FLAGS_topics_distribution,
                                 0,
                                 FLAGS_num_topics - 1,
                                 static_cast<double>(FLAGS_topics_mean),
-                                static_cast<double>(FLAGS_topics_stddev)));
+                                static_cast<double>(FLAGS_topics_stddev),
+                                args->seed));
 
   // Generate some dummy data.
   std::vector<char> data(FLAGS_message_size);
@@ -218,6 +219,7 @@ static void DoProduce(void* params) {
     parg->namespaceid = namespaceid;
     parg->producer = (*producers)[p % producers->size()].get();
     parg->publish_callback = publish_callback;
+    parg->seed = p << 32;  // should be consistent between runs.
 
     thread_ids.push_back(env->StartThread(rocketspeed::ProducerWorker, parg));
     total_messages -= num_messages;
@@ -446,24 +448,29 @@ int main(int argc, char** argv) {
     [&] (std::unique_ptr<rocketspeed::ResultStatus> rs) {
     uint64_t now = env->NowMicros();
 
-    // Parse message data to get received index.
-    rocketspeed::Slice data = rs->GetContents();
-    unsigned long long int message_index, send_time;
-    std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
-    ack_latency->Record(static_cast<uint64_t>(now - send_time));
+    if (rs->GetStatus().ok()) {
+      // Parse message data to get received index.
+      rocketspeed::Slice data = rs->GetContents();
+      unsigned long long int message_index, send_time;
+      std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
+      ack_latency->Record(static_cast<uint64_t>(now - send_time));
 
-    if (FLAGS_delay_subscribe) {
-      if (rs->GetStatus().ok()) {
-        // Get the minimum sequence number for this topic to subscribe to later.
-        std::string topic = rs->GetTopicName().ToString();
-        std::lock_guard<std::mutex> lock(first_seqno_mutex);
-        auto it = first_seqno.find(topic);
-        if (it == first_seqno.end()) {
-          first_seqno[topic] = rs->GetSequenceNumber();
-        } else {
-          it->second = std::min(it->second, rs->GetSequenceNumber());
+      if (FLAGS_delay_subscribe) {
+        if (rs->GetStatus().ok()) {
+          // Get the min sequence number for this topic to subscribe to later.
+          std::string topic = rs->GetTopicName().ToString();
+          std::lock_guard<std::mutex> lock(first_seqno_mutex);
+          auto it = first_seqno.find(topic);
+          if (it == first_seqno.end()) {
+            first_seqno[topic] = rs->GetSequenceNumber();
+          } else {
+            it->second = std::min(it->second, rs->GetSequenceNumber());
+          }
         }
       }
+    } else {
+      ++failed_publishes;
+      LOG_WARN(info_log, "Received publish failure response");
     }
 
     if (FLAGS_await_ack) {
@@ -475,11 +482,6 @@ int main(int argc, char** argv) {
       if (++ack_messages_received == FLAGS_num_messages) {
         all_ack_messages_received.Post();
       }
-    }
-
-    if (!rs->GetStatus().ok()) {
-      ++failed_publishes;
-      LOG_WARN(info_log, "Received publish failure response");
     }
   };
 
