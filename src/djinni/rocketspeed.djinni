@@ -152,8 +152,7 @@ ProxyImpl = interface +c {
         disconnect_callback: DisconnectCallback): Status;
 
   forward(message: binary,
-          session: i64,
-          sequence: i32): Status;
+          session: i64): Status;
 
   destroySession(session: i64);
 

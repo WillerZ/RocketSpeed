@@ -47,8 +47,8 @@ public class Proxy implements AutoCloseable {
     status.checkExceptions();
   }
 
-  public Status forward(byte[] message, long sessionId, int sequenceNumber) {
-    return proxyImpl.forward(message, sessionId, sequenceNumber);
+  public Status forward(byte[] message, long sessionId) {
+    return proxyImpl.forward(message, sessionId);
   }
 
   public void destroySession(long sessionId) {

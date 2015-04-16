@@ -64,10 +64,9 @@ Status ProxyWrapper::Start(
 }
 
 Status ProxyWrapper::Forward(std::vector<uint8_t> message,
-                             int64_t session,
-                             int32_t sequence) {
+                             int64_t session) {
   std::string message1(message.begin(), message.end());
-  return FromStatus(proxy_->Forward(std::move(message1), session, sequence));
+  return FromStatus(proxy_->Forward(std::move(message1), session));
 }
 
 void ProxyWrapper::DestroySession(int64_t session) {

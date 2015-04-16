@@ -54,16 +54,15 @@ CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)
 }
 
-CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1forward(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jbyteArray j_message, jlong j_session, jint j_sequence)
+CJNIEXPORT jobject JNICALL Java_org_rocketspeed_ProxyImpl_00024CppProxy_native_1forward(JNIEnv* jniEnv, jobject /*this*/, jlong nativeRef, jbyteArray j_message, jlong j_session)
 {
     try {
         DJINNI_FUNCTION_PROLOGUE1(jniEnv, nativeRef);
         const std::shared_ptr<::rocketspeed::djinni::ProxyImpl> & ref = djinni::CppProxyHandle<::rocketspeed::djinni::ProxyImpl>::get(nativeRef);
         std::vector<uint8_t> c_message = ::djinni::HBinary::fromJava(jniEnv, j_message);
         int64_t c_session = ::djinni::HI64::Unboxed::fromJava(jniEnv, j_session);
-        int32_t c_sequence = ::djinni::HI32::Unboxed::fromJava(jniEnv, j_sequence);
 
-        ::rocketspeed::djinni::Status cr = ref->Forward(std::move(c_message), std::move(c_session), std::move(c_sequence));
+        ::rocketspeed::djinni::Status cr = ref->Forward(std::move(c_message), std::move(c_session));
 
         return NativeStatus::toJava(jniEnv, cr);
     } JNI_TRANSLATE_EXCEPTIONS_RETURN(jniEnv, 0 /* value doesn't matter*/)
