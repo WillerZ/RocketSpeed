@@ -14,7 +14,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "src/messages/msg_loop.h"
 #include "src/messages/stream_socket.h"
+#include "src/proxy/wrapped_message.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/ordered_processor.h"
 #include "src/util/worker_loop.h"
@@ -29,18 +31,30 @@ struct OrderedEventType {
 
 typedef OrderedProcessor<OrderedEventType> SessionProcessor;
 
+struct SessionInfo {
+  explicit SessionInfo(SessionProcessor processor)
+      : next_seqno_(0), ordered_processor_(std::move(processor)) {
+  }
+
+  /** Next sequence number for messages sent via OnMessageCallback. */
+  MessageSequenceNumber next_seqno_;
+  /** Ordering processor for messages received via Forward. */
+  SessionProcessor ordered_processor_;
+};
+
 /** Represents per message loop worker data. */
 struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
   ProxyWorkerData(StreamAllocator allocator)
-      : open_streams_(std::move(allocator)) {}
+      : open_streams_(std::move(allocator)) {
+  }
 
   ProxyWorkerData(const ProxyWorkerData&) = delete;
   ProxyWorkerData& operator=(const ProxyWorkerData&) = delete;
 
   /** The data can only be accessed from a single and the same thread. */
   ThreadCheck thread_check_;
-  /** Stores ordering processor per session. */
-  std::unordered_map<int64_t, SessionProcessor> session_processors_;
+  /** Stores session metdata for all open sessions. */
+  std::unordered_map<int64_t, SessionInfo> open_sessions_;
   /** Stores map: (session, session local stream ID) <-> global stream ID. */
   UniqueStreamMap<int64_t> open_streams_;
 };
@@ -66,20 +80,17 @@ Status Proxy::CreateNewInstance(ProxyOptions options,
 }
 
 Proxy::Proxy(ProxyOptions options)
-: info_log_(std::move(options.info_log))
-, env_(options.env)
-, config_(std::move(options.conf))
-, ordering_buffer_size_(options.ordering_buffer_size)
-, msg_thread_(0) {
+    : info_log_(std::move(options.info_log))
+    , env_(options.env)
+    , config_(std::move(options.conf))
+    , ordering_buffer_size_(options.ordering_buffer_size)
+    , msg_thread_(0) {
   using std::placeholders::_1;
   using std::placeholders::_2;
 
-  msg_loop_.reset(new MsgLoop(env_,
-                              options.env_options,
+  msg_loop_.reset(new MsgLoop(env_, options.env_options,
                               0,  // port
-                              options.num_workers,
-                              info_log_,
-                              "proxy"));
+                              options.num_workers, info_log_, "proxy"));
 
   auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1, _2);
   auto goodbye_callback = std::bind(&Proxy::HandleGoodbyeMessage, this, _1, _2);
@@ -110,30 +121,25 @@ Status Proxy::Start(OnMessageCallback on_message,
   on_disconnect_ = on_disconnect ? std::move(on_disconnect)
                                  : [](const std::vector<int64_t>&) {};
 
-  msg_thread_ = env_->StartThread([this] () { msg_loop_->Run(); },
-                                  "proxy");
+  msg_thread_ = env_->StartThread([this]() { msg_loop_->Run(); }, "proxy");
 
   return msg_loop_->WaitUntilRunning();
 }
 
-Status Proxy::Forward(std::string data, int64_t session, int32_t sequence) {
-  int worker_id = WorkerForSession(session);
-  StreamID local;
-  {  // Deserialize origin of the message.
-    Slice in(data.data(), data.size());
-    Status st = DecodeOrigin(&in, &local);
-    if (!st.ok()) {
-      return st;
-    }
-    data.erase(0, data.size() - in.size());
+Status Proxy::Forward(std::string data, int64_t session) {
+  // Deserialize metadata.
+  StreamID origin;
+  MessageSequenceNumber sequence;
+  std::string msg;
+  Status st = UnwrapMessage(std::move(data), &msg, &origin, &sequence);
+  if (!st.ok()) {
+    return st;
   }
+  // Forward message to responsible worker.
+  int worker_id = WorkerForSession(session);
   std::unique_ptr<Command> command(
-      new ExecuteCommand(std::bind(&Proxy::HandleMessageForwarded,
-                                   this,
-                                   std::move(data),
-                                   session,
-                                   sequence,
-                                   local)));
+      new ExecuteCommand(std::bind(&Proxy::HandleMessageForwarded, this,
+                                   std::move(msg), session, sequence, origin)));
   return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
@@ -184,14 +190,13 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
     if (status == decltype(status)::kNotRemoved) {
       // Session might have been closed while connection to pilot/copilot died.
       LOG_INFO(info_log_,
-               "Proxy received goodbye on non-existent stream (%llu)",
-               origin);
+               "Proxy received goodbye on non-existent stream (%llu)", origin);
       return;
     }
 
     // If that was the last stream on the session, remove the session.
     if (status == decltype(status)::kRemovedLast) {
-      data.session_processors_.erase(session);
+      data.open_sessions_.erase(session);
       on_disconnect_({session});
     }
   } else {
@@ -205,14 +210,13 @@ void Proxy::HandleDestroySession(int64_t session) {
   auto& data = GetWorkerDataForSession(session);
   data.thread_check_.Check();
 
-  // Remove session processor.
-  data.session_processors_.erase(session);
+  // Remove session information.
+  data.open_sessions_.erase(session);
   // Remove all streams for the session.
   auto removed = data.open_streams_.RemoveContext(session);
 
   // Send goodbye to all removed streams.
-  MessageGoodbye goodbye(Tenant::GuestTenant,
-                         MessageGoodbye::Code::Graceful,
+  MessageGoodbye goodbye(Tenant::GuestTenant, MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
   for (const auto& pair : removed) {
     StreamID global = pair.second;
@@ -225,42 +229,60 @@ void Proxy::HandleDestroySession(int64_t session) {
 }
 
 void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
-                                  StreamID origin) {
+                                  StreamID global) {
   if (!on_message_) {
     return;
   }
 
-  LOG_INFO(info_log_,
-           "Received message from RocketSpeed, type %d",
+  LOG_INFO(info_log_, "Received message from RocketSpeed, type %d",
            static_cast<int>(msg->GetMessageType()));
 
-  const auto& data = *worker_data_[msg_loop_->GetThreadWorkerIndex()];
+  auto& data = *worker_data_[msg_loop_->GetThreadWorkerIndex()];
   data.thread_check_.Check();
 
-  // Find corresponding session and translate stream ID back.
+  // Find corresponding session and translate stream ID back, drop if stream was
+  // not open.
   int64_t session;
   StreamID local;
-  bool found = data.open_streams_.FindLocalAndContext(origin, &session, &local);
+  bool found = data.open_streams_.FindLocalAndContext(global, &session, &local);
   if (!found) {
     LOG_ERROR(info_log_,
               "Could not find session for global stream ID (%llu)",
-              origin);
+              global);
     stats_.bad_origins->Add(1);
     return;
   }
 
+  MessageSequenceNumber seqno;
+  {  // Assign sequence number, drop if session is not open.
+    auto it = data.open_sessions_.find(session);
+    if (it == data.open_sessions_.end()) {
+      LOG_ERROR(info_log_,
+                "Could not find open session %" PRIi64 ", stream (%llu) exists",
+                session,
+                global);
+      stats_.bad_origins->Add(1);
+      // This shall never happen.
+      assert(false);
+      return;
+    }
+    seqno = it->second.next_seqno_++;
+  }
+
+  // Include sequence number and origin stream in the message.
+  std::string serialized;
   // TODO(pja) 1 : ideally we wouldn't reserialize here.
-  std::string serial;
-  msg->SerializeToString(&serial);
-  serial = EncodeOrigin(local).append(serial);
+  msg->SerializeToString(&serialized);
+  serialized = WrapMessage(std::move(serialized), local, seqno);
+
   // Deliver message.
-  on_message_(session, std::move(serial));
+  on_message_(session, std::move(serialized));
   stats_.on_message_calls->Add(1);
 }
 
 void Proxy::HandleMessageForwarded(std::string msg,
                                    int64_t session,
-                                   int32_t sequence,
+                                   MessageSequenceNumber sequence,
                                    StreamID local) {
   stats_.forwards->Add(1);
 
@@ -292,8 +314,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
       LOG_ERROR(info_log_,
                 "Session %" PRIi64
                 " attempting to send invalid message type through proxy (%d)",
-                session,
-                static_cast<int>(message->GetMessageType()));
+                session, static_cast<int>(message->GetMessageType()));
       stats_.forward_errors->Add(1);
       // Kill session.
       HandleDestroySession(session);
@@ -301,36 +322,36 @@ void Proxy::HandleMessageForwarded(std::string msg,
       return;
   }
 
+  // Find or create session info.
+  auto& data = GetWorkerDataForSession(session);
+  // Handle reordering.
+  auto it = data.open_sessions_.find(session);
+  if (it == data.open_sessions_.end()) {
+    // Not there, so create it.
+    SessionProcessor processor(
+        ordering_buffer_size_,
+        [this, session, &data](SessionProcessor::EventType event) {
+          // It's safe to capture data reference.
+          // Need to check if session is still there. Previous command
+          // processed may have caused it to drop.
+          if (data.open_sessions_.find(session) == data.open_sessions_.end()) {
+            return;
+          }
+          HandleMessageForwardedInorder(event.type, std::move(event.message),
+                                        session, event.local);
+        });
+
+    auto result =
+        data.open_sessions_.emplace(session, SessionInfo(std::move(processor)));
+    assert(result.second);
+    it = result.first;
+  }
+
   if (sequence == -1) {
-    HandleMessageForwardedInorder(
-        message->GetMessageType(), std::move(msg), session, local);
+    HandleMessageForwardedInorder(message->GetMessageType(), std::move(msg),
+                                  session, local);
   } else {
-    auto& data = GetWorkerDataForSession(session);
-    // Handle reordering.
-    auto it = data.session_processors_.find(session);
-    if (it == data.session_processors_.end()) {
-      // Not there, so create it.
-      SessionProcessor processor(
-          ordering_buffer_size_,
-          [this, session, &data](SessionProcessor::EventType event) {
-            // It's safe to capture data reference.
-            // Need to check if session is still there. Previous command
-            // processed may have caused it to drop.
-            if (data.session_processors_.find(session) ==
-                data.session_processors_.end()) {
-              return;
-            }
-            HandleMessageForwardedInorder(
-                event.type, std::move(event.message), session, event.local);
-          });
-
-      auto result =
-          data.session_processors_.emplace(session, std::move(processor));
-      assert(result.second);
-      it = result.first;
-    }
-
-    Status st = it->second.Process(
+    Status st = it->second.ordered_processor_.Process(
         {message->GetMessageType(), std::move(msg), local}, sequence);
     if (!st.ok()) {
       // Kill the session.

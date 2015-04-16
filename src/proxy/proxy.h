@@ -1,7 +1,8 @@
-// Copyright (c) 2014, Facebook, Inc.  All rights reserved.
-// This source code is licensed under the BSD-style license found in the
-// LICENSE file in the root directory of this source tree. An additional grant
-// of patent rights can be found in the PATENTS file in the same directory.
+//  Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under the BSD-style license found in the
+//  LICENSE file in the root directory of this source tree. An additional grant
+//  of patent rights can be found in the PATENTS file in the same directory.
+//
 #pragma once
 
 #include <functional>
@@ -10,11 +11,12 @@
 #include <vector>
 
 #include "include/Types.h"
+#include "src/messages/stream_socket.h"
 #include "src/messages/messages.h"
-#include "src/messages/msg_loop.h"
+#include "src/proxy/options.h"
+#include "src/proxy/wrapped_message.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
-#include "src/proxy/options.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
@@ -22,6 +24,8 @@
 
 namespace rocketspeed {
 
+class MsgLoop;
+class Message;
 struct ProxyWorkerData;
 class StreamSocket;
 
@@ -34,11 +38,9 @@ class StreamSocket;
  */
 class Proxy {
  public:
-  typedef std::function<void(int64_t, std::string)>
-    OnMessageCallback;
+  typedef std::function<void(int64_t, std::string)> OnMessageCallback;
 
-  typedef std::function<void(const std::vector<int64_t>&)>
-    OnDisconnectCallback;
+  typedef std::function<void(const std::vector<int64_t>&)> OnDisconnectCallback;
 
   /**
    * Creates a new instance of the RocketSpeed proxy.
@@ -71,29 +73,26 @@ class Proxy {
    * Data messages are sent to a pilot, while metadata messages are sent to a
    * copilot.
    *
+   * Provided binary blob encodes sequence number, origin stream and  the
+   * message itself.
+   *
    * If the proxy has sent all messages before the provided sequence number,
    * then the message is forwarded immediately. If not, then it is buffered
-   * and sent later. If not enough buffer space is available then an error
-   * status will be returned.
+   * and sent later. If not enough buffer space is available then the session
+   * will be destroyed.
    *
    * Sequence numbers must start at 0.
-   *
-   * If a sequence number of -1 is provided, the message will
-   * be sent immediately. This should be used if the caller
-   * can guarantee ordering.
+   * If a sequence number of -1 is provided, the message will be sent
+   * immediately. This should be used if the caller can guarantee ordering or
+   * for out of band messages.
    *
    * Forward is thread safe.
    *
-   * @param data The serialized RocketSpeed message prefixed with serialized
-   *             origin stream.
+   * @param data The serialized message, sequence number and origin stream.
    * @param session Unique session ID. Messages are ordered per session.
-   * @param sequence Sequence ID of messages per session.
-   * @param origin Origin stream ID of message.
-   * @return ok() if successful, otherwise an error status.
+   * @return Status::OK() if successful, otherwise an error status.
    */
-  Status Forward(std::string data,
-                 int64_t session,
-                 int32_t sequence);
+  Status Forward(std::string data, int64_t session);
 
   /**
    * Instructs the proxy to reset the next expected sequence number for a
@@ -161,7 +160,7 @@ class Proxy {
 
   void HandleMessageForwarded(std::string msg,
                               int64_t session,
-                              int32_t sequence,
+                              MessageSequenceNumber sequence,
                               StreamID local);
 
   void HandleMessageForwardedInorder(MessageType message_type,

@@ -16,6 +16,32 @@
 
 namespace rocketspeed {
 
+class WrappedMessage {};
+
+TEST(WrappedMessage, Serialization) {
+  MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
+  const StreamID stream = 42;
+  const MessageSequenceNumber seqno = 1337;
+  std::string message;
+  ping.SerializeToString(&message);
+
+  // Wrap the message.
+  std::string wrapped = WrapMessage(message, stream, seqno);
+
+  // Unwarp it back.
+  std::unique_ptr<Message> ping1;
+  StreamID stream1;
+  MessageSequenceNumber seqno1;
+  ASSERT_OK(UnwrapMessage(wrapped, &ping1, &stream1, &seqno1));
+
+  // Message and metadata must match.
+  std::string message1;
+  ping1->SerializeToString(&message1);
+  ASSERT_EQ(message, message1);
+  ASSERT_EQ(stream, stream1);
+  ASSERT_EQ(seqno, seqno1);
+}
+
 class ProxyTest {
  public:
   ProxyTest() {
@@ -47,18 +73,21 @@ TEST(ProxyTest, Publish) {
   // Start the proxy.
   // We're going to publish a message and expect an ack in return.
   port::Semaphore checkpoint;
-  const StreamID expected_stream = 0;
+  const StreamID expected_stream = 1337;
   std::atomic<int64_t> expected_session;
+  // This is accessed from on_message callback only.
+  std::unordered_map<int64_t, MessageSequenceNumber> expected_seqno;
   auto on_message = [&](int64_t session, std::string data) {
     ASSERT_EQ(session, expected_session.load());
 
     StreamID stream;
-    Slice in(data.data(), data.size());
-    DecodeOrigin(&in, &stream);
-    ASSERT_EQ(expected_stream, stream);
+    MessageSequenceNumber seqno;
+    std::unique_ptr<Message> msg;
+    ASSERT_OK(UnwrapMessage(std::move(data), &msg, &stream, &seqno));
 
-    std::unique_ptr<Message> msg =
-        Message::CreateNewInstance(in.ToUniqueChars(), in.size());
+    ASSERT_EQ(expected_stream, stream);
+    ASSERT_EQ(expected_seqno[session]++, seqno);
+
     ASSERT_TRUE(msg != nullptr);
     ASSERT_EQ(MessageType::mDataAck, msg->GetMessageType());
 
@@ -78,34 +107,41 @@ TEST(ProxyTest, Publish) {
                       GuestNamespace,
                       Slice("payload"));
   publish.SerializeToString(&serial);
-  serial = EncodeOrigin(expected_stream).append(serial);
 
-  const int64_t session = 123;
-  expected_session = session;
+  expected_session = 123;
 
   // Send through proxy to pilot. Pilot should respond and proxy will send
   // serialized response to on_message defined above.
-  ASSERT_OK(proxy->Forward(serial, session, -1));
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, -1),
+                           expected_session));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
+  // Another message send out of band should pass as well.
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, -1),
+                           expected_session));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
   // Now try some out of order messages.
 
-  ASSERT_OK(proxy->Forward(serial, session, 1));
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 1),
+                           expected_session));
   // should not arrive
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
-  ASSERT_OK(proxy->Forward(serial, session, 2));
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 2),
+                           expected_session));
   // should not arrive
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
-  ASSERT_OK(proxy->Forward(serial, session, 0));
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 0),
+                           expected_session));
   // all three should arrive
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
-  expected_session = session + 1;
-  ASSERT_OK(proxy->Forward(serial, session + 1, 0));
+  expected_session = expected_session + 1;
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 0),
+                           expected_session));
   // different session, should arrive
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
@@ -116,7 +152,7 @@ TEST(ProxyTest, Publish) {
 }
 
 TEST(ProxyTest, SeqnoError) {
-  const StreamID expected_stream = 0;
+  const StreamID expected_stream = 1337;
 
   // Start the proxy.
   // We're going to ping an expect an error.
@@ -127,27 +163,35 @@ TEST(ProxyTest, SeqnoError) {
   MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
   std::string serial;
   ping.SerializeToString(&serial);
-  serial = EncodeOrigin(expected_stream).append(serial);
 
   const int64_t session = 123;
 
   // Send to proxy on seqno 999999999. Will be out of buffer space and fail.
   // Should get the on_disconnect_ error.
-  ASSERT_OK(proxy->Forward(serial, session, 999999999));
+  ASSERT_OK(
+      proxy->Forward(WrapMessage(serial, expected_stream, 999999999), session));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
 TEST(ProxyTest, DestroySession) {
-  const StreamID expected_stream = 0;
+  const int64_t expected_session = 123;
+  const StreamID expected_stream = 1337;
 
   // Start the proxy.
   // We're going to ping an expect an error.
   port::Semaphore checkpoint;
+  // This is accessed from on_message callback only.
+  std::unordered_map<int64_t, MessageSequenceNumber> expected_seqno;
   auto on_message = [&](int64_t session, std::string data) {
+    ASSERT_EQ(session, expected_session);
+
     StreamID stream;
-    Slice in(data.data(), data.size());
-    DecodeOrigin(&in, &stream);
-    ASSERT_EQ(stream, expected_stream);
+    MessageSequenceNumber seqno;
+    std::unique_ptr<Message> msg;
+    ASSERT_OK(UnwrapMessage(std::move(data), &msg, &stream, &seqno));
+
+    ASSERT_EQ(expected_stream, stream);
+    ASSERT_EQ(expected_seqno[session]++, seqno);
 
     checkpoint.Post();
   };
@@ -156,12 +200,10 @@ TEST(ProxyTest, DestroySession) {
   MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
   std::string serial;
   ping.SerializeToString(&serial);
-  serial = EncodeOrigin(expected_stream).append(serial);
-
-  const int64_t session = 123;
 
   // Send to proxy then await response.
-  ASSERT_OK(proxy->Forward(serial, session, 0));
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 0),
+                           expected_session));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
   // Check that pilot and copilot have at least one client.
@@ -169,8 +211,9 @@ TEST(ProxyTest, DestroySession) {
   ASSERT_NE(cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync(), 0);
 
   // Now destroy, and send at seqno 1. Should not get response.
-  proxy->DestroySession(session);
-  ASSERT_OK(proxy->Forward(serial, session, 1));
+  proxy->DestroySession(expected_session);
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 1),
+                           expected_session));
   ASSERT_TRUE(!checkpoint.TimedWait(std::chrono::milliseconds(100)));
 
   // Check that pilot and copilot have no clients.
@@ -179,16 +222,21 @@ TEST(ProxyTest, DestroySession) {
 }
 
 TEST(ProxyTest, ServerDown) {
-  const StreamID expected_stream = 0;
+  const StreamID expected_stream = 1337;
 
   // Start the proxy.
   // We're going to ping and expect an error.
   port::Semaphore checkpoint;
+  // This is accessed from on_message callback only.
+  std::unordered_map<int64_t, MessageSequenceNumber> expected_seqno;
   auto on_message = [&](int64_t session, std::string data) {
     StreamID stream;
-    Slice in(data.data(), data.size());
-    DecodeOrigin(&in, &stream);
-    ASSERT_EQ(stream, expected_stream);
+    MessageSequenceNumber seqno;
+    std::unique_ptr<Message> msg;
+    ASSERT_OK(UnwrapMessage(std::move(data), &msg, &stream, &seqno));
+
+    ASSERT_EQ(expected_stream, stream);
+    ASSERT_EQ(expected_seqno[session]++, seqno);
 
     checkpoint.Post();
   };
@@ -203,11 +251,10 @@ TEST(ProxyTest, ServerDown) {
   MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
   std::string serial;
   ping.SerializeToString(&serial);
-  serial = EncodeOrigin(expected_stream).append(serial);
 
   // Send to proxy then await response.
-  ASSERT_OK(proxy->Forward(serial, 123, 0));
-  ASSERT_OK(proxy->Forward(serial, 456, 0));
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 0), 123));
+  ASSERT_OK(proxy->Forward(WrapMessage(serial, expected_stream, 0), 456));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
@@ -226,23 +273,26 @@ TEST(ProxyTest, ServerDown) {
 
 TEST(ProxyTest, ForwardGoodbye) {
   const int64_t expected_session = 123;
-  const StreamID pilot_stream = 0;
-  const StreamID copilot_stream = 1;
+  const StreamID pilot_stream = 123;
+  const StreamID copilot_stream = 321;
   ASSERT_TRUE(pilot_stream != copilot_stream);
 
   // Start the proxy.
   // We're going to talk to pilot and copilot, then say goodbye.
   port::Semaphore checkpoint;
+  // This is accessed from on_message callback only.
+  std::unordered_map<int64_t, MessageSequenceNumber> expected_seqno;
   auto on_message = [&](int64_t session, std::string data) {
     ASSERT_EQ(session, expected_session);
 
     StreamID stream;
-    Slice in(data.data(), data.size());
-    DecodeOrigin(&in, &stream);
+    MessageSequenceNumber seqno;
+    std::unique_ptr<Message> message;
+    ASSERT_OK(UnwrapMessage(std::move(data), &message, &stream, &seqno));
+
+    ASSERT_EQ(expected_seqno[session]++, seqno);
 
     // Find the message type.
-    std::unique_ptr<Message> message =
-        Message::CreateNewInstance(in.ToUniqueChars(), in.size());
     if (!message) {
       ASSERT_TRUE(false);
     }
@@ -275,8 +325,8 @@ TEST(ProxyTest, ForwardGoodbye) {
                       Slice("payload"));
   publish.SerializeToString(&publish_serial);
 
-  ASSERT_OK(proxy->Forward(
-      EncodeOrigin(pilot_stream).append(publish_serial), expected_session, 0));
+  ASSERT_OK(proxy->Forward(WrapMessage(publish_serial, pilot_stream, 0),
+                           expected_session));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
   // Send subscribe message.
@@ -287,8 +337,8 @@ TEST(ProxyTest, ForwardGoodbye) {
       {TopicPair(1, "topic", MetadataType::mSubscribe, GuestNamespace)});
   subscribe.SerializeToString(&sub_serial);
 
-  ASSERT_OK(proxy->Forward(
-      EncodeOrigin(copilot_stream).append(sub_serial), expected_session, 1));
+  ASSERT_OK(proxy->Forward(WrapMessage(sub_serial, copilot_stream, 1),
+                           expected_session));
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 
   // Pilot and copilot share message loop.
@@ -308,17 +358,16 @@ TEST(ProxyTest, ForwardGoodbye) {
   goodbye.SerializeToString(&goodbye_serial);
 
   // Send goodbye message on behalf on the publisher.
-  ASSERT_OK(proxy->Forward(
-      EncodeOrigin(pilot_stream).append(goodbye_serial), expected_session, 2));
+  ASSERT_OK(proxy->Forward(WrapMessage(goodbye_serial, pilot_stream, 2),
+                           expected_session));
   env->SleepForMicroseconds(50000);  // time to propagate
 
   // Check that one stream is gone.
   ASSERT_EQ(cockpit_loop->GetNumClientsSync(), clients_num - 1);
 
   // Send goodbye message on behalf on the subscriber.
-  ASSERT_OK(proxy->Forward(EncodeOrigin(copilot_stream).append(goodbye_serial),
-                           expected_session,
-                           2));
+  ASSERT_OK(proxy->Forward(WrapMessage(goodbye_serial, copilot_stream, 3),
+                           expected_session));
   env->SleepForMicroseconds(50000);  // time to propagate
 
   // Check that another stream is gone.
