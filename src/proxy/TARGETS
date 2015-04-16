@@ -14,8 +14,23 @@ cpp_library(
     ],
     deps = [
         '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/proxy:wrapped_message',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
+    ],
+)
+
+cpp_library(
+    name = 'wrapped_message',
+    srcs = [
+        'wrapped_message.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/messages:streams',
     ],
 )
