@@ -333,7 +333,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
     seen_by_server.insert(pong.second);
     // Send back reponse.
     pong.first->SetPingType(MessagePing::PingType::Response);
-    server.SendResponse(*pong.first, pong.second, 0);
+    ASSERT_OK(server.SendResponse(*pong.first, pong.second, 0));
     ASSERT_TRUE(client_ping.TimedWait(timeout_));
   }
   {  // Send back pong to client2.
@@ -343,7 +343,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
     seen_by_server.insert(pong.second);
     // Send back reponse.
     pong.first->SetPingType(MessagePing::PingType::Response);
-    server.SendResponse(*pong.first, pong.second, 0);
+    ASSERT_OK(server.SendResponse(*pong.first, pong.second, 0));
     ASSERT_TRUE(client_ping.TimedWait(timeout_));
   }
 
@@ -425,7 +425,8 @@ TEST(Messaging, GracefulGoodbye) {
         }
         auto ping = static_cast<MessagePing*>(msg.get());
         ping->SetPingType(MessagePing::PingType::Response);
-        server.SendResponse(*ping, origin, server.GetThreadWorkerIndex());
+        ASSERT_OK(
+            server.SendResponse(*ping, origin, server.GetThreadWorkerIndex()));
       }},
   });
   env_->StartThread([&]() { server.Run(); }, "loop-server");

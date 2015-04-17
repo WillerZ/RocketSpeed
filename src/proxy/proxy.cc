@@ -152,6 +152,10 @@ void Proxy::DestroySession(int64_t session) {
     LOG_ERROR(info_log_,
               "Could not schedule session deletion: %s, leaking resources.",
               st.ToString().c_str());
+    // Inactive clients will be removed by GC mechanism, Proxy will receive
+    // Goodbye message for each stream this session opened, and after closing
+    // the last stream, the session will be disposed as well (see
+    // Proxy::HandleGoodbyeMessage).
   }
 }
 
@@ -215,17 +219,22 @@ void Proxy::HandleDestroySession(int64_t session) {
   // Remove all streams for the session.
   auto removed = data.open_streams_.RemoveContext(session);
 
-  // Send goodbye to all removed streams.
+  // Prepare list of streams that we will be sending goodbye to.
+  SendCommand::StreamList recipients;
+  for (const auto& pair : removed) {
+    recipients.push_back(pair.second);
+  }
+
+  // Prepare goodbye message.
   MessageGoodbye goodbye(Tenant::GuestTenant, MessageGoodbye::Code::Graceful,
                          MessageGoodbye::OriginType::Client);
-  for (const auto& pair : removed) {
-    StreamID global = pair.second;
-    // Send goodbye message as response, because we don't want to open stream if
-    // it wasn't opened before.
-    const auto worker = WorkerForSession(session);
-    msg_loop_->SendResponse(goodbye, global, worker);
-    // OK if above fails. Server will garbage collect client.
-  }
+  std::string serialized;
+  goodbye.SerializeToString(&serialized);
+
+  // Send goodbye to all removed streams as a response, because we don't want to
+  // open stream if it wasn't opened before.
+  msg_loop_->SendCommandToSelf(SerializedSendCommand::Response(
+      std::move(serialized), std::move(recipients)));
 }
 
 void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
