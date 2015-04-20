@@ -97,7 +97,7 @@ void WorkerLoop<Command>::Run(std::function<void(Command cmd)> callback) {
     if (command_queue_.read(cmd)) {
       callback(std::move(cmd));
     }
-  } while (!stop_.load());
+  } while (!stop_.load(std::memory_order_acquire));
 
   while (command_queue_.read(cmd)) {
     callback(std::move(cmd));
@@ -116,7 +116,7 @@ bool WorkerLoop<Command>::Send(Args&&... args) {
 
 template <typename Command>
 void WorkerLoop<Command>::Stop() {
-  stop_ = true;
+  stop_.store(true, std::memory_order_release);
   cmd_received_.Post();
 }
 

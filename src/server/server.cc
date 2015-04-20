@@ -262,6 +262,8 @@ int Run(int argc,
     }
   }
 
+  tower->Stop();
+
   // Stop all background services.
   delete pilot;
   delete copilot;

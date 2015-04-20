@@ -259,10 +259,28 @@ LocalTestCluster::~LocalTestCluster() {
     env_->WaitForJoin(control_tower_thread_);
   }
 
-  // Delete all components (this stops their worker/room loops).
+  if (control_tower_) {
+    control_tower_->Stop();
+  }
+
+  if (pilot_) {
+    pilot_->Stop();
+  }
+
+  if (copilot_) {
+    copilot_->Stop();
+  }
+
+  // Should now be safe to shutdown LogStorage.
+#ifdef USE_LOGDEVICE
+  logdevice_->client_.reset();
+#endif
+  assert(logdevice_->storage_.unique());  // should be last reference
+  logdevice_->storage_.reset();
+
+  delete control_tower_;
   delete pilot_;
   delete copilot_;
-  delete control_tower_;
 }
 
 Statistics LocalTestCluster::GetStatistics() const {

@@ -93,7 +93,7 @@ class LogDeviceStorage : public LogStorage {
     std::shared_ptr<Logger> info_log,
     LogDeviceStorage** storage);
 
-  ~LogDeviceStorage() final {}
+  ~LogDeviceStorage() final;
 
   Status AppendAsync(LogID id,
                      const Slice& data,

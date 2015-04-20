@@ -36,6 +36,7 @@ LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
 }
 
 LogTailer::~LogTailer() {
+  assert(!storage_);  // Must call Stop() before deleting.
 }
 
 Status LogTailer::Initialize(OnRecordCallback on_record,
@@ -66,6 +67,11 @@ Status LogTailer::Initialize(OnRecordCallback on_record,
   // initialize the number of open logs per reader to zero.
   num_open_logs_per_reader_.resize(num_readers, 0);
   return Status::OK();
+}
+
+void LogTailer::Stop() {
+  reader_.clear();
+  storage_.reset();
 }
 
 Status LogTailer::CreateReader(size_t reader_id,
@@ -128,6 +134,7 @@ Status LogTailer::CreateReader(size_t reader_id,
 
   // Create log reader.
   std::vector<AsyncLogReader*> readers;
+  assert(storage_);
   Status st = storage_->CreateAsyncReaders(1, record_cb, gap_cb, &readers);
   if (st.ok()) {
     assert(readers.size() == 1);
@@ -204,9 +211,10 @@ LogTailer::FindLatestSeqno(
   std::function<void(Status, SequenceNumber)> callback) {
   // LogDevice treats std::chrono::milliseconds::max() specially, avoiding
   // a binary search and just returning the next LSN.
+  assert(storage_);
   return storage_->FindTimeAsync(logid,
                                  std::chrono::milliseconds::max(),
-                                 callback);
+                                 std::move(callback));
 }
 
 // This traverses the reader array without any locks but that is

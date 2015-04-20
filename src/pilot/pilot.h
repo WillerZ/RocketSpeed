@@ -59,7 +59,9 @@ class Pilot {
   // A new instance of a Pilot
   static Status CreateNewInstance(PilotOptions options,
                                   Pilot** pilot);
-  virtual ~Pilot();
+  ~Pilot();
+
+  void Stop();
 
   // Returns the sanitized options used by the pilot
   PilotOptions& GetOptions() { return options_; }

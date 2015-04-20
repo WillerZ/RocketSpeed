@@ -27,6 +27,11 @@ class ControlTower {
                                   ControlTower** ct);
   virtual ~ControlTower();
 
+  /**
+   * Synchronously stop the tower from sending further communication.
+   */
+  void Stop();
+
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}
 

@@ -63,20 +63,29 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
 }
 
 ControlTower::~ControlTower() {
-  // Stop tailer before shutting down rooms
-  log_tailer_.reset();
-  topic_tailer_.clear();
+  assert(room_thread_id_.empty());  // Must call Stop() before deleting.
+}
 
-  // Shutdown room loops
+void ControlTower::Stop() {
+  // Stop rooms from communicating with topic tailer.
   for (auto& r: rooms_) {
     r->Stop();
   }
-  // delete rooms
   for (auto& r: room_thread_id_) {
     options_.env->WaitForJoin(r);
   }
-  rooms_.clear();
-  options_.info_log->Flush();
+  room_thread_id_.clear();
+
+  // Stop topic tailer from communicating with log tailer.
+  for (auto& t: topic_tailer_) {
+    t->Stop();
+  }
+
+  // Stop log tailer from communicating with log storage.
+  log_tailer_->Stop();
+
+  // Release reference to log storage.
+  options_.storage.reset();
 }
 
 /**

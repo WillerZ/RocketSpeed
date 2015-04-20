@@ -34,12 +34,22 @@ class LogTailer {
                              size_t)>         // reader ID
     OnGapCallback;
 
-  // create a LogTailer
+  /**
+   * Create a LogTailer.
+   */
   static Status CreateNewInstance(
                            Env* env,
                            std::shared_ptr<LogStorage> storage,
                            std::shared_ptr<Logger> info_log,
                            LogTailer** tailer);
+
+  /**
+   * Shuts down the LogTailer.
+   *
+   * It is safe to destroy the LogStorage afterwards, but it is undefined to
+   * invoke any other actions on the LogTailer other than destruction.
+   */
+  void Stop();
 
   /**
    * Initialize the LogTailer first before using it.
@@ -86,7 +96,7 @@ class LogTailer {
                       AsyncLogReader** out);
 
   // The Storage device
-  const std::shared_ptr<LogStorage> storage_;
+  std::shared_ptr<LogStorage> storage_;
 
   // One reader per ControlRoom
   std::vector<std::unique_ptr<AsyncLogReader>> reader_;

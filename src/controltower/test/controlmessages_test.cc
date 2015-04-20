@@ -252,6 +252,7 @@ TEST(ControlTowerTest, NoLogger) {
   options.storage = cluster.GetLogStorage();
   options.log_router = cluster.GetLogRouter();
   ASSERT_OK(ControlTower::CreateNewInstance(options, &tower));
+  tower->Stop();
   delete tower;
 }
 

@@ -148,6 +148,12 @@ LogDeviceStorage::LogDeviceStorage(
 , info_log_(std::move(info_log)) {
 }
 
+LogDeviceStorage::~LogDeviceStorage() {
+  // Ensure that we hold the only reference.
+  // Graceful shutdown relies on this.
+  assert(client_.unique());
+}
+
 Status LogDeviceStorage::AppendAsync(LogID id,
                                      const Slice& data,
                                      AppendCallback callback) {

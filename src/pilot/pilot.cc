@@ -15,6 +15,9 @@
 namespace rocketspeed {
 
 void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
+  // IMPORTANT: This may be called after Stop(). Must not use the log storage
+  // or log router after this point.
+
   // Record latency
   uint64_t latency = pilot_->options_.env->NowMicros() - append_time_;
   pilot_->worker_data_[worker_id_].stats_.append_latency->Record(latency);
@@ -66,6 +69,13 @@ Pilot::Pilot(PilotOptions options):
 
 Pilot::~Pilot() {
   options_.info_log->Flush();
+}
+
+void Pilot::Stop() {
+  assert(!options_.msg_loop->IsRunning());  // must stop message loop first
+  log_storage_.reset();
+  options_.storage.reset();
+  options_.log_router.reset();
 }
 
 /**

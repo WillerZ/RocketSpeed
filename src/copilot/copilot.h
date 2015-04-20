@@ -32,7 +32,9 @@ class Copilot {
   // A new instance of a Copilot
   static Status CreateNewInstance(CopilotOptions options,
                                   Copilot** copilot);
-  virtual ~Copilot();
+  ~Copilot();
+
+  void Stop();
 
   // Returns the sanitized options used by the copilot
   CopilotOptions& GetOptions() { return options_; }

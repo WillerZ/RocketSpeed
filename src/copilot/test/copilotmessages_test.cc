@@ -152,6 +152,7 @@ TEST(CopilotTest, WorkerMapping) {
     ASSERT_LE(tower_to_workers[control_tower].size(),
               options.control_tower_connections);
   }
+  copilot->Stop();
   delete copilot;
 }
 
@@ -173,6 +174,7 @@ TEST(CopilotTest, NoLogger) {
   options.log_dir = "///";  // invalid dir, will fail to create LOG file.
   options.log_router = cluster.GetLogRouter();
   ASSERT_OK(Copilot::CreateNewInstance(options, &copilot));
+  copilot->Stop();
   delete copilot;
 }
 

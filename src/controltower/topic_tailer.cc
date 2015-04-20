@@ -345,10 +345,7 @@ TopicTailer::TopicTailer(
 }
 
 TopicTailer::~TopicTailer() {
-  if (worker_thread_) {
-    worker_loop_.Stop();
-    env_->WaitForJoin(worker_thread_);
-  }
+  assert(worker_thread_ == 0);  // must call Stop() before deleting.
 }
 
 Status TopicTailer::SendLogRecord(
@@ -501,7 +498,15 @@ Status TopicTailer::Initialize(size_t reader_id) {
   return Status::OK();
 }
 
-// Create a new instance of the LogStorage
+void TopicTailer::Stop() {
+  if (worker_thread_) {
+    worker_loop_.Stop();
+    env_->WaitForJoin(worker_thread_);
+    worker_thread_ = 0;
+  }
+}
+
+// Create a new instance of the TopicTailer
 Status
 TopicTailer::CreateNewInstance(
     BaseEnv* env,

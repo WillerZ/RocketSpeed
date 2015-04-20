@@ -90,7 +90,16 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
 }
 
 Copilot::~Copilot() {
+  // Must be stopped first.
+  assert(workers_.empty());
+  assert(worker_threads_.empty());
+  options_.info_log->Flush();
+}
+
+void Copilot::Stop() {
+  assert(!options_.msg_loop->IsRunning());
   Env* env = options_.env;
+
   // Stop all the workers.
   for (auto& worker : workers_) {
     worker->Stop();
@@ -101,7 +110,9 @@ Copilot::~Copilot() {
     env->WaitForJoin(worker_thread);
   }
 
-  options_.info_log->Flush();
+  worker_threads_.clear();
+  workers_.clear();
+  options_.log_router.reset();
 }
 
 /**

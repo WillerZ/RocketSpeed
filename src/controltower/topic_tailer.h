@@ -46,6 +46,12 @@ class TopicTailer {
   Status Initialize(size_t reader_id);
 
   /**
+   * Shuts down the Topic Tailer, synchronously halting all communication
+   * with the Log Tailer.
+   */
+  void Stop();
+
+  /**
    * Adds a subscriber to a topic. This call is not thread-safe.
    */
   Status AddSubscriber(const TopicUUID& topic,
