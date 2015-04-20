@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "external/folly/move_wrapper.h"
+
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
@@ -488,7 +490,7 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
       if (!st.ok() && subscription_callback_) {
         SubscriptionStatus error_msg;
         error_msg.status = std::move(st);
-        error_msg.namespace_id = topic.namespace_id;
+        error_msg.namespace_id = std::move(topic.namespace_id);
         error_msg.topic_name = std::move(topic.topic_name);
         subscription_callback_(std::move(error_msg));
       }
@@ -722,13 +724,12 @@ void ClientImpl::ProcessRestoredSubscription(
       st = Status::InternalError("Restored unsubscribe request");
     } else if (elem.start) {
       int worker_id = GetWorkerForTopic(elem.topic_name);
-      TopicPair topic(elem.start.get(),
-                      elem.topic_name,
-                      MetadataType::mSubscribe,
-                      elem.namespace_id);
+      auto moved_topic = folly::makeMoveWrapper(
+          TopicPair(elem.start.get(), elem.topic_name, MetadataType::mSubscribe,
+                    elem.namespace_id));
       std::unique_ptr<Command> command(
-          new ExecuteCommand([this, topic, worker_id]() {
-            HandleSubscription(topic, worker_id);
+          new ExecuteCommand([this, moved_topic, worker_id]() mutable {
+            HandleSubscription(moved_topic.move(), worker_id);
           }));
       st = msg_loop_->SendCommand(std::move(command), worker_id);
     } else {

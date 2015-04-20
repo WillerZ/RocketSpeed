@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "external/folly/move_wrapper.h"
+
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream_socket.h"
 #include "src/proxy/wrapped_message.h"
@@ -137,9 +139,11 @@ Status Proxy::Forward(std::string data, int64_t session) {
   }
   // Forward message to responsible worker.
   int worker_id = WorkerForSession(session);
-  std::unique_ptr<Command> command(
-      new ExecuteCommand(std::bind(&Proxy::HandleMessageForwarded, this,
-                                   std::move(msg), session, sequence, origin)));
+  auto moved_msg = folly::makeMoveWrapper(std::move(msg));
+  std::unique_ptr<Command> command(new ExecuteCommand(
+      [this, moved_msg, session, sequence, origin]() mutable {
+        HandleMessageForwarded(moved_msg.move(), session, sequence, origin);
+      }));
   return msg_loop_->SendCommand(std::move(command), worker_id);
 }
 
