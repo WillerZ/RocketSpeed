@@ -20,6 +20,7 @@
 #include "src/copilot/copilot.h"
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
+#include "src/util/control_tower_router.h"
 #include "src/util/parsing.h"
 #include "src/util/storage.h"
 
@@ -208,11 +209,13 @@ int Run(int argc,
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
     // Parse comma-separated control_towers hostname.
+    ControlTowerId node_id = 0;
     for (auto hostname : SplitString(FLAGS_control_towers)) {
       HostId host(hostname, FLAGS_tower_port);
-      copilot_opts.control_towers.push_back(host.ToClientId());
+      copilot_opts.control_towers.emplace(node_id, host);
       LOG_INFO(info_log, "Adding control tower '%s'",
         host.ToString().c_str());
+      ++node_id;
     }
     if (FLAGS_pilot) {
       copilot_opts.pilots.push_back(pilot_host);

@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -361,7 +362,7 @@ class SubscriptionRequest {
 class HostId {
  public:
   std::string hostname;      // name of a machine
-  uint64_t    port;          // name of port to connect to
+  uint64_t    port;          // port number to connect to
 
   HostId(std::string s, uint64_t p);
   HostId();
@@ -446,6 +447,14 @@ class TopicOptions {
 };
 
 }  // namespace rocketspeed
+
+namespace std {
+  template <>
+  struct hash<rocketspeed::HostId> {
+    size_t operator()(const rocketspeed::HostId& host_id) const;
+  };
+} // namespace std
+
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop
 #endif

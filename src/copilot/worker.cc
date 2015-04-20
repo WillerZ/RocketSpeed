@@ -402,7 +402,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
 
   if (notify_control_tower) {
     // Find control tower responsible for this topic's log.
-    ClientID const* recipient = nullptr;
+    HostId const* recipient = nullptr;
     if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
       int outgoing_worker_id = copilot_->GetLogWorker(logid);
 
@@ -417,11 +417,12 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       if (!status.ok()) {
         LOG_INFO(options_.info_log,
           "Failed to send metadata response to %s",
-          recipient->c_str());
+          recipient->ToString().c_str());
       } else {
         LOG_INFO(options_.info_log,
           "Sent subscription for Topic(%s)@%" PRIu64 " to %s",
-          request.topic_name.c_str(), request.seqno, recipient->c_str());
+          request.topic_name.c_str(), request.seqno,
+          recipient->ToString().c_str());
       }
     } else {
       // This should only ever happen if all control towers are offline.
@@ -517,7 +518,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
     if (subscriptions.empty()) {
       // No subscriptions on this topic left, tell control tower to unsubscribe
       // this copilot worker.
-      ClientID const* recipient = nullptr;
+      HostId const* recipient = nullptr;
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Forward unsubscribe request to control tower, with this copilot
         // worker as the subscriber.
@@ -540,12 +541,12 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
         if (!status.ok()) {
           LOG_INFO(options_.info_log,
               "Failed to send unsubscribe request to %s",
-              recipient->c_str());
+              recipient->ToString().c_str());
         }
       }
     } else if (our_seqno < earliest_other_seqno) {
       // Need to update control tower.
-      ClientID const* recipient = nullptr;
+      HostId const* recipient = nullptr;
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Re subscribe our control tower subscription with the later seqno.
         int outgoing_worker_id = copilot_->GetLogWorker(logid);
@@ -567,7 +568,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
           if (!status.ok()) {
           LOG_INFO(options_.info_log,
               "Failed to send unsubscribe request to %s",
-              recipient->c_str());
+              recipient->ToString().c_str());
         }
       } else {
         // This should only ever happen if all control towers are offline.
@@ -694,15 +695,16 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
   }
 }
 
-StreamSocket* CopilotWorker::GetControlTowerSocket(const ClientID& tower,
+StreamSocket* CopilotWorker::GetControlTowerSocket(const HostId& tower,
                                                    MsgLoop* msg_loop,
                                                    int outgoing_worker_id) {
   auto& tower_sockets = control_tower_sockets_[tower];
   auto it = tower_sockets.find(outgoing_worker_id);
   if (it == tower_sockets.end()) {
-    it = tower_sockets.emplace(outgoing_worker_id,
-                               msg_loop->CreateOutboundStream(
-                                   tower, outgoing_worker_id)).first;
+    it = tower_sockets.emplace(
+      outgoing_worker_id,
+      msg_loop->CreateOutboundStream(
+        tower.ToClientId(), outgoing_worker_id)).first;
   }
   return &it->second;
 }

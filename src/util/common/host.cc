@@ -11,7 +11,7 @@
 namespace rocketspeed {
 
 HostId::HostId(std::string s, uint64_t p) :
-  hostname(s),
+  hostname(std::move(s)),
   port(p) {
 }
 
@@ -59,3 +59,10 @@ ClientID HostId::ToClientId(int worker_id) const {
 }
 
 }  // namespace rocketspeed
+
+size_t std::hash<rocketspeed::HostId>::operator()(
+    const rocketspeed::HostId& host_id) const {
+  const size_t x = std::hash<std::string>()(host_id.hostname);
+  const size_t y = std::hash<uint64_t>()(host_id.port);
+  return x ^ (y + 0x9e3779b9 + (x << 6) + (x >> 2));
+}

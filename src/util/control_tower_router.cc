@@ -8,51 +8,66 @@
 namespace rocketspeed {
 
 ControlTowerRouter::ControlTowerRouter(
-  const std::vector<ClientID>& control_towers,
+  std::unordered_map<ControlTowerId, HostId> control_towers,
   unsigned int replicas, size_t control_towers_per_log)
-: host_ids_(control_towers.begin(), control_towers.end())
-, replication_(replicas), control_towers_per_log_(control_towers_per_log) {
-  for (const ClientID& host_id : host_ids_) {
-    mapping_.Add(&host_id, replicas);
+: host_ids_(std::move(control_towers))
+, replication_(replicas)
+, control_towers_per_log_(control_towers_per_log) {
+  for (auto const& node_host : host_ids_) {
+    mapping_.Add(node_host.first, replicas);
   }
 }
 
 Status ControlTowerRouter::GetControlTower(LogID logID,
-                                           const ClientID** out) const {
-  std::vector<const ClientID*> towers;
+                                           const HostId** out) const {
+  std::vector<const HostId*> towers;
   Status status = GetControlTowers(logID, &towers);
-  if (status.ok())
+  if (status.ok()) {
     *out = towers[0];
+  }
   return status;
 }
 
 Status ControlTowerRouter::GetControlTowers(
     LogID logID,
-    std::vector<const ClientID*>* out) const {
+    std::vector<const HostId*>* out) const {
   size_t count = std::min(control_towers_per_log_, mapping_.SlotCount());
   out->resize(count);
-  if (count == 0)
+  if (count == 0) {
     return Status::NotFound();
+  }
 
-  mapping_.MultiGet(logID, count, out->begin());
+  std::vector<ControlTowerId> node_ids;
+  node_ids.resize(count);
+  mapping_.MultiGet(logID, count, node_ids.begin());
+  for (size_t i = 0; i < count; ++i) {
+    // Map node IDs to host IDs.
+    auto it = host_ids_.find(node_ids[i]);
+    if (it == host_ids_.end()) {
+      return Status::NotFound();
+    }
+    (*out)[i] = &it->second;
+  }
   return Status::OK();
 }
 
-Status ControlTowerRouter::AddControlTower(const ClientID& host_id) {
-  auto result = host_ids_.insert(host_id);
+Status ControlTowerRouter::AddControlTower(ControlTowerId node_id,
+                                           HostId host_id) {
+  auto result = host_ids_.emplace(node_id, std::move(host_id));
   if (!result.second) {
-    return Status::InvalidArgument("ClientID already in router");
+    return Status::InvalidArgument("Node ID already in router");
   }
-  mapping_.Add(&*result.first, replication_);
+  mapping_.Add(node_id, replication_);
   return Status::OK();
 }
 
-Status ControlTowerRouter::RemoveControlTower(const ClientID& host_id) {
-  auto iter = host_ids_.find(host_id);
+Status ControlTowerRouter::RemoveControlTower(ControlTowerId node_id) {
+  auto iter = host_ids_.find(node_id);
   if (iter == host_ids_.end()) {
-    return Status::InvalidArgument("ClientID not in router");
+    return Status::InvalidArgument("Node ID not in router");
   }
-  mapping_.Remove(&*iter);
+  mapping_.Remove(node_id);
+  host_ids_.erase(iter);
   return Status::OK();
 }
 

@@ -124,7 +124,7 @@ TEST(CopilotTest, WorkerMapping) {
   options.info_log = info_log_;
   for (int i = 0; i < num_towers; ++i) {
     // Generate fake control towers.
-    options.control_towers.push_back(HostId("tower", i).ToClientId());
+    options.control_towers.emplace(i, HostId("tower", i));
   }
   options.pilots.push_back(HostId("fakepilot", 0));
   options.msg_loop = &loop;
@@ -135,13 +135,13 @@ TEST(CopilotTest, WorkerMapping) {
   ASSERT_TRUE(st.ok());
 
   // Now check that each control tower is mapped to one worker.
-  std::unordered_map<const ClientID*, std::set<int>> tower_to_workers;
+  std::unordered_map<const HostId*, std::set<int>> tower_to_workers;
   const auto& router = copilot->GetControlTowerRouter();
   for (LogID logid = log_range.first;
        logid <= log_range.second;
        ++logid) {
     // Find the tower responsible for this log.
-    ClientID const* control_tower = nullptr;
+    HostId const* control_tower = nullptr;
     ASSERT_TRUE(router.GetControlTower(logid, &control_tower).ok());
 
     // Find the worker responsible for this log.

@@ -7,13 +7,15 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include "include/Types.h"
 #include "src/port/Env.h"
-#include "src/util/storage.h"
+#include "src/util/control_tower_router.h"
 
 namespace rocketspeed {
 
+class LogRouter;
 class MsgLoop;
 
 struct CopilotOptions {
@@ -63,7 +65,7 @@ struct CopilotOptions {
   size_t log_file_time_to_roll;
 
   // Control Tower host IDs.
-  std::vector<ClientID> control_towers;
+  std::unordered_map<ControlTowerId, HostId> control_towers;
 
   // Pilot hostids (needed for writing rollcall topic).
   std::vector<HostId> pilots;

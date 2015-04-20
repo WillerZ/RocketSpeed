@@ -312,7 +312,7 @@ int Copilot::GetLogWorker(LogID logid) const {
   const int num_workers = options_.msg_loop->GetNumWorkers();
 
   // First map logid to control tower.
-  ClientID const* control_tower = nullptr;
+  HostId const* control_tower = nullptr;
   Status st = control_tower_router_.GetControlTower(logid, &control_tower);
   if (!st.ok()) {
     LOG_WARN(options_.info_log,
@@ -328,7 +328,8 @@ int Copilot::GetLogWorker(LogID logid) const {
 
   // Hash control tower to a worker.
   size_t connection = logid % options_.control_tower_connections;
-  size_t hash = MurmurHash2<std::string>()(*control_tower);
+  size_t hash = MurmurHash2<std::string, size_t>()(control_tower->hostname,
+                                                   control_tower->port);
   return static_cast<int>((hash + connection) % num_workers);
 }
 

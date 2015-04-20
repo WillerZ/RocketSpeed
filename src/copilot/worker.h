@@ -162,7 +162,7 @@ class CopilotWorker {
                      StreamID origin);
 
   /** Gets or (re)open socket to control tower. */
-  StreamSocket* GetControlTowerSocket(const ClientID& tower,
+  StreamSocket* GetControlTowerSocket(const HostId& tower,
                                       MsgLoop* msg_loop,
                                       int outgoing_worker_id);
 
@@ -227,7 +227,7 @@ class CopilotWorker {
    * Keeps track of all opened stream sockets to control towers, the index in
    * this array corresponds to message loop worker id.
    */
-  std::unordered_map<ClientID, std::unordered_map<int, StreamSocket>>
+  std::unordered_map<HostId, std::unordered_map<int, StreamSocket>>
       control_tower_sockets_;
 };
 
