@@ -5,7 +5,6 @@
 //
 
 #pragma once
-#include "include/RocketSpeed.h"
 #include <random>
 #include <cmath>
 #include <string>

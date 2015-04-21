@@ -26,6 +26,7 @@ collect_logs=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 remote_bench=''
+use_mqtt=''
 
 if [ -z ${ROCKETSPEED_ARGS+x} ]; then
   logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
@@ -47,16 +48,9 @@ part=${DBG:-opt}
 server=${SERVER:-_build/$part/rocketspeed/github/src/server/rocketspeed}
 bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
-if [ ! -f $bench ]; then
-  echo "Must have: "
-  echo "  $bench"
-  echo "from current directory"
-  exit 1
-fi
-
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,mqtt, \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -111,12 +105,21 @@ while true; do
       rollcall="$2"; shift 2 ;;
     --rocketbench_host )
       rocketbench_host="$2"; remote_bench='true'; shift 2 ;;
+    --mqtt )
+      use_mqtt='true'; bench=_build/$part/rocketspeed/github/src/tools/rocketbench/mqtt/rocketbench_mqtt; shift 1 ;;
     -- )
       shift; break ;;
     * )
       exit 1 ;;
   esac
 done
+
+if [ ! -f $bench ]; then
+  echo "Must have: "
+  echo "  $bench"
+  echo "from current directory"
+  exit 1
+fi
 
 if [ $ROCKETSPEED_HOSTS ]; then
   IFS=',' read -a available_hosts <<< "$ROCKETSPEED_HOSTS"
@@ -163,6 +166,7 @@ if [ $remote_bench ]; then
 else
   bench_cmd="$bench"
 fi
+bench_cmd="${bench_cmd} ${ROCKETBENCH_ARGS}"
 
 pilots=("${available_hosts[@]::num_pilots}")
 available_hosts=("${available_hosts[@]:num_pilots}")  # pop num_pilots off
@@ -370,6 +374,7 @@ if [ $# -ne 1 ]; then
   echo "--strip              Strip rocketspeed (and rocketbench) binaries for deploying."
   echo "--rollcall           Enable/disable RollCall."
   echo "--rocketbench_host   Host to use for running rocketbench."
+  echo "--mqtt               Use MQTT RocketSpeed client for rocketbench."
   exit 1
  fi
 fi
@@ -392,6 +397,8 @@ if [ $remote ]; then
   const_params+=" --start_local_server=false"
   const_params+=" --pilot_hostnames=$pilots_csv"
   const_params+=" --copilot_hostnames=$copilots_csv"
+elif [ $use_mqtt ]; then
+  const_params+=" --start_local_server=false"
 else
   const_params+=" --start_local_server=true"
 fi
