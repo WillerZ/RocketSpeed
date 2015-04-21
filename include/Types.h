@@ -72,7 +72,7 @@ typedef std::string Topic;
 /**
  * Each message has a sequence number associated with it.
  * A newly produced message has a higher sequence number than
- * a message produced earlier.
+ * a message produced earlier for the same topic.
  */
 typedef uint64_t SequenceNumber;
 
@@ -206,35 +206,6 @@ class ResultStatus {
 };
 
 /**
- * This is the status returned when a subscription/unsubscription
- * message is acknowledged and confirmed by the Cloud Service.
- */
-class SubscriptionStatus {
- public:
-  SubscriptionStatus() : seqno(0),
-                         subscribed(false),
-                         topic_name(""),
-                         namespace_id("") {}
-
-  SubscriptionStatus(NamespaceID _namespace_id,
-                     Topic _topic_name,
-                     SequenceNumber _seqno,
-                     bool _subscribe,
-                     Status _status)
-      : status(std::move(_status))
-      , seqno(_seqno)
-      , subscribed(_subscribe)
-      , topic_name(std::move(_topic_name))
-      , namespace_id(std::move(_namespace_id)) {}
-
-  Status status;
-  SequenceNumber seqno;  // the start seqno of a subscription
-  bool subscribed;       // true for subscription, false for unsubscription
-  Topic topic_name;
-  NamespaceID namespace_id;
-};
-
-/**
  *  Message received on subscribed topics
  */
 class MessageReceived {
@@ -298,6 +269,39 @@ enum Tenant : TenantID {
    * RocketSpeed system up, alive and running well.
    */
   SystemTenant = 2,
+};
+
+/**
+ * This is the status returned when a subscription/unsubscription
+ * message is acknowledged and confirmed by the Cloud Service.
+ */
+class SubscriptionStatus {
+ public:
+  SubscriptionStatus() : seqno(0),
+                         subscribed(false),
+                         topic_name(""),
+                         namespace_id(""),
+                         tenant_id(InvalidTenant) {}
+
+  SubscriptionStatus(TenantID _tenant_id,
+                     NamespaceID _namespace_id,
+                     Topic _topic_name,
+                     SequenceNumber _seqno,
+                     bool _subscribe,
+                     Status _status)
+      : status(std::move(_status))
+      , seqno(_seqno)
+      , subscribed(_subscribe)
+      , topic_name(std::move(_topic_name))
+      , namespace_id(std::move(_namespace_id))
+      , tenant_id(_tenant_id) {}
+
+  Status status;
+  SequenceNumber seqno;  // the start seqno of a subscription
+  bool subscribed;       // true for subscription, false for unsubscription
+  Topic topic_name;
+  NamespaceID namespace_id;
+  TenantID tenant_id;
 };
 
 /**
@@ -384,47 +388,26 @@ class HostId {
 
 /**
  * A Configuration that specifies how a client can describe a RocketSpeed Cloud.
- *
- * @param url The name of the RocketSpeed Cloud Service
- * @param tenancyID A unique ID for this service.
  */
 class Configuration {
  public:
-  /**
-   * Creates a Configuration object for a set of pilots and tenant ID.
-   *
-   * @param pilots Pilot hostnames.
-   * @param copilots Copilot hostnames.
-   * @param tenant_id Client tenant ID.
-   * @param num_workers Number of client worker threads.
-   * @return A new Configuration with the specified options.
-   */
-  static Configuration* Create(const std::vector<HostId>& pilots,
-                               const std::vector<HostId>& copilots,
-                               TenantID tenant_id,
-                               int num_workers = 4);
-
   virtual ~Configuration() {}
 
   /**
-   * The list of Pilot endpoints
+   * Get a pilot host ID to use for publishes.
+   *
+   * @param pilot_out If ok(), will be set to pilot host ID to use.
+   * @return ok() if successful, otherwise error.
    */
-  virtual const std::vector<HostId>& GetPilotHostIds() const = 0;
+  virtual Status GetPilot(HostId* pilot_out) const = 0;
 
   /**
-   * The list of CoPilot endpoints
+   * Get a copilot host ID to use for subscriptions.
+   *
+   * @param copilot_out If ok(), will be set to copilot host ID to use.
+   * @return ok() if successful, otherwise error.
    */
-  virtual const std::vector<HostId>& GetCopilotHostIds() const = 0;
-
-  /**
-   * The Tenant associated with this configuration
-   */
-  virtual TenantID GetTenantID() const = 0;
-
-  /**
-   * The number of client worker threads.
-   */
-  virtual int GetNumWorkers() const = 0;
+  virtual Status GetCopilot(HostId* copilot_out) const = 0;
 };
 
 enum Retention : char {

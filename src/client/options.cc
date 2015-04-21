@@ -10,15 +10,12 @@
 
 namespace rocketspeed {
 
-ClientOptions::ClientOptions(const Configuration& _config, ClientID _client_id)
-    : config(_config)
-    , client_id(std::move(_client_id))
-    , username("")
-    , access_token("")
-    , storage(nullptr)
+ClientOptions::ClientOptions()
+    : storage(nullptr)
     , info_log(nullptr)
     , env(ClientEnv::Default())
-    , wake_lock(nullptr) {
+    , wake_lock(nullptr)
+    , num_workers(1) {
 }
 
 }  // namespace rocketspeed

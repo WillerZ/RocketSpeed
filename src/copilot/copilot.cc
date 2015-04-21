@@ -11,6 +11,7 @@
 #include <vector>
 #include "src/client/client.h"
 #include "src/util/memory.h"
+#include "src/util/common/fixed_configuration.h"
 
 namespace rocketspeed {
 
@@ -80,6 +81,7 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
   // Create Rollcall topic writer
   if (options_.rollcall_enabled) {
     rollcall_.reset(new RollcallImpl(std::move(client),
+                                     InvalidTenant,
                                      InvalidNamespace,
                                      SubscriptionStart(0),
                                      nullptr));
@@ -132,11 +134,9 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
   // Create a configuration to determine the identity of a pilot.
   // Use a dummy copilot identifier, this is not needed and can be
   // removed in the future.
-  std::unique_ptr<Configuration> conf(Configuration::Create(
-                                      options.pilots,
-                                      { HostId() },
-                                      SystemTenant));
-  ClientOptions client_options(*conf.get(), "DummyClientId");
+  ClientOptions client_options;
+  client_options.config =
+    std::make_shared<FixedConfiguration>(options.pilots[0], HostId());
 
   // Create a client to write rollcall topic.
   std::unique_ptr<ClientImpl> client;

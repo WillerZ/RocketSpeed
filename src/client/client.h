@@ -46,24 +46,24 @@ class ClientImpl : public Client {
                        MessageReceivedCallback receive_callback,
                        RestoreStrategy restore_strategy);
 
-  virtual PublishStatus Publish(const Topic& name,
+  virtual PublishStatus Publish(const TenantID tenant_id,
+                                const Topic& name,
                                 const NamespaceID& namespaceId,
                                 const TopicOptions& options,
                                 const Slice& data,
                                 PublishCallback callback,
                                 const MsgId messageId);
 
-  virtual void ListenTopics(const std::vector<SubscriptionRequest>& names);
+  virtual void ListenTopics(const TenantID tenant_id,
+                            const std::vector<SubscriptionRequest>& names);
 
   virtual void Acknowledge(const MessageReceived& message);
 
   virtual void SaveSubscriptions(SnapshotCallback snapshot_callback);
 
   ClientImpl(BaseEnv* env,
+             std::shared_ptr<Configuration> config,
              std::shared_ptr<WakeLock> wake_lock,
-             const HostId& pilot_host_id,
-             const HostId& copilot_host_id,
-             TenantID tenant_id,
              std::unique_ptr<MsgLoopBase> msg_loop,
              std::unique_ptr<SubscriptionStorage> storage,
              std::shared_ptr<Logger> info_log,
@@ -74,19 +74,16 @@ class ClientImpl : public Client {
  private:
   // Handler for SubscriptionStorage load all events.
   void ProcessRestoredSubscription(
-      const std::vector<SubscriptionRequest>& restored);
+    const std::vector<SubscriptionRequest>& restored);
 
   /** A non-owning pointer to the environment. */
   BaseEnv* env_;
 
+  // Configuration.
+  std::shared_ptr<Configuration> config_;
+
   // A wake lock used on mobile devices.
   SmartWakeLock wake_lock_;
-
-  // HostId of copilot machines to send messages to.
-  HostId copilot_host_id_;
-
-  // Tenant ID of this producer.
-  TenantID tenant_id_;
 
   // Incoming message loop object.
   std::unique_ptr<MsgLoopBase> msg_loop_;
@@ -119,10 +116,12 @@ class ClientImpl : public Client {
   int GetWorkerForTopic(const Topic& name) const;
 
   /** Informs the client about a status of a subscription request. */
-  void AnnounceSubscriptionStatus(TopicPair request, Status status);
+  void AnnounceSubscriptionStatus(const TenantID tenant_id,
+                                  TopicPair request, Status status);
 
   /** Handles subscription requests from the client. */
-  void HandleSubscription(TopicPair request, int worker_id);
+  void HandleSubscription(const TenantID tenant_id,
+                          TopicPair request, int worker_id);
 
   /** Handler for messages received on some topic. */
   void ProcessData(std::unique_ptr<Message> msg, StreamID origin);

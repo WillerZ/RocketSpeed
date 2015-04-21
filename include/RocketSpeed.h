@@ -53,10 +53,7 @@ class WakeLock;
  */
 struct ClientOptions {
   // Configuration of this service provider.
-  const Configuration& config;
-
-  // Identifier for this client.
-  ClientID client_id;
+  std::shared_ptr<Configuration> config;
 
   // Username for authentication.
   std::string username;
@@ -80,9 +77,12 @@ struct ClientOptions {
   // Default: nullptr
   std::shared_ptr<WakeLock> wake_lock;
 
+  // Number of threads used by the client.
+  // Default: 1
+  int num_workers;
+
   // Constructor which fills default values.
-  ClientOptions(const Configuration& _config,
-                ClientID _client_id);
+  ClientOptions();
 };
 
 /**
@@ -133,6 +133,7 @@ class Client {
    * Asynchronously publishes a new message to the Topic. The return parameter
    * indicates whether the publish was successfully enqueued.
    *
+   * @param tenant_id ID of tenant responsible for the publish.
    * @param topic_name Name of this topic to be opened
    * @param topic_namespace Namespace of this topic name
    * @param options Quality of service for this Topic
@@ -144,7 +145,8 @@ class Client {
    * @params message_id The provided message_id, optional
    * @return the status and message ID of the published message.
    */
-  virtual PublishStatus Publish(const Topic& topic_name,
+  virtual PublishStatus Publish(const TenantID tenant_id,
+                                const Topic& topic_name,
                                 const NamespaceID& topic_namespace,
                                 const TopicOptions& options,
                                 const Slice& data,
@@ -159,9 +161,11 @@ class Client {
    * Messages arriving for this topic will be returned to the
    * application via invocation to MessageReceivedCallback.
    *
+   * @param tenant_id ID of tenant responsible for the subscription.
    * @param requests a vector describing subscription/unsubscription requests
    */
-  virtual void ListenTopics(const std::vector<SubscriptionRequest>& names) = 0;
+  virtual void ListenTopics(const TenantID tenant_id,
+                            const std::vector<SubscriptionRequest>& names) = 0;
 
   /**
    * Acknowledges message to the client.

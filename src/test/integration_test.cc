@@ -65,25 +65,21 @@ TEST(IntegrationTest, OneMessage) {
   };
 
   // Create RocketSpeed client.
-  std::unique_ptr<Configuration> config(
-      Configuration::Create(cluster.GetPilotHostIds(),
-                            cluster.GetCopilotHostIds(),
-                            Tenant(102),
-                            1));
-  //TODO(ranji42) Try to use the same integration_test for mqttclient.
-  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
   ASSERT_OK(client->Start(subscription_callback, receive_callback));
 
   // Send a message.
-  auto ps = client->Publish(topic,
-                           namespace_id,
-                           topic_options,
-                           Slice(data),
-                           publish_callback,
-                           message_id);
+  auto ps = client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            publish_callback,
+                            message_id);
   ASSERT_TRUE(ps.status.ok());
   ASSERT_TRUE(ps.msgid == message_id);
 
@@ -91,7 +87,7 @@ TEST(IntegrationTest, OneMessage) {
   std::vector<SubscriptionRequest> subscriptions = {
     SubscriptionRequest(namespace_id, topic, true, 1)
   };
-  client->ListenTopics(subscriptions);
+  client->ListenTopics(GuestTenant, subscriptions);
 
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);
@@ -175,25 +171,21 @@ TEST(IntegrationTest, TrimAll) {
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {};
 
   // Create RocketSpeed client.
-  std::unique_ptr<Configuration> config(
-      Configuration::Create(cluster.GetPilotHostIds(),
-                            cluster.GetCopilotHostIds(),
-                            Tenant(102),
-                            1));
-
-  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
   ASSERT_OK(client->Start(subscription_callback, receive_callback));
 
   // Send a message.
-  auto ps = client->Publish(topic,
-                           namespace_id,
-                           topic_options,
-                           Slice(data),
-                           publish_callback,
-                           message_id);
+  auto ps = client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            publish_callback,
+                            message_id);
   ASSERT_OK(ps.status);
   ASSERT_TRUE(ps.msgid == message_id);
 
@@ -298,13 +290,8 @@ TEST(IntegrationTest, TrimFirst) {
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {};
 
   // Create RocketSpeed client.
-  std::unique_ptr<Configuration> config(
-      Configuration::Create(cluster.GetPilotHostIds(),
-                            cluster.GetCopilotHostIds(),
-                            Tenant(102),
-                            1));
-
-  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -313,23 +300,25 @@ TEST(IntegrationTest, TrimFirst) {
   // Publish messages.
   for (int i = 1; i < num_publish; ++i) {
     auto msgid = msgid_generator.Generate();
-    auto ps = client->Publish(topic,
-                             namespace_id,
-                             topic_options,
-                             Slice(data),
-                             norm_pub_cb,
-                             msgid);
+    auto ps = client->Publish(GuestTenant,
+                              topic,
+                              namespace_id,
+                              topic_options,
+                              Slice(data),
+                              norm_pub_cb,
+                              msgid);
     ASSERT_TRUE(ps.status.ok());
     ASSERT_TRUE(ps.msgid == msgid);
   }
 
   auto msgid = msgid_generator.Generate();
-  auto ps = client->Publish(topic,
-                           namespace_id,
-                           topic_options,
-                           Slice(data),
-                           last_pub_cb,
-                           msgid);
+  auto ps = client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            last_pub_cb,
+                            msgid);
   ASSERT_TRUE(ps.status.ok());
   ASSERT_TRUE(ps.msgid == msgid);
 
@@ -368,12 +357,8 @@ TEST(IntegrationTest, TrimGapHandling) {
   };
 
   // Create RocketSpeed client.
-  std::unique_ptr<Configuration> config(
-      Configuration::Create(cluster.GetPilotHostIds(),
-                            cluster.GetCopilotHostIds(),
-                            Tenant(102),
-                            1));
-  ClientOptions options(*config, "client");
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -388,7 +373,8 @@ TEST(IntegrationTest, TrimGapHandling) {
       publish_sem.Post();
     };
     // Even messages to topics[0], odd to topics[1].
-    auto ps = client->Publish(topics[i & 1],
+    auto ps = client->Publish(GuestTenant,
+                              topics[i & 1],
                               ns,
                               TopicOptions(),
                               std::to_string(i),
@@ -406,7 +392,7 @@ TEST(IntegrationTest, TrimGapHandling) {
 
   auto test_receipt = [&] (int topic, SequenceNumber seqno, int expected) {
     // Tests that subscribing to topic@seqno results in 'expected' messages.
-    client->ListenTopics({{ ns, topics[topic], true, seqno }});
+    client->ListenTopics(GuestTenant, {{ ns, topics[topic], true, seqno }});
     ASSERT_TRUE(sub_sem[topic].TimedWait(std::chrono::seconds(1)));
     while (expected--) {
       ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
@@ -463,12 +449,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   };
 
   // Create RocketSpeed client.
-  std::unique_ptr<Configuration> config(
-      Configuration::Create(cluster.GetPilotHostIds(),
-                            cluster.GetCopilotHostIds(),
-                            Tenant(102),
-                            4));
-  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -477,7 +459,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+    ASSERT_TRUE(client->Publish(GuestTenant, topic, ns, opts, Slice(data),
                                 publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
@@ -486,7 +468,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
     std::vector<SubscriptionRequest> subscriptions = {
         SubscriptionRequest(ns, topic, true, 0)
     };
-    client->ListenTopics(subscriptions);
+    client->ListenTopics(GuestTenant, subscriptions);
     ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
   }
 
@@ -494,7 +476,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   // Send 3 more different messages.
   for (int i = 3; i < 6; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+    ASSERT_TRUE(client->Publish(GuestTenant, topic, ns, opts, Slice(data),
                                 publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
     ASSERT_TRUE(message_sem.TimedWait(timeout));
@@ -509,14 +491,14 @@ TEST(IntegrationTest, SequenceNumberZero) {
     std::vector<SubscriptionRequest> subscriptions = {
       SubscriptionRequest(ns, topic, false, 0)
     };
-    client->ListenTopics(subscriptions);
+    client->ListenTopics(GuestTenant, subscriptions);
     ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
   }
 
   // Send some messages and wait for the acks.
   for (int i = 6; i < 9; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+    ASSERT_TRUE(client->Publish(GuestTenant, topic, ns, opts, Slice(data),
                                 publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
@@ -525,14 +507,14 @@ TEST(IntegrationTest, SequenceNumberZero) {
     std::vector<SubscriptionRequest> subscriptions = {
         SubscriptionRequest(ns, topic, true, 0)
     };
-    client->ListenTopics(subscriptions);
+    client->ListenTopics(GuestTenant, subscriptions);
     ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
   }
 
   // Send 3 more messages again.
   for (int i = 9; i < 12; ++i) {
     std::string data = std::to_string(i);
-    ASSERT_TRUE(client->Publish(topic, ns, opts, Slice(data),
+    ASSERT_TRUE(client->Publish(GuestTenant, topic, ns, opts, Slice(data),
                                 publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
     ASSERT_TRUE(message_sem.TimedWait(timeout));
@@ -603,7 +585,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>, StreamID) {};
   client.RegisterCallbacks(callbacks);
   StreamSocket socket(client.CreateOutboundStream(
-      cluster.GetCopilotHostIds().front().ToClientId(), 0));
+      cluster.GetCopilot()->GetClientId(), 0));
   env_->StartThread([&] () { client.Run(); }, "client");
   client.WaitUntilRunning();
 
@@ -657,12 +639,8 @@ TEST(IntegrationTest, UnsubscribeCallback) {
   };
 
   // Create RocketSpeed client.
-  std::unique_ptr<Configuration> config(
-      Configuration::Create(cluster.GetPilotHostIds(),
-                            cluster.GetCopilotHostIds(),
-                            Tenant(102),
-                            1));
-  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -672,14 +650,14 @@ TEST(IntegrationTest, UnsubscribeCallback) {
   std::vector<SubscriptionRequest> subscriptions1 = {
     SubscriptionRequest(namespace_id, topic, true, 1)
   };
-  client->ListenTopics(subscriptions1);
+  client->ListenTopics(GuestTenant, subscriptions1);
   sub_checkpoint.TimedWait(std::chrono::seconds(1));
 
   // Unsubscribe.
   std::vector<SubscriptionRequest> subscriptions2 = {
     SubscriptionRequest(namespace_id, topic, false, 1)
   };
-  client->ListenTopics(subscriptions2);
+  client->ListenTopics(GuestTenant, subscriptions2);
   sub_checkpoint.TimedWait(std::chrono::seconds(1));
 }
 
@@ -722,25 +700,21 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   };
 
   // Create RocketSpeed client.
-  std::unique_ptr<Configuration> config(
-      Configuration::Create(cluster.GetPilotHostIds(),
-                            cluster.GetCopilotHostIds(),
-                            Tenant(102),
-                            1));
-  //TODO(ranji42) Try to use the same integration_test for mqttclient.
-  ClientOptions options(*config, GUIDGenerator().GenerateString());
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
   ASSERT_OK(client->Start(subscription_callback, receive_callback));
 
   // Send a message.
-  auto ps = client->Publish(topic,
-                           namespace_id,
-                           topic_options,
-                           Slice(data),
-                           publish_callback,
-                           message_id);
+  auto ps = client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            publish_callback,
+                            message_id);
   ASSERT_TRUE(ps.status.ok());
   ASSERT_TRUE(ps.msgid == message_id);
 
@@ -748,7 +722,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   std::vector<SubscriptionRequest> subscriptions = {
     SubscriptionRequest(namespace_id, topic, true, 1)
   };
-  client->ListenTopics(subscriptions);
+  client->ListenTopics(GuestTenant, subscriptions);
 
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);

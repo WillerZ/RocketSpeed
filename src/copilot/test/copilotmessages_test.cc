@@ -74,7 +74,7 @@ TEST(CopilotTest, Subscribe) {
   // create a client to communicate with the Copilot
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
   StreamSocket socket(loop.CreateOutboundStream(
-      cluster.GetCopilotHostIds().front().ToClientId(), 0));
+      cluster.GetCopilot()->GetClientId(), 0));
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
                                    StreamID origin) {
@@ -192,7 +192,7 @@ TEST(CopilotTest, Rollcall) {
   // create a client to communicate with the Copilot
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
   StreamSocket socket(loop.CreateOutboundStream(
-      cluster.GetCopilotHostIds().front().ToClientId(), 0));
+      cluster.GetCopilot()->GetClientId(), 0));
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
                                    StreamID origin) {
@@ -213,7 +213,7 @@ TEST(CopilotTest, Rollcall) {
   // Create a rollcall client
   NamespaceID ns = GuestNamespace;
   std::unique_ptr<ClientImpl> client;
-  ASSERT_OK(cluster.CreateClient("ClientId1", &client, true));
+  ASSERT_OK(cluster.CreateClient(&client, true));
   auto rollcall_callback = [this, &checkpoint2, &num_msg]
     (RollcallEntry entry) {
     ProcessRollcall(entry);
@@ -223,7 +223,7 @@ TEST(CopilotTest, Rollcall) {
   };
   // subscribe to rollcall topic for any new entries
   // that appear in the rollcall topic.
-  RollcallImpl rollcall1(std::move(client), ns,
+  RollcallImpl rollcall1(std::move(client), GuestTenant, ns,
                          SubscriptionStart(0), rollcall_callback);
 
   // send subscribe messages to copilot
@@ -251,7 +251,6 @@ TEST(CopilotTest, Rollcall) {
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         { TopicPair(0, topic, type, ns) });
-    ClientID host = cluster.GetCopilotHostIds().front().ToClientId();
     sent_msgs_.insert(topic);
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }

@@ -17,7 +17,7 @@ cpp_library(
     deps = [
         '@/rocketspeed/github/src/client',
         '@/rocketspeed/github/src/proxy:proxy_library',
-        '@/rocketspeed/github/src/util/common:configuration',
+        '@/rocketspeed/github/src/util/common:fixed_configuration',
         '@/rocketspeed/github/src-gen/djinni:interface',
         '@/rocketspeed/github/external/djinni/support-lib/jni',
     ],

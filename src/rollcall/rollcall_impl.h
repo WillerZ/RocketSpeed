@@ -36,13 +36,17 @@ class RollcallImpl : public RollcallStream {
  public:
   // Constructor
   RollcallImpl(std::unique_ptr<ClientImpl> client,
+               const TenantID tenant_id,
                const NamespaceID& nsid,
                const SubscriptionStart& start_point,
                RollCallback callback);
 
   // Write an entry to the rollcall topic.
-  Status WriteEntry(const Topic& topic_name, const NamespaceID& nsid,
-                    bool isSubscription, PublishCallback publish_callback);
+  Status WriteEntry(const TenantID tenant_id,
+                    const Topic& topic_name,
+                    const NamespaceID& nsid,
+                    bool isSubscription,
+                    PublishCallback publish_callback);
 
    // Closes resources associated with this rollcall stream reader
   virtual ~RollcallImpl() = default;

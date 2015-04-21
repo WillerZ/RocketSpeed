@@ -61,13 +61,13 @@ TEST(DataStoreTest, GetPut) {
   ASSERT_OK(cluster.GetStatus());
 
   // get the name of the machine:port where the copilot is running
-  std::vector<HostId> copilot = cluster.GetCopilotHostIds();
+  HostId copilot = cluster.GetCopilot()->GetHostId();
 
   // create a new database
   unique_ptr<DataStore> handle;
   std::string value;
   bool create_new = true;
-  ASSERT_TRUE(DataStore::Open(copilot[0], client_id_, create_new,
+  ASSERT_TRUE(DataStore::Open(copilot, client_id_, create_new,
                               info_log_, &handle).ok());
   DataStoreImpl* handleimpl = static_cast<DataStoreImpl *>(handle.get());
   ASSERT_EQ(handleimpl->NumRecords(), 0);
@@ -87,7 +87,7 @@ TEST(DataStoreTest, GetPut) {
 
   // reopen the database and create new database. Older data
   // should not reapppear.
-  ASSERT_TRUE(DataStore::Open(copilot[0], client_id_, create_new,
+  ASSERT_TRUE(DataStore::Open(copilot, client_id_, create_new,
                               info_log_, &handle).ok());
   handleimpl = static_cast<DataStoreImpl *>(handle.get());
   ASSERT_EQ(handleimpl->NumRecords(), 0);
@@ -101,13 +101,13 @@ TEST(DataStoreTest, Iteration) {
   ASSERT_OK(cluster.GetStatus());
 
   // get the name of the machine:port where the copilot is running
-  std::vector<HostId> copilot = cluster.GetCopilotHostIds();
+  HostId copilot = cluster.GetCopilot()->GetHostId();
 
   // create a new database
   unique_ptr<DataStore> handle;
   std::string value;
   bool create_new = true;
-  ASSERT_TRUE(DataStore::Open(copilot[0], client_id_, create_new,
+  ASSERT_TRUE(DataStore::Open(copilot, client_id_, create_new,
                               info_log_, &handle).ok());
   DataStoreImpl* handleimpl = static_cast<DataStoreImpl *>(handle.get());
   ASSERT_EQ(handleimpl->NumRecords(), 0);

@@ -154,6 +154,7 @@ class CopilotWorker {
 
   // Write to Rollcall topic
   void RollcallWrite(std::unique_ptr<Message> msg,
+                     const TenantID tenant_id,
                      const Topic& topic_name,
                      const NamespaceID& namespace_id,
                      const MetadataType type,

@@ -33,6 +33,7 @@ class RollcallStream {
   /*
    * Open the rollcall stream for this namespace.
    * @param client_options The options needed to create a client
+   * @param tenant_id Tenant ID of rollcall reader.
    * @param nsid There is one rollcall stream per namespace
    * @param start_point The start point of this subscription
    * @param callback Invoked for every RollcallEntry in the rollcall stream.
@@ -45,6 +46,7 @@ class RollcallStream {
    * @return the status of whether this call was successful or not
    */
   static Status Open(ClientOptions client_options,
+                     TenantID tenant_id,
                      const NamespaceID& nsid,
                      const SubscriptionStart& start_point,
                      RollCallback callback,

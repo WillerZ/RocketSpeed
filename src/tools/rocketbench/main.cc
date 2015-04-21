@@ -23,6 +23,7 @@
 #include "src/test/test_cluster.h"
 #endif
 #include "src/util/auto_roll_logger.h"
+#include "src/util/common/fixed_configuration.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/parsing.h"
 #include "src/tools/rocketbench/random_distribution.h"
@@ -158,7 +159,8 @@ static void ProducerWorker(void* param) {
              static_cast<long long unsigned int>(send_time));
 
     // Send the message
-    PublishStatus ps = producer->Publish(topic_name,
+    PublishStatus ps = producer->Publish(GuestTenant,
+                                         topic_name,
                                          namespaceid,
                                          topic_options,
                                          payload,
@@ -302,7 +304,7 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
     topics.push_back(request);
     if (i % batch_size == batch_size - 1) {
       // send a subscription request
-      consumers[c++ % consumers.size()]->ListenTopics(topics);
+      consumers[c++ % consumers.size()]->ListenTopics(GuestTenant, topics);
       sent += topics.size();
       if (sent >= kSubscribeBatchSize) {
         // Have sent the batch size now, wait for next batch.
@@ -317,7 +319,7 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
 
   // subscribe to all remaining topics
   if (topics.size() != 0) {
-    consumers[c++ % consumers.size()]->ListenTopics(topics);
+    consumers[c++ % consumers.size()]->ListenTopics(GuestTenant, topics);
   }
 }
 
@@ -569,15 +571,13 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < num_clients; ++i) {
     // Create config for this client by picking pilot and copilot in a round
     // robin fashion.
-    std::unique_ptr<rocketspeed::Configuration> config(
-        rocketspeed::Configuration::Create({pilots[i % pilots.size()]},
-                                           {copilots[i % copilots.size()]},
-                                           rocketspeed::Tenant(102),
-                                           FLAGS_client_workers));
-    // Configure the client.
-    rocketspeed::ClientOptions options(
-        *config, rocketspeed::GUIDGenerator().GenerateString());
+    rocketspeed::ClientOptions options;
+    options.config =
+      std::make_shared<rocketspeed::FixedConfiguration>(
+        pilots[i % pilots.size()],
+        copilots[i % copilots.size()]);
     options.info_log = info_log;
+    options.num_workers = FLAGS_client_workers;
     std::unique_ptr<rocketspeed::ClientImpl> client;
     // Create the client.
     auto st = rocketspeed::ClientImpl::Create(std::move(options), &client);

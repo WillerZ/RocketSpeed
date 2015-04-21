@@ -103,8 +103,7 @@ class DataStoreImpl : public DataStore {
  friend IteratorImpl;
  public:
   // Constructor
-  DataStoreImpl(std::unique_ptr<Configuration> config,
-                std::unique_ptr<ClientImpl> client,
+  DataStoreImpl(std::unique_ptr<ClientImpl> client,
                 bool create_new,
                 std::shared_ptr<Logger> info_log);
 
@@ -134,7 +133,6 @@ class DataStoreImpl : public DataStore {
     SubscriptionConfirmed   = 0x02,
   };
   std::shared_ptr<Logger> info_log_;            // informational logs
-  const std::unique_ptr<Configuration> config_; // rocket speed config
   ReaderState state_;                           // current state of this reader
   const NamespaceID datastore_namespace_;       // name of namespace
   const Topic datastore_topic_;                 // name of the datastore topic

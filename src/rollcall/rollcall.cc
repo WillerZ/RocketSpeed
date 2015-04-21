@@ -14,6 +14,7 @@ namespace rocketspeed {
 const NamespaceID RollcallImpl::rollcall_namespace_ = "_rollcall";
 
 RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
+  const TenantID tenant_id,
   const NamespaceID& nsid,
   const SubscriptionStart& start_point,
   RollCallback callback):
@@ -61,7 +62,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
                                         rollcall_topic_,
                                         true,
                                         start_point_));
-    rs_client_->ListenTopics(names);
+    rs_client_->ListenTopics(tenant_id, names);
   } else {
     rs_client_->Start(nullptr, nullptr,
                       Client::RestoreStrategy::kDontRestore); // start client
@@ -69,8 +70,11 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
 }
 
 Status
-RollcallImpl::WriteEntry(const Topic& topic_name, const NamespaceID& nsid,
-  bool isSubscription, PublishCallback publish_callback){
+RollcallImpl::WriteEntry(const TenantID tenant_id,
+                         const Topic& topic_name,
+                         const NamespaceID& nsid,
+                         bool isSubscription,
+                         PublishCallback publish_callback) {
 
   // Serialize the entry
   RollcallEntry impl(topic_name, isSubscription ?
@@ -82,7 +86,8 @@ RollcallImpl::WriteEntry(const Topic& topic_name, const NamespaceID& nsid,
 
   // write it out to rollcall topic
   Topic rtopic(GetRollcallTopicName(nsid));
-  return rs_client_->Publish(rtopic,
+  return rs_client_->Publish(tenant_id,
+                             rtopic,
                              rollcall_namespace_,
                              rollcall_topic_options_,
                              sl,
@@ -124,6 +129,7 @@ RollcallEntry::DeSerialize(Slice in) {
 // Static method to open a Rollcall stream
 Status
 RollcallStream::Open(ClientOptions client_options,
+  const TenantID tenant_id,
   const NamespaceID& nsid,
   const SubscriptionStart& start_point,
   RollCallback callback,
@@ -141,7 +147,7 @@ RollcallStream::Open(ClientOptions client_options,
   }
 
   // create our object
-  stream->reset(new RollcallImpl(std::move(client), nsid,
+  stream->reset(new RollcallImpl(std::move(client), tenant_id, nsid,
                                  start_point, callback));
   return  Status::OK();
 }

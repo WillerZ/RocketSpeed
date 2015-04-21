@@ -397,12 +397,22 @@ void Proxy::HandleMessageForwardedInorder(MessageType message_type,
     // Select destination based on message type.
     switch (message_type) {
       case MessageType::mPing:  // could go to either
-      case MessageType::mPublish:
-        host = config_->GetPilotHostIds().front();
+      case MessageType::mPublish: {
+        Status st = config_->GetPilot(&host);
+        if (!st.ok()) {
+          LOG_ERROR(info_log_, "Failed to find pilot");
+          return;
+        }
         break;
-      case MessageType::mMetadata:
-        host = config_->GetCopilotHostIds().front();
+      }
+      case MessageType::mMetadata: {
+        Status st = config_->GetCopilot(&host);
+        if (!st.ok()) {
+          LOG_ERROR(info_log_, "Failed to find copilot");
+          return;
+        }
         break;
+      }
       default:
         LOG_ERROR(info_log_, "Invalid message type cannot be forwarded.");
         assert(false);

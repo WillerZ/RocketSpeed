@@ -147,7 +147,8 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
             subscription.stream_id,
             subscription.worker_id);
           // Update rollcall topic.
-          RollcallWrite(std::move(message), request.topic_name,
+          RollcallWrite(std::move(message), msg->GetTenantID(),
+                        request.topic_name,
                         request.namespace_id, request.topic_type,
                         logid, worker_id, subscription.stream_id);
         } else {
@@ -444,7 +445,8 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
                subscriber);
     }
     // Update rollcall topic.
-    RollcallWrite(std::move(message), request.topic_name, request.namespace_id,
+    RollcallWrite(std::move(message), msg->GetTenantID(),
+                  request.topic_name, request.namespace_id,
                   request.topic_type, logid, worker_id, subscriber);
   }
 }
@@ -578,7 +580,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
       }
     }
     // Update rollcall topic.
-    RollcallWrite(nullptr, topic_name,
+    RollcallWrite(nullptr, tenant_id, topic_name,
                   namespace_id, MetadataType::mUnSubscribe,
                   logid, worker_id, subscriber);
   }
@@ -620,6 +622,7 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
 //
 void
 CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
+                             const TenantID tenant_id,
                              const Topic& topic_name,
                              const NamespaceID& namespace_id,
                              const MetadataType type,
@@ -667,7 +670,9 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
   };
 
   // Issue the write to rollcall topic
-  Status status = copilot_->GetRollcallLogger()->WriteEntry(topic_name,
+  Status status = copilot_->GetRollcallLogger()->WriteEntry(
+                               tenant_id,
+                               topic_name,
                                namespace_id,
                                type == MetadataType::mSubscribe ? true : false,
                                publish_callback);

@@ -23,9 +23,9 @@ cpp_library(
 )
 
 cpp_library(
-    name = 'configuration',
+    name = 'fixed_configuration',
     srcs = [
-        'configuration.cc',
+        'fixed_configuration.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',

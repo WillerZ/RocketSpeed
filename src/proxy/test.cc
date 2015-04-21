@@ -56,10 +56,7 @@ class ProxyTest {
     // Create proxy.
     ProxyOptions opts;
     opts.info_log = info_log;
-    opts.conf.reset(Configuration::Create(cluster->GetPilotHostIds(),
-                                          cluster->GetCopilotHostIds(),
-                                          Tenant::GuestTenant,
-                                          4));
+    opts.conf = cluster->GetConfiguration();
     ASSERT_OK(Proxy::CreateNewInstance(std::move(opts), &proxy));
   }
 

@@ -112,21 +112,24 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
 };
 
 PublisherImpl::PublisherImpl(BaseEnv* env,
+                             std::shared_ptr<Configuration> config,
                              std::shared_ptr<Logger> info_log,
                              MsgLoopBase* msg_loop,
-                             SmartWakeLock* wake_lock,
-                             HostId pilot_host)
-    : info_log_(std::move(info_log))
+                             SmartWakeLock* wake_lock)
+    : config_(std::move(config))
+    , info_log_(std::move(info_log))
     , msg_loop_(msg_loop)
-    , wake_lock_(wake_lock)
-    , pilot_host_(std::move(pilot_host)) {
+    , wake_lock_(wake_lock) {
   // Prepare sharded state.
   worker_data_.reset(new PublisherWorkerData[msg_loop_->GetNumWorkers()]);
 
   // Initialise stream socket for each worker, each of them is independent.
+  HostId pilot;
+  Status st = config_->GetPilot(&pilot);
+  assert(st.ok());
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     worker_data_[i].pilot_socket =
-        msg_loop_->CreateOutboundStream(pilot_host_.ToClientId(), i);
+        msg_loop_->CreateOutboundStream(pilot.ToClientId(), i);
   }
 
   // Register our callbacks.

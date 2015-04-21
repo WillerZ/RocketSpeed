@@ -11,6 +11,7 @@
 
 #include "src/logdevice/storage.h"
 #include "src/logdevice/log_router.h"
+#include "src/util/common/fixed_configuration.h"
 
 #ifdef USE_LOGDEVICE
 #include "logdevice/include/debug.h"
@@ -185,9 +186,6 @@ void LocalTestCluster::Initialize(Options opts) {
     // to write to the rollcall topic (via the pilot).
     opts.start_pilot = true;
     HostId pilot_host("localhost", Pilot::DEFAULT_PORT);
-    configuration_.reset(Configuration::Create({pilot_host}, {pilot_host},
-                                                SystemTenant));
-
     if (opts.start_copilot) {
       // Create Copilot
       opts.copilot.control_towers.emplace(0, control_tower_->GetHostId());
@@ -232,11 +230,12 @@ void LocalTestCluster::Initialize(Options opts) {
 }
 
 Status
-LocalTestCluster::CreateClient(const ClientID& id,
-                               std::unique_ptr<ClientImpl>* client,
+LocalTestCluster::CreateClient(std::unique_ptr<ClientImpl>* client,
                                bool is_internal) {
   std::unique_ptr<ClientImpl> cl;
-  ClientOptions client_options(*configuration_.get(), id);
+  ClientOptions client_options;
+  client_options.info_log = info_log_;
+  client_options.config = GetConfiguration();
   Status status = ClientImpl::Create(std::move(client_options),
                                      client, is_internal);
   return status;
@@ -307,6 +306,12 @@ std::shared_ptr<LogStorage> LocalTestCluster::GetLogStorage() {
 
 std::shared_ptr<LogRouter> LocalTestCluster::GetLogRouter() {
   return logdevice_->log_router_;
+}
+
+std::shared_ptr<Configuration> LocalTestCluster::GetConfiguration() const {
+  HostId pilot = pilot_ ? pilot_->GetHostId() : HostId();
+  HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
+  return std::make_shared<FixedConfiguration>(pilot, copilot);
 }
 
 }  // namespace rocketspeed

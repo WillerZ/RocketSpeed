@@ -80,17 +80,11 @@ class LocalTestCluster {
     return status_;
   }
 
-  // Get the pilot host IDs.
-  std::vector<HostId> GetPilotHostIds() const {
-    assert(pilot_);
-    return std::vector<HostId>{ pilot_->GetHostId() };
-  }
-
-  // Get the copilot host IDs.
-  std::vector<HostId> GetCopilotHostIds() const {
-    assert(copilot_);
-    return std::vector<HostId>{ copilot_->GetHostId() };
-  }
+  /**
+   * Creates a Configuration, which can be used by a client to talk to the
+   * test cluster.
+   */
+  std::shared_ptr<Configuration> GetConfiguration() const;
 
   Pilot* GetPilot() {
     return pilot_;
@@ -114,8 +108,7 @@ class LocalTestCluster {
   Env* GetEnv() const { return env_; }
 
   // Create a new client for the test cluster.
-  Status CreateClient(const ClientID& id,
-                      std::unique_ptr<ClientImpl>* client,
+  Status CreateClient(std::unique_ptr<ClientImpl>* client,
                       bool is_internal);
 
  private:

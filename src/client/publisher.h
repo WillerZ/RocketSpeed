@@ -31,16 +31,16 @@ class PublisherImpl {
    * Creates publisher object from provided parameters.
    *
    * @param env the environment used by the client
+   * @param config configuration of RocketSpeed service
    * @param info_log a logger object
    * @param wake_lock a non-owning pointer to the wake lock
-   * @param pilot_host a host id of a pilot that this publisher talks to
    * @param msg_loop a non-owning pointer to the message loop
    */
   PublisherImpl(BaseEnv* env,
+                std::shared_ptr<Configuration> config,
                 std::shared_ptr<Logger> info_log,
                 MsgLoopBase* msg_loop,
-                SmartWakeLock* wake_lock,
-                HostId pilot_host);
+                SmartWakeLock* wake_lock);
 
   ~PublisherImpl();
 
@@ -56,6 +56,7 @@ class PublisherImpl {
                         const MsgId messageId);
 
  private:
+  const std::shared_ptr<Configuration> config_;
   const std::shared_ptr<Logger> info_log_;
   /** A non-owning pointer to the message loop. */
   MsgLoopBase* msg_loop_;
@@ -63,8 +64,6 @@ class PublisherImpl {
   SmartWakeLock* wake_lock_;
   /** State of the publisher sharded by worker threads. */
   std::unique_ptr<PublisherWorkerData[]> worker_data_;
-
-  HostId pilot_host_;
 
   /** Handles acknowledgements for published messages. */
   void ProcessDataAck(std::unique_ptr<Message> msg, StreamID origin);

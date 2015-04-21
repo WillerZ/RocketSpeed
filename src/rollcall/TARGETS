@@ -14,7 +14,7 @@ cpp_library(
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/util/common:configuration',
+        '@/rocketspeed/github/src/util/common:fixed_configuration',
     ],
     warp = False,
 )

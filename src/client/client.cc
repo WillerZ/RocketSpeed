@@ -32,6 +32,7 @@
 #ifndef USE_MQTTMSGLOOP
 #include "src/messages/msg_loop.h"
 #else
+#include "rocketspeed/mqttclient/configuration.h"
 #include "rocketspeed/mqttclient/mqtt_msg_loop.h"
 #include "rocketspeed/mqttclient/proxygen_mqtt.h"
 #endif
@@ -51,7 +52,8 @@ class ClientCreationError : public Client {
     return creationStatus_;
   }
 
-  virtual PublishStatus Publish(const Topic&,
+  virtual PublishStatus Publish(const TenantID tenant_id,
+                                const Topic&,
                                 const NamespaceID&,
                                 const TopicOptions&,
                                 const Slice&,
@@ -60,7 +62,8 @@ class ClientCreationError : public Client {
     return PublishStatus(creationStatus_, message_id);
   }
 
-  virtual void ListenTopics(const std::vector<SubscriptionRequest>&) {}
+  virtual void ListenTopics(const TenantID,
+                            const std::vector<SubscriptionRequest>&) {}
   virtual void Acknowledge(const MessageReceived&) {}
   virtual void SaveSubscriptions(SnapshotCallback) {}
 
@@ -84,18 +87,8 @@ Status ClientImpl::Create(ClientOptions options,
                           std::unique_ptr<ClientImpl>* client,
                           bool is_internal) {
   assert (client);
-  if (!is_internal) {
-    if (options.config.GetTenantID() <= 100) {
-      return Status::InvalidArgument("TenantId must be greater than 100.");
-    }
-  }
+
   // Validate arguments.
-  if (options.config.GetPilotHostIds().empty()) {
-    return Status::InvalidArgument("Must have at least one pilot.");
-  }
-  if (options.config.GetCopilotHostIds().empty()) {
-    return Status::InvalidArgument("Must have at least one copilot.");
-  }
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();
   }
@@ -105,29 +98,26 @@ Status ClientImpl::Create(ClientOptions options,
     new MsgLoop(options.env,
                 EnvOptions(),
                 0,
-                options.config.GetNumWorkers(),
+                options.num_workers,
                 options.info_log,
-                "client",
-                options.client_id));
+                "client"));
 #else
+  MQTTConfiguration* mqtt_config =
+    static_cast<MQTTConfiguration*>(options.config.get());
   std::unique_ptr<MsgLoopBase> msg_loop_(
     new MQTTMsgLoop(
       options.env,
-      options.client_id,
-      options.config.GetPilotHostIds().front(),
-      options.username,
-      options.access_token,
-      true, // We enable SSL when talking over MQTT.
+      mqtt_config->GetVIP(),
+      mqtt_config->GetUsername(),
+      mqtt_config->GetAccessToken(),
+      mqtt_config->UseSSL(),
       options.info_log,
       &ProxygenMQTTClient::Create));
 #endif
 
-  // TODO(pja) 1 : Just using first pilot for now, should use some sort of map.
   client->reset(new ClientImpl(options.env,
+                               options.config,
                                options.wake_lock,
-                               options.config.GetPilotHostIds().front(),
-                               options.config.GetCopilotHostIds().front(),
-                               options.config.GetTenantID(),
                                std::move(msg_loop_),
                                std::move(options.storage),
                                options.info_log,
@@ -334,28 +324,21 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
 };
 
 ClientImpl::ClientImpl(BaseEnv* env,
+                       std::shared_ptr<Configuration> config,
                        std::shared_ptr<WakeLock> wake_lock,
-                       const HostId& pilot_host_id,
-                       const HostId& copilot_host_id,
-                       TenantID tenant_id,
                        std::unique_ptr<MsgLoopBase> msg_loop,
                        std::unique_ptr<SubscriptionStorage> storage,
                        std::shared_ptr<Logger> info_log,
                        bool is_internal)
 : env_(env)
+, config_(std::move(config))
 , wake_lock_(std::move(wake_lock))
-, copilot_host_id_(copilot_host_id)
-, tenant_id_(tenant_id)
 , msg_loop_(std::move(msg_loop))
 , msg_loop_thread_spawned_(false)
 , storage_(std::move(storage))
 , info_log_(info_log)
 , is_internal_(is_internal)
-, publisher_(env,
-             info_log,
-             msg_loop_.get(),
-             &wake_lock_,
-             std::move(pilot_host_id)) {
+, publisher_(env, config_, info_log, msg_loop_.get(), &wake_lock_) {
   using std::placeholders::_1;
 
   // Setup callbacks.
@@ -377,9 +360,12 @@ ClientImpl::ClientImpl(BaseEnv* env,
   worker_data_.reset(new ClientWorkerData[msg_loop_->GetNumWorkers()]);
 
   // Initialise stream socket for each worker, each of them is independent.
+  HostId copilot;
+  Status st = config_->GetCopilot(&copilot);
+  assert(st.ok());  // TODO(pja) : handle failures
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     worker_data_[i].copilot_socket = StreamSocket(
-        msg_loop_->CreateOutboundStream(copilot_host_id_.ToClientId(), i));
+        msg_loop_->CreateOutboundStream(copilot.ToClientId(), i));
   }
 
   msg_loop_->RegisterCallbacks(callbacks);
@@ -441,21 +427,27 @@ ClientImpl::~ClientImpl() {
   }
 }
 
-PublishStatus ClientImpl::Publish(const Topic& name,
+PublishStatus ClientImpl::Publish(const TenantID tenant_id,
+                                  const Topic& name,
                                   const NamespaceID& namespace_id,
                                   const TopicOptions& options,
                                   const Slice& data,
                                   PublishCallback callback,
                                   const MsgId message_id) {
   if (!is_internal_) {
+    if (tenant_id <= 100 && tenant_id != GuestTenant) {
+      return PublishStatus(
+        Status::InvalidArgument("TenantID must be greater than 100."),
+        message_id);
+    }
+
     if (IsReserved(namespace_id)) {
       return PublishStatus(
-          Status::InvalidArgument(
-              "NamespaceID is reserved for internal usage."),
-          message_id);
+        Status::InvalidArgument("NamespaceID is reserved for internal usage."),
+        message_id);
     }
   }
-  return publisher_.Publish(tenant_id_,
+  return publisher_.Publish(tenant_id,
                             namespace_id,
                             name,
                             options,
@@ -464,7 +456,8 @@ PublishStatus ClientImpl::Publish(const Topic& name,
                             message_id);
 }
 
-void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
+void ClientImpl::ListenTopics(const TenantID tenant_id,
+                              const std::vector<SubscriptionRequest>& topics) {
   std::vector<SubscriptionRequest> restore;
 
   // Determine which requests can be executed right away and which
@@ -483,8 +476,8 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
       int worker_id = GetWorkerForTopic(elem.topic_name);
       TopicPair topic(start, elem.topic_name, type, elem.namespace_id);
       std::unique_ptr<Command> command(
-          new ExecuteCommand([this, topic, worker_id]() {
-            HandleSubscription(topic, worker_id);
+          new ExecuteCommand([this, tenant_id, topic, worker_id]() {
+            HandleSubscription(tenant_id, topic, worker_id);
           }));
       auto st = msg_loop_->SendCommand(std::move(command), worker_id);
       if (!st.ok() && subscription_callback_) {
@@ -492,6 +485,7 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
         error_msg.status = std::move(st);
         error_msg.namespace_id = std::move(topic.namespace_id);
         error_msg.topic_name = std::move(topic.topic_name);
+        error_msg.tenant_id = tenant_id;
         subscription_callback_(std::move(error_msg));
       }
     } else {
@@ -505,11 +499,13 @@ void ClientImpl::ListenTopics(const std::vector<SubscriptionRequest>& topics) {
   }
 }
 
-void ClientImpl::AnnounceSubscriptionStatus(TopicPair request, Status status) {
+void ClientImpl::AnnounceSubscriptionStatus(const TenantID tenant_id,
+                                            TopicPair request, Status status) {
   assert(request.topic_type != MetadataType::mNotinitialized);
   if (subscription_callback_) {
     bool subscribe = request.topic_type == MetadataType::mSubscribe;
-    subscription_callback_(SubscriptionStatus(request.namespace_id,
+    subscription_callback_(SubscriptionStatus(tenant_id,
+                                              request.namespace_id,
                                               std::move(request.topic_name),
                                               request.seqno,
                                               subscribe,
@@ -517,20 +513,23 @@ void ClientImpl::AnnounceSubscriptionStatus(TopicPair request, Status status) {
   }
 }
 
-void ClientImpl::HandleSubscription(TopicPair request, int worker_id) {
+void ClientImpl::HandleSubscription(const TenantID tenant_id,
+                                    TopicPair request,
+                                    int worker_id) {
   auto& worker_data = worker_data_[worker_id];
 
   {  // Update state of this subscription.
     TopicPair request_inout = request;
     if (worker_data.IssueRequest(&request_inout)) {
       // Announce previous pending request if any.
-      AnnounceSubscriptionStatus(std::move(request_inout),
+      AnnounceSubscriptionStatus(tenant_id,
+                                 std::move(request_inout),
                                  Status::NotInitialized());
     }
   }
 
   // Construct a message.
-  MessageMetadata message(tenant_id_,
+  MessageMetadata message(tenant_id,
                           MessageMetadata::MetaType::Request,
                           {std::move(request)});
 
@@ -539,7 +538,7 @@ void ClientImpl::HandleSubscription(TopicPair request, int worker_id) {
   auto st =
       msg_loop_->SendRequest(message, &worker_data.copilot_socket, worker_id);
   if (!st.ok()) {
-    AnnounceSubscriptionStatus(std::move(request), std::move(st));
+    AnnounceSubscriptionStatus(tenant_id, std::move(request), std::move(st));
   }
 }
 
@@ -705,7 +704,7 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg,
   for (const auto& request : requests) {
     // If the ACK matches pending request, release the latter one.
     if (worker_data.AcknowledgeRequest(request)) {
-      AnnounceSubscriptionStatus(request, Status::OK());
+      AnnounceSubscriptionStatus(meta->GetTenantID(), request, Status::OK());
     }
   }
 }
@@ -713,6 +712,7 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg,
 void ClientImpl::ProcessRestoredSubscription(
     const std::vector<SubscriptionRequest>& restored) {
   for (const auto& elem : restored) {
+    const TenantID tenant_id = Tenant::GuestTenant;  // TODO
     Status st;
     if (!elem.subscribe) {
       // We shouldn't ever restore unsubscribe request.
@@ -728,9 +728,9 @@ void ClientImpl::ProcessRestoredSubscription(
           TopicPair(elem.start.get(), elem.topic_name, MetadataType::mSubscribe,
                     elem.namespace_id));
       std::unique_ptr<Command> command(
-          new ExecuteCommand([this, moved_topic, worker_id]() mutable {
-            HandleSubscription(moved_topic.move(), worker_id);
-          }));
+        new ExecuteCommand([this, tenant_id, moved_topic, worker_id]() mutable {
+          HandleSubscription(tenant_id, moved_topic.move(), worker_id);
+        }));
       st = msg_loop_->SendCommand(std::move(command), worker_id);
     } else {
       // We couldn't restore
@@ -744,6 +744,7 @@ void ClientImpl::ProcessRestoredSubscription(
       failed_restore.status = std::move(st);
       failed_restore.namespace_id = elem.namespace_id;
       failed_restore.topic_name = elem.topic_name;
+      failed_restore.tenant_id = tenant_id;
       subscription_callback_(std::move(failed_restore));
     }
   }

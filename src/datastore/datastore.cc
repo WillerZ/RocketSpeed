@@ -9,16 +9,15 @@
 #include "datastore_impl.h"
 #include "src/port/port.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/fixed_configuration.h"
 
 namespace rocketspeed {
 
 DataStoreImpl::DataStoreImpl(
-  std::unique_ptr<Configuration> config,
   std::unique_ptr<ClientImpl> client,
   bool create_new,
   std::shared_ptr<Logger> info_log) :
   info_log_(info_log),
-  config_(std::move(config)),
   state_(ReaderState::SubscriptionRequestSent),
   datastore_namespace_(SytemNamespacePermanent),
   datastore_topic_(DefaultDataStoreTopicName()),
@@ -83,7 +82,7 @@ DataStoreImpl::DataStoreImpl(
                                       datastore_topic_,
                                       true,
                                       start_point_));
-  rs_client_->ListenTopics(names);
+  rs_client_->ListenTopics(SystemTenant, names);
 
   // If we are creating a new database, then insert a metadata record
   // to indicate that all previous entries are invalid.
@@ -149,7 +148,8 @@ DataStoreImpl::PutInternal(const std::string& key, const std::string& value,
   };
 
   // write it out to rollcall topic
-  Status status =  rs_client_->Publish(datastore_topic_,
+  Status status =  rs_client_->Publish(SystemTenant,
+                             datastore_topic_,
                              datastore_namespace_,
                              datastore_topic_options_,
                              sl,
@@ -339,11 +339,8 @@ DataStore::Open(HostId machine,
   std::unique_ptr<ClientImpl> client;
 
   // create a configuration
-  std::unique_ptr<Configuration> configuration_;
-  configuration_.reset(Configuration::Create({machine}, {machine},
-                                                SystemTenant));
-
-  ClientOptions options(*configuration_.get(), client_id);
+  ClientOptions options;
+  options.config = std::make_shared<FixedConfiguration>(machine, machine);
 
   // open the client
   Status status = ClientImpl::Create(
@@ -353,8 +350,7 @@ DataStore::Open(HostId machine,
   }
 
   // create our object
-  stream->reset(new DataStoreImpl(std::move(configuration_),
-                                  std::move(client),
+  stream->reset(new DataStoreImpl(std::move(client),
                                   create_new,
                                   info_log));
   return  Status::OK();
