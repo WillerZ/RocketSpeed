@@ -19,7 +19,9 @@
 #include <atomic>
 #include <cassert>
 #include <string>
-#include "src/port/Env.h"
+
+#include "include/Logger.h"
+#include "src/util/common/base_env.h"
 
 namespace rocketspeed {
 
@@ -32,13 +34,13 @@ class PosixLogger : public Logger {
   int fd_;
   const static uint64_t flush_every_seconds_ = 5;
   std::atomic_uint_fast64_t last_flush_micros_;
-  Env* env_;
+  BaseEnv* env_;
   bool flush_pending_;
   bool close_on_free_;
  public:
   PosixLogger(FILE* f,
               bool close_on_free,
-              Env* env,
+              BaseEnv* env,
               const InfoLogLevel log_level = InfoLogLevel::ERROR_LEVEL)
       : Logger(log_level),
         file_(f),

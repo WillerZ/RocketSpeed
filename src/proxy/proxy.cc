@@ -118,7 +118,7 @@ Proxy::Proxy(ProxyOptions options)
 }
 
 Status Proxy::Start(OnMessageCallback on_message,
-                    Proxy::OnDisconnectCallback on_disconnect) {
+                    OnDisconnectCallback on_disconnect) {
   on_message_ = std::move(on_message);
   on_disconnect_ = on_disconnect ? std::move(on_disconnect)
                                  : [](const std::vector<int64_t>&) {};
@@ -204,6 +204,9 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
 
     // If that was the last stream on the session, remove the session.
     if (status == decltype(status)::kRemovedLast) {
+      LOG_INFO(info_log_,
+               "Removed last stream on session %" PRIi64 ", closing session",
+               session);
       data.open_sessions_.erase(session);
       on_disconnect_({session});
     }
@@ -307,7 +310,12 @@ void Proxy::HandleMessageForwarded(std::string msg,
 
   // Find message type.
   if (!message) {
-    LOG_ERROR(info_log_, "Failed to deserialize message forwarded to proxy.");
+    LOG_ERROR(info_log_,
+              "Failed deserializing message forwarded to proxy, "
+              "session (%" PRIi64 ") seqno (%d) local stream (%llu)",
+              session,
+              sequence,
+              local);
     stats_.forward_errors->Add(1);
     // Kill the session.
     HandleDestroySession(session);
@@ -367,6 +375,12 @@ void Proxy::HandleMessageForwarded(std::string msg,
     Status st = it->second.ordered_processor_.Process(
         {message->GetMessageType(), std::move(msg), local}, sequence);
     if (!st.ok()) {
+      LOG_ERROR(info_log_,
+                "Failed to insert message (%d) into processor"
+                " for session %" PRIi64 ", reason: %s",
+                sequence,
+                session,
+                st.ToString().c_str());
       // Kill the session.
       HandleDestroySession(session);
       on_disconnect_({session});

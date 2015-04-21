@@ -10,7 +10,7 @@
 #if defined(OS_ANDROID)
 #include "src/util/android/logcat_logger.h"
 #else
-#warning "No logger for this platform, default to NullLogger"
+#include "src/util/posix_logger.h"
 #endif
 
 namespace rocketspeed {
@@ -19,7 +19,7 @@ std::shared_ptr<Logger> JvmEnv::CreatePlatformLogger(InfoLogLevel log_level) {
 #if defined(OS_ANDROID)
   return std::make_shared<LogcatLogger>(log_level);
 #else
-  return std::make_shared<NullLogger>();
+  return std::make_shared<PosixLogger>(stderr, false, this);
 #endif
 }
 
