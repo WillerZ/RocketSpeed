@@ -12,7 +12,7 @@ class HostMapTest {};
 
 TEST(HostMapTest, Empty) {
   HostMap map1(10);
-  StreamID dummyid;
+  StreamID dummyid = 0;
   ASSERT_EQ(map1.Lookup(dummyid), -1);
 }
 

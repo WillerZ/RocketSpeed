@@ -117,7 +117,6 @@ class LogDeviceStorage : public LogStorage {
                    std::shared_ptr<Logger> info_log);
 
   std::shared_ptr<facebook::logdevice::Client> client_;
-  Env* env_;
   std::shared_ptr<Logger> info_log_;
 };
 

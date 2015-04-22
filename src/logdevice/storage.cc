@@ -144,7 +144,6 @@ LogDeviceStorage::LogDeviceStorage(
   Env* env,
   std::shared_ptr<Logger> info_log)
 : client_(client)
-, env_(env)
 , info_log_(std::move(info_log)) {
 }
 
