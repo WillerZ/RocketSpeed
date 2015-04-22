@@ -6,7 +6,7 @@
 #include "include/RocketSpeed.h"
 
 #include "include/Types.h"
-#include "src/client/client_env.h"
+#include "src/util/common/client_env.h"
 
 namespace rocketspeed {
 

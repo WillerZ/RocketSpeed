@@ -9,8 +9,7 @@ public class BuilderTest {
 
   @Test
   public void testExceptionOnClientOpen() {
-    Builder builder = new Builder()
-        .resubscribeFromStorage();
+    Builder builder = new Builder().resubscribeFromStorage();
     try {
       builder.build();
     } catch (Exception e) {

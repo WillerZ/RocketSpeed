@@ -7,7 +7,7 @@ import java.util.logging.Level;
 public final class Builder {
 
   static {
-    System.loadLibrary("rocketspeedjni");
+    System.loadLibrary("rsclientjni");
   }
 
   private WakeLock wakeLock;
@@ -94,8 +94,8 @@ public final class Builder {
   public Client build() throws Exception {
     try {
       assertInvalidState(config != null, "Missing Configuration.");
-      ClientImpl clientImpl = ClientImpl.Create(level, config,
-                                                subscribeCallback, storage, wrapWakeLock(wakeLock));
+      ClientImpl clientImpl = ClientImpl.Create(level, config, subscribeCallback, storage,
+                                                wrapWakeLock(wakeLock));
       try {
         // Note that until we call Start method on ClientImpl, no client threads are running.
         // Consequently, no callback can be issued by the client until it is started, therefore

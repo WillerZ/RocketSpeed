@@ -77,8 +77,7 @@ public class WakeLockTest {
         calledBack.release();
       }
     };
-    client = new Builder(wakeLock)
-        .configuration(testCluster.createConfiguration())
+    client = new Builder(wakeLock).configuration(testCluster.createConfiguration())
         .receiveCallback(receiveCallback)
         .subscribeCallback(subscribeCallback)
         .build();

@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "include/Logger.h"
-#include "src/client/client_env.h"
+#include "src/util/common/client_env.h"
 
 #include "djinni_support.hpp"
 

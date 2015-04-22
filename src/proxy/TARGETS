@@ -19,6 +19,7 @@ cpp_library(
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/messages',
     ],
+    link_whole = True,
 )
 
 cpp_library(

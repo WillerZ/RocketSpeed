@@ -9,7 +9,7 @@ public class Proxy implements AutoCloseable {
   /* package */ static final Logger LOGGER = Logger.getLogger(Proxy.class.getName());
 
   static {
-    System.loadLibrary("rocketspeedjni");
+    System.loadLibrary("rsproxyjni");
   }
 
   private final ProxyImpl proxyImpl;

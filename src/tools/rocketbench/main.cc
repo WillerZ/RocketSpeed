@@ -28,7 +28,7 @@
 #include "src/util/parsing.h"
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
-#include "src/client/client_env.h"
+#include "src/util/common/client_env.h"
 
 #ifdef USE_MQTTMSGLOOP
 #include "rocketspeed/mqttclient/configuration.h"

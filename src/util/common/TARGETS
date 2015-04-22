@@ -2,6 +2,7 @@ cpp_library(
     name = 'common',
     srcs = [
         'base_env.cc',
+        'client_env.cc',
         'coding.cc',
         'guid_generator.cc',
         'host.cc',
@@ -19,7 +20,7 @@ cpp_library(
     deps = [
         '@/rocketspeed/github/src/port',
     ],
-    warp = False,
+    link_whole = True,
 )
 
 cpp_library(
@@ -33,4 +34,5 @@ cpp_library(
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
     ],
+    link_whole = True,
 )

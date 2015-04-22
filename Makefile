@@ -340,7 +340,6 @@ rs_stress: tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL)
 #  	Build client-only library
 # ---------------------------------------------------------------------------
 CLIENTSOURCES =        src/client/client.cc \
-                       src/client/client_env.cc \
                        src/client/options.cc \
                        src/client/storage/file_storage.cc \
                        src/messages/descriptor_event.cc \
@@ -350,6 +349,7 @@ CLIENTSOURCES =        src/client/client.cc \
                        src/port/port_posix.cc \
                        src/util/build_version.cc \
                        src/util/common/base_env.cc \
+                       src/util/common/client_env.cc \
                        src/util/common/coding.cc \
                        src/util/common/fixed_configuration.cc \
                        src/util/common/guid_generator.cc \

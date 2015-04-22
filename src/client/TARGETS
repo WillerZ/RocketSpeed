@@ -2,7 +2,6 @@ cpp_library(
     name = 'client',
     srcs = [
         'client.cc',
-        'client_env.cc',
         'options.cc',
         'publisher.cc',
         'storage/file_storage.cc',
@@ -25,7 +24,6 @@ cpp_library(
     name = 'rsmqtt_client_library',
     srcs = [
         'client.cc',
-        'client_env.cc',
         'options.cc',
         'publisher.cc',
         'storage/file_storage.cc',

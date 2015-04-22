@@ -1,22 +1,197 @@
 JAVA_VERSION = '7'
 
+# Proxy bindings.
+cpp_binary(
+    name = 'librsproxyjni.so',
+    output_subdir = 'proxy',
+    srcs = [
+        # interface implementation
+        'src-gen/djinni/cpp/HostId.cpp',
+        # jni implementation
+        'src-gen/djinni/cpp/jni/NativeConfigurationImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeDisconnectCallback.cpp',
+        'src-gen/djinni/cpp/jni/NativeMessageCallback.cpp',
+        'src-gen/djinni/cpp/jni/NativeHostId.cpp',
+        'src-gen/djinni/cpp/jni/NativeProxyImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeStatus.cpp',
+        # glue implementation
+        'src/djinni/conversions.cc',
+        'src/djinni/jvm_env.cc',
+        'src/djinni/jvm_logger.cc',
+        'src/djinni/main.cc',
+        'src/djinni/proxy_wrapper.cc',
+    ],
+    preprocessor_flags = [
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
+        '-Irocketspeed/github',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
+        '-Irocketspeed/github/external/Optional',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/proxy:proxy_library',
+        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:fixed_configuration',
+        '@/rocketspeed/github/external/djinni/support-lib/jni',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    dlopen_enabled = True,
+)
+
+java_library(
+    name = 'proxy_java',
+    srcs = [
+        # handwritten
+        'src/main/java/org/rocketspeed/Configuration.java',
+        'src/main/java/org/rocketspeed/Proxy.java',
+        'src/main/java/org/rocketspeed/Status.java',
+        # generated
+        'src-gen/djinni/java/org/rocketspeed/ConfigurationImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/DisconnectCallback.java',
+        'src-gen/djinni/java/org/rocketspeed/HostId.java',
+        'src-gen/djinni/java/org/rocketspeed/MessageCallback.java',
+        'src-gen/djinni/java/org/rocketspeed/LogLevel.java',
+        'src-gen/djinni/java/org/rocketspeed/ProxyImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/StatusBase.java',
+        'src-gen/djinni/java/org/rocketspeed/StatusCode.java',
+    ],
+    deps = [
+        ':librsproxyjni.so',
+    ],
+)
+
+java_unittest(
+    name = 'proxy_java_test',
+    srcs = [
+        'src/test/java/org/rocketspeed/ProxyBindingsLinkTest.java',
+    ],
+    test_classes = [
+        'org.rocketspeed.ProxyBindingsLinkTest',
+    ],
+    deps = [
+        ':proxy_java',
+    ],
+    aether_deps = [
+        'org.mockito:mockito-all:1.9.5',
+    ],
+    env = {
+        'LD_LIBRARY_PATH' : '_bin/rocketspeed/github/proxy',
+    },
+    java_version = JAVA_VERSION,
+    openjdk = True,
+)
+
+# Client bindings.
+cpp_binary(
+    name = 'librsclientjni.so',
+    output_subdir = 'client',
+    srcs = [
+        # interface implementation
+        'src-gen/djinni/cpp/HostId.cpp',
+        'src-gen/djinni/cpp/MsgIdImpl.cpp',
+        # jni implementation
+        'src-gen/djinni/cpp/jni/NativeClientImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeConfigurationImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeHostId.cpp',
+        'src-gen/djinni/cpp/jni/NativeMsgIdImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativePublishCallbackImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativePublishStatus.cpp',
+        'src-gen/djinni/cpp/jni/NativeReceiveCallbackImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeSnapshotCallbackImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeStatus.cpp',
+        'src-gen/djinni/cpp/jni/NativeSubscribeCallbackImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeSubscriptionRequestImpl.cpp',
+        'src-gen/djinni/cpp/jni/NativeSubscriptionStorage.cpp',
+        'src-gen/djinni/cpp/jni/NativeWakeLockImpl.cpp',
+        # glue implementation
+        'src/djinni/client.cc',
+        'src/djinni/conversions.cc',
+        'src/djinni/jvm_env.cc',
+        'src/djinni/jvm_logger.cc',
+        'src/djinni/main.cc',
+    ],
+    preprocessor_flags = [
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
+        '-Irocketspeed/github',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
+        '-Irocketspeed/github/external/Optional',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/client',
+        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:fixed_configuration',
+        '@/rocketspeed/github/external/djinni/support-lib/jni',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    dlopen_enabled = True,
+)
+
 java_library(
     name = 'client_java',
-    srcs = util.files('src/main/java/**/*.java')
-         + util.files('src-gen/djinni/java/**/*.java'),
+    srcs = [
+        # handwritten
+        'src/main/java/org/rocketspeed/android/WakeLock.java',
+        'src/main/java/org/rocketspeed/Builder.java',
+        'src/main/java/org/rocketspeed/Client.java',
+        'src/main/java/org/rocketspeed/Configuration.java',
+        'src/main/java/org/rocketspeed/MessageReceived.java',
+        'src/main/java/org/rocketspeed/MsgId.java',
+        'src/main/java/org/rocketspeed/PublishCallbackAdaptor.java',
+        'src/main/java/org/rocketspeed/PublishCallback.java',
+        'src/main/java/org/rocketspeed/ReceiveCallbackAdaptor.java',
+        'src/main/java/org/rocketspeed/ReceiveCallback.java',
+        'src/main/java/org/rocketspeed/SnapshotCallbackAdapter.java',
+        'src/main/java/org/rocketspeed/SnapshotCallback.java',
+        'src/main/java/org/rocketspeed/Status.java',
+        'src/main/java/org/rocketspeed/SubscribeCallbackAdaptor.java',
+        'src/main/java/org/rocketspeed/SubscribeCallback.java',
+        'src/main/java/org/rocketspeed/SubscriptionRequest.java',
+        'src/main/java/org/rocketspeed/SubscriptionStart.java',
+        'src/main/java/org/rocketspeed/TopicOptions.java',
+        # generated
+        'src-gen/djinni/java/org/rocketspeed/ClientImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/ConfigurationImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/HostId.java',
+        'src-gen/djinni/java/org/rocketspeed/LogLevel.java',
+        'src-gen/djinni/java/org/rocketspeed/MsgIdImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/PublishCallbackImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/PublishStatus.java',
+        'src-gen/djinni/java/org/rocketspeed/ReceiveCallbackImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/RetentionBase.java',
+        'src-gen/djinni/java/org/rocketspeed/SnapshotCallbackImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/StatusBase.java',
+        'src-gen/djinni/java/org/rocketspeed/StatusCode.java',
+        'src-gen/djinni/java/org/rocketspeed/StorageType.java',
+        'src-gen/djinni/java/org/rocketspeed/SubscribeCallbackImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/SubscriptionRequestImpl.java',
+        'src-gen/djinni/java/org/rocketspeed/SubscriptionStorage.java',
+        'src-gen/djinni/java/org/rocketspeed/WakeLockImpl.java',
+    ],
     deps = [
-        '@/rocketspeed/github/src/djinni:rocketspeedjni',
+        ':librsclientjni.so',
     ],
 )
 
 java_unittest(
     name = 'client_java_test',
-    srcs = util.files('src/test/java/**/*.java'),
+    srcs = [
+        'src/test/java/org/rocketspeed/android/WakeLockTest.java',
+        'src/test/java/org/rocketspeed/BuilderTest.java',
+        'src/test/java/org/rocketspeed/IntegrationTest.java',
+        'src/test/java/org/rocketspeed/LocalTestCluster.java',
+        'src/test/java/org/rocketspeed/LocalTestClusterTest.java',
+        'src/test/java/org/rocketspeed/tests/VisibilityTest.java',
+        'src/test/java/org/rocketspeed/util/StatusMonoidFirst.java',
+    ],
     test_classes = [
         'org.rocketspeed.BuilderTest',
         'org.rocketspeed.IntegrationTest',
         'org.rocketspeed.LocalTestClusterTest',
-        'org.rocketspeed.ProxyBindingsLinkTest',
         'org.rocketspeed.android.WakeLockTest',
         'org.rocketspeed.tests.VisibilityTest',
     ],
@@ -33,6 +208,7 @@ java_unittest(
     ],
     env = {
         'RS_CLUSTER_BIN_PATH' : '_bin/rocketspeed/github/src/test/test_cluster_proc',
+        'LD_LIBRARY_PATH' : '_bin/rocketspeed/github/client',
     },
     java_version = JAVA_VERSION,
     openjdk = True,
