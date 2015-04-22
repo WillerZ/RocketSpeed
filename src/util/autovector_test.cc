@@ -205,13 +205,13 @@ StringVector RandomStringVector(
   std::bernoulli_distribution should_erase(0.4);
   StringVector result;
   for (size_t i = 0; i < 100 * max_size; ++i) {
-    std::uniform_int_distribution<size_t> position(0, result.size());
-
     if ((!result.empty() && should_erase(random_generator)) ||
         result.size() == max_size)
     {
+      std::uniform_int_distribution<size_t> position(0, result.size() - 1);
       result.erase(result.begin() + position(random_generator));
     } else {
+      std::uniform_int_distribution<size_t> position(0, result.size());
       result.insert(result.begin() + position(random_generator),
                     RandomString(random_generator));
     }
