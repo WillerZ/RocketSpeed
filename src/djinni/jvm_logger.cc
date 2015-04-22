@@ -19,7 +19,9 @@ std::shared_ptr<Logger> JvmEnv::CreatePlatformLogger(InfoLogLevel log_level) {
 #if defined(OS_ANDROID)
   return std::make_shared<LogcatLogger>(log_level);
 #else
-  return std::make_shared<PosixLogger>(stderr, false, this);
+  auto info_log = std::make_shared<PosixLogger>(stderr, false, this);
+  info_log->SetInfoLogLevel(log_level);
+  return info_log;
 #endif
 }
 
