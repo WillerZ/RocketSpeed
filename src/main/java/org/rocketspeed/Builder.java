@@ -13,8 +13,6 @@ public final class Builder {
   private WakeLock wakeLock;
   private LogLevel level;
   private ConfigurationImpl config;
-  private int tenantID;
-  private String clientID;
   private SubscribeCallbackImpl subscribeCallback;
   private ReceiveCallbackAdaptor receiveCallback;
   private SubscriptionStorage storage;
@@ -45,8 +43,6 @@ public final class Builder {
     // Default log level includes warning messages.
     level = LogLevel.WARN_LEVEL;
     // We do not reset config, as it can be reused by multiple clients.
-    tenantID = -1;
-    clientID = null;
     subscribeCallback = null;
     // Receive callback adaptor is tied to each client, so it must be recreated before we can
     // reuse builder.
@@ -64,17 +60,6 @@ public final class Builder {
   public Builder configuration(Configuration config) {
     assertNotNull(config, "Configuration");
     this.config = config.djinni();
-    return this;
-  }
-
-  public Builder tenantID(int tenantID) {
-    this.tenantID = tenantID;
-    return this;
-  }
-
-  public Builder clientID(String clientID) {
-    assertNotNull(clientID, "ClientID");
-    this.clientID = clientID;
     return this;
   }
 
@@ -109,9 +94,7 @@ public final class Builder {
   public Client build() throws Exception {
     try {
       assertInvalidState(config != null, "Missing Configuration.");
-      assertInvalidState(clientID != null, "Missing ClientID.");
-      assertInvalidState(tenantID >= 0, "Missing TenantID.");
-      ClientImpl clientImpl = ClientImpl.Create(level, config, tenantID, clientID,
+      ClientImpl clientImpl = ClientImpl.Create(level, config,
                                                 subscribeCallback, storage, wrapWakeLock(wakeLock));
       try {
         // Note that until we call Start method on ClientImpl, no client threads are running.

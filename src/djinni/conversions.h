@@ -21,9 +21,8 @@ namespace djinni {
 
 class ConfigurationImpl;
 
-std::unique_ptr<rocketspeed::Configuration> ToConfiguration(
-    ConfigurationImpl config,
-    int32_t tenant_id);
+std::shared_ptr<rocketspeed::Configuration> ToConfiguration(
+    ConfigurationImpl config);
 
 rocketspeed::InfoLogLevel ToInfoLogLevel(LogLevel log_level);
 

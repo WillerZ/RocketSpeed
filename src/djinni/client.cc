@@ -99,15 +99,14 @@ PublishStatus fromPublishStatus(rocketspeed::PublishStatus status) {
 std::shared_ptr<ClientImpl> ClientImpl::Create(
     LogLevel log_level,
     ConfigurationImpl config,
-    int32_t tenant_id,
-    std::string client_id,
     std::shared_ptr<SubscribeCallbackImpl> subscribe_callback,
     SubscriptionStorage storage,
     std::shared_ptr<WakeLockImpl> wake_lock) {
   rocketspeed::Status status;
 
-  auto config1 = ToConfiguration(config, tenant_id);
-  rocketspeed::ClientOptions options(*config1, client_id);
+  auto config1 = ToConfiguration(config);
+  rocketspeed::ClientOptions options;
+  options.config = config1;
 
   auto jvm_env = JvmEnv::Default();
   options.env = jvm_env;
@@ -184,6 +183,7 @@ Status Client::Start(std::shared_ptr<ReceiveCallbackImpl> receive_callback,
 }
 
 PublishStatus Client::Publish(
+    int32_t tenant_id,
     std::string namespace_id,
     std::string topic_name,
     std::vector<uint8_t> data,
@@ -204,14 +204,16 @@ PublishStatus Client::Publish(
   TopicOptions topic_options;
   rocketspeed::PublishStatus status;
   if (message_id) {
-    status = client_->Publish(topic_name,
+    status = client_->Publish(tenant_id,
+                              topic_name,
                               namespace_id,
                               topic_options,
                               toSlice(data),
                               publish_callback1,
                               toMsgId(message_id.value()));
   } else {
-    status = client_->Publish(topic_name,
+    status = client_->Publish(tenant_id,
+                              topic_name,
                               namespace_id,
                               topic_options,
                               toSlice(data),
@@ -221,12 +223,13 @@ PublishStatus Client::Publish(
   return fromPublishStatus(status);
 }
 
-void Client::ListenTopics(std::vector<SubscriptionRequestImpl> requests) {
+void Client::ListenTopics(int32_t tenant_id,
+                          std::vector<SubscriptionRequestImpl> requests) {
   std::vector<SubscriptionRequest> requests1;
   for (auto& request : requests) {
     requests1.push_back(toSubscriptionRequest(request));
   }
-  client_->ListenTopics(requests1);
+  client_->ListenTopics(tenant_id, requests1);
 }
 
 namespace {

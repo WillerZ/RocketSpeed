@@ -9,9 +9,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class ClientImpl {
     public abstract Status Start(ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
 
-    public abstract PublishStatus Publish(String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+    public abstract PublishStatus Publish(int tenantId, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
-    public abstract void ListenTopics(ArrayList<SubscriptionRequestImpl> names);
+    public abstract void ListenTopics(int tenantId, ArrayList<SubscriptionRequestImpl> names);
 
     public abstract void Acknowledge(String namespaceId, String topicName, long sequenceNumber);
 
@@ -19,7 +19,7 @@ public abstract class ClientImpl {
 
     public abstract void Close();
 
-    public static native ClientImpl Create(LogLevel logLevel, ConfigurationImpl config, int tenantId, String clientId, SubscribeCallbackImpl subscribeCallback, SubscriptionStorage storage, WakeLockImpl wakeLock);
+    public static native ClientImpl Create(LogLevel logLevel, ConfigurationImpl config, SubscribeCallbackImpl subscribeCallback, SubscriptionStorage storage, WakeLockImpl wakeLock);
 
     public static final class CppProxy extends ClientImpl
     {
@@ -53,20 +53,20 @@ public abstract class ClientImpl {
         private native Status native_Start(long _nativeRef, ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
 
         @Override
-        public PublishStatus Publish(String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
+        public PublishStatus Publish(int tenantId, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Publish(this.nativeRef, namespaceId, topicName, data, messageId, publishCallback);
+            return native_Publish(this.nativeRef, tenantId, namespaceId, topicName, data, messageId, publishCallback);
         }
-        private native PublishStatus native_Publish(long _nativeRef, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+        private native PublishStatus native_Publish(long _nativeRef, int tenantId, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
 
         @Override
-        public void ListenTopics(ArrayList<SubscriptionRequestImpl> names)
+        public void ListenTopics(int tenantId, ArrayList<SubscriptionRequestImpl> names)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_ListenTopics(this.nativeRef, names);
+            native_ListenTopics(this.nativeRef, tenantId, names);
         }
-        private native void native_ListenTopics(long _nativeRef, ArrayList<SubscriptionRequestImpl> names);
+        private native void native_ListenTopics(long _nativeRef, int tenantId, ArrayList<SubscriptionRequestImpl> names);
 
         @Override
         public void Acknowledge(String namespaceId, String topicName, long sequenceNumber)

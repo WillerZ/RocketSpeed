@@ -100,18 +100,17 @@ public class IntegrationTest {
     // Client setup.
     String clientId = "test_client_id-OneMessage";
     int tenantId = 101;
-    Builder builder = new Builder().clientID(clientId)
+    Builder builder = new Builder()
         .configuration(testCluster.createConfiguration())
-        .tenantID(tenantId)
         .receiveCallback(receiveCallback)
         .subscribeCallback(subscribeCallback);
 
     try (Client client = builder.build()) {
       // Send a message.
-      client.publish(ns, topic, data, publishCallback);
+      client.publish(tenantId, ns, topic, data, publishCallback);
 
       // Listen for the topic from the beginning of time.
-      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, BEGINNING)));
+      client.listenTopics(tenantId, singletonList(new SubscriptionRequest(ns, topic, true, BEGINNING)));
 
       // Wait for publish ack.
       assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
@@ -172,26 +171,25 @@ public class IntegrationTest {
     // Client setup.
     String clientId = "test_topic-SequenceNumberZero";
     int tenantId = 102;
-    Builder builder = new Builder().clientID(clientId)
+    Builder builder = new Builder()
         .configuration(testCluster.createConfiguration())
-        .tenantID(tenantId)
         .receiveCallback(receiveCallback)
         .subscribeCallback(subscribeCallback);
 
     try (Client client = builder.build()) {
       // Send some messages and wait for the ACKs.
       for (int i = 1; i < 4; ++i) {
-        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
+        client.publish(tenantId, ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
 
       // Subscribe starting from current topic head.
-      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, CURRENT)));
+      client.listenTopics(tenantId, singletonList(new SubscriptionRequest(ns, topic, true, CURRENT)));
       assertTrue(subscribeSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
 
       // Send 3 more different messages.
       for (int i = 3; i < 6; ++i) {
-        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
+        client.publish(tenantId, ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
@@ -200,22 +198,22 @@ public class IntegrationTest {
       assertEquals(asList("3", "4", "5"), receivedMessages);
 
       // Unsubscribe.
-      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, false, UNKNOWN)));
+      client.listenTopics(tenantId, singletonList(new SubscriptionRequest(ns, topic, false, UNKNOWN)));
       assertTrue(subscribeSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
 
       // Send some messages and wait for the ACKs.
       for (int i = 6; i < 9; ++i) {
-        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
+        client.publish(tenantId, ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
 
       // Subscribe starting from current topic head.
-      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, CURRENT)));
+      client.listenTopics(tenantId, singletonList(new SubscriptionRequest(ns, topic, true, CURRENT)));
       assertTrue(subscribeSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
 
       // Send 3 more messages again.
       for (int i = 9; i < 12; ++i) {
-        client.publish(ns, topic, valueOf(i).getBytes(), publishCallback);
+        client.publish(tenantId, ns, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
@@ -266,16 +264,15 @@ public class IntegrationTest {
     Builder builder = new Builder().configuration(testCluster.createConfiguration());
 
     // Create a client.
-    try (Client client = builder.clientID(clientId)
-        .tenantID(tenantId)
+    try (Client client = builder
         .receiveCallback(receiveCallback)
         .usingFileStorage(snapshotFile, false)
         .build()) {
       // Subscribe starting from the first sequence number.
-      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, BEGINNING)));
+      client.listenTopics(tenantId, singletonList(new SubscriptionRequest(ns, topic, true, BEGINNING)));
       // Send some messages and wait for the ACKs.
       for (int i = 0; i < 3; ++i) {
-        client.publish(ns, topic, valueOf(i).getBytes());
+        client.publish(tenantId, ns, topic, valueOf(i).getBytes());
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
       // Should receive all of the first three messages.
@@ -291,17 +288,16 @@ public class IntegrationTest {
     receivedMessages.clear();
 
     // Create a client again.
-    try (Client client = builder.clientID(clientId)
-        .tenantID(tenantId)
+    try (Client client = builder
         .receiveCallback(receiveCallback)
         .usingFileStorage(snapshotFile, true)
         .build()) {
       // Subscribe starting from unknown sequence number, a subscription storage is expected to
       // provide this information.
-      client.listenTopics(singletonList(new SubscriptionRequest(ns, topic, true, UNKNOWN)));
+      client.listenTopics(tenantId, singletonList(new SubscriptionRequest(ns, topic, true, UNKNOWN)));
       // Send some different messages and wait for the ACKs.
       for (int i = 3; i < 6; ++i) {
-        client.publish(ns, topic, valueOf(i).getBytes());
+        client.publish(tenantId, ns, topic, valueOf(i).getBytes());
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
       // Should receive none of the first three messages and all from the second batch.
@@ -316,8 +312,7 @@ public class IntegrationTest {
     receivedMessages.clear();
 
     // Create a client once again.
-    try (Client client = builder.clientID(clientId)
-        .tenantID(tenantId)
+    try (Client client = builder
         .receiveCallback(receiveCallback)
         .usingFileStorage(snapshotFile, true)
         .resubscribeFromStorage()
@@ -326,7 +321,7 @@ public class IntegrationTest {
       // automatically.
       // Send some different messages and wait for the ACKs.
       for (int i = 6; i < 9; ++i) {
-        client.publish(ns, topic, valueOf(i).getBytes());
+        client.publish(tenantId, ns, topic, valueOf(i).getBytes());
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
       // Should receive none of the first three messages and all from the second batch.

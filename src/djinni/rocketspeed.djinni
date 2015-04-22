@@ -106,8 +106,6 @@ SubscriptionStorage = record {
 ClientImpl = interface +c {
   static Create(log_level: LogLevel,
                 config: ConfigurationImpl,
-                tenant_id: i32,
-                client_id: string,
                 subscribe_callback: SubscribeCallbackImpl,
                 storage: SubscriptionStorage,
                 wake_lock: WakeLockImpl): ClientImpl;
@@ -116,13 +114,15 @@ ClientImpl = interface +c {
         restore_subscriptions: bool,
         resubscribe_from_storage: bool): Status;
 
-  Publish(namespace_id: string,
+  Publish(tenant_id: i32,
+          namespace_id: string,
           topic_name: string,
           data: binary,
           message_id: optional<MsgIdImpl>,
           publish_callback: PublishCallbackImpl): PublishStatus;
 
-  ListenTopics(names: list<SubscriptionRequestImpl>);
+  ListenTopics(tenant_id: i32,
+               names: list<SubscriptionRequestImpl>);
 
   Acknowledge(namespace_id: string,
               topic_name: string,

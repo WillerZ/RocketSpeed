@@ -24,7 +24,7 @@ std::shared_ptr<ProxyImpl> ProxyImpl::Create(LogLevel log_level,
                                              ConfigurationImpl config,
                                              int32_t num_workers) {
   rocketspeed::Status status;
-  auto config1 = ToConfiguration(std::move(config), 101);
+  auto config1 = ToConfiguration(std::move(config));
 
   ProxyOptions options;
   options.conf = std::move(config1);

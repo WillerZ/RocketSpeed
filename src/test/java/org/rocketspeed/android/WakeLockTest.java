@@ -77,9 +77,8 @@ public class WakeLockTest {
         calledBack.release();
       }
     };
-    client = new Builder(wakeLock).clientID("client-id-123")
+    client = new Builder(wakeLock)
         .configuration(testCluster.createConfiguration())
-        .tenantID(123)
         .receiveCallback(receiveCallback)
         .subscribeCallback(subscribeCallback)
         .build();
@@ -94,6 +93,7 @@ public class WakeLockTest {
 
   @Test
   public void testLockedInCallbacks() throws Exception {
+    int tenantId = 123;
     String ns = "guest";
     String topic = "test_topic-LockedInCallbacks";
 
@@ -102,12 +102,12 @@ public class WakeLockTest {
     long start = System.currentTimeMillis();
 
     // Subscribe to a topic that we will be publishing to.
-    client.listenTopics(asList(new SubscriptionRequest(ns, topic, true, CURRENT)));
+    client.listenTopics(tenantId, asList(new SubscriptionRequest(ns, topic, true, CURRENT)));
     // Wait for confirmation.
     assertTrue(calledBack.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
 
     // Publish to the topic.
-    client.publish(ns, topic, new byte[3], publishCallback);
+    client.publish(tenantId, ns, topic, new byte[3], publishCallback);
     // Wait for confirmation...
     assertTrue(calledBack.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
     // ...and message.

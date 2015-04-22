@@ -35,13 +35,15 @@ class Client : public ClientImpl {
                bool resubscribe_from_storage) override;
 
   PublishStatus Publish(
+      int32_t tenant_id,
       std::string namespace_id,
       std::string topic_name,
       std::vector<uint8_t> data,
       std::experimental::optional<MsgIdImpl> message_id,
       std::shared_ptr<PublishCallbackImpl> publish_callback) override;
 
-  void ListenTopics(std::vector<SubscriptionRequestImpl> names) override;
+  void ListenTopics(int32_t tenant_id,
+                    std::vector<SubscriptionRequestImpl> names) override;
 
   void Acknowledge(std::string namespace_id,
                    std::string topic_name,

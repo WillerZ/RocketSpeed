@@ -14,6 +14,8 @@
 #include "include/Logger.h"
 #include "include/Types.h"
 
+#include "src/util/common/fixed_configuration.h"
+
 #include "src-gen/djinni/cpp/ConfigurationImpl.hpp"
 #include "src-gen/djinni/cpp/HostId.hpp"
 #include "src-gen/djinni/cpp/LogLevel.hpp"
@@ -25,9 +27,17 @@ namespace djinni {
 
 std::shared_ptr<rocketspeed::Configuration> ToConfiguration(
     ConfigurationImpl config) {
-  return std::make_shared<FixedConfiguration>(
-    HostId(config.pilots[0].hostname, config.pilots[0].port),
-    HostId(config.copilots[0].hostname, config.copilots[0].port));
+  rocketspeed::HostId pilot;
+  rocketspeed::HostId copilot;
+  if (!config.pilots.empty()) {
+    pilot = rocketspeed::HostId(config.pilots[0].hostname,
+                                config.pilots[0].port);
+  }
+  if (!config.copilots.empty()) {
+    copilot = rocketspeed::HostId(config.copilots[0].hostname,
+                                  config.copilots[0].port);
+  }
+  return std::make_shared<FixedConfiguration>(pilot, copilot);
 }
 
 rocketspeed::InfoLogLevel ToInfoLogLevel(LogLevel log_level) {
