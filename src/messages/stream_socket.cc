@@ -10,32 +10,17 @@
 
 namespace rocketspeed {
 
-/**
- * Encodes stream ID onto wire.
- *
- * @param origin Origin stream ID.
- * @return Encoded origin.
- */
-std::string EncodeOrigin(const StreamID origin) {
-  std::string encoded;
-  PutFixed64(&encoded, static_cast<uint64_t>(origin));
-  return encoded;
+void EncodeOrigin(std::string* out, const StreamID origin) {
+  PutFixed64(out, static_cast<uint64_t>(origin));
 }
 
-/**
- * Decodes wire format of stream origin.
- *
- * @param in Input slice of encoded stream spec. Will be advanced beyond spec.
- * @param origin Output parameter for decoded stream.
- * @return ok() if successfully decoded, otherwise error.
- */
-Status DecodeOrigin(Slice* in, StreamID* origin) {
+bool DecodeOrigin(Slice* in, StreamID* origin) {
   uint64_t origin_fixed;
   if (!GetFixed64(in, &origin_fixed)) {
-    return Status::InvalidArgument("Bad stream ID");
+    return false;
   }
   *origin = static_cast<StreamID>(origin_fixed);
-  return Status::OK();
+  return true;
 }
 
 }  // namespace rocketspeed

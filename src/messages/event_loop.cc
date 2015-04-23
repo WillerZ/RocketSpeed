@@ -362,8 +362,7 @@ class SocketEvent {
 
       // Decode the recipients.
       StreamID local = 0;
-      Status st = DecodeOrigin(&in, &local);
-      if (!st.ok()) {
+      if (!DecodeOrigin(&in, &local)) {
         continue;
       }
 
@@ -630,7 +629,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
       // Enqueue data to SocketEvent queue. This message will be sent out
       // when the output socket is ready to write.
       auto destinations = std::make_shared<TimestampedString>();
-      destinations->string = EncodeOrigin(local);
+      EncodeOrigin(&destinations->string, local);
       destinations->issued_time = issued_time;
 
       size_t frame_size = destinations->string.size() + msg->string.size();

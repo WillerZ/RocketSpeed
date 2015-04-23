@@ -31,19 +31,19 @@ static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
 /**
  * Encodes stream ID onto wire.
  *
+ * @param out Output string to append encoded origin to.
  * @param origin Origin stream ID.
- * @return Encoded origin.
  */
-std::string EncodeOrigin(StreamID origin);
+void EncodeOrigin(std::string* out, StreamID origin);
 
 /**
  * Decodes wire format of stream origin.
  *
  * @param in Input slice of encoded stream spec. Will be advanced beyond spec.
  * @param origin Output parameter for decoded stream.
- * @return ok() if successfully decoded, otherwise error.
+ * @return true iff successfully decoded.
  */
-Status DecodeOrigin(Slice* in, StreamID* origin);
+bool DecodeOrigin(Slice* in, StreamID* origin);
 
 /** Keeps state of the stream as seen by its creator. */
 class StreamSocket {

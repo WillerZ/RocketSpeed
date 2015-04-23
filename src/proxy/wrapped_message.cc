@@ -13,45 +13,91 @@
 
 namespace rocketspeed {
 
+namespace {
+
+const uint32_t kHeaderMagic = 0xD00DBEEF, kFooterMagic = 0xFEE1DEAD;
+
+const size_t kHeaderSize = sizeof(kHeaderMagic),
+             kFooterSize = sizeof(StreamID) + sizeof(MessageSequenceNumber) +
+                           sizeof(kFooterMagic);
+
+std::string MagicToHexString(const uint32_t magic) {
+  return Slice(reinterpret_cast<const char*>(&magic), sizeof(magic))
+      .ToString(true);
+}
+
+}  // namespace
+
 std::string WrapMessage(std::string raw_message,
                         StreamID origin,
                         MessageSequenceNumber seqno) {
+  std::string wrapped_message;
+  wrapped_message.reserve(raw_message.size() + kHeaderSize + kFooterSize);
+  // Prefix message with header magic bytes.
+  PutFixed32(&wrapped_message, kHeaderMagic);
+  // Put the RocketSpeed message.
+  wrapped_message.append(raw_message);
   // Append origin stream.
-  raw_message.append(EncodeOrigin(origin));
+  EncodeOrigin(&wrapped_message, origin);
   // Append message sequence number
-  PutFixed32(&raw_message, seqno);
-  return raw_message;
+  PutFixed32(&wrapped_message, seqno);
+  // Suffix message with magic bytes.
+  PutFixed32(&wrapped_message, kFooterMagic);
+  return wrapped_message;
 }
 
 Status UnwrapMessage(std::string wrapped_message,
                      std::string* raw_message,
                      StreamID* stream,
                      MessageSequenceNumber* seqno) {
-  const size_t kSeqnoSize = sizeof(MessageSequenceNumber),
-               kStreamSize = sizeof(StreamID),
-               kMetadataSize = kStreamSize + kSeqnoSize;
-  // Verify that message contains stream ID and sequence number.
-  if (wrapped_message.size() < kMetadataSize) {
-    return Status::IOError("Message too short, dropping.");
+  if (wrapped_message.size() < kHeaderSize + kFooterSize) {
+    return Status::IOError("Message too short to contain header and footer.");
   }
-  Slice metadata_slice(
-      wrapped_message.data() + wrapped_message.size() - kMetadataSize,
-      kMetadataSize);
-  // Deserialize origin stream.
-  Status st = DecodeOrigin(&metadata_slice, stream);
-  if (!st.ok()) {
-    return st;
+
+  // We'll accumulate description of all encountered errors and try to
+  // opportunistically deserialise as much of a message as possible.
+  std::string errors;
+
+  {  // Read the header.
+    Slice in(wrapped_message.data(), kHeaderSize);
+    uint32_t header_magic;
+    if (!GetFixed32(&in, &header_magic)) {
+      errors += "failed reding header magic, ";
+    } else if (header_magic != kHeaderMagic) {
+      errors += MagicToHexString(kHeaderMagic) + " != " +
+                MagicToHexString(header_magic) + " in header, ";
+    }
   }
-  // Deserialize message sequence number.
-  uint32_t seqno_unsigned;
-  if (!GetFixed32(&metadata_slice, &seqno_unsigned)) {
-    return Status::IOError("Failed to deserialise sequence number");
+
+  {  // Read the footer.
+    Slice in(wrapped_message.data() + (wrapped_message.size() - kFooterSize),
+             kFooterSize);
+    // Deserialize origin stream.
+    if (!DecodeOrigin(&in, stream)) {
+      errors += "failed reading origin, ";
+    }
+    // Deserialize message sequence number.
+    uint32_t seqno_unsigned;
+    if (!GetFixed32(&in, &seqno_unsigned)) {
+      errors += "failed reading seqno, ";
+    } else {
+      *seqno = static_cast<MessageSequenceNumber>(seqno_unsigned);
+    }
+    // Deserialize footer magic.
+    uint32_t footer_magic;
+    if (!GetFixed32(&in, &footer_magic)) {
+      errors += "failed reading footer magic, ";
+    } else if (footer_magic != kFooterMagic) {
+      errors += MagicToHexString(kFooterMagic) + " != " +
+                MagicToHexString(footer_magic) + " in footer, ";
+    }
   }
-  *seqno = static_cast<MessageSequenceNumber>(seqno_unsigned);
-  // Strip metdata and leave a serialized message only.
-  wrapped_message.resize(wrapped_message.size() - kMetadataSize);
+
+  // Strip header and footer and leave a serialized message only.
+  wrapped_message.erase(0, kHeaderSize);
+  wrapped_message.resize(wrapped_message.size() - kFooterSize);
   *raw_message = std::move(wrapped_message);
-  return Status::OK();
+  return errors.empty() ? Status::OK() : Status::IOError(std::move(errors));
 }
 
 Status UnwrapMessage(std::string wrapped_message,

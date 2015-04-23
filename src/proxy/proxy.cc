@@ -130,11 +130,18 @@ Status Proxy::Start(OnMessageCallback on_message,
 
 Status Proxy::Forward(std::string data, int64_t session) {
   // Deserialize metadata.
-  StreamID origin;
-  MessageSequenceNumber sequence;
+  StreamID origin = 0;
+  MessageSequenceNumber sequence = 0;
   std::string msg;
   Status st = UnwrapMessage(std::move(data), &msg, &origin, &sequence);
   if (!st.ok()) {
+    LOG_ERROR(info_log_,
+              "Faled unwrapping message on session %" PRIi64
+              ", speculative stream (%llu) and seqno %d. Problems: %s",
+              session,
+              origin,
+              sequence,
+              st.ToString().c_str());
     return st;
   }
   // Forward message to responsible worker.
