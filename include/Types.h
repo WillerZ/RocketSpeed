@@ -85,7 +85,7 @@ struct GUID {
     struct { uint64_t hi, lo; };
   };
 
-  GUID() {}
+  GUID() : hi(0), lo(0) {}
 
   explicit GUID(const char guid[16]) {
     memcpy(id, guid, 16);
