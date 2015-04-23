@@ -56,7 +56,7 @@ typedef autovector<TopicSubscription, 1> TopicList;
 //
 class TopicManager {
  public:
-  TopicManager() = default;
+  TopicManager() {}
   ~TopicManager() = default;
 
   /**

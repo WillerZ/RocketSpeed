@@ -57,7 +57,7 @@ class ControlRoom {
   // The Tailer sends data messages to ControlRoom.
   class RoomCommand {
    public:
-    RoomCommand() = default;
+    RoomCommand() {}
 
     RoomCommand(std::unique_ptr<Message> message,
                 int worker_id,

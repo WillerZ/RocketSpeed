@@ -40,7 +40,7 @@ class LinkedMap {
   using const_reverse_iterator = typename List::const_reverse_iterator;
   using insertion_result = typename std::pair<iterator, bool>;
 
-  LinkedMap() = default;
+  LinkedMap() {}
   LinkedMap(LinkedMap&&) = default;
   LinkedMap& operator= (LinkedMap&&) = default;
 

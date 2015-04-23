@@ -29,7 +29,7 @@ TEST(LinkedMapTest, Constness) {  // Compile time test
 
 
 struct NonCopyable {
-  NonCopyable() = default;
+  NonCopyable() {}
   NonCopyable(const NonCopyable&) = delete;
   NonCopyable& operator= (const NonCopyable&) = delete;
   NonCopyable(NonCopyable&&) = delete;
@@ -37,7 +37,7 @@ struct NonCopyable {
 };
 
 struct Movable {
-  Movable() = default;
+  Movable() {}
   Movable(const Movable&) = delete;
   Movable& operator= (const Movable&) = delete;
   Movable(Movable&&) = default;
@@ -45,7 +45,7 @@ struct Movable {
 };
 
 struct Copyable {
-  Copyable() = default;
+  Copyable() {}
   Copyable(const Copyable&) = default;
   Copyable& operator= (const Copyable&) = default;
   Copyable(Copyable&&) = delete;

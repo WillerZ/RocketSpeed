@@ -66,7 +66,7 @@ class PooledObjectList {
   static_assert(std::is_base_of<PooledObject<T>, T>::value,
                 "T should be a subclass of PooledObject<T>.");
  public:
-  PooledObjectList() = default;
+  PooledObjectList() {}
 
   template <typename... Args>
   T* Allocate(Args&&... args) {

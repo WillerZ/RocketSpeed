@@ -49,16 +49,10 @@ GUIDGenerator::GUIDGenerator() {
 }
 
 GUID GUIDGenerator::Generate() {
-  union {
-    GUID guid;
-    struct {
-      uint64_t ui0;
-      uint64_t ui1;
-    };
-  } result;
-  result.ui0 = rng_();
-  result.ui1 = rng_();
-  return result.guid;
+  GUID guid;
+  guid.hi = rng_();
+  guid.lo = rng_();
+  return guid;
 }
 
 // generates a 16 byte guid string

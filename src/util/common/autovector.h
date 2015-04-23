@@ -46,7 +46,7 @@ class AutoVectorAllocator {
     typedef AutoVectorAllocator<U, kCapacity> other;
   };
 
-  AutoVectorAllocator() = default;
+  AutoVectorAllocator() {}
 
   AutoVectorAllocator(const AutoVectorAllocator&) = delete;
 

@@ -29,7 +29,7 @@ class Copilot;
 // These are sent from the Copilot to the worker.
 class CopilotWorkerCommand {
  public:
-  CopilotWorkerCommand() = default;
+  CopilotWorkerCommand() {}
 
   CopilotWorkerCommand(LogID logid,
                        std::unique_ptr<Message> msg,

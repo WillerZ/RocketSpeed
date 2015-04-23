@@ -258,7 +258,7 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   /** Stream socket used by this worker to talk to the copilot. */
   StreamSocket copilot_socket;
 
-  ClientWorkerData() = default;
+  ClientWorkerData() {}
   // Noncopyable
   ClientWorkerData(const ClientWorkerData&) = delete;
   ClientWorkerData& operator=(const ClientWorkerData&) = delete;
