@@ -55,12 +55,6 @@ struct ClientOptions {
   // Configuration of this service provider.
   std::shared_ptr<Configuration> config;
 
-  // Username for authentication.
-  std::string username;
-
-  // Access Token for authentication.
-  std::string access_token;
-
   // Strategy for storing subscription state.
   // Default: nullptr.
   std::unique_ptr<SubscriptionStorage> storage;
