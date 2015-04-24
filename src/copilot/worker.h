@@ -17,7 +17,6 @@
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream_socket.h"
-#include "src/util/control_tower_router.h"
 #include "src/util/worker_loop.h"
 #include "src/util/common/hash.h"
 #include "src/util/topic_uuid.h"
@@ -25,6 +24,7 @@
 namespace rocketspeed {
 
 class Copilot;
+class ControlTowerRouter;
 
 // These are sent from the Copilot to the worker.
 class CopilotWorkerCommand {
@@ -39,6 +39,14 @@ class CopilotWorkerCommand {
   , msg_(std::move(msg))
   , worker_id_(worker_id)
   , origin_(origin) {
+  }
+
+  explicit CopilotWorkerCommand(std::shared_ptr<ControlTowerRouter> new_router)
+  : router_update_(std::move(new_router)) {
+  }
+
+  bool IsRouterUpdate() const {
+    return !msg_;
   }
 
   // Get log ID where topic lives to subscribe to
@@ -59,11 +67,18 @@ class CopilotWorkerCommand {
     return origin_;
   }
 
+  std::shared_ptr<ControlTowerRouter> GetRouterUpdate() {
+    assert(router_update_);
+    assert(!msg_);
+    return router_update_;
+  }
+
  private:
   LogID logid_;
   std::unique_ptr<Message> msg_;
   int worker_id_;
   StreamID origin_;
+  std::shared_ptr<ControlTowerRouter> router_update_;
 };
 
 /**
@@ -74,7 +89,7 @@ class CopilotWorker {
  public:
   // Constructs a new CopilotWorker (does not start a thread).
   CopilotWorker(const CopilotOptions& options,
-                const ControlTowerRouter* control_tower_router,
+                std::shared_ptr<ControlTowerRouter> control_tower_router,
                 const int myid,
                 Copilot* copilot);
 
@@ -83,6 +98,8 @@ class CopilotWorker {
                std::unique_ptr<Message> msg,
                int worker_id,
                StreamID origin);
+
+  bool Forward(std::shared_ptr<ControlTowerRouter> new_router);
 
   // Start the worker loop on this thread.
   // Blocks until the worker loop ends.
@@ -173,8 +190,8 @@ class CopilotWorker {
   // Copilot specific options.
   const CopilotOptions& options_;
 
-  // Shared router for control towers.
-  const ControlTowerRouter* control_tower_router_;
+  // Router for control towers.
+  std::shared_ptr<ControlTowerRouter> control_tower_router_;
 
   // Reference to the copilot
   Copilot* copilot_;

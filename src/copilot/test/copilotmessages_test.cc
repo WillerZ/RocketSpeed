@@ -135,8 +135,10 @@ TEST(CopilotTest, WorkerMapping) {
   ASSERT_TRUE(st.ok());
 
   // Now check that each control tower is mapped to one worker.
-  std::unordered_map<const HostId*, std::set<int>> tower_to_workers;
-  const auto& router = copilot->GetControlTowerRouter();
+  std::unordered_map<HostId, std::set<int>> tower_to_workers;
+  ControlTowerRouter router(options.control_towers,
+                            options.consistent_hash_replicas,
+                            options.control_towers_per_log);
   for (LogID logid = log_range.first;
        logid <= log_range.second;
        ++logid) {
@@ -145,11 +147,11 @@ TEST(CopilotTest, WorkerMapping) {
     ASSERT_TRUE(router.GetControlTower(logid, &control_tower).ok());
 
     // Find the worker responsible for this log.
-    int worker_id = copilot->GetLogWorker(logid);
-    tower_to_workers[control_tower].insert(worker_id);
+    int worker_id = copilot->GetLogWorker(logid, *control_tower);
+    tower_to_workers[*control_tower].insert(worker_id);
 
     // Check that the tower maps to only one worker.
-    ASSERT_LE(tower_to_workers[control_tower].size(),
+    ASSERT_LE(tower_to_workers[*control_tower].size(),
               options.control_tower_connections);
   }
   copilot->Stop();

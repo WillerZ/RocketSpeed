@@ -40,6 +40,12 @@ class ControlTowerRouter {
     unsigned int replicas,
     size_t control_towers_per_log);
 
+  /** Copyable and movable */
+  ControlTowerRouter(const ControlTowerRouter&) = default;
+  ControlTowerRouter& operator=(const ControlTowerRouter&) = default;
+  ControlTowerRouter(ControlTowerRouter&&) = default;
+  ControlTowerRouter& operator=(ControlTowerRouter&&) = default;
+
   /**
     * Gets the host ID of the control tower ring that is tailing this log.
     *

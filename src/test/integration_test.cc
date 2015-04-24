@@ -42,7 +42,7 @@ TEST(IntegrationTest, OneMessage) {
   port::Semaphore msg_received;
 
   // Message setup.
-  Topic topic = "test_topic";
+  Topic topic = "OneMessage";
   NamespaceID namespace_id = GuestNamespace;
   TopicOptions topic_options;
   std::string data = "test_message";
@@ -108,7 +108,7 @@ TEST(IntegrationTest, TrimAll) {
   port::Semaphore read_sem;
 
   // Message setup.
-  Topic topic = "test_topic";
+  Topic topic = "TrimAll";
   NamespaceID namespace_id = GuestNamespace;
   TopicOptions topic_options;
   std::string data = "test_message";
@@ -210,7 +210,7 @@ TEST(IntegrationTest, TrimFirst) {
   port::Semaphore read_sem;
 
   // Message setup.
-  Topic topic = "test_topic";
+  Topic topic = "TrimFirst";
   NamespaceID namespace_id = GuestNamespace;
   TopicOptions topic_options;
   std::string data = "test_message";
@@ -341,7 +341,7 @@ TEST(IntegrationTest, TrimGapHandling) {
 
   // Constants.
   const NamespaceID ns = GuestNamespace;
-  const Topic topics[2] = { "topic1", "topic2" };
+  const Topic topics[2] = { "TrimGapHandling1", "TrimGapHandling2" };
   const int num_messages = 10;
 
   port::Semaphore sub_sem[2];
@@ -591,9 +591,10 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
 
   // Subscribe.
   NamespaceID ns = GuestNamespace;
+  Topic topic = "UnsubscribeOnGoodbye";
   MessageMetadata sub(Tenant::GuestTenant,
                       MessageMetadata::MetaType::Request,
-                      { TopicPair(1, "topic", MetadataType::mSubscribe, ns) });
+                      { TopicPair(1, topic, MetadataType::mSubscribe, ns) });
   ASSERT_OK(client.SendRequest(sub, &socket, 0));
   ASSERT_TRUE(subscribed.TimedWait(std::chrono::milliseconds(100)));
 
@@ -608,7 +609,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   // We shouldn't get the message.
   MessageData publish(MessageType::mPublish,
                       Tenant::GuestTenant,
-                      "topic",
+                      topic,
                       ns,
                       Slice("data"));
   ASSERT_OK(client.SendRequest(publish, &socket, 0));
@@ -624,7 +625,7 @@ TEST(IntegrationTest, UnsubscribeCallback) {
   ASSERT_OK(cluster.GetStatus());
 
   // Message setup.
-  Topic topic = "test_topic";
+  Topic topic = "UnsubscribeCallback";
   NamespaceID namespace_id = GuestNamespace;
 
   port::Semaphore sub_checkpoint;
@@ -677,7 +678,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   port::Semaphore msg_received;
 
   // Message setup.
-  Topic topic = "test_topic";
+  Topic topic = "OneMessageWithoutRollCall";
   NamespaceID namespace_id = GuestNamespace;
   TopicOptions topic_options;
   std::string data = "test_message";
@@ -727,6 +728,84 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);
   ASSERT_TRUE(result);
+}
+
+TEST(IntegrationTest, NewControlTower) {
+  // Will send a message to one control tower. Stop it, bring up a new one,
+  // inform copilot of the change, then try to send another.
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Message setup.
+  NamespaceID namespace_id = GuestNamespace;
+  TopicOptions topic_options;
+
+  // RocketSpeed callbacks
+  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {};
+  auto subscription_callback = [&] (SubscriptionStatus ss) {};
+
+  port::Semaphore msg_received;
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
+    msg_received.Post();
+  };
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+
+  // Send a message.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            "NewControlTower1",
+                            namespace_id,
+                            topic_options,
+                            "message1",
+                            publish_callback).status);
+
+  // Listen for the message.
+  client->ListenTopics(GuestTenant,
+    { SubscriptionRequest(namespace_id, "NewControlTower1", true, 1) });
+
+  // Wait for the message.
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+
+  // Stop Control Tower
+  cluster.GetControlTower()->Stop();
+
+  // Send another message to a different topic.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            "NewControlTower2",
+                            namespace_id,
+                            topic_options,
+                            "message2",
+                            publish_callback).status);
+
+  // Start new control tower (only).
+  LocalTestCluster::Options new_opts;
+  new_opts.info_log = info_log;
+  new_opts.start_controltower = true;
+  new_opts.start_copilot = false;
+  new_opts.start_pilot = false;
+  new_opts.controltower_port = ControlTower::DEFAULT_PORT + 1;
+  LocalTestCluster new_cluster(new_opts);
+
+  // Inform copilot of new control tower.
+  std::unordered_map<uint64_t, HostId> new_towers = {
+    { 0, new_cluster.GetControlTower()->GetHostId() }
+  };
+  ASSERT_OK(cluster.GetCopilot()->UpdateControlTowers(std::move(new_towers)));
+
+  // Listen for the message.
+  client->ListenTopics(GuestTenant,
+    { SubscriptionRequest(namespace_id, "NewControlTower2", true, 1) });
+
+  // Wait for the message.
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
 }
 
 }  // namespace rocketspeed

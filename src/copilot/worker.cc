@@ -9,17 +9,19 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/copilot/copilot.h"
+#include "src/util/control_tower_router.h"
 #include "src/util/hostmap.h"
 
 namespace rocketspeed {
 
-CopilotWorker::CopilotWorker(const CopilotOptions& options,
-                             const ControlTowerRouter* control_tower_router,
-                             const int myid,
-                             Copilot* copilot)
+CopilotWorker::CopilotWorker(
+    const CopilotOptions& options,
+    std::shared_ptr<ControlTowerRouter> control_tower_router,
+    const int myid,
+    Copilot* copilot)
 : worker_loop_(options.worker_queue_size)
 , options_(options)
-, control_tower_router_(control_tower_router)
+, control_tower_router_(std::move(control_tower_router))
 , copilot_(copilot)
 , myid_(myid) {
   // copilot is required.
@@ -43,70 +45,78 @@ bool CopilotWorker::Forward(LogID logid,
   return worker_loop_.Send(logid, std::move(msg), worker_id, origin);
 }
 
+bool CopilotWorker::Forward(std::shared_ptr<ControlTowerRouter> new_router) {
+  return worker_loop_.Send(std::move(new_router));
+}
+
 void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
   // Process CopilotWorkerCommand
-  std::unique_ptr<Message> message = command.GetMessage();
-  Message* msg = message.get();
-  assert(msg);
+  if (command.IsRouterUpdate()) {
+    control_tower_router_ = command.GetRouterUpdate();
+  } else {
+    std::unique_ptr<Message> message = command.GetMessage();
+    Message* msg = message.get();
+    assert(msg);
 
-  switch (msg->GetMessageType()) {
-  case MessageType::mMetadata: {
-      MessageMetadata* metadata = static_cast<MessageMetadata*>(msg);
-      const std::vector<TopicPair>& topics = metadata->GetTopicInfo();
-      assert(topics.size() == 1);  // Workers only handle 1 topic at a time.
-      const TopicPair& request = topics[0];
+    switch (msg->GetMessageType()) {
+    case MessageType::mMetadata: {
+        MessageMetadata* metadata = static_cast<MessageMetadata*>(msg);
+        const std::vector<TopicPair>& topics = metadata->GetTopicInfo();
+        assert(topics.size() == 1);  // Workers only handle 1 topic at a time.
+        const TopicPair& request = topics[0];
 
-      if (metadata->GetMetaType() == MessageMetadata::MetaType::Request) {
-        if (request.topic_type == MetadataType::mSubscribe) {
-          // Subscribe
-          ProcessSubscribe(std::move(message),
-                           request,
-                           command.GetLogID(),
-                           command.GetWorkerId(),
-                           command.GetOrigin());
-        } else {
-          // Unsubscribe
-          ProcessUnsubscribe(std::move(message),
+        if (metadata->GetMetaType() == MessageMetadata::MetaType::Request) {
+          if (request.topic_type == MetadataType::mSubscribe) {
+            // Subscribe
+            ProcessSubscribe(std::move(message),
                              request,
                              command.GetLogID(),
                              command.GetWorkerId(),
                              command.GetOrigin());
-        }
-      } else {
-        if (request.topic_type == MetadataType::mSubscribe) {
-          // Response from Control Tower.
-          ProcessMetadataResponse(std::move(message),
-                                  request,
-                                  command.GetLogID(),
-                                  command.GetWorkerId());
+          } else {
+            // Unsubscribe
+            ProcessUnsubscribe(std::move(message),
+                               request,
+                               command.GetLogID(),
+                               command.GetWorkerId(),
+                               command.GetOrigin());
+          }
+        } else {
+          if (request.topic_type == MetadataType::mSubscribe) {
+            // Response from Control Tower.
+            ProcessMetadataResponse(std::move(message),
+                                    request,
+                                    command.GetLogID(),
+                                    command.GetWorkerId());
+          }
         }
       }
-    }
-    break;
+      break;
 
-  case MessageType::mDeliver: {
-      // Data to forward to client.
-      ProcessDeliver(std::move(message));
-    }
-    break;
+    case MessageType::mDeliver: {
+        // Data to forward to client.
+        ProcessDeliver(std::move(message));
+      }
+      break;
 
-  case MessageType::mGap: {
-      // Data to forward to client.
-      ProcessGap(std::move(message));
-    }
-    break;
+    case MessageType::mGap: {
+        // Data to forward to client.
+        ProcessGap(std::move(message));
+      }
+      break;
 
-  case MessageType::mGoodbye: {
-      ProcessGoodbye(std::move(message), command.GetOrigin());
-    }
-    break;
+    case MessageType::mGoodbye: {
+        ProcessGoodbye(std::move(message), command.GetOrigin());
+      }
+      break;
 
-  default: {
-      LOG_WARN(options_.info_log,
-          "Unexpected message type in copilot worker %d",
-          msg->GetMessageType());
+    default: {
+        LOG_WARN(options_.info_log,
+            "Unexpected message type in copilot worker %d",
+            msg->GetMessageType());
+      }
+      break;
     }
-    break;
   }
 }
 
@@ -405,7 +415,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // Find control tower responsible for this topic's log.
     HostId const* recipient = nullptr;
     if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
-      int outgoing_worker_id = copilot_->GetLogWorker(logid);
+      int outgoing_worker_id = copilot_->GetLogWorker(logid, *recipient);
 
       // Find or open a new stream socket to this control tower.
       auto socket = GetControlTowerSocket(
@@ -524,7 +534,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Forward unsubscribe request to control tower, with this copilot
         // worker as the subscriber.
-        int outgoing_worker_id = copilot_->GetLogWorker(logid);
+        int outgoing_worker_id = copilot_->GetLogWorker(logid, *recipient);
         MessageMetadata newmsg(tenant_id,
                                MessageMetadata::MetaType::Request,
                                { TopicPair(0,  // seqno doesnt matter
@@ -551,7 +561,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
       HostId const* recipient = nullptr;
       if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
         // Re subscribe our control tower subscription with the later seqno.
-        int outgoing_worker_id = copilot_->GetLogWorker(logid);
+        int outgoing_worker_id = copilot_->GetLogWorker(logid, *recipient);
         MessageMetadata newmsg(tenant_id,
                                MessageMetadata::MetaType::Request,
                                { TopicPair(earliest_other_seqno,

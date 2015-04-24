@@ -23,12 +23,18 @@ namespace rocketspeed {
 struct LocalTestCluster::LogDevice {
 #ifdef USE_LOGDEVICE
   // LogDevice cluster and client.
-  std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster> cluster_;
+  static std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+    cluster_;
   std::shared_ptr<facebook::logdevice::Client> client_;
 #endif  // USE_LOGDEVICE
   std::shared_ptr<LogStorage> storage_;
   std::shared_ptr<LogRouter> log_router_;
 };
+
+#ifdef USE_LOGDEVICE
+std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+  LocalTestCluster::LogDevice::cluster_;
+#endif  // USE_LOGDEVICE
 
 LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
                                    bool start_controltower,
@@ -96,9 +102,11 @@ void LocalTestCluster::Initialize(Options opts) {
 #ifdef USE_LOGDEVICE
     if (opts.storage_url.empty()) {
       // Setup the local LogDevice cluster and create, client, and storage.
-      logdevice_->cluster_ =
+      if (!LogDevice::cluster_) {
+        LogDevice::cluster_ =
           facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(3);
-      logdevice_->client_ = logdevice_->cluster_->createClient();
+      }
+      logdevice_->client_ = LogDevice::cluster_->createClient();
       status_ = LogDeviceStorage::Create(logdevice_->client_,
                                          env_,
                                          info_log_,
@@ -145,7 +153,7 @@ void LocalTestCluster::Initialize(Options opts) {
 
   if (opts.start_controltower) {
     control_tower_loop_.reset(new MsgLoop(
-        env_, env_options, ControlTower::DEFAULT_PORT, 16, info_log_, "tower"));
+        env_, env_options, opts.controltower_port, 16, info_log_, "tower"));
 
     // Create ControlTower
     opts.tower.info_log = info_log_;
@@ -176,16 +184,15 @@ void LocalTestCluster::Initialize(Options opts) {
   }
 
   if (opts.start_copilot || opts.start_pilot) {
-    static_assert(Copilot::DEFAULT_PORT == Pilot::DEFAULT_PORT,
-                  "Default port for pilot and copilot differ.");
+    assert(opts.copilot_port == opts.pilot_port);
     cockpit_loop_.reset(new MsgLoop(
-        env_, env_options, Copilot::DEFAULT_PORT, 16, info_log_, "cockpit"));
+        env_, env_options, opts.copilot_port, 16, info_log_, "cockpit"));
 
     // If we need to start the copilot, then it is better to start the
     // pilot too. Any subscribe/unsubscribe requests to the copilot needs
     // to write to the rollcall topic (via the pilot).
     opts.start_pilot = true;
-    HostId pilot_host("localhost", Pilot::DEFAULT_PORT);
+    HostId pilot_host("localhost", opts.pilot_port);
     if (opts.start_copilot) {
       // Create Copilot
       opts.copilot.control_towers.emplace(0, control_tower_->GetHostId());

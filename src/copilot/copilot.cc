@@ -63,18 +63,18 @@ void Copilot::StartWorkers() {
  * Private constructor for a Copilot
  */
 Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
-  options_(SanitizeOptions(std::move(options))),
-  control_tower_router_(options_.control_towers,
-                        options_.consistent_hash_replicas,
-                        options_.control_towers_per_log) {
-
+  options_(SanitizeOptions(std::move(options))) {
   stats_.resize(options_.msg_loop->GetNumWorkers());
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
   // Create workers.
+  std::shared_ptr<ControlTowerRouter> router =
+    std::make_shared<ControlTowerRouter>(options_.control_towers,
+                                         options_.consistent_hash_replicas,
+                                         options_.control_tower_connections);
   for (uint32_t i = 0; i < options_.num_workers; ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
-                                            &control_tower_router_,
+                                            router,
                                             i,
                                             this));
   }
@@ -319,28 +319,12 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   return cb;
 }
 
-int Copilot::GetLogWorker(LogID logid) const {
-  const int num_workers = options_.msg_loop->GetNumWorkers();
-
-  // First map logid to control tower.
-  HostId const* control_tower = nullptr;
-  Status st = control_tower_router_.GetControlTower(logid, &control_tower);
-  if (!st.ok()) {
-    LOG_WARN(options_.info_log,
-      "Failed to map log ID %" PRIu64 " to a control tower",
-      logid);
-
-    // Fallback to log ID-based allocation.
-    // This is less efficient (multiple workers talking to same tower)
-    // but no less correct.
-    return static_cast<int>(logid % num_workers);
-  }
-  assert(control_tower);
-
+int Copilot::GetLogWorker(LogID logid, const HostId& control_tower) const {
   // Hash control tower to a worker.
-  size_t connection = logid % options_.control_tower_connections;
-  size_t hash = MurmurHash2<std::string, size_t>()(control_tower->hostname,
-                                                   control_tower->port);
+  const int num_workers = options_.msg_loop->GetNumWorkers();
+  const size_t connection = logid % options_.control_tower_connections;
+  const size_t hash = MurmurHash2<std::string, size_t>()(control_tower.hostname,
+                                                         control_tower.port);
   return static_cast<int>((hash + connection) % num_workers);
 }
 
@@ -350,6 +334,26 @@ Statistics Copilot::GetStatistics() const {
     aggr.Aggregate(s.all);
   }
   return aggr;
+}
+
+Status Copilot::UpdateControlTowers(
+    std::unordered_map<uint64_t, HostId> nodes) {
+  Status result;
+  // Send the new nodes to all workers.
+  // If we fail to forward to any single worker then return failure so that
+  // whoever is providing the updated hosts can retry later.
+  std::shared_ptr<ControlTowerRouter> new_router =
+    std::make_shared<ControlTowerRouter>(std::move(nodes),
+                                         options_.consistent_hash_replicas,
+                                         options_.control_tower_connections);
+  for (uint32_t i = 0; i < options_.num_workers; ++i) {
+    if (!workers_[i]->Forward(new_router)) {
+      LOG_WARN(options_.info_log,
+        "Failed to forward control tower update to worker %" PRIu32, i);
+      result = Status::NoBuffer();
+    }
+  }
+  return result;
 }
 
 }  // namespace rocketspeed

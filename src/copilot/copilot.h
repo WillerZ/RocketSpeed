@@ -19,7 +19,6 @@
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"
-#include "src/util/control_tower_router.h"
 
 namespace rocketspeed {
 
@@ -54,12 +53,8 @@ class Copilot {
     return options_.msg_loop->SendCommand(std::move(command), worker_id);
   }
 
-  // Get the worker loop associated with a log.
-  int GetLogWorker(LogID logid) const;
-
-  const ControlTowerRouter& GetControlTowerRouter() const {
-    return control_tower_router_;
-  }
+  // Get the worker loop associated with a log on a particular control tower.
+  int GetLogWorker(LogID logid, const HostId& control_tower) const;
 
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;
@@ -78,6 +73,16 @@ class Copilot {
     return &stats_[id];
   }
 
+  /**
+   * Updates the control tower routing information.
+   *
+   * @param nodes Map of NodeIds to control tower hosts. The node IDs
+   *              determine what logs are routed to each host. This is a
+   *              a completely new set of nodes, not a delta.
+   * @return ok() if successfully propagated to all workers, error otherwise.
+   */
+  Status UpdateControlTowers(std::unordered_map<uint64_t, HostId> nodes);
+
  private:
 
   // The options used by the Copilot
@@ -86,9 +91,6 @@ class Copilot {
   // Worker objects and threads, these have their own message loops.
   std::vector<std::unique_ptr<CopilotWorker>> workers_;
   std::vector<BaseEnv::ThreadId> worker_threads_;
-
-  // Control tower router. Workers will access this, but don't own it.
-  ControlTowerRouter control_tower_router_;
 
   // A client to write rollcall topic
   std::unique_ptr<RollcallImpl> rollcall_;

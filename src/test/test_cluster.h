@@ -40,6 +40,9 @@ class LocalTestCluster {
     PilotOptions pilot;
     CopilotOptions copilot;
     ControlTowerOptions tower;
+    int controltower_port = ControlTower::DEFAULT_PORT;
+    int copilot_port = Copilot::DEFAULT_PORT;
+    int pilot_port = Pilot::DEFAULT_PORT;
   };
 
   /**

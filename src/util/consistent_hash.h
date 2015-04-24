@@ -79,6 +79,12 @@ class ConsistentHash {
   explicit ConsistentHash(const KeyHash& keyHash = KeyHash(),
                           const SlotHash& slotHash = SlotHash());
 
+  /** Copyable and movable */
+  ConsistentHash(const ConsistentHash&) = default;
+  ConsistentHash& operator=(const ConsistentHash&) = default;
+  ConsistentHash(ConsistentHash&&) = default;
+  ConsistentHash& operator=(ConsistentHash&&) = default;
+
   /**
    * Adds a new slot to the mapping.
    *
