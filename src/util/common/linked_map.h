@@ -45,7 +45,7 @@ class LinkedMap {
   LinkedMap& operator= (LinkedMap&&) = default;
 
   LinkedMap(const LinkedMap&) = delete;
-  LinkedMap* operator= (const LinkedMap&) = delete;
+  LinkedMap& operator= (const LinkedMap&) = delete;
 
   // Iterators
   iterator begin() { return list_.begin(); }

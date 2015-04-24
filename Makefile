@@ -99,7 +99,8 @@ TESTS = \
   port_android_to_string_test \
   proxy_test \
   ordered_processor_test \
-  datastore_test
+  datastore_test \
+  timeout_list_test
 
 TOOLS = \
 	rocketbench
@@ -322,6 +323,8 @@ ordered_processor_test: src/util/tests/ordered_processor_test.o $(LIBOBJECTS) $(
 datastore_test: src/datastore/test/datastore_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
+timeout_list_test: src/util/tests/timeout_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test
