@@ -38,8 +38,8 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
 
   // what message have we received?
   MessageType type = msg->GetMessageType();
-  LOG_INFO(info_log_,
-      "Received message %d at port %ld", type, (long)hostid_.port);
+  LOG_DEBUG(
+      info_log_, "Received message %d at port %ld", type, (long)hostid_.port);
 
   // Search for a callback method corresponding to this msg type
   // Give up ownership of this message to the callback function

@@ -136,7 +136,7 @@ Status Proxy::Forward(std::string data, int64_t session) {
   Status st = UnwrapMessage(std::move(data), &msg, &origin, &sequence);
   if (!st.ok()) {
     LOG_ERROR(info_log_,
-              "Faled unwrapping message on session %" PRIi64
+              "Failed unwrapping message on session %" PRIi64
               ", speculative stream (%llu) and seqno %d. Problems: %s",
               session,
               origin,
@@ -228,8 +228,15 @@ void Proxy::HandleDestroySession(int64_t session) {
   auto& data = GetWorkerDataForSession(session);
   data.thread_check_.Check();
 
+  auto it = data.open_sessions_.find(session);
+  if (it == data.open_sessions_.end()) {
+    // Session does not exist.
+    return;
+  }
+
+  LOG_INFO(info_log_, "Destroying session: %" PRIi64, session);
   // Remove session information.
-  data.open_sessions_.erase(session);
+  data.open_sessions_.erase(it);
   // Remove all streams for the session.
   auto removed = data.open_streams_.RemoveContext(session);
 
@@ -257,8 +264,9 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
     return;
   }
 
-  LOG_INFO(info_log_, "Received message from RocketSpeed, type %d",
-           static_cast<int>(msg->GetMessageType()));
+  LOG_DEBUG(info_log_,
+            "Received message from RocketSpeed, type %d",
+            static_cast<int>(msg->GetMessageType()));
 
   auto& data = *worker_data_[msg_loop_->GetThreadWorkerIndex()];
   data.thread_check_.Check();

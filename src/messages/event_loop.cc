@@ -264,9 +264,10 @@ class SocketEvent {
           partial_ = Slice(partial_.data() + count, partial_.size() - count);
           return Status::OK();
         } else {
-          LOG_INFO(event_loop_->info_log_,
-              "Successfully wrote %ld bytes to remote host fd(%d)",
-              count, fd_);
+          LOG_DEBUG(event_loop_->info_log_,
+                    "Successfully wrote %ld bytes to remote host fd(%d)",
+                    count,
+                    fd_);
         }
         // The partial message is completely sent out. Remove it from queue.
         partial_.clear();
