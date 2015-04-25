@@ -13,8 +13,8 @@
 #include "include/Types.h"
 #include "src/messages/stream_socket.h"
 #include "src/messages/messages.h"
+#include "src/messages/wrapped_message.h"
 #include "src/proxy/options.h"
-#include "src/proxy/wrapped_message.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 

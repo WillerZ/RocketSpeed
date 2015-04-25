@@ -18,7 +18,7 @@
 
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream_socket.h"
-#include "src/proxy/wrapped_message.h"
+#include "src/messages/wrapped_message.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/ordered_processor.h"
 #include "src/util/worker_loop.h"
