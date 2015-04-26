@@ -262,4 +262,10 @@ TEST(AutoVectorTest, BigRandomTest) {
 
 }  // namespace rocketspeed
 
-int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(); }
+int main(int argc, char** argv) {
+#ifndef ROCKETSPEED_LITE
+  return rocketspeed::test::RunAllTests();
+#else
+  return 0;
+#endif
+}

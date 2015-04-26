@@ -14,7 +14,7 @@ namespace rocketspeed {
 
 #ifdef ROCKETSPEED_LITE
 template <class T, size_t kCapacity = 8>
-class autovector : public std::vector<T> {};
+using autovector = std::vector<T>;
 #else
 
 // autovector<T,Int=1> is a sequence container that implements small buffer
