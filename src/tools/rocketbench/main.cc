@@ -580,6 +580,14 @@ int main(int argc, char** argv) {
 
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;
   size_t num_clients = std::max(pilots.size(), copilots.size());
+#ifdef USE_MQTTMSGLOOP
+  // MQTTMsgLoop is single threaded, so is the client backed by MQTTClient. In
+  // order to ensure requested parallelism when using MQTT, we have to create
+  // client_workers times more clients. We also set client_workers to 1, which
+  // is the effective value for MQTT-backed client.
+  num_clients *= FLAGS_client_workers;
+  FLAGS_client_workers = 1;
+#endif
   for (size_t i = 0; i < num_clients; ++i) {
     // Create config for this client by picking pilot and copilot in a round
     // robin fashion.
