@@ -50,6 +50,9 @@ class LogcatLogger final : public Logger {
       case InfoLogLevel::FATAL_LEVEL:
         prio = ANDROID_LOG_FATAL;
         break;
+      case InfoLogLevel::VITAL_LEVEL:
+        prio = ANDROID_LOG_SILENT;
+        break;
       default:
         prio = ANDROID_LOG_DEFAULT;
     }

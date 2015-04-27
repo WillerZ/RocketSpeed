@@ -913,7 +913,7 @@ EventLoop::Run() {
     return;
   }
 
-  LOG_INFO(info_log_, "Starting EventLoop at port %d", port_number_);
+  LOG_VITAL(info_log_, "Starting EventLoop at port %d", port_number_);
   info_log_->Flush();
 
   // Start the event loop.
@@ -954,7 +954,7 @@ void EventLoop::Stop() {
     thread_check_.Reset();
     stream_router_.CloseAll();
     teardown_all_connections();
-    LOG_INFO(info_log_, "Stopped EventLoop at port %d", port_number_);
+    LOG_VITAL(info_log_, "Stopped EventLoop at port %d", port_number_);
     info_log_->Flush();
     base_ = nullptr;
   }

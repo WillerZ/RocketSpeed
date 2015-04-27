@@ -5,7 +5,9 @@
 //
 #pragma once
 
+#include <cassert>
 #include <cstdarg>
+#include <cstring>
 #include <memory>
 
 #define RS_LOG(log_level_expr, info_log_expr, ...) \
@@ -40,6 +42,10 @@
   RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
+#define LOG_VITAL(info_log_expr, ...) \
+  RS_LOG(::rocketspeed::InfoLogLevel::VITAL_LEVEL, \
+      info_log_expr, __VA_ARGS__)
+
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
 #endif
@@ -51,9 +57,46 @@ enum InfoLogLevel : unsigned char {
   WARN_LEVEL,
   ERROR_LEVEL,
   FATAL_LEVEL,
+  VITAL_LEVEL,
   NONE_LEVEL,
   NUM_INFO_LOG_LEVELS,
 };
+
+/**
+ * Convert an InfoLogLevel to string.
+ *
+ * @param level Log level to convert.
+ * @return Corresponding string.
+ */
+inline const char* LogLevelToString(InfoLogLevel level) {
+  static const char* kInfoLogLevelNames[NUM_INFO_LOG_LEVELS] = {
+    "DEBUG",
+    "INFO",
+    "WARN",
+    "ERROR",
+    "FATAL",
+    "VITAL",
+    "NONE"
+  };
+  assert(level >= 0 && level < NUM_INFO_LOG_LEVELS);
+  return kInfoLogLevelNames[level];
+}
+
+/**
+ * Convert a string to an InfoLogLevel. Not case sensitive.
+ *
+ * @param str String to convert.
+ * @return Corresponding info log level, or WARN if no match.
+ */
+inline InfoLogLevel StringToLogLevel(const char* str) {
+  for (int i = 0; i < NUM_INFO_LOG_LEVELS; ++i) {
+    InfoLogLevel level = static_cast<InfoLogLevel>(i);
+    if (strcasecmp(LogLevelToString(level), str) == 0) {
+      return level;
+    }
+  }
+  return WARN_LEVEL;
+}
 
 // An interface for writing log messages. It is recommended to use the LOG
 // macro instead of directly calling methods of this class because the macro
@@ -77,8 +120,7 @@ class Logger {
   virtual void Logv(const InfoLogLevel log_level,
                     const char* format,
                     va_list ap) {
-    static const char* kInfoLogLevelNames[5] = {
-        "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
+
     if (log_level < log_level_) {
       return;
     }
@@ -87,7 +129,7 @@ class Logger {
     snprintf(new_format,
              sizeof(new_format) - 1,
              "[%s] %s",
-             kInfoLogLevelNames[log_level],
+             LogLevelToString(log_level),
              format);
     Append(new_format, ap);
   }

@@ -47,7 +47,7 @@ DEFINE_bool(copilot, false, "start the copilot");
 DEFINE_int32(copilot_port,
              rocketspeed::Copilot::DEFAULT_PORT,
              "copilot port number");
-DEFINE_int32(copilot_workers, 32, "copilot worker threads");
+DEFINE_int32(copilot_workers, 16, "copilot worker threads");
 DEFINE_string(control_towers,
               "localhost",
               "comma-separated control tower hostnames");
@@ -56,6 +56,13 @@ DEFINE_int32(copilot_connections, 8,
 DEFINE_bool(rollcall, true, "enable RollCall");
 
 DEFINE_string(rs_log_dir, "", "directory for server logs");
+
+#ifdef NDEBUG
+DEFINE_string(loglevel, "warn", "debug|info|warn|error|fatal|vital|none");
+#else
+DEFINE_string(loglevel, "info", "debug|info|warn|error|fatal|vital|none");
+#endif
+
 
 namespace rocketspeed {
 
@@ -67,24 +74,13 @@ int Run(int argc,
         Env* env,
         EnvOptions env_options) {
   Status st;
-  std::shared_ptr<LogRouter> log_router = get_router();
-
-  // As a special case, if no components are specified then all of them
-  // are started.
-  if (!FLAGS_pilot && !FLAGS_copilot && !FLAGS_tower) {
-    FLAGS_pilot = true;
-    FLAGS_copilot = true;
-    FLAGS_tower = true;
-  }
 
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
 
-#ifdef NDEBUG
-  auto log_level = WARN_LEVEL;
-#else
-  auto log_level = INFO_LEVEL;
-#endif
+  auto log_level = StringToLogLevel(FLAGS_loglevel.c_str());
+  fprintf(stderr, "RocketSpeed log level set to %s\n",
+    LogLevelToString(log_level));
 
   // Create info log
   std::shared_ptr<Logger> info_log;
@@ -103,11 +99,29 @@ int Run(int argc,
                                  &info_log);
   }
   if (!st.ok()) {
+    fprintf(stderr, "RocketSpeed failed to create Logger\n");
     info_log = std::make_shared<NullLogger>();
+  }
+
+  // As a special case, if no components are specified then all of them
+  // are started.
+  if (!FLAGS_pilot && !FLAGS_copilot && !FLAGS_tower) {
+    LOG_VITAL(info_log, "Starting all services (pilot, copilot, controltower)");
+    FLAGS_pilot = true;
+    FLAGS_copilot = true;
+    FLAGS_tower = true;
+  }
+
+  LOG_VITAL(info_log, "Creating LogRouter");
+  std::shared_ptr<LogRouter> log_router = get_router();
+  if (!log_router) {
+    LOG_FATAL(info_log, "Failed to create LogRouter");
   }
 
   // Utility for creating a message loop.
   auto make_msg_loop = [&] (int port, int workers, std::string name) {
+    LOG_VITAL(info_log, "Constructing MsgLoop port=%d workers=%d name=%s",
+      port, workers, name.c_str());
     return new MsgLoop(env,
                        env_options,
                        port,
@@ -133,15 +147,18 @@ int Run(int argc,
   std::shared_ptr<LogStorage> storage;
   if (FLAGS_pilot || FLAGS_tower) {
     // Only need storage for pilot and control tower.
+    LOG_VITAL(info_log, "Creating LogStorage");
     storage = get_storage(env, info_log);
     if (!storage) {
-      fprintf(stderr, "Failed to construct log storage");
+      LOG_FATAL(info_log, "Failed to construct log storage");
       return 1;
     }
   }
 
   if (FLAGS_pilot && FLAGS_copilot && FLAGS_pilot_port == FLAGS_copilot_port) {
     // Pilot + Copilot sharing message loop.
+    LOG_VITAL(info_log, "Pilot and copilot sharing MsgLoop port=%d",
+      FLAGS_pilot_port);
     int workers = std::max(FLAGS_pilot_workers, FLAGS_copilot_workers);
     pilot_loop.reset(make_msg_loop(FLAGS_pilot_port,
                                    workers,
@@ -163,6 +180,7 @@ int Run(int argc,
 
   // Create Control Tower.
   if (FLAGS_tower) {
+    LOG_VITAL(info_log, "Creating Control Tower");
     ControlTowerOptions tower_opts;
     tower_opts.msg_loop = tower_loop.get();
     tower_opts.worker_queue_size = FLAGS_worker_queue_size;
@@ -174,7 +192,7 @@ int Run(int argc,
     st = ControlTower::CreateNewInstance(std::move(tower_opts),
                                                       &tower);
     if (!st.ok()) {
-      fprintf(stderr, "Error in Starting ControlTower (%s)\n",
+      LOG_FATAL(info_log, "Error in Starting ControlTower (%s)\n",
         st.ToString().c_str());
       return 1;
     }
@@ -183,6 +201,7 @@ int Run(int argc,
   // Create Pilot.
   HostId pilot_host("localhost", FLAGS_pilot_port);
   if (FLAGS_pilot) {
+    LOG_VITAL(info_log, "Creating Pilot");
     PilotOptions pilot_opts;
     pilot_opts.msg_loop = pilot_loop.get();
     pilot_opts.info_log = info_log;
@@ -192,7 +211,7 @@ int Run(int argc,
     st = Pilot::CreateNewInstance(std::move(pilot_opts),
                                                &pilot);
     if (!st.ok()) {
-      fprintf(stderr, "Error in Starting Pilot (%s)\n",
+      LOG_FATAL(info_log, "Error in Starting Pilot (%s)\n",
         st.ToString().c_str());
       return 1;
     }
@@ -200,6 +219,7 @@ int Run(int argc,
 
   // Create Copilot.
   if (FLAGS_copilot) {
+    LOG_VITAL(info_log, "Creating Copilot");
     CopilotOptions copilot_opts;
     copilot_opts.msg_loop = copilot_loop.get();
     copilot_opts.worker_queue_size = FLAGS_worker_queue_size;
@@ -215,7 +235,7 @@ int Run(int argc,
     for (auto hostname : SplitString(FLAGS_control_towers)) {
       HostId host(hostname, FLAGS_tower_port);
       copilot_opts.control_towers.emplace(node_id, host);
-      LOG_INFO(info_log, "Adding control tower '%s'",
+      LOG_VITAL(info_log, "Adding control tower '%s'",
         host.ToString().c_str());
       ++node_id;
     }
@@ -225,7 +245,7 @@ int Run(int argc,
     st = Copilot::CreateNewInstance(std::move(copilot_opts),
                                     &copilot);
     if (!st.ok()) {
-      fprintf(stderr, "Error in Starting Copilot (%s)\n",
+      LOG_FATAL(info_log, "Error in Starting Copilot (%s)\n",
         st.ToString().c_str());
       return 1;
     }
@@ -245,6 +265,7 @@ int Run(int argc,
   }
 
   // Start all the messages loops, with the last loop started in this thread.
+  LOG_VITAL(info_log, "Starting all message loop threads");
   std::vector<std::thread> threads;
   assert(msg_loops.size() != 0);
   for (size_t i = 0; i < msg_loops.size() - 1; ++i) {
@@ -259,12 +280,14 @@ int Run(int argc,
   msg_loops[msg_loops.size() - 1]->Run();
 
   // Join all the other message loops.
+  LOG_VITAL(info_log, "Joining all message loop threads");
   for (std::thread& t : threads) {
     if (t.joinable()) {
       t.join();
     }
   }
 
+  LOG_VITAL(info_log, "Stopping services");
   tower->Stop();
 
   // Stop all background services.
@@ -275,6 +298,7 @@ int Run(int argc,
   // Shutdown libevent for good hygiene.
   EventLoop::GlobalShutdown();
 
+  LOG_VITAL(info_log, "Process exit");
   return 0;
 }
 

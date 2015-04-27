@@ -341,6 +341,8 @@ ClientImpl::ClientImpl(BaseEnv* env,
 , publisher_(env, config_, info_log, msg_loop_.get(), &wake_lock_) {
   using std::placeholders::_1;
 
+  LOG_VITAL(info_log_, "Creating Client");
+
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg,
@@ -372,6 +374,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
 
   if (storage_) {
     // Initialize subscription storage.
+    LOG_VITAL(info_log_, "Initializing subscription storage");
     storage_->Initialize(
         std::bind(&ClientImpl::ProcessRestoredSubscription, this, _1),
         msg_loop_.get());
