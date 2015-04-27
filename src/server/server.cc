@@ -174,7 +174,8 @@ int Run(int argc,
     st = ControlTower::CreateNewInstance(std::move(tower_opts),
                                                       &tower);
     if (!st.ok()) {
-      fprintf(stderr, "Error in Starting ControlTower\n");
+      fprintf(stderr, "Error in Starting ControlTower (%s)\n",
+        st.ToString().c_str());
       return 1;
     }
   }
@@ -191,7 +192,8 @@ int Run(int argc,
     st = Pilot::CreateNewInstance(std::move(pilot_opts),
                                                &pilot);
     if (!st.ok()) {
-      fprintf(stderr, "Error in Starting Pilot\n");
+      fprintf(stderr, "Error in Starting Pilot (%s)\n",
+        st.ToString().c_str());
       return 1;
     }
   }
@@ -223,7 +225,8 @@ int Run(int argc,
     st = Copilot::CreateNewInstance(std::move(copilot_opts),
                                     &copilot);
     if (!st.ok()) {
-      fprintf(stderr, "Error in Starting Copilot\n");
+      fprintf(stderr, "Error in Starting Copilot (%s)\n",
+        st.ToString().c_str());
       return 1;
     }
   }
