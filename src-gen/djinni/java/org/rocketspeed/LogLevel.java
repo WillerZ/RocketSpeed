@@ -9,6 +9,7 @@ public enum LogLevel {
     WARN_LEVEL,
     ERROR_LEVEL,
     FATAL_LEVEL,
+    VITAL_LEVEL,
     NONE_LEVEL,
     NUM_INFO_LOG_LEVELS,
     ;
