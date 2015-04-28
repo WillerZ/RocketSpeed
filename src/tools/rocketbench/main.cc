@@ -51,6 +51,7 @@ DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 1000000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
 DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
+DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(delay_subscribe, false, "start reading after publishing");
 DEFINE_bool(logging, true, "enable/disable logging");
@@ -80,10 +81,6 @@ typedef std::pair<rocketspeed::MsgId, uint64_t> MsgTime;
 struct Result {
   bool succeeded;
 };
-
-// wait for 5 seconds of inactivity before declaring that something is
-// not working.
-static int idle_timeout = 5;
 
 // Number of topics to subscribe to at once.
 static const size_t kSubscribeBatchSize = 10000;
@@ -263,7 +260,7 @@ static void DoProduce(void* params) {
   if (FLAGS_await_ack) {
     // Wait for the all_ack_messages_received semaphore to be posted.
     // Keep waiting as long as a message was received in the last 5 seconds.
-    auto timeout = std::chrono::seconds(idle_timeout);
+    auto timeout = std::chrono::seconds(FLAGS_idle_timeout);
     do {
       all_ack_messages_received->TimedWait(timeout);
     } while (ack_messages_received->load() != FLAGS_num_messages &&
@@ -281,8 +278,6 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
                  std::unordered_map<std::string, SequenceNumber> first_seqno,
                  rocketspeed::port::Semaphore* batch_semaphore) {
-  SequenceNumber start = 0;   // start sequence number (0 = only new records)
-
   // This needs to be low enough so that subscriptions are evenly distributed
   // among client threads.
   auto total_threads = consumers.size() * FLAGS_client_workers;
@@ -298,7 +293,7 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
 
   size_t sent = 0;
 
-  // create all subscriptions from seqno 1
+  SequenceNumber start = 0;   // start sequence number (0 = only new records)
   SubscriptionRequest request(nsid, "", true, start);
   size_t c = 0;
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
@@ -320,7 +315,8 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
       sent += topics.size();
       if (sent >= kSubscribeBatchSize) {
         // Have sent the batch size now, wait for next batch.
-        if (!batch_semaphore->TimedWait(std::chrono::seconds(idle_timeout))) {
+        if (!batch_semaphore->TimedWait(
+                std::chrono::seconds(FLAGS_idle_timeout))) {
           return;
         }
         sent -= kSubscribeBatchSize;
@@ -347,7 +343,7 @@ static void DoConsume(void* param) {
     args->last_data_message;
   // Wait for the all_messages_received semaphore to be posted.
   // Keep waiting as long as a message was received in the last 5 seconds.
-  auto timeout = std::chrono::seconds(idle_timeout);
+  auto timeout = std::chrono::seconds(FLAGS_idle_timeout);
   do {
     all_messages_received->TimedWait(timeout);
   } while (messages_received->load() != FLAGS_num_messages &&
@@ -634,7 +630,8 @@ int main(int argc, char** argv) {
       printf("Subscribing to topics... ");
       fflush(stdout);
       DoSubscribe(clients, nsid, std::move(first_seqno), &batch_semaphore);
-      if (!all_topics_subscribed.TimedWait(std::chrono::seconds(5))) {
+      if (!all_topics_subscribed.TimedWait(
+              std::chrono::seconds(FLAGS_idle_timeout))) {
         printf("time out\n");
         LOG_WARN(info_log, "Failed to subscribe to all topics");
         info_log->Flush();
