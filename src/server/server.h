@@ -16,6 +16,10 @@ DECLARE_bool(copilot);
 DECLARE_int32(pilot_port);
 DECLARE_int32(copilot_port);
 
+DECLARE_string(loglevel);
+DECLARE_string(rs_log_dir);
+DECLARE_bool(log_to_stderr);
+
 namespace rocketspeed {
 
 class Env;
