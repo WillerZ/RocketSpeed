@@ -137,7 +137,7 @@ class MsgLoopBase {
                               StreamID stream,
                               int worker_id) = 0;
 
-  virtual Statistics GetStatistics() const = 0;
+  virtual Statistics GetStatisticsSync() = 0;
 
   // Checks that we are running on any EventLoop thread.
   virtual void ThreadCheck() const = 0;

@@ -6,20 +6,18 @@
 #pragma once
 
 #include <cassert>
-#include <atomic>
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
+#include "src/util/common/thread_check.h"
 #include "src/port/port.h"
 
 namespace rocketspeed {
 
 /**
  * Simple counter. Aligned to the cache to avoid potential false sharing.
- *
- * Safe to be written to from one thread and read from others.
  */
 class alignas(CACHE_LINE_SIZE) Counter {
  public:
@@ -28,31 +26,34 @@ class alignas(CACHE_LINE_SIZE) Counter {
   }
 
   Counter(const Counter& src)
-  : count_(src.count_.load(std::memory_order_acquire)) {
+  : count_(src.count_) {
   }
 
   void Add(uint64_t delta) {
-    count_.fetch_add(delta, std::memory_order_acq_rel);
+    thread_check_.Check();
+    count_ += delta;
   }
 
   uint64_t Get() const {
-    return count_.load(std::memory_order_acquire);
+    thread_check_.Check();
+    return count_;
   }
 
   void Aggregate(const Counter& counter) {
+    thread_check_.Check();
     Add(counter.Get());
   }
 
   std::string Report() const;
 
  private:
-  std::atomic<uint64_t> count_{0};
+  uint64_t count_{0};
+  ThreadCheck thread_check_;
 };
 
 /**
  * Histogram with log-scale buckets.
- *
- * Safe to be written to by one thread, and read from others.
+ * Not thread-safe.
  */
 class Histogram {
  public:
@@ -108,9 +109,10 @@ class Histogram {
   double max_;
   double smallest_bucket_;
   double ratio_;
-  std::atomic<uint64_t> num_samples_;
-  std::unique_ptr<std::atomic<uint64_t>[]> bucket_counts_;
+  uint64_t num_samples_;
+  std::unique_ptr<uint64_t[]> bucket_counts_;
   size_t num_buckets_;
+  ThreadCheck thread_check_;
 };
 
 /**
@@ -121,6 +123,8 @@ class Histogram {
 class Statistics {
  public:
   Statistics() {}
+
+  Statistics(const Statistics &s);
 
   /**
    * Adds a new, named Counter object to the tracked statistics.
@@ -163,6 +167,7 @@ class Statistics {
   // Maps of counter/histogram names to those objects.
   std::unordered_map<std::string, std::unique_ptr<Counter>> counters_;
   std::unordered_map<std::string, std::unique_ptr<Histogram>> histograms_;
+  ThreadCheck thread_check_;
 };
 
 template <typename T>

@@ -69,7 +69,7 @@ class ClientImpl : public Client {
              std::shared_ptr<Logger> info_log,
              bool is_internal);
 
-  Statistics GetStatistics() const;
+  Statistics GetStatisticsSync() const;
 
  private:
   // Handler for SubscriptionStorage load all events.

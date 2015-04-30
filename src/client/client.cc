@@ -758,8 +758,8 @@ void ClientImpl::ProcessRestoredSubscription(
   }
 }
 
-Statistics ClientImpl::GetStatistics() const {
-  return msg_loop_->GetStatistics();
+Statistics ClientImpl::GetStatisticsSync() const {
+  return msg_loop_->GetStatisticsSync();
 }
 
 int ClientImpl::GetWorkerForTopic(const Topic& name) const {

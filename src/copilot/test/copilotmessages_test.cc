@@ -293,7 +293,7 @@ TEST(CopilotTest, Rollcall) {
   // Verify that statistics are recorded accurately. Account for the
   // fact that subscribing to the rollcall topic shows up as one
   // additional subscription in the statistic.
-  const Statistics& stats = cluster.GetStatistics();
+  const Statistics& stats = cluster.GetStatisticsSync();
   std::string stats_report = stats.Report();
   ASSERT_NE(
     stats_report.find("rocketspeed.copilot.numwrites_rollcall_total: " +

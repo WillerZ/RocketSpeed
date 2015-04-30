@@ -328,12 +328,10 @@ int Copilot::GetLogWorker(LogID logid, const HostId& control_tower) const {
   return static_cast<int>((hash + connection) % num_workers);
 }
 
-Statistics Copilot::GetStatistics() const {
-  Statistics aggr;
-  for (const Stats& s : stats_) {
-    aggr.Aggregate(s.all);
-  }
-  return aggr;
+Statistics Copilot::GetStatisticsSync() const {
+  return options_.msg_loop->AggregateStatsSync(
+    [this] (int i) { return stats_[i].all; }
+  );
 }
 
 Status Copilot::UpdateControlTowers(

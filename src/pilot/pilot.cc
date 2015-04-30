@@ -237,12 +237,10 @@ std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
   return cb;
 }
 
-Statistics Pilot::GetStatistics() const {
-  Statistics aggr;
-  for (const WorkerData& data : worker_data_) {
-    aggr.Aggregate(data.stats_.all);
-  }
-  return aggr;
+Statistics Pilot::GetStatisticsSync() const {
+  return options_.msg_loop->AggregateStatsSync(
+    [this] (int i) { return worker_data_[i].stats_.all; }
+  );
 }
 
 }  // namespace rocketspeed

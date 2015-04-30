@@ -9,16 +9,15 @@
 
 #include <algorithm>
 #include <limits>
-#include <memory>
 #include <string>
 #include <unordered_map>
 
-#include "src/port/port.h"
+#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
 std::string Counter::Report() const {
-  return std::to_string(count_.load(std::memory_order_acquire));
+  return std::to_string(count_);
 }
 
 Histogram::Histogram(double min,
@@ -33,9 +32,9 @@ Histogram::Histogram(double min,
   assert(max >= min);
   assert(ratio > 1.0);
   num_buckets_ = BucketIndex(max) + 1;
-  bucket_counts_.reset(new std::atomic<uint64_t>[num_buckets_]);
+  bucket_counts_.reset(new uint64_t[num_buckets_]);
   for (size_t i = 0; i < num_buckets_; ++i) {
-    bucket_counts_[i].store(0, std::memory_order_release);
+    bucket_counts_[i] = 0;
   }
 }
 
@@ -47,17 +46,18 @@ Histogram::Histogram(const Histogram& src)
 , num_samples_(0)
 , num_buckets_(src.num_buckets_) {
   // Copy the size then use the existing Aggregate code to copy.
-  bucket_counts_.reset(new std::atomic<uint64_t>[num_buckets_]);
+  bucket_counts_.reset(new uint64_t[num_buckets_]);
   for (size_t i = 0; i < num_buckets_; ++i) {
-    bucket_counts_[i].store(0, std::memory_order_release);
+    bucket_counts_[i] = 0;
   }
   Aggregate(src);
 }
 
 void Histogram::Record(double sample) {
+  thread_check_.Check();
   size_t index = std::min(BucketIndex(sample), num_buckets_ - 1);
-  bucket_counts_[index].fetch_add(1, std::memory_order_acq_rel);
-  num_samples_.fetch_add(1, std::memory_order_acq_rel);
+  bucket_counts_[index] += 1;
+  num_samples_ += 1;
 }
 
 size_t Histogram::BucketIndex(double sample) const {
@@ -77,28 +77,21 @@ size_t Histogram::BucketIndex(double sample) const {
 }
 
 double Histogram::Percentile(double p) const {
-  // This may be called from a thread other than the one incrementing the
-  // bucket counts and the num samples. This means the sum of the bucket counts
-  // may be different from the num samples within this function.
-  // This is OK as long as the num samples is <= the bucket counts.
-  //
-  // The percentiles may be temporarily skewed, but with enough samples, the
-  // skew will be minimal.
+  thread_check_.Check();
   assert(p >= 0.0);
   assert(p <= 1.0);
 
-  size_t n = num_samples_.load(std::memory_order_acquire);
-  if (n == 0) {
+  if (num_samples_ == 0) {
     return min_;
   }
 
-  size_t index = static_cast<size_t>(static_cast<double>(n) * p);
-  if (index >= n) {
-    index = n - 1;
+  size_t index = static_cast<size_t>(static_cast<double>(num_samples_) * p);
+  if (index >= num_samples_) {
+    index = num_samples_ - 1;
   }
 
   for (size_t bucket = 0; bucket < num_buckets_; ++bucket) {
-    size_t count = bucket_counts_[bucket].load(std::memory_order_acquire);
+    size_t count = bucket_counts_[bucket];
     if (index > count || count == 0) {
       // Percentile does not lie in this bucket.
       index -= count;
@@ -117,6 +110,7 @@ double Histogram::Percentile(double p) const {
 }
 
 void Histogram::Aggregate(const Histogram& histogram) {
+  thread_check_.Check();
   // Parameters must match exactly for histograms to aggregate.
   assert(histogram.min_ == min_);
   assert(histogram.max_ == max_);
@@ -126,13 +120,14 @@ void Histogram::Aggregate(const Histogram& histogram) {
 
   // Just sum up the bucket counts and number of samples.
   for (size_t i = 0; i < num_buckets_; ++i) {
-    uint64_t n = histogram.bucket_counts_[i].load(std::memory_order_acquire);
-    bucket_counts_[i].fetch_add(n, std::memory_order_acq_rel);
-    num_samples_.fetch_add(n, std::memory_order_acq_rel);
+    uint64_t n = histogram.bucket_counts_[i];
+    bucket_counts_[i] += n;
+    num_samples_ += n;
   }
 }
 
 std::string Histogram::Report() const {
+  thread_check_.Check();
   // Reports the p50, p90, p99, and p99.9 percentiles.
   char buffer[256];
   snprintf(buffer, 256, "p50: %-8.1lf  "
@@ -141,17 +136,18 @@ std::string Histogram::Report() const {
                         "p99.9: %-8.1lf  "
                         "(%llu samples)",
     Percentile(0.50), Percentile(0.90), Percentile(0.99), Percentile(0.999),
-    static_cast<long long unsigned int>(
-      num_samples_.load(std::memory_order_acquire)));
+    static_cast<long long unsigned int>(num_samples_));
   return std::string(buffer);
 }
 
 void Statistics::Aggregate(const Statistics& stats) {
+  thread_check_.Check();
   AggregateOne(&counters_, stats.counters_);
   AggregateOne(&histograms_, stats.histograms_);
 }
 
 Counter* Statistics::AddCounter(const std::string& name) {
+  thread_check_.Check();
   counters_[name] = std::unique_ptr<Counter>(new Counter());
   return counters_[name].get();
 }
@@ -161,18 +157,21 @@ Histogram* Statistics::AddHistogram(const std::string& name,
                                     double max,
                                     double smallest_bucket,
                                     double bucket_ratio) {
+  thread_check_.Check();
   histograms_[name] = std::unique_ptr<Histogram>(
     new Histogram(min, max, smallest_bucket, bucket_ratio));
   return histograms_[name].get();
 }
 
 Histogram* Statistics::AddLatency(const std::string& name) {
+  thread_check_.Check();
   histograms_[name] = std::unique_ptr<Histogram>(
     new Histogram(0, 1e12, 1.0, 1.1));
   return histograms_[name].get();
 }
 
 std::string Statistics::Report() const {
+  thread_check_.Check();
   std::vector<std::string> reports;
   size_t width = 40;
 
@@ -204,5 +203,21 @@ std::string Statistics::Report() const {
   return report;
 }
 
+Statistics::Statistics(const Statistics &s) {
+  // Deep copy of statistics
+  for (auto &p : s.counters_) {
+    counters_.emplace(
+      p.first,
+      std::unique_ptr<Counter>(new Counter(*p.second.get()))
+    );
+  }
+
+  for (auto &p : s.histograms_) {
+    histograms_.emplace(
+      p.first,
+      std::unique_ptr<Histogram>(new Histogram(*p.second.get()))
+    );
+  }
+}
 
 }  // namespace rocketspeed

@@ -94,7 +94,7 @@ TEST(PilotTest, Publish) {
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(100)));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
-  const Statistics& stats = cluster.GetStatistics();
+  const Statistics& stats = cluster.GetStatisticsSync();
   std::string stats_report = stats.Report();
   ASSERT_NE(stats_report.find("rocketspeed.pilot.append_requests:        100"),
             std::string::npos);

@@ -826,11 +826,11 @@ int main(int argc, char** argv) {
 
 #if !defined(OS_ANDROID)
       if (FLAGS_start_local_server) {
-        stats.Aggregate(test_cluster->GetStatistics());
+        stats.Aggregate(test_cluster->GetStatisticsSync());
       }
 #endif
       for (auto& client : clients) {
-        stats.Aggregate(client->GetStatistics());
+        stats.Aggregate(client->GetStatisticsSync());
       }
 
       printf("\n");

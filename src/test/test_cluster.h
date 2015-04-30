@@ -105,7 +105,7 @@ class LocalTestCluster {
 
   std::shared_ptr<LogRouter> GetLogRouter();
 
-  Statistics GetStatistics() const;
+  Statistics GetStatisticsSync() const;
 
   // Returns the environment used by the TestCluster
   Env* GetEnv() const { return env_; }

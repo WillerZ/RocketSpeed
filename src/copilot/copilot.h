@@ -66,7 +66,7 @@ class Copilot {
   }
 
   // Returns an aggregated statistics object from the copilot
-  Statistics GetStatistics() const;
+  Statistics GetStatisticsSync() const;
 
   // Get a reference to an individual worker's data
   Stats* GetStats(int id) {

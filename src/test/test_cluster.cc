@@ -299,19 +299,19 @@ LocalTestCluster::~LocalTestCluster() {
   delete copilot_;
 }
 
-Statistics LocalTestCluster::GetStatistics() const {
+Statistics LocalTestCluster::GetStatisticsSync() const {
   Statistics aggregated;
   if (pilot_) {
-    aggregated.Aggregate(pilot_->GetStatistics());
+    aggregated.Aggregate(pilot_->GetStatisticsSync());
   }
   if (control_tower_loop_) {
-    aggregated.Aggregate(control_tower_loop_->GetStatistics());
+    aggregated.Aggregate(control_tower_loop_->GetStatisticsSync());
   }
   if (cockpit_loop_) {
-    aggregated.Aggregate(cockpit_loop_->GetStatistics());
+    aggregated.Aggregate(cockpit_loop_->GetStatisticsSync());
   }
   if (copilot_) {
-    aggregated.Aggregate(copilot_->GetStatistics());
+    aggregated.Aggregate(copilot_->GetStatisticsSync());
   }
   // TODO(pja) 1 : Add control tower once they have stats.
   return std::move(aggregated);

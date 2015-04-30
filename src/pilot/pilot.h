@@ -76,7 +76,7 @@ class Pilot {
     return options_.msg_loop->GetClientId(worker_id);
   }
 
-  Statistics GetStatistics() const;
+  Statistics GetStatisticsSync() const;
 
   void AppendCallback(Status append_status,
                       SequenceNumber seqno,
