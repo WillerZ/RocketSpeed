@@ -102,8 +102,6 @@ TEST(PilotTest, Publish) {
             std::string::npos);
   ASSERT_NE(stats_report.find("rocketspeed.pilot.append_latency_us"),
             std::string::npos);
-  ASSERT_NE(stats_report.find("rocketspeed.cockpit.bad_origin:           0"),
-            std::string::npos);
 }
 
 TEST(PilotTest, NoLogger) {

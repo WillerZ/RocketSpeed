@@ -73,8 +73,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
     , env_options_(env_options)
     , info_log_(info_log)
     , name_(name)
-    , next_worker_id_(0)
-    , stats_("rocketspeed." + name) {
+    , next_worker_id_(0){
   assert(info_log);
   assert(num_workers >= 1);
 
