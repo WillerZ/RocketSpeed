@@ -131,10 +131,10 @@ class SocketEvent {
   }
 
   // One message to be sent out.
-  Status Enqueue(const std::shared_ptr<TimestampedString>& msg) {
+  Status Enqueue(std::shared_ptr<TimestampedString> msg) {
     event_loop_->thread_check_.Check();
 
-    send_queue_.emplace_back(msg);
+    send_queue_.emplace_back(std::move(msg));
 
     // If the write-ready event is not currently registered, and the socket
     // is ready for writing, then we'll try to write immediately. If the
@@ -641,9 +641,9 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
       hdr->issued_time = issued_time;
 
       // Add message header, destinations, and contents.
-      st = sev->Enqueue(hdr);
+      st = sev->Enqueue(std::move(hdr));
       if (st.ok()) {
-        st = sev->Enqueue(destinations);
+        st = sev->Enqueue(std::move(destinations));
       }
       if (st.ok()) {
         st = sev->Enqueue(msg);
