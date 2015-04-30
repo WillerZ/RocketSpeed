@@ -244,9 +244,9 @@ class SocketEvent {
         ssize_t count = write(fd_, partial_.data(), partial_.size());
         if (count == -1) {
           LOG_WARN(event_loop_->info_log_,
-              "Wanted to write %d bytes to remote host fd(%d) but encountered "
+              "Wanted to write %zu bytes to remote host fd(%d) but encountered "
               "errno(%d) \"%s\".",
-              (int)partial_.size(), fd_, errno, strerror(errno));
+              partial_.size(), fd_, errno, strerror(errno));
           event_loop_->info_log_->Flush();
           if (errno != EAGAIN && errno != EWOULDBLOCK) {
             // write error, close connection.
@@ -254,11 +254,11 @@ class SocketEvent {
           }
           return Status::OK();
         }
-        if ((unsigned int)count != partial_.size()) {
+        if (static_cast<size_t>(count) != partial_.size()) {
           LOG_WARN(event_loop_->info_log_,
-              "Wanted to write %d bytes to remote host fd(%d) but only "
-              "%d bytes written successfully.",
-              (int)partial_.size(), fd_, (int)count);
+              "Wanted to write %zu bytes to remote host fd(%d) but only "
+              "%zd bytes written successfully.",
+              partial_.size(), fd_, count);
           event_loop_->info_log_->Flush();
           // update partial data pointers
           partial_ = Slice(partial_.data() + count, partial_.size() - count);
@@ -794,28 +794,17 @@ EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
   event_base_loopexit(base, NULL);
 }
 
-void
-EventLoop::Run() {
+Status
+EventLoop::Initialize() {
+  if (base_) {
+    assert(false);
+    return Status::InvalidArgument("EventLoop already initialized.");
+  }
 
-/**
- * gcc complains that a format string that is not constant is
- * a security risk. Switch off security check for this piece of code.
- */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-security"
-  auto start_error = [&] (const std::string& error) {
-    LOG_ERROR(info_log_, error.c_str());
-    info_log_->Flush();
-    start_status_ = Status::InternalError(error);
-    start_signal_.Post();
-  };
-#pragma GCC diagnostic pop
-
-  thread_check_.Reset();
   base_ = event_base_new();
   if (!base_) {
-    start_error("Failed to create an event base for an EventLoop thread");
-    return;
+    return Status::InternalError(
+      "Failed to create an event base for an EventLoop thread");
   }
 
   // Port number <= 0 indicates that there is no accept loop.
@@ -837,9 +826,9 @@ EventLoop::Run() {
       static_cast<int>(sizeof(sin)));
 
     if (listener_ == nullptr) {
-      start_error("Failed to create connection listener on port " +
-        std::to_string(port_number_));
-      return;
+      return Status::InternalError(
+        "Failed to create connection listener on port " +
+          std::to_string(port_number_));
     }
 
     evconnlistener_set_error_cb(listener_, &EventLoop::accept_error_cb);
@@ -855,20 +844,18 @@ EventLoop::Run() {
     reinterpret_cast<void*>(this));
 
   if (startup_event_ == nullptr) {
-    start_error("Failed to create first startup event");
-    return;
+    return Status::InternalError("Failed to create first startup event");
   }
   timeval zero_seconds = {0, 0};
   int rv = evtimer_add(startup_event_, &zero_seconds);
   if (rv != 0) {
-    start_error("Failed to add startup event to event base");
-    return;
+    return Status::InternalError("Failed to add startup event to event base");
   }
 
   // An event that signals new commands in the command queue.
   if (shutdown_eventfd_.status() < 0) {
-    start_error("Failed to create eventfd for shutdown commands");
-    return;
+    return Status::InternalError(
+      "Failed to create eventfd for shutdown commands");
   }
 
   // Create a shutdown event that will run when we want to stop the loop.
@@ -883,19 +870,17 @@ EventLoop::Run() {
     this->do_shutdown,
     reinterpret_cast<void*>(this));
   if (shutdown_event_ == nullptr) {
-    start_error("Failed to create shutdown event");
-    return;
+    return Status::InternalError("Failed to create shutdown event");
   }
   rv = event_add(shutdown_event_, nullptr);
   if (rv != 0) {
-    start_error("Failed to add shutdown event to event base");
-    return;
+    return Status::InternalError("Failed to add shutdown event to event base");
   }
 
   // An event that signals new commands in the command queue.
   if (command_ready_eventfd_.status() < 0) {
-    start_error("Failed to create eventfd for waiting commands");
-    return;
+    return Status::InternalError(
+      "Failed to create eventfd for waiting commands");
   }
   command_ready_event_ = event_new(
     base_,
@@ -904,21 +889,28 @@ EventLoop::Run() {
     this->do_command,
     reinterpret_cast<void*>(this));
   if (command_ready_event_ == nullptr) {
-    start_error("Failed to create command queue event");
-    return;
+    return Status::InternalError("Failed to create command queue event");
   }
   rv = event_add(command_ready_event_, nullptr);
   if (rv != 0) {
-    start_error("Failed to add command event to event base");
+    return Status::InternalError("Failed to add command event to event base");
+  }
+  return Status::OK();
+}
+
+void EventLoop::Run() {
+  if (!base_) {
+    LOG_FATAL(info_log_, "EventLoop not initialized before use.");
+    assert(false);
     return;
   }
-
   LOG_VITAL(info_log_, "Starting EventLoop at port %d", port_number_);
   info_log_->Flush();
 
   // Start the event loop.
   // This will not exit until Stop is called, or some error
   // happens within libevent.
+  thread_check_.Reset();
   event_base_dispatch(base_);
   running_ = false;
 }
@@ -1024,7 +1016,7 @@ Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
       return Status::TimedOut();
     }
   }
-  return start_status_;
+  return Status::OK();
 }
 
 // Removes an socket event created by setup_connection.

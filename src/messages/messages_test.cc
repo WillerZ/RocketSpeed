@@ -210,6 +210,7 @@ TEST(Messaging, ErrorHandling) {
 TEST(Messaging, PingPong) {
   // Create server loop.
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  ASSERT_OK(server.Initialize());
   env_->StartThread([&]() { server.Run(); }, "server");
 
   // Posted on every ping message received.
@@ -229,6 +230,7 @@ TEST(Messaging, PingPong) {
         ping_sem.Post();
       }},
   });
+  ASSERT_OK(loop.Initialize());
   env_->StartThread([&]() { loop.Run(); }, "client");
 
   ASSERT_OK(server.WaitUntilRunning());
@@ -271,6 +273,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
         server_ping.Post();
       }},
   });
+  ASSERT_OK(server.Initialize());
   env_->StartThread([&]() { server.Run(); }, "server");
 
   // Posted on any ping message received by any client.
@@ -286,6 +289,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
         client_ping.Post();
       }},
   });
+  ASSERT_OK(client1.Initialize());
   env_->StartThread([&]() { client1.Run(); }, "client1");
 
   // Second client loop.
@@ -298,6 +302,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
         client_ping.Post();
       }},
   });
+  ASSERT_OK(client2.Initialize());
   env_->StartThread([&]() { client2.Run(); }, "client2");
 
   ASSERT_OK(server.WaitUntilRunning());
@@ -355,6 +360,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
 
   // Server loop.
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  ASSERT_OK(server.Initialize());
   env_->StartThread([&]() { server.Run(); }, "server");
 
   // Clients loop.
@@ -384,6 +390,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
         }},
     });
   }
+  ASSERT_OK(client.Initialize());
   env_->StartThread([&]() { client.Run(); }, "loop-client");
 
   ASSERT_OK(server.WaitUntilRunning());
@@ -429,6 +436,7 @@ TEST(Messaging, GracefulGoodbye) {
             server.SendResponse(*ping, origin, server.GetThreadWorkerIndex()));
       }},
   });
+  ASSERT_OK(server.Initialize());
   env_->StartThread([&]() { server.Run(); }, "loop-server");
 
   // Post to the checkpoint when receiving a ping.
@@ -449,6 +457,7 @@ TEST(Messaging, GracefulGoodbye) {
   // Clients loop.
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client");
   client.RegisterCallbacks(callbacks);
+  ASSERT_OK(client.Initialize());
   env_->StartThread([&]() { client.Run(); }, "client");
 
   ASSERT_OK(server.WaitUntilRunning());
@@ -501,16 +510,16 @@ TEST(Messaging, GracefulGoodbye) {
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 }
 
-TEST(Messaging, WaitUntilRunningFailure) {
-  // Check that WaitUntilRunning returns failure.
+TEST(Messaging, InitializeFailure) {
+  // Check that Initialize returns failure.
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
+  ASSERT_OK(loop1.Initialize());
   env_->StartThread([&]() { loop1.Run(); }, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
 
   // now start another on same port, should fail.
   MsgLoop loop2(env_, env_options_, 58499, 1, info_log_, "loop2");
-  env_->StartThread([&]() { loop2.Run(); }, "loop2");
-  ASSERT_TRUE(!loop2.WaitUntilRunning().ok());
+  ASSERT_TRUE(!loop2.Initialize().ok());
 }
 
 TEST(Messaging, SocketDeath) {
@@ -518,6 +527,7 @@ TEST(Messaging, SocketDeath) {
   // stream, if the stream has broken during transmission.
   MsgLoop receiver_loop(
       env_, env_options_, 58499, 1, info_log_, "receiver_loop0");
+  ASSERT_OK(receiver_loop.Initialize());
   env_->StartThread([&]() { receiver_loop.Run(); }, "receiver_loop0");
 
   // Post to the checkpoint when receiving a ping.
@@ -533,6 +543,7 @@ TEST(Messaging, SocketDeath) {
   // Sender loop.
   MsgLoop sender_loop(env_, env_options_, 0, 1, info_log_, "sender_loop");
   sender_loop.RegisterCallbacks(callbacks);
+  ASSERT_OK(sender_loop.Initialize());
   env_->StartThread([&]() { sender_loop.Run(); }, "sender_loop");
   ASSERT_OK(sender_loop.WaitUntilRunning());
   ASSERT_OK(receiver_loop.WaitUntilRunning());
@@ -554,6 +565,7 @@ TEST(Messaging, SocketDeath) {
   // Restart receiver_loop with the same parameters.
   MsgLoop receiver_loop1(
       env_, env_options_, 58499, 1, info_log_, "receiver_loop1");
+  ASSERT_OK(receiver_loop1.Initialize());
   env_->StartThread([&]() { receiver_loop1.Run(); }, "receiver_loop1");
   receiver_loop1.RegisterCallbacks(callbacks);
   ASSERT_OK(receiver_loop1.WaitUntilRunning());
@@ -579,6 +591,7 @@ TEST(Messaging, SocketDeath) {
 
 TEST(Messaging, GatherTest) {
   MsgLoop loop(env_, env_options_, -1, 10, info_log_, "loop");
+  ASSERT_OK(loop.Initialize());
   env_->StartThread([&] () { loop.Run(); }, "loop");
   ASSERT_OK(loop.WaitUntilRunning());
 

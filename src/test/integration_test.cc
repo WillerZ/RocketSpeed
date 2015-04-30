@@ -586,6 +586,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   client.RegisterCallbacks(callbacks);
   StreamSocket socket(client.CreateOutboundStream(
       cluster.GetCopilot()->GetClientId(), 0));
+  ASSERT_OK(client.Initialize());
   env_->StartThread([&] () { client.Run(); }, "client");
   client.WaitUntilRunning();
 

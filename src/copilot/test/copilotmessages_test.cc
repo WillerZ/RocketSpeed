@@ -85,6 +85,7 @@ TEST(CopilotTest, Subscribe) {
         }
       }},
   });
+  ASSERT_OK(loop.Initialize());
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
   ASSERT_OK(loop.WaitUntilRunning());
@@ -207,6 +208,7 @@ TEST(CopilotTest, Rollcall) {
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
   });
+  ASSERT_OK(loop.Initialize());
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
                     "testc-" + std::to_string(loop.GetHostId().port));
   ASSERT_OK(loop.WaitUntilRunning());

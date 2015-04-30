@@ -169,6 +169,16 @@ void MsgLoop::SetThreadWorkerIndex(int worker_index) {
   }
 }
 
+Status MsgLoop::Initialize() {
+  for (auto& event_loop : event_loops_) {
+    Status st = event_loop->Initialize();
+    if (!st.ok()) {
+      return st;
+    }
+  }
+  return Status::OK();
+}
+
 void MsgLoop::Run() {
   LOG_INFO(info_log_, "Starting Message Loop at port %ld", (long)hostid_.port);
   env_->SetCurrentThreadName(name_ + "-0");

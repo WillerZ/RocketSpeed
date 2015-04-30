@@ -115,6 +115,11 @@ Status ClientImpl::Create(ClientOptions options,
       &ProxygenMQTTClient::Create));
 #endif
 
+  Status st = msg_loop_->Initialize();
+  if (!st.ok()) {
+    return st;
+  }
+
   client->reset(new ClientImpl(options.env,
                                options.config,
                                options.wake_lock,

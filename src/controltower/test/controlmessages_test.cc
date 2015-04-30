@@ -96,6 +96,7 @@ TEST(ControlTowerTest, Subscribe) {
         ProcessMetadata(std::move(msg), origin);
       }},
   });
+  ASSERT_OK(loop.Initialize());
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop, "client");
   ASSERT_OK(loop.WaitUntilRunning());
 
@@ -140,6 +141,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
+  ASSERT_OK(loop1.Initialize());
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop1, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
 
@@ -175,6 +177,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
+  ASSERT_OK(loop2.Initialize());
   env_->StartThread(ControlTowerTest::MsgLoopStart, &loop2, "loop2");
   ASSERT_OK(loop2.WaitUntilRunning());
 

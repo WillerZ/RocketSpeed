@@ -154,6 +154,11 @@ void LocalTestCluster::Initialize(Options opts) {
   if (opts.start_controltower) {
     control_tower_loop_.reset(new MsgLoop(
         env_, env_options, opts.controltower_port, 16, info_log_, "tower"));
+    status_ = control_tower_loop_->Initialize();
+    if (!status_.ok()) {
+      LOG_ERROR(info_log_, "Failed to initialize Control Tower loop.");
+      return;
+    }
 
     // Create ControlTower
     opts.tower.info_log = info_log_;
@@ -187,6 +192,11 @@ void LocalTestCluster::Initialize(Options opts) {
     assert(opts.copilot_port == opts.pilot_port);
     cockpit_loop_.reset(new MsgLoop(
         env_, env_options, opts.copilot_port, 16, info_log_, "cockpit"));
+    status_ = cockpit_loop_->Initialize();
+    if (!status_.ok()) {
+      LOG_ERROR(info_log_, "Failed to initialize Cockpit loop.");
+      return;
+    }
 
     // If we need to start the copilot, then it is better to start the
     // pilot too. Any subscribe/unsubscribe requests to the copilot needs

@@ -71,6 +71,7 @@ TEST(PilotTest, Publish) {
         }
       }},
   });
+  ASSERT_OK(loop.Initialize());
   env_->StartThread(MsgLoopStart, &loop, "client");
   ASSERT_OK(loop.WaitUntilRunning());
 

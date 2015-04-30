@@ -87,6 +87,11 @@ class FileStorageTest {
   }
 
   Status StartMsgLoop() {
+    Status st = msg_loop->Initialize();
+    if (!st.ok()) {
+      return st;
+    }
+
     env->StartThread([this]() {
       msg_loop->Run();
     });

@@ -44,6 +44,8 @@ class MsgLoop : public MsgLoopBase {
   void
   RegisterCallbacks(const std::map<MessageType, MsgCallbackType>& callbacks);
 
+  Status Initialize();
+
   // Start this instance of the Event Loop
   void Run(void);
 

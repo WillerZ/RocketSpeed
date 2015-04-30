@@ -59,6 +59,15 @@ class MsgLoopBase {
   virtual void RegisterCallbacks(const std::map<MessageType,
                                  MsgCallbackType>& callbacks) = 0;
 
+  /**
+   * Initializes all event loops.
+   * After this point, commands can be sent, but they will not be processed
+   * until the message loop begins to run (assuming Initialize succeeded).
+   *
+   * @return ok() if successful, otherwise error.
+   */
+  virtual Status Initialize() = 0;
+
   // Start this instance of the Event Loop
   virtual void Run(void) = 0;
 

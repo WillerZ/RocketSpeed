@@ -9,6 +9,7 @@
 #error "gflags is required for rocketspeed"
 #endif
 
+#include "src/server/server.h"
 #include <gflags/gflags.h>
 #include <signal.h>
 #include <algorithm>
@@ -66,15 +67,9 @@ DEFINE_string(loglevel, "info", "debug|info|warn|error|fatal|vital|none");
 
 namespace rocketspeed {
 
-int Run(int argc,
-        char** argv,
-        std::function<std::shared_ptr<LogStorage>(
-          Env*, std::shared_ptr<Logger>)> get_storage,
-        std::function<std::shared_ptr<LogRouter>()> get_router,
-        Env* env,
-        EnvOptions env_options) {
-  Status st;
-
+RocketSpeed::RocketSpeed(Env* env, EnvOptions env_options)
+: env_(env)
+, env_options_(env_options) {
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
 
@@ -83,50 +78,56 @@ int Run(int argc,
     LogLevelToString(log_level));
 
   // Create info log
-  std::shared_ptr<Logger> info_log;
+  Status st;
   if (FLAGS_log_to_stderr) {
-    st = env->StdErrLogger(&info_log);
-    if (info_log) {
-      info_log->SetInfoLogLevel(log_level);
+    st = env_->StdErrLogger(&info_log_);
+    if (info_log_) {
+      info_log_->SetInfoLogLevel(log_level);
     }
   } else {
-    st = CreateLoggerFromOptions(env,
+    st = CreateLoggerFromOptions(env_,
                                  FLAGS_rs_log_dir,
                                  "LOG",
                                  0,
                                  0,
                                  log_level,
-                                 &info_log);
+                                 &info_log_);
   }
   if (!st.ok()) {
     fprintf(stderr, "RocketSpeed failed to create Logger\n");
-    info_log = std::make_shared<NullLogger>();
+    info_log_ = std::make_shared<NullLogger>();
   }
+}
 
+Status RocketSpeed::Initialize(
+    std::function<std::shared_ptr<LogStorage>(
+      Env*, std::shared_ptr<Logger>)> get_storage,
+    std::function<std::shared_ptr<LogRouter>()> get_router) {
   // As a special case, if no components are specified then all of them
   // are started.
   if (!FLAGS_pilot && !FLAGS_copilot && !FLAGS_tower) {
-    LOG_VITAL(info_log, "Starting all services (pilot, copilot, controltower)");
+    LOG_VITAL(info_log_,
+      "Starting all services (pilot, copilot, controltower)");
     FLAGS_pilot = true;
     FLAGS_copilot = true;
     FLAGS_tower = true;
   }
 
-  LOG_VITAL(info_log, "Creating LogRouter");
+  LOG_VITAL(info_log_, "Creating LogRouter");
   std::shared_ptr<LogRouter> log_router = get_router();
   if (!log_router) {
-    LOG_FATAL(info_log, "Failed to create LogRouter");
+    LOG_FATAL(info_log_, "Failed to create LogRouter");
   }
 
   // Utility for creating a message loop.
   auto make_msg_loop = [&] (int port, int workers, std::string name) {
-    LOG_VITAL(info_log, "Constructing MsgLoop port=%d workers=%d name=%s",
+    LOG_VITAL(info_log_, "Constructing MsgLoop port=%d workers=%d name=%s",
       port, workers, name.c_str());
-    return new MsgLoop(env,
-                       env_options,
+    return new MsgLoop(env_,
+                       env_options_,
                        port,
                        workers,
-                       info_log,
+                       info_log_,
                        std::move(name));
   };
 
@@ -134,7 +135,7 @@ int Run(int argc,
   Pilot* pilot = nullptr;
   Copilot* copilot = nullptr;
 
-  std::unique_ptr<MsgLoop> tower_loop;
+  std::shared_ptr<MsgLoop> tower_loop;
   std::shared_ptr<MsgLoop> pilot_loop;
   std::shared_ptr<MsgLoop> copilot_loop;
 
@@ -147,17 +148,16 @@ int Run(int argc,
   std::shared_ptr<LogStorage> storage;
   if (FLAGS_pilot || FLAGS_tower) {
     // Only need storage for pilot and control tower.
-    LOG_VITAL(info_log, "Creating LogStorage");
-    storage = get_storage(env, info_log);
+    LOG_VITAL(info_log_, "Creating LogStorage");
+    storage = get_storage(env_, info_log_);
     if (!storage) {
-      LOG_FATAL(info_log, "Failed to construct log storage");
-      return 1;
+      return Status::InternalError("Failed to construct log storage");
     }
   }
 
   if (FLAGS_pilot && FLAGS_copilot && FLAGS_pilot_port == FLAGS_copilot_port) {
     // Pilot + Copilot sharing message loop.
-    LOG_VITAL(info_log, "Pilot and copilot sharing MsgLoop port=%d",
+    LOG_VITAL(info_log_, "Pilot and copilot sharing MsgLoop port=%d",
       FLAGS_pilot_port);
     int workers = std::max(FLAGS_pilot_workers, FLAGS_copilot_workers);
     pilot_loop.reset(make_msg_loop(FLAGS_pilot_port,
@@ -180,51 +180,49 @@ int Run(int argc,
 
   // Create Control Tower.
   if (FLAGS_tower) {
-    LOG_VITAL(info_log, "Creating Control Tower");
+    LOG_VITAL(info_log_, "Creating Control Tower");
     ControlTowerOptions tower_opts;
     tower_opts.msg_loop = tower_loop.get();
     tower_opts.worker_queue_size = FLAGS_worker_queue_size;
     tower_opts.number_of_rooms = FLAGS_tower_rooms;
-    tower_opts.info_log = info_log;
+    tower_opts.info_log = info_log_;
     tower_opts.storage = storage;
     tower_opts.log_router = log_router;
 
-    st = ControlTower::CreateNewInstance(std::move(tower_opts),
-                                                      &tower);
+    Status st = ControlTower::CreateNewInstance(std::move(tower_opts),
+                                                &tower);
     if (!st.ok()) {
-      LOG_FATAL(info_log, "Error in Starting ControlTower (%s)\n",
-        st.ToString().c_str());
-      return 1;
+      return st;
     }
+    tower_.reset(tower);
   }
 
   // Create Pilot.
   HostId pilot_host("localhost", FLAGS_pilot_port);
   if (FLAGS_pilot) {
-    LOG_VITAL(info_log, "Creating Pilot");
+    LOG_VITAL(info_log_, "Creating Pilot");
     PilotOptions pilot_opts;
     pilot_opts.msg_loop = pilot_loop.get();
-    pilot_opts.info_log = info_log;
+    pilot_opts.info_log = info_log_;
     pilot_opts.storage = storage;
     pilot_opts.log_router = log_router;
 
-    st = Pilot::CreateNewInstance(std::move(pilot_opts),
-                                               &pilot);
+    Status st = Pilot::CreateNewInstance(std::move(pilot_opts),
+                                         &pilot);
     if (!st.ok()) {
-      LOG_FATAL(info_log, "Error in Starting Pilot (%s)\n",
-        st.ToString().c_str());
-      return 1;
+      return st;
     }
+    pilot_.reset(pilot);
   }
 
   // Create Copilot.
   if (FLAGS_copilot) {
-    LOG_VITAL(info_log, "Creating Copilot");
+    LOG_VITAL(info_log_, "Creating Copilot");
     CopilotOptions copilot_opts;
     copilot_opts.msg_loop = copilot_loop.get();
     copilot_opts.worker_queue_size = FLAGS_worker_queue_size;
     copilot_opts.num_workers = FLAGS_copilot_workers;
-    copilot_opts.info_log = info_log;
+    copilot_opts.info_log = info_log_;
     copilot_opts.control_tower_connections = FLAGS_copilot_connections;
     copilot_opts.log_router = log_router;
     copilot_opts.rollcall_enabled = FLAGS_rollcall;
@@ -235,71 +233,101 @@ int Run(int argc,
     for (auto hostname : SplitString(FLAGS_control_towers)) {
       HostId host(hostname, FLAGS_tower_port);
       copilot_opts.control_towers.emplace(node_id, host);
-      LOG_VITAL(info_log, "Adding control tower '%s'",
+      LOG_VITAL(info_log_, "Adding control tower '%s'",
         host.ToString().c_str());
       ++node_id;
     }
     if (FLAGS_pilot) {
       copilot_opts.pilots.push_back(pilot_host);
     }
-    st = Copilot::CreateNewInstance(std::move(copilot_opts),
-                                    &copilot);
+    Status st = Copilot::CreateNewInstance(std::move(copilot_opts),
+                                           &copilot);
     if (!st.ok()) {
-      LOG_FATAL(info_log, "Error in Starting Copilot (%s)\n",
-        st.ToString().c_str());
-      return 1;
+      return st;
     }
+    copilot_.reset(copilot);
   }
 
-  // Start all the services, with the last one running in this thread.
   // Get a list of message loops.
-  std::vector<MsgLoop*> msg_loops;
   if (tower_loop) {
-    msg_loops.push_back(tower_loop.get());
+    msg_loops_.emplace_back(std::move(tower_loop));
   }
   if (copilot_loop) {
-    msg_loops.push_back(copilot_loop.get());
+    msg_loops_.emplace_back(std::move(copilot_loop));
   }
-  if (pilot_loop && pilot_loop != copilot_loop) {
-    msg_loops.push_back(pilot_loop.get());
+  if (pilot_loop && FLAGS_pilot_port != FLAGS_copilot_port) {
+    msg_loops_.emplace_back(std::move(pilot_loop));
   }
 
-  // Start all the messages loops, with the last loop started in this thread.
-  LOG_VITAL(info_log, "Starting all message loop threads");
-  std::vector<std::thread> threads;
-  assert(msg_loops.size() != 0);
-  for (size_t i = 0; i < msg_loops.size() - 1; ++i) {
-    threads.emplace_back(
-      [] (MsgLoop* msg_loop) {
-        msg_loop->Run();
-      },
-      msg_loops[i]);
+  // Initialize message loops.
+  for (auto& msg_loop : msg_loops_) {
+    Status st = msg_loop->Initialize();
+    if (!st.ok()) {
+      return st;
+    }
   }
-  // Start the last loop, this will block until something the loop exits for
+  return Status::OK();
+}
+
+RocketSpeed::~RocketSpeed() {
+  // All threads must be stopped first, otherwise we may still have running
+  // services.
+  assert(threads_.empty());
+  assert(msg_loops_.empty());
+
+  // Shutdown libevent for good hygiene.
+  EventLoop::GlobalShutdown();
+}
+
+void RocketSpeed::Run() {
+  // Start all the messages loops, with the first loop started in this thread.
+  LOG_VITAL(info_log_, "Starting all message loop threads");
+  assert(msg_loops_.size() != 0);
+  for (size_t i = 1; i < msg_loops_.size(); ++i) {
+    threads_.emplace_back(
+      [this, i] (MsgLoop* msg_loop) {
+        msg_loop->Run();
+        LOG_VITAL(info_log_, "Message loop %zu finished.", i);
+      },
+      msg_loops_[i].get());
+  }
+  // Start the first loop, this will block until something the loop exits for
   // some reason.
-  msg_loops[msg_loops.size() - 1]->Run();
+  msg_loops_[0]->Run();
+  LOG_VITAL(info_log_, "Message loop 0 finished.");
+}
+
+void RocketSpeed::Stop() {
+  // Stop all message loops.
+  LOG_VITAL(info_log_, "Stopping Message Loops");
+  for (std::shared_ptr<MsgLoop>& loop : msg_loops_) {
+    loop->Stop();
+  }
 
   // Join all the other message loops.
-  LOG_VITAL(info_log, "Joining all message loop threads");
-  for (std::thread& t : threads) {
+  LOG_VITAL(info_log_, "Joining all message loop threads");
+  for (std::thread& t : threads_) {
     if (t.joinable()) {
       t.join();
     }
   }
 
-  LOG_VITAL(info_log, "Stopping services");
-  tower->Stop();
+  // Stop all services.
+  if (tower_) {
+    LOG_VITAL(info_log_, "Stopping Control Tower");
+    tower_->Stop();
+  }
+  if (copilot_) {
+    LOG_VITAL(info_log_, "Stopping Copilot");
+    copilot_->Stop();
+  }
+  if (pilot_) {
+    LOG_VITAL(info_log_, "Stopping Pilot");
+    pilot_->Stop();
+  }
 
-  // Stop all background services.
-  delete pilot;
-  delete copilot;
-  delete tower;
-
-  // Shutdown libevent for good hygiene.
-  EventLoop::GlobalShutdown();
-
-  LOG_VITAL(info_log, "Process exit");
-  return 0;
+  threads_.clear();
+  msg_loops_.clear();
 }
 
 }  // namespace rocketspeed

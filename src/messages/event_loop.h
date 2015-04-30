@@ -167,6 +167,13 @@ class EventLoop {
 
   virtual ~EventLoop();
 
+  /**
+   * Initialize the event loop.
+   * This allows commands to be sent, but won't be processed until the event
+   * loop starts running.
+   */
+  Status Initialize();
+
   // Start this instance of the Event Loop
   void Run(void);
 

@@ -123,6 +123,10 @@ Status Proxy::Start(OnMessageCallback on_message,
   on_disconnect_ = on_disconnect ? std::move(on_disconnect)
                                  : [](const std::vector<int64_t>&) {};
 
+  Status st = msg_loop_->Initialize();
+  if (!st.ok()) {
+    return st;
+  }
   msg_thread_ = env_->StartThread([this]() { msg_loop_->Run(); }, "proxy");
 
   return msg_loop_->WaitUntilRunning();
