@@ -52,6 +52,7 @@ bool CopilotWorker::Forward(std::shared_ptr<ControlTowerRouter> new_router) {
 void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
   // Process CopilotWorkerCommand
   if (command.IsRouterUpdate()) {
+    LOG_VITAL(options_.info_log, "Updating control tower router");
     control_tower_router_ = command.GetRouterUpdate();
   } else {
     std::unique_ptr<Message> message = command.GetMessage();
