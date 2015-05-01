@@ -299,12 +299,5 @@ void Semaphore::Post() {
   // destroyed it
 }
 
-int Semaphore::Value() {
-  int val;
-  int rv __attribute__((__unused__)) = sem_getvalue(rawsem(), &val);
-  assert(rv == 0);
-  return val;
-}
-
 }  // namespace port
 }  // namespace rocketspeed

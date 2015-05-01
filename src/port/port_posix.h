@@ -225,7 +225,6 @@ class Semaphore {
     return TimedWait(std::chrono::system_clock::now() + timeout);
   }
   void Post();
-  int Value();
 
   // Not copyable but movable
   Semaphore(const Semaphore &other) = delete;
