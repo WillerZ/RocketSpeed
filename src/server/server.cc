@@ -250,13 +250,13 @@ Status RocketSpeed::Initialize(
 
   // Get a list of message loops.
   if (tower_loop) {
-    msg_loops_.emplace_back(std::move(tower_loop));
+    msg_loops_.emplace_back(tower_loop);
   }
   if (copilot_loop) {
-    msg_loops_.emplace_back(std::move(copilot_loop));
+    msg_loops_.emplace_back(copilot_loop);
   }
-  if (pilot_loop && FLAGS_pilot_port != FLAGS_copilot_port) {
-    msg_loops_.emplace_back(std::move(pilot_loop));
+  if (pilot_loop && pilot_loop != copilot_loop) {
+    msg_loops_.emplace_back(pilot_loop);
   }
 
   // Initialize message loops.
