@@ -129,8 +129,9 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   LOG_INFO(options_.info_log,
-      "Received data (%.16s) for Topic(%s)",
+      "Received data (%.16s) in ns(%s) for Topic(%s)",
       msg_data->GetPayload().ToString().c_str(),
+      msg_data->GetNamespaceId().ToString().c_str(),
       msg_data->GetTopicName().ToString().c_str());
 
   // Setup AppendCallback
