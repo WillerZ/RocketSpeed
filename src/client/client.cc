@@ -321,6 +321,10 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
     return st;
   }
 
+  void Clear() {
+    subscriptions_.clear();
+  }
+
  private:
   /** Asserts that this part of a state is accessed from a single thread. */
   ThreadCheck thread_check_;
@@ -362,6 +366,10 @@ ClientImpl::ClientImpl(BaseEnv* env,
                                               StreamID origin) {
     ProcessMetadata(std::move(msg), origin);
   };
+  callbacks[MessageType::mGoodbye] =
+      [this](std::unique_ptr<Message> msg, StreamID origin) {
+        ProcessGoodbye(std::move(msg), origin);
+      };
 
   // Create sharded state.
   worker_data_.reset(new ClientWorkerData[msg_loop_->GetNumWorkers()]);
@@ -715,6 +723,33 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg,
       AnnounceSubscriptionStatus(meta->GetTenantID(), request, Status::OK());
     }
   }
+}
+
+void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
+  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
+  auto& worker_data = worker_data_[worker_id];
+
+  // Check that message arrived on correct stream.
+  if (worker_data.copilot_socket.GetStreamID() != origin) {
+    return;
+  }
+
+  // Reset subscriptions on this worker.
+  worker_data.Clear();
+
+  // Get the copilot's address.
+  HostId copilot;
+  Status st = config_->GetCopilot(&copilot);
+  assert(st.ok());  // TODO(pja) : handle failures
+
+  // And create socket to it.
+  worker_data.copilot_socket =
+      msg_loop_->CreateOutboundStream(copilot.ToClientId(), worker_id);
+
+  LOG_INFO(info_log_,
+           "Reconnected to %s on stream %llu",
+           copilot.ToString().c_str(),
+           worker_data.copilot_socket.GetStreamID());
 }
 
 void ClientImpl::ProcessRestoredSubscription(

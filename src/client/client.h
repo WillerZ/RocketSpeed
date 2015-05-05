@@ -131,6 +131,9 @@ class ClientImpl : public Client {
 
   /** Handler for metadata messages received. */
   void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
+
+  /** Handler for goodbye messages received. */
+  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 };
 
 }  // namespace rocketspeed

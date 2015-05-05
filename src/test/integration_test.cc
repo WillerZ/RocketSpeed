@@ -663,6 +663,75 @@ TEST(IntegrationTest, UnsubscribeCallback) {
   sub_checkpoint.TimedWait(std::chrono::seconds(1));
 }
 
+TEST(IntegrationTest, LostConnection) {
+  // Tests that client can be used after it loses connection to the cloud.
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.copilot.rollcall_enabled = false;
+  opts.info_log = info_log;
+  std::unique_ptr<LocalTestCluster> cluster(new LocalTestCluster(opts));
+  ASSERT_OK(cluster->GetStatus());
+
+  // Message read semaphore.
+  port::Semaphore msg_received;
+
+  // Message setup.
+  Topic topic = "LostConnection";
+  NamespaceID namespace_id = GuestNamespace;
+  TopicOptions topic_options;
+  std::string data = "test_message";
+
+  // RocketSpeed callbacks;
+  auto publish_callback = [&](std::unique_ptr<ResultStatus> rs) {};
+
+  auto subscription_callback = [&](SubscriptionStatus ss) {
+    ASSERT_TRUE(ss.topic_name == topic);
+    ASSERT_TRUE(ss.namespace_id == namespace_id);
+  };
+
+  auto receive_callback = [&](std::unique_ptr<MessageReceived> mr) {
+    ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
+    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    msg_received.Post();
+  };
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster->GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+
+  // Send a message.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            publish_callback).status);
+
+  // Listen on a topic.
+  std::vector<SubscriptionRequest> subscriptions = {
+      SubscriptionRequest(namespace_id, topic, true, 1)};
+  client->ListenTopics(GuestTenant, subscriptions);
+
+  // Wait for the message.
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+
+  // Restart the cluster, which kills connection.
+  cluster.reset();
+  cluster.reset(new LocalTestCluster(opts));
+  ASSERT_OK(cluster->GetStatus());
+
+  // Listen for topics.
+  client->ListenTopics(GuestTenant, subscriptions);
+
+  // Wait for message.
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+}
+
 TEST(IntegrationTest, OneMessageWithoutRollCall) {
   // This test is a duplicate of OneMessage, just with RollCall disabled.
   // The intention is just to be a quick check to ensure that things still
