@@ -17,6 +17,7 @@ namespace rocketspeed {
 class ControlRoom;
 class LogTailer;
 class TopicTailer;
+class Statistics;
 
 class ControlTower {
  public:
@@ -75,6 +76,8 @@ class ControlTower {
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;
   }
+
+  Statistics GetStatisticsSync();
 
  private:
   // The options used by the Control Tower

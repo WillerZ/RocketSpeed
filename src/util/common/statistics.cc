@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <limits>
 #include <string>
-#include <unordered_map>
 
 #include "src/util/common/thread_check.h"
 

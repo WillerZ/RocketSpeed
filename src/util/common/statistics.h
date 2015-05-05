@@ -182,6 +182,18 @@ class Statistics {
    */
   void Aggregate(const Statistics& stats);
 
+  const std::unordered_map<std::string, std::unique_ptr<Counter>>&
+    GetCounters() const {
+    thread_check_.Check();
+    return counters_;
+  }
+
+  const std::unordered_map<std::string, std::unique_ptr<Histogram>>&
+    GetHistograms() const {
+    thread_check_.Check();
+    return histograms_;
+  }
+
  private:
   // Aggregates one set of statistics into another.
   template <typename T>
@@ -192,13 +204,14 @@ class Statistics {
   // Maps of counter/histogram names to those objects.
   std::unordered_map<std::string, std::unique_ptr<Counter>> counters_;
   std::unordered_map<std::string, std::unique_ptr<Histogram>> histograms_;
+
   ThreadCheck thread_check_;
 };
 
 template <typename T>
 void Statistics::AggregateOne(
-    std::unordered_map<std::string, std::unique_ptr<T>>* dst,
-    const std::unordered_map<std::string, std::unique_ptr<T>>& src) {
+  std::unordered_map<std::string, std::unique_ptr<T>>* dst,
+  const std::unordered_map<std::string, std::unique_ptr<T>>& src) {
   for (const auto& stat : src) {
     const std::string& name = stat.first;
     auto it = dst->find(name);

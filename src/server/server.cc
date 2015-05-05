@@ -330,4 +330,18 @@ void RocketSpeed::Stop() {
   msg_loops_.clear();
 }
 
+Statistics RocketSpeed::GetStatisticsSync() {
+  Statistics server_stats;
+  if (pilot_) {
+    server_stats.Aggregate(pilot_->GetStatisticsSync());
+  }
+  if (copilot_) {
+    server_stats.Aggregate(copilot_->GetStatisticsSync());
+  }
+  if (tower_) {
+    server_stats.Aggregate(tower_->GetStatisticsSync());
+  }
+  return server_stats;
+}
+
 }  // namespace rocketspeed

@@ -118,7 +118,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
                                           event_callback,
                                           accept_callback,
                                           std::move(allocs[i]),
-                                          "rocketspeed." + name);
+                                          name);
     event_loops_.emplace_back(event_loop);
   }
 

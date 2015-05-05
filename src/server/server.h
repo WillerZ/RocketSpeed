@@ -33,6 +33,7 @@ class LogRouter;
 class LogStorage;
 class MsgLoop;
 class Pilot;
+class Statistics;
 
 class RocketSpeed {
  public:
@@ -84,6 +85,8 @@ class RocketSpeed {
 
   /** ControlTower */
   ControlTower* GetControlTower() { return tower_.get(); }
+
+  Statistics GetStatisticsSync();
 
  protected:
   Env* env_;

@@ -122,9 +122,9 @@ class Stats {
  public:
   Stats() {
     numwrites_rollcall_total = all.AddCounter(
-                             "rocketspeed.copilot.numwrites_rollcall_total");
+                             "copilot.numwrites_rollcall_total");
     numwrites_rollcall_failed = all.AddCounter(
-                             "rocketspeed.copilot.numwrites_rollcall_failed");
+                             "copilot.numwrites_rollcall_failed");
   }
   // all statistics about a copilot
   Statistics all;

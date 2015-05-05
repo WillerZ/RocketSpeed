@@ -331,6 +331,10 @@ HostNumber ControlTower::InsertHost(StreamID origin, int worker_id) {
   return hostnum;
 }
 
+Statistics ControlTower::GetStatisticsSync() {
+  return options_.msg_loop->GetStatisticsSync();
+}
+
 int ControlTower::LogIDToRoom(LogID log_id) const {
   return static_cast<int>(log_id % rooms_.size());
 }

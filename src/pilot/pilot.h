@@ -95,9 +95,9 @@ class Pilot {
 
   struct Stats {
     Stats() {
-      append_latency = all.AddLatency("rocketspeed.pilot.append_latency_us");
-      append_requests = all.AddCounter("rocketspeed.pilot.append_requests");
-      failed_appends = all.AddCounter("rocketspeed.pilot.failed_appends");
+      append_latency = all.AddLatency("pilot.append_latency_us");
+      append_requests = all.AddCounter("pilot.append_requests");
+      failed_appends = all.AddCounter("pilot.failed_appends");
     }
 
     Statistics all;
