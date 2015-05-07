@@ -398,6 +398,8 @@ TEST(IntegrationTest, TrimGapHandling) {
       ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
     }
     ASSERT_TRUE(!recv_sem[topic].TimedWait(std::chrono::milliseconds(100)));
+    client->ListenTopics(GuestTenant, {{ ns, topics[topic], false, seqno }});
+    ASSERT_TRUE(sub_sem[topic].TimedWait(std::chrono::seconds(1)));
   };
 
   test_receipt(0, seqnos[0], 5);
@@ -725,8 +727,16 @@ TEST(IntegrationTest, LostConnection) {
   cluster.reset(new LocalTestCluster(opts));
   ASSERT_OK(cluster->GetStatus());
 
-  // Listen for topics.
-  client->ListenTopics(GuestTenant, subscriptions);
+  // We do NOT reissue subscription requests, this is done automatically by the
+  // client.
+
+  // Send another message.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            publish_callback).status);
 
   // Wait for message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));

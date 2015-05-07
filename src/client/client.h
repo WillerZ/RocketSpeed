@@ -31,6 +31,7 @@ class ClientEnv;
 class ClientWorkerData;
 class MessageReceived;
 class Logger;
+class SubscriptionState;
 class WakeLock;
 
 /** Implementation of the client interface. */
@@ -123,8 +124,11 @@ class ClientImpl : public Client {
   void HandleSubscription(const TenantID tenant_id,
                           TopicPair request, int worker_id);
 
+  SubscriptionState* FindOrSendUnsubscribe(const NamespaceID& namespace_id,
+                                           const Topic& topic_name);
+
   /** Handler for messages received on some topic. */
-  void ProcessData(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);
 
    /** Handler for messages received on some topic. */
   void ProcessGap(std::unique_ptr<Message> msg, StreamID origin);

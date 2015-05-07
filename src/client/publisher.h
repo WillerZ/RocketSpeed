@@ -55,6 +55,10 @@ class PublisherImpl {
                         PublishCallback callback,
                         const MsgId messageId);
 
+  /** Handles goodbye messages for publisher streams. */
+  // TODO(stupaq) hide and register callback once we get multi guest MsgLoop
+  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
+
  private:
   const std::shared_ptr<Configuration> config_;
   const std::shared_ptr<Logger> info_log_;

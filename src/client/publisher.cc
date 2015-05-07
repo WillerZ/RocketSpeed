@@ -258,6 +258,41 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
   }
 }
 
+void PublisherImpl::ProcessGoodbye(std::unique_ptr<Message> msg,
+                                   StreamID origin) {
+  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
+  auto& worker_data = worker_data_[worker_id];
+
+  // Check that message arrived on correct stream.
+  if (worker_data.pilot_socket.GetStreamID() != origin) {
+    LOG_WARN(info_log_,
+             "Received message on unexpected stream (%llu), expected (%llu)",
+             origin,
+             worker_data.pilot_socket.GetStreamID());
+    return;
+  }
+
+  // Reset pending acks, as they will not return.
+  // TODO(stupaq) resend unacked messages and hope we can dedup them
+  std::unique_lock<std::mutex> lock2(worker_data.message_sent_mutex);
+  worker_data.messages_sent.clear();
+  lock2.unlock();
+
+  // Get the pilot's address.
+  HostId pilot;
+  Status st = config_->GetPilot(&pilot);
+  assert(st.ok());  // TODO(pja) : handle failures
+
+  // And create socket to it.
+  worker_data.pilot_socket =
+      msg_loop_->CreateOutboundStream(pilot.ToClientId(), worker_id);
+
+  LOG_INFO(info_log_,
+           "Reconnected to %s on stream %llu",
+           pilot.ToString().c_str(),
+           worker_data.pilot_socket.GetStreamID());
+}
+
 int PublisherImpl::GetWorkerForTopic(const Topic& name) const {
   return static_cast<int>(MurmurHash2<std::string>()(name) %
                           msg_loop_->GetNumWorkers());
