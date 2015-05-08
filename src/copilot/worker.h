@@ -170,8 +170,7 @@ class CopilotWorker {
                           int worker_id);
 
   // Write to Rollcall topic
-  void RollcallWrite(std::unique_ptr<Message> msg,
-                     const TenantID tenant_id,
+  void RollcallWrite(const TenantID tenant_id,
                      const Topic& topic_name,
                      const NamespaceID& namespace_id,
                      const MetadataType type,

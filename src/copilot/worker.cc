@@ -158,7 +158,7 @@ void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
             subscription.stream_id,
             subscription.worker_id);
           // Update rollcall topic.
-          RollcallWrite(std::move(message), msg->GetTenantID(),
+          RollcallWrite(msg->GetTenantID(),
                         request.topic_name,
                         request.namespace_id, request.topic_type,
                         logid, worker_id, subscription.stream_id);
@@ -456,7 +456,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
                subscriber);
     }
     // Update rollcall topic.
-    RollcallWrite(std::move(message), msg->GetTenantID(),
+    RollcallWrite(msg->GetTenantID(),
                   request.topic_name, request.namespace_id,
                   request.topic_type, logid, worker_id, subscriber);
   }
@@ -591,7 +591,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
       }
     }
     // Update rollcall topic.
-    RollcallWrite(nullptr, tenant_id, topic_name,
+    RollcallWrite(tenant_id, topic_name,
                   namespace_id, MetadataType::mUnSubscribe,
                   logid, worker_id, subscriber);
   }
@@ -632,8 +632,7 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
 // Inserts an entry into the rollcall topic.
 //
 void
-CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
-                             const TenantID tenant_id,
+CopilotWorker::RollcallWrite(const TenantID tenant_id,
                              const Topic& topic_name,
                              const NamespaceID& namespace_id,
                              const MetadataType type,
@@ -644,8 +643,6 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
     return;
   }
 
-  assert(msg || type == MetadataType::mUnSubscribe);
-
   // Write to rollcall topic failed. If this was a 'subscription' event,
   // then send unsubscribe message to copilot worker. This will send an
   // unsubscribe response to appropriate client.
@@ -654,15 +651,14 @@ CopilotWorker::RollcallWrite(std::unique_ptr<Message> msg,
   // cannot reference local variables.
   std::function<void()> process_error;
   if (type == MetadataType::mSubscribe) {
-    TenantID tenant = msg->GetTenantID();
     process_error =
-      [this, topic_name, namespace_id, logid, worker_id, origin, tenant] () {
+      [this, topic_name, namespace_id, logid, worker_id, origin, tenant_id] () {
         copilot_->GetStats(myid_)->numwrites_rollcall_failed->Add(1);
         std::vector<TopicPair> topics = { TopicPair(0, topic_name,
                                                   MetadataType::mUnSubscribe,
                                                   namespace_id) };
         std::unique_ptr<Message> newmsg(new MessageMetadata(
-                                          tenant,
+                                          tenant_id,
                                           MessageMetadata::MetaType::Request,
                                           topics));
         // Start the automatic unsubscribe process. We rely on the assumption
