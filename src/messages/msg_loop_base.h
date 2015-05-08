@@ -187,6 +187,7 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
   auto context = std::make_shared<Context>();
 
   const int n = GetNumWorkers();
+  context->second.reserve(n);
   for (int i = 0; i < n; ++i) {
     // Schedule the per_worker function to be called on each worker.
     // Results will be accumulated in context->second.
@@ -196,7 +197,7 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
         T result = per_worker(i);
         {
           MutexLock lock(&context->first);
-          context->second.push_back(std::move(result));
+          context->second.emplace_back(std::move(result));
           done = context->second.size() == n;
         }
         if (done) {

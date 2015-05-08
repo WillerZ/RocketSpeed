@@ -53,6 +53,22 @@ Histogram::Histogram(const Histogram& src)
   Aggregate(src);
 }
 
+Histogram::Histogram(Histogram&& src)
+: min_(src.min_)
+, max_(src.max_)
+, smallest_bucket_(src.smallest_bucket_)
+, ratio_(src.ratio_)
+, num_samples_(src.num_samples_)
+, bucket_counts_(std::move(src.bucket_counts_))
+, num_buckets_(src.num_buckets_) {
+  src.bucket_counts_.reset(new uint64_t[num_buckets_]);
+  src.thread_check_.Reset();
+  for (size_t i = 0; i < num_buckets_; ++i) {
+    src.bucket_counts_[i] = 0;
+  }
+  src.num_samples_ = 0;
+}
+
 void Histogram::Record(double sample) {
   thread_check_.Check();
   size_t index = std::min(BucketIndex(sample), num_buckets_ - 1);
@@ -111,6 +127,8 @@ double Histogram::Percentile(double p) const {
 
 void Histogram::Aggregate(const Histogram& histogram) {
   thread_check_.Check();
+  histogram.thread_check_.Check();
+
   // Parameters must match exactly for histograms to aggregate.
   assert(histogram.min_ == min_);
   assert(histogram.max_ == max_);
@@ -218,6 +236,22 @@ Statistics::Statistics(const Statistics &s) {
       std::unique_ptr<Histogram>(new Histogram(*p.second.get()))
     );
   }
+}
+
+Statistics::Statistics(Statistics&& src)
+: counters_(std::move(src.counters_))
+, histograms_(std::move(src.histograms_)) {
+}
+
+Statistics Statistics::MoveThread() {
+  Statistics stats = std::move(*this);
+  for (auto& p : stats.counters_) {
+    p.second.reset(new Counter(std::move(*p.second)));
+  }
+  for (auto& p : stats.histograms_) {
+    p.second.reset(new Histogram(std::move(*p.second)));
+  }
+  return stats;
 }
 
 }  // namespace rocketspeed

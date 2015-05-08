@@ -459,9 +459,36 @@ int main(int argc, char** argv) {
   std::chrono::time_point<std::chrono::steady_clock> last_data_message;
 
   // Benchmark statistics.
-  rocketspeed::Statistics stats;
-  rocketspeed::Histogram* ack_latency = stats.AddLatency("ack-latency");
-  rocketspeed::Histogram* recv_latency = stats.AddLatency("recv-latency");
+  std::mutex all_stats_mutex;
+  std::vector<std::unique_ptr<rocketspeed::Statistics>> all_stats;
+  rocketspeed::ThreadLocalPtr per_thread_stats;
+  rocketspeed::ThreadLocalPtr ack_latency;
+  rocketspeed::ThreadLocalPtr recv_latency;
+
+  // Initializes stats for current thread.
+  auto InitThreadLocalStats = [&] () {
+    if (!per_thread_stats.Get()) {
+      std::unique_ptr<rocketspeed::Statistics> stats(
+        new rocketspeed::Statistics());
+      per_thread_stats.Reset(stats.get());
+      ack_latency.Reset(stats->AddLatency("ack-latency"));
+      recv_latency.Reset(stats->AddLatency("recv-latency"));
+      std::lock_guard<std::mutex> lock(all_stats_mutex);
+      all_stats.emplace_back(std::move(stats));
+    }
+  };
+
+  // Get thread local ack latency histogram.
+  auto GetAckLatency = [&] () {
+    InitThreadLocalStats();
+    return static_cast<rocketspeed::Histogram*>(ack_latency.Get());
+  };
+
+  // Get thread local recv latency histogram.
+  auto GetRecvLatency = [&] () {
+    InitThreadLocalStats();
+    return static_cast<rocketspeed::Histogram*>(recv_latency.Get());
+  };
 
   // Create callback for publish acks.
   std::atomic<int64_t> ack_messages_received{0};
@@ -480,7 +507,7 @@ int main(int argc, char** argv) {
       rocketspeed::Slice data = rs->GetContents();
       unsigned long long int message_index, send_time;
       std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
-      ack_latency->Record(static_cast<uint64_t>(now - send_time));
+      GetAckLatency()->Record(static_cast<uint64_t>(now - send_time));
 
       if (FLAGS_delay_subscribe) {
         if (rs->GetStatus().ok()) {
@@ -534,7 +561,7 @@ int main(int argc, char** argv) {
           "Received message %llu with timestamp %llu",
           static_cast<long long unsigned int>(message_index),
           static_cast<long long unsigned int>(send_time));
-      recv_latency->Record(static_cast<uint64_t>(now - send_time));
+      GetRecvLatency()->Record(static_cast<uint64_t>(now - send_time));
       std::lock_guard<std::mutex> lock(is_received_mutex);
       if (is_received[message_index]) {
         LOG_WARN(info_log,
@@ -823,6 +850,14 @@ int main(int argc, char** argv) {
       printf("Throughput\n");
       printf("%" PRIu64 " messages/s\n", msg_per_sec);
       printf("%.2lf MB/s\n", static_cast<double>(bytes_per_sec) * 1e-6);
+
+      rocketspeed::Statistics stats;
+
+      // Aggregate per-thread stats.
+      std::lock_guard<std::mutex> lock(all_stats_mutex);
+      for (auto& s : all_stats) {
+        stats.Aggregate(s->MoveThread());
+      }
 
 #if !defined(OS_ANDROID)
       if (FLAGS_start_local_server) {

@@ -20,16 +20,27 @@ void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
 
   // Record latency
   uint64_t latency = pilot_->options_.env->NowMicros() - append_time_;
-  pilot_->worker_data_[worker_id_].stats_.append_latency->Record(latency);
-  pilot_->worker_data_[worker_id_].stats_.append_requests->Add(1);
-  pilot_->AppendCallback(append_status,
-                         seqno,
-                         std::move(msg_),
-                         logid_,
-                         append_time_,
-                         worker_id_,
-                         origin_);
-  pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
+  Status st = pilot_->options_.msg_loop->SendCommand(
+    std::unique_ptr<Command>(new ExecuteCommand(
+      [this, latency, append_status, seqno] () {
+        pilot_->worker_data_[worker_id_].stats_.append_latency->Record(latency);
+        pilot_->worker_data_[worker_id_].stats_.append_requests->Add(1);
+        pilot_->AppendCallback(append_status,
+                               seqno,
+                               std::move(msg_),
+                               logid_,
+                               append_time_,
+                               worker_id_,
+                               origin_);
+        pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
+      })), worker_id_);
+
+  if (!st.ok()) {
+    LOG_WARN(pilot_->options_.info_log,
+      "Failed to send command for append callback: %s",
+      st.ToString().c_str());
+    pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
+  }
 }
 
 /**

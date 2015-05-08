@@ -381,8 +381,8 @@ Statistics MsgLoop::AggregateStatsSync(WorkerStatsProvider stats_provider) {
     // Attempt to gather num clients from each event loop.
     st = Gather(stats_provider,
       [&done, &aggregated_stats] (std::vector<Statistics> clients) {
-        for (const Statistics& stat: clients) {
-          aggregated_stats.Aggregate(stat);
+        for (Statistics& stat: clients) {
+          aggregated_stats.Aggregate(stat.MoveThread());
         }
         done.Post();
       });
@@ -393,7 +393,7 @@ Statistics MsgLoop::AggregateStatsSync(WorkerStatsProvider stats_provider) {
     }
   } while (!st.ok());
   done.Wait();
-  return aggregated_stats;
+  return aggregated_stats.MoveThread();
 }
 
 

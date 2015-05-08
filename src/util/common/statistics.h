@@ -29,6 +29,11 @@ class alignas(CACHE_LINE_SIZE) Counter {
   : count_(src.count_) {
   }
 
+  Counter(Counter&& src) noexcept
+  : count_(src.count_) {
+    src.thread_check_.Reset();
+  }
+
   void Add(uint64_t delta) {
     thread_check_.Check();
     count_ += delta;
@@ -46,7 +51,13 @@ class alignas(CACHE_LINE_SIZE) Counter {
 
   std::string Report() const;
 
- private:
+  Counter MoveThread() {
+    auto result = std::move(*this);
+    result.thread_check_.Check();
+    return result;
+  }
+
+private:
   uint64_t count_{0};
   ThreadCheck thread_check_;
 };
@@ -77,6 +88,8 @@ class Histogram {
    */
   Histogram(const Histogram& src);
 
+  Histogram(Histogram&& src) /* may throw */;
+
   /**
    * Adds a sample to the histogram. If sample is outside the range of
    * [min, max] then it will be clamped.
@@ -102,7 +115,13 @@ class Histogram {
    */
   std::string Report() const;
 
- private:
+  Histogram MoveThread() {
+    auto result = std::move(*this);
+    result.thread_check_.Check();
+    return result;
+  }
+
+private:
   size_t BucketIndex(double sample) const;
 
   double min_;
@@ -124,7 +143,13 @@ class Statistics {
  public:
   Statistics() {}
 
-  Statistics(const Statistics &s);
+  Statistics(const Statistics& s);
+  Statistics(Statistics&& src) /* may throw */;
+
+  /**
+   * Moves ownership of the statistics to the current thread.
+   */
+  Statistics MoveThread();
 
   /**
    * Adds a new, named Counter object to the tracked statistics.
