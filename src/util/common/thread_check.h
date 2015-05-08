@@ -13,8 +13,10 @@ namespace rocketspeed {
 
 /**
  * Utility for ensuring that a particular piece of code is always called on the
- * correct thread. The first call to check() will initialize the expected thread
+ * correct thread. The first call to Check() will initialize the expected thread
  * and subsequent calls will assert that it is being called on the same thread.
+ * When copied in engaged state, expected thread is preserved, otherwise both
+ * copy and oiginal remain not engaged.
  *
  * In release builds, everything is a no-op.
  *
@@ -25,9 +27,19 @@ struct ThreadCheck {
  public:
   ThreadCheck()
 #ifndef NDEBUG
-  : thread_id_(0)
+      : thread_id_(0)
 #endif
   {
+  }
+
+  ThreadCheck(const ThreadCheck& other) { *this = other; }
+
+  ThreadCheck& operator=(const ThreadCheck& other) {
+#ifndef NDEBUG
+    auto thread_id = other.thread_id_.load(std::memory_order_consume);
+    thread_id_.store(thread_id, std::memory_order_release);
+#endif
+    return *this;
   }
 
   /**
@@ -37,7 +49,7 @@ struct ThreadCheck {
    */
   inline bool Ok() const {
 #ifndef NDEBUG
-   pthread_t  desired = pthread_self(), expected = 0;
+    pthread_t desired = pthread_self(), expected = 0;
     return thread_id_.compare_exchange_strong(expected, desired) ||
            expected == desired;
 

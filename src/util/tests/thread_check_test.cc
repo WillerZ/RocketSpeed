@@ -33,6 +33,24 @@ TEST(ThreadCheckTest, Test) {
   ASSERT_TRUE(!c2.Ok());  // owned by other thread, should fail
 }
 
+TEST(ThreadCheckTest, MoveTest) {
+  ThreadCheck c1;
+  ThreadCheck c2(c1);
+  ThreadCheck c3 = c1;
+  ASSERT_TRUE(c1.Ok());
+  ASSERT_TRUE(c2.Ok());
+  ASSERT_TRUE(c3.Ok());
+
+  std::thread([&]() {
+    ASSERT_TRUE(!c1.Ok());
+    ThreadCheck c4(c1);
+    ThreadCheck c5 = c1;
+    ASSERT_TRUE(!c4.Ok());
+    ASSERT_TRUE(!c5.Ok());
+
+  }).join();
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
