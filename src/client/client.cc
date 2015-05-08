@@ -94,7 +94,8 @@ class SubscriptionState {
   TopicPair Terminate();
 
  private:
-  // TODO(stupaq) add thread check once we drop movability
+  ThreadCheck thread_check_;
+
   const TenantID tenant_id_;
   const NamespaceID namespace_id_;
   const Topic topic_name_;
@@ -129,8 +130,10 @@ class SubscriptionState {
 
 void SubscriptionState::ReceiveMessage(Logger* info_log,
                                        std::unique_ptr<MessageGap> gap) {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
+
   const auto current = gap->GetEndSequenceNumber(),
              previous = gap->GetStartSequenceNumber();
   if (ReceiveMessage(info_log, current, previous)) {
@@ -146,8 +149,10 @@ void SubscriptionState::ReceiveMessage(Logger* info_log,
 
 void SubscriptionState::ReceiveMessage(Logger* info_log,
                                        std::unique_ptr<MessageData> data) {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
+
   const auto current = data->GetSequenceNumber(),
              previous = data->GetPrevSequenceNumber();
   if (ReceiveMessage(info_log, current, previous)) {
@@ -168,6 +173,7 @@ void SubscriptionState::ReceiveMessage(Logger* info_log,
 bool SubscriptionState::ReceiveMessage(Logger* info_log,
                                        SequenceNumber current,
                                        SequenceNumber previous) {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
   assert(current >= previous);
@@ -197,6 +203,7 @@ bool SubscriptionState::ReceiveMessage(Logger* info_log,
 }
 
 bool SubscriptionState::ReceiveAck(Logger* info_log, const TopicPair& request) {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
 
@@ -229,6 +236,7 @@ bool SubscriptionState::ReceiveAck(Logger* info_log, const TopicPair& request) {
 
 bool SubscriptionState::ReceiveSubscribeAck(Logger* info_log,
                                             SequenceNumber subscribed_from) {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
 
@@ -277,6 +285,7 @@ bool SubscriptionState::ReceiveSubscribeAck(Logger* info_log,
 }
 
 bool SubscriptionState::ReceiveUnsubscribeAck(Logger* info_log) {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
 
@@ -305,6 +314,7 @@ bool SubscriptionState::ReceiveUnsubscribeAck(Logger* info_log) {
 }
 
 TopicPair SubscriptionState::Resubscribe() {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
 
@@ -320,6 +330,7 @@ TopicPair SubscriptionState::Resubscribe() {
 }
 
 TopicPair SubscriptionState::Terminate() {
+  thread_check_.Check();
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
 
@@ -330,6 +341,8 @@ TopicPair SubscriptionState::Terminate() {
 }
 
 void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
+  thread_check_.Check();
+
   if (subscription_callback_) {
     // TODO(stupaq) pass heavy stuff by const reference
     subscription_callback_(SubscriptionStatus(tenant_id_,
