@@ -12,6 +12,7 @@
 #include <vector>
 #include <gflags/gflags.h>
 #include "src/port/Env.h"
+#include "src/supervisor/supervisor_loop.h"
 
 // These ones are in server.cc
 DECLARE_bool(tower);
@@ -95,6 +96,7 @@ class RocketSpeed {
   std::unique_ptr<Pilot> pilot_;
   std::unique_ptr<Copilot> copilot_;
   std::unique_ptr<ControlTower> tower_;
+  std::unique_ptr<SupervisorLoop> supervisor_loop_;
   std::vector<std::thread> threads_;
   std::vector<std::shared_ptr<MsgLoop>> msg_loops_;
 };

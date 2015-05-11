@@ -675,7 +675,6 @@ void
 EventLoop::do_startevent(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   obj->thread_check_.Check();
-  obj->start_status_ = Status::OK();
   obj->running_ = true;
   obj->start_signal_.Post();
 }
@@ -836,7 +835,7 @@ EventLoop::Initialize() {
     return Status::InternalError("Failed to add startup event to event base");
   }
 
-  // An event that signals new commands in the command queue.
+  // An event that signals the shutdown of the event loop.
   if (shutdown_eventfd_.status() < 0) {
     return Status::InternalError(
       "Failed to create eventfd for shutdown commands");

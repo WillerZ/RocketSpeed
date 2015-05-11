@@ -9,6 +9,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <memory>
+#include <atomic>
 
 #define RS_LOG(log_level_expr, info_log_expr, ...) \
   do { \
@@ -83,6 +84,19 @@ inline const char* LogLevelToString(InfoLogLevel level) {
 }
 
 /**
+ * Checks whether the passed string is a correct name for the log level.
+ */
+inline bool IsValidLogLevel(const std::string& str) {
+  for (int i = 0; i < NUM_INFO_LOG_LEVELS; ++i) {
+    InfoLogLevel level = static_cast<InfoLogLevel>(i);
+    if (strcasecmp(LogLevelToString(level), str.c_str()) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Convert a string to an InfoLogLevel. Not case sensitive.
  *
  * @param str String to convert.
@@ -121,7 +135,7 @@ class Logger {
                     const char* format,
                     va_list ap) {
 
-    if (log_level < log_level_) {
+    if (log_level < GetInfoLogLevel()) {
       return;
     }
 
@@ -155,10 +169,12 @@ class Logger {
   /** Flush to the OS buffers. */
   virtual void Flush() {}
 
-  virtual InfoLogLevel GetInfoLogLevel() const { return log_level_; }
+  virtual InfoLogLevel GetInfoLogLevel() const {
+    return log_level_.load(std::memory_order_relaxed);
+  }
 
   virtual void SetInfoLogLevel(const InfoLogLevel log_level) {
-    log_level_ = log_level;
+    log_level_.store(log_level, std::memory_order_relaxed);
   }
 
  private:
@@ -166,7 +182,7 @@ class Logger {
   Logger(const Logger&);
   void operator=(const Logger&);
 
-  InfoLogLevel log_level_;
+  std::atomic<InfoLogLevel> log_level_;
 };
 
 

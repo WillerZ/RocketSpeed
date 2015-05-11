@@ -294,7 +294,6 @@ class EventLoop {
   // Is the EventLoop all setup and running?
   std::atomic<bool> running_;
   port::Semaphore start_signal_;
-  Status start_status_;
 
   // The event loop base.
   event_base *base_ = nullptr;

@@ -22,6 +22,7 @@
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
 #include "src/util/control_tower_router.h"
+#include "src/supervisor/supervisor_loop.h"
 #include "src/util/parsing.h"
 #include "src/util/storage.h"
 
@@ -56,6 +57,12 @@ DEFINE_int32(copilot_connections, 8,
              "num connections between one copilot and one control tower");
 DEFINE_bool(rollcall, true, "enable RollCall");
 
+// Supervisor settings
+DEFINE_bool(supervisor, true, "start the supervisor");
+DEFINE_int32(supervisor_port,
+             rocketspeed::SupervisorLoop::DEFAULT_PORT,
+             "supervisor port number");
+
 DEFINE_string(rs_log_dir, "", "directory for server logs");
 
 #ifdef NDEBUG
@@ -63,7 +70,6 @@ DEFINE_string(loglevel, "warn", "debug|info|warn|error|fatal|vital|none");
 #else
 DEFINE_string(loglevel, "info", "debug|info|warn|error|fatal|vital|none");
 #endif
-
 
 namespace rocketspeed {
 
@@ -248,6 +254,23 @@ Status RocketSpeed::Initialize(
     copilot_.reset(copilot);
   }
 
+  // Create Supervisor loop
+  if (FLAGS_supervisor) {
+    LOG_VITAL(info_log_, "Creating Supervisor loop");
+    SupervisorOptions supervisor_opts;
+    supervisor_opts.port = (uint32_t)FLAGS_supervisor_port;
+    supervisor_opts.info_log = info_log_;
+    supervisor_opts.tower_loop = tower_loop.get(),
+    supervisor_opts.copilot_loop = copilot_loop.get();
+    supervisor_opts.pilot_loop = pilot_loop.get();
+
+    Status st = SupervisorLoop::CreateNewInstance(std::move(supervisor_opts),
+                                                  &supervisor_loop_);
+    if (!st.ok()) {
+      LOG_ERROR(info_log_, "Failed to create the supervisor loop");
+    }
+  }
+
   // Get a list of message loops.
   if (tower_loop) {
     msg_loops_.emplace_back(tower_loop);
@@ -266,6 +289,12 @@ Status RocketSpeed::Initialize(
       return st;
     }
   }
+  // initialize superisor loop
+  Status st = supervisor_loop_->Initialize();
+  if (!st.ok()) {
+    LOG_ERROR(info_log_, "Failed to initialize the supervisor loop");
+  }
+
   return Status::OK();
 }
 
@@ -280,6 +309,17 @@ RocketSpeed::~RocketSpeed() {
 }
 
 void RocketSpeed::Run() {
+  // Start the supervisor thread
+  if (supervisor_loop_) {
+    threads_.emplace_back(
+      [this] (SupervisorLoop* s) {
+        s->Run();
+        LOG_VITAL(info_log_, "Supervisor loop finished.");
+      },
+      supervisor_loop_.get()
+    );
+  }
+
   // Start all the messages loops, with the first loop started in this thread.
   LOG_VITAL(info_log_, "Starting all message loop threads");
   assert(msg_loops_.size() != 0);
@@ -291,6 +331,7 @@ void RocketSpeed::Run() {
       },
       msg_loops_[i].get());
   }
+
   // Start the first loop, this will block until something the loop exits for
   // some reason.
   msg_loops_[0]->Run();
@@ -303,9 +344,12 @@ void RocketSpeed::Stop() {
   for (std::shared_ptr<MsgLoop>& loop : msg_loops_) {
     loop->Stop();
   }
+  if (supervisor_loop_) {
+    supervisor_loop_->Stop();
+  }
 
   // Join all the other message loops.
-  LOG_VITAL(info_log_, "Joining all message loop threads");
+  LOG_VITAL(info_log_, "Joining all the loop threads");
   for (std::thread& t : threads_) {
     if (t.joinable()) {
       t.join();
@@ -325,7 +369,6 @@ void RocketSpeed::Stop() {
     LOG_VITAL(info_log_, "Stopping Pilot");
     pilot_->Stop();
   }
-
   threads_.clear();
   msg_loops_.clear();
 }

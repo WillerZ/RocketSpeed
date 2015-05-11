@@ -25,5 +25,14 @@
 #define event_set_log_callback ld_event_set_log_callback
 #define event_enable_debug_mode ld_event_enable_debug_mode
 #define libevent_global_shutdown ld_libevent_global_shutdown
+#define bufferevent_get_input ld_bufferevent_get_input
+#define bufferevent_get_output ld_bufferevent_get_output
+#define evbuffer_readln ld_evbuffer_readln
+#define evbuffer_add_printf ld_evbuffer_add_printf
+#define bufferevent_socket_new ld_bufferevent_socket_new
+#define bufferevent_setcb ld_bufferevent_setcb
+#define bufferevent_setwatermark ld_bufferevent_setwatermark
+#define bufferevent_enable ld_bufferevent_enable
+#define bufferevent_free ld_bufferevent_free
 
 #endif  // USE_UPSTREAM_LIBEVENT

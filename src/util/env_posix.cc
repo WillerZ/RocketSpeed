@@ -1043,6 +1043,15 @@ class PosixConnection: public Connection {
     }
     return Status::IOError("Incomplete send of data");
   }
+
+  virtual Status Receive(char* buffer, ssize_t sz) {
+    ssize_t count = read(sockfd_, buffer, sz);
+    if (count != sz) {
+      return Status::IOError("Failed to read the data");
+    }
+
+    return Status::OK();
+  }
 };
 
 
