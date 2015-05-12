@@ -43,7 +43,9 @@ FileStorage::Snapshot::Snapshot(std::string final_path,
     : final_path_(std::move(final_path))
     , temp_path_(std::move(temp_path))
     , descriptor_(std::move(descriptor)) {
+#ifndef NDEBUG
   thread_checks_.resize(num_threads);
+#endif  // NDEBUG
   chunks_.resize(num_threads);
 }
 
