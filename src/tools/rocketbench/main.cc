@@ -638,9 +638,7 @@ int main(int argc, char** argv) {
       LOG_ERROR(info_log, "Failed to open client: %s.", st.ToString().c_str());
       return 1;
     }
-    st = client->Start(subscribe_callback,
-                       receive_callback,
-                       rocketspeed::Client::RestoreStrategy::kDontRestore);
+    st = client->Start(subscribe_callback, receive_callback);
     if (!st.ok()) {
       LOG_ERROR(info_log, "Failed to start client: %s.", st.ToString().c_str());
       return 1;

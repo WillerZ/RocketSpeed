@@ -227,8 +227,8 @@ TEST(CopilotTest, Rollcall) {
   };
   // subscribe to rollcall topic for any new entries
   // that appear in the rollcall topic.
-  RollcallImpl rollcall1(std::move(client), GuestTenant, ns,
-                         SubscriptionStart(0), rollcall_callback);
+  RollcallImpl rollcall1(
+      std::move(client), GuestTenant, ns, 0, rollcall_callback);
 
   // send subscribe messages to copilot
   for (size_t i = 0; i < expected; ++i) {

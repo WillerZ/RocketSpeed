@@ -83,7 +83,7 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
     rollcall_.reset(new RollcallImpl(std::move(client),
                                      InvalidTenant,
                                      InvalidNamespace,
-                                     SubscriptionStart(0),
+                                     0,
                                      nullptr));
   }
 

@@ -11,53 +11,35 @@
 
 #include "include/Slice.h"
 #include "include/Status.h"
-#include "include/Types.h"
 #include "include/SubscriptionStorage.h"
+#include "include/Types.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
 #endif
-/**
- * This is the RocketSpeed interface. The interface is partitioned
- * into two parts, the Publish and the Listen.
- * 'Publish' request that messages be written to a topic. The PublishCallback
- * in invoked when the message is reliably acknowledged by the system.
- * 'Listen' requests that messages for a specified topic(s) be delivered
- * to the application. The SubscribeCallback is invoked when the system
- * confirmed the promise to deliver messages for that topic. A message
- * arriving on a subscribed topic causes the MessageReceivedCallback
- * to be invoked.
- */
 namespace rocketspeed {
 
-/*
- * The various type of callbacks used by the RocketSpeed Interface.
+class BaseEnv;
+class Client;
+class Logger;
+class SubscriptionStorage;
+class WakeLock;
+
+/**
+ * The various type of callbacks used by the RocketSpeed interface.
  * These are described in more details in those apis where they are used.
  */
 typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
 typedef std::function<void(SubscriptionStatus)> SubscribeCallback;
 typedef std::function<void(std::unique_ptr<MessageReceived>)>
                                           MessageReceivedCallback;
+typedef std::function<void(Status)> SaveSubscriptionsCallback;
 
-/** An opaque logger type. */
-class Logger;
-
-/** An opaque client's environment class. */
-class BaseEnv;
-
-/** An opaque wake lock. */
-class WakeLock;
-
-/**
- * Describes the Client object to be created.
- */
-struct ClientOptions {
+/** Describes the Client object to be created. */
+class ClientOptions {
+ public:
   // Configuration of this service provider.
   std::shared_ptr<Configuration> config;
-
-  // Strategy for storing subscription state.
-  // Default: nullptr.
-  std::unique_ptr<SubscriptionStorage> storage;
 
   // Logger that is used for info messages.
   // Default: nullptr.
@@ -75,39 +57,27 @@ struct ClientOptions {
   // Default: 1
   int num_workers;
 
-  // Constructor which fills default values.
+  // Strategy for storing subscriptions.
+  // Default: null-strategy.
+  std::unique_ptr<SubscriptionStorage> storage;
+
+  /** Creates options with default values. */
   ClientOptions();
 };
 
-/**
- * The Client is used to produce and consume messages for a single topic or
- * multiple topics.
- */
+/** The Client is used to produce and consume messages on arbitrary topics. */
 class Client {
  public:
-  /** Controls how client restores subscription state. */
-  enum RestoreStrategy {
-    /** Starts with clean in-memory subscription state. */
-    kDontRestore,
-    /** Restores state from snapshot, but doesn't automatically resubscribe. */
-    kRestoreOnly,
-    /** Restores state and resubscribes to all topics found in the storage. */
-    kResubscribe,
-  };
-
   /**
-   * Creates a Client. This can create connections to the Cloud Service
-   * Provider, validate credentials, etc.
+   * Creates the client object.
    *
-   * @param options The description of client object to be created
-   * @return on success returns OK(), otherwise errorcode
+   * @param options The description of client object to be created.
+   * @return Status::OK() iff client was created successfully.
    */
   static Status Create(ClientOptions client_options,
                        std::unique_ptr<Client>* client);
 
-  /**
-   * Closes this Client's connection to the Cloud Service Provider.
-   */
+  /** Closes the client, connections and frees all allocated resources. */
   virtual ~Client() = default;
 
   /**
@@ -116,12 +86,9 @@ class Client {
    * @param subscribe_callback Invoked on successfull or failed attempt to
    * subscribe.
    * @param receive_callback Invoked on each received message.
-   * @param restore_strategy Controls how client restores subscription state.
    */
-  virtual Status Start(
-      SubscribeCallback subscribe_callback = nullptr,
-      MessageReceivedCallback receive_callback = nullptr,
-      RestoreStrategy restore_strategy = RestoreStrategy::kDontRestore) = 0;
+  virtual Status Start(SubscribeCallback subscribe_callback = nullptr,
+                       MessageReceivedCallback receive_callback = nullptr) = 0;
 
   /**
    * Asynchronously publishes a new message to the Topic. The return parameter
@@ -162,28 +129,82 @@ class Client {
                             const std::vector<SubscriptionRequest>& names) = 0;
 
   /**
-   * Acknowledges message to the client.
+   * Subscribes to a topic with provided parameters.
    *
-   * All sequence numbers no later than the sequence number of given message
-   * are considered to be processed by the application.
-   * Consequently, when application closes the client saving subsciption state
-   * and then attempts to renew subscription on the same topic, it will be
-   * restarted from the next sequence number.
+   * Subscribe callback is invoked when the client is successfully subscribed.
+   * Messages arriving on this subscription are delivered to the application via
+   * message received callback.
    *
-   * @param message the message to be acknowledged.
+   * @param parameters Parameters of the subscription.
+   * @return Status::OK() iff subscription request was successfully enqueued.
    */
-  virtual void Acknowledge(const MessageReceived& message) = 0;
+  virtual Status Subscribe(
+      SubscriptionParameters parameters,
+      SubscribeCallback subscription_callback = nullptr,
+      MessageReceivedCallback deliver_callback = nullptr) = 0;
+
+  /** Convenience method, see the other overload for details. */
+  Status Subscribe(TenantID tenant_id,
+                   NamespaceID namespace_id,
+                   Topic topic_name,
+                   SequenceNumber start_seqno,
+                   SubscribeCallback subscription_callback = nullptr,
+                   MessageReceivedCallback deliver_callback = nullptr) {
+    return Subscribe({tenant_id,
+                      std::move(namespace_id),
+                      std::move(topic_name),
+                      start_seqno},
+                     std::move(subscription_callback),
+                     std::move(deliver_callback));
+  }
+
+  /**
+   * Unsubscribes from a topic identified by provided parameters.
+   *
+   * Subscribe callback is invoked when the client is successfully unsubscribed.
+   * Messages arriving on this subscription after client unsubscribed, are
+   * silently dropped.
+   *
+   * @param namespace_id Namespace the topic belongs to.
+   * @param topic_name Names of a topic one wants to unsubscribe from.
+   * @return Status::OK() iff unsubscription request was successfully enqueued.
+   */
+  virtual Status Unsubscribe(NamespaceID namespace_id, Topic topic_name) = 0;
+
+  /**
+   * Acknowledges that this message was processed by the application.
+   * All sequence numbers no later than the sequence number of given message
+   * are as well considered to be processed by the application. When application
+   * saves, and then restores subscription state, the subscription will continue
+   * from the next sequence number.
+   *
+   * @param message The message to be acknowledged.
+   * @return Status::OK() iff acknowledgement was successful.
+   */
+  virtual Status Acknowledge(const MessageReceived& message) = 0;
 
   /**
    * Saves state of subscriptions according to strategy selected when opening
-   * the client. Appropriate callback is invoked to inform whether state of
-   * subscriptions was saved successfully.
-   *
+   * the client.
    * All messages acknowledged before this call will be included in the saved
-   * state, which means that if a client is restarted and its state is restored
-   * from saved state, if will remember these messages as acknowledged.
+   * state, which means that if a client is restarted with the same subscription
+   * storage parameters, restored subscription will start from the same point.
+   *
+   * @param save_callback A callback to inform whether saving succeeded.
    */
-  virtual void SaveSubscriptions(SnapshotCallback snapshot_callback) = 0;
+  virtual void SaveSubscriptions(SaveSubscriptionsCallback save_callback) = 0;
+
+  /**
+   * Reads all subscriptions saved by strategy selected when opening the client.
+   * Returns a list with subscription prototypes, so that an application can
+   * decide which subscriptions should be restored and provide appropriate
+   * callbacks.
+   *
+   * @subscriptions An out parameter with a list of restored subscriptions.
+   * @return Status::OK iff subscriptions were restored successfully.
+   */
+  virtual Status RestoreSubscriptions(
+      std::vector<SubscriptionParameters>* subscriptions) = 0;
 };
 
 }  // namespace rocketspeed

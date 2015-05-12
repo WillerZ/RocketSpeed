@@ -888,6 +888,55 @@ TEST(IntegrationTest, NewControlTower) {
   ASSERT_TRUE(msg_received.TimedWait(timeout));
 }
 
+TEST(IntegrationTest, SubscriptionStorage) {
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  std::string file_path =
+      test::TmpDir() + "/SubscriptionStorage-file_storage_data";
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  ASSERT_OK(SubscriptionStorage::File(options.env,
+                                      options.info_log,
+                                      file_path,
+                                      &options.storage));
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(client->Start(nullptr, nullptr));
+
+  // Create some subscriptions.
+  std::vector<SubscriptionParameters> expected = {
+      SubscriptionParameters(Tenant::GuestTenant, GuestNamespace,
+                             "SubscriptionStorage_0", 123),
+      SubscriptionParameters(Tenant::GuestTenant, GuestNamespace,
+                             "SubscriptionStorage_1", 0), };
+
+  for (const auto& params : expected) {
+    ASSERT_OK(client->Subscribe(params));
+  }
+  // No need to wait for any callbacks.
+
+  port::Semaphore save_sem;
+  auto save_callback = [&save_sem](Status status) {
+    ASSERT_OK(status);
+    save_sem.Post();
+  };
+  client->SaveSubscriptions(save_callback);
+  ASSERT_TRUE(save_sem.TimedWait(timeout));
+
+  // Restore subscriptions.
+  std::vector<SubscriptionParameters> restored;
+  ASSERT_OK(client->RestoreSubscriptions(&restored));
+  std::sort(restored.begin(), restored.end(),
+            [](SubscriptionParameters a, SubscriptionParameters b) {
+    return a.topic_name < b.topic_name;
+  });
+  ASSERT_TRUE(expected == restored);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

@@ -1,114 +1,97 @@
-// Copyright (c) 2014, Facebook, Inc.  All rights reserved.
-// This source code is licensed under the BSD-style license found in the
-// LICENSE file in the root directory of this source tree. An additional grant
-// of patent rights can be found in the PATENTS file in the same directory.
+//  Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under the BSD-style license found in the
+//  LICENSE file in the root directory of this source tree. An additional grant
+//  of patent rights can be found in the PATENTS file in the same directory.
 //
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <vector>
 
-#include "include/Status.h"
 #include "include/Types.h"
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC visibility push(default)
-#endif
 
 namespace rocketspeed {
 
-/** An opaque logger type. */
-class Logger;
-
-class MsgLoopBase;
-
-/** Callback to notify Client about loaded subscription data. */
-typedef std::function<void(const std::vector<SubscriptionRequest>&)>
-    LoadCallback;
-
-/** Callback to notify Client about finished snapshot. */
-typedef std::function<void(Status)> SnapshotCallback;
-
-/** Environment used by the storage. */
 class BaseEnv;
+class Logger;
+class Status;
+class SubscriptionParameters;
 
-/**
- * Defines how the RocketSpeed Client saves and restores subscription data.
- * Subscription storage is needed for every application, which requires
- * subscriptions to be resumed after it the application is restarted.
- * Application can provide its own mechanism to save and restore subscription
- * state, which must implement the following interface.
- */
+/** Defines how the RocketSpeed Client saves and restores subscription data. */
 class SubscriptionStorage {
  public:
   /**
    * Creates subscription storage backed by a file.
+   *
    * The file must not be concurrently used by two different instances of the
-   * storage, and this must be ensured by the caller.
-   * @param env environment used by the storage,
-   * @param file_path path to a file in which subscription state is persisted,
-   * @param info_log log for info messages.
+   * storage, and this must be ensured by the creator of the storage.
+   *
+   * @param env Environment used by the storage,
+   * @param info_log Log for info messages.
+   * @param file_path Path to a file in which subscription state is persisted,
    */
   static Status File(BaseEnv* env,
-                     const std::string& file_path,
                      std::shared_ptr<Logger> info_log,
+                     std::string file_path,
                      std::unique_ptr<SubscriptionStorage>* out);
+
+  /** Represents a snapshot being written. */
+  class Snapshot {
+   public:
+    virtual ~Snapshot() {}
+
+    /**
+     * Adds entry for subscription with provided parameters to the snapshot.
+     * Calling thread must identify itself with a nuemric ID which is lower than
+     * number of threads provided when creating the snapshot (IDs start form 0).
+     *
+     * @param thread_id A numeric ID of the writing thread.
+     * @return Status::OK() iff append was successfull.
+     *
+     * Rest of the parameters are self explanatory.
+     */
+    virtual Status Append(size_t thread_id,
+                          TenantID tenant_id,
+                          const NamespaceID& namespace_id,
+                          const Topic& topic_name,
+                          SequenceNumber start_seqno) = 0;
+
+    /**
+     * Commits all data written by all threads.
+     *
+     * This call must be the last operation on the snapshot, and the caller must
+     * provide external synchronisation between all writers and the thread
+     * calling this function. A snapshot cannot be committed if any append from
+     * any thread failed, and it must be ensured externally.
+     *
+     * @return Status::OK() iff append was successfull.
+     */
+    virtual Status Commit() = 0;
+  };
 
   virtual ~SubscriptionStorage() {}
 
   /**
-   * Sets callback functions which consume asynchronous events.
-   * Also provides storage implementation with message loop.
-   * This method is called by the Client before any other method of this class.
-   */
-  virtual void Initialize(LoadCallback load_callback,
-                          MsgLoopBase* msg_loop) = 0;
-
-  /**
-   * Fills subscription storage with persisted data.
-   * Can be called on initialized storage only, before backing message loop
-   * starts. User can choose not to invoke this method, in which case the
-   * storage will be initially empty.
-   */
-  virtual Status ReadSnapshot() = 0;
-
-  /**
-   * Stores or removes given subscription data for given topic.
-   * This should be invoked on every subscribe/unsubscribe, as well as every
-   * message acknowledged by the application.
-   */
-  virtual Status Update(SubscriptionRequest message) = 0;
-
-  /**
-   * Loads subscription data for given topics.
-   * If the status is OK, then appropriate callback will be invoked with
-   * restored subscriptions state.
-   */
-  virtual Status Load(std::vector<SubscriptionRequest> requests) = 0;
-
-  /**
-   * Loads all subscription data
-   * If the status is OK, then appropriate callback will be invoked with
-   * restored subscriptions state.
-   */
-  virtual Status LoadAll() = 0;
-
-  /**
-   * Creates snapshot and writes it to persistent storage. Appropriate callback
-   * is invoked with status of this snapshot after it finishes. All subscription
-   * data which was included in the snapshot, must be available after the
-   * application restarts.
+   * Reads all subscriptions saved by strategy selected when opening the client.
    *
-   * Implementation must ensure that all update operations that were sheduled
-   * before this method is called, are included in the snapshot. In other words,
-   * if update method was invoked before this method, corresponding changes to
-   * subscription state will be included in the snapshot.
+   * @subscriptions An out parameter with a list of restored subscriptions.
+   * @return Status::OK iff subscriptions were restored successfully.
    */
-  virtual void WriteSnapshot(SnapshotCallback snapshot_callback) = 0;
+  virtual Status RestoreSubscriptions(
+      std::vector<SubscriptionParameters>* subscriptions) = 0;
+
+  /**
+   * Creates a new snapshot context.
+   *
+   * Subscription state must be written into a snapshot, and can be written by
+   * up to provided number of different threads.
+   *
+   * @param num_threads Number of threads that can be used to write snapshot.
+   * @param snapshot An out parameter for snapshot handle.
+   * @return Status::OK() iff append was successfull.
+   */
+  virtual Status CreateSnapshot(size_t num_threads,
+                                std::shared_ptr<Snapshot>* snapshot) = 0;
 };
 
 }  // namespace rocketspeed
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC visibility pop
-#endif

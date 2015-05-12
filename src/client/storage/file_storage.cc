@@ -1,7 +1,7 @@
-// Copyright (c) 2014, Facebook, Inc.  All rights reserved.
-// This source code is licensed under the BSD-style license found in the
-// LICENSE file in the root directory of this source tree. An additional grant
-// of patent rights can be found in the PATENTS file in the same directory.
+//  Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under the BSD-style license found in the
+//  LICENSE file in the root directory of this source tree. An additional grant
+//  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "file_storage.h"
 
@@ -20,112 +20,155 @@
 
 #include "include/Logger.h"
 #include "src/messages/descriptor_event.h"
-#include "src/messages/msg_loop.h"
-#include "src/messages/event_loop.h"
-#include "storage_commands.h"
+#include "src/client/topic_id.h"
+#include "src/util/common/base_env.h"
 #include "src/util/common/coding.h"
-#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
+////////////////////////////////////////////////////////////////////////////////
 Status SubscriptionStorage::File(BaseEnv* env,
-                                 const std::string& file_path,
                                  std::shared_ptr<Logger> info_log,
+                                 std::string file_path,
                                  std::unique_ptr<SubscriptionStorage>* out) {
-  out->reset(new FileStorage(env, file_path, info_log));
+  out->reset(new FileStorage(env, info_log, std::move(file_path)));
   return Status::OK();
 }
 
+////////////////////////////////////////////////////////////////////////////////
+FileStorage::Snapshot::Snapshot(std::string final_path,
+                                std::string temp_path,
+                                DescriptorEvent descriptor,
+                                size_t num_threads)
+    : final_path_(std::move(final_path))
+    , temp_path_(std::move(temp_path))
+    , descriptor_(std::move(descriptor)) {
+  thread_checks_.resize(num_threads);
+  chunks_.resize(num_threads);
+}
+
+Status FileStorage::Snapshot::Append(size_t thread_id,
+                                     TenantID tenant_id,
+                                     const NamespaceID& namespace_id,
+                                     const Topic& topic_name,
+                                     SequenceNumber start_seqno) {
+#ifndef NDEBUG
+  assert(thread_id < thread_checks_.size());
+  thread_checks_[thread_id].Check();
+#endif  // NDEBUG
+
+  auto buffer = &chunks_[thread_id];
+
+  PutFixed16(buffer, tenant_id);
+  PutFixed64(buffer, start_seqno);
+  std::string topic_id;
+  PutTopicID(&topic_id, namespace_id, topic_name);
+  PutFixed32(buffer, static_cast<uint32_t>(topic_id.size()));
+  buffer->append(topic_id);
+
+  return Status::OK();
+}
+
+Status FileStorage::Snapshot::Commit() {
+  // Attempt to write buffers one by one.
+  for (auto& chunk : chunks_) {
+    Status st = descriptor_.Write(chunk);
+    if (!st.ok()) {
+      return st;
+    }
+  }
+  // Close temp file, so that we can swap it with the destination file.
+  descriptor_ = DescriptorEvent();
+
+  // Commit snapshot.
+  if (std::rename(temp_path_.c_str(), final_path_.c_str()) != 0) {
+    return Status::IOError("Snapshot failed when committing state: ",
+                           std::string(strerror(errno)));
+  }
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 FileStorage::FileStorage(BaseEnv* env,
-                         std::string read_path,
-                         std::shared_ptr<Logger> info_log)
+                         std::shared_ptr<Logger> info_log,
+                         std::string file_path)
     : env_(env)
     , info_log_(std::move(info_log))
-    , read_path_(std::move(read_path))
-    , msg_loop_(nullptr) {
+    , file_path_(std::move(file_path)) {
 }
 
-FileStorage::~FileStorage(){};
-
-void FileStorage::Initialize(LoadCallback load_callback,
-                             MsgLoopBase* msg_loop) {
-  using std::placeholders::_1;
-  assert(!msg_loop_);
-  msg_loop_ = msg_loop;
-  assert(msg_loop_);
-
-  // Message loop must not be running.
-  assert(!msg_loop_->IsRunning());
-
-  load_callback_ = std::move(load_callback);
-
-  // Empty subscription state, so that c'tor leaves the object in valid state.
-  const int num_workers = msg_loop_->GetNumWorkers();
-  worker_data_.reset(new WorkerData[num_workers]);
-
-  // Setup handlers for our custom commands.
-  auto update_handler = [this](std::unique_ptr<Command> command,
-                               uint64_t issued_time) {
-    HandleUpdateCommand(std::move(command));
-  };
-  msg_loop_->RegisterCommandCallback(CommandType::kStorageUpdateCommand,
-                                     update_handler);
-
-  auto load_handler = [this](std::unique_ptr<Command> command,
-                             uint64_t issued_time) {
-    HandleLoadCommand(std::move(command));
-  };
-  msg_loop_->RegisterCommandCallback(CommandType::kStorageLoadCommand,
-                                     load_handler);
-
-  auto snapshot_handler = [this](std::unique_ptr<Command> command,
-                                 uint64_t issued_time) {
-    HandleSnapshotCommand(std::move(command));
-  };
-  msg_loop_->RegisterCommandCallback(CommandType::kStorageSnapshotCommand,
-                                     snapshot_handler);
-}
-
-Status FileStorage::Update(SubscriptionRequest request) {
-  const int worker_id = GetWorkerForTopic(request.topic_name);
-  std::unique_ptr<Command> command(
-      new StorageUpdateCommand(std::move(request)));
-  return msg_loop_->SendCommand(std::move(command), worker_id);
-}
-
-Status FileStorage::Load(std::vector<SubscriptionRequest> requests) {
-  assert(!requests.empty());
-
-  const int num_workers = msg_loop_->GetNumWorkers();
-  std::vector<std::vector<SubscriptionRequest>> sharded(num_workers);
-  for (auto& request : requests) {
-    const int worker_id = GetWorkerForTopic(request.topic_name);
-    assert(0 <= worker_id && worker_id < num_workers);
-    sharded[worker_id].push_back(std::move(request));
+Status FileStorage::RestoreSubscriptions(
+    std::vector<SubscriptionParameters>* subscriptions) {
+  // Open the file.
+  std::unique_ptr<SequentialFile> file;
+  EnvOptions env_options;
+  Status st = env_->NewSequentialFile(file_path_, &file, env_options);
+  if (!st.ok()) {
+    return st;
   }
 
-  Status status;
-  for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
-    if (sharded[worker_id].empty()) {
-      continue;
+  std::vector<SubscriptionParameters> result;
+
+  const size_t kHeaderSize =
+      sizeof(uint16_t) + sizeof(uint64_t) + sizeof(uint32_t);
+  std::vector<char> buffer(kHeaderSize);
+  Slice chunk;
+
+  do {
+    st = file->Read(kHeaderSize, &chunk, &buffer[0]);
+    if (!st.ok()) {
+      return st;
     }
-    std::unique_ptr<Command> command(new StorageLoadCommand(
-        std::move(sharded[worker_id])));
-    status = msg_loop_->SendCommand(std::move(command), worker_id);
-  }
-  // TODO(t6161065) If status != OK then abort command on all threads.
-  return status;
-}
+    if (chunk.empty()) {
+      // End of data.
+      break;
+    }
 
-Status FileStorage::LoadAll() {
-  const int num_workers = msg_loop_->GetNumWorkers();
-  Status status;
-  for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
-    std::unique_ptr<Command> command(new StorageLoadCommand());
-    status = msg_loop_->SendCommand(std::move(command), worker_id);
-  }
-  // TODO(t6161065) If status != OK then abort command on all threads.
-  return status;
+    // TenantID.
+    TenantID tenant_id;
+    if (!GetFixed16(&chunk, &tenant_id)) {
+      return Status::IOError("Bad tenant ID");
+    }
+
+    // SequenceNumber.
+    SequenceNumber seqno;
+    if (!GetFixed64(&chunk, &seqno)) {
+      return Status::IOError("Bad sequence number");
+    }
+
+    // TopicID.
+    uint32_t name_size;
+    if (!GetFixed32(&chunk, &name_size)) {
+      return Status::IOError("Bad topic name length");
+    }
+    if (buffer.size() < name_size) {
+      buffer.resize(name_size);
+    }
+    st = file->Read(name_size, &chunk, &buffer[0]);
+    if (!st.ok()) {
+      return st;
+    }
+    if (name_size != chunk.size()) {
+      return Status::IOError("Bad topic ID");
+    }
+
+    // NamespaceID and Topic.
+    Slice buffer_in(buffer.data(), buffer.size());
+    NamespaceID namespace_id;
+    Topic topic_name;
+    if (!GetTopicID(&buffer_in, &namespace_id, &topic_name)) {
+      return Status::IOError("Bad topic ID");
+    }
+    TopicID topic_id(namespace_id, topic_name);
+
+    result.emplace_back(
+        tenant_id, std::move(namespace_id), std::move(topic_name), seqno);
+  } while (true);
+
+  // Successfully read all subscriptions.
+  *subscriptions = std::move(result);
+
+  return Status::OK();
 }
 
 namespace {
@@ -145,215 +188,30 @@ int OpenNewTempFile(std::string prefix, std::string* path) {
   if (fd < 0) {
     return -1;
   }
+  // Note that O_NOBLOCK has absolutely no effect on reguar file descriptors.
+  // Regular files are always readable and writable, therefore we're fine with
+  // default flags here.
   path->assign(path_c.get());
   return fd;
 }
 
 }  // namespace
 
-void FileStorage::WriteSnapshot(SnapshotCallback callback) {
+Status FileStorage::CreateSnapshot(
+    size_t num_threads,
+    std::shared_ptr<SubscriptionStorage::Snapshot>* snapshot) {
   // Create a new temporary file for writing.
-  // Note that O_NOBLOCK has absolutely no effect on reguar file descriptors.
-  // Regular files are always readable and writable, therefor we're fine with
-  // default flags here.
-  std::string write_path;
-  int fd = OpenNewTempFile(read_path_, &write_path);
+  std::string temp_path;
+  int fd = OpenNewTempFile(file_path_, &temp_path);
   if (fd < 0) {
-    // Abort the snapshot.
-    callback(Status::IOError("Cannot open: " + write_path, strerror(errno)));
-    return;
+    return Status::IOError("Cannot open: " + temp_path, strerror(errno));
   }
-  // Assert: nothrow guarantee until fd is owned by snapshot_state.
-  auto snapshot_state =
-      std::make_shared<SnapshotState>(std::move(callback),
-                                      info_log_,
-                                      msg_loop_->GetNumWorkers(),
-                                      std::move(write_path),
-                                      read_path_,
-                                      fd);
-  // Fan-out to every worker.
-  const int num_workers = msg_loop_->GetNumWorkers();
-  Status status;
-  for (int worker_id = 0; worker_id < num_workers && status.ok(); ++worker_id) {
-    std::unique_ptr<Command> command(
-        new StorageSnapshotCommand(snapshot_state));
-    status = msg_loop_->SendCommand(std::move(command), worker_id);
-  }
-  if (!status.ok()) {
-    // Fail the snapshot, call back will be invoked by SnapshotState.
-    snapshot_state->SnapshotFailed(status);
-  }
-}
+  DescriptorEvent descriptor(fd);
+  fd = -1;
 
-Status FileStorage::ReadSnapshot() {
-  // Message loop must not be running.
-  assert(!msg_loop_->IsRunning());
-
-  Status status;
-  // Open the file.
-  std::unique_ptr<SequentialFile> file;
-  status = env_->NewSequentialFile(read_path_, &file, env_options_);
-  if (!status.ok()) {
-    return status;
-  }
-
-  // We have to store subscriptions in a temporary structure, so that we do not
-  // restore data from a corrupted file.
-  const int num_workers = msg_loop_->GetNumWorkers();
-  std::unique_ptr<WorkerData[]> new_worker_data(new WorkerData[num_workers]);
-
-  // Read.
-  const size_t kHeaderSize =
-      sizeof(uint64_t) + sizeof(uint32_t);
-  std::vector<char> buffer(kHeaderSize);
-  Slice chunk;
-  do {
-    status = file->Read(kHeaderSize, &chunk, &buffer[0]);
-    if (!status.ok()) {
-      return status;
-    }
-    if (chunk.empty()) {
-      // End of data.
-      break;
-    }
-
-    // Sequence number.
-    SequenceNumber seqno;
-    if (!GetFixed64(&chunk, &seqno)) {
-      return Status::InternalError("Bad sequence number");
-    }
-
-    // Topic name.
-    uint32_t name_size;
-    if (!GetFixed32(&chunk, &name_size)) {
-      return Status::InternalError("Bad topic name length");
-    }
-    if (buffer.size() < name_size) {
-      buffer.resize(name_size);
-    }
-    status = file->Read(name_size, &chunk, &buffer[0]);
-    if (name_size != chunk.size()) {
-      return Status::InternalError("Bad topic ID");
-    }
-
-    // Namespace id and topic name.
-    Slice buffer_in(buffer.data(), buffer.size());
-    NamespaceID namespace_id;
-    Topic topic;
-    if (!GetTopicID(&buffer_in, &namespace_id, &topic)) {
-      return Status::InternalError("Bad topic ID");
-    }
-    TopicID topic_id(namespace_id, topic);
-
-    // Assign entry to the right worker.
-    const int worker_id = GetWorkerForTopic(topic_id.topic_name);
-    new_worker_data[worker_id].topics_subscribed.emplace(
-        std::move(topic_id), SubscriptionState(seqno));
-  } while (true);
-
-  // Commit. No synchronization is needed, as worker threads are not running.
-  worker_data_ = std::move(new_worker_data);
-
+  snapshot->reset(new Snapshot(
+      file_path_, std::move(temp_path), std::move(descriptor), num_threads));
   return Status::OK();
-}
-
-void FileStorage::HandleUpdateCommand(std::unique_ptr<Command> command) {
-  StorageUpdateCommand* update =
-      static_cast<StorageUpdateCommand*>(command.get());
-  auto& worker_data = GetCurrentWorkerData();
-
-  // Find an entry for the topic if it exists.
-  auto iter = worker_data.Find(&update->request);
-
-  const SubscriptionRequest& request = update->request;
-  if (request.subscribe) {
-    if (request.start) {
-      SequenceNumber new_seqno = request.start.get();
-      // Add or update subscription.
-      if (iter == worker_data.topics_subscribed.end()) {
-        // We're missing entry for this topic.
-        SubscriptionState state(new_seqno);
-        TopicID topic_id(request.namespace_id, request.topic_name);
-        worker_data.topics_subscribed.emplace(std::move(topic_id), state);
-      } else {
-        // We alreaady have an entry for this topic, so updating seq no only.
-        // We do not need a lock for this, since current thread is the only
-        // modifier and performs update atomically.
-        iter->second.IncreaseSequenceNumber(new_seqno);
-      }
-    } else {
-      // Otherwise we just ignore. Without knowing the sequence number, we
-      // cannot restore the subscription.
-    }
-  } else {
-    // Remove subscription.
-    if (iter != worker_data.topics_subscribed.end()) {
-      // We have to remove an entry.
-      worker_data.topics_subscribed.erase(iter);
-    } else {
-      LOG_WARN(info_log_,
-               "Attempt to unsubscribe from already unsubscribed Topic(%s, %s)",
-               request.namespace_id.c_str(),
-               request.topic_name.c_str());
-      info_log_->Flush();
-    }
-  }
-}
-
-void FileStorage::HandleLoadCommand(std::unique_ptr<Command> command) {
-  StorageLoadCommand* load = static_cast<StorageLoadCommand*>(command.get());
-  auto& worker_data = GetCurrentWorkerData();
-
-  if (load->query.empty()) {
-    // There is no list of subscriptions to query, return all state.
-    for (const auto& pair : worker_data.topics_subscribed) {
-      load->query.emplace_back(pair.first.namespace_id,
-                               pair.first.topic_name,
-                               true,
-                               pair.second.GetSequenceNumber());
-    }
-  } else {
-    for (auto& request : load->query) {
-      // Find an entry for the topic if it exists.
-      auto iter = worker_data.Find(&request);
-      if (iter != worker_data.topics_subscribed.end()) {
-        request.start = iter->second.GetSequenceNumber();
-      } else {
-        // No state found for this topic.
-        request.start = SubscriptionStart();
-      }
-    }
-  }
-
-  // Invoke callback with both successful and failed queries.
-  load_callback_(load->query);
-}
-
-void FileStorage::HandleSnapshotCommand(std::unique_ptr<Command> command) {
-  StorageSnapshotCommand* snapshot =
-      static_cast<StorageSnapshotCommand*>(command.get());
-  const int worker_id = msg_loop_->GetThreadWorkerIndex();
-  auto& worker_data = worker_data_[worker_id];
-  std::string buffer;
-  // Write topics in this part.
-  for (auto& it : worker_data.topics_subscribed) {
-    PutFixed64(&buffer, it.second.GetSequenceNumber());
-    std::string topic_id;
-    PutTopicID(&topic_id, it.first.namespace_id, it.first.topic_name);
-    PutFixed32(&buffer, static_cast<uint32_t>(topic_id.size()));
-    buffer.append(topic_id);
-  }
-  // Append to snapshot state.
-  snapshot->snapshot_state->ChunkSucceeded(worker_id, std::move(buffer));
-}
-
-int FileStorage::GetWorkerForTopic(const Topic& topic_name) const {
-  const int num_workers = msg_loop_->GetNumWorkers();
-  return static_cast<int>(MurmurHash2<std::string>()(topic_name) % num_workers);
-}
-
-FileStorage::WorkerData& FileStorage::GetCurrentWorkerData() {
-  return worker_data_[msg_loop_->GetThreadWorkerIndex()];
 }
 
 }  // namespace rocketspeed

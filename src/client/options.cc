@@ -5,17 +5,13 @@
 //
 #include "include/RocketSpeed.h"
 
+#include "include/SubscriptionStorage.h"
 #include "include/Types.h"
+#include "src/client/storage/file_storage.h"
 #include "src/util/common/client_env.h"
 
 namespace rocketspeed {
 
-ClientOptions::ClientOptions()
-    : storage(nullptr)
-    , info_log(nullptr)
-    , env(ClientEnv::Default())
-    , wake_lock(nullptr)
-    , num_workers(1) {
-}
+ClientOptions::ClientOptions() : env(ClientEnv::Default()), num_workers(1) {}
 
 }  // namespace rocketspeed

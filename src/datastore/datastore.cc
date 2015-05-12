@@ -73,8 +73,7 @@ DataStoreImpl::DataStoreImpl(
   };
 
   // start the client
-  rs_client_->Start(subscribe_callback, receive_callback,
-                    Client::RestoreStrategy::kDontRestore);// start client
+  rs_client_->Start(subscribe_callback, receive_callback);
 
   // send a subscription request for rollcall topic
   std::vector<SubscriptionRequest> names;

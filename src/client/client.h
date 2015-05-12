@@ -43,9 +43,8 @@ class ClientImpl : public Client {
 
   virtual ~ClientImpl();
 
-  virtual Status Start(SubscribeCallback subscription_callback,
-                       MessageReceivedCallback receive_callback,
-                       RestoreStrategy restore_strategy);
+  Status Start(SubscribeCallback subscription_callback,
+               MessageReceivedCallback receive_callback) override;
 
   virtual PublishStatus Publish(const TenantID tenant_id,
                                 const Topic& name,
@@ -58,9 +57,18 @@ class ClientImpl : public Client {
   virtual void ListenTopics(const TenantID tenant_id,
                             const std::vector<SubscriptionRequest>& names);
 
-  virtual void Acknowledge(const MessageReceived& message);
+  Status Subscribe(SubscriptionParameters parameters,
+                   SubscribeCallback subscription_callback,
+                   MessageReceivedCallback deliver_callback) override;
 
-  virtual void SaveSubscriptions(SnapshotCallback snapshot_callback);
+  Status Unsubscribe(NamespaceID namespace_id, Topic topic_name) override;
+
+  Status Acknowledge(const MessageReceived& message) override;
+
+  void SaveSubscriptions(SaveSubscriptionsCallback save_callback) override;
+
+  Status RestoreSubscriptions(
+      std::vector<SubscriptionParameters>* subscriptions) override;
 
   ClientImpl(BaseEnv* env,
              std::shared_ptr<Configuration> config,
@@ -73,10 +81,6 @@ class ClientImpl : public Client {
   Statistics GetStatisticsSync() const;
 
  private:
-  // Handler for SubscriptionStorage load all events.
-  void ProcessRestoredSubscription(
-    const std::vector<SubscriptionRequest>& restored);
-
   /** A non-owning pointer to the environment. */
   BaseEnv* env_;
 
@@ -116,13 +120,11 @@ class ClientImpl : public Client {
   /** Shards topics into workers */
   int GetWorkerForTopic(const Topic& name) const;
 
-  /** Informs the client about a status of a subscription request. */
-  void AnnounceSubscriptionStatus(const TenantID tenant_id,
-                                  TopicPair request, Status status);
+  /** Handles creation of a subscription on provided worker thread. */
+  void StartSubscription(SubscriptionState sub_state);
 
-  /** Handles subscription requests from the client. */
-  void HandleSubscription(const TenantID tenant_id,
-                          TopicPair request, int worker_id);
+  /** Handles termination of a subscription on provided worker thread. */
+  void TerminateSubscription(NamespaceID namespace_id, Topic topic_name);
 
   SubscriptionState* FindOrSendUnsubscribe(const NamespaceID& namespace_id,
                                            const Topic& topic_name);

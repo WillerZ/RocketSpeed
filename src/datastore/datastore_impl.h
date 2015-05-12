@@ -137,7 +137,7 @@ class DataStoreImpl : public DataStore {
   const NamespaceID datastore_namespace_;       // name of namespace
   const Topic datastore_topic_;                 // name of the datastore topic
   const bool create_new_;                       // remove all pre-exisiting data
-  const SubscriptionStart start_point_;
+  const SequenceNumber start_point_;
   const TopicOptions datastore_topic_options_;
   const MsgId msgid_;
 

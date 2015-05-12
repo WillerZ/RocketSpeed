@@ -20,10 +20,7 @@ enum CommandType : uint8_t {
   kNotInitialized = 0,
   kSendCommand = 0x01,
   kAcceptCommand = 0x02,
-  kStorageUpdateCommand = 0x03,
-  kStorageLoadCommand = 0x04,
-  kStorageSnapshotCommand = 0x05,
-  kExecuteCommand = 0x06,
+  kExecuteCommand = 0x03,
 };
 
 /**

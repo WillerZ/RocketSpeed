@@ -36,9 +36,9 @@ class RollcallImpl : public RollcallStream {
  public:
   // Constructor
   RollcallImpl(std::unique_ptr<ClientImpl> client,
-               const TenantID tenant_id,
+               TenantID tenant_id,
                const NamespaceID& nsid,
-               const SubscriptionStart& start_point,
+               SequenceNumber start_point,
                RollCallback callback);
 
   // Write an entry to the rollcall topic.
@@ -62,7 +62,7 @@ class RollcallImpl : public RollcallStream {
  private:
   const std::unique_ptr<ClientImpl> rs_client_; // rocket speed client
   const NamespaceID nsid_;             // namespace
-  const SubscriptionStart start_point_;// start seqno of rollcall topic
+  const SequenceNumber start_point_;// start seqno of rollcall topic
   RollCallback callback_;             // callback specified by application
   ReaderState state_;                 // the current state of this reader
   const Topic rollcall_topic_;        // name of the rollcall topic

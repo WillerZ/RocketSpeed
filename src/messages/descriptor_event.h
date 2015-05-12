@@ -5,39 +5,40 @@
 //
 #pragma once
 
-#include <unistd.h>
-
-#include <deque>
-#include <memory>
-
-#include "include/Logger.h"
 #include "include/Status.h"
 #include "include/Slice.h"
-#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
-class EventLoop;
-
-// TODO(stupaq #5930219) make it asynchronous on linux
+/**
+ * A RAII wrapper around file descriptor.
+ *
+ * This class is not thread safe, unless external synchronization is provided.
+ */
 class DescriptorEvent {
  public:
-  DescriptorEvent(std::shared_ptr<Logger> info_log, int fd);
+  // Noncopyable
+  DescriptorEvent(const DescriptorEvent&) = delete;
+  DescriptorEvent& operator=(const DescriptorEvent&) = delete;
+  // Movable
+  DescriptorEvent(DescriptorEvent&& other) noexcept {
+    *this = std::move(other);
+  }
+  DescriptorEvent& operator=(DescriptorEvent&& other) {
+    fd_ = other.fd_;
+    other.fd_ = -1;
+    return *this;
+  }
+
+  DescriptorEvent() : fd_(-1) {}
+
+  explicit DescriptorEvent(int fd) : fd_(fd){};
 
   ~DescriptorEvent();
 
-  // Performs a write operation.
-  Status Write(std::string&& data);
-
-  // Noncopyable
-  DescriptorEvent(const DescriptorEvent&) = delete;
-  void operator=(const DescriptorEvent&) = delete;
+  Status Write(Slice data);
 
  private:
-  // This class is not thread safe, unless external synchronization is provided.
-  ThreadCheck thread_check_;
-  // Logger for info messages.
-  const std::shared_ptr<Logger> info_log_;
   // The descriptor.
   int fd_;
 };

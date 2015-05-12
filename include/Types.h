@@ -305,53 +305,24 @@ class SubscriptionStatus {
 };
 
 /**
- * Indicates a sequence number which marks a begnning of subscription.
- * If present, the subscription will be started/resumed from given number.
- * If absent, the subscription will be resumed from last known sequence number,
- * according to specified storage strategy.
- */
-class SubscriptionStart {
- public:
-  /* implicit */ SubscriptionStart(SequenceNumber seqno)
-      : seqno_(seqno), present_(true) {}
-
-  SubscriptionStart() : seqno_(0), present_(false) {}
-
-  explicit operator bool() const {
-    return present_;
-  }
-
-  SequenceNumber get() const {
-    assert(*this);
-    return seqno_;
-  }
-
- private:
-  SequenceNumber seqno_;
-  bool present_;
-};
-
-/**
  * Indicates which topic to subscribe, messages after the specified sequence
  * number will be delivered to the client.
  * A seqno of 0 indicates that the subscriber is interested in receiving
  * whatever data is available via this topic.
  * A seqno of 1 indicates that the subscriber is interested in receiving
  * all the data that was published to this topic.
- * An absent seqno indicates that subscription should be resumed based on
- * information from state storage.
  */
 class SubscriptionRequest {
  public:
   NamespaceID namespace_id;
   Topic topic_name;
   bool subscribe;
-  SubscriptionStart start;
+  SequenceNumber start;
 
   SubscriptionRequest(NamespaceID _namespace_id,
                       Topic _topic_name,
                       bool _subscribe,
-                      SubscriptionStart _start)
+                      SequenceNumber _start)
       : namespace_id(std::move(_namespace_id)),
         topic_name(std::move(_topic_name)),
         subscribe(_subscribe),
@@ -427,6 +398,38 @@ enum Retention : char {
 class TopicOptions {
  public:
   TopicOptions() {}
+};
+
+/**
+ * Describes parameters of a subscription persisted by the client.
+ * After receiving a list of restored subscriptions, the application can reissue
+ * corresponding subscription requests by providing subscription objects back
+ * to the client together with appropriate callbacks.
+ */
+class SubscriptionParameters {
+ public:
+  TenantID tenant_id;
+  NamespaceID namespace_id;
+  Topic topic_name;
+  SequenceNumber start_seqno;
+
+  SubscriptionParameters(TenantID _tenant_id,
+                         NamespaceID _namespace_id,
+                         Topic _topic_name,
+                         SequenceNumber _start_seqno)
+      : tenant_id(_tenant_id)
+      , namespace_id(std::move(_namespace_id))
+      , topic_name(std::move(_topic_name))
+      , start_seqno(_start_seqno) {}
+
+  bool operator==(const SubscriptionParameters& other) const {
+    return tenant_id == other.tenant_id && start_seqno == other.start_seqno &&
+           namespace_id == other.namespace_id && topic_name == other.topic_name;
+  }
+
+  bool operator!=(const SubscriptionParameters& other) const {
+    return !(*this == other);
+  }
 };
 
 }  // namespace rocketspeed

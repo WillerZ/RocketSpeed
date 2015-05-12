@@ -48,7 +48,7 @@ class RollcallStream {
   static Status Open(ClientOptions client_options,
                      TenantID tenant_id,
                      const NamespaceID& nsid,
-                     const SubscriptionStart& start_point,
+                     SequenceNumber start_point,
                      RollCallback callback,
                      std::unique_ptr<RollcallStream>* reader);
 

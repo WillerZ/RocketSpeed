@@ -16,7 +16,7 @@ const NamespaceID RollcallImpl::rollcall_namespace_ = "_rollcall";
 RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
   const TenantID tenant_id,
   const NamespaceID& nsid,
-  const SubscriptionStart& start_point,
+  const SequenceNumber start_point,
   RollCallback callback):
   rs_client_(std::move(client)),
   nsid_(nsid),
@@ -53,8 +53,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
       rmsg.DeSerialize(msg->GetContents());
       callback_(std::move(rmsg));
     };
-    rs_client_->Start(subscribe_callback, receive_callback,
-                      Client::RestoreStrategy::kDontRestore);// start client
+    rs_client_->Start(subscribe_callback, receive_callback);
 
     // send a subscription request for rollcall topic
     std::vector<SubscriptionRequest> names;
@@ -64,8 +63,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
                                         start_point_));
     rs_client_->ListenTopics(tenant_id, names);
   } else {
-    rs_client_->Start(nullptr, nullptr,
-                      Client::RestoreStrategy::kDontRestore); // start client
+    rs_client_->Start(nullptr, nullptr);
   }
 }
 
@@ -131,13 +129,10 @@ Status
 RollcallStream::Open(ClientOptions client_options,
   const TenantID tenant_id,
   const NamespaceID& nsid,
-  const SubscriptionStart& start_point,
+  SequenceNumber start_point,
   RollCallback callback,
   std::unique_ptr<RollcallStream>* stream) {
   std::unique_ptr<ClientImpl> client;
-
-  // no persistence needed for this topic
-  assert(client_options.storage == nullptr);
 
   // open the client
   Status status = ClientImpl::Create(
