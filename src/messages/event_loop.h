@@ -183,9 +183,6 @@ class EventLoop {
   // Stop the event loop.
   void Stop();
 
-  // Registers callback for certain command types.
-  void RegisterCallback(CommandType type, CommandCallbackType callbacks);
-
   /**
    * Returns stream ID allocator used by this event loop to create outbound
    * streams.

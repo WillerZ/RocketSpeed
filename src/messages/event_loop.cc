@@ -582,22 +582,6 @@ std::vector<StreamID> StreamRouter::RemoveConnection(SocketEvent* sev) {
   return result;
 }
 
-void EventLoop::RegisterCallback(CommandType type,
-                                 CommandCallbackType callbacks) {
-  // Cannot modify callbacks after the loop has started.
-  assert(!IsRunning());
-
-  // Cannnot modify internal callbacks.
-  assert(type != CommandType::kAcceptCommand);
-  assert(type != CommandType::kSendCommand);
-  assert(type != CommandType::kExecuteCommand);
-
-  // We do not allow any duplicates.
-  assert(command_callbacks_.find(type) == command_callbacks_.end());
-
-  command_callbacks_[type] = callbacks;
-}
-
 void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
                                   uint64_t issued_time) {
   // Need using otherwise SendCommand is confused with the member function.

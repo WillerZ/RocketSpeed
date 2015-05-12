@@ -128,16 +128,6 @@ MsgLoop::MsgLoop(BaseEnv* env,
       (long)hostid_.port, msg_callbacks_.size());
 }
 
-void MsgLoop::RegisterCommandCallback(CommandType type,
-                                      CommandCallbackType callback) {
-  // Cannot call this when it is already running.
-  assert(!IsRunning());
-
-  for (auto& loop : event_loops_) {
-    loop->RegisterCallback(type, callback);
-  }
-}
-
 void
 MsgLoop::RegisterCallbacks(
     const std::map<MessageType, MsgCallbackType>& callbacks) {
