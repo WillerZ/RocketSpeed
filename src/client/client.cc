@@ -826,7 +826,6 @@ void ClientImpl::TerminateSubscription(NamespaceID namespace_id,
               "Cannot remove missing subscription on Topic(%s, %s)",
               topic_id.namespace_id.c_str(),
               topic_id.topic_name.c_str());
-    assert(false);
     return;
   }
   SubscriptionState sub_state(std::move(it->second));
@@ -977,8 +976,13 @@ void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg,
   std::vector<TopicPair> requests;
   for (const auto& request : metadata->GetTopicInfo()) {
     // Find the right subscription and deliver the message to it.
-    auto sub_state =
-        FindOrSendUnsubscribe(request.namespace_id, request.topic_name);
+    const TopicID topic_id(request.namespace_id, request.topic_name);
+    auto it = worker_data.subscriptions_.find(topic_id);
+    if (it == worker_data.subscriptions_.end()) {
+      // We don't know about corresponding subscription, ignore the ACK.
+      continue;
+    }
+    auto sub_state = &it->second;
     if (sub_state) {
       if (sub_state->ReceiveAck(info_log_.get(), request)) {
         // Need to resubscribe.
