@@ -70,7 +70,7 @@ TEST(IntegrationTest, OneMessage) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+  ASSERT_OK(client->Start(nullptr, nullptr));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -84,10 +84,12 @@ TEST(IntegrationTest, OneMessage) {
   ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
-  std::vector<SubscriptionRequest> subscriptions = {
-    SubscriptionRequest(namespace_id, topic, true, 1)
-  };
-  client->ListenTopics(GuestTenant, subscriptions);
+  ASSERT_OK(client->Subscribe(GuestTenant,
+                              namespace_id,
+                              topic,
+                              1,
+                              subscription_callback,
+                              receive_callback));
 
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);

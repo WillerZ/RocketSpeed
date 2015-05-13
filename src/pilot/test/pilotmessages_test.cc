@@ -96,11 +96,11 @@ TEST(PilotTest, Publish) {
 
   const Statistics& stats = cluster.GetStatisticsSync();
   std::string stats_report = stats.Report();
-  ASSERT_NE(stats_report.find("rocketspeed.pilot.append_requests:        100"),
+  ASSERT_NE(stats_report.find("pilot.append_requests:                    100"),
             std::string::npos);
-  ASSERT_NE(stats_report.find("rocketspeed.pilot.failed_appends:         0"),
+  ASSERT_NE(stats_report.find("pilot.failed_appends:                     0"),
             std::string::npos);
-  ASSERT_NE(stats_report.find("rocketspeed.pilot.append_latency_us"),
+  ASSERT_NE(stats_report.find("pilot.append_latency_us"),
             std::string::npos);
 }
 

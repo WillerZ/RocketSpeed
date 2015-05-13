@@ -296,11 +296,11 @@ TEST(CopilotTest, Rollcall) {
   const Statistics& stats = cluster.GetStatisticsSync();
   std::string stats_report = stats.Report();
   ASSERT_NE(
-    stats_report.find("rocketspeed.copilot.numwrites_rollcall_total: " +
+    stats_report.find("copilot.numwrites_rollcall_total:         " +
             std::to_string(num_msg + 1)),
             std::string::npos);
   ASSERT_NE(
-    stats_report.find("rocketspeed.copilot.numwrites_rollcall_failed: 0"),
+    stats_report.find("copilot.numwrites_rollcall_failed:        0"),
             std::string::npos);
 }
 

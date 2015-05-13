@@ -642,7 +642,7 @@ Status ClientImpl::Subscribe(SubscriptionParameters parameters,
   const auto worker_id = GetWorkerForTopic(parameters.topic_name);
   // Create an object that manages state of the subscription.
   auto moved_sub_state = folly::makeMoveWrapper(SubscriptionState(
-      std::move(parameters), subscription_callback_, receive_callback_));
+      std::move(parameters), subscription_callback, deliver_callback));
   // Send command to responsible worker.
   auto action = [this, moved_sub_state]() mutable {
     StartSubscription(moved_sub_state.move());
