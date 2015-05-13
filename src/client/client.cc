@@ -59,7 +59,7 @@ class SubscriptionState {
       , topic_name_(std::move(parameters.topic_name))
       , subscription_callback_(std::move(subscription_callback))
       , deliver_callback_(std::move(deliver_callback))
-      , state_(State::kPendingFirstAck)
+      , state_(State::kSubscribed)
       , expected_seqno_(parameters.start_seqno)
       // If we were to restore state from subscription storage before the
       // subscription advances, we would restore from the next sequence number,
@@ -112,8 +112,6 @@ class SubscriptionState {
 
   /** State of the subscription. */
   enum State {
-    kPendingFirstAck,
-    kPendingAck,
     kSubscribed,
     kTerminated,
   } state_;
@@ -188,7 +186,7 @@ bool SubscriptionState::ReceiveMessage(Logger* info_log,
   assert(state_ != State::kTerminated);
   assert(current >= previous);
 
-  if (state_ != State::kSubscribed) {
+  if (state_ == State::kTerminated) {
     LOG_WARN(info_log,
              "Unexpected message %" PRIu64 "-%" PRIu64 " on Topic(%s, %s)",
              previous,
@@ -197,7 +195,9 @@ bool SubscriptionState::ReceiveMessage(Logger* info_log,
              GetTopicName().c_str());
     return false;
   }
-  if (expected_seqno_ > current || expected_seqno_ < previous) {
+  if (expected_seqno_ > current ||
+      expected_seqno_ < previous ||
+      (expected_seqno_ == 0 && previous != 0)) {
     LOG_INFO(info_log,
              "Duplicate message %" PRIu64 "-%" PRIu64
              " on Topic(%s, %s) expected %" PRIu64,
@@ -251,8 +251,6 @@ bool SubscriptionState::ReceiveSubscribeAck(Logger* info_log,
   assert(state_ != State::kTerminated);
 
   switch (state_) {
-    case State::kPendingFirstAck:
-    case State::kPendingAck:
     case State::kSubscribed: {
       LOG_DEBUG(info_log,
                 "Received subscribe ACK on Topic(%s, %s) with seqno %" PRIu64
@@ -261,25 +259,6 @@ bool SubscriptionState::ReceiveSubscribeAck(Logger* info_log,
                 GetTopicName().c_str(),
                 subscribed_from,
                 expected_seqno_);
-      if (expected_seqno_ == 0) {
-        // If we requested to start listening from current tail of the log, then
-        // we must adjust expected seqno based on ACK.
-        expected_seqno_ = subscribed_from;
-      } else {
-        // If we subscribed from specific point, we're good with any
-        // subscription as long as it covers expected seqno, otherwise we have
-        // to resubscribe.
-        if (subscribed_from > expected_seqno_) {
-          state_ = State::kPendingAck;
-          return true;
-        }
-      }
-      // If we've been waiting for the first ack, we should notify client about
-      // successfull subscription, otherwise remain silent.
-      if (state_ == State::kPendingFirstAck) {
-        AnnounceStatus(true, Status::OK());
-      }
-      state_ = State::kSubscribed;
       return false;
     }
     case State::kTerminated:
@@ -300,8 +279,6 @@ bool SubscriptionState::ReceiveUnsubscribeAck(Logger* info_log) {
   assert(state_ != State::kTerminated);
 
   switch (state_) {
-    case State::kPendingFirstAck:
-    case State::kPendingAck:
     case State::kSubscribed:
       LOG_INFO(
           info_log,
@@ -328,13 +305,7 @@ TopicPair SubscriptionState::Resubscribe() {
   // This means we still have a reference to terminated subscription.
   assert(state_ != State::kTerminated);
 
-  // This function can be called in any state but kTerminated, if called while
-  // not pending for an ack, we should entrer kPendingAck, as kPendingFirstAck
-  // can be visited only once.
-  if (state_ != State::kPendingFirstAck) {
-    state_ = State::kPendingAck;
-  }
-
+  state_ = State::kSubscribed;
   return TopicPair(
       expected_seqno_, topic_name_, MetadataType::mSubscribe, namespace_id_);
 }
@@ -940,8 +911,8 @@ void ClientImpl::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
 
   auto gap = static_cast<MessageGap*>(msg.get());
   // Find the right subscription and deliver the message to it.
-  auto sub_state = FindOrSendUnsubscribe(gap->GetNamespaceId().ToString(),
-                                         gap->GetTopicName().ToString());
+  auto sub_state = FindOrSendUnsubscribe(gap->GetNamespaceId(),
+                                         gap->GetTopicName());
   if (sub_state) {
     sub_state->ReceiveMessage(
         info_log_.get(),

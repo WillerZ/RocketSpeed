@@ -85,8 +85,7 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
         } else {
           if (request.topic_type == MetadataType::mSubscribe) {
             // Response from Control Tower.
-            ProcessMetadataResponse(std::move(message),
-                                    request,
+            ProcessMetadataResponse(request,
                                     command.GetLogID(),
                                     command.GetWorkerId());
           }
@@ -121,57 +120,17 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
   }
 }
 
-void CopilotWorker::ProcessMetadataResponse(std::unique_ptr<Message> message,
-                                            const TopicPair& request,
+void CopilotWorker::ProcessMetadataResponse(const TopicPair& request,
                                             LogID logid,
                                             int worker_id) {
-  MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
-
   LOG_INFO(options_.info_log,
       "Received %ssubscribe response for Topic(%s)",
       request.topic_type == MetadataType::mSubscribe ? "" : "un",
       request.topic_name.c_str());
 
   // Get the list of subscriptions for this topic.
-  TopicUUID uuid(request.namespace_id, request.topic_name);
-  auto it = subscriptions_.find(uuid);
-  if (it != subscriptions_.end()) {
-    for (auto& subscription : it->second) {
-      // If the subscription is awaiting a response.
-      if (subscription.awaiting_ack) {
-        // Send to client's worker.
-        Status status = options_.msg_loop->SendResponse(*msg,
-                                                        subscription.stream_id,
-                                                        subscription.worker_id);
-        if (status.ok()) {
-          subscription.awaiting_ack = false;
+  if (request.topic_type == MetadataType::mUnSubscribe) {
 
-          // When the subscription seqno is 0, it was waiting on the correct
-          // seqno for *now*. The response has provided the correct seqno.
-          if (subscription.seqno == 0) {
-            subscription.seqno = request.seqno;
-          }
-          LOG_INFO(options_.info_log,
-            "Sending %ssubscribe response for Topic(%s) to %llu on worker %d",
-            request.topic_type == MetadataType::mSubscribe ? "" : "un",
-            request.topic_name.c_str(),
-            subscription.stream_id,
-            subscription.worker_id);
-          // Update rollcall topic.
-          RollcallWrite(msg->GetTenantID(),
-                        request.topic_name,
-                        request.namespace_id, request.topic_type,
-                        logid, worker_id, subscription.stream_id);
-        } else {
-          LOG_WARN(options_.info_log,
-            "Failed to send metadata response to %llu",
-            subscription.stream_id);
-          // We were unable to forward the subscribe-response to the client
-          // so the client is unaware that it has a confirmed subscription.
-          // There is no need to write the rollcall topic.
-        }
-      }
-    }
   }
 }
 
@@ -194,14 +153,6 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
     // Send to all subscribers.
     for (auto& subscription : it->second) {
       StreamID recipient = subscription.stream_id;
-
-      // If the subscription is awaiting a response, do not forward.
-      if (subscription.awaiting_ack) {
-        LOG_INFO(options_.info_log,
-                 "Data not delivered to %llu (awaiting ack)",
-                 recipient);
-        continue;
-      }
 
       // Also do not send a response if the seqno is too low.
       if (subscription.seqno > seqno) {
@@ -254,7 +205,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
       "Copilot received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
       msg->GetStartSequenceNumber(),
       msg->GetEndSequenceNumber(),
-      msg->GetTopicName().ToString().c_str());
+      msg->GetTopicName().c_str());
   TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
   auto it = subscriptions_.find(uuid);
   if (it != subscriptions_.end()) {
@@ -264,14 +215,6 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
     // Send to all subscribers.
     for (auto& subscription : it->second) {
       StreamID recipient = subscription.stream_id;
-
-      // If the subscription is awaiting a response, do not forward.
-      if (subscription.awaiting_ack) {
-        LOG_INFO(options_.info_log,
-                 "Gap ignored for %llu (awaiting ack)",
-                 recipient);
-        continue;
-      }
 
       // Also ignore if the seqno is too low.
       if (subscription.seqno > next_seqno) {
@@ -305,7 +248,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
                  "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %llu",
                  msg->GetStartSequenceNumber(),
                  msg->GetEndSequenceNumber(),
-                 msg->GetTopicName().ToString().c_str(),
+                 msg->GetTopicName().c_str(),
                  recipient);
       } else {
         LOG_WARN(
@@ -326,7 +269,6 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       request.seqno,
       subscriber);
 
-  bool notify_origin = false;
   bool notify_control_tower = false;
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
 
@@ -340,7 +282,6 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // No subscribers on this topic, create new topic entry.
     std::vector<Subscription> subscribers{ Subscription(subscriber,
                                                         request.seqno,
-                                                        true,
                                                         worker_id) };
     subscriptions_.emplace(uuid, subscribers);
     notify_control_tower = true;
@@ -359,24 +300,18 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
           // will need to tell us the correct seqno, which will be updated
           // locally in the metadata response.
           subscription.seqno = request.seqno;
-          subscription.awaiting_ack = true;
           notify_control_tower = true;
         } else if (subscription.seqno == request.seqno) {
-          // Already subscribed at the correct seqno, just ack again.
-          subscription.awaiting_ack = false;
-          notify_origin = true;
+          // Already subscribed at the correct seqno.
         } else if (subscription.seqno > request.seqno) {
           // Existing subscription is ahead, rewind control tower subscription
           // TODO(pja) 1 : may need new subscriber ID here
           subscription.seqno = request.seqno;
-          subscription.awaiting_ack = true;
           notify_control_tower = true;
         } else {
           // Existing subscription is behind, just let it catch up.
           // TODO(pja) 1 : may need new subscriber ID here
           subscription.seqno = request.seqno;
-          subscription.awaiting_ack = false;
-          notify_origin = true;
         }
         // Update the worker_id for this subscription, in case it changed.
         subscription.worker_id = worker_id;
@@ -396,21 +331,16 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
         // notify the CT.
         topic_iter->second.emplace_back(subscriber,
                                         request.seqno,
-                                        false,
                                         worker_id);
-        notify_origin = true;
       } else {
         // Need to add new subscription and rewind existing subscription.
         topic_iter->second.emplace_back(subscriber,
                                         request.seqno,
-                                        true,
                                         worker_id);
         notify_control_tower = true;
       }
     }
   }
-  // check that we need to notify only one, not both
-  assert(!notify_control_tower || !notify_origin);
 
   if (notify_control_tower) {
     // Find control tower responsible for this topic's log.
@@ -444,22 +374,10 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     }
   }
 
-  if (notify_origin) {
-    // Send response to origin to notify that subscription has been processed.
-    msg->SetMetaType(MessageMetadata::MetaType::Response);
-    Status st = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
-    if (!st.ok()) {
-      // Failed to send response. The origin will re-send the subscription
-      // again in the future, and we'll try to immediately respond again.
-      LOG_INFO(options_.info_log,
-               "Failed to send subscribe response to %llu",
-               subscriber);
-    }
-    // Update rollcall topic.
-    RollcallWrite(msg->GetTenantID(),
-                  request.topic_name, request.namespace_id,
-                  request.topic_type, logid, worker_id, subscriber);
-  }
+  // Update rollcall topic.
+  RollcallWrite(msg->GetTenantID(),
+                request.topic_name, request.namespace_id,
+                request.topic_type, logid, worker_id, subscriber);
 }
 
 void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
@@ -480,23 +398,6 @@ void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
                      request.topic_name,
                      logid,
                      worker_id);
-
-  // Send response to origin to notify that subscription has been processed.
-  msg->SetMetaType(MessageMetadata::MetaType::Response);
-  Status status = options_.msg_loop->SendResponse(*msg, subscriber, worker_id);
-  if (!status.ok()) {
-    // Failed to send response. The origin will re-send the subscription
-    // again in the future, and we'll try to immediately respond again.
-    LOG_WARN(options_.info_log,
-        "Failed to send unsubscribe response on Topic(%s) to %llu",
-        request.topic_name.c_str(),
-        subscriber);
-  } else {
-    LOG_INFO(options_.info_log,
-             "Send unsubscribe response on Topic(%s) to %llu",
-             request.topic_name.c_str(),
-             subscriber);
-  }
 }
 
 void CopilotWorker::RemoveSubscription(TenantID tenant_id,

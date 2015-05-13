@@ -140,9 +140,9 @@ TEST(Messaging, DataGap) {
   gap2.DeSerialize(&original);
 
   // verify that the new message is the same as original
-  ASSERT_EQ(gap2.GetTopicName().ToString(), "topic");
+  ASSERT_EQ(gap2.GetTopicName(), "topic");
   ASSERT_EQ(gap2.GetTenantID(), (TenantID)Tenant::GuestTenant);
-  ASSERT_EQ(gap2.GetNamespaceId().ToString(), "guest");
+  ASSERT_EQ(gap2.GetNamespaceId(), "guest");
   ASSERT_EQ(gap2.GetStartSequenceNumber(), 100);
   ASSERT_EQ(gap2.GetEndSequenceNumber(), 200);
 }

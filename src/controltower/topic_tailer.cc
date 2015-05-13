@@ -48,12 +48,15 @@ class LogReader {
    *                   for the topic. If this is the first record processed on
    *                   this topic then prev_seqno is set to the starting
    *                   seqno for the log.
+   * @param is_tail Will be set to true if the record is believed to be at the
+   *                end of the log.
    * @return ok() if successful, otherwise error.
    */
   Status ProcessRecord(LogID log_id,
                        SequenceNumber seqno,
                        const TopicUUID& topic,
-                       SequenceNumber* prev_seqno);
+                       SequenceNumber* prev_seqno,
+                       bool* is_tail);
 
   /**
    * Checks that a gap is valid for processing.
@@ -86,11 +89,14 @@ class LogReader {
   /**
    * Initialize reader state for log.
    *
+   * @param topic Topic to start reading.
    * @param log_id ID of log to initialize.
    * @param seqno Starting seqno to read from.
    * @return ok() if successful, otherwise error.
    */
-  Status StartReading(LogID log_id, SequenceNumber seqno);
+  Status StartReading(const TopicUUID& topic,
+                      LogID log_id,
+                      SequenceNumber seqno);
 
   /**
    * Free up reader state for a log.
@@ -120,6 +126,16 @@ class LogReader {
                         SequenceNumber to);
 
   /**
+   * Provide a suggestion at the tail seqno for a log. If the LogReader has no
+   * better information then this seqno will be assumed to be the next seqno to
+   * be written to the log, and will be sent to subscribers at seqno 0.
+   *
+   * @param log_id Lod to suggest sequence number for.
+   * @param seqno Lower-bound estimate on next seqno to be published.
+   */
+  void SuggestTailSeqno(LogID log_id, SequenceNumber seqno);
+
+  /**
    * Returns the log reader ID.
    */
   size_t GetReaderId() const {
@@ -137,6 +153,15 @@ class LogReader {
     // Last read sequence number on this log.
     SequenceNumber last_read;
 
+    // This is a lower-bound estimate on the last sequence number for this log.
+    // A tail_seqno 0 should be interpreted as no estimate.
+    // tail_seqno will be initially set after a call to FindLatestSeqno,
+    // and will increase on receipt of later records.
+    // Stopping reading will reset the tail_seqno to 0.
+    // This value can become inaccurate if a reader is receiving records
+    // slower than they are produced.
+    SequenceNumber tail_seqno = 0;
+
     // Number of active subscribers.
     size_t num_subscribers = 0;
   };
@@ -151,16 +176,30 @@ class LogReader {
 Status LogReader::ProcessRecord(LogID log_id,
                                 SequenceNumber seqno,
                                 const TopicUUID& topic,
-                                SequenceNumber* prev_seqno) {
+                                SequenceNumber* prev_seqno,
+                                bool* is_tail) {
   thread_check_.Check();
 
   // Get state for this log.
   auto log_it = log_state_.find(log_id);
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
+    if (log_state.tail_seqno != 0 &&
+        log_state.tail_seqno <= seqno) {
+      // If we had an estimate on the tail sequence number and it was lower
+      // than this record, then update the estimate.
+      *is_tail = true;
+      log_state.tail_seqno = seqno + 1;
+    } else {
+      *is_tail = false;
+    }
+
     if (seqno != log_state.last_read + 1) {
       LOG_WARN(info_log_,
-        "Record received out of order. Expected:%" PRIu64 " Received:%" PRIu64,
+        "Record received out of order on %s Log(%" PRIu64 ")."
+        " Expected:%" PRIu64 " Received:%" PRIu64,
+        topic.ToString().c_str(),
+        log_id,
         log_state.last_read + 1,
         seqno);
       return Status::NotFound();
@@ -185,8 +224,8 @@ Status LogReader::ProcessRecord(LogID log_id,
   } else {
     // This log isn't open.
     LOG_WARN(info_log_,
-      "Record received for unopened Log(%" PRIu64 ")",
-      log_id);
+      "Record received for %s on unopened Log(%" PRIu64 ")",
+      topic.ToString().c_str(), log_id);
     return Status::NotFound();
   }
 }
@@ -223,6 +262,13 @@ void LogReader::ProcessGap(
   auto log_it = log_state_.find(log_id);
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
+    if (log_state.tail_seqno != 0 &&
+        log_state.tail_seqno <= to) {
+      // If we had an estimate on the tail sequence number and it was lower
+      // than this record, then update the estimate.
+      log_state.tail_seqno = to + 1;
+    }
+
     if (from != log_state.last_read + 1) {
       assert(false);  // should have been validated before calling this.
     }
@@ -263,7 +309,19 @@ void LogReader::ProcessBenignGap(LogID log_id,
   }
 }
 
-Status LogReader::StartReading(LogID log_id, SequenceNumber seqno) {
+void LogReader::SuggestTailSeqno(LogID log_id, SequenceNumber seqno) {
+  thread_check_.Check();
+  auto log_it = log_state_.find(log_id);
+  if (log_it != log_state_.end()) {
+    LogState& log_state = log_it->second;
+    log_state.tail_seqno =
+      std::max(log_state.tail_seqno, std::max(log_state.last_read + 1, seqno));
+  }
+}
+
+Status LogReader::StartReading(const TopicUUID& topic,
+                               LogID log_id,
+                               SequenceNumber seqno) {
   thread_check_.Check();
 
   Status st;
@@ -275,6 +333,9 @@ Status LogReader::StartReading(LogID log_id, SequenceNumber seqno) {
     st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
     if (st.ok()) {
       // Insert new log state.
+      LOG_INFO(info_log_,
+        "Log(%" PRIu64 ") now being read from %" PRIu64 " for %s",
+        log_id, seqno, topic.ToString().c_str());
       LogState log_state;
       log_state.start_seqno = seqno;
       log_state.last_read = seqno - 1;
@@ -284,20 +345,45 @@ Status LogReader::StartReading(LogID log_id, SequenceNumber seqno) {
   } else {
     // Already reading, check if we need to reseek.
     LogState& log_state = it->second;
-    if (log_state.last_read >= seqno) {
+
+    // Check if we
+    bool need_to_rewind = true;
+    if (log_state.last_read < seqno) {
+      need_to_rewind = false;
+    }
+
+    // Check if we have seen the topic in this log already.
+    auto ps_it = log_state.prev_seqno.find(topic);
+    if (ps_it != log_state.prev_seqno.end()) {
+      if (ps_it->second < seqno) {
+        // Last message for topic was before 'seqno' -- no need to rewind.
+        need_to_rewind = false;
+      } else {
+        // Rewind this topic state only.
+        LOG_INFO(info_log_,
+          "Reseting Log(%" PRIu64 ") state for %s@%" PRIu64,
+          log_id, topic.ToString().c_str(), seqno);
+        ps_it->second = seqno - 1;
+      }
+    }
+
+    if (need_to_rewind) {
       // Need to rewind to seqno.
       const bool first_open = false;
       st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
       if (st.ok()) {
-        log_state.num_subscribers++;
         log_state.last_read = seqno - 1;
-        log_state.start_seqno = seqno;
-        log_state.prev_seqno.clear();
+        if (seqno < log_state.start_seqno) {
+          // The whole thing is being rewound, so clear prev_seqno.
+          LOG_INFO(info_log_,
+            "Reseting Log(%" PRIu64 ") to %" PRIu64,
+            log_id, seqno);
+          log_state.prev_seqno.clear();
+          log_state.start_seqno = seqno;
+        }
       }
-      return st;
-    } else {
-      log_state.num_subscribers++;
     }
+    log_state.num_subscribers++;
   }
   return st;
 }
@@ -363,10 +449,12 @@ Status TopicTailer::SendLogRecord(
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno;
+    bool is_tail;
     Status st = log_reader_->ProcessRecord(log_id,
                                            next_seqno,
                                            uuid,
-                                           &prev_seqno);
+                                           &prev_seqno,
+                                           &is_tail);
 
     if (st.ok()) {
       // Find subscribed hosts.
@@ -380,19 +468,57 @@ Status TopicTailer::SendLogRecord(
             "Hostnum(%d) advanced to %s@%" PRIu64,
             int(sub->GetHostNum()),
             uuid.ToString().c_str(),
-            next_seqno);
+            next_seqno + 1);
         });
 
-      if (hosts.empty()) {
+      std::vector<HostNumber> tail_hosts;
+      if (is_tail) {
+        // This is a message at the tail.
+        // Find all hosts subscribed at 0.
+        topic_map_[log_id].VisitSubscribers(
+          uuid, 0, 0,
+          [this, &tail_hosts, next_seqno, &uuid] (TopicSubscription* sub) {
+            tail_hosts.emplace_back(sub->GetHostNum());
+            sub->SetSequenceNumber(next_seqno + 1);
+            LOG_INFO(info_log_,
+              "Hostnum(%d) advanced to %s@%" PRIu64,
+              int(sub->GetHostNum()),
+              uuid.ToString().c_str(),
+              next_seqno + 1);
+          });
+
+        // Hosts subscribed at the tail need the message previous sequence
+        // number to be 0, so we need to send a different message to these
+        // hosts.
+        if (!tail_hosts.empty()) {
+          std::unique_ptr<Message> tail_data;
+          data->SetSequenceNumbers(0, next_seqno);
+          if (hosts.empty()) {
+            // No hosts subscribed at non-0, so just use the data message.
+            tail_data = std::move(data);
+          } else {
+            // We need to send 'data' to the non-0 subscribing hosts.
+            tail_data = Message::Copy(*data);
+          }
+          // Send message downstream.
+          on_message_(std::move(tail_data), std::move(tail_hosts));
+        }
+      }
+
+      if (!hosts.empty()) {
+        // Send message downstream.
+        assert(data);
+        data->SetSequenceNumbers(prev_seqno, next_seqno);
+        on_message_(std::unique_ptr<Message>(data.release()), std::move(hosts));
+      }
+
+      if (data) {
         LOG_INFO(info_log_,
-          "No hosts found for message on %s@%" PRIu64 "-%" PRIu64,
+          "No hosts found for %smessage on %s@%" PRIu64 "-%" PRIu64,
+          is_tail ? "tail " : "",
           uuid.ToString().c_str(),
           prev_seqno,
           next_seqno);
-      } else {
-        // Send message downstream.
-        data->SetSequenceNumbers(prev_seqno, next_seqno);
-        on_message_(std::unique_ptr<Message>(data.release()), std::move(hosts));
       }
     } else {
       // We don't have log open, so drop.
@@ -459,8 +585,8 @@ Status TopicTailer::SendGapRecord(
         topic.GetTopicID(&namespace_id, &topic_name);
         std::unique_ptr<Message> msg(
           new MessageGap(Tenant::GuestTenant,
-                         namespace_id,
-                         topic_name,
+                         namespace_id.ToString(),
+                         topic_name.ToString(),
                          type,
                          prev_seqno,
                          to));
@@ -536,6 +662,86 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
     return st;
   }
 
+  // Handle to 0 sequence number special case.
+  // Zero means to start reading from the latest records, so we first need
+  // to asynchronously consult the LogTailer for the latest seqno, and then
+  // process the subscription.
+  if (start == 0) {
+    // Create a callback to enqueue a subscribe command.
+    // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
+    // when converted to an std::function - could use an alloc pool for this.
+    auto callback = [this, topic, hostnum, logid] (Status status,
+                                                   SequenceNumber seqno) {
+      if (!status.ok()) {
+        LOG_WARN(info_log_,
+          "Failed to find latest sequence number in %s (%s)",
+          topic.ToString().c_str(),
+          status.ToString().c_str());
+        return;
+      }
+
+      bool sent = worker_loop_.Send([this, topic, hostnum, logid, seqno] () {
+        // Send message to inform subscriber of latest seqno.
+        LOG_INFO(info_log_,
+          "Sending gap message on %s@0-%" PRIu64 " Log(%" PRIu64 ")",
+          topic.ToString().c_str(),
+          seqno - 1,
+          logid);
+        Slice namespace_id;
+        Slice topic_name;
+        topic.GetTopicID(&namespace_id, &topic_name);
+        std::unique_ptr<Message> msg(
+          new MessageGap(Tenant::GuestTenant,
+                         namespace_id.ToString(),
+                         topic_name.ToString(),
+                         GapType::kBenign,
+                         0,
+                         seqno - 1));
+        on_message_(std::move(msg), { hostnum });
+
+        bool was_added = topic_map_[logid].AddSubscriber(topic, seqno, hostnum);
+        LOG_INFO(info_log_,
+          "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s)",
+          int(hostnum),
+          topic.ToString().c_str(),
+          seqno,
+          was_added ? "new" : "update");
+
+        if (!was_added) {
+          // Was update, so remove old subscription first.
+          log_reader_->StopReading(logid);
+        }
+        LOG_INFO(info_log_,
+          "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
+          logid,
+          seqno);
+        log_reader_->StartReading(topic, logid, seqno);
+        log_reader_->SuggestTailSeqno(logid, seqno);
+      });
+
+      if (!sent) {
+        LOG_WARN(info_log_,
+          "Failed to send %s@0 sub for HostNum(%d) to TopicTailer worker loop",
+          topic.ToString().c_str(),
+          hostnum);
+      }
+    };
+
+    Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
+    if (!seqno_status.ok()) {
+      LOG_WARN(info_log_,
+        "Failed to find latest seqno (%s) for %s",
+        seqno_status.ToString().c_str(),
+        topic.ToString().c_str());
+    } else {
+      LOG_INFO(info_log_,
+        "Sent FindLatestSeqno request for Hostnum(%d) for %s",
+        hostnum,
+        topic.ToString().c_str());
+    }
+    return seqno_status;
+  }
+
   bool sent = worker_loop_.Send([this, logid, topic, start, hostnum] () {
     bool was_added = topic_map_[logid].AddSubscriber(topic, start, hostnum);
     LOG_INFO(info_log_,
@@ -549,7 +755,7 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
       // Was update, so remove old subscription first.
       log_reader_->StopReading(logid);
     }
-    log_reader_->StartReading(logid, start);
+    log_reader_->StartReading(topic, logid, start);
   });
 
   return sent ? Status::OK() : Status::NoBuffer();
@@ -580,23 +786,6 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
   });
 
   return sent ? Status::OK() : Status::NoBuffer();
-}
-
-Status
-TopicTailer::FindLatestSeqno(
-    const TopicUUID& topic,
-    std::function<void(Status, SequenceNumber)> callback) {
-  thread_check_.Check();
-
-  // Map topic to log.
-  LogID logid;
-  Status st = log_router_->GetLogID(topic, &logid);
-  if (!st.ok()) {
-    return st;
-  }
-
-  // Forward request to log tailer.
-  return log_tailer_->FindLatestSeqno(logid, std::move(callback));
 }
 
 }  // namespace rocketspeed

@@ -48,7 +48,7 @@ DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
 DEFINE_int32(client_workers, 32, "number of client workers");
 DEFINE_int32(message_size, 100, "message size (bytes)");
-DEFINE_uint64(num_topics, 1000000, "number of topics");
+DEFINE_uint64(num_topics, 10000, "number of topics");
 DEFINE_int64(num_messages, 10000, "number of messages to send");
 DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
 DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
@@ -73,6 +73,9 @@ DEFINE_string(mqtt_access_token, "", "MQTT access token");
 DEFINE_bool(mqtt_use_ssl, true, "MQTT use SSL");
 #endif
 
+using namespace rocketspeed;
+
+rocketspeed::Env* env;
 std::shared_ptr<rocketspeed::Logger> info_log;
 
 
@@ -83,7 +86,8 @@ struct Result {
 };
 
 // Number of topics to subscribe to at once.
-static const size_t kSubscribeBatchSize = 10000;
+static const size_t kSubscribeBatchSize = 1000;
+static const int kBatchDurationMicros = 100000;  // time between batches
 
 struct ProducerArgs {
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* producers;
@@ -120,8 +124,6 @@ static void ProducerWorker(void* param) {
   Client* producer = args->producer;
   PublishCallback publish_callback = args->publish_callback;
   args->result = false;
-
-  Env* env = Env::Default();
 
   // Random number generator.
   std::unique_ptr<rocketspeed::RandomDistributionBase>
@@ -218,7 +220,6 @@ static void DoProduce(void* params) {
   std::chrono::time_point<std::chrono::steady_clock>* last_ack_message =
     args->last_ack_message;
   rocketspeed::PublishCallback publish_callback = args->publish_callback;
-  Env* env = Env::Default();
 
   // Distribute total number of messages among them.
   std::vector<Env::ThreadId> thread_ids;
@@ -276,8 +277,7 @@ static void DoProduce(void* params) {
  */
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
-                 std::unordered_map<std::string, SequenceNumber> first_seqno,
-                 rocketspeed::port::Semaphore* batch_semaphore) {
+                 std::unordered_map<std::string, SequenceNumber> first_seqno) {
   // This needs to be low enough so that subscriptions are evenly distributed
   // among client threads.
   auto total_threads = consumers.size() * FLAGS_client_workers;
@@ -314,11 +314,8 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
       consumers[c++ % consumers.size()]->ListenTopics(GuestTenant, topics);
       sent += topics.size();
       if (sent >= kSubscribeBatchSize) {
-        // Have sent the batch size now, wait for next batch.
-        if (!batch_semaphore->TimedWait(
-                std::chrono::seconds(FLAGS_idle_timeout))) {
-          return;
-        }
+        // Have sent the batch size now, sleep a little for copilot.
+        env->SleepForMicroseconds(kBatchDurationMicros);
         sent -= kSubscribeBatchSize;
       }
       topics.clear();
@@ -356,7 +353,7 @@ static void DoConsume(void* param) {
 
 int main(int argc, char** argv) {
   rocketspeed::Env::InstallSignalHandlers();
-  rocketspeed::Env* env = rocketspeed::Env::Default();
+  env = rocketspeed::Env::Default();
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
 
   // This loop is needed so that we can attach to this process via
@@ -584,18 +581,8 @@ int main(int argc, char** argv) {
 
   // Subscribe callback.
   std::atomic<uint64_t> num_topics_subscribed{0};
-  rocketspeed::port::Semaphore all_topics_subscribed;
-  rocketspeed::port::Semaphore batch_semaphore;
   auto subscribe_callback = [&] (rocketspeed::SubscriptionStatus ss) {
     if (ss.subscribed) {
-      auto num_subscribed = ++num_topics_subscribed;
-      if (num_subscribed % kSubscribeBatchSize == 0) {
-        batch_semaphore.Post();
-      }
-      if (num_subscribed == FLAGS_num_topics) {
-        all_topics_subscribed.Post();
-      }
-    } else {
       LOG_WARN(info_log, "Received an unsubscribe response");
     }
   };
@@ -654,17 +641,8 @@ int main(int argc, char** argv) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
-      DoSubscribe(clients, nsid, std::move(first_seqno), &batch_semaphore);
-      if (!all_topics_subscribed.TimedWait(
-              std::chrono::seconds(FLAGS_idle_timeout))) {
-        printf("time out\n");
-        LOG_WARN(info_log, "Failed to subscribe to all topics");
-        info_log->Flush();
-        printf("Failed to subscribe to all topics (%llu/%llu)\n",
-          static_cast<long long unsigned int>(num_topics_subscribed.load()),
-          static_cast<long long unsigned int>(FLAGS_num_topics));
-        return 1;
-      }
+      DoSubscribe(clients, nsid, std::move(first_seqno));
+      env->SleepForMicroseconds(1000000);  // allow 1 seconds for subscribe
       printf("done\n");
     }
 
@@ -733,7 +711,7 @@ int main(int argc, char** argv) {
 
     // Subscribe to topics
     subscribe_time = env->NowMicros();
-    DoSubscribe(clients, nsid, std::move(first_seqno), &batch_semaphore);
+    DoSubscribe(clients, nsid, std::move(first_seqno));
     subscribe_time = env->NowMicros() - subscribe_time;
     printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics",
       subscribe_time / 1000,

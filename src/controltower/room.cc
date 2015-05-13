@@ -96,68 +96,6 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   const std::vector<TopicPair>& topic = request->GetTopicInfo();
   assert(topic.size() == 1);
 
-  // Handle to 0 sequence number special case.
-  // Zero means to start reading from the latest records, so we first need
-  // to asynchronously consult the tailer for the latest seqno, and then
-  // process the subscription.
-  if (topic[0].topic_type == MetadataType::mSubscribe &&
-      topic[0].seqno == 0) {
-    // Create a callback to enqueue a subscribe command.
-    // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
-    // when converted to an std::function - could use an alloc pool for this.
-    auto callback = [this, request, worker_id, origin] (Status status,
-                                                        SequenceNumber seqno) {
-      std::unique_ptr<Message> message(request);
-      if (!status.ok()) {
-        LOG_WARN(control_tower_->GetOptions().info_log,
-                 "Failed to find latest sequence number in Topic(%s, %s) (%s)",
-                 request->GetTopicInfo()[0].namespace_id.c_str(),
-                 request->GetTopicInfo()[0].topic_name.c_str(),
-                 status.ToString().c_str());
-        return;
-      }
-
-      std::vector<TopicPair>& req_topic = request->GetTopicInfo();
-      req_topic[0].seqno = seqno;  // update seqno
-      LOG_INFO(control_tower_->GetOptions().info_log,
-               "Subscribing (%llu) at latest seqno for Topic(%s)@%" PRIu64,
-               origin,
-               req_topic[0].topic_name.c_str(),
-               req_topic[0].seqno);
-
-      // send message back to this Room with the seqno appropriately
-      // filled up in the message.
-      assert(seqno != 0);
-      status = Forward(std::move(message), worker_id, origin);
-      if (!status.ok()) {
-        // TODO(pja) 1: may need to do some flow control if this is due
-        // to receiving too many subscriptions.
-        LOG_WARN(control_tower_->GetOptions().info_log,
-                 "Failed to enqueue subscription (%s)",
-                 status.ToString().c_str());
-      }
-    };
-
-    TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
-    st = ct->GetTopicTailer(room_number_)->FindLatestSeqno(uuid, callback);
-    if (!st.ok()) {
-      // TODO(pja) 1: may need to do some flow control if this is due
-      // to receiving too many subscriptions.
-      LOG_WARN(options.info_log,
-               "Failed to find latest seqno (%s) for %s",
-               st.ToString().c_str(),
-               uuid.ToString().c_str());
-    } else {
-      // Succeeded, so ownership of message is in the callback.
-      msg.release();
-      LOG_INFO(options.info_log,
-               "Sent FindLatestSeqno request for (%llu) for %s",
-               origin,
-               uuid.ToString().c_str());
-    }
-    return;
-  }
-
   // Map the origin to a HostNumber
   int test_worker_id = -1;
   HostNumber hostnum = ct->LookupHost(origin, &test_worker_id);
@@ -185,31 +123,6 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
         origin,
         topic[0].topic_name.c_str());
   }
-
-  // change it to a response ack message
-  request->SetMetaType(MessageMetadata::MetaType::Response);
-
-  // send response back to copilot
-  st = options.msg_loop->SendResponse(*request, origin, worker_id);
-  if (!st.ok()) {
-    LOG_WARN(options.info_log,
-             "Unable to send %s response for Topic(%s)@%" PRIu64
-             " to tower for %llu",
-             topic[0].topic_type == MetadataType::mSubscribe ? "subscribe"
-                                                             : "unsubscribe",
-             topic[0].topic_name.c_str(),
-             topic[0].seqno,
-             origin);
-  } else {
-    LOG_INFO(options.info_log,
-        "Sent %s response for Topic(%s)@%" PRIu64 " to tower for %llu",
-        topic[0].topic_type == MetadataType::mSubscribe
-          ? "subscribe" : "unsubscribe",
-        topic[0].topic_name.c_str(),
-        topic[0].seqno,
-        origin);
-  }
-  options.info_log->Flush();
 }
 
 Status
@@ -297,7 +210,7 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
       "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
       prev_seqno,
       next_seqno,
-      gap->GetTopicName().ToString().c_str());
+      gap->GetTopicName().c_str());
 
   for (HostNumber hostnum : hosts) {
     // Convert HostNumber to origin StreamID.
@@ -313,7 +226,7 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
                  "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %llu",
                  prev_seqno,
                  next_seqno,
-                 gap->GetTopicName().ToString().c_str(),
+                 gap->GetTopicName().c_str(),
                  origin);
       } else {
         LOG_WARN(options.info_log,

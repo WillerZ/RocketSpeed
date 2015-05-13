@@ -117,6 +117,15 @@ std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
   return std::move(msg);
 }
 
+std::unique_ptr<Message> Message::Copy(const Message& msg) {
+  // Not efficient, but not used often, and should be efficient once we
+  // have shared serialized buffers.
+  std::string serial;
+  msg.SerializeToString(&serial);
+  Slice slice(serial);
+  return CreateNewInstance(slice.ToUniqueChars(), slice.size());
+}
+
 void Message::SerializeToString(std::string* out) const {
   Serialize();  // serialize into local buffer
   out->assign(std::move(serialize_buffer__));
@@ -414,13 +423,13 @@ Status MessageDataAck::DeSerialize(Slice* in) {
 }
 
 MessageGap::MessageGap(TenantID tenantID,
-                       Slice namespace_id,
-                       Slice topic_name,
+                       NamespaceID namespace_id,
+                       Topic topic_name,
                        GapType gap_type,
                        SequenceNumber gap_from,
                        SequenceNumber gap_to)
-: namespace_id_(namespace_id)
-, topic_name_(topic_name)
+: namespace_id_(std::move(namespace_id))
+, topic_name_(std::move(topic_name))
 , gap_type_(gap_type)
 , gap_from_(gap_from)
 , gap_to_(gap_to) {
@@ -437,7 +446,7 @@ Slice MessageGap::Serialize() const {
   PutFixed16(&serialize_buffer__, tenantid_);
 
   // Write the gap information.
-  PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
+  PutTopicID(&serialize_buffer__, Slice(namespace_id_), Slice(topic_name_));
   PutFixedEnum8(&serialize_buffer__, gap_type_);
   PutVarint64(&serialize_buffer__, gap_from_);
   PutVarint64(&serialize_buffer__, gap_to_);

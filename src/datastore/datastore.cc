@@ -18,7 +18,6 @@ DataStoreImpl::DataStoreImpl(
   bool create_new,
   std::shared_ptr<Logger> info_log) :
   info_log_(info_log),
-  state_(ReaderState::SubscriptionRequestSent),
   datastore_namespace_(SytemNamespacePermanent),
   datastore_topic_(DefaultDataStoreTopicName()),
   create_new_(create_new),
@@ -27,32 +26,22 @@ DataStoreImpl::DataStoreImpl(
   num_fetched_(0),
   timeout_(1),
   wait_at_startup_(true),
-  subscribed_cv_(&mutex_),
   rawdata_version_(0),
   rs_client_(std::move(client)) {
 
-  // If the subscription request was successful, then mark
-  // our state as SubscriptionConfirmed. Otherwise invoke
+  // If the subscription request was unsuccessful, then invoke
   // user-specified callback with error state.
   auto subscribe_callback = [this] (SubscriptionStatus ss) {
     MutexLock lock(&mutex_);
-    assert(state_ == ReaderState::SubscriptionRequestSent);
-    if (ss.status.ok()) {
-      assert(ss.subscribed);
-      assert(ss.namespace_id == datastore_namespace_);
-      state_ = ReaderState::SubscriptionConfirmed;
-    } else {
+    if (!ss.status.ok()) {
       // mark datastore as bad
       db_status_ = Status::IOError(ss.status.ToString());
-      state_ = ReaderState::Invalid;
     }
-    subscribed_cv_.Signal(); // subscription request complete.
   };
 
   // Receive all messages from this topic and update our
   // in-memory data base
   auto receive_callback = [this] (std::unique_ptr<MessageReceived> msg) {
-    assert(state_ == ReaderState::SubscriptionConfirmed);
     assert(msg->GetNamespaceId() == datastore_namespace_);
     KeyValue rmsg;
     rmsg.DeSerialize(msg->GetContents());
@@ -181,12 +170,6 @@ DataStoreImpl::WaitForData() {
 
     //  do a quick check without lock
     if (!wait_at_startup_) {
-      return;
-    }
-    while (state_ == ReaderState::SubscriptionRequestSent) {
-      subscribed_cv_.Wait();
-    }
-    if (state_ == ReaderState::Invalid) {
       return;
     }
   }

@@ -144,8 +144,7 @@ class CopilotWorker {
                           StreamID subscriber);
 
   // Process a metadata response from control tower.
-  void ProcessMetadataResponse(std::unique_ptr<Message> msg,
-                               const TopicPair& request,
+  void ProcessMetadataResponse(const TopicPair& request,
                                LogID logid,
                                int worker_id);
 
@@ -202,16 +201,13 @@ class CopilotWorker {
   struct Subscription {
     Subscription(StreamID id,
                  SequenceNumber seq_no,
-                 bool await_ack,
                  int _worker_id)
     : stream_id(id)
     , seqno(seq_no)
-    , awaiting_ack(await_ack)
     , worker_id(_worker_id) {}
 
     StreamID stream_id;    // The subscriber
     SequenceNumber seqno;  // Lowest seqno to accept
-    bool awaiting_ack;     // Is the subscriber awaiting an subscribe response?
     int worker_id;         // The event loop worker for client.
   };
 

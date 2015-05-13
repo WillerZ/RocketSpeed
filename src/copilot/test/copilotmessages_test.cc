@@ -39,8 +39,6 @@ class CopilotTest {
   Env* env_;
   EnvOptions env_options_;
   std::shared_ptr<Logger> info_log_;
-  std::set<Topic> sent_msgs_;
-  std::set<Topic> acked_msgs_;
   std::vector<RollcallEntry> rollcall_entries_;
 
   // A static method that is the entry point of a background MsgLoop
@@ -49,65 +47,11 @@ class CopilotTest {
     loop->Run();
   }
 
-  // A method to process a subscribe response message
-  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
-    ASSERT_EQ(msg->GetMessageType(), MessageType::mMetadata);
-    MessageMetadata* metadata = static_cast<MessageMetadata*>(msg.get());
-    ASSERT_EQ(metadata->GetMetaType(), MessageMetadata::MetaType::Response);
-    ASSERT_EQ(metadata->GetTopicInfo().size(), 1);
-    acked_msgs_.insert(metadata->GetTopicInfo()[0].topic_name);
-  }
-
   // A method to process rollcall entries
   void ProcessRollcall(const RollcallEntry& entry) {
     rollcall_entries_.push_back(entry);
   }
 };
-
-TEST(CopilotTest, Subscribe) {
-  // Create cluster with copilot and controltower only.
-  LocalTestCluster cluster(info_log_, true, true, false);
-  ASSERT_OK(cluster.GetStatus());
-
-  port::Semaphore checkpoint;
-
-  // create a client to communicate with the Copilot
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  StreamSocket socket(loop.CreateOutboundStream(
-      cluster.GetCopilot()->GetClientId(), 0));
-  loop.RegisterCallbacks({
-      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
-                                   StreamID origin) {
-        ASSERT_EQ(socket.GetStreamID(), origin);
-        ProcessMetadata(std::move(msg), origin);
-        if (sent_msgs_.size() == acked_msgs_.size()) {
-          checkpoint.Post();
-        }
-      }},
-  });
-  ASSERT_OK(loop.Initialize());
-  env_->StartThread(CopilotTest::MsgLoopStart, &loop,
-                    "testc-" + std::to_string(loop.GetHostId().port));
-  ASSERT_OK(loop.WaitUntilRunning());
-
-  // send subscribe/unsubscribe messages to copilot
-  int num_msg = 100;
-  for (int i = 0; i < num_msg; ++i) {
-    NamespaceID ns = "test" + std::to_string(i % 50);
-    std::string topic = "copilot_test_" + std::to_string(i % 50);
-    auto type = i < num_msg/2 ? MetadataType::mSubscribe :
-                                MetadataType::mUnSubscribe;
-    MessageMetadata msg(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        { TopicPair(0, topic, type, ns) });
-    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
-    sent_msgs_.insert(topic);
-  }
-
-  // Ensure all messages were ack'd
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(2)));
-  ASSERT_TRUE(sent_msgs_ == acked_msgs_);
-}
 
 TEST(CopilotTest, WorkerMapping) {
   // Create cluster with copilot and controltower only.
@@ -186,7 +130,6 @@ TEST(CopilotTest, Rollcall) {
   LocalTestCluster cluster(info_log_, true, true, true);
   ASSERT_OK(cluster.GetStatus());
 
-  port::Semaphore checkpoint;
   port::Semaphore checkpoint2;
 
   size_t num_msg = 100;
@@ -197,14 +140,7 @@ TEST(CopilotTest, Rollcall) {
   StreamSocket socket(loop.CreateOutboundStream(
       cluster.GetCopilot()->GetClientId(), 0));
   loop.RegisterCallbacks({
-      {MessageType::mMetadata, [&](std::unique_ptr<Message> msg,
-                                   StreamID origin) {
-        ASSERT_EQ(socket.GetStreamID(), origin);
-        ProcessMetadata(std::move(msg), origin);
-        if (expected == acked_msgs_.size()) {
-          checkpoint.Post();
-        }
-      }},
+      {MessageType::mMetadata, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
   });
@@ -237,16 +173,8 @@ TEST(CopilotTest, Rollcall) {
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         { TopicPair(0, topic, type, ns) });
-    sent_msgs_.insert(topic);
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }
-  // Ensure that subscriptions were acked from server.
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
-  ASSERT_EQ(expected, acked_msgs_.size());
-  ASSERT_TRUE(sent_msgs_ == acked_msgs_);
-
-  acked_msgs_.clear();
-  sent_msgs_.clear();
 
   // send unsubscribe messages to copilot
   for (size_t i = 0; i < expected; ++i) {
@@ -255,13 +183,11 @@ TEST(CopilotTest, Rollcall) {
     MessageMetadata msg(Tenant::GuestTenant,
                         MessageMetadata::MetaType::Request,
                         { TopicPair(0, topic, type, ns) });
-    sent_msgs_.insert(topic);
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }
-  // Ensure that unsubscriptions were acked from server.
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
-  ASSERT_TRUE(sent_msgs_ == acked_msgs_);
-  ASSERT_EQ(expected, acked_msgs_.size());
+
+  /* sleep override */
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   // Ensure that all subscriptions were found in the rollcall log
   ASSERT_TRUE(checkpoint2.TimedWait(std::chrono::seconds(5)));
@@ -283,7 +209,7 @@ TEST(CopilotTest, Rollcall) {
         found = true;
         // found the entry we were looking for. Make it invalid
         // so that it does not match succeeding entries any more.
-        rollcall_entries_[j].SetType( RollcallEntry::EntryType::Error);
+        rollcall_entries_[j].SetType(RollcallEntry::EntryType::Error);
         break;
       }
     }

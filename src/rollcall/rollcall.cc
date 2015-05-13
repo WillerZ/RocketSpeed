@@ -22,7 +22,6 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
   nsid_(nsid),
   start_point_(start_point),
   callback_(std::move(callback)),
-  state_(ReaderState::SubscriptionRequestSent),
   rollcall_topic_(GetRollcallTopicName(nsid)),
   msgid_(MsgId()) {
 
@@ -30,12 +29,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
   // our state as SubscriptionConfirmed. Otherwise invoke
   // user-specified callback with error state.
   auto subscribe_callback = [this] (SubscriptionStatus ss) {
-    assert(state_ == ReaderState::SubscriptionRequestSent);
-    if (ss.status.ok()) {
-      assert(ss.subscribed);
-      assert(ss.namespace_id == rollcall_namespace_);
-      state_ = ReaderState::SubscriptionConfirmed;
-    } else {
+    if (!ss.status.ok()) {
       // invoke user-specified callback with error status
       callback_(RollcallEntry());
     }
@@ -47,7 +41,6 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
     // It converts the incoming record into a RollcallEntry record
     // and passes it back to the application.
     auto receive_callback = [this] (std::unique_ptr<MessageReceived> msg) {
-      assert(state_ == ReaderState::SubscriptionConfirmed);
       assert(msg->GetNamespaceId() == rollcall_namespace_);
       RollcallEntry rmsg;
       rmsg.DeSerialize(msg->GetContents());

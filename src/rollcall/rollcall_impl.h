@@ -18,15 +18,6 @@
  */
 namespace rocketspeed {
 
-//
-// The states of the Rollcall Reader
-//
-enum ReaderState : char {
-  Invalid                 = 0x00,
-  SubscriptionRequestSent = 0x01,
-  SubscriptionConfirmed   = 0x02,
-};
-
 /*
  * An implementation for the Rollcall stream.
  * For reading the rollcall, register a callback via the constructor
@@ -64,7 +55,6 @@ class RollcallImpl : public RollcallStream {
   const NamespaceID nsid_;             // namespace
   const SequenceNumber start_point_;// start seqno of rollcall topic
   RollCallback callback_;             // callback specified by application
-  ReaderState state_;                 // the current state of this reader
   const Topic rollcall_topic_;        // name of the rollcall topic
   const TopicOptions rollcall_topic_options_;
   const MsgId msgid_;

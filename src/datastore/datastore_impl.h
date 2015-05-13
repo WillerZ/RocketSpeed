@@ -127,13 +127,7 @@ class DataStoreImpl : public DataStore {
   size_t NumRecords();
 
  private:
-  enum ReaderState : char {               // The states of the datastore
-    Invalid                 = 0x00,
-    SubscriptionRequestSent = 0x01,
-    SubscriptionConfirmed   = 0x02,
-  };
   std::shared_ptr<Logger> info_log_;            // informational logs
-  ReaderState state_;                           // current state of this reader
   const NamespaceID datastore_namespace_;       // name of namespace
   const Topic datastore_topic_;                 // name of the datastore topic
   const bool create_new_;                       // remove all pre-exisiting data
@@ -165,9 +159,6 @@ class DataStoreImpl : public DataStore {
 
   // Mutex to protect rawdata_ and rawdata_version_.
   port::Mutex mutex_;
-
-  // condition variable to indicate that subscription is done
-  port::CondVar subscribed_cv_;
 
   // The key-values read in from the storage
   std::map<std::string, std::string> rawdata_;

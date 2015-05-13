@@ -88,7 +88,7 @@ class PosixLogger : public Logger {
       struct tm t;
       localtime_r(&seconds, &t);
       p += snprintf(p, limit - p,
-                    "%02d/%02d-%02d:%02d:%02d.%06d %llx %-11.11s ",
+                    "%02d/%02d-%02d:%02d:%02d.%06d %llx %-13.13s ",
                     t.tm_mon + 1,
                     t.tm_mday,
                     t.tm_hour,

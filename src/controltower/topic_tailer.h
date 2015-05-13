@@ -64,12 +64,6 @@ class TopicTailer {
   Status RemoveSubscriber(const TopicUUID& topic,
                           HostNumber hostnum);
 
-  // Asynchronously finds the latest seqno then
-  // invokes the callback.
-  Status FindLatestSeqno(
-    const TopicUUID& topic,
-    std::function<void(Status, SequenceNumber)> callback);
-
   /**
    * Process a data record from a log tailer, and forward to on_message.
    *

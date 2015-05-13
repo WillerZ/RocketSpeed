@@ -249,7 +249,7 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
       "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
       gap->GetStartSequenceNumber(),
       gap->GetEndSequenceNumber(),
-      gap->GetTopicName().ToString().c_str());
+      gap->GetTopicName().c_str());
 
   // map the topic to a logid
   LogID logid;

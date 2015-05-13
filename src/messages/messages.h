@@ -130,6 +130,11 @@ class Message : public Serializer {
   virtual Status DeSerialize(Slice* in) = 0;
   void SerializeToString(std::string* out) const;
 
+  /**
+   * Creates a deep copy of a message.
+   */
+  static std::unique_ptr<Message> Copy(const Message& msg);
+
  protected:
   Message(MessageType type, TenantID tenantid) :
           type_(type), tenantid_(tenantid) {
@@ -466,8 +471,8 @@ class MessageGap : public Message {
    * @param msgid The MsgIds of the messages that have been ack'd
    */
   explicit MessageGap(TenantID tenantID,
-                      Slice namespace_id,
-                      Slice topic_name,
+                      NamespaceID namespace_id,
+                      Topic topic_name,
                       GapType gap_type,
                       SequenceNumber gap_from,
                       SequenceNumber gap_to);
@@ -484,11 +489,11 @@ class MessageGap : public Message {
   /**
    * Get the gap information.
    */
-  Slice GetNamespaceId() const {
+  const NamespaceID& GetNamespaceId() const {
     return namespace_id_;
   }
 
-  Slice GetTopicName() const {
+  const Topic& GetTopicName() const {
     return topic_name_;
   }
 
@@ -512,8 +517,8 @@ class MessageGap : public Message {
 
  private:
   // type of this message: mGap
-  Slice namespace_id_;
-  Slice topic_name_;
+  NamespaceID namespace_id_;
+  Topic topic_name_;
   GapType gap_type_;
   SequenceNumber gap_from_;
   SequenceNumber gap_to_;
