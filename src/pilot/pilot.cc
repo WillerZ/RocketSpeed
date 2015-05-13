@@ -37,7 +37,11 @@ void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
 
   if (!st.ok()) {
     LOG_WARN(pilot_->options_.info_log,
-      "Failed to send command for append callback: %s",
+      "Failed to send command for append callback on Log(%" PRIu64 ")"
+      " Topic(%s,%s): %s",
+      logid_,
+      msg_->GetNamespaceId().ToString().c_str(),
+      msg_->GetTopicName().ToString().c_str(),
       st.ToString().c_str());
     pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
   }
@@ -140,10 +144,11 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   LOG_INFO(options_.info_log,
-      "Received data (%.16s) in ns(%s) for Topic(%s)",
+      "Received data (%.16s) for Topic(%s,%s) in Log(%" PRIu64 ")",
       msg_data->GetPayload().ToString().c_str(),
       msg_data->GetNamespaceId().ToString().c_str(),
-      msg_data->GetTopicName().ToString().c_str());
+      msg_data->GetTopicName().ToString().c_str(),
+      logid);
 
   // Setup AppendCallback
   uint64_t now = options_.env->NowMicros();
@@ -166,9 +171,12 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   if (!status.ok()) {
     // Append call failed, log and send failure ack.
     worker_data_[worker_id].stats_.failed_appends->Add(1);
-    LOG_WARN(options_.info_log,
-      "Failed to append to Log(%" PRIu64 ") (%s)",
-      static_cast<uint64_t>(logid), status.ToString().c_str());
+    LOG_ERROR(options_.info_log,
+      "Failed to append to Topic(%s,%s) in Log(%" PRIu64 ") (%s)",
+      msg_data->GetNamespaceId().ToString().c_str(),
+      msg_data->GetTopicName().ToString().c_str(),
+      logid,
+      status.ToString().c_str());
     options_.info_log->Flush();
 
     SendAck(msg_data, 0, MessageDataAck::AckStatus::Failure, worker_id, origin);
@@ -193,17 +201,21 @@ void Pilot::AppendCallback(Status append_status,
             worker_id,
             origin);
     LOG_INFO(options_.info_log,
-        "Appended (%.16s) successfully to Topic(%s) in Log(%" PRIu64
+        "Appended (%.16s) successfully to Topic(%s,%s) in Log(%" PRIu64
         ")@%" PRIu64,
         msg->GetPayload().ToString().c_str(),
+        msg->GetNamespaceId().ToString().c_str(),
         msg->GetTopicName().ToString().c_str(),
         logid,
         seqno);
   } else {
     // Append failed, send failure ack.
     worker_data_[worker_id].stats_.failed_appends->Add(1);
-    LOG_WARN(options_.info_log,
-        "AppendAsync failed (%s)",
+    LOG_ERROR(options_.info_log,
+        "AppendAsync failed for Topic(%s,%s) in Log(%" PRIu64 ") (%s)",
+        msg->GetNamespaceId().ToString().c_str(),
+        msg->GetTopicName().ToString().c_str(),
+        logid,
         append_status.ToString().c_str());
     options_.info_log->Flush();
     SendAck(msg.get(),
@@ -232,7 +244,12 @@ void Pilot::SendAck(MessageData* msg,
   if (!st.ok()) {
     // This is entirely possible, other end may have disconnected by the time
     // we get round to sending an ack. This shouldn't be a rare occurrence.
-    LOG_INFO(options_.info_log, "Failed to send ack to stream (%llu)", origin);
+    LOG_WARN(options_.info_log,
+      "SendAck failed. Stream(%llu) Topic(%s,%s): %s",
+      origin,
+      msg->GetNamespaceId().ToString().c_str(),
+      msg->GetTopicName().ToString().c_str(),
+      st.ToString().c_str());
   }
 }
 
