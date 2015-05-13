@@ -181,6 +181,21 @@ TEST(Messaging, Goodbye) {
   ASSERT_EQ(goodbye2.GetOriginType(), goodbye1.GetOriginType());
 }
 
+TEST(Messaging, InvalidEnum) {
+  // create a message
+  MessageGoodbye goodbye1(
+    Tenant::GuestTenant,
+    MessageGoodbye::Code(MessageGoodbye::Code::Graceful + 10) /* invalid */,
+    MessageGoodbye::Server);
+
+  // serialize the message
+  Slice original = goodbye1.Serialize();
+
+  // Should fail to deserialize.
+  MessageGoodbye goodbye2;
+  ASSERT_TRUE(!goodbye2.DeSerialize(&original).ok());
+}
+
 TEST(Messaging, ErrorHandling) {
   // Test that Message::CreateNewInstance handles bad messages.
   TenantID tenant = Tenant::GuestTenant;

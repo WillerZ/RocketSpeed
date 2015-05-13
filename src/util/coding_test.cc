@@ -304,6 +304,11 @@ enum class Fixed16 : uint16_t { empty = 0, x = 0x1234 };
 enum class Fixed32 : uint32_t { empty = 0, x = 0x12345678 };
 enum class Fixed64 : uint64_t { empty = 0, x = 0x1234567898765432 };
 
+bool ValidateEnum(Fixed8) { return true; }
+bool ValidateEnum(Fixed16) { return true; }
+bool ValidateEnum(Fixed32) { return true; }
+bool ValidateEnum(Fixed64) { return true; }
+
 TEST(Coding, FixedEnum) {
   Fixed8  in8  = Fixed8::x,  out8  = Fixed8::empty;
   Fixed16 in16 = Fixed16::x, out16 = Fixed16::empty;

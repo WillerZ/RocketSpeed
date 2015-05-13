@@ -442,7 +442,7 @@ inline bool GetFixedEnum8(Slice* input, T* value) {
     return false;
   }
   *value = static_cast<T>(data);
-  return true;
+  return ValidateEnum(*value);
 }
 
 template <typename T>
@@ -454,7 +454,7 @@ inline bool GetFixedEnum16(Slice* input, T* value) {
     return false;
   }
   *value = static_cast<T>(data);
-  return true;
+  return ValidateEnum(*value);
 }
 
 template <typename T>
@@ -466,7 +466,7 @@ inline bool GetFixedEnum32(Slice* input, T* value) {
     return false;
   }
   *value = static_cast<T>(data);
-  return true;
+  return ValidateEnum(*value);
 }
 
 template <typename T>
@@ -478,7 +478,7 @@ inline bool GetFixedEnum64(Slice* input, T* value) {
     return false;
   }
   *value = static_cast<T>(data);
-  return true;
+  return ValidateEnum(*value);
 }
 
 }  // namespace rocketspeed

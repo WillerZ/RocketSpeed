@@ -119,4 +119,8 @@ class RollcallEntry {
   static const char ROLLCALL_ENTRY_VERSION_CURRENT= 1;
 };
 
+inline bool ValidateEnum(RollcallEntry::EntryType e) {
+  return e >= RollcallEntry::Error && e <= RollcallEntry::UnSubscriptionRequest;
+}
+
 }  // namespace rocketspeed

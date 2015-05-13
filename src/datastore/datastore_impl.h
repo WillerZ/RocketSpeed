@@ -97,6 +97,10 @@ class KeyValue {
   static const char DATASTORE_VERSION_CURRENT = 1;
 };
 
+inline bool ValidateEnum(KeyValue::EntryType e) {
+  return e >= KeyValue::Error && e <= KeyValue::Success;
+}
+
 class IteratorImpl;
 
 class DataStoreImpl : public DataStore {

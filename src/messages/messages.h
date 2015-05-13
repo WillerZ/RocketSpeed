@@ -41,6 +41,10 @@ enum MessageType : uint8_t {
   mGoodbye = 0x07,            // goodbye
 };
 
+inline bool ValidateEnum(MessageType e) {
+  return e >= mPing && e <= mGoodbye;
+}
+
 /*
  * The metadata messages can be of two subtypes
  */
@@ -50,6 +54,10 @@ enum MetadataType : uint8_t {
   mUnSubscribe = 0x02              // unsubscribe
 };
 
+inline bool ValidateEnum(MetadataType e) {
+  return e >= mSubscribe && e <= mUnSubscribe;
+}
+
 /**
  * Type of gaps that may appear in the logs.
  */
@@ -58,6 +66,10 @@ enum GapType : uint8_t {
   kDataLoss = 0x01,   // Catastrophic failure, acknowledged data was lost.
   kRetention = 0x02,  // Gap due to data falling out of retention period.
 };
+
+inline bool ValidateEnum(GapType e) {
+  return e >= kBenign && e <= kRetention;
+}
 
 /*
  * A topic:bool pair to indicate whether to subscribe or unsubscribe
@@ -201,6 +213,10 @@ class MessagePing : public Message {
   PingType pingtype_;
   std::string cookie_;
 };
+
+inline bool ValidateEnum(MessagePing::PingType e) {
+  return e >= MessagePing::Request && e <= MessagePing::Response;
+}
 
 /*
  * This is a data message.
@@ -386,6 +402,10 @@ class MessageMetadata : public Message {
   std::vector<TopicPair> topics_;
 };
 
+inline bool ValidateEnum(MessageMetadata::MetaType e) {
+  return e >= MessageMetadata::Request && e <= MessageMetadata::Response;
+}
+
 /*
  * This is a data ack message.
  * The ack is sent back to the producer after a publish.
@@ -459,6 +479,10 @@ class MessageDataAck : public Message {
   // type of this message: mDataAck
   AckVector acks_;  // message acks
 };
+
+inline bool ValidateEnum(MessageDataAck::AckStatus e) {
+  return e >= MessageDataAck::Success && e <= MessageDataAck::Failure;
+}
 
 /*
  * This message indicates a gap in the logs.
@@ -585,5 +609,12 @@ class MessageGoodbye : public Message {
   OriginType origin_type_;
 };
 
+inline bool ValidateEnum(MessageGoodbye::Code e) {
+  return e >= MessageGoodbye::SocketError && e <= MessageGoodbye::Graceful;
+}
+
+inline bool ValidateEnum(MessageGoodbye::OriginType e) {
+  return e >= MessageGoodbye::Client && e <= MessageGoodbye::Server;
+}
 
 }  // namespace rocketspeed
