@@ -121,6 +121,8 @@ class CopilotWorker {
   }
 
  private:
+  struct Subscription;
+
   // Callback for worker loop commands.
   void CommandCallback(CopilotWorkerCommand command);
 
@@ -151,12 +153,22 @@ class CopilotWorker {
   // Forward data to subscribers.
   void ProcessDeliver(std::unique_ptr<Message> msg);
 
-  // Fprward gap to subscribers.
+  // Forward gap to subscribers.
   void ProcessGap(std::unique_ptr<Message> msg);
 
   // Remove all subscriptions for a client.
   void ProcessGoodbye(std::unique_ptr<Message> msg,
                       StreamID origin);
+
+  void ProcessRouterUpdate(std::shared_ptr<ControlTowerRouter> router);
+
+  // Closes stream to a control tower, and updates all affected subscriptions.
+  void CloseControlTowerStream(StreamID stream);
+
+  // Attempts to re-establish subscriptions on behalf of a client.
+  void ResendSubscriptions(LogID log_id,
+                           const TopicUUID& uuid,
+                           Subscription* sub);
 
   // Removes a single subscription.
   // May update subscription to control tower.
@@ -197,22 +209,48 @@ class CopilotWorker {
   // My worker id
   int myid_;
 
-  // Subscription metadata
+  // Subscription metadata per client.
   struct Subscription {
     Subscription(StreamID id,
                  SequenceNumber seq_no,
-                 int _worker_id)
+                 int _worker_id,
+                 TenantID _tenant_id)
     : stream_id(id)
     , seqno(seq_no)
-    , worker_id(_worker_id) {}
+    , worker_id(_worker_id)
+    , tenant_id(_tenant_id) {}
 
-    StreamID stream_id;    // The subscriber
-    SequenceNumber seqno;  // Lowest seqno to accept
-    int worker_id;         // The event loop worker for client.
+    struct Tower {
+      explicit Tower(StreamID _stream_id)
+      : stream_id(_stream_id) {}
+
+      StreamID stream_id;
+    };
+
+    Tower* FindTower(StreamID tower_stream) {
+      for (Tower& tower : towers) {
+        if (tower.stream_id == tower_stream) {
+          return &tower;
+        }
+      }
+      return nullptr;
+    }
+
+    StreamID stream_id;           // The subscriber
+    SequenceNumber seqno;         // Lowest seqno to accept
+    int worker_id;                // The event loop worker for client.
+    TenantID tenant_id;           // Tenant ID of the subscriber.
+    autovector<Tower, 1> towers;  // Tower subscriptions.
   };
 
-  // Map of topics to active subscriptions.
-  std::unordered_map<TopicUUID, std::vector<Subscription>> subscriptions_;
+  struct TopicState {
+    explicit TopicState(LogID _log_id) : log_id(_log_id) {}
+    LogID log_id;
+    std::vector<std::unique_ptr<Subscription>> subscriptions;
+  };
+
+  // State of subscriptions for a single topic.
+  std::unordered_map<TopicUUID, TopicState> topics_;
 
   // Map of client to topics subscribed to.
   struct TopicInfo {

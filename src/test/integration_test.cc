@@ -796,6 +796,7 @@ TEST(IntegrationTest, NewControlTower) {
 
   // Stop Control Tower
   cluster.GetControlTower()->Stop();
+  cluster.GetControlTowerLoop()->Stop();
 
   // Send another message to a different topic.
   ASSERT_OK(client->Publish(GuestTenant,
@@ -821,10 +822,22 @@ TEST(IntegrationTest, NewControlTower) {
   ASSERT_OK(cluster.GetCopilot()->UpdateControlTowers(std::move(new_towers)));
 
   // Listen for the message.
+  // This subscription request should be routed to the new control tower.
   client->ListenTopics(GuestTenant,
     { SubscriptionRequest(namespace_id, "NewControlTower2", true, 1) });
 
   // Wait for the message.
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+
+  // Send a message on the old topic again.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            "NewControlTower1",
+                            namespace_id,
+                            topic_options,
+                            "message3",
+                            publish_callback).status);
+
+  // The copilot should have re-subscribed us to the new control tower.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
 }
 

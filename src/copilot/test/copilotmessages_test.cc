@@ -186,9 +186,6 @@ TEST(CopilotTest, Rollcall) {
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }
 
-  /* sleep override */
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
   // Ensure that all subscriptions were found in the rollcall log
   ASSERT_TRUE(checkpoint2.TimedWait(std::chrono::seconds(5)));
 

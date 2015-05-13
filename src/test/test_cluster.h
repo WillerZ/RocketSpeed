@@ -101,6 +101,10 @@ class LocalTestCluster {
     return control_tower_;
   }
 
+  MsgLoop* GetControlTowerLoop() {
+    return control_tower_loop_.get();
+  }
+
   std::shared_ptr<LogStorage> GetLogStorage();
 
   std::shared_ptr<LogRouter> GetLogRouter();

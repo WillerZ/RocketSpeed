@@ -52,8 +52,7 @@ bool CopilotWorker::Forward(std::shared_ptr<ControlTowerRouter> new_router) {
 void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
   // Process CopilotWorkerCommand
   if (command.IsRouterUpdate()) {
-    LOG_VITAL(options_.info_log, "Updating control tower router");
-    control_tower_router_ = command.GetRouterUpdate();
+    ProcessRouterUpdate(command.GetRouterUpdate());
   } else {
     std::unique_ptr<Message> message = command.GetMessage();
     Message* msg = message.get();
@@ -128,9 +127,11 @@ void CopilotWorker::ProcessMetadataResponse(const TopicPair& request,
       request.topic_type == MetadataType::mSubscribe ? "" : "un",
       request.topic_name.c_str());
 
-  // Get the list of subscriptions for this topic.
   if (request.topic_type == MetadataType::mUnSubscribe) {
-
+    // TODO(pja) 1 : Need to handle this, but control tower doesn't currently
+    // send unsolicited unsubscribes, so there's no use case for this yet.
+    // The only time control tower will send us an unsubscribe is if we ask
+    // for one, in which case we've already handled it.
   }
 }
 
@@ -144,44 +145,55 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       msg->GetTopicName().ToString().c_str());
 
   TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
-  auto it = subscriptions_.find(uuid);
-  if (it != subscriptions_.end()) {
+  auto it = topics_.find(uuid);
+  if (it != topics_.end()) {
+    TopicState& topic = it->second;
     auto seqno = msg->GetSequenceNumber();
     auto prev_seqno = msg->GetPrevSequenceNumber();
     std::vector<std::pair<ClientID, int>> destinations;
 
     // Send to all subscribers.
-    for (auto& subscription : it->second) {
-      StreamID recipient = subscription.stream_id;
+    for (auto& sub : topic.subscriptions) {
+      StreamID recipient = sub->stream_id;
 
-      // Also do not send a response if the seqno is too low.
-      if (subscription.seqno > seqno) {
+      // Do not send a response if the seqno is too low.
+      if (sub->seqno > seqno) {
         LOG_INFO(options_.info_log,
                  "Data not delivered to %llu"
                  " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
                  recipient,
                  seqno,
-                 subscription.seqno);
+                 sub->seqno);
         continue;
       }
 
       // or too high.
-      if (subscription.seqno < prev_seqno) {
+      if (sub->seqno < prev_seqno) {
         LOG_INFO(options_.info_log,
                  "Data not delivered to %llu"
                  " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
                  recipient,
                  prev_seqno,
-                 subscription.seqno);
+                 sub->seqno);
+        continue;
+      }
+
+      // or not matching zeroes.
+      if (sub->seqno == 0 && prev_seqno != 0) {
+        LOG_INFO(options_.info_log,
+                 "Data not delivered to %llu"
+                 " (prev_seqno@%" PRIu64 " not 0)",
+                 recipient,
+                 prev_seqno);
         continue;
       }
 
       // Send to worker loop.
       Status status = options_.msg_loop->SendResponse(*msg,
                                                       recipient,
-                                                      subscription.worker_id);
+                                                      sub->worker_id);
       if (status.ok()) {
-        subscription.seqno = seqno + 1;
+        sub->seqno = seqno + 1;
 
         LOG_INFO(options_.info_log,
                  "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %llu",
@@ -207,42 +219,53 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
       msg->GetEndSequenceNumber(),
       msg->GetTopicName().c_str());
   TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
-  auto it = subscriptions_.find(uuid);
-  if (it != subscriptions_.end()) {
+  auto it = topics_.find(uuid);
+  if (it != topics_.end()) {
+    TopicState& topic = it->second;
     auto prev_seqno = msg->GetStartSequenceNumber();
     auto next_seqno = msg->GetEndSequenceNumber();
 
     // Send to all subscribers.
-    for (auto& subscription : it->second) {
-      StreamID recipient = subscription.stream_id;
+    for (auto& sub : topic.subscriptions) {
+      StreamID recipient = sub->stream_id;
 
-      // Also ignore if the seqno is too low.
-      if (subscription.seqno > next_seqno) {
+      // Ignore if the seqno is too low.
+      if (sub->seqno > next_seqno) {
         LOG_INFO(options_.info_log,
                  "Gap ignored for %llu"
                  " (next_seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
                  recipient,
                  next_seqno,
-                 subscription.seqno);
+                 sub->seqno);
         continue;
       }
 
       // or too high.
-      if (subscription.seqno < prev_seqno) {
+      if (sub->seqno < prev_seqno) {
         LOG_INFO(options_.info_log,
                  "Gap ignored for %llu"
                  " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
                  recipient,
                  prev_seqno,
-                 subscription.seqno);
+                 sub->seqno);
+        continue;
+      }
+
+      // or not matching zeroes.
+      if (sub->seqno == 0 && prev_seqno != 0) {
+        LOG_INFO(options_.info_log,
+                 "Gap ignored for %llu"
+                 " (prev_seqno@%" PRIu64 " not 0)",
+                 recipient,
+                 prev_seqno);
         continue;
       }
 
       // Send to worker loop.
       Status status = options_.msg_loop->SendResponse(
-          *msg, recipient, subscription.worker_id);
+          *msg, recipient, sub->worker_id);
       if (status.ok()) {
-        subscription.seqno = next_seqno + 1;
+        sub->seqno = next_seqno + 1;
 
         LOG_INFO(options_.info_log,
                  "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %llu",
@@ -269,115 +292,106 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
       request.seqno,
       subscriber);
 
-  bool notify_control_tower = false;
   MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
+  const TenantID tenant_id = msg->GetTenantID();
 
   // Insert into client-topic map. Doesn't matter if it was already there.
   TopicInfo topic_info { request.topic_name, request.namespace_id, logid };
   client_topics_[subscriber].insert(topic_info);
 
+  // Find/insert topic state.
   TopicUUID uuid(request.namespace_id, request.topic_name);
-  auto topic_iter = subscriptions_.find(uuid);
-  if (topic_iter == subscriptions_.end()) {
-    // No subscribers on this topic, create new topic entry.
-    std::vector<Subscription> subscribers{ Subscription(subscriber,
-                                                        request.seqno,
-                                                        worker_id) };
-    subscriptions_.emplace(uuid, subscribers);
-    notify_control_tower = true;
-  } else {
-    // Already have subscriptions on this topic.
-    // First check if we already have a subscription for this subscriber.
-    bool found = false;
-    SequenceNumber earliest_seqno = request.seqno + 1;
-    for (auto& subscription : topic_iter->second) {
-      if (subscription.stream_id == subscriber) {
-        assert(!found);  // should never have a duplicate subscription
-        // Already a subscriber. Do we need to update seqno?
-        if (request.seqno == 0 || subscription.seqno == 0) {
-          // Requesting with seqno == 0 means we want to subscribe from *now*.
-          // Always need to notify the control_tower because the control tower
-          // will need to tell us the correct seqno, which will be updated
-          // locally in the metadata response.
-          subscription.seqno = request.seqno;
-          notify_control_tower = true;
-        } else if (subscription.seqno == request.seqno) {
-          // Already subscribed at the correct seqno.
-        } else if (subscription.seqno > request.seqno) {
-          // Existing subscription is ahead, rewind control tower subscription
-          // TODO(pja) 1 : may need new subscriber ID here
-          subscription.seqno = request.seqno;
-          notify_control_tower = true;
-        } else {
-          // Existing subscription is behind, just let it catch up.
-          // TODO(pja) 1 : may need new subscriber ID here
-          subscription.seqno = request.seqno;
-        }
-        // Update the worker_id for this subscription, in case it changed.
-        subscription.worker_id = worker_id;
-        found = true;
-      }
-      // Find earliest seqno subscription for this topic.
-      if (subscription.seqno != 0) {
-        earliest_seqno = std::min(earliest_seqno, subscription.seqno);
-      }
-    }
+  auto topic_iter = topics_.find(uuid);
+  if (topic_iter == topics_.end()) {
+    topic_iter = topics_.emplace(uuid, TopicState(logid)).first;
+  }
+  TopicState& topic = topic_iter->second;
 
-    if (!found) {
-      if (earliest_seqno <= request.seqno) {
-        // Already subscribed to a point before the request, we can just ack
-        // the client request and let the tailer catch up.
-        // TODO(pja) 1 : may take a long time to catch up, so may need to
-        // notify the CT.
-        topic_iter->second.emplace_back(subscriber,
-                                        request.seqno,
-                                        worker_id);
-      } else {
-        // Need to add new subscription and rewind existing subscription.
-        topic_iter->second.emplace_back(subscriber,
-                                        request.seqno,
-                                        worker_id);
-        notify_control_tower = true;
+  // First check if we already have a subscription for this subscriber.
+  Subscription* this_sub = nullptr;
+  SequenceNumber earliest_seqno = request.seqno + 1;
+  Subscription* earliest_sub = nullptr;
+  for (auto& sub : topic.subscriptions) {
+    if (sub->stream_id == subscriber) {
+      assert(!this_sub);  // should never have a duplicate subscription
+      if (sub->seqno != request.seqno) {
+        sub->towers.clear();  // new upstream sub needed
       }
+      sub->seqno = request.seqno;
+      sub->worker_id = worker_id;
+      this_sub = sub.get();
+    }
+    // Find earliest seqno subscription for this topic.
+    if (sub->seqno != 0) {
+      earliest_seqno = std::min(earliest_seqno, sub->seqno);
+      earliest_sub = sub.get();
     }
   }
 
-  if (notify_control_tower) {
-    // Find control tower responsible for this topic's log.
-    HostId const* recipient = nullptr;
-    if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
-      int outgoing_worker_id = copilot_->GetLogWorker(logid, *recipient);
+  if (!this_sub) {
+    // No existing subscription, so insert new one.
+    topic.subscriptions.emplace_back(
+      new Subscription(subscriber,
+                       request.seqno,
+                       worker_id,
+                       tenant_id));
+    this_sub = topic.subscriptions.back().get();
+  }
 
-      // Find or open a new stream socket to this control tower.
-      auto socket = GetControlTowerSocket(
-          *recipient, options_.msg_loop, outgoing_worker_id);
-
-      // Forward request to control tower to update the copilot subscription.
-      Status status = options_.msg_loop->SendRequest(*msg,
-                                                     socket,
-                                                     outgoing_worker_id);
-      if (!status.ok()) {
-        LOG_INFO(options_.info_log,
-          "Failed to send metadata response to %s",
-          recipient->ToString().c_str());
-      } else {
-        LOG_INFO(options_.info_log,
-          "Sent subscription for Topic(%s)@%" PRIu64 " to %s",
-          request.topic_name.c_str(), request.seqno,
-          recipient->ToString().c_str());
-      }
+  // Do we need new tower subscription for this subscriber?
+  if (this_sub->towers.empty()) {
+    // Check if existing tower subscription can be used.
+    if (earliest_sub &&
+        earliest_seqno <= request.seqno &&
+        !earliest_sub->towers.empty()) {
+      // Use the same towers and let them catch up.
+      this_sub->towers = earliest_sub->towers;
     } else {
-      // This should only ever happen if all control towers are offline.
-      LOG_WARN(options_.info_log,
-        "Failed to find control tower for log ID %" PRIu64,
-        static_cast<uint64_t>(logid));
+      // Find control tower responsible for this topic's log.
+      HostId const* recipient = nullptr;
+      if (control_tower_router_->GetControlTower(logid, &recipient).ok()) {
+        int outgoing_worker_id = copilot_->GetLogWorker(logid, *recipient);
+
+        // Find or open a new stream socket to this control tower.
+        auto socket = GetControlTowerSocket(
+            *recipient, options_.msg_loop, outgoing_worker_id);
+
+        // Forward request to control tower to update the copilot subscription.
+        Status status = options_.msg_loop->SendRequest(*msg,
+                                                       socket,
+                                                       outgoing_worker_id);
+        if (!status.ok()) {
+          LOG_WARN(options_.info_log,
+            "Failed to send subscribe to %s",
+            recipient->ToString().c_str());
+        } else {
+          LOG_INFO(options_.info_log,
+            "Sent subscription for Topic(%s)@%" PRIu64 " to %s",
+            request.topic_name.c_str(), request.seqno,
+            recipient->ToString().c_str());
+
+          // Update the towers for the subscription.
+          if (this_sub) {
+            StreamID stream_id = socket->GetStreamID();
+            Subscription::Tower* tower = this_sub->FindTower(stream_id);
+            if (!tower) {
+              this_sub->towers.emplace_back(stream_id);
+            }
+          }
+
+          // Update rollcall topic.
+          RollcallWrite(tenant_id,
+                        request.topic_name, request.namespace_id,
+                        request.topic_type, logid, worker_id, subscriber);
+        }
+      } else {
+        // This should only ever happen if all control towers are offline.
+        LOG_WARN(options_.info_log,
+          "Failed to find control tower for log ID %" PRIu64,
+          static_cast<uint64_t>(logid));
+      }
     }
   }
-
-  // Update rollcall topic.
-  RollcallWrite(msg->GetTenantID(),
-                request.topic_name, request.namespace_id,
-                request.topic_type, logid, worker_id, subscriber);
 }
 
 void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
@@ -411,20 +425,22 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
   client_topics_[subscriber].erase(topic_info);
 
   TopicUUID uuid(namespace_id, topic_name);
-  auto topic_iter = subscriptions_.find(uuid);
-  if (topic_iter != subscriptions_.end()) {
+  auto topic_iter = topics_.find(uuid);
+  if (topic_iter != topics_.end()) {
     // Find our subscription and remove it.
+    TopicState& topic = topic_iter->second;
     SequenceNumber earliest_other_seqno = 0;
     SequenceNumber our_seqno = 0;
-    auto& subscriptions = topic_iter->second;
+    auto& subscriptions = topic.subscriptions;
     for (auto it = subscriptions.begin(); it != subscriptions.end(); ) {
-      if (it->stream_id == subscriber) {
+      Subscription* sub = it->get();
+      if (sub->stream_id == subscriber) {
         // This is our subscription, remove it.
-        our_seqno = it->seqno;
+        our_seqno = sub->seqno;
         it = subscriptions.erase(it);
       } else {
         // Find earliest other seqno subscription for this topic.
-        earliest_other_seqno = std::min(earliest_other_seqno, it->seqno);
+        earliest_other_seqno = std::min(earliest_other_seqno, sub->seqno);
         ++it;
       }
     }
@@ -458,6 +474,9 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
               recipient->ToString().c_str());
         }
       }
+
+      // Remove from topic map.
+      topics_.erase(topic_iter);
     } else if (our_seqno < earliest_other_seqno) {
       // Need to update control tower.
       HostId const* recipient = nullptr;
@@ -502,31 +521,123 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
                                    StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(message.get());
 
-  LOG_INFO(options_.info_log,
+  switch (goodbye->GetOriginType()) {
+    case MessageGoodbye::OriginType::Client: {
+      // This is a goodbye from one of the clients.
+      LOG_INFO(options_.info_log,
            "Copilot received goodbye for client %llu",
            origin);
 
-  if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Client) {
-    // This is a goodbye from one of the clients.
-    auto it = client_topics_.find(origin);
-    if (it != client_topics_.end()) {
-      // Unsubscribe from all topics.
-      // Making a copy because RemoveSubscription will modify client_topics_;
-      auto topics_copy = it->second;
-      for (const TopicInfo& info : topics_copy) {
-        RemoveSubscription(goodbye->GetTenantID(),
-                           origin,
-                           info.namespace_id,
-                           info.topic_name,
-                           info.logid,
-                           0);  // The worked id is a dummy because we do not
-                                //  need to send any response back to the client
+      auto it = client_topics_.find(origin);
+      if (it != client_topics_.end()) {
+        // Unsubscribe from all topics.
+        // Making a copy because RemoveSubscription will modify client_topics_;
+        auto topics_copy = it->second;
+        for (const TopicInfo& info : topics_copy) {
+          RemoveSubscription(goodbye->GetTenantID(),
+                             origin,
+                             info.namespace_id,
+                             info.topic_name,
+                             info.logid,
+                             0);  // The worked id is a dummy because we do not
+                                // need to send any response back to the client
+        }
+        client_topics_.erase(it);
       }
-      client_topics_.erase(it);
+      break;
     }
-  } else {
-    // TODO(stupaq) resubscribe all lost subscriptions
+
+    case MessageGoodbye::OriginType::Server: {
+      LOG_WARN(options_.info_log,
+           "Copilot received goodbye for server %llu",
+           origin);
+      CloseControlTowerStream(origin);
+      break;
+    }
   }
+}
+
+void CopilotWorker::ProcessRouterUpdate(
+    std::shared_ptr<ControlTowerRouter> router) {
+  LOG_VITAL(options_.info_log, "Updating control tower router");
+  control_tower_router_ = std::move(router);
+
+  // Resubscribe all subscriptions that don't have a control tower subscription.
+  for (auto& uuid_topic : topics_) {
+    const TopicUUID& uuid = uuid_topic.first;
+    for (auto& sub : uuid_topic.second.subscriptions) {
+      if (sub->towers.empty()) {
+        ResendSubscriptions(uuid_topic.second.log_id, uuid, sub.get());
+      }
+    }
+  }
+}
+
+void CopilotWorker::CloseControlTowerStream(StreamID stream) {
+  // Update control_tower_sockets_.
+  // Removes all entries with StreamID == stream.
+  for (auto& socket : control_tower_sockets_) {
+    std::unordered_map<int, StreamSocket>& streams = socket.second;
+    for (auto it = streams.begin(); it != streams.end(); ) {
+      if (it->second.GetStreamID() == stream) {
+        it = streams.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  // Resubscribe all subscriptions being served by the removed stream.
+  for (auto& uuid_topic : topics_) {
+    const TopicUUID& uuid = uuid_topic.first;
+    for (auto& sub : uuid_topic.second.subscriptions) {
+      // sub->towers are the tower streams providing data for this subscription.
+      // Remove the streams that matches the closed stream.
+      bool affected = false;
+      for (auto it = sub->towers.begin(); it != sub->towers.end(); ) {
+        if (it->stream_id == stream) {
+          affected = true;
+          it = sub->towers.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      // If a stream was closed on this subscription, re-send the subscription
+      // so that it can be processed by other control towers.
+      if (affected) {
+        ResendSubscriptions(uuid_topic.second.log_id, uuid, sub.get());
+      }
+    }
+  }
+}
+
+void CopilotWorker::ResendSubscriptions(LogID log_id,
+                                        const TopicUUID& uuid,
+                                        Subscription* sub) {
+  LOG_INFO(options_.info_log,
+    "Re-establishing subscription for %llu on %s@%" PRIu64,
+    sub->stream_id,
+    uuid.ToString().c_str(),
+    sub->seqno);
+
+  Slice namespace_id;
+  Slice topic_name;
+  uuid.GetTopicID(&namespace_id, &topic_name);
+  TopicPair request { sub->seqno,
+                      topic_name.ToString(),
+                      MetadataType::mSubscribe,
+                      namespace_id.ToString() };
+  std::unique_ptr<MessageMetadata> metadata(
+    new MessageMetadata(sub->tenant_id,
+                        MessageMetadata::MetaType::Request,
+                        { request }));
+
+  ProcessSubscribe(std::unique_ptr<Message>(metadata.release()),
+                   request,
+                   log_id,
+                   sub->worker_id,
+                   sub->stream_id);
 }
 
 //

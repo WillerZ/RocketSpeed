@@ -259,7 +259,8 @@ class MessageData : public Message {
   SequenceNumber GetSequenceNumber() const { return seqno_; }
 
   /**
-   * @return The message previous Sequence Number.
+   * @return The message previous Sequence Number. For subscriptions to seqno
+   *         0, this will be 0.
    */
   SequenceNumber GetPrevSequenceNumber() const { return seqno_prev_; }
 
@@ -525,10 +526,17 @@ class MessageGap : public Message {
     return gap_type_;
   }
 
+  /**
+   * @return First sequence number (inclusive) of the gap. For subscriptions to
+   *         0, this will be 0.
+   */
   SequenceNumber GetStartSequenceNumber() const {
     return gap_from_;
   }
 
+  /**
+   * @return Last sequence number (inclusive) of the gap.
+   */
   SequenceNumber GetEndSequenceNumber() const {
     return gap_to_;
   }
