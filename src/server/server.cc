@@ -65,6 +65,14 @@ DEFINE_int32(supervisor_port,
              rocketspeed::SupervisorLoop::DEFAULT_PORT,
              "supervisor port number");
 
+DEFINE_bool(heartbeat_enabled, false, "enabled the stream heartbeat check");
+DEFINE_int32(heartbeat_timeout,
+             900,
+             "heartbeat timeout for the idle streams, in seconds");
+DEFINE_int32(heartbeat_expire_batch,
+             rocketspeed::EventLoop::Options::kDefaultHeartbeatExpireBatch,
+             "number of streams to expire in one blocking call");
+
 DEFINE_string(rs_log_dir, "", "directory for server logs");
 
 #ifdef NDEBUG
@@ -131,12 +139,19 @@ Status RocketSpeed::Initialize(
   auto make_msg_loop = [&] (int port, int workers, std::string name) {
     LOG_VITAL(info_log_, "Constructing MsgLoop port=%d workers=%d name=%s",
       port, workers, name.c_str());
+    MsgLoop::Options options;
+    options.event_loop.heartbeat_timeout =
+      std::chrono::seconds(FLAGS_heartbeat_timeout);
+    options.event_loop.heartbeat_expire_batch =
+      FLAGS_heartbeat_expire_batch;
+    options.event_loop.heartbeat_enabled = FLAGS_heartbeat_enabled;
     return new MsgLoop(env_,
                        env_options_,
                        port,
                        workers,
                        info_log_,
-                       std::move(name));
+                       std::move(name),
+                       std::move(options));
   };
 
   ControlTower* tower = nullptr;

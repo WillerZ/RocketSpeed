@@ -17,6 +17,7 @@
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"
+#include "src/util/common/object_pool.h"
 #include "src/pilot/options.h"
 
 namespace rocketspeed {

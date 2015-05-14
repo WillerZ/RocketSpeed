@@ -24,6 +24,20 @@ class Logger;
 
 class MsgLoop : public MsgLoopBase {
  public:
+
+  /**
+    * Options is a helper class used for passing the additional arguments to the
+    * MsgLoop constructor.
+    */
+  class Options {
+   public:
+    // passed client_id. default is ""
+    ClientID client_id;
+    // the options used for constructing the underlying event loop. will get
+    // modified within the constructor.
+    EventLoop::Options event_loop;
+  };
+
   // Create a listener to receive messages on a specified port.
   // When a message arrives, invoke the specified callback.
   MsgLoop(BaseEnv* env,
@@ -32,7 +46,7 @@ class MsgLoop : public MsgLoopBase {
           int num_workers,
           const std::shared_ptr<Logger>& info_log,
           std::string name,
-          ClientID client_id = "");
+          Options options = Options());
 
   virtual ~MsgLoop();
 

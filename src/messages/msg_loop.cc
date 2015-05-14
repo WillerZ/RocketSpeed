@@ -69,7 +69,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  int num_workers,
                  const std::shared_ptr<Logger>& info_log,
                  std::string name,
-                 ClientID client_id)
+                 MsgLoop::Options options)
     : MsgLoopBase(env)
     , worker_index_(&free_thread_local)
     , env_options_(env_options)
@@ -85,18 +85,18 @@ MsgLoop::MsgLoop(BaseEnv* env,
   hostid_ = HostId(std::string(myname), port);
 
   // Generate client ID from the host ID if none was specified.
-  if (client_id.empty()) {
-    client_id = hostid_.ToClientId();
+  if (options.client_id.empty()) {
+    options.client_id = hostid_.ToClientId();
   } else {
     // Provided client ID shouldn't include the worker byte.
-    client_id.push_back('a');
+    options.client_id.push_back('a');
   }
 
   // Setup event loop client IDs.
   assert(num_workers < 256);
   worker_client_ids_.reset(new ClientID[num_workers]);
   for (int i = 0; i < num_workers; ++i) {
-    worker_client_ids_[i] = client_id;
+    worker_client_ids_[i] = options.client_id;
     worker_client_ids_[i].back() = static_cast<char>('a' + i);
   }
 
@@ -112,6 +112,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
 
   // Create a stream allocator for the entire stream ID space.
   auto allocs = StreamAllocator().Divide(num_workers);
+  options.event_loop.stats_prefix = name;
   for (int i = 0; i < num_workers; ++i) {
     EventLoop* event_loop = new EventLoop(env,
                                           env_options,
@@ -120,7 +121,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
                                           event_callback,
                                           accept_callback,
                                           std::move(allocs[i]),
-                                          name);
+                                          options.event_loop);
     event_loops_.emplace_back(event_loop);
   }
 

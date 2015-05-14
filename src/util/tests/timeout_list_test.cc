@@ -70,10 +70,28 @@ TEST(TimeoutListTest, CallbackExpiry) {
   tlist.ProcessExpired(std::chrono::milliseconds(100),
                     [&](std::string colour) {
                       expired.emplace_back(std::move(colour));
-                    });
+                    }, -1);
 
   ASSERT_EQ(expired.size(), 3);
   ASSERT_EQ(tlist.Size(), 0);
+}
+
+TEST(TimeoutListTest, BatchLimitExpiry) {
+  TimeoutList<std::string> tlist;
+  tlist.Add("Red");
+  tlist.Add("Green");
+  tlist.Add("blue");
+  /* sleep override */
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  // expire some items
+  std::vector<std::string> expired;
+  tlist.ProcessExpired(std::chrono::milliseconds(100),
+                    [&](std::string colour) {
+                      expired.emplace_back(std::move(colour));
+                    }, 2);
+
+  ASSERT_EQ(expired.size(), 2);
+  ASSERT_EQ(tlist.Size(), 1);
 }
 
 }  // namespace rocketspeed

@@ -28,9 +28,9 @@
 #include "src/messages/unique_stream_map.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
-#include "src/util/common/object_pool.h"
 #include "src/util/common/thread_check.h"
 #include "src/util/common/multi_producer_queue.h"
+#include "src/util/timeout_list.h"
 
 // libevent2 forward declarations.
 struct event;
@@ -143,6 +143,8 @@ class StreamRouter {
 
 class EventLoop {
  public:
+  class Options;
+
   static void EnableDebug();
 
   /**
@@ -154,6 +156,7 @@ class EventLoop {
    * @param accept_callback Callback invoked when a new client connects
    * @param command_queue_size The size of the internal command queue
    * @param allocator Represents a set of stream IDs available to this loop.
+   * @param options All the arbitrary options
    */
   EventLoop(BaseEnv* env,
             EnvOptions env_options,
@@ -162,8 +165,7 @@ class EventLoop {
             EventCallbackType event_callback,
             AcceptCallbackType accept_callback,
             StreamAllocator allocator,
-            const std::string& stats_prefix = "",
-            uint32_t command_queue_size = 1000000);
+            Options options);
 
   virtual ~EventLoop();
 
@@ -280,6 +282,31 @@ class EventLoop {
   // Shutdown libevent. Should be called at end of main().
   static void GlobalShutdown();
 
+
+  /**
+    * Option is a helper class used for passing the additional arguments to the
+    * EventLoop constructor.
+    */
+  class Options {
+   public:
+    static const uint32_t kDefaultCommandQueueSize = 1000000;
+    static constexpr std::chrono::seconds kDefaultHeartbeatTimeout =
+      std::chrono::seconds(900);
+    static const int kDefaultHeartbeatExpireBatch = -1;
+
+    // prefix used for statistics
+    std::string stats_prefix;
+    // initial size of the command queue
+    uint32_t command_queue_size = kDefaultCommandQueueSize;
+    // timeout after which all inactive streams should be considered expired
+    std::chrono::seconds heartbeat_timeout = kDefaultHeartbeatTimeout;
+    // since we expire the streams in the blocking call, limit the number of
+    // streams expired at once. the rest will be processed in the next call.
+    int heartbeat_expire_batch = kDefaultHeartbeatExpireBatch;
+    // whether the stream heartbeat check is enabled
+    bool heartbeat_enabled = false;
+  };
+
  private:
   friend class SocketEvent;
   friend class StreamRouter;
@@ -337,6 +364,19 @@ class EventLoop {
   // Number of open connections, including accepted connections, that we haven't
   // received any data on.
   std::atomic<uint64_t> active_connections_;
+
+  // weather the stream heartbeat check is enabled
+  bool heartbeat_enabled_;
+  // the timed list used for tracking the stream activity & expire unused ones
+  TimeoutList<StreamID> heartbeat_;
+  // timeout after which all inactive streams should be considered expired
+  std::chrono::seconds heartbeat_timeout_;
+  // since we expire the streams in the blocking call, limit the number of
+  // streams expired at once. the rest will be processed in the next call.
+  int heartbeat_expire_batch_;
+  // the callback invoked on the expired streams in the heartbeat_. it should
+  // be responsible for closing the stream properly
+  std::function<void(StreamID)> heartbeat_expired_callback_;
 
   // Thread check
   rocketspeed::ThreadCheck thread_check_;

@@ -103,13 +103,17 @@ template <class T> class TimeoutList {
   * @param timeout  Elapsed time to evict an entry
   * @param callback Callback invoked for each evicted/expired entry,
   *                 should take a T parameter e.g. [](T expired_item) {...}
+  * @param batch_limit
+  *                 limit the number of entries to be expired & processed.
+  *                  -1 exipres all qualified entries.
   */
   template <class Rep, class Period, class ExpiryCallback>
   void ProcessExpired(const std::chrono::duration<Rep, Period>& timeout,
-                      ExpiryCallback callback) {
+                      ExpiryCallback callback,
+                      int batch_limit) {
     auto tm_now = std::chrono::steady_clock::now();
     auto it = lmap_.begin();
-    while (it != lmap_.end()) {
+    while (it != lmap_.end() && (batch_limit < 0 || batch_limit-- > 0)) {
       if ((tm_now - it->second) <= timeout) {
         // no more to process, as this is in ascending order
         return;

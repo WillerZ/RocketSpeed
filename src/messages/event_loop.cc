@@ -206,13 +206,13 @@ class SocketEvent {
     } else if (what & EV_SIGNAL) {
     }
 
+    EventLoop* const event_loop = sev->event_loop_;
     if (!st.ok()) {
       // Inform MsgLoop that clients have disconnected.
       auto origin_type = sev->was_initiated_
                              ? MessageGoodbye::OriginType::Server
                              : MessageGoodbye::OriginType::Client;
 
-      EventLoop* event_loop = sev->event_loop_;
       // Remove and close streams that were assigned to this connection.
       auto globals = event_loop->stream_router_.RemoveConnection(sev);
       // Delete the socket event.
@@ -228,6 +228,13 @@ class SocketEvent {
                                origin_type));
         event_loop->Dispatch(std::move(msg), global);
       }
+    }
+
+    if (event_loop->heartbeat_enabled_) {
+      event_loop->heartbeat_.ProcessExpired(
+        event_loop->heartbeat_timeout_,
+        event_loop->heartbeat_expired_callback_,
+        event_loop->heartbeat_expire_batch_);
     }
   }
 
@@ -400,6 +407,10 @@ class SocketEvent {
                  "New stream (%llu) was associated with socket fd(%d)",
                  global,
                  fd_);
+      }
+
+      if (do_insert && event_loop_->heartbeat_enabled_) {
+        event_loop_->heartbeat_.Add(global);
       }
 
       if (msg->GetMessageType() == MessageType::mGoodbye) {
@@ -1138,9 +1149,6 @@ void EventLoop::EnableDebugThreadUnsafe(DebugCallback log_cb) {
 #endif
 }
 
-/**
- * Constructor for a Message Loop
- */
 EventLoop::EventLoop(BaseEnv* env,
                      EnvOptions env_options,
                      int port_number,
@@ -1148,8 +1156,7 @@ EventLoop::EventLoop(BaseEnv* env,
                      EventCallbackType event_callback,
                      AcceptCallbackType accept_callback,
                      StreamAllocator allocator,
-                     const std::string& stats_prefix,
-                     uint32_t command_queue_size) :
+                     EventLoop::Options options) :
   env_(env),
   env_options_(env_options),
   port_number_(port_number),
@@ -1160,12 +1167,12 @@ EventLoop::EventLoop(BaseEnv* env,
   accept_callback_(std::move(accept_callback)),
   listener_(nullptr),
   shutdown_eventfd_(rocketspeed::port::Eventfd(true, true)),
-  command_queue_(command_queue_size),
+  command_queue_(options.command_queue_size),
   command_ready_eventfd_(rocketspeed::port::Eventfd(true, true)),
   stream_router_(allocator.Split()),
   outbound_allocator_(std::move(allocator)),
   active_connections_(0),
-  stats_(stats_prefix) {
+  stats_(options.stats_prefix) {
 
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
@@ -1180,6 +1187,29 @@ EventLoop::EventLoop(BaseEnv* env,
       std::unique_ptr<Command> command, uint64_t issued_time) {
     static_cast<ExecuteCommand*>(command.get())->Execute();
   };
+
+  heartbeat_enabled_ = options.heartbeat_enabled;
+  heartbeat_timeout_ = options.heartbeat_timeout;
+  heartbeat_expire_batch_ = options.heartbeat_expire_batch;
+  heartbeat_expired_callback_ =
+    [this](StreamID global) {
+      std::unique_ptr<Message> msg(
+          new MessageGoodbye(Tenant::InvalidTenant,
+                             MessageGoodbye::Code::HeartbeatTimeout,
+                             MessageGoodbye::OriginType::Client));
+      // handle the goodbye message by the server
+      Dispatch(std::move(msg), global);
+      // send the goodbye to the client, it should close the stream after the
+      // t6778565 is completed
+      // TODO(rpetrovic): update the comment after t6778565
+      std::string serial;
+      msg->SerializeToString(&serial);
+      // note that we do not check the command queue size in HandleSendCommand
+      // right now, as we would do in SendCommand
+      HandleSendCommand(
+        SerializedSendCommand::Response(std::move(serial), {global}),
+        env_->NowMicros());
+    };
 
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }

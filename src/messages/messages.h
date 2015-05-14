@@ -577,6 +577,7 @@ class MessageGoodbye : public Message {
   enum Code : char {
     SocketError = 0x00,
     Graceful = 0x01,
+    HeartbeatTimeout = 0x02
   };
 
   /**
@@ -626,7 +627,8 @@ class MessageGoodbye : public Message {
 };
 
 inline bool ValidateEnum(MessageGoodbye::Code e) {
-  return e >= MessageGoodbye::SocketError && e <= MessageGoodbye::Graceful;
+  return e >= MessageGoodbye::SocketError &&
+         e <= MessageGoodbye::HeartbeatTimeout;
 }
 
 inline bool ValidateEnum(MessageGoodbye::OriginType e) {
