@@ -288,43 +288,34 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
     batch_size = static_cast<int>(kSubscribeBatchSize);
   }
 
-  std::vector<SubscriptionRequest> topics;
-  topics.reserve(batch_size);
-
   size_t sent = 0;
 
   SequenceNumber start = 0;   // start sequence number (0 = only new records)
-  SubscriptionRequest request(nsid, "", true, start);
   size_t c = 0;
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
-    request.topic_name.assign("benchmark." + std::to_string(i));
+    std::string topic_name("benchmark." + std::to_string(i));
     if (FLAGS_delay_subscribe) {
       // Find the first seqno published to this topic (or 0 if none published).
-      auto it = first_seqno.find(request.topic_name);
+      auto it = first_seqno.find(topic_name);
       if (it == first_seqno.end()) {
-        request.start = 0;
+        start = 0;
       } else {
-        request.start = it->second;
+        start = it->second;
       }
     }
 
-    topics.push_back(request);
+    // Subscribe.
+    consumers[c++ % consumers.size()]
+        ->Client::Subscribe(GuestTenant, nsid, topic_name, start);
+    ++sent;
+
     if (i % batch_size == batch_size - 1) {
-      // send a subscription request
-      consumers[c++ % consumers.size()]->ListenTopics(GuestTenant, topics);
-      sent += topics.size();
       if (sent >= kSubscribeBatchSize) {
         // Have sent the batch size now, sleep a little for copilot.
         env->SleepForMicroseconds(kBatchDurationMicros);
         sent -= kSubscribeBatchSize;
       }
-      topics.clear();
     }
-  }
-
-  // subscribe to all remaining topics
-  if (topics.size() != 0) {
-    consumers[c++ % consumers.size()]->ListenTopics(GuestTenant, topics);
   }
 }
 
@@ -625,11 +616,7 @@ int main(int argc, char** argv) {
       LOG_ERROR(info_log, "Failed to open client: %s.", st.ToString().c_str());
       return 1;
     }
-    st = client->Start(subscribe_callback, receive_callback);
-    if (!st.ok()) {
-      LOG_ERROR(info_log, "Failed to start client: %s.", st.ToString().c_str());
-      return 1;
-    }
+    client->SetDefaultCallbacks(subscribe_callback, receive_callback);
     clients.emplace_back(client.release());
   }
   rocketspeed::NamespaceID nsid =

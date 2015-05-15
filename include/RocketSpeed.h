@@ -81,14 +81,21 @@ class Client {
   virtual ~Client() = default;
 
   /**
-   * Starts the client and restores subscription data according to provided
-   * strategy.
-   * @param subscribe_callback Invoked on successfull or failed attempt to
-   * subscribe.
-   * @param receive_callback Invoked on each received message.
+   * Sets default callback for announcing subscription status and message
+   * delivery.
+   *
+   * This method is NOT thread-safe, if ever called, it must be right after
+   * creating the client from the same thread. Caller must ensure that this call
+   * "happened-before" any call which creates a new subscription.
+   *
+   * @param subscription_callback See docs for corresponding callback in
+   *                              subscribe method.
+   * @param deliver_callback See docs for corresponding callback in
+   *                         subscribe method.
    */
-  virtual Status Start(SubscribeCallback subscribe_callback = nullptr,
-                       MessageReceivedCallback receive_callback = nullptr) = 0;
+  virtual void SetDefaultCallbacks(
+      SubscribeCallback subscription_callback = nullptr,
+      MessageReceivedCallback deliver_callback = nullptr) = 0;
 
   /**
    * Asynchronously publishes a new message to the Topic. The return parameter
@@ -111,22 +118,8 @@ class Client {
                                 const NamespaceID& topic_namespace,
                                 const TopicOptions& options,
                                 const Slice& data,
-                                PublishCallback callback,
+                                PublishCallback callback = nullptr,
                                 const MsgId message_id = MsgId()) = 0;
-
-  /**
-   * Initiates the chain of events to subscribe to a topic.
-   * The SubscribeCallback is invoked when this client
-   * is successfully subscribed to the specified topic(s).
-   *
-   * Messages arriving for this topic will be returned to the
-   * application via invocation to MessageReceivedCallback.
-   *
-   * @param tenant_id ID of tenant responsible for the subscription.
-   * @param requests a vector describing subscription/unsubscription requests
-   */
-  virtual void ListenTopics(const TenantID tenant_id,
-                            const std::vector<SubscriptionRequest>& names) = 0;
 
   /**
    * Subscribes to a topic with provided parameters.
@@ -136,6 +129,10 @@ class Client {
    * message received callback.
    *
    * @param parameters Parameters of the subscription.
+   * @param subscription_callback Invoked to notify termination of the
+   *                              subscription.
+   * @param deliver_callback Invoked with every message received on the
+   *                         subscription.
    * @return Status::OK() iff subscription request was successfully enqueued.
    */
   virtual Status Subscribe(

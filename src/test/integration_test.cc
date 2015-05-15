@@ -70,7 +70,6 @@ TEST(IntegrationTest, OneMessage) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(nullptr, nullptr));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -169,16 +168,12 @@ TEST(IntegrationTest, TrimAll) {
     publish_sem.Post();
   };
 
-  auto subscription_callback = [&] (SubscriptionStatus ss) {};
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {};
-
   // Create RocketSpeed client.
   ClientOptions options;
   options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -288,16 +283,12 @@ TEST(IntegrationTest, TrimFirst) {
     publish_sem.Post();
   };
 
-  auto subscription_callback = [&] (SubscriptionStatus ss) {};
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {};
-
   // Create RocketSpeed client.
   ClientOptions options;
   options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
 
   // Publish messages.
   for (int i = 1; i < num_publish; ++i) {
@@ -361,7 +352,7 @@ TEST(IntegrationTest, TrimGapHandling) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+  client->SetDefaultCallbacks(subscription_callback, receive_callback);
 
   // Publish messages.
   SequenceNumber seqnos[num_messages];
@@ -389,14 +380,14 @@ TEST(IntegrationTest, TrimGapHandling) {
   ASSERT_OK(cluster.GetLogRouter()->GetLogID(ns, topics[1], &log_id2));
   ASSERT_EQ(log_id, log_id2);  // opts.single_log = true; should ensure this.
 
-  auto test_receipt = [&] (int topic, SequenceNumber seqno, int expected) {
+  auto test_receipt = [&](int topic, SequenceNumber seqno, int expected) {
     // Tests that subscribing to topic@seqno results in 'expected' messages.
-    client->ListenTopics(GuestTenant, {{ ns, topics[topic], true, seqno }});
+    ASSERT_OK(client->Subscribe(GuestTenant, ns, topics[topic], seqno));
     while (expected--) {
       ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
     }
     ASSERT_TRUE(!recv_sem[topic].TimedWait(std::chrono::milliseconds(100)));
-    client->ListenTopics(GuestTenant, {{ ns, topics[topic], false, seqno }});
+    ASSERT_OK(client->Unsubscribe(ns, topics[topic]));
   };
 
   test_receipt(0, seqnos[0], 5);
@@ -452,7 +443,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+  client->SetDefaultCallbacks(subscription_callback, receive_callback);
 
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {
@@ -462,13 +453,9 @@ TEST(IntegrationTest, SequenceNumberZero) {
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
 
-  { // Subscribe using seqno 0.
-    std::vector<SubscriptionRequest> subscriptions = {
-        SubscriptionRequest(ns, topic, true, 0)
-    };
-    client->ListenTopics(GuestTenant, subscriptions);
-    ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
-  }
+  // Subscribe using seqno 0.
+  ASSERT_OK(client->Subscribe(GuestTenant, ns, topic, 0));
+  ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
 
   // Should not receive any of the last three messages.
   // Send 3 more different messages.
@@ -485,12 +472,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
     ASSERT_TRUE(received == expected);
   }
 
-  { // Unsubscribe from previously subscribed topic.
-    std::vector<SubscriptionRequest> subscriptions = {
-      SubscriptionRequest(ns, topic, false, 0)
-    };
-    client->ListenTopics(GuestTenant, subscriptions);
-  }
+  // Unsubscribe from previously subscribed topic.
+  ASSERT_OK(client->Unsubscribe(ns, topic));
 
   // Send some messages and wait for the acks.
   for (int i = 6; i < 9; ++i) {
@@ -500,13 +483,9 @@ TEST(IntegrationTest, SequenceNumberZero) {
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
 
-  { // Subscribe using seqno 0.
-    std::vector<SubscriptionRequest> subscriptions = {
-        SubscriptionRequest(ns, topic, true, 0)
-    };
-    client->ListenTopics(GuestTenant, subscriptions);
-    ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
-  }
+  // Subscribe using seqno 0.
+  ASSERT_OK(client->Subscribe(GuestTenant, ns, topic, 0));
+  ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
 
   // Send 3 more messages again.
   for (int i = 9; i < 12; ++i) {
@@ -631,9 +610,6 @@ TEST(IntegrationTest, LostConnection) {
   // RocketSpeed callbacks;
   auto publish_callback = [&](std::unique_ptr<ResultStatus> rs) {};
 
-  auto subscription_callback = [&](SubscriptionStatus ss) {
-  };
-
   auto receive_callback = [&](std::unique_ptr<MessageReceived> mr) {
     ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
     ASSERT_TRUE(mr->GetContents().ToString() == data);
@@ -646,7 +622,7 @@ TEST(IntegrationTest, LostConnection) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Send a message.
   ASSERT_OK(client->Publish(GuestTenant,
@@ -657,9 +633,7 @@ TEST(IntegrationTest, LostConnection) {
                             publish_callback).status);
 
   // Listen on a topic.
-  std::vector<SubscriptionRequest> subscriptions = {
-      SubscriptionRequest(namespace_id, topic, true, 1)};
-  client->ListenTopics(GuestTenant, subscriptions);
+  ASSERT_OK(client->Subscribe(GuestTenant, namespace_id, topic, 1));
 
   // Wait for the message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
@@ -708,12 +682,6 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   MsgId message_id = msgid_generator.Generate();
 
   // RocketSpeed callbacks;
-  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
-  };
-
-  auto subscription_callback = [&] (SubscriptionStatus ss) {
-  };
-
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
     ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
     ASSERT_TRUE(mr->GetContents().ToString() == data);
@@ -726,7 +694,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -734,16 +702,13 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
                             namespace_id,
                             topic_options,
                             Slice(data),
-                            publish_callback,
+                            nullptr,
                             message_id);
   ASSERT_TRUE(ps.status.ok());
   ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
-  std::vector<SubscriptionRequest> subscriptions = {
-    SubscriptionRequest(namespace_id, topic, true, 1)
-  };
-  client->ListenTopics(GuestTenant, subscriptions);
+  ASSERT_OK(client->Subscribe(GuestTenant, namespace_id, topic, 1));
 
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);
@@ -763,9 +728,6 @@ TEST(IntegrationTest, NewControlTower) {
   TopicOptions topic_options;
 
   // RocketSpeed callbacks
-  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {};
-  auto subscription_callback = [&] (SubscriptionStatus ss) {};
-
   port::Semaphore msg_received;
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
     msg_received.Post();
@@ -777,19 +739,18 @@ TEST(IntegrationTest, NewControlTower) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(subscription_callback, receive_callback));
+  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Send a message.
   ASSERT_OK(client->Publish(GuestTenant,
                             "NewControlTower1",
                             namespace_id,
                             topic_options,
-                            "message1",
-                            publish_callback).status);
+                            "message1").status);
 
   // Listen for the message.
-  client->ListenTopics(GuestTenant,
-    { SubscriptionRequest(namespace_id, "NewControlTower1", true, 1) });
+  ASSERT_OK(
+      client->Subscribe(GuestTenant, namespace_id, "NewControlTower1", 1));
 
   // Wait for the message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
@@ -803,8 +764,7 @@ TEST(IntegrationTest, NewControlTower) {
                             "NewControlTower2",
                             namespace_id,
                             topic_options,
-                            "message2",
-                            publish_callback).status);
+                            "message2").status);
 
   // Start new control tower (only).
   LocalTestCluster::Options new_opts;
@@ -823,8 +783,8 @@ TEST(IntegrationTest, NewControlTower) {
 
   // Listen for the message.
   // This subscription request should be routed to the new control tower.
-  client->ListenTopics(GuestTenant,
-    { SubscriptionRequest(namespace_id, "NewControlTower2", true, 1) });
+  ASSERT_OK(
+      client->Subscribe(GuestTenant, namespace_id, "NewControlTower2", 1));
 
   // Wait for the message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
@@ -834,8 +794,7 @@ TEST(IntegrationTest, NewControlTower) {
                             "NewControlTower1",
                             namespace_id,
                             topic_options,
-                            "message3",
-                            publish_callback).status);
+                            "message3").status);
 
   // The copilot should have re-subscribed us to the new control tower.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
@@ -858,7 +817,6 @@ TEST(IntegrationTest, SubscriptionStorage) {
                                       &options.storage));
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  ASSERT_OK(client->Start(nullptr, nullptr));
 
   // Create some subscriptions.
   std::vector<SubscriptionParameters> expected = {
@@ -913,14 +871,14 @@ TEST(IntegrationTest, SubscriptionManagement) {
     options[i].config = cluster.GetConfiguration();
     options[i].info_log = info_log;
     ASSERT_OK(Client::Create(std::move(options[i]), &client[i]));
-    ASSERT_OK(client[i]->Start(nullptr,
+    client[i]->SetDefaultCallbacks(nullptr,
       [&, i] (std::unique_ptr<MessageReceived> mr) {
         {
           std::lock_guard<std::mutex> lock(inbox_lock[i]);
           inbox[i].push_back(mr->GetContents().ToString());
         }
         checkpoint[i].Post();
-      }));
+      });
   }
 
   // Publish a message and wait.
@@ -938,12 +896,13 @@ TEST(IntegrationTest, SubscriptionManagement) {
   };
 
   // Subscribe to a topic.
-  auto sub = [&] (int c, Topic topic, SequenceNumber seqno) {
+  auto sub = [&](int c, Topic topic, SequenceNumber seqno) {
     if (seqno == 0) {
       env_->SleepForMicroseconds(100000);  // allow latest seqno to propagate.
     }
-    client[c]->ListenTopics(GuestTenant,
-      {{ GuestNamespace, topic, true, seqno }});
+    // Leave null callbacks, it'll fall back to the ones set when starting the
+    // client.
+    client[c]->Subscribe(GuestTenant, GuestNamespace, topic, seqno);
     if (seqno == 0) {
       env_->SleepForMicroseconds(100000);  // allow latest seqno to propagate.
     }
@@ -951,8 +910,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
 
   // Unsubscribe from a topic.
   auto unsub = [&] (int c, Topic topic) {
-    client[c]->ListenTopics(GuestTenant,
-      {{ GuestNamespace, topic, false, 1 }});
+    ASSERT_OK(client[c]->Unsubscribe(GuestNamespace, topic));
   };
 
   // Receive messages.

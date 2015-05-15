@@ -285,69 +285,21 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-/** An implementation of the Client API that represents a creation error. */
-class ClientCreationError : public Client {
- public:
-  explicit ClientCreationError(const Status& creationStatus)
-    : creationStatus_(creationStatus)
-  {}
-
-  virtual Status Start(SubscribeCallback,
-                       MessageReceivedCallback) {
-    return creationStatus_;
-  }
-
-  virtual PublishStatus Publish(const TenantID tenant_id,
-                                const Topic&,
-                                const NamespaceID&,
-                                const TopicOptions&,
-                                const Slice&,
-                                PublishCallback,
-                                const MsgId message_id) {
-    return PublishStatus(creationStatus_, message_id);
-  }
-
-  virtual void ListenTopics(const TenantID,
-                            const std::vector<SubscriptionRequest>&) {}
-
-  Status Subscribe(SubscriptionParameters,
-                   SubscribeCallback,
-                   MessageReceivedCallback) override {
-    return Status::OK();
-  }
-
-  Status Unsubscribe(NamespaceID namespace_id, Topic topic_name) {
-    return Status::OK();
-  }
-
-  Status Acknowledge(const MessageReceived&) override { return Status::OK(); }
-
-  void SaveSubscriptions(SaveSubscriptionsCallback) override {}
-
-  Status RestoreSubscriptions(std::vector<SubscriptionParameters>*) override {
-    return Status::OK();
-  }
-
- private:
-  Status creationStatus_;
-};
-
-Status Client::Create(ClientOptions options, std::unique_ptr<Client>* client) {
-  assert (client);
-  std::unique_ptr<ClientImpl> clientImpl;
-  auto st = ClientImpl::Create(std::move(options), &clientImpl);
+Status Client::Create(ClientOptions options,
+                      std::unique_ptr<Client>* out_client) {
+  assert(out_client);
+  std::unique_ptr<ClientImpl> client_impl;
+  auto st = ClientImpl::Create(std::move(options), &client_impl);
   if (st.ok()) {
-    client->reset(clientImpl.release());
-  } else {
-    client->reset(new ClientCreationError(st));
+    *out_client = std::move(client_impl);
   }
   return st;
 }
 
 Status ClientImpl::Create(ClientOptions options,
-                          std::unique_ptr<ClientImpl>* client,
+                          std::unique_ptr<ClientImpl>* out_client,
                           bool is_internal) {
-  assert (client);
+  assert(out_client);
 
   // Validate arguments.
   if (!options.info_log) {
@@ -381,13 +333,20 @@ Status ClientImpl::Create(ClientOptions options,
     return st;
   }
 
-  client->reset(new ClientImpl(options.env,
-                               options.config,
-                               options.wake_lock,
-                               std::move(msg_loop_),
-                               std::move(options.storage),
-                               options.info_log,
-                               is_internal));
+  std::unique_ptr<ClientImpl> client(new ClientImpl(options.env,
+                                                    options.config,
+                                                    options.wake_lock,
+                                                    std::move(msg_loop_),
+                                                    std::move(options.storage),
+                                                    options.info_log,
+                                                    is_internal));
+
+  st = client->WaitUntilRunning();
+  if (!st.ok()) {
+    return st;
+  }
+
+  *out_client = std::move(client);
   return Status::OK();
 }
 
@@ -445,21 +404,10 @@ ClientImpl::ClientImpl(BaseEnv* env,
   msg_loop_->RegisterCallbacks(callbacks);
 }
 
-Status ClientImpl::Start(SubscribeCallback subscribe_callback,
-                         MessageReceivedCallback receive_callback) {
-  subscription_callback_ = std::move(subscribe_callback);
-  receive_callback_ = std::move(receive_callback);
-
-  msg_loop_thread_ = env_->StartThread([this]() {
-    msg_loop_->Run();
-  }, "client");
-  msg_loop_thread_spawned_ = true;
-
-  Status st = msg_loop_->WaitUntilRunning();
-  if (!st.ok()) {
-    return st;
-  }
-  return Status::OK();
+void ClientImpl::SetDefaultCallbacks(SubscribeCallback subscription_callback,
+                                     MessageReceivedCallback deliver_callback) {
+  subscription_cb_fallback_ = std::move(subscription_callback);
+  deliver_cb_fallback_ = std::move(deliver_callback);
 }
 
 ClientImpl::~ClientImpl() {
@@ -501,39 +449,22 @@ PublishStatus ClientImpl::Publish(const TenantID tenant_id,
                             message_id);
 }
 
-void ClientImpl::ListenTopics(
-    const TenantID tenant_id,
-    const std::vector<SubscriptionRequest>& requests) {
-  for (const auto& req : requests) {
-    Status st;
-    if (req.subscribe) {
-      st = Client::Subscribe(tenant_id,
-                             std::move(req.namespace_id),
-                             std::move(req.topic_name),
-                             req.start,
-                             subscription_callback_,
-                             receive_callback_);
-    } else {
-      st = Unsubscribe(std::move(req.namespace_id), std::move(req.topic_name));
-    }
-    if (!st.ok() && subscription_callback_) {
-      SubscriptionStatus error_msg;
-      error_msg.tenant_id = tenant_id;
-      error_msg.namespace_id = std::move(req.namespace_id);
-      error_msg.topic_name = std::move(req.topic_name);
-      error_msg.status = std::move(st);
-      subscription_callback_(std::move(error_msg));
-    }
-  }
-}
-
 Status ClientImpl::Subscribe(SubscriptionParameters parameters,
                              SubscribeCallback subscription_callback,
                              MessageReceivedCallback deliver_callback) {
   const auto worker_id = GetWorkerForTopic(parameters.topic_name);
+  // Select callbacks taking fallbacks into an account.
+  if (!subscription_callback) {
+    subscription_callback = subscription_cb_fallback_;
+  }
+  if (!deliver_callback) {
+    deliver_callback = deliver_cb_fallback_;
+  }
   // Create an object that manages state of the subscription.
-  auto moved_sub_state = folly::makeMoveWrapper(SubscriptionState(
-      std::move(parameters), subscription_callback, deliver_callback));
+  auto moved_sub_state = folly::makeMoveWrapper(
+      SubscriptionState(std::move(parameters),
+                        std::move(subscription_callback),
+                        std::move(deliver_callback)));
   // Send command to responsible worker.
   auto action = [this, moved_sub_state]() mutable {
     StartSubscription(moved_sub_state.move());
@@ -673,6 +604,18 @@ Status ClientImpl::RestoreSubscriptions(
 
 Statistics ClientImpl::GetStatisticsSync() const {
   return msg_loop_->GetStatisticsSync();
+}
+
+Status ClientImpl::WaitUntilRunning() {
+  msg_loop_thread_ =
+      env_->StartThread([this]() { msg_loop_->Run(); }, "client");
+  msg_loop_thread_spawned_ = true;
+
+  Status st = msg_loop_->WaitUntilRunning();
+  if (!st.ok()) {
+    return st;
+  }
+  return Status::OK();
 }
 
 int ClientImpl::GetWorkerForTopic(const Topic& name) const {

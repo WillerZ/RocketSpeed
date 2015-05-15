@@ -305,33 +305,6 @@ class SubscriptionStatus {
 };
 
 /**
- * Indicates which topic to subscribe, messages after the specified sequence
- * number will be delivered to the client.
- * A seqno of 0 indicates that the subscriber is interested in receiving
- * whatever data is available via this topic.
- * A seqno of 1 indicates that the subscriber is interested in receiving
- * all the data that was published to this topic.
- */
-class SubscriptionRequest {
- public:
-  NamespaceID namespace_id;
-  Topic topic_name;
-  bool subscribe;
-  SequenceNumber start;
-
-  SubscriptionRequest(NamespaceID _namespace_id,
-                      Topic _topic_name,
-                      bool _subscribe,
-                      SequenceNumber _start)
-      : namespace_id(std::move(_namespace_id)),
-        topic_name(std::move(_topic_name)),
-        subscribe(_subscribe),
-        start(_start) {}
-
-  SubscriptionRequest() {}
-};
-
-/**
  * A host:port pair that uniquely identifies a machine.
  */
 class HostId {

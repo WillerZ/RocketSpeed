@@ -46,17 +46,22 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
       rmsg.DeSerialize(msg->GetContents());
       callback_(std::move(rmsg));
     };
-    rs_client_->Start(subscribe_callback, receive_callback);
+    rs_client_->SetDefaultCallbacks(subscribe_callback, receive_callback);
 
     // send a subscription request for rollcall topic
-    std::vector<SubscriptionRequest> names;
-    names.push_back(SubscriptionRequest(rollcall_namespace_,
-                                        rollcall_topic_,
-                                        true,
-                                        start_point_));
-    rs_client_->ListenTopics(tenant_id, names);
-  } else {
-    rs_client_->Start(nullptr, nullptr);
+    Status st = rs_client_->Client::Subscribe(tenant_id,
+                                              rollcall_namespace_,
+                                              rollcall_topic_,
+                                              start_point_);
+    if (!st.ok()) {
+      subscribe_callback(
+          SubscriptionStatus(tenant_id,
+                             rollcall_namespace_,
+                             rollcall_topic_,
+                             start_point,
+                             true,
+                             std::move(st)));
+    }
   }
 }
 

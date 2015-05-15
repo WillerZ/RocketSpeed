@@ -43,8 +43,8 @@ class ClientImpl : public Client {
 
   virtual ~ClientImpl();
 
-  Status Start(SubscribeCallback subscription_callback,
-               MessageReceivedCallback receive_callback) override;
+  void SetDefaultCallbacks(SubscribeCallback subscription_callback,
+                           MessageReceivedCallback deliver_callback) override;
 
   virtual PublishStatus Publish(const TenantID tenant_id,
                                 const Topic& name,
@@ -53,9 +53,6 @@ class ClientImpl : public Client {
                                 const Slice& data,
                                 PublishCallback callback,
                                 const MsgId messageId);
-
-  virtual void ListenTopics(const TenantID tenant_id,
-                            const std::vector<SubscriptionRequest>& names);
 
   Status Subscribe(SubscriptionParameters parameters,
                    SubscribeCallback subscription_callback,
@@ -95,12 +92,6 @@ class ClientImpl : public Client {
   BaseEnv::ThreadId msg_loop_thread_;
   bool msg_loop_thread_spawned_;
 
-  // callback for incoming ack message for a subscription/unsubscription
-  SubscribeCallback subscription_callback_;
-
-  // callback for incoming data messages
-  MessageReceivedCallback receive_callback_;
-
   // Persistent subscription storage
   std::unique_ptr<SubscriptionStorage> storage_;
 
@@ -116,6 +107,14 @@ class ClientImpl : public Client {
 
   /** The publisher object, which handles write path in the client. */
   PublisherImpl publisher_;
+
+  /** Default callback for announcing subscription status. */
+  SubscribeCallback subscription_cb_fallback_;
+  /** Default callbacks for delivering messages. */
+  MessageReceivedCallback deliver_cb_fallback_;
+
+  /** Starts message loop and waits until it's running. */
+  Status WaitUntilRunning();
 
   /** Shards topics into workers */
   int GetWorkerForTopic(const Topic& name) const;

@@ -62,15 +62,22 @@ DataStoreImpl::DataStoreImpl(
   };
 
   // start the client
-  rs_client_->Start(subscribe_callback, receive_callback);
+  rs_client_->SetDefaultCallbacks(subscribe_callback, receive_callback);
 
   // send a subscription request for rollcall topic
-  std::vector<SubscriptionRequest> names;
-  names.push_back(SubscriptionRequest(datastore_namespace_,
-                                      datastore_topic_,
-                                      true,
-                                      start_point_));
-  rs_client_->ListenTopics(SystemTenant, names);
+  Status st = rs_client_->Client::Subscribe(SystemTenant,
+                                            datastore_namespace_,
+                                            datastore_topic_,
+                                            start_point_);
+  if (!st.ok()) {
+    subscribe_callback(
+        SubscriptionStatus(SystemTenant,
+                           datastore_namespace_,
+                           datastore_topic_,
+                           start_point_,
+                           true,
+                           std::move(st)));
+  }
 
   // If we are creating a new database, then insert a metadata record
   // to indicate that all previous entries are invalid.
