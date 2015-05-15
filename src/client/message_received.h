@@ -13,13 +13,14 @@ namespace rocketspeed {
 /**
  * Interface class for transferring a message from RS-client to application.
  */
-
 class MessageReceivedClient : public MessageReceived {
  public:
-  explicit MessageReceivedClient(std::unique_ptr<Message> m) :
-      msg_(std::move(m)) {
-    data_ = static_cast<const MessageData*>(msg_.get());
-  }
+  MessageReceivedClient(NamespaceID namespace_id,
+                        Topic topic_name,
+                        std::unique_ptr<MessageDeliverData> data)
+      : namespace_id_(std::move(namespace_id)),
+        topic_name_(std::move(topic_name)),
+        data_(std::move(data)) {}
 
   // The sequence number of this message
   virtual SequenceNumber GetSequenceNumber() const {
@@ -27,25 +28,18 @@ class MessageReceivedClient : public MessageReceived {
   }
 
   // The namespace id of this message
-  virtual Slice GetNamespaceId() const {
-    return data_->GetNamespaceId();
-  }
+  virtual Slice GetNamespaceId() const { return Slice(namespace_id_); }
 
   // The Topic name
-  virtual Slice GetTopicName() const {
-    return data_->GetTopicName();
-  }
+  virtual Slice GetTopicName() const { return Slice(topic_name_); }
 
   // The contents of the message
-  virtual Slice GetContents() const {
-    return data_->GetPayload();
-  }
-
-  virtual ~MessageReceivedClient();
+  virtual Slice GetContents() const { return data_->GetPayload(); }
 
  private:
-  const std::unique_ptr<Message> msg_;
-  const MessageData* data_;
+  NamespaceID namespace_id_;
+  Topic topic_name_;
+  std::unique_ptr<MessageDeliverData> data_;
 };
 
 }  // namespace rocketspeed

@@ -413,6 +413,8 @@ class SubscriptionParameters {
   Topic topic_name;
   SequenceNumber start_seqno;
 
+  SubscriptionParameters() = default;
+
   SubscriptionParameters(TenantID _tenant_id,
                          NamespaceID _namespace_id,
                          Topic _topic_name,

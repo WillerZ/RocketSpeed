@@ -298,12 +298,11 @@ TEST(ProxyTest, ForwardGoodbye) {
         // Publish ACKs shall arrive on pilot stream.
         ASSERT_EQ(stream, pilot_stream);
         break;
-      case MessageType::mMetadata:
-        // Subscribe ACKs shall arrive on copilot stream.
+      case MessageType::mUnsubscribe:
+      case MessageType::mDeliverGap:
+      case MessageType::mDeliverData:
+        // Unsubscriptions, data and gaps shall arrive on copilot stream.
         ASSERT_EQ(stream, copilot_stream);
-        break;
-      case MessageType::mDeliver:
-        // Ignore.
         break;
       default:
         ASSERT_TRUE(false);
@@ -317,7 +316,7 @@ TEST(ProxyTest, ForwardGoodbye) {
   std::string publish_serial;
   MessageData publish(MessageType::mPublish,
                       Tenant::GuestTenant,
-                      Slice("topic"),
+                      Slice("ForwardGoodbye"),
                       GuestNamespace,
                       Slice("payload"));
   publish.SerializeToString(&publish_serial);
@@ -328,10 +327,11 @@ TEST(ProxyTest, ForwardGoodbye) {
 
   // Send subscribe message.
   std::string sub_serial;
-  MessageMetadata subscribe(
-      Tenant::GuestTenant,
-      MessageMetadata::MetaType::Request,
-      {TopicPair(1, "topic", MetadataType::mSubscribe, GuestNamespace)});
+  MessageSubscribe subscribe(Tenant::GuestTenant,
+                             GuestNamespace,
+                             "ForwardGoodbye",
+                             1,
+                             123);
   subscribe.SerializeToString(&sub_serial);
 
   ASSERT_OK(proxy->Forward(WrapMessage(sub_serial, copilot_stream, 1),

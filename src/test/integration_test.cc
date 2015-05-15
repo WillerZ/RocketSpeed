@@ -1094,6 +1094,19 @@ TEST(IntegrationTest, SubscriptionManagement) {
   pub(0, "g", "g0");
   recv(0, {"g0"});
   recv(1, {"g0"});
+
+  // Rewinding subscription.
+  sub(0, "h", 0);
+  auto h0 = pub(1, "h", "h0");
+  auto h1 = pub(1, "h", "h1");
+  auto h2 = pub(1, "h", "h2");
+  recv(0, {"h0", "h1", "h2"});
+  sub(0, "h", h2);
+  recv(0, {"h2"});
+  sub(0, "h", h1);
+  recv(0, {"h1", "h2"});
+  sub(0, "h", h0);
+  recv(0, {"h0", "h1", "h2"});
 }
 
 }  // namespace rocketspeed

@@ -112,6 +112,8 @@ class Copilot {
   void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessGap(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessUnsubscribe(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();

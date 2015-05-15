@@ -126,19 +126,21 @@ class ClientImpl : public Client {
   /** Handles termination of a subscription on provided worker thread. */
   void TerminateSubscription(NamespaceID namespace_id, Topic topic_name);
 
-  SubscriptionState* FindOrSendUnsubscribe(const NamespaceID& namespace_id,
-                                           const Topic& topic_name);
+  bool IsNotCopilot(const ClientWorkerData& worker_data, StreamID origin);
 
-  /** Handler for messages received on some topic. */
-  void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);
+  SubscriptionState* FindOrSendUnsubscribe(TenantID tenant_id,
+                                           SubscriptionID sub_id);
 
-   /** Handler for messages received on some topic. */
-  void ProcessGap(std::unique_ptr<Message> msg, StreamID origin);
+  /** Handler for messages carrying data. */
+  void ProcessDeliverData(std::unique_ptr<Message> msg, StreamID origin);
 
-  /** Handler for metadata messages received. */
-  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
+  /** Handler for gap messages. */
+  void ProcessDeliverGap(std::unique_ptr<Message> msg, StreamID origin);
 
-  /** Handler for goodbye messages received. */
+  /** Handler for unsubscribe messages. */
+  void ProcessUnsubscribe(std::unique_ptr<Message> msg, StreamID origin);
+
+  /** Handler for goodbye messages. */
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 };
 

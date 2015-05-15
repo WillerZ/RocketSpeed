@@ -97,14 +97,14 @@ Proxy::Proxy(ProxyOptions options)
   auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1, _2);
   auto goodbye_callback = std::bind(&Proxy::HandleGoodbyeMessage, this, _1, _2);
 
-  // Use same callback for all server-generated messages.
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mMetadata] = callback;
-  callbacks[MessageType::mDataAck] = callback;
-  callbacks[MessageType::mGap] = callback;
-  callbacks[MessageType::mDeliver] = callback;
   callbacks[MessageType::mPing] = callback;
-
+  // Use same callback for all messages originating from pilot.
+  callbacks[MessageType::mDataAck] = callback;
+  // And copilot.
+  callbacks[MessageType::mUnsubscribe] = callback;
+  callbacks[MessageType::mDeliverGap] = callback;
+  callbacks[MessageType::mDeliverData] = callback;
   // Except goodbye. Goodbye needs to be handled separately.
   callbacks[MessageType::mGoodbye] = goodbye_callback;
   msg_loop_->RegisterCallbacks(callbacks);
@@ -343,7 +343,8 @@ void Proxy::HandleMessageForwarded(std::string msg,
   switch (message->GetMessageType()) {
     case MessageType::mPing:
     case MessageType::mPublish:
-    case MessageType::mMetadata:
+    case MessageType::mSubscribe:
+    case MessageType::mUnsubscribe:
     case MessageType::mGoodbye:
       break;
 
@@ -435,7 +436,8 @@ void Proxy::HandleMessageForwardedInorder(MessageType message_type,
         }
         break;
       }
-      case MessageType::mMetadata: {
+      case MessageType::mSubscribe:
+      case MessageType::mUnsubscribe: {
         Status st = config_->GetCopilot(&host);
         if (!st.ok()) {
           LOG_ERROR(info_log_, "Failed to find copilot");

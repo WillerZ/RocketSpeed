@@ -65,23 +65,7 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
         assert(topics.size() == 1);  // Workers only handle 1 topic at a time.
         const TopicPair& request = topics[0];
 
-        if (metadata->GetMetaType() == MessageMetadata::MetaType::Request) {
-          if (request.topic_type == MetadataType::mSubscribe) {
-            // Subscribe
-            ProcessSubscribe(std::move(message),
-                             request,
-                             command.GetLogID(),
-                             command.GetWorkerId(),
-                             command.GetOrigin());
-          } else {
-            // Unsubscribe
-            ProcessUnsubscribe(std::move(message),
-                               request,
-                               command.GetLogID(),
-                               command.GetWorkerId(),
-                               command.GetOrigin());
-          }
-        } else {
+        if (metadata->GetMetaType() == MessageMetadata::MetaType::Response) {
           if (request.topic_type == MetadataType::mSubscribe) {
             // Response from Control Tower.
             ProcessMetadataResponse(request,
@@ -103,6 +87,28 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
         ProcessGap(std::move(message));
       }
       break;
+
+    case MessageType::mSubscribe: {
+      // Subscribe request from a client.
+      auto subscribe = static_cast<MessageSubscribe*>(message.get());
+      ProcessSubscribe(subscribe->GetTenantID(),
+                       subscribe->GetNamespace(),
+                       subscribe->GetTopicName(),
+                       subscribe->GetStartSequenceNumber(),
+                       subscribe->GetSubID(),
+                       command.GetLogID(),
+                       command.GetWorkerId(),
+                       command.GetOrigin());
+    } break;
+
+    case MessageType::mUnsubscribe: {
+      auto unsubscribe = static_cast<MessageUnsubscribe*>(message.get());
+      ProcessUnsubscribe(unsubscribe->GetTenantID(),
+                         unsubscribe->GetSubID(),
+                         unsubscribe->GetReason(),
+                         command.GetWorkerId(),
+                         command.GetOrigin());
+    } break;
 
     case MessageType::mGoodbye: {
         ProcessGoodbye(std::move(message), command.GetOrigin());
@@ -148,9 +154,8 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
   auto it = topics_.find(uuid);
   if (it != topics_.end()) {
     TopicState& topic = it->second;
-    auto seqno = msg->GetSequenceNumber();
-    auto prev_seqno = msg->GetPrevSequenceNumber();
-    std::vector<std::pair<ClientID, int>> destinations;
+    const auto seqno = msg->GetSequenceNumber();
+    const auto prev_seqno = msg->GetPrevSequenceNumber();
 
     // Send to all subscribers.
     for (auto& sub : topic.subscriptions) {
@@ -188,17 +193,20 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
         continue;
       }
 
-      // Send to worker loop.
-      Status status = options_.msg_loop->SendResponse(*msg,
+      // Send message to the client.
+      MessageDeliverData data(sub->tenant_id, sub->sub_id, msg->GetPayload());
+      data.SetSequenceNumbers(prev_seqno, seqno);
+      Status status = options_.msg_loop->SendResponse(data,
                                                       recipient,
                                                       sub->worker_id);
       if (status.ok()) {
         sub->seqno = seqno + 1;
 
         LOG_INFO(options_.info_log,
-                 "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %llu",
+                 "Sent data (%.16s)@%" PRIu64 " for ID(%u) Topic(%s) to %llu",
                  msg->GetPayload().ToString().c_str(),
                  msg->GetSequenceNumber(),
+                 data.GetSubID(),
                  msg->GetTopicName().ToString().c_str(),
                  recipient);
       } else {
@@ -222,8 +230,8 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
   auto it = topics_.find(uuid);
   if (it != topics_.end()) {
     TopicState& topic = it->second;
-    auto prev_seqno = msg->GetStartSequenceNumber();
-    auto next_seqno = msg->GetEndSequenceNumber();
+    const auto prev_seqno = msg->GetStartSequenceNumber();
+    const auto next_seqno = msg->GetEndSequenceNumber();
 
     // Send to all subscribers.
     for (auto& sub : topic.subscriptions) {
@@ -261,16 +269,22 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
         continue;
       }
 
-      // Send to worker loop.
-      Status status = options_.msg_loop->SendResponse(
-          *msg, recipient, sub->worker_id);
+      // Send message to the client.
+      MessageDeliverGap gap(sub->tenant_id, sub->sub_id, msg->GetType());
+      gap.SetSequenceNumbers(prev_seqno, next_seqno);
+      Status status = options_.msg_loop->SendResponse(gap,
+                                                      recipient,
+                                                      sub->worker_id);
+
       if (status.ok()) {
         sub->seqno = next_seqno + 1;
 
         LOG_INFO(options_.info_log,
-                 "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %llu",
+                 "Sent gap %" PRIu64 "-%" PRIu64
+                 " for  subscription ID(%u) Topic(%s) to %llu",
                  msg->GetStartSequenceNumber(),
                  msg->GetEndSequenceNumber(),
+                 gap.GetSubID(),
                  msg->GetTopicName().c_str(),
                  recipient);
       } else {
@@ -281,26 +295,27 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
   }
 }
 
-void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
-                                     const TopicPair& request,
-                                     LogID logid,
-                                     int worker_id,
-                                     StreamID subscriber) {
+void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
+                                     const NamespaceID& namespace_id,
+                                     const Topic& topic_name,
+                                     const SequenceNumber start_seqno,
+                                     const SubscriptionID sub_id,
+                                     const LogID logid,
+                                     const int worker_id,
+                                     const StreamID subscriber) {
   LOG_INFO(options_.info_log,
-      "Received subscribe request for Topic(%s)@%" PRIu64 " for %llu",
-      request.topic_name.c_str(),
-      request.seqno,
+      "Received subscribe request ID(%u) for Topic(%s)@%" PRIu64 " for %llu",
+      sub_id,
+      topic_name.c_str(),
+      start_seqno,
       subscriber);
 
-  MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
-  const TenantID tenant_id = msg->GetTenantID();
-
-  // Insert into client-topic map. Doesn't matter if it was already there.
-  TopicInfo topic_info { request.topic_name, request.namespace_id, logid };
-  client_topics_[subscriber].insert(topic_info);
+  // Insert into client-topic map.
+  client_subscriptions_[subscriber]
+      .emplace(sub_id, TopicInfo{topic_name, namespace_id, logid});
 
   // Find/insert topic state.
-  TopicUUID uuid(request.namespace_id, request.topic_name);
+  TopicUUID uuid(namespace_id, topic_name);
   auto topic_iter = topics_.find(uuid);
   if (topic_iter == topics_.end()) {
     topic_iter = topics_.emplace(uuid, TopicState(logid)).first;
@@ -309,15 +324,15 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
 
   // First check if we already have a subscription for this subscriber.
   Subscription* this_sub = nullptr;
-  SequenceNumber earliest_seqno = request.seqno + 1;
+  SequenceNumber earliest_seqno = start_seqno + 1;
   Subscription* earliest_sub = nullptr;
   for (auto& sub : topic.subscriptions) {
-    if (sub->stream_id == subscriber) {
+    if (sub->stream_id == subscriber && sub->sub_id == sub_id) {
       assert(!this_sub);  // should never have a duplicate subscription
-      if (sub->seqno != request.seqno) {
+      if (sub->seqno != start_seqno) {
         sub->towers.clear();  // new upstream sub needed
       }
-      sub->seqno = request.seqno;
+      sub->seqno = start_seqno;
       sub->worker_id = worker_id;
       this_sub = sub.get();
     }
@@ -332,9 +347,10 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
     // No existing subscription, so insert new one.
     topic.subscriptions.emplace_back(
       new Subscription(subscriber,
-                       request.seqno,
+                       start_seqno,
                        worker_id,
-                       tenant_id));
+                       tenant_id,
+                       sub_id));
     this_sub = topic.subscriptions.back().get();
   }
 
@@ -342,7 +358,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   if (this_sub->towers.empty()) {
     // Check if existing tower subscription can be used.
     if (earliest_sub &&
-        earliest_seqno <= request.seqno &&
+        earliest_seqno <= start_seqno &&
         !earliest_sub->towers.empty()) {
       // Use the same towers and let them catch up.
       this_sub->towers = earliest_sub->towers;
@@ -356,8 +372,14 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
         auto socket = GetControlTowerSocket(
             *recipient, options_.msg_loop, outgoing_worker_id);
 
-        // Forward request to control tower to update the copilot subscription.
-        Status status = options_.msg_loop->SendRequest(*msg,
+        // Send request to control tower to update the copilot subscription.
+        MessageMetadata message(
+            tenant_id, MessageMetadata::MetaType::Request,
+            {TopicPair(start_seqno,
+                       topic_name,
+                       MetadataType::mSubscribe,
+                       namespace_id)});
+        Status status = options_.msg_loop->SendRequest(message,
                                                        socket,
                                                        outgoing_worker_id);
         if (!status.ok()) {
@@ -367,7 +389,7 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
         } else {
           LOG_INFO(options_.info_log,
             "Sent subscription for Topic(%s)@%" PRIu64 " to %s",
-            request.topic_name.c_str(), request.seqno,
+            topic_name.c_str(), start_seqno,
             recipient->ToString().c_str());
 
           // Update the towers for the subscription.
@@ -380,9 +402,9 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
           }
 
           // Update rollcall topic.
-          RollcallWrite(tenant_id,
-                        request.topic_name, request.namespace_id,
-                        request.topic_type, logid, worker_id, subscriber);
+          RollcallWrite(sub_id, tenant_id,
+                        topic_name, namespace_id,
+                        MetadataType::mSubscribe, logid, worker_id, subscriber);
         }
       } else {
         // This should only ever happen if all control towers are offline.
@@ -394,35 +416,43 @@ void CopilotWorker::ProcessSubscribe(std::unique_ptr<Message> message,
   }
 }
 
-void CopilotWorker::ProcessUnsubscribe(std::unique_ptr<Message> message,
-                                       const TopicPair& request,
-                                       LogID logid,
+void CopilotWorker::ProcessUnsubscribe(TenantID tenant_id,
+                                       SubscriptionID sub_id,
+                                       MessageUnsubscribe::Reason reason,
                                        int worker_id,
                                        StreamID subscriber) {
   LOG_INFO(options_.info_log,
-           "Received unsubscribe request for Topic(%s) for %llu",
-           request.topic_name.c_str(),
+           "Received unsubscribe request for ID (%u) on stream %llu",
+           sub_id,
            subscriber);
 
-  MessageMetadata* msg = static_cast<MessageMetadata*>(message.get());
-
-  RemoveSubscription(msg->GetTenantID(),
+  RemoveSubscription(tenant_id,
+                     sub_id,
                      subscriber,
-                     request.namespace_id,
-                     request.topic_name,
-                     logid,
                      worker_id);
 }
 
-void CopilotWorker::RemoveSubscription(TenantID tenant_id,
+void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
+                                       const SubscriptionID sub_id,
                                        const StreamID subscriber,
-                                       const NamespaceID& namespace_id,
-                                       const Topic& topic_name,
-                                       LogID logid,
-                                       int worker_id) {
-  // Remove from client-topic map. Doesn't matter if it was already there.
-  TopicInfo topic_info { topic_name, namespace_id, logid };
-  client_topics_[subscriber].erase(topic_info);
+                                       const int worker_id) {
+  NamespaceID namespace_id;
+  Topic topic_name;
+  LogID logid;
+  {  // Remove from client-topic map.
+    auto& client_subscriptions = client_subscriptions_[subscriber];
+    auto it = client_subscriptions.find(sub_id);
+    if (it == client_subscriptions.end()) {
+      // We broadcast unsubscribes to all workers, this is perfectly normal
+      // situation.
+      return;
+    }
+    auto& topic_info = it->second;
+    namespace_id = std::move(topic_info.namespace_id);
+    topic_name = std::move(topic_info.topic_name);
+    logid = topic_info.logid;
+    client_subscriptions.erase(it);
+  }
 
   TopicUUID uuid(namespace_id, topic_name);
   auto topic_iter = topics_.find(uuid);
@@ -434,7 +464,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
     auto& subscriptions = topic.subscriptions;
     for (auto it = subscriptions.begin(); it != subscriptions.end(); ) {
       Subscription* sub = it->get();
-      if (sub->stream_id == subscriber) {
+      if (sub->stream_id == subscriber && sub->sub_id == sub_id) {
         // This is our subscription, remove it.
         our_seqno = sub->seqno;
         it = subscriptions.erase(it);
@@ -511,7 +541,7 @@ void CopilotWorker::RemoveSubscription(TenantID tenant_id,
       }
     }
     // Update rollcall topic.
-    RollcallWrite(tenant_id, topic_name,
+    RollcallWrite(sub_id, tenant_id, topic_name,
                   namespace_id, MetadataType::mUnSubscribe,
                   logid, worker_id, subscriber);
   }
@@ -528,21 +558,20 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
            "Copilot received goodbye for client %llu",
            origin);
 
-      auto it = client_topics_.find(origin);
-      if (it != client_topics_.end()) {
+      auto it = client_subscriptions_.find(origin);
+      if (it != client_subscriptions_.end()) {
         // Unsubscribe from all topics.
-        // Making a copy because RemoveSubscription will modify client_topics_;
+        // Making a copy because RemoveSubscription will modify
+        // client_subscriptions_;
         auto topics_copy = it->second;
-        for (const TopicInfo& info : topics_copy) {
+        for (const auto& entry : topics_copy) {
           RemoveSubscription(goodbye->GetTenantID(),
+                             entry.first,
                              origin,
-                             info.namespace_id,
-                             info.topic_name,
-                             info.logid,
                              0);  // The worked id is a dummy because we do not
                                 // need to send any response back to the client
         }
-        client_topics_.erase(it);
+        client_subscriptions_.erase(it);
       }
       break;
     }
@@ -624,17 +653,12 @@ void CopilotWorker::ResendSubscriptions(LogID log_id,
   Slice namespace_id;
   Slice topic_name;
   uuid.GetTopicID(&namespace_id, &topic_name);
-  TopicPair request { sub->seqno,
-                      topic_name.ToString(),
-                      MetadataType::mSubscribe,
-                      namespace_id.ToString() };
-  std::unique_ptr<MessageMetadata> metadata(
-    new MessageMetadata(sub->tenant_id,
-                        MessageMetadata::MetaType::Request,
-                        { request }));
 
-  ProcessSubscribe(std::unique_ptr<Message>(metadata.release()),
-                   request,
+  ProcessSubscribe(sub->tenant_id,
+                   namespace_id.ToString(),
+                   topic_name.ToString(),
+                   sub->seqno,
+                   sub->sub_id,
                    log_id,
                    sub->worker_id,
                    sub->stream_id);
@@ -644,7 +668,8 @@ void CopilotWorker::ResendSubscriptions(LogID log_id,
 // Inserts an entry into the rollcall topic.
 //
 void
-CopilotWorker::RollcallWrite(const TenantID tenant_id,
+CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
+                             const TenantID tenant_id,
                              const Topic& topic_name,
                              const NamespaceID& namespace_id,
                              const MetadataType type,
@@ -663,21 +688,23 @@ CopilotWorker::RollcallWrite(const TenantID tenant_id,
   // cannot reference local variables.
   std::function<void()> process_error;
   if (type == MetadataType::mSubscribe) {
-    process_error =
-      [this, topic_name, namespace_id, logid, worker_id, origin, tenant_id] () {
+    process_error = [this, topic_name, namespace_id, logid, worker_id, origin,
+                     tenant_id, sub_id]() {
         copilot_->GetStats(myid_)->numwrites_rollcall_failed->Add(1);
-        std::vector<TopicPair> topics = { TopicPair(0, topic_name,
-                                                  MetadataType::mUnSubscribe,
-                                                  namespace_id) };
-        std::unique_ptr<Message> newmsg(new MessageMetadata(
-                                          tenant_id,
-                                          MessageMetadata::MetaType::Request,
-                                          topics));
+        std::unique_ptr<Message> newmsg(new MessageUnsubscribe(
+            tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested));
         // Start the automatic unsubscribe process. We rely on the assumption
         // that the unsubscribe request can fail only if the client is
         // un-communicable, in which case the client's subscritions are reaped.
         Forward(logid, std::move(newmsg), worker_id, origin);
-      };
+        // Send back message to the client, saying that it should resubscribe.
+        MessageUnsubscribe unsubscribe(tenant_id,
+                                       sub_id,
+                                       MessageUnsubscribe::Reason::kRequested);
+        options_.msg_loop->SendResponse(unsubscribe, origin, worker_id);
+        // We can't do any proper error handling from this thread, as it belongs
+        // to the client used by RollCall.
+    };
   }
 
   // This callback is called when the write to the rollcall topic is complete

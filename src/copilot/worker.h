@@ -132,16 +132,19 @@ class CopilotWorker {
                MessageDataAck::AckStatus status);
 
   // Add a subscriber to a topic.
-  void ProcessSubscribe(std::unique_ptr<Message> msg,
-                        const TopicPair& request,
+  void ProcessSubscribe(TenantID tenant_id,
+                        const NamespaceID& namespace_id,
+                        const Topic& topic_name,
+                        SequenceNumber start_seqno,
+                        SubscriptionID sub_id,
                         LogID logid,
                         int worker_id,
                         StreamID subscriber);
 
   // Remove a subscriber from a topic.
-  void ProcessUnsubscribe(std::unique_ptr<Message> msg,
-                          const TopicPair& request,
-                          LogID logid,
+  void ProcessUnsubscribe(TenantID tenant_id,
+                          SubscriptionID sub_id,
+                          MessageUnsubscribe::Reason reason,
                           int worker_id,
                           StreamID subscriber);
 
@@ -174,14 +177,13 @@ class CopilotWorker {
   // May update subscription to control tower.
   // Does not send response to subscriber.
   void RemoveSubscription(TenantID tenant_id,
-                          const StreamID subscriber,
-                          const NamespaceID& namespace_id,
-                          const Topic& topic_name,
-                          LogID logid,
+                          SubscriptionID sub_id,
+                          StreamID subscriber,
                           int worker_id);
 
   // Write to Rollcall topic
-  void RollcallWrite(const TenantID tenant_id,
+  void RollcallWrite(const SubscriptionID sub_id,
+                     const TenantID tenant_id,
                      const Topic& topic_name,
                      const NamespaceID& namespace_id,
                      const MetadataType type,
@@ -214,11 +216,13 @@ class CopilotWorker {
     Subscription(StreamID id,
                  SequenceNumber seq_no,
                  int _worker_id,
-                 TenantID _tenant_id)
+                 TenantID _tenant_id,
+                 SubscriptionID _sub_id)
     : stream_id(id)
     , seqno(seq_no)
     , worker_id(_worker_id)
-    , tenant_id(_tenant_id) {}
+    , tenant_id(_tenant_id)
+    , sub_id(_sub_id) {}
 
     struct Tower {
       explicit Tower(StreamID _stream_id)
@@ -240,6 +244,7 @@ class CopilotWorker {
     SequenceNumber seqno;         // Lowest seqno to accept
     int worker_id;                // The event loop worker for client.
     TenantID tenant_id;           // Tenant ID of the subscriber.
+    const SubscriptionID sub_id;  // Stream-local ID of this subscription.
     autovector<Tower, 1> towers;  // Tower subscriptions.
   };
 
@@ -254,25 +259,14 @@ class CopilotWorker {
 
   // Map of client to topics subscribed to.
   struct TopicInfo {
-    struct Hash {
-      size_t operator()(const TopicInfo& t) const {
-        // Don't need to include logid, because it is a function of topic_name.
-        return MurmurHash2<Topic, NamespaceID>()(t.topic_name, t.namespace_id);
-      }
-    };
-
-    bool operator==(const TopicInfo& rhs) const {
-      // Don't need to include logid, because it is a function of topic_name.
-      return topic_name == rhs.topic_name && namespace_id == rhs.namespace_id;
-    }
-
     Topic topic_name;
     NamespaceID namespace_id;
     LogID logid;
   };
 
-  typedef std::unordered_set<TopicInfo, TopicInfo::Hash> TopicInfoSet;
-  std::unordered_map<StreamID, TopicInfoSet> client_topics_;
+  using ClientSubscriptions =
+      std::unordered_map<SubscriptionID, TopicInfo, MurmurHash2<size_t>>;
+  std::unordered_map<StreamID, ClientSubscriptions> client_subscriptions_;
 
   /**
    * Keeps track of all opened stream sockets to control towers, the index in

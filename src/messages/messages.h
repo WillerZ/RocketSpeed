@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "include/Slice.h"
@@ -27,22 +28,28 @@
 
 namespace rocketspeed {
 
-/*
- * The message types. The first byte of a message indicates the message type.
- */
-enum MessageType : uint8_t {
-  NotInitialized = 0,         // not initialized yet
-  mPing = 0x01,               // ping data
-  mPublish = 0x02,            // data publish
-  mMetadata = 0x03,           // subscription information
-  mDataAck = 0x04,            // ack for user data
-  mGap = 0x05,                // gap in the log
-  mDeliver = 0x06,            // data delivery
-  mGoodbye = 0x07,            // goodbye
+/** The message types. */
+enum class MessageType : uint8_t {
+  NotInitialized = 0,   // not initialized yet
+  mPing = 0x01,         // ping data
+  mPublish = 0x02,      // data publish
+  mMetadata = 0x03,     // subscription information
+  mDataAck = 0x04,      // ack for user data
+  mGap = 0x05,          // gap in the log
+  mDeliver = 0x06,      // data delivery
+  mGoodbye = 0x07,      // MessageGoodbye
+  mSubscribe = 0x08,    // MessageSubscribe
+  mUnsubscribe = 0x09,  // MessageUnsubscribe
+  mDeliverGap = 0x0A,   // MessageDeliverGap
+  mDeliverData = 0x0B,  // MessageDeliverData
 };
 
+inline std::ostream& operator<<(std::ostream& os, MessageType type) {
+  return os << static_cast<std::underlying_type<MessageType>::type>(type);
+}
+
 inline bool ValidateEnum(MessageType e) {
-  return e >= mPing && e <= mGoodbye;
+  return e >= MessageType::mPing && e <= MessageType::mDeliverData;
 }
 
 /*
@@ -139,7 +146,7 @@ class Message : public Serializer {
   /*
    * Inherited from Serializer
    */
-  virtual Status DeSerialize(Slice* in) = 0;
+  Status DeSerialize(Slice* in) override;
   void SerializeToString(std::string* out) const;
 
   /**
@@ -151,8 +158,14 @@ class Message : public Serializer {
   Message(MessageType type, TenantID tenantid) :
           type_(type), tenantid_(tenantid) {
   }
+
+  explicit Message(MessageType type) : type_(type) {
+  }
+
   Message() : type_(MessageType::NotInitialized) {
   }
+
+  Slice Serialize() const override;
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
@@ -161,7 +174,6 @@ class Message : public Serializer {
 
  private:
   static std::unique_ptr<Message> CreateNewInstance(Slice* in);
-  virtual Slice Serialize() const = 0;
 };
 
 
@@ -624,5 +636,167 @@ inline bool ValidateEnum(MessageGoodbye::Code e) {
 inline bool ValidateEnum(MessageGoodbye::OriginType e) {
   return e >= MessageGoodbye::Client && e <= MessageGoodbye::Server;
 }
+
+/**
+ * Messages exchanged on a subscription.
+ * @{
+ */
+
+/**
+ * ID of the subscription the message belongs to. IDs are uniquely identify
+ * subscription within a stream.
+ */
+typedef uint32_t SubscriptionID;
+
+/** A request to subscribe to provided topic with given parameters. */
+class MessageSubscribe final : public Message {
+ public:
+  MessageSubscribe(TenantID tenant_id,
+                   const NamespaceID& namespace_id,
+                   const Topic& topic_name,
+                   SequenceNumber start_seqno,
+                   SubscriptionID sub_id)
+      : Message(MessageType::mSubscribe, tenant_id),
+        namespace_id_(namespace_id),
+        topic_name_(topic_name),
+        start_seqno_(start_seqno),
+        sub_id_(sub_id) {}
+
+  MessageSubscribe() : Message(MessageType::mSubscribe) {}
+
+  const NamespaceID& GetNamespace() const { return namespace_id_; }
+
+  const Topic& GetTopicName() const { return topic_name_; }
+
+  SequenceNumber GetStartSequenceNumber() const { return start_seqno_; }
+
+  SubscriptionID GetSubID() const { return sub_id_; }
+
+  Slice Serialize() const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  /** Parameters of the subscription. */
+  NamespaceID namespace_id_;
+  Topic topic_name_;
+  SequenceNumber start_seqno_;
+  /** ID of the requested subscription assigned by the subscriber. */
+  SubscriptionID sub_id_;
+};
+
+/**
+ * A request or response which notifies that subscription was terminated by
+ * either side.
+ */
+class MessageUnsubscribe final : public Message {
+ public:
+  enum class Reason : uint8_t {
+    kRequested = 0x00,
+    kBackOff = 0x01,
+    kInvalid = 0x02,
+  };
+
+  MessageUnsubscribe(TenantID tenant_id, SubscriptionID sub_id, Reason reason)
+      : Message(MessageType::mUnsubscribe, tenant_id),
+        sub_id_(sub_id),
+        reason_(reason) {}
+
+  MessageUnsubscribe() : Message(MessageType::mUnsubscribe) {}
+
+  SubscriptionID GetSubID() const { return sub_id_; }
+
+  Reason GetReason() const { return reason_; }
+
+  Slice Serialize() const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  /** ID of the subscription this response refers to. */
+  SubscriptionID sub_id_;
+  /** A feedback to the other party, why this subscription was terminated. */
+  Reason reason_;
+};
+
+inline bool ValidateEnum(MessageUnsubscribe::Reason e) {
+  return e >= MessageUnsubscribe::Reason::kRequested &&
+         e <= MessageUnsubscribe::Reason::kInvalid;
+}
+
+/**
+ * An abstract message delivered on particular subscription.
+ * Carries a pair of sequence numbers and advances subscription state according
+ * to their values. Depending on concrete type may or may not carry extra data.
+ */
+class MessageDeliver : public Message {
+ public:
+  MessageDeliver(MessageType type, TenantID tenant_id, SubscriptionID sub_id)
+      : Message(type, tenant_id), sub_id_(sub_id), seqno_prev_(0), seqno_(0) {}
+
+  explicit MessageDeliver(MessageType type) : Message(type) {}
+  virtual ~MessageDeliver() = 0;
+
+  SubscriptionID GetSubID() const { return sub_id_; }
+
+  SequenceNumber GetPrevSequenceNumber() const { return seqno_prev_; }
+
+  SequenceNumber GetSequenceNumber() const { return seqno_; }
+
+  void SetSequenceNumbers(SequenceNumber seqno_prev, SequenceNumber seqno) {
+    assert(seqno_prev <= seqno);
+    seqno_prev_ = seqno_prev;
+    seqno_ = seqno;
+  }
+
+  Slice Serialize() const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  /** ID of the subscription this response refers to. */
+  SubscriptionID sub_id_;
+  /** Sequence number of the previous message on this subscription. */
+  SequenceNumber seqno_prev_;
+  /** Sequence number of this message. */
+  SequenceNumber seqno_;
+};
+
+inline MessageDeliver::~MessageDeliver() {}
+
+/** A message delivered on particular subscription, which carries no data. */
+class MessageDeliverGap final : public MessageDeliver {
+ public:
+  MessageDeliverGap(TenantID tenant_id, SubscriptionID sub_id, GapType gap_type)
+      : MessageDeliver(MessageType::mDeliverGap, tenant_id, sub_id),
+        gap_type_(gap_type) {}
+
+  MessageDeliverGap() : MessageDeliver(MessageType::mDeliverGap) {}
+
+  GapType GetGapType() const { return gap_type_; }
+
+  Slice Serialize() const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  GapType gap_type_;
+};
+
+/** A message delivered on particular subscription. */
+class MessageDeliverData final : public MessageDeliver {
+ public:
+  MessageDeliverData(TenantID tenant_id, SubscriptionID sub_id, Slice payload)
+      : MessageDeliver(MessageType::mDeliverData, tenant_id, sub_id),
+        payload_(payload) {}
+
+  MessageDeliverData() : MessageDeliver(MessageType::mDeliverData) {}
+
+  Slice GetPayload() const { return payload_; }
+
+  Slice Serialize() const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  /** Payload delivered with the message. */
+  Slice payload_;
+};
+/** @} */
 
 }  // namespace rocketspeed

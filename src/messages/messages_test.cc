@@ -181,6 +181,71 @@ TEST(Messaging, Goodbye) {
   ASSERT_EQ(goodbye2.GetOriginType(), goodbye1.GetOriginType());
 }
 
+TEST(Messaging, MessageSubscribe) {
+  MessageSubscribe msg1(Tenant::GuestTenant,
+                              GuestNamespace,
+                              "MessageSubscribe",
+                              123123,
+                              42);
+
+  Slice original = msg1.Serialize();
+  MessageSubscribe msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+  ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
+  ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
+  ASSERT_EQ(msg1.GetStartSequenceNumber(), msg2.GetStartSequenceNumber());
+  ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+}
+
+TEST(Messaging, MessageUnsubscribe) {
+  MessageUnsubscribe msg1(Tenant::GuestTenant,
+                          42,
+                          MessageUnsubscribe::Reason::kBackOff);
+
+  Slice original = msg1.Serialize();
+  MessageUnsubscribe msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+  ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+}
+
+TEST(Messaging, MessageDeliverGap) {
+  MessageDeliverGap msg1(Tenant::GuestTenant, 42, GapType::kRetention);
+  msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
+
+  Slice original = msg1.Serialize();
+  MessageDeliverGap msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+  ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+  ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
+  ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
+  ASSERT_EQ(msg1.GetGapType(), msg2.GetGapType());
+}
+
+TEST(Messaging, MessageDeliverData) {
+  MessageDeliverData msg1(Tenant::GuestTenant, 42, Slice("payload"));
+  msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
+
+  Slice original = msg1.Serialize();
+  MessageDeliverData msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+  ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+  ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
+  ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
+  ASSERT_EQ(msg1.GetPayload().ToString(), msg2.GetPayload().ToString());
+}
+
 TEST(Messaging, InvalidEnum) {
   // create a message
   MessageGoodbye goodbye1(

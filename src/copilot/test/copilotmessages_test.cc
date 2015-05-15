@@ -140,9 +140,10 @@ TEST(CopilotTest, Rollcall) {
   StreamSocket socket(loop.CreateOutboundStream(
       cluster.GetCopilot()->GetClientId(), 0));
   loop.RegisterCallbacks({
-      {MessageType::mMetadata, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mSubscribe, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mUnsubscribe, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverData, [](std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop.Initialize());
   env_->StartThread(CopilotTest::MsgLoopStart, &loop,
@@ -167,22 +168,18 @@ TEST(CopilotTest, Rollcall) {
       std::move(client), GuestTenant, ns, 0, rollcall_callback);
 
   // send subscribe messages to copilot
-  for (size_t i = 0; i < expected; ++i) {
+  for (SubscriptionID i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
-    auto type = MetadataType::mSubscribe;
-    MessageMetadata msg(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        { TopicPair(0, topic, type, ns) });
+    MessageSubscribe msg(Tenant::GuestTenant, ns, topic, 0, i);
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }
 
   // send unsubscribe messages to copilot
-  for (size_t i = 0; i < expected; ++i) {
+  for (SubscriptionID i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
-    auto type = MetadataType::mUnSubscribe;
-    MessageMetadata msg(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        { TopicPair(0, topic, type, ns) });
+    MessageUnsubscribe msg(Tenant::GuestTenant,
+                           i,
+                           MessageUnsubscribe::Reason::kRequested);
     ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   }
 

@@ -274,6 +274,66 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   }
 }
 
+void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
+  options_.msg_loop->ThreadCheck();
+
+  auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+  LOG_INFO(options_.info_log,
+           "Received subscribe request for Topic(%s, %s)@%" PRIu64,
+           subscribe->GetNamespace().c_str(),
+           subscribe->GetTopicName().c_str(),
+           subscribe->GetStartSequenceNumber());
+
+  // Calculate log ID for this topic.
+  LogID logid;
+  Status st = options_.log_router->GetLogID(subscribe->GetNamespace(),
+                                            subscribe->GetTopicName(),
+                                            &logid);
+  if (!st.ok()) {
+    LOG_WARN(options_.info_log,
+             "Unable to map Topic(%s, %s) to LogID: %s",
+             subscribe->GetNamespace().c_str(),
+             subscribe->GetTopicName().c_str(),
+             st.ToString().c_str());
+    return;
+  }
+
+  // Calculate the destination worker.
+  auto dest_worker_id = static_cast<int>(logid % options_.num_workers);
+  auto& worker = workers_[dest_worker_id];
+
+  // Forward message to responsible worker.
+  auto worker_id = options_.msg_loop->GetThreadWorkerIndex();
+  if (!worker->Forward(logid, std::move(msg), worker_id, origin)) {
+    LOG_WARN(options_.info_log, "Worker %d queue is full.", worker_id);
+  }
+}
+
+void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
+                                 StreamID origin) {
+  options_.msg_loop->ThreadCheck();
+
+  auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
+  LOG_INFO(options_.info_log,
+           "Received unsubscribe for subscription (%u) at stream (%llu)",
+           unsubscribe->GetSubID(),
+           origin);
+
+  // Broadcast to all workers.
+  for (uint32_t i = 0; i < options_.num_workers; ++i) {
+    std::unique_ptr<MessageUnsubscribe> new_msg(new MessageUnsubscribe(
+        unsubscribe->GetTenantID(),
+        unsubscribe->GetSubID(),
+        unsubscribe->GetReason()));
+    LogID logid = 0;  // unused
+    int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
+    workers_[i]->Forward(logid,
+                         std::move(new_msg),
+                         event_loop_worker,
+                         origin);
+  }
+}
+
 void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
@@ -307,6 +367,7 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
 
 // A static method to initialize the callback map
 std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
+  using namespace std::placeholders;
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
   cb[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg,
@@ -325,6 +386,10 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
                                       StreamID origin) {
     ProcessGoodbye(std::move(msg), origin);
   };
+  cb[MessageType::mSubscribe] =
+      std::bind(&Copilot::ProcessSubscribe, this, _1, _2);
+  cb[MessageType::mUnsubscribe] =
+      std::bind(&Copilot::ProcessUnsubscribe, this, _1, _2);
   return cb;
 }
 

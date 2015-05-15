@@ -59,7 +59,6 @@ class SubscriptionState {
       , topic_name_(std::move(parameters.topic_name))
       , subscription_callback_(std::move(subscription_callback))
       , deliver_callback_(std::move(deliver_callback))
-      , state_(State::kSubscribed)
       , expected_seqno_(parameters.start_seqno)
       // If we were to restore state from subscription storage before the
       // subscription advances, we would restore from the next sequence number,
@@ -73,24 +72,43 @@ class SubscriptionState {
 
   const Topic& GetTopicName() const { return topic_name_; }
 
-  void ReceiveMessage(Logger* info_log, std::unique_ptr<MessageGap> gap);
-
-  void ReceiveMessage(Logger* info_log, std::unique_ptr<MessageData> data);
-
-  /** Processes an ACK, returns true iff resubscription must be issued. */
-  bool ReceiveAck(Logger* info_log, const TopicPair& request);
+  void AssignID(const std::shared_ptr<Logger>& info_log,
+                SubscriptionID sub_id) {
+    thread_check_.Check();
+    LOG_INFO(info_log,
+             "Subscription on Topic(%s, %s)@%" PRIu64
+             " for tenant %u assigned ID (%u)",
+             namespace_id_.c_str(),
+             topic_name_.c_str(),
+             expected_seqno_,
+             tenant_id_,
+             sub_id);
+  }
 
   /**
-   * Marks subscription as pending ACK, returns TopicPair which should be
-   * immediately sent to the Copilot.
+   * Processes unsubscribe message, optionally announces its status and decides
+   * on its fate.
    */
-  TopicPair Resubscribe();
+  enum class Action {
+    kTerminate,
+    kResubscribe,
+  };
+  Action ProcessMessage(const std::shared_ptr<Logger>& info_log,
+                        const MessageUnsubscribe& unsubscribe);
 
-  /**
-   * Marks subscription as terminated, returns TopicPair which should be
-   * immediately sent to the Copilot.
-   */
-  TopicPair Terminate();
+  /** Processes gap message, gap messages are not passed to the application. */
+  void ReceiveMessage(const std::shared_ptr<Logger>& info_log,
+                      std::unique_ptr<MessageDeliverGap> gap);
+
+  /** Processes data message, and delivers it to the application. */
+  void ReceiveMessage(const std::shared_ptr<Logger>& info_log,
+                      std::unique_ptr<MessageDeliverData> data);
+
+  /** Returns a lower bound on the seqno of the next expected message. */
+  SequenceNumber GetExpected() const {
+    thread_check_.Check();
+    return expected_seqno_;
+  }
 
   /** Marks provided sequence number as acknowledged. */
   void Acknowledge(SequenceNumber seqno);
@@ -110,91 +128,88 @@ class SubscriptionState {
   const SubscribeCallback subscription_callback_;
   const MessageReceivedCallback deliver_callback_;
 
-  /** State of the subscription. */
-  enum State {
-    kSubscribed,
-    kTerminated,
-  } state_;
   /** Next expected sequence number on this subscription. */
   SequenceNumber expected_seqno_;
   /** Seqence number of the last acknowledged message. */
   SequenceNumber last_acked_seqno_;
 
-
   /** Returns true iff message arrived in order and not duplicated. */
-  bool ReceiveMessage(Logger* info_log,
-                      SequenceNumber current,
-                      SequenceNumber previous);
-
-  /** Processes an ACK, returns true iff resubscription must be issued. */
-  bool ReceiveSubscribeAck(Logger* info_log, SequenceNumber subscribed_from);
-
-  /** Processes an ACK, returns true iff resubscription must be issued. */
-  bool ReceiveUnsubscribeAck(Logger* info_log);
+  bool ProcessMessage(const std::shared_ptr<Logger>& info_log,
+                      const MessageDeliver& deliver);
 
   /** Announces status of a subscription via user defined callback. */
   void AnnounceStatus(bool subscribed, Status status);
 };
 
-void SubscriptionState::ReceiveMessage(Logger* info_log,
-                                       std::unique_ptr<MessageGap> gap) {
+SubscriptionState::Action SubscriptionState::ProcessMessage(
+    const std::shared_ptr<Logger>& info_log,
+    const MessageUnsubscribe& unsubscribe) {
   thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
 
-  const auto current = gap->GetEndSequenceNumber(),
-             previous = gap->GetStartSequenceNumber();
-  if (ReceiveMessage(info_log, current, previous)) {
-    LOG_DEBUG(info_log,
-              "Received gap %" PRIu64 "-%" PRIu64 " on Topic(%s, %s)",
-              previous,
-              current,
-              namespace_id_.c_str(),
-              GetTopicName().c_str());
-    // Do not deliver, this is internal message.
+  switch (unsubscribe.GetReason()) {
+    case MessageUnsubscribe::Reason::kRequested:
+      LOG_DEBUG(info_log,
+                "Terminated subscription ID (%u) on Topic(%s, %s)@%" PRIu64,
+                unsubscribe.GetSubID(),
+                namespace_id_.c_str(),
+                topic_name_.c_str(),
+                expected_seqno_);
+      AnnounceStatus(false, Status::OK());
+      return Action::kTerminate;
+    case MessageUnsubscribe::Reason::kBackOff:
+      LOG_INFO(info_log, "Resubscribing with ID (%u) on Topic(%s, %s)@%" PRIu64,
+               unsubscribe.GetSubID(),
+               namespace_id_.c_str(),
+               topic_name_.c_str(),
+               expected_seqno_);
+      // We will silently resubscribe, don't announce subscription status.
+      return Action::kResubscribe;
+    case MessageUnsubscribe::Reason::kInvalid:
+      LOG_WARN(
+          info_log,
+          "Terminated invalid subscription ID (%u) on Topic(%s, %s)@%" PRIu64,
+          unsubscribe.GetSubID(),
+          namespace_id_.c_str(),
+          topic_name_.c_str(),
+          expected_seqno_);
+      AnnounceStatus(false, Status::InvalidArgument("Invalid subscription"));
+      return Action::kTerminate;
+      // No default, we will be warned about unhandled code.
   }
+  assert(false);
 }
 
-void SubscriptionState::ReceiveMessage(Logger* info_log,
-                                       std::unique_ptr<MessageData> data) {
+void SubscriptionState::ReceiveMessage(const std::shared_ptr<Logger>& info_log,
+                                       std::unique_ptr<MessageDeliverGap> gap) {
   thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
 
-  const auto current = data->GetSequenceNumber(),
-             previous = data->GetPrevSequenceNumber();
-  if (ReceiveMessage(info_log, current, previous)) {
-    LOG_DEBUG(info_log,
-              "Received data %" PRIu64 "-%" PRIu64 " on Topic(%s, %s)",
-              previous,
-              current,
-              namespace_id_.c_str(),
-              GetTopicName().c_str());
+  ProcessMessage(info_log, *gap);
+  // Do not deliver, this is internal message.
+}
+
+void SubscriptionState::ReceiveMessage(
+    const std::shared_ptr<Logger>& info_log,
+    std::unique_ptr<MessageDeliverData> data) {
+  thread_check_.Check();
+
+  if (ProcessMessage(info_log, *data)) {
     // Deliver message to the application.
     if (deliver_callback_) {
-      deliver_callback_(std::unique_ptr<MessageReceivedClient>(
-          new MessageReceivedClient(std::move(data))));
+      deliver_callback_(
+          std::unique_ptr<MessageReceivedClient>(new MessageReceivedClient(
+              namespace_id_, topic_name_, std::move(data))));
     }
   }
 }
 
-bool SubscriptionState::ReceiveMessage(Logger* info_log,
-                                       SequenceNumber current,
-                                       SequenceNumber previous) {
+bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
+                                       const MessageDeliver& deliver) {
   thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
+
+  const auto current = deliver.GetSequenceNumber(),
+             previous = deliver.GetPrevSequenceNumber();
   assert(current >= previous);
 
-  if (state_ == State::kTerminated) {
-    LOG_WARN(info_log,
-             "Unexpected message %" PRIu64 "-%" PRIu64 " on Topic(%s, %s)",
-             previous,
-             current,
-             namespace_id_.c_str(),
-             GetTopicName().c_str());
-    return false;
-  }
   if (expected_seqno_ > current ||
       expected_seqno_ < previous ||
       (expected_seqno_ == 0 && previous != 0)) {
@@ -204,127 +219,28 @@ bool SubscriptionState::ReceiveMessage(Logger* info_log,
              previous,
              current,
              namespace_id_.c_str(),
-             GetTopicName().c_str(),
+             topic_name_.c_str(),
              expected_seqno_);
     return false;
   }
+
+  const char* type_description =
+      deliver.GetMessageType() == MessageType::mDeliverGap ? "gap" : "data";
+  LOG_DEBUG(info_log,
+            "Received %s %" PRIu64 "-%" PRIu64 " on Topic(%s, %s)@%" PRIu64,
+            type_description,
+            previous,
+            current,
+            namespace_id_.c_str(),
+            topic_name_.c_str(),
+            expected_seqno_);
+
   expected_seqno_ = current + 1;
   return true;
 }
 
-bool SubscriptionState::ReceiveAck(Logger* info_log, const TopicPair& request) {
-  thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
-
-  if (namespace_id_ != request.namespace_id ||
-      topic_name_ != request.topic_name) {
-    LOG_ERROR(info_log,
-              "Unexpected metadata message received on Topic(%s, %s)",
-              namespace_id_.c_str(),
-              GetTopicName().c_str());
-    assert(false);
-    return false;
-  }
-
-  switch (request.topic_type) {
-    case MetadataType::mNotinitialized:
-      LOG_WARN(info_log,
-               "Not initialized metadata message on Topic(%s, %s)",
-               namespace_id_.c_str(),
-               GetTopicName().c_str());
-      return false;
-    case MetadataType::mSubscribe:
-      return ReceiveSubscribeAck(info_log, request.seqno);
-    case MetadataType::mUnSubscribe:
-      return ReceiveUnsubscribeAck(info_log);
-      // No default, we will be warned about unhandled code.
-  }
-  assert(false);
-  return false;
-}
-
-bool SubscriptionState::ReceiveSubscribeAck(Logger* info_log,
-                                            SequenceNumber subscribed_from) {
-  thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
-
-  switch (state_) {
-    case State::kSubscribed: {
-      LOG_DEBUG(info_log,
-                "Received subscribe ACK on Topic(%s, %s) with seqno %" PRIu64
-                " expected %" PRIu64,
-                namespace_id_.c_str(),
-                GetTopicName().c_str(),
-                subscribed_from,
-                expected_seqno_);
-      return false;
-    }
-    case State::kTerminated:
-      LOG_WARN(info_log,
-               "Unexpected metadata message on Topic(%s, %s)",
-               namespace_id_.c_str(),
-               GetTopicName().c_str());
-      return false;
-      // No default, we will be warned about unhandled code.
-  }
-  assert(false);
-  return false;
-}
-
-bool SubscriptionState::ReceiveUnsubscribeAck(Logger* info_log) {
-  thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
-
-  switch (state_) {
-    case State::kSubscribed:
-      LOG_INFO(
-          info_log,
-          "Received unsubscribe ACK on Topic(%s, %s) while expecting seqno "
-          "%" PRIu64,
-          namespace_id_.c_str(),
-          GetTopicName().c_str(),
-          expected_seqno_);
-      return true;
-    case State::kTerminated:
-      LOG_WARN(info_log,
-               "Unexpected metadata message on Topic(%s, %s)",
-               namespace_id_.c_str(),
-               GetTopicName().c_str());
-      return false;
-      // No default, we will be warned about unhandled code.
-  }
-  assert(false);
-  return false;
-}
-
-TopicPair SubscriptionState::Resubscribe() {
-  thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
-
-  state_ = State::kSubscribed;
-  return TopicPair(
-      expected_seqno_, topic_name_, MetadataType::mSubscribe, namespace_id_);
-}
-
-TopicPair SubscriptionState::Terminate() {
-  thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
-
-  state_ = State::kTerminated;
-  AnnounceStatus(false, Status::OK());
-  return TopicPair(
-      expected_seqno_, topic_name_, MetadataType::mUnSubscribe, namespace_id_);
-}
-
 void SubscriptionState::Acknowledge(SequenceNumber seqno) {
   thread_check_.Check();
-  // This means we still have a reference to terminated subscription.
-  assert(state_ != State::kTerminated);
 
   if (last_acked_seqno_ < seqno) {
     last_acked_seqno_ = seqno;
@@ -356,12 +272,16 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   ClientWorkerData(ClientWorkerData&&) = delete;
   ClientWorkerData& operator=(ClientWorkerData&&) = delete;
 
-  ClientWorkerData() {}
+  ClientWorkerData() : next_sub_id_(0) {}
 
   /** Stream socket used by this worker to talk to the copilot. */
   StreamSocket copilot_socket;
+  /** Next subscription ID to be used for new subscription. */
+  SubscriptionID next_sub_id_;
   /** All subscriptions served by this worker. */
-  std::unordered_map<TopicID, SubscriptionState> subscriptions_;
+  std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
+  /** A mapping from topics to subscription IDs. */
+  std::unordered_map<TopicID, SubscriptionID> subscribed_topics_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -493,17 +413,17 @@ ClientImpl::ClientImpl(BaseEnv* env,
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg,
+  callbacks[MessageType::mDeliverData] = [this] (std::unique_ptr<Message> msg,
                                              StreamID origin) {
-    ProcessDeliver(std::move(msg), origin);
+    ProcessDeliverData(std::move(msg), origin);
   };
-  callbacks[MessageType::mGap] = [this] (std::unique_ptr<Message> msg,
+  callbacks[MessageType::mDeliverGap] = [this] (std::unique_ptr<Message> msg,
                                          StreamID origin) {
-    ProcessGap(std::move(msg), origin);
+    ProcessDeliverGap(std::move(msg), origin);
   };
-  callbacks[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg,
+  callbacks[MessageType::mUnsubscribe] = [this] (std::unique_ptr<Message> msg,
                                               StreamID origin) {
-    ProcessMetadata(std::move(msg), origin);
+    ProcessUnsubscribe(std::move(msg), origin);
   };
   callbacks[MessageType::mGoodbye] =
       [this](std::unique_ptr<Message> msg, StreamID origin) {
@@ -646,14 +566,27 @@ Status ClientImpl::Acknowledge(const MessageReceived& message) {
   auto action = [this, worker_id, moved_topic_id, acked_seqno]() mutable {
     auto& worker_data = worker_data_[worker_id];
 
-    // Find corresponding subscription object.
+    SubscriptionID sub_id;
     TopicID topic_id(moved_topic_id.move());
-    auto it = worker_data.subscriptions_.find(topic_id);
+    {  // Find corresponding subscription ID.
+      auto it = worker_data.subscribed_topics_.find(topic_id);
+      if (it == worker_data.subscribed_topics_.end()) {
+        LOG_WARN(info_log_,
+                 "Cannot acknowledge missing subscription on Topic(%s, %s)",
+                 topic_id.namespace_id.c_str(),
+                 topic_id.topic_name.c_str());
+        return;
+      }
+      sub_id = it->second;
+    }
+
+    // Find corresponding subscription object.
+    auto it = worker_data.subscriptions_.find(sub_id);
     if (it == worker_data.subscriptions_.end()) {
       LOG_ERROR(info_log_,
-                "Can not acknowledge nonexistent subscription on Topic(%s, %s)",
-                topic_id.namespace_id.c_str(),
-                topic_id.topic_name.c_str());
+                "Cannot acknowledge missing subscription ID (%u)",
+                sub_id);
+      assert(false);
       return;
     }
 
@@ -751,30 +684,56 @@ void ClientImpl::StartSubscription(SubscriptionState sub_state_val) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
+  TopicID topic_id(sub_state_val.GetNamespace(), sub_state_val.GetTopicName());
+  {  // Kill any existing subscription on the topic.
+    if (worker_data.subscribed_topics_.count(topic_id) > 0) {
+      TerminateSubscription(sub_state_val.GetNamespace(),
+                            sub_state_val.GetTopicName());
+    }
+  }
+
+  SubscriptionID sub_id;
   SubscriptionState* sub_state;
-  {  // Verify that no entry for this topic exists.
-    TopicID topic_id(sub_state_val.GetNamespace(),
-                     sub_state_val.GetTopicName());
-    auto it = worker_data.subscriptions_.find(topic_id);
-    if (it != worker_data.subscriptions_.end()) {
-      LOG_WARN(info_log_,
-               "Ignoring request to rewind subscription on Topic(%s, %s)",
-               topic_id.namespace_id.c_str(),
-               topic_id.topic_name.c_str());
+  {  // Assign subscription ID and store the subscription.
+    const SubscriptionID started_search_at = worker_data.next_sub_id_;
+    do {
+      // This loop will do up to number of existing subscriptions iterations.
+      sub_id = worker_data.next_sub_id_++;
+      auto it = worker_data.subscriptions_.find(sub_id);
+      if (it == worker_data.subscriptions_.end()) {
+        auto emplace_result = worker_data.subscriptions_.emplace(
+            sub_id, std::move(sub_state_val));
+        assert(emplace_result.second);
+        sub_state = &emplace_result.first->second;
+        break;
+      }
+    } while (worker_data.next_sub_id_ != started_search_at);
+    // If we've made a full cycle, it means we've run out of subscription IDs.
+    if (worker_data.next_sub_id_ == started_search_at) {
+      // Apparently we have about 4 TB of ram or we're leaking IDs.
+      LOG_FATAL(info_log_,
+                "Failed to allocate ID for new subscription on Topic(%s, %s)",
+                sub_state_val.GetNamespace().c_str(),
+                sub_state_val.GetTopicName().c_str());
+      assert(false);
       return;
     }
+  }
+  sub_state->AssignID(info_log_, sub_id);
 
+  {  // Replace existing subscription on the topic.
     // Insert entry for new subscription.
-    auto emplace_result = worker_data.subscriptions_.emplace(
-        std::move(topic_id), std::move(sub_state_val));
+    auto emplace_result =
+        worker_data.subscribed_topics_.emplace(std::move(topic_id), sub_id);
     assert(emplace_result.second);
-    sub_state = &emplace_result.first->second;
   }
 
   // Prepare first subscription request.
-  MessageMetadata message(sub_state->GetTenant(),
-                          MessageMetadata::MetaType::Request,
-                          {sub_state->Resubscribe()});
+  MessageSubscribe message(sub_state->GetTenant(),
+                           sub_state->GetNamespace(),
+                           sub_state->GetTopicName(),
+                           sub_state->GetExpected(),
+                           sub_id);
 
   // Send message.
   wake_lock_.AcquireForSending();
@@ -790,22 +749,38 @@ void ClientImpl::TerminateSubscription(NamespaceID namespace_id,
   auto& worker_data = worker_data_[worker_id];
 
   const TopicID topic_id(std::move(namespace_id), std::move(topic_name));
-  // Remove subscription state.
-  auto it = worker_data.subscriptions_.find(topic_id);
+  SubscriptionID sub_id;
+  {  // Remove entry for the topic.
+    auto it = worker_data.subscribed_topics_.find(topic_id);
+    if (it == worker_data.subscribed_topics_.end()) {
+      LOG_WARN(info_log_,
+               "Cannot remove missing subscription on Topic(%s, %s)",
+               topic_id.namespace_id.c_str(),
+               topic_id.topic_name.c_str());
+      return;
+    }
+    sub_id = it->second;
+    worker_data.subscribed_topics_.erase(it);
+  }
+
+  // Remove subscription state and prepare unsubscribe message.
+  auto it = worker_data.subscriptions_.find(sub_id);
   if (it == worker_data.subscriptions_.end()) {
-    LOG_ERROR(info_log_,
-              "Cannot remove missing subscription on Topic(%s, %s)",
-              topic_id.namespace_id.c_str(),
-              topic_id.topic_name.c_str());
+    LOG_ERROR(info_log_, "Cannot remove missing subscription ID (%u)", sub_id);
+    assert(false);
     return;
   }
   SubscriptionState sub_state(std::move(it->second));
   worker_data.subscriptions_.erase(it);
 
   // Prepare unsubscription request.
-  MessageMetadata message(sub_state.GetTenant(),
-                          MessageMetadata::MetaType::Request,
-                          {sub_state.Terminate()});
+  MessageUnsubscribe message(sub_state.GetTenant(),
+                             sub_id,
+                             MessageUnsubscribe::Reason::kRequested);
+
+  // Update subscription state, which will announce subscription status to the
+  // application.
+  sub_state.ProcessMessage(info_log_, message);
 
   // Send message.
   wake_lock_.AcquireForSending();
@@ -816,37 +791,45 @@ void ClientImpl::TerminateSubscription(NamespaceID namespace_id,
     // subscription as removed, we will respond with appropriate unsubscribe
     // request to every message on the terminated subscription.
     LOG_WARN(info_log_,
-             "Failed to send unsubscribe response on Topic(%s, %s)",
-             topic_id.namespace_id.c_str(),
-             topic_id.topic_name.c_str());
+             "Failed to send unsubscribe response for ID (%u)",
+             sub_id);
   }
 }
 
-SubscriptionState* ClientImpl::FindOrSendUnsubscribe(
-    const NamespaceID& namespace_id,
-    const Topic& topic_name) {
+bool ClientImpl::IsNotCopilot(const ClientWorkerData& worker_data,
+                              StreamID origin) {
+  if (worker_data.copilot_socket.GetStreamID() != origin) {
+    LOG_ERROR(info_log_,
+              "Incorrect message stream: (%llu) expected: (%llu)",
+              origin,
+              worker_data.copilot_socket.GetStreamID());
+    assert(false);
+    return true;
+  }
+  return false;
+}
+
+SubscriptionState* ClientImpl::FindOrSendUnsubscribe(TenantID tenant_id,
+                                                     SubscriptionID sub_id) {
   // Get worker data that all topics in the message are assigned to.
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
   {  // Attemp to find corresponding subscription.
-    const TopicID topic_id(namespace_id, topic_name);
-    auto it = worker_data.subscriptions_.find(topic_id);
+    auto it = worker_data.subscriptions_.find(sub_id);
     if (it != worker_data.subscriptions_.end()) {
       return &it->second;
     }
   }
 
   LOG_WARN(info_log_,
-           "Cannot find subscription on Topic(%s, %s), sending unsubscribe",
-           namespace_id.c_str(),
-           topic_name.c_str());
+           "Cannot find subscription ID (%u), sending unsubscribe",
+           sub_id);
 
   // Prepare unsubscription request.
-  MessageMetadata message(
-      Tenant::GuestTenant,
-      MessageMetadata::MetaType::Request,
-      {TopicPair(0, topic_name, MetadataType::mUnSubscribe, namespace_id)});
+  MessageUnsubscribe message(tenant_id,
+                             sub_id,
+                             MessageUnsubscribe::Reason::kRequested);
 
   // Send message.
   wake_lock_.AcquireForSending();
@@ -856,122 +839,102 @@ SubscriptionState* ClientImpl::FindOrSendUnsubscribe(
     // No harm done if we fail to send unsubscribe request, the subscription
     // does not really exist.
     LOG_WARN(info_log_,
-             "Failed to send unsubscribe response on Topic(%s, %s)",
-             namespace_id.c_str(),
-             topic_name.c_str());
+             "Failed to send unsubscribe response ID (%u)",
+             sub_id);
   }
 
   return nullptr;
 }
 
-void ClientImpl::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
-  wake_lock_.AcquireForReceiving();
+void ClientImpl::ProcessDeliverData(std::unique_ptr<Message> msg,
+                                    StreamID origin) {
+  std::unique_ptr<MessageDeliverData> data(
+      static_cast<MessageDeliverData*>(msg.release()));
 
+  wake_lock_.AcquireForReceiving();
   // Get worker data that this topic is assigned to.
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (worker_data.copilot_socket.GetStreamID() != origin) {
-    LOG_ERROR(info_log_,
-              "Incorrect message stream: (%llu) expected: (%llu)",
-              origin,
-              worker_data.copilot_socket.GetStreamID());
-    assert(false);
+  if (IsNotCopilot(worker_data, origin)) {
     return;
   }
 
-  auto deliver = static_cast<MessageData*>(msg.get());
   // Find the right subscription and deliver the message to it.
-  auto sub_state = FindOrSendUnsubscribe(deliver->GetNamespaceId().ToString(),
-                                         deliver->GetTopicName().ToString());
+  auto sub_state = FindOrSendUnsubscribe(data->GetTenantID(), data->GetSubID());
   if (sub_state) {
-    sub_state->ReceiveMessage(
-        info_log_.get(),
-        std::unique_ptr<MessageData>(static_cast<MessageData*>(msg.release())));
+    sub_state->ReceiveMessage(info_log_, std::move(data));
   }
 }
 
-void ClientImpl::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
-  wake_lock_.AcquireForReceiving();
+void ClientImpl::ProcessDeliverGap(std::unique_ptr<Message> msg,
+                                   StreamID origin) {
+  std::unique_ptr<MessageDeliverGap> gap(
+      static_cast<MessageDeliverGap*>(msg.release()));
 
+  wake_lock_.AcquireForReceiving();
   // Get worker data that this topic is assigned to.
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (worker_data.copilot_socket.GetStreamID() != origin) {
-    LOG_ERROR(info_log_,
-              "Incorrect message stream: (%llu) expected: (%llu)",
-              origin,
-              worker_data.copilot_socket.GetStreamID());
-    assert(false);
+  if (IsNotCopilot(worker_data, origin)) {
     return;
   }
 
-  auto gap = static_cast<MessageGap*>(msg.get());
   // Find the right subscription and deliver the message to it.
-  auto sub_state = FindOrSendUnsubscribe(gap->GetNamespaceId(),
-                                         gap->GetTopicName());
+  auto sub_state = FindOrSendUnsubscribe(gap->GetTenantID(), gap->GetSubID());
   if (sub_state) {
-    sub_state->ReceiveMessage(
-        info_log_.get(),
-        std::unique_ptr<MessageGap>(static_cast<MessageGap*>(msg.release())));
+    sub_state->ReceiveMessage(info_log_, std::move(gap));
   }
 }
 
-void ClientImpl::ProcessMetadata(std::unique_ptr<Message> msg,
-                                 StreamID origin) {
-  wake_lock_.AcquireForReceiving();
+void ClientImpl::ProcessUnsubscribe(std::unique_ptr<Message> msg,
+                                    StreamID origin) {
+  std::unique_ptr<MessageUnsubscribe> unsubscribe(
+      static_cast<MessageUnsubscribe*>(msg.release()));
 
+  wake_lock_.AcquireForReceiving();
   // Get worker data that all topics in the message are assigned to.
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (worker_data.copilot_socket.GetStreamID() != origin) {
+  if (IsNotCopilot(worker_data, origin)) {
+    return;
+  }
+
+  const SubscriptionID sub_id = unsubscribe->GetSubID();
+  // Find the right subscription and deliver the message to it.
+  auto it = worker_data.subscriptions_.find(sub_id);
+  if (it == worker_data.subscriptions_.end()) {
     LOG_WARN(info_log_,
-             "Incorrect message stream: (%llu) expected: (%llu)",
-             origin,
-             worker_data.copilot_socket.GetStreamID());
+             "Received unsibscribe with unrecognised ID(%u)",
+             sub_id);
     return;
   }
+  SubscriptionState* sub_state = &it->second;
 
-  auto metadata = static_cast<MessageMetadata*>(msg.get());
-  // The client should receive only responses to subscribe/unsubscribe.
-  if (metadata->GetMetaType() != MessageMetadata::MetaType::Response) {
-    LOG_ERROR(info_log_, "Received metadata message, which is not a response");
-    return;
+  auto action = sub_state->ProcessMessage(info_log_, *unsubscribe);
+  switch (action) {
+    case SubscriptionState::Action::kTerminate:
+      worker_data.subscriptions_.erase(it);
+      break;
+    case SubscriptionState::Action::kResubscribe: {
+      MessageSubscribe message(sub_state->GetTenant(),
+                               sub_state->GetNamespace(),
+                               sub_state->GetTopicName(),
+                               sub_state->GetExpected(),
+                               sub_id);
+      Status st = msg_loop_->SendRequest(message,
+                                         &worker_data.copilot_socket,
+                                         worker_id);
+      // TODO(stupaq) handle failure
+      assert(st.ok());
+    } break;
+      // No default, we will be warned about unhandled code.
   }
-
-  std::vector<TopicPair> requests;
-  for (const auto& request : metadata->GetTopicInfo()) {
-    // Find the right subscription and deliver the message to it.
-    const TopicID topic_id(request.namespace_id, request.topic_name);
-    auto it = worker_data.subscriptions_.find(topic_id);
-    if (it == worker_data.subscriptions_.end()) {
-      // We don't know about corresponding subscription, ignore the ACK.
-      continue;
-    }
-    auto sub_state = &it->second;
-    if (sub_state) {
-      if (sub_state->ReceiveAck(info_log_.get(), request)) {
-        // Need to resubscribe.
-        requests.emplace_back(sub_state->Resubscribe());
-      }
-    }
-  }
-
-  // Prepare message with all collected requests.
-  MessageMetadata request(metadata->GetTenantID(),
-                          MessageMetadata::MetaType::Request,
-                          std::move(requests));
-
-  // Send all collected requests.
-  Status st =
-      msg_loop_->SendRequest(request, &worker_data.copilot_socket, worker_id);
-  // TODO(stupaq) handle failure
-  assert(st.ok());
 }
 
 void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
@@ -999,31 +962,31 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
            copilot.ToString().c_str(),
            worker_data.copilot_socket.GetStreamID());
 
-  // Prepare a list of subscriptions to reissue.
-  std::vector<TopicPair> requests;
+  // Reissue all subscriptions.
   for (auto& entry : worker_data.subscriptions_) {
+    SubscriptionID sub_id = entry.first;
     SubscriptionState* sub_state = &entry.second;
+
     LOG_INFO(info_log_,
-             "Reissuing subscription on Topic(%s, %s)",
+             "Reissued subscription ID (%u) on Topic(%s, %s)@%" PRIu64,
+             sub_id,
              sub_state->GetNamespace().c_str(),
-             sub_state->GetTopicName().c_str());
-    requests.emplace_back(sub_state->Resubscribe());
+             sub_state->GetTopicName().c_str(),
+             sub_state->GetExpected());
+
+    // Prepare subscription request.
+    MessageSubscribe message(sub_state->GetTenant(),
+                             sub_state->GetNamespace(),
+                             sub_state->GetTopicName(),
+                             sub_state->GetExpected(),
+                             sub_id);
+
+    // Send message.
+    st =
+        msg_loop_->SendRequest(message, &worker_data.copilot_socket, worker_id);
+    // TODO(stupaq) handle failure
+    assert(st.ok());
   }
-
-  // Prepare message with all collected requests.
-  // TODO(stupaq) pass real tenant instead
-  MessageMetadata request(Tenant::GuestTenant,
-                          MessageMetadata::MetaType::Request,
-                          std::move(requests));
-
-  // Send all collected requests.
-  st = msg_loop_->SendRequest(request, &worker_data.copilot_socket, worker_id);
-  // TODO(stupaq) handle failure
-  assert(st.ok());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-MessageReceivedClient::~MessageReceivedClient() {
 }
 
 }  // namespace rocketspeed
