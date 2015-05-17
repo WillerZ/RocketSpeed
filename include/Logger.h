@@ -8,8 +8,9 @@
 #include <cassert>
 #include <cstdarg>
 #include <cstring>
-#include <memory>
 #include <atomic>
+#include <memory>
+#include <string>
 
 #define RS_LOG(log_level_expr, info_log_expr, ...) \
   do { \

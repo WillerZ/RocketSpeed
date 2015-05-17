@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,13 @@
 #include "src/port/Env.h"
 #include "src/port/stack_trace.h"
 #include "src/util/random.h"
+
+// ostream output for enums.
+template <typename T>
+inline typename std::enable_if<std::is_enum<T>::value, std::ostream>::type&
+operator<<(std::ostream& os, T enum_value) {
+  return os << static_cast<typename std::underlying_type<T>::type>(enum_value);
+}
 
 namespace rocketspeed {
 namespace test {

@@ -118,7 +118,7 @@ void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
     default: {
         LOG_WARN(options_.info_log,
             "Unexpected message type in copilot worker %d",
-            msg->GetMessageType());
+            static_cast<int>(msg->GetMessageType()));
       }
       break;
     }

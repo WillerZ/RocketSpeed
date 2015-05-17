@@ -44,10 +44,6 @@ enum class MessageType : uint8_t {
   mDeliverData = 0x0B,  // MessageDeliverData
 };
 
-inline std::ostream& operator<<(std::ostream& os, MessageType type) {
-  return os << static_cast<std::underlying_type<MessageType>::type>(type);
-}
-
 inline bool ValidateEnum(MessageType e) {
   return e >= MessageType::mPing && e <= MessageType::mDeliverData;
 }

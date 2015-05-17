@@ -40,7 +40,8 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
   // what message have we received?
   MessageType type = msg->GetMessageType();
   LOG_DEBUG(
-      info_log_, "Received message %d at port %ld", type, (long)hostid_.port);
+      info_log_, "Received message %d at port %ld",
+      static_cast<int>(type), (long)hostid_.port);
 
   // Search for a callback method corresponding to this msg type
   // Give up ownership of this message to the callback function
@@ -52,7 +53,8 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
     // If the user has not registered a message of this type,
     // then this msg will be droped silently.
     LOG_WARN(info_log_,
-        "No registered msg callback for msg type %d", type);
+        "No registered msg callback for msg type %d",
+        static_cast<int>(type));
     info_log_->Flush();
     assert(0);
   }
