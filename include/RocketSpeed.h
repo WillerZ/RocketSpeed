@@ -197,8 +197,8 @@ class Client {
    * Saves state of subscriptions according to strategy selected when opening
    * the client.
    * All messages acknowledged before this call will be included in the saved
-   * state, which means that if a client is restarted with the same subscription
-   * storage parameters, restored subscription will start from the same point.
+   * state, which means that the application will be able to restore them using
+   * the following call.
    *
    * @param save_callback A callback to inform whether saving succeeded.
    */
