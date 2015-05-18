@@ -79,9 +79,10 @@ Status LogTailer::CreateReader(size_t reader_id,
                                OnGapCallback on_gap,
                                AsyncLogReader** out) {
   // Define a lambda for callback
-  auto record_cb = [this, reader_id, on_record] (
+  auto record_cb = [this, reader_id, on_record, on_gap] (
       std::unique_ptr<LogRecord> record) {
     LogID log_id = record->log_id;
+    SequenceNumber seqno = record->seqno;
 
     // Convert storage record into RocketSpeed message.
     Status st;
@@ -89,22 +90,25 @@ Status LogTailer::CreateReader(size_t reader_id,
       new LogRecordMessageData(std::move(record), &st));
     if (!st.ok()) {
       LOG_WARN(info_log_,
-        "Failed to deserialize message (%s).",
+        "Failed to deserialize message in Log(%" PRIu64 ")@%" PRIu64 ": %s",
+        log_id,
+        seqno,
         st.ToString().c_str());
-        info_log_->Flush();
+
+      // Publish gap in place.
+      on_gap(log_id, GapType::kDataLoss, seqno, seqno, reader_id);
     } else {
       LOG_INFO(info_log_,
         "LogTailer received data (%.16s)@%" PRIu64
         " for Topic(%s) in Log(%" PRIu64 ").",
         msg->GetPayload().ToString().c_str(),
-        msg->GetSequenceNumber(),
+        seqno,
         msg->GetTopicName().ToString().c_str(),
         log_id);
-    }
-    assert(st.ok());
 
-    // Invoke message callback.
-    on_record(std::move(msg), log_id, reader_id);
+      // Invoke message callback.
+      on_record(std::move(msg), log_id, reader_id);
+    }
   };
 
   auto gap_cb = [this, reader_id, on_gap] (const GapRecord& record) {

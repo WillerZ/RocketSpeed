@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <map>
+#include <random>
 #include <thread>
 #include <vector>
 #include "src/messages/serializer.h"
@@ -98,6 +99,8 @@ class Pilot {
       append_latency = all.AddLatency("pilot.append_latency_us");
       append_requests = all.AddCounter("pilot.append_requests");
       failed_appends = all.AddCounter("pilot.failed_appends");
+
+      FAULT_corrupt_writes = all.AddCounter("pilot.FAULT_corrupt_writes");
     }
 
     Statistics all;
@@ -110,6 +113,9 @@ class Pilot {
 
     // Number of append failures.
     Counter* failed_appends;
+
+    // Number of written corrupt records through fault injection.
+    Counter* FAULT_corrupt_writes;
   };
 
   // Send an ack message to the host for the msgid.
@@ -126,13 +132,15 @@ class Pilot {
   std::shared_ptr<LogStorage> log_storage_;
 
   struct alignas(CACHE_LINE_SIZE) WorkerData {
-    WorkerData()
-    : append_closure_pool_(new SharedPooledObjectList<AppendClosure>()) {
+    WorkerData(unsigned int seed)
+    : append_closure_pool_(new SharedPooledObjectList<AppendClosure>())
+    , prng_(seed) {
     }
 
     // AppendClosure object pool and lock.
     std::unique_ptr<SharedPooledObjectList<AppendClosure>> append_closure_pool_;
     Stats stats_;
+    std::mt19937 prng_;
   };
 
   // Per-thread data.

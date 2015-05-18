@@ -74,7 +74,10 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
 Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))) {
 
-  worker_data_.resize(options_.msg_loop->GetNumWorkers());
+  std::random_device rd;
+  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
+    worker_data_.emplace_back(WorkerData(rd()));
+  }
   log_storage_ = options_.storage;
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
@@ -132,6 +135,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   assert(msg->GetMessageType() == MessageType::mPublish);
 
   int worker_id = options_.msg_loop->GetThreadWorkerIndex();
+  WorkerData& worker_data = worker_data_[worker_id];
 
   // Route topic to log ID.
   MessageData* msg_data = static_cast<MessageData*>(msg.release());
@@ -154,7 +158,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   uint64_t now = options_.env->NowMicros();
   AppendClosure* closure;
   std::unique_ptr<MessageData> msg_owned(msg_data);
-  closure = worker_data_[worker_id].append_closure_pool_->Allocate(
+  closure = worker_data.append_closure_pool_->Allocate(
     this,
     std::move(msg_owned),
     logid,
@@ -168,9 +172,22 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
                                           msg_data->GetStorageSlice(),
                                           std::move(append_callback));
 
+  // Fault injection: insert corrupt data into the logs.
+  if (options_.FAULT_corrupt_extra_probability != 0.0) {
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    if (dist(worker_data.prng_) < options_.FAULT_corrupt_extra_probability) {
+      LOG_INFO(options_.info_log,
+        "Fault-injection: appending corrupt record into Log(%" PRIu64 ")",
+        logid);
+      worker_data.stats_.FAULT_corrupt_writes->Add(1);
+      log_storage_->AppendAsync(logid, "invalid",
+        [] (Status, SequenceNumber) {});
+    }
+  }
+
   if (!status.ok()) {
     // Append call failed, log and send failure ack.
-    worker_data_[worker_id].stats_.failed_appends->Add(1);
+    worker_data.stats_.failed_appends->Add(1);
     LOG_ERROR(options_.info_log,
       "Failed to append to Topic(%s,%s) in Log(%" PRIu64 ") (%s)",
       msg_data->GetNamespaceId().ToString().c_str(),
@@ -182,7 +199,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
     SendAck(msg_data, 0, MessageDataAck::AckStatus::Failure, worker_id, origin);
 
     // If AppendAsync, the closure will never be invoked, so delete now.
-    worker_data_[worker_id].append_closure_pool_->Deallocate(closure);
+    worker_data.append_closure_pool_->Deallocate(closure);
   }
 }
 

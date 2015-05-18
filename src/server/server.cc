@@ -43,6 +43,8 @@ DEFINE_int32(pilot_port,
              rocketspeed::Pilot::DEFAULT_PORT,
              "pilot port number");
 DEFINE_int32(pilot_workers, 16, "pilot worker threads");
+DEFINE_double(FAULT_pilot_corrupt_extra_probability, 0.0,
+  "probability of writing a corrupt message to the log after each publish");
 
 // Copilot settings
 DEFINE_bool(copilot, false, "start the copilot");
@@ -212,6 +214,8 @@ Status RocketSpeed::Initialize(
     pilot_opts.info_log = info_log_;
     pilot_opts.storage = storage;
     pilot_opts.log_router = log_router;
+    pilot_opts.FAULT_corrupt_extra_probability =
+      FLAGS_FAULT_pilot_corrupt_extra_probability;
 
     Status st = Pilot::CreateNewInstance(std::move(pilot_opts),
                                          &pilot);

@@ -68,6 +68,11 @@ struct PilotOptions {
   // Log router.
   std::shared_ptr<LogRouter> log_router;
 
+  // Probability that a publish message will be followed by a badly formatted
+  // message into the log for the purpose of testing log corruption.
+  // Default: 0
+  double FAULT_corrupt_extra_probability;
+
   // Create PilotOptions with default values for all fields
   PilotOptions();
 };
