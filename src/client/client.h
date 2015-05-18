@@ -55,8 +55,8 @@ class ClientImpl : public Client {
                                 const MsgId messageId);
 
   SubscriptionHandle Subscribe(SubscriptionParameters parameters,
-                               SubscribeCallback subscription_callback,
-                               MessageReceivedCallback deliver_callback)
+                               MessageReceivedCallback deliver_callback,
+                               SubscribeCallback subscription_callback)
       override;
 
   Status Unsubscribe(SubscriptionHandle sub_handle) override;

@@ -13,7 +13,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "src/client/message_received.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/client/topic_id.h"
 #include "src/messages/msg_loop_base.h"

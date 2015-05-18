@@ -10,7 +10,6 @@
 
 #include "include/RocketSpeed.h"
 #include "src/client/client.h"
-#include "src/client/message_received.h"
 #include "src/port/port.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/thread_check.h"
@@ -59,8 +58,7 @@ TEST(IntegrationTest, OneMessage) {
     ASSERT_TRUE(ss.GetNamespace() == namespace_id);
   };
 
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
-    ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
     ASSERT_TRUE(mr->GetContents().ToString() == data);
     msg_received.Post();
   };
@@ -88,8 +86,8 @@ TEST(IntegrationTest, OneMessage) {
                                 namespace_id,
                                 topic,
                                 1,
-                                subscription_callback,
-                                receive_callback));
+                                receive_callback,
+                                subscription_callback));
 
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);
@@ -339,10 +337,6 @@ TEST(IntegrationTest, TrimGapHandling) {
   const int num_messages = 10;
 
   port::Semaphore recv_sem[2];
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
-    int index = mr->GetTopicName().ToString() == topics[0] ? 0 : 1;
-    recv_sem[index].Post();
-  };
 
   // Create RocketSpeed client.
   ClientOptions options;
@@ -350,7 +344,6 @@ TEST(IntegrationTest, TrimGapHandling) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Publish messages.
   SequenceNumber seqnos[num_messages];
@@ -379,8 +372,14 @@ TEST(IntegrationTest, TrimGapHandling) {
   ASSERT_EQ(log_id, log_id2);  // opts.single_log = true; should ensure this.
 
   auto test_receipt = [&](int topic, SequenceNumber seqno, int expected) {
+    auto receive_callback = [&recv_sem, topic](
+        std::unique_ptr<MessageReceived>&) { recv_sem[topic].Post(); };
     // Tests that subscribing to topic@seqno results in 'expected' messages.
-    auto handle = client->Subscribe(GuestTenant, ns, topics[topic], seqno);
+    auto handle = client->Subscribe(GuestTenant,
+                                    ns,
+                                    topics[topic],
+                                    seqno,
+                                    receive_callback);
     ASSERT_TRUE(handle);
     while (expected--) {
       ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
@@ -426,7 +425,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
 
   std::vector<std::string> received;
   ThreadCheck thread_check;
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
     // Messages from the same topic will always be received on the same thread.
     thread_check.Check();
     received.push_back(mr->GetContents().ToString());
@@ -607,8 +606,7 @@ TEST(IntegrationTest, LostConnection) {
   // RocketSpeed callbacks;
   auto publish_callback = [&](std::unique_ptr<ResultStatus> rs) {};
 
-  auto receive_callback = [&](std::unique_ptr<MessageReceived> mr) {
-    ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
+  auto receive_callback = [&](std::unique_ptr<MessageReceived>& mr) {
     ASSERT_TRUE(mr->GetContents().ToString() == data);
     msg_received.Post();
   };
@@ -679,8 +677,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   MsgId message_id = msgid_generator.Generate();
 
   // RocketSpeed callbacks;
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
-    ASSERT_TRUE(mr->GetTopicName().ToString() == topic);
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
     ASSERT_TRUE(mr->GetContents().ToString() == data);
     msg_received.Post();
   };
@@ -726,7 +723,7 @@ TEST(IntegrationTest, NewControlTower) {
 
   // RocketSpeed callbacks
   port::Semaphore msg_received;
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
     msg_received.Post();
   };
 
@@ -797,6 +794,27 @@ TEST(IntegrationTest, NewControlTower) {
   ASSERT_TRUE(msg_received.TimedWait(timeout));
 }
 
+class MessageReceivedMock : public MessageReceived {
+ public:
+  MessageReceivedMock(SubscriptionID sub_id,
+                      SequenceNumber seqno,
+                      Slice payload)
+      : sub_id_(sub_id)
+      , seqno_(seqno)
+      , payload_(std::move(payload)) {}
+
+  SubscriptionHandle GetSubscriptionHandle() const override { return sub_id_; }
+
+  SequenceNumber GetSequenceNumber() const override { return seqno_; }
+
+  Slice GetContents() const override { return payload_; }
+
+ private:
+  SubscriptionID sub_id_;
+  SequenceNumber seqno_;
+  Slice payload_;
+};
+
 TEST(IntegrationTest, SubscriptionStorage) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
@@ -828,17 +846,10 @@ TEST(IntegrationTest, SubscriptionStorage) {
   }
 
   // Acknowledge some messages.
-  std::unique_ptr<MessageDeliverData> data(
-      new MessageDeliverData(GuestTenant,
-                             handles[0],
-                             Slice("payload")));
-  data->SetSequenceNumbers(120, 125);
-  // We now expect the higher seqno.
-  expected[0].start_seqno = 126;
-  MessageReceivedClient message(
-      expected[0].namespace_id, expected[0].topic_name,
-      std::move(data));
+  MessageReceivedMock message(handles[0], 125, Slice("payload"));
   ASSERT_OK(client->Acknowledge(message));
+  // We now expect the higher seqno.
+  expected[0].start_seqno = message.GetSequenceNumber() + 1;
 
   // No need to wait for any callbacks.
 
@@ -884,7 +895,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
     options[i].info_log = info_log;
     ASSERT_OK(Client::Create(std::move(options[i]), &client[i]));
     client[i]->SetDefaultCallbacks(nullptr,
-      [&, i] (std::unique_ptr<MessageReceived> mr) {
+      [&, i] (std::unique_ptr<MessageReceived>& mr) {
         {
           std::lock_guard<std::mutex> lock(inbox_lock[i]);
           inbox[i].push_back(mr->GetContents().ToString());

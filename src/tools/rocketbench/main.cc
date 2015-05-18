@@ -535,7 +535,7 @@ int main(int argc, char** argv) {
   std::vector<bool> is_received(FLAGS_num_messages, false);
   std::mutex is_received_mutex;
   auto receive_callback = [&]
-    (std::unique_ptr<rocketspeed::MessageReceived> rs) {
+    (std::unique_ptr<rocketspeed::MessageReceived>& rs) {
     uint64_t now = env->NowMicros();
     ++messages_received;
     last_data_message = std::chrono::steady_clock::now();

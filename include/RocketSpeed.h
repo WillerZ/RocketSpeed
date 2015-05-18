@@ -20,19 +20,31 @@
 namespace rocketspeed {
 
 class BaseEnv;
-class Client;
 class Logger;
-class SubscriptionStorage;
 class WakeLock;
 
-/**
- * The various type of callbacks used by the RocketSpeed interface.
- * These are described in more details in those apis where they are used.
- */
+/** Notifies about the staus of a message published to the RocketSpeed. */
 typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
+
+/**
+ * Notifies the application about status of a subscription, see subscribe call
+ * for details.
+ */
 typedef std::function<void(const SubscriptionStatus&)> SubscribeCallback;
-typedef std::function<void(std::unique_ptr<MessageReceived>)>
-                                          MessageReceivedCallback;
+
+/**
+ * Notifies about message received on a subscription.
+ *
+ * The application can steal message from the reference argument, but if it
+ * doesn't, using the message object after the callback yields undefined
+ * behaviour.
+ * If the application does not need message payload buffer outside of the
+ * callback, it is advised not to steal the message object.
+ */
+typedef std::function<void(std::unique_ptr<MessageReceived>&)>
+    MessageReceivedCallback;
+
+/** Notifies about status of a finished subscription snapshot. */
 typedef std::function<void(Status)> SaveSubscriptionsCallback;
 
 /** Describes the Client object to be created. */
@@ -129,17 +141,17 @@ class Client {
    * message received callback.
    *
    * @param parameters Parameters of the subscription.
-   * @param subscription_callback Invoked to notify termination of the
-   *                              subscription.
    * @param deliver_callback Invoked with every message received on the
    *                         subscription.
+   * @param subscription_callback Invoked to notify termination of the
+   *                              subscription.
    * @return A handle that identifies this subscription. The handle is unengaged
    *         iff the Client failed to create the subscription.
    */
   virtual SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
-      SubscribeCallback subscription_callback = nullptr,
-      MessageReceivedCallback deliver_callback = nullptr) = 0;
+      MessageReceivedCallback deliver_callback = nullptr,
+      SubscribeCallback subscription_callback = nullptr) = 0;
 
   /** Convenience method, see the other overload for details. */
   SubscriptionHandle Subscribe(
@@ -147,14 +159,14 @@ class Client {
       NamespaceID namespace_id,
       Topic topic_name,
       SequenceNumber start_seqno,
-      SubscribeCallback subscription_callback = nullptr,
-      MessageReceivedCallback deliver_callback = nullptr) {
+      MessageReceivedCallback deliver_callback = nullptr,
+      SubscribeCallback subscription_callback = nullptr) {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
                       std::move(topic_name),
                       start_seqno},
-                     std::move(subscription_callback),
-                     std::move(deliver_callback));
+                     std::move(deliver_callback),
+                     std::move(subscription_callback));
   }
 
   /**

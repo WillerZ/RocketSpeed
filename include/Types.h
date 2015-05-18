@@ -387,19 +387,13 @@ class SubscriptionStatus {
 /** Message received on a subscription. */
 class MessageReceived {
  public:
-  /** Returns handle identifying subscription that this message arrived on. */
+  /** The handle identifying subscription that this message arrived on. */
   virtual SubscriptionHandle GetSubscriptionHandle() const = 0;
 
-  // The sequence number of this message
+  /** The sequence number of this message. */
   virtual SequenceNumber GetSequenceNumber() const = 0;
 
-  // The namespace id of this message
-  virtual Slice GetNamespaceId() const = 0;
-
-  // The Topic name
-  virtual Slice GetTopicName() const = 0;
-
-  // The contents of the message
+  /** The contents of the message. */
   virtual Slice GetContents() const = 0;
 
   virtual ~MessageReceived() {}

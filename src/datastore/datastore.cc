@@ -41,8 +41,7 @@ DataStoreImpl::DataStoreImpl(
 
   // Receive all messages from this topic and update our
   // in-memory data base
-  auto receive_callback = [this] (std::unique_ptr<MessageReceived> msg) {
-    assert(msg->GetNamespaceId() == datastore_namespace_);
+  auto receive_callback = [this] (std::unique_ptr<MessageReceived>& msg) {
     KeyValue rmsg;
     rmsg.DeSerialize(msg->GetContents());
     {

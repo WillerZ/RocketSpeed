@@ -24,7 +24,6 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "include/WakeLock.h"
-#include "src/client/message_received.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
@@ -167,6 +166,25 @@ SubscriptionState::Action SubscriptionState::ProcessMessage(
   assert(false);
 }
 
+class MessageReceivedImpl : public MessageReceived {
+ public:
+  explicit MessageReceivedImpl(std::unique_ptr<MessageDeliverData> data)
+      : data_(std::move(data)) {}
+
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    return data_->GetSubID();
+  }
+
+  SequenceNumber GetSequenceNumber() const override {
+    return data_->GetSequenceNumber();
+  }
+
+  Slice GetContents() const override { return data_->GetPayload(); }
+
+ private:
+  std::unique_ptr<MessageDeliverData> data_;
+};
+
 void SubscriptionState::ReceiveMessage(const std::shared_ptr<Logger>& info_log,
                                        std::unique_ptr<MessageDeliverGap> gap) {
   thread_check_.Check();
@@ -183,9 +201,9 @@ void SubscriptionState::ReceiveMessage(
   if (ProcessMessage(info_log, *data)) {
     // Deliver message to the application.
     if (deliver_callback_) {
-      deliver_callback_(
-          std::unique_ptr<MessageReceivedClient>(new MessageReceivedClient(
-              namespace_id_, topic_name_, std::move(data))));
+      std::unique_ptr<MessageReceived> received(
+          new MessageReceivedImpl(std::move(data)));
+      deliver_callback_(received);
     }
   }
 }
@@ -463,8 +481,8 @@ PublishStatus ClientImpl::Publish(const TenantID tenant_id,
 
 SubscriptionHandle ClientImpl::Subscribe(
     SubscriptionParameters parameters,
-    SubscribeCallback subscription_callback,
-    MessageReceivedCallback deliver_callback) {
+    MessageReceivedCallback deliver_callback,
+    SubscribeCallback subscription_callback) {
   // Select callbacks taking fallbacks into an account.
   if (!subscription_callback) {
     subscription_callback = subscription_cb_fallback_;

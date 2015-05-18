@@ -40,8 +40,7 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
     // Callback invoked on every message received from storage.
     // It converts the incoming record into a RollcallEntry record
     // and passes it back to the application.
-    auto receive_callback = [this] (std::unique_ptr<MessageReceived> msg) {
-      assert(msg->GetNamespaceId() == rollcall_namespace_);
+    auto receive_callback = [this] (std::unique_ptr<MessageReceived>& msg) {
       RollcallEntry rmsg;
       rmsg.DeSerialize(msg->GetContents());
       callback_(std::move(rmsg));
