@@ -31,11 +31,11 @@ DataStoreImpl::DataStoreImpl(
 
   // If the subscription request was unsuccessful, then invoke
   // user-specified callback with error state.
-  auto subscribe_callback = [this] (SubscriptionStatus ss) {
+  auto subscribe_callback = [this] (const SubscriptionStatus& ss) {
     MutexLock lock(&mutex_);
-    if (!ss.status.ok()) {
+    if (!ss.GetStatus().ok()) {
       // mark datastore as bad
-      db_status_ = Status::IOError(ss.status.ToString());
+      db_status_ = Status::IOError(ss.GetStatus().ToString());
     }
   };
 
@@ -70,13 +70,8 @@ DataStoreImpl::DataStoreImpl(
                                               datastore_topic_,
                                               start_point_);
   if (!handle) {
-    subscribe_callback(
-        SubscriptionStatus(SystemTenant,
-                           datastore_namespace_,
-                           datastore_topic_,
-                           start_point_,
-                           true,
-                           Status::InternalError("Failed to subscribe")));
+    // mark datastore as bad
+    db_status_ = Status::IOError("Failed to subscribe");
   }
   // Handle will be lost, but the only way we unsubscribe is by shutting down
   // the client.

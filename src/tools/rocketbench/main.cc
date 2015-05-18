@@ -572,12 +572,11 @@ int main(int argc, char** argv) {
 
   // Subscribe callback.
   std::atomic<uint64_t> num_topics_subscribed{0};
-  auto subscribe_callback = [&] (rocketspeed::SubscriptionStatus ss) {
-    if (ss.subscribed) {
+  auto subscribe_callback = [&](const rocketspeed::SubscriptionStatus& ss) {
+    if (!ss.IsSubscribed()) {
       LOG_WARN(info_log, "Received an unsubscribe response");
     }
   };
-
 
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;
   size_t num_clients = std::max(pilots.size(), copilots.size());

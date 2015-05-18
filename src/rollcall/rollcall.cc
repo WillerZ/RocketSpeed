@@ -28,8 +28,8 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
   // If the subscription request was successful, then mark
   // our state as SubscriptionConfirmed. Otherwise invoke
   // user-specified callback with error state.
-  auto subscribe_callback = [this] (SubscriptionStatus ss) {
-    if (!ss.status.ok()) {
+  auto subscribe_callback = [this] (const SubscriptionStatus& ss) {
+    if (!ss.GetStatus().ok()) {
       // invoke user-specified callback with error status
       callback_(RollcallEntry());
     }
@@ -54,13 +54,8 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
                                                 rollcall_topic_,
                                                 start_point_);
     if (!handle) {
-      subscribe_callback(
-          SubscriptionStatus(tenant_id,
-                             rollcall_namespace_,
-                             rollcall_topic_,
-                             start_point,
-                             true,
-                             Status::InternalError("Failed to subscribe")));
+      // invoke user-specified callback with error status
+      callback_(RollcallEntry());
     }
     // Handle will be lost, but the only way we unsubscribe is by shutting down
     // the client.

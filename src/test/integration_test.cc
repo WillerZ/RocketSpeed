@@ -54,9 +54,9 @@ TEST(IntegrationTest, OneMessage) {
   auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
   };
 
-  auto subscription_callback = [&] (SubscriptionStatus ss) {
-    ASSERT_TRUE(ss.topic_name == topic);
-    ASSERT_TRUE(ss.namespace_id == namespace_id);
+  auto subscription_callback = [&](const SubscriptionStatus& ss) {
+    ASSERT_TRUE(ss.GetTopicName() == topic);
+    ASSERT_TRUE(ss.GetNamespace() == namespace_id);
   };
 
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
@@ -338,9 +338,6 @@ TEST(IntegrationTest, TrimGapHandling) {
   const Topic topics[2] = { "TrimGapHandling1", "TrimGapHandling2" };
   const int num_messages = 10;
 
-  auto subscription_callback = [&] (SubscriptionStatus ss) {
-  };
-
   port::Semaphore recv_sem[2];
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
     int index = mr->GetTopicName().ToString() == topics[0] ? 0 : 1;
@@ -353,7 +350,7 @@ TEST(IntegrationTest, TrimGapHandling) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  client->SetDefaultCallbacks(subscription_callback, receive_callback);
+  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Publish messages.
   SequenceNumber seqnos[num_messages];
@@ -427,9 +424,6 @@ TEST(IntegrationTest, SequenceNumberZero) {
     publish_sem.Post();
   };
 
-  auto subscription_callback = [&] (SubscriptionStatus ss) {
-  };
-
   std::vector<std::string> received;
   ThreadCheck thread_check;
   auto receive_callback = [&] (std::unique_ptr<MessageReceived> mr) {
@@ -445,7 +439,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  client->SetDefaultCallbacks(subscription_callback, receive_callback);
+  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {

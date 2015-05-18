@@ -30,7 +30,7 @@ class WakeLock;
  * These are described in more details in those apis where they are used.
  */
 typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
-typedef std::function<void(SubscriptionStatus)> SubscribeCallback;
+typedef std::function<void(const SubscriptionStatus&)> SubscribeCallback;
 typedef std::function<void(std::unique_ptr<MessageReceived>)>
                                           MessageReceivedCallback;
 typedef std::function<void(Status)> SaveSubscriptionsCallback;

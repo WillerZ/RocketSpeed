@@ -252,39 +252,6 @@ enum Tenant : TenantID {
 };
 
 /**
- * This is the status returned when a subscription/unsubscription
- * message is acknowledged and confirmed by the Cloud Service.
- */
-class SubscriptionStatus {
- public:
-  SubscriptionStatus() : seqno(0),
-                         subscribed(false),
-                         topic_name(""),
-                         namespace_id(""),
-                         tenant_id(InvalidTenant) {}
-
-  SubscriptionStatus(TenantID _tenant_id,
-                     NamespaceID _namespace_id,
-                     Topic _topic_name,
-                     SequenceNumber _seqno,
-                     bool _subscribe,
-                     Status _status)
-      : status(std::move(_status))
-      , seqno(_seqno)
-      , subscribed(_subscribe)
-      , topic_name(std::move(_topic_name))
-      , namespace_id(std::move(_namespace_id))
-      , tenant_id(_tenant_id) {}
-
-  Status status;
-  SequenceNumber seqno;  // the start seqno of a subscription
-  bool subscribed;       // true for subscription, false for unsubscription
-  Topic topic_name;
-  NamespaceID namespace_id;
-  TenantID tenant_id;
-};
-
-/**
  * A host:port pair that uniquely identifies a machine.
  */
 class HostId {
@@ -391,6 +358,30 @@ class SubscriptionParameters {
   bool operator!=(const SubscriptionParameters& other) const {
     return !(*this == other);
   }
+};
+
+/** Status of a subscription requested by the application. */
+class SubscriptionStatus {
+ public:
+  /** The tenant this subscription was created for. */
+  virtual TenantID GetTenant() const = 0;
+
+  /** The namespace of the topic. */
+  virtual const NamespaceID& GetNamespace() const = 0;
+
+  /** The topic name this message arrived on. */
+  virtual const Topic& GetTopicName() const = 0;
+
+  /** Current sequence number of the subscription. */
+  virtual SequenceNumber GetSequenceNumber() const = 0;
+
+  /** True iff the subscription is active after the callback. */
+  virtual bool IsSubscribed() const = 0;
+
+  /** The reason of this notification. */
+  virtual const Status& GetStatus() const = 0;
+
+  virtual ~SubscriptionStatus() {}
 };
 
 /** Message received on a subscription. */

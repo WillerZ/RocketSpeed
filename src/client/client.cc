@@ -235,17 +235,45 @@ void SubscriptionState::Acknowledge(SequenceNumber seqno) {
   }
 }
 
+class SubscriptionStatusImpl : public SubscriptionStatus {
+ public:
+  SubscriptionStatusImpl(const SubscriptionState& sub_state,
+                         bool subscribed,
+                         Status status)
+      : sub_state_(sub_state)
+      , subscribed_(subscribed)
+      , status_(std::move(status)) {}
+
+  TenantID GetTenant() const override { return sub_state_.GetTenant(); }
+
+  const NamespaceID& GetNamespace() const override {
+    return sub_state_.GetNamespace();
+  }
+
+  const Topic& GetTopicName() const override {
+    return sub_state_.GetTopicName();
+  }
+
+  SequenceNumber GetSequenceNumber() const override {
+    return sub_state_.GetExpected();
+  }
+
+  bool IsSubscribed() const override { return subscribed_; }
+
+  const Status& GetStatus() const override { return status_; }
+
+ private:
+  const SubscriptionState& sub_state_;
+  bool subscribed_;
+  Status status_;
+};
+
 void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
   thread_check_.Check();
 
   if (subscription_callback_) {
-    // TODO(stupaq) pass heavy stuff by const reference
-    subscription_callback_(SubscriptionStatus(tenant_id_,
-                                              namespace_id_,
-                                              topic_name_,
-                                              expected_seqno_,
-                                              subscribed,
-                                              std::move(status)));
+    SubscriptionStatusImpl sub_status(*this, subscribed, std::move(status));
+    subscription_callback_(sub_status);
   }
 }
 

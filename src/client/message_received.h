@@ -41,7 +41,6 @@ class MessageReceivedClient : public MessageReceived {
   virtual Slice GetContents() const { return data_->GetPayload(); }
 
  private:
-  SubscriptionHandle handle_;
   NamespaceID namespace_id_;
   Topic topic_name_;
   std::unique_ptr<MessageDeliverData> data_;
