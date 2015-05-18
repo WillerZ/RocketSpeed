@@ -13,6 +13,7 @@
 #include "src/port/port.h"
 #include "src/util/testharness.h"
 #include "src/util/common/multi_producer_queue.h"
+#include "src/util/common/guid_generator.h"
 
 namespace rocketspeed {
 
@@ -231,7 +232,10 @@ TEST(Messaging, MessageDeliverGap) {
 }
 
 TEST(Messaging, MessageDeliverData) {
-  MessageDeliverData msg1(Tenant::GuestTenant, 42, Slice("payload"));
+  MessageDeliverData msg1(Tenant::GuestTenant,
+                          42,
+                          GUIDGenerator().Generate(),
+                          Slice("payload"));
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   Slice original = msg1.Serialize();
@@ -243,6 +247,7 @@ TEST(Messaging, MessageDeliverData) {
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
   ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
   ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
+  ASSERT_TRUE(msg1.GetMessageID() == msg2.GetMessageID());
   ASSERT_EQ(msg1.GetPayload().ToString(), msg2.GetPayload().ToString());
 }
 

@@ -784,11 +784,17 @@ class MessageDeliverGap final : public MessageDeliver {
 /** A message delivered on particular subscription. */
 class MessageDeliverData final : public MessageDeliver {
  public:
-  MessageDeliverData(TenantID tenant_id, SubscriptionID sub_id, Slice payload)
-      : MessageDeliver(MessageType::mDeliverData, tenant_id, sub_id),
-        payload_(payload) {}
+  MessageDeliverData(TenantID tenant_id,
+                     SubscriptionID sub_id,
+                     MsgId message_id,
+                     Slice payload)
+      : MessageDeliver(MessageType::mDeliverData, tenant_id, sub_id)
+      , message_id_(message_id)
+      , payload_(payload) {}
 
   MessageDeliverData() : MessageDeliver(MessageType::mDeliverData) {}
+
+  const MsgId& GetMessageID() const { return message_id_; };
 
   Slice GetPayload() const { return payload_; }
 
@@ -796,6 +802,8 @@ class MessageDeliverData final : public MessageDeliver {
   Status DeSerialize(Slice* in) override;
 
  private:
+  /** ID of the message assigned by the publisher. */
+  MsgId message_id_;
   /** Payload delivered with the message. */
   Slice payload_;
 };

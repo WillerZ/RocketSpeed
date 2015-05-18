@@ -194,7 +194,10 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
       }
 
       // Send message to the client.
-      MessageDeliverData data(sub->tenant_id, sub->sub_id, msg->GetPayload());
+      MessageDeliverData data(sub->tenant_id,
+                              sub->sub_id,
+                              msg->GetMessageId(),
+                              msg->GetPayload());
       data.SetSequenceNumbers(prev_seqno, seqno);
       Status status = options_.msg_loop->SendResponse(data,
                                                       recipient,

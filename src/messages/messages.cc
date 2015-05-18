@@ -680,6 +680,8 @@ Status MessageDeliverGap::DeSerialize(Slice* in) {
 
 Slice MessageDeliverData::Serialize() const {
   MessageDeliver::Serialize();
+  PutLengthPrefixedSlice(&serialize_buffer__,
+                         Slice((const char*)&message_id_, sizeof(message_id_)));
   PutLengthPrefixedSlice(&serialize_buffer__, payload_);
   return Slice(serialize_buffer__);
 }
@@ -689,6 +691,12 @@ Status MessageDeliverData::DeSerialize(Slice* in) {
   if (!st.ok()) {
     return st;
   }
+  Slice id_slice;
+  if (!GetLengthPrefixedSlice(in, &id_slice) ||
+      id_slice.size() < sizeof(message_id_)) {
+    return Status::InvalidArgument("Bad Message ID");
+  }
+  memcpy(&message_id_, id_slice.data(), sizeof(message_id_));
   if (!GetLengthPrefixedSlice(in, &payload_)) {
     return Status::InvalidArgument("Bad payload");
   }
