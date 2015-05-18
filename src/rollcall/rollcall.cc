@@ -49,19 +49,21 @@ RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
     rs_client_->SetDefaultCallbacks(subscribe_callback, receive_callback);
 
     // send a subscription request for rollcall topic
-    Status st = rs_client_->Client::Subscribe(tenant_id,
-                                              rollcall_namespace_,
-                                              rollcall_topic_,
-                                              start_point_);
-    if (!st.ok()) {
+    auto handle = rs_client_->Client::Subscribe(tenant_id,
+                                                rollcall_namespace_,
+                                                rollcall_topic_,
+                                                start_point_);
+    if (!handle) {
       subscribe_callback(
           SubscriptionStatus(tenant_id,
                              rollcall_namespace_,
                              rollcall_topic_,
                              start_point,
                              true,
-                             std::move(st)));
+                             Status::InternalError("Failed to subscribe")));
     }
+    // Handle will be lost, but the only way we unsubscribe is by shutting down
+    // the client.
   }
 }
 

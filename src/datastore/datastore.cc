@@ -65,19 +65,21 @@ DataStoreImpl::DataStoreImpl(
   rs_client_->SetDefaultCallbacks(subscribe_callback, receive_callback);
 
   // send a subscription request for rollcall topic
-  Status st = rs_client_->Client::Subscribe(SystemTenant,
-                                            datastore_namespace_,
-                                            datastore_topic_,
-                                            start_point_);
-  if (!st.ok()) {
+  auto handle = rs_client_->Client::Subscribe(SystemTenant,
+                                              datastore_namespace_,
+                                              datastore_topic_,
+                                              start_point_);
+  if (!handle) {
     subscribe_callback(
         SubscriptionStatus(SystemTenant,
                            datastore_namespace_,
                            datastore_topic_,
                            start_point_,
                            true,
-                           std::move(st)));
+                           Status::InternalError("Failed to subscribe")));
   }
+  // Handle will be lost, but the only way we unsubscribe is by shutting down
+  // the client.
 
   // If we are creating a new database, then insert a metadata record
   // to indicate that all previous entries are invalid.

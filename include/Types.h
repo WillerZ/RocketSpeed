@@ -206,26 +206,6 @@ class ResultStatus {
 };
 
 /**
- *  Message received on subscribed topics
- */
-class MessageReceived {
- public:
-  // The sequence number of this message
-  virtual SequenceNumber GetSequenceNumber() const = 0;
-
-  // The namespace id of this message
-  virtual Slice GetNamespaceId() const = 0;
-
-  // The Topic name
-  virtual Slice GetTopicName() const = 0;
-
-  // The contents of the message
-  virtual Slice GetContents() const = 0;
-
-  virtual ~MessageReceived()  {}
-};
-
-/**
  * An object of the form scheme://host:port/path
  */
 typedef std::string URL;
@@ -374,9 +354,15 @@ class TopicOptions {
 };
 
 /**
+ * Identifies a single subscription. A null-handle does not correspond to any
+ * subscription.
+ */
+typedef uint64_t SubscriptionHandle;
+
+/**
  * Describes parameters of a subscription persisted by the client.
  * After receiving a list of restored subscriptions, the application can reissue
- * corresponding subscription requests by providing subscription objects back
+ * corresponding subscription requests by providing subscription parameters back
  * to the client together with appropriate callbacks.
  */
 class SubscriptionParameters {
@@ -405,6 +391,27 @@ class SubscriptionParameters {
   bool operator!=(const SubscriptionParameters& other) const {
     return !(*this == other);
   }
+};
+
+/** Message received on a subscription. */
+class MessageReceived {
+ public:
+  /** Returns handle identifying subscription that this message arrived on. */
+  virtual SubscriptionHandle GetSubscriptionHandle() const = 0;
+
+  // The sequence number of this message
+  virtual SequenceNumber GetSequenceNumber() const = 0;
+
+  // The namespace id of this message
+  virtual Slice GetNamespaceId() const = 0;
+
+  // The Topic name
+  virtual Slice GetTopicName() const = 0;
+
+  // The contents of the message
+  virtual Slice GetContents() const = 0;
+
+  virtual ~MessageReceived() {}
 };
 
 }  // namespace rocketspeed

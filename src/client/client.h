@@ -54,11 +54,12 @@ class ClientImpl : public Client {
                                 PublishCallback callback,
                                 const MsgId messageId);
 
-  Status Subscribe(SubscriptionParameters parameters,
-                   SubscribeCallback subscription_callback,
-                   MessageReceivedCallback deliver_callback) override;
+  SubscriptionHandle Subscribe(SubscriptionParameters parameters,
+                               SubscribeCallback subscription_callback,
+                               MessageReceivedCallback deliver_callback)
+      override;
 
-  Status Unsubscribe(NamespaceID namespace_id, Topic topic_name) override;
+  Status Unsubscribe(SubscriptionHandle sub_handle) override;
 
   Status Acknowledge(const MessageReceived& message) override;
 
@@ -116,14 +117,28 @@ class ClientImpl : public Client {
   /** Starts message loop and waits until it's running. */
   Status WaitUntilRunning();
 
-  /** Shards topics into workers */
-  int GetWorkerForTopic(const Topic& name) const;
+  /** Next subscription ID seed to be used for new subscription ID. */
+  std::atomic<uint64_t> next_sub_id_;
+
+  /**
+   * Returns a new subscription handle. This method is thread-safe.
+   *
+   * @param worker_id A worker this subscription will be bound to.
+   * @return A handle, if fails to allocate returns a null-handle.
+   */
+  SubscriptionHandle CreateNewHandle(int worker_id);
+
+  /**
+   * Extracts worker ID from provided subscription handle.
+   * In case of error, returned worker ID is negative.
+   */
+  int GetWorkerID(SubscriptionHandle sub_handle) const;
 
   /** Handles creation of a subscription on provided worker thread. */
-  void StartSubscription(SubscriptionState sub_state);
+  void StartSubscription(SubscriptionID sub_id, SubscriptionState sub_state);
 
   /** Handles termination of a subscription on provided worker thread. */
-  void TerminateSubscription(NamespaceID namespace_id, Topic topic_name);
+  void TerminateSubscription(SubscriptionID sub_id);
 
   bool IsNotCopilot(const ClientWorkerData& worker_data, StreamID origin);
 

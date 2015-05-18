@@ -10,6 +10,7 @@
 
 #include "include/RocketSpeed.h"
 #include "src/client/client.h"
+#include "src/client/message_received.h"
 #include "src/port/port.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/thread_check.h"
@@ -83,12 +84,12 @@ TEST(IntegrationTest, OneMessage) {
   ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
-  ASSERT_OK(client->Subscribe(GuestTenant,
-                              namespace_id,
-                              topic,
-                              1,
-                              subscription_callback,
-                              receive_callback));
+  ASSERT_TRUE(client->Subscribe(GuestTenant,
+                                namespace_id,
+                                topic,
+                                1,
+                                subscription_callback,
+                                receive_callback));
 
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);
@@ -382,12 +383,13 @@ TEST(IntegrationTest, TrimGapHandling) {
 
   auto test_receipt = [&](int topic, SequenceNumber seqno, int expected) {
     // Tests that subscribing to topic@seqno results in 'expected' messages.
-    ASSERT_OK(client->Subscribe(GuestTenant, ns, topics[topic], seqno));
+    auto handle = client->Subscribe(GuestTenant, ns, topics[topic], seqno);
+    ASSERT_TRUE(handle);
     while (expected--) {
       ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
     }
     ASSERT_TRUE(!recv_sem[topic].TimedWait(std::chrono::milliseconds(100)));
-    ASSERT_OK(client->Unsubscribe(ns, topics[topic]));
+    ASSERT_OK(client->Unsubscribe(std::move(handle)));
   };
 
   test_receipt(0, seqnos[0], 5);
@@ -454,7 +456,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   }
 
   // Subscribe using seqno 0.
-  ASSERT_OK(client->Subscribe(GuestTenant, ns, topic, 0));
+  auto handle = client->Subscribe(GuestTenant, ns, topic, 0);
+  ASSERT_TRUE(handle);
   ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
 
   // Should not receive any of the last three messages.
@@ -473,7 +476,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   }
 
   // Unsubscribe from previously subscribed topic.
-  ASSERT_OK(client->Unsubscribe(ns, topic));
+  ASSERT_OK(client->Unsubscribe(std::move(handle)));
 
   // Send some messages and wait for the acks.
   for (int i = 6; i < 9; ++i) {
@@ -484,7 +487,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
   }
 
   // Subscribe using seqno 0.
-  ASSERT_OK(client->Subscribe(GuestTenant, ns, topic, 0));
+  ASSERT_TRUE(client->Subscribe(GuestTenant, ns, topic, 0));
   ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
 
   // Send 3 more messages again.
@@ -633,7 +636,7 @@ TEST(IntegrationTest, LostConnection) {
                             publish_callback).status);
 
   // Listen on a topic.
-  ASSERT_OK(client->Subscribe(GuestTenant, namespace_id, topic, 1));
+  ASSERT_TRUE(client->Subscribe(GuestTenant, namespace_id, topic, 1));
 
   // Wait for the message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
@@ -708,7 +711,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
-  ASSERT_OK(client->Subscribe(GuestTenant, namespace_id, topic, 1));
+  ASSERT_TRUE(client->Subscribe(GuestTenant, namespace_id, topic, 1));
 
   // Wait for the message.
   bool result = msg_received.TimedWait(timeout);
@@ -749,7 +752,7 @@ TEST(IntegrationTest, NewControlTower) {
                             "message1").status);
 
   // Listen for the message.
-  ASSERT_OK(
+  ASSERT_TRUE(
       client->Subscribe(GuestTenant, namespace_id, "NewControlTower1", 1));
 
   // Wait for the message.
@@ -783,7 +786,7 @@ TEST(IntegrationTest, NewControlTower) {
 
   // Listen for the message.
   // This subscription request should be routed to the new control tower.
-  ASSERT_OK(
+  ASSERT_TRUE(
       client->Subscribe(GuestTenant, namespace_id, "NewControlTower2", 1));
 
   // Wait for the message.
@@ -825,9 +828,24 @@ TEST(IntegrationTest, SubscriptionStorage) {
       SubscriptionParameters(Tenant::GuestTenant, GuestNamespace,
                              "SubscriptionStorage_1", 0), };
 
+  std::vector<SubscriptionHandle> handles;
   for (const auto& params : expected) {
-    ASSERT_OK(client->Subscribe(params));
+    handles.emplace_back(client->Subscribe(params));
   }
+
+  // Acknowledge some messages.
+  std::unique_ptr<MessageDeliverData> data(
+      new MessageDeliverData(GuestTenant,
+                             handles[0],
+                             Slice("payload")));
+  data->SetSequenceNumbers(120, 125);
+  // We now expect the higher seqno.
+  expected[0].start_seqno = 126;
+  MessageReceivedClient message(
+      expected[0].namespace_id, expected[0].topic_name,
+      std::move(data));
+  ASSERT_OK(client->Acknowledge(message));
+
   // No need to wait for any callbacks.
 
   port::Semaphore save_sem;
@@ -896,21 +914,23 @@ TEST(IntegrationTest, SubscriptionManagement) {
   };
 
   // Subscribe to a topic.
-  auto sub = [&](int c, Topic topic, SequenceNumber seqno) {
+  auto sub = [&](int c, Topic topic, SequenceNumber seqno)->SubscriptionHandle {
     if (seqno == 0) {
       env_->SleepForMicroseconds(100000);  // allow latest seqno to propagate.
     }
     // Leave null callbacks, it'll fall back to the ones set when starting the
     // client.
-    client[c]->Subscribe(GuestTenant, GuestNamespace, topic, seqno);
+    auto handle =
+        client[c]->Subscribe(GuestTenant, GuestNamespace, topic, seqno);
     if (seqno == 0) {
       env_->SleepForMicroseconds(100000);  // allow latest seqno to propagate.
     }
+    return std::move(handle);
   };
 
   // Unsubscribe from a topic.
-  auto unsub = [&] (int c, Topic topic) {
-    ASSERT_OK(client[c]->Unsubscribe(GuestNamespace, topic));
+  auto unsub = [&](int c, SubscriptionHandle handle) {
+    ASSERT_OK(client[c]->Unsubscribe(std::move(handle)));
   };
 
   // Receive messages.
@@ -945,14 +965,14 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(1, {});
 
   // Subscribe client 0 to start, publish 3, receive 3.
-  sub(0, "a", 1);
+  auto h_0a = sub(0, "a", 1);
   pub(0, "a", "a0");
   SequenceNumber a1 = pub(0, "a", "a1");
   pub(0, "a", "a2");
   recv(0, {"a0", "a1", "a2"});
 
   // Subscribe client 1 at message 2/3, receive messages 2 + 3
-  sub(1, "a", a1);
+  auto h_1a = sub(1, "a", a1);
   recv(0, {});
   recv(1, {"a1", "a2"});
 
@@ -962,27 +982,27 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(1, {"a3"});
 
   // Unsubscribe client 0, publish, only client 1 should receive.
-  unsub(0, "a");
+  unsub(0, h_0a);
   pub(0, "a", "a4");
   recv(0, {});
   recv(1, {"a4"});
 
   // Unsubscribe client 1, publish, neither should receive.
-  unsub(1, "a");
+  unsub(1, h_1a);
   pub(0, "a", "a5");
   recv(0, {});
   recv(1, {});
 
   // Subscribe both at tail, publish, both should receive.
   sub(0, "a", 0);
-  sub(1, "a", 0);
+  h_1a = sub(1, "a", 0);
   pub(0, "a", "a6");
   recv(0, {"a6"});
   recv(1, {"a6"});
 
   // Unsubscribe client 1, publish, resubscribe at tail, publish again.
   // Client 0 should receive both, while client 1 only last one.
-  unsub(1, "a");
+  unsub(1, h_1a);
   pub(0, "a", "a7");
   sub(1, "a", 0);
   pub(0, "a", "a8");
@@ -992,22 +1012,22 @@ TEST(IntegrationTest, SubscriptionManagement) {
   // Test topic tailer handling of intertwined topic subscriptions.
   // Subscribe both to b and publish b0.
   sub(0, "b", 1);
-  sub(1, "b", 1);
+  auto h_1b = sub(1, "b", 1);
   pub(0, "b", "b0");
   recv(0, {"b0"});
   recv(1, {"b0"});
 
   // Unsubscribe b then advance the log with topic c.
-  unsub(1, "b");
+  unsub(1, h_1b);
   pub(0, "c", "c0");
   SequenceNumber c1 = pub(0, "c", "c1");
   pub(0, "c", "c2");
 
   // Subsribe client1 to c1.
   // This must cause log tailer to rewind.
-  sub(1, "c", c1);
+  auto h_1c = sub(1, "c", c1);
   recv(1, {"c1", "c2"});
-  unsub(1, "c");
+  unsub(1, h_1c);
 
   // Check that client 0 can still read b's (gapless topics mean that we still
   // need to keep track of last b).
@@ -1053,7 +1073,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(0, {"g0"});
   recv(1, {"g0"});
 
-  // Rewinding subscription.
+  // Multiple subscriptions.
   sub(0, "h", 0);
   auto h0 = pub(1, "h", "h0");
   auto h1 = pub(1, "h", "h1");
@@ -1065,6 +1085,10 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(0, {"h1", "h2"});
   sub(0, "h", h0);
   recv(0, {"h0", "h1", "h2"});
+  // Since we have 4 subscriptions at the tail, whatever we publish now arrives
+  // in as many copies, one per subscription.
+  pub(1, "h", "h3");
+  recv(0, {"h3", "h3", "h3", "h3"});
 }
 
 }  // namespace rocketspeed

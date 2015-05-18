@@ -203,7 +203,8 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message) {
         sub->seqno = seqno + 1;
 
         LOG_INFO(options_.info_log,
-                 "Sent data (%.16s)@%" PRIu64 " for ID(%u) Topic(%s) to %llu",
+                 "Sent data (%.16s)@%" PRIu64 " for ID(%" PRIu64
+                 ") Topic(%s) to %llu",
                  msg->GetPayload().ToString().c_str(),
                  msg->GetSequenceNumber(),
                  data.GetSubID(),
@@ -281,7 +282,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message) {
 
         LOG_INFO(options_.info_log,
                  "Sent gap %" PRIu64 "-%" PRIu64
-                 " for  subscription ID(%u) Topic(%s) to %llu",
+                 " for  subscription ID(%" PRIu64 ") Topic(%s) to %llu",
                  msg->GetStartSequenceNumber(),
                  msg->GetEndSequenceNumber(),
                  gap.GetSubID(),
@@ -304,7 +305,8 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
                                      const int worker_id,
                                      const StreamID subscriber) {
   LOG_INFO(options_.info_log,
-      "Received subscribe request ID(%u) for Topic(%s)@%" PRIu64 " for %llu",
+      "Received subscribe request ID(%" PRIu64
+      ") for Topic(%s)@%" PRIu64 " for %llu",
       sub_id,
       topic_name.c_str(),
       start_seqno,
@@ -422,7 +424,7 @@ void CopilotWorker::ProcessUnsubscribe(TenantID tenant_id,
                                        int worker_id,
                                        StreamID subscriber) {
   LOG_INFO(options_.info_log,
-           "Received unsubscribe request for ID (%u) on stream %llu",
+           "Received unsubscribe request for ID (%" PRIu64 ") on stream %llu",
            sub_id,
            subscriber);
 

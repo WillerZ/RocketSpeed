@@ -22,6 +22,10 @@ class MessageReceivedClient : public MessageReceived {
         topic_name_(std::move(topic_name)),
         data_(std::move(data)) {}
 
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    return data_->GetSubID();
+  }
+
   // The sequence number of this message
   virtual SequenceNumber GetSequenceNumber() const {
     return data_->GetSequenceNumber();
@@ -37,6 +41,7 @@ class MessageReceivedClient : public MessageReceived {
   virtual Slice GetContents() const { return data_->GetPayload(); }
 
  private:
+  SubscriptionHandle handle_;
   NamespaceID namespace_id_;
   Topic topic_name_;
   std::unique_ptr<MessageDeliverData> data_;

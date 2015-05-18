@@ -315,7 +315,8 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
 
   auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
   LOG_INFO(options_.info_log,
-           "Received unsubscribe for subscription (%u) at stream (%llu)",
+           "Received unsubscribe for subscription (%" PRIu64
+           ") at stream (%llu)",
            unsubscribe->GetSubID(),
            origin);
 

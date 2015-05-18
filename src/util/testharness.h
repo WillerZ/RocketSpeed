@@ -110,7 +110,7 @@ class Tester {
 };
 
 #define ASSERT_TRUE(c) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .Is((c), #c)
+  .Is(!!(c), #c)
 #define ASSERT_OK(s) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
   .IsOk((s))
 #define ASSERT_EQ(a, b) ::rocketspeed::test::Tester(__FILE__, __LINE__) \

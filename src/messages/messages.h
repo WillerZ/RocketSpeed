@@ -642,7 +642,7 @@ inline bool ValidateEnum(MessageGoodbye::OriginType e) {
  * ID of the subscription the message belongs to. IDs are uniquely identify
  * subscription within a stream.
  */
-typedef uint32_t SubscriptionID;
+typedef uint64_t SubscriptionID;
 
 /** A request to subscribe to provided topic with given parameters. */
 class MessageSubscribe final : public Message {

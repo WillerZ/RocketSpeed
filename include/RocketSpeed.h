@@ -133,20 +133,22 @@ class Client {
    *                              subscription.
    * @param deliver_callback Invoked with every message received on the
    *                         subscription.
-   * @return Status::OK() iff subscription request was successfully enqueued.
+   * @return A handle that identifies this subscription. The handle is unengaged
+   *         iff the Client failed to create the subscription.
    */
-  virtual Status Subscribe(
+  virtual SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
       SubscribeCallback subscription_callback = nullptr,
       MessageReceivedCallback deliver_callback = nullptr) = 0;
 
   /** Convenience method, see the other overload for details. */
-  Status Subscribe(TenantID tenant_id,
-                   NamespaceID namespace_id,
-                   Topic topic_name,
-                   SequenceNumber start_seqno,
-                   SubscribeCallback subscription_callback = nullptr,
-                   MessageReceivedCallback deliver_callback = nullptr) {
+  SubscriptionHandle Subscribe(
+      TenantID tenant_id,
+      NamespaceID namespace_id,
+      Topic topic_name,
+      SequenceNumber start_seqno,
+      SubscribeCallback subscription_callback = nullptr,
+      MessageReceivedCallback deliver_callback = nullptr) {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
                       std::move(topic_name),
@@ -156,17 +158,16 @@ class Client {
   }
 
   /**
-   * Unsubscribes from a topic identified by provided parameters.
+   * Unsubscribes from a topic identified by provided handle.
    *
    * Subscribe callback is invoked when the client is successfully unsubscribed.
    * Messages arriving on this subscription after client unsubscribed, are
    * silently dropped.
    *
-   * @param namespace_id Namespace the topic belongs to.
-   * @param topic_name Names of a topic one wants to unsubscribe from.
+   * @param A handle that identifies the subscription.
    * @return Status::OK() iff unsubscription request was successfully enqueued.
    */
-  virtual Status Unsubscribe(NamespaceID namespace_id, Topic topic_name) = 0;
+  virtual Status Unsubscribe(SubscriptionHandle sub_handle) = 0;
 
   /**
    * Acknowledges that this message was processed by the application.

@@ -589,7 +589,7 @@ Slice MessageSubscribe::Serialize() const {
   Message::Serialize();
   PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
   PutVarint64(&serialize_buffer__, start_seqno_);
-  PutVarint32(&serialize_buffer__, sub_id_);
+  PutVarint64(&serialize_buffer__, sub_id_);
   return Slice(serialize_buffer__);
 }
 
@@ -604,7 +604,7 @@ Status MessageSubscribe::DeSerialize(Slice* in) {
   if (!GetVarint64(in, &start_seqno_)) {
     return Status::InvalidArgument("Bad SequenceNumber");
   }
-  if (!GetVarint32(in, &sub_id_)) {
+  if (!GetVarint64(in, &sub_id_)) {
     return Status::InvalidArgument("Bad SubscriptionID");
   }
   return Status::OK();
@@ -612,7 +612,7 @@ Status MessageSubscribe::DeSerialize(Slice* in) {
 
 Slice MessageUnsubscribe::Serialize() const {
   Message::Serialize();
-  PutVarint32(&serialize_buffer__, sub_id_);
+  PutVarint64(&serialize_buffer__, sub_id_);
   PutFixedEnum8(&serialize_buffer__, reason_);
   return Slice(serialize_buffer__);
 }
@@ -622,7 +622,7 @@ Status MessageUnsubscribe::DeSerialize(Slice* in) {
   if (!st.ok()) {
     return st;
   }
-  if (!GetVarint32(in, &sub_id_)) {
+  if (!GetVarint64(in, &sub_id_)) {
     return Status::InvalidArgument("Bad SubscriptionID");
   }
   if (!GetFixedEnum8(in, &reason_)) {
@@ -633,7 +633,7 @@ Status MessageUnsubscribe::DeSerialize(Slice* in) {
 
 Slice MessageDeliver::Serialize() const {
   Message::Serialize();
-  PutVarint32(&serialize_buffer__, sub_id_);
+  PutVarint64(&serialize_buffer__, sub_id_);
   PutVarint64(&serialize_buffer__, seqno_prev_);
   assert(seqno_ >= seqno_prev_);
   uint64_t seqno_diff = seqno_ - seqno_prev_;
@@ -646,7 +646,7 @@ Status MessageDeliver::DeSerialize(Slice* in) {
   if (!st.ok()) {
     return st;
   }
-  if (!GetVarint32(in, &sub_id_)) {
+  if (!GetVarint64(in, &sub_id_)) {
     return Status::InvalidArgument("Bad SubscriptionID");
   }
   if (!GetVarint64(in, &seqno_prev_)) {

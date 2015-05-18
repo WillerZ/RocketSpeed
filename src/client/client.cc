@@ -28,7 +28,6 @@
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
-#include "src/util/common/hash.h"
 
 #ifndef USE_MQTTMSGLOOP
 #include "src/messages/msg_loop.h"
@@ -71,19 +70,6 @@ class SubscriptionState {
   const NamespaceID& GetNamespace() const { return namespace_id_; }
 
   const Topic& GetTopicName() const { return topic_name_; }
-
-  void AssignID(const std::shared_ptr<Logger>& info_log,
-                SubscriptionID sub_id) {
-    thread_check_.Check();
-    LOG_INFO(info_log,
-             "Subscription on Topic(%s, %s)@%" PRIu64
-             " for tenant %u assigned ID (%u)",
-             namespace_id_.c_str(),
-             topic_name_.c_str(),
-             expected_seqno_,
-             tenant_id_,
-             sub_id);
-  }
 
   /**
    * Processes unsubscribe message, optionally announces its status and decides
@@ -149,7 +135,8 @@ SubscriptionState::Action SubscriptionState::ProcessMessage(
   switch (unsubscribe.GetReason()) {
     case MessageUnsubscribe::Reason::kRequested:
       LOG_DEBUG(info_log,
-                "Terminated subscription ID (%u) on Topic(%s, %s)@%" PRIu64,
+                "Terminated subscription ID(%" PRIu64
+                ") on Topic(%s, %s)@%" PRIu64,
                 unsubscribe.GetSubID(),
                 namespace_id_.c_str(),
                 topic_name_.c_str(),
@@ -157,7 +144,8 @@ SubscriptionState::Action SubscriptionState::ProcessMessage(
       AnnounceStatus(false, Status::OK());
       return Action::kTerminate;
     case MessageUnsubscribe::Reason::kBackOff:
-      LOG_INFO(info_log, "Resubscribing with ID (%u) on Topic(%s, %s)@%" PRIu64,
+      LOG_INFO(info_log,
+               "Resubscribing with ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
                unsubscribe.GetSubID(),
                namespace_id_.c_str(),
                topic_name_.c_str(),
@@ -165,13 +153,13 @@ SubscriptionState::Action SubscriptionState::ProcessMessage(
       // We will silently resubscribe, don't announce subscription status.
       return Action::kResubscribe;
     case MessageUnsubscribe::Reason::kInvalid:
-      LOG_WARN(
-          info_log,
-          "Terminated invalid subscription ID (%u) on Topic(%s, %s)@%" PRIu64,
-          unsubscribe.GetSubID(),
-          namespace_id_.c_str(),
-          topic_name_.c_str(),
-          expected_seqno_);
+      LOG_WARN(info_log,
+               "Terminated invalid subscription ID (%" PRIu64
+               ") on Topic(%s, %s)@%" PRIu64,
+               unsubscribe.GetSubID(),
+               namespace_id_.c_str(),
+               topic_name_.c_str(),
+               expected_seqno_);
       AnnounceStatus(false, Status::InvalidArgument("Invalid subscription"));
       return Action::kTerminate;
       // No default, we will be warned about unhandled code.
@@ -272,16 +260,12 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   ClientWorkerData(ClientWorkerData&&) = delete;
   ClientWorkerData& operator=(ClientWorkerData&&) = delete;
 
-  ClientWorkerData() : next_sub_id_(0) {}
+  ClientWorkerData() {}
 
   /** Stream socket used by this worker to talk to the copilot. */
   StreamSocket copilot_socket;
-  /** Next subscription ID to be used for new subscription. */
-  SubscriptionID next_sub_id_;
   /** All subscriptions served by this worker. */
   std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
-  /** A mapping from topics to subscription IDs. */
-  std::unordered_map<TopicID, SubscriptionID> subscribed_topics_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -449,10 +433,10 @@ PublishStatus ClientImpl::Publish(const TenantID tenant_id,
                             message_id);
 }
 
-Status ClientImpl::Subscribe(SubscriptionParameters parameters,
-                             SubscribeCallback subscription_callback,
-                             MessageReceivedCallback deliver_callback) {
-  const auto worker_id = GetWorkerForTopic(parameters.topic_name);
+SubscriptionHandle ClientImpl::Subscribe(
+    SubscriptionParameters parameters,
+    SubscribeCallback subscription_callback,
+    MessageReceivedCallback deliver_callback) {
   // Select callbacks taking fallbacks into an account.
   if (!subscription_callback) {
     subscription_callback = subscription_cb_fallback_;
@@ -460,70 +444,85 @@ Status ClientImpl::Subscribe(SubscriptionParameters parameters,
   if (!deliver_callback) {
     deliver_callback = deliver_cb_fallback_;
   }
+
+  // Choose client worker for this subscription.
+  const auto worker_id = msg_loop_->LoadBalancedWorkerId();
+
+  // Allocate unique handle and ID for new subscription.
+  const SubscriptionHandle sub_handle = CreateNewHandle(worker_id);
+  if (!sub_handle) {
+    LOG_ERROR(info_log_, "Client run out of subscription handles");
+    return SubscriptionHandle(0);
+  }
+  const SubscriptionID sub_id = sub_handle;
+
   // Create an object that manages state of the subscription.
   auto moved_sub_state = folly::makeMoveWrapper(
       SubscriptionState(std::move(parameters),
                         std::move(subscription_callback),
                         std::move(deliver_callback)));
+
   // Send command to responsible worker.
-  auto action = [this, moved_sub_state]() mutable {
-    StartSubscription(moved_sub_state.move());
-  };
-  return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(new ExecuteCommand(std::move(action))),
+  Status st = msg_loop_->SendCommand(
+      std::unique_ptr<Command>(
+          new ExecuteCommand([this, sub_id, moved_sub_state]() mutable {
+            StartSubscription(sub_id, moved_sub_state.move());
+          })),
       worker_id);
+  return st.ok() ? sub_handle : SubscriptionHandle(0);
 }
 
-Status ClientImpl::Unsubscribe(NamespaceID namespace_id, Topic topic_name) {
-  const auto worker_id = GetWorkerForTopic(topic_name);
+Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
+  if (!sub_handle) {
+    return Status::InvalidArgument("Unengaged handle.");
+  }
+
+  // Determine corresponding worker and subscription ID.
+  const auto worker_id = GetWorkerID(sub_handle);
+  if (worker_id < 0) {
+    return Status::InvalidArgument("Invalid handle.");
+  }
+  const SubscriptionID sub_id = sub_handle;
+
   // Send command to responsible worker.
-  auto moved_namespace_id = folly::makeMoveWrapper(std::move(namespace_id));
-  auto moved_topic_name = folly::makeMoveWrapper(std::move(topic_name));
-  auto action = [this, moved_namespace_id, moved_topic_name]() mutable {
-    TerminateSubscription(moved_namespace_id.move(), moved_topic_name.move());
-  };
   return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(new ExecuteCommand(std::move(action))),
+      std::unique_ptr<Command>(new ExecuteCommand(
+          std::bind(&ClientImpl::TerminateSubscription, this, sub_id))),
       worker_id);
 }
 
 Status ClientImpl::Acknowledge(const MessageReceived& message) {
-  // Find the right worker to send command to.
-  auto moved_topic_id = folly::makeMoveWrapper(TopicID(
-      message.GetNamespaceId().ToString(), message.GetTopicName().ToString()));
-  int worker_id = GetWorkerForTopic(moved_topic_id->topic_name);
-  // Acknowledge the message in subscription state.
+  const SubscriptionHandle sub_handle = message.GetSubscriptionHandle();
+  if (!sub_handle) {
+    return Status::InvalidArgument("Unengaged handle.");
+  }
+
+  // Determine corresponding worker and subscription ID.
+  const auto worker_id = GetWorkerID(sub_handle);
+  if (worker_id < 0) {
+    return Status::InvalidArgument("Invalid handle.");
+  }
+  const SubscriptionID sub_id = sub_handle;
+
+  // Prepare command to be executed.
   SequenceNumber acked_seqno = message.GetSequenceNumber();
-  auto action = [this, worker_id, moved_topic_id, acked_seqno]() mutable {
+  auto action = [this, worker_id, sub_id, acked_seqno]() {
     auto& worker_data = worker_data_[worker_id];
 
-    SubscriptionID sub_id;
-    TopicID topic_id(moved_topic_id.move());
-    {  // Find corresponding subscription ID.
-      auto it = worker_data.subscribed_topics_.find(topic_id);
-      if (it == worker_data.subscribed_topics_.end()) {
-        LOG_WARN(info_log_,
-                 "Cannot acknowledge missing subscription on Topic(%s, %s)",
-                 topic_id.namespace_id.c_str(),
-                 topic_id.topic_name.c_str());
-        return;
-      }
-      sub_id = it->second;
-    }
-
-    // Find corresponding subscription object.
+    // Find corresponding subscription state.
     auto it = worker_data.subscriptions_.find(sub_id);
     if (it == worker_data.subscriptions_.end()) {
-      LOG_ERROR(info_log_,
-                "Cannot acknowledge missing subscription ID (%u)",
-                sub_id);
-      assert(false);
+      LOG_WARN(info_log_,
+               "Cannot acknowledge missing subscription ID (%" PRIu64 ")",
+               sub_id);
       return;
     }
 
     // Record acknowledgement in the state.
     it->second.Acknowledge(acked_seqno);
   };
+
+  // Send command to responsible worker.
   return msg_loop_->SendCommand(
       std::unique_ptr<Command>(new ExecuteCommand(std::move(action))),
       worker_id);
@@ -550,7 +549,7 @@ void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
     const auto& worker_data = worker_data_[worker_id];
 
     for (const auto& entry : worker_data.subscriptions_) {
-      const auto sub_state = &entry.second;
+      const SubscriptionState* sub_state = &entry.second;
       SequenceNumber start_seqno = sub_state->GetLastAcknowledged();
       // Subscription storage stores parameters of subscribe requests that shall
       // be reissued, therefore we must persiste the next sequence number.
@@ -618,58 +617,51 @@ Status ClientImpl::WaitUntilRunning() {
   return Status::OK();
 }
 
-int ClientImpl::GetWorkerForTopic(const Topic& name) const {
-  return static_cast<int>(MurmurHash2<std::string>()(name) %
-                          msg_loop_->GetNumWorkers());
+SubscriptionHandle ClientImpl::CreateNewHandle(int worker_id) {
+  const auto num_workers = msg_loop_->GetNumWorkers();
+  const auto handle = 1 + worker_id + num_workers * next_sub_id_++;
+  if (GetWorkerID(handle) != worker_id) {
+    return SubscriptionHandle(0);
+  }
+  return handle;
 }
 
-void ClientImpl::StartSubscription(SubscriptionState sub_state_val) {
+int ClientImpl::GetWorkerID(SubscriptionHandle sub_handle) const {
+  const auto num_workers = msg_loop_->GetNumWorkers();
+  const auto worker_id = static_cast<int>((sub_handle - 1) % num_workers);
+  if (worker_id < 0 || worker_id >= num_workers) {
+    return -1;
+  }
+  return worker_id;
+}
+
+void ClientImpl::StartSubscription(SubscriptionID sub_id,
+                                   SubscriptionState sub_state_val) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
-  TopicID topic_id(sub_state_val.GetNamespace(), sub_state_val.GetTopicName());
-  {  // Kill any existing subscription on the topic.
-    if (worker_data.subscribed_topics_.count(topic_id) > 0) {
-      TerminateSubscription(sub_state_val.GetNamespace(),
-                            sub_state_val.GetTopicName());
-    }
-  }
-
-  SubscriptionID sub_id;
   SubscriptionState* sub_state;
-  {  // Assign subscription ID and store the subscription.
-    const SubscriptionID started_search_at = worker_data.next_sub_id_;
-    do {
-      // This loop will do up to number of existing subscriptions iterations.
-      sub_id = worker_data.next_sub_id_++;
-      auto it = worker_data.subscriptions_.find(sub_id);
-      if (it == worker_data.subscriptions_.end()) {
-        auto emplace_result = worker_data.subscriptions_.emplace(
-            sub_id, std::move(sub_state_val));
-        assert(emplace_result.second);
-        sub_state = &emplace_result.first->second;
-        break;
-      }
-    } while (worker_data.next_sub_id_ != started_search_at);
-    // If we've made a full cycle, it means we've run out of subscription IDs.
-    if (worker_data.next_sub_id_ == started_search_at) {
-      // Apparently we have about 4 TB of ram or we're leaking IDs.
-      LOG_FATAL(info_log_,
-                "Failed to allocate ID for new subscription on Topic(%s, %s)",
-                sub_state_val.GetNamespace().c_str(),
-                sub_state_val.GetTopicName().c_str());
+  {  // Store the subscription state.
+    auto emplace_result =
+        worker_data.subscriptions_.emplace(sub_id, std::move(sub_state_val));
+    if (!emplace_result.second) {
+      LOG_ERROR(info_log_,
+                "Duplicated subscription ID(%" PRIu64 ")",
+                sub_id);
       assert(false);
       return;
     }
+    sub_state = &emplace_result.first->second;
   }
-  sub_state->AssignID(info_log_, sub_id);
 
-  {  // Replace existing subscription on the topic.
-    // Insert entry for new subscription.
-    auto emplace_result =
-        worker_data.subscribed_topics_.emplace(std::move(topic_id), sub_id);
-    assert(emplace_result.second);
-  }
+  LOG_INFO(info_log_,
+           "Subscription on Topic(%s, %s)@%" PRIu64
+           " for tenant %u ID(%" PRIu64 ")",
+           sub_state->GetNamespace().c_str(),
+           sub_state->GetTopicName().c_str(),
+           sub_state->GetExpected(),
+           sub_state->GetTenant(),
+           sub_id);
 
   // Prepare first subscription request.
   MessageSubscribe message(sub_state->GetTenant(),
@@ -686,31 +678,16 @@ void ClientImpl::StartSubscription(SubscriptionState sub_state_val) {
   assert(st.ok());
 }
 
-void ClientImpl::TerminateSubscription(NamespaceID namespace_id,
-                                       Topic topic_name) {
+void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
-
-  const TopicID topic_id(std::move(namespace_id), std::move(topic_name));
-  SubscriptionID sub_id;
-  {  // Remove entry for the topic.
-    auto it = worker_data.subscribed_topics_.find(topic_id);
-    if (it == worker_data.subscribed_topics_.end()) {
-      LOG_WARN(info_log_,
-               "Cannot remove missing subscription on Topic(%s, %s)",
-               topic_id.namespace_id.c_str(),
-               topic_id.topic_name.c_str());
-      return;
-    }
-    sub_id = it->second;
-    worker_data.subscribed_topics_.erase(it);
-  }
 
   // Remove subscription state and prepare unsubscribe message.
   auto it = worker_data.subscriptions_.find(sub_id);
   if (it == worker_data.subscriptions_.end()) {
-    LOG_ERROR(info_log_, "Cannot remove missing subscription ID (%u)", sub_id);
-    assert(false);
+    LOG_ERROR(info_log_,
+              "Cannot remove missing subscription ID(%" PRIu64 ")",
+              sub_id);
     return;
   }
   SubscriptionState sub_state(std::move(it->second));
@@ -734,7 +711,7 @@ void ClientImpl::TerminateSubscription(NamespaceID namespace_id,
     // subscription as removed, we will respond with appropriate unsubscribe
     // request to every message on the terminated subscription.
     LOG_WARN(info_log_,
-             "Failed to send unsubscribe response for ID (%u)",
+             "Failed to send unsubscribe response for ID(%" PRIu64 ")",
              sub_id);
   }
 }
@@ -766,7 +743,7 @@ SubscriptionState* ClientImpl::FindOrSendUnsubscribe(TenantID tenant_id,
   }
 
   LOG_WARN(info_log_,
-           "Cannot find subscription ID (%u), sending unsubscribe",
+           "Cannot find subscription ID(%" PRIu64 "), sending unsubscribe",
            sub_id);
 
   // Prepare unsubscription request.
@@ -782,7 +759,7 @@ SubscriptionState* ClientImpl::FindOrSendUnsubscribe(TenantID tenant_id,
     // No harm done if we fail to send unsubscribe request, the subscription
     // does not really exist.
     LOG_WARN(info_log_,
-             "Failed to send unsubscribe response ID (%u)",
+             "Failed to send unsubscribe response ID(%" PRIu64 ")",
              sub_id);
   }
 
@@ -853,7 +830,7 @@ void ClientImpl::ProcessUnsubscribe(std::unique_ptr<Message> msg,
   auto it = worker_data.subscriptions_.find(sub_id);
   if (it == worker_data.subscriptions_.end()) {
     LOG_WARN(info_log_,
-             "Received unsibscribe with unrecognised ID(%u)",
+             "Received unsibscribe with unrecognised ID(%" PRIu64 ")",
              sub_id);
     return;
   }
@@ -911,7 +888,7 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
     SubscriptionState* sub_state = &entry.second;
 
     LOG_INFO(info_log_,
-             "Reissued subscription ID (%u) on Topic(%s, %s)@%" PRIu64,
+             "Reissued subscription ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
              sub_id,
              sub_state->GetNamespace().c_str(),
              sub_state->GetTopicName().c_str(),
