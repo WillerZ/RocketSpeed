@@ -164,6 +164,7 @@ SubscriptionState::Action SubscriptionState::ProcessMessage(
       // No default, we will be warned about unhandled code.
   }
   assert(false);
+  return Action::kTerminate;
 }
 
 class MessageReceivedImpl : public MessageReceived {
