@@ -20,7 +20,7 @@
 
 namespace rocketspeed {
 
-struct LocalTestCluster::LogDevice {
+struct LocalTestCluster::TestStorage {
 #ifdef USE_LOGDEVICE
   // LogDevice cluster and client.
   static std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
@@ -33,7 +33,7 @@ struct LocalTestCluster::LogDevice {
 
 #ifdef USE_LOGDEVICE
 std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
-  LocalTestCluster::LogDevice::cluster_;
+  LocalTestCluster::TestStorage::cluster_;
 #endif  // USE_LOGDEVICE
 
 LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
@@ -57,7 +57,7 @@ LocalTestCluster::LocalTestCluster(Options opts) {
 }
 
 void LocalTestCluster::Initialize(Options opts) {
-  logdevice_.reset(new LogDevice);
+  storage_.reset(new TestStorage);
   env_ = opts.env;
   info_log_ = opts.info_log;
   pilot_ = nullptr;
@@ -78,76 +78,83 @@ void LocalTestCluster::Initialize(Options opts) {
 #endif  // NDEBUG
 #endif  // USE_LOGDEVICE
 
-  // Range of logs to use.
-  std::pair<LogID, LogID> log_range;
-  if (opts.single_log) {
-    log_range = std::pair<LogID, LogID>(1, 1);
-  } else {
-#ifdef USE_LOGDEVICE
-    if (opts.storage_url.empty()) {
-      // Can only use one log as the logdevice test utils only supports that.
-      // See T4894216
+  if (!opts.log_storage) {
+    // Range of logs to use.
+    std::pair<LogID, LogID> log_range;
+    if (opts.single_log) {
       log_range = std::pair<LogID, LogID>(1, 1);
     } else {
-      log_range = std::pair<LogID, LogID>(1, 100000);
-    }
-#else
-    // Something more substantial for the mock logdevice.
-    log_range = std::pair<LogID, LogID>(1, 1000);
-#endif  // USE_LOGDEVICE
-  }
-
-  LogDeviceStorage* storage = nullptr;
-  if (opts.start_pilot || opts.start_controltower) {
 #ifdef USE_LOGDEVICE
-    if (opts.storage_url.empty()) {
-      // Setup the local LogDevice cluster and create, client, and storage.
-      if (!LogDevice::cluster_) {
-        LogDevice::cluster_ =
-          facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(3);
+      if (opts.storage_url.empty()) {
+        // Can only use one log as the logdevice test utils only supports that.
+        // See T4894216
+        log_range = std::pair<LogID, LogID>(1, 1);
+      } else {
+        log_range = std::pair<LogID, LogID>(1, 100000);
       }
-      logdevice_->client_ = LogDevice::cluster_->createClient();
-      status_ = LogDeviceStorage::Create(logdevice_->client_,
-                                         env_,
-                                         info_log_,
-                                         &storage);
-    } else {
-      status_ = LogDeviceStorage::Create("rocketspeed.logdevice.primary",
-                                         opts.storage_url,
+#else
+      // Something more substantial for the mock logdevice.
+      log_range = std::pair<LogID, LogID>(1, 1000);
+#endif  // USE_LOGDEVICE
+    }
+
+    LogDeviceStorage* storage = nullptr;
+    if (opts.start_pilot || opts.start_controltower) {
+#ifdef USE_LOGDEVICE
+      if (opts.storage_url.empty()) {
+        // Setup the local LogDevice cluster and create, client, and storage.
+        if (!TestStorage::cluster_) {
+          TestStorage::cluster_ =
+            facebook::logdevice::IntegrationTestUtils::ClusterFactory()
+              .create(3);
+        }
+        storage_->client_ = TestStorage::cluster_->createClient();
+        status_ = LogDeviceStorage::Create(storage_->client_,
+                                           env_,
+                                           info_log_,
+                                           &storage);
+      } else {
+        status_ = LogDeviceStorage::Create("rocketspeed.logdevice.primary",
+                                           opts.storage_url,
+                                           "",
+                                           std::chrono::milliseconds(1000),
+                                           16,
+                                           env_,
+                                           info_log_,
+                                           &storage);
+      }
+#else
+      status_ = LogDeviceStorage::Create("",
+                                         "",
                                          "",
                                          std::chrono::milliseconds(1000),
                                          16,
                                          env_,
                                          info_log_,
                                          &storage);
-    }
-#else
-    status_ = LogDeviceStorage::Create("",
-                                       "",
-                                       "",
-                                       std::chrono::milliseconds(1000),
-                                       16,
-                                       env_,
-                                       info_log_,
-                                       &storage);
 #endif  // USE_LOGDEVICE
 
-    if (!status_.ok() || !storage) {
-      LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
-      return;
+      if (!status_.ok() || !storage) {
+        LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
+        return;
+      }
+      storage_->storage_.reset(storage);
+      storage = nullptr;
+
+      storage_->log_router_ =
+        std::make_shared<LogDeviceLogRouter>(log_range.first, log_range.second);
     }
-    logdevice_->storage_.reset(storage);
-    storage = nullptr;
+  } else {
+    storage_->storage_ = opts.log_storage;
+    storage_->log_router_ = opts.log_router;
   }
-  logdevice_->log_router_ =
-    std::make_shared<LogDeviceLogRouter>(log_range.first, log_range.second);
 
   // Tell rocketspeed to use this storage interface/router.
-  opts.pilot.storage = logdevice_->storage_;
-  opts.pilot.log_router = logdevice_->log_router_;
-  opts.copilot.log_router = logdevice_->log_router_;
-  opts.tower.storage = logdevice_->storage_;
-  opts.tower.log_router = logdevice_->log_router_;
+  opts.pilot.storage = storage_->storage_;
+  opts.pilot.log_router = storage_->log_router_;
+  opts.copilot.log_router = storage_->log_router_;
+  opts.tower.storage = storage_->storage_;
+  opts.tower.log_router = storage_->log_router_;
 
   EnvOptions env_options;
 
@@ -289,10 +296,10 @@ LocalTestCluster::~LocalTestCluster() {
 
   // Should now be safe to shutdown LogStorage.
 #ifdef USE_LOGDEVICE
-  logdevice_->client_.reset();
+  storage_->client_.reset();
 #endif
-  assert(logdevice_->storage_.unique());  // should be last reference
-  logdevice_->storage_.reset();
+  assert(storage_->storage_.unique());  // should be last reference
+  storage_->storage_.reset();
 
   delete control_tower_;
   delete pilot_;
@@ -318,11 +325,11 @@ Statistics LocalTestCluster::GetStatisticsSync() const {
 }
 
 std::shared_ptr<LogStorage> LocalTestCluster::GetLogStorage() {
-  return logdevice_->storage_;
+  return storage_->storage_;
 }
 
 std::shared_ptr<LogRouter> LocalTestCluster::GetLogRouter() {
-  return logdevice_->log_router_;
+  return storage_->log_router_;
 }
 
 std::shared_ptr<Configuration> LocalTestCluster::GetConfiguration() const {

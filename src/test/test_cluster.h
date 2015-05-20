@@ -43,6 +43,8 @@ class LocalTestCluster {
     int controltower_port = ControlTower::DEFAULT_PORT;
     int copilot_port = Copilot::DEFAULT_PORT;
     int pilot_port = Pilot::DEFAULT_PORT;
+    std::shared_ptr<LogStorage> log_storage;
+    std::shared_ptr<LogRouter> log_router;
   };
 
   /**
@@ -121,8 +123,8 @@ class LocalTestCluster {
  private:
   void Initialize(Options opts);
 
-  struct LogDevice;
-  std::unique_ptr<LogDevice> logdevice_;
+  struct TestStorage;
+  std::unique_ptr<TestStorage> storage_;
 
   // General cluster status.
   Status status_;
