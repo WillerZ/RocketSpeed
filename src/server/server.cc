@@ -245,8 +245,6 @@ Status RocketSpeed::Initialize(
     LOG_VITAL(info_log_, "Creating Copilot");
     CopilotOptions copilot_opts;
     copilot_opts.msg_loop = copilot_loop.get();
-    copilot_opts.worker_queue_size = FLAGS_worker_queue_size;
-    copilot_opts.num_workers = FLAGS_copilot_workers;
     copilot_opts.info_log = info_log_;
     copilot_opts.control_tower_connections = FLAGS_copilot_connections;
     copilot_opts.log_router = log_router;

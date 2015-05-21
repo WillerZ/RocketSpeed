@@ -4,13 +4,17 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
-#include "src/copilot/worker.h"
+#include "worker.h"
+
 #include <vector>
+
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/copilot/copilot.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/hostmap.h"
+
+#include "external/folly/move_wrapper.h"
 
 namespace rocketspeed {
 
@@ -19,8 +23,7 @@ CopilotWorker::CopilotWorker(
     std::shared_ptr<ControlTowerRouter> control_tower_router,
     const int myid,
     Copilot* copilot)
-: worker_loop_(options.worker_queue_size)
-, options_(options)
+: options_(options)
 , control_tower_router_(std::move(control_tower_router))
 , copilot_(copilot)
 , myid_(myid) {
@@ -31,98 +34,78 @@ CopilotWorker::CopilotWorker(
   options_.info_log->Flush();
 }
 
-void CopilotWorker::Run() {
-  LOG_INFO(options_.info_log, "Starting worker loop");
-  worker_loop_.Run([this] (CopilotWorkerCommand command) {
-    CommandCallback(std::move(command));
-  });
-}
-
 bool CopilotWorker::Forward(LogID logid,
                             std::unique_ptr<Message> msg,
                             int worker_id,
                             StreamID origin) {
-  return worker_loop_.Send(logid, std::move(msg), worker_id, origin);
+  auto moved_msg = folly::makeMoveWrapper(std::move(msg));
+  std::unique_ptr<ExecuteCommand> command(
+    new ExecuteCommand([this, moved_msg, logid, worker_id, origin]() mutable {
+      auto message = moved_msg.move();
+      switch (message->GetMessageType()) {
+        case MessageType::mMetadata: {
+          auto metadata = static_cast<MessageMetadata*>(message.get());
+          const std::vector<TopicPair>& topics = metadata->GetTopicInfo();
+          // Workers only handle 1 topic at a time.
+          assert(topics.size() == 1);
+          const TopicPair& request = topics[0];
+
+          if (metadata->GetMetaType() ==
+              MessageMetadata::MetaType::Response) {
+            if (request.topic_type == MetadataType::mSubscribe) {
+              // Response from Control Tower.
+              ProcessMetadataResponse(request, logid, worker_id);
+            }
+          }
+        } break;
+
+        case MessageType::mDeliver: {
+          ProcessDeliver(std::move(message));
+        } break;
+
+        case MessageType::mGap: {
+          ProcessGap(std::move(message));
+        } break;
+
+        case MessageType::mSubscribe: {
+          auto subscribe = static_cast<MessageSubscribe*>(message.get());
+          ProcessSubscribe(subscribe->GetTenantID(),
+                           subscribe->GetNamespace(),
+                           subscribe->GetTopicName(),
+                           subscribe->GetStartSequenceNumber(),
+                           subscribe->GetSubID(),
+                           logid,
+                           worker_id,
+                           origin);
+        } break;
+
+        case MessageType::mUnsubscribe: {
+          auto unsubscribe = static_cast<MessageUnsubscribe*>(message.get());
+          ProcessUnsubscribe(unsubscribe->GetTenantID(),
+                             unsubscribe->GetSubID(),
+                             unsubscribe->GetReason(),
+                             worker_id,
+                             origin);
+        } break;
+
+        case MessageType::mGoodbye: {
+          ProcessGoodbye(std::move(message), origin);
+        } break;
+
+        default: {
+          LOG_WARN(options_.info_log,
+                   "Unexpected message type in copilot worker %d",
+                   static_cast<int>(message->GetMessageType()));
+        }
+      }
+    }));
+  return options_.msg_loop->SendCommand(std::move(command), myid_).ok();
 }
 
 bool CopilotWorker::Forward(std::shared_ptr<ControlTowerRouter> new_router) {
-  return worker_loop_.Send(std::move(new_router));
-}
-
-void CopilotWorker::CommandCallback(CopilotWorkerCommand command) {
-  // Process CopilotWorkerCommand
-  if (command.IsRouterUpdate()) {
-    ProcessRouterUpdate(command.GetRouterUpdate());
-  } else {
-    std::unique_ptr<Message> message = command.GetMessage();
-    Message* msg = message.get();
-    assert(msg);
-
-    switch (msg->GetMessageType()) {
-    case MessageType::mMetadata: {
-        MessageMetadata* metadata = static_cast<MessageMetadata*>(msg);
-        const std::vector<TopicPair>& topics = metadata->GetTopicInfo();
-        assert(topics.size() == 1);  // Workers only handle 1 topic at a time.
-        const TopicPair& request = topics[0];
-
-        if (metadata->GetMetaType() == MessageMetadata::MetaType::Response) {
-          if (request.topic_type == MetadataType::mSubscribe) {
-            // Response from Control Tower.
-            ProcessMetadataResponse(request,
-                                    command.GetLogID(),
-                                    command.GetWorkerId());
-          }
-        }
-      }
-      break;
-
-    case MessageType::mDeliver: {
-        // Data to forward to client.
-        ProcessDeliver(std::move(message));
-      }
-      break;
-
-    case MessageType::mGap: {
-        // Data to forward to client.
-        ProcessGap(std::move(message));
-      }
-      break;
-
-    case MessageType::mSubscribe: {
-      // Subscribe request from a client.
-      auto subscribe = static_cast<MessageSubscribe*>(message.get());
-      ProcessSubscribe(subscribe->GetTenantID(),
-                       subscribe->GetNamespace(),
-                       subscribe->GetTopicName(),
-                       subscribe->GetStartSequenceNumber(),
-                       subscribe->GetSubID(),
-                       command.GetLogID(),
-                       command.GetWorkerId(),
-                       command.GetOrigin());
-    } break;
-
-    case MessageType::mUnsubscribe: {
-      auto unsubscribe = static_cast<MessageUnsubscribe*>(message.get());
-      ProcessUnsubscribe(unsubscribe->GetTenantID(),
-                         unsubscribe->GetSubID(),
-                         unsubscribe->GetReason(),
-                         command.GetWorkerId(),
-                         command.GetOrigin());
-    } break;
-
-    case MessageType::mGoodbye: {
-        ProcessGoodbye(std::move(message), command.GetOrigin());
-      }
-      break;
-
-    default: {
-        LOG_WARN(options_.info_log,
-            "Unexpected message type in copilot worker %d",
-            static_cast<int>(msg->GetMessageType()));
-      }
-      break;
-    }
-  }
+  std::unique_ptr<ExecuteCommand> command(new ExecuteCommand(
+      std::bind(&CopilotWorker::ProcessRouterUpdate, this, new_router)));
+  return options_.msg_loop->SendCommand(std::move(command), myid_).ok();
 }
 
 void CopilotWorker::ProcessMetadataResponse(const TopicPair& request,

@@ -214,7 +214,6 @@ void LocalTestCluster::Initialize(Options opts) {
       // Create Copilot
       opts.copilot.control_towers.emplace(0, control_tower_->GetHostId());
       opts.copilot.info_log = info_log_;
-      opts.copilot.num_workers = 16;
       opts.copilot.msg_loop = cockpit_loop_.get();
       opts.copilot.control_tower_connections =
           cockpit_loop_->GetNumWorkers();

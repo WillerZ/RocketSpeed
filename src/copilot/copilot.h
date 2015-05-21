@@ -90,7 +90,6 @@ class Copilot {
 
   // Worker objects and threads, these have their own message loops.
   std::vector<std::unique_ptr<CopilotWorker>> workers_;
-  std::vector<BaseEnv::ThreadId> worker_threads_;
 
   // A client to write rollcall topic
   std::unique_ptr<RollcallImpl> rollcall_;
@@ -104,9 +103,6 @@ class Copilot {
 
   // Sanitize input options if necessary
   CopilotOptions SanitizeOptions(CopilotOptions options);
-
-  // Start the background workers.
-  void StartWorkers();
 
   // callbacks to process incoming messages
   void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);

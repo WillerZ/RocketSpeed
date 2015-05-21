@@ -36,29 +36,6 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
   return std::move(options);
 }
 
-void Copilot::StartWorkers() {
-  Env* env = options_.env;
-
-  // Start worker threads.
-  for (size_t i = 0; i < workers_.size(); ++i) {
-    std::string thread_name = "copilotw-" + std::to_string(i);
-    auto entry_point = [] (void* arg) {
-      CopilotWorker* worker = static_cast<CopilotWorker*>(arg);
-      worker->Run();
-    };
-    worker_threads_.emplace_back(
-      env->StartThread(entry_point, (void*)workers_[i].get(), thread_name)
-    );
-  }
-
-  // Wait for them to start.
-  for (const auto& worker : workers_) {
-    while (!worker->IsRunning()) {
-      std::this_thread::yield();
-    }
-  }
-}
-
 /**
  * Private constructor for a Copilot
  */
@@ -72,7 +49,7 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
     std::make_shared<ControlTowerRouter>(options_.control_towers,
                                          options_.consistent_hash_replicas,
                                          options_.control_tower_connections);
-  for (uint32_t i = 0; i < options_.num_workers; ++i) {
+  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
                                             router,
                                             i,
@@ -94,25 +71,12 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
 Copilot::~Copilot() {
   // Must be stopped first.
   assert(workers_.empty());
-  assert(worker_threads_.empty());
   options_.info_log->Flush();
 }
 
 void Copilot::Stop() {
   assert(!options_.msg_loop->IsRunning());
-  Env* env = options_.env;
 
-  // Stop all the workers.
-  for (auto& worker : workers_) {
-    worker->Stop();
-  }
-
-  // Join their threads.
-  for (auto& worker_thread : worker_threads_) {
-    env->WaitForJoin(worker_thread);
-  }
-
-  worker_threads_.clear();
   workers_.clear();
   options_.log_router.reset();
 }
@@ -147,7 +111,6 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
     return status;
   }
   *copilot = new Copilot(std::move(options), std::move(client));
-  (*copilot)->StartWorkers();
   return Status::OK();
 }
 
@@ -179,7 +142,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   // calculate the destination worker
-  int worker_id = static_cast<int>(logid % options_.num_workers);
+  int worker_id = static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
   auto& worker = workers_[worker_id];
 
   // forward message to worker
@@ -221,7 +184,8 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
       continue;
     }
     // calculate the destination worker
-    int worker_id = static_cast<int>(logid % options_.num_workers);
+    int worker_id =
+        static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
     auto& worker = workers_[worker_id];
 
     // Copy out only the ith topic into a new message.
@@ -263,7 +227,7 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   // calculate the destination worker
-  int worker_id = static_cast<int>(logid % options_.num_workers);
+  int worker_id = static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
   auto& worker = workers_[worker_id];
 
   // forward message to worker
@@ -299,7 +263,8 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   // Calculate the destination worker.
-  auto dest_worker_id = static_cast<int>(logid % options_.num_workers);
+  auto dest_worker_id =
+      static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
   auto& worker = workers_[dest_worker_id];
 
   // Forward message to responsible worker.
@@ -321,7 +286,7 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
            origin);
 
   // Broadcast to all workers.
-  for (uint32_t i = 0; i < options_.num_workers; ++i) {
+  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     std::unique_ptr<MessageUnsubscribe> new_msg(new MessageUnsubscribe(
         unsubscribe->GetTenantID(),
         unsubscribe->GetSubID(),
@@ -352,7 +317,7 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   // Inform all workers.
-  for (uint32_t i = 0; i < options_.num_workers; ++i) {
+  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     std::unique_ptr<Message> new_msg(
       new MessageGoodbye(goodbye->GetTenantID(),
                          goodbye->GetCode(),
@@ -419,7 +384,7 @@ Status Copilot::UpdateControlTowers(
     std::make_shared<ControlTowerRouter>(std::move(nodes),
                                          options_.consistent_hash_replicas,
                                          options_.control_tower_connections);
-  for (uint32_t i = 0; i < options_.num_workers; ++i) {
+  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     if (!workers_[i]->Forward(new_router)) {
       LOG_WARN(options_.info_log,
         "Failed to forward control tower update to worker %" PRIu32, i);

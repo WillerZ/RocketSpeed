@@ -70,12 +70,6 @@ struct CopilotOptions {
   // Pilot hostids (needed for writing rollcall topic).
   std::vector<HostId> pilots;
 
-  // Number of worker loops for the pilot.
-  uint32_t num_workers;
-
-  // Size of the worker queue (number of commands in flight).
-  uint32_t worker_queue_size;
-
   // Number of replicas for the consistent hash ring for control tower lookup.
   // Trade-off: higher means better distribution of log IDs to control towers,
   // but also higher memory usage (linear with num replicas), and slower
@@ -86,7 +80,7 @@ struct CopilotOptions {
   uint32_t control_towers_per_log;
 
   // Number of connections between this copilot and each control tower.
-  // Should be <= num_workers
+  // Should be <= number of message loop workers.
   // Default: 4
   uint32_t control_tower_connections;
 

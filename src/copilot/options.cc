@@ -19,8 +19,6 @@ CopilotOptions::CopilotOptions()
     log_dir(""),
     max_log_file_size(0),
     log_file_time_to_roll(0),
-    num_workers(std::thread::hardware_concurrency()),
-    worker_queue_size(1000000),
     consistent_hash_replicas(20),
     control_towers_per_log(1),
     control_tower_connections(4),

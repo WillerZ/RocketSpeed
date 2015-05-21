@@ -17,7 +17,6 @@
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream_socket.h"
-#include "src/util/worker_loop.h"
 #include "src/util/common/hash.h"
 #include "src/util/topic_uuid.h"
 
@@ -25,61 +24,6 @@ namespace rocketspeed {
 
 class Copilot;
 class ControlTowerRouter;
-
-// These are sent from the Copilot to the worker.
-class CopilotWorkerCommand {
- public:
-  CopilotWorkerCommand() {}
-
-  CopilotWorkerCommand(LogID logid,
-                       std::unique_ptr<Message> msg,
-                       int worker_id,
-                       StreamID origin)
-  : logid_(logid)
-  , msg_(std::move(msg))
-  , worker_id_(worker_id)
-  , origin_(origin) {
-  }
-
-  explicit CopilotWorkerCommand(std::shared_ptr<ControlTowerRouter> new_router)
-  : router_update_(std::move(new_router)) {
-  }
-
-  bool IsRouterUpdate() const {
-    return !msg_;
-  }
-
-  // Get log ID where topic lives to subscribe to
-  LogID GetLogID() const {
-    return logid_;
-  }
-
-  // Get the message.
-  std::unique_ptr<Message> GetMessage() {
-    return std::move(msg_);
-  }
-
-  int GetWorkerId() const {
-    return worker_id_;
-  }
-
-  StreamID GetOrigin() const {
-    return origin_;
-  }
-
-  std::shared_ptr<ControlTowerRouter> GetRouterUpdate() {
-    assert(router_update_);
-    assert(!msg_);
-    return router_update_;
-  }
-
- private:
-  LogID logid_;
-  std::unique_ptr<Message> msg_;
-  int worker_id_;
-  StreamID origin_;
-  std::shared_ptr<ControlTowerRouter> router_update_;
-};
 
 /**
  * Copilot worker. The copilot will allocate several of these, ideally one
@@ -101,20 +45,6 @@ class CopilotWorker {
 
   bool Forward(std::shared_ptr<ControlTowerRouter> new_router);
 
-  // Start the worker loop on this thread.
-  // Blocks until the worker loop ends.
-  void Run();
-
-  // Stop the worker loop.
-  void Stop() {
-    worker_loop_.Stop();
-  }
-
-  // Check if the worker loop is running.
-  bool IsRunning() const {
-    return worker_loop_.IsRunning();
-  }
-
   // Get the host id of this worker's worker loop.
   const HostId& GetHostId() const {
     return options_.msg_loop->GetHostId();
@@ -122,9 +52,6 @@ class CopilotWorker {
 
  private:
   struct Subscription;
-
-  // Callback for worker loop commands.
-  void CommandCallback(CopilotWorkerCommand command);
 
   // Send an ack message to the host for the msgid.
   void SendAck(const ClientID& host,
@@ -195,9 +122,6 @@ class CopilotWorker {
   StreamSocket* GetControlTowerSocket(const HostId& tower,
                                       MsgLoop* msg_loop,
                                       int outgoing_worker_id);
-
-  // Main worker loop for this worker.
-  WorkerLoop<CopilotWorkerCommand> worker_loop_;
 
   // Copilot specific options.
   const CopilotOptions& options_;
