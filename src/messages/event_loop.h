@@ -26,6 +26,7 @@
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
 #include "src/messages/unique_stream_map.h"
+#include "src/port/port.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"

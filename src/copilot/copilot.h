@@ -8,6 +8,7 @@
 #include <map>
 #include <thread>
 #include <vector>
+
 #include "src/copilot/options.h"
 #include "src/copilot/worker.h"
 #include "src/messages/serializer.h"
@@ -22,7 +23,7 @@
 
 namespace rocketspeed {
 
-class Stats;
+class Statistics;
 
 class Copilot {
  public:
@@ -68,11 +69,6 @@ class Copilot {
   // Returns an aggregated statistics object from the copilot
   Statistics GetStatisticsSync() const;
 
-  // Get a reference to an individual worker's data
-  Stats* GetStats(int id) {
-    return &stats_[id];
-  }
-
   /**
    * Updates the control tower routing information.
    *
@@ -94,10 +90,6 @@ class Copilot {
   // A client to write rollcall topic
   std::unique_ptr<RollcallImpl> rollcall_;
 
-  // Per-thread statistics data.
-  std::vector<Stats> stats_;
-
-
   // private Constructor
   Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client);
 
@@ -113,26 +105,6 @@ class Copilot {
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
-};
-
-// Statistics collected by copilot
-class Stats {
- public:
-  Stats() {
-    numwrites_rollcall_total = all.AddCounter(
-                             "copilot.numwrites_rollcall_total");
-    numwrites_rollcall_failed = all.AddCounter(
-                             "copilot.numwrites_rollcall_failed");
-  }
-  // all statistics about a copilot
-  Statistics all;
-
-  // Number of writes attempted to rollcall topic
-  Counter* numwrites_rollcall_total;
-
-  // Number of subscription writes to rollcall topic that failed and
-  // resulted in an automatic forced unsubscription request.
-  Counter* numwrites_rollcall_failed;
 };
 
 }  // namespace rocketspeed

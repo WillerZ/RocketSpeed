@@ -678,7 +678,6 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
   if (type == MetadataType::mSubscribe) {
     process_error = [this, topic_name, namespace_id, logid, worker_id, origin,
                      tenant_id, sub_id]() {
-        copilot_->GetStats(myid_)->numwrites_rollcall_failed->Add(1);
         std::unique_ptr<Message> newmsg(new MessageUnsubscribe(
             tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested));
         // Start the automatic unsubscribe process. We rely on the assumption
@@ -690,8 +689,19 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
                                        sub_id,
                                        MessageUnsubscribe::Reason::kRequested);
         options_.msg_loop->SendResponse(unsubscribe, origin, worker_id);
+        // TODO(dhruba)
         // We can't do any proper error handling from this thread, as it belongs
         // to the client used by RollCall.
+
+        // The counter must be updtaed from worker thread.
+        Status st = options_.msg_loop->SendCommand(
+            std::unique_ptr<Command>(new ExecuteCommand(
+                [this]() { stats_.rollcall_writes_failed->Add(1); })),
+            myid_);
+        if (!st.ok()) {
+          LOG_ERROR(options_.info_log,
+                    "Failed to increment failed RollCall writes counter");
+        }
     };
   }
 
@@ -710,7 +720,7 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
                                namespace_id,
                                type == MetadataType::mSubscribe ? true : false,
                                publish_callback);
-  copilot_->GetStats(myid_)->numwrites_rollcall_total->Add(1);
+  stats_.rollcall_writes_total->Add(1);
   if (status.ok()) {
     LOG_INFO(options_.info_log,
              "Send rollcall write (%ssubscribe) for Topic(%s) in "

@@ -50,8 +50,24 @@ class CopilotWorker {
     return options_.msg_loop->GetHostId();
   }
 
+  const Statistics& GetStatistics() { return stats_.all; }
+
  private:
   struct Subscription;
+
+  struct Stats {
+    Stats() {
+      rollcall_writes_total =
+          all.AddCounter("copilot.numwrites_rollcall_total");
+      rollcall_writes_failed =
+          all.AddCounter("copilot.numwrites_rollcall_failed");
+    }
+
+    Statistics all;
+
+    Counter* rollcall_writes_total;
+    Counter* rollcall_writes_failed;
+  } stats_;
 
   // Send an ack message to the host for the msgid.
   void SendAck(const ClientID& host,

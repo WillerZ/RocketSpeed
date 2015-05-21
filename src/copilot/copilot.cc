@@ -41,7 +41,6 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
  */
 Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
   options_(SanitizeOptions(std::move(options))) {
-  stats_.resize(options_.msg_loop->GetNumWorkers());
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
   // Create workers.
@@ -370,8 +369,7 @@ int Copilot::GetLogWorker(LogID logid, const HostId& control_tower) const {
 
 Statistics Copilot::GetStatisticsSync() const {
   return options_.msg_loop->AggregateStatsSync(
-    [this] (int i) { return stats_[i].all; }
-  );
+      [this](int i) { return workers_[i]->GetStatistics(); });
 }
 
 Status Copilot::UpdateControlTowers(

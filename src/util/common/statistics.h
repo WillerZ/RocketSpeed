@@ -12,14 +12,14 @@
 #include <memory>
 
 #include "src/util/common/thread_check.h"
-#include "src/port/port.h"
 
 namespace rocketspeed {
 
 /**
- * Simple counter. Aligned to the cache to avoid potential false sharing.
+ * Simple counter.
+ * Not thread safe.
  */
-class alignas(CACHE_LINE_SIZE) Counter {
+class Counter {
  public:
   Counter()
   : count_(0) {
