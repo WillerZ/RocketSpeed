@@ -48,7 +48,7 @@ TEST(SupervisorTest, Basic) {
   // start the Supervisor loop
   rocketspeed::Env::ThreadId supervisor_thread_id;
 
-  supervisor->Initialize();
+  ASSERT_OK(supervisor->Initialize());
 
   supervisor_thread_id = env_->StartThread([&]() {
     supervisor->Run();

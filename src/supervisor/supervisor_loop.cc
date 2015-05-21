@@ -90,6 +90,9 @@ Status SupervisorLoop::Initialize() {
     static_cast<int>(sizeof(sin)));
 
   if (!listener_) {
+    LOG_ERROR(options_.info_log,
+              "Supervisor failed to be started on port %d",
+              options_.port);
     return Status::InternalError("Listener could not be created");
   }
 

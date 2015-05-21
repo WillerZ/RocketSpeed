@@ -306,10 +306,13 @@ Status RocketSpeed::Initialize(
       return st;
     }
   }
-  // initialize superisor loop
-  Status st = supervisor_loop_->Initialize();
-  if (!st.ok()) {
-    LOG_ERROR(info_log_, "Failed to initialize the supervisor loop");
+
+  if (supervisor_loop_) {
+    // initialize superisor loop
+    Status st = supervisor_loop_->Initialize();
+    if (!st.ok()) {
+      LOG_ERROR(info_log_, "Failed to initialize the supervisor loop");
+    }
   }
 
   return Status::OK();
