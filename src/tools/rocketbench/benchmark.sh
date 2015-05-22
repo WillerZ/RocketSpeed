@@ -6,12 +6,13 @@ M=$((1024 * K))
 G=$((1024 * M))
 
 message_size=100
-num_messages=$((1 * M))
-message_rate=$((50 * K))
+num_messages=1000
+message_rate=100
+subscribe_rate=10
 remote=''
 deploy=''
 client_workers=32
-num_topics=10000
+num_topics=100
 num_pilots=1
 num_copilots=1
 num_towers=1
@@ -50,7 +51,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,mqtt, \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,mqtt,subscribe-rate: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -107,6 +108,8 @@ while true; do
       rocketbench_host="$2"; remote_bench='true'; shift 2 ;;
     --mqtt )
       use_mqtt='true'; bench=_build/$part/rocketspeed/github/src/tools/rocketbench/mqtt/rocketbench_mqtt; shift 1 ;;
+    --subscribe-rate )
+      subscribe_rate="$2"; shift 2 ;;
     -- )
       shift; break ;;
     * )
@@ -359,6 +362,7 @@ if [ $# -ne 1 ]; then
   echo "-n --num_messages    Number of messages to send."
   echo "-q --stop-servers    Stop the rocketspeed binary on remote servers."
   echo "-r --rate            Messages to send per second."
+  echo "--subscribe-rate     Number of subscriptions to send per second."
   echo "-s --remote          Use remote server(s) for pilot, copilot, control towers."
   echo "-t --topics          Number of topics."
   echo "-x --pilots          Number of pilots to use."
@@ -389,6 +393,7 @@ const_params="
   --message_size=$message_size \
   --num_messages=$num_messages \
   --message_rate=$message_rate \
+  --subscribe_rate=$subscribe_rate \
   --client_workers=$client_workers \
   --num_topics=$num_topics"
 

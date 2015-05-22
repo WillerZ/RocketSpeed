@@ -151,6 +151,11 @@ class LogStorage {
                       std::function<void(std::unique_ptr<LogRecord>)> record_cb,
                       std::function<void(const GapRecord&)> gap_cb,
                       std::vector<AsyncLogReader*>* readers) = 0;
+
+  /**
+   * Returns true if subscribers can subscribe past the end of a log.
+   */
+  virtual bool CanSubscribePastEnd() const = 0;
 };
 
 /**

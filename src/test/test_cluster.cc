@@ -145,8 +145,8 @@ void LocalTestCluster::Initialize(Options opts) {
         std::make_shared<LogDeviceLogRouter>(log_range.first, log_range.second);
     }
   } else {
-    storage_->storage_ = opts.log_storage;
-    storage_->log_router_ = opts.log_router;
+    storage_->storage_ = std::move(opts.log_storage);
+    storage_->log_router_ = std::move(opts.log_router);
   }
 
   // Tell rocketspeed to use this storage interface/router.

@@ -48,9 +48,10 @@ DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
 DEFINE_int32(client_workers, 32, "number of client workers");
 DEFINE_int32(message_size, 100, "message size (bytes)");
-DEFINE_uint64(num_topics, 10000, "number of topics");
-DEFINE_int64(num_messages, 10000, "number of messages to send");
-DEFINE_int64(message_rate, 100000, "messages per second (0 = unlimited)");
+DEFINE_uint64(num_topics, 100, "number of topics");
+DEFINE_int64(num_messages, 1000, "number of messages to send");
+DEFINE_int64(message_rate, 100, "messages per second (0 = unlimited)");
+DEFINE_int64(subscribe_rate, 10, "subscribes per second (0 = unlimited)");
 DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(delay_subscribe, false, "start reading after publishing");
@@ -84,10 +85,6 @@ typedef std::pair<rocketspeed::MsgId, uint64_t> MsgTime;
 struct Result {
   bool succeeded;
 };
-
-// Number of topics to subscribe to at once.
-static const size_t kSubscribeBatchSize = 1000;
-static const int kBatchDurationMicros = 100000;  // time between batches
 
 struct ProducerArgs {
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* producers;
@@ -278,42 +275,30 @@ static void DoProduce(void* params) {
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
                  std::unordered_map<std::string, SequenceNumber> first_seqno) {
-  // This needs to be low enough so that subscriptions are evenly distributed
-  // among client threads.
-  auto total_threads = consumers.size() * FLAGS_client_workers;
-  unsigned int batch_size =
-    std::min(100, std::max(1,
-      static_cast<int>(FLAGS_num_topics / total_threads / 10)));
-  if (batch_size > static_cast<int>(kSubscribeBatchSize)) {
-    batch_size = static_cast<int>(kSubscribeBatchSize);
-  }
-
-  size_t sent = 0;
-
-  SequenceNumber start = 0;   // start sequence number (0 = only new records)
+  auto start = std::chrono::steady_clock::now();
+  SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
   size_t c = 0;
+  auto rate = FLAGS_subscribe_rate;
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     std::string topic_name("benchmark." + std::to_string(i));
     if (FLAGS_delay_subscribe) {
       // Find the first seqno published to this topic (or 0 if none published).
       auto it = first_seqno.find(topic_name);
       if (it == first_seqno.end()) {
-        start = 0;
+        seqno = 0;
       } else {
-        start = it->second;
+        seqno = it->second;
       }
     }
-
-    // Subscribe.
     consumers[c++ % consumers.size()]
-        ->Client::Subscribe(GuestTenant, nsid, topic_name, start);
-    ++sent;
-
-    if (i % batch_size == batch_size - 1) {
-      if (sent >= kSubscribeBatchSize) {
-        // Have sent the batch size now, sleep a little for copilot.
-        env->SleepForMicroseconds(kBatchDurationMicros);
-        sent -= kSubscribeBatchSize;
+        ->Client::Subscribe(GuestTenant, nsid, topic_name, seqno);
+    if (rate) {
+      int64_t have_sent = i;
+      auto expired = std::chrono::steady_clock::now() - start;
+      auto expected = std::chrono::microseconds(1000000 * have_sent / rate);
+      if (expected > expired) {
+        /* sleep override */
+        std::this_thread::sleep_for(expected - expired);
       }
     }
   }

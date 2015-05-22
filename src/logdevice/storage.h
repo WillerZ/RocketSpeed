@@ -111,6 +111,10 @@ class LogDeviceStorage : public LogStorage {
                       std::function<void(const GapRecord&)> gap_cb,
                       std::vector<AsyncLogReader*>* readers);
 
+  bool CanSubscribePastEnd() const {
+    return true;
+  }
+
  private:
   LogDeviceStorage(std::shared_ptr<facebook::logdevice::Client> client,
                    Env* env,

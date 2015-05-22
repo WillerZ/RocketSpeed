@@ -82,6 +82,11 @@ class LogTailer {
     LogID logid,
     std::function<void(Status, SequenceNumber)> callback);
 
+  // Can we subscribe past the end of the log?
+  bool CanSubscribePastEnd() const {
+    return storage_->CanSubscribePastEnd();
+  }
+
   ~LogTailer();
 
  private:

@@ -715,7 +715,15 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
           "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
           logid,
           seqno);
-        log_reader_->StartReading(topic, logid, seqno);
+
+        if (log_tailer_->CanSubscribePastEnd()) {
+          log_reader_->StartReading(topic, logid, seqno);
+        } else {
+          // Using 'seqno - 1' to ensure that we start reading at a sequence
+          // number that exists. FindLatestSeqno returns the *next* seqno to be
+          // written to the log.
+          log_reader_->StartReading(topic, logid, seqno - 1);
+        }
         log_reader_->SuggestTailSeqno(logid, seqno);
       });
 
