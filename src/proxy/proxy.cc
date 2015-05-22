@@ -59,6 +59,22 @@ struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
   std::unordered_map<int64_t, SessionInfo> open_sessions_;
   /** Stores map: (session, session local stream ID) <-> global stream ID. */
   UniqueStreamMap<int64_t> open_streams_;
+  /** Statistics aggregated by the proxy. */
+  struct Stats {
+    Stats() {
+      forwards = all.AddCounter("proxy.forwards");
+      forward_errors = all.AddCounter("proxy.forward_errors");
+      on_message_calls = all.AddCounter("proxy.on_message_calls");
+      bad_origins = all.AddCounter("proxy.bad_origins");
+    }
+
+    Statistics all;
+
+    Counter* forwards;
+    Counter* forward_errors;
+    Counter* on_message_calls;
+    Counter* bad_origins;
+  } stats_;
 };
 
 Status Proxy::CreateNewInstance(ProxyOptions options,
@@ -178,6 +194,11 @@ Proxy::~Proxy() {
   }
 }
 
+Statistics Proxy::GetStatisticsSync() {
+  return msg_loop_->AggregateStatsSync(
+      [this](int i) -> Statistics { return worker_data_[i]->stats_.all; });
+}
+
 int Proxy::WorkerForSession(int64_t session) const {
   return static_cast<int>(session % msg_loop_->GetNumWorkers());
 }
@@ -281,7 +302,7 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
     LOG_ERROR(info_log_,
               "Could not find session for global stream ID (%llu)",
               global);
-    stats_.bad_origins->Add(1);
+    data.stats_.bad_origins->Add(1);
     return;
   }
 
@@ -293,7 +314,7 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
                 "Could not find open session %" PRIi64 ", stream (%llu) exists",
                 session,
                 global);
-      stats_.bad_origins->Add(1);
+      data.stats_.bad_origins->Add(1);
       // This shall never happen.
       assert(false);
       return;
@@ -309,14 +330,17 @@ void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
 
   // Deliver message.
   on_message_(session, std::move(serialized));
-  stats_.on_message_calls->Add(1);
+  data.stats_.on_message_calls->Add(1);
 }
 
 void Proxy::HandleMessageForwarded(std::string msg,
                                    int64_t session,
                                    MessageSequenceNumber sequence,
                                    StreamID local) {
-  stats_.forwards->Add(1);
+  auto& data = *worker_data_[msg_loop_->GetThreadWorkerIndex()];
+  data.thread_check_.Check();
+
+  data.stats_.forwards->Add(1);
 
   // TODO(pja) 1 : Really inefficient. Only need to deserialize header,
   // not entire message, and don't need to copy entire message.
@@ -332,7 +356,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
               session,
               sequence,
               local);
-    stats_.forward_errors->Add(1);
+    data.stats_.forward_errors->Add(1);
     // Kill the session.
     HandleDestroySession(session);
     on_disconnect_({session});
@@ -353,7 +377,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
                 "Session %" PRIi64
                 " attempting to send invalid message type through proxy (%d)",
                 session, static_cast<int>(message->GetMessageType()));
-      stats_.forward_errors->Add(1);
+      data.stats_.forward_errors->Add(1);
       // Kill session.
       HandleDestroySession(session);
       on_disconnect_({session});
@@ -361,8 +385,6 @@ void Proxy::HandleMessageForwarded(std::string msg,
   }
 
   // Find or create session info.
-  auto& data = GetWorkerDataForSession(session);
-  // Handle reordering.
   auto it = data.open_sessions_.find(session);
   if (it == data.open_sessions_.end()) {
     // Not there, so create it.
@@ -385,6 +407,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
     it = result.first;
   }
 
+  // Handle reordering.
   if (sequence == -1) {
     HandleMessageForwardedInorder(message->GetMessageType(), std::move(msg),
                                   session, local);

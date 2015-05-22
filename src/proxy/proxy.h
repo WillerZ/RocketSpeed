@@ -110,9 +110,7 @@ class Proxy {
    */
   ~Proxy();
 
-  const Statistics& GetStatistics() const {
-    return stats_.all;
-  }
+  Statistics GetStatisticsSync();
 
  private:
   explicit Proxy(ProxyOptions options);
@@ -129,22 +127,6 @@ class Proxy {
 
   /** Worker data sharded by session. */
   std::vector<std::unique_ptr<ProxyWorkerData>> worker_data_;
-
-  struct Stats {
-    Stats() {
-      forwards = all.AddCounter("rocketspeed.proxy.forwards");
-      forward_errors = all.AddCounter("rocketspeed.proxy.forward_errors");
-      on_message_calls = all.AddCounter("rocketspeed.proxy.on_message_calls");
-      bad_origins = all.AddCounter("rocketspeed.proxy.bad_origins");
-    }
-
-    Statistics all;
-
-    Counter* forwards;
-    Counter* forward_errors;
-    Counter* on_message_calls;
-    Counter* bad_origins;
-  } stats_;
 
   int WorkerForSession(int64_t session) const;
 
