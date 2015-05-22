@@ -143,7 +143,7 @@ static void ProducerWorker(void* param) {
   info_log->Flush();
 
   // Calculate message rate for this worker.
-  int64_t rate = FLAGS_message_rate / FLAGS_num_threads;
+  int64_t rate = FLAGS_message_rate / FLAGS_num_threads + 1;
 
   auto start = std::chrono::steady_clock::now();
   for (int64_t i = 0; i < num_messages; ++i) {
@@ -276,11 +276,11 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
                  std::unordered_map<std::string, SequenceNumber> first_seqno) {
   auto start = std::chrono::steady_clock::now();
-  SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
   size_t c = 0;
-  auto rate = FLAGS_subscribe_rate;
+  auto rate = FLAGS_subscribe_rate / FLAGS_num_threads + 1;
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     std::string topic_name("benchmark." + std::to_string(i));
+    SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
     if (FLAGS_delay_subscribe) {
       // Find the first seqno published to this topic (or 0 if none published).
       auto it = first_seqno.find(topic_name);
