@@ -108,6 +108,11 @@ bool CopilotWorker::Forward(std::shared_ptr<ControlTowerRouter> new_router) {
   return options_.msg_loop->SendCommand(std::move(command), myid_).ok();
 }
 
+const Statistics& CopilotWorker::GetStatistics() {
+  stats_.subscribed_topics->Set(topics_.size());
+  return stats_.all;
+}
+
 void CopilotWorker::ProcessMetadataResponse(const TopicPair& request,
                                             LogID logid,
                                             int worker_id) {
@@ -339,6 +344,7 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
                        worker_id,
                        tenant_id,
                        sub_id));
+    stats_.incoming_subscriptions->Add(1);
     this_sub = topic.subscriptions.back().get();
   }
 
@@ -456,6 +462,7 @@ void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
         // This is our subscription, remove it.
         our_seqno = sub->seqno;
         it = subscriptions.erase(it);
+        stats_.incoming_subscriptions->Add(-1);
       } else {
         // Find earliest other seqno subscription for this topic.
         earliest_other_seqno = std::min(earliest_other_seqno, sub->seqno);

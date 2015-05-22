@@ -965,9 +965,20 @@ TEST(IntegrationTest, SubscriptionManagement) {
     inbox[c].clear();
   };
 
+  // Checks number of subscriptions and topics subscribed on the Copilot.
+  auto check_cp_stats = [&](uint64_t num_subs, uint64_t num_topics) {
+    auto stats = cluster.GetCopilot()->GetStatisticsSync();
+    ASSERT_EQ(num_subs,
+              stats.GetCounterValue("copilot.incoming_subscriptions"));
+    ASSERT_EQ(num_topics, stats.GetCounterValue("copilot.subscribed_topics"));
+  };
+
   // Empty inboxes.
   recv(0, {});
   recv(1, {});
+
+  // No subscriptions.
+  check_cp_stats(0, 0);
 
   // Subscribe client 0 to start, publish 3, receive 3.
   auto h_0a = sub(0, "a", 1);
@@ -975,11 +986,13 @@ TEST(IntegrationTest, SubscriptionManagement) {
   SequenceNumber a1 = pub(0, "a", "a1");
   pub(0, "a", "a2");
   recv(0, {"a0", "a1", "a2"});
+  check_cp_stats(1, 1);
 
   // Subscribe client 1 at message 2/3, receive messages 2 + 3
   auto h_1a = sub(1, "a", a1);
   recv(0, {});
   recv(1, {"a1", "a2"});
+  check_cp_stats(2, 1);
 
   // Publish one more, both receive.
   pub(0, "a", "a3");
@@ -991,12 +1004,14 @@ TEST(IntegrationTest, SubscriptionManagement) {
   pub(0, "a", "a4");
   recv(0, {});
   recv(1, {"a4"});
+  check_cp_stats(1, 1);
 
   // Unsubscribe client 1, publish, neither should receive.
   unsub(1, h_1a);
   pub(0, "a", "a5");
   recv(0, {});
   recv(1, {});
+  check_cp_stats(0, 0);
 
   // Subscribe both at tail, publish, both should receive.
   sub(0, "a", 0);

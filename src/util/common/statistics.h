@@ -39,6 +39,11 @@ class Counter {
     count_ += delta;
   }
 
+  void Set(uint64_t count) {
+    thread_check_.Check();
+    count_ = count;
+  }
+
   uint64_t Get() const {
     thread_check_.Check();
     return count_;
@@ -182,16 +187,13 @@ class Statistics {
    */
   void Aggregate(const Statistics& stats);
 
-  const std::unordered_map<std::string, std::unique_ptr<Counter>>&
-    GetCounters() const {
+  uint64_t GetCounterValue(const std::string& name) const {
     thread_check_.Check();
-    return counters_;
-  }
-
-  const std::unordered_map<std::string, std::unique_ptr<Histogram>>&
-    GetHistograms() const {
-    thread_check_.Check();
-    return histograms_;
+    auto it = counters_.find(name);
+    if (it == counters_.end()) {
+      return 0;
+    }
+    return it->second->Get();
   }
 
  private:
