@@ -187,6 +187,18 @@ class Statistics {
    */
   void Aggregate(const Statistics& stats);
 
+  const std::unordered_map<std::string, std::unique_ptr<Counter>>&
+    GetCounters() const {
+    thread_check_.Check();
+    return counters_;
+  }
+
+  const std::unordered_map<std::string, std::unique_ptr<Histogram>>&
+    GetHistograms() const {
+    thread_check_.Check();
+    return histograms_;
+  }
+
   uint64_t GetCounterValue(const std::string& name) const {
     thread_check_.Check();
     auto it = counters_.find(name);
