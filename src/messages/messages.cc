@@ -24,6 +24,21 @@
  */
 namespace rocketspeed {
 
+const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
+  "invalid",
+  "ping",
+  "publish",
+  "metadata",
+  "data_ack",
+  "gap",
+  "deliver",
+  "goodbye",
+  "subscribe",
+  "unsubscribe",
+  "deliver_gap",
+  "deliver_data",
+};
+
  /**
   * Creates a Message of the appropriate subtype by looking at the
   * MessageType. Returns nullptr on error. It is the responsibility

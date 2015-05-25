@@ -325,9 +325,20 @@ TEST(Messaging, PingPong) {
   MessagePing msg(
       Tenant::GuestTenant, MessagePing::PingType::Request, "cookie");
 
+  auto pings_recv = [] (MsgLoop& msg_loop) {
+    return msg_loop.GetStatisticsSync()
+      .GetCounterValue(msg_loop.GetName() + ".messages_received.ping");
+  };
+
   // Send a single ping first.
+  ASSERT_EQ(pings_recv(loop), 0);
+  ASSERT_EQ(pings_recv(server), 0);
+
   ASSERT_OK(loop.SendRequest(msg, &socket, 0));
   ASSERT_TRUE(ping_sem.TimedWait(timeout_));
+
+  ASSERT_EQ(pings_recv(loop), 1);
+  ASSERT_EQ(pings_recv(server), 1);
 
   // Now send multiple ping messages to server back-to-back.
   const int num_msgs = 100;
@@ -338,6 +349,9 @@ TEST(Messaging, PingPong) {
   for (int i = 0; i < num_msgs; ++i) {
     ASSERT_TRUE(ping_sem.TimedWait(timeout_));
   }
+
+  ASSERT_EQ(pings_recv(loop), 1 + num_msgs);
+  ASSERT_EQ(pings_recv(server), 1 + num_msgs);
 }
 
 TEST(Messaging, SameStreamsOnDifferentSockets) {

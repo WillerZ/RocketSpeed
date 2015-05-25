@@ -75,6 +75,11 @@ class MsgLoop : public MsgLoopBase {
   // Get the host ID of this message loop.
   const HostId& GetHostId() const { return hostid_; }
 
+  // Get the name of this message loop.
+  const std::string& GetName() const {
+    return name_;
+  }
+
   // The client ID of a specific event loop.
   const ClientID& GetClientId(int worker_id) const {
     return worker_client_ids_[worker_id];

@@ -42,11 +42,16 @@ enum class MessageType : uint8_t {
   mUnsubscribe = 0x09,  // MessageUnsubscribe
   mDeliverGap = 0x0A,   // MessageDeliverGap
   mDeliverData = 0x0B,  // MessageDeliverData
+
+  min = mPing,
+  max = mDeliverData,
 };
 
 inline bool ValidateEnum(MessageType e) {
-  return e >= MessageType::mPing && e <= MessageType::mDeliverData;
+  return e >= MessageType::min && e <= MessageType::max;
 }
+
+extern const char* const kMessageTypeNames[size_t(MessageType::max) + 1];
 
 /*
  * The metadata messages can be of two subtypes

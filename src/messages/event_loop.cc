@@ -413,7 +413,8 @@ class SocketEvent {
         event_loop_->heartbeat_.Add(global);
       }
 
-      if (msg->GetMessageType() == MessageType::mGoodbye) {
+      const MessageType msg_type = msg->GetMessageType();
+      if (msg_type == MessageType::mGoodbye) {
         MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
         LOG_INFO(event_loop_->GetLog(),
                  "Received goodbye message (code %d) for stream (%llu)",
@@ -432,6 +433,9 @@ class SocketEvent {
                    sev->fd_);
         }
       }
+
+      assert(ValidateEnum(msg_type));
+      event_loop_->stats_.messages_received[size_t(msg_type)]->Add(1);
 
       // Invoke the callback for this message.
       event_loop_->Dispatch(std::move(msg), global);
@@ -1212,6 +1216,17 @@ EventLoop::EventLoop(BaseEnv* env,
     };
 
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
+}
+
+EventLoop::Stats::Stats(const std::string& prefix) {
+  command_latency = all.AddLatency(prefix + ".command_latency");
+  write_latency = all.AddLatency(prefix + ".write_latency");
+  commands_processed = all.AddCounter(prefix + ".commands_processed");
+  accepts = all.AddCounter(prefix + ".accepts");
+  for (int i = 0; i < int(MessageType::max) + 1; ++i) {
+    messages_received[i] = all.AddCounter(
+      prefix + ".messages_received." + kMessageTypeNames[i]);
+  }
 }
 
 EventLoop::~EventLoop() {

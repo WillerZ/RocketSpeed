@@ -383,18 +383,14 @@ class EventLoop {
   rocketspeed::ThreadCheck thread_check_;
 
   struct Stats {
-    explicit Stats(const std::string& prefix) {
-      command_latency = all.AddLatency(prefix + ".command_latency");
-      write_latency = all.AddLatency(prefix + ".write_latency");
-      commands_processed = all.AddCounter(prefix + ".commands_processed");
-      accepts = all.AddCounter(prefix + ".accepts");
-    }
+    explicit Stats(const std::string& prefix);
 
     Statistics all;
     Histogram* command_latency;   // time from SendCommand to do_command
     Histogram* write_latency;     // time from SendCommand to socket write
     Counter* commands_processed;
     Counter* accepts;             // number of connection accepted
+    Counter* messages_received[size_t(MessageType::max) + 1];
   } stats_;
 
   // A callback for handling SendCommands.
