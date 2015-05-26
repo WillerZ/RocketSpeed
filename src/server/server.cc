@@ -36,6 +36,8 @@ DEFINE_int32(tower_port,
              rocketspeed::ControlTower::DEFAULT_PORT,
              "tower port number");
 DEFINE_int32(tower_rooms, 16, "tower rooms");
+DEFINE_int64(tower_max_subscription_lag, 10000,
+             "max seqno lag on subscriptions");
 
 // Pilot settings
 DEFINE_bool(pilot, false, "start the pilot");
@@ -69,8 +71,7 @@ DEFINE_bool(heartbeat_enabled, false, "enabled the stream heartbeat check");
 DEFINE_int32(heartbeat_timeout,
              900,
              "heartbeat timeout for the idle streams, in seconds");
-DEFINE_int32(heartbeat_expire_batch,
-             rocketspeed::EventLoop::Options::kDefaultHeartbeatExpireBatch,
+DEFINE_int32(heartbeat_expire_batch, -1 /* unbounded */,
              "number of streams to expire in one blocking call");
 
 DEFINE_string(rs_log_dir, "", "directory for server logs");
@@ -211,6 +212,7 @@ Status RocketSpeed::Initialize(
     tower_opts.info_log = info_log_;
     tower_opts.storage = storage;
     tower_opts.log_router = log_router;
+    tower_opts.max_subscription_lag = FLAGS_tower_max_subscription_lag;
 
     Status st = ControlTower::CreateNewInstance(std::move(tower_opts),
                                                 &tower);

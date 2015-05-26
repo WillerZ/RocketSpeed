@@ -54,7 +54,11 @@ TopicManager::RemoveSubscriber(const TopicUUID& topic, HostNumber subscriber) {
   // find list of subscribers for this topic
   auto iter = topic_map_.find(topic);
   if (iter != topic_map_.end()) {
-    return RemoveSubscription(iter->second, subscriber);
+    bool removed = RemoveSubscription(iter->second, subscriber);
+    if (removed && iter->second.empty()) {
+      topic_map_.erase(iter);
+    }
+    return removed;
   }
   return false;
 }

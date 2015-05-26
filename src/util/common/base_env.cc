@@ -48,10 +48,10 @@ namespace rocketspeed {
 
 
 void BaseEnv::SetCurrentThreadName(const std::string& name) {
+  thread_name()->assign(name);
 #if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 12)
   {
-    thread_name()->assign(name);
     pthread_setname_np(pthread_self(), name.c_str());
   }
 #endif

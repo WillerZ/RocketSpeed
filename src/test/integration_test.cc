@@ -879,6 +879,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
   LocalTestCluster::Options opts;
   opts.info_log = info_log;
   opts.single_log = true;   // for testing topic tailer
+  opts.tower.max_subscription_lag = 3;
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
@@ -942,14 +943,10 @@ TEST(IntegrationTest, SubscriptionManagement) {
   auto recv = [&] (int c, std::vector<std::string> expected) {
     for (size_t i = 0; i < expected.size(); ++i) {
       // Wait for expected messages.
-      if (!checkpoint[c].TimedWait(timeout)) {
-        fprintf(stderr, "Client %d failed to receive msg %zu/%zu\n",
-          c, i, expected.size());
-        ASSERT_TRUE(false);
-      }
+      checkpoint[c].TimedWait(timeout);
     }
     // No more.
-    ASSERT_TRUE(!checkpoint[c].TimedWait(std::chrono::milliseconds(10)));
+    env_->SleepForMicroseconds(10000);
     std::lock_guard<std::mutex> lock(inbox_lock[c]);
     if (inbox[c] != expected) {
       fprintf(stderr, "Inbox %d contains:\n", c);
@@ -1109,6 +1106,16 @@ TEST(IntegrationTest, SubscriptionManagement) {
   // in as many copies, one per subscription.
   pub(1, "h", "h3");
   recv(0, {"h3", "h3", "h3", "h3"});
+
+  SequenceNumber i0 = pub(0, "i", "i0");
+  pub(0, "j", "j0");
+  pub(0, "i", "i1");
+  pub(0, "j", "j1");
+  pub(0, "j", "j2");
+  sub(0, "i", i0);
+  recv(0, {"i0", "i1"});
+  sub(1, "i", i0);
+  recv(1, {"i0", "i1"});
 }
 
 }  // namespace rocketspeed

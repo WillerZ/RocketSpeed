@@ -198,7 +198,8 @@ Status ControlTower::Initialize() {
     if (st.ok()) {
       // Topic tailer i uses reader i in log tailer.
       const size_t reader_id = i;
-      st = topic_tailer->Initialize(reader_id);
+      st = topic_tailer->Initialize(reader_id,
+                                    opt.max_subscription_lag);
     }
     if (!st.ok()) {
       return st;

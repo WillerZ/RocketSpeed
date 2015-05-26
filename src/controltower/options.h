@@ -85,6 +85,13 @@ struct ControlTowerOptions {
   // Log router.
   std::shared_ptr<LogRouter> log_router;
 
+  // Maximum number of sequence numbers that a subscription can lag behind
+  // before being sent a gap. This is to ensure that (a) subscribers regularly
+  // receive updates for each topic, even if there are no records, and (b) that
+  // temporary disconnections don't result in excessive rewind.
+  // Default: 10K
+  int64_t max_subscription_lag;
+
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
 };

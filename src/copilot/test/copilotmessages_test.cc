@@ -167,6 +167,9 @@ TEST(CopilotTest, Rollcall) {
   RollcallImpl rollcall1(
       std::move(client), GuestTenant, ns, 0, rollcall_callback);
 
+  // Wait a little so that the subscribe to 0 isn't affected by rollcall writes.
+  env_->SleepForMicroseconds(100000);
+
   // send subscribe messages to copilot
   for (SubscriptionID i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);

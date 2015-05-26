@@ -126,7 +126,9 @@ class SocketEvent {
     if (ev_) {
       event_free(ev_);
     }
-    event_free(write_ev_);
+    if (write_ev_) {
+      event_free(write_ev_);
+    }
     close(fd_);
   }
 

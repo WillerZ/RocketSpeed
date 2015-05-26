@@ -290,20 +290,15 @@ class EventLoop {
     */
   class Options {
    public:
-    static const uint32_t kDefaultCommandQueueSize = 1000000;
-    static constexpr std::chrono::seconds kDefaultHeartbeatTimeout =
-      std::chrono::seconds(900);
-    static const int kDefaultHeartbeatExpireBatch = -1;
-
     // prefix used for statistics
     std::string stats_prefix;
     // initial size of the command queue
-    uint32_t command_queue_size = kDefaultCommandQueueSize;
+    uint32_t command_queue_size = 1000000;
     // timeout after which all inactive streams should be considered expired
-    std::chrono::seconds heartbeat_timeout = kDefaultHeartbeatTimeout;
+    std::chrono::seconds heartbeat_timeout{900};
     // since we expire the streams in the blocking call, limit the number of
     // streams expired at once. the rest will be processed in the next call.
-    int heartbeat_expire_batch = kDefaultHeartbeatExpireBatch;
+    int heartbeat_expire_batch = -1;
     // whether the stream heartbeat check is enabled
     bool heartbeat_enabled = false;
   };

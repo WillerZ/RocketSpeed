@@ -27,7 +27,17 @@ class LogReader;
 class TopicTailer {
  friend class ControlTowerTest;
  public:
-  // create a LogTailer
+  /**
+   * Create a TopicTailer.
+   *
+   * @param env Environment.
+   * @param log_tailer Tailer for logs. Will be manipulated by TopicTailer.
+   * @param log_router For routing topics to logs.
+   * @param info_log For logging.
+   * @param on_message Callback for Deliver and Gap messages.
+   * @param tailer Output parameter for created TopicTailer.
+   * @return ok() if TopicTailer created, otherwise error.
+   */
   static Status CreateNewInstance(
    BaseEnv* env,
    LogTailer* log_tailer,
@@ -41,9 +51,13 @@ class TopicTailer {
    * Initialize the TopicTailer first before using it.
    *
    * @param reader_id ID of reader on LogTailer.
+   * @param max_subscription_lag Maximum number of sequence numbers that a
+   *                             subscription can lag behind before being sent
+   *                             a gap.
    * @return ok if successful, otherwise error code.
    */
-  Status Initialize(size_t reader_id);
+  Status Initialize(size_t reader_id,
+                    int64_t max_subscription_lag);
 
   /**
    * Shuts down the Topic Tailer, synchronously halting all communication
