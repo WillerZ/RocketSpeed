@@ -203,7 +203,8 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
 
   if (expected_seqno_ > current ||
       expected_seqno_ < previous ||
-      (expected_seqno_ == 0 && previous != 0)) {
+      (expected_seqno_ == 0 && previous != 0) ||
+      (expected_seqno_ != 0 && previous == 0)) {
     LOG_INFO(info_log,
              "Duplicate message %" PRIu64 "-%" PRIu64
              " on Topic(%s, %s) expected %" PRIu64,

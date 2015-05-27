@@ -176,7 +176,8 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
       }
 
       // or not matching zeroes.
-      if (sub->seqno == 0 && prev_seqno != 0) {
+      if ((sub->seqno == 0 && prev_seqno != 0) ||
+          (sub->seqno != 0 && prev_seqno == 0)) {
         LOG_INFO(options_.info_log,
                  "Data not delivered to %llu"
                  " (prev_seqno@%" PRIu64 " not 0)",
@@ -260,7 +261,8 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       }
 
       // or not matching zeroes.
-      if (sub->seqno == 0 && prev_seqno != 0) {
+      if ((sub->seqno == 0 && prev_seqno != 0) ||
+          (sub->seqno != 0 && prev_seqno == 0)) {
         LOG_INFO(options_.info_log,
                  "Gap ignored for %llu"
                  " (prev_seqno@%" PRIu64 " not 0)",
@@ -835,7 +837,8 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
     if (tower.stream->GetStreamID() == origin) {
       if (prev <= tower.next_seqno &&
           next >= tower.next_seqno &&
-          !(prev == 0 && tower.next_seqno != 0)) {
+          !(prev == 0 && tower.next_seqno != 0) &&
+          !(prev != 0 && tower.next_seqno == 0)) {
         LOG_INFO(options_.info_log,
           "Tower subscription %llu advanced from %" PRIu64 " to %" PRIu64,
           tower.stream->GetStreamID(),
