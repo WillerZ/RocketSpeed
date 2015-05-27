@@ -618,7 +618,12 @@ TEST(IntegrationTest, LostConnection) {
   std::string data = "test_message";
 
   // RocketSpeed callbacks;
-  auto publish_callback = [&](std::unique_ptr<ResultStatus> rs) {};
+  auto ok_callback =
+      [&](std::unique_ptr<ResultStatus> rs) { ASSERT_OK(rs->GetStatus()); };
+
+  auto disconnected_callback = [&](std::unique_ptr<ResultStatus> rs) {
+    ASSERT_TRUE(!rs->GetStatus().ok());
+  };
 
   auto receive_callback = [&](std::unique_ptr<MessageReceived>& mr) {
     ASSERT_TRUE(mr->GetContents().ToString() == data);
@@ -639,7 +644,7 @@ TEST(IntegrationTest, LostConnection) {
                             namespace_id,
                             topic_options,
                             Slice(data),
-                            publish_callback).status);
+                            ok_callback).status);
 
   // Listen on a topic.
   ASSERT_TRUE(client->Subscribe(GuestTenant, namespace_id, topic, 1));
@@ -649,6 +654,15 @@ TEST(IntegrationTest, LostConnection) {
 
   // Restart the cluster, which kills connection.
   cluster.reset();
+
+  // Send another message while disconnected.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            disconnected_callback).status);
+
   cluster.reset(new LocalTestCluster(opts));
   ASSERT_OK(cluster->GetStatus());
 
@@ -661,7 +675,7 @@ TEST(IntegrationTest, LostConnection) {
                             namespace_id,
                             topic_options,
                             Slice(data),
-                            publish_callback).status);
+                            ok_callback).status);
 
   // Wait for message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));

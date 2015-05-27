@@ -5,6 +5,8 @@
 //
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <memory>
 
 #include "include/WakeLock.h"

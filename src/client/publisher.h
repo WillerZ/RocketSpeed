@@ -6,6 +6,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
@@ -17,6 +18,7 @@ namespace rocketspeed {
 
 class BaseEnv;
 class Message;
+class MessageData;
 class MsgLoopBase;
 class SmartWakeLock;
 class Logger;
@@ -60,14 +62,15 @@ class PublisherImpl {
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 
  private:
+  friend class PublisherWorkerData;
+
   const std::shared_ptr<Configuration> config_;
   const std::shared_ptr<Logger> info_log_;
-  /** A non-owning pointer to the message loop. */
-  MsgLoopBase* msg_loop_;
-  /** A non-owning pointer to the wake lock. */
-  SmartWakeLock* wake_lock_;
+  MsgLoopBase* const msg_loop_;
+  SmartWakeLock* const wake_lock_;
+
   /** State of the publisher sharded by worker threads. */
-  std::unique_ptr<PublisherWorkerData[]> worker_data_;
+  std::vector<PublisherWorkerData> worker_data_;
 
   /** Handles acknowledgements for published messages. */
   void ProcessDataAck(std::unique_ptr<Message> msg, StreamID origin);

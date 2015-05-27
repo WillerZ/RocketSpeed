@@ -3,21 +3,20 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-#include "src/client/publisher.h"
+#include "publisher.h"
 
-#include <atomic>
 #include <memory>
-#include <mutex>
-#include <set>
-#include <thread>
 #include <unordered_map>
-#include <unordered_set>
+
+#include "external/folly/move_wrapper.h"
 
 #include "src/client/smart_wake_lock.h"
-#include "src/client/topic_id.h"
+#include "src/messages/messages.h"
 #include "src/messages/msg_loop_base.h"
+#include "src/messages/commands.h"
 #include "src/port/port.h"
 #include "src/util/common/hash.h"
+#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
@@ -38,9 +37,7 @@ class ClientResultStatus : public ResultStatus {
     }
   }
 
-  virtual Status GetStatus() const {
-    return status_;
-  }
+  virtual Status GetStatus() const { return status_; }
 
   virtual MsgId GetMessageId() const {
     assert(status_.ok());
@@ -68,8 +65,7 @@ class ClientResultStatus : public ResultStatus {
     return message_.GetPayload();
   }
 
-  ~ClientResultStatus() {
-  }
+  ~ClientResultStatus() {}
 
  private:
   Status status_;
@@ -78,142 +74,101 @@ class ClientResultStatus : public ResultStatus {
   SequenceNumber seqno_;
 };
 
+////////////////////////////////////////////////////////////////////////////////
 /** Describes published message awaiting response. */
 class PendingAck {
  public:
   PendingAck(PublishCallback _callback, std::string _data)
-      : callback(std::move(_callback)), data(std::move(_data)) {
-  }
+      : callback(std::move(_callback)), data(std::move(_data)) {}
 
   PublishCallback callback;
   std::string data;
 };
 
-/**
- * State of a publisher. We have one such structure per worker thread, all
- * messages on a single topic are handled by a single thread to avoid
- * contention. Aligned to avoid false sharing.
- */
+/** State of a single publisher, aligned to avoid false sharing. */
 class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
  public:
+  // Noncopyable
+  PublisherWorkerData(const PublisherWorkerData&) = delete;
+  PublisherWorkerData& operator=(const PublisherWorkerData&) = delete;
+  // Movable
+  PublisherWorkerData(PublisherWorkerData&&) = default;
+  PublisherWorkerData& operator=(PublisherWorkerData&&) = default;
+
+  PublisherWorkerData(PublisherImpl* publisher, int worker_id)
+      : publisher_(publisher), worker_id_(worker_id) {}
+
+  /** Recreates streams used in communication with the Pilot. */
+  void Reconnect();
+
+  /** Publishes message to the Pilot. */
+  void Publish(MsgId message_id,
+               std::string serialized,
+               PublishCallback callback);
+
+  /** Handles acknowledgements for published messages. */
+  void ProcessDataAck(std::unique_ptr<Message> msg, StreamID origin);
+
+  /** Handles goodbye messages for publisher streams. */
+  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
+
+ private:
+  ThreadCheck thread_check_;
+  PublisherImpl* const publisher_;
+  /** Index of this worker. */
+  const int worker_id_;
   /** Stream socket used by this worker to talk to the pilot. */
-  StreamSocket pilot_socket;
-
-  /**
-   * Map a subscribed topic name to the last sequence number received for this
-   * topic.
-   */
-  std::unordered_map<TopicID, SequenceNumber> topic_map;
-
+  StreamSocket pilot_socket_;
   /** Messages sent, awaiting ack. Maps message ID -> pre-serialized message. */
-  std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent;
-  std::mutex message_sent_mutex;  // mutex for operators on messages_sent_
+  std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent_;
+
+  /** Checks that message arrived on correct stream. */
+  bool IsNotPilot(StreamID origin);
 };
 
-PublisherImpl::PublisherImpl(BaseEnv* env,
-                             std::shared_ptr<Configuration> config,
-                             std::shared_ptr<Logger> info_log,
-                             MsgLoopBase* msg_loop,
-                             SmartWakeLock* wake_lock)
-    : config_(std::move(config))
-    , info_log_(std::move(info_log))
-    , msg_loop_(msg_loop)
-    , wake_lock_(wake_lock) {
-  // Prepare sharded state.
-  worker_data_.reset(new PublisherWorkerData[msg_loop_->GetNumWorkers()]);
-
-  // Initialise stream socket for each worker, each of them is independent.
-  HostId pilot;
-  Status st = config_->GetPilot(&pilot);
-  assert(st.ok());
-  for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    worker_data_[i].pilot_socket =
-        msg_loop_->CreateOutboundStream(pilot.ToClientId(), i);
-  }
-
-  // Register our callbacks.
-  std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mDataAck] =
-      std::bind(&PublisherImpl::ProcessDataAck,
-                this,
-                std::placeholders::_1,
-                std::placeholders::_2);
-  msg_loop_->RegisterCallbacks(std::move(callbacks));
-}
-
-PublisherImpl::~PublisherImpl() {
-  // Destructor cannot be inline, otherwise we have to define worker data in
-  // header file and pull include dependencies. It sounds like a reasonable
-  // tradeoff.
-}
-
-PublishStatus PublisherImpl::Publish(TenantID tenant_id,
-                                     const NamespaceID& namespace_id,
-                                     const Topic& name,
-                                     const TopicOptions& options,
-                                     const Slice& data,
-                                     PublishCallback callback,
-                                     const MsgId message_id) {
-  // Find the worker ID for this topic.
-  int worker_id = GetWorkerForTopic(name);
-  auto& worker_data = worker_data_[worker_id];
-
-  // Construct message.
-  MessageData message(MessageType::mPublish,
-                      tenant_id,
-                      Slice(name),
-                      namespace_id,
-                      data);
-
-  // Take note of message ID before we move into the command.
-  const MsgId empty_msgid = MsgId();
-  if (!(message_id == empty_msgid)) {
-    message.SetMessageId(message_id);
-  }
-  const MsgId msgid = message.GetMessageId();
-
-  // Get a serialized version of the message
-  // TODO(pja) 1 : Figure out what to do with shared strings.
-  std::string serialized;
-  message.SerializeToString(&serialized);
-
-  // Add message to the sent list.
-  PendingAck pending_ack(std::move(callback), std::move(serialized));
-  std::unique_lock<std::mutex> lock(worker_data.message_sent_mutex);
-  bool added =
-      worker_data.messages_sent.emplace(msgid, std::move(pending_ack)).second;
-  lock.unlock();
-
-  assert(added);
+void PublisherWorkerData::Publish(MsgId message_id,
+                                  std::string serialized,
+                                  PublishCallback callback) {
+  thread_check_.Check();
 
   // Send to event loop for processing (the loop will free it).
-  wake_lock_->AcquireForSending();
-  Status status =
-      msg_loop_->SendRequest(message, &worker_data.pilot_socket, worker_id);
-  if (!status.ok() && added) {
-    std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
-    worker_data.messages_sent.erase(msgid);
-    lock1.unlock();
+  Status st = publisher_->msg_loop_->SendCommand(
+      SerializedSendCommand::Request(serialized, {&pilot_socket_}), worker_id_);
+  if (!st.ok()) {
+    std::unique_ptr<ClientResultStatus> result_status(
+        new ClientResultStatus(Status::NoBuffer(), serialized, 0));
+    callback(std::move(result_status));
+    return;
   }
 
-  // Return status with the generated message ID.
-  return PublishStatus(status, msgid);
+  // Add message to the sent list.
+  auto emplace_result = messages_sent_.emplace(
+      message_id, PendingAck(std::move(callback), std::move(serialized)));
+  ((void)emplace_result);
+  assert(emplace_result.second);
 }
 
-void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
-                                   StreamID origin) {
-  wake_lock_->AcquireForReceiving();
-  msg_loop_->ThreadCheck();
+void PublisherWorkerData::Reconnect() {
+  // Get the pilot's address.
+  HostId pilot;
+  Status st = publisher_->config_->GetPilot(&pilot);
+  assert(st.ok());  // TODO(pja) : handle failures
 
-  int worker_id = msg_loop_->GetThreadWorkerIndex();
-  auto& worker_data = worker_data_[worker_id];
+  // And create socket to it.
+  pilot_socket_ = publisher_->msg_loop_->CreateOutboundStream(
+      pilot.ToClientId(), worker_id_);
 
-  // Check that message arrived on correct stream.
-  if (worker_data.pilot_socket.GetStreamID() != origin) {
-    LOG_WARN(info_log_,
-             "Incorrect message stream: (%llu) expected: (%llu)",
-             origin,
-             worker_data.pilot_socket.GetStreamID());
+  LOG_INFO(publisher_->info_log_,
+           "Reconnected to %s on stream %llu",
+           pilot.ToString().c_str(),
+           pilot_socket_.GetStreamID());
+}
+
+void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
+                                         StreamID origin) {
+  thread_check_.Check();
+
+  if (IsNotPilot(origin)) {
     return;
   }
 
@@ -222,14 +177,12 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
-    // Find the message ID from the messages_sent list.
-    std::unique_lock<std::mutex> lock1(worker_data.message_sent_mutex);
-    auto it = worker_data.messages_sent.find(ack.msgid);
-    bool successful_ack = it != worker_data.messages_sent.end();
-    lock1.unlock();
+    LOG_INFO(publisher_->info_log_,
+             "Received DataAck for message ID %s",
+             ack.msgid.ToHexString().c_str());
 
-    // If successful, invoke callback.
-    if (successful_ack) {
+    auto it = messages_sent_.find(ack.msgid);
+    if (it != messages_sent_.end()) {
       if (it->second.callback) {
         Status st;
         SequenceNumber seqno = 0;
@@ -246,9 +199,7 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
       }
 
       // Remove sent message from list.
-      std::unique_lock<std::mutex> lock2(worker_data.message_sent_mutex);
-      worker_data.messages_sent.erase(it);
-      lock2.unlock();
+      messages_sent_.erase(it);
     } else {
       // We've received an ack for a message that has already been acked
       // (or was never sent). This is possible if a message was sent twice
@@ -257,39 +208,121 @@ void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
   }
 }
 
-void PublisherImpl::ProcessGoodbye(std::unique_ptr<Message> msg,
-                                   StreamID origin) {
-  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
-  auto& worker_data = worker_data_[worker_id];
+void PublisherWorkerData::ProcessGoodbye(std::unique_ptr<Message> msg,
+                                         StreamID origin) {
+  thread_check_.Check();
 
-  // Check that message arrived on correct stream.
-  if (worker_data.pilot_socket.GetStreamID() != origin) {
-    LOG_WARN(info_log_,
-             "Received message on unexpected stream (%llu), expected (%llu)",
-             origin,
-             worker_data.pilot_socket.GetStreamID());
+  if (IsNotPilot(origin)) {
     return;
   }
 
-  // Reset pending acks, as they will not return.
-  // TODO(stupaq) resend unacked messages and hope we can dedup them
-  std::unique_lock<std::mutex> lock2(worker_data.message_sent_mutex);
-  worker_data.messages_sent.clear();
-  lock2.unlock();
+  // Notify about failed publishes.
+  for (auto& entry : messages_sent_) {
+    std::unique_ptr<ClientResultStatus> result_status(
+        new ClientResultStatus(Status::InternalError("Disconnected"),
+                               std::move(entry.second.data),
+                               0));
+    entry.second.callback(std::move(result_status));
+  }
+  messages_sent_.clear();
 
-  // Get the pilot's address.
-  HostId pilot;
-  Status st = config_->GetPilot(&pilot);
-  assert(st.ok());  // TODO(pja) : handle failures
+  // Recreate connection.
+  Reconnect();
+}
 
-  // And create socket to it.
-  worker_data.pilot_socket =
-      msg_loop_->CreateOutboundStream(pilot.ToClientId(), worker_id);
+bool PublisherWorkerData::IsNotPilot(StreamID origin) {
+  if (pilot_socket_.GetStreamID() != origin) {
+    LOG_WARN(publisher_->info_log_,
+             "Incorrect message stream: (%llu) expected: (%llu)",
+             origin,
+             pilot_socket_.GetStreamID());
+    return true;
+  }
+  return false;
+}
 
-  LOG_INFO(info_log_,
-           "Reconnected to %s on stream %llu",
-           pilot.ToString().c_str(),
-           worker_data.pilot_socket.GetStreamID());
+////////////////////////////////////////////////////////////////////////////////
+PublisherImpl::PublisherImpl(BaseEnv* env,
+                             std::shared_ptr<Configuration> config,
+                             std::shared_ptr<Logger> info_log,
+                             MsgLoopBase* msg_loop,
+                             SmartWakeLock* wake_lock)
+    : config_(std::move(config))
+    , info_log_(std::move(info_log))
+    , msg_loop_(msg_loop)
+    , wake_lock_(wake_lock) {
+  using namespace std::placeholders;
+
+  // Prepare sharded state.
+  for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
+    worker_data_.emplace_back(this, i);
+    // Connect to the Pilot.
+    worker_data_.back().Reconnect();
+  }
+
+  // Register our callbacks.
+  std::map<MessageType, MsgCallbackType> callbacks;
+  callbacks[MessageType::mDataAck] =
+      std::bind(&PublisherImpl::ProcessDataAck, this, _1, _2);
+  msg_loop_->RegisterCallbacks(std::move(callbacks));
+}
+
+PublisherImpl::~PublisherImpl() {
+  // Destructor cannot be inline, otherwise we have to define worker data in
+  // header file and pull include dependencies. It sounds like a reasonable
+  // tradeoff.
+}
+
+PublishStatus PublisherImpl::Publish(TenantID tenant_id,
+                                     const NamespaceID& namespace_id,
+                                     const Topic& topic_name,
+                                     const TopicOptions& options,
+                                     const Slice& data,
+                                     PublishCallback callback,
+                                     const MsgId message_id) {
+  // Find the worker ID for this topic.
+  const auto worker_id = GetWorkerForTopic(topic_name);
+
+  // Construct message.
+  MessageData message(
+      MessageType::mPublish, tenant_id, Slice(topic_name), namespace_id, data);
+
+  // Take note of message ID before we move into the command.
+  const MsgId empty_msgid = MsgId();
+  if (!(message_id == empty_msgid)) {
+    message.SetMessageId(message_id);
+  }
+  const MsgId msgid = message.GetMessageId();
+
+  std::string serialized;
+  message.SerializeToString(&serialized);
+
+  // Schedule command to publish the message.
+  auto moved_serialized = folly::makeMoveWrapper(std::move(serialized));
+  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
+  Status st = msg_loop_->SendCommand(
+      std::unique_ptr<ExecuteCommand>(new ExecuteCommand(
+          [this, worker_id, msgid, moved_serialized, moved_callback]() mutable {
+            worker_data_[worker_id].Publish(
+                msgid, moved_serialized.move(), moved_callback.move());
+          })),
+      worker_id);
+
+  // Return status with the generated message ID.
+  return PublishStatus(st, msgid);
+}
+
+// TODO(stupaq) remove these once we get thread-unsafe outgoing loops
+void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
+                                   StreamID origin) {
+  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
+  worker_data_[worker_id].ProcessDataAck(std::move(msg), origin);
+}
+
+void PublisherImpl::ProcessGoodbye(std::unique_ptr<Message> msg,
+                                   StreamID origin) {
+  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
+  worker_data_[worker_id].ProcessGoodbye(std::move(msg), origin);
 }
 
 int PublisherImpl::GetWorkerForTopic(const Topic& name) const {
