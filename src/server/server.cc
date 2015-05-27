@@ -59,6 +59,8 @@ DEFINE_string(control_towers,
               "comma-separated control tower hostnames");
 DEFINE_int32(copilot_connections, 8,
              "num connections between one copilot and one control tower");
+DEFINE_int32(copilot_towers_per_log, 2,
+             "number of towers to subscribe to for each log");
 DEFINE_bool(rollcall, true, "enable RollCall");
 
 // Supervisor settings
@@ -247,6 +249,7 @@ Status RocketSpeed::Initialize(
     copilot_opts.msg_loop = copilot_loop.get();
     copilot_opts.info_log = info_log_;
     copilot_opts.control_tower_connections = FLAGS_copilot_connections;
+    copilot_opts.control_towers_per_log = FLAGS_copilot_towers_per_log;
     copilot_opts.log_router = log_router;
     copilot_opts.rollcall_enabled = FLAGS_rollcall;
 

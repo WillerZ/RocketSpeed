@@ -19,7 +19,9 @@ namespace rocketspeed {
 // for each reader will only be called on one thread.
 //
 class LogTailer {
- friend class ControlTowerTest;
+  friend class ControlTowerTest;
+  friend class IntegrationTest;
+
  public:
   // Callbacks.
   typedef std::function<void(std::unique_ptr<MessageData>,  // publish msg

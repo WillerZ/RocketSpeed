@@ -10,6 +10,7 @@
 
 #include "include/RocketSpeed.h"
 #include "src/client/client.h"
+#include "src/controltower/log_tailer.h"
 #include "src/port/port.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/thread_check.h"
@@ -25,7 +26,13 @@ class IntegrationTest {
   IntegrationTest()
       : timeout(5)
       , env_(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env_, "IntegrationTest", &info_log));
+    ASSERT_OK(test::CreateLogger(env_,
+                                 "IntegrationTest",
+                                 &info_log));
+  }
+
+  int GetNumOpenLogs(ControlTower* ct) const {
+    return ct->GetLogTailer()->NumberOpenLogs();
   }
 
  protected:
@@ -775,6 +782,7 @@ TEST(IntegrationTest, NewControlTower) {
   new_opts.start_pilot = false;
   new_opts.controltower_port = ControlTower::DEFAULT_PORT + 1;
   LocalTestCluster new_cluster(new_opts);
+  ASSERT_OK(new_cluster.GetStatus());
 
   // Inform copilot of new control tower.
   std::unordered_map<uint64_t, HostId> new_towers = {
@@ -1123,6 +1131,127 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(0, {"i0", "i1"});
   sub(1, "i", i0);
   recv(1, {"i0", "i1"});
+}
+
+TEST(IntegrationTest, LogAvailability) {
+  // Tests the availability of a single log after control tower failure.
+  // Requires copilot talks to at least 2 control towers for each log.
+  // Will test CT failure by stopping the CT loop, without closing connections.
+
+  // Setup local RocketSpeed cluster (pilot + copilot + tower).
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.start_controltower = true;
+  opts.start_copilot = true;
+  opts.start_pilot = true;
+  opts.copilot.control_towers_per_log = 2;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Start new control tower (only).
+  LocalTestCluster::Options ct_opts[2];
+  std::unique_ptr<LocalTestCluster> ct_cluster[2];
+  for (int i = 0; i < 2; ++i) {
+    ct_opts[i].info_log = info_log;
+    ct_opts[i].start_controltower = true;
+    ct_opts[i].start_copilot = false;
+    ct_opts[i].start_pilot = false;
+    ct_opts[i].controltower_port = ControlTower::DEFAULT_PORT + i + 1;
+    ct_cluster[i].reset(new LocalTestCluster(ct_opts[i]));
+    ASSERT_OK(ct_cluster[i]->GetStatus());
+  }
+
+  // Inform copilot of origin control tower, and second control tower
+  // (but not third -- we'll use that later).
+  std::unordered_map<uint64_t, HostId> new_towers = {
+    { 0, cluster.GetControlTower()->GetHostId() },
+    { 1, ct_cluster[0]->GetControlTower()->GetHostId() }
+  };
+  ASSERT_OK(cluster.GetCopilot()->UpdateControlTowers(std::move(new_towers)));
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+
+
+  // Listen on many topics (to ensure at least one goes to each tower).
+  port::Semaphore msg_received;
+  std::vector<SubscriptionHandle> subscriptions;
+  enum { kNumTopics = 100 };
+  for (int i = 0; i < kNumTopics; ++i) {
+    auto handle =
+      client->Subscribe(GuestTenant,
+                        GuestNamespace,
+                        "LogAvailability" + std::to_string(i),
+                        1,
+                        [&] (std::unique_ptr<MessageReceived>& mr) {
+                          msg_received.Post();
+                        });
+    subscriptions.push_back(handle);
+  }
+
+  // The copilot should be subscribed to all topics on BOTH control towers.
+  env_->SleepForMicroseconds(100000);
+
+  // Stop the first control tower to ensure it cannot deliver records.
+  cluster.GetControlTower()->Stop();
+
+  // Publish to all topics.
+  for (int i = 0; i < kNumTopics; ++i) {
+    ASSERT_OK(client->Publish(GuestTenant,
+                              "LogAvailability" + std::to_string(i),
+                              GuestNamespace,
+                              TopicOptions(),
+                              "data").status);
+  }
+
+  // Check all messages were received despite one control tower down.
+  for (int i = 0; i < kNumTopics; ++i) {
+    ASSERT_TRUE(msg_received.TimedWait(timeout));
+  }
+
+  // Update the control tower mapping to be just the third tower.
+  new_towers = {
+    { 2, ct_cluster[1]->GetControlTower()->GetHostId() },
+  };
+
+  ASSERT_OK(cluster.GetCopilot()->UpdateControlTowers(std::move(new_towers)));
+  env_->SleepForMicroseconds(100000);
+
+  // Resend subscriptions.
+  port::Semaphore msg_received2;
+  for (int i = 0; i < kNumTopics; ++i) {
+    auto handle =
+      client->Subscribe(GuestTenant,
+                        GuestNamespace,
+                        "LogAvailability" + std::to_string(i),
+                        1,
+                        [&] (std::unique_ptr<MessageReceived>& mr) {
+                          msg_received2.Post();
+                        });
+    subscriptions.push_back(handle);
+  }
+
+  // This should resubscribe using the third tower.
+  // Check that all messages come through.
+  for (int i = 0; i < kNumTopics; ++i) {
+    ASSERT_TRUE(msg_received2.TimedWait(timeout));
+  }
+
+  // Check that unsubscribes work.
+  // We would have still had some lingering subscriptions on ct_cluster[0],
+  // so this tests that they have been cleaned up correctly despite not being
+  // the active subscription.
+  for (auto handle : subscriptions) {
+    client->Unsubscribe(handle);
+  }
+  env_->SleepForMicroseconds(100000);
+
+  ASSERT_EQ(GetNumOpenLogs(ct_cluster[1]->GetControlTower()), 0);
+  ASSERT_EQ(GetNumOpenLogs(ct_cluster[0]->GetControlTower()), 0);
 }
 
 }  // namespace rocketspeed

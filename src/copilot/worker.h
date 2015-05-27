@@ -54,6 +54,7 @@ class CopilotWorker {
 
  private:
   struct Subscription;
+  struct TopicState;
 
   struct Stats {
     Stats() {
@@ -101,10 +102,12 @@ class CopilotWorker {
                                int worker_id);
 
   // Forward data to subscribers.
-  void ProcessDeliver(std::unique_ptr<Message> msg);
+  void ProcessDeliver(std::unique_ptr<Message> msg,
+                      StreamID origin);
 
   // Forward gap to subscribers.
-  void ProcessGap(std::unique_ptr<Message> msg);
+  void ProcessGap(std::unique_ptr<Message> msg,
+                  StreamID origin);
 
   // Remove all subscriptions for a client.
   void ProcessGoodbye(std::unique_ptr<Message> msg,
@@ -115,10 +118,17 @@ class CopilotWorker {
   // Closes stream to a control tower, and updates all affected subscriptions.
   void CloseControlTowerStream(StreamID stream);
 
-  // Attempts to re-establish subscriptions on behalf of a client.
-  void ResendSubscriptions(LogID log_id,
-                           const TopicUUID& uuid,
-                           Subscription* sub);
+  // Sends a metadata request.
+  // Returns true if successful.
+  bool SendMetadata(TenantID tenant_id,
+                    MetadataType type,
+                    const TopicUUID& uuid,
+                    SequenceNumber seqno,
+                    StreamSocket* stream,
+                    int worker_id);
+
+  // Refreshes ustream subscriptions for a topic.
+  void UpdateTowerSubscriptions(const TopicUUID& uuid, TopicState& topic);
 
   // Removes a single subscription.
   // May update subscription to control tower.
@@ -142,6 +152,13 @@ class CopilotWorker {
   StreamSocket* GetControlTowerSocket(const HostId& tower,
                                       MsgLoop* msg_loop,
                                       int outgoing_worker_id);
+
+  // Advance the sequence number state of tower subscriptions.
+  void AdvanceTowers(TopicState* topic,
+                     SequenceNumber prev,
+                     SequenceNumber next,
+                     StreamID origin);
+
 
   // Copilot specific options.
   const CopilotOptions& options_;
@@ -168,34 +185,43 @@ class CopilotWorker {
     , tenant_id(_tenant_id)
     , sub_id(_sub_id) {}
 
-    struct Tower {
-      explicit Tower(StreamID _stream_id)
-      : stream_id(_stream_id) {}
+    StreamID stream_id;           // The subscriber
+    SequenceNumber seqno;         // Lowest seqno to accept
+    int worker_id;                // The event loop worker for client.
+    TenantID tenant_id;           // Tenant ID of the subscriber.
+    const SubscriptionID sub_id;  // Stream-local ID of this subscription.
+  };
 
-      StreamID stream_id;
+  struct TopicState {
+    explicit TopicState(LogID _log_id) : log_id(_log_id) {}
+
+    struct Tower {
+      explicit Tower(StreamSocket* _stream,
+                     SequenceNumber _next_seqno,
+                     int _worker_id)
+      : stream(_stream)
+      , next_seqno(_next_seqno)
+      , worker_id(_worker_id) {}
+
+      StreamSocket* stream;       // Tower connection stream socket.
+      SequenceNumber next_seqno;  // Next expected seqno (i.e. where subscribed)
+      int worker_id;              // Worker ID for Tower.
     };
 
-    Tower* FindTower(StreamID tower_stream) {
+    Tower* FindTower(StreamSocket* tower_stream) {
       for (Tower& tower : towers) {
-        if (tower.stream_id == tower_stream) {
+        if (tower.stream == tower_stream) {
           return &tower;
         }
       }
       return nullptr;
     }
 
-    StreamID stream_id;           // The subscriber
-    SequenceNumber seqno;         // Lowest seqno to accept
-    int worker_id;                // The event loop worker for client.
-    TenantID tenant_id;           // Tenant ID of the subscriber.
-    const SubscriptionID sub_id;  // Stream-local ID of this subscription.
-    autovector<Tower, 1> towers;  // Tower subscriptions.
-  };
+    using Towers = autovector<Tower, 2>;
 
-  struct TopicState {
-    explicit TopicState(LogID _log_id) : log_id(_log_id) {}
     LogID log_id;
     std::vector<std::unique_ptr<Subscription>> subscriptions;
+    Towers towers; // Tower subscriptions.
   };
 
   // State of subscriptions for a single topic.

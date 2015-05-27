@@ -47,7 +47,7 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
   std::shared_ptr<ControlTowerRouter> router =
     std::make_shared<ControlTowerRouter>(options_.control_towers,
                                          options_.consistent_hash_replicas,
-                                         options_.control_tower_connections);
+                                         options_.control_towers_per_log);
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
                                             router,
@@ -381,7 +381,7 @@ Status Copilot::UpdateControlTowers(
   std::shared_ptr<ControlTowerRouter> new_router =
     std::make_shared<ControlTowerRouter>(std::move(nodes),
                                          options_.consistent_hash_replicas,
-                                         options_.control_tower_connections);
+                                         options_.control_towers_per_log);
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     if (!workers_[i]->Forward(new_router)) {
       LOG_WARN(options_.info_log,
