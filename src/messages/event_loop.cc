@@ -699,6 +699,13 @@ EventLoop::do_startevent(evutil_socket_t listener, short event, void *arg) {
 }
 
 void
+EventLoop::do_timerevent(evutil_socket_t listener, short event, void *arg) {
+  EventLoop* obj = static_cast<EventLoop *>(arg);
+  obj->thread_check_.Check();
+  obj->timer_callback_();
+}
+
+void
 EventLoop::do_shutdown(evutil_socket_t listener, short event, void *arg) {
   EventLoop* obj = static_cast<EventLoop *>(arg);
   obj->thread_check_.Check();
@@ -940,6 +947,7 @@ void EventLoop::Stop() {
     if (startup_event_) event_free(startup_event_);
     if (shutdown_event_) event_free(shutdown_event_);
     if (command_ready_event_) event_free(command_ready_event_);
+    if (timer_event_) event_free(timer_event_);
     event_base_free(base_);
     command_ready_eventfd_.closefd();
     shutdown_eventfd_.closefd();
@@ -952,6 +960,34 @@ void EventLoop::Stop() {
     info_log_->Flush();
     base_ = nullptr;
   }
+}
+
+Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
+                                      std::chrono::microseconds period) {
+  timer_callback_ = callback;
+  timer_event_ = event_new(
+    base_,
+    -1,
+    EV_PERSIST,
+    static_cast<EventLoop*>(nullptr)->do_timerevent,
+    reinterpret_cast<void*>(this));
+
+  if (timer_event_ == nullptr) {
+    LOG_ERROR(info_log_, "Failed to create timer event");
+    info_log_->Flush();
+    return Status::InternalError("event_new returned error creating timer");
+  }
+
+  timeval timer_seconds;
+  timer_seconds.tv_sec = period.count() / 1000000ULL;
+  timer_seconds.tv_usec = period.count() % 1000000ULL;
+  int rv = event_add(timer_event_, &timer_seconds);
+  if (rv != 0) {
+    LOG_ERROR(info_log_, "Failed to add timer event to event base");
+    info_log_->Flush();
+    return Status::InternalError("event_add returned error while adding timer");
+  }
+  return Status::OK();
 }
 
 StreamSocket EventLoop::CreateOutboundStream(ClientID destination) {

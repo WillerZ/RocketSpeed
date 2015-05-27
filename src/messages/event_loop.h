@@ -20,6 +20,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
+#include <chrono>
 
 #include "include/Logger.h"
 #include "src/messages/commands.h"
@@ -51,6 +52,8 @@ typedef std::function<void(int fd)> AcceptCallbackType;
 typedef std::function<void(std::unique_ptr<Command> command,
                            uint64_t issued_time)>
   CommandCallbackType;
+
+typedef std::function<void()> TimerCallbackType;
 
 class EventLoop;
 class SocketEvent;
@@ -186,6 +189,9 @@ class EventLoop {
   // Stop the event loop.
   void Stop();
 
+  Status RegisterTimerCallback(TimerCallbackType callback,
+                             std::chrono::microseconds period);
+
   /**
    * Returns stream ID allocator used by this event loop to create outbound
    * streams.
@@ -288,7 +294,6 @@ class EventLoop {
   // Shutdown libevent. Should be called at end of main().
   static void GlobalShutdown();
 
-
   /**
     * Option is a helper class used for passing the additional arguments to the
     * EventLoop constructor.
@@ -332,6 +337,7 @@ class EventLoop {
   // The callbacks
   EventCallbackType event_callback_;
   AcceptCallbackType accept_callback_;
+  TimerCallbackType timer_callback_;
   std::map<CommandType, CommandCallbackType> command_callbacks_;
 
   // The connection listener
@@ -343,6 +349,9 @@ class EventLoop {
 
   // Startup event
   event* startup_event_ = nullptr;
+
+    // Startup event
+  event* timer_event_ = nullptr;
 
   // Command event
   event* command_ready_event_ = nullptr;
@@ -414,6 +423,7 @@ class EventLoop {
   static Status setup_fd(int fd, EventLoop* event_loop);
   static void accept_error_cb(evconnlistener *listener, void *arg);
   static void do_startevent(int listener, short event, void *arg);
+  static void do_timerevent(int listener, short event, void *arg);
   static void do_shutdown(int listener, short event, void *arg);
   static void do_command(int listener, short event, void *arg);
 };

@@ -11,6 +11,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 #include "src/messages/commands.h"
 #include "src/messages/event_loop.h"
@@ -54,6 +55,9 @@ class MsgLoopBase {
   // Registers callbacks for a number of message types.
   virtual void RegisterCallbacks(const std::map<MessageType,
                                  MsgCallbackType>& callbacks) = 0;
+
+  virtual Status RegisterTimerCallback(TimerCallbackType callback,
+                                     std::chrono::microseconds period) = 0;
 
   /**
    * Initializes all event loops.

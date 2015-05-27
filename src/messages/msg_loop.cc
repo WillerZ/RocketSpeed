@@ -131,8 +131,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
       (long)hostid_.port, msg_callbacks_.size());
 }
 
-void
-MsgLoop::RegisterCallbacks(
+void MsgLoop::RegisterCallbacks(
     const std::map<MessageType, MsgCallbackType>& callbacks) {
   // Cannot call this when it is already running.
   assert(!IsRunning());
@@ -143,6 +142,20 @@ MsgLoop::RegisterCallbacks(
     assert(msg_callbacks_.find(elem.first) == msg_callbacks_.end());
     msg_callbacks_[elem.first] = elem.second;
   }
+}
+
+Status MsgLoop::RegisterTimerCallback(TimerCallbackType callback,
+                                    std::chrono::microseconds period) {
+  // Cannot call this when it is already running.
+  assert(!IsRunning());
+
+  for (const std::unique_ptr<EventLoop>& loop: event_loops_) {
+    Status ret = loop->RegisterTimerCallback(callback, period);
+    if (!ret.ok()) {
+      return ret;
+    }
+  }
+  return Status::OK();
 }
 
 int MsgLoop::GetThreadWorkerIndex() const {

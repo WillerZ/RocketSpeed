@@ -621,6 +621,22 @@ TEST(Messaging, GracefulGoodbye) {
   ASSERT_EQ(server.GetNumClientsSync(), 1);
 }
 
+
+TEST(Messaging, Timer) {
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "loop");
+  std::atomic_int counter(0);
+  ASSERT_OK(loop.Initialize());
+  ASSERT_OK(loop.RegisterTimerCallback([&]() { counter++; },
+                           std::chrono::microseconds(30000)));
+
+  env_->StartThread([&]() { loop.Run(); }, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  // verify the expected number of timer tics after the sleep period
+  env_->SleepForMicroseconds(110000);
+  ASSERT_EQ(counter.load(), 3);
+}
+
 TEST(Messaging, InitializeFailure) {
   // Check that Initialize returns failure.
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");

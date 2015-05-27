@@ -18,6 +18,8 @@
 
 namespace rocketspeed {
 
+typedef std::function<void()> TimerCallbackType;
+
 class StreamAllocator;
 class EventLoop;
 class Logger;
@@ -53,6 +55,10 @@ class MsgLoop : public MsgLoopBase {
   // Registers callbacks for a number of message types.
   void
   RegisterCallbacks(const std::map<MessageType, MsgCallbackType>& callbacks);
+
+  // Register the timer callback at the givne period. Must be called after Init.
+  Status RegisterTimerCallback(TimerCallbackType callback,
+                             std::chrono::microseconds period) override;
 
   Status Initialize();
 
