@@ -192,6 +192,8 @@ class CopilotWorker {
     const SubscriptionID sub_id;  // Stream-local ID of this subscription.
   };
 
+  enum : size_t { kMaxTowerConnections = 2 };
+
   struct TopicState {
     explicit TopicState(LogID _log_id) : log_id(_log_id) {}
 
@@ -217,7 +219,7 @@ class CopilotWorker {
       return nullptr;
     }
 
-    using Towers = autovector<Tower, 2>;
+    using Towers = autovector<Tower, kMaxTowerConnections>;
 
     LogID log_id;
     std::vector<std::unique_ptr<Subscription>> subscriptions;

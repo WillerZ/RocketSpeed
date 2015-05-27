@@ -37,6 +37,7 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "unsubscribe",
   "deliver_gap",
   "deliver_data",
+  "find_tail_seqno",
 };
 
  /**
@@ -140,6 +141,15 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mDeliverData: {
       std::unique_ptr<MessageDeliverData> msg(new MessageDeliverData());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mFindTailSeqno: {
+      std::unique_ptr<MessageFindTailSeqno> msg(new MessageFindTailSeqno());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -596,6 +606,23 @@ Status MessageGoodbye::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad origin type");
   }
 
+  return Status::OK();
+}
+
+Slice MessageFindTailSeqno::Serialize() const {
+  Message::Serialize();
+  PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
+  return Slice(serialize_buffer__);
+}
+
+Status MessageFindTailSeqno::DeSerialize(Slice* in) {
+  Status st = Message::DeSerialize(in);
+  if (!st.ok()) {
+    return st;
+  }
+  if (!GetTopicID(in, &namespace_id_, &topic_name_)) {
+    return Status::InvalidArgument("Bad NamespaceID and/or TopicName");
+  }
   return Status::OK();
 }
 

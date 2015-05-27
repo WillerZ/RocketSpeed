@@ -30,21 +30,22 @@ namespace rocketspeed {
 
 /** The message types. */
 enum class MessageType : uint8_t {
-  NotInitialized = 0,   // not initialized yet
-  mPing = 0x01,         // ping data
-  mPublish = 0x02,      // data publish
-  mMetadata = 0x03,     // subscription information
-  mDataAck = 0x04,      // ack for user data
-  mGap = 0x05,          // gap in the log
-  mDeliver = 0x06,      // data delivery
-  mGoodbye = 0x07,      // MessageGoodbye
-  mSubscribe = 0x08,    // MessageSubscribe
-  mUnsubscribe = 0x09,  // MessageUnsubscribe
-  mDeliverGap = 0x0A,   // MessageDeliverGap
-  mDeliverData = 0x0B,  // MessageDeliverData
+  NotInitialized = 0,    // not initialized yet
+  mPing = 0x01,          // ping data
+  mPublish = 0x02,       // data publish
+  mMetadata = 0x03,      // subscription information
+  mDataAck = 0x04,       // ack for user data
+  mGap = 0x05,           // gap in the log
+  mDeliver = 0x06,       // data delivery
+  mGoodbye = 0x07,       // MessageGoodbye
+  mSubscribe = 0x08,     // MessageSubscribe
+  mUnsubscribe = 0x09,   // MessageUnsubscribe
+  mDeliverGap = 0x0A,    // MessageDeliverGap
+  mDeliverData = 0x0B,   // MessageDeliverData
+  mFindTailSeqno = 0x0C, // MessageFindTailSeqno
 
   min = mPing,
-  max = mDeliverData,
+  max = mFindTailSeqno,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -639,6 +640,34 @@ inline bool ValidateEnum(MessageGoodbye::Code e) {
 inline bool ValidateEnum(MessageGoodbye::OriginType e) {
   return e >= MessageGoodbye::Client && e <= MessageGoodbye::Server;
 }
+
+/**
+ * A request for the tail sequence number.
+ * Servers respond by sending a benign gap from 0-[tail seqno].
+ * The tail sequence number is computed with best effort.
+ */
+class MessageFindTailSeqno final : public Message {
+ public:
+  MessageFindTailSeqno(TenantID tenant_id,
+                       NamespaceID namespace_id,
+                       Topic topic_name)
+      : Message(MessageType::mFindTailSeqno, tenant_id)
+      , namespace_id_(std::move(namespace_id))
+      , topic_name_(std::move(topic_name)) {}
+
+  MessageFindTailSeqno() : Message(MessageType::mFindTailSeqno) {}
+
+  const NamespaceID& GetNamespace() const { return namespace_id_; }
+
+  const Topic& GetTopicName() const { return topic_name_; }
+
+  Slice Serialize() const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  NamespaceID namespace_id_;
+  Topic topic_name_;
+};
 
 /**
  * Messages exchanged on a subscription.

@@ -1145,6 +1145,14 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(0, {"i0", "i1"});
   sub(1, "i", i0);
   recv(1, {"i0", "i1"});
+
+  // Subscribe to the future then 0.
+  SequenceNumber k0 = pub(0, "k", "k0");
+  sub(0, "k", k0 + 100000000);
+  sub(1, "k", 0);
+  pub(0, "k", "k1");
+  recv(0, {});
+  recv(1, {"k1"});
 }
 
 TEST(IntegrationTest, LogAvailability) {

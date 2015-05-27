@@ -292,6 +292,19 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
             options_.info_log, "Failed to distribute gap to %llu", recipient);
       }
     }
+
+    if (prev_seqno == 0) {
+      // When prev_seqno == 0, this was a gap to inform us what the current
+      // sequence number is. It could be the case that it's actually lower than
+      // all other subscriptions (e.g. because we have "future" subscriptions).
+      // In this case, we need to actually rewind to this older subscription,
+      // so we have to (potentially) update subscriptions here.
+      UpdateTowerSubscriptions(uuid, topic);
+
+      // TODO(pja): if we have a higher subscription, and that subscription has
+      // received messages then we can use that as a more accurate tail
+      // position, and avoid a resubscribe.
+    }
   }
 }
 
@@ -564,22 +577,23 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
     return;
   }
 
-  // Find earliest subscription.
+  // Find earliest non-zero subscription, or zero if only zero subscriptions.
   bool have_zero_sub = false;
-  SequenceNumber earliest_nonzero = 0;
+  SequenceNumber new_seqno = 0;
   for (auto& sub : topic.subscriptions) {
     if (sub->seqno != 0) {
-      if (earliest_nonzero == 0 || sub->seqno < earliest_nonzero) {
-        earliest_nonzero = sub->seqno;
+      if (new_seqno == 0 || sub->seqno < new_seqno) {
+        new_seqno = sub->seqno;
       }
     } else {
       have_zero_sub = true;
     }
   }
 
-  // If we have a subscription for zero then we need to subscribe to zero to
-  // get the 0-n gap message. After that, we may need to resubscribe.
-  SequenceNumber new_seqno = have_zero_sub ? 0 : earliest_nonzero;
+  // Note: it could be the case that the only subscriptions we have are
+  // subscriptions at 0, so new_seqno will be 0 in that case, and we will
+  // subscribe the copilot at 0 without sending a FindTailSeqno request.
+  const bool send_latest_request = have_zero_sub && new_seqno != 0;
 
   // Check if we need to resubscribe to control towers.
   // First check if we have enough tower subscriptions.
@@ -610,15 +624,10 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
     }
   }
 
-  // Do we need new tower subscription for this subscriber?
-  if (resub_needed) {
-    // Keep track of previous susbcriptions. If we subscribe to different
-    // towers then we need to unsubscribe to the old ones.
-    auto old_towers = topic.towers;
-
-    // Clear old subscriptions.
-    topic.towers.clear();
-
+  // If needed, find a list of control tower connections.
+  using TowerConnection = std::pair<StreamSocket*, int>;  // socket + worker_id
+  autovector<TowerConnection, kMaxTowerConnections> tower_conns;
+  if (resub_needed || send_latest_request) {
     // Find control towers responsible for this topic's log.
     std::vector<HostId const*> recipients;
     if (control_tower_router_->GetControlTowers(log_id, &recipients).ok()) {
@@ -630,26 +639,41 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
         auto socket = GetControlTowerSocket(
             *recipient, options_.msg_loop, outgoing_worker_id);
 
-        // Send request to control tower to update the copilot subscription.
-        bool success = SendMetadata(tenant_id,
-                                    MetadataType::mSubscribe,
-                                    uuid,
-                                    new_seqno,
-                                    socket,
-                                    outgoing_worker_id);
-        if (success) {
-          // Update the towers for the subscription.
-          auto* tower = topic.FindTower(socket);
-          if (!tower) {
-            topic.towers.emplace_back(socket, new_seqno, outgoing_worker_id);
-          }
-        }
+        tower_conns.emplace_back(socket, outgoing_worker_id);
       }
     } else {
       // This should only ever happen if all control towers are offline.
       LOG_WARN(options_.info_log,
         "Failed to find control towers for log ID %" PRIu64,
         static_cast<uint64_t>(log_id));
+    }
+  }
+
+  // Do we need new tower subscription for this subscriber?
+  if (resub_needed) {
+    // Keep track of previous susbcriptions. If we subscribe to different
+    // towers then we need to unsubscribe to the old ones.
+    auto old_towers = std::move(topic.towers);
+
+    // Clear old subscriptions.
+    topic.towers.clear();
+
+    for (TowerConnection& tower_conn : tower_conns) {
+      // Send request to control tower to update the copilot subscription.
+      StreamSocket* const socket = tower_conn.first;
+      const int outgoing_worker_id = tower_conn.second;
+
+      bool success = SendMetadata(tenant_id,
+                                  MetadataType::mSubscribe,
+                                  uuid,
+                                  new_seqno,
+                                  socket,
+                                  outgoing_worker_id);
+      if (success) {
+        // Update the towers for the subscription.
+        assert(!topic.FindTower(socket));  // we just cleared all towers.
+        topic.towers.emplace_back(socket, new_seqno, outgoing_worker_id);
+      }
     }
 
     // Find old_towers that aren't in the new towers.
@@ -662,6 +686,35 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
                      0,  // seqno: irrelevant for unsubscribe
                      tower.stream,
                      tower.worker_id);
+      }
+    }
+  }
+
+  // For zero sequence numbers, we just request it from the control tower.
+  if (send_latest_request) {
+    Slice namespace_id;
+    Slice topic_name;
+    uuid.GetTopicID(&namespace_id, &topic_name);
+
+    MessageFindTailSeqno msg(tenant_id,
+                             namespace_id.ToString(),
+                             topic_name.ToString());
+
+    // Send to all control towers.
+    for (TowerConnection& tower_conn : tower_conns) {
+      StreamSocket* const stream = tower_conn.first;
+      const int worker_id = tower_conn.second;
+      Status status = options_.msg_loop->SendRequest(msg, stream, worker_id);
+      if (!status.ok()) {
+        LOG_WARN(options_.info_log,
+          "Failed to send %s FindTailSeqno to tower stream %llu",
+          uuid.ToString().c_str(),
+          stream->GetStreamID());
+      } else {
+        LOG_INFO(options_.info_log,
+          "Sent %s FindTailSeqno to tower stream %llu",
+          uuid.ToString().c_str(),
+          stream->GetStreamID());
       }
     }
   }

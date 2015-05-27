@@ -20,6 +20,8 @@
 #include "src/controltower/room.h"
 #include "src/controltower/topic_tailer.h"
 
+#include "external/folly/move_wrapper.h"
+
 namespace rocketspeed {
 
 /**
@@ -264,6 +266,76 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
   }
 }
 
+void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
+                                        StreamID origin) {
+  options_.msg_loop->ThreadCheck();
+  int worker_id = options_.msg_loop->GetThreadWorkerIndex();
+  MessageFindTailSeqno* request = static_cast<MessageFindTailSeqno*>(msg.get());
+
+  // Find log ID for topic.
+  LogID log_id;
+  Status st = options_.log_router->GetLogID(Slice(request->GetNamespace()),
+                                            Slice(request->GetTopicName()),
+                                            &log_id);
+  if (!st.ok()) {
+    LOG_WARN(options_.info_log,
+        "Unable to map Topic(%s,%s) to logid %s",
+        request->GetNamespace().c_str(),
+        request->GetTopicName().c_str(),
+        st.ToString().c_str());
+    return;
+  }
+
+  // Send FindLatestSeqno request to log tailer.
+  auto msg_moved = folly::makeMoveWrapper(std::move(msg));
+  st = log_tailer_->FindLatestSeqno(log_id,
+    [this, log_id, msg_moved, origin, worker_id]
+    (Status status, SequenceNumber seqno) mutable {
+      MessageFindTailSeqno* req =
+        static_cast<MessageFindTailSeqno*>(msg_moved->get());
+      if (status.ok()) {
+        // Sequence number found, so send gap back to clinet.
+        MessageGap gap(req->GetTenantID(),
+                       req->GetNamespace(),
+                       req->GetTopicName(),
+                       GapType::kBenign,
+                       0,
+                       seqno - 1);
+        status = options_.msg_loop->SendResponse(gap, origin, worker_id);
+        if (status.ok()) {
+          LOG_INFO(options_.info_log,
+            "Sent latest seqno gap 0-%" PRIu64 " to %llu for Topic(%s,%s)",
+            seqno - 1,
+            origin,
+            req->GetNamespace().c_str(),
+            req->GetTopicName().c_str());
+        } else {
+          LOG_WARN(options_.info_log,
+            "Failed to send latest seqno gap to %llu for Topic(%s,%s)",
+            origin,
+            req->GetNamespace().c_str(),
+            req->GetTopicName().c_str());
+        }
+      } else {
+        LOG_WARN(options_.info_log,
+          "FindLatestSeqno for Log(%" PRIu64 ") failed with: %s",
+          log_id,
+          status.ToString().c_str());
+      }
+    });
+
+  if (st.ok()) {
+    LOG_DEBUG(options_.info_log,
+      "Sent FindLatestSeqno for Log(%" PRIu64 ")",
+      log_id);
+  } else {
+    LOG_WARN(options_.info_log,
+      "FindLatestSeqno for Log(%" PRIu64 ") failed with: %s",
+      log_id,
+      st.ToString().c_str());
+  }
+}
+
 // A static method to initialize the callback map
 std::map<MessageType, MsgCallbackType>
 ControlTower::InitializeCallbacks() {
@@ -272,6 +344,10 @@ ControlTower::InitializeCallbacks() {
   cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg,
                                        StreamID origin) {
     ProcessMetadata(std::move(msg), origin);
+  };
+  cb[MessageType::mFindTailSeqno] = [this] (std::unique_ptr<Message> msg,
+                                            StreamID origin) {
+    ProcessFindTailSeqno(std::move(msg), origin);
   };
 
   // return the updated map
