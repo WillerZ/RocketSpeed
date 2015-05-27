@@ -21,7 +21,6 @@
 #include "src/messages/wrapped_message.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/ordered_processor.h"
-#include "src/util/worker_loop.h"
 
 namespace rocketspeed {
 

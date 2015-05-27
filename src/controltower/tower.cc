@@ -63,24 +63,9 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
 }
 
 ControlTower::~ControlTower() {
-  assert(room_thread_id_.empty());  // Must call Stop() before deleting.
 }
 
 void ControlTower::Stop() {
-  // Stop rooms from communicating with topic tailer.
-  for (auto& r: rooms_) {
-    r->Stop();
-  }
-  for (auto& r: room_thread_id_) {
-    options_.env->WaitForJoin(r);
-  }
-  room_thread_id_.clear();
-
-  // Stop topic tailer from communicating with log tailer.
-  for (auto& t: topic_tailer_) {
-    t->Stop();
-  }
-
   // Stop log tailer from communicating with log storage.
   log_tailer_->Stop();
 
@@ -166,7 +151,7 @@ Status ControlTower::Initialize() {
     }
   };
 
-  size_t num_readers = opt.number_of_rooms;
+  const size_t num_readers = opt.msg_loop->GetNumWorkers();
   st = log_tailer_->Initialize(std::move(on_record),
                                std::move(on_gap),
                                num_readers);
@@ -176,7 +161,8 @@ Status ControlTower::Initialize() {
 
   // Now create the TopicTailer.
   // One per room with one reader each.
-  for (size_t i = 0; i < opt.number_of_rooms; ++i) {
+  const size_t num_rooms = opt.msg_loop->GetNumWorkers();
+  for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
       [this, i] (std::unique_ptr<Message> msg,
                  std::vector<HostNumber> hosts) {
@@ -190,6 +176,8 @@ Status ControlTower::Initialize() {
       };
     TopicTailer* topic_tailer;
     st = TopicTailer::CreateNewInstance(opt.env,
+                                        options_.msg_loop,
+                                        int(i),
                                         log_tailer_.get(),
                                         opt.log_router,
                                         opt.info_log,
@@ -207,23 +195,8 @@ Status ControlTower::Initialize() {
     topic_tailer_.emplace_back(topic_tailer);
   }
 
-  for (unsigned int i = 0; i < opt.number_of_rooms; i++) {
+  for (unsigned int i = 0; i < num_rooms; i++) {
     rooms_.emplace_back(new ControlRoom(opt, this, i));
-  }
-
-  // Start background threads for Room msg loops
-  unsigned int numrooms = opt.number_of_rooms;
-  for (unsigned int i = 0; i < numrooms; i++) {
-    ControlRoom* room = rooms_[i].get();
-    BaseEnv::ThreadId t = opt.env->StartThread(ControlRoom::Run, room,
-                  "rooms-" + std::to_string(room->GetRoomNumber()));
-    room_thread_id_.push_back(t);
-  }
-  // Wait for all the Rooms to be ready to process events
-  for (unsigned int i = 0; i < numrooms; i++) {
-    while (!rooms_[i].get()->IsRunning()) {
-      std::this_thread::yield();
-    }
   }
   return Status::OK();
 }

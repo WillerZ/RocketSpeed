@@ -14,7 +14,6 @@
 #include "src/util/hostmap.h"
 #include "src/util/storage.h"
 #include "src/util/topic_uuid.h"
-#include "src/util/worker_loop.h"
 #include "src/util/common/thread_check.h"
 #include "src/controltower/topic.h"
 
@@ -23,6 +22,7 @@ namespace rocketspeed {
 class LogTailer;
 class LogRouter;
 class LogReader;
+class MsgLoop;
 
 class TopicTailer {
  friend class ControlTowerTest;
@@ -31,6 +31,8 @@ class TopicTailer {
    * Create a TopicTailer.
    *
    * @param env Environment.
+   * @param msg_loop MsgLoop this tailer belongs to.
+   * @param worker_id Worker index tailer runs on.
    * @param log_tailer Tailer for logs. Will be manipulated by TopicTailer.
    * @param log_router For routing topics to logs.
    * @param info_log For logging.
@@ -40,6 +42,8 @@ class TopicTailer {
    */
   static Status CreateNewInstance(
    BaseEnv* env,
+   MsgLoop* msg_loop,
+   int worker_id,
    LogTailer* log_tailer,
    std::shared_ptr<LogRouter> log_router,
    std::shared_ptr<Logger> info_log,
@@ -58,12 +62,6 @@ class TopicTailer {
    */
   Status Initialize(size_t reader_id,
                     int64_t max_subscription_lag);
-
-  /**
-   * Shuts down the Topic Tailer, synchronously halting all communication
-   * with the Log Tailer.
-   */
-  void Stop();
 
   /**
    * Adds a subscriber to a topic. This call is not thread-safe.
@@ -115,15 +113,23 @@ class TopicTailer {
 
   // private constructor
   TopicTailer(BaseEnv* env,
+              MsgLoop* msg_loop,
+              int worker_id,
               LogTailer* log_tailer,
               std::shared_ptr<LogRouter> log_router,
               std::shared_ptr<Logger> info_log,
               std::function<void(std::unique_ptr<Message>,
                                  std::vector<HostNumber>)> on_message);
 
+  bool Forward(std::function<void()> command);
+
   ThreadCheck thread_check_;
 
   BaseEnv* env_;
+
+  // Message loop that we belong to, and our worker index.
+  MsgLoop* msg_loop_;
+  const int worker_id_;
 
   // The log tailer.
   LogTailer* log_tailer_;
@@ -139,9 +145,6 @@ class TopicTailer {
   // Callback for outgoing messages.
   std::function<void(std::unique_ptr<Message>,
                      std::vector<HostNumber>)> on_message_;
-
-  WorkerLoop<TopicTailerCommand> worker_loop_;
-  BaseEnv::ThreadId worker_thread_;
 
   // Subscription information per topic
   std::unordered_map<LogID, TopicManager> topic_map_;

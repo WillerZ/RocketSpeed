@@ -17,8 +17,6 @@ ControlTowerOptions::ControlTowerOptions()
     log_dir(""),
     max_log_file_size(0),
     log_file_time_to_roll(0),
-    number_of_rooms(env->GetNumberOfCpus()),
-    worker_queue_size(1000000),
     max_number_of_hosts(10000),
     max_subscription_lag(10000) {
 }

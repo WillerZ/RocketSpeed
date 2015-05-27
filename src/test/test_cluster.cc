@@ -169,7 +169,6 @@ void LocalTestCluster::Initialize(Options opts) {
 
     // Create ControlTower
     opts.tower.info_log = info_log_;
-    opts.tower.number_of_rooms = 16;
     opts.tower.msg_loop = control_tower_loop_.get();
     status_ = ControlTower::CreateNewInstance(opts.tower,
                                               &control_tower_);

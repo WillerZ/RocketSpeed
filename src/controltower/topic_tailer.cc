@@ -15,6 +15,7 @@
 #include "src/util/topic_uuid.h"
 #include "src/util/common/linked_map.h"
 #include "src/util/common/thread_check.h"
+#include "src/messages/msg_loop.h"
 
 namespace rocketspeed {
 
@@ -484,22 +485,23 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
 
 TopicTailer::TopicTailer(
     BaseEnv* env,
+    MsgLoop* msg_loop,
+    int worker_id,
     LogTailer* log_tailer,
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
                        std::vector<HostNumber>)> on_message) :
   env_(env),
+  msg_loop_(msg_loop),
+  worker_id_(worker_id),
   log_tailer_(log_tailer),
   log_router_(std::move(log_router)),
   info_log_(std::move(info_log)),
-  on_message_(std::move(on_message)),
-  worker_loop_(1 << 20),
-  worker_thread_(0) {
+  on_message_(std::move(on_message)) {
 }
 
 TopicTailer::~TopicTailer() {
-  assert(worker_thread_ == 0);  // must call Stop() before deleting.
 }
 
 Status TopicTailer::SendLogRecord(
@@ -511,7 +513,7 @@ Status TopicTailer::SendLogRecord(
 
   // Send to worker loop.
   MessageData* data_raw = msg.release();
-  bool sent = worker_loop_.Send([this, data_raw, log_id] () {
+  bool sent = Forward([this, data_raw, log_id] () {
     // Process message from the log tailer.
     std::unique_ptr<MessageData> data(data_raw);
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
@@ -672,7 +674,7 @@ Status TopicTailer::SendGapRecord(
   assert(reader_id == log_reader_->GetReaderId());
 
   // Send to worker loop.
-  bool sent = worker_loop_.Send([this, log_id, type, from, to] () {
+  bool sent = Forward([this, log_id, type, from, to] () {
     // Check for out-of-order gap messages, or gaps received on log that
     // we're not reading on.
     Status st = log_reader_->ValidateGap(log_id, from);
@@ -741,29 +743,15 @@ Status TopicTailer::Initialize(size_t reader_id,
                                   log_tailer_,
                                   reader_id,
                                   max_subscription_lag));
-  worker_thread_ = env_->StartThread(
-    [this] () {
-      worker_loop_.Run([this] (TopicTailerCommand command) {
-        // TopicTailerCommand is just a function.
-        command();
-      });;
-    },
-    "tailer-" + std::to_string(reader_id));
   return Status::OK();
-}
-
-void TopicTailer::Stop() {
-  if (worker_thread_) {
-    worker_loop_.Stop();
-    env_->WaitForJoin(worker_thread_);
-    worker_thread_ = 0;
-  }
 }
 
 // Create a new instance of the TopicTailer
 Status
 TopicTailer::CreateNewInstance(
     BaseEnv* env,
+    MsgLoop* msg_loop,
+    int worker_id,
     LogTailer* log_tailer,
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
@@ -771,6 +759,8 @@ TopicTailer::CreateNewInstance(
                        std::vector<HostNumber>)> on_message,
     TopicTailer** tailer) {
   *tailer = new TopicTailer(env,
+                            msg_loop,
+                            worker_id,
                             log_tailer,
                             std::move(log_router),
                             std::move(info_log),
@@ -808,7 +798,7 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
         return;
       }
 
-      bool sent = worker_loop_.Send([this, topic, hostnum, logid, seqno] () {
+      bool sent = Forward([this, topic, hostnum, logid, seqno] () {
         // Send message to inform subscriber of latest seqno.
         LOG_INFO(info_log_,
           "Sending gap message on %s@0-%" PRIu64 " Log(%" PRIu64 ")",
@@ -878,7 +868,7 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
     return seqno_status;
   }
 
-  bool sent = worker_loop_.Send([this, logid, topic, start, hostnum] () {
+  bool sent = Forward([this, logid, topic, start, hostnum] () {
     bool was_added = topic_map_[logid].AddSubscriber(topic, start, hostnum);
     LOG_INFO(info_log_,
       "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s)",
@@ -909,7 +899,7 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
     return st;
   }
 
-  bool sent = worker_loop_.Send([this, logid, topic, hostnum] () {
+  bool sent = Forward([this, logid, topic, hostnum] () {
     bool was_removed = topic_map_[logid].RemoveSubscriber(topic, hostnum);
     if (was_removed) {
       LOG_INFO(info_log_,
@@ -923,5 +913,12 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
 
   return sent ? Status::OK() : Status::NoBuffer();
 }
+
+bool TopicTailer::Forward(std::function<void()> command) {
+  std::unique_ptr<Command> cmd(new ExecuteCommand(std::move(command)));
+  Status st = msg_loop_->SendCommand(std::move(cmd), worker_id_);
+  return st.ok();
+}
+
 
 }  // namespace rocketspeed

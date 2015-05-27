@@ -17,6 +17,8 @@
 #include "src/util/common/coding.h"
 #include "src/util/topic_uuid.h"
 
+#include "external/folly/move_wrapper.h"
+
 namespace rocketspeed {
 
 ControlRoom::ControlRoom(const ControlTowerOptions& options,
@@ -24,38 +26,10 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
                          unsigned int room_number) :
   control_tower_(control_tower),
   room_number_(room_number),
-  topic_tailer_(control_tower->GetTopicTailer(room_number)),
-  room_loop_(options.worker_queue_size) {
+  topic_tailer_(control_tower->GetTopicTailer(room_number)) {
 }
 
 ControlRoom::~ControlRoom() {
-}
-
-// static method to start the loop for processing Room events
-void ControlRoom::Run(void* arg) {
-  ControlRoom* room = static_cast<ControlRoom*>(arg);
-  LOG_INFO(room->control_tower_->GetOptions().info_log,
-      "Starting ControlRoom Loop at room number %d",
-      room->room_number_);
-
-  // Define a lambda to process Commands by the room_loop_.
-  auto command_callback = [room] (RoomCommand command) {
-    std::unique_ptr<Message> message = command.GetMessage();
-    MessageType type = message->GetMessageType();
-    if (type == MessageType::mMetadata) {
-      // subscription message from ControlTower
-      int worker_id = command.GetWorkerId();
-      StreamID origin = command.GetOrigin();
-      assert(worker_id != -1);  // from tower
-      room->ProcessMetadata(std::move(message), worker_id, origin);
-    } else if (type == MessageType::mDeliver) {
-      room->ProcessDeliver(std::move(message), command.GetHosts());
-    } else if (type == MessageType::mGap) {
-      room->ProcessGap(std::move(message), command.GetHosts());
-    }
-  };
-
-  room->room_loop_.Run(command_callback);
 }
 
 // The Control Tower uses this method to forward a message to this Room.
@@ -65,11 +39,16 @@ Status
 ControlRoom::Forward(std::unique_ptr<Message> msg,
                      int worker_id,
                      StreamID origin) {
-  if (room_loop_.Send(std::move(msg), worker_id, origin)) {
-    return Status::OK();
-  } else {
-    return Status::NoBuffer();
-  }
+  auto moved_msg = folly::makeMoveWrapper(std::move(msg));
+  std::unique_ptr<Command> cmd(
+    new ExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
+      std::unique_ptr<Message> message(moved_msg.move());
+      assert(message->GetMessageType() == MessageType::mMetadata);
+      assert(worker_id != -1);
+      ProcessMetadata(std::move(message), worker_id, origin);
+    }));
+  MsgLoop* msg_loop = control_tower_->GetOptions().msg_loop;
+  return msg_loop->SendCommand(std::move(cmd), room_number_);
 }
 
 // Process Metadata messages that are coming in from ControlTower.
@@ -128,11 +107,22 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
 Status
 ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
                              std::vector<HostNumber> hosts) {
-  if (room_loop_.Send(std::move(msg), std::move(hosts))) {
-    return Status::OK();
-  } else {
-    return Status::NoBuffer();
-  }
+  auto moved_msg = folly::makeMoveWrapper(std::move(msg));
+  auto moved_hosts = folly::makeMoveWrapper(std::move(hosts));
+  std::unique_ptr<Command> cmd(
+    new ExecuteCommand([this, moved_msg, moved_hosts] () mutable {
+      std::unique_ptr<Message> message(moved_msg.move());
+      MessageType type = message->GetMessageType();
+      if (type == MessageType::mDeliver) {
+        ProcessDeliver(std::move(message), moved_hosts.move());
+      } else if (type == MessageType::mGap) {
+        ProcessGap(std::move(message), moved_hosts.move());
+      } else {
+        assert(false);
+      }
+    }));
+  MsgLoop* msg_loop = control_tower_->GetOptions().msg_loop;
+  return msg_loop->SendCommand(std::move(cmd), room_number_);
 }
 
 
@@ -239,8 +229,6 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
   if (hosts.empty()) {
     LOG_WARN(options.info_log, "No hosts for gap: no message sent.");
   }
-
-  // TODO(pja) 1 : Send to copilots.
 }
 
 }  // namespace rocketspeed

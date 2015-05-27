@@ -35,7 +35,7 @@ DEFINE_bool(tower, false, "start the control tower");
 DEFINE_int32(tower_port,
              rocketspeed::ControlTower::DEFAULT_PORT,
              "tower port number");
-DEFINE_int32(tower_rooms, 16, "tower rooms");
+DEFINE_int32(tower_workers, 16, "tower rooms");
 DEFINE_int64(tower_max_subscription_lag, 10000,
              "max seqno lag on subscriptions");
 
@@ -165,7 +165,7 @@ Status RocketSpeed::Initialize(
 
   if (FLAGS_tower) {
     tower_loop.reset(make_msg_loop(FLAGS_tower_port,
-                                   FLAGS_tower_rooms,
+                                   FLAGS_tower_workers,
                                    "tower"));
   }
 
@@ -207,8 +207,6 @@ Status RocketSpeed::Initialize(
     LOG_VITAL(info_log_, "Creating Control Tower");
     ControlTowerOptions tower_opts;
     tower_opts.msg_loop = tower_loop.get();
-    tower_opts.worker_queue_size = FLAGS_worker_queue_size;
-    tower_opts.number_of_rooms = FLAGS_tower_rooms;
     tower_opts.info_log = info_log_;
     tower_opts.storage = storage;
     tower_opts.log_router = log_router;
