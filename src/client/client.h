@@ -68,33 +68,23 @@ class ClientImpl : public Client {
   Status RestoreSubscriptions(
       std::vector<SubscriptionParameters>* subscriptions) override;
 
-  ClientImpl(BaseEnv* env,
-             std::shared_ptr<Configuration> config,
-             std::shared_ptr<WakeLock> wake_lock,
+  ClientImpl(ClientOptions options,
              std::unique_ptr<MsgLoopBase> msg_loop,
-             std::unique_ptr<SubscriptionStorage> storage,
-             std::shared_ptr<Logger> info_log,
              bool is_internal);
 
   Statistics GetStatisticsSync() const;
 
  private:
-  /** A non-owning pointer to the environment. */
-  BaseEnv* env_;
+  /** Options provided when creating the Client. */
+  ClientOptions options_;
 
-  // Configuration.
-  std::shared_ptr<Configuration> config_;
-
-  // A wake lock used on mobile devices.
+  /** A wake lock used on mobile devices. */
   SmartWakeLock wake_lock_;
 
   // Incoming message loop object.
   std::unique_ptr<MsgLoopBase> msg_loop_;
   BaseEnv::ThreadId msg_loop_thread_;
   bool msg_loop_thread_spawned_;
-
-  // Persistent subscription storage
-  std::unique_ptr<SubscriptionStorage> storage_;
 
   // Main logger for the client
   const std::shared_ptr<Logger> info_log_;
@@ -142,8 +132,11 @@ class ClientImpl : public Client {
 
   bool IsNotCopilot(const ClientWorkerData& worker_data, StreamID origin);
 
-  SubscriptionState* FindOrSendUnsubscribe(TenantID tenant_id,
-                                           SubscriptionID sub_id);
+  /**
+   * Synchronises a portion of pending subscribe and unsubscribe requests with
+   * the Copilot. Takes into an account rate limits.
+   */
+  void SendPendingRequests();
 
   /** Handler for messages carrying data. */
   void ProcessDeliverData(std::unique_ptr<Message> msg, StreamID origin);

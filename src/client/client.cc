@@ -70,16 +70,10 @@ class SubscriptionState {
 
   const Topic& GetTopicName() const { return topic_name_; }
 
-  /**
-   * Processes unsubscribe message, optionally announces its status and decides
-   * on its fate.
-   */
-  enum class Action {
-    kTerminate,
-    kResubscribe,
-  };
-  Action ProcessMessage(const std::shared_ptr<Logger>& info_log,
-                        const MessageUnsubscribe& unsubscribe);
+  /** Terminates subscription and notifies the application. */
+  void Terminate(const std::shared_ptr<Logger>& info_log,
+                 SubscriptionID sub_id,
+                 MessageUnsubscribe::Reason reason);
 
   /** Processes gap message, gap messages are not passed to the application. */
   void ReceiveMessage(const std::shared_ptr<Logger>& info_log,
@@ -126,45 +120,35 @@ class SubscriptionState {
   void AnnounceStatus(bool subscribed, Status status);
 };
 
-SubscriptionState::Action SubscriptionState::ProcessMessage(
-    const std::shared_ptr<Logger>& info_log,
-    const MessageUnsubscribe& unsubscribe) {
+void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
+                                  SubscriptionID sub_id,
+                                  MessageUnsubscribe::Reason reason) {
   thread_check_.Check();
 
-  switch (unsubscribe.GetReason()) {
+  switch (reason) {
     case MessageUnsubscribe::Reason::kRequested:
       LOG_DEBUG(info_log,
-                "Terminated subscription ID(%" PRIu64
-                ") on Topic(%s, %s)@%" PRIu64,
-                unsubscribe.GetSubID(),
+                "Unsubscribed ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
+                sub_id,
                 namespace_id_.c_str(),
                 topic_name_.c_str(),
                 expected_seqno_);
       AnnounceStatus(false, Status::OK());
-      return Action::kTerminate;
-    case MessageUnsubscribe::Reason::kBackOff:
-      LOG_INFO(info_log,
-               "Resubscribing with ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
-               unsubscribe.GetSubID(),
-               namespace_id_.c_str(),
-               topic_name_.c_str(),
-               expected_seqno_);
-      // We will silently resubscribe, don't announce subscription status.
-      return Action::kResubscribe;
+      break;
     case MessageUnsubscribe::Reason::kInvalid:
       LOG_WARN(info_log,
-               "Terminated invalid subscription ID (%" PRIu64
-               ") on Topic(%s, %s)@%" PRIu64,
-               unsubscribe.GetSubID(),
+               "Kicked subscription ID (%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
+               sub_id,
                namespace_id_.c_str(),
                topic_name_.c_str(),
                expected_seqno_);
       AnnounceStatus(false, Status::InvalidArgument("Invalid subscription"));
-      return Action::kTerminate;
+      break;
+    case MessageUnsubscribe::Reason::kBackOff:
+      assert(false);
+      break;
       // No default, we will be warned about unhandled code.
   }
-  assert(false);
-  return Action::kTerminate;
 }
 
 class MessageReceivedImpl : public MessageReceived {
@@ -313,6 +297,10 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   StreamSocket copilot_socket;
   /** All subscriptions served by this worker. */
   std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
+  /** A set of subscriptions pending subscribe message being sent out. */
+  std::unordered_set<SubscriptionID> pending_subscribes_;
+  /** A set of subscriptions pending unsubscribe message being sent out. */
+  std::unordered_map<SubscriptionID, TenantID> pending_terminations_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -364,13 +352,8 @@ Status ClientImpl::Create(ClientOptions options,
     return st;
   }
 
-  std::unique_ptr<ClientImpl> client(new ClientImpl(options.env,
-                                                    options.config,
-                                                    options.wake_lock,
-                                                    std::move(msg_loop_),
-                                                    std::move(options.storage),
-                                                    options.info_log,
-                                                    is_internal));
+  std::unique_ptr<ClientImpl> client(
+      new ClientImpl(std::move(options), std::move(msg_loop_), is_internal));
 
   st = client->WaitUntilRunning();
   if (!st.ok()) {
@@ -381,24 +364,20 @@ Status ClientImpl::Create(ClientOptions options,
   return Status::OK();
 }
 
-ClientImpl::ClientImpl(BaseEnv* env,
-                       std::shared_ptr<Configuration> config,
-                       std::shared_ptr<WakeLock> wake_lock,
+ClientImpl::ClientImpl(ClientOptions options,
                        std::unique_ptr<MsgLoopBase> msg_loop,
-                       std::unique_ptr<SubscriptionStorage> storage,
-                       std::shared_ptr<Logger> info_log,
                        bool is_internal)
-: env_(env)
-, config_(std::move(config))
-, wake_lock_(std::move(wake_lock))
-, msg_loop_(std::move(msg_loop))
-, msg_loop_thread_spawned_(false)
-, storage_(std::move(storage))
-, info_log_(info_log)
-, is_internal_(is_internal)
-, publisher_(env, config_, info_log, msg_loop_.get(), &wake_lock_) {
-  using std::placeholders::_1;
-
+    : options_(std::move(options))
+    , wake_lock_(std::move(options_.wake_lock))
+    , msg_loop_(std::move(msg_loop))
+    , msg_loop_thread_spawned_(false)
+    , info_log_(options_.info_log)
+    , is_internal_(is_internal)
+    , publisher_(options_.env,
+                 options_.config,
+                 options_.info_log,
+                 msg_loop_.get(),
+                 &wake_lock_) {
   LOG_VITAL(info_log_, "Creating Client");
 
   // Setup callbacks.
@@ -425,7 +404,7 @@ ClientImpl::ClientImpl(BaseEnv* env,
 
   // Initialise stream socket for each worker, each of them is independent.
   HostId copilot;
-  Status st = config_->GetCopilot(&copilot);
+  Status st = options_.config->GetCopilot(&copilot);
   assert(st.ok());  // TODO(pja) : handle failures
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     worker_data_[i].copilot_socket = StreamSocket(
@@ -447,7 +426,7 @@ ClientImpl::~ClientImpl() {
 
   if (msg_loop_thread_spawned_) {
     // Wait for thread to join.
-    env_->WaitForJoin(msg_loop_thread_);
+    options_.env->WaitForJoin(msg_loop_thread_);
   }
 }
 
@@ -504,10 +483,10 @@ SubscriptionHandle ClientImpl::Subscribe(
   const SubscriptionID sub_id = sub_handle;
 
   // Create an object that manages state of the subscription.
-  auto moved_sub_state = folly::makeMoveWrapper(
-      SubscriptionState(std::move(parameters),
-                        std::move(subscription_callback),
-                        std::move(deliver_callback)));
+  auto moved_sub_state =
+      folly::makeMoveWrapper(SubscriptionState(std::move(parameters),
+                                               std::move(subscription_callback),
+                                               std::move(deliver_callback)));
 
   // Send command to responsible worker.
   Status st = msg_loop_->SendCommand(
@@ -576,13 +555,14 @@ Status ClientImpl::Acknowledge(const MessageReceived& message) {
 }
 
 void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
-  if (!storage_) {
+  if (!options_.storage) {
     save_callback(Status::NotInitialized());
     return;
   }
 
   std::shared_ptr<SubscriptionStorage::Snapshot> snapshot;
-  Status st = storage_->CreateSnapshot(msg_loop_->GetNumWorkers(), &snapshot);
+  Status st =
+      options_.storage->CreateSnapshot(msg_loop_->GetNumWorkers(), &snapshot);
   if (!st.ok()) {
     LOG_ERROR(info_log_,
               "Failed to create snapshot to save subscriptions: %s",
@@ -641,11 +621,11 @@ void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
 
 Status ClientImpl::RestoreSubscriptions(
     std::vector<SubscriptionParameters>* subscriptions) {
-  if (!storage_) {
+  if (!options_.storage) {
     return Status::NotInitialized();
   }
 
-  return storage_->RestoreSubscriptions(subscriptions);
+  return options_.storage->RestoreSubscriptions(subscriptions);
 }
 
 Statistics ClientImpl::GetStatisticsSync() const {
@@ -654,7 +634,7 @@ Statistics ClientImpl::GetStatisticsSync() const {
 
 Status ClientImpl::WaitUntilRunning() {
   msg_loop_thread_ =
-      env_->StartThread([this]() { msg_loop_->Run(); }, "client");
+      options_.env->StartThread([this]() { msg_loop_->Run(); }, "client");
   msg_loop_thread_spawned_ = true;
 
   Status st = msg_loop_->WaitUntilRunning();
@@ -692,9 +672,7 @@ void ClientImpl::StartSubscription(SubscriptionID sub_id,
     auto emplace_result =
         worker_data.subscriptions_.emplace(sub_id, std::move(sub_state_val));
     if (!emplace_result.second) {
-      LOG_ERROR(info_log_,
-                "Duplicated subscription ID(%" PRIu64 ")",
-                sub_id);
+      LOG_ERROR(info_log_, "Duplicate subscription ID(%" PRIu64 ")", sub_id);
       assert(false);
       return;
     }
@@ -702,34 +680,23 @@ void ClientImpl::StartSubscription(SubscriptionID sub_id,
   }
 
   LOG_INFO(info_log_,
-           "Subscription on Topic(%s, %s)@%" PRIu64
-           " for tenant %u ID(%" PRIu64 ")",
+           "Subscribed on Topic(%s, %s)@%" PRIu64 " Tenant(%u) ID(%" PRIu64 ")",
            sub_state->GetNamespace().c_str(),
            sub_state->GetTopicName().c_str(),
            sub_state->GetExpected(),
            sub_state->GetTenant(),
            sub_id);
 
-  // Prepare first subscription request.
-  MessageSubscribe message(sub_state->GetTenant(),
-                           sub_state->GetNamespace(),
-                           sub_state->GetTopicName(),
-                           sub_state->GetExpected(),
-                           sub_id);
-
-  // Send message.
-  wake_lock_.AcquireForSending();
-  Status st =
-      msg_loop_->SendRequest(message, &worker_data.copilot_socket, worker_id);
-  // TODO(stupaq) handle failures
-  assert(st.ok());
+  // Issue subscription.
+  worker_data.pending_subscribes_.emplace(sub_id);
+  SendPendingRequests();
 }
 
 void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
-  // Remove subscription state and prepare unsubscribe message.
+  // Remove subscription state entry.
   auto it = worker_data.subscriptions_.find(sub_id);
   if (it == worker_data.subscriptions_.end()) {
     LOG_ERROR(info_log_,
@@ -740,27 +707,14 @@ void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
   SubscriptionState sub_state(std::move(it->second));
   worker_data.subscriptions_.erase(it);
 
-  // Prepare unsubscription request.
-  MessageUnsubscribe message(sub_state.GetTenant(),
-                             sub_id,
-                             MessageUnsubscribe::Reason::kRequested);
-
-  // Update subscription state, which will announce subscription status to the
+  // Update subscription state, which announces subscription status to the
   // application.
-  sub_state.ProcessMessage(info_log_, message);
+  sub_state.Terminate(
+      info_log_, sub_id, MessageUnsubscribe::Reason::kRequested);
 
-  // Send message.
-  wake_lock_.AcquireForSending();
-  Status st =
-      msg_loop_->SendRequest(message, &worker_data.copilot_socket, worker_id);
-  if (!st.ok()) {
-    // No harm done if we fail to send unsubscribe request, since we've marked
-    // subscription as removed, we will respond with appropriate unsubscribe
-    // request to every message on the terminated subscription.
-    LOG_WARN(info_log_,
-             "Failed to send unsubscribe response for ID(%" PRIu64 ")",
-             sub_id);
-  }
+  // Issue unsubscribe request.
+  worker_data.pending_terminations_.emplace(sub_id, sub_state.GetTenant());
+  SendPendingRequests();
 }
 
 bool ClientImpl::IsNotCopilot(const ClientWorkerData& worker_data,
@@ -776,41 +730,109 @@ bool ClientImpl::IsNotCopilot(const ClientWorkerData& worker_data,
   return false;
 }
 
-SubscriptionState* ClientImpl::FindOrSendUnsubscribe(TenantID tenant_id,
-                                                     SubscriptionID sub_id) {
-  // Get worker data that all topics in the message are assigned to.
+void ClientImpl::SendPendingRequests() {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
-  {  // Attemp to find corresponding subscription.
-    auto it = worker_data.subscriptions_.find(sub_id);
-    if (it != worker_data.subscriptions_.end()) {
-      return &it->second;
+  // Return immediately if there is nothing to do.
+  if (worker_data.pending_subscribes_.empty() &&
+      worker_data.pending_terminations_.empty()) {
+    return;
+  }
+
+  // If we have no subscriptions and some pending requests, close the
+  // connection. This way we unsubscribe all of them.
+  if (options_.close_connection_with_no_subscription &&
+      worker_data.subscriptions_.empty()) {
+    assert(worker_data.pending_subscribes_.empty());
+    assert(!worker_data.pending_terminations_.empty());
+    TenantID tenant_id = worker_data.pending_terminations_.begin()->second;
+
+    MessageGoodbye goodbye(tenant_id,
+                           MessageGoodbye::Code::Graceful,
+                           MessageGoodbye::OriginType::Client);
+
+    Status st =
+        msg_loop_->SendRequest(goodbye, &worker_data.copilot_socket, worker_id);
+    if (st.ok()) {
+      LOG_INFO(info_log_,
+               "Closed stream (%llu) with no active subscriptions",
+               worker_data.copilot_socket.GetStreamID());
+      // All unsubscribe requests were propagated.
+      worker_data.pending_terminations_.clear();
+      // Allocate new stream, if we were to subscribe in the future.
+      worker_data.copilot_socket = msg_loop_->CreateOutboundStream(
+          worker_data.copilot_socket.GetDestination(), worker_id);
+    } else {
+      LOG_WARN(info_log_,
+               "Failed to close stream (%llu) with no active subscrions",
+               worker_data.copilot_socket.GetStreamID());
+    }
+
+    // Nothing to do or we should try next time.
+    return;
+  }
+
+  // Sync unsubscribe requests.
+  while (!worker_data.pending_terminations_.empty()) {
+    auto it = worker_data.pending_terminations_.begin();
+    TenantID tenant_id = it->second;
+    SubscriptionID sub_id = it->first;
+
+    MessageUnsubscribe unsubscribe(
+        tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested);
+
+    Status st = msg_loop_->SendRequest(
+        unsubscribe, &worker_data.copilot_socket, worker_id);
+    if (st.ok()) {
+      LOG_DEBUG(info_log_, "Unsubscribed ID (%" PRIu64 ")", sub_id);
+      // Message was sent, we may clear pending request.
+      worker_data.pending_terminations_.erase(it);
+    } else {
+      LOG_WARN(info_log_,
+               "Failed to send unsubscribe response for ID(%" PRIu64 ")",
+               sub_id);
+      // Try next time.
+      return;
     }
   }
 
-  LOG_WARN(info_log_,
-           "Cannot find subscription ID(%" PRIu64 "), sending unsubscribe",
-           sub_id);
+  // Sync subscribe requests.
+  while (!worker_data.pending_subscribes_.empty()) {
+    auto it = worker_data.pending_subscribes_.begin();
+    SubscriptionID sub_id = *it;
 
-  // Prepare unsubscription request.
-  MessageUnsubscribe message(tenant_id,
-                             sub_id,
-                             MessageUnsubscribe::Reason::kRequested);
+    SubscriptionState* sub_state;
+    {
+      auto it_state = worker_data.subscriptions_.find(sub_id);
+      if (it_state == worker_data.subscriptions_.end()) {
+        // Subscription doesn't exist, no need to send request.
+        worker_data.pending_subscribes_.erase(it);
+        continue;
+      }
+      sub_state = &it_state->second;
+    }
 
-  // Send message.
-  wake_lock_.AcquireForSending();
-  Status st =
-      msg_loop_->SendRequest(message, &worker_data.copilot_socket, worker_id);
-  if (!st.ok()) {
-    // No harm done if we fail to send unsubscribe request, the subscription
-    // does not really exist.
-    LOG_WARN(info_log_,
-             "Failed to send unsubscribe response ID(%" PRIu64 ")",
-             sub_id);
+    MessageSubscribe subscribe(sub_state->GetTenant(),
+                               sub_state->GetNamespace(),
+                               sub_state->GetTopicName(),
+                               sub_state->GetExpected(),
+                               sub_id);
+
+    Status st = msg_loop_->SendRequest(
+        subscribe, &worker_data.copilot_socket, worker_id);
+    if (st.ok()) {
+      LOG_DEBUG(info_log_, "Subscribed ID (%" PRIu64 ")", sub_id);
+      // Message was sent, we may clear pending request.
+      worker_data.pending_subscribes_.erase(it);
+    } else {
+      LOG_WARN(info_log_,
+               "Failed to send subscribe request for ID(%" PRIu64 ")",
+               sub_id);
+      // Try next time.
+      return;
+    }
   }
-
-  return nullptr;
 }
 
 void ClientImpl::ProcessDeliverData(std::unique_ptr<Message> msg,
@@ -829,9 +851,14 @@ void ClientImpl::ProcessDeliverData(std::unique_ptr<Message> msg,
   }
 
   // Find the right subscription and deliver the message to it.
-  auto sub_state = FindOrSendUnsubscribe(data->GetTenantID(), data->GetSubID());
-  if (sub_state) {
-    sub_state->ReceiveMessage(info_log_, std::move(data));
+  SubscriptionID sub_id = data->GetSubID();
+  auto it = worker_data.subscriptions_.find(sub_id);
+  if (it != worker_data.subscriptions_.end()) {
+    it->second.ReceiveMessage(info_log_, std::move(data));
+  } else {
+    LOG_WARN(info_log_, "Subscription ID(%" PRIu64 ") not found", sub_id);
+    worker_data.pending_terminations_.emplace(sub_id, data->GetTenantID());
+    SendPendingRequests();
   }
 }
 
@@ -851,9 +878,14 @@ void ClientImpl::ProcessDeliverGap(std::unique_ptr<Message> msg,
   }
 
   // Find the right subscription and deliver the message to it.
-  auto sub_state = FindOrSendUnsubscribe(gap->GetTenantID(), gap->GetSubID());
-  if (sub_state) {
-    sub_state->ReceiveMessage(info_log_, std::move(gap));
+  SubscriptionID sub_id = gap->GetSubID();
+  auto it = worker_data.subscriptions_.find(sub_id);
+  if (it != worker_data.subscriptions_.end()) {
+    it->second.ReceiveMessage(info_log_, std::move(gap));
+  } else {
+    LOG_WARN(info_log_, "Subscription ID(%" PRIu64 ") not found", sub_id);
+    worker_data.pending_terminations_.emplace(sub_id, gap->GetTenantID());
+    SendPendingRequests();
   }
 }
 
@@ -881,27 +913,26 @@ void ClientImpl::ProcessUnsubscribe(std::unique_ptr<Message> msg,
              sub_id);
     return;
   }
-  SubscriptionState* sub_state = &it->second;
 
-  auto action = sub_state->ProcessMessage(info_log_, *unsubscribe);
-  switch (action) {
-    case SubscriptionState::Action::kTerminate:
-      worker_data.subscriptions_.erase(it);
-      break;
-    case SubscriptionState::Action::kResubscribe: {
-      MessageSubscribe message(sub_state->GetTenant(),
-                               sub_state->GetNamespace(),
-                               sub_state->GetTopicName(),
-                               sub_state->GetExpected(),
-                               sub_id);
-      Status st = msg_loop_->SendRequest(message,
-                                         &worker_data.copilot_socket,
-                                         worker_id);
-      // TODO(stupaq) handle failure
-      assert(st.ok());
-    } break;
-      // No default, we will be warned about unhandled code.
+  if (unsubscribe->GetReason() == MessageUnsubscribe::Reason::kBackOff) {
+    // Handle back off unsubscribes separately, as they don't change the state
+    // of the subscription (Copilot could send goodbye message equivalently).
+    LOG_INFO(info_log_,
+             "Received back off for ID(%" PRIu64 "), resubscribing",
+             unsubscribe->GetSubID());
+
+    // Reissue subscription.
+    worker_data.pending_subscribes_.emplace(sub_id);
+    SendPendingRequests();
+
+    // Do not terminate subscription in this case.
+    return;
   }
+
+  // Terminate subscription, and notify the application.
+  it->second.Terminate(info_log_, sub_id, unsubscribe->GetReason());
+  // Remove the corresponding state entry.
+  worker_data.subscriptions_.erase(it);
 }
 
 void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
@@ -917,7 +948,7 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
 
   // Get the copilot's address.
   HostId copilot;
-  Status st = config_->GetCopilot(&copilot);
+  Status st = options_.config->GetCopilot(&copilot);
   assert(st.ok());  // TODO(pja) : handle failures
 
   // And create socket to it.
@@ -932,28 +963,10 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   // Reissue all subscriptions.
   for (auto& entry : worker_data.subscriptions_) {
     SubscriptionID sub_id = entry.first;
-    SubscriptionState* sub_state = &entry.second;
-
-    LOG_INFO(info_log_,
-             "Reissued subscription ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
-             sub_id,
-             sub_state->GetNamespace().c_str(),
-             sub_state->GetTopicName().c_str(),
-             sub_state->GetExpected());
-
-    // Prepare subscription request.
-    MessageSubscribe message(sub_state->GetTenant(),
-                             sub_state->GetNamespace(),
-                             sub_state->GetTopicName(),
-                             sub_state->GetExpected(),
-                             sub_id);
-
-    // Send message.
-    st =
-        msg_loop_->SendRequest(message, &worker_data.copilot_socket, worker_id);
-    // TODO(stupaq) handle failure
-    assert(st.ok());
+    // Mark subscription as pending.
+    worker_data.pending_subscribes_.emplace(sub_id);
   }
+  SendPendingRequests();
 }
 
 }  // namespace rocketspeed

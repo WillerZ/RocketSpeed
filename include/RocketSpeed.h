@@ -73,6 +73,11 @@ class ClientOptions {
   // Default: null-strategy.
   std::unique_ptr<SubscriptionStorage> storage;
 
+  // Determines whether terminating the last subscription on a connection should
+  // trigger disconnection.
+  // Default: true
+  bool close_connection_with_no_subscription;
+
   /** Creates options with default values. */
   ClientOptions();
 };

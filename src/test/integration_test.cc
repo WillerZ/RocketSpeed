@@ -468,6 +468,9 @@ TEST(IntegrationTest, SequenceNumberZero) {
     ASSERT_TRUE(received == expected);
   }
 
+  // Verify that we have a client on the Copilot.
+  auto num_clients = cluster.GetCopilot()->GetMsgLoop()->GetNumClientsSync();
+
   // Unsubscribe from previously subscribed topic.
   ASSERT_OK(client->Unsubscribe(std::move(handle)));
 
@@ -478,6 +481,10 @@ TEST(IntegrationTest, SequenceNumberZero) {
                                 publish_callback).status.ok());
     ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
+
+  // Number of streams on the Copilot's MsgLoop should drop by one.
+  ASSERT_EQ(num_clients - 1,
+            cluster.GetCopilot()->GetMsgLoop()->GetNumClientsSync());
 
   // Subscribe using seqno 0.
   ASSERT_TRUE(client->Subscribe(GuestTenant, ns, topic, 0));
