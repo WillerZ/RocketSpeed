@@ -141,7 +141,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   // calculate the destination worker
-  int worker_id = static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
+  int worker_id = GetLogWorker(logid);
   auto& worker = workers_[worker_id];
 
   // forward message to worker
@@ -183,8 +183,7 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
       continue;
     }
     // calculate the destination worker
-    int worker_id =
-        static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
+    int worker_id = GetLogWorker(logid);
     auto& worker = workers_[worker_id];
 
     // Copy out only the ith topic into a new message.
@@ -226,7 +225,7 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   // calculate the destination worker
-  int worker_id = static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
+  int worker_id = GetLogWorker(logid);
   auto& worker = workers_[worker_id];
 
   // forward message to worker
@@ -262,8 +261,7 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   }
 
   // Calculate the destination worker.
-  auto dest_worker_id =
-      static_cast<int>(logid % options_.msg_loop->GetNumWorkers());
+  auto dest_worker_id = GetLogWorker(logid);
   auto& worker = workers_[dest_worker_id];
 
   // Forward message to responsible worker.
@@ -358,12 +356,16 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   return cb;
 }
 
-int Copilot::GetLogWorker(LogID logid, const HostId& control_tower) const {
+int Copilot::GetLogWorker(LogID log_id) const {
+  return static_cast<int>(log_id % options_.msg_loop->GetNumWorkers());
+}
+
+int Copilot::GetTowerWorker(LogID log_id, const HostId& tower) const {
   // Hash control tower to a worker.
   const int num_workers = options_.msg_loop->GetNumWorkers();
-  const size_t connection = logid % options_.control_tower_connections;
-  const size_t hash = MurmurHash2<std::string, size_t>()(control_tower.hostname,
-                                                         control_tower.port);
+  const size_t connection = log_id % options_.control_tower_connections;
+  const size_t hash = MurmurHash2<std::string, size_t>()(tower.hostname,
+                                                         tower.port);
   return static_cast<int>((hash + connection) % num_workers);
 }
 
@@ -375,6 +377,28 @@ Statistics Copilot::GetStatisticsSync() const {
 }
 
 std::string Copilot::GetInfoSync(std::vector<std::string> args) {
+  if (args.size() >= 1) {
+    if (args[0] == "towers_for_log" && args.size() == 2 && !args[1].empty()) {
+      // towers_for_log n  -- what towers are serving a log.
+      char* end = nullptr;
+      const LogID log_id { strtoul(&*args[1].begin(), &end, 10) };
+      std::string result;
+      auto worker_id = GetLogWorker(log_id);
+      Status st =
+        options_.msg_loop->WorkerRequestSync(
+          [this, log_id, worker_id] () {
+            return workers_[worker_id]->GetTowersForLog(log_id);
+          },
+          worker_id,
+          &result);
+      return st.ok() ? result : st.ToString();
+    } else if (args[0] == "log_for_topic" && args.size() == 3) {
+      // log_for_topic namespace topic_name
+      LogID log_id;
+      Status st = options_.log_router->GetLogID(args[1], args[2], &log_id);
+      return st.ok() ? std::to_string(log_id) : st.ToString();
+    }
+  }
   return "Unknown info for copilot";
 }
 

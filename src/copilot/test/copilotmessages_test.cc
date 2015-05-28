@@ -92,7 +92,7 @@ TEST(CopilotTest, WorkerMapping) {
     ASSERT_TRUE(router.GetControlTower(logid, &control_tower).ok());
 
     // Find the worker responsible for this log.
-    int worker_id = copilot->GetLogWorker(logid, *control_tower);
+    int worker_id = copilot->GetTowerWorker(logid, *control_tower);
     tower_to_workers[*control_tower].insert(worker_id);
 
     // Check that the tower maps to only one worker.

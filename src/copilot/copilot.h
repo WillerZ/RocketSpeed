@@ -54,9 +54,6 @@ class Copilot {
     return options_.msg_loop->SendCommand(std::move(command), worker_id);
   }
 
-  // Get the worker loop associated with a log on a particular control tower.
-  int GetLogWorker(LogID logid, const HostId& control_tower) const;
-
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;
   }
@@ -81,6 +78,12 @@ class Copilot {
    * @return ok() if successfully propagated to all workers, error otherwise.
    */
   Status UpdateControlTowers(std::unordered_map<uint64_t, HostId> nodes);
+
+  // Get the worker loop associated with a log.
+  int GetLogWorker(LogID log_id) const;
+
+  // EventLoop worker responsible for a control tower.
+  int GetTowerWorker(LogID log_id, const HostId& tower) const;
 
  private:
 

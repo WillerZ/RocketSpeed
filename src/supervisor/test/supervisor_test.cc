@@ -139,6 +139,9 @@ TEST(SupervisorTest, TowerLog) {
     seqno);
   ASSERT_EQ(std::string(expected), DoRequest("info tower log 1\n"));
   ASSERT_EQ(std::string(expected), DoRequest("info tower logs\n"));
+  ASSERT_EQ(cluster.GetControlTower()->GetHostId().ToString() + "\n\n",
+    DoRequest("info copilot towers_for_log 1\n"));
+  ASSERT_EQ("1\n", DoRequest("info copilot log_for_topic guest TowerLog\n"));
 
   supervisor->Stop();
   env_->WaitForJoin(supervisor_thread_id);

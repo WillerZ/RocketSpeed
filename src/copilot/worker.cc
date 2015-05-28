@@ -635,7 +635,7 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
     if (control_tower_router_->GetControlTowers(log_id, &recipients).ok()) {
       // Update subscription on all control towers.
       for (HostId const* recipient : recipients) {
-        int outgoing_worker_id = copilot_->GetLogWorker(log_id, *recipient);
+        int outgoing_worker_id = copilot_->GetTowerWorker(log_id, *recipient);
 
         // Find or open a new stream socket to this control tower.
         auto socket = GetControlTowerSocket(
@@ -851,5 +851,18 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
   }
 }
 
+std::string CopilotWorker::GetTowersForLog(LogID log_id) const {
+  std::string result;
+  std::vector<HostId const*> towers;
+  if (control_tower_router_->GetControlTowers(log_id, &towers).ok()) {
+    for (HostId const* tower : towers) {
+      result += tower->ToString();
+      result += '\n';
+    }
+  } else {
+    result = "No towers for log";
+  }
+  return result;
+}
 
 }  // namespace rocketspeed

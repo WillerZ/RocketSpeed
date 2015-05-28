@@ -52,6 +52,11 @@ class CopilotWorker {
 
   const Statistics& GetStatistics();
 
+  /**
+   * Returns human-readable info on the towers serving a particular log.
+   */
+  std::string GetTowersForLog(LogID log_id) const;
+
  private:
   struct Subscription;
   struct TopicState;
@@ -158,7 +163,6 @@ class CopilotWorker {
                      SequenceNumber prev,
                      SequenceNumber next,
                      StreamID origin);
-
 
   // Copilot specific options.
   const CopilotOptions& options_;
