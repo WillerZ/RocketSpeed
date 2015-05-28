@@ -110,6 +110,12 @@ bool CopilotWorker::Forward(std::shared_ptr<ControlTowerRouter> new_router) {
 
 const Statistics& CopilotWorker::GetStatistics() {
   stats_.subscribed_topics->Set(topics_.size());
+
+  size_t total_sockets = 0;
+  for (const auto& entry : control_tower_sockets_) {
+    total_sockets += entry.second.size();
+  }
+  stats_.control_tower_sockets->Set(total_sockets);
   return stats_.all;
 }
 
@@ -150,6 +156,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
     AdvanceTowers(&topic, prev_seqno, seqno, origin);
 
     // Send to all subscribers.
+    bool delivered_at_least_once = false;
     for (auto& sub : topic.subscriptions) {
       StreamID recipient = sub->stream_id;
 
@@ -186,6 +193,10 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
         continue;
       }
 
+      // Mark even if fail to send.
+      // The point is that it wasn't out of order.
+      delivered_at_least_once = true;
+
       // Send message to the client.
       MessageDeliverData data(sub->tenant_id,
                               sub->sub_id,
@@ -195,6 +206,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
       Status status = options_.msg_loop->SendResponse(data,
                                                       recipient,
                                                       sub->worker_id);
+
       if (status.ok()) {
         sub->seqno = seqno + 1;
 
@@ -212,6 +224,11 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
                  recipient);
       }
     }
+    if (!delivered_at_least_once) {
+      stats_.data_dropped_out_of_order->Add(1);
+    }
+  } else {
+    stats_.data_on_unsubscribed_topic->Add(1);
   }
 }
 
@@ -235,6 +252,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
     AdvanceTowers(&topic, prev_seqno, next_seqno, origin);
 
     // Send to all subscribers.
+    bool delivered_at_least_once = false;
     for (auto& sub : topic.subscriptions) {
       StreamID recipient = sub->stream_id;
 
@@ -271,6 +289,10 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
         continue;
       }
 
+      // Mark even if fail to send.
+      // The point is that it wasn't out of order.
+      delivered_at_least_once = true;
+
       // Send message to the client.
       MessageDeliverGap gap(sub->tenant_id, sub->sub_id, msg->GetType());
       gap.SetSequenceNumbers(prev_seqno, next_seqno);
@@ -295,6 +317,10 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       }
     }
 
+    if (!delivered_at_least_once) {
+      stats_.gap_dropped_out_of_order->Add(1);
+    }
+
     if (prev_seqno == 0) {
       // When prev_seqno == 0, this was a gap to inform us what the current
       // sequence number is. It could be the case that it's actually lower than
@@ -307,6 +333,8 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       // received messages then we can use that as a more accurate tail
       // position, and avoid a resubscribe.
     }
+  } else {
+    stats_.gap_on_unsubscribed_topic->Add(1);
   }
 }
 
@@ -824,6 +852,7 @@ StreamSocket* CopilotWorker::GetControlTowerSocket(const HostId& tower,
       outgoing_worker_id,
       msg_loop->CreateOutboundStream(
         tower.ToClientId(), outgoing_worker_id)).first;
+    stats_.control_tower_socket_creations->Add(1);
   }
   return &it->second;
 }
@@ -845,10 +874,13 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
           tower.next_seqno,
           next + 1);
         tower.next_seqno = next + 1;
+      } else {
+        stats_.out_of_order_seqno_from_tower->Add(1);
       }
       break;
     }
   }
+  stats_.message_from_unexpected_tower->Add(1);
 }
 
 std::string CopilotWorker::GetTowersForLog(LogID log_id) const {

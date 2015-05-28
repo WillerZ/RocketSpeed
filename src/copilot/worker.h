@@ -64,11 +64,29 @@ class CopilotWorker {
   struct Stats {
     Stats() {
       rollcall_writes_total =
-          all.AddCounter("copilot.numwrites_rollcall_total");
+        all.AddCounter("copilot.numwrites_rollcall_total");
       rollcall_writes_failed =
-          all.AddCounter("copilot.numwrites_rollcall_failed");
-      incoming_subscriptions = all.AddCounter("copilot.incoming_subscriptions");
-      subscribed_topics = all.AddCounter("copilot.subscribed_topics");
+        all.AddCounter("copilot.numwrites_rollcall_failed");
+      incoming_subscriptions =
+        all.AddCounter("copilot.incoming_subscriptions");
+      subscribed_topics =
+        all.AddCounter("copilot.subscribed_topics");
+      data_on_unsubscribed_topic =
+        all.AddCounter("copilot.data_on_unsubscribed_topic");
+      gap_on_unsubscribed_topic =
+        all.AddCounter("copilot.gap_on_unsubscribed_topic");
+      out_of_order_seqno_from_tower =
+        all.AddCounter("copilot.out_of_order_seqno_from_tower");
+      control_tower_socket_creations =
+        all.AddCounter("copilot.control_tower_socket_creations");
+      control_tower_sockets =
+        all.AddCounter("copilot.control_tower_sockets");
+      data_dropped_out_of_order =
+        all.AddCounter("copilot.data_dropped_out_of_order");
+      gap_dropped_out_of_order =
+        all.AddCounter("copilot.gap_dropped_out_of_order");
+      message_from_unexpected_tower =
+        all.AddCounter("copilot.message_from_unexpected_tower");
     }
 
     Statistics all;
@@ -77,6 +95,14 @@ class CopilotWorker {
     Counter* rollcall_writes_failed;
     Counter* incoming_subscriptions;
     Counter* subscribed_topics;
+    Counter* data_on_unsubscribed_topic;
+    Counter* gap_on_unsubscribed_topic;
+    Counter* out_of_order_seqno_from_tower;
+    Counter* control_tower_socket_creations;
+    Counter* control_tower_sockets;
+    Counter* data_dropped_out_of_order;
+    Counter* gap_dropped_out_of_order;
+    Counter* message_from_unexpected_tower;
   } stats_;
 
   // Send an ack message to the host for the msgid.
