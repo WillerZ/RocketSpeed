@@ -79,6 +79,9 @@ class ControlTower {
 
   Statistics GetStatisticsSync();
 
+  // Gets information about the running service.
+  std::string GetInfoSync(std::vector<std::string> args);
+
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;

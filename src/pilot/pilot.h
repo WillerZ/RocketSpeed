@@ -80,6 +80,9 @@ class Pilot {
 
   Statistics GetStatisticsSync() const;
 
+  // Gets information about the running service.
+  std::string GetInfoSync(std::vector<std::string> args);
+
   void AppendCallback(Status append_status,
                       SequenceNumber seqno,
                       std::unique_ptr<MessageData> msg,

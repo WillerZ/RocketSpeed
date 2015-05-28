@@ -69,6 +69,9 @@ class Copilot {
   // Returns an aggregated statistics object from the copilot
   Statistics GetStatisticsSync() const;
 
+  // Gets information about the running service.
+  std::string GetInfoSync(std::vector<std::string> args);
+
   /**
    * Updates the control tower routing information.
    *

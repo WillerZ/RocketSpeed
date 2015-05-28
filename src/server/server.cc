@@ -280,9 +280,9 @@ Status RocketSpeed::Initialize(
     SupervisorOptions supervisor_opts;
     supervisor_opts.port = (uint32_t)FLAGS_supervisor_port;
     supervisor_opts.info_log = info_log_;
-    supervisor_opts.tower_loop = tower_loop.get(),
-    supervisor_opts.copilot_loop = copilot_loop.get();
-    supervisor_opts.pilot_loop = pilot_loop.get();
+    supervisor_opts.tower = tower_.get(),
+    supervisor_opts.copilot = copilot_.get();
+    supervisor_opts.pilot = pilot_.get();
 
     Status st = SupervisorLoop::CreateNewInstance(std::move(supervisor_opts),
                                                   &supervisor_loop_);

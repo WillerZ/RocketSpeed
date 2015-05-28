@@ -8,8 +8,10 @@
 
 namespace rocketspeed {
 
-class MsgLoop;
+class ControlTower;
+class Copilot;
 class Logger;
+class Pilot;
 
 // Options used for initializing/running the SupervisorLoop.
 struct SupervisorOptions {
@@ -20,9 +22,9 @@ struct SupervisorOptions {
   std::shared_ptr<Logger> info_log;
 
   // Msg Loops (options does not own these pointers)
-  MsgLoop* tower_loop;
-  MsgLoop* pilot_loop;
-  MsgLoop* copilot_loop;
+  ControlTower* tower;
+  Pilot* pilot;
+  Copilot* copilot;
 };
 
 }

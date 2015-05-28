@@ -9,6 +9,10 @@
 
 #include "src/util/parsing.h"
 
+#include "src/controltower/tower.h"
+#include "src/copilot/copilot.h"
+#include "src/pilot/pilot.h"
+
 #include "src/messages/event2_version.h"
 #include "src/messages/msg_loop.h"
 #include <event2/event.h>
@@ -23,15 +27,6 @@ namespace rocketspeed {
 
 Status SupervisorLoop::CreateNewInstance(SupervisorOptions options,
   std::unique_ptr<SupervisorLoop>* supervisor) {
-
-  // Ensure that at least one of the msg loops has been started
-  if (!options.tower_loop && !options.pilot_loop && !options.copilot_loop) {
-    assert(false);
-    return Status::InvalidArgument(
-      "Supervisor requires at least one msg loop to observe"
-    );
-  }
-
   // Need to check if we can successfully bind to port
   *supervisor =
     std::unique_ptr<SupervisorLoop>(new SupervisorLoop(std::move(options)));
@@ -254,15 +249,15 @@ std::map<std::string, SupervisorCommand> SupervisorLoop::commands_ = {
         } else {
           std::string response("Invalid command");
           const SupervisorOptions& options = supervisor->options_;
-          if (args[1] == std::string("pilot")
-              && options.pilot_loop != nullptr) {
-            response = options.pilot_loop->GetStatisticsSync().Report();
-          } else if (args[1] == std::string("copilot") &&
-                     options.copilot_loop != nullptr) {
-            response = options.copilot_loop->GetStatisticsSync().Report();
-          } else if (args[1] == std::string("tower") &&
-                     options.tower_loop != nullptr) {
-            response = options.tower_loop->GetStatisticsSync().Report();
+          if (args[1] == "pilot" && options.pilot != nullptr) {
+            response =
+              options.pilot->GetStatisticsSync().Report();
+          } else if (args[1] == "copilot" && options.copilot != nullptr) {
+            response =
+              options.copilot->GetStatisticsSync().Report();
+          } else if (args[1] == "tower" && options.tower != nullptr) {
+            response =
+              options.tower->GetStatisticsSync().Report();
           }
           return response;
         }
@@ -288,6 +283,31 @@ std::map<std::string, SupervisorCommand> SupervisorLoop::commands_ = {
             return "Trying to set invalid log level";
           }
           return "Set log level to " + args[1];
+        }
+      }
+    )
+  },
+  {
+    "info",
+    SupervisorCommand(
+      "info",
+      "info tower log n\n",
+      [](std::vector<std::string> args, SupervisorLoop* supervisor)
+        -> std::string {
+
+        if (args.size() < 2) {
+          return "Invalid command";
+        }
+        std::string handler = args[1];
+        args.erase(args.begin(), args.begin() + 2);
+        if (handler == "pilot" && supervisor->options_.pilot) {
+          return supervisor->options_.pilot->GetInfoSync(std::move(args));
+        } else if (handler == "copilot" && supervisor->options_.copilot) {
+          return supervisor->options_.copilot->GetInfoSync(std::move(args));
+        } else if (handler == "tower" && supervisor->options_.tower) {
+          return supervisor->options_.tower->GetInfoSync(std::move(args));
+        } else {
+          return "Invalid command";
         }
       }
     )
@@ -374,4 +394,4 @@ Status SupervisorLoop::WaitUntilRunning(std::chrono::seconds timeout) {
   return Status::OK();
 }
 
-}
+}  // namespace rocketspeed

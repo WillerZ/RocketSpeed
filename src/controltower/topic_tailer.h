@@ -106,6 +106,11 @@ class TopicTailer {
     SequenceNumber to,
     size_t reader_id);
 
+  /**
+   * Get human-readable information about a particular log.
+   */
+  std::string GetLogInfo(LogID log_id) const;
+
   ~TopicTailer();
 
  private:

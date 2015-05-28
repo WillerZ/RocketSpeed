@@ -374,6 +374,10 @@ Statistics Copilot::GetStatisticsSync() const {
   return stats;
 }
 
+std::string Copilot::GetInfoSync(std::vector<std::string> args) {
+  return "Unknown info for copilot";
+}
+
 Status Copilot::UpdateControlTowers(
     std::unordered_map<uint64_t, HostId> nodes) {
   Status result;

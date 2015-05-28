@@ -524,7 +524,7 @@ class Connection {
   // Write the data to the connection
   virtual Status Send(const Slice& data) = 0;
 
-  virtual Status Receive(char* buffer, ssize_t sz) = 0;
+  virtual Status Receive(char* buffer, ssize_t* sz) = 0;
 
   virtual ~Connection() {}
 };

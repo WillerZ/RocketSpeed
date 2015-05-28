@@ -385,6 +385,27 @@ Statistics ControlTower::GetStatisticsSync() {
   return options_.msg_loop->GetStatisticsSync();
 }
 
+std::string ControlTower::GetInfoSync(std::vector<std::string> args) {
+  if (args.size() >= 1) {
+    if (args[0] == "log" && args.size() == 2 && !args[1].empty()) {
+      // log n  -- information about a single log.
+      char* end = nullptr;
+      const LogID log_id { strtoul(&*args[1].begin(), &end, 10) };
+      const int room = LogIDToRoom(log_id);
+      std::string result;
+      Status st =
+        options_.msg_loop->WorkerRequestSync(
+          [this, room, log_id] () {
+            return topic_tailer_[room]->GetLogInfo(log_id);
+          },
+          room,
+          &result);
+      return st.ok() ? result : st.ToString();
+    }
+  }
+  return "Unknown info for control tower";
+}
+
 int ControlTower::LogIDToRoom(LogID log_id) const {
   return static_cast<int>(log_id % rooms_.size());
 }

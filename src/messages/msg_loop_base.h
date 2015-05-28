@@ -170,6 +170,23 @@ class MsgLoopBase {
   template <typename PerWorkerFunc, typename GatherFunc>
   Status Gather(PerWorkerFunc per_worker, GatherFunc callback);
 
+  /**
+   * Essentially performs `*out = request()` on the specified worker with a
+   * timeout. *out will only be set if the result is ok().
+   *
+   * @param request Function to invoke on worker thread.
+   * @param worker_id Index of worker thread to invoke on.
+   * @param out Output parameter for result.
+   * @param timeout Timeout for request.
+   * @return ok() if successfully invoked, otherwise error.
+   */
+  template <typename RequestFunc, typename Result>
+  Status WorkerRequestSync(RequestFunc request,
+                           int worker_id,
+                           Result* out,
+                           std::chrono::seconds timeout =
+                             std::chrono::seconds(5));
+
  protected:
   BaseEnv* env_;
 };
@@ -206,6 +223,38 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
       return st;
     }
   }
+  return Status::OK();
+}
+
+template <typename RequestFunc, typename Result>
+Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
+                                      int worker_id,
+                                      Result* out,
+                                      std::chrono::seconds timeout) {
+  assert(out);
+
+  // Request context.
+  // Needs to be shared in case of timeout.
+  auto done = std::make_shared<port::Semaphore>();
+  auto result = std::make_shared<Result>();
+  auto lock = std::make_shared<port::Mutex>();
+  std::unique_ptr<Command> command(
+    new ExecuteCommand([this, request, done, result, lock] () {
+      {
+        MutexLock guard(lock.get());
+        *result = request();
+      }
+      done->Post();
+    }));
+  Status st = SendCommand(std::move(command), worker_id);
+  if (!st.ok()) {
+    return st;
+  }
+  if (!done->TimedWait(timeout)) {
+    return Status::TimedOut();
+  }
+  MutexLock guard(&*lock);
+  *out = std::move(*result);
   return Status::OK();
 }
 

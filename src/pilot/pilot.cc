@@ -290,4 +290,8 @@ Statistics Pilot::GetStatisticsSync() const {
   return stats;
 }
 
+std::string Pilot::GetInfoSync(std::vector<std::string> args) {
+  return "Unknown info for pilot";
+}
+
 }  // namespace rocketspeed

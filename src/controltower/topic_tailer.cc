@@ -163,6 +163,12 @@ class LogReader {
     return reader_id_;
   }
 
+  /**
+   * Get human-readable information about a log.
+   */
+  std::string GetLogInfo(LogID log_id) const;
+
+
  private:
   struct TopicState {
     SequenceNumber next_seqno;
@@ -481,6 +487,32 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
     }
   }
   return st;
+}
+
+std::string LogReader::GetLogInfo(LogID log_id) const {
+  thread_check_.Check();
+  char buffer[1024];
+  auto log_it = log_state_.find(log_id);
+  if (log_it != log_state_.end()) {
+    const LogState& log_state = log_it->second;
+    snprintf(
+      buffer, sizeof(buffer),
+      "Log(%" PRIu64 ").start_seqno: %" PRIu64 "\n"
+      "Log(%" PRIu64 ").last_read: %" PRIu64 "\n"
+      "Log(%" PRIu64 ").tail_seqno: %" PRIu64 "\n"
+      "Log(%" PRIu64 ").num_subscribers: %zu\n"
+      "Log(%" PRIu64 ").num_topics_subscribed: %zu\n",
+      log_id, log_state.start_seqno,
+      log_id, log_state.last_read,
+      log_id, log_state.tail_seqno,
+      log_id, log_state.num_subscribers,
+      log_id, log_state.topics.size());
+  } else {
+    snprintf(buffer, sizeof(buffer),
+      "Log(%" PRIu64 ") not currently open\n",
+      log_id);
+  }
+  return std::string(buffer);
 }
 
 TopicTailer::TopicTailer(
@@ -918,6 +950,11 @@ bool TopicTailer::Forward(std::function<void()> command) {
   std::unique_ptr<Command> cmd(new ExecuteCommand(std::move(command)));
   Status st = msg_loop_->SendCommand(std::move(cmd), worker_id_);
   return st.ok();
+}
+
+std::string TopicTailer::GetLogInfo(LogID log_id) const {
+  thread_check_.Check();
+  return log_reader_->GetLogInfo(log_id);
 }
 
 
