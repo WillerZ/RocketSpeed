@@ -138,6 +138,7 @@ TEST(SupervisorTest, TowerLog) {
     seqno,
     seqno);
   ASSERT_EQ(std::string(expected), DoRequest("info tower log 1\n"));
+  ASSERT_EQ(std::string(expected), DoRequest("info tower logs\n"));
 
   supervisor->Stop();
   env_->WaitForJoin(supervisor_thread_id);

@@ -171,6 +171,24 @@ class MsgLoopBase {
   Status Gather(PerWorkerFunc per_worker, GatherFunc callback);
 
   /**
+   * Synchronous map reduce across workers. Calls map(w) on each worker thread
+   * where w is the worker thread index, collects the results into a map then
+   * assigns *out = reduce({map(0), map(1), ...}).
+   *
+   * @param map Mapping function to call on each worker.
+   * @param reduce Reducing function, called with vector of results of map.
+   * @param out Output for result of reduce.
+   * @param timeout Timeout for getting all results.
+   * @return ok() if out was written before timeout, otherwise error.
+   */
+  template <typename MapFunc, typename ReduceFunc, typename Result>
+  Status MapReduceSync(MapFunc map,
+                       ReduceFunc reduce,
+                       Result* out,
+                       std::chrono::seconds timeout =
+                         std::chrono::seconds(5));
+
+  /**
    * Essentially performs `*out = request()` on the specified worker with a
    * timeout. *out will only be set if the result is ok().
    *
@@ -226,6 +244,34 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
   return Status::OK();
 }
 
+template <typename MapFunc, typename ReduceFunc, typename Result>
+Status MsgLoopBase::MapReduceSync(MapFunc map,
+                                  ReduceFunc reduce,
+                                  Result* out,
+                                  std::chrono::seconds timeout) {
+  assert(out);
+  using T = decltype(map(0));
+
+  // Request context.
+  // Needs to be shared in case of timeout.
+  auto done = std::make_shared<port::Semaphore>();
+  auto result = std::make_shared<Result>();
+  Status st =
+    Gather(map,
+           [reduce, result, done] (std::vector<T> results) {
+             *result = reduce(results);
+             done->Post();
+           });
+  if (!st.ok()) {
+    return st;
+  }
+  if (!done->TimedWait(timeout)) {
+    return Status::TimedOut();
+  }
+  *out = std::move(*result);
+  return Status::OK();
+}
+
 template <typename RequestFunc, typename Result>
 Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
                                       int worker_id,
@@ -237,13 +283,9 @@ Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
   // Needs to be shared in case of timeout.
   auto done = std::make_shared<port::Semaphore>();
   auto result = std::make_shared<Result>();
-  auto lock = std::make_shared<port::Mutex>();
   std::unique_ptr<Command> command(
-    new ExecuteCommand([this, request, done, result, lock] () {
-      {
-        MutexLock guard(lock.get());
-        *result = request();
-      }
+    new ExecuteCommand([this, request, done, result] () {
+      *result = request();
       done->Post();
     }));
   Status st = SendCommand(std::move(command), worker_id);
@@ -253,7 +295,6 @@ Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
   if (!done->TimedWait(timeout)) {
     return Status::TimedOut();
   }
-  MutexLock guard(&*lock);
   *out = std::move(*result);
   return Status::OK();
 }

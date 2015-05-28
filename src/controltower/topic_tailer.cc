@@ -168,6 +168,11 @@ class LogReader {
    */
   std::string GetLogInfo(LogID log_id) const;
 
+  /**
+   * Get human-readable information about all logs.
+   */
+  std::string GetAllLogsInfo() const;
+
 
  private:
   struct TopicState {
@@ -513,6 +518,15 @@ std::string LogReader::GetLogInfo(LogID log_id) const {
       log_id);
   }
   return std::string(buffer);
+}
+
+std::string LogReader::GetAllLogsInfo() const {
+  thread_check_.Check();
+  std::string result;
+  for (const auto& log_entry : log_state_) {
+    result += GetLogInfo(log_entry.first);
+  }
+  return result;
 }
 
 TopicTailer::TopicTailer(
@@ -955,6 +969,11 @@ bool TopicTailer::Forward(std::function<void()> command) {
 std::string TopicTailer::GetLogInfo(LogID log_id) const {
   thread_check_.Check();
   return log_reader_->GetLogInfo(log_id);
+}
+
+std::string TopicTailer::GetAllLogsInfo() const {
+  thread_check_.Check();
+  return log_reader_->GetAllLogsInfo();
 }
 
 

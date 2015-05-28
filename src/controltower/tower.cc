@@ -401,6 +401,19 @@ std::string ControlTower::GetInfoSync(std::vector<std::string> args) {
           room,
           &result);
       return st.ok() ? result : st.ToString();
+    } else if (args[0] == "logs") {
+      // logs  -- information about all logs.
+      std::string result;
+      Status st =
+        options_.msg_loop->MapReduceSync(
+          [this] (int room) {
+            return topic_tailer_[room]->GetAllLogsInfo();
+          },
+          [] (std::vector<std::string> infos) {
+            return std::accumulate(infos.begin(), infos.end(), std::string());
+          },
+          &result);
+      return st.ok() ? result : st.ToString();
     }
   }
   return "Unknown info for control tower";

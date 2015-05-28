@@ -291,7 +291,8 @@ std::map<std::string, SupervisorCommand> SupervisorLoop::commands_ = {
     "info",
     SupervisorCommand(
       "info",
-      "info tower log n\n",
+      "info tower log n\n"
+      "info tower logs\n",
       [](std::vector<std::string> args, SupervisorLoop* supervisor)
         -> std::string {
 

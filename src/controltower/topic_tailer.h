@@ -111,6 +111,11 @@ class TopicTailer {
    */
   std::string GetLogInfo(LogID log_id) const;
 
+  /**
+   * Get human-readable information about all logs.
+   */
+  std::string GetAllLogsInfo() const;
+
   ~TopicTailer();
 
  private:
