@@ -133,29 +133,3 @@ ClientImpl = interface +c {
 
   Close();
 }
-
-
-MessageCallback = interface +j {
-  call(session_id: i64,
-       message: binary);
-}
-
-DisconnectCallback = interface +j {
-  call(session_ids: list<i64>);
-}
-
-ProxyImpl = interface +c {
-  static create(log_level: LogLevel,
-                config: ConfigurationImpl,
-                num_workers: i32): ProxyImpl;
-
-  start(message_callback: MessageCallback,
-        disconnect_callback: DisconnectCallback): Status;
-
-  forward(message: binary,
-          session: i64): Status;
-
-  destroySession(session: i64);
-
-  close();
-}

@@ -1,0 +1,19 @@
+cpp_library(
+    name = 'jvm_env',
+    srcs = [
+        'jvm_env.cc',
+        'jvm_logger.cc',
+    ],
+    preprocessor_flags = [
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
+        '-Irocketspeed/github',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/util/common',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+)

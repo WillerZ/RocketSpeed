@@ -10,7 +10,7 @@
 #include "include/Logger.h"
 #include "src/util/common/client_env.h"
 
-#include "djinni_support.hpp"
+#include "jni.h"
 
 namespace rocketspeed {
 
@@ -29,11 +29,11 @@ class JvmEnv final : public ClientEnv {
   static JvmEnv* Default();
 
   ThreadId StartThread(void (*function)(void* arg),
-                               void* arg,
-                               const std::string& thread_name = "");
+                       void* arg,
+                       const std::string& thread_name = "");
 
   ThreadId StartThread(std::function<void()> f,
-                               const std::string& thread_name = "");
+                       const std::string& thread_name = "");
 
   /**
    * Selects logger implementation based on target platform.

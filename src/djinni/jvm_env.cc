@@ -8,6 +8,8 @@
 #include <pthread.h>
 #include <cassert>
 
+#include "djinni_support.hpp"
+
 namespace rocketspeed {
 
 namespace {
