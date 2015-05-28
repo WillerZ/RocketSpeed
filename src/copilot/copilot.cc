@@ -368,8 +368,10 @@ int Copilot::GetLogWorker(LogID logid, const HostId& control_tower) const {
 }
 
 Statistics Copilot::GetStatisticsSync() const {
-  return options_.msg_loop->AggregateStatsSync(
+  Statistics stats = options_.msg_loop->AggregateStatsSync(
       [this](int i) { return workers_[i]->GetStatistics(); });
+  stats.Aggregate(options_.msg_loop->GetStatisticsSync());
+  return stats;
 }
 
 Status Copilot::UpdateControlTowers(

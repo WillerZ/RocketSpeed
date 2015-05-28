@@ -216,15 +216,15 @@ TEST(CopilotTest, Rollcall) {
   // Verify that statistics are recorded accurately. Account for the
   // fact that subscribing to the rollcall topic shows up as one
   // additional subscription in the statistic.
-  const Statistics& stats = cluster.GetStatisticsSync();
+  const Statistics& stats = cluster.GetCopilot()->GetStatisticsSync();
   std::string stats_report = stats.Report();
-  ASSERT_NE(
-    stats_report.find("copilot.numwrites_rollcall_total:         " +
-            std::to_string(num_msg + 1)),
-            std::string::npos);
-  ASSERT_NE(
-    stats_report.find("copilot.numwrites_rollcall_failed:        0"),
-            std::string::npos);
+  ASSERT_EQ(stats.GetCounterValue("copilot.numwrites_rollcall_total"),
+    num_msg + 1);
+  ASSERT_EQ(stats.GetCounterValue("copilot.numwrites_rollcall_failed"), 0);
+  ASSERT_EQ(stats.GetCounterValue("cockpit.messages_received.subscribe"),
+    num_msg / 2 + 1);
+  ASSERT_EQ(stats.GetCounterValue("cockpit.messages_received.unsubscribe"),
+    num_msg / 2);
 }
 
 }  // namespace rocketspeed

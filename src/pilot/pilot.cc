@@ -284,9 +284,10 @@ std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
 }
 
 Statistics Pilot::GetStatisticsSync() const {
-  return options_.msg_loop->AggregateStatsSync(
-    [this] (int i) { return worker_data_[i].stats_.all; }
-  );
+  Statistics stats = options_.msg_loop->AggregateStatsSync(
+    [this] (int i) { return worker_data_[i].stats_.all; });
+  stats.Aggregate(options_.msg_loop->GetStatisticsSync());
+  return stats;
 }
 
 }  // namespace rocketspeed

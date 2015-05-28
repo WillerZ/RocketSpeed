@@ -309,11 +309,8 @@ Statistics LocalTestCluster::GetStatisticsSync() const {
   if (pilot_) {
     aggregated.Aggregate(pilot_->GetStatisticsSync());
   }
-  if (control_tower_loop_) {
-    aggregated.Aggregate(control_tower_loop_->GetStatisticsSync());
-  }
-  if (cockpit_loop_) {
-    aggregated.Aggregate(cockpit_loop_->GetStatisticsSync());
+  if (control_tower_) {
+    aggregated.Aggregate(control_tower_->GetStatisticsSync());
   }
   if (copilot_) {
     aggregated.Aggregate(copilot_->GetStatisticsSync());

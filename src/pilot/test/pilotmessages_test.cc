@@ -94,14 +94,12 @@ TEST(PilotTest, Publish) {
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(100)));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
-  const Statistics& stats = cluster.GetStatisticsSync();
+  const Statistics& stats = cluster.GetPilot()->GetStatisticsSync();
   std::string stats_report = stats.Report();
-  ASSERT_NE(stats_report.find("pilot.append_requests:                    100"),
-            std::string::npos);
-  ASSERT_NE(stats_report.find("pilot.failed_appends:                     0"),
-            std::string::npos);
-  ASSERT_NE(stats_report.find("pilot.append_latency_us"),
-            std::string::npos);
+  ASSERT_EQ(stats.GetCounterValue("pilot.append_requests"), 100);
+  ASSERT_EQ(stats.GetCounterValue("pilot.failed_appends"), 0);
+  ASSERT_EQ(stats.GetCounterValue("cockpit.messages_received.publish"), 100);
+  ASSERT_NE(stats_report.find("pilot.append_latency_us"), std::string::npos);
 }
 
 TEST(PilotTest, NoLogger) {
