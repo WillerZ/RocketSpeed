@@ -8,6 +8,7 @@
 #include "src/controltower/tower.h"
 
 #include <map>
+#include <numeric>
 #include <thread>
 #include <vector>
 
@@ -227,7 +228,8 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
                                               &logid);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
-          "Unable to map Topic(%s) to logid %s",
+          "Unable to map Topic(%s,%s) to logid %s",
+          topic.namespace_id.c_str(),
           topic.topic_name.c_str(),
           st.ToString().c_str());
       continue;
@@ -248,17 +250,19 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
     st = room->Forward(std::move(newmessage), worker_id, origin);
     if (!st.ok()) {
       LOG_WARN(options_.info_log,
-          "Unable to forward %ssubscription for Topic(%s)@%" PRIu64
+          "Unable to forward %ssubscription for Topic(%s,%s)@%" PRIu64
           " to rooms-%u (%s)",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
+          topic.namespace_id.c_str(),
           topic.topic_name.c_str(),
           topic.seqno,
           room_number,
           st.ToString().c_str());
     } else {
       LOG_INFO(options_.info_log,
-          "Forwarded %ssubscription for Topic(%s)@%" PRIu64 " to rooms-%u",
+          "Forwarded %ssubscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
+          topic.namespace_id.c_str(),
           topic.topic_name.c_str(),
           topic.seqno,
           room_number);

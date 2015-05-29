@@ -100,9 +100,10 @@ Status LogTailer::CreateReader(size_t reader_id,
     } else {
       LOG_INFO(info_log_,
         "LogTailer received data (%.16s)@%" PRIu64
-        " for Topic(%s) in Log(%" PRIu64 ").",
+        " for Topic(%s,%s) in Log(%" PRIu64 ").",
         msg->GetPayload().ToString().c_str(),
         seqno,
+        msg->GetNamespaceId().ToString().c_str(),
         msg->GetTopicName().ToString().c_str(),
         log_id);
 

@@ -91,15 +91,17 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
   if (topic[0].topic_type == MetadataType::mSubscribe) {
     topic_tailer_->AddSubscriber(uuid, topic[0].seqno, hostnum);
     LOG_INFO(options.info_log,
-        "Added subscriber %llu for Topic(%s)@%" PRIu64,
+        "Added subscriber %llu for Topic(%s,%s)@%" PRIu64,
         origin,
+        topic[0].namespace_id.c_str(),
         topic[0].topic_name.c_str(),
         topic[0].seqno);
   } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
     topic_tailer_->RemoveSubscriber(uuid, hostnum);
     LOG_INFO(options.info_log,
-        "Removed subscriber %llu from Topic(%s)",
+        "Removed subscriber %llu from Topic(%s,%s)",
         origin,
+        topic[0].namespace_id.c_str(),
         topic[0].topic_name.c_str());
   }
 }
@@ -140,10 +142,11 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
   const SequenceNumber prev_seqno = request->GetPrevSequenceNumber();
   const SequenceNumber next_seqno = request->GetSequenceNumber();
   LOG_INFO(options.info_log,
-      "Received data (%.16s)@%" PRIu64 "-%" PRIu64 " for Topic(%s)",
+      "Received data (%.16s)@%" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
       request->GetPayload().ToString().c_str(),
       prev_seqno,
       next_seqno,
+      request->GetNamespaceId().ToString().c_str(),
       request->GetTopicName().ToString().c_str());
 
   // serialize msg
@@ -163,10 +166,10 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
 
       if (st.ok()) {
         LOG_INFO(options.info_log,
-                 "Sent data (%.16s)@%" PRIu64 " for Topic(%s) to %llu",
+                 "Sent data (%.16s)@%" PRIu64 " for %s to %llu",
                  request->GetPayload().ToString().c_str(),
                  request->GetSequenceNumber(),
-                 request->GetTopicName().ToString().c_str(),
+                 uuid.ToString().c_str(),
                  origin);
       } else {
         LOG_WARN(options.info_log,
@@ -178,9 +181,8 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
 
   if (hosts.empty()) {
     LOG_WARN(options.info_log,
-      "No hosts for record in Topic(%s, %s)@%" PRIu64 ": no message sent.",
-      request->GetNamespaceId().ToString().c_str(),
-      request->GetTopicName().ToString().c_str(),
+      "No hosts for record in %s@%" PRIu64 ": no message sent.",
+      uuid.ToString().c_str(),
       request->GetSequenceNumber());
   }
 }
@@ -197,9 +199,10 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = control_tower_->GetOptions();
   LOG_INFO(options.info_log,
-      "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
+      "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
       prev_seqno,
       next_seqno,
+      gap->GetNamespaceId().c_str(),
       gap->GetTopicName().c_str());
 
   for (HostNumber hostnum : hosts) {
@@ -213,9 +216,10 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
 
       if (st.ok()) {
         LOG_INFO(options.info_log,
-                 "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s) to %llu",
+                 "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
                  prev_seqno,
                  next_seqno,
+                 gap->GetNamespaceId().c_str(),
                  gap->GetTopicName().c_str(),
                  origin);
       } else {

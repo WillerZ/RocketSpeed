@@ -123,8 +123,9 @@ void CopilotWorker::ProcessMetadataResponse(const TopicPair& request,
                                             LogID logid,
                                             int worker_id) {
   LOG_INFO(options_.info_log,
-      "Received %ssubscribe response for Topic(%s)",
+      "Received %ssubscribe response for Topic(%s,%s)",
       request.topic_type == MetadataType::mSubscribe ? "" : "un",
+      request.namespace_id.c_str(),
       request.topic_name.c_str());
 
   if (request.topic_type == MetadataType::mUnSubscribe) {
@@ -140,9 +141,10 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
   MessageData* msg = static_cast<MessageData*>(message.get());
   // Get the list of subscriptions for this topic.
   LOG_INFO(options_.info_log,
-      "Copilot received data (%.16s)@%" PRIu64 " for Topic(%s)",
+      "Copilot received data (%.16s)@%" PRIu64 " for Topic(%s,%s)",
       msg->GetPayload().ToString().c_str(),
       msg->GetSequenceNumber(),
+      msg->GetNamespaceId().ToString().c_str(),
       msg->GetTopicName().ToString().c_str());
 
   TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
@@ -212,11 +214,11 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
 
         LOG_INFO(options_.info_log,
                  "Sent data (%.16s)@%" PRIu64 " for ID(%" PRIu64
-                 ") Topic(%s) to %llu",
+                 ") %s to %llu",
                  msg->GetPayload().ToString().c_str(),
                  msg->GetSequenceNumber(),
                  data.GetSubID(),
-                 msg->GetTopicName().ToString().c_str(),
+                 uuid.ToString().c_str(),
                  recipient);
       } else {
         LOG_WARN(options_.info_log,
@@ -236,12 +238,12 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
                                StreamID origin) {
   MessageGap* msg = static_cast<MessageGap*>(message.get());
   // Get the list of subscriptions for this topic.
+  TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
   LOG_INFO(options_.info_log,
-      "Copilot received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
+      "Copilot received gap %" PRIu64 "-%" PRIu64 " for %s",
       msg->GetStartSequenceNumber(),
       msg->GetEndSequenceNumber(),
-      msg->GetTopicName().c_str());
-  TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
+      uuid.ToString().c_str());
   auto it = topics_.find(uuid);
   if (it != topics_.end()) {
     TopicState& topic = it->second;
@@ -305,11 +307,11 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
 
         LOG_INFO(options_.info_log,
                  "Sent gap %" PRIu64 "-%" PRIu64
-                 " for  subscription ID(%" PRIu64 ") Topic(%s) to %llu",
+                 " for  subscription ID(%" PRIu64 ") %s to %llu",
                  msg->GetStartSequenceNumber(),
                  msg->GetEndSequenceNumber(),
                  gap.GetSubID(),
-                 msg->GetTopicName().c_str(),
+                 uuid.ToString().c_str(),
                  recipient);
       } else {
         LOG_WARN(
@@ -346,11 +348,12 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
                                      const LogID logid,
                                      const int worker_id,
                                      const StreamID subscriber) {
+  TopicUUID uuid(namespace_id, topic_name);
   LOG_INFO(options_.info_log,
       "Received subscribe request ID(%" PRIu64
-      ") for Topic(%s)@%" PRIu64 " for %llu",
+      ") for %s@%" PRIu64 " for %llu",
       sub_id,
-      topic_name.c_str(),
+      uuid.ToString().c_str(),
       start_seqno,
       subscriber);
 
@@ -359,7 +362,6 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
       .emplace(sub_id, TopicInfo{topic_name, namespace_id, logid});
 
   // Find/insert topic state.
-  TopicUUID uuid(namespace_id, topic_name);
   auto topic_iter = topics_.find(uuid);
   if (topic_iter == topics_.end()) {
     topic_iter = topics_.emplace(uuid, TopicState(logid)).first;
@@ -821,18 +823,17 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
   stats_.rollcall_writes_total->Add(1);
   if (status.ok()) {
     LOG_INFO(options_.info_log,
-             "Send rollcall write (%ssubscribe) for Topic(%s) in "
-             "namespace %s",
+             "Send rollcall write (%ssubscribe) for Topic(%s,%s)",
              type == MetadataType::mSubscribe ? "" : "un",
-             topic_name.c_str(),
-             namespace_id.c_str());
+             namespace_id.c_str(),
+             topic_name.c_str());
   } else {
     LOG_INFO(options_.info_log,
-             "Failed to send rollcall write (%ssubscribe) for Topic(%s) in "
-             "namespace %s status %s",
+             "Failed to send rollcall write (%ssubscribe) for Topic(%s,%s) "
+             "status %s",
              type == MetadataType::mSubscribe ? "" : "un",
-             topic_name.c_str(),
              namespace_id.c_str(),
+             topic_name.c_str(),
              status.ToString().c_str());
     // If we are unable to write to the rollcall topic and it is a subscription
     // request, then we need to terminate that subscription.

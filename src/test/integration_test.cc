@@ -654,6 +654,7 @@ TEST(IntegrationTest, LostConnection) {
 
   // Restart the cluster, which kills connection.
   cluster.reset();
+  env_->SleepForMicroseconds(200000);
 
   // Send another message while disconnected.
   ASSERT_OK(client->Publish(GuestTenant,
@@ -1270,7 +1271,7 @@ TEST(IntegrationTest, LogAvailability) {
   for (auto handle : subscriptions) {
     client->Unsubscribe(handle);
   }
-  env_->SleepForMicroseconds(100000);
+  env_->SleepForMicroseconds(200000);
 
   ASSERT_EQ(GetNumOpenLogs(ct_cluster[1]->GetControlTower()), 0);
   ASSERT_EQ(GetNumOpenLogs(ct_cluster[0]->GetControlTower()), 0);

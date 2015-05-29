@@ -6,6 +6,7 @@
 #define __STDC_FORMAT_MACROS
 #include "src/copilot/copilot.h"
 #include <map>
+#include <numeric>
 #include <string>
 #include <thread>
 #include <vector>
@@ -123,7 +124,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   MessageData* data = static_cast<MessageData*>(msg.get());
 
   LOG_INFO(options_.info_log,
-      "Received data (%.16s)@%" PRIu64 " in ns(%s) for Topic(%s)",
+      "Received data (%.16s)@%" PRIu64 " for Topic(%s,%s)",
       data->GetPayload().ToString().c_str(),
       data->GetSequenceNumber(),
       data->GetNamespaceId().ToString().c_str(),
@@ -165,11 +166,12 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
     const TopicPair& topic = request->GetTopicInfo()[i];
 
     LOG_INFO(options_.info_log,
-      "Received %s %s for Topic(%s)@%" PRIu64,
+      "Received %s %s for Topic(%s,%s)@%" PRIu64,
       topic.topic_type == MetadataType::mSubscribe
         ? "subscribe" : "unsubscribe",
       request->GetMetaType() == MessageMetadata::MetaType::Request
         ? "request" : "response",
+      topic.namespace_id.c_str(),
       topic.topic_name.c_str(),
       topic.seqno);
 
@@ -208,9 +210,10 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   MessageGap* gap = static_cast<MessageGap*>(msg.get());
 
   LOG_INFO(options_.info_log,
-      "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s)",
+      "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
       gap->GetStartSequenceNumber(),
       gap->GetEndSequenceNumber(),
+      gap->GetNamespaceId().c_str(),
       gap->GetTopicName().c_str());
 
   // map the topic to a logid

@@ -253,6 +253,10 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
     , wake_lock_(wake_lock) {
   using namespace std::placeholders;
 
+  // clang complains the private member wake_lock_ is unused, but we will
+  // use it in the future. This silences the warning.
+  (void)wake_lock_;
+
   // Prepare sharded state.
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     worker_data_.emplace_back(this, i);
