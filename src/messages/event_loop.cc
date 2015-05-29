@@ -962,8 +962,9 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
 
   if (!success) {
     // The queue was full and the write failed.
-    LOG_WARN(info_log_, "The command queue is full");
+    LOG_ERROR(info_log_, "The command queue is full");
     info_log_->Flush();
+    exit(1);
     return Status::NoBuffer();
   }
 

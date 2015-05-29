@@ -27,7 +27,6 @@
 #include "src/util/storage.h"
 
 // Common settings
-DEFINE_int32(worker_queue_size, 1000000, "number of worker commands in flight");
 DEFINE_bool(log_to_stderr, false, "log to stderr (otherwise LOG file)");
 
 // Control tower settings
