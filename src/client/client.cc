@@ -378,7 +378,8 @@ ClientImpl::ClientImpl(ClientOptions options,
                  options_.config,
                  options_.info_log,
                  msg_loop_.get(),
-                 &wake_lock_) {
+                 &wake_lock_)
+    , next_sub_id_(0) {
   LOG_VITAL(info_log_, "Creating Client");
 
   // Setup callbacks.
