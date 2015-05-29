@@ -57,6 +57,13 @@ class CopilotWorker {
    */
   std::string GetTowersForLog(LogID log_id) const;
 
+  /**
+   * Returns human-readable info about all subscriptions.
+   *
+   * @param filter Filter for topic names (uses strstr).
+   */
+  std::string GetSubscriptionInfo(std::string filter) const;
+
  private:
   struct Subscription;
   struct TopicState;

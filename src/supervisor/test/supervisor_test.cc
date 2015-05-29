@@ -143,6 +143,15 @@ TEST(SupervisorTest, TowerLog) {
     DoRequest("info copilot towers_for_log 1\n"));
   ASSERT_EQ("1\n", DoRequest("info copilot log_for_topic guest TowerLog\n"));
 
+  snprintf(expected, sizeof(expected),
+    "Topic(guest,TowerLog).log_id: 1\n"
+    "Topic(guest,TowerLog).subscription_count: 1\n"
+    "Topic(guest,TowerLog).tower[0].next_seqno: %" PRIu64 "\n\n",
+    seqno + 1);
+  ASSERT_EQ(std::string(expected),
+    DoRequest("info copilot subscriptions Tower\n"));
+  ASSERT_EQ("\n", DoRequest("info copilot subscriptions foo\n"));
+
   supervisor->Stop();
   env_->WaitForJoin(supervisor_thread_id);
 }

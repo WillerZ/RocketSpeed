@@ -397,6 +397,20 @@ std::string Copilot::GetInfoSync(std::vector<std::string> args) {
       LogID log_id;
       Status st = options_.log_router->GetLogID(args[1], args[2], &log_id);
       return st.ok() ? std::to_string(log_id) : st.ToString();
+    } else if (args[0] == "subscriptions" && args.size() == 2) {
+      // subscriptions FILTER -- information about topics.
+      std::string result;
+      std::string filter = args[1];
+      Status st =
+        options_.msg_loop->MapReduceSync(
+          [this, filter] (int worker_id) {
+            return workers_[worker_id]->GetSubscriptionInfo(filter);
+          },
+          [] (std::vector<std::string> infos) {
+            return std::accumulate(infos.begin(), infos.end(), std::string());
+          },
+          &result);
+      return st.ok() ? result : st.ToString();
     }
   }
   return "Unknown info for copilot";

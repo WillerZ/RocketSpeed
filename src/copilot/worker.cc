@@ -897,4 +897,33 @@ std::string CopilotWorker::GetTowersForLog(LogID log_id) const {
   return result;
 }
 
+std::string CopilotWorker::GetSubscriptionInfo(std::string filter) const {
+  std::string result;
+  for (const auto& entry : topics_) {
+    char buffer[4096];
+    const TopicUUID& topic = entry.first;
+    const TopicState& state = entry.second;
+    std::string topic_name = topic.ToString();
+    if (!strstr(topic_name.c_str(), filter.c_str())) {
+      continue;
+    }
+    int n = 0;
+    n += snprintf(buffer + n, sizeof(buffer),
+                  "%s.log_id: %" PRIu64 "\n",
+                  topic_name.c_str(), state.log_id);
+    n += snprintf(buffer + n, sizeof(buffer),
+                  "%s.subscription_count: %zu\n",
+                  topic_name.c_str(), state.subscriptions.size());
+    size_t t = 0;
+    for (const TopicState::Tower& tower : state.towers) {
+      n += snprintf(buffer + n, sizeof(buffer),
+                    "%s.tower[%zu].next_seqno: %" PRIu64 "\n",
+                    topic_name.c_str(), t, tower.next_seqno);
+      ++t;
+    }
+    result += buffer;
+  }
+  return result;
+}
+
 }  // namespace rocketspeed
