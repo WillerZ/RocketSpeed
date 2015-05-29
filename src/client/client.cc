@@ -726,7 +726,6 @@ bool ClientImpl::IsNotCopilot(const ClientWorkerData& worker_data,
               "Incorrect message stream: (%llu) expected: (%llu)",
               origin,
               worker_data.copilot_socket.GetStreamID());
-    assert(false);
     return true;
   }
   return false;

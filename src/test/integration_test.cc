@@ -1277,6 +1277,67 @@ TEST(IntegrationTest, LogAvailability) {
   ASSERT_EQ(GetNumOpenLogs(ct_cluster[0]->GetControlTower()), 0);
 }
 
+TEST(IntegrationTest, TowerDeathReconnect) {
+  // Connect to a tower, kill it, bring back up at same host ID, and check that
+  // we reconnect and resub.
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  // RocketSpeed callbacks
+  port::Semaphore msg_received;
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
+    msg_received.Post();
+  };
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+  client->SetDefaultCallbacks(nullptr, receive_callback);
+
+  // Send a message.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            "TowerDeathReconnect",
+                            GuestNamespace,
+                            TopicOptions(),
+                            "message1").status);
+
+  // Listen for the message.
+  ASSERT_TRUE(
+      client->Subscribe(GuestTenant, GuestNamespace, "TowerDeathReconnect", 1));
+
+  // Wait for the message.
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+  ASSERT_TRUE(!msg_received.TimedWait(std::chrono::milliseconds(100)));
+
+  // Stop Control Tower
+  cluster.GetControlTower()->Stop();
+  cluster.GetControlTowerLoop()->Stop();
+
+  // Start new control tower (only) with same host:port.
+  LocalTestCluster::Options new_opts;
+  new_opts.info_log = info_log;
+  new_opts.start_controltower = true;
+  new_opts.start_copilot = false;
+  new_opts.start_pilot = false;
+  LocalTestCluster new_cluster(new_opts);
+  ASSERT_OK(new_cluster.GetStatus());
+
+  // Send another message.
+  ASSERT_OK(client->Publish(GuestTenant,
+                            "TowerDeathReconnect",
+                            GuestNamespace,
+                            TopicOptions(),
+                            "message2").status);
+
+  // Wait for the message.
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

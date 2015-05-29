@@ -124,7 +124,7 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   MessageData* data = static_cast<MessageData*>(msg.get());
 
   LOG_INFO(options_.info_log,
-      "Received data (%.16s)@%" PRIu64 " for Topic(%s,%s)",
+      "Received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
       data->GetPayload().ToString().c_str(),
       data->GetSequenceNumber(),
       data->GetNamespaceId().ToString().c_str(),

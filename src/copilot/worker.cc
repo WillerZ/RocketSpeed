@@ -141,7 +141,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
   MessageData* msg = static_cast<MessageData*>(message.get());
   // Get the list of subscriptions for this topic.
   LOG_INFO(options_.info_log,
-      "Copilot received data (%.16s)@%" PRIu64 " for Topic(%s,%s)",
+      "Copilot received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
       msg->GetPayload().ToString().c_str(),
       msg->GetSequenceNumber(),
       msg->GetNamespaceId().ToString().c_str(),
@@ -528,15 +528,23 @@ void CopilotWorker::ProcessRouterUpdate(
 }
 
 void CopilotWorker::CloseControlTowerStream(StreamID stream) {
+  // List of topics affected by this control tower death.
+  std::vector<TopicUUID> affected_topics;
+
   // Removes upstream connection for affected subscriptions.
   for (auto& uuid_topic : topics_) {
     TopicState& topic = uuid_topic.second;
+    bool affected = false;
     for (auto it = topic.towers.begin(); it != topic.towers.end(); ) {
       if (it->stream->GetStreamID() == stream) {
         it = topic.towers.erase(it);
+        affected = true;
       } else {
         ++it;
       }
+    }
+    if (affected) {
+      affected_topics.push_back(uuid_topic.first);
     }
   }
 
@@ -551,6 +559,13 @@ void CopilotWorker::CloseControlTowerStream(StreamID stream) {
         ++it;
       }
     }
+  }
+
+  // Update subscriptions on affected topics.
+  for (const TopicUUID& uuid : affected_topics) {
+    auto it = topics_.find(uuid);
+    assert(it != topics_.end());
+    UpdateTowerSubscriptions(uuid, it->second);
   }
 }
 
