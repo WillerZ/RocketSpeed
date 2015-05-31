@@ -14,6 +14,7 @@
 #include "src/util/hostmap.h"
 #include "src/util/storage.h"
 #include "src/util/topic_uuid.h"
+#include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 #include "src/controltower/topic.h"
 
@@ -106,6 +107,15 @@ class TopicTailer {
     SequenceNumber to,
     size_t reader_id);
 
+  const Statistics& GetStatistics() const {
+    return stats_.all;
+  }
+
+  /**
+   * Get an estimate of tail seqno for a log, or 0 if unknown.
+   */
+  SequenceNumber GetTailSeqnoEstimate(LogID log_id) const;
+
   /**
    * Get human-readable information about a particular log.
    */
@@ -133,6 +143,11 @@ class TopicTailer {
 
   bool Forward(std::function<void()> command);
 
+  void AddTailSubscriber(const TopicUUID& topic,
+                         HostNumber hostnum,
+                         LogID logid,
+                         SequenceNumber seqno);
+
   ThreadCheck thread_check_;
 
   BaseEnv* env_;
@@ -158,6 +173,67 @@ class TopicTailer {
 
   // Subscription information per topic
   std::unordered_map<LogID, TopicManager> topic_map_;
+
+  struct Stats {
+    Stats() {
+      log_records_received =
+        all.AddCounter("topic_tailer.log_records_received");
+      new_tail_records_sent =
+        all.AddCounter("topic_tailer.new_tail_records_sent");
+      log_records_with_subscriptions =
+        all.AddCounter("topic_tailer.log_records_with_subscriptions");
+      log_records_without_subscriptions =
+        all.AddCounter("topic_tailer.log_records_without_subscriptions");
+      log_records_out_of_order =
+        all.AddCounter("topic_tailer.log_records_out_of_order");
+      bumped_subscriptions =
+        all.AddCounter("topic_tailer.bumped_subscriptions");
+      gap_records_received =
+        all.AddCounter("topic_tailer.gap_records_received");
+      gap_records_out_of_order =
+        all.AddCounter("topic_tailer.gap_records_out_of_order");
+      gap_records_with_subscriptions =
+        all.AddCounter("topic_tailer.gap_records_with_subscriptions");
+      gap_records_without_subscriptions =
+        all.AddCounter("topic_tailer.gap_records_without_subscriptions");
+      benign_gaps_received =
+        all.AddCounter("topic_tailer.benign_gaps_received");
+      malignant_gaps_received =
+        all.AddCounter("topic_tailer.malignant_gaps_received");
+      add_subscriber_requests =
+        all.AddCounter("topic_tailer.add_subscriber_requests");
+      add_subscriber_requests_at_0 =
+        all.AddCounter("topic_tailer.add_subscriber_requests_at_0");
+      add_subscriber_requests_at_0_fast =
+        all.AddCounter("topic_tailer.add_subscriber_requests_at_0_fast");
+      add_subscriber_requests_at_0_slow =
+        all.AddCounter("topic_tailer.add_subscriber_requests_at_0_slow");
+      updated_subscriptions =
+        all.AddCounter("topic_tailer.updated_subscriptions");
+      remove_subscriber_requests =
+        all.AddCounter("topic_tailer.remove_subscriber_requests");
+    }
+
+    Statistics all;
+    Counter* log_records_received;
+    Counter* new_tail_records_sent;
+    Counter* log_records_with_subscriptions;
+    Counter* log_records_without_subscriptions;
+    Counter* log_records_out_of_order;
+    Counter* bumped_subscriptions;
+    Counter* gap_records_received;
+    Counter* gap_records_out_of_order;
+    Counter* gap_records_with_subscriptions;
+    Counter* gap_records_without_subscriptions;
+    Counter* benign_gaps_received;
+    Counter* malignant_gaps_received;
+    Counter* add_subscriber_requests;
+    Counter* add_subscriber_requests_at_0;
+    Counter* add_subscriber_requests_at_0_fast;
+    Counter* add_subscriber_requests_at_0_slow;
+    Counter* updated_subscriptions;
+    Counter* remove_subscriber_requests;
+  } stats_;
 };
 
 }  // namespace rocketspeed

@@ -24,6 +24,7 @@ copilot_port=''
 controltower_port=''
 log_dir="/tmp"
 collect_logs=''
+collect_stats=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 remote_bench=''
@@ -51,7 +52,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,mqtt,subscribe-rate: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,mqtt,subscribe-rate: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -70,6 +71,8 @@ while true; do
       start_servers='true'; remote='true'; shift ;;
     -l | --collect-logs )
       collect_logs='true'; remote='true'; shift ;;
+    --collect-stats )
+      collect_stats='true'; shift ;;
     -n | --messages )
       num_messages="$2"; shift 2 ;;
     -q | --stop-servers )
@@ -201,6 +204,22 @@ function join {
 pilots_csv=$(join , ${pilots[@]})
 copilots_csv=$(join , ${copilots[@]})
 towers_csv=$(join , ${control_towers[@]})
+
+function collect_stats {
+  if [ $remote ]; then
+    echo
+    echo "===== Collecting server stats ====="
+    for host in ${pilots[@]}; do
+      echo stats pilot | nc $host 58800 > "pilot.$host.stats"
+    done
+    for host in ${copilots[@]}; do
+      echo stats copilot | nc $host 58800 > "copilot.$host.stats"
+    done
+    for host in ${control_towers[@]}; do
+      echo stats tower | nc $host 58800 > "tower.$host.stats"
+    done
+  fi
+}
 
 function stop_servers {
   if [ $remote ]; then
@@ -493,6 +512,11 @@ for job in ${jobs[@]}; do
 
   echo "Complete $job in $((end-start)) seconds" | tee -a $report
 done
+
+# Collect stats
+if [ $collect_stats ]; then
+  collect_stats
+fi
 
 # Stop servers if specified
 if [ $stop_servers ]; then

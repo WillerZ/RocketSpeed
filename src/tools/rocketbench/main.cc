@@ -277,7 +277,7 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  std::unordered_map<std::string, SequenceNumber> first_seqno) {
   auto start = std::chrono::steady_clock::now();
   size_t c = 0;
-  auto rate = FLAGS_subscribe_rate / FLAGS_num_threads + 1;
+  auto rate = FLAGS_subscribe_rate;
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     std::string topic_name("benchmark." + std::to_string(i));
     SequenceNumber seqno = 0;   // start sequence number (0 = only new records)

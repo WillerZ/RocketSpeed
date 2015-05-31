@@ -292,7 +292,7 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
 
   // Send FindLatestSeqno request to log tailer.
   auto msg_moved = folly::makeMoveWrapper(std::move(msg));
-  st = log_tailer_->FindLatestSeqno(log_id,
+  auto callback =
     [this, log_id, msg_moved, origin, worker_id]
     (Status status, SequenceNumber seqno) mutable {
       MessageFindTailSeqno* req =
@@ -326,17 +326,33 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
           log_id,
           status.ToString().c_str());
       }
-    });
+    };
 
-  if (st.ok()) {
-    LOG_DEBUG(options_.info_log,
-      "Sent FindLatestSeqno for Log(%" PRIu64 ")",
-      log_id);
-  } else {
-    LOG_WARN(options_.info_log,
-      "FindLatestSeqno for Log(%" PRIu64 ") failed with: %s",
-      log_id,
-      st.ToString().c_str());
+  const int room = LogIDToRoom(log_id);
+  std::unique_ptr<Command> cmd(
+    new ExecuteCommand([this, room, log_id, callback] () mutable {
+      SequenceNumber seqno = topic_tailer_[room]->GetTailSeqnoEstimate(log_id);
+      if (seqno) {
+        callback(Status::OK(), seqno);
+      } else {
+        Status status = log_tailer_->FindLatestSeqno(log_id, callback);
+        if (status.ok()) {
+          LOG_DEBUG(options_.info_log,
+            "Sent FindLatestSeqno for Log(%" PRIu64 ")",
+            log_id);
+        } else {
+          LOG_ERROR(options_.info_log,
+            "FindLatestSeqno for Log(%" PRIu64 ") failed with: %s",
+            log_id,
+            status.ToString().c_str());
+        }
+      }
+    }));
+  st = options_.msg_loop->SendCommand(std::move(cmd), room);
+  if (!st.ok()) {
+    LOG_ERROR(options_.info_log,
+      "Failed to enqueue command to find latest seqno on Log(%" PRIu64 "): %s",
+      log_id, st.ToString().c_str());
   }
 }
 
@@ -386,7 +402,10 @@ HostNumber ControlTower::InsertHost(StreamID origin, int worker_id) {
 }
 
 Statistics ControlTower::GetStatisticsSync() {
-  return options_.msg_loop->GetStatisticsSync();
+  Statistics stats = options_.msg_loop->AggregateStatsSync(
+    [this] (int i) { return topic_tailer_[i]->GetStatistics(); });
+  stats.Aggregate(options_.msg_loop->GetStatisticsSync());
+  return stats;
 }
 
 std::string ControlTower::GetInfoSync(std::vector<std::string> args) {

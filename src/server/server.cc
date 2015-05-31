@@ -34,7 +34,7 @@ DEFINE_bool(tower, false, "start the control tower");
 DEFINE_int32(tower_port,
              rocketspeed::ControlTower::DEFAULT_PORT,
              "tower port number");
-DEFINE_int32(tower_workers, 16, "tower rooms");
+DEFINE_int32(tower_workers, 40, "tower rooms");
 DEFINE_int64(tower_max_subscription_lag, 10000,
              "max seqno lag on subscriptions");
 
@@ -43,7 +43,7 @@ DEFINE_bool(pilot, false, "start the pilot");
 DEFINE_int32(pilot_port,
              rocketspeed::Pilot::DEFAULT_PORT,
              "pilot port number");
-DEFINE_int32(pilot_workers, 16, "pilot worker threads");
+DEFINE_int32(pilot_workers, 40, "pilot worker threads");
 DEFINE_double(FAULT_pilot_corrupt_extra_probability, 0.0,
   "probability of writing a corrupt message to the log after each publish");
 
@@ -52,7 +52,7 @@ DEFINE_bool(copilot, false, "start the copilot");
 DEFINE_int32(copilot_port,
              rocketspeed::Copilot::DEFAULT_PORT,
              "copilot port number");
-DEFINE_int32(copilot_workers, 16, "copilot worker threads");
+DEFINE_int32(copilot_workers, 40, "copilot worker threads");
 DEFINE_string(control_towers,
               "localhost",
               "comma-separated control tower hostnames");

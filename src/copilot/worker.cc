@@ -893,7 +893,7 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
       } else {
         stats_.out_of_order_seqno_from_tower->Add(1);
       }
-      break;
+      return;
     }
   }
   stats_.message_from_unexpected_tower->Add(1);

@@ -1299,16 +1299,18 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   ASSERT_OK(Client::Create(std::move(options), &client));
   client->SetDefaultCallbacks(nullptr, receive_callback);
 
+  // Listen for messages.
+  ASSERT_TRUE(
+      client->Subscribe(GuestTenant, GuestNamespace, "TowerDeathReconnect", 0));
+
+  env_->SleepForMicroseconds(100000);
+
   // Send a message.
   ASSERT_OK(client->Publish(GuestTenant,
                             "TowerDeathReconnect",
                             GuestNamespace,
                             TopicOptions(),
                             "message1").status);
-
-  // Listen for the message.
-  ASSERT_TRUE(
-      client->Subscribe(GuestTenant, GuestNamespace, "TowerDeathReconnect", 1));
 
   // Wait for the message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
