@@ -425,7 +425,7 @@ Status LogReader::StartReading(const TopicUUID& topic,
   if (it == log_state.topics.end()) {
     TopicState topic_state;
     topic_state.next_seqno = seqno;
-    topic_state.num_subscribers = 1;
+    topic_state.num_subscribers = 0;
     it = log_state.topics.emplace_front(topic, topic_state).first;
     reseek = true;
   } else {
@@ -481,28 +481,26 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
     return Status::InternalError("Not reading this log");
   } else {
     LogState& log_state = log_it->second;
-    if (log_state.num_subscribers == 1) {
+    log_state.num_subscribers--;
+    auto it = log_state.topics.find(topic);
+    assert(it != log_state.topics.end());
+    if (--it->second.num_subscribers == 0) {
+      LOG_INFO(info_log_,
+        "No more subscribers on %s for Log(%" PRIu64 ")",
+        topic.ToString().c_str(),
+        log_id);
+      log_state.topics.erase(it);
+    }
+
+    if (log_state.num_subscribers == 0) {
       // Last subscriber for this log, so stop reading.
       st = tailer_->StopReading(log_id, reader_id_);
       if (st.ok()) {
         LOG_INFO(info_log_,
           "No more subscribers on Log(%" PRIu64 ")",
           log_id);
-        log_state.num_subscribers--;
-        assert(log_state.num_subscribers == 0);
+        assert(log_state.topics.empty());
         log_state_.erase(log_it);
-      }
-    } else {
-      // More subscribers, just decrement the counter and continue.
-      log_state.num_subscribers--;
-      auto it = log_state.topics.find(topic);
-      assert(it != log_state.topics.end());
-      if (--it->second.num_subscribers == 0) {
-        LOG_INFO(info_log_,
-          "No more subscribers on %s for Log(%" PRIu64 ")",
-          topic.ToString().c_str(),
-          log_id);
-        log_state.topics.erase(it);
       }
     }
   }
