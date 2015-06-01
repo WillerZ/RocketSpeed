@@ -216,6 +216,11 @@ void AsyncReader::doNotDecodeBufferedWrites() {
   assert(false);  // not implemented
 }
 
+void AsyncReader::skipPartiallyTrimmedSections() {
+  // Mock implementation doesn't need to do anything here.
+  // There are no partially trimmed sections in our logs.
+}
+
 AsyncReaderImpl *AsyncReader::impl() {
   return static_cast<AsyncReaderImpl*>(this);
 }

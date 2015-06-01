@@ -286,13 +286,11 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
       gap_cb(record);
     });
 
-#ifdef USE_LOGDEVICE
   // LogDevice trims record non-deterministically across storage nodes, so
   // the logs are heavily fragmented with gaps in the grey area where some
   // nodes have trimmed a record, and others haven't. This tells the reader to
   // eagerly use the highest trim point of any node.
   reader_->skipPartiallyTrimmedSections();
-#endif
 }
 
 AsyncLogDeviceReader::~AsyncLogDeviceReader() {

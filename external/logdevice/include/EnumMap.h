@@ -16,13 +16,13 @@ namespace facebook { namespace logdevice {
 template<typename Enum, typename Val>
 class EnumMap {
 public:
-  EnumMap() : map_({}) { setValues(); }
+  EnumMap() : map_() { setValues(); }
 
   const Val& operator[](int n) {
-    if (n >= 0 && n < static_cast<int>(Enum::MAX) && map_[n].valid()) {
+    if (n >= 0 && n < static_cast<int>(Enum::MAX)) {
       return map_[n];
     } else {
-      return Val::invalid;
+      return invalidValue();
     }
   }
 
@@ -40,6 +40,11 @@ private:
 
   // sets map values. This function gets specialized in each class
   void setValues();
+
+  // Can be specialized.
+  static const Val& invalidValue() {
+    return Val::invalid;
+  }
 
   std::array<Val, static_cast<int>(Enum::MAX)> map_;
 };

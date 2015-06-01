@@ -63,14 +63,23 @@ struct LogRecord {
  */
 struct DataRecordAttributes {
   DataRecordAttributes() { }
-  DataRecordAttributes(lsn_t lsn, std::chrono::milliseconds timestamp) :
-    lsn(lsn), timestamp(timestamp) {}
+  DataRecordAttributes(lsn_t lsn,
+                       std::chrono::milliseconds timestamp,
+                       int batch_offset = 0) :
+    lsn(lsn),
+    timestamp(timestamp),
+    batch_offset(batch_offset) {}
 
   lsn_t   lsn;   // log sequence number (LSN) of this record
 
   // timestamp in milliseconds since epoch assigned to this record by a
   // LogDevice server
   std::chrono::milliseconds timestamp;
+
+  // If the record is part of a batch written through BufferedWriter, this
+  // contains the record's 0-based index within the batch.  (All records that
+  // get batched into a single write by BufferedWriter have the same LSN.)
+  int batch_offset;
 };
 
 
@@ -83,10 +92,11 @@ struct DataRecord : public LogRecord {
   DataRecord() { }
   DataRecord(logid_t logid, const Payload& payload,
              lsn_t lsn=LSN_INVALID,
-             std::chrono::milliseconds timestamp=std::chrono::milliseconds{0}) :
+             std::chrono::milliseconds timestamp=std::chrono::milliseconds{0},
+             int batch_offset = 0) :
     LogRecord(logid),
     payload(payload),
-    attrs(lsn, timestamp) {}
+    attrs(lsn, timestamp, batch_offset) {}
 
   Payload payload;             // payload of this record
   DataRecordAttributes attrs;  // attributes of this record. Not const,

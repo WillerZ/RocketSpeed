@@ -151,6 +151,20 @@ class AsyncReader {
   void forceNoSingleCopyDelivery();
 
   /**
+   * If called, when reading a section of the log that has been partially
+   * trimmed, the reader will prefer to deliver a large trim gap for the
+   * entire section.
+   *
+   * The default behaviour is to deliver whatever records are still
+   * available, which (because of LogDevice's distributed and nondeterministic
+   * nature) results in an interleaved stream of records and TRIM gaps, which
+   * is undesirable in some cases.
+   *
+   * See doc/partially-trimmed.md for a detailed explanation.
+   */
+  void skipPartiallyTrimmedSections();
+
+  /**
    * Checks if the connection to the LogDevice cluster for a log appears
    * healthy.  When a read() call times out, this can be used to make an
    * informed guess whether this is because there is no data or because there

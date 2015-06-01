@@ -9,6 +9,7 @@
 #include "logdevice/include/AsyncReader.h"
 #include "logdevice/include/ClientSettings.h"
 #include "logdevice/include/Err.h"
+#include "logdevice/include/LogGroupAttributes.h"
 #include "logdevice/include/Reader.h"
 #include "logdevice/include/Record.h"
 #include "logdevice/include/types.h"
@@ -377,6 +378,17 @@ public:
    */
   std::pair<logid_t, logid_t> getLogRangeByName(const std::string& name)
                                                                      noexcept;
+
+  /**
+   * Looks up metadata of a log group by its name as specified in this Client's
+   * configuration.
+   *
+   * @return  If configuration has a JSON object in the "logs" section with
+   *          "name" attribute @param name, returns the LogGroupAttributes
+   *          object that contains the attributes for that entry.
+   */
+  std::unique_ptr<LogGroupAttributes>
+    getLogGroupAttributes(const std::string& name) noexcept;
 
   /**
    * @return  on success returns the log id at offset @param offset in log
