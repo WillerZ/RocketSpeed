@@ -147,6 +147,9 @@ class MsgLoopBase {
   // Retrieves the worker ID for the currently running thread.
   virtual int GetThreadWorkerIndex() const = 0;
 
+  // Get the size of the message queue for worker_id.
+  virtual size_t GetQueueSize(int worker_id) const = 0;
+
   /**
    * Waits until the message loop has run, or failed to start. If the loop
    * started and has subsequently stopped, the status will still be OK().
@@ -266,7 +269,14 @@ Status MsgLoopBase::MapReduceSync(MapFunc map,
     return st;
   }
   if (!done->TimedWait(timeout)) {
-    return Status::TimedOut();
+    std::string msg = "Queue sizes = ";
+    for (int i = 0; i < GetNumWorkers(); ++i) {
+      msg += std::to_string(GetQueueSize(i));
+      if (i != GetNumWorkers() - 1) {
+        msg += + ", ";
+      }
+    }
+    return Status::TimedOut(msg);
   }
   *out = std::move(*result);
   return Status::OK();
@@ -293,7 +303,8 @@ Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
     return st;
   }
   if (!done->TimedWait(timeout)) {
-    return Status::TimedOut();
+    const size_t queue_size = GetQueueSize(worker_id);
+    return Status::TimedOut("Queue size = " + std::to_string(queue_size));
   }
   *out = std::move(*result);
   return Status::OK();

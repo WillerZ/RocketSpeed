@@ -52,8 +52,9 @@ Status Status::Unauthorized(const std::string msg,
   return Status(Code::kInternal, msg, msg2);
 }
 
-Status Status::TimedOut() {
-  return Status(Code::kTimedOut);
+Status Status::TimedOut(const std::string msg,
+                        const std::string msg2) {
+  return Status(Code::kTimedOut, msg, msg2);
 }
 
 Status Status::NoBuffer() {

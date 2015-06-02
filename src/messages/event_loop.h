@@ -252,6 +252,11 @@ class EventLoop {
    */
   int GetNumClients() const;
 
+  /** @return Current size of command queue. */
+  size_t GetQueueSize() const {
+    return command_queue_.sizeGuess();
+  }
+
   /**
    * Waits until the event loop is running.
    *

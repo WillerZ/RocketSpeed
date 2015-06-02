@@ -51,6 +51,10 @@ struct MultiProducerQueue {
     return queue_.read(record);
   }
 
+  size_t sizeGuess() const {
+    return queue_.sizeGuess();
+  }
+
  private:
   folly::ProducerConsumerQueue<T> queue_;
   std::mutex mutex_;

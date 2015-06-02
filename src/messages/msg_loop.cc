@@ -162,6 +162,10 @@ void MsgLoop::SetThreadWorkerIndex(int worker_index) {
   }
 }
 
+size_t MsgLoop::GetQueueSize(int worker_id) const {
+  return event_loops_[worker_id]->GetQueueSize();
+}
+
 Status MsgLoop::Initialize() {
   for (auto& event_loop : event_loops_) {
     Status st = event_loop->Initialize();

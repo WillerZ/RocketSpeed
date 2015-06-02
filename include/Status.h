@@ -44,7 +44,8 @@ class Status {
   static Status Unauthorized(const std::string msg,
                              const std::string msg2 = "");
 
-  static Status TimedOut();
+  static Status TimedOut(const std::string msg = "",
+                         const std::string msg2 = "");
 
   static Status NoBuffer();
 

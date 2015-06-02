@@ -719,6 +719,27 @@ TEST(Messaging, GatherTest) {
   ASSERT_EQ(n, 45); // 45 = 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9
 }
 
+TEST(Messaging, TimeoutTest) {
+  // Initialize, but don't start loop.
+  MsgLoop loop(env_, env_options_, -1, 4, info_log_, "loop");
+  ASSERT_OK(loop.Initialize());
+
+  int result = 0;
+  Status st = loop.WorkerRequestSync([](){ return 1; },
+                                     2,
+                                     &result,
+                                     std::chrono::seconds(1));
+  ASSERT_TRUE(st.IsTimedOut());
+  ASSERT_EQ(st.ToString(), "Timed out: Queue size = 1");
+
+  st = loop.MapReduceSync([](int) { return 1; },
+                          [](std::vector<int>) { return 1; },
+                          &result,
+                          std::chrono::seconds(1));
+  ASSERT_TRUE(st.IsTimedOut());
+  ASSERT_EQ(st.ToString(), "Timed out: Queue sizes = 1, 1, 2, 1");
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

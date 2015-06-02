@@ -146,6 +146,8 @@ class MsgLoop : public MsgLoopBase {
   // Will assert if called from a non-EventLoop thread.
   int GetThreadWorkerIndex() const;
 
+  size_t GetQueueSize(int worker_id) const override;
+
   Status WaitUntilRunning(std::chrono::seconds timeout =
                             std::chrono::seconds(10));
 
