@@ -22,30 +22,24 @@ class Status {
   static Status OK();
 
   /// Return error status of an appropriate type.
-  static Status NotFound(const std::string& msg, const std::string& msg2 = "");
+  static Status NotFound(std::string msg);
 
   /// Fast path for not found without malloc;
   static Status NotFound();
 
-  static Status NotSupported(const std::string msg,
-                             const std::string msg2 = "");
+  static Status NotSupported(std::string msg);
 
-  static Status InvalidArgument(const std::string msg,
-                                const std::string msg2 = "");
+  static Status InvalidArgument(std::string msg);
 
-  static Status IOError(const std::string msg,
-                        const std::string msg2 = "");
+  static Status IOError(std::string msg);
 
   static Status NotInitialized();
 
-  static Status InternalError(const std::string msg,
-                              const std::string msg2 = "");
+  static Status InternalError(std::string msg);
 
-  static Status Unauthorized(const std::string msg,
-                             const std::string msg2 = "");
+  static Status Unauthorized(std::string msg);
 
-  static Status TimedOut(const std::string msg = "",
-                         const std::string msg2 = "");
+  static Status TimedOut(std::string msg = "");
 
   static Status NoBuffer();
 
@@ -101,8 +95,9 @@ class Status {
   std::string state_;
 
   explicit Status(Code code) : code_(code), state_("") { }
-  Status(Code code, const std::string msg, const std::string msg2) :
-    code_(code), state_(msg + msg2) {
+
+  Status(Code code, std::string msg) :
+    code_(code), state_(std::move(msg)) {
   }
 };
 

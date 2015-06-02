@@ -42,7 +42,7 @@ class ErrorEnv : public EnvWrapper {
     result->reset();
     if (writable_file_error_) {
       ++num_writable_file_errors_;
-      return Status::IOError(fname, "fake error");
+      return Status::IOError(fname + ": fake error");
     }
     return target()->NewWritableFile(fname, result, soptions);
   }

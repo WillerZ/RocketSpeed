@@ -84,7 +84,7 @@ Status FileStorage::Snapshot::Commit() {
 
   // Commit snapshot.
   if (std::rename(temp_path_.c_str(), final_path_.c_str()) != 0) {
-    return Status::IOError("Snapshot failed when committing state: ",
+    return Status::IOError("Snapshot failed when committing state: " +
                            std::string(strerror(errno)));
   }
   return Status::OK();
@@ -206,7 +206,7 @@ Status FileStorage::CreateSnapshot(
   std::string temp_path;
   int fd = OpenNewTempFile(file_path_, &temp_path);
   if (fd < 0) {
-    return Status::IOError("Cannot open: " + temp_path, strerror(errno));
+    return Status::IOError("Cannot open: " + temp_path + strerror(errno));
   }
   DescriptorEvent descriptor(fd);
   fd = -1;

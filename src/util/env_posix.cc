@@ -110,7 +110,7 @@ static std::set<std::string> lockedFiles;
 static port::Mutex mutex_lockedFiles;
 
 static Status IOError(const std::string& context, int err_number) {
-  return Status::IOError(context, strerror(err_number));
+  return Status::IOError(context + ": " + strerror(err_number));
 }
 
 #ifdef NDEBUG

@@ -14,8 +14,8 @@ Status::Status() : code_(Code::kOk), state_("") { }
 Status Status::OK() { return Status(); }
 
 // Return error status of an appropriate type.
-Status Status::NotFound(const std::string& msg, const std::string& msg2) {
-  return Status(Code::kNotFound, msg, msg2);
+Status Status::NotFound(std::string msg) {
+  return Status(Code::kNotFound, std::move(msg));
 }
 
 // Fast path for not found without malloc;
@@ -23,38 +23,32 @@ Status Status::NotFound() {
   return Status(Code::kNotFound);
 }
 
-Status Status::NotSupported(const std::string msg,
-                            const std::string msg2) {
-  return Status(Code::kNotSupported, msg, msg2);
+Status Status::NotSupported(std::string msg) {
+  return Status(Code::kNotSupported, std::move(msg));
 }
 
-Status Status::InvalidArgument(const std::string msg,
-                              const std::string msg2) {
-  return Status(Code::kInvalidArgument, msg, msg2);
+Status Status::InvalidArgument(std::string msg) {
+  return Status(Code::kInvalidArgument, std::move(msg));
 }
 
-Status Status::IOError(const std::string msg,
-                       const std::string msg2) {
-  return Status(Code::kIOError, msg, msg2);
+Status Status::IOError(std::string msg) {
+  return Status(Code::kIOError, std::move(msg));
 }
 
 Status Status::NotInitialized() {
   return Status(Code::kNotInitialized);
 }
 
-Status Status::InternalError(const std::string msg,
-                            const std::string msg2) {
-  return Status(Code::kInternal, msg, msg2);
+Status Status::InternalError(std::string msg) {
+  return Status(Code::kInternal, std::move(msg));
 }
 
-Status Status::Unauthorized(const std::string msg,
-                            const std::string msg2) {
-  return Status(Code::kInternal, msg, msg2);
+Status Status::Unauthorized(std::string msg) {
+  return Status(Code::kInternal, std::move(msg));
 }
 
-Status Status::TimedOut(const std::string msg,
-                        const std::string msg2) {
-  return Status(Code::kTimedOut, msg, msg2);
+Status Status::TimedOut(std::string msg) {
+  return Status(Code::kTimedOut, std::move(msg));
 }
 
 Status Status::NoBuffer() {

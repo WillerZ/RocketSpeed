@@ -259,7 +259,8 @@ class SocketEvent {
           event_loop_->info_log_->Flush();
           if (errno != EAGAIN && errno != EWOULDBLOCK) {
             // write error, close connection.
-            return Status::IOError("write call failed ", std::to_string(errno));
+            return Status::IOError("write call failed: " +
+                                   std::to_string(errno));
           }
           return Status::OK();
         }
@@ -320,7 +321,8 @@ class SocketEvent {
         if (n == -1 || (n == 0 && total_read == 0)) {
           if (!(n == -1 && errno == EAGAIN)) {
             // Read error, close connection.
-            return Status::IOError("read call failed ", std::to_string(errno));
+            return Status::IOError("read call failed: " +
+                                   std::to_string(errno));
           }
           return Status::OK();
         }
@@ -352,7 +354,7 @@ class SocketEvent {
       if (n == -1 || (n == 0 && total_read == 0)) {
         if (!(n == -1 && errno == EAGAIN)) {
           // Read error, close connection.
-          return Status::IOError("read call failed ", std::to_string(errno));
+          return Status::IOError("read call failed: " + std::to_string(errno));
         }
         return Status::OK();
       }

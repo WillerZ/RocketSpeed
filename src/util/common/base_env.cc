@@ -91,7 +91,7 @@ class SequentialFileImpl : public SequentialFile {
         clearerr(file_);
       } else {
         // A partial read with an error: return a non-ok status
-        s = Status::IOError(filename_, strerror(errno));
+        s = Status::IOError(filename_ + ": " + strerror(errno));
       }
     }
     return s;
@@ -99,7 +99,7 @@ class SequentialFileImpl : public SequentialFile {
 
   Status Skip(uint64_t n) {
     if (fseek(file_, n, SEEK_CUR)) {
-      return Status::IOError(filename_, strerror(errno));
+      return Status::IOError(filename_ + ": " + strerror(errno));
     }
     return Status::OK();
   }
@@ -114,7 +114,7 @@ Status BaseEnv::NewSequentialFile(const std::string& fname,
     f = fopen(fname.c_str(), "r");
   } while (f == nullptr && errno == EINTR);
   if (f == nullptr) {
-    return Status::IOError(fname, strerror(errno));
+    return Status::IOError(fname + ": " + strerror(errno));
   } else {
     int fd = fileno(f);
     if (options.set_fd_cloexec) {
