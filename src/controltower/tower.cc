@@ -437,6 +437,24 @@ std::string ControlTower::GetInfoSync(std::vector<std::string> args) {
           },
           &result);
       return st.ok() ? result : st.ToString();
+    } else if (args[0] == "tail_seqno" && args.size() == 2) {
+      // tail_seqno n  -- find tail seqno for log n.
+      char* end = nullptr;
+      const LogID log_id { strtoul(&*args[1].begin(), &end, 10) };
+      auto done = std::make_shared<port::Semaphore>();
+      auto result = std::make_shared<SequenceNumber>();
+      auto callback = [&done, &result](Status status, SequenceNumber seqno) {
+        *result = seqno;
+        done->Post();
+      };
+      Status st = log_tailer_->FindLatestSeqno(log_id, callback);
+      if (st.ok()) {
+        if (done->TimedWait(std::chrono::seconds(5))) {
+          return std::to_string(*result);
+        }
+        st = Status::TimedOut();
+      }
+      return st.ToString();
     }
   }
   return "Unknown info for control tower";

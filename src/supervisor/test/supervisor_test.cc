@@ -152,6 +152,10 @@ TEST(SupervisorTest, TowerLog) {
     DoRequest("info copilot subscriptions Tower\n"));
   ASSERT_EQ("\n", DoRequest("info copilot subscriptions foo\n"));
 
+  ASSERT_EQ(std::to_string(seqno + 1) + "\n",
+    DoRequest("info tower tail_seqno 1\n"));
+
+
   supervisor->Stop();
   env_->WaitForJoin(supervisor_thread_id);
 }
