@@ -174,6 +174,9 @@ class TopicTailer {
   // Subscription information per topic
   std::unordered_map<LogID, TopicManager> topic_map_;
 
+  // Cached tail sequence number per log.
+  std::unordered_map<LogID, SequenceNumber> tail_seqno_cached_;
+
   struct Stats {
     Stats() {
       log_records_received =

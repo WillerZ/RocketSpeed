@@ -508,7 +508,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
 
   { // Should not receive any of the messages sent while it unsubscribed.
     std::vector<std::string> expected = {"3", "4", "5", "9", "10", "11"};
-    ASSERT_TRUE(received == expected);
+    ASSERT_EQ(received, expected);
   }
 }
 

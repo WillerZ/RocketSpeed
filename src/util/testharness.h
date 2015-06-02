@@ -25,6 +25,33 @@ operator<<(std::ostream& os, T enum_value) {
   return os << static_cast<typename std::underlying_type<T>::type>(enum_value);
 }
 
+/**
+ * Generic pretty-printing. Uses operator<<.
+ */
+template <typename T>
+inline std::string PrettyPrint(const T& value) {
+  std::ostringstream ss;
+  ss << value;
+  return ss.str();
+}
+
+/**
+ * Pretty printing for vectors.
+ */
+template <typename T>
+inline std::string PrettyPrint(const std::vector<T>& container) {
+  std::ostringstream ss;
+  ss << "{";
+  for (auto it = container.begin(); it != container.end(); ++it) {
+    if (it != container.begin()) {
+      ss << ", ";
+    }
+    ss << PrettyPrint(*it);
+  }
+  ss << "}";
+  return ss.str();
+}
+
 namespace rocketspeed {
 namespace test {
 
@@ -94,7 +121,7 @@ class Tester {
   template <class X, class Y>                           \
   Tester& name(const X& x, const Y& y) {                \
     if (!(x op y)) {                                   \
-      ss_ << " failed: " << x << (" " #op " ") << y;    \
+      ss_ << " failed: " << PrettyPrint(x) << (" " #op " ") << PrettyPrint(y); \
       Fail();                                      \
     }                                                   \
     return *this;                                       \
