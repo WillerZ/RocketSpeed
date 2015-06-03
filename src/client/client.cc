@@ -292,10 +292,12 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   ClientWorkerData(ClientWorkerData&&) = delete;
   ClientWorkerData& operator=(ClientWorkerData&&) = delete;
 
-  ClientWorkerData() {}
+  ClientWorkerData() : copilot_socket_valid_(false) {}
 
   /** Stream socket used by this worker to talk to the copilot. */
   StreamSocket copilot_socket;
+  /** Determines whether copilot socket is valid. */
+  bool copilot_socket_valid_;
   /** All subscriptions served by this worker. */
   std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
   /** A set of subscriptions pending subscribe message being sent out. */
@@ -403,15 +405,6 @@ ClientImpl::ClientImpl(ClientOptions options,
 
   // Create sharded state.
   worker_data_.reset(new ClientWorkerData[msg_loop_->GetNumWorkers()]);
-
-  // Initialise stream socket for each worker, each of them is independent.
-  HostId copilot;
-  Status st = options_.config->GetCopilot(&copilot);
-  assert(st.ok());  // TODO(pja) : handle failures
-  for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    worker_data_[i].copilot_socket = StreamSocket(
-        msg_loop_->CreateOutboundStream(copilot.ToClientId(), i));
-  }
 
   msg_loop_->RegisterCallbacks(callbacks);
 }
@@ -721,8 +714,14 @@ void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
 
 bool ClientImpl::IsNotCopilot(const ClientWorkerData& worker_data,
                               StreamID origin) {
+  if (!worker_data.copilot_socket_valid_) {
+    LOG_DEBUG(info_log_,
+              "Unexpected message on stream: (%llu), no valid stream",
+              origin);
+    return true;
+  }
   if (worker_data.copilot_socket.GetStreamID() != origin) {
-    LOG_ERROR(info_log_,
+    LOG_DEBUG(info_log_,
               "Incorrect message stream: (%llu) expected: (%llu)",
               origin,
               worker_data.copilot_socket.GetStreamID());
@@ -739,6 +738,41 @@ void ClientImpl::SendPendingRequests() {
   if (worker_data.pending_subscribes_.empty() &&
       worker_data.pending_terminations_.empty()) {
     return;
+  }
+
+  // Check if we have a valid socket to the Copilot, recreate it if not.
+  if (!worker_data.copilot_socket_valid_) {
+    // Since we're not connected to the Copilot, all subscriptions were
+    // terminated, so we don't need to send corresponding unsubscribes.
+    // We might be disconnected and still have some pending unsubscribes, as the
+    // application can terminate subscription while the client is reconnecting.
+    worker_data.pending_terminations_.clear();
+
+    // If we only had pending unsubscribes, there is no point reconnecting.
+    if (worker_data.pending_subscribes_.empty()) {
+      return;
+    }
+
+    // Get the copilot's address.
+    HostId copilot;
+    Status st = options_.config->GetCopilot(&copilot);
+    if (!st.ok()) {
+      LOG_WARN(info_log_,
+               "Failed to obtain Copilot address: %s",
+               st.ToString().c_str());
+      // We'll try to obtain the address and reconnect on next occasion.
+      return;
+    }
+
+    // And create socket to it.
+    worker_data.copilot_socket =
+        msg_loop_->CreateOutboundStream(copilot.ToClientId(), worker_id);
+    worker_data.copilot_socket_valid_ = true;
+
+    LOG_INFO(info_log_,
+             "Reconnected to %s on stream %llu",
+             copilot.ToString().c_str(),
+             worker_data.copilot_socket.GetStreamID());
   }
 
   // If we have no subscriptions and some pending requests, close the
@@ -759,11 +793,11 @@ void ClientImpl::SendPendingRequests() {
       LOG_INFO(info_log_,
                "Closed stream (%llu) with no active subscriptions",
                worker_data.copilot_socket.GetStreamID());
-      // All unsubscribe requests were propagated.
+      // All unsubscribe requests were synced.
       worker_data.pending_terminations_.clear();
-      // Allocate new stream, if we were to subscribe in the future.
-      worker_data.copilot_socket = msg_loop_->CreateOutboundStream(
-          worker_data.copilot_socket.GetDestination(), worker_id);
+      // Since we've sent goodbye message, we need to recreate socket when
+      // sending the next message.
+      worker_data.copilot_socket_valid_ = false;
     } else {
       LOG_WARN(info_log_,
                "Failed to close stream (%llu) with no active subscrions",
@@ -941,25 +975,18 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (worker_data.copilot_socket.GetStreamID() != origin) {
+  if (IsNotCopilot(worker_data, origin)) {
     // It might still be addressed to the publisher.
     publisher_.ProcessGoodbye(std::move(msg), origin);
     return;
   }
 
-  // Get the copilot's address.
-  HostId copilot;
-  Status st = options_.config->GetCopilot(&copilot);
-  assert(st.ok());  // TODO(pja) : handle failures
+  LOG_WARN(info_log_, "Received goodbye message on (%llu)", origin);
+  // Mark socket as broken.
+  worker_data.copilot_socket_valid_ = false;
 
-  // And create socket to it.
-  worker_data.copilot_socket =
-      msg_loop_->CreateOutboundStream(copilot.ToClientId(), worker_id);
-
-  LOG_INFO(info_log_,
-           "Reconnected to %s on stream %llu",
-           copilot.ToString().c_str(),
-           worker_data.copilot_socket.GetStreamID());
+  // Clear all pending unsubscribe requests.
+  worker_data.pending_terminations_.clear();
 
   // Reissue all subscriptions.
   for (auto& entry : worker_data.subscriptions_) {
@@ -967,6 +994,7 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
     // Mark subscription as pending.
     worker_data.pending_subscribes_.emplace(sub_id);
   }
+
   SendPendingRequests();
 }
 
