@@ -407,6 +407,9 @@ ClientImpl::ClientImpl(ClientOptions options,
   worker_data_.reset(new ClientWorkerData[msg_loop_->GetNumWorkers()]);
 
   msg_loop_->RegisterCallbacks(callbacks);
+  msg_loop_->RegisterTimerCallback(
+      std::bind(&ClientImpl::SendPendingRequests, this),
+      options_.timer_period);
 }
 
 void ClientImpl::SetDefaultCallbacks(SubscribeCallback subscription_callback,

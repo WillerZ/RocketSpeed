@@ -15,7 +15,8 @@ namespace rocketspeed {
 ClientOptions::ClientOptions()
     : env(ClientEnv::Default())
     , num_workers(1)
-    , close_connection_with_no_subscription(true) {
+    , close_connection_with_no_subscription(true)
+    , timer_period(200) {
 }
 
 }  // namespace rocketspeed

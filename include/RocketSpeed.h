@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -77,6 +78,11 @@ class ClientOptions {
   // trigger disconnection.
   // Default: true
   bool close_connection_with_no_subscription;
+
+  // Period of internal client clock. Determines resolution of backoff and rate
+  // limiting time measurements.
+  // Default: 200 ms
+  std::chrono::milliseconds timer_period;
 
   /** Creates options with default values. */
   ClientOptions();
