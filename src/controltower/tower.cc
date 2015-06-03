@@ -154,7 +154,8 @@ Status ControlTower::Initialize() {
     }
   };
 
-  const size_t num_readers = opt.msg_loop->GetNumWorkers();
+  const size_t num_rooms = opt.msg_loop->GetNumWorkers();
+  const size_t num_readers = num_rooms * opt.readers_per_room;
   st = log_tailer_->Initialize(std::move(on_record),
                                std::move(on_gap),
                                num_readers);
@@ -164,7 +165,7 @@ Status ControlTower::Initialize() {
 
   // Now create the TopicTailer.
   // One per room with one reader each.
-  const size_t num_rooms = opt.msg_loop->GetNumWorkers();
+  size_t reader_id = 0;
   for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
       [this, i] (std::unique_ptr<Message> msg,
@@ -188,9 +189,11 @@ Status ControlTower::Initialize() {
                                         &topic_tailer);
     if (st.ok()) {
       // Topic tailer i uses reader i in log tailer.
-      const size_t reader_id = i;
-      st = topic_tailer->Initialize(reader_id,
-                                    opt.max_subscription_lag);
+      std::vector<size_t> reader_ids;
+      for (size_t j = 0; j < opt.readers_per_room; ++j) {
+        reader_ids.push_back(reader_id++);
+      }
+      st = topic_tailer->Initialize(reader_ids, opt.max_subscription_lag);
     }
     if (!st.ok()) {
       return st;

@@ -24,16 +24,16 @@ static bool UpdateSubscription(TopicList& list,
   return true;
 }
 
-/// @return true iff subscription was removed.
+/// @return true iff no more subscriptions on this topic.
 static bool RemoveSubscription(TopicList& list,
                                HostNumber hostnum) {
   for (auto it = list.begin(); it != list.end(); ++it) {
     if (it->GetHostNum() == hostnum) {
       list.erase(it);
-      return true;
+      break;
     }
   }
-  return false;
+  return list.empty();
 }
 
 // Add a new subscriber to the topic. The name of the topic and the
@@ -54,13 +54,14 @@ TopicManager::RemoveSubscriber(const TopicUUID& topic, HostNumber subscriber) {
   // find list of subscribers for this topic
   auto iter = topic_map_.find(topic);
   if (iter != topic_map_.end()) {
-    bool removed = RemoveSubscription(iter->second, subscriber);
-    if (removed && iter->second.empty()) {
+    bool all_removed = RemoveSubscription(iter->second, subscriber);
+    if (all_removed) {
+      assert(iter->second.empty());
       topic_map_.erase(iter);
     }
-    return removed;
+    return all_removed;
   }
-  return false;
+  return true;
 }
 
 void TopicManager::VisitSubscribers(

@@ -82,6 +82,10 @@ struct ControlTowerOptions {
   // Default: 10K
   int64_t max_subscription_lag;
 
+  // Maximum number of readers on a single log per room.
+  // Default: 2
+  size_t readers_per_room;
+
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
 };

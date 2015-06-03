@@ -71,7 +71,7 @@ class TopicManager {
   /**
    * Remove an existing subscriber for a topic.
    *
-   * @return true iff removed.
+   * @return true iff no subscribers left on this topic.
    */
   bool RemoveSubscriber(const TopicUUID& topic,
                         HostNumber subscriber);

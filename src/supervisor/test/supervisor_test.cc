@@ -85,6 +85,7 @@ TEST(SupervisorTest, TowerLog) {
   opts.copilot.rollcall_enabled = false;
   opts.info_log = info_log_;
   opts.single_log = true;
+  opts.tower.readers_per_room = 1;
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
@@ -134,7 +135,6 @@ TEST(SupervisorTest, TowerLog) {
     "Log(1).tail_seqno_cached: 0\n"
     "Log(1).reader[1].start_seqno: %" PRIu64 "\n"
     "Log(1).reader[1].last_read: %" PRIu64 "\n"
-    "Log(1).reader[1].num_subscribers: 1\n"
     "Log(1).reader[1].num_topics_subscribed: 1\n\n",
     seqno,
     seqno);
@@ -143,7 +143,6 @@ TEST(SupervisorTest, TowerLog) {
   snprintf(expected, sizeof(expected),
     "Log(1).reader[1].start_seqno: %" PRIu64 "\n"
     "Log(1).reader[1].last_read: %" PRIu64 "\n"
-    "Log(1).reader[1].num_subscribers: 1\n"
     "Log(1).reader[1].num_topics_subscribed: 1\n\n",
     seqno,
     seqno);

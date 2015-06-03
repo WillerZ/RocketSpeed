@@ -93,7 +93,12 @@ TEST(ControlTowerTest, Subscribe) {
 
 TEST(ControlTowerTest, MultipleSubscribers) {
   // Create cluster with copilot and controltower.
-  LocalTestCluster cluster(info_log_, true, true, false);
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log_;
+  opts.start_copilot = true;
+  opts.start_controltower = true;
+  opts.tower.readers_per_room = 1;
+  LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
   auto ct = cluster.GetControlTower();
 

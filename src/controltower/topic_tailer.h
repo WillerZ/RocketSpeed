@@ -55,13 +55,13 @@ class TopicTailer {
   /**
    * Initialize the TopicTailer first before using it.
    *
-   * @param reader_id ID of reader on LogTailer.
+   * @param reader_ids IDs of readers on LogTailer.
    * @param max_subscription_lag Maximum number of sequence numbers that a
    *                             subscription can lag behind before being sent
    *                             a gap.
    * @return ok if successful, otherwise error code.
    */
-  Status Initialize(size_t reader_id,
+  Status Initialize(const std::vector<size_t>& reader_ids,
                     int64_t max_subscription_lag);
 
   /**
@@ -148,6 +148,27 @@ class TopicTailer {
                          LogID logid,
                          SequenceNumber seqno);
 
+  void AddSubscriberInternal(const TopicUUID& topic,
+                             HostNumber hostnum,
+                             LogID logid,
+                             SequenceNumber start);
+
+  void RemoveSubscriberInternal(const TopicUUID& topic,
+                                HostNumber hostnum,
+                                LogID logid);
+
+  /**
+   * Finds the LogReader* with given reader_id, or nullptr if none found.
+   */
+  LogReader* FindLogReader(size_t reader_id);
+
+  /**
+   * Assigned a new subscription (hostnum + topic) to a LogReader.
+   */
+  LogReader* ReaderForNewSubscription(HostNumber hostnum,
+                                      const TopicUUID& topic,
+                                      SequenceNumber seqno);
+
   ThreadCheck thread_check_;
 
   BaseEnv* env_;
@@ -165,7 +186,10 @@ class TopicTailer {
   // Information log
   std::shared_ptr<Logger> info_log_;
 
-  std::unique_ptr<LogReader> log_reader_;
+  // Each reader is capable of reading each log once.
+  // We have multiple readers in case a log is subscribed to at multiple
+  // positions.
+  std::vector<std::unique_ptr<LogReader>> log_readers_;
 
   // Callback for outgoing messages.
   std::function<void(std::unique_ptr<Message>,

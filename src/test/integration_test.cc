@@ -978,17 +978,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
     // No more.
     env_->SleepForMicroseconds(10000);
     std::lock_guard<std::mutex> lock(inbox_lock[c]);
-    if (inbox[c] != expected) {
-      fprintf(stderr, "Inbox %d contains:\n", c);
-      for (auto s : inbox[c]) {
-        fprintf(stderr, "%s\n", s.c_str());
-      }
-      fprintf(stderr, "\nExpected:\n");
-      for (auto s : expected) {
-        fprintf(stderr, "%s\n", s.c_str());
-      }
-    }
-    ASSERT_TRUE(inbox[c] == expected);
+    ASSERT_EQ(inbox[c], expected);
     inbox[c].clear();
   };
 
@@ -1008,8 +998,8 @@ TEST(IntegrationTest, SubscriptionManagement) {
   check_cp_stats(0, 0);
 
   // Subscribe client 0 to start, publish 3, receive 3.
-  auto h_0a = sub(0, "a", 1);
-  pub(0, "a", "a0");
+  SequenceNumber a0 = pub(0, "a", "a0");
+  auto h_0a = sub(0, "a", a0);
   SequenceNumber a1 = pub(0, "a", "a1");
   pub(0, "a", "a2");
   recv(0, {"a0", "a1", "a2"});
@@ -1058,8 +1048,8 @@ TEST(IntegrationTest, SubscriptionManagement) {
 
   // Test topic tailer handling of intertwined topic subscriptions.
   // Subscribe both to b and publish b0.
-  sub(0, "b", 1);
-  auto h_1b = sub(1, "b", 1);
+  sub(0, "b", a0);
+  auto h_1b = sub(1, "b", a0);
   pub(0, "b", "b0");
   recv(0, {"b0"});
   recv(1, {"b0"});
@@ -1103,7 +1093,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(1, {"e0"});
 
   // Topic rewind.
-  sub(0, "f", 1);
+  sub(0, "f", a0);
   SequenceNumber f0 = pub(0, "f", "f0");
   pub(0, "!f", "!f0");
   recv(0, {"f0"});
@@ -1114,7 +1104,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(1, {"f1"});
 
   // Topic rewind on empty topic.
-  sub(0, "g", 1); // will go to tail
+  sub(0, "g", a0); // will go to tail
   sub(1, "g", f0);
   pub(0, "g", "g0");
   recv(0, {"g0"});
