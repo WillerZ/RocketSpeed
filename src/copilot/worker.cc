@@ -30,7 +30,7 @@ CopilotWorker::CopilotWorker(
   // copilot is required.
   assert(copilot_);
 
-  LOG_INFO(options_.info_log, "Created a new CopilotWorker");
+  LOG_VITAL(options_.info_log, "Created a new CopilotWorker");
   options_.info_log->Flush();
 }
 
@@ -140,12 +140,12 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
                                    StreamID origin) {
   MessageData* msg = static_cast<MessageData*>(message.get());
   // Get the list of subscriptions for this topic.
-  LOG_INFO(options_.info_log,
-      "Copilot received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
-      msg->GetPayload().ToString().c_str(),
-      msg->GetSequenceNumber(),
-      msg->GetNamespaceId().ToString().c_str(),
-      msg->GetTopicName().ToString().c_str());
+  LOG_DEBUG(options_.info_log,
+            "Copilot received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
+            msg->GetPayload().ToString().c_str(),
+            msg->GetSequenceNumber(),
+            msg->GetNamespaceId().ToString().c_str(),
+            msg->GetTopicName().ToString().c_str());
 
   TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
   auto it = topics_.find(uuid);
@@ -164,34 +164,34 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
 
       // Do not send a response if the seqno is too low.
       if (sub->seqno > seqno) {
-        LOG_INFO(options_.info_log,
-                 "Data not delivered to %llu"
-                 " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
-                 recipient,
-                 seqno,
-                 sub->seqno);
+        LOG_DEBUG(options_.info_log,
+                  "Data not delivered to %llu"
+                  " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
+                  recipient,
+                  seqno,
+                  sub->seqno);
         continue;
       }
 
       // or too high.
       if (sub->seqno < prev_seqno) {
-        LOG_INFO(options_.info_log,
-                 "Data not delivered to %llu"
-                 " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
-                 recipient,
-                 prev_seqno,
-                 sub->seqno);
+        LOG_DEBUG(options_.info_log,
+                  "Data not delivered to %llu"
+                  " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
+                  recipient,
+                  prev_seqno,
+                  sub->seqno);
         continue;
       }
 
       // or not matching zeroes.
       if ((sub->seqno == 0 && prev_seqno != 0) ||
           (sub->seqno != 0 && prev_seqno == 0)) {
-        LOG_INFO(options_.info_log,
-                 "Data not delivered to %llu"
-                 " (prev_seqno@%" PRIu64 " not 0)",
-                 recipient,
-                 prev_seqno);
+        LOG_DEBUG(options_.info_log,
+                  "Data not delivered to %llu"
+                  " (prev_seqno@%" PRIu64 " not 0)",
+                  recipient,
+                  prev_seqno);
         continue;
       }
 
@@ -212,14 +212,14 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
       if (status.ok()) {
         sub->seqno = seqno + 1;
 
-        LOG_INFO(options_.info_log,
-                 "Sent data (%.16s)@%" PRIu64 " for ID(%" PRIu64
-                 ") %s to %llu",
-                 msg->GetPayload().ToString().c_str(),
-                 msg->GetSequenceNumber(),
-                 data.GetSubID(),
-                 uuid.ToString().c_str(),
-                 recipient);
+        LOG_DEBUG(options_.info_log,
+                  "Sent data (%.16s)@%" PRIu64 " for ID(%" PRIu64
+                  ") %s to %llu",
+                  msg->GetPayload().ToString().c_str(),
+                  msg->GetSequenceNumber(),
+                  data.GetSubID(),
+                  uuid.ToString().c_str(),
+                  recipient);
       } else {
         LOG_WARN(options_.info_log,
                  "Failed to distribute message to %llu",
@@ -239,11 +239,11 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
   MessageGap* msg = static_cast<MessageGap*>(message.get());
   // Get the list of subscriptions for this topic.
   TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
-  LOG_INFO(options_.info_log,
-      "Copilot received gap %" PRIu64 "-%" PRIu64 " for %s",
-      msg->GetStartSequenceNumber(),
-      msg->GetEndSequenceNumber(),
-      uuid.ToString().c_str());
+  LOG_DEBUG(options_.info_log,
+            "Copilot received gap %" PRIu64 "-%" PRIu64 " for %s",
+            msg->GetStartSequenceNumber(),
+            msg->GetEndSequenceNumber(),
+            uuid.ToString().c_str());
   auto it = topics_.find(uuid);
   if (it != topics_.end()) {
     TopicState& topic = it->second;
@@ -260,34 +260,34 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
 
       // Ignore if the seqno is too low.
       if (sub->seqno > next_seqno) {
-        LOG_INFO(options_.info_log,
-                 "Gap ignored for %llu"
-                 " (next_seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
-                 recipient,
-                 next_seqno,
-                 sub->seqno);
+        LOG_DEBUG(options_.info_log,
+                  "Gap ignored for %llu"
+                  " (next_seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
+                  recipient,
+                  next_seqno,
+                  sub->seqno);
         continue;
       }
 
       // or too high.
       if (sub->seqno < prev_seqno) {
-        LOG_INFO(options_.info_log,
-                 "Gap ignored for %llu"
-                 " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
-                 recipient,
-                 prev_seqno,
-                 sub->seqno);
+        LOG_DEBUG(options_.info_log,
+                  "Gap ignored for %llu"
+                  " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
+                  recipient,
+                  prev_seqno,
+                  sub->seqno);
         continue;
       }
 
       // or not matching zeroes.
       if ((sub->seqno == 0 && prev_seqno != 0) ||
           (sub->seqno != 0 && prev_seqno == 0)) {
-        LOG_INFO(options_.info_log,
-                 "Gap ignored for %llu"
-                 " (prev_seqno@%" PRIu64 " not 0)",
-                 recipient,
-                 prev_seqno);
+        LOG_DEBUG(options_.info_log,
+                  "Gap ignored for %llu"
+                  " (prev_seqno@%" PRIu64 " not 0)",
+                  recipient,
+                  prev_seqno);
         continue;
       }
 
@@ -305,14 +305,14 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       if (status.ok()) {
         sub->seqno = next_seqno + 1;
 
-        LOG_INFO(options_.info_log,
-                 "Sent gap %" PRIu64 "-%" PRIu64
-                 " for  subscription ID(%" PRIu64 ") %s to %llu",
-                 msg->GetStartSequenceNumber(),
-                 msg->GetEndSequenceNumber(),
-                 gap.GetSubID(),
-                 uuid.ToString().c_str(),
-                 recipient);
+        LOG_DEBUG(options_.info_log,
+                  "Sent gap %" PRIu64 "-%" PRIu64
+                  " for  subscription ID(%" PRIu64 ") %s to %llu",
+                  msg->GetStartSequenceNumber(),
+                  msg->GetEndSequenceNumber(),
+                  gap.GetSubID(),
+                  uuid.ToString().c_str(),
+                  recipient);
       } else {
         LOG_WARN(
             options_.info_log, "Failed to distribute gap to %llu", recipient);
@@ -843,7 +843,7 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
              namespace_id.c_str(),
              topic_name.c_str());
   } else {
-    LOG_INFO(options_.info_log,
+    LOG_WARN(options_.info_log,
              "Failed to send rollcall write (%ssubscribe) for Topic(%s,%s) "
              "status %s",
              type == MetadataType::mSubscribe ? "" : "un",
@@ -884,11 +884,12 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
           next >= tower.next_seqno &&
           !(prev == 0 && tower.next_seqno != 0) &&
           !(prev != 0 && tower.next_seqno == 0)) {
-        LOG_INFO(options_.info_log,
-          "Tower subscription %llu advanced from %" PRIu64 " to %" PRIu64,
-          tower.stream->GetStreamID(),
-          tower.next_seqno,
-          next + 1);
+        LOG_DEBUG(options_.info_log,
+                  "Tower subscription %llu advanced from %" PRIu64
+                  " to %" PRIu64,
+                  tower.stream->GetStreamID(),
+                  tower.next_seqno,
+                  next + 1);
         tower.next_seqno = next + 1;
       } else {
         stats_.out_of_order_seqno_from_tower->Add(1);

@@ -64,7 +64,7 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
                                      nullptr));
   }
 
-  LOG_INFO(options_.info_log, "Created a new Copilot");
+  LOG_VITAL(options_.info_log, "Created a new Copilot");
   options_.info_log->Flush();
 }
 
@@ -123,12 +123,12 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   // get the request message
   MessageData* data = static_cast<MessageData*>(msg.get());
 
-  LOG_INFO(options_.info_log,
-      "Received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
-      data->GetPayload().ToString().c_str(),
-      data->GetSequenceNumber(),
-      data->GetNamespaceId().ToString().c_str(),
-      data->GetTopicName().ToString().c_str());
+  LOG_DEBUG(options_.info_log,
+            "Received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
+            data->GetPayload().ToString().c_str(),
+            data->GetSequenceNumber(),
+            data->GetNamespaceId().ToString().c_str(),
+            data->GetTopicName().ToString().c_str());
 
   // map the topic to a logid
   LogID logid;
@@ -136,8 +136,9 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
                                             data->GetTopicName(),
                                             &logid);
   if (!st.ok()) {
-    LOG_INFO(options_.info_log,
-        "Unable to map msg to logid %s", st.ToString().c_str());
+    LOG_WARN(options_.info_log,
+             "Unable to map msg to logid %s",
+             st.ToString().c_str());
     return;
   }
 
@@ -165,23 +166,25 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
     // map the topic to a logid
     const TopicPair& topic = request->GetTopicInfo()[i];
 
-    LOG_INFO(options_.info_log,
-      "Received %s %s for Topic(%s,%s)@%" PRIu64,
-      topic.topic_type == MetadataType::mSubscribe
-        ? "subscribe" : "unsubscribe",
-      request->GetMetaType() == MessageMetadata::MetaType::Request
-        ? "request" : "response",
-      topic.namespace_id.c_str(),
-      topic.topic_name.c_str(),
-      topic.seqno);
+    LOG_DEBUG(options_.info_log,
+              "Received %s %s for Topic(%s,%s)@%" PRIu64,
+              topic.topic_type == MetadataType::mSubscribe ? "subscribe"
+                                                           : "unsubscribe",
+              request->GetMetaType() == MessageMetadata::MetaType::Request
+                  ? "request"
+                  : "response",
+              topic.namespace_id.c_str(),
+              topic.topic_name.c_str(),
+              topic.seqno);
 
     LogID logid;
     Status st = options_.log_router->GetLogID(topic.namespace_id,
                                               topic.topic_name,
                                               &logid);
     if (!st.ok()) {
-      LOG_INFO(options_.info_log,
-          "Unable to map msg to logid %s", st.ToString().c_str());
+      LOG_WARN(options_.info_log,
+               "Unable to map msg to logid %s",
+               st.ToString().c_str());
       continue;
     }
     // calculate the destination worker
@@ -209,12 +212,12 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   // get the gap message
   MessageGap* gap = static_cast<MessageGap*>(msg.get());
 
-  LOG_INFO(options_.info_log,
-      "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
-      gap->GetStartSequenceNumber(),
-      gap->GetEndSequenceNumber(),
-      gap->GetNamespaceId().c_str(),
-      gap->GetTopicName().c_str());
+  LOG_DEBUG(options_.info_log,
+            "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
+            gap->GetStartSequenceNumber(),
+            gap->GetEndSequenceNumber(),
+            gap->GetNamespaceId().c_str(),
+            gap->GetTopicName().c_str());
 
   // map the topic to a logid
   LogID logid;
@@ -222,8 +225,9 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
                                             gap->GetTopicName(),
                                             &logid);
   if (!st.ok()) {
-    LOG_INFO(options_.info_log,
-        "Unable to map msg to logid %s", st.ToString().c_str());
+    LOG_WARN(options_.info_log,
+             "Unable to map msg to logid %s",
+             st.ToString().c_str());
     return;
   }
 
@@ -243,11 +247,11 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
   auto subscribe = static_cast<MessageSubscribe*>(msg.get());
-  LOG_INFO(options_.info_log,
-           "Received subscribe request for Topic(%s, %s)@%" PRIu64,
-           subscribe->GetNamespace().c_str(),
-           subscribe->GetTopicName().c_str(),
-           subscribe->GetStartSequenceNumber());
+  LOG_DEBUG(options_.info_log,
+            "Received subscribe request for Topic(%s, %s)@%" PRIu64,
+            subscribe->GetNamespace().c_str(),
+            subscribe->GetTopicName().c_str(),
+            subscribe->GetStartSequenceNumber());
 
   // Calculate log ID for this topic.
   LogID logid;
@@ -279,11 +283,11 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
   options_.msg_loop->ThreadCheck();
 
   auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
-  LOG_INFO(options_.info_log,
-           "Received unsubscribe for subscription (%" PRIu64
-           ") at stream (%llu)",
-           unsubscribe->GetSubID(),
-           origin);
+  LOG_DEBUG(options_.info_log,
+            "Received unsubscribe for subscription (%" PRIu64
+            ") at stream (%llu)",
+            unsubscribe->GetSubID(),
+            origin);
 
   // Broadcast to all workers.
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
@@ -306,12 +310,12 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   switch (goodbye->GetOriginType()) {
     case MessageGoodbye::OriginType::Client: {
-      LOG_INFO(options_.info_log, "Received goodbye for client %llu", origin);
+      LOG_DEBUG(options_.info_log, "Received goodbye for client %llu", origin);
       break;
     }
 
     case MessageGoodbye::OriginType::Server: {
-      LOG_WARN(options_.info_log, "Received goodbye for server %llu", origin);
+      LOG_DEBUG(options_.info_log, "Received goodbye for server %llu", origin);
       break;
     }
   }
