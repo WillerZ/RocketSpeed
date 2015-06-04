@@ -7,10 +7,12 @@
 #include "src/client/client.h"
 
 #include <cassert>
+#include <cmath>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -282,6 +284,9 @@ void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+/** A duration type unit-compatible with BaseEnv::NowMicros(). */
+typedef std::chrono::microseconds EnvClockDuration;
+
 /** State of a single subscriber worker, aligned to avoid false sharing. */
 class alignas(CACHE_LINE_SIZE) ClientWorkerData {
  public:
@@ -292,8 +297,23 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   ClientWorkerData(ClientWorkerData&&) = delete;
   ClientWorkerData& operator=(ClientWorkerData&&) = delete;
 
-  ClientWorkerData() : copilot_socket_valid_(false) {}
+  ClientWorkerData()
+      : backoff_until_time_(0)
+      , last_send_time_(0)
+      , consecutive_goodbyes_count_(0)
+      , copilot_socket_valid_(false) {
+    std::random_device r;
+    rng_.seed(r());
+  }
 
+  /** Time point (in us) until which client should not attemt to reconnect. */
+  uint64_t backoff_until_time_;
+  /** Time point (in us) of last message sending event. */
+  uint64_t last_send_time_;
+  /** Number of consecutive goodbye messages. */
+  size_t consecutive_goodbyes_count_;
+  /** Random engine used by this client. */
+  ClientRNG rng_;
   /** Stream socket used by this worker to talk to the copilot. */
   StreamSocket copilot_socket;
   /** Determines whether copilot socket is valid. */
@@ -324,6 +344,12 @@ Status ClientImpl::Create(ClientOptions options,
   assert(out_client);
 
   // Validate arguments.
+  if (options.backoff_base < 1.0) {
+    return Status::InvalidArgument("Backoff base must be >= 1.0");
+  }
+  if (!options.backoff_distribution) {
+    return Status::InvalidArgument("Missing backoff distribution.");
+  }
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();
   }
@@ -743,6 +769,7 @@ void ClientImpl::SendPendingRequests() {
     return;
   }
 
+  const uint64_t now = options_.env->NowMicros();
   // Check if we have a valid socket to the Copilot, recreate it if not.
   if (!worker_data.copilot_socket_valid_) {
     // Since we're not connected to the Copilot, all subscriptions were
@@ -753,6 +780,11 @@ void ClientImpl::SendPendingRequests() {
 
     // If we only had pending unsubscribes, there is no point reconnecting.
     if (worker_data.pending_subscribes_.empty()) {
+      return;
+    }
+
+    // We do have requests to sync, check if we're still in backoff mode.
+    if (now <= worker_data.backoff_until_time_) {
       return;
     }
 
@@ -796,6 +828,7 @@ void ClientImpl::SendPendingRequests() {
       LOG_INFO(info_log_,
                "Closed stream (%llu) with no active subscriptions",
                worker_data.copilot_socket.GetStreamID());
+      worker_data.last_send_time_ = now;
       // All unsubscribe requests were synced.
       worker_data.pending_terminations_.clear();
       // Since we've sent goodbye message, we need to recreate socket when
@@ -824,6 +857,7 @@ void ClientImpl::SendPendingRequests() {
         unsubscribe, &worker_data.copilot_socket, worker_id);
     if (st.ok()) {
       LOG_DEBUG(info_log_, "Unsubscribed ID (%" PRIu64 ")", sub_id);
+      worker_data.last_send_time_ = now;
       // Message was sent, we may clear pending request.
       worker_data.pending_terminations_.erase(it);
     } else {
@@ -861,6 +895,7 @@ void ClientImpl::SendPendingRequests() {
         subscribe, &worker_data.copilot_socket, worker_id);
     if (st.ok()) {
       LOG_DEBUG(info_log_, "Subscribed ID (%" PRIu64 ")", sub_id);
+      worker_data.last_send_time_ = now;
       // Message was sent, we may clear pending request.
       worker_data.pending_subscribes_.erase(it);
     } else {
@@ -887,6 +922,8 @@ void ClientImpl::ProcessDeliverData(std::unique_ptr<Message> msg,
   if (IsNotCopilot(worker_data, origin)) {
     return;
   }
+
+  worker_data.consecutive_goodbyes_count_ = 0;
 
   // Find the right subscription and deliver the message to it.
   SubscriptionID sub_id = data->GetSubID();
@@ -915,6 +952,8 @@ void ClientImpl::ProcessDeliverGap(std::unique_ptr<Message> msg,
     return;
   }
 
+  worker_data.consecutive_goodbyes_count_ = 0;
+
   // Find the right subscription and deliver the message to it.
   SubscriptionID sub_id = gap->GetSubID();
   auto it = worker_data.subscriptions_.find(sub_id);
@@ -941,6 +980,8 @@ void ClientImpl::ProcessUnsubscribe(std::unique_ptr<Message> msg,
   if (IsNotCopilot(worker_data, origin)) {
     return;
   }
+
+  worker_data.consecutive_goodbyes_count_ = 0;
 
   const SubscriptionID sub_id = unsubscribe->GetSubID();
   // Find the right subscription and deliver the message to it.
@@ -984,7 +1025,6 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
     return;
   }
 
-  LOG_WARN(info_log_, "Received goodbye message on (%llu)", origin);
   // Mark socket as broken.
   worker_data.copilot_socket_valid_ = false;
 
@@ -997,6 +1037,31 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
     // Mark subscription as pending.
     worker_data.pending_subscribes_.emplace(sub_id);
   }
+
+  // Failed to reconnect, apply back off logic.
+  ++worker_data.consecutive_goodbyes_count_;
+  EnvClockDuration backoff_initial = options_.backoff_initial;
+  assert(worker_data.consecutive_goodbyes_count_ > 0);
+  double backoff_value = static_cast<double>(backoff_initial.count()) *
+                         std::pow(static_cast<double>(options_.backoff_base),
+                                  worker_data.consecutive_goodbyes_count_ - 1);
+  EnvClockDuration backoff_limit = options_.backoff_limit;
+  backoff_value =
+      std::min(backoff_value, static_cast<double>(backoff_limit.count()));
+  backoff_value *= options_.backoff_distribution(&worker_data.rng_);
+  const uint64_t backoff_period = static_cast<uint64_t>(backoff_value);
+  // We count backoff period from the time of sending the last message, so
+  // that we can attempt to reconnect right after getting goodbye message, if
+  // we got it after long period of inactivity.
+  worker_data.backoff_until_time_ =
+      worker_data.last_send_time_ + backoff_period;
+
+  LOG_INFO(info_log_,
+           "Received %zd goodbye messages in a row (on stream %llu),"
+           " back off for %" PRIu64 " ms",
+           worker_data.consecutive_goodbyes_count_,
+           origin,
+           backoff_period / 1000);
 
   SendPendingRequests();
 }

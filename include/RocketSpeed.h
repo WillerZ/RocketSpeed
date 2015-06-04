@@ -8,6 +8,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <random>
 #include <vector>
 
 #include "include/Slice.h"
@@ -48,6 +49,9 @@ typedef std::function<void(std::unique_ptr<MessageReceived>&)>
 /** Notifies about status of a finished subscription snapshot. */
 typedef std::function<void(Status)> SaveSubscriptionsCallback;
 
+/** Client random number generator. */
+typedef std::mt19937 ClientRNG;
+
 /** Describes the Client object to be created. */
 class ClientOptions {
  public:
@@ -83,6 +87,25 @@ class ClientOptions {
   // limiting time measurements.
   // Default: 200 ms
   std::chrono::milliseconds timer_period;
+
+  // A base of exponential back-off curve.
+  // Default: 2.0
+  double backoff_base;
+
+  // A scaling factor of the exponential back-off curve.
+  // Default: 5 s
+  std::chrono::milliseconds backoff_initial;
+
+  // A limit on back-off period.
+  // Default: 1 min
+  std::chrono::milliseconds backoff_limit;
+
+  // A distribution used to determine final back-off period. If P is the period
+  // calculated according to truncated exponential back-off algorithm, the final
+  // period equals distribution(rng) * P.
+  // Default: std::uniform_real_distribution<double>
+  typedef std::function<double(ClientRNG*)> BackOffDistribution;
+  BackOffDistribution backoff_distribution;
 
   /** Creates options with default values. */
   ClientOptions();

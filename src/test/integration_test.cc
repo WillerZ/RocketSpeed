@@ -630,10 +630,18 @@ TEST(IntegrationTest, LostConnection) {
     msg_received.Post();
   };
 
+  // Backoff parameters.
+  const int scale = 200 * 1000;
+  const double base = 4.0;
+
   // Create RocketSpeed client.
   ClientOptions options;
   options.config = cluster->GetConfiguration();
   options.info_log = info_log;
+  options.timer_period = std::chrono::milliseconds(10);
+  options.backoff_initial = std::chrono::milliseconds(scale / 1000);
+  options.backoff_base = base;
+  options.backoff_distribution = [](ClientRNG*) { return 1.0; };
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
   client->SetDefaultCallbacks(nullptr, receive_callback);
@@ -652,9 +660,9 @@ TEST(IntegrationTest, LostConnection) {
   // Wait for the message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
 
+  uint64_t start = env_->NowMicros();
   // Restart the cluster, which kills connection.
   cluster.reset();
-  env_->SleepForMicroseconds(200000);
 
   // Send another message while disconnected.
   ASSERT_OK(client->Publish(GuestTenant,
@@ -663,6 +671,9 @@ TEST(IntegrationTest, LostConnection) {
                             topic_options,
                             Slice(data),
                             disconnected_callback).status);
+
+  // Wait, so that we miss the zeroth and first attempt to reconnect.
+  env_->SleepForMicroseconds(scale + scale / 2);
 
   cluster.reset(new LocalTestCluster(opts));
   ASSERT_OK(cluster->GetStatus());
@@ -679,7 +690,14 @@ TEST(IntegrationTest, LostConnection) {
                             ok_callback).status);
 
   // Wait for message.
+  uint64_t restart = env_->NowMicros() - start;
   ASSERT_TRUE(msg_received.TimedWait(timeout));
+  uint64_t elapsed = env_->NowMicros() - start;
+
+  ASSERT_LE(restart, 3 * scale);
+  // Client tries immediately, after <scale>, and then after <base> * <scale>.
+  ASSERT_GE(elapsed, (base + 1) * scale);
+  ASSERT_LE(elapsed, 2 * base * scale);
 }
 
 TEST(IntegrationTest, OneMessageWithoutRollCall) {

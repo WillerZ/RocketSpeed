@@ -5,6 +5,8 @@
 //
 #include "include/RocketSpeed.h"
 
+#include <random>
+
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/storage/file_storage.h"
@@ -12,11 +14,22 @@
 
 namespace rocketspeed {
 
+struct DefaultBackOffDistribution {
+  double operator()(ClientRNG* rng) const {
+    std::uniform_real_distribution<double> distribution(0.0, 1.0);
+    return distribution(*rng);
+  }
+};
+
 ClientOptions::ClientOptions()
     : env(ClientEnv::Default())
     , num_workers(1)
     , close_connection_with_no_subscription(true)
-    , timer_period(200) {
+    , timer_period(200)
+    , backoff_base(2.0)
+    , backoff_initial(5 * 1000)
+    , backoff_limit(1 * 60 * 1000)
+    , backoff_distribution(DefaultBackOffDistribution()) {
 }
 
 }  // namespace rocketspeed
