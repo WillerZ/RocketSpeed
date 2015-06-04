@@ -262,7 +262,7 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
           room_number,
           st.ToString().c_str());
     } else {
-      LOG_INFO(options_.info_log,
+      LOG_DEBUG(options_.info_log,
           "Forwarded %ssubscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.namespace_id.c_str(),
@@ -310,7 +310,7 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
                        seqno - 1);
         status = options_.msg_loop->SendResponse(gap, origin, worker_id);
         if (status.ok()) {
-          LOG_INFO(options_.info_log,
+          LOG_DEBUG(options_.info_log,
             "Sent latest seqno gap 0-%" PRIu64 " to %llu for Topic(%s,%s)",
             seqno - 1,
             origin,
@@ -324,7 +324,7 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
             req->GetTopicName().c_str());
         }
       } else {
-        LOG_WARN(options_.info_log,
+        LOG_ERROR(options_.info_log,
           "FindLatestSeqno for Log(%" PRIu64 ") failed with: %s",
           log_id,
           status.ToString().c_str());

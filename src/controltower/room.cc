@@ -141,7 +141,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
 
   const SequenceNumber prev_seqno = request->GetPrevSequenceNumber();
   const SequenceNumber next_seqno = request->GetSequenceNumber();
-  LOG_INFO(options.info_log,
+  LOG_DEBUG(options.info_log,
       "Received data (%.16s)@%" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
       request->GetPayload().ToString().c_str(),
       prev_seqno,
@@ -165,7 +165,7 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
       st = options.msg_loop->SendResponse(*request, origin, worker_id);
 
       if (st.ok()) {
-        LOG_INFO(options.info_log,
+        LOG_DEBUG(options.info_log,
                  "Sent data (%.16s)@%" PRIu64 " for %s to %llu",
                  request->GetPayload().ToString().c_str(),
                  request->GetSequenceNumber(),
@@ -198,7 +198,7 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
 
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = control_tower_->GetOptions();
-  LOG_INFO(options.info_log,
+  LOG_DEBUG(options.info_log,
       "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
       prev_seqno,
       next_seqno,
@@ -215,7 +215,7 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
       Status st = options.msg_loop->SendResponse(*gap, origin, worker_id);
 
       if (st.ok()) {
-        LOG_INFO(options.info_log,
+        LOG_DEBUG(options.info_log,
                  "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
                  prev_seqno,
                  next_seqno,

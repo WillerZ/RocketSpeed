@@ -89,7 +89,7 @@ Status LogTailer::CreateReader(size_t reader_id,
     std::unique_ptr<MessageData> msg(
       new LogRecordMessageData(std::move(record), &st));
     if (!st.ok()) {
-      LOG_WARN(info_log_,
+      LOG_ERROR(info_log_,
         "Failed to deserialize message in Log(%" PRIu64 ")@%" PRIu64 ": %s",
         log_id,
         seqno,
@@ -98,7 +98,7 @@ Status LogTailer::CreateReader(size_t reader_id,
       // Publish gap in place.
       on_gap(log_id, GapType::kDataLoss, seqno, seqno, reader_id);
     } else {
-      LOG_INFO(info_log_,
+      LOG_DEBUG(info_log_,
         "LogTailer received data (%.16s)@%" PRIu64
         " for Topic(%s,%s) in Log(%" PRIu64 ").",
         msg->GetPayload().ToString().c_str(),
@@ -177,13 +177,13 @@ Status LogTailer::StartReading(LogID logid,
       num_open_logs_per_reader_[reader_id]++;
     }
   } else {
-    LOG_WARN(info_log_,
-             "AsyncReader %zu failed to start reading Log(%" PRIu64
-             ")@%" PRIu64 "(%s).",
-             reader_id,
-             logid,
-             start,
-             st.ToString().c_str());
+    LOG_ERROR(info_log_,
+              "AsyncReader %zu failed to start reading Log(%" PRIu64
+              ")@%" PRIu64 "(%s).",
+              reader_id,
+              logid,
+              start,
+              st.ToString().c_str());
   }
   return st;
 }
@@ -202,7 +202,7 @@ LogTailer::StopReading(LogID logid, size_t reader_id) {
         reader_id, logid);
     num_open_logs_per_reader_[reader_id]--;
   } else {
-    LOG_WARN(info_log_,
+    LOG_ERROR(info_log_,
         "AsyncReader %zu failed to stop reading Log(%" PRIu64 ") (%s).",
         reader_id, logid, st.ToString().c_str());
   }
