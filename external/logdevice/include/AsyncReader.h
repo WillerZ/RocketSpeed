@@ -37,10 +37,15 @@ class AsyncReader {
    * unspecified thread when a record is read. The callback for a log will
    * always be called on the same thread.
    *
+   * The callback should return true if the record was successfully consumed.
+   * If the callback returns false, delivery of the same record will be
+   * retried after some time.  In that case, the callback must not drain the
+   * input unique_ptr& (this is asserted in debug builds).
+   *
    * Only affects subsequent startReading() calls; calling startReading()
    * first and setRecordCallback() after has no effect.
    */
-  void setRecordCallback(std::function<void(std::unique_ptr<DataRecord>)>);
+  void setRecordCallback(std::function<bool(std::unique_ptr<DataRecord>&)>);
 
 
   /**
@@ -49,8 +54,12 @@ class AsyncReader {
    * record informs the reader about gaps in the sequence of record
    * numbers. In most cases such gaps are benign and not an indication of data
    * loss. See class GapRecord in Record.h for details.
+   *
+   * The callback should return true if the gap was successfully consumed.
+   * If the callback returns false, delivery of the same gap will be
+   * retried after some time.
    */
-  void setGapCallback(std::function<void(const GapRecord&)>);
+  void setGapCallback(std::function<bool(const GapRecord&)>);
 
   /**
    * Sets a callback that the LogDevice client library will call when it has

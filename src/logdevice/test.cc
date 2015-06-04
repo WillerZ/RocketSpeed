@@ -91,7 +91,7 @@ TEST(MockLogDeviceTest, Basic) {
   std::atomic<int> count1{0};
   std::atomic<int> count2{0};
   reader1->setRecordCallback(
-    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count1));
       ++count1;
@@ -101,15 +101,17 @@ TEST(MockLogDeviceTest, Basic) {
       if (count1 == 8 && count2 == 4) {
         checkpoint2.Post();
       }
+      return true;
     });
   reader2->setRecordCallback(
-    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count2 + 1));
       ++count2;
       if (count1 == 6 && count2 == 4) {
         checkpoint1.Post();
       }
+      return true;
     });
 
   reader1->startReading(logid, lsn[0]);
@@ -161,13 +163,14 @@ TEST(MockLogDeviceTest, FindTime) {
   std::chrono::milliseconds timestamps[3];
   std::atomic<int> count{0};
   reader->setRecordCallback(
-    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
       ASSERT_LT(count, 3);
       timestamps[count] = rec->attrs.timestamp;
       ++count;
       if (count == 3) {
         checkpoint.Post();
       }
+      return true;
     });
   reader->startReading(logid, lsn[0]);
 
@@ -233,13 +236,14 @@ TEST(MockLogDeviceTest, Trim) {
   // Read all the timestamps from the records.
   std::atomic<int> count{0};
   reader->setRecordCallback(
-    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count + 2));
       ++count;
       if (count == 2) {
         checkpoint.Post();
       }
+      return true;
     });
   reader->startReading(logid, lsn[0]);
 
@@ -263,7 +267,7 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
   std::atomic<lsn_t> lsn1{LSN_OLDEST};  // last LSN read
   auto reader1 = client->createAsyncReader();
   reader1->setRecordCallback(
-    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count1));
       ++count1;
@@ -271,6 +275,7 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
       if (count1 == numMessages) {
         checkpoint1.Post();
       }
+      return true;
     });
   reader1->startReading(logid, LSN_OLDEST, LSN_MAX);
 
@@ -279,7 +284,7 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
   std::atomic<lsn_t> lsn2{LSN_OLDEST};
   auto reader2 = client->createAsyncReader();
   reader2->setRecordCallback(
-    [&] (std::unique_ptr<facebook::logdevice::DataRecord> rec) {
+    [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
       ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count2));
       ++count2;
@@ -287,6 +292,7 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
       if (count2 == numMessages) {
         checkpoint2.Post();
       }
+      return true;
     });
   reader2->startReading(logid, LSN_OLDEST, LSN_MAX);
 

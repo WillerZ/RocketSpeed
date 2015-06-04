@@ -66,7 +66,9 @@ AsyncReaderImpl::AsyncReaderImpl()
                 std::min(log.until_, lsn)
               };
               if (gap_cb_) {
-                gap_cb_(record);
+                bool success = gap_cb_(record);
+                (void)success;  // ignore in mock impl.
+                assert(success);
               }
             }
           }
@@ -147,7 +149,9 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
         std::min(until, current_lsn - 1)
       };
       if (gap_cb_) {
-        gap_cb_(record);
+        bool success = gap_cb_(record);
+        (void)success;  // ignore in mock impl.
+        assert(success);
       }
 
       // We are now proccessing from current_lsn.
@@ -166,18 +170,20 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
           file.GetData(),
           current_lsn,
           file.GetTimestamp()));
-      data_cb_(std::move(dataRecord));
+      bool success = data_cb_(dataRecord);
+      (void)success;  // ignore in mock impl.
+      assert(success);
     }
   }
   return opened ? expected_lsn : LSN_INVALID;
 }
 
 void AsyncReader::setRecordCallback(
-    std::function<void(std::unique_ptr<DataRecord>)> cb) {
+    std::function<bool(std::unique_ptr<DataRecord>&)> cb) {
   impl()->data_cb_ = cb;
 }
 
-void AsyncReader::setGapCallback(std::function<void(const GapRecord&)> cb) {
+void AsyncReader::setGapCallback(std::function<bool(const GapRecord&)> cb) {
   impl()->gap_cb_ = cb;
 }
 

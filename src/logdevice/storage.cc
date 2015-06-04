@@ -254,10 +254,11 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
 : reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
   reader_->setRecordCallback(
-    [this, record_cb] (std::unique_ptr<facebook::logdevice::DataRecord> data) {
+    [this, record_cb] (std::unique_ptr<facebook::logdevice::DataRecord>& data) {
       // Convert DataRecord to our LogRecord format.
       std::unique_ptr<LogRecord> record(new LogDeviceRecord(std::move(data)));
       record_cb(std::move(record));
+      return true;
     });
 
   reader_->setGapCallback(
@@ -284,6 +285,7 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
       }
 
       gap_cb(record);
+      return true;
     });
 
   // LogDevice trims record non-deterministically across storage nodes, so

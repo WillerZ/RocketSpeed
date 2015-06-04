@@ -45,8 +45,8 @@ class AsyncReaderImpl : public AsyncReader {
   lsn_t LastSequenceNumber(logid_t logid);
 
   // Callbacks
-  std::function<void(std::unique_ptr<DataRecord>)> data_cb_;
-  std::function<void(const GapRecord&)> gap_cb_;
+  std::function<bool(std::unique_ptr<DataRecord>&)> data_cb_;
+  std::function<bool(const GapRecord&)> gap_cb_;
 
   // Mutex for locking the logs_ map.
   std::mutex mutex_;

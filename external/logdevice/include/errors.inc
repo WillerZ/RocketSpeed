@@ -39,6 +39,7 @@ ERROR_CODE(DISABLED,    ,"server is marked down") // connection failed because
 ERROR_CODE(EXISTS,      ,"object already exists")
 ERROR_CODE(SHUTDOWN,    ,"shutting down")
 ERROR_CODE(NOTINCONFIG, ,"server is not in cluster configuration")
+ERROR_CODE(NOSSLCONFIG, ,"SSL not configured for node")
 ERROR_CODE(PROTONOSUPPORT, ,"unsupport LogDevice protocol version") // errno(3)
 ERROR_CODE(PROTO,       ,"protocol error") // errno(3)
 ERROR_CODE(PEER_CLOSED, ,"connection closed by peer")

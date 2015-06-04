@@ -1,8 +1,8 @@
 This version of logdevice was fetched from git commit:
 
 $ git rev-list --format=format:'%ci' -1 `git rev-parse HEAD`
-commit 66cd37f4ca03a72daea0eacd601ad15405512a20
-2015-06-01 03:50:23 -0700
+commit 0e1436dd9c84738a412cea3de5c17ee01fd56852
+2015-06-04 04:41:07 -0700
 
 The rocketspeed code should include the header files in the 'include'
 directory to access logdevice.
