@@ -129,16 +129,16 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
 
   switch (reason) {
     case MessageUnsubscribe::Reason::kRequested:
-      LOG_DEBUG(info_log,
-                "Unsubscribed ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
-                sub_id,
-                namespace_id_.c_str(),
-                topic_name_.c_str(),
-                expected_seqno_);
+      LOG_INFO(info_log,
+               "Unsubscribed ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
+               sub_id,
+               namespace_id_.c_str(),
+               topic_name_.c_str(),
+               expected_seqno_);
       AnnounceStatus(false, Status::OK());
       break;
     case MessageUnsubscribe::Reason::kInvalid:
-      LOG_WARN(info_log,
+      LOG_INFO(info_log,
                "Kicked subscription ID (%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
                sub_id,
                namespace_id_.c_str(),
@@ -207,7 +207,7 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
       expected_seqno_ < previous ||
       (expected_seqno_ == 0 && previous != 0) ||
       (expected_seqno_ != 0 && previous == 0)) {
-    LOG_INFO(info_log,
+    LOG_WARN(info_log,
              "Duplicate message %" PRIu64 "-%" PRIu64
              " on Topic(%s, %s) expected %" PRIu64,
              previous,
@@ -324,7 +324,27 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   std::unordered_set<SubscriptionID> pending_subscribes_;
   /** A set of subscriptions pending unsubscribe message being sent out. */
   std::unordered_map<SubscriptionID, TenantID> pending_terminations_;
+
+  bool ExpectsMessage(const std::shared_ptr<Logger>& info_log, StreamID origin);
 };
+
+bool ClientWorkerData::ExpectsMessage(const std::shared_ptr<Logger>& info_log,
+                                      StreamID origin) {
+  if (!copilot_socket_valid_) {
+    LOG_WARN(info_log,
+             "Unexpected message on stream: (%llu), no valid stream",
+             origin);
+    return false;
+  }
+  if (copilot_socket.GetStreamID() != origin) {
+    LOG_WARN(info_log,
+             "Unexpected message on stream: (%llu), expected: (%llu)",
+             origin,
+             copilot_socket.GetStreamID());
+    return false;
+  }
+  return true;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 Status Client::Create(ClientOptions options,
@@ -502,6 +522,7 @@ SubscriptionHandle ClientImpl::Subscribe(
   const SubscriptionHandle sub_handle = CreateNewHandle(worker_id);
   if (!sub_handle) {
     LOG_ERROR(info_log_, "Client run out of subscription handles");
+    assert(false);
     return SubscriptionHandle(0);
   }
   const SubscriptionID sub_id = sub_handle;
@@ -588,9 +609,9 @@ void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
   Status st =
       options_.storage->CreateSnapshot(msg_loop_->GetNumWorkers(), &snapshot);
   if (!st.ok()) {
-    LOG_ERROR(info_log_,
-              "Failed to create snapshot to save subscriptions: %s",
-              st.ToString().c_str());
+    LOG_WARN(info_log_,
+             "Failed to create snapshot to save subscriptions: %s",
+             st.ToString().c_str());
     save_callback(std::move(st));
     return;
   }
@@ -635,9 +656,9 @@ void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
   // Fan out commands to all workers.
   st = msg_loop_->Gather(std::move(map), std::move(reduce));
   if (!st.ok()) {
-    LOG_ERROR(info_log_,
-              "Failed to send snapshot command to all workers: %s",
-              st.ToString().c_str());
+    LOG_WARN(info_log_,
+             "Failed to send snapshot command to all workers: %s",
+             st.ToString().c_str());
     save_callback(std::move(st));
     return;
   }
@@ -723,9 +744,9 @@ void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
   // Remove subscription state entry.
   auto it = worker_data.subscriptions_.find(sub_id);
   if (it == worker_data.subscriptions_.end()) {
-    LOG_ERROR(info_log_,
-              "Cannot remove missing subscription ID(%" PRIu64 ")",
-              sub_id);
+    LOG_WARN(info_log_,
+             "Cannot remove missing subscription ID(%" PRIu64 ")",
+             sub_id);
     return;
   }
   SubscriptionState sub_state(std::move(it->second));
@@ -739,24 +760,6 @@ void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
   // Issue unsubscribe request.
   worker_data.pending_terminations_.emplace(sub_id, sub_state.GetTenant());
   SendPendingRequests();
-}
-
-bool ClientImpl::IsNotCopilot(const ClientWorkerData& worker_data,
-                              StreamID origin) {
-  if (!worker_data.copilot_socket_valid_) {
-    LOG_DEBUG(info_log_,
-              "Unexpected message on stream: (%llu), no valid stream",
-              origin);
-    return true;
-  }
-  if (worker_data.copilot_socket.GetStreamID() != origin) {
-    LOG_DEBUG(info_log_,
-              "Incorrect message stream: (%llu) expected: (%llu)",
-              origin,
-              worker_data.copilot_socket.GetStreamID());
-    return true;
-  }
-  return false;
 }
 
 void ClientImpl::SendPendingRequests() {
@@ -856,7 +859,7 @@ void ClientImpl::SendPendingRequests() {
     Status st = msg_loop_->SendRequest(
         unsubscribe, &worker_data.copilot_socket, worker_id);
     if (st.ok()) {
-      LOG_DEBUG(info_log_, "Unsubscribed ID (%" PRIu64 ")", sub_id);
+      LOG_INFO(info_log_, "Unsubscribed ID (%" PRIu64 ")", sub_id);
       worker_data.last_send_time_ = now;
       // Message was sent, we may clear pending request.
       worker_data.pending_terminations_.erase(it);
@@ -894,7 +897,7 @@ void ClientImpl::SendPendingRequests() {
     Status st = msg_loop_->SendRequest(
         subscribe, &worker_data.copilot_socket, worker_id);
     if (st.ok()) {
-      LOG_DEBUG(info_log_, "Subscribed ID (%" PRIu64 ")", sub_id);
+      LOG_INFO(info_log_, "Subscribed ID (%" PRIu64 ")", sub_id);
       worker_data.last_send_time_ = now;
       // Message was sent, we may clear pending request.
       worker_data.pending_subscribes_.erase(it);
@@ -919,7 +922,7 @@ void ClientImpl::ProcessDeliverData(std::unique_ptr<Message> msg,
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (IsNotCopilot(worker_data, origin)) {
+  if (!worker_data.ExpectsMessage(info_log_, origin)) {
     return;
   }
 
@@ -948,7 +951,7 @@ void ClientImpl::ProcessDeliverGap(std::unique_ptr<Message> msg,
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (IsNotCopilot(worker_data, origin)) {
+  if (!worker_data.ExpectsMessage(info_log_, origin)) {
     return;
   }
 
@@ -977,7 +980,7 @@ void ClientImpl::ProcessUnsubscribe(std::unique_ptr<Message> msg,
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (IsNotCopilot(worker_data, origin)) {
+  if (!worker_data.ExpectsMessage(info_log_, origin)) {
     return;
   }
 
@@ -1019,7 +1022,8 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker_data = worker_data_[worker_id];
 
   // Check that message arrived on correct stream.
-  if (IsNotCopilot(worker_data, origin)) {
+  if (!worker_data.copilot_socket_valid_ ||
+      worker_data.copilot_socket.GetStreamID() != origin) {
     // It might still be addressed to the publisher.
     publisher_.ProcessGoodbye(std::move(msg), origin);
     return;
@@ -1056,8 +1060,8 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   worker_data.backoff_until_time_ =
       worker_data.last_send_time_ + backoff_period;
 
-  LOG_INFO(info_log_,
-           "Received %zd goodbye messages in a row (on stream %llu),"
+  LOG_WARN(info_log_,
+           "Received %zu goodbye messages in a row (on stream %llu),"
            " back off for %" PRIu64 " ms",
            worker_data.consecutive_goodbyes_count_,
            origin,

@@ -177,9 +177,9 @@ void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
   for (const auto& ack : ackMsg->GetAcks()) {
-    LOG_INFO(publisher_->info_log_,
-             "Received DataAck for message ID %s",
-             ack.msgid.ToHexString().c_str());
+    LOG_DEBUG(publisher_->info_log_,
+              "Received DataAck for message ID %s",
+              ack.msgid.ToHexString().c_str());
 
     auto it = messages_sent_.find(ack.msgid);
     if (it != messages_sent_.end()) {
@@ -225,6 +225,10 @@ void PublisherWorkerData::ProcessGoodbye(std::unique_ptr<Message> msg,
     entry.second.callback(std::move(result_status));
   }
   messages_sent_.clear();
+
+  LOG_WARN(publisher_->info_log_,
+           "Received goodbye message on stream (%llu)",
+           origin);
 
   // Recreate connection.
   Reconnect();

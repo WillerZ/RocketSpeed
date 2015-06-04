@@ -130,8 +130,6 @@ class ClientImpl : public Client {
   /** Handles termination of a subscription on provided worker thread. */
   void TerminateSubscription(SubscriptionID sub_id);
 
-  bool IsNotCopilot(const ClientWorkerData& worker_data, StreamID origin);
-
   /**
    * Synchronises a portion of pending subscribe and unsubscribe requests with
    * the Copilot. Takes into an account rate limits.
