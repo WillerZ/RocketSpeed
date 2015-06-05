@@ -155,10 +155,17 @@ TEST(SupervisorTest, TowerLog) {
   snprintf(expected, sizeof(expected),
     "Topic(guest,TowerLog).log_id: 1\n"
     "Topic(guest,TowerLog).subscription_count: 1\n"
+    "Topic(guest,TowerLog).records_sent: 1\n"
+    "Topic(guest,TowerLog).gaps_sent: 0\n"
     "Topic(guest,TowerLog).tower[0].next_seqno: %" PRIu64 "\n\n",
     seqno + 1);
   ASSERT_EQ(std::string(expected),
     DoRequest("info copilot subscriptions Tower\n"));
+  ASSERT_EQ(std::string(expected),
+    DoRequest("info copilot subscriptions Tower 1\n"));
+  ASSERT_EQ(std::string(expected),
+    DoRequest("info copilot subscriptions Tower 100\n"));
+  ASSERT_EQ("\n", DoRequest("info copilot subscriptions 0\n"));
   ASSERT_EQ("\n", DoRequest("info copilot subscriptions foo\n"));
 
   ASSERT_EQ(std::to_string(seqno + 1) + "\n",

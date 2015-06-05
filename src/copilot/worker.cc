@@ -211,6 +211,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
 
       if (status.ok()) {
         sub->seqno = seqno + 1;
+        ++topic.records_sent;
 
         LOG_DEBUG(options_.info_log,
                   "Sent data (%.16s)@%" PRIu64 " for ID(%" PRIu64
@@ -304,6 +305,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
 
       if (status.ok()) {
         sub->seqno = next_seqno + 1;
+        ++topic.gaps_sent;
 
         LOG_DEBUG(options_.info_log,
                  "Sent gap %" PRIu64 "-%" PRIu64
@@ -914,7 +916,8 @@ std::string CopilotWorker::GetTowersForLog(LogID log_id) const {
   return result;
 }
 
-std::string CopilotWorker::GetSubscriptionInfo(std::string filter) const {
+std::string CopilotWorker::GetSubscriptionInfo(std::string filter,
+                                               int max) const {
   std::string result;
   for (const auto& entry : topics_) {
     char buffer[4096];
@@ -924,6 +927,9 @@ std::string CopilotWorker::GetSubscriptionInfo(std::string filter) const {
     if (!strstr(topic_name.c_str(), filter.c_str())) {
       continue;
     }
+    if (!max--) {
+      break;
+    }
     int n = 0;
     n += snprintf(buffer + n, sizeof(buffer),
                   "%s.log_id: %" PRIu64 "\n",
@@ -931,6 +937,12 @@ std::string CopilotWorker::GetSubscriptionInfo(std::string filter) const {
     n += snprintf(buffer + n, sizeof(buffer),
                   "%s.subscription_count: %zu\n",
                   topic_name.c_str(), state.subscriptions.size());
+    n += snprintf(buffer + n, sizeof(buffer),
+                  "%s.records_sent: %" PRIu32 "\n",
+                  topic_name.c_str(), state.records_sent);
+    n += snprintf(buffer + n, sizeof(buffer),
+                  "%s.gaps_sent: %" PRIu32 "\n",
+                  topic_name.c_str(), state.gaps_sent);
     size_t t = 0;
     for (const TopicState::Tower& tower : state.towers) {
       n += snprintf(buffer + n, sizeof(buffer),

@@ -387,8 +387,7 @@ std::string Copilot::GetInfoSync(std::vector<std::string> args) {
   if (args.size() >= 1) {
     if (args[0] == "towers_for_log" && args.size() == 2 && !args[1].empty()) {
       // towers_for_log n  -- what towers are serving a log.
-      char* end = nullptr;
-      const LogID log_id { strtoul(&*args[1].begin(), &end, 10) };
+      const LogID log_id { strtoul(&*args[1].begin(), nullptr, 10) };
       std::string result;
       auto worker_id = GetLogWorker(log_id);
       Status st =
@@ -404,14 +403,15 @@ std::string Copilot::GetInfoSync(std::vector<std::string> args) {
       LogID log_id;
       Status st = options_.log_router->GetLogID(args[1], args[2], &log_id);
       return st.ok() ? std::to_string(log_id) : st.ToString();
-    } else if (args[0] == "subscriptions" && args.size() == 2) {
-      // subscriptions FILTER -- information about topics.
+    } else if (args[0] == "subscriptions" && args.size() >= 2) {
+      // subscriptions FILTER MAX -- information about topics.
       std::string result;
       std::string filter = args[1];
+      int max = args.size() == 3 ? atoi(&*args[2].begin()) : 1;
       Status st =
         options_.msg_loop->MapReduceSync(
-          [this, filter] (int worker_id) {
-            return workers_[worker_id]->GetSubscriptionInfo(filter);
+          [this, filter, max] (int worker_id) {
+            return workers_[worker_id]->GetSubscriptionInfo(filter, max);
           },
           [] (std::vector<std::string> infos) {
             return std::accumulate(infos.begin(), infos.end(), std::string());

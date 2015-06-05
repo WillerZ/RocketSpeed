@@ -61,8 +61,9 @@ class CopilotWorker {
    * Returns human-readable info about all subscriptions.
    *
    * @param filter Filter for topic names (uses strstr).
+   * @param max Maximum number of subscriptions to return.
    */
-  std::string GetSubscriptionInfo(std::string filter) const;
+  std::string GetSubscriptionInfo(std::string filter, int max) const;
 
  private:
   struct Subscription;
@@ -261,6 +262,8 @@ class CopilotWorker {
     LogID log_id;
     std::vector<std::unique_ptr<Subscription>> subscriptions;
     Towers towers; // Tower subscriptions.
+    uint32_t records_sent = 0;
+    uint32_t gaps_sent = 0;
   };
 
   // State of subscriptions for a single topic.
