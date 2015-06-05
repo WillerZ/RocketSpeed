@@ -6,6 +6,7 @@
 #define __STDC_FORMAT_MACROS
 #include "src/controltower/topic_tailer.h"
 
+#include <limits>
 #include <unordered_map>
 #include <vector>
 #include <inttypes.h>
@@ -20,6 +21,26 @@
 namespace rocketspeed {
 
 /**
+ * Constants for the cost of accepting a subscription.
+ * See: LogReader::SubscriptionCost.
+ */
+enum : uint64_t {
+  /**
+   * The cost of rewinding is infinite (we don't want to rewind unless we must).
+   */
+  kSubscriptionCostRewind = std::numeric_limits<uint64_t>::max(),
+
+  /**
+   * Heuristic for the cost of starting a subscription. If we have a reader
+   * at 100, a spare reader with no logs open, and a new subscription at 101,
+   * it would be better for the reader at 100 to take on the subscription than
+   * to start a new reader. The break-even point where a new reader is
+   * preferable is when the old reader is kSubscriptionCostStart behind.
+   */
+  kSubscriptionCostStart = 1000
+};
+
+/**
  * Encapsulates state needed for one reader of a log.
  */
 class LogReader {
@@ -28,7 +49,7 @@ class LogReader {
    * Create a LogReader.
    *
    * @param info_log Logger.
-   * @param tailer LogTailer to read from.
+   * @param tailer LogTailer to read from (or nullptr for virtual readers).
    * @param reader_id LogTailer reader ID.
    * @param max_subscription_lag Maximum number of sequence numbers a
    *                             subscription can lag behind before sending gap.
@@ -41,7 +62,6 @@ class LogReader {
   , tailer_(tailer)
   , reader_id_(reader_id)
   , max_subscription_lag_(max_subscription_lag) {
-    assert(tailer);
   }
 
   /**
@@ -148,10 +168,42 @@ class LogReader {
     std::function<void(const TopicUUID&, SequenceNumber)> on_bump);
 
   /**
+   * Returns the cost of accepting a new subscription (lower better).
+   */
+  uint64_t SubscriptionCost(const TopicUUID& topic,
+                            LogID log_id,
+                            SequenceNumber seqno) const;
+
+  /**
+   * Tests if this LogReader can be merged into another for a particular log,
+   * i.e. reader can subsume all of this reader's subscriptions.
+   */
+  bool CanMergeInto(LogReader* reader, LogID log_id) const;
+
+  /**
+   * Merges subscriptions state into another LogReader for a particular log.
+   * This reader will stop reading on log_id, and its state removed.
+   */
+  void MergeInto(LogReader* reader, LogID log_id);
+
+  /**
+   * Take the log subscriptions from another reader and start reading.
+   */
+  void StealLogSubscriptions(LogReader* reader, LogID log_id);
+
+  /**
    * Returns the log reader ID.
    */
   size_t GetReaderId() const {
     return reader_id_;
+  }
+
+  /**
+   * A virtual reader maintains a start_seqno and topic state, without having
+   * an actual log reader active.
+   */
+  bool IsVirtual() const {
+    return tailer_ == nullptr;
   }
 
   /**
@@ -255,7 +307,7 @@ Status LogReader::ValidateGap(LogID log_id, SequenceNumber from) {
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
     if (from != log_state.last_read + 1) {
-      LOG_INFO(info_log_,
+      LOG_DEBUG(info_log_,
         "Reader(%zu) received gap out of order. Expected:%" PRIu64
         " Received:%" PRIu64,
         reader_id_,
@@ -264,7 +316,7 @@ Status LogReader::ValidateGap(LogID log_id, SequenceNumber from) {
       return Status::NotFound();
     }
   } else {
-    LOG_INFO(info_log_,
+    LOG_DEBUG(info_log_,
       "Reader(%zu) received gap on unopened Log(%" PRIu64 ")",
       reader_id_,
       log_id);
@@ -343,7 +395,7 @@ void LogReader::BumpLaggingSubscriptions(
       if (tseqno + max_subscription_lag_ < seqno) {
         // Eligible for bump.
         const TopicUUID& topic = it->first;
-        LOG_INFO(info_log_,
+        LOG_DEBUG(info_log_,
           "Bumping %s from %" PRIu64 " to %" PRIu64 " on Log(%" PRIu64 ")",
           topic.ToString().c_str(),
           tseqno,
@@ -402,12 +454,14 @@ Status LogReader::StartReading(const TopicUUID& topic,
   if (reseek) {
     if (first_open) {
       LOG_INFO(info_log_,
-        "Reader(%zu) now reading Log(%" PRIu64 ") from %" PRIu64 " for %s",
+        "%sReader(%zu) now reading Log(%" PRIu64 ") from %" PRIu64 " for %s",
+        IsVirtual() ? "Virtual" : "",
         reader_id_, log_id, seqno, topic.ToString().c_str());
     } else {
       LOG_INFO(info_log_,
-        "Reader(%zu) rewinding Log(%" PRIu64 ") from %" PRIu64 " to %" PRIu64
+        "%sReader(%zu) rewinding Log(%" PRIu64 ") from %" PRIu64 " to %" PRIu64
         " for %s",
+        IsVirtual() ? "Virtual" : "",
         reader_id_,
         log_id,
         log_state.last_read + 1,
@@ -415,16 +469,20 @@ Status LogReader::StartReading(const TopicUUID& topic,
         topic.ToString().c_str());
     }
 
-    st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
-    if (!st.ok()) {
-      return st;
+    if (!IsVirtual()) {
+      st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
+      if (!st.ok()) {
+        LOG_ERROR(info_log_,
+          "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64": %s",
+          reader_id_,
+          log_id,
+          seqno,
+          st.ToString().c_str());
+        return st;
+      }
     }
     log_state.start_seqno = std::min(log_state.start_seqno, seqno);
     log_state.last_read = seqno - 1;
-
-    if (seqno < log_state.start_seqno) {
-      FlushHistory(log_id, seqno);
-    }
   }
   return st;
 }
@@ -439,27 +497,184 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
     auto it = log_state.topics.find(topic);
     if (it != log_state.topics.end()) {
       LOG_INFO(info_log_,
-        "No more subscribers on %s for Log(%" PRIu64 ") Reader(%zu)",
+        "No more subscribers on %s for Log(%" PRIu64 ") %sReader(%zu)",
         topic.ToString().c_str(),
         log_id,
+        IsVirtual() ? "Virtual" : "",
         reader_id_);
       log_state.topics.erase(it);
 
       if (log_state.topics.empty()) {
         // Last subscriber for this log, so stop reading.
-        st = tailer_->StopReading(log_id, reader_id_);
+        if (!IsVirtual()) {
+          st = tailer_->StopReading(log_id, reader_id_);
+        }
         if (st.ok()) {
           LOG_INFO(info_log_,
-            "No more subscribers on Log(%" PRIu64 ") Reader(%zu)",
+            "No more subscribers on Log(%" PRIu64 ") %sReader(%zu)",
             log_id,
+            IsVirtual() ? "Virtual" : "",
             reader_id_);
           assert(log_state.topics.empty());
           log_state_.erase(log_it);
+        } else {
+          LOG_ERROR(info_log_,
+            "Reader(%zu) failed to stop reading Log(%" PRIu64 "): %s",
+            reader_id_,
+            log_id,
+            st.ToString().c_str());
         }
       }
     }
   }
   return st;
+}
+
+uint64_t LogReader::SubscriptionCost(const TopicUUID& topic,
+                                     LogID log_id,
+                                     SequenceNumber seqno) const {
+  auto log_it = log_state_.find(log_id);
+  if (log_it != log_state_.end()) {
+    const LogState& log_state = log_it->second;
+    if (log_state.last_read < seqno) {
+      // We haven't reached this seqno yet, so the costs is the distance
+      // until we reach the new sequence number.
+      return seqno - log_state.last_read;
+    }
+
+    // We have already passed the subscription seqno, but we might have
+    // kept track of it for a different subscriber.
+    auto it = log_state.topics.find(topic);
+    if (it == log_state.topics.end()) {
+      // Unknown topic, so rewind necessary.
+      return kSubscriptionCostRewind;
+    } else {
+      if (seqno < it->second.next_seqno) {
+        // We've already passed this seqno, even for this topic, so rewind.
+        return kSubscriptionCostRewind;
+      } else {
+        // Zero cost to taking on this subscription.
+        return 0;
+      }
+    }
+  } else {
+    // We aren't reading this log, so we can start reading immediately.
+    // However, to start reading we need to communicate with the log storage,
+    // which has a cost. It's cheaper for a reader at 100 to accept a
+    // subscription at 101 than it is for an idle reader to open that log.
+    return kSubscriptionCostStart;
+  }
+}
+
+bool LogReader::CanMergeInto(LogReader* reader, LogID log_id) const {
+  thread_check_.Check();
+  assert(reader);
+
+  // Cannot merge to/from a virtual reader
+  assert(!IsVirtual());
+  assert(!reader->IsVirtual());
+
+  // Find LogState in this reader.
+  auto log_it1 = log_state_.find(log_id);
+  if (log_it1 == log_state_.end()) {
+    // We're not reading this log, nothing to merge.
+    return false;
+  }
+
+  // Find LogState in destination reader.
+  auto log_it2 = reader->log_state_.find(log_id);
+  if (log_it2 == reader->log_state_.end()) {
+    // Reader isn't reading this log, so cannot subsume subscriptions.
+    return false;
+  }
+
+  // Can merge when they are at the same sequence number.
+  const LogState& src = log_it1->second;
+  const LogState& dest = log_it2->second;
+  return dest.last_read == src.last_read;
+}
+
+void LogReader::MergeInto(LogReader* reader, LogID log_id) {
+  thread_check_.Check();
+  assert(reader);
+  assert(CanMergeInto(reader, log_id));
+
+  // Extract LogStates for this log.
+  auto log_it1 = log_state_.find(log_id);
+  auto log_it2 = reader->log_state_.find(log_id);
+  assert(log_it1 != log_state_.end());
+  assert(log_it2 != log_state_.end());
+
+  // Verify last_read.
+  LogState& src = log_it1->second;
+  LogState& dest = log_it2->second;
+  assert(dest.last_read == src.last_read);
+
+  LOG_INFO(info_log_,
+    "Merging Reader(%zu) into Reader(%zu) on Log(%" PRIu64 ")@%" PRIu64,
+    reader_id_,
+    reader->reader_id_,
+    log_id,
+    src.last_read);
+
+  // Now just merge the topic state by taking the min of next_seqno for each.
+  for (auto& src_topic_entry : src.topics) {
+    const TopicUUID& topic = src_topic_entry.first;
+    TopicState& src_topic = src_topic_entry.second;
+    auto it = dest.topics.find(topic);
+    if (it != dest.topics.end()) {
+      // Merge TopicStates by taking the min seqno.
+      TopicState& dest_topic = it->second;
+      dest_topic.next_seqno = std::min(dest_topic.next_seqno,
+                                       src_topic.next_seqno);
+    } else {
+      // Merge by inserting.
+      TopicState topic_state;
+      topic_state.next_seqno = src_topic.next_seqno;
+      // TODO(pja) : these shouldn't emplace_back
+      dest.topics.emplace_back(topic, topic_state);
+    }
+  }
+
+  // Now clear our state and stop reading the log.
+  log_state_.erase(log_it1);
+  Status st = tailer_->StopReading(log_id, reader_id_);
+  if (st.ok()) {
+    LOG_INFO(info_log_, "Reader(%zu) stopped on Log(%" PRIu64 ") due to merge",
+      reader_id_,
+      log_id);
+  } else {
+    LOG_ERROR(info_log_, "Failed to stop Reader(%zu) on Log(%" PRIu64 "): %s",
+      reader_id_,
+      log_id,
+      st.ToString().c_str());
+  }
+}
+
+void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
+  // Must be stealing from a virtual log.
+  assert(reader->IsVirtual());
+  assert(reader->IsLogOpen(log_id));
+  assert(!IsVirtual());
+  assert(!IsLogOpen(log_id));
+
+  LogState& log_state = reader->log_state_.find(log_id)->second;
+
+  const bool first_open = true;
+  Status st = tailer_->StartReading(log_id,
+                                    log_state.start_seqno,
+                                    reader_id_,
+                                    first_open);
+  if (st.ok()) {
+    log_state_.emplace(log_id, std::move(log_state));
+  } else {
+    LOG_ERROR(info_log_,
+      "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64 ": %s",
+      reader_id_,
+      log_id,
+      log_state.start_seqno,
+      st.ToString().c_str());
+  }
 }
 
 std::string LogReader::GetLogInfo(LogID log_id) const {
@@ -545,12 +760,7 @@ Status TopicTailer::SendLogRecord(
       ts_it->second = next_seqno + 1;
     }
 
-    if (prev_seqno == 0) {
-      // No subscribers for this topic.
-      return;
-    }
-
-    if (st.ok()) {
+    if (prev_seqno != 0 && st.ok()) {
       // Find subscribed hosts.
       std::vector<HostNumber> hosts;
       topic_map_[log_id].VisitSubscribers(
@@ -558,7 +768,7 @@ Status TopicTailer::SendLogRecord(
         [&] (TopicSubscription* sub) {
           hosts.emplace_back(sub->GetHostNum());
           sub->SetSequenceNumber(next_seqno + 1);
-          LOG_INFO(info_log_,
+          LOG_DEBUG(info_log_,
             "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
             " Reader(%zu)",
             int(sub->GetHostNum()),
@@ -577,7 +787,7 @@ Status TopicTailer::SendLogRecord(
           [&] (TopicSubscription* sub) {
             tail_hosts.emplace_back(sub->GetHostNum());
             sub->SetSequenceNumber(next_seqno + 1);
-            LOG_INFO(info_log_,
+            LOG_DEBUG(info_log_,
               "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
               " Reader(%zu)",
               int(sub->GetHostNum()),
@@ -616,7 +826,7 @@ Status TopicTailer::SendLogRecord(
 
       if (data) {
         stats_.log_records_without_subscriptions->Add(1);
-        LOG_INFO(info_log_,
+        LOG_DEBUG(info_log_,
           "Reader(%zu) found no hosts for %smessage on %s@%" PRIu64 "-%" PRIu64,
           reader_id,
           is_tail ? "tail " : "",
@@ -648,7 +858,7 @@ Status TopicTailer::SendLogRecord(
 
               // Advance subscription.
               sub->SetSequenceNumber(next_seqno + 1);
-              LOG_INFO(info_log_,
+              LOG_DEBUG(info_log_,
                 "Hostnum(%d) bumped to %s@%" PRIu64 " on Log(%" PRIu64 ")"
                 " Reader(%zu)",
                 int(sub->GetHostNum()),
@@ -687,6 +897,8 @@ Status TopicTailer::SendLogRecord(
         next_seqno,
         st.ToString().c_str());
     }
+
+    AttemptReaderMerges(reader, log_id);
   });
 
   Status st;
@@ -739,7 +951,7 @@ Status TopicTailer::SendGapRecord(
           [&] (TopicSubscription* sub) {
             hosts.emplace_back(sub->GetHostNum());
             sub->SetSequenceNumber(to + 1);
-            LOG_INFO(info_log_,
+            LOG_DEBUG(info_log_,
               "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
               " Reader(%zu)",
               int(sub->GetHostNum()),
@@ -782,6 +994,8 @@ Status TopicTailer::SendGapRecord(
       stats_.malignant_gaps_received->Add(1);
       reader->FlushHistory(log_id, to + 1);
     }
+
+    AttemptReaderMerges(reader, log_id);
   });
 
   return sent ? Status::OK() : Status::NoBuffer();
@@ -803,6 +1017,11 @@ Status TopicTailer::Initialize(const std::vector<size_t>& reader_ids,
                     reader_id,
                     max_subscription_lag));
   }
+  pending_reader_.reset(
+    new LogReader(info_log_,
+                  nullptr,  // null LogTailer <=> virtual reader
+                  0,
+                  max_subscription_lag));
   return Status::OK();
 }
 
@@ -932,7 +1151,7 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
   }
 
   bool sent = Forward([this, logid, topic, hostnum] () {
-    LOG_INFO(info_log_,
+    LOG_DEBUG(info_log_,
       "Hostnum(%d) unsubscribed for %s",
       int(hostnum),
       topic.ToString().c_str());
@@ -982,7 +1201,7 @@ void TopicTailer::AddTailSubscriber(const TopicUUID& topic,
                                     LogID logid,
                                     SequenceNumber seqno) {
   // Send message to inform subscriber of latest seqno.
-  LOG_INFO(info_log_,
+  LOG_DEBUG(info_log_,
     "Sending gap message on %s@0-%" PRIu64 " Log(%" PRIu64 ")",
     topic.ToString().c_str(),
     seqno - 1,
@@ -1017,18 +1236,19 @@ void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
   // Using 'seqno - 1' to ensure that we start reading at a sequence
   // number that exists. FindLatestSeqno returns the *next* seqno to be
   // written to the log.
-  SequenceNumber start_seqno =
+  SequenceNumber start =
     log_tailer_->CanSubscribePastEnd() ? seqno : seqno - 1;
-  LogReader* reader = ReaderForNewSubscription(hostnum, topic, start_seqno);
+  LogReader* reader = ReaderForNewSubscription(hostnum, topic, logid, start);
   assert(reader);
-  reader->StartReading(topic, logid, start_seqno);
+  reader->StartReading(topic, logid, start);
 
-    LOG_INFO(info_log_,
-    "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s) on Reader(%zu)",
+  LOG_DEBUG(info_log_,
+    "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s) on %sReader(%zu)",
     int(hostnum),
     topic.ToString().c_str(),
     seqno,
     was_added ? "new" : "update",
+    reader->IsVirtual() ? "Virtual" : "",
     reader->GetReaderId());
 }
 
@@ -1066,8 +1286,48 @@ LogReader* TopicTailer::FindLogReader(size_t reader_id) {
 
 LogReader* TopicTailer::ReaderForNewSubscription(HostNumber hostnum,
                                                  const TopicUUID& topic,
+                                                 LogID logid,
                                                  SequenceNumber seqno) {
-  return log_readers_[0].get();
+  // Find the best reader for this subscription.
+  // We never rewind a reader until it is merged with another.
+  // If a subscription is before the current position of all readers then
+  // the subscription is added to pending_reader_. Once a reader merges with
+  // another, the merged reader takes over the subscriptions of pending reader.
+  // This algorithm only works with > 1 reader, so with one reader we just
+  // rewind always. A better algorithm would be to use timers (TODO).
+  if (log_readers_.size() == 1) {
+    return log_readers_[0].get();
+  }
+  LogReader* best_reader = pending_reader_.get();
+  uint64_t best_cost = kSubscriptionCostRewind;
+  for (auto& reader : log_readers_) {
+    // Find cost of accepting this new subscription.
+    uint64_t reader_cost = reader->SubscriptionCost(topic, logid, seqno);
+    if (reader_cost < best_cost) {
+      // This is a better reader.
+      best_reader = reader.get();
+      best_cost = reader_cost;
+    }
+  }
+  return best_reader;
 }
+
+void TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
+  // Attempt to merge src reader into all other readers on log_id.
+  for (auto& dest : log_readers_) {
+    if (src != dest.get() && src->CanMergeInto(dest.get(), log_id)) {
+      // Perform merge.
+      src->MergeInto(dest.get(), log_id);
+
+      // Now check if there are pending subscriptions on the virtual reader.
+      if (pending_reader_->IsLogOpen(log_id)) {
+        // We'll subsume the subscriptions from the virtual reader.
+        src->StealLogSubscriptions(pending_reader_.get(), log_id);
+      }
+      break;
+    }
+  }
+}
+
 
 }  // namespace rocketspeed

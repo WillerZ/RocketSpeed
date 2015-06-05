@@ -165,6 +165,7 @@ Status LogTailer::StartReading(LogID logid,
   if (reader_.size() == 0) {
     return Status::NotInitialized();
   }
+  assert(reader_id < reader_.size());
   AsyncLogReader* r = reader_[reader_id].get();
   Status st = r->Open(logid, start);
   if (st.ok()) {

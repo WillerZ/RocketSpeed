@@ -163,11 +163,19 @@ class TopicTailer {
   LogReader* FindLogReader(size_t reader_id);
 
   /**
-   * Assigned a new subscription (hostnum + topic) to a LogReader.
+   * Assign a new subscription (hostnum + topic) to a LogReader.
    */
   LogReader* ReaderForNewSubscription(HostNumber hostnum,
                                       const TopicUUID& topic,
+                                      LogID logid,
                                       SequenceNumber seqno);
+
+  /**
+   * Attempt to merge src into all other readers.
+   * Merging into another reader means that the other reader will subsume all
+   * subscriptions that src was serving, and src will stop reading on log_id.
+   */
+  void AttemptReaderMerges(LogReader* src, LogID log_id);
 
   ThreadCheck thread_check_;
 
@@ -190,6 +198,13 @@ class TopicTailer {
   // We have multiple readers in case a log is subscribed to at multiple
   // positions.
   std::vector<std::unique_ptr<LogReader>> log_readers_;
+
+  // This is a 'virtual' reader for all pending subscriptions.
+  // It has the same interface as LogReader, but doesn't actually read
+  // from a log. Once a read reader (from log_readers_) becomes available,
+  // it will take the state of pending_reader_ and open the log at the
+  // correct position.
+  std::unique_ptr<LogReader> pending_reader_;
 
   // Callback for outgoing messages.
   std::function<void(std::unique_ptr<Message>,

@@ -306,13 +306,13 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
         sub->seqno = next_seqno + 1;
 
         LOG_DEBUG(options_.info_log,
-                  "Sent gap %" PRIu64 "-%" PRIu64
-                  " for  subscription ID(%" PRIu64 ") %s to %llu",
-                  msg->GetStartSequenceNumber(),
-                  msg->GetEndSequenceNumber(),
-                  gap.GetSubID(),
-                  uuid.ToString().c_str(),
-                  recipient);
+                 "Sent gap %" PRIu64 "-%" PRIu64
+                 " for subscription ID(%" PRIu64 ") %s to %llu",
+                 msg->GetStartSequenceNumber(),
+                 msg->GetEndSequenceNumber(),
+                 gap.GetSubID(),
+                 uuid.ToString().c_str(),
+                 recipient);
       } else {
         LOG_WARN(
             options_.info_log, "Failed to distribute gap to %llu", recipient);
