@@ -41,6 +41,10 @@ class ClientImpl : public Client {
                        std::unique_ptr<ClientImpl>* client,
                        bool is_internal = false);
 
+  ClientImpl(ClientOptions options,
+             std::unique_ptr<MsgLoopBase> msg_loop,
+             bool is_internal);
+
   virtual ~ClientImpl();
 
   void SetDefaultCallbacks(SubscribeCallback subscription_callback,
@@ -67,10 +71,6 @@ class ClientImpl : public Client {
 
   Status RestoreSubscriptions(
       std::vector<SubscriptionParameters>* subscriptions) override;
-
-  ClientImpl(ClientOptions options,
-             std::unique_ptr<MsgLoopBase> msg_loop,
-             bool is_internal);
 
   Statistics GetStatisticsSync() const;
 
@@ -104,11 +104,11 @@ class ClientImpl : public Client {
   /** Default callbacks for delivering messages. */
   MessageReceivedCallback deliver_cb_fallback_;
 
-  /** Starts message loop and waits until it's running. */
-  Status WaitUntilRunning();
-
   /** Next subscription ID seed to be used for new subscription ID. */
   std::atomic<uint64_t> next_sub_id_;
+
+  /** Starts the client. */
+  Status Start();
 
   /**
    * Returns a new subscription handle. This method is thread-safe.

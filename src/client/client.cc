@@ -414,7 +414,7 @@ Status ClientImpl::Create(ClientOptions options,
   std::unique_ptr<ClientImpl> client(
       new ClientImpl(std::move(options), std::move(msg_loop_), is_internal));
 
-  st = client->WaitUntilRunning();
+  st = client->Start();
   if (!st.ok()) {
     return st;
   }
@@ -683,15 +683,10 @@ Statistics ClientImpl::GetStatisticsSync() const {
   return msg_loop_->GetStatisticsSync();
 }
 
-Status ClientImpl::WaitUntilRunning() {
+Status ClientImpl::Start() {
   msg_loop_thread_ =
       options_.env->StartThread([this]() { msg_loop_->Run(); }, "client");
   msg_loop_thread_spawned_ = true;
-
-  Status st = msg_loop_->WaitUntilRunning();
-  if (!st.ok()) {
-    return st;
-  }
   return Status::OK();
 }
 
