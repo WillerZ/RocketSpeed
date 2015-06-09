@@ -2,6 +2,7 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+#define __STDC_FORMAT_MACROS
 
 #include <atomic>
 #include <chrono>
@@ -232,6 +233,73 @@ TEST(ClientTest, GetCopilotFailure) {
 
   // Copilot should receive the subscribe request.
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
+}
+
+TEST(ClientTest, OfflineOperations) {
+  std::unordered_map<Topic, std::pair<SequenceNumber, SubscriptionHandle>>
+      subscriptions;
+  port::Semaphore unsubscribe_sem, all_ok_sem;
+  std::atomic<bool> expects_request(false);
+  auto subscribe_cb = [&](std::unique_ptr<Message> msg, StreamID origin) {
+    ASSERT_TRUE(expects_request.load());
+    auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+    auto it = subscriptions.find(subscribe->GetTopicName());
+    ASSERT_TRUE(it != subscriptions.end());
+    ASSERT_EQ(it->second.first, subscribe->GetStartSequenceNumber());
+    subscriptions.erase(it);
+    if (subscriptions.empty()) {
+      all_ok_sem.Post();
+    }
+  };
+  auto copilot = MockCopilot({{MessageType::mSubscribe, subscribe_cb}});
+
+  ClientOptions options;
+  // Speed up client retries.
+  options.timer_period = std::chrono::milliseconds(1);
+  options.backoff_distribution = [](ClientRNG*) { return 0.0; };
+  auto client = CreateClient(std::move(options));
+
+  // Disable communication.
+  config_->SetCopilot(HostId());
+
+  auto sub = [&](Topic topic_name, SequenceNumber start_seqno) {
+    ASSERT_EQ(0, subscriptions.count(topic_name));
+    auto sub_handle = client->Subscribe(
+        GuestTenant,
+        GuestNamespace,
+        topic_name,
+        start_seqno,
+        nullptr,
+        [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
+    ASSERT_TRUE(sub_handle);
+    subscriptions[topic_name] = {start_seqno, sub_handle};
+  };
+
+  auto unsub = [&](Topic topic_name) {
+    auto it = subscriptions.find(topic_name);
+    ASSERT_TRUE(it != subscriptions.end());
+    ASSERT_OK(client->Unsubscribe(it->second.second));
+    subscriptions.erase(it);
+    ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+  };
+
+  // Simulate some subscriptions and unsubscriptions.
+  sub("a", 0);
+  sub("b", 1);
+  unsub("a");
+  unsub("b");
+  // No subscriptions at this point.
+  sub("c", 2);
+  sub("a", 3);
+  sub("b", 4);
+  unsub("a");
+
+  // Finished offline operations.
+  expects_request = true;
+  // Enable communication and wait for Copilot to verify all received
+  // requests.
+  config_->SetCopilot(copilot->GetHostId());
+  ASSERT_TRUE(all_ok_sem.TimedWait(positive_timeout));
 }
 
 }  // namespace rocketspeed
