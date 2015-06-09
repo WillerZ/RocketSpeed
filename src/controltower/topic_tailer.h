@@ -218,42 +218,44 @@ class TopicTailer {
 
   struct Stats {
     Stats() {
+      const std::string prefix = "tower.topic_tailer.";
+
       log_records_received =
-        all.AddCounter("topic_tailer.log_records_received");
+        all.AddCounter(prefix + "log_records_received");
       new_tail_records_sent =
-        all.AddCounter("topic_tailer.new_tail_records_sent");
+        all.AddCounter(prefix + "new_tail_records_sent");
       log_records_with_subscriptions =
-        all.AddCounter("topic_tailer.log_records_with_subscriptions");
+        all.AddCounter(prefix + "log_records_with_subscriptions");
       log_records_without_subscriptions =
-        all.AddCounter("topic_tailer.log_records_without_subscriptions");
+        all.AddCounter(prefix + "log_records_without_subscriptions");
       log_records_out_of_order =
-        all.AddCounter("topic_tailer.log_records_out_of_order");
+        all.AddCounter(prefix + "log_records_out_of_order");
       bumped_subscriptions =
-        all.AddCounter("topic_tailer.bumped_subscriptions");
+        all.AddCounter(prefix + "bumped_subscriptions");
       gap_records_received =
-        all.AddCounter("topic_tailer.gap_records_received");
+        all.AddCounter(prefix + "gap_records_received");
       gap_records_out_of_order =
-        all.AddCounter("topic_tailer.gap_records_out_of_order");
+        all.AddCounter(prefix + "gap_records_out_of_order");
       gap_records_with_subscriptions =
-        all.AddCounter("topic_tailer.gap_records_with_subscriptions");
+        all.AddCounter(prefix + "gap_records_with_subscriptions");
       gap_records_without_subscriptions =
-        all.AddCounter("topic_tailer.gap_records_without_subscriptions");
+        all.AddCounter(prefix + "gap_records_without_subscriptions");
       benign_gaps_received =
-        all.AddCounter("topic_tailer.benign_gaps_received");
+        all.AddCounter(prefix + "benign_gaps_received");
       malignant_gaps_received =
-        all.AddCounter("topic_tailer.malignant_gaps_received");
+        all.AddCounter(prefix + "malignant_gaps_received");
       add_subscriber_requests =
-        all.AddCounter("topic_tailer.add_subscriber_requests");
+        all.AddCounter(prefix + "add_subscriber_requests");
       add_subscriber_requests_at_0 =
-        all.AddCounter("topic_tailer.add_subscriber_requests_at_0");
+        all.AddCounter(prefix + "add_subscriber_requests_at_0");
       add_subscriber_requests_at_0_fast =
-        all.AddCounter("topic_tailer.add_subscriber_requests_at_0_fast");
+        all.AddCounter(prefix + "add_subscriber_requests_at_0_fast");
       add_subscriber_requests_at_0_slow =
-        all.AddCounter("topic_tailer.add_subscriber_requests_at_0_slow");
+        all.AddCounter(prefix + "add_subscriber_requests_at_0_slow");
       updated_subscriptions =
-        all.AddCounter("topic_tailer.updated_subscriptions");
+        all.AddCounter(prefix + "updated_subscriptions");
       remove_subscriber_requests =
-        all.AddCounter("topic_tailer.remove_subscriber_requests");
+        all.AddCounter(prefix + "remove_subscriber_requests");
     }
 
     Statistics all;
