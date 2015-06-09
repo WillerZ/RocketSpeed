@@ -133,8 +133,8 @@ TEST(ClientTest, UnsubscribeDedup) {
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(!unsubscribe_sem.TimedWait(negative_timeout));
 
-  // Wait for the rest of dedup timeout.
-  ASSERT_TRUE(!unsubscribe_sem.TimedWait(dedup_timeout - negative_timeout));
+  // Wait for dedup period.
+  ASSERT_TRUE(!unsubscribe_sem.TimedWait(dedup_timeout));
 
   // Publish another bad message.
   deliver.SetSequenceNumbers(11, 12);
@@ -215,9 +215,16 @@ TEST(ClientTest, GetCopilotFailure) {
   config_->SetCopilot(HostId());
 
   // Subscribe, not call should make it to the Copilot.
-  client->Subscribe(GuestTenant, GuestNamespace, "GetCopilotFailure", 0);
+  auto sub_handle =
+      client->Subscribe(GuestTenant, GuestNamespace, "GetCopilotFailure", 0);
   ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
-  // Intentionally repeated.
+
+  // While disconnected, unsubscribe and subscribe again, this shouldn't affect
+  // the scenario.
+  client->Unsubscribe(sub_handle);
+  client->Subscribe(GuestTenant, GuestNamespace, "GetCopilotFailure", 0);
+
+  // Copilot shouldn't receive anything.
   ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
 
   // Set Copilot address in the config.

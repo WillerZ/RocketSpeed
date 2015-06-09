@@ -760,6 +760,8 @@ void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
 
   // Issue unsubscribe request.
   worker_data.pending_terminations_.emplace(sub_id, sub_state.GetTenant());
+  // Remove pending subscribe request, if any.
+  worker_data.pending_subscribes_.erase(sub_id);
   SendPendingRequests();
 }
 
@@ -767,7 +769,6 @@ void ClientImpl::SendPendingRequests() {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
-  const uint64_t now = options_.env->NowMicros();
   // Evict entries from a list of recently sent unsubscribe messages.
   worker_data.recent_terminations_.ProcessExpired(
       options_.unsubscribe_deduplication_timeout, [](SubscriptionID) {}, -1);
@@ -778,6 +779,7 @@ void ClientImpl::SendPendingRequests() {
     return;
   }
 
+  const uint64_t now = options_.env->NowMicros();
   // Check if we have a valid socket to the Copilot, recreate it if not.
   if (!worker_data.copilot_socket_valid_) {
     // Since we're not connected to the Copilot, all subscriptions were
@@ -823,10 +825,10 @@ void ClientImpl::SendPendingRequests() {
   if (options_.close_connection_with_no_subscription &&
       worker_data.subscriptions_.empty()) {
     assert(worker_data.pending_subscribes_.empty());
-    assert(!worker_data.pending_terminations_.empty());
-    TenantID tenant_id = worker_data.pending_terminations_.begin()->second;
 
-    MessageGoodbye goodbye(tenant_id,
+    // We do not use any specific tenant, there might be many unsubscribe
+    // requests from arbitrary tenants.
+    MessageGoodbye goodbye(GuestTenant,
                            MessageGoodbye::Code::Graceful,
                            MessageGoodbye::OriginType::Client);
 
