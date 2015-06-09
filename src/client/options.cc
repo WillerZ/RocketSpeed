@@ -29,7 +29,8 @@ ClientOptions::ClientOptions()
     , backoff_base(2.0)
     , backoff_initial(5 * 1000)
     , backoff_limit(1 * 60 * 1000)
-    , backoff_distribution(DefaultBackOffDistribution()) {
+    , backoff_distribution(DefaultBackOffDistribution())
+    , unsubscribe_deduplication_timeout(10 * 1000) {
 }
 
 }  // namespace rocketspeed

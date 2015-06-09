@@ -52,6 +52,13 @@ template <class T> class TimeoutList {
   size_t Size() const { return lmap_.size(); }
 
   /**
+   * Checks whether the list contains provided item.
+   */
+  bool Contains(const T& t) const {
+    return lmap_.contains(t);
+  }
+
+  /**
   * Adds a new item with a time_point = now()
   * or updates an existing item to now() and moves to back of the list
   */
@@ -72,6 +79,13 @@ template <class T> class TimeoutList {
   */
   bool Erase(const T& t) {
     return lmap_.erase(t);
+  }
+
+  /**
+   * Removes all entries of the list, without any time checks.
+   */
+  void Clear() {
+    lmap_.clear();
   }
 
   /**

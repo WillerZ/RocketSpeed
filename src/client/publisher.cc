@@ -96,10 +96,9 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
   PublisherWorkerData& operator=(PublisherWorkerData&&) = default;
 
   PublisherWorkerData(PublisherImpl* publisher, int worker_id)
-      : publisher_(publisher), worker_id_(worker_id) {}
-
-  /** Recreates streams used in communication with the Pilot. */
-  void Reconnect();
+      : publisher_(publisher)
+      , worker_id_(worker_id)
+      , pilot_socket_valid_(false) {}
 
   /** Publishes message to the Pilot. */
   void Publish(MsgId message_id,
@@ -119,17 +118,44 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
   const int worker_id_;
   /** Stream socket used by this worker to talk to the pilot. */
   StreamSocket pilot_socket_;
+  /** Determines whether pilot socket is valid. */
+  bool pilot_socket_valid_;
   /** Messages sent, awaiting ack. Maps message ID -> pre-serialized message. */
   std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent_;
 
-  /** Checks that message arrived on correct stream. */
-  bool IsNotPilot(StreamID origin);
+  bool ExpectsMessage(StreamID origin);
 };
 
 void PublisherWorkerData::Publish(MsgId message_id,
                                   std::string serialized,
                                   PublishCallback callback) {
   thread_check_.Check();
+
+  // Check if we have a valid socket to the Pilot, recreate it if not.
+  if (!pilot_socket_valid_) {
+    // Get the pilot's address.
+    HostId pilot;
+    Status st = publisher_->config_->GetPilot(&pilot);
+    if (!st.ok()) {
+      LOG_WARN(publisher_->info_log_,
+               "Failed to obtain Pilot address: %s",
+               st.ToString().c_str());
+      // We'll try to obtain the address and reconnect on next occasion.
+      // TODO(stupaq) make above comment valid.
+      assert(false);
+      return;
+    }
+
+    // And create socket to it.
+    pilot_socket_ = publisher_->msg_loop_->CreateOutboundStream(
+        pilot.ToClientId(), worker_id_);
+    pilot_socket_valid_ = true;
+
+    LOG_INFO(publisher_->info_log_,
+             "Reconnected to %s on stream %llu",
+             pilot.ToString().c_str(),
+             pilot_socket_.GetStreamID());
+  }
 
   // Send to event loop for processing (the loop will free it).
   Status st = publisher_->msg_loop_->SendCommand(
@@ -148,27 +174,11 @@ void PublisherWorkerData::Publish(MsgId message_id,
   assert(emplace_result.second);
 }
 
-void PublisherWorkerData::Reconnect() {
-  // Get the pilot's address.
-  HostId pilot;
-  Status st = publisher_->config_->GetPilot(&pilot);
-  assert(st.ok());  // TODO(pja) : handle failures
-
-  // And create socket to it.
-  pilot_socket_ = publisher_->msg_loop_->CreateOutboundStream(
-      pilot.ToClientId(), worker_id_);
-
-  LOG_INFO(publisher_->info_log_,
-           "Reconnected to %s on stream %llu",
-           pilot.ToString().c_str(),
-           pilot_socket_.GetStreamID());
-}
-
 void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
                                          StreamID origin) {
   thread_check_.Check();
 
-  if (IsNotPilot(origin)) {
+  if (!ExpectsMessage(origin)) {
     return;
   }
 
@@ -212,9 +222,15 @@ void PublisherWorkerData::ProcessGoodbye(std::unique_ptr<Message> msg,
                                          StreamID origin) {
   thread_check_.Check();
 
-  if (IsNotPilot(origin)) {
+  if (!ExpectsMessage(origin)) {
     return;
   }
+
+  LOG_WARN(publisher_->info_log_,
+           "Received goodbye message on stream (%llu)",
+           origin);
+
+  pilot_socket_valid_ = false;
 
   // Notify about failed publishes.
   for (auto& entry : messages_sent_) {
@@ -225,24 +241,23 @@ void PublisherWorkerData::ProcessGoodbye(std::unique_ptr<Message> msg,
     entry.second.callback(std::move(result_status));
   }
   messages_sent_.clear();
-
-  LOG_WARN(publisher_->info_log_,
-           "Received goodbye message on stream (%llu)",
-           origin);
-
-  // Recreate connection.
-  Reconnect();
 }
 
-bool PublisherWorkerData::IsNotPilot(StreamID origin) {
+bool PublisherWorkerData::ExpectsMessage(StreamID origin) {
+  if (!pilot_socket_valid_) {
+    LOG_WARN(publisher_->info_log_,
+             "Unexpected message on stream: (%llu), no valid stream",
+             origin);
+    return false;
+  }
   if (pilot_socket_.GetStreamID() != origin) {
     LOG_WARN(publisher_->info_log_,
-             "Incorrect message stream: (%llu) expected: (%llu)",
+             "Unexpected message on stream: (%llu), expected: (%llu)",
              origin,
              pilot_socket_.GetStreamID());
-    return true;
+    return false;
   }
-  return false;
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -261,11 +276,8 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
   // use it in the future. This silences the warning.
   (void)wake_lock_;
 
-  // Prepare sharded state.
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     worker_data_.emplace_back(this, i);
-    // Connect to the Pilot.
-    worker_data_.back().Reconnect();
   }
 
   // Register our callbacks.

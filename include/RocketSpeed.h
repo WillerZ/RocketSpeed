@@ -107,6 +107,11 @@ class ClientOptions {
   typedef std::function<double(ClientRNG*)> BackOffDistribution;
   BackOffDistribution backoff_distribution;
 
+  // If client receives a burst of messages on non-existent subscription ID, it
+  // will respond with unsubscribe message only once every specified duration.
+  // Default: 10s
+  std::chrono::milliseconds unsubscribe_deduplication_timeout;
+
   /** Creates options with default values. */
   ClientOptions();
 };

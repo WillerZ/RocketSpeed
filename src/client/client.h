@@ -136,11 +136,8 @@ class ClientImpl : public Client {
    */
   void SendPendingRequests();
 
-  /** Handler for messages carrying data. */
-  void ProcessDeliverData(std::unique_ptr<Message> msg, StreamID origin);
-
-  /** Handler for gap messages. */
-  void ProcessDeliverGap(std::unique_ptr<Message> msg, StreamID origin);
+  /** Handler for data and gap messages */
+  void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);
 
   /** Handler for unsubscribe messages. */
   void ProcessUnsubscribe(std::unique_ptr<Message> msg, StreamID origin);

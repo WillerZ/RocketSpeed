@@ -29,6 +29,7 @@
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/port/port.h"
+#include "src/util/timeout_list.h"
 
 #ifndef USE_MQTTMSGLOOP
 #include "src/messages/msg_loop.h"
@@ -77,13 +78,9 @@ class SubscriptionState {
                  SubscriptionID sub_id,
                  MessageUnsubscribe::Reason reason);
 
-  /** Processes gap message, gap messages are not passed to the application. */
+  /** Processes gap or data message. */
   void ReceiveMessage(const std::shared_ptr<Logger>& info_log,
-                      std::unique_ptr<MessageDeliverGap> gap);
-
-  /** Processes data message, and delivers it to the application. */
-  void ReceiveMessage(const std::shared_ptr<Logger>& info_log,
-                      std::unique_ptr<MessageDeliverData> data);
+                      std::unique_ptr<MessageDeliver> deliver);
 
   /** Returns a lower bound on the seqno of the next expected message. */
   SequenceNumber GetExpected() const {
@@ -172,26 +169,31 @@ class MessageReceivedImpl : public MessageReceived {
   std::unique_ptr<MessageDeliverData> data_;
 };
 
-void SubscriptionState::ReceiveMessage(const std::shared_ptr<Logger>& info_log,
-                                       std::unique_ptr<MessageDeliverGap> gap) {
-  thread_check_.Check();
-
-  ProcessMessage(info_log, *gap);
-  // Do not deliver, this is internal message.
-}
-
 void SubscriptionState::ReceiveMessage(
     const std::shared_ptr<Logger>& info_log,
-    std::unique_ptr<MessageDeliverData> data) {
+    std::unique_ptr<MessageDeliver> deliver) {
   thread_check_.Check();
 
-  if (ProcessMessage(info_log, *data)) {
-    // Deliver message to the application.
-    if (deliver_callback_) {
-      std::unique_ptr<MessageReceived> received(
-          new MessageReceivedImpl(std::move(data)));
-      deliver_callback_(received);
-    }
+  if (!ProcessMessage(info_log, *deliver)) {
+    return;
+  }
+
+  switch (deliver->GetMessageType()) {
+    case MessageType::mDeliverData:
+      // Deliver data message to the application.
+      if (deliver_callback_) {
+        std::unique_ptr<MessageDeliverData> data(
+            static_cast<MessageDeliverData*>(deliver.release()));
+        std::unique_ptr<MessageReceived> received(
+            new MessageReceivedImpl(std::move(data)));
+        deliver_callback_(received);
+      }
+      break;
+    case MessageType::mDeliverGap:
+      // Do not deliver gap messages.
+      break;
+    default:
+      assert(false);
   }
 }
 
@@ -320,6 +322,11 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   bool copilot_socket_valid_;
   /** All subscriptions served by this worker. */
   std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
+  /**
+   * A timeout list with recently sent unsubscribe requests, used to dedup
+   * unsubscribes if we receive a burst of messages on terminated subscription.
+   */
+  TimeoutList<SubscriptionID> recent_terminations_;
   /** A set of subscriptions pending subscribe message being sent out. */
   std::unordered_set<SubscriptionID> pending_subscribes_;
   /** A set of subscriptions pending unsubscribe message being sent out. */
@@ -364,6 +371,9 @@ Status ClientImpl::Create(ClientOptions options,
   assert(out_client);
 
   // Validate arguments.
+  if (!options.config) {
+    return Status::InvalidArgument("Missing configuration.");
+  }
   if (options.backoff_base < 1.0) {
     return Status::InvalidArgument("Backoff base must be >= 1.0");
   }
@@ -432,14 +442,10 @@ ClientImpl::ClientImpl(ClientOptions options,
 
   // Setup callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mDeliverData] = [this] (std::unique_ptr<Message> msg,
-                                             StreamID origin) {
-    ProcessDeliverData(std::move(msg), origin);
-  };
-  callbacks[MessageType::mDeliverGap] = [this] (std::unique_ptr<Message> msg,
-                                         StreamID origin) {
-    ProcessDeliverGap(std::move(msg), origin);
-  };
+  callbacks[MessageType::mDeliverGap] = callbacks[MessageType::mDeliverData] =
+      [this](std::unique_ptr<Message> msg, StreamID origin) {
+        ProcessDeliver(std::move(msg), origin);
+      };
   callbacks[MessageType::mUnsubscribe] = [this] (std::unique_ptr<Message> msg,
                                               StreamID origin) {
     ProcessUnsubscribe(std::move(msg), origin);
@@ -766,13 +772,17 @@ void ClientImpl::SendPendingRequests() {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   auto& worker_data = worker_data_[worker_id];
 
+  const uint64_t now = options_.env->NowMicros();
+  // Evict entries from a list of recently sent unsubscribe messages.
+  worker_data.recent_terminations_.ProcessExpired(
+      options_.unsubscribe_deduplication_timeout, [](SubscriptionID) {}, -1);
+
   // Return immediately if there is nothing to do.
   if (worker_data.pending_subscribes_.empty() &&
       worker_data.pending_terminations_.empty()) {
     return;
   }
 
-  const uint64_t now = options_.env->NowMicros();
   // Check if we have a valid socket to the Copilot, recreate it if not.
   if (!worker_data.copilot_socket_valid_) {
     // Since we're not connected to the Copilot, all subscriptions were
@@ -853,6 +863,12 @@ void ClientImpl::SendPendingRequests() {
     TenantID tenant_id = it->second;
     SubscriptionID sub_id = it->first;
 
+    if (worker_data.recent_terminations_.Contains(sub_id)) {
+      // Skip the unsubscribe message if we sent it recently.
+      worker_data.pending_terminations_.erase(it);
+      continue;
+    }
+
     MessageUnsubscribe unsubscribe(
         tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested);
 
@@ -863,6 +879,8 @@ void ClientImpl::SendPendingRequests() {
       worker_data.last_send_time_ = now;
       // Message was sent, we may clear pending request.
       worker_data.pending_terminations_.erase(it);
+      // Record the fact, so we don't send duplicates of the message.
+      worker_data.recent_terminations_.Add(sub_id);
     } else {
       LOG_WARN(info_log_,
                "Failed to send unsubscribe response for ID(%" PRIu64 ")",
@@ -911,10 +929,9 @@ void ClientImpl::SendPendingRequests() {
   }
 }
 
-void ClientImpl::ProcessDeliverData(std::unique_ptr<Message> msg,
-                                    StreamID origin) {
-  std::unique_ptr<MessageDeliverData> data(
-      static_cast<MessageDeliverData*>(msg.release()));
+void ClientImpl::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
+  std::unique_ptr<MessageDeliver> deliver(
+      static_cast<MessageDeliver*>(msg.release()));
 
   wake_lock_.AcquireForReceiving();
   // Get worker data that this topic is assigned to.
@@ -929,42 +946,14 @@ void ClientImpl::ProcessDeliverData(std::unique_ptr<Message> msg,
   worker_data.consecutive_goodbyes_count_ = 0;
 
   // Find the right subscription and deliver the message to it.
-  SubscriptionID sub_id = data->GetSubID();
+  SubscriptionID sub_id = deliver->GetSubID();
   auto it = worker_data.subscriptions_.find(sub_id);
   if (it != worker_data.subscriptions_.end()) {
-    it->second.ReceiveMessage(info_log_, std::move(data));
+    it->second.ReceiveMessage(info_log_, std::move(deliver));
   } else {
     LOG_WARN(info_log_, "Subscription ID(%" PRIu64 ") not found", sub_id);
-    worker_data.pending_terminations_.emplace(sub_id, data->GetTenantID());
-    SendPendingRequests();
-  }
-}
-
-void ClientImpl::ProcessDeliverGap(std::unique_ptr<Message> msg,
-                                   StreamID origin) {
-  std::unique_ptr<MessageDeliverGap> gap(
-      static_cast<MessageDeliverGap*>(msg.release()));
-
-  wake_lock_.AcquireForReceiving();
-  // Get worker data that this topic is assigned to.
-  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
-  auto& worker_data = worker_data_[worker_id];
-
-  // Check that message arrived on correct stream.
-  if (!worker_data.ExpectsMessage(info_log_, origin)) {
-    return;
-  }
-
-  worker_data.consecutive_goodbyes_count_ = 0;
-
-  // Find the right subscription and deliver the message to it.
-  SubscriptionID sub_id = gap->GetSubID();
-  auto it = worker_data.subscriptions_.find(sub_id);
-  if (it != worker_data.subscriptions_.end()) {
-    it->second.ReceiveMessage(info_log_, std::move(gap));
-  } else {
-    LOG_WARN(info_log_, "Subscription ID(%" PRIu64 ") not found", sub_id);
-    worker_data.pending_terminations_.emplace(sub_id, gap->GetTenantID());
+    // Issue unsubscribe request.
+    worker_data.pending_terminations_.emplace(sub_id, deliver->GetTenantID());
     SendPendingRequests();
   }
 }
@@ -1032,8 +1021,9 @@ void ClientImpl::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   // Mark socket as broken.
   worker_data.copilot_socket_valid_ = false;
 
-  // Clear all pending unsubscribe requests.
-  worker_data.pending_terminations_.clear();
+  // Clear a list of recently sent unsubscribes, these subscriptions IDs were
+  // generated for different socket, so are no longer valid.
+  worker_data.recent_terminations_.Clear();
 
   // Reissue all subscriptions.
   for (auto& entry : worker_data.subscriptions_) {
