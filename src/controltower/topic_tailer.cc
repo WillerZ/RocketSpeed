@@ -269,7 +269,7 @@ Status LogReader::ProcessRecord(LogID log_id,
     LogState& log_state = log_it->second;
 
     if (seqno != log_state.last_read + 1) {
-      LOG_WARN(info_log_,
+      LOG_DEBUG(info_log_,
         "Reader(%zu) received record out of order on %s Log(%" PRIu64 ")."
         " Expected:%" PRIu64 " Received:%" PRIu64,
         reader_id_,
@@ -294,7 +294,7 @@ Status LogReader::ProcessRecord(LogID log_id,
     return Status::OK();
   } else {
     // This log isn't open.
-    LOG_WARN(info_log_,
+    LOG_DEBUG(info_log_,
       "Reader(%zu) received record for %s on unopened Log(%" PRIu64 ")",
       reader_id_,
       topic.ToString().c_str(), log_id);
@@ -887,7 +887,7 @@ Status TopicTailer::SendLogRecord(
     } else {
       // Log not open or at wrong seqno, so drop.
       stats_.log_records_out_of_order->Add(1);
-      LOG_WARN(info_log_,
+      LOG_DEBUG(info_log_,
         "Reader(%zu) failed to process message (%.16s)"
         " on Log(%" PRIu64 ")@%" PRIu64
         " (%s)",
