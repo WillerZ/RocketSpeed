@@ -658,7 +658,9 @@ void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
   assert(!IsVirtual());
   assert(!IsLogOpen(log_id));
 
-  LogState& log_state = reader->log_state_.find(log_id)->second;
+  auto log_it = reader->log_state_.find(log_id);
+  assert(log_it != reader->log_state_.end());
+  LogState& log_state = log_it->second;
 
   const bool first_open = true;
   Status st = tailer_->StartReading(log_id,
@@ -666,7 +668,9 @@ void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
                                     reader_id_,
                                     first_open);
   if (st.ok()) {
+    assert(!log_state.topics.empty());
     log_state_.emplace(log_id, std::move(log_state));
+    reader->log_state_.erase(log_it);
   } else {
     LOG_ERROR(info_log_,
       "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64 ": %s",
