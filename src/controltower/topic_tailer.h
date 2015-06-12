@@ -6,6 +6,7 @@
 #pragma once
 
 #include <memory>
+#include <random>
 #include <vector>
 #include "include/Status.h"
 #include "include/Types.h"
@@ -28,6 +29,12 @@ class MsgLoop;
 class TopicTailer {
  friend class ControlTowerTest;
  public:
+  struct Options {
+    // Probability of failing to enqueue a log record to the TopicTailer queue.
+    // For testing the log storage backoff/flow control.
+    double FAULT_send_log_record_failure_rate = 0.0;
+  };
+
   /**
    * Create a TopicTailer.
    *
@@ -42,15 +49,16 @@ class TopicTailer {
    * @return ok() if TopicTailer created, otherwise error.
    */
   static Status CreateNewInstance(
-   BaseEnv* env,
-   MsgLoop* msg_loop,
-   int worker_id,
-   LogTailer* log_tailer,
-   std::shared_ptr<LogRouter> log_router,
-   std::shared_ptr<Logger> info_log,
-   std::function<void(std::unique_ptr<Message>,
-                      std::vector<HostNumber>)> on_message,
-   TopicTailer** tailer);
+    BaseEnv* env,
+    MsgLoop* msg_loop,
+    int worker_id,
+    LogTailer* log_tailer,
+    std::shared_ptr<LogRouter> log_router,
+    std::shared_ptr<Logger> info_log,
+    std::function<void(std::unique_ptr<Message>,
+                       std::vector<HostNumber>)> on_message,
+    Options options,
+    TopicTailer** tailer);
 
   /**
    * Initialize the TopicTailer first before using it.
@@ -86,7 +94,7 @@ class TopicTailer {
    * @return OK() if record was sent for processing.
    */
   Status SendLogRecord(
-    std::unique_ptr<MessageData> msg,
+    std::unique_ptr<MessageData>& msg,
     LogID log_id,
     size_t reader_id);
 
@@ -139,7 +147,8 @@ class TopicTailer {
               std::shared_ptr<LogRouter> log_router,
               std::shared_ptr<Logger> info_log,
               std::function<void(std::unique_ptr<Message>,
-                                 std::vector<HostNumber>)> on_message);
+                                 std::vector<HostNumber>)> on_message,
+              Options options);
 
   bool Forward(std::function<void()> command);
 
@@ -215,6 +224,10 @@ class TopicTailer {
 
   // Cached tail sequence number per log.
   std::unordered_map<LogID, SequenceNumber> tail_seqno_cached_;
+
+  std::mt19937 prng_;
+
+  Options options_;
 
   struct Stats {
     Stats() {

@@ -211,9 +211,16 @@ class EventLoop {
    */
   StreamSocket CreateOutboundStream(ClientID destination);
 
-  // Send a command to the event loop for processing.
-  // This call is thread-safe.
-  Status SendCommand(std::unique_ptr<Command> command);
+  /**
+   * Send a command to the event loop for processing.
+   *
+   * If the command is successfully queued then it will be moved from its
+   * source location, otherwise an error will be returned and command will
+   * be left intact, in case the caller wishes to retry later.
+   *
+   * This call is thread-safe.
+   */
+  Status SendCommand(std::unique_ptr<Command>& command);
 
   // Start communicating on a fd.
   // This call is thread-safe.

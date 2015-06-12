@@ -720,26 +720,39 @@ TopicTailer::TopicTailer(
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
-                       std::vector<HostNumber>)> on_message) :
+                       std::vector<HostNumber>)> on_message,
+    Options options) :
   env_(env),
   msg_loop_(msg_loop),
   worker_id_(worker_id),
   log_tailer_(log_tailer),
   log_router_(std::move(log_router)),
   info_log_(std::move(info_log)),
-  on_message_(std::move(on_message)) {
+  on_message_(std::move(on_message)),
+  prng_(std::random_device()()),
+  options_(options) {
 }
 
 TopicTailer::~TopicTailer() {
 }
 
 Status TopicTailer::SendLogRecord(
-    std::unique_ptr<MessageData> msg,
+    std::unique_ptr<MessageData>& msg,
     LogID log_id,
     size_t reader_id) {
   // Send to worker loop.
   MessageData* data_raw = msg.release();
-  bool sent = Forward([this, data_raw, log_id, reader_id] () {
+
+  bool force_failure = false;
+  if (options_.FAULT_send_log_record_failure_rate != 0.0) {
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    if (dist(prng_) < options_.FAULT_send_log_record_failure_rate) {
+      force_failure = true;
+      LOG_DEBUG(info_log_, "Forcing Forward to fail in SendLogRecord");
+    }
+  }
+
+  bool sent = !force_failure && Forward([this, data_raw, log_id, reader_id] () {
     // Validate.
     LogReader* reader = FindLogReader(reader_id);
     assert(reader != nullptr);
@@ -907,7 +920,8 @@ Status TopicTailer::SendLogRecord(
 
   Status st;
   if (!sent) {
-    delete data_raw;
+    // Put the message back so that the storage can retry later.
+    msg.reset(data_raw);
     st = Status::NoBuffer();
   }
   return st;
@@ -1040,6 +1054,7 @@ TopicTailer::CreateNewInstance(
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
                        std::vector<HostNumber>)> on_message,
+    Options options,
     TopicTailer** tailer) {
   *tailer = new TopicTailer(env,
                             msg_loop,
@@ -1047,7 +1062,8 @@ TopicTailer::CreateNewInstance(
                             log_tailer,
                             std::move(log_router),
                             std::move(info_log),
-                            std::move(on_message));
+                            std::move(on_message),
+                            options);
   return Status::OK();
 }
 
@@ -1167,7 +1183,7 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
 
 bool TopicTailer::Forward(std::function<void()> command) {
   std::unique_ptr<Command> cmd(new ExecuteCommand(std::move(command)));
-  Status st = msg_loop_->SendCommand(std::move(cmd), worker_id_);
+  Status st = msg_loop_->TrySendCommand(cmd, worker_id_);
   return st.ok();
 }
 

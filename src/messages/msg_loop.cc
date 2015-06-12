@@ -275,9 +275,10 @@ void MsgLoop::SendCommandToSelf(std::unique_ptr<Command> command) {
                                                  env_->NowMicros());
 }
 
-Status MsgLoop::SendCommand(std::unique_ptr<Command> command, int worker_id) {
+Status MsgLoop::TrySendCommand(std::unique_ptr<Command>& command,
+                               int worker_id) {
   assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
-  return event_loops_[worker_id]->SendCommand(std::move(command));
+  return event_loops_[worker_id]->SendCommand(command);
 }
 
 Status MsgLoop::SendRequest(const Message& msg,

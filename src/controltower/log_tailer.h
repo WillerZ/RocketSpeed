@@ -23,13 +23,21 @@ class LogTailer {
   friend class IntegrationTest;
 
  public:
-  // Callbacks.
-  typedef std::function<void(std::unique_ptr<MessageData>,  // publish msg
-                             LogID,                         // log ID
-                             size_t)>                       // reader ID
+  /**
+   * Callback for incoming messages. If the message was processed successfully,
+   * the callback should return true. If unsuccessful, false should be returned,
+   * and the MessageData should be unmoved.
+   */
+  typedef std::function<bool(std::unique_ptr<MessageData>&,  // publish msg
+                             LogID,                          // log ID
+                             size_t)>                        // reader ID
     OnRecordCallback;
 
-  typedef std::function<void(LogID,           // log ID
+  /**
+   * Callback for incoming gaps. If the gap was processed successfully,
+   * the callback should return true. If unsuccessful, false should be returned.
+   */
+  typedef std::function<bool(LogID,           // log ID
                              GapType,         // type of gap
                              SequenceNumber,  // start sequence number
                              SequenceNumber,  // end sequence number

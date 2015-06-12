@@ -140,9 +140,10 @@ TEST(IntegrationTest, TrimAll) {
     ASSERT_OK(st);
 
     // Reader callbacks
-    auto record_cb = [&] (std::unique_ptr<LogRecord> r) {
+    auto record_cb = [&] (std::unique_ptr<LogRecord>& r) {
       // We should not be reading any records as they have been trimmed.
       ASSERT_TRUE(false);
+      return true;
     };
 
     auto gap_cb = [&] (const GapRecord &r) {
@@ -151,6 +152,7 @@ TEST(IntegrationTest, TrimAll) {
       ASSERT_TRUE(r.from == seqno);
       num_gaps++;
       read_sem.Post();
+      return true;
     };
 
     // Create readers.
@@ -250,10 +252,11 @@ TEST(IntegrationTest, TrimFirst) {
     ASSERT_OK(st);
 
     // Reader callbacks.
-    auto record_cb = [&] (std::unique_ptr<LogRecord> r) {
+    auto record_cb = [&] (std::unique_ptr<LogRecord>& r) {
       // We should not be reading any records as they have been trimmed.
       num_logs++;
       read_sem.Post();
+      return true;
     };
 
     auto gap_cb = [&] (const GapRecord &r) {
@@ -261,6 +264,7 @@ TEST(IntegrationTest, TrimFirst) {
       // previously published publish lsn.
       num_gaps++;
       read_sem.Post();
+      return true;
     };
 
     // Create readers.

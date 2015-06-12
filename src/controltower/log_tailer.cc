@@ -25,6 +25,10 @@ struct LogRecordMessageData : public MessageData {
     SetSequenceNumbers(record_->seqno - 1, record_->seqno);
   }
 
+  std::unique_ptr<LogRecord> MoveRecord() {
+    return std::move(record_);
+  }
+
  private:
   std::unique_ptr<LogRecord> record_;
 };
@@ -80,7 +84,7 @@ Status LogTailer::CreateReader(size_t reader_id,
                                AsyncLogReader** out) {
   // Define a lambda for callback
   auto record_cb = [this, reader_id, on_record, on_gap] (
-      std::unique_ptr<LogRecord> record) {
+      std::unique_ptr<LogRecord>& record) {
     LogID log_id = record->log_id;
     SequenceNumber seqno = record->seqno;
 
@@ -88,6 +92,7 @@ Status LogTailer::CreateReader(size_t reader_id,
     Status st;
     std::unique_ptr<MessageData> msg(
       new LogRecordMessageData(std::move(record), &st));
+    bool success;
     if (!st.ok()) {
       LOG_ERROR(info_log_,
         "Failed to deserialize message in Log(%" PRIu64 ")@%" PRIu64 ": %s",
@@ -96,7 +101,7 @@ Status LogTailer::CreateReader(size_t reader_id,
         st.ToString().c_str());
 
       // Publish gap in place.
-      on_gap(log_id, GapType::kDataLoss, seqno, seqno, reader_id);
+      success = on_gap(log_id, GapType::kDataLoss, seqno, seqno, reader_id);
     } else {
       LOG_DEBUG(info_log_,
         "LogTailer received data (%.16s)@%" PRIu64
@@ -108,8 +113,14 @@ Status LogTailer::CreateReader(size_t reader_id,
         log_id);
 
       // Invoke message callback.
-      on_record(std::move(msg), log_id, reader_id);
+      success = on_record(msg, log_id, reader_id);
     }
+    if (!success) {
+      assert(msg);  // must not be moved if failed
+      // put back so that caller can retry later.
+      record = static_cast<LogRecordMessageData*>(msg.get())->MoveRecord();
+    }
+    return success;
   };
 
   auto gap_cb = [this, reader_id, on_gap] (const GapRecord& record) {
@@ -134,7 +145,11 @@ Status LogTailer::CreateReader(size_t reader_id,
         break;
     }
 
-    on_gap(record.log_id, record.type, record.from, record.to, reader_id);
+    return on_gap(record.log_id,
+                  record.type,
+                  record.from,
+                  record.to,
+                  reader_id);
   };
 
   // Create log reader.

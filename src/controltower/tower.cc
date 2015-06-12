@@ -116,13 +116,13 @@ Status ControlTower::Initialize() {
   log_tailer_.reset(log_tailer);
 
   // Initialize the LogTailer.
-  auto on_record = [this] (std::unique_ptr<MessageData> msg,
+  auto on_record = [this] (std::unique_ptr<MessageData>& msg,
                            LogID log_id,
                            size_t reader_id) {
     // Process message from the log tailer.
     const int room_number = LogIDToRoom(log_id);
     Status status = topic_tailer_[room_number]->SendLogRecord(
-      std::move(msg),
+      msg,
       log_id,
       reader_id);
     if (!status.ok()) {
@@ -130,7 +130,10 @@ Status ControlTower::Initialize() {
         "Failed to SendLogRecord to topic tailer %d (%s)",
         room_number,
         status.ToString().c_str());
+      assert(msg);
+      return false;
     }
+    return true;
   };
 
   auto on_gap = [this] (LogID log_id,
@@ -151,7 +154,9 @@ Status ControlTower::Initialize() {
         "Failed to SendGapRecord to topic tailer %d (%s)",
         room_number,
         status.ToString().c_str());
+      return false;
     }
+    return true;
   };
 
   const size_t num_rooms = opt.msg_loop->GetNumWorkers();
@@ -185,7 +190,8 @@ Status ControlTower::Initialize() {
                                         log_tailer_.get(),
                                         opt.log_router,
                                         opt.info_log,
-                                        std::move(on_message) ,
+                                        std::move(on_message),
+                                        opt.topic_tailer,
                                         &topic_tailer);
     if (st.ok()) {
       // Topic tailer i uses reader i in log tailer.

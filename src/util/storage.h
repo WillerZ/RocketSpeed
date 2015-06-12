@@ -141,16 +141,19 @@ class LogStorage {
    *
    * @param parallelism number of parallel readers to create.
    * @param record_cb a callback that will be called on an
-   *        unspecified thread when a record is read.
+   *        unspecified thread when a record is read. Should return true if
+   *        processed successfully, or false if the reader should retry the
+   *        same record later.
    * @param gap_cb a callback that will be called on an
    *        unspecified thread when a gap occurs in the log.
    * @param readers output buffer for the AsyncLogReaders.
    * @return on success returns OK(), otherwise errorcode.
    */
-  virtual Status CreateAsyncReaders(unsigned int parallelism,
-                      std::function<void(std::unique_ptr<LogRecord>)> record_cb,
-                      std::function<void(const GapRecord&)> gap_cb,
-                      std::vector<AsyncLogReader*>* readers) = 0;
+  virtual Status CreateAsyncReaders(
+    unsigned int parallelism,
+    std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+    std::function<bool(const GapRecord&)> gap_cb,
+    std::vector<AsyncLogReader*>* readers) = 0;
 
   /**
    * Returns true if subscribers can subscribe past the end of a log.

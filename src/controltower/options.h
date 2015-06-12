@@ -10,6 +10,7 @@
 #include "include/Types.h"
 #include "src/port/Env.h"
 #include "src/util/storage.h"
+#include "src/controltower/topic_tailer.h"
 
 namespace rocketspeed {
 
@@ -85,6 +86,9 @@ struct ControlTowerOptions {
   // Maximum number of readers on a single log per room.
   // Default: 2
   size_t readers_per_room;
+
+  // Options for TopicTailer
+  TopicTailer::Options topic_tailer;
 
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();

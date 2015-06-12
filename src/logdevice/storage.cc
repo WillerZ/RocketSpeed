@@ -9,6 +9,22 @@
 namespace rocketspeed {
 
 /**
+ * LogDevice log record entry.
+ */
+struct LogDeviceRecord : public LogRecord {
+ public:
+  explicit
+  LogDeviceRecord(std::unique_ptr<facebook::logdevice::DataRecord> record);
+
+  std::unique_ptr<facebook::logdevice::DataRecord> MoveRecord() {
+    return std::move(record_);
+  }
+
+ private:
+  std::unique_ptr<facebook::logdevice::DataRecord> record_;
+};
+
+/**
  * Converts a LogDevice Status to a RocketSpeed::Status.
  * The mapping isn't one-to-one, so some information is lost.
  */
@@ -225,8 +241,8 @@ Status LogDeviceStorage::FindTimeAsync(
 Status
 LogDeviceStorage::CreateAsyncReaders(
   unsigned int parallelism,
-  std::function<void(std::unique_ptr<LogRecord>)> record_cb,
-  std::function<void(const GapRecord&)> gap_cb,
+  std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+  std::function<bool(const GapRecord&)> gap_cb,
   std::vector<AsyncLogReader*>* readers) {
   // Validate
   if (!readers) {
@@ -248,8 +264,8 @@ LogDeviceStorage::CreateAsyncReaders(
 
 AsyncLogDeviceReader::AsyncLogDeviceReader(
   LogDeviceStorage* storage,
-  std::function<void(std::unique_ptr<LogRecord>)> record_cb,
-  std::function<void(const GapRecord&)> gap_cb,
+  std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+  std::function<bool(const GapRecord&)> gap_cb,
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
 : reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
@@ -257,8 +273,15 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
     [this, record_cb] (std::unique_ptr<facebook::logdevice::DataRecord>& data) {
       // Convert DataRecord to our LogRecord format.
       std::unique_ptr<LogRecord> record(new LogDeviceRecord(std::move(data)));
-      record_cb(std::move(record));
-      return true;
+      bool success = record_cb(record);
+      if (!success) {
+        // record_cb must not move record if it failed to process.
+        assert(record);
+
+        // Put it back, since LogDevice will be expecting it there.
+        data = static_cast<LogDeviceRecord*>(record.get())->MoveRecord();
+      }
+      return success;
     });
 
   reader_->setGapCallback(
@@ -284,8 +307,7 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
           break;
       }
 
-      gap_cb(record);
-      return true;
+      return gap_cb(record);
     });
 
   // LogDevice trims record non-deterministically across storage nodes, so

@@ -38,6 +38,8 @@ DEFINE_int32(tower_workers, 40, "tower rooms");
 DEFINE_int64(tower_max_subscription_lag, 10000,
              "max seqno lag on subscriptions");
 DEFINE_int32(tower_readers_per_room, 2, "log readers per room");
+DEFINE_double(FAULT_tower_send_log_record_failure_rate, 0.0,
+  "probability of failing to append to topic tailer queue from log storage");
 
 // Pilot settings
 DEFINE_bool(pilot, false, "start the pilot");
@@ -214,6 +216,8 @@ Status RocketSpeed::Initialize(
     tower_opts.log_router = log_router;
     tower_opts.max_subscription_lag = FLAGS_tower_max_subscription_lag;
     tower_opts.readers_per_room = FLAGS_tower_readers_per_room;
+    tower_opts.topic_tailer.FAULT_send_log_record_failure_rate =
+      FLAGS_FAULT_tower_send_log_record_failure_rate;
 
     Status st = ControlTower::CreateNewInstance(std::move(tower_opts),
                                                 &tower);

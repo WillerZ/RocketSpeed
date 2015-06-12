@@ -756,6 +756,36 @@ TEST(Messaging, TimeoutTest) {
   ASSERT_EQ(st.ToString(), "Timed out: Queue sizes = 1, 1, 2, 1");
 }
 
+TEST(Messaging, TrySendCommand) {
+  // Check that TrySendCommand works (doesn't destroy commands on failure).
+  MsgLoop::Options opts;
+  opts.event_loop.command_queue_size = 100;
+  MsgLoop loop(env_, env_options_, -1, 1, info_log_, "loop", opts);
+  ASSERT_OK(loop.Initialize());
+  env_->StartThread([&] () { loop.Run(); }, "loop");
+
+  // Write as fast as possible, with retries.
+  bool failed_at_least_once = false;
+  for (int i = 0; i < 200; ++i) {
+    std::unique_ptr<Command> command(
+      new ExecuteCommand([this] () {
+        // This will cause reading end to require backoff.
+        env_->SleepForMicroseconds(1000);
+      }));
+    for (;;) {
+      Status st = loop.TrySendCommand(command, 0);
+      if (st.ok()) {
+        break;
+      }
+      failed_at_least_once = true;
+      ASSERT_TRUE(command);
+      env_->SleepForMicroseconds(100);
+    }
+  }
+  ASSERT_TRUE(failed_at_least_once);  // otherwise we aren't testing anything
+  loop.Stop();
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

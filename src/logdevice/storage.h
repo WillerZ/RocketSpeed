@@ -26,18 +26,6 @@ class Env;
 class Logger;
 
 /**
- * LogDevice log record entry.
- */
-struct LogDeviceRecord : public LogRecord {
- public:
-  explicit
-  LogDeviceRecord(std::unique_ptr<facebook::logdevice::DataRecord> record);
-
- private:
-  std::unique_ptr<facebook::logdevice::DataRecord> record_;
-};
-
-/**
  * Log storage interface backed by LogDevice.
  */
 class LogDeviceStorage : public LogStorage {
@@ -106,10 +94,11 @@ class LogDeviceStorage : public LogStorage {
                        std::chrono::milliseconds timestamp,
                        std::function<void(Status, SequenceNumber)> callback);
 
-  Status CreateAsyncReaders(unsigned int parallelism,
-                      std::function<void(std::unique_ptr<LogRecord>)> record_cb,
-                      std::function<void(const GapRecord&)> gap_cb,
-                      std::vector<AsyncLogReader*>* readers);
+  Status CreateAsyncReaders(
+    unsigned int parallelism,
+    std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+    std::function<bool(const GapRecord&)> gap_cb,
+    std::vector<AsyncLogReader*>* readers);
 
   bool CanSubscribePastEnd() const {
     return true;
@@ -130,8 +119,8 @@ class LogDeviceStorage : public LogStorage {
 class AsyncLogDeviceReader : public AsyncLogReader {
  public:
   AsyncLogDeviceReader(LogDeviceStorage* storage,
-                    std::function<void(std::unique_ptr<LogRecord>)> record_cb,
-                    std::function<void(const GapRecord&)> gap_cb,
+                    std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+                    std::function<bool(const GapRecord&)> gap_cb,
                     std::unique_ptr<facebook::logdevice::AsyncReader>&& reader);
 
   ~AsyncLogDeviceReader() final;

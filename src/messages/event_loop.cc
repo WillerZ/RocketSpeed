@@ -994,7 +994,7 @@ StreamSocket EventLoop::CreateOutboundStream(ClientID destination) {
   return StreamSocket(std::move(destination), outbound_allocator_.Next());
 }
 
-Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
+Status EventLoop::SendCommand(std::unique_ptr<Command>& command) {
   TimestampedCommand ts_cmd { std::move(command), env_->NowMicros() };
   bool success = command_queue_.write(std::move(ts_cmd));
 
@@ -1002,7 +1002,8 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
     // The queue was full and the write failed.
     LOG_ERROR(info_log_, "The command queue is full");
     info_log_->Flush();
-    exit(1);
+    assert(ts_cmd.command);
+    command = std::move(ts_cmd.command);  // put back
     return Status::NoBuffer();
   }
 
@@ -1021,7 +1022,7 @@ Status EventLoop::SendCommand(std::unique_ptr<Command> command) {
 void EventLoop::Accept(int fd) {
   // May be called from another thread, so must add to the command queue.
   std::unique_ptr<Command> command(new AcceptCommand(fd));
-  SendCommand(std::move(command));
+  SendCommand(command);
 }
 
 void EventLoop::Dispatch(std::unique_ptr<Message> message, StreamID origin) {

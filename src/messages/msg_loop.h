@@ -114,7 +114,8 @@ class MsgLoop : public MsgLoopBase {
    */
   void SendCommandToSelf(std::unique_ptr<Command> command);
 
-  Status SendCommand(std::unique_ptr<Command> command, int worker_id) override;
+  Status TrySendCommand(std::unique_ptr<Command>& command,
+                        int worker_id) override;
 
   Status SendRequest(const Message& msg,
                      StreamSocket* socket,
