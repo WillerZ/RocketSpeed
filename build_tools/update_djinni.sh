@@ -34,8 +34,8 @@ find "$JAVA_DIR" "$CPP_DIR" -type f ! -name 'TARGETS' -delete || true
   --ident-cpp-local foo_bar \
   --ident-cpp-file FooBar \
   \
-  --jni-out "$CPP_DIR/jni" \
-  --jni-include-prefix "$CPP_DIR_REL/jni/" \
+  --jni-out "$CPP_DIR" \
+  --jni-include-prefix "$CPP_DIR_REL/" \
   --jni-include-cpp-prefix "$CPP_DIR_REL/" \
   --ident-jni-class NativeFooBar \
   --ident-jni-file NativeFooBar \

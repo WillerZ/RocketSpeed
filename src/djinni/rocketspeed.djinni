@@ -15,17 +15,6 @@ Status = record +j {
   state: string;
 }
 
-MsgIdImpl = record {
-  const SIZE: i32 = 16;
-
-  guid: binary;
-} deriving (eq)
-
-HostId = record {
-  hostname: string;
-  port: i32;
-} deriving (eq)
-
 LogLevel = enum {
   DEBUG_LEVEL;
   INFO_LEVEL;
@@ -37,99 +26,93 @@ LogLevel = enum {
   NUM_INFO_LOG_LEVELS;
 }
 
-RetentionBase = enum {
-  OneHour;
-  OneDay;
-  OneWeek;
-}
-
-SubscriptionRequestImpl = record {
-  namespace_id: string;
-  topic_name: string;
-  subscribe: bool;
-  start: optional<i64>;
-}
-
-ConfigurationImpl = record {
-  pilots: list<HostId>;
-  copilots: list<HostId>;
-}
-
-PublishCallbackImpl = interface +j +o {
-  Call(status: Status,
-       namespace_id: string,
-       topic_name: string,
-       message_id: MsgIdImpl,
-       sequence_number: i64);
-}
-
-PublishStatus = record {
-  status: Status;
-  message_id: optional<MsgIdImpl>;
-}
-
-SubscribeCallbackImpl = interface +j +o {
-  Call(status: Status,
-       namespace_id: string,
-       topic_name: string,
-       sequence_number: i64,
-       subscribed: bool);
-}
-
-ReceiveCallbackImpl = interface +j +o {
-  Call(namespace_id: string,
-       topic_name: string,
-       sequence_number: i64,
-       contents: binary);
-}
-
-SnapshotCallbackImpl = interface +j +o {
-  Call(status: Status);
-}
+HostId = record {
+  host: string;
+  port: i32;
+} deriving (eq)
 
 StorageType = enum {
   None;
   File;
 }
 
-WakeLockImpl = interface +j +o {
-  Acquire(timeout: i64);
-
-  Release();
-}
-
 SubscriptionStorage = record {
   type: StorageType;
-  # Used only when this is a file storage
-  file_path: optional<string>;
+  # Used only when this is a file storage.
+  file_path: string;
 }
 
+MsgId = record +j {
+  hi: i64;
+  lo: i64;
+} deriving (eq)
+
+PublishCallback = interface +j +o {
+  call(message_id: MsgId,
+       namespace_id: string,
+       topic_name: string,
+       seqno: i64,
+       status: Status);
+}
+
+MessageReceivedCallback = interface +j +o {
+  call(sub_handle: i64,
+       start_seqno: i64,
+       contents: binary);
+}
+
+SubscribeCallback = interface +j +o {
+  call(tenant_id: i32,
+       namespace_id: string,
+       topic_name: string,
+       start_seqno: i64,
+       subscribed: bool,
+       status: Status);
+}
+
+SnapshotCallback = interface +j +o {
+  call(status: Status);
+}
+
+SubscriptionParameters = record {
+  tenant_id: i32;
+  namespace_id: string;
+  topic_name: string;
+  start_seqno: i64;
+} deriving (eq)
+
 ClientImpl = interface +c {
-  static Create(log_level: LogLevel,
-                config: ConfigurationImpl,
-                subscribe_callback: SubscribeCallbackImpl,
-                storage: SubscriptionStorage,
-                wake_lock: WakeLockImpl): ClientImpl;
 
-  Start(receive_callback: ReceiveCallbackImpl,
-        restore_subscriptions: bool,
-        resubscribe_from_storage: bool): Status;
+  static create(log_level: LogLevel,
+                cockpit: HostId,
+                storage: SubscriptionStorage): ClientImpl;
 
-  Publish(tenant_id: i32,
+  publish(tenant_id: i32,
           namespace_id: string,
           topic_name: string,
           data: binary,
-          message_id: optional<MsgIdImpl>,
-          publish_callback: PublishCallbackImpl): PublishStatus;
+          publish_cb: PublishCallback,
+          message_id: MsgId): MsgId;
 
-  ListenTopics(tenant_id: i32,
-               names: list<SubscriptionRequestImpl>);
+  subscribe(tenant_id: i32,
+            namespace_id: string,
+            topic_name: string,
+            start_seqno: i64,
+            deliver_cb: MessageReceivedCallback,
+            subscribe_cb: SubscribeCallback): i64;
 
-  Acknowledge(namespace_id: string,
-              topic_name: string,
-              sequence_number: i64);
+  resubscribe(params: SubscriptionParameters,
+              deliver_cb: MessageReceivedCallback,
+              subscribe_cb: SubscribeCallback): i64;
 
-  SaveSubscriptions(snapshot_callback: SnapshotCallbackImpl);
+  unsubscribe(sub_handle: i64);
 
-  Close();
+  acknowledge(sub_handle: i64,
+              seqno: i64);
+
+  saveSubscriptions(snapshot_cb: SnapshotCallback);
+
+  restoreSubscriptions(): list<SubscriptionParameters>;
+
+  close();
 }

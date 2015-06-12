@@ -3,8 +3,6 @@ package org.rocketspeed;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.util.Collections;
-import java.util.List;
 
 public class LocalTestCluster implements AutoCloseable {
 
@@ -18,10 +16,6 @@ public class LocalTestCluster implements AutoCloseable {
   private Process cluster;
   private OutputStreamWriter clusterIn;
   private InputStreamReader clusterOut;
-
-  private static String getBinaryPath() {
-    return System.getenv(ENV_RS_CLUSTER_BIN_PATH);
-  }
 
   public LocalTestCluster() throws IOException, InterruptedException {
     this(getBinaryPath());
@@ -55,23 +49,12 @@ public class LocalTestCluster implements AutoCloseable {
     }
   }
 
-  public List<HostId> getPilots() {
-    return Collections.singletonList(new HostId("localhost", PILOT_DEFAULT_PORT));
+  private static String getBinaryPath() {
+    return System.getenv(ENV_RS_CLUSTER_BIN_PATH);
   }
 
-  public List<HostId> getCopilots() {
-    return Collections.singletonList(new HostId("localhost", COPILOT_DEFAULT_PORT));
-  }
-
-  public Configuration createConfiguration() {
-    Configuration config = new Configuration();
-    for (HostId hostId : getPilots()) {
-      config.addPilot(hostId.getHostname(), hostId.getPort());
-    }
-    for (HostId hostId : getCopilots()) {
-      config.addCopilot(hostId.getHostname(), hostId.getPort());
-    }
-    return config;
+  public HostId getCockpit() {
+    return new HostId("localhost", PILOT_DEFAULT_PORT);
   }
 
   private boolean hasTerminated() {

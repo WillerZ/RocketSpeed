@@ -37,6 +37,9 @@ ClientEnv* ClientEnv::Default() {
   return &client_env;
 }
 
+ClientEnv::~ClientEnv() {
+}
+
 static void* StartThreadWrapper(void* arg) {
   std::function<void()>* state = reinterpret_cast<std::function<void()>*>(arg);
   (*state)();

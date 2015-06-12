@@ -10,20 +10,17 @@
 namespace rocketspeed { namespace djinni {
 
 struct HostId final {
-
-    std::string hostname;
-
+    std::string host;
     int32_t port;
 
-    bool operator==(const HostId & other) const;
-    bool operator!=(const HostId & other) const;
+    friend bool operator==(const HostId& lhs, const HostId& rhs);
+    friend bool operator!=(const HostId& lhs, const HostId& rhs);
 
-    HostId(
-            std::string hostname,
-            int32_t port) :
-                hostname(std::move(hostname)),
-                port(std::move(port)) {
-    }
+    HostId(std::string host,
+           int32_t port)
+    : host(std::move(host))
+    , port(std::move(port))
+    {}
 };
 
 } }  // namespace rocketspeed::djinni

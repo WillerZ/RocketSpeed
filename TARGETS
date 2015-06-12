@@ -1,116 +1,26 @@
 JAVA_VERSION = '7'
-
-# Client bindings.
-cpp_binary(
-    name = 'librsclientjni.so',
-    output_subdir = 'client',
-    srcs = [
-        # interface implementation
-        'src-gen/djinni/cpp/HostId.cpp',
-        'src-gen/djinni/cpp/MsgIdImpl.cpp',
-        # jni implementation
-        'src-gen/djinni/cpp/jni/NativeClientImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativeConfigurationImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativeHostId.cpp',
-        'src-gen/djinni/cpp/jni/NativeMsgIdImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativePublishCallbackImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativePublishStatus.cpp',
-        'src-gen/djinni/cpp/jni/NativeReceiveCallbackImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativeSnapshotCallbackImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativeStatus.cpp',
-        'src-gen/djinni/cpp/jni/NativeSubscribeCallbackImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativeSubscriptionRequestImpl.cpp',
-        'src-gen/djinni/cpp/jni/NativeSubscriptionStorage.cpp',
-        'src-gen/djinni/cpp/jni/NativeWakeLockImpl.cpp',
-        # glue implementation
-        'src/djinni/client.cc',
-        'src/djinni/conversions.cc',
-        'src/djinni/jvm_env.cc',
-        'src/djinni/jvm_logger.cc',
-        'src/djinni/main.cc',
-    ],
-    preprocessor_flags = [
-        '-DROCKETSPEED_PLATFORM_POSIX',
-        '-DOS_LINUX',
-        '-Irocketspeed/github',
-        '-Irocketspeed/github/external/djinni/support-lib/jni',
-        '-Irocketspeed/github/external/Optional',
-    ],
-    deps = [
-        '@/rocketspeed/github/src/client',
-        '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/util/common:fixed_configuration',
-        '@/rocketspeed/github/external/djinni/support-lib/jni',
-    ],
-    external_deps = [
-        ('openjdk', None, 'jvm'),
-    ],
-    dlopen_enabled = True,
-)
+SO_NAME = 'librsclientjni.so'
 
 java_library(
     name = 'client_java',
-    srcs = [
-        # handwritten
-        'src/main/java/org/rocketspeed/android/WakeLock.java',
-        'src/main/java/org/rocketspeed/Builder.java',
-        'src/main/java/org/rocketspeed/Client.java',
-        'src/main/java/org/rocketspeed/Configuration.java',
-        'src/main/java/org/rocketspeed/MessageReceived.java',
-        'src/main/java/org/rocketspeed/MsgId.java',
-        'src/main/java/org/rocketspeed/PublishCallbackAdaptor.java',
-        'src/main/java/org/rocketspeed/PublishCallback.java',
-        'src/main/java/org/rocketspeed/ReceiveCallbackAdaptor.java',
-        'src/main/java/org/rocketspeed/ReceiveCallback.java',
-        'src/main/java/org/rocketspeed/SnapshotCallbackAdapter.java',
-        'src/main/java/org/rocketspeed/SnapshotCallback.java',
-        'src/main/java/org/rocketspeed/Status.java',
-        'src/main/java/org/rocketspeed/SubscribeCallbackAdaptor.java',
-        'src/main/java/org/rocketspeed/SubscribeCallback.java',
-        'src/main/java/org/rocketspeed/SubscriptionRequest.java',
-        'src/main/java/org/rocketspeed/SubscriptionStart.java',
-        'src/main/java/org/rocketspeed/TopicOptions.java',
-        # generated
-        'src-gen/djinni/java/org/rocketspeed/ClientImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/ConfigurationImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/HostId.java',
-        'src-gen/djinni/java/org/rocketspeed/LogLevel.java',
-        'src-gen/djinni/java/org/rocketspeed/MsgIdImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/PublishCallbackImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/PublishStatus.java',
-        'src-gen/djinni/java/org/rocketspeed/ReceiveCallbackImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/RetentionBase.java',
-        'src-gen/djinni/java/org/rocketspeed/SnapshotCallbackImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/StatusBase.java',
-        'src-gen/djinni/java/org/rocketspeed/StatusCode.java',
-        'src-gen/djinni/java/org/rocketspeed/StorageType.java',
-        'src-gen/djinni/java/org/rocketspeed/SubscribeCallbackImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/SubscriptionRequestImpl.java',
-        'src-gen/djinni/java/org/rocketspeed/SubscriptionStorage.java',
-        'src-gen/djinni/java/org/rocketspeed/WakeLockImpl.java',
-    ],
+    srcs = glob([
+        'src/main/java/org/rocketspeed/*.java',
+        'src-gen/djinni/java/org/rocketspeed/*.java',
+    ]),
     deps = [
-        ':librsclientjni.so',
+        ':%s' % SO_NAME,
     ],
 )
 
 java_unittest(
     name = 'client_java_test',
-    srcs = [
-        'src/test/java/org/rocketspeed/android/WakeLockTest.java',
-        'src/test/java/org/rocketspeed/BuilderTest.java',
-        'src/test/java/org/rocketspeed/IntegrationTest.java',
-        'src/test/java/org/rocketspeed/LocalTestCluster.java',
-        'src/test/java/org/rocketspeed/LocalTestClusterTest.java',
-        'src/test/java/org/rocketspeed/tests/VisibilityTest.java',
-        'src/test/java/org/rocketspeed/util/StatusMonoidFirst.java',
-    ],
+    srcs = glob([
+        'src/test/java/org/rocketspeed/*.java',
+        'src/test/java/org/rocketspeed/util/*.java',
+    ]),
     test_classes = [
-        'org.rocketspeed.BuilderTest',
         'org.rocketspeed.IntegrationTest',
         'org.rocketspeed.LocalTestClusterTest',
-        'org.rocketspeed.android.WakeLockTest',
-        'org.rocketspeed.tests.VisibilityTest',
     ],
     deps = [
         ':client_java',
@@ -129,4 +39,40 @@ java_unittest(
     },
     java_version = JAVA_VERSION,
     openjdk = True,
+)
+
+cpp_binary(
+    name = 'librsclientjni.so',
+    output_subdir = 'client',
+    srcs = glob([
+        'src/djinni/*.cc',
+        'src-gen/djinni/cpp/*.cpp'
+    ]),
+    preprocessor_flags = [
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
+        '-Irocketspeed/github',
+        '-Irocketspeed/github/external/djinni/support-lib/jni',
+    ],
+    deps = [
+        ':djinni_support',
+        '@/rocketspeed/github/src/client',
+        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:fixed_configuration',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    dlopen_enabled = True,
+)
+
+cpp_library(
+    name = 'djinni_support',
+    srcs = [
+        'external/djinni/support-lib/jni/djinni_support.cpp',
+    ],
+    external_deps = [
+        ('openjdk', None, 'jvm'),
+    ],
+    link_whole = True,
 )

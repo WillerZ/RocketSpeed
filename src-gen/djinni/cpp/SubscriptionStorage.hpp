@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "optional.hpp"
 #include "src-gen/djinni/cpp/StorageType.hpp"
 #include <string>
 #include <utility>
@@ -11,19 +10,15 @@
 namespace rocketspeed { namespace djinni {
 
 struct SubscriptionStorage final {
-
     StorageType type;
+    /** Used only when this is a file storage. */
+    std::string file_path;
 
-    /** Used only when this is a file storage */
-    std::experimental::optional<std::string> file_path;
-
-
-    SubscriptionStorage(
-            StorageType type,
-            std::experimental::optional<std::string> file_path) :
-                type(std::move(type)),
-                file_path(std::move(file_path)) {
-    }
+    SubscriptionStorage(StorageType type,
+                        std::string file_path)
+    : type(std::move(type))
+    , file_path(std::move(file_path))
+    {}
 };
 
 } }  // namespace rocketspeed::djinni

@@ -1,115 +1,48 @@
 package org.rocketspeed;
 
-import org.rocketspeed.android.WakeLock;
-
-import java.util.logging.Level;
-
 public final class Builder {
 
   static {
     System.loadLibrary("rsclientjni");
   }
 
-  private WakeLock wakeLock;
   private LogLevel level;
-  private ConfigurationImpl config;
-  private SubscribeCallbackImpl subscribeCallback;
-  private ReceiveCallbackAdaptor receiveCallback;
+  private HostId cockpit;
   private SubscriptionStorage storage;
-  private boolean restoreSubscriptions;
-  private boolean resubscribeFromStorage;
 
-  /**
-   * A constructor to be used by non-Android applications.
-   */
   public Builder() {
     reset();
   }
 
-  /**
-   * A constructor to be used by Android applications.
-   *
-   * @param wakeLock A wake lock implementation to be used by the client.
-   */
-  public Builder(WakeLock wakeLock) {
-    this();
-    assertNotNull(wakeLock, "Wake lock");
-    this.wakeLock = wakeLock;
-  }
-
-
   private void reset() {
-    wakeLock = null;
     // Default log level includes warning messages.
     level = LogLevel.WARN_LEVEL;
-    // We do not reset config, as it can be reused by multiple clients.
-    subscribeCallback = null;
-    // Receive callback adaptor is tied to each client, so it must be recreated before we can
-    // reuse builder.
-    receiveCallback = null;
+    cockpit = null;
     storage = new SubscriptionStorage(StorageType.NONE, "");
-    restoreSubscriptions = false;
-    resubscribeFromStorage = false;
   }
 
   public Builder logLevel(LogLevel level) {
+    assertNotNull(level, "Log level");
     this.level = level;
     return this;
   }
 
-  public Builder configuration(Configuration config) {
-    assertNotNull(config, "Configuration");
-    this.config = config.djinni();
-    return this;
-  }
-
-  public Builder subscribeCallback(final SubscribeCallback callback) {
-    assertNotNull(callback, "Subscribe callback");
-    this.subscribeCallback = new SubscribeCallbackAdaptor(callback);
-    return this;
-  }
-
-  public Builder receiveCallback(final ReceiveCallback callback) {
-    assertNotNull(callback, "Receive callback");
-    this.receiveCallback = new ReceiveCallbackAdaptor(callback);
+  public Builder cockpit(HostId cockpit) {
+    assertNotNull(cockpit, "Cockpit");
+    this.cockpit = cockpit;
     return this;
   }
 
   public Builder usingFileStorage(String filePath) {
-    return usingFileStorage(filePath, true);
-  }
-
-  public Builder usingFileStorage(String filePath, boolean restoreSubscriptions) {
     assertNotNull(filePath, "Storage file path");
     storage = new SubscriptionStorage(StorageType.FILE, filePath);
-    this.restoreSubscriptions = restoreSubscriptions;
-    return this;
-  }
-
-  public Builder resubscribeFromStorage() {
-    resubscribeFromStorage = true;
     return this;
   }
 
   public Client build() throws Exception {
     try {
-      assertInvalidState(config != null, "Missing Configuration.");
-      ClientImpl clientImpl = ClientImpl.Create(level, config, subscribeCallback, storage,
-                                                wrapWakeLock(wakeLock));
-      try {
-        // Note that until we call Start method on ClientImpl, no client threads are running.
-        // Consequently, no callback can be issued by the client until it is started, therefore
-        // it is safe to finish initialisation of receive callback now.
-        if (receiveCallback != null) {
-          receiveCallback.setClientImpl(clientImpl);
-        }
-        clientImpl.Start(receiveCallback, restoreSubscriptions, resubscribeFromStorage)
-            .checkExceptions();
-        return new Client(clientImpl);
-      } catch (Exception e) {
-        clientImpl.Close();
-        throw e;
-      }
+      assertInvalidState(cockpit != null, "Missing cockpit address.");
+      return new Client(ClientImpl.create(level, cockpit, storage));
     } finally {
       reset();
     }
@@ -125,31 +58,5 @@ public final class Builder {
     if (!cond) {
       throw new IllegalStateException(desc);
     }
-  }
-
-  private static WakeLockImpl wrapWakeLock(final WakeLock wakeLock) {
-    return wakeLock == null ? null : new WakeLockImpl() {
-      @Override
-      public void Acquire(long timeout) {
-        try {
-          if (timeout < 0) {
-            wakeLock.acquire();
-          } else {
-            wakeLock.acquire(timeout);
-          }
-        } catch (Throwable e) {
-          Client.LOGGER.log(Level.WARNING, "Exception thrown in WakeLock.acquire()", e);
-        }
-      }
-
-      @Override
-      public void Release() {
-        try {
-          wakeLock.release();
-        } catch (Throwable e) {
-          Client.LOGGER.log(Level.WARNING, "Exception thrown in WakeLock.release()", e);
-        }
-      }
-    };
   }
 }

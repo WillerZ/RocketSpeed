@@ -6,19 +6,19 @@ package org.rocketspeed;
 public final class HostId {
 
 
-    /*package*/ final String hostname;
+    /*package*/ final String host;
 
     /*package*/ final int port;
 
     public HostId(
-            String hostname,
+            String host,
             int port) {
-        this.hostname = hostname;
+        this.host = host;
         this.port = port;
     }
 
-    public String getHostname() {
-        return hostname;
+    public String getHost() {
+        return host;
     }
 
     public int getPort() {
@@ -31,7 +31,7 @@ public final class HostId {
             return false;
         }
         HostId other = (HostId) obj;
-        return this.hostname.equals(other.hostname) &&
+        return this.host.equals(other.host) &&
                 this.port == other.port;
     }
 }

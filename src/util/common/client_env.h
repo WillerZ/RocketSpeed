@@ -26,6 +26,8 @@ class ClientEnv : public BaseEnv {
  public:
   ClientEnv() {}
 
+  virtual ~ClientEnv();
+
   /**
    * Return a default environment suitable for the current operating system.
    * The result of Default() belongs to rocketspeed and must never be deleted.

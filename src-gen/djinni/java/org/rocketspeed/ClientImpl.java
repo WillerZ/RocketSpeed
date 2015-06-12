@@ -7,19 +7,23 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ClientImpl {
-    public abstract Status Start(ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
+    public abstract MsgId publish(int tenantId, String namespaceId, String topicName, byte[] data, PublishCallback publishCb, MsgId messageId);
 
-    public abstract PublishStatus Publish(int tenantId, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+    public abstract long subscribe(int tenantId, String namespaceId, String topicName, long startSeqno, MessageReceivedCallback deliverCb, SubscribeCallback subscribeCb);
 
-    public abstract void ListenTopics(int tenantId, ArrayList<SubscriptionRequestImpl> names);
+    public abstract long resubscribe(SubscriptionParameters params, MessageReceivedCallback deliverCb, SubscribeCallback subscribeCb);
 
-    public abstract void Acknowledge(String namespaceId, String topicName, long sequenceNumber);
+    public abstract void unsubscribe(long subHandle);
 
-    public abstract void SaveSubscriptions(SnapshotCallbackImpl snapshotCallback);
+    public abstract void acknowledge(long subHandle, long seqno);
 
-    public abstract void Close();
+    public abstract void saveSubscriptions(SnapshotCallback snapshotCb);
 
-    public static native ClientImpl Create(LogLevel logLevel, ConfigurationImpl config, SubscribeCallbackImpl subscribeCallback, SubscriptionStorage storage, WakeLockImpl wakeLock);
+    public abstract ArrayList<SubscriptionParameters> restoreSubscriptions();
+
+    public abstract void close();
+
+    public static native ClientImpl create(LogLevel logLevel, HostId cockpit, SubscriptionStorage storage);
 
     public static final class CppProxy extends ClientImpl
     {
@@ -45,51 +49,67 @@ public abstract class ClientImpl {
         }
 
         @Override
-        public Status Start(ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage)
+        public MsgId publish(int tenantId, String namespaceId, String topicName, byte[] data, PublishCallback publishCb, MsgId messageId)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Start(this.nativeRef, receiveCallback, restoreSubscriptions, resubscribeFromStorage);
+            return native_publish(this.nativeRef, tenantId, namespaceId, topicName, data, publishCb, messageId);
         }
-        private native Status native_Start(long _nativeRef, ReceiveCallbackImpl receiveCallback, boolean restoreSubscriptions, boolean resubscribeFromStorage);
+        private native MsgId native_publish(long _nativeRef, int tenantId, String namespaceId, String topicName, byte[] data, PublishCallback publishCb, MsgId messageId);
 
         @Override
-        public PublishStatus Publish(int tenantId, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback)
+        public long subscribe(int tenantId, String namespaceId, String topicName, long startSeqno, MessageReceivedCallback deliverCb, SubscribeCallback subscribeCb)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            return native_Publish(this.nativeRef, tenantId, namespaceId, topicName, data, messageId, publishCallback);
+            return native_subscribe(this.nativeRef, tenantId, namespaceId, topicName, startSeqno, deliverCb, subscribeCb);
         }
-        private native PublishStatus native_Publish(long _nativeRef, int tenantId, String namespaceId, String topicName, byte[] data, MsgIdImpl messageId, PublishCallbackImpl publishCallback);
+        private native long native_subscribe(long _nativeRef, int tenantId, String namespaceId, String topicName, long startSeqno, MessageReceivedCallback deliverCb, SubscribeCallback subscribeCb);
 
         @Override
-        public void ListenTopics(int tenantId, ArrayList<SubscriptionRequestImpl> names)
+        public long resubscribe(SubscriptionParameters params, MessageReceivedCallback deliverCb, SubscribeCallback subscribeCb)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_ListenTopics(this.nativeRef, tenantId, names);
+            return native_resubscribe(this.nativeRef, params, deliverCb, subscribeCb);
         }
-        private native void native_ListenTopics(long _nativeRef, int tenantId, ArrayList<SubscriptionRequestImpl> names);
+        private native long native_resubscribe(long _nativeRef, SubscriptionParameters params, MessageReceivedCallback deliverCb, SubscribeCallback subscribeCb);
 
         @Override
-        public void Acknowledge(String namespaceId, String topicName, long sequenceNumber)
+        public void unsubscribe(long subHandle)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_Acknowledge(this.nativeRef, namespaceId, topicName, sequenceNumber);
+            native_unsubscribe(this.nativeRef, subHandle);
         }
-        private native void native_Acknowledge(long _nativeRef, String namespaceId, String topicName, long sequenceNumber);
+        private native void native_unsubscribe(long _nativeRef, long subHandle);
 
         @Override
-        public void SaveSubscriptions(SnapshotCallbackImpl snapshotCallback)
+        public void acknowledge(long subHandle, long seqno)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_SaveSubscriptions(this.nativeRef, snapshotCallback);
+            native_acknowledge(this.nativeRef, subHandle, seqno);
         }
-        private native void native_SaveSubscriptions(long _nativeRef, SnapshotCallbackImpl snapshotCallback);
+        private native void native_acknowledge(long _nativeRef, long subHandle, long seqno);
 
         @Override
-        public void Close()
+        public void saveSubscriptions(SnapshotCallback snapshotCb)
         {
             assert !this.destroyed.get() : "trying to use a destroyed object";
-            native_Close(this.nativeRef);
+            native_saveSubscriptions(this.nativeRef, snapshotCb);
         }
-        private native void native_Close(long _nativeRef);
+        private native void native_saveSubscriptions(long _nativeRef, SnapshotCallback snapshotCb);
+
+        @Override
+        public ArrayList<SubscriptionParameters> restoreSubscriptions()
+        {
+            assert !this.destroyed.get() : "trying to use a destroyed object";
+            return native_restoreSubscriptions(this.nativeRef);
+        }
+        private native ArrayList<SubscriptionParameters> native_restoreSubscriptions(long _nativeRef);
+
+        @Override
+        public void close()
+        {
+            assert !this.destroyed.get() : "trying to use a destroyed object";
+            native_close(this.nativeRef);
+        }
+        private native void native_close(long _nativeRef);
     }
 }

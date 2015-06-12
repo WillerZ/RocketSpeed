@@ -6,13 +6,13 @@
 namespace rocketspeed { namespace djinni {
 
 
-bool HostId::operator==(const HostId & other) const {
-    return hostname == other.hostname &&
-        port == other.port;
+bool operator==(const HostId& lhs, const HostId& rhs) {
+    return lhs.host == rhs.host &&
+           lhs.port == rhs.port;
 }
 
-bool HostId::operator!=(const HostId & other) const {
-    return !(*this == other);
+bool operator!=(const HostId& lhs, const HostId& rhs) {
+    return !(lhs == rhs);
 }
 
 } }  // namespace rocketspeed::djinni

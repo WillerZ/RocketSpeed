@@ -10,18 +10,14 @@
 namespace rocketspeed { namespace djinni {
 
 struct Status final {
-
     StatusCode code;
-
     std::string state;
 
-
-    Status(
-            StatusCode code,
-            std::string state) :
-                code(std::move(code)),
-                state(std::move(state)) {
-    }
+    Status(StatusCode code,
+           std::string state)
+    : code(std::move(code))
+    , state(std::move(state))
+    {}
 };
 
 } }  // namespace rocketspeed::djinni

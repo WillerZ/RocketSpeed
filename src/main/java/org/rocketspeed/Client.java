@@ -1,12 +1,13 @@
 package org.rocketspeed;
 
 import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Logger;
 
 public class Client implements AutoCloseable {
 
-  /* package */ static final Logger LOGGER = Logger.getLogger(Client.class.getName());
+  public static final long BEGINNING_SEQNO = Long.MIN_VALUE + 1L;
+  public static final long CURRENT_SEQNO = Long.MIN_VALUE;
+  public static final String GUEST_NAMESPACE = "guest";
+  public static final int GUEST_TENANT = 1;
 
   static {
     System.loadLibrary("rsclientjni");
@@ -18,47 +19,68 @@ public class Client implements AutoCloseable {
     this.client = client;
   }
 
-  public MsgId publish(int tenantId, String namespaceID, String topicName, byte[] data)
-      throws Exception {
-    return publish(tenantId, namespaceID, topicName, data, null);
+  public MsgId publish(int tenantId,
+                       String namespaceId,
+                       String topicName,
+                       byte[] data,
+                       PublishCallback publishCb) {
+    return publish(tenantId, namespaceId, topicName, data, publishCb, MsgId.EMPTY);
   }
 
-  public MsgId publish(int tenantId, String namespaceID, String topicName, byte[] data,
-                       PublishCallback callback) throws Exception {
-    return publish(tenantId, namespaceID, topicName, data, callback, new TopicOptions());
+  public MsgId publish(int tenantId,
+                       String namespaceId,
+                       String topicName,
+                       byte[] data,
+                       PublishCallback publishCb,
+                       MsgId messageId) {
+    return client.publish(tenantId, namespaceId, topicName, data, publishCb, messageId);
   }
 
-  public MsgId publish(int tenantId, String namespaceID, String topicName, byte[] data,
-                       PublishCallback callback, TopicOptions options) throws Exception {
-    return publish(tenantId, namespaceID, topicName, data, callback, options, null);
+  public long subscribe(int tenantId,
+                        String namespaceId,
+                        String topicName,
+                        long startSeqno,
+                        MessageReceivedCallback deliverCb) {
+    return subscribe(tenantId, namespaceId, topicName, startSeqno, deliverCb, null);
   }
 
-  public MsgId publish(int tenantId, String namespaceID, String topicName, byte[] data,
-                       PublishCallback callback, TopicOptions options, MsgId messageId)
-      throws Exception {
-    assert options != null;
-    MsgIdImpl messageId1 = messageId == null ? null : messageId.djinni();
-    PublishCallbackImpl callback1 = callback == null ? null : new PublishCallbackAdaptor(callback);
-    PublishStatus status = client.Publish(tenantId, namespaceID, topicName, data, messageId1,
-                                          callback1);
-    status.getStatus().checkExceptions();
-    return new MsgId(status.getMessageId());
+  public long subscribe(int tenantId,
+                        String namespaceId,
+                        String topicName,
+                        long startSeqno,
+                        MessageReceivedCallback deliverCb,
+                        SubscribeCallback subscribeCb) {
+    return client.subscribe(tenantId, namespaceId, topicName, startSeqno, deliverCb, subscribeCb);
   }
 
-  public void listenTopics(int tenantId, List<SubscriptionRequest> requests) {
-    ArrayList<SubscriptionRequestImpl> requests1 = new ArrayList<SubscriptionRequestImpl>();
-    for (SubscriptionRequest request : requests) {
-      requests1.add(request.djinni());
-    }
-    client.ListenTopics(tenantId, requests1);
+  public long subscribe(SubscriptionParameters params, MessageReceivedCallback deliverCb) {
+    return subscribe(params, deliverCb, null);
   }
 
-  public void saveSubscriptions(SnapshotCallback callback) {
-    client.SaveSubscriptions(new SnapshotCallbackAdapter(callback));
+  public long subscribe(SubscriptionParameters params,
+                        MessageReceivedCallback deliverCb,
+                        SubscribeCallback subscribeCb) {
+    return client.resubscribe(params, deliverCb, subscribeCb);
+  }
+
+  public void unsubscribe(long subHandle) {
+    client.unsubscribe(subHandle);
+  }
+
+  public void acknowledge(long subHandle, long seqno) {
+    client.acknowledge(subHandle, seqno);
+  }
+
+  public void saveSubscriptions(SnapshotCallback snapshotCb) {
+    client.saveSubscriptions(snapshotCb);
+  }
+
+  public ArrayList<SubscriptionParameters> restoreSubscriptions() {
+    return client.restoreSubscriptions();
   }
 
   @Override
   public void close() {
-    client.Close();
+    client.close();
   }
 }
