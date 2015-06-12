@@ -52,6 +52,12 @@ struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
   ProxyWorkerData(const ProxyWorkerData&) = delete;
   ProxyWorkerData& operator=(const ProxyWorkerData&) = delete;
 
+  Statistics GetStatistics() {
+    stats_.open_sessions->Set(open_sessions_.size());
+    stats_.open_streams->Set(open_streams_.GetNumStreams());
+    return stats_.all;
+  }
+
   /** The data can only be accessed from a single and the same thread. */
   ThreadCheck thread_check_;
   /** Stores session metdata for all open sessions. */
@@ -65,6 +71,9 @@ struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
       forward_errors = all.AddCounter("proxy.forward_errors");
       on_message_calls = all.AddCounter("proxy.on_message_calls");
       bad_origins = all.AddCounter("proxy.bad_origins");
+      goodbyes_from_server = all.AddCounter("proxy.goodbyes_from_server");
+      open_sessions = all.AddCounter("proxy.open_sessions");
+      open_streams = all.AddCounter("proxy.open_stream");
     }
 
     Statistics all;
@@ -73,6 +82,9 @@ struct alignas(CACHE_LINE_SIZE) ProxyWorkerData {
     Counter* forward_errors;
     Counter* on_message_calls;
     Counter* bad_origins;
+    Counter* goodbyes_from_server;
+    Counter* open_sessions;
+    Counter* open_streams;
   } stats_;
 };
 
@@ -195,7 +207,7 @@ Proxy::~Proxy() {
 
 Statistics Proxy::GetStatisticsSync() {
   return msg_loop_->AggregateStatsSync(
-      [this](int i) -> Statistics { return worker_data_[i]->stats_.all; });
+      [this](int i) -> Statistics { return worker_data_[i]->GetStatistics(); });
 }
 
 int Proxy::WorkerForSession(int64_t session) const {
@@ -218,6 +230,7 @@ void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
 
     auto& data = *worker_data_[msg_loop_->GetThreadWorkerIndex()];
     data.thread_check_.Check();
+    data.stats_.goodbyes_from_server->Add(1);
     // Remove entry from streams map.
     int64_t session;
     StreamID local;
