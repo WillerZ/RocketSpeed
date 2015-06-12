@@ -203,9 +203,11 @@ void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
           st = Status::IOError("Publish failed");
         }
 
-        std::unique_ptr<ClientResultStatus> result_status(
-            new ClientResultStatus(st, std::move(it->second.data), seqno));
-        it->second.callback(std::move(result_status));
+        if (it->second.callback) {
+          std::unique_ptr<ClientResultStatus> result_status(
+              new ClientResultStatus(st, std::move(it->second.data), seqno));
+          it->second.callback(std::move(result_status));
+        }
       }
 
       // Remove sent message from list.
@@ -234,11 +236,13 @@ void PublisherWorkerData::ProcessGoodbye(std::unique_ptr<Message> msg,
 
   // Notify about failed publishes.
   for (auto& entry : messages_sent_) {
-    std::unique_ptr<ClientResultStatus> result_status(
-        new ClientResultStatus(Status::InternalError("Disconnected"),
-                               std::move(entry.second.data),
-                               0));
-    entry.second.callback(std::move(result_status));
+    if (entry.second.callback) {
+      std::unique_ptr<ClientResultStatus> result_status(
+          new ClientResultStatus(Status::InternalError("Disconnected"),
+                                 std::move(entry.second.data),
+                                 0));
+      entry.second.callback(std::move(result_status));
+    }
   }
   messages_sent_.clear();
 }
