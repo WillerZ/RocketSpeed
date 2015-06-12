@@ -90,17 +90,16 @@ class CppMarshal(spec: Spec) extends Marshal(spec) {
   // this can be used in c++ generation to know whether a const& should be applied to the parameter or not
   private def toCppParamType(tm: MExpr, namespace: Option[String] = None): String = {
     val cppType = toCppType(tm, namespace)
-    val refType = "const " + cppType + " &"
     val valueType = cppType
 
     def toType(expr: MExpr): String = expr.base match {
       case p: MPrimitive => valueType
       case d: MDef => d.defType match {
         case DEnum => valueType
-        case _  => refType
+        case _  => valueType
       }
       case MOptional => toType(expr.args.head)
-      case _ => refType
+      case _ => valueType
     }
     toType(tm)
   }
