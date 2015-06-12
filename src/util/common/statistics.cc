@@ -11,6 +11,7 @@
 #include <limits>
 #include <string>
 
+#include "src/port/port.h"
 #include "src/util/common/thread_check.h"
 
 namespace rocketspeed {

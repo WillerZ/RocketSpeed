@@ -10,6 +10,9 @@
 
 #include "include/Types.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC visibility push(default)
+#endif
 namespace rocketspeed {
 
 class BaseEnv;
@@ -95,3 +98,6 @@ class SubscriptionStorage {
 };
 
 }  // namespace rocketspeed
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC visibility pop
+#endif

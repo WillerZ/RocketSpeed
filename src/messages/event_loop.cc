@@ -275,7 +275,7 @@ class SocketEvent {
           return Status::OK();
         } else {
           LOG_DEBUG(event_loop_->info_log_,
-                    "Successfully wrote %ld bytes to remote host fd(%d)",
+                    "Successfully wrote %zd bytes to remote host fd(%d)",
                     count,
                     fd_);
         }
