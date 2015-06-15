@@ -12,59 +12,41 @@
 #include "src/client/client.h"
 #include "src/util/common/coding.h"
 
-/**
- * This is the Rollcall interface. Applications can use this interface
- * to list all the topics that all clients are subscribed to.
- */
 namespace rocketspeed {
 
-/*
- * An implementation for the Rollcall stream.
- * For reading the rollcall, register a callback via the constructor
- * For writing to the rollcall, use RollcallImpl::WriteEntry.
+/**
+ * An implementation or the RollcallStream capable of both reading and writing
+ * Rollcall entires.
  */
 class RollcallImpl : public RollcallStream {
  public:
-  // Constructor
-  RollcallImpl(std::unique_ptr<ClientImpl> client,
-               TenantID tenant_id,
-               const NamespaceID& nsid,
-               SequenceNumber start_point,
-               RollCallback callback);
+  RollcallImpl(std::unique_ptr<ClientImpl> client, TenantID tenant_id);
 
-  // Write an entry to the rollcall topic.
+  RollcallShard GetNumShards(const NamespaceID& namespace_id) override;
+
+  Status Subscribe(const NamespaceID& namespace_id,
+                   RollcallShard shard_id,
+                   RollCallback callback) override;
+
+  /** Writes an entry to the rollcall topic. */
   Status WriteEntry(const TenantID tenant_id,
                     const Topic& topic_name,
                     const NamespaceID& nsid,
                     bool isSubscription,
                     PublishCallback publish_callback);
 
-   // Closes resources associated with this rollcall stream reader
   virtual ~RollcallImpl() = default;
 
-  // Create the rollcall topic name for a namespace
-  static Topic GetRollcallTopicName(const NamespaceID& nsid) {
-    std::string topic = "r";
-    PutLengthPrefixedSlice(&topic, Slice(nsid));
-    topic.append(".");
-    return topic;
-  }
-
  private:
-  const std::unique_ptr<ClientImpl> rs_client_; // rocket speed client
-  const NamespaceID nsid_;             // namespace
-  const SequenceNumber start_point_;// start seqno of rollcall topic
-  RollCallback callback_;             // callback specified by application
-  const Topic rollcall_topic_;        // name of the rollcall topic
-  const TopicOptions rollcall_topic_options_;
-  const MsgId msgid_;
+  static const NamespaceID kRollcallNamespace;
 
-  // The rollcall topic resides in namespace '_rollcall'.
-  static const NamespaceID rollcall_namespace_;
+  const std::unique_ptr<ClientImpl> client_;
+  const TenantID tenant_id_;
 
-  void Serialize(std::string* buffer);
-  Status DeSerialize(const Slice& in);
+  RollcallShard GetRollcallShard(const NamespaceID& namespace_id,
+                                 const Topic& topic);
 
+  Topic GetRollcallTopicName(const NamespaceID& nsid, RollcallShard shard_id);
 };
 
 }  // namespace rocketspeed

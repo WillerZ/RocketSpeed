@@ -4,141 +4,145 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
-
 #include "rollcall_impl.h"
+
+#include "include/Slice.h"
 #include "src/client/client.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
-const NamespaceID RollcallImpl::rollcall_namespace_ = "_rollcall";
-
-RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
-  const TenantID tenant_id,
-  const NamespaceID& nsid,
-  const SequenceNumber start_point,
-  RollCallback callback):
-  rs_client_(std::move(client)),
-  nsid_(nsid),
-  start_point_(start_point),
-  callback_(std::move(callback)),
-  rollcall_topic_(GetRollcallTopicName(nsid)),
-  msgid_(MsgId()) {
-
-  // If the subscription request was successful, then mark
-  // our state as SubscriptionConfirmed. Otherwise invoke
-  // user-specified callback with error state.
-  auto subscribe_callback = [this] (const SubscriptionStatus& ss) {
-    if (!ss.GetStatus().ok()) {
-      // invoke user-specified callback with error status
-      callback_(RollcallEntry());
-    }
-  };
-
-  if (callback_ != nullptr) {
-    // If we are tailing the log, then set it up here.
-    // Callback invoked on every message received from storage.
-    // It converts the incoming record into a RollcallEntry record
-    // and passes it back to the application.
-    auto receive_callback = [this] (std::unique_ptr<MessageReceived>& msg) {
-      RollcallEntry rmsg;
-      rmsg.DeSerialize(msg->GetContents());
-      callback_(std::move(rmsg));
-    };
-    rs_client_->SetDefaultCallbacks(subscribe_callback, receive_callback);
-
-    // send a subscription request for rollcall topic
-    auto handle = rs_client_->Client::Subscribe(tenant_id,
-                                                rollcall_namespace_,
-                                                rollcall_topic_,
-                                                start_point_);
-    if (!handle) {
-      // invoke user-specified callback with error status
-      callback_(RollcallEntry());
-    }
-    // Handle will be lost, but the only way we unsubscribe is by shutting down
-    // the client.
-  }
-}
-
-Status
-RollcallImpl::WriteEntry(const TenantID tenant_id,
-                         const Topic& topic_name,
-                         const NamespaceID& nsid,
-                         bool isSubscription,
-                         PublishCallback publish_callback) {
-
-  // Serialize the entry
-  RollcallEntry impl(topic_name, isSubscription ?
-                       RollcallEntry::EntryType::SubscriptionRequest :
-                       RollcallEntry::EntryType::UnSubscriptionRequest);
-  std::string serial;
-  impl.Serialize(&serial);
-  Slice sl(serial);
-
-  // write it out to rollcall topic
-  Topic rtopic(GetRollcallTopicName(nsid));
-  return rs_client_->Publish(tenant_id,
-                             rtopic,
-                             rollcall_namespace_,
-                             rollcall_topic_options_,
-                             sl,
-                             std::move(publish_callback),
-                             msgid_).status;
-}
-
-// write this object into a serialized string
-void
-RollcallEntry::Serialize(std::string* buffer) {
-  PutFixed8(buffer, version_);
-  PutFixed8(buffer, entry_type_);
-  PutLengthPrefixedSlice(buffer, Slice(topic_name_));
-}
-
-// initialize this object from a serialized string
-Status
-RollcallEntry::DeSerialize(Slice in) {
-  Slice sl;
-  // extract the version
-  if (!GetFixed8(&in, reinterpret_cast<uint8_t *>(&version_))) {
-   return Status::InvalidArgument("Rollcall:Bad version");
-  }
-
-  // Is this a subscription or unsubscription request?
-  if (!GetFixedEnum8(&in, &entry_type_)) {
-   return Status::InvalidArgument("Rollcall:Bad subscription type");
-  }
-
-  // update topic name
-  if (!GetLengthPrefixedSlice(&in, &sl)) {
-   return Status::InvalidArgument("Rollcall:Bad topic name");
-  }
-  topic_name_.clear();
-  topic_name_.append(sl.data(), sl.size());
-  return Status::OK();
-}
-
-// Static method to open a Rollcall stream
-Status
-RollcallStream::Open(ClientOptions client_options,
-  const TenantID tenant_id,
-  const NamespaceID& nsid,
-  SequenceNumber start_point,
-  RollCallback callback,
-  std::unique_ptr<RollcallStream>* stream) {
+Status RollcallStream::Open(ClientOptions client_options,
+                            const TenantID tenant_id,
+                            std::unique_ptr<RollcallStream>* stream) {
   std::unique_ptr<ClientImpl> client;
-
-  // open the client
-  Status status = ClientImpl::Create(
-                     std::move(client_options), &client, true);
+  Status status = ClientImpl::Create(std::move(client_options), &client, true);
   if (!status.ok()) {
     return status;
   }
+  stream->reset(new RollcallImpl(std::move(client), tenant_id));
+  return Status::OK();
+}
 
-  // create our object
-  stream->reset(new RollcallImpl(std::move(client), tenant_id, nsid,
-                                 start_point, callback));
-  return  Status::OK();
+const NamespaceID RollcallImpl::kRollcallNamespace = "_r";
+
+RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
+                           const TenantID tenant_id)
+    : client_(std::move(client)), tenant_id_(tenant_id) {
+}
+
+RollcallShard RollcallImpl::GetNumShards(const NamespaceID& namespace_id) {
+  if (namespace_id == GuestNamespace) {
+    // Guest namespace is extensively used in tests.
+    return 4;
+  } else {
+    return 1024;
+  }
+}
+
+Status RollcallImpl::Subscribe(const NamespaceID& namespace_id,
+                               RollcallShard shard_id,
+                               const RollCallback callback) {
+  if (shard_id >= GetNumShards(namespace_id)) {
+    return Status::InvalidArgument("Shard ID out of range");
+  }
+  if (!callback) {
+    return Status::InvalidArgument("Missing callback");
+  }
+
+  auto subscribe_callback = [callback](const SubscriptionStatus& ss) {
+    if (!ss.GetStatus().ok()) {
+      // Notify about failed subscription.
+      callback(RollcallEntry());
+    }
+  };
+  auto receive_callback = [callback](std::unique_ptr<MessageReceived>& msg) {
+    RollcallEntry rmsg;
+    rmsg.DeSerialize(msg->GetContents());
+    callback(std::move(rmsg));
+  };
+
+  auto handle =
+      client_->Client::Subscribe(tenant_id_,
+                                 kRollcallNamespace,
+                                 GetRollcallTopicName(namespace_id, shard_id),
+                                 0,
+                                 std::move(receive_callback),
+                                 std::move(subscribe_callback));
+  return handle ? Status::OK()
+                : Status::InternalError("Failed to create subscription.");
+}
+
+Status RollcallImpl::WriteEntry(const TenantID tenant_id,
+                                const Topic& topic_name,
+                                const NamespaceID& nsid,
+                                bool isSubscription,
+                                PublishCallback publish_callback) {
+  if (nsid == kRollcallNamespace) {
+    // We do not write rollcall subscriptions into the rollcall.
+    return Status::OK();
+  }
+
+  // Serialize the entry
+  RollcallEntry impl(topic_name,
+                     isSubscription
+                         ? RollcallEntry::EntryType::SubscriptionRequest
+                         : RollcallEntry::EntryType::UnSubscriptionRequest);
+  std::string serial;
+  impl.Serialize(&serial);
+
+  // write it out to rollcall topic
+  Topic rollcall_topic(
+      GetRollcallTopicName(nsid, GetRollcallShard(nsid, topic_name)));
+  return client_->Publish(tenant_id,
+                          std::move(rollcall_topic),
+                          kRollcallNamespace,
+                          TopicOptions(),
+                          Slice(serial),
+                          std::move(publish_callback),
+                          MsgId()).status;
+}
+
+RollcallShard RollcallImpl::GetRollcallShard(const NamespaceID& namespace_id,
+                                             const Topic& topic) {
+  return static_cast<RollcallShard>(MurmurHash2<Topic>()(topic) %
+                                    GetNumShards(namespace_id));
+}
+
+Topic RollcallImpl::GetRollcallTopicName(const NamespaceID& nsid,
+                                         RollcallShard shard_id) {
+  std::string topic = nsid;
+  topic.push_back('.');
+  char buf[2];
+  EncodeFixed16(buf, shard_id);
+  Slice shard_slice(buf, sizeof(buf));
+  topic.append(shard_slice.ToString(true));
+  return topic;
+}
+
+void RollcallEntry::Serialize(std::string* buffer) {
+  buffer->reserve(4 + topic_name_.size());
+  buffer->resize(4);
+  (*buffer)[0] = version_;
+  (*buffer)[1] = (*buffer)[3] = '_';
+  (*buffer)[2] = entry_type_;
+  buffer->append(topic_name_);
+}
+
+Status RollcallEntry::DeSerialize(Slice in) {
+  if (in.size() < 4) {
+    return Status::InvalidArgument("Invalid rollcall entry");
+  }
+  version_ = in[0];
+  entry_type_ = static_cast<EntryType>(in[2]);
+  if (!ValidateEnum(entry_type_)) {
+    return Status::InvalidArgument("Invalid rollcall entry type");
+  }
+  in.remove_prefix(4);
+  topic_name_.clear();
+  topic_name_.append(in.data(), in.size());
+  return Status::OK();
 }
 
 }  // namespace rocketspeed

@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "include/RocketSpeed.h"
 
@@ -25,32 +26,36 @@ namespace rocketspeed {
 class RollcallEntry;
 typedef std::function<void(RollcallEntry)> RollCallback;
 
-/*
+/**
+ * Identifies RollCall shard within a namespace. Shards are numbered from 0 to
+ * number of shards - 1. All events on a single topic are written to one (and
+ * always the same) shard.
+ */
+typedef uint16_t RollcallShard;
+
+/**
  * The reader that is used to tail the rollcall entries for a namespace.
  */
 class RollcallStream {
  public:
-  /*
+  /**
    * Open the rollcall stream for this namespace.
    * @param client_options The options needed to create a client
    * @param tenant_id Tenant ID of rollcall reader.
-   * @param nsid There is one rollcall stream per namespace
-   * @param start_point The start point of this subscription
-   * @param callback Invoked for every RollcallEntry in the rollcall stream.
-   *                 The callback would be invoked on any arbitrary
-   *                 thread or a pool of threads. If a RollcallEntry containing
-   *                 topic T appears on a specific thread T,then all succeeding
-   *                 RollcallEntry for topic T are guaranteed to appear
-   *                 on the same thread T.
    * @param reader The reader returned from this call
    * @return the status of whether this call was successful or not
    */
   static Status Open(ClientOptions client_options,
                      TenantID tenant_id,
-                     const NamespaceID& nsid,
-                     SequenceNumber start_point,
-                     RollCallback callback,
                      std::unique_ptr<RollcallStream>* reader);
+
+  /** Returns a number of shards for given namespace. */
+  virtual RollcallShard GetNumShards(const NamespaceID& namespace_id) = 0;
+
+  /** Subscribes to rollcall updates for given shard in the namespace. */
+  virtual Status Subscribe(const NamespaceID& namespace_id,
+                           RollcallShard shard_id,
+                           RollCallback callback) = 0;
 
   /**
    * Closes resources associated with this rollcall topic reader
@@ -69,9 +74,9 @@ class RollcallEntry {
 
   // The types of Rollcall Entries.
   enum EntryType : char {
-    Error                 = 0x00,
-    SubscriptionRequest   = 0x01,
-    UnSubscriptionRequest = 0x02,
+    Error                 = 'E',
+    SubscriptionRequest   = 'S',
+    UnSubscriptionRequest = 'U',
   };
 
   RollcallEntry(const Topic& topic, EntryType entry_type) :
@@ -116,7 +121,7 @@ class RollcallEntry {
   char  version_;
   EntryType entry_type_;
   Topic topic_name_;
-  static const char ROLLCALL_ENTRY_VERSION_CURRENT= 1;
+  static const char ROLLCALL_ENTRY_VERSION_CURRENT = '1';
 };
 
 inline bool ValidateEnum(RollcallEntry::EntryType e) {

@@ -57,11 +57,7 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
   }
   // Create Rollcall topic writer
   if (options_.rollcall_enabled) {
-    rollcall_.reset(new RollcallImpl(std::move(client),
-                                     InvalidTenant,
-                                     InvalidNamespace,
-                                     0,
-                                     nullptr));
+    rollcall_.reset(new RollcallImpl(std::move(client), InvalidTenant));
   }
 
   LOG_VITAL(options_.info_log, "Created a new Copilot");

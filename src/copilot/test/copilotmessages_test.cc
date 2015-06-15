@@ -6,6 +6,7 @@
 
 #include <unistd.h>
 #include <chrono>
+#include <numeric>
 #include <set>
 #include <string>
 #include <thread>
@@ -39,17 +40,11 @@ class CopilotTest {
   Env* env_;
   EnvOptions env_options_;
   std::shared_ptr<Logger> info_log_;
-  std::vector<RollcallEntry> rollcall_entries_;
 
   // A static method that is the entry point of a background MsgLoop
   static void MsgLoopStart(void* arg) {
     MsgLoop* loop = reinterpret_cast<MsgLoop*>(arg);
     loop->Run();
-  }
-
-  // A method to process rollcall entries
-  void ProcessRollcall(const RollcallEntry& entry) {
-    rollcall_entries_.push_back(entry);
   }
 };
 
@@ -126,87 +121,113 @@ TEST(CopilotTest, NoLogger) {
 }
 
 TEST(CopilotTest, Rollcall) {
+  using namespace std::placeholders;
+
   // Create cluster with pilot, copilot and controltower only.
   LocalTestCluster cluster(info_log_, true, true, true);
   ASSERT_OK(cluster.GetStatus());
 
-  port::Semaphore checkpoint2;
-
-  size_t num_msg = 100;
-  size_t expected = num_msg / 2;
-
-  // create a client to communicate with the Copilot
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
-  StreamSocket socket(loop.CreateOutboundStream(
-      cluster.GetCopilot()->GetClientId(), 0));
-  loop.RegisterCallbacks({
+  // Create a Client mock.
+  MsgLoop client(env_, env_options_, 58499, 1, info_log_, "client_mock");
+  StreamSocket socket(
+      client.CreateOutboundStream(cluster.GetCopilot()->GetClientId(), 0));
+  client.RegisterCallbacks({
       {MessageType::mSubscribe, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mUnsubscribe, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mDeliverData, [](std::unique_ptr<Message>, StreamID) {}},
   });
-  ASSERT_OK(loop.Initialize());
-  MsgLoopThread t1(env_, &loop,
-    "testc-" + std::to_string(loop.GetHostId().port));
-  ASSERT_OK(loop.WaitUntilRunning());
-  ASSERT_EQ(rollcall_entries_.size(), 0);
+  ASSERT_OK(client.Initialize());
+  MsgLoopThread client_thread(env_, &client, "client_mock");
+  ASSERT_OK(client.WaitUntilRunning());
 
-  // Create a rollcall client
-  NamespaceID ns = GuestNamespace;
-  std::unique_ptr<ClientImpl> client;
-  ASSERT_OK(cluster.CreateClient(&client, true));
-  auto rollcall_callback = [this, &checkpoint2, &num_msg]
-    (RollcallEntry entry) {
-    ProcessRollcall(entry);
-    if (rollcall_entries_.size() == num_msg) {
-      checkpoint2.Post();
+  // Create Rollcall client.
+  std::unique_ptr<RollcallImpl> rollcall;
+  {
+    std::unique_ptr<ClientImpl> rc_client;
+    ASSERT_OK(cluster.CreateClient(&rc_client, true));
+    rollcall.reset(new RollcallImpl(std::move(rc_client), GuestTenant));
+  }
+
+  const RollcallShard num_shards = rollcall->GetNumShards(GuestNamespace);
+  ASSERT_GE(num_shards, 2);
+  const size_t expected = 50, num_msg = 2 * expected;
+  port::Semaphore checkpoint;
+  std::mutex callback_mutex;
+  std::vector<RollcallEntry> rollcall_entries;
+  std::unordered_map<Topic, size_t> receiving_shards;
+  std::vector<size_t> num_received_per_shard(num_shards, 0);
+  auto generic_cb = [&](size_t shard_id, RollcallEntry entry) {
+    std::lock_guard<std::mutex> lock(callback_mutex);
+    ASSERT_TRUE(rollcall_entries.size() != num_msg);
+    ASSERT_TRUE(entry.GetType() != RollcallEntry::EntryType::Error);
+    // Verify that all entries on a topic arrive on the same client.
+    auto it = receiving_shards.find(entry.GetTopicName());
+    if (it != receiving_shards.end()) {
+      ASSERT_EQ(shard_id, it->second);
+    } else {
+      receiving_shards.emplace(entry.GetTopicName(), shard_id);
+    }
+    // Count received per client.
+    num_received_per_shard.at(shard_id)++;
+    // Collect entries and notify if we've collected all expected ones.
+    rollcall_entries.push_back(entry);
+    if (rollcall_entries.size() == num_msg) {
+      checkpoint.Post();
     }
   };
-  // subscribe to rollcall topic for any new entries
-  // that appear in the rollcall topic.
-  RollcallImpl rollcall1(
-      std::move(client), GuestTenant, ns, 0, rollcall_callback);
+
+  // Subscribe to each Rollcall shard.
+  for (RollcallShard shard_id = 0; shard_id < num_shards; ++shard_id) {
+    ASSERT_OK(rollcall->Subscribe(
+        GuestNamespace, shard_id, std::bind(generic_cb, shard_id, _1)));
+  }
 
   // Wait a little so that the subscribe to 0 isn't affected by rollcall writes.
-  env_->SleepForMicroseconds(100000);
+  env_->SleepForMicroseconds(500000);
 
   // send subscribe messages to copilot
   for (SubscriptionID i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
-    MessageSubscribe msg(Tenant::GuestTenant, ns, topic, 0, i);
-    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+    MessageSubscribe msg(Tenant::GuestTenant, GuestNamespace, topic, 0, i);
+    ASSERT_OK(client.SendRequest(msg, &socket, 0));
   }
 
   // send unsubscribe messages to copilot
   for (SubscriptionID i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
-    MessageUnsubscribe msg(Tenant::GuestTenant,
-                           i,
-                           MessageUnsubscribe::Reason::kRequested);
-    ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+    MessageUnsubscribe msg(
+        Tenant::GuestTenant, i, MessageUnsubscribe::Reason::kRequested);
+    ASSERT_OK(client.SendRequest(msg, &socket, 0));
   }
 
-  // Ensure that all subscriptions were found in the rollcall log
-  ASSERT_TRUE(checkpoint2.TimedWait(std::chrono::seconds(5)));
+  // Ensure that all expected entries were received by Rolcall clients.
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(5)));
+  std::lock_guard<std::mutex> lock(callback_mutex);
+  // Verify that every client got something. This might get flaky when we change
+  // topic names or Rollcall sharding hash.
+  for (size_t shard_id = 0; shard_id < num_shards; ++shard_id) {
+    ASSERT_TRUE(num_received_per_shard.at(shard_id) > 0);
+  }
 
   // Verify that all entries in the rollcall log match our
   // subscription and unsubscription request
-  ASSERT_EQ(rollcall_entries_.size(), num_msg);
+  ASSERT_EQ(rollcall_entries.size(), num_msg);
   for (size_t i = 0; i < num_msg; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i % expected);
-    auto type = i < num_msg/2 ?
-                  RollcallEntry::EntryType::SubscriptionRequest :
-                  RollcallEntry::EntryType::UnSubscriptionRequest;
+    auto type = i < num_msg / 2
+                    ? RollcallEntry::EntryType::SubscriptionRequest
+                    : RollcallEntry::EntryType::UnSubscriptionRequest;
 
     // find this entry in the rollcall topic
     bool found = false;
-    for (size_t j = 0; j < rollcall_entries_.size(); j++) {
-      if (rollcall_entries_[j].GetType() == type &&
-          rollcall_entries_[j].GetTopicName() == topic) {
+    for (size_t j = 0; j < rollcall_entries.size(); j++) {
+      if (rollcall_entries[j].GetType() == type &&
+          rollcall_entries[j].GetTopicName() == topic) {
         found = true;
         // found the entry we were looking for. Make it invalid
         // so that it does not match succeeding entries any more.
-        rollcall_entries_[j].SetType(RollcallEntry::EntryType::Error);
+        rollcall_entries[j].SetType(RollcallEntry::EntryType::Error);
         break;
       }
     }
@@ -219,12 +240,12 @@ TEST(CopilotTest, Rollcall) {
   const Statistics& stats = cluster.GetCopilot()->GetStatisticsSync();
   std::string stats_report = stats.Report();
   ASSERT_EQ(stats.GetCounterValue("copilot.numwrites_rollcall_total"),
-    num_msg + 1);
+            num_msg + num_shards);
   ASSERT_EQ(stats.GetCounterValue("copilot.numwrites_rollcall_failed"), 0);
   ASSERT_EQ(stats.GetCounterValue("cockpit.messages_received.subscribe"),
-    num_msg / 2 + 1);
+            num_msg / 2 + num_shards);
   ASSERT_EQ(stats.GetCounterValue("cockpit.messages_received.unsubscribe"),
-    num_msg / 2);
+            num_msg / 2);
 }
 
 }  // namespace rocketspeed
