@@ -9,7 +9,6 @@
 
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/messages/msg_loop.h"
 #include "src/port/Env.h"
 #include "src/client/storage/file_storage.h"
 #include "src/util/common/coding.h"
