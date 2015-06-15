@@ -53,9 +53,9 @@ lsn_t LastSeqnoWritten(
  * Structure for the three header fields from the above format diagram.
  */
 struct RecordHeader {
-  lsn_t lsn;
-  uint64_t timestamp;
-  uint64_t datasize;
+  lsn_t lsn = 0;
+  uint64_t timestamp = 0;
+  uint64_t datasize = 0;
 };
 
 /**

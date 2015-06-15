@@ -73,7 +73,7 @@ TEST(ControlTowerTest, Subscribe) {
       {MessageType::mMetadata, [](std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop.Initialize());
-  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop, "client");
+  MsgLoopThread t1(env_, &loop, "client");
   ASSERT_OK(loop.WaitUntilRunning());
 
   // create a message
@@ -122,7 +122,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
   ASSERT_OK(loop1.Initialize());
-  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop1, "loop1");
+  MsgLoopThread t1(env_, &loop1, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
 
   // first subscriber *******
@@ -151,7 +151,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
   ASSERT_OK(loop2.Initialize());
-  env_->StartThread(ControlTowerTest::MsgLoopStart, &loop2, "loop2");
+  MsgLoopThread t2(env_, &loop2, "loop2");
   ASSERT_OK(loop2.WaitUntilRunning());
 
   // The second subscriber subscribes to the same topics.

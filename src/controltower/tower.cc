@@ -69,6 +69,9 @@ ControlTower::~ControlTower() {
 }
 
 void ControlTower::Stop() {
+  // MsgLoop must be stopped first.
+  assert(!options_.msg_loop->IsRunning());
+
   // Stop log tailer from communicating with log storage.
   log_tailer_->Stop();
 

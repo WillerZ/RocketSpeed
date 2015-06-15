@@ -573,7 +573,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   StreamSocket socket(client.CreateOutboundStream(
       cluster.GetCopilot()->GetClientId(), 0));
   ASSERT_OK(client.Initialize());
-  env_->StartThread([&] () { client.Run(); }, "client");
+  auto tid = env_->StartThread([&] () { client.Run(); }, "client");
   client.WaitUntilRunning();
 
   // Subscribe.
@@ -600,6 +600,9 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
                       Slice("data"));
   ASSERT_OK(client.SendRequest(publish, &socket, 0));
   ASSERT_TRUE(!received_data.TimedWait(std::chrono::milliseconds(100)));
+
+  client.Stop();
+  env_->WaitForJoin(tid);
 }
 
 TEST(IntegrationTest, LostConnection) {
@@ -786,8 +789,8 @@ TEST(IntegrationTest, NewControlTower) {
   ASSERT_TRUE(msg_received.TimedWait(timeout));
 
   // Stop Control Tower
-  cluster.GetControlTower()->Stop();
   cluster.GetControlTowerLoop()->Stop();
+  cluster.GetControlTower()->Stop();
 
   // Send another message to a different topic.
   ASSERT_OK(client->Publish(GuestTenant,
@@ -1217,6 +1220,7 @@ TEST(IntegrationTest, LogAvailability) {
   env_->SleepForMicroseconds(100000);
 
   // Stop the first control tower to ensure it cannot deliver records.
+  cluster.GetControlTowerLoop()->Stop();
   cluster.GetControlTower()->Stop();
 
   // Publish to all topics.
@@ -1314,8 +1318,8 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   ASSERT_TRUE(!msg_received.TimedWait(std::chrono::milliseconds(100)));
 
   // Stop Control Tower
-  cluster.GetControlTower()->Stop();
   cluster.GetControlTowerLoop()->Stop();
+  cluster.GetControlTower()->Stop();
 
   // Start new control tower (only) with same host:port.
   LocalTestCluster::Options new_opts;

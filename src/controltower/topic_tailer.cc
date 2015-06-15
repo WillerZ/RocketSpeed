@@ -447,10 +447,6 @@ Status LogReader::StartReading(const TopicUUID& topic,
     reseek = (seqno <= log_state.last_read);
   }
 
-  if (seqno < log_state.start_seqno) {
-    assert(reseek);
-  }
-
   if (reseek) {
     if (first_open) {
       LOG_INFO(info_log_,

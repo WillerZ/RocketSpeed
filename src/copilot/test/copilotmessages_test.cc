@@ -146,8 +146,8 @@ TEST(CopilotTest, Rollcall) {
       {MessageType::mDeliverData, [](std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop.Initialize());
-  env_->StartThread(CopilotTest::MsgLoopStart, &loop,
-                    "testc-" + std::to_string(loop.GetHostId().port));
+  MsgLoopThread t1(env_, &loop,
+    "testc-" + std::to_string(loop.GetHostId().port));
   ASSERT_OK(loop.WaitUntilRunning());
   ASSERT_EQ(rollcall_entries_.size(), 0);
 

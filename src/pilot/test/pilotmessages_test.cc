@@ -72,7 +72,7 @@ TEST(PilotTest, Publish) {
       }},
   });
   ASSERT_OK(loop.Initialize());
-  env_->StartThread(MsgLoopStart, &loop, "client");
+  MsgLoopThread t1(env_, &loop, "client");
   ASSERT_OK(loop.WaitUntilRunning());
 
   // send messages to pilot

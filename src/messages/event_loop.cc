@@ -921,45 +921,44 @@ void EventLoop::Run() {
   // happens within libevent.
   thread_check_.Reset();
   event_base_dispatch(base_);
+
+  // Shutdown everything
+  if (listener_) {
+    evconnlistener_free(listener_);
+  }
+  if (startup_event_) {
+    event_free(startup_event_);
+  }
+  if (shutdown_event_) {
+    event_free(shutdown_event_);
+  }
+  if (command_ready_event_) {
+    event_free(command_ready_event_);
+  }
+  if (timer_event_) {
+    event_free(timer_event_);
+  }
+  event_base_free(base_);
+  command_ready_eventfd_.closefd();
+
+  // Reset the thread checker since the event loop thread is exiting.
+  stream_router_.CloseAll();
+  teardown_all_connections();
+  LOG_VITAL(info_log_, "Stopped EventLoop at port %d", port_number_);
+  info_log_->Flush();
+  base_ = nullptr;
+
   running_ = false;
 }
 
 void EventLoop::Stop() {
-  if (base_ != nullptr) {
-    if (running_) {
-      // Write to the shutdown event FD to signal the event loop thread
-      // to shutdown and stop looping.
-      int result;
-      do {
-        result = shutdown_eventfd_.write_event(1);
-      } while (running_ && (result < 0 || errno == EAGAIN));
-
-      // Wait for event loop to exit on the loop thread.
-      while (running_) {
-        std::this_thread::yield();
-      }
-    }
-
-    // Shutdown everything
-    if (listener_) {
-      evconnlistener_free(listener_);
-    }
-    if (startup_event_) event_free(startup_event_);
-    if (shutdown_event_) event_free(shutdown_event_);
-    if (command_ready_event_) event_free(command_ready_event_);
-    if (timer_event_) event_free(timer_event_);
-    event_base_free(base_);
-    command_ready_eventfd_.closefd();
-    shutdown_eventfd_.closefd();
-
-    // Reset the thread checker since the event loop thread is exiting.
-    thread_check_.Reset();
-    stream_router_.CloseAll();
-    teardown_all_connections();
-    LOG_VITAL(info_log_, "Stopped EventLoop at port %d", port_number_);
-    info_log_->Flush();
-    base_ = nullptr;
-  }
+  // Write to the shutdown event FD to signal the event loop thread
+  // to shutdown and stop looping.
+  LOG_VITAL(info_log_, "Stopping EventLoop");
+  int result;
+  do {
+    result = shutdown_eventfd_.write_event(1);
+  } while (result < 0 && errno == EAGAIN);
 }
 
 Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
@@ -1272,8 +1271,10 @@ EventLoop::Stats::Stats(const std::string& prefix) {
 }
 
 EventLoop::~EventLoop() {
-  // stop dispatch loop
-  Stop();
+  // Event loop should already be stopped by this point, and the running
+  // thread should be joined.
+  assert(!running_);
+  shutdown_eventfd_.closefd();
 }
 
 const char* EventLoop::SeverityToString(int severity) {

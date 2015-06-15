@@ -308,7 +308,7 @@ TEST(Messaging, PingPong) {
   // Create server loop.
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
   ASSERT_OK(server.Initialize());
-  env_->StartThread([&]() { server.Run(); }, "server");
+  MsgLoopThread t1(env_, &server, "server");
 
   // Posted on every ping message received.
   port::Semaphore ping_sem;
@@ -328,7 +328,7 @@ TEST(Messaging, PingPong) {
       }},
   });
   ASSERT_OK(loop.Initialize());
-  env_->StartThread([&]() { loop.Run(); }, "client");
+  MsgLoopThread t2(env_, &loop, "client");
 
   ASSERT_OK(server.WaitUntilRunning());
   ASSERT_OK(loop.WaitUntilRunning());
@@ -385,7 +385,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
       }},
   });
   ASSERT_OK(server.Initialize());
-  env_->StartThread([&]() { server.Run(); }, "server");
+  MsgLoopThread t1(env_, &server, "server");
 
   // Posted on any ping message received by any client.
   port::Semaphore client_ping;
@@ -401,7 +401,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
       }},
   });
   ASSERT_OK(client1.Initialize());
-  env_->StartThread([&]() { client1.Run(); }, "client1");
+  MsgLoopThread t2(env_, &client1, "client1");
 
   // Second client loop.
   MsgLoop client2(env_, env_options_, 0, 1, info_log_, "client2");
@@ -414,7 +414,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
       }},
   });
   ASSERT_OK(client2.Initialize());
-  env_->StartThread([&]() { client2.Run(); }, "client2");
+  MsgLoopThread t3(env_, &client2, "client2");
 
   ASSERT_OK(server.WaitUntilRunning());
   ASSERT_OK(client1.WaitUntilRunning());
@@ -472,7 +472,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
   // Server loop.
   MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
   ASSERT_OK(server.Initialize());
-  env_->StartThread([&]() { server.Run(); }, "server");
+  MsgLoopThread t1(env_, &server, "server");
 
   // Clients loop.
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client");
@@ -502,7 +502,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
     });
   }
   ASSERT_OK(client.Initialize());
-  env_->StartThread([&]() { client.Run(); }, "loop-client");
+  MsgLoopThread t2(env_, &client, "loop-client");
 
   ASSERT_OK(server.WaitUntilRunning());
   ASSERT_OK(client.WaitUntilRunning());
@@ -548,7 +548,7 @@ TEST(Messaging, GracefulGoodbye) {
       }},
   });
   ASSERT_OK(server.Initialize());
-  env_->StartThread([&]() { server.Run(); }, "loop-server");
+  MsgLoopThread t1(env_, &server, "loop-server");
 
   // Post to the checkpoint when receiving a ping.
   port::Semaphore checkpoint;
@@ -569,7 +569,7 @@ TEST(Messaging, GracefulGoodbye) {
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client");
   client.RegisterCallbacks(callbacks);
   ASSERT_OK(client.Initialize());
-  env_->StartThread([&]() { client.Run(); }, "client");
+  MsgLoopThread t2(env_, &client, "client");
 
   ASSERT_OK(server.WaitUntilRunning());
   ASSERT_OK(client.WaitUntilRunning());
@@ -629,7 +629,7 @@ TEST(Messaging, Timer) {
   ASSERT_OK(loop.RegisterTimerCallback([&]() { counter++; },
                            std::chrono::microseconds(30000)));
 
-  env_->StartThread([&]() { loop.Run(); }, "loop");
+  MsgLoopThread t1(env_, &loop, "loop");
   ASSERT_OK(loop.WaitUntilRunning());
 
   // verify the expected number of timer tics after the sleep period
@@ -641,7 +641,7 @@ TEST(Messaging, InitializeFailure) {
   // Check that Initialize returns failure.
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
   ASSERT_OK(loop1.Initialize());
-  env_->StartThread([&]() { loop1.Run(); }, "loop1");
+  MsgLoopThread t1(env_, &loop1, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
 
   // now start another on same port, should fail.
@@ -653,9 +653,10 @@ TEST(Messaging, SocketDeath) {
   // Tests that a client cannot unwillingly send messages on the same logical
   // stream, if the stream has broken during transmission.
   MsgLoop receiver_loop(
-      env_, env_options_, 58499, 1, info_log_, "receiver_loop0");
+      env_, env_options_, 58499, 1, info_log_, "receiver_loop");
   ASSERT_OK(receiver_loop.Initialize());
-  env_->StartThread([&]() { receiver_loop.Run(); }, "receiver_loop0");
+  std::unique_ptr<MsgLoopThread> t1(
+    new MsgLoopThread(env_, &receiver_loop, "receiver_loop"));
 
   // Post to the checkpoint when receiving a ping.
   port::Semaphore checkpoint;
@@ -671,7 +672,7 @@ TEST(Messaging, SocketDeath) {
   MsgLoop sender_loop(env_, env_options_, 0, 1, info_log_, "sender_loop");
   sender_loop.RegisterCallbacks(callbacks);
   ASSERT_OK(sender_loop.Initialize());
-  env_->StartThread([&]() { sender_loop.Run(); }, "sender_loop");
+  MsgLoopThread t2(env_, &sender_loop, "sender_loop");
   ASSERT_OK(sender_loop.WaitUntilRunning());
   ASSERT_OK(receiver_loop.WaitUntilRunning());
 
@@ -688,12 +689,13 @@ TEST(Messaging, SocketDeath) {
   ASSERT_TRUE(checkpoint.TimedWait(timeout_));
 
   // Kill the receiver loop
-  receiver_loop.Stop();
+  t1.reset();
+
   // Restart receiver_loop with the same parameters.
   MsgLoop receiver_loop1(
       env_, env_options_, 58499, 1, info_log_, "receiver_loop1");
   ASSERT_OK(receiver_loop1.Initialize());
-  env_->StartThread([&]() { receiver_loop1.Run(); }, "receiver_loop1");
+  MsgLoopThread t3(env_, &receiver_loop1, "receiver_loop1");
   receiver_loop1.RegisterCallbacks(callbacks);
   ASSERT_OK(receiver_loop1.WaitUntilRunning());
 
@@ -719,7 +721,7 @@ TEST(Messaging, SocketDeath) {
 TEST(Messaging, GatherTest) {
   MsgLoop loop(env_, env_options_, -1, 10, info_log_, "loop");
   ASSERT_OK(loop.Initialize());
-  env_->StartThread([&] () { loop.Run(); }, "loop");
+  MsgLoopThread t1(env_, &loop, "loop");
   ASSERT_OK(loop.WaitUntilRunning());
 
   port::Semaphore done;

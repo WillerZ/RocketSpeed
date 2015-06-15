@@ -322,4 +322,27 @@ Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
   return Status::OK();
 }
 
+class MsgLoopThread {
+ public:
+  MsgLoopThread(BaseEnv* env, MsgLoopBase* msg_loop, std::string name)
+  : env_(env)
+  , msg_loop_(msg_loop) {
+    assert(env_);
+    assert(msg_loop_);
+    tid_ = env_->StartThread([msg_loop] () { msg_loop->Run(); }, name);
+  }
+
+  ~MsgLoopThread() {
+    msg_loop_->Stop();
+    if (tid_) {
+      env_->WaitForJoin(tid_);
+    }
+  }
+
+ private:
+  BaseEnv* env_;
+  MsgLoopBase* msg_loop_;
+  BaseEnv::ThreadId tid_;
+};
+
 }  // namespace rocketspeed

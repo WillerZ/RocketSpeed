@@ -66,17 +66,45 @@ class ClientTest {
   const std::shared_ptr<MockConfiguration> config_;
   std::shared_ptr<rocketspeed::Logger> info_log_;
 
-  std::unique_ptr<MsgLoop> MockCopilot(
+  struct CopilotMock {
+    CopilotMock(Env* _env,
+                std::unique_ptr<MsgLoop> _msg_loop,
+                BaseEnv::ThreadId _tid)
+    : env(_env)
+    , msg_loop(std::move(_msg_loop))
+    , tid(_tid) {
+    }
+
+    CopilotMock(CopilotMock&& src) noexcept
+    : env(src.env)
+    , msg_loop(std::move(src.msg_loop))
+    , tid(src.tid) {
+      src.tid = 0;
+    }
+
+    ~CopilotMock() {
+      msg_loop->Stop();
+      if (tid) {
+        env->WaitForJoin(tid);
+      }
+    }
+
+    Env* env;
+    std::unique_ptr<MsgLoop> msg_loop;
+    BaseEnv::ThreadId tid;
+  };
+
+  CopilotMock MockCopilot(
       const std::map<MessageType, MsgCallbackType>& callbacks) {
     std::unique_ptr<MsgLoop> copilot(
         new MsgLoop(env_, EnvOptions(), 58499, 1, info_log_, "copilot"));
     copilot->RegisterCallbacks(callbacks);
     ASSERT_OK(copilot->Initialize());
-    env_->StartThread([&]() { copilot->Run(); }, "copilot");
+    auto tid = env_->StartThread([&]() { copilot->Run(); }, "copilot");
     ASSERT_OK(copilot->WaitUntilRunning());
     // Set copilot address in the configuration.
     config_->SetCopilot(copilot->GetHostId());
-    return std::move(copilot);
+    return CopilotMock { env_, std::move(copilot), tid };
   }
 
   std::unique_ptr<Client> CreateClient(ClientOptions options) {
@@ -128,7 +156,7 @@ TEST(ClientTest, UnsubscribeDedup) {
   // Send messages on a non-existent subscription.
   for (size_t i = 0; i < 10; ++i) {
     deliver.SetSequenceNumbers(i, i + 1);
-    ASSERT_OK(copilot->SendResponse(deliver, last_origin.load(), 0));
+    ASSERT_OK(copilot.msg_loop->SendResponse(deliver, last_origin.load(), 0));
   }
   // Should receive only one unsubscribe message.
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
@@ -139,7 +167,7 @@ TEST(ClientTest, UnsubscribeDedup) {
 
   // Publish another bad message.
   deliver.SetSequenceNumbers(11, 12);
-  ASSERT_OK(copilot->SendResponse(deliver, last_origin.load(), 0));
+  ASSERT_OK(copilot.msg_loop->SendResponse(deliver, last_origin.load(), 0));
   // Should receive unsubscribe message.
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
 }
@@ -165,7 +193,7 @@ TEST(ClientTest, BackOff) {
           // before we perform the assignment to copilot_ptr.
           copilot_ptr.load()->SendResponse(goodbye, origin, 0);
         }}});
-  copilot_ptr = copilot.get();
+  copilot_ptr = copilot.msg_loop.get();
 
   // Back-off parameters.
   const uint64_t initial = 50 * 1000;
@@ -229,7 +257,7 @@ TEST(ClientTest, GetCopilotFailure) {
   ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
 
   // Set Copilot address in the config.
-  config_->SetCopilot(copilot->GetHostId());
+  config_->SetCopilot(copilot.msg_loop->GetHostId());
 
   // Copilot should receive the subscribe request.
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
@@ -298,7 +326,7 @@ TEST(ClientTest, OfflineOperations) {
   expects_request = true;
   // Enable communication and wait for Copilot to verify all received
   // requests.
-  config_->SetCopilot(copilot->GetHostId());
+  config_->SetCopilot(copilot.msg_loop->GetHostId());
   ASSERT_TRUE(all_ok_sem.TimedWait(positive_timeout));
 }
 

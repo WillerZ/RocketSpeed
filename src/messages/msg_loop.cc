@@ -180,6 +180,7 @@ size_t MsgLoop::GetQueueSize(int worker_id) const {
 }
 
 Status MsgLoop::Initialize() {
+  LOG_VITAL(info_log_, "Initializing MsgLoop");
   for (auto& event_loop : event_loops_) {
     Status st = event_loop->Initialize();
     if (!st.ok()) {
@@ -239,6 +240,7 @@ void MsgLoop::Run() {
 }
 
 void MsgLoop::Stop() {
+  LOG_VITAL(info_log_, "Stopping MsgLoop");
   for (auto& event_loop : event_loops_) {
     event_loop->Stop();
   }
@@ -253,7 +255,8 @@ void MsgLoop::Stop() {
 }
 
 MsgLoop::~MsgLoop() {
-  Stop();
+  LOG_VITAL(info_log_, "Destroying MsgLoop");
+  assert(!IsRunning());
 }
 
 StreamAllocator* MsgLoop::GetOutboundStreamAllocator(int worker_id) {
