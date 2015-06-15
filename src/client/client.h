@@ -17,7 +17,6 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
-#include "src/client/topic_id.h"
 #include "src/client/publisher.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/messages.h"

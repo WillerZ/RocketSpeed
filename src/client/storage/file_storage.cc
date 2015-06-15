@@ -20,7 +20,6 @@
 
 #include "include/Logger.h"
 #include "src/messages/descriptor_event.h"
-#include "src/client/topic_id.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/coding.h"
 
@@ -138,7 +137,7 @@ Status FileStorage::RestoreSubscriptions(
       return Status::IOError("Bad sequence number");
     }
 
-    // TopicID.
+    // Chunk with namespace and topic name.
     uint32_t name_size;
     if (!GetFixed32(&chunk, &name_size)) {
       return Status::IOError("Bad topic name length");
@@ -161,7 +160,6 @@ Status FileStorage::RestoreSubscriptions(
     if (!GetTopicID(&buffer_in, &namespace_id, &topic_name)) {
       return Status::IOError("Bad topic ID");
     }
-    TopicID topic_id(namespace_id, topic_name);
 
     result.emplace_back(
         tenant_id, std::move(namespace_id), std::move(topic_name), seqno);
