@@ -344,7 +344,6 @@ class EventLoop {
   // The callbacks
   EventCallbackType event_callback_;
   AcceptCallbackType accept_callback_;
-  TimerCallbackType timer_callback_;
   std::map<CommandType, CommandCallbackType> command_callbacks_;
 
   // The connection listener
@@ -356,9 +355,6 @@ class EventLoop {
 
   // Startup event
   event* startup_event_ = nullptr;
-
-    // Startup event
-  event* timer_event_ = nullptr;
 
   // Command event
   event* command_ready_event_ = nullptr;
@@ -394,6 +390,22 @@ class EventLoop {
   // the callback invoked on the expired streams in the heartbeat_. it should
   // be responsible for closing the stream properly
   std::function<void(StreamID)> heartbeat_expired_callback_;
+
+  // Timer callbacks.
+  struct Timer {
+    explicit Timer(TimerCallbackType _callback)
+    : callback(std::move(_callback)) {
+    }
+
+    Timer(const Timer&) = delete;
+    Timer(Timer&&) = delete;
+    Timer& operator=(const Timer&) = delete;
+    Timer& operator=(Timer&&) = delete;
+
+    TimerCallbackType callback;
+    event* loop_event = nullptr;
+  };
+  std::vector<std::unique_ptr<Timer>> timers_;
 
   // Thread check
   rocketspeed::ThreadCheck thread_check_;

@@ -624,17 +624,21 @@ TEST(Messaging, GracefulGoodbye) {
 
 TEST(Messaging, Timer) {
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "loop");
-  std::atomic_int counter(0);
+  std::atomic_int counter1(0);
+  std::atomic_int counter2(0);
   ASSERT_OK(loop.Initialize());
-  ASSERT_OK(loop.RegisterTimerCallback([&]() { counter++; },
+  ASSERT_OK(loop.RegisterTimerCallback([&]() { counter1++; },
                            std::chrono::microseconds(30000)));
+  ASSERT_OK(loop.RegisterTimerCallback([&]() { counter2++; },
+                           std::chrono::microseconds(50000)));
 
   MsgLoopThread t1(env_, &loop, "loop");
   ASSERT_OK(loop.WaitUntilRunning());
 
   // verify the expected number of timer tics after the sleep period
   env_->SleepForMicroseconds(110000);
-  ASSERT_EQ(counter.load(), 3);
+  ASSERT_EQ(counter1.load(), 3);
+  ASSERT_EQ(counter2.load(), 2);
 }
 
 TEST(Messaging, InitializeFailure) {
@@ -764,7 +768,7 @@ TEST(Messaging, TrySendCommand) {
   opts.event_loop.command_queue_size = 100;
   MsgLoop loop(env_, env_options_, -1, 1, info_log_, "loop", opts);
   ASSERT_OK(loop.Initialize());
-  env_->StartThread([&] () { loop.Run(); }, "loop");
+  MsgLoopThread t1(env_, &loop, "loop");
 
   // Write as fast as possible, with retries.
   bool failed_at_least_once = false;
@@ -785,7 +789,6 @@ TEST(Messaging, TrySendCommand) {
     }
   }
   ASSERT_TRUE(failed_at_least_once);  // otherwise we aren't testing anything
-  loop.Stop();
 }
 
 }  // namespace rocketspeed
