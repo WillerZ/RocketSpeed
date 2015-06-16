@@ -49,15 +49,16 @@ class CopilotTest {
 };
 
 TEST(CopilotTest, WorkerMapping) {
-  // Create cluster with copilot and controltower only.
-  LocalTestCluster cluster(info_log_, true, true, false);
+  // Create cluster with controltower only.
+  LocalTestCluster cluster(info_log_, true, false, false);
   ASSERT_OK(cluster.GetStatus());
 
   const int num_towers = 100;
   const int num_workers = 10;
-  const int port = ControlTower::DEFAULT_PORT;
+  const int port = Copilot::DEFAULT_PORT - 99;
 
   MsgLoop loop(env_, EnvOptions(), port, num_workers, info_log_, "test");
+  ASSERT_OK(loop.Initialize());
 
   CopilotOptions options;
   auto log_range = std::pair<LogID, LogID>(1, 10000);
@@ -100,15 +101,16 @@ TEST(CopilotTest, WorkerMapping) {
 
 TEST(CopilotTest, NoLogger) {
   // Create cluster with tower+copilot (only need this for the log router).
-  LocalTestCluster cluster(info_log_, true, true, false);
+  LocalTestCluster cluster(info_log_, true, false, false);
   ASSERT_OK(cluster.GetStatus());
 
   MsgLoop loop(env_,
                env_options_,
-               58499,
+               0,
                1,
                std::make_shared<NullLogger>(),
                "test");
+  ASSERT_OK(loop.Initialize());
   Copilot* copilot = nullptr;
   CopilotOptions options;
   options.pilots.push_back(HostId("fakepilot", 0));
@@ -128,7 +130,7 @@ TEST(CopilotTest, Rollcall) {
   ASSERT_OK(cluster.GetStatus());
 
   // Create a Client mock.
-  MsgLoop client(env_, env_options_, 58499, 1, info_log_, "client_mock");
+  MsgLoop client(env_, env_options_, 0, 1, info_log_, "client_mock");
   StreamSocket socket(
       client.CreateOutboundStream(cluster.GetCopilot()->GetClientId(), 0));
   client.RegisterCallbacks({

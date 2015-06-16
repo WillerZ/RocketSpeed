@@ -210,6 +210,25 @@ Status RocketSpeed::Initialize(
     }
   }
 
+  // Get a list of message loops.
+  if (tower_loop) {
+    msg_loops_.emplace_back(tower_loop);
+  }
+  if (copilot_loop) {
+    msg_loops_.emplace_back(copilot_loop);
+  }
+  if (pilot_loop && pilot_loop != copilot_loop) {
+    msg_loops_.emplace_back(pilot_loop);
+  }
+
+  // Initialize message loops.
+  for (auto& msg_loop : msg_loops_) {
+    Status st = msg_loop->Initialize();
+    if (!st.ok()) {
+      return st;
+    }
+  }
+
   // Create Control Tower.
   if (FLAGS_tower) {
     LOG_VITAL(info_log_, "Creating Control Tower");
@@ -300,25 +319,6 @@ Status RocketSpeed::Initialize(
                                                   &supervisor_loop_);
     if (!st.ok()) {
       LOG_ERROR(info_log_, "Failed to create the supervisor loop");
-    }
-  }
-
-  // Get a list of message loops.
-  if (tower_loop) {
-    msg_loops_.emplace_back(tower_loop);
-  }
-  if (copilot_loop) {
-    msg_loops_.emplace_back(copilot_loop);
-  }
-  if (pilot_loop && pilot_loop != copilot_loop) {
-    msg_loops_.emplace_back(pilot_loop);
-  }
-
-  // Initialize message loops.
-  for (auto& msg_loop : msg_loops_) {
-    Status st = msg_loop->Initialize();
-    if (!st.ok()) {
-      return st;
     }
   }
 
