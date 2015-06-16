@@ -16,6 +16,8 @@
 #ifdef USE_LOGDEVICE
 #include "logdevice/include/debug.h"
 #include "logdevice/test/utils/IntegrationTestUtils.h"
+#else
+#include "src/logdevice/Common.h"
 #endif  // USE_LOGDEVICE
 
 namespace rocketspeed {
@@ -124,6 +126,11 @@ void LocalTestCluster::Initialize(Options opts) {
                                            &storage);
       }
 #else
+      static bool first_cluster = true;
+      if (first_cluster) {
+        Env::Default()->DeleteDirRecursive(facebook::logdevice::MOCK_LOG_DIR);
+        first_cluster = false;
+      }
       status_ = LogDeviceStorage::Create("",
                                          "",
                                          "",
