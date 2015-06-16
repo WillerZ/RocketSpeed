@@ -938,9 +938,7 @@ void EventLoop::Run() {
     event_free(timer->loop_event);
   }
   event_base_free(base_);
-  command_ready_eventfd_.closefd();
 
-  // Reset the thread checker since the event loop thread is exiting.
   stream_router_.CloseAll();
   teardown_all_connections();
   LOG_VITAL(info_log_, "Stopped EventLoop at port %d", port_number_);
@@ -962,6 +960,9 @@ void EventLoop::Stop() {
 
 Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
                                         std::chrono::microseconds period) {
+  assert(base_);
+  assert(!IsRunning());
+
   std::unique_ptr<Timer> timer(new Timer(std::move(callback)));
   timer->loop_event = event_new(
     base_,
@@ -1277,6 +1278,7 @@ EventLoop::~EventLoop() {
   // thread should be joined.
   assert(!running_);
   shutdown_eventfd_.closefd();
+  command_ready_eventfd_.closefd();
 }
 
 const char* EventLoop::SeverityToString(int severity) {
