@@ -109,6 +109,7 @@ class Copilot {
   void ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessUnsubscribe(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessTimerTick();
 
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };

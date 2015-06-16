@@ -22,7 +22,9 @@ CopilotOptions::CopilotOptions()
     consistent_hash_replicas(20),
     control_towers_per_log(1),
     control_tower_connections(4),
-    rollcall_enabled(true) {
+    rollcall_enabled(true),
+    timer_interval_micros(500000),
+    resubscriptions_per_second(10000) {
 }
 
 }  // namespace rocketspeed

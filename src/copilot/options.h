@@ -91,6 +91,14 @@ struct CopilotOptions {
   // Default: true
   bool rollcall_enabled;
 
+  // Time between health check ticks.
+  // Default: 500,000 (0.5s)
+  uint64_t timer_interval_micros;
+
+  // Maximum number of re-subscriptions per second.
+  // Default: 10,000
+  uint64_t resubscriptions_per_second;
+
   // Create CopilotOptions with default values for all fields
   CopilotOptions();
 };

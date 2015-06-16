@@ -30,6 +30,13 @@ CopilotWorker::CopilotWorker(
   // copilot is required.
   assert(copilot_);
 
+  // Cached calculation.
+  resubscriptions_per_tick_ = std::max<uint64_t>(1,
+    options_.resubscriptions_per_second *
+    options_.timer_interval_micros /
+    1000000 /
+    options_.msg_loop->GetNumWorkers());
+
   LOG_VITAL(options_.info_log, "Created a new CopilotWorker");
   options_.info_log->Flush();
 }
@@ -116,6 +123,7 @@ const Statistics& CopilotWorker::GetStatistics() {
     total_sockets += entry.second.size();
   }
   stats_.control_tower_sockets->Set(total_sockets);
+  stats_.orphaned_topics->Set(orphan_topics_.size());
   return stats_.all;
 }
 
@@ -471,6 +479,7 @@ void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
     // No more subscriptions, so remove from map.
     if (topic.subscriptions.empty()) {
       topics_.erase(topic_iter);
+      orphan_topics_.erase(uuid);
     }
   }
 }
@@ -518,35 +527,41 @@ void CopilotWorker::ProcessRouterUpdate(
     std::shared_ptr<ControlTowerRouter> router) {
   LOG_VITAL(options_.info_log, "Updating control tower router");
   control_tower_router_ = std::move(router);
+}
 
-  // Resubscribe all subscriptions without enough control tower subscriptions.
-  for (auto& uuid_topic : topics_) {
-    const TopicUUID& uuid = uuid_topic.first;
-    TopicState& topic = uuid_topic.second;
-    if (topic.towers.size() < options_.control_towers_per_log) {
-      UpdateTowerSubscriptions(uuid, topic);
+void CopilotWorker::ProcessTimerTick() {
+  // On each tick, we loop through orphan topics to check if we can find
+  // a control tower subscription for then. We limit the number sent per second
+  // to avoid thundering herd on the control tower.
+  uint64_t count = resubscriptions_per_tick_;
+  while (count-- && !orphan_topics_.empty()) {
+    const TopicUUID& uuid = orphan_topics_.front();
+    auto it = topics_.find(uuid);
+    assert(it != topics_.end());
+    if (it != topics_.end()) {
+      // It's possible the UpdateTowerSubscriptions will fail to find
+      // subscriptions. We move the first orpan topic to the back of the list
+      // in case this happens to ensure that the same topic isn't retried in
+      // a tight loop. If the subscription is successful, the orpan topic
+      // will be removed by UpdateTowerSubscriptions.
+      orphan_topics_.move_to_back(orphan_topics_.begin());
+      UpdateTowerSubscriptions(uuid, it->second);
     }
   }
 }
 
 void CopilotWorker::CloseControlTowerStream(StreamID stream) {
-  // List of topics affected by this control tower death.
-  std::vector<TopicUUID> affected_topics;
-
   // Removes upstream connection for affected subscriptions.
   for (auto& uuid_topic : topics_) {
+    const TopicUUID& uuid = uuid_topic.first;
     TopicState& topic = uuid_topic.second;
-    bool affected = false;
     for (auto it = topic.towers.begin(); it != topic.towers.end(); ) {
       if (it->stream->GetStreamID() == stream) {
         it = topic.towers.erase(it);
-        affected = true;
+        AddOrphanTopic(uuid);
       } else {
         ++it;
       }
-    }
-    if (affected) {
-      affected_topics.push_back(uuid_topic.first);
     }
   }
 
@@ -561,13 +576,6 @@ void CopilotWorker::CloseControlTowerStream(StreamID stream) {
         ++it;
       }
     }
-  }
-
-  // Update subscriptions on affected topics.
-  for (const TopicUUID& uuid : affected_topics) {
-    auto it = topics_.find(uuid);
-    assert(it != topics_.end());
-    UpdateTowerSubscriptions(uuid, it->second);
   }
 }
 
@@ -767,6 +775,16 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
       }
     }
   }
+
+  if (topic.towers.size() < options_.control_towers_per_log) {
+    // Still not enough tower subscriptions, so put onto orphan list.
+    // This will happen if e.g. sending the subscription failed due to full
+    // queue, or if there simply aren't any control towers currently available.
+    AddOrphanTopic(uuid);
+  } else {
+    // Ensure that we are no longer marked as an orphan.
+    orphan_topics_.erase(uuid);
+  }
 }
 
 //
@@ -900,6 +918,13 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
     }
   }
   stats_.message_from_unexpected_tower->Add(1);
+}
+
+void CopilotWorker::AddOrphanTopic(TopicUUID uuid) {
+  if (!orphan_topics_.contains(uuid)) {
+    // Add to the queue of topics that need tower subscriptions.
+    orphan_topics_.emplace_back(std::move(uuid));
+  }
 }
 
 std::string CopilotWorker::GetTowersForLog(LogID log_id) const {

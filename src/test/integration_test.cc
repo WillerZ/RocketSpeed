@@ -1281,9 +1281,17 @@ TEST(IntegrationTest, LogAvailability) {
 TEST(IntegrationTest, TowerDeathReconnect) {
   // Connect to a tower, kill it, bring back up at same host ID, and check that
   // we reconnect and resub.
+  const size_t kNumTopics = 1000;
 
   // Setup local RocketSpeed cluster.
-  LocalTestCluster cluster(info_log);
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.start_controltower = true;
+  opts.start_pilot = true;
+  opts.start_copilot = true;
+  opts.copilot.timer_interval_micros = 100000;
+  opts.copilot.resubscriptions_per_second = kNumTopics;
+  LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
   // RocketSpeed callbacks
@@ -1301,25 +1309,40 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Listen for messages.
-  ASSERT_TRUE(
-      client->Subscribe(GuestTenant, GuestNamespace, "TowerDeathReconnect", 0));
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    ASSERT_TRUE(
+      client->Subscribe(GuestTenant,
+                        GuestNamespace,
+                        "TowerDeathReconnect" + std::to_string(t),
+                        0));
+  }
 
-  env_->SleepForMicroseconds(100000);
+  env_->SleepForMicroseconds(1000000);
 
   // Send a message.
-  ASSERT_OK(client->Publish(GuestTenant,
-                            "TowerDeathReconnect",
-                            GuestNamespace,
-                            TopicOptions(),
-                            "message1").status);
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    ASSERT_OK(client->Publish(GuestTenant,
+                              "TowerDeathReconnect" + std::to_string(t),
+                              GuestNamespace,
+                              TopicOptions(),
+                              "message1").status);
+  }
 
-  // Wait for the message.
-  ASSERT_TRUE(msg_received.TimedWait(timeout));
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    // Wait for the message.
+    ASSERT_TRUE(msg_received.TimedWait(timeout));
+  }
   ASSERT_TRUE(!msg_received.TimedWait(std::chrono::milliseconds(100)));
 
   // Stop Control Tower
   cluster.GetControlTowerLoop()->Stop();
   cluster.GetControlTower()->Stop();
+
+  // Let the copilot fail to reconnect for a few ticks (to check that code path)
+  env_->SleepForMicroseconds(3 * int(opts.copilot.timer_interval_micros));
+
+  auto stats1 = cluster.GetCopilot()->GetStatisticsSync();
+  ASSERT_EQ(kNumTopics, stats1.GetCounterValue("copilot.orphaned_topics"));
 
   // Start new control tower (only) with same host:port.
   LocalTestCluster::Options new_opts;
@@ -1327,18 +1350,34 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   new_opts.start_controltower = true;
   new_opts.start_copilot = false;
   new_opts.start_pilot = false;
+
+  uint64_t start = env_->NowMicros();
   LocalTestCluster new_cluster(new_opts);
   ASSERT_OK(new_cluster.GetStatus());
 
   // Send another message.
-  ASSERT_OK(client->Publish(GuestTenant,
-                            "TowerDeathReconnect",
-                            GuestNamespace,
-                            TopicOptions(),
-                            "message2").status);
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    ASSERT_OK(client->Publish(GuestTenant,
+                              "TowerDeathReconnect" + std::to_string(t),
+                              GuestNamespace,
+                              TopicOptions(),
+                              "message2").status);
+  }
 
-  // Wait for the message.
-  ASSERT_TRUE(msg_received.TimedWait(timeout));
+  // Wait for the messages.
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    ASSERT_TRUE(msg_received.TimedWait(timeout));
+  }
+
+  uint64_t end = env_->NowMicros();
+
+  // Should have taken ~1 second to resubscribe all topics.
+  ASSERT_GE(end - start, 900000);
+  ASSERT_LE(end - start, 1500000);
+
+  // Check that there are no more orhpaned topics.
+  auto stats2 = cluster.GetCopilot()->GetStatisticsSync();
+  ASSERT_EQ(0, stats2.GetCounterValue("copilot.orphaned_topics"));
 }
 
 }  // namespace rocketspeed

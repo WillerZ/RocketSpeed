@@ -27,11 +27,10 @@ namespace rocketspeed {
 //
 //   (3,103) (1,101) (2,102)
 //
-template <class Key, class Value, class KeyHash = std::hash<Key>,
-                                  class KeyEqual = std::equal_to<Key>>
-class LinkedMap {
+template <class Key, class Node, class KeyHash, class KeyEqual, class NodeToKey>
+class LinkedBase {
  public:
-  using List = std::list<std::pair<const Key, Value>>;
+  using List = std::list<Node>;
 
   using value_type = typename List::value_type;
   using iterator = typename List::iterator;
@@ -40,12 +39,12 @@ class LinkedMap {
   using const_reverse_iterator = typename List::const_reverse_iterator;
   using insertion_result = typename std::pair<iterator, bool>;
 
-  LinkedMap() {}
-  LinkedMap(LinkedMap&&) = default;
-  LinkedMap& operator= (LinkedMap&&) = default;
+  LinkedBase() {}
+  LinkedBase(LinkedBase&&) = default;
+  LinkedBase& operator= (LinkedBase&&) = default;
 
-  LinkedMap(const LinkedMap&) = delete;
-  LinkedMap& operator= (const LinkedMap&) = delete;
+  LinkedBase(const LinkedBase&) = delete;
+  LinkedBase& operator= (const LinkedBase&) = delete;
 
   // Iterators
   iterator begin() { return list_.begin(); }
@@ -115,7 +114,7 @@ class LinkedMap {
   emplace(iterator pos, Args&&... args) {
     const auto it = list_.emplace(pos, std::forward<Args>(args)...);
     try {
-      const auto emplace_result = index_.emplace(&it->first, it);
+      const auto emplace_result = index_.emplace(&node_to_key(*it), it);
       if (emplace_result.second) {
         return { it, true };
       } else {
@@ -129,7 +128,7 @@ class LinkedMap {
   }
 
   iterator erase(iterator pos) {
-    index_.erase(&pos->first);
+    index_.erase(&node_to_key(*pos));
     return list_.erase(pos);
   }
 
@@ -189,7 +188,7 @@ class LinkedMap {
     erase(std::prev(end()));
   }
 
-  void swap(LinkedMap& other) {
+  void swap(LinkedBase& other) {
     list_.swap(other.list_);
     index_.swap(other.index_);
   }
@@ -222,6 +221,34 @@ class LinkedMap {
 
   List list_;
   Index index_;
+  NodeToKey node_to_key;
 };
+
+struct LinkedMapKey {
+  template <class A, class B>
+  const A& operator()(const std::pair<const A, B>& p) const {
+    return p.first;
+  }
+};
+
+struct LinkedSetKey {
+  template <class T>
+  const T& operator()(const T& p) const {
+    return p;
+  }
+};
+
+template <class Key,
+          class Value,
+          class KeyHash = std::hash<Key>,
+          class KeyEqual = std::equal_to<Key>>
+using LinkedMap =
+  LinkedBase<Key, std::pair<const Key, Value>, KeyHash, KeyEqual, LinkedMapKey>;
+
+template <class Key,
+          class KeyHash = std::hash<Key>,
+          class KeyEqual = std::equal_to<Key>>
+using LinkedSet =
+  LinkedBase<Key, Key, KeyHash, KeyEqual, LinkedSetKey>;
 
 } // namespace rocketspeed

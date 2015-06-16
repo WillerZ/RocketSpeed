@@ -43,6 +43,11 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
 Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
   options_(SanitizeOptions(std::move(options))) {
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
+  options_.msg_loop->RegisterTimerCallback(
+    [this] () {
+      ProcessTimerTick();
+    },
+    std::chrono::microseconds(options_.timer_interval_micros));
 
   // Create workers.
   std::shared_ptr<ControlTowerRouter> router =
@@ -329,6 +334,12 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
                          event_loop_worker,
                          origin);
   }
+}
+
+void Copilot::ProcessTimerTick() {
+  // This is invoked once per MsgLoop worker thread.
+  const int worker_id = options_.msg_loop->GetThreadWorkerIndex();
+  workers_[worker_id]->ProcessTimerTick();
 }
 
 // A static method to initialize the callback map

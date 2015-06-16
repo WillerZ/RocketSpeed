@@ -63,6 +63,10 @@ DEFINE_int32(copilot_connections, 8,
              "num connections between one copilot and one control tower");
 DEFINE_int32(copilot_towers_per_log, 2,
              "number of towers to subscribe to for each log");
+DEFINE_int64(copilot_timer_interval_micros, 500000,
+             "microseconds between health check ticks");
+DEFINE_int64(copilot_resubscriptions_per_second, 10000,
+             "maximum number of orphaned topic resubscriptions per second");
 DEFINE_bool(rollcall, true, "enable RollCall");
 
 // Supervisor settings
@@ -257,6 +261,9 @@ Status RocketSpeed::Initialize(
     copilot_opts.control_towers_per_log = FLAGS_copilot_towers_per_log;
     copilot_opts.log_router = log_router;
     copilot_opts.rollcall_enabled = FLAGS_rollcall;
+    copilot_opts.timer_interval_micros = FLAGS_copilot_timer_interval_micros;
+    copilot_opts.resubscriptions_per_second =
+      FLAGS_copilot_resubscriptions_per_second;
 
     // TODO(pja) 1 : Configure control tower hosts from config file.
     // Parse comma-separated control_towers hostname.

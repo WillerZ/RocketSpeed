@@ -18,6 +18,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream_socket.h"
 #include "src/util/common/hash.h"
+#include "src/util/common/linked_map.h"
 #include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
@@ -44,6 +45,9 @@ class CopilotWorker {
                StreamID origin);
 
   bool Forward(std::shared_ptr<ControlTowerRouter> new_router);
+
+  // Invoked on a regularly clock interval.
+  void ProcessTimerTick();
 
   // Get the host id of this worker's worker loop.
   const HostId& GetHostId() const {
@@ -95,6 +99,8 @@ class CopilotWorker {
         all.AddCounter("copilot.gap_dropped_out_of_order");
       message_from_unexpected_tower =
         all.AddCounter("copilot.message_from_unexpected_tower");
+      orphaned_topics =
+        all.AddCounter("copilot.orphaned_topics");
     }
 
     Statistics all;
@@ -111,6 +117,7 @@ class CopilotWorker {
     Counter* data_dropped_out_of_order;
     Counter* gap_dropped_out_of_order;
     Counter* message_from_unexpected_tower;
+    Counter* orphaned_topics;
   } stats_;
 
   // Send an ack message to the host for the msgid.
@@ -197,6 +204,10 @@ class CopilotWorker {
                      SequenceNumber prev,
                      SequenceNumber next,
                      StreamID origin);
+
+  // Add a topic to the orphan queue.
+  // These subscriptions will be retired periodically.
+  void AddOrphanTopic(TopicUUID uuid);
 
   // Copilot specific options.
   const CopilotOptions& options_;
@@ -286,6 +297,12 @@ class CopilotWorker {
    */
   std::unordered_map<HostId, std::unordered_map<int, StreamSocket>>
       control_tower_sockets_;
+
+  // Queue of topics that are missing upstream subscriptions.
+  LinkedSet<TopicUUID> orphan_topics_;
+
+  // Maximum number of resubscriptions per ProcessTimerTick.
+  uint64_t resubscriptions_per_tick_;
 };
 
 }  // namespace rocketspeed
