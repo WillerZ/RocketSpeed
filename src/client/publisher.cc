@@ -40,28 +40,23 @@ class ClientResultStatus : public ResultStatus {
   virtual Status GetStatus() const { return status_; }
 
   virtual MsgId GetMessageId() const {
-    assert(status_.ok());
     return message_.GetMessageId();
   }
 
   virtual SequenceNumber GetSequenceNumber() const {
     // Sequence number comes from the ack, not the original message.
-    assert(status_.ok());
     return seqno_;
   }
 
   virtual Slice GetTopicName() const {
-    assert(status_.ok());
     return message_.GetTopicName();
   }
 
   virtual Slice GetNamespaceId() const {
-    assert(status_.ok());
     return message_.GetNamespaceId();
   }
 
   virtual Slice GetContents() const {
-    assert(status_.ok());
     return message_.GetPayload();
   }
 
