@@ -310,7 +310,7 @@ class EventLoop {
     // prefix used for statistics
     std::string stats_prefix;
     // initial size of the command queue
-    uint32_t command_queue_size = 10000000;
+    uint32_t command_queue_size = 100000;
     // timeout after which all inactive streams should be considered expired
     std::chrono::seconds heartbeat_timeout{900};
     // since we expire the streams in the blocking call, limit the number of
