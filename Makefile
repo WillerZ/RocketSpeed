@@ -331,7 +331,7 @@ timeout_list_test: src/util/tests/timeout_list_test.o $(LIBOBJECTS) $(TESTHARNES
 supervisor_test: src/supervisor/test/supervisor_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
-client_test: src/client/client_test.o $(LIBOBJECTS) $(TESTHARNESS)
+client_test: src/client/tests/client_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
