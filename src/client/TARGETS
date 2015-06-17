@@ -20,17 +20,41 @@ cpp_library(
 )
 
 cpp_unittest(
+    name = 'client_test',
+    srcs = [
+        'tests/client_test.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
+    ],
+    deps = [
+        ':client',
+        '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/util/common',
+    ],
+    tags = [
+        'serialize',
+        'serialize_test_cases',
+        'unmanaged_test_cases',
+    ],
+)
+
+cpp_unittest(
     name = 'file_storage_test',
     srcs = [
         'storage/tests/file_storage_test.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github',
-        '-DROCKETSPEED_PLATFORM_POSIX=1',
-        '-DOS_LINUX=1',
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
     ],
     deps = [
-        '@/rocketspeed/github/src/client:client',
+        ':client',
         '@/rocketspeed/github/src/port',
         '@/rocketspeed/github/src/util',
         '@/rocketspeed/github/src/util/common',
@@ -53,8 +77,8 @@ cpp_library(
     preprocessor_flags = [
         '-Irocketspeed/github/include',
         '-Irocketspeed/github',
-        '-DROCKETSPEED_PLATFORM_POSIX=1',
-        '-DOS_LINUX=1',
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
         '-DUSE_MQTTMSGLOOP',
     ],
     deps = [
