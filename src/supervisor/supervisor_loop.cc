@@ -372,6 +372,9 @@ void SupervisorLoop::AcceptCallback(evconnlistener *listener,
                     SupervisorLoop::ErrorCallback,
                     supervisor_loop);
   bufferevent_setwatermark(bev, EV_READ, 0, 1 << 12);
+#if LIBEVENT_VERSION_NUMBER >= 0x02010300
+  bufferevent_set_max_single_write(bev, 1 << 20);  // 1MB ought to be enough
+#endif
   bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
 

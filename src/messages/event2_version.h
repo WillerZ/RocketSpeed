@@ -34,5 +34,6 @@
 #define bufferevent_setwatermark ld_bufferevent_setwatermark
 #define bufferevent_enable ld_bufferevent_enable
 #define bufferevent_free ld_bufferevent_free
+#define bufferevent_set_max_single_write ld_bufferevent_set_max_single_write
 
 #endif  // USE_UPSTREAM_LIBEVENT
