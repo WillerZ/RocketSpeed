@@ -37,7 +37,7 @@ RollcallShard RollcallImpl::GetNumShards(const NamespaceID& namespace_id) {
     // Guest namespace is extensively used in tests.
     return 4;
   } else {
-    return 1024;
+    return 16 * 1024; // 16K logs
   }
 }
 
