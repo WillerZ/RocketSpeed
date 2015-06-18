@@ -775,16 +775,19 @@ Status TopicTailer::SendLogRecord(
 
     if (prev_seqno != 0 && st.ok()) {
       // Find subscribed hosts.
+      TopicManager& topic_manager = topic_map_[log_id];
+
       std::vector<HostNumber> hosts;
-      topic_map_[log_id].VisitSubscribers(
+      topic_manager.VisitSubscribers(
         uuid, prev_seqno, next_seqno,
         [&] (TopicSubscription* sub) {
-          hosts.emplace_back(sub->GetHostNum());
+          const HostNumber hostnum = sub->GetHostNum();
+          hosts.emplace_back(hostnum);
           sub->SetSequenceNumber(next_seqno + 1);
           LOG_DEBUG(info_log_,
             "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
             " Reader(%zu)",
-            int(sub->GetHostNum()),
+            int(hostnum),
             uuid.ToString().c_str(),
             next_seqno + 1,
             log_id,
@@ -795,15 +798,16 @@ Status TopicTailer::SendLogRecord(
       if (is_tail) {
         // This is a message at the tail.
         // Find all hosts subscribed at 0.
-        topic_map_[log_id].VisitSubscribers(
+        topic_manager.VisitSubscribers(
           uuid, 0, 0,
           [&] (TopicSubscription* sub) {
-            tail_hosts.emplace_back(sub->GetHostNum());
+            const HostNumber hostnum = sub->GetHostNum();
+            tail_hosts.emplace_back(hostnum);
             sub->SetSequenceNumber(next_seqno + 1);
             LOG_DEBUG(info_log_,
               "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
               " Reader(%zu)",
-              int(sub->GetHostNum()),
+              int(hostnum),
               uuid.ToString().c_str(),
               next_seqno + 1,
               log_id,
@@ -863,18 +867,19 @@ Status TopicTailer::SendLogRecord(
 
           // Find subscribed hosts between bump_seqno and next_seqno.
           std::vector<HostNumber> bumped_hosts;
-          topic_map_[log_id].VisitSubscribers(
+          topic_manager.VisitSubscribers(
             topic, bump_seqno, next_seqno,
             [&] (TopicSubscription* sub) {
+              const HostNumber hostnum = sub->GetHostNum();
               // Add host to list.
-              bumped_hosts.emplace_back(sub->GetHostNum());
+              bumped_hosts.emplace_back(hostnum);
 
               // Advance subscription.
               sub->SetSequenceNumber(next_seqno + 1);
               LOG_DEBUG(info_log_,
                 "Hostnum(%d) bumped to %s@%" PRIu64 " on Log(%" PRIu64 ")"
                 " Reader(%zu)",
-                int(sub->GetHostNum()),
+                int(hostnum),
                 topic.ToString().c_str(),
                 next_seqno + 1,
                 log_id,
@@ -1177,6 +1182,18 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
   return sent ? Status::OK() : Status::NoBuffer();
 }
 
+Status TopicTailer::RemoveSubscriber(HostNumber hostnum) {
+  thread_check_.Check();
+  bool sent = Forward([this, hostnum] () {
+    LOG_DEBUG(info_log_,
+      "Hostnum(%d) unsubscribed for all topics",
+      int(hostnum));
+    RemoveSubscriberInternal(hostnum);
+  });
+
+  return sent ? Status::OK() : Status::NoBuffer();
+}
+
 bool TopicTailer::Forward(std::function<void()> command) {
   std::unique_ptr<Command> cmd(new ExecuteCommand(std::move(command)));
   Status st = msg_loop_->TrySendCommand(cmd, worker_id_);
@@ -1285,6 +1302,19 @@ void TopicTailer::RemoveSubscriberInternal(const TopicUUID& topic,
       // Tail seqno cache is no longer being updated, so clear.
       tail_seqno_cached_.erase(logid);
     }
+  }
+}
+
+void TopicTailer::RemoveSubscriberInternal(HostNumber hostnum) {
+  thread_check_.Check();
+
+  // Remove hostnum subscription from every log and every topic.
+  for (auto& entry : topic_map_) {
+    const LogID log_id = entry.first;
+    TopicManager& topic_manager = entry.second;
+    topic_manager.VisitTopics([&] (const TopicUUID& topic) {
+        RemoveSubscriberInternal(topic, hostnum, log_id);
+      });
   }
 }
 

@@ -113,6 +113,7 @@ class ControlTower {
   // callbacks to process incoming messages
   void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessFindTailSeqno(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 
   Status Initialize();

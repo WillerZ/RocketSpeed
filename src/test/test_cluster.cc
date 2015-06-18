@@ -202,9 +202,8 @@ void LocalTestCluster::Initialize(Options opts) {
   }
 
   if (opts.start_copilot || opts.start_pilot) {
-    assert(opts.copilot_port == opts.pilot_port);
     cockpit_loop_.reset(new MsgLoop(
-        env_, env_options, opts.copilot_port, 16, info_log_, "cockpit"));
+        env_, env_options, opts.cockpit_port, 16, info_log_, "cockpit"));
     status_ = cockpit_loop_->Initialize();
     if (!status_.ok()) {
       LOG_ERROR(info_log_, "Failed to initialize Cockpit loop.");
@@ -215,7 +214,7 @@ void LocalTestCluster::Initialize(Options opts) {
     // pilot too. Any subscribe/unsubscribe requests to the copilot needs
     // to write to the rollcall topic (via the pilot).
     opts.start_pilot = true;
-    HostId pilot_host("localhost", opts.pilot_port);
+    HostId pilot_host("localhost", opts.cockpit_port);
     if (opts.start_copilot) {
       // Create Copilot
       opts.copilot.control_towers.emplace(0, control_tower_->GetHostId());

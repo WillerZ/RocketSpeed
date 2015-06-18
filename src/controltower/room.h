@@ -63,6 +63,7 @@ class ControlRoom {
                       const std::vector<HostNumber>& hosts);
   void ProcessGap(std::unique_ptr<Message> msg,
                   const std::vector<HostNumber>& hosts);
+  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 };
 
 }  // namespace rocketspeed

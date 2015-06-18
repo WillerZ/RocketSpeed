@@ -83,8 +83,11 @@ void TopicManager::VisitSubscribers(
 void TopicManager::VisitTopics(
     std::function<void(const TopicUUID& topic)> visitor) {
   thread_check_.Check();
-  for (auto& topic_sub : topic_map_) {
-    visitor(topic_sub.first);
+  for (auto it = topic_map_.begin(); it != topic_map_.end(); ) {
+    // We save next here to allow visitor to RemoveSubscribers on this topic.
+    auto next = std::next(it);
+    visitor(it->first);
+    it = next;
   }
 }
 

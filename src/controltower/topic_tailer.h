@@ -86,6 +86,11 @@ class TopicTailer {
                           HostNumber hostnum);
 
   /**
+   * Removes all subscriptions for a host.
+   */
+  Status RemoveSubscriber(HostNumber hostnum);
+
+  /**
    * Process a data record from a log tailer, and forward to on_message.
    *
    * @param msg Log record message.
@@ -165,6 +170,8 @@ class TopicTailer {
   void RemoveSubscriberInternal(const TopicUUID& topic,
                                 HostNumber hostnum,
                                 LogID logid);
+
+  void RemoveSubscriberInternal(HostNumber hostnum);
 
   /**
    * Finds the LogReader* with given reader_id, or nullptr if none found.

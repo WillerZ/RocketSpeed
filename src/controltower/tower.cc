@@ -368,6 +368,34 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
   }
 }
 
+// A callback method to process MessageMetadata
+// The message is forwarded to the appropriate ControlRoom
+void
+ControlTower::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
+  options_.msg_loop->ThreadCheck();
+
+  // get the request message
+  MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
+
+  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
+    // forward message to the destination room
+    std::unique_ptr<Message> new_msg(
+      new MessageGoodbye(goodbye->GetTenantID(),
+                         goodbye->GetCode(),
+                         goodbye->GetOriginType()));
+    Status st = rooms_[i]->Forward(std::move(new_msg), -1, origin);
+    if (!st.ok()) {
+      LOG_WARN(options_.info_log,
+          "Unable to forward goodbye to rooms-%d (%s)",
+          i, st.ToString().c_str());
+    } else {
+      LOG_DEBUG(options_.info_log,
+          "Forwarded goodbye to rooms-%d",
+          i);
+    }
+  }
+}
+
 // A static method to initialize the callback map
 std::map<MessageType, MsgCallbackType>
 ControlTower::InitializeCallbacks() {
@@ -380,6 +408,10 @@ ControlTower::InitializeCallbacks() {
   cb[MessageType::mFindTailSeqno] = [this] (std::unique_ptr<Message> msg,
                                             StreamID origin) {
     ProcessFindTailSeqno(std::move(msg), origin);
+  };
+  cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg,
+                                      StreamID origin) {
+    ProcessGoodbye(std::move(msg), origin);
   };
 
   // return the updated map

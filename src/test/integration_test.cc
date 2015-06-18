@@ -1380,6 +1380,82 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   ASSERT_EQ(0, stats2.GetCounterValue("copilot.orphaned_topics"));
 }
 
+TEST(IntegrationTest, CopilotDeath) {
+  const size_t kNumTopics = 100;
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.start_controltower = true;
+  opts.start_pilot = false;
+  opts.start_copilot = true;
+  opts.copilot.timer_interval_micros = 100000;
+  opts.copilot.resubscriptions_per_second = kNumTopics;
+  opts.cockpit_port = Copilot::DEFAULT_PORT + 1;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Separate cluster for pilot (since we need to stop the copilot
+  // independently from the pilot).
+  LocalTestCluster pilot_cluster(info_log, false, false, true);
+  ASSERT_OK(pilot_cluster.GetStatus());
+
+  // Create RocketSpeed clients.
+  ClientOptions sub_options;
+  sub_options.config = cluster.GetConfiguration();
+  sub_options.info_log = info_log;
+  std::unique_ptr<Client> sub_client;
+  ASSERT_OK(Client::Create(std::move(sub_options), &sub_client));
+
+  ClientOptions pub_options;
+  pub_options.config = pilot_cluster.GetConfiguration();
+  pub_options.info_log = info_log;
+  std::unique_ptr<Client> pub_client;
+  ASSERT_OK(Client::Create(std::move(pub_options), &pub_client));
+
+  // Listen for messages.
+  port::Semaphore msg_received;
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    ASSERT_TRUE(
+      sub_client->Subscribe(GuestTenant,
+                            GuestNamespace,
+                            "CopilotDeath" + std::to_string(t),
+                            0,
+                            [&] (std::unique_ptr<MessageReceived>& mr) {
+                              msg_received.Post();
+                            }));
+  }
+
+  env_->SleepForMicroseconds(100000);
+
+  // Send a more messages.
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    ASSERT_OK(pub_client->Publish(GuestTenant,
+                                  "CopilotDeath" + std::to_string(t),
+                                  GuestNamespace,
+                                  TopicOptions(),
+                                  "message1").status);
+  }
+
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    // Wait for the message.
+    ASSERT_TRUE(msg_received.TimedWait(timeout));
+  }
+  ASSERT_TRUE(!msg_received.TimedWait(std::chrono::milliseconds(100)));
+
+  // Should have some logs open now.
+  ASSERT_NE(GetNumOpenLogs(cluster.GetControlTower()), 0);
+
+  // Stop Copilot
+  cluster.GetCockpitLoop()->Stop();
+  cluster.GetCopilot()->Stop();
+
+  env_->SleepForMicroseconds(100000);
+
+  // All logs should be closed now.
+  ASSERT_EQ(GetNumOpenLogs(cluster.GetControlTower()), 0);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

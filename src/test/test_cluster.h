@@ -41,8 +41,7 @@ class LocalTestCluster {
     CopilotOptions copilot;
     ControlTowerOptions tower;
     int controltower_port = ControlTower::DEFAULT_PORT;
-    int copilot_port = Copilot::DEFAULT_PORT;
-    int pilot_port = Pilot::DEFAULT_PORT;
+    int cockpit_port = Copilot::DEFAULT_PORT;
     std::shared_ptr<LogStorage> log_storage;
     std::shared_ptr<LogRouter> log_router;
   };
@@ -101,6 +100,10 @@ class LocalTestCluster {
 
   ControlTower* GetControlTower() {
     return control_tower_;
+  }
+
+  MsgLoop* GetCockpitLoop() {
+    return cockpit_loop_.get();
   }
 
   MsgLoop* GetControlTowerLoop() {

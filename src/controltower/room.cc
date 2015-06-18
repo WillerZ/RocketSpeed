@@ -43,9 +43,18 @@ ControlRoom::Forward(std::unique_ptr<Message> msg,
   std::unique_ptr<Command> cmd(
     new ExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
       std::unique_ptr<Message> message(moved_msg.move());
-      assert(message->GetMessageType() == MessageType::mMetadata);
-      assert(worker_id != -1);
-      ProcessMetadata(std::move(message), worker_id, origin);
+      if (message->GetMessageType() == MessageType::mMetadata) {
+        assert(worker_id != -1);
+        ProcessMetadata(std::move(message), worker_id, origin);
+      } else if (message->GetMessageType() == MessageType::mGoodbye) {
+        assert(worker_id == -1);
+        ProcessGoodbye(std::move(message), origin);
+      } else {
+        LOG_ERROR(control_tower_->GetOptions().info_log,
+          "Unexpected message type in room: %d",
+          static_cast<int>(message->GetMessageType()));
+        assert(false);
+      }
     }));
   MsgLoop* msg_loop = control_tower_->GetOptions().msg_loop;
   return msg_loop->SendCommand(std::move(cmd), room_number_);
@@ -104,6 +113,32 @@ ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
         topic[0].namespace_id.c_str(),
         topic[0].topic_name.c_str());
   }
+}
+
+// Process Goodbye messages that are coming in from ControlTower.
+void
+ControlRoom::ProcessGoodbye(std::unique_ptr<Message> msg,
+                            StreamID origin) {
+  ControlTower* ct = control_tower_;
+  ControlTowerOptions& options = ct->GetOptions();
+
+  // Map the origin to a HostNumber
+  int test_worker_id = -1;
+  HostNumber hostnum = ct->LookupHost(origin, &test_worker_id);
+  if (hostnum == -1) {
+    // Unknown host, ignore.
+    LOG_WARN(options.info_log,
+      "Received goodbye from unknown origin Stream(%llu)",
+      origin);
+    return;
+  }
+  assert(hostnum >= 0);
+  LOG_INFO(options.info_log,
+    "Received goodbye for Stream(%llu) Hostnum(%d)",
+    origin,
+    int(hostnum));
+
+  topic_tailer_->RemoveSubscriber(hostnum);
 }
 
 Status

@@ -314,7 +314,7 @@ TEST(Messaging, PingPong) {
   port::Semaphore ping_sem;
 
   // Create client to communicate with the server.
-  MsgLoop loop(env_, env_options_, 58498, 1, info_log_, "client");
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "client");
   StreamSocket socket(loop.CreateOutboundStream(server.GetClientId(0), 0));
   loop.RegisterCallbacks({
       {MessageType::mPing, [&](std::unique_ptr<Message> msg,
