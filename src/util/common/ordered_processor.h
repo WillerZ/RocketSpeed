@@ -84,10 +84,12 @@ struct OrderedProcessor {
     Status st;
     if (mode_ == OrderedProcessorMode::kLossy) {
       // Skip head records until this record fits in the buffer.
-      while (seqno > next_seqno_ + buffer_size_) {
-        SkipNext();
+      if (seqno > next_seqno_ + buffer_size_) {
+        do {
+          SkipNext();
+        } while (seqno > next_seqno_ + buffer_size_);
+        st = Status::NoBuffer();
       }
-      st = Status::NoBuffer();
     } else if (mode_ == OrderedProcessorMode::kLossless) {
       if (seqno > next_seqno_ + buffer_size_) {
         return Status::NoBuffer();

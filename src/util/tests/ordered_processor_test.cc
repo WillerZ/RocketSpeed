@@ -157,6 +157,40 @@ TEST(OrderedProcessorTest, LossyRandomized) {
   ASSERT_EQ(processed, expected);
 }
 
+TEST(OrderedProcessorTest, LossyBasic) {
+    typedef std::vector<int> Ints;
+  Ints processed;
+  OrderedProcessor<int> p(3, [&] (int x) { processed.push_back(x); },
+    OrderedProcessorMode::kLossy);
+
+  // seqno 0, should be process immediately
+  ASSERT_OK(p.Process(100, 0));
+  ASSERT_EQ(processed, (Ints{100}));
+
+  // seqno 2, should not be processed yet.
+  ASSERT_OK(p.Process(300, 2));
+  ASSERT_EQ(processed, (Ints{100}));
+
+  // seqno 1, should be processed, then seqno 2 which was already queued.
+  ASSERT_OK(p.Process(200, 1));
+  ASSERT_EQ(processed, (Ints{100, 200, 300}));
+
+  // seqno 0, 1 and 2 should fail to process
+  ASSERT_TRUE(p.Process(666, 0).IsInvalidArgument());  // in past
+  ASSERT_TRUE(p.Process(666, 1).IsInvalidArgument());  // in past
+  ASSERT_TRUE(p.Process(666, 2).IsInvalidArgument());  // in past
+
+  // 7 not enough space, but should drop 3.
+  ASSERT_TRUE(p.Process(800, 7).IsNoBuffer());
+  ASSERT_EQ(processed, (Ints{100, 200, 300}));
+
+  // seqno 4, 5 should advance us and get 6 as well.
+  ASSERT_OK(p.Process(600, 5));
+  ASSERT_OK(p.Process(700, 6));
+  ASSERT_OK(p.Process(500, 4));
+  ASSERT_EQ(processed, (Ints{100, 200, 300, 500, 600, 700, 800}));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
