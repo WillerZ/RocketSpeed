@@ -741,11 +741,45 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
-  ASSERT_TRUE(client->Subscribe(GuestTenant, namespace_id, topic, 1));
+  auto handle = client->Subscribe(GuestTenant, namespace_id, topic, 1);
+  ASSERT_TRUE(handle);
 
   // Wait for the message.
-  bool result = msg_received.TimedWait(timeout);
-  ASSERT_TRUE(result);
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+
+  // Should have received backlog records, and no tail records.
+  auto stats1 = cluster.GetControlTower()->GetStatisticsSync();
+  auto backlog1 =
+    stats1.GetCounterValue("tower.topic_tailer.backlog_records_received");
+  auto tail1 =
+    stats1.GetCounterValue("tower.topic_tailer.tail_records_received");
+  ASSERT_GE(backlog1, 1);
+  ASSERT_EQ(tail1, 0);
+  client->Unsubscribe(handle);
+
+  // Now subscribe at tail, and publish 1.
+  handle = client->Subscribe(GuestTenant, namespace_id, topic, 0);
+  ASSERT_TRUE(handle);
+
+  env_->SleepForMicroseconds(100000);
+
+  client->Publish(GuestTenant,
+                  topic,
+                  namespace_id,
+                  topic_options,
+                  Slice(data),
+                  nullptr,
+                  message_id);
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+
+  // Should have received no more backlog records, and just 1 tail record.
+  auto stats2 = cluster.GetControlTower()->GetStatisticsSync();
+  auto backlog2 =
+    stats2.GetCounterValue("tower.topic_tailer.backlog_records_received");
+  auto tail2 =
+    stats2.GetCounterValue("tower.topic_tailer.tail_records_received");
+  ASSERT_EQ(backlog2, backlog1);
+  ASSERT_EQ(tail2, 1);
 }
 
 TEST(IntegrationTest, NewControlTower) {

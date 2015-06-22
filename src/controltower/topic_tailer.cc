@@ -773,6 +773,12 @@ Status TopicTailer::SendLogRecord(
       ts_it->second = next_seqno + 1;
     }
 
+    if (is_tail) {
+      stats_.tail_records_received->Add(1);
+    } else {
+      stats_.backlog_records_received->Add(1);
+    }
+
     if (prev_seqno != 0 && st.ok()) {
       // Find subscribed hosts.
       TopicManager& topic_manager = topic_map_[log_id];

@@ -242,6 +242,10 @@ class TopicTailer {
 
       log_records_received =
         all.AddCounter(prefix + "log_records_received");
+      backlog_records_received =
+        all.AddCounter(prefix + "backlog_records_received");
+      tail_records_received =
+        all.AddCounter(prefix + "tail_records_received");
       new_tail_records_sent =
         all.AddCounter(prefix + "new_tail_records_sent");
       log_records_with_subscriptions =
@@ -280,6 +284,8 @@ class TopicTailer {
 
     Statistics all;
     Counter* log_records_received;
+    Counter* backlog_records_received;
+    Counter* tail_records_received;
     Counter* new_tail_records_sent;
     Counter* log_records_with_subscriptions;
     Counter* log_records_without_subscriptions;
