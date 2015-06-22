@@ -12,15 +12,19 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+
 #include <atomic>
+#include <chrono>
 #include <functional>
-#include <memory>
-#include <map>
 #include <list>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-#include <chrono>
+
+#include "external/folly/producer_consumer_queue.h"
 
 #include "include/Logger.h"
 #include "src/messages/commands.h"
@@ -31,7 +35,7 @@
 #include "src/util/common/base_env.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
-#include "src/util/common/multi_producer_queue.h"
+#include "src/util/common/thread_local.h"
 #include "src/util/timeout_list.h"
 
 // libevent2 forward declarations.
@@ -242,6 +246,7 @@ class EventLoop {
 
   // Get event loop statistics
   const Statistics& GetStatistics() const {
+    stats_.queue_count->Set(owned_command_queues_.size());
     return stats_.all;
   }
 
@@ -265,9 +270,10 @@ class EventLoop {
    */
   int GetNumClients() const;
 
-  /** @return Current size of command queue. */
+  /** @return Current size of this thread's command queue. */
   size_t GetQueueSize() const {
-    return command_queue_.sizeGuess();
+    return
+      const_cast<EventLoop*>(this)->GetThreadLocalQueue()->queue.sizeGuess();
   }
 
   /**
@@ -310,7 +316,7 @@ class EventLoop {
     // prefix used for statistics
     std::string stats_prefix;
     // initial size of the command queue
-    uint32_t command_queue_size = 100000;
+    uint32_t command_queue_size = 10000;
     // timeout after which all inactive streams should be considered expired
     std::chrono::seconds heartbeat_timeout{900};
     // since we expire the streams in the blocking call, limit the number of
@@ -356,16 +362,36 @@ class EventLoop {
   // Startup event
   event* startup_event_ = nullptr;
 
-  // Command event
-  event* command_ready_event_ = nullptr;
-
   // Command queue and its associated event
   struct TimestampedCommand {
     std::unique_ptr<Command> command;
     uint64_t issued_time;
   };
-  MultiProducerQueue<TimestampedCommand> command_queue_;
-  rocketspeed::port::Eventfd command_ready_eventfd_;
+
+  struct CommandQueue {
+    CommandQueue(EventLoop* _event_loop, uint32_t size);
+    ~CommandQueue();
+
+    Status AttachToLoop();
+
+    EventLoop* event_loop;
+    folly::ProducerConsumerQueue<TimestampedCommand> queue;
+    rocketspeed::port::Eventfd ready_fd;
+    event* ready_event;
+  };
+
+  // Each thread has its own command queue to communicate with the EventLoop.
+  ThreadLocalPtr command_queues_;
+
+  // Vector of CommandQueues to delete.
+  // command_queues_ cannot own these becase it deletes them on thread exit,
+  // and we only want to delete on EventLoop destruction.
+  std::vector<std::unique_ptr<CommandQueue>> owned_command_queues_;
+
+  // Shared command queue for sending control commands.
+  // This should only be used for creating new queues.
+  port::Mutex control_command_mutex_;
+  CommandQueue control_command_queue_;
 
   StreamRouter stream_router_;
   /** Allocator for outboung streams. */
@@ -418,8 +444,17 @@ class EventLoop {
     Histogram* write_latency;     // time from SendCommand to socket write
     Counter* commands_processed;
     Counter* accepts;             // number of connection accepted
+    Counter* queue_count;         // number of queues attached this loop
     Counter* messages_received[size_t(MessageType::max) + 1];
   } stats_;
+
+  const uint32_t command_queue_size_;
+
+  // Send a command using a particular command queue.
+  Status SendCommand(std::unique_ptr<Command>& command,
+                     CommandQueue* command_queue);
+
+  CommandQueue* GetThreadLocalQueue();
 
   // A callback for handling SendCommands.
   void HandleSendCommand(std::unique_ptr<Command> command,

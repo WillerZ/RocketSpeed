@@ -1168,6 +1168,7 @@ TEST(IntegrationTest, LogAvailability) {
   opts.start_copilot = true;
   opts.start_pilot = true;
   opts.copilot.control_towers_per_log = 2;
+  opts.copilot.rollcall_enabled = false;
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
@@ -1209,7 +1210,7 @@ TEST(IntegrationTest, LogAvailability) {
       client->Subscribe(GuestTenant,
                         GuestNamespace,
                         "LogAvailability" + std::to_string(i),
-                        1,
+                        0,
                         [&] (std::unique_ptr<MessageReceived>& mr) {
                           msg_received.Post();
                         });
@@ -1217,7 +1218,7 @@ TEST(IntegrationTest, LogAvailability) {
   }
 
   // The copilot should be subscribed to all topics on BOTH control towers.
-  env_->SleepForMicroseconds(100000);
+  env_->SleepForMicroseconds(200000);
 
   // Stop the first control tower to ensure it cannot deliver records.
   cluster.GetControlTowerLoop()->Stop();
@@ -1243,7 +1244,7 @@ TEST(IntegrationTest, LogAvailability) {
   };
 
   ASSERT_OK(cluster.GetCopilot()->UpdateControlTowers(std::move(new_towers)));
-  env_->SleepForMicroseconds(100000);
+  env_->SleepForMicroseconds(200000);
 
   // Resend subscriptions.
   port::Semaphore msg_received2;
@@ -1252,11 +1253,21 @@ TEST(IntegrationTest, LogAvailability) {
       client->Subscribe(GuestTenant,
                         GuestNamespace,
                         "LogAvailability" + std::to_string(i),
-                        1,
+                        0,
                         [&] (std::unique_ptr<MessageReceived>& mr) {
                           msg_received2.Post();
                         });
     subscriptions.push_back(handle);
+  }
+  env_->SleepForMicroseconds(200000);
+
+  // Publish to all topics.
+  for (int i = 0; i < kNumTopics; ++i) {
+    ASSERT_OK(client->Publish(GuestTenant,
+                              "LogAvailability" + std::to_string(i),
+                              GuestNamespace,
+                              TopicOptions(),
+                              "data").status);
   }
 
   // This should resubscribe using the third tower.
@@ -1450,7 +1461,7 @@ TEST(IntegrationTest, CopilotDeath) {
   cluster.GetCockpitLoop()->Stop();
   cluster.GetCopilot()->Stop();
 
-  env_->SleepForMicroseconds(100000);
+  env_->SleepForMicroseconds(200000);
 
   // All logs should be closed now.
   ASSERT_EQ(GetNumOpenLogs(cluster.GetControlTower()), 0);

@@ -1313,7 +1313,9 @@ void TopicTailer::RemoveSubscriberInternal(HostNumber hostnum) {
     const LogID log_id = entry.first;
     TopicManager& topic_manager = entry.second;
     topic_manager.VisitTopics([&] (const TopicUUID& topic) {
-        RemoveSubscriberInternal(topic, hostnum, log_id);
+        // Need to copy since RemoveSubscriber may invalidate reference.
+        const TopicUUID topic_copy(topic);
+        RemoveSubscriberInternal(topic_copy, hostnum, log_id);
       });
   }
 }
