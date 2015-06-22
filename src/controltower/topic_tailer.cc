@@ -755,6 +755,8 @@ Status TopicTailer::SendLogRecord(
 
     // Process message from the log tailer.
     stats_.log_records_received->Add(1);
+    stats_.log_records_received_payload_size->Add(data_raw->GetPayload().
+                                                  size());
     std::unique_ptr<MessageData> data(data_raw);
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
