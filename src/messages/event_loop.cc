@@ -1044,6 +1044,7 @@ Status EventLoop::SendCommand(std::unique_ptr<Command>& command,
     info_log_->Flush();
     assert(ts_cmd.command);
     command = std::move(ts_cmd.command);  // put back
+    stats_.full_queue_errors->Add(1);
     return Status::NoBuffer();
   }
 
@@ -1306,6 +1307,7 @@ EventLoop::Stats::Stats(const std::string& prefix) {
   commands_processed = all.AddCounter(prefix + ".commands_processed");
   accepts = all.AddCounter(prefix + ".accepts");
   queue_count = all.AddCounter(prefix + ".queue_count");
+  full_queue_errors = all.AddCounter(prefix + ".full_queue_errors");
   for (int i = 0; i < int(MessageType::max) + 1; ++i) {
     messages_received[i] = all.AddCounter(
       prefix + ".messages_received." + kMessageTypeNames[i]);

@@ -445,6 +445,7 @@ class EventLoop {
     Counter* commands_processed;
     Counter* accepts;             // number of connection accepted
     Counter* queue_count;         // number of queues attached this loop
+    Counter* full_queue_errors;   // number of times SendCommand into full queue
     Counter* messages_received[size_t(MessageType::max) + 1];
   } stats_;
 

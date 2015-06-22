@@ -771,7 +771,7 @@ TEST(Messaging, TrySendCommand) {
   MsgLoopThread t1(env_, &loop, "loop");
 
   // Write as fast as possible, with retries.
-  bool failed_at_least_once = false;
+  int failures = 0;
   for (int i = 0; i < 200; ++i) {
     std::unique_ptr<Command> command(
       new ExecuteCommand([this] () {
@@ -783,12 +783,16 @@ TEST(Messaging, TrySendCommand) {
       if (st.ok()) {
         break;
       }
-      failed_at_least_once = true;
+      ++failures;
       ASSERT_TRUE(command);
       env_->SleepForMicroseconds(100);
     }
   }
-  ASSERT_TRUE(failed_at_least_once);  // otherwise we aren't testing anything
+  ASSERT_NE(failures, 0);  // otherwise we aren't testing anything
+
+  env_->SleepForMicroseconds(10000);
+  auto stats = loop.GetStatisticsSync();
+  ASSERT_EQ(stats.GetCounterValue("loop.full_queue_errors"), failures);
 }
 
 }  // namespace rocketspeed
