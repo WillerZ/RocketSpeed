@@ -93,6 +93,11 @@ class Copilot {
   // Worker objects and threads, these have their own message loops.
   std::vector<std::unique_ptr<CopilotWorker>> workers_;
 
+  // For each thread, maps (StreamID, SubscriptionID) pairs to copilot workers.
+  using SubscriptionIDToWorkerMap =
+    std::unordered_map<StreamID, std::unordered_map<SubscriptionID, int>>;
+  std::vector<SubscriptionIDToWorkerMap> sub_id_map_;
+
   // A client to write rollcall topic
   std::unique_ptr<RollcallImpl> rollcall_;
 

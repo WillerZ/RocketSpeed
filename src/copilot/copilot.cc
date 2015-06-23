@@ -54,12 +54,16 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
     std::make_shared<ControlTowerRouter>(options_.control_towers,
                                          options_.consistent_hash_replicas,
                                          options_.control_towers_per_log);
-  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
+
+  const int num_workers = options_.msg_loop->GetNumWorkers();
+  for (int i = 0; i < num_workers; ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
                                             router,
                                             i,
                                             this));
   }
+  sub_id_map_.resize(num_workers);
+
   // Create Rollcall topic writer
   if (options_.rollcall_enabled) {
     rollcall_.reset(new RollcallImpl(std::move(client), InvalidTenant));
@@ -272,8 +276,10 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   auto dest_worker_id = GetLogWorker(logid);
   auto& worker = workers_[dest_worker_id];
 
-  // Forward message to responsible worker.
   auto worker_id = options_.msg_loop->GetThreadWorkerIndex();
+  sub_id_map_[worker_id][origin].emplace(subscribe->GetSubID(), dest_worker_id);
+
+  // Forward message to responsible worker.
   if (!worker->Forward(logid, std::move(msg), worker_id, origin)) {
     LOG_WARN(options_.info_log, "Worker %d queue is full.", worker_id);
   }
@@ -290,27 +296,36 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
             unsubscribe->GetSubID(),
             origin);
 
-  // Broadcast to all workers.
-  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
-    std::unique_ptr<MessageUnsubscribe> new_msg(new MessageUnsubscribe(
-        unsubscribe->GetTenantID(),
-        unsubscribe->GetSubID(),
-        unsubscribe->GetReason()));
-    LogID logid = 0;  // unused
-    int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
-    workers_[i]->Forward(logid,
-                         std::move(new_msg),
-                         event_loop_worker,
-                         origin);
+  const LogID logid = 0;  // unused
+  const int this_worker = options_.msg_loop->GetThreadWorkerIndex();
+  const auto sub_id = unsubscribe->GetSubID();
+
+  // Subscription map for this worker.
+  auto& worker_map = sub_id_map_[this_worker];
+
+  // Find subscription map for this incoming stream.
+  auto stream_it = worker_map.find(origin);
+  if (stream_it != worker_map.end()) {
+    auto& subscription_map = stream_it->second;
+
+    // Find worker for this subscription ID.
+    auto sub_it = subscription_map.find(sub_id);
+    if (sub_it != subscription_map.end()) {
+      const int worker_id = sub_it->second;
+      workers_[worker_id]->Forward(logid, std::move(msg), this_worker, origin);
+      subscription_map.erase(sub_it);
+    }
   }
 }
 
 void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
+  int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
 
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   switch (goodbye->GetOriginType()) {
     case MessageGoodbye::OriginType::Client: {
+      sub_id_map_[event_loop_worker].erase(origin);
       LOG_DEBUG(options_.info_log, "Received goodbye for client %llu", origin);
       break;
     }
@@ -328,7 +343,6 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
                          goodbye->GetCode(),
                          goodbye->GetOriginType()));
     LogID logid = 0;  // unused
-    int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
     workers_[i]->Forward(logid,
                          std::move(new_msg),
                          event_loop_worker,
