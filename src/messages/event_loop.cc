@@ -1044,7 +1044,7 @@ Status EventLoop::SendCommand(std::unique_ptr<Command>& command,
     info_log_->Flush();
     assert(ts_cmd.command);
     command = std::move(ts_cmd.command);  // put back
-    stats_.full_queue_errors->Add(1);
+    //stats_.full_queue_errors->Add(1);
     return Status::NoBuffer();
   }
 
