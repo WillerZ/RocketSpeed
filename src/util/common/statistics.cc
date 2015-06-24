@@ -28,7 +28,9 @@ Histogram::Histogram(double min,
 , max_(max)
 , smallest_bucket_(smallest_bucket)
 , ratio_(ratio)
-, num_samples_(0) {
+, num_samples_(0)
+, log_ratio_(log(ratio))
+, log_smallest_bucket_(log(smallest_bucket)) {
   assert(max >= min);
   assert(ratio > 1.0);
   num_buckets_ = BucketIndex(max) + 1;
@@ -44,7 +46,9 @@ Histogram::Histogram(const Histogram& src)
 , smallest_bucket_(src.smallest_bucket_)
 , ratio_(src.ratio_)
 , num_samples_(0)
-, num_buckets_(src.num_buckets_) {
+, num_buckets_(src.num_buckets_)
+, log_ratio_(src.log_ratio_)
+, log_smallest_bucket_(src.log_smallest_bucket_) {
   // Copy the size then use the existing Aggregate code to copy.
   bucket_counts_.reset(new uint64_t[num_buckets_]);
   for (size_t i = 0; i < num_buckets_; ++i) {
@@ -60,7 +64,9 @@ Histogram::Histogram(Histogram&& src)
 , ratio_(src.ratio_)
 , num_samples_(src.num_samples_)
 , bucket_counts_(std::move(src.bucket_counts_))
-, num_buckets_(src.num_buckets_) {
+, num_buckets_(src.num_buckets_)
+, log_ratio_(src.log_ratio_)
+, log_smallest_bucket_(src.log_smallest_bucket_) {
   src.bucket_counts_.reset(new uint64_t[num_buckets_]);
   src.thread_check_.Reset();
   for (size_t i = 0; i < num_buckets_; ++i) {
@@ -83,9 +89,8 @@ size_t Histogram::BucketIndex(double sample) const {
   // Samples up to min_ + smallest_bucket_ * ratio_ ^ N go to bucket N
   // and so on.
   sample = std::max(0.0, std::min(sample, max_) - min_);
-  double log_ratio = log(ratio_);
   int32_t bucket = static_cast<int32_t>(
-    (log_ratio + log(sample) - log(smallest_bucket_)) / log_ratio);
+    (log_ratio_ + log(sample) - log_smallest_bucket_) / log_ratio_);
   if (bucket < 0) {
     return 0;
   }

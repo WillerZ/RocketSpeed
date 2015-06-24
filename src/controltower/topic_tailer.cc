@@ -162,10 +162,11 @@ class LogReader {
    * @param next_seqno Tail sequence number of the log to trim.
    * @param on_bump To be invoked for bumped topics.
    */
+  template <typename OnBump>
   void BumpLaggingSubscriptions(
     LogID log_id,
     SequenceNumber next_seqno,
-    std::function<void(const TopicUUID&, SequenceNumber)> on_bump);
+    const OnBump& on_bump);
 
   /**
    * Returns the cost of accepting a new subscription (lower better).
@@ -378,10 +379,11 @@ void LogReader::ProcessBenignGap(LogID log_id,
   }
 }
 
+template <typename OnBump>
 void LogReader::BumpLaggingSubscriptions(
     LogID log_id,
     SequenceNumber seqno,
-    std::function<void(const TopicUUID&, SequenceNumber)> on_bump) {
+    const OnBump& on_bump) {
   thread_check_.Check();
   auto log_it = log_state_.find(log_id);
   if (log_it != log_state_.end()) {

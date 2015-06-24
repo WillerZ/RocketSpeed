@@ -87,22 +87,52 @@ class TopicManager {
    * @param to Upper threshold of subscriptions.
    * @param visitor Visiting function for subscriptions. Mutation is allowed.
    */
+  template <typename Visitor>
   void VisitSubscribers(const TopicUUID& topic,
                         SequenceNumber from,
                         SequenceNumber to,
-                        std::function<void(TopicSubscription*)> visitor);
+                        const Visitor& visitor);
 
   /**
    * Visits the list of topics with subscribers.
    *
    * @param visitor Visiting function for topics.
    */
-  void VisitTopics(std::function<void(const TopicUUID& topic)> visitor);
+  template <typename Visitor>
+  void VisitTopics(const Visitor& visitor);
 
  private:
   // Map a topic name to a list of TopicEntries.
   std::unordered_map<TopicUUID, TopicList> topic_map_;
   ThreadCheck thread_check_;
 };
+
+template <typename Visitor>
+void TopicManager::VisitSubscribers(
+    const TopicUUID& topic,
+    SequenceNumber from,
+    SequenceNumber to,
+    const Visitor& visitor) {
+  thread_check_.Check();
+  auto iter = topic_map_.find(topic);
+  if (iter != topic_map_.end()) {
+    for (TopicSubscription& sub : iter->second) {
+      if (sub.GetSequenceNumber() >= from && sub.GetSequenceNumber() <= to) {
+        visitor(&sub);
+      }
+    }
+  }
+}
+
+template <typename Visitor>
+void TopicManager::VisitTopics(const Visitor& visitor) {
+  thread_check_.Check();
+  for (auto it = topic_map_.begin(); it != topic_map_.end(); ) {
+    // We save next here to allow visitor to RemoveSubscribers on this topic.
+    auto next = std::next(it);
+    visitor(it->first);
+    it = next;
+  }
+}
 
 }  // namespace rocketspeed

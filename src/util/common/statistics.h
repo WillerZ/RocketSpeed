@@ -136,6 +136,8 @@ private:
   uint64_t num_samples_;
   std::unique_ptr<uint64_t[]> bucket_counts_;
   size_t num_buckets_;
+  double log_ratio_;  // == log(ratio_)
+  double log_smallest_bucket_;  // == log(smallest_bucket_)
   ThreadCheck thread_check_;
 };
 

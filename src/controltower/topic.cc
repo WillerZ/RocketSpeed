@@ -64,31 +64,4 @@ TopicManager::RemoveSubscriber(const TopicUUID& topic, HostNumber subscriber) {
   return true;
 }
 
-void TopicManager::VisitSubscribers(
-    const TopicUUID& topic,
-    SequenceNumber from,
-    SequenceNumber to,
-    std::function<void(TopicSubscription*)> visitor) {
-  thread_check_.Check();
-  auto iter = topic_map_.find(topic);
-  if (iter != topic_map_.end()) {
-    for (TopicSubscription& sub : iter->second) {
-      if (sub.GetSequenceNumber() >= from && sub.GetSequenceNumber() <= to) {
-        visitor(&sub);
-      }
-    }
-  }
-}
-
-void TopicManager::VisitTopics(
-    std::function<void(const TopicUUID& topic)> visitor) {
-  thread_check_.Check();
-  for (auto it = topic_map_.begin(); it != topic_map_.end(); ) {
-    // We save next here to allow visitor to RemoveSubscribers on this topic.
-    auto next = std::next(it);
-    visitor(it->first);
-    it = next;
-  }
-}
-
 }  // namespace rocketspeed
