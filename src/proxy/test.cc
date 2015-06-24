@@ -44,6 +44,8 @@ TEST(WrappedMessage, Serialization) {
 
 class ProxyTest {
  public:
+  static const int kOrderingBufferSize = 10;
+
   ProxyTest() {
     env = Env::Default();
     ASSERT_OK(test::CreateLogger(env, "ProxyTest", &info_log));
@@ -57,6 +59,7 @@ class ProxyTest {
     ProxyOptions opts;
     opts.info_log = info_log;
     opts.conf = cluster->GetConfiguration();
+    opts.ordering_buffer_size = kOrderingBufferSize;
     ASSERT_OK(Proxy::CreateNewInstance(std::move(opts), &proxy));
   }
 
@@ -163,10 +166,12 @@ TEST(ProxyTest, SeqnoError) {
 
   const int64_t session = 123;
 
-  // Send to proxy on seqno 999999999. Will be out of buffer space and fail.
+  // Send to proxy on out of range seqnos. Will run out of space and fail.
   // Should get the on_disconnect_ error.
-  ASSERT_OK(
-      proxy->Forward(WrapMessage(serial, expected_stream, 999999999), session));
+  for (int i = 0; i < kOrderingBufferSize + 1; ++i) {
+    ASSERT_OK(
+      proxy->Forward(WrapMessage(serial, expected_stream, 99999 + i), session));
+  }
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 

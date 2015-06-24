@@ -38,7 +38,6 @@ TEST(OrderedProcessorTest, Basic) {
   ASSERT_TRUE(p.Process(666, 0).IsInvalidArgument());  // in past
   ASSERT_TRUE(p.Process(666, 1).IsInvalidArgument());  // in past
   ASSERT_TRUE(p.Process(666, 2).IsInvalidArgument());  // in past
-  ASSERT_TRUE(p.Process(666, 7).IsNoBuffer());  // not enough buffer space
   ASSERT_EQ(processed, (Ints{100, 200, 300}));
 
   // seqno 4, 5, 6 should not be processed yet.
@@ -57,6 +56,12 @@ TEST(OrderedProcessorTest, Basic) {
   // seqno 0, should process immediately
   ASSERT_OK(p.Process(800, 0));
   ASSERT_EQ(processed, (Ints{100, 200, 300, 400, 500, 600, 700, 800}));
+
+  // test running out of space
+  ASSERT_OK(p.Process(666, 100));
+  ASSERT_OK(p.Process(666, 101));
+  ASSERT_OK(p.Process(666, 102));
+  ASSERT_TRUE(p.Process(666, 103).IsNoBuffer());  // not enough buffer space
 }
 
 TEST(OrderedProcessorTest, Randomized) {
@@ -101,7 +106,6 @@ TEST(OrderedProcessorTest, SkipNext) {
   ASSERT_TRUE(p.Process(666, 0).IsInvalidArgument());  // in past
   ASSERT_TRUE(p.Process(666, 1).IsInvalidArgument());  // in past
   ASSERT_TRUE(p.Process(666, 2).IsInvalidArgument());  // in past
-  ASSERT_TRUE(p.Process(666, 7).IsNoBuffer());  // not enough buffer space
   ASSERT_EQ(processed, (Ints{100, 300}));
 
   // seqno 4, 5, 6 should not be processed yet.
@@ -139,21 +143,23 @@ TEST(OrderedProcessorTest, LossyRandomized) {
   std::mt19937 rng(rd());
   std::shuffle(numbers.begin(), numbers.end(), rng);
 
-  // Process first 100.
-  std::set<int> expected_set;
+  // Process first 1000.
+  std::vector<int> expected;
+  std::priority_queue<int, std::vector<int>, std::greater<int>> queue;
   for (int x : numbers) {
     p.Process(x, x);
-    if (expected_set.empty() || x >= *expected_set.rbegin() - buffer) {
-      expected_set.insert(x);
+    if (queue.size() == buffer) {
+      expected.push_back(queue.top());
+      queue.pop();
+    }
+    if (expected.empty() || expected.back() < x) {
+      queue.push(x);
     }
   }
-
-  // Skip 100 to ensure full buffer is processed.
-  for (size_t i = 0; i < buffer; ++i) {
-    p.SkipNext();
+  for (; !queue.empty(); queue.pop()) {
+    expected.push_back(queue.top());
   }
 
-  std::vector<int> expected(expected_set.begin(), expected_set.end());
   ASSERT_EQ(processed, expected);
 }
 
@@ -180,15 +186,13 @@ TEST(OrderedProcessorTest, LossyBasic) {
   ASSERT_TRUE(p.Process(666, 1).IsInvalidArgument());  // in past
   ASSERT_TRUE(p.Process(666, 2).IsInvalidArgument());  // in past
 
-  // 7 not enough space, but should drop 3.
-  ASSERT_TRUE(p.Process(800, 7).IsNoBuffer());
-  ASSERT_EQ(processed, (Ints{100, 200, 300}));
-
-  // seqno 4, 5 should advance us and get 6 as well.
-  ASSERT_OK(p.Process(600, 5));
   ASSERT_OK(p.Process(700, 6));
+  ASSERT_OK(p.Process(600, 5));
   ASSERT_OK(p.Process(500, 4));
-  ASSERT_EQ(processed, (Ints{100, 200, 300, 500, 600, 700, 800}));
+
+  // 8 not enough space, but should drop 3 and process 4, 5, 6
+  ASSERT_TRUE(p.Process(900, 8).IsNoBuffer());
+  ASSERT_EQ(processed, (Ints{100, 200, 300, 500, 600, 700}));
 }
 
 }  // namespace rocketspeed

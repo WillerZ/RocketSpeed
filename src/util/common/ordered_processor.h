@@ -9,6 +9,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <queue>
 #include "include/Status.h"
 
 namespace rocketspeed {
@@ -53,16 +54,34 @@ struct OrderedProcessor {
     : object(std::move(_object))
     , seqno(_seqno) {}
 
+    bool operator<(const Unprocessed& rhs) const {
+      // Priority queue orders using < to mean "lower priority", so objects
+      // with higher sequence number have lower priority.
+      return seqno > rhs.seqno;
+    }
+
     T object;
     uint64_t seqno;
   };
 
+  struct PriorityQueue : public std::priority_queue<Unprocessed> {
+    void clear() {
+      // Standard specifies that std::priority_queue has a protected c
+      // member that is the underlying container.
+      this->c.clear();
+      this->c.shrink_to_fit();
+    }
+
+    void shrink_to_fit() {
+      this->c.shrink_to_fit();
+    }
+  };
+
   OrderedProcessor(
-      int buffer_size,
+      int max_size,
       std::function<void(T)> processor,
       OrderedProcessorMode mode = OrderedProcessorMode::kLossless)
-  : buffer_(new Unprocessed[buffer_size])
-  , buffer_size_(buffer_size)
+  : max_size_(max_size)
   , next_seqno_(0)
   , processor_(std::move(processor))
   , mode_(mode) {
@@ -84,14 +103,14 @@ struct OrderedProcessor {
     Status st;
     if (mode_ == OrderedProcessorMode::kLossy) {
       // Skip head records until this record fits in the buffer.
-      if (seqno > next_seqno_ + buffer_size_) {
+      if (queue_.size() >= max_size_) {
         do {
           SkipNext();
-        } while (seqno > next_seqno_ + buffer_size_);
+        } while (queue_.size() >= max_size_);
         st = Status::NoBuffer();
       }
     } else if (mode_ == OrderedProcessorMode::kLossless) {
-      if (seqno > next_seqno_ + buffer_size_) {
+      if (queue_.size() >= max_size_) {
         return Status::NoBuffer();
       }
     }
@@ -100,14 +119,8 @@ struct OrderedProcessor {
       return Status::InvalidArgument("Seqno already processed");
     }
 
-    // Fits in buffer, check that it isn't a duplicate.
-    uint64_t index = seqno % buffer_size_;  // location for new obj
-    if (buffer_[index].seqno != kInvalidSeqno) {
-      return Status::InvalidArgument("Duplicate sequence number provided");
-    }
-
-    buffer_[index].seqno = seqno;
-    buffer_[index].object = std::move(object);
+    // Fits in buffer.
+    queue_.emplace(std::move(object), seqno);
     return st;
   }
 
@@ -117,9 +130,7 @@ struct OrderedProcessor {
    */
   void Reset() {
     next_seqno_ = 0;
-    for (uint64_t i = 0; i < buffer_size_; ++i) {
-      buffer_[i] = Unprocessed();
-    }
+    queue_.clear();
   }
 
   /**
@@ -139,22 +150,26 @@ struct OrderedProcessor {
    * Process any pending objects at the head.
    */
   void ProcessHead() {
-    uint64_t head = next_seqno_ % buffer_size_;
-    while (buffer_[head].seqno == next_seqno_) {
-      processor_(std::move(buffer_[head].object));
-      buffer_[head].seqno = kInvalidSeqno;
-      ++next_seqno_;
-      if (++head == buffer_size_) {
-        head = 0;
+    while (!queue_.empty() && queue_.top().seqno <= next_seqno_) {
+      if (queue_.top().seqno == next_seqno_) {
+        processor_(std::move(queue_.top().object));
+        ++next_seqno_;
+      } else {
+        // Was an erroneous, out of order sequence number.
       }
+      queue_.pop();
+    }
+    if (queue_.empty()) {
+      // Shrink size when queue becomes empty.
+      queue_.shrink_to_fit();
     }
   }
 
  private:
-  std::unique_ptr<Unprocessed[]> buffer_;  // cyclic buffer of unprocessed data
-  uint64_t buffer_size_;                   // size of buffer_
-  uint64_t next_seqno_;                    // seqno of next object to process
-  std::function<void(T)> processor_;       // function for processing data
+  PriorityQueue queue_;               // queue of unprocessed data
+  uint64_t max_size_;                 // max size of queue_
+  uint64_t next_seqno_;               // seqno of next object to process
+  std::function<void(T)> processor_;  // function for processing data
   OrderedProcessorMode mode_;
 };
 
