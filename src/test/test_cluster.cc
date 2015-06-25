@@ -312,6 +312,10 @@ LocalTestCluster::~LocalTestCluster() {
 
 Statistics LocalTestCluster::GetStatisticsSync() const {
   Statistics aggregated;
+  // Set of MsgLoops for all components.
+  // std::set is used since pilot and copilot often share same MsgLoop, and
+  // we only want to gather stats once.
+  std::set<MsgLoop*> msg_loops;
   if (pilot_) {
     aggregated.Aggregate(pilot_->GetStatisticsSync());
   }
@@ -321,8 +325,10 @@ Statistics LocalTestCluster::GetStatisticsSync() const {
   if (copilot_) {
     aggregated.Aggregate(copilot_->GetStatisticsSync());
   }
-  // TODO(pja) 1 : Add control tower once they have stats.
-  return std::move(aggregated);
+  for (MsgLoop* msg_loop : msg_loops) {
+    aggregated.Aggregate(msg_loop->GetStatisticsSync());
+  }
+  return aggregated;
 }
 
 std::shared_ptr<LogStorage> LocalTestCluster::GetLogStorage() {

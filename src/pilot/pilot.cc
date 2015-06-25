@@ -284,10 +284,8 @@ std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
 }
 
 Statistics Pilot::GetStatisticsSync() const {
-  Statistics stats = options_.msg_loop->AggregateStatsSync(
+  return options_.msg_loop->AggregateStatsSync(
     [this] (int i) { return worker_data_[i].stats_.all; });
-  stats.Aggregate(options_.msg_loop->GetStatisticsSync());
-  return stats;
 }
 
 std::string Pilot::GetInfoSync(std::vector<std::string> args) {

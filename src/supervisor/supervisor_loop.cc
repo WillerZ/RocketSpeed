@@ -250,14 +250,17 @@ std::map<std::string, SupervisorCommand> SupervisorLoop::commands_ = {
           std::string response("Invalid command");
           const SupervisorOptions& options = supervisor->options_;
           if (args[1] == "pilot" && options.pilot != nullptr) {
-            response =
-              options.pilot->GetStatisticsSync().Report();
+            Statistics stats = options.pilot->GetStatisticsSync();
+            stats.Aggregate(options.pilot->GetMsgLoop()->GetStatisticsSync());
+            response = stats.Report();
           } else if (args[1] == "copilot" && options.copilot != nullptr) {
-            response =
-              options.copilot->GetStatisticsSync().Report();
+            Statistics stats = options.copilot->GetStatisticsSync();
+            stats.Aggregate(options.copilot->GetMsgLoop()->GetStatisticsSync());
+            response = stats.Report();
           } else if (args[1] == "tower" && options.tower != nullptr) {
-            response =
-              options.tower->GetStatisticsSync().Report();
+            Statistics stats = options.tower->GetStatisticsSync();
+            stats.Aggregate(options.tower->GetMsgLoop()->GetStatisticsSync());
+            response = stats.Report();
           }
           return response;
         }

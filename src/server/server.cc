@@ -410,14 +410,24 @@ void RocketSpeed::Stop() {
 
 Statistics RocketSpeed::GetStatisticsSync() {
   Statistics server_stats;
+  // Set of MsgLoops for all components.
+  // std::set is used since pilot and copilot often share same MsgLoop, and
+  // we only want to gather stats once.
+  std::set<MsgLoop*> msg_loops;
   if (pilot_) {
     server_stats.Aggregate(pilot_->GetStatisticsSync());
+    msg_loops.insert(pilot_->GetMsgLoop());
   }
   if (copilot_) {
     server_stats.Aggregate(copilot_->GetStatisticsSync());
+    msg_loops.insert(copilot_->GetMsgLoop());
   }
   if (tower_) {
     server_stats.Aggregate(tower_->GetStatisticsSync());
+    msg_loops.insert(tower_->GetMsgLoop());
+  }
+  for (MsgLoop* msg_loop : msg_loops) {
+    server_stats.Aggregate(msg_loop->GetStatisticsSync());
   }
   return server_stats;
 }

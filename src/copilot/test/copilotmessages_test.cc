@@ -239,7 +239,8 @@ TEST(CopilotTest, Rollcall) {
   // Verify that statistics are recorded accurately. Account for the
   // fact that subscribing to the rollcall topic shows up as one
   // additional subscription in the statistic.
-  const Statistics& stats = cluster.GetCopilot()->GetStatisticsSync();
+  Statistics stats = cluster.GetCopilot()->GetStatisticsSync();
+  stats.Aggregate(cluster.GetCopilot()->GetMsgLoop()->GetStatisticsSync());
   std::string stats_report = stats.Report();
   ASSERT_EQ(stats.GetCounterValue("copilot.numwrites_rollcall_total"),
             num_msg + num_shards);

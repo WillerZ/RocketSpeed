@@ -94,7 +94,8 @@ TEST(PilotTest, Publish) {
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(100)));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
-  const Statistics& stats = cluster.GetPilot()->GetStatisticsSync();
+  Statistics stats = cluster.GetPilot()->GetStatisticsSync();
+  stats.Aggregate(cluster.GetPilot()->GetMsgLoop()->GetStatisticsSync());
   std::string stats_report = stats.Report();
   ASSERT_EQ(stats.GetCounterValue("pilot.append_requests"), 100);
   ASSERT_EQ(stats.GetCounterValue("pilot.failed_appends"), 0);

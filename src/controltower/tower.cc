@@ -446,10 +446,8 @@ HostNumber ControlTower::InsertHost(StreamID origin, int worker_id) {
 }
 
 Statistics ControlTower::GetStatisticsSync() {
-  Statistics stats = options_.msg_loop->AggregateStatsSync(
+  return options_.msg_loop->AggregateStatsSync(
     [this] (int i) { return topic_tailer_[i]->GetStatistics(); });
-  stats.Aggregate(options_.msg_loop->GetStatisticsSync());
-  return stats;
 }
 
 std::string ControlTower::GetInfoSync(std::vector<std::string> args) {

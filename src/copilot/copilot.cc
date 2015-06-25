@@ -398,10 +398,8 @@ int Copilot::GetTowerWorker(LogID log_id, const HostId& tower) const {
 }
 
 Statistics Copilot::GetStatisticsSync() const {
-  Statistics stats = options_.msg_loop->AggregateStatsSync(
+  return options_.msg_loop->AggregateStatsSync(
       [this](int i) { return workers_[i]->GetStatistics(); });
-  stats.Aggregate(options_.msg_loop->GetStatisticsSync());
-  return stats;
 }
 
 std::string Copilot::GetInfoSync(std::vector<std::string> args) {
