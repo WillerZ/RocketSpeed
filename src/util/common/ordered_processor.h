@@ -75,6 +75,14 @@ struct OrderedProcessor {
     void shrink_to_fit() {
       this->c.shrink_to_fit();
     }
+
+    Unprocessed pop_top() {
+      // priority_queue has no way in the interface to move out the top
+      // element, so we need to hack around it.
+      Unprocessed popped = std::move(const_cast<Unprocessed&>(this->top()));
+      this->pop();
+      return popped;
+    }
   };
 
   OrderedProcessor(
@@ -152,12 +160,12 @@ struct OrderedProcessor {
   void ProcessHead() {
     while (!queue_.empty() && queue_.top().seqno <= next_seqno_) {
       if (queue_.top().seqno == next_seqno_) {
-        processor_(std::move(queue_.top().object));
+        processor_(queue_.pop_top().object);
         ++next_seqno_;
       } else {
         // Was an erroneous, out of order sequence number.
+        queue_.pop();
       }
-      queue_.pop();
     }
     if (queue_.empty()) {
       // Shrink size when queue becomes empty.
