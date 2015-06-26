@@ -1238,7 +1238,7 @@ TEST(IntegrationTest, LogAvailability) {
   // Listen on many topics (to ensure at least one goes to each tower).
   port::Semaphore msg_received;
   std::vector<SubscriptionHandle> subscriptions;
-  enum { kNumTopics = 100 };
+  enum { kNumTopics = 10 };
   for (int i = 0; i < kNumTopics; ++i) {
     auto handle =
       client->Subscribe(GuestTenant,

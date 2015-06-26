@@ -714,33 +714,17 @@ EventLoop::do_shutdown(evutil_socket_t listener, short event, void *arg) {
 }
 
 void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
-  CommandQueue* command_queue = static_cast<CommandQueue *>(arg);
-  assert(command_queue);
-  EventLoop* obj = command_queue->event_loop;
+  IncomingQueue* incoming_queue = static_cast<IncomingQueue*>(arg);
+  assert(incoming_queue);
+  EventLoop* obj = incoming_queue->event_loop;
   assert(obj);
   obj->thread_check_.Check();
 
-  // Read the value from the eventfd to find out how many commands are ready.
-  uint64_t available;
-  if (command_queue->ready_fd.read_event(&available)) {
-    LOG_WARN(obj->info_log_, "Failed to read eventfd value, errno=%d", errno);
-    obj->info_log_->Flush();
-    return;
-  }
-
   // Read commands from the queue (there might have been multiple
   // commands added since we have received the last notification).
-  while (available--) {
-    TimestampedCommand ts_cmd;
-
-    // Read a command from the queue.
-    if (!command_queue->queue.read(ts_cmd)) {
-      // This should not happen.
-      LOG_WARN(obj->info_log_, "Wrong number of available commands reported");
-      obj->info_log_->Flush();
-      return;
-    }
-
+  CommandQueue* command_queue = incoming_queue->queue.get();
+  TimestampedCommand ts_cmd;
+  while (command_queue->Read(ts_cmd)) {
     // Call registered callback.
     obj->Dispatch(std::move(ts_cmd.command), ts_cmd.issued_time);
   }
@@ -801,10 +785,11 @@ EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
   obj->thread_check_.Check();
   event_base *base = evconnlistener_get_base(listener);
   int err = EVUTIL_SOCKET_ERROR();
-  LOG_WARN(obj->info_log_,
+  LOG_FATAL(obj->info_log_,
     "Got an error %d (%s) on the listener. "
     "Shutting down.\n", err, evutil_socket_error_to_string(err));
-  event_base_loopexit(base, NULL);
+  obj->internal_status_ = Status::InternalError("Accept error -- check logs");
+  event_base_loopexit(base, nullptr);
 }
 
 Status
@@ -890,13 +875,13 @@ EventLoop::Initialize() {
     return Status::InternalError("Failed to add shutdown event to event base");
   }
 
-  Status st = control_command_queue_.AttachToLoop();
+  control_command_queue_ =
+    std::make_shared<CommandQueue>(env_, info_log_, command_queue_size_);
+  Status st = AddIncomingQueue(control_command_queue_);
   if (!st.ok()) {
-    LOG_FATAL(info_log_,
-      "Failed to attach control command queue to event loop");
-    return st;
+    LOG_FATAL(info_log_, "Failed to add control command queue");
   }
-  return Status::OK();
+  return st;
 }
 
 void EventLoop::Run() {
@@ -927,10 +912,17 @@ void EventLoop::Run() {
   for (auto& timer : timers_) {
     event_free(timer->loop_event);
   }
+  incoming_queues_.clear();
+  teardown_all_connections();
   event_base_free(base_);
 
+  if (!internal_status_.ok()) {
+    LOG_ERROR(info_log_,
+      "EventLoop loop stopped with error: %s",
+      internal_status_.ToString().c_str());
+  }
+
   stream_router_.CloseAll();
-  teardown_all_connections();
   LOG_VITAL(info_log_, "Stopped EventLoop at port %d", port_number_);
   info_log_->Flush();
   base_ = nullptr;
@@ -986,78 +978,87 @@ StreamSocket EventLoop::CreateOutboundStream(ClientID destination) {
   return StreamSocket(std::move(destination), outbound_allocator_.Next());
 }
 
-EventLoop::CommandQueue* EventLoop::GetThreadLocalQueue() {
+const std::shared_ptr<CommandQueue>& EventLoop::GetThreadLocalQueue() {
   // Get the thread local command queue.
-  CommandQueue* command_queue =
-    static_cast<CommandQueue*>(command_queues_.Get());
+  std::shared_ptr<CommandQueue>* command_queue_ptr =
+    static_cast<std::shared_ptr<CommandQueue>*>(command_queues_.Get());
 
-  if (!command_queue) {
+  if (!command_queue_ptr) {
     // Doesn't exist yet, so create a new one.
-    command_queue = new CommandQueue(this, command_queue_size_);
-
-    // Attach the new command queue to the event loop.
-    std::unique_ptr<CommandQueue> owned_command_queue(command_queue);
-    auto moved_cq = folly::makeMoveWrapper(std::move(owned_command_queue));
-    std::unique_ptr<Command> attach_command(
-      new ExecuteCommand([this, moved_cq] () mutable {
-        Status st = (*moved_cq)->AttachToLoop();
-        if (st.ok()) {
-          LOG_INFO(info_log_, "Added new command queue");
-          owned_command_queues_.emplace_back(moved_cq.move());
-        } else {
-          LOG_FATAL(info_log_, "Failed to add command queue to EventLoop");
-        }
-      }));
-
-    Status st;
-    {
-      // Need to lock when writing to control_command_queue_ since it is shared.
-      MutexLock lock(&control_command_mutex_);
-      st = SendCommand(attach_command, &control_command_queue_);
-    }
-
-    if (!st.ok()) {
-      LOG_FATAL(info_log_, "Failed to add command queue to EventLoop");
-      exit(EXIT_FAILURE);  // cannot recover from this
-      return nullptr;
-    }
+    std::shared_ptr<CommandQueue> command_queue =
+      CreateCommandQueue(command_queue_size_);
 
     // Set this as the thread local queue.
-    command_queues_.Reset(command_queue);
+    command_queue_ptr = new std::shared_ptr<CommandQueue>(command_queue);
+    command_queues_.Reset(command_queue_ptr);
+  }
+  return *command_queue_ptr;
+}
+
+std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(size_t size) {
+  auto command_queue = std::make_shared<CommandQueue>(env_, info_log_, size);
+  Status st = AttachQueue(command_queue);
+  if (!st.ok()) {
+    LOG_ERROR(info_log_, "Failed to attach command queue to EventLoop");
   }
   return command_queue;
 }
 
-Status EventLoop::SendCommand(std::unique_ptr<Command>& command) {
-  // Send command using thread local queue.
-  return SendCommand(command, GetThreadLocalQueue());
+Status EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
+  // Attach the new command queue to the event loop.
+  std::unique_ptr<Command> attach_command(
+    new ExecuteCommand([this, command_queue] () mutable {
+      Status st = AddIncomingQueue(std::move(command_queue));
+      if (!st.ok()) {
+        LOG_FATAL(info_log_, "Failed to attach command queue to EventLoop: %s",
+          st.ToString().c_str());
+        internal_status_ = st;
+        event_base_loopexit(base_, nullptr);
+      }
+    }));
+
+  bool ok;
+  {
+    // Need to lock when writing to control_command_queue_ since it is shared.
+    MutexLock lock(&control_command_mutex_);
+    const bool check_thread = false;
+    ok = control_command_queue_->Write(attach_command, check_thread);
+  }
+
+  if (!ok) {
+    LOG_FATAL(info_log_, "Failed to add command queue to EventLoop");
+    return Status::InternalError("Failed to add command queue to EventLoop");
+  }
+  return Status::OK();
 }
 
-Status EventLoop::SendCommand(std::unique_ptr<Command>& command,
-                              CommandQueue* command_queue) {
-  TimestampedCommand ts_cmd { std::move(command), env_->NowMicros() };
-  bool success = command_queue->queue.write(std::move(ts_cmd));
-
-  if (!success) {
-    // The queue was full and the write failed.
-    LOG_ERROR(info_log_, "The command queue is full");
-    info_log_->Flush();
-    assert(ts_cmd.command);
-    command = std::move(ts_cmd.command);  // put back
-    //stats_.full_queue_errors->Add(1);
-    return Status::NoBuffer();
+Status EventLoop::AddIncomingQueue(
+    std::shared_ptr<CommandQueue> command_queue) {
+  // An event that signals new commands in the command queue.
+  std::unique_ptr<IncomingQueue> incoming_queue(new IncomingQueue());
+  incoming_queue->queue = std::move(command_queue);
+  incoming_queue->event_loop = this;
+  incoming_queue->ready_event = event_new(
+    base_,
+    incoming_queue->queue->GetReadFd(),
+    EV_PERSIST|EV_READ,
+    do_command,
+    reinterpret_cast<void*>(incoming_queue.get()));
+  if (incoming_queue->ready_event == nullptr) {
+    return Status::InternalError("Failed to create command queue ready event");
   }
-
-  // Write to the command_ready_eventfd_ to send an event to the reader.
-  if (command_queue->ready_fd.write_event(1)) {
-    // Some internal error happened.
-    LOG_ERROR(info_log_,
-        "Error writing a notification to eventfd, errno=%d", errno);
-    info_log_->Flush();
-    return Status::InternalError("eventfd_write returned error");
+  if (event_add(incoming_queue->ready_event, nullptr)) {
+    return Status::InternalError("Failed to add command ready event");
   }
-
+  LOG_INFO(info_log_, "Added new command queue to EventLoop");
+  incoming_queues_.emplace_back(std::move(incoming_queue));
   return Status::OK();
+}
+
+Status EventLoop::SendCommand(std::unique_ptr<Command>& command) {
+  // Send command using thread local queue.
+  return GetThreadLocalQueue()->Write(command) ?
+    Status::OK() : Status::NoBuffer();
 }
 
 void EventLoop::Accept(int fd) {
@@ -1236,6 +1237,12 @@ void EventLoop::EnableDebugThreadUnsafe(DebugCallback log_cb) {
 #endif
 }
 
+static void CommandQueueUnrefHandler(void* ptr) {
+  std::shared_ptr<CommandQueue>* command_queue =
+    static_cast<std::shared_ptr<CommandQueue>*>(ptr);
+  delete command_queue;
+}
+
 EventLoop::EventLoop(BaseEnv* env,
                      EnvOptions env_options,
                      int port_number,
@@ -1254,7 +1261,7 @@ EventLoop::EventLoop(BaseEnv* env,
   accept_callback_(std::move(accept_callback)),
   listener_(nullptr),
   shutdown_eventfd_(rocketspeed::port::Eventfd(true, true)),
-  control_command_queue_(this, options.command_queue_size),
+  command_queues_(CommandQueueUnrefHandler),
   stream_router_(allocator.Split()),
   outbound_allocator_(std::move(allocator)),
   active_connections_(0),
@@ -1343,42 +1350,10 @@ int EventLoop::GetNumClients() const {
   return static_cast<int>(stream_router_.GetNumStreams());
 }
 
-EventLoop::CommandQueue::CommandQueue(EventLoop* _event_loop, uint32_t size)
-: event_loop(_event_loop)
-, queue(size)
-, ready_fd(true, true)
-, ready_event(nullptr) {
-}
-
-Status EventLoop::CommandQueue::AttachToLoop() {
-  // An event that signals new commands in the command queue.
-  assert(event_loop);
-
-  if (ready_fd.status() < 0) {
-    return Status::InternalError("Failed to create ready eventfd");
-  }
-
-  ready_event = event_new(
-    event_loop->base_,
-    ready_fd.readfd(),
-    EV_PERSIST|EV_READ,
-    event_loop->do_command,
-    reinterpret_cast<void*>(this));
-  if (ready_event == nullptr) {
-    return Status::InternalError("Failed to create command ready eventfd");
-  }
-  int rv = event_add(ready_event, nullptr);
-  if (rv != 0) {
-    return Status::InternalError("Failed to add command ready event");
-  }
-  return Status::OK();
-}
-
-EventLoop::CommandQueue::~CommandQueue() {
+EventLoop::IncomingQueue::~IncomingQueue() {
   if (ready_event) {
     event_free(ready_event);
   }
-  ready_fd.closefd();
 }
 
 }  // namespace rocketspeed

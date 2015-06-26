@@ -27,6 +27,7 @@
 #include "external/folly/producer_consumer_queue.h"
 
 #include "include/Logger.h"
+#include "src/messages/command_queues.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
@@ -273,8 +274,24 @@ class EventLoop {
   /** @return Current size of this thread's command queue. */
   size_t GetQueueSize() const {
     return
-      const_cast<EventLoop*>(this)->GetThreadLocalQueue()->queue.sizeGuess();
+      const_cast<EventLoop*>(this)->GetThreadLocalQueue()->GetSize();
   }
+
+  /**
+   * Creates a new queue that will be read by the EventLoop.
+   *
+   * @param size Size of the queue (number of commands).
+   * @return The created queue.
+   */
+  std::shared_ptr<CommandQueue> CreateCommandQueue(size_t size);
+
+  /**
+   * Attaches the command queue to the EventLoop for processing.
+   *
+   * @param command_queue The CommandQueue to begin reading and processing.
+   * @return ok() if successful, otherwise error.
+   */
+  Status AttachQueue(std::shared_ptr<CommandQueue> command_queue);
 
   /**
    * Waits until the event loop is running.
@@ -330,6 +347,11 @@ class EventLoop {
   friend class SocketEvent;
   friend class StreamRouter;
 
+  // Internal status of the EventLoop.
+  // If something fatally fails internally then the event loop will stop
+  // running and Run will return this status.
+  Status internal_status_;
+
   BaseEnv* env_;
 
   EnvOptions env_options_;
@@ -362,24 +384,6 @@ class EventLoop {
   // Startup event
   event* startup_event_ = nullptr;
 
-  // Command queue and its associated event
-  struct TimestampedCommand {
-    std::unique_ptr<Command> command;
-    uint64_t issued_time;
-  };
-
-  struct CommandQueue {
-    CommandQueue(EventLoop* _event_loop, uint32_t size);
-    ~CommandQueue();
-
-    Status AttachToLoop();
-
-    EventLoop* event_loop;
-    folly::ProducerConsumerQueue<TimestampedCommand> queue;
-    rocketspeed::port::Eventfd ready_fd;
-    event* ready_event;
-  };
-
   // Each thread has its own command queue to communicate with the EventLoop.
   ThreadLocalPtr command_queues_;
 
@@ -391,7 +395,7 @@ class EventLoop {
   // Shared command queue for sending control commands.
   // This should only be used for creating new queues.
   port::Mutex control_command_mutex_;
-  CommandQueue control_command_queue_;
+  std::shared_ptr<CommandQueue> control_command_queue_;
 
   StreamRouter stream_router_;
   /** Allocator for outboung streams. */
@@ -451,11 +455,24 @@ class EventLoop {
 
   const uint32_t command_queue_size_;
 
+  // libevent read notification events for
+  struct IncomingQueue {
+    IncomingQueue() {}
+    ~IncomingQueue();
+
+    std::shared_ptr<CommandQueue> queue;
+    event* ready_event;
+    EventLoop* event_loop;  // used in do_command callback.
+  };
+  std::vector<std::unique_ptr<IncomingQueue>> incoming_queues_;
+
   // Send a command using a particular command queue.
   Status SendCommand(std::unique_ptr<Command>& command,
                      CommandQueue* command_queue);
 
-  CommandQueue* GetThreadLocalQueue();
+  const std::shared_ptr<CommandQueue>& GetThreadLocalQueue();
+
+  Status AddIncomingQueue(std::shared_ptr<CommandQueue> command_queue);
 
   // A callback for handling SendCommands.
   void HandleSendCommand(std::unique_ptr<Command> command,

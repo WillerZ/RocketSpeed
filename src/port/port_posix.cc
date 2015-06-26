@@ -140,7 +140,7 @@ Eventfd::Eventfd(bool nonblock, bool close_on_exec) {
   status_ = pipe(fd_);
 
   // Set attributes on both the pipe descriptors
-  if (!flags) {
+  if (flags) {
     if (!status_) {
       status_ =  fcntl(fd_[0], F_SETFL, flags);
     }
