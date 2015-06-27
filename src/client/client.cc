@@ -948,10 +948,20 @@ void ClientImpl::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   if (it != worker_data.subscriptions_.end()) {
     it->second.ReceiveMessage(info_log_, std::move(deliver));
   } else {
-    LOG_DEBUG(info_log_, "Subscription ID(%" PRIu64 ") for delivery not found "
-      "(may have been unsubscribed recently)", sub_id);
-    // Issue unsubscribe request.
-    worker_data.pending_terminations_.emplace(sub_id, deliver->GetTenantID());
+    if (worker_data.recent_terminations_.Contains(sub_id)) {
+      LOG_DEBUG(info_log_,
+                "Subscription ID(%" PRIu64
+                ") for delivery not found, unsubscribed recently",
+                sub_id);
+    } else {
+      LOG_WARN(info_log_,
+               "Subscription ID(%" PRIu64 ") for delivery not found",
+               sub_id);
+      // Issue unsubscribe request.
+      worker_data.pending_terminations_.emplace(sub_id, deliver->GetTenantID());
+    }
+    // This also evicts entries from recent terminations list, should be called
+    // in either branch.
     SendPendingRequests();
   }
 }
