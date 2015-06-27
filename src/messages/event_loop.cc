@@ -876,7 +876,9 @@ EventLoop::Initialize() {
   }
 
   control_command_queue_ =
-    std::make_shared<CommandQueue>(env_, info_log_, command_queue_size_);
+    std::make_shared<CommandQueue>(env_,
+                                   info_log_,
+                                   default_command_queue_size_);
   Status st = AddIncomingQueue(control_command_queue_);
   if (!st.ok()) {
     LOG_FATAL(info_log_, "Failed to add control command queue");
@@ -986,7 +988,7 @@ const std::shared_ptr<CommandQueue>& EventLoop::GetThreadLocalQueue() {
   if (!command_queue_ptr) {
     // Doesn't exist yet, so create a new one.
     std::shared_ptr<CommandQueue> command_queue =
-      CreateCommandQueue(command_queue_size_);
+      CreateCommandQueue(default_command_queue_size_);
 
     // Set this as the thread local queue.
     command_queue_ptr = new std::shared_ptr<CommandQueue>(command_queue);
@@ -996,6 +998,10 @@ const std::shared_ptr<CommandQueue>& EventLoop::GetThreadLocalQueue() {
 }
 
 std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(size_t size) {
+  if (size == 0) {
+    // Use default size when size == 0.
+    size = default_command_queue_size_;
+  }
   auto command_queue = std::make_shared<CommandQueue>(env_, info_log_, size);
   Status st = AttachQueue(command_queue);
   if (!st.ok()) {
@@ -1266,7 +1272,7 @@ EventLoop::EventLoop(BaseEnv* env,
   outbound_allocator_(std::move(allocator)),
   active_connections_(0),
   stats_(options.stats_prefix),
-  command_queue_size_(options.command_queue_size) {
+  default_command_queue_size_(options.command_queue_size) {
 
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](

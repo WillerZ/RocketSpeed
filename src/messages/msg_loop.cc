@@ -13,6 +13,7 @@
 
 #include "include/Logger.h"
 #include "src/port/port.h"
+#include "src/messages/command_queues.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/stream_allocator.h"
 #include "src/messages/messages.h"
@@ -287,12 +288,8 @@ Status MsgLoop::TrySendCommand(std::unique_ptr<Command>& command,
 Status MsgLoop::SendRequest(const Message& msg,
                             StreamSocket* socket,
                             int worker_id) {
-  // Serialise the message.
-  std::string serial;
-  msg.SerializeToString(&serial);
   // Create command and append it to the proper event loop.
-  Status st = SendCommand(
-      SerializedSendCommand::Request(std::move(serial), {socket}), worker_id);
+  Status st = SendCommand(RequestCommand(msg, socket), worker_id);
   if (st.ok()) {
     socket->Open();
   }
@@ -302,12 +299,25 @@ Status MsgLoop::SendRequest(const Message& msg,
 Status MsgLoop::SendResponse(const Message& msg,
                              StreamID stream,
                              int worker_id) {
-  // Serialise the message.
+  // Create command and append it to the proper event loop.
+  return SendCommand(ResponseCommand(msg, stream), worker_id);
+}
+
+
+std::unique_ptr<Command> MsgLoop::RequestCommand(const Message& msg,
+                                                 StreamSocket* socket) {
+  // Serialize the message.
   std::string serial;
   msg.SerializeToString(&serial);
-  // Create command and append it to the proper event loop.
-  return SendCommand(
-      SerializedSendCommand::Response(std::move(serial), {stream}), worker_id);
+  return SerializedSendCommand::Request(std::move(serial), {socket});
+}
+
+std::unique_ptr<Command> MsgLoop::ResponseCommand(const Message& msg,
+                                                  StreamID stream) {
+  // Serialize the message.
+  std::string serial;
+  msg.SerializeToString(&serial);
+  return SerializedSendCommand::Response(std::move(serial), {stream});
 }
 
 //
@@ -381,6 +391,29 @@ int MsgLoop::GetNumClientsSync() {
   return result;
 }
 
+std::shared_ptr<CommandQueue> MsgLoop::CreateCommandQueue(int worker_id,
+                                                          size_t size) {
+  assert(worker_id < GetNumWorkers());
+  return event_loops_[worker_id]->CreateCommandQueue(size);
+}
+
+std::vector<std::shared_ptr<CommandQueue>>
+MsgLoop::CreateWorkerQueues(size_t size) {
+  std::vector<std::shared_ptr<CommandQueue>> queues;
+  for (int i = 0; i < GetNumWorkers(); ++i) {
+    queues.emplace_back(CreateCommandQueue(i, size));
+  }
+  return queues;
+}
+
+std::unique_ptr<ThreadLocalCommandQueues>
+MsgLoop::CreateThreadLocalQueues(int worker_id, size_t size) {
+  return std::unique_ptr<ThreadLocalCommandQueues>(
+    new ThreadLocalCommandQueues([this, worker_id, size] () {
+      return CreateCommandQueue(worker_id, size);
+    }));
+}
+
 Statistics MsgLoop::GetStatisticsSync() {
   return AggregateStatsSync([this] (int i) {
     return event_loops_[i]->GetStatistics();
@@ -409,6 +442,5 @@ Statistics MsgLoop::AggregateStatsSync(WorkerStatsProvider stats_provider) {
   done.Wait();
   return aggregated_stats.MoveThread();
 }
-
 
 }  // namespace rocketspeed

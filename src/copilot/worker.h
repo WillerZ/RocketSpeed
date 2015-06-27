@@ -38,13 +38,14 @@ class CopilotWorker {
                 const int myid,
                 Copilot* copilot);
 
-  // Forward a message to this worker for processing.
-  bool Forward(LogID logid,
-               std::unique_ptr<Message> msg,
-               int worker_id,
-               StreamID origin);
+  // Creates a worker command for processing.
+  std::unique_ptr<Command> WorkerCommand(LogID logid,
+                                         std::unique_ptr<Message> msg,
+                                         int worker_id,
+                                         StreamID origin);
 
-  bool Forward(std::shared_ptr<ControlTowerRouter> new_router);
+  std::unique_ptr<Command> WorkerCommand(
+    std::shared_ptr<ControlTowerRouter> new_router);
 
   // Invoked on a regularly clock interval.
   void ProcessTimerTick();
@@ -303,6 +304,15 @@ class CopilotWorker {
 
   // Maximum number of resubscriptions per ProcessTimerTick.
   uint64_t resubscriptions_per_tick_;
+
+  // Queue for each client worker.
+  std::vector<std::shared_ptr<CommandQueue>> client_queues_;
+
+  // Queue for each control tower worker.
+  std::vector<std::shared_ptr<CommandQueue>> tower_queues_;
+
+  // Queues for reporting back to worker from RollCall error callback.
+  std::unique_ptr<ThreadLocalCommandQueues> rollcall_error_queues_;
 };
 
 }  // namespace rocketspeed

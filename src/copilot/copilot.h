@@ -101,6 +101,17 @@ class Copilot {
   // A client to write rollcall topic
   std::unique_ptr<RollcallImpl> rollcall_;
 
+  // Full-mesh network of queues for the messages from clients to workers.
+  std::vector<std::vector<std::shared_ptr<CommandQueue>>>
+    client_to_worker_queues_;
+
+  // Full-mesh network on queues for responses from control towers to workers.
+  std::vector<std::vector<std::shared_ptr<CommandQueue>>>
+    tower_to_worker_queues_;
+
+  // Thread-local queue mesh for updating workers with new tower routing info.
+  std::vector<std::unique_ptr<ThreadLocalCommandQueues>> router_update_queues_;
+
   // private Constructor
   Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client);
 

@@ -10,6 +10,7 @@
 #include "include/Status.h"
 #include "src/port/port.h"
 #include "src/util/common/thread_check.h"
+#include "src/util/common/thread_local.h"
 
 namespace rocketspeed {
 
@@ -79,6 +80,34 @@ class CommandQueue {
   eventfd_t pending_reads_;
   ThreadCheck read_check_;
   ThreadCheck write_check_;
+};
+
+/**
+ * Lazily constructed CommandQueue per thread.
+ */
+class ThreadLocalCommandQueues {
+ public:
+  /**
+   * Creates a ThreadLocalCommandQueues with specific lazy creation funciton.
+   *
+   * @param create_queue Callback for creating thread-local queues.
+   */
+  explicit ThreadLocalCommandQueues(
+    std::function<std::shared_ptr<CommandQueue>()> create_queue);
+
+  // non-copyable, non-moveable
+  ThreadLocalCommandQueues(const ThreadLocalCommandQueues&) = delete;
+  ThreadLocalCommandQueues(ThreadLocalCommandQueues&&) = delete;
+  ThreadLocalCommandQueues& operator=(const ThreadLocalCommandQueues&) = delete;
+  ThreadLocalCommandQueues& operator=(ThreadLocalCommandQueues&&) = delete;
+
+  /**
+   * The thread-local CommandQueue.
+   */
+  CommandQueue* GetThreadLocal();
+
+ private:
+  ThreadLocalObject<std::shared_ptr<CommandQueue>> thread_local_;
 };
 
 }  // namespace rocketspeed

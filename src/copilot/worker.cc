@@ -39,14 +39,19 @@ CopilotWorker::CopilotWorker(
 
   LOG_VITAL(options_.info_log, "Created a new CopilotWorker");
   options_.info_log->Flush();
+
+  client_queues_ = options_.msg_loop->CreateWorkerQueues();
+  tower_queues_ = options_.msg_loop->CreateWorkerQueues();
+  rollcall_error_queues_ = options_.msg_loop->CreateThreadLocalQueues(myid_);
 }
 
-bool CopilotWorker::Forward(LogID logid,
-                            std::unique_ptr<Message> msg,
-                            int worker_id,
-                            StreamID origin) {
+std::unique_ptr<Command>
+CopilotWorker::WorkerCommand(LogID logid,
+                             std::unique_ptr<Message> msg,
+                             int worker_id,
+                             StreamID origin) {
   auto moved_msg = folly::makeMoveWrapper(std::move(msg));
-  std::unique_ptr<ExecuteCommand> command(
+  std::unique_ptr<Command> command(
     new ExecuteCommand([this, moved_msg, logid, worker_id, origin]() mutable {
       auto message = moved_msg.move();
       switch (message->GetMessageType()) {
@@ -106,13 +111,14 @@ bool CopilotWorker::Forward(LogID logid,
         }
       }
     }));
-  return options_.msg_loop->SendCommand(std::move(command), myid_).ok();
+  return command;
 }
 
-bool CopilotWorker::Forward(std::shared_ptr<ControlTowerRouter> new_router) {
-  std::unique_ptr<ExecuteCommand> command(new ExecuteCommand(
+std::unique_ptr<Command>
+CopilotWorker::WorkerCommand(std::shared_ptr<ControlTowerRouter> new_router) {
+  std::unique_ptr<Command> command(new ExecuteCommand(
       std::bind(&CopilotWorker::ProcessRouterUpdate, this, new_router)));
-  return options_.msg_loop->SendCommand(std::move(command), myid_).ok();
+  return command;
 }
 
 const Statistics& CopilotWorker::GetStatistics() {
@@ -213,11 +219,8 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
                               msg->GetMessageId(),
                               msg->GetPayload());
       data.SetSequenceNumbers(prev_seqno, seqno);
-      Status status = options_.msg_loop->SendResponse(data,
-                                                      recipient,
-                                                      sub->worker_id);
-
-      if (status.ok()) {
+      auto command = options_.msg_loop->ResponseCommand(data, recipient);
+      if (client_queues_[sub->worker_id]->Write(command)) {
         sub->seqno = seqno + 1;
         ++topic.records_sent;
 
@@ -307,11 +310,8 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       // Send message to the client.
       MessageDeliverGap gap(sub->tenant_id, sub->sub_id, msg->GetType());
       gap.SetSequenceNumbers(prev_seqno, next_seqno);
-      Status status = options_.msg_loop->SendResponse(gap,
-                                                      recipient,
-                                                      sub->worker_id);
-
-      if (status.ok()) {
+      auto command = options_.msg_loop->ResponseCommand(gap, recipient);
+      if (client_queues_[sub->worker_id]->Write(command)) {
         sub->seqno = next_seqno + 1;
         ++topic.gaps_sent;
 
@@ -594,21 +594,22 @@ bool CopilotWorker::SendMetadata(TenantID tenant_id,
     MessageMetadata::MetaType::Request,
     {TopicPair(seqno, topic_name.ToString(), type, namespace_id.ToString())});
 
-  Status status = options_.msg_loop->SendRequest(message, stream, worker_id);
-  if (!status.ok()) {
+  auto command = options_.msg_loop->RequestCommand(message, stream);
+  if (tower_queues_[worker_id]->Write(command)) {
     LOG_WARN(options_.info_log,
       "Failed to send %s %ssubscribe to tower stream %llu",
       uuid.ToString().c_str(),
       type == MetadataType::mUnSubscribe ? "un" : "",
       stream->GetStreamID());
+    return true;
   } else {
     LOG_INFO(options_.info_log,
       "Sent %s %ssubscription to tower stream %llu",
       uuid.ToString().c_str(),
       type == MetadataType::mUnSubscribe ? "un" : "",
       stream->GetStreamID());
+    return false;
   }
-  return status.ok();
 }
 
 void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
@@ -761,8 +762,8 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
     for (TowerConnection& tower_conn : tower_conns) {
       StreamSocket* const stream = tower_conn.first;
       const int worker_id = tower_conn.second;
-      Status status = options_.msg_loop->SendRequest(msg, stream, worker_id);
-      if (!status.ok()) {
+      auto command = options_.msg_loop->RequestCommand(msg, stream);
+      if (!tower_queues_[worker_id]->Write(command)) {
         LOG_WARN(options_.info_log,
           "Failed to send %s FindTailSeqno to tower stream %llu",
           uuid.ToString().c_str(),
@@ -811,32 +812,30 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
   // cannot reference local variables.
   std::function<void()> process_error;
   if (type == MetadataType::mSubscribe) {
-    process_error = [this, topic_name, namespace_id, logid, worker_id, origin,
-                     tenant_id, sub_id]() {
-        std::unique_ptr<Message> newmsg(new MessageUnsubscribe(
-            tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested));
-        // Start the automatic unsubscribe process. We rely on the assumption
-        // that the unsubscribe request can fail only if the client is
-        // un-communicable, in which case the client's subscritions are reaped.
-        Forward(logid, std::move(newmsg), worker_id, origin);
-        // Send back message to the client, saying that it should resubscribe.
-        MessageUnsubscribe unsubscribe(tenant_id,
-                                       sub_id,
-                                       MessageUnsubscribe::Reason::kRequested);
-        options_.msg_loop->SendResponse(unsubscribe, origin, worker_id);
-        // TODO(dhruba)
-        // We can't do any proper error handling from this thread, as it belongs
-        // to the client used by RollCall.
+    process_error = [this, worker_id, origin, tenant_id, sub_id]() {
+      // We can't do any proper error handling from this thread, as it belongs
+      // to the client used by RollCall.
+      std::unique_ptr<Command> command(new ExecuteCommand(
+        [this, worker_id, origin, tenant_id, sub_id]() {
+          // Start the automatic unsubscribe process. We rely on the assumption
+          // that the unsubscribe request can fail only if the client is
+          // un-communicable, in which case the client's subscriptions are
+          // reaped.
+          const auto reason = MessageUnsubscribe::Reason::kRequested;
+          ProcessUnsubscribe(tenant_id, sub_id, reason, worker_id, origin);
 
-        // The counter must be updtaed from worker thread.
-        Status st = options_.msg_loop->SendCommand(
-            std::unique_ptr<Command>(new ExecuteCommand(
-                [this]() { stats_.rollcall_writes_failed->Add(1); })),
-            myid_);
-        if (!st.ok()) {
-          LOG_ERROR(options_.info_log,
-                    "Failed to increment failed RollCall writes counter");
-        }
+          // Send back message to the client, saying that it should resubscribe.
+          MessageUnsubscribe msg(tenant_id, sub_id, reason);
+          auto unsub_command = options_.msg_loop->ResponseCommand(msg, origin);
+          client_queues_[worker_id]->Write(unsub_command);
+
+          stats_.rollcall_writes_failed->Add(1);
+        }));
+
+      if (!rollcall_error_queues_->GetThreadLocal()->Write(command)) {
+        LOG_ERROR(options_.info_log,
+                  "Failed to process RollCall writes failure");
+      }
     };
   }
 

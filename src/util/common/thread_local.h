@@ -160,4 +160,36 @@ class ThreadLocalPtr {
   const uint32_t id_;
 };
 
+/**
+ * Lazily constructed per-thread object.
+ */
+template <typename T>
+class ThreadLocalObject {
+ public:
+  /**
+   * Create ThreadLocalObject with provided lazy constructor.
+   */
+  explicit ThreadLocalObject(std::function<T*()> create)
+  : void_ptr_(&Unref)
+  , create_(std::move(create)) {
+  }
+
+  T& GetThreadLocal() {
+    T* obj = static_cast<T*>(void_ptr_.Get());
+    if (!obj) {
+      obj = create_();
+      void_ptr_.Reset(obj);
+    }
+    return *obj;
+  }
+
+ private:
+  static void Unref(void* ptr) {
+    delete static_cast<T*>(ptr);
+  }
+
+  ThreadLocalPtr void_ptr_;
+  std::function<T*()> create_;
+};
+
 }  // namespace rocketspeed

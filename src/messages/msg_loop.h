@@ -26,7 +26,6 @@ class Logger;
 
 class MsgLoop : public MsgLoopBase {
  public:
-
   /**
     * Options is a helper class used for passing the additional arguments to the
     * MsgLoop constructor.
@@ -125,6 +124,12 @@ class MsgLoop : public MsgLoopBase {
                       StreamID stream,
                       int worker_id) override;
 
+  std::unique_ptr<Command> RequestCommand(const Message& msg,
+                                          StreamSocket* socket);
+
+  std::unique_ptr<Command> ResponseCommand(const Message& msg,
+                                           StreamID stream);
+
   using WorkerStatsProvider = std::function<Statistics(int)>;
 
   /**
@@ -166,6 +171,34 @@ class MsgLoop : public MsgLoopBase {
    * @return The total number of clients.
    */
   int GetNumClientsSync();
+
+  /**
+   * Creates a new queue that will be read by a worker loop.
+   *
+   * @param worker_id The worker to read from this queue.
+   * @param size Size of the queue (number of commands). Defaults to whatever
+   *             the EventLoop default command queue size is.
+   * @return The created queue.
+   */
+  std::shared_ptr<CommandQueue> CreateCommandQueue(int worker_id,
+                                                   size_t size = 0);
+
+  /**
+   * Creates a vector of command queues, one for each worker.
+   *
+   * @param size Size of the queue (number of commands). Defaults to whatever
+   *             the EventLoop default command queue size is.
+   * @return The created queue vector.
+   */
+  std::vector<std::shared_ptr<CommandQueue>>
+    CreateWorkerQueues(size_t size = 0);
+
+  /**
+   * Creates a logical set of queues from each thread, to a particular worker.
+   * The queues are created on demand for each thread.
+   */
+  std::unique_ptr<ThreadLocalCommandQueues>
+    CreateThreadLocalQueues(int worker_id, size_t size = 0);
 
  private:
   void SetThreadWorkerIndex(int worker_index);

@@ -69,6 +69,16 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
     rollcall_.reset(new RollcallImpl(std::move(client), InvalidTenant));
   }
 
+  // Create queues.
+  for (int i = 0; i < num_workers; ++i) {
+    client_to_worker_queues_.emplace_back(
+      options_.msg_loop->CreateWorkerQueues());
+    tower_to_worker_queues_.emplace_back(
+      options_.msg_loop->CreateWorkerQueues());
+    router_update_queues_.emplace_back(
+      options_.msg_loop->CreateThreadLocalQueues(i));
+  }
+
   LOG_VITAL(options_.info_log, "Created a new Copilot");
   options_.info_log->Flush();
 }
@@ -152,7 +162,10 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker = workers_[worker_id];
 
   // forward message to worker
-  if (!worker->Forward(logid, std::move(msg), event_loop_worker, origin)) {
+  auto command =
+    worker->WorkerCommand(logid, std::move(msg), event_loop_worker, origin);
+  auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
+  if (!queue->Write(command)) {
     LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
@@ -205,7 +218,12 @@ void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
 
     // forward message to worker
     int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
-    worker->Forward(logid, std::move(newmessage), event_loop_worker, origin);
+    auto command = worker->WorkerCommand(logid,
+                                         std::move(newmessage),
+                                         event_loop_worker,
+                                         origin);
+    auto& queue = client_to_worker_queues_[event_loop_worker][worker_id];
+    queue->Write(command);
   }
 }
 
@@ -241,7 +259,10 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker = workers_[worker_id];
 
   // forward message to worker
-  if (!worker->Forward(logid, std::move(msg), event_loop_worker, origin)) {
+  auto command =
+    worker->WorkerCommand(logid, std::move(msg), event_loop_worker, origin);
+  auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
+  if (!queue->Write(command)) {
     LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
@@ -279,8 +300,12 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   auto worker_id = options_.msg_loop->GetThreadWorkerIndex();
   sub_id_map_[worker_id][origin].emplace(subscribe->GetSubID(), dest_worker_id);
 
+  auto command =
+    worker->WorkerCommand(logid, std::move(msg), worker_id, origin);
+  auto& queue = client_to_worker_queues_[worker_id][dest_worker_id];
+
   // Forward message to responsible worker.
-  if (!worker->Forward(logid, std::move(msg), worker_id, origin)) {
+  if (!queue->Write(command)) {
     LOG_WARN(options_.info_log, "Worker %d queue is full.", worker_id);
   }
 }
@@ -312,7 +337,12 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
     auto sub_it = subscription_map.find(sub_id);
     if (sub_it != subscription_map.end()) {
       const int worker_id = sub_it->second;
-      workers_[worker_id]->Forward(logid, std::move(msg), this_worker, origin);
+      auto command = workers_[worker_id]->WorkerCommand(logid,
+                                                        std::move(msg),
+                                                        this_worker,
+                                                        origin);
+      auto& queue = client_to_worker_queues_[this_worker][worker_id];
+      queue->Write(command);
       subscription_map.erase(sub_it);
     }
   }
@@ -343,10 +373,15 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
                          goodbye->GetCode(),
                          goodbye->GetOriginType()));
     LogID logid = 0;  // unused
-    workers_[i]->Forward(logid,
-                         std::move(new_msg),
-                         event_loop_worker,
-                         origin);
+    auto command = workers_[i]->WorkerCommand(logid,
+                                              std::move(new_msg),
+                                              event_loop_worker,
+                                              origin);
+    auto& queue =
+      goodbye->GetOriginType() == MessageGoodbye::OriginType::Client ?
+      client_to_worker_queues_[event_loop_worker][i] :
+      tower_to_worker_queues_[event_loop_worker][i];
+    queue->Write(command);
   }
 }
 
@@ -453,7 +488,9 @@ Status Copilot::UpdateControlTowers(
                                          options_.consistent_hash_replicas,
                                          options_.control_towers_per_log);
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
-    if (!workers_[i]->Forward(new_router)) {
+    // Send command to worker on the thread-local queue.
+    auto command = workers_[i]->WorkerCommand(new_router);
+    if (!router_update_queues_[i]->GetThreadLocal()->Write(command)) {
       LOG_WARN(options_.info_log,
         "Failed to forward control tower update to worker %" PRIu32, i);
       result = Status::NoBuffer();

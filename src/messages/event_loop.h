@@ -280,10 +280,12 @@ class EventLoop {
   /**
    * Creates a new queue that will be read by the EventLoop.
    *
-   * @param size Size of the queue (number of commands).
+   * @param size Size of the queue (number of commands). Defaults to whatever
+   *             the EventLoop default command queue size is.
    * @return The created queue.
    */
-  std::shared_ptr<CommandQueue> CreateCommandQueue(size_t size);
+  std::shared_ptr<CommandQueue> CreateCommandQueue(size_t size = 0);
+
 
   /**
    * Attaches the command queue to the EventLoop for processing.
@@ -453,7 +455,7 @@ class EventLoop {
     Counter* messages_received[size_t(MessageType::max) + 1];
   } stats_;
 
-  const uint32_t command_queue_size_;
+  const uint32_t default_command_queue_size_;
 
   // libevent read notification events for
   struct IncomingQueue {
