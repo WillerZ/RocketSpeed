@@ -100,7 +100,9 @@ class Histogram {
    * [min, max] then it will be clamped.
    */
   void Record(double sample);
-  void Record(uint64_t sample) { Record(static_cast<double>(sample)); }
+
+  template <typename T>
+  void Record(T sample) { Record(static_cast<double>(sample)); }
 
   /**
    * Computes an approximate percentile from the sampled data.
@@ -124,6 +126,10 @@ class Histogram {
     auto result = std::move(*this);
     result.thread_check_.Check();
     return result;
+  }
+
+  uint64_t GetNumSamples() const {
+    return num_samples_;
   }
 
 private:

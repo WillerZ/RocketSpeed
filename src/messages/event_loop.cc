@@ -8,6 +8,7 @@
 
 #include <limits.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <netinet/in.h>
 #include <deque>
 #include <functional>
@@ -41,6 +42,12 @@ const int EventLoop::kLogSeverityWarn = _EVENT_LOG_WARN;
 const int EventLoop::kLogSeverityErr = _EVENT_LOG_ERR;
 
 #define ROCKETSPEED_CURRENT_MSG_VERSION 1
+
+/**
+ * Maximum number of iovecs to write at once. Note that an array of iovec will
+ * be allocated on the stack with this length, so it should not be too high.
+ */
+static const size_t kMaxIovecs = 256;
 
 struct MessageHeader {
   /**
@@ -140,26 +147,15 @@ class SocketEvent {
 
     send_queue_.emplace_back(std::move(msg));
 
-    // If the write-ready event is not currently registered, and the socket
-    // is ready for writing, then we'll try to write immediately. If the
-    // socket isn't ready for writing, we'll queue up the message, add a write
+    // If the write-ready event is not currently registered, add a write
     // event and wait until its ready.
     if (!write_ev_added_) {
-      if (ready_for_writing_) {
-        // Try to write everything now.
-        WriteCallback();
+      if (event_add(write_ev_, nullptr)) {
+        LOG_ERROR(event_loop_->GetLog(),
+            "Failed to add write event for fd(%d)", fd_);
+        return Status::InternalError("Failed to enqueue write message");
       }
-
-      if (!send_queue_.empty()) {
-        // Failed to write everything, so add a write event to notify us
-        // later when writing is available on this socket.
-        if (event_add(write_ev_, nullptr)) {
-          LOG_WARN(event_loop_->GetLog(),
-              "Failed to add write event for fd(%d)", fd_);
-          return Status::InternalError("Failed to enqueue write message");
-        }
-        write_ev_added_ = true;
-      }
+      write_ev_added_ = true;
     }
     return Status::OK();
   }
@@ -186,8 +182,7 @@ class SocketEvent {
   , write_ev_(nullptr)
   , event_loop_(event_loop)
   , write_ev_added_(false)
-  , was_initiated_(initiated)
-  , ready_for_writing_(false) {
+  , was_initiated_(initiated) {
     // Can only add events from the event loop thread.
     event_loop->thread_check_.Check();
 
@@ -204,7 +199,6 @@ class SocketEvent {
     if (what & EV_READ) {
       st = sev->ReadCallback();
     } else if (what & EV_WRITE) {
-      sev->ready_for_writing_ = true;
       st = sev->WriteCallback();
     } else if (what & EV_TIMEOUT) {
     } else if (what & EV_SIGNAL) {
@@ -246,18 +240,42 @@ class SocketEvent {
     event_loop_->thread_check_.Check();
     assert(send_queue_.size() > 0);
 
+    // Sanity check stats.
+    // write_succeed_* should have a record for all write_size_*
+    assert(event_loop_->stats_.write_size_bytes->GetNumSamples() ==
+           event_loop_->stats_.write_succeed_bytes->GetNumSamples());
+    assert(event_loop_->stats_.write_size_iovec->GetNumSamples() ==
+           event_loop_->stats_.write_succeed_iovec->GetNumSamples());
+
     while (send_queue_.size() > 0) {
-      //
       // if there is any pending data from the previously sent
       // partial-message, then send it.
       if (partial_.size() > 0) {
         assert(send_queue_.size() > 0);
-        ssize_t count = write(fd_, partial_.data(), partial_.size());
+
+        // Prepare iovecs.
+        iovec iov[kMaxIovecs];
+        int iovcnt = 0;
+        int limit = static_cast<int>(std::min(kMaxIovecs, send_queue_.size()));
+        size_t total = 0;
+        for (; iovcnt < limit; ++iovcnt) {
+          Slice v(iovcnt != 0 ? Slice(send_queue_[iovcnt]->string) : partial_);
+          iov[iovcnt].iov_base = (void*)v.data();
+          iov[iovcnt].iov_len = v.size();
+          total += v.size();
+        }
+
+        event_loop_->stats_.write_size_bytes->Record(total);
+        event_loop_->stats_.write_size_iovec->Record(iovcnt);
+        event_loop_->stats_.socket_writes->Add(1);
+        ssize_t count = writev(fd_, iov, iovcnt);
         if (count == -1) {
+          event_loop_->stats_.write_succeed_bytes->Record(0);
+          event_loop_->stats_.write_succeed_iovec->Record(0);
           LOG_WARN(event_loop_->info_log_,
               "Wanted to write %zu bytes to remote host fd(%d) but encountered "
               "errno(%d) \"%s\".",
-              partial_.size(), fd_, errno, strerror(errno));
+              total, fd_, errno, strerror(errno));
           event_loop_->info_log_->Flush();
           if (errno != EAGAIN && errno != EWOULDBLOCK) {
             // write error, close connection.
@@ -266,27 +284,43 @@ class SocketEvent {
           }
           return Status::OK();
         }
-        if (static_cast<size_t>(count) != partial_.size()) {
+        event_loop_->stats_.write_succeed_bytes->Record(count);
+        if (static_cast<size_t>(count) != total) {
+          event_loop_->stats_.partial_socket_writes->Add(1);
           LOG_WARN(event_loop_->info_log_,
               "Wanted to write %zu bytes to remote host fd(%d) but only "
               "%zd bytes written successfully.",
-              partial_.size(), fd_, count);
-          event_loop_->info_log_->Flush();
-          // update partial data pointers
-          partial_ = Slice(partial_.data() + count, partial_.size() - count);
-          return Status::OK();
-        } else {
-          LOG_DEBUG(event_loop_->info_log_,
-                    "Successfully wrote %zd bytes to remote host fd(%d)",
-                    count,
-                    fd_);
+              total, fd_, count);
         }
-        // The partial message is completely sent out. Remove it from queue.
+
+        size_t written = static_cast<size_t>(count);
+        for (int i = 0; i < iovcnt; ++i) {
+          assert(!send_queue_.empty());
+          auto& item = send_queue_.front();
+          if (i != 0) {
+            partial_ = Slice(item->string);
+          }
+          if (written >= partial_.size()) {
+            // Fully wrote section.
+            written -= partial_.size();
+          } else {
+            // Only partially written, update partial and return.
+            partial_.remove_prefix(written);
+            event_loop_->stats_.write_succeed_iovec->Record(i);
+            return Status::OK();
+          }
+          event_loop_->stats_.write_latency->Record(
+            event_loop_->env_->NowMicros() - item->issued_time);
+          send_queue_.pop_front();
+        }
+        event_loop_->stats_.write_succeed_iovec->Record(iovcnt);
+        assert(written == 0);
         partial_.clear();
 
-        event_loop_->stats_.write_latency->Record(
-            event_loop_->env_->NowMicros() - send_queue_.front()->issued_time);
-        send_queue_.pop_front();
+        LOG_DEBUG(event_loop_->info_log_,
+                  "Successfully wrote %zd bytes to remote host fd(%d)",
+                  count,
+                  fd_);
       }
 
       // No more partial data to be sent out.
@@ -460,7 +494,6 @@ class SocketEvent {
   EventLoop* event_loop_;
   bool write_ev_added_;    // is the write event added?
   bool was_initiated_;   // was this connection initiated by us?
-  bool ready_for_writing_;  // is the socket ready for writing?
   /**
    * A remote destination, if non-empty the socket can be reused by anyone, who
    * wants to talk the remote host.
@@ -1317,10 +1350,20 @@ EventLoop::EventLoop(BaseEnv* env,
 EventLoop::Stats::Stats(const std::string& prefix) {
   command_latency = all.AddLatency(prefix + ".command_latency");
   write_latency = all.AddLatency(prefix + ".write_latency");
+  write_size_bytes =
+    all.AddHistogram(prefix + ".write_size_bytes", 0, kMaxIovecs, 1, 1.1);
+  write_size_iovec =
+    all.AddHistogram(prefix + ".write_size_iovec", 0, kMaxIovecs, 1, 1.1);
+  write_succeed_bytes =
+    all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1);
+  write_succeed_iovec =
+    all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1);
   commands_processed = all.AddCounter(prefix + ".commands_processed");
   accepts = all.AddCounter(prefix + ".accepts");
   queue_count = all.AddCounter(prefix + ".queue_count");
   full_queue_errors = all.AddCounter(prefix + ".full_queue_errors");
+  socket_writes = all.AddCounter(prefix + ".socket_writes");
+  partial_socket_writes = all.AddCounter(prefix + ".partial_socket_writes");
   for (int i = 0; i < int(MessageType::max) + 1; ++i) {
     messages_received[i] = all.AddCounter(
       prefix + ".messages_received." + kMessageTypeNames[i]);

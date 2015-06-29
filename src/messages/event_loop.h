@@ -448,11 +448,17 @@ class EventLoop {
     Statistics all;
     Histogram* command_latency;   // time from SendCommand to do_command
     Histogram* write_latency;     // time from SendCommand to socket write
+    Histogram* write_size_bytes;  // total bytes in write calls
+    Histogram* write_size_iovec;  // total iovecs in write calls.
+    Histogram* write_succeed_bytes; // successful bytes written in write calls.
+    Histogram* write_succeed_iovec; // successful iovecs written in write calls.
     Counter* commands_processed;
     Counter* accepts;             // number of connection accepted
     Counter* queue_count;         // number of queues attached this loop
     Counter* full_queue_errors;   // number of times SendCommand into full queue
     Counter* messages_received[size_t(MessageType::max) + 1];
+    Counter* socket_writes;       // number of calls to write(v)
+    Counter* partial_socket_writes; // number of writes that partially succeeded
   } stats_;
 
   const uint32_t default_command_queue_size_;
