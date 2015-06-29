@@ -11,7 +11,6 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "src/util/common/coding.h"
-#include "src/util/common/guid_generator.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are
@@ -255,7 +254,6 @@ MessageData::MessageData(MessageType type,
   assert(type == MessageType::mPublish || type == MessageType::mDeliver);
   seqno_ = 0;
   seqno_prev_ = 0;
-  msgid_ = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
 }
 
 MessageData::MessageData(MessageType type):

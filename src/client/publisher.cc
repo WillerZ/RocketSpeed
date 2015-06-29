@@ -15,6 +15,7 @@
 #include "src/messages/msg_loop_base.h"
 #include "src/messages/commands.h"
 #include "src/port/port.h"
+#include "src/util/common/guid_generator.h"
 #include "src/util/common/hash.h"
 #include "src/util/common/thread_check.h"
 
@@ -310,6 +311,8 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   const MsgId empty_msgid = MsgId();
   if (!(message_id == empty_msgid)) {
     message.SetMessageId(message_id);
+  } else {
+    message.SetMessageId(GUIDGenerator::ThreadLocalGUIDGenerator()->Generate());
   }
   const MsgId msgid = message.GetMessageId();
 
