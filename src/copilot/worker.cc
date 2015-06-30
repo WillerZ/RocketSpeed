@@ -596,15 +596,15 @@ bool CopilotWorker::SendMetadata(TenantID tenant_id,
 
   auto command = options_.msg_loop->RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {
-    LOG_WARN(options_.info_log,
-      "Failed to send %s %ssubscribe to tower stream %llu",
+    LOG_DEBUG(options_.info_log,
+      "Sent %s %ssubscription to tower stream %llu",
       uuid.ToString().c_str(),
       type == MetadataType::mUnSubscribe ? "un" : "",
       stream->GetStreamID());
     return true;
   } else {
-    LOG_INFO(options_.info_log,
-      "Sent %s %ssubscription to tower stream %llu",
+    LOG_WARN(options_.info_log,
+      "Failed to send %s %ssubscribe to tower stream %llu",
       uuid.ToString().c_str(),
       type == MetadataType::mUnSubscribe ? "un" : "",
       stream->GetStreamID());
