@@ -28,6 +28,45 @@ struct TimestampedCommand {
 
 class CommandQueue {
  public:
+  class BatchedRead {
+   public:
+    static constexpr size_t kMaxBatchSize = 1000;
+
+    // Noncopyable & nonmovable
+    BatchedRead(const BatchedRead&) = delete;
+    BatchedRead& operator=(const BatchedRead&) = delete;
+    BatchedRead(BatchedRead&&) = delete;
+    BatchedRead& operator=(BatchedRead&&) = delete;
+
+    /**
+     * Creates an object which allows reading from given queue.
+     * The object should be disposed once reader is done reading this batch,
+     * otherwise there is a risk of a reader not being notified when new command
+     * appears in the queue.
+     * Using this object from thread other than reader for provided queue yields
+     * undefined behaviour.
+     * This object cannot outlive queue that it was bound to.
+     *
+     * @param queue A queue to read from.
+     */
+    explicit BatchedRead(CommandQueue* queue);
+
+    ~BatchedRead();
+
+    /**
+     * Reads a timestamped command from the queue.
+     *
+     * @param ts_cmd Output for read command.
+     * @return true iff a command was read, false otherwise.
+     */
+    bool Read(TimestampedCommand& ts_cmd);
+
+   private:
+    CommandQueue* queue_;
+    /** Number of commands that can be read in this batch. */
+    size_t allowed_reads_;
+  };
+
   /**
    * Construct a queue with a given size (number of commands).
    *
@@ -38,14 +77,6 @@ class CommandQueue {
   CommandQueue(BaseEnv* env, std::shared_ptr<Logger> info_log, size_t size);
 
   ~CommandQueue();
-
-  /**
-   * Reads a timestamped command from the queue.
-   *
-   * @param ts_cmd Output for read command.
-   * @return true iff a command was read, false otherwise.
-   */
-  bool Read(TimestampedCommand& ts_cmd);
 
   /**
    * Writes a command to the queue. If unsuccessful, the command pointer will
@@ -73,11 +104,12 @@ class CommandQueue {
   }
 
  private:
+  friend class BatchedRead;
+
   BaseEnv* env_;
   std::shared_ptr<Logger> info_log_;
   folly::ProducerConsumerQueue<TimestampedCommand> queue_;
   rocketspeed::port::Eventfd ready_fd_;
-  eventfd_t pending_reads_;
   ThreadCheck read_check_;
   ThreadCheck write_check_;
 };
