@@ -38,7 +38,7 @@ namespace rocketspeed {
 //   (green) (blue) (yellow)
 //
 
-template <class T> class TimeoutList {
+template <class T, class Hash = std::hash<T>> class TimeoutList {
  public:
   TimeoutList() {}
   TimeoutList(TimeoutList&&) = default;
@@ -138,7 +138,7 @@ template <class T> class TimeoutList {
   }
 
  private:
-  LinkedMap<T, std::chrono::steady_clock::time_point> lmap_;
+  LinkedMap<T, std::chrono::steady_clock::time_point, Hash> lmap_;
 
 };
 

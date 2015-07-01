@@ -6,8 +6,11 @@
 #define __STDC_FORMAT_MACROS
 #include "rollcall_impl.h"
 
+#include "external/folly/move_wrapper.h"
+
 #include "include/Slice.h"
 #include "src/client/client.h"
+#include "src/util/topic_uuid.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/hash.h"
 
@@ -27,9 +30,12 @@ Status RollcallStream::Open(ClientOptions client_options,
 
 const NamespaceID RollcallImpl::kRollcallNamespace = "_r";
 
-RollcallImpl::RollcallImpl(std::unique_ptr<ClientImpl> client,
-                           const TenantID tenant_id)
-    : client_(std::move(client)), tenant_id_(tenant_id) {
+RollcallImpl::RollcallImpl(std::shared_ptr<ClientImpl> client,
+                           const TenantID tenant_id,
+                           std::string stats_prefix)
+    : client_(std::move(client)),
+      tenant_id_(tenant_id),
+      stats_(std::move(stats_prefix)) {
 }
 
 RollcallShard RollcallImpl::GetNumShards(const NamespaceID& namespace_id) {
@@ -37,7 +43,7 @@ RollcallShard RollcallImpl::GetNumShards(const NamespaceID& namespace_id) {
     // Guest namespace is extensively used in tests.
     return 4;
   } else {
-    return 16 * 1024; // 16K logs
+    return 400;
   }
 }
 
@@ -57,10 +63,21 @@ Status RollcallImpl::Subscribe(const NamespaceID& namespace_id,
       callback(RollcallEntry());
     }
   };
-  auto receive_callback = [callback](std::unique_ptr<MessageReceived>& msg) {
-    RollcallEntry rmsg;
-    rmsg.DeSerialize(msg->GetContents());
-    callback(std::move(rmsg));
+  auto receive_callback = [callback] (std::unique_ptr<MessageReceived>& msg) {
+    Slice in(msg->GetContents());
+    if (in.size() >= 2 && in[1] == '_') {
+      auto version = in[0];
+      if (version == RollcallEntry::ROLLCALL_ENTRY_VERSION_CURRENT) {
+        in.remove_prefix(2);
+        while (!in.empty()) {
+          RollcallEntry rmsg(version);
+          if (!rmsg.DeSerialize(&in).ok()) {
+            break;
+          }
+          callback(std::move(rmsg));
+        }
+      }
+    }
   };
 
   auto handle =
@@ -75,38 +92,103 @@ Status RollcallImpl::Subscribe(const NamespaceID& namespace_id,
 }
 
 Status RollcallImpl::WriteEntry(const TenantID tenant_id,
-                                const Topic& topic_name,
-                                const NamespaceID& nsid,
+                                const TopicUUID& topic,
+                                size_t shard_affinity,
                                 bool isSubscription,
-                                PublishCallback publish_callback) {
+                                std::function<void(Status)> publish_callback,
+                                size_t max_batch_size_bytes) {
+  thread_check_.Check();
+
+  Slice namespace_id;
+  Slice topic_name;
+  topic.GetTopicID(&namespace_id, &topic_name);
+
+  NamespaceID nsid = namespace_id.ToString();
   if (nsid == kRollcallNamespace) {
     // We do not write rollcall subscriptions into the rollcall.
     return Status::OK();
   }
 
   // Serialize the entry
-  RollcallEntry impl(topic_name,
+  RollcallEntry impl(topic_name.ToString(),
                      isSubscription
                          ? RollcallEntry::EntryType::SubscriptionRequest
                          : RollcallEntry::EntryType::UnSubscriptionRequest);
-  std::string serial;
-  impl.Serialize(&serial);
 
-  // write it out to rollcall topic
-  Topic rollcall_topic(
-      GetRollcallTopicName(nsid, GetRollcallShard(nsid, topic_name)));
-  return client_->Publish(tenant_id,
-                          std::move(rollcall_topic),
+  const RollcallShard shard = GetRollcallShard(nsid, shard_affinity);
+  const BatchKey batch_key(shard, std::move(nsid), tenant_id);
+
+  Batch& batch = batches_[batch_key];
+  if (batch.payload.empty()) {
+    // First entry -- write batch header.
+    batch.payload.push_back(RollcallEntry::ROLLCALL_ENTRY_VERSION_CURRENT);
+    batch.payload.push_back('_');
+
+    // Also add to batch timeout list.
+    batch_timeouts_.Add(batch_key);
+  }
+  impl.Serialize(&batch.payload);
+  batch.callbacks.emplace_back(std::move(publish_callback));
+
+  if (batch.payload.size() >= max_batch_size_bytes) {
+    FlushBatch(batch_key);
+    batch_timeouts_.Erase(batch_key);
+    stats_.batch_size_writes->Add(1);
+  }
+  return Status::OK();
+}
+
+void RollcallImpl::CheckBatchTimeouts(std::chrono::milliseconds timeout) {
+  thread_check_.Check();
+  batch_timeouts_.ProcessExpired(
+    timeout,
+    [this] (const BatchKey& key) {
+      FlushBatch(key);
+      stats_.batch_timeout_writes->Add(1);
+    },
+    -1 /* process all */);
+}
+
+Status RollcallImpl::FlushBatch(const BatchKey& key) {
+  thread_check_.Check();
+  Status st;
+  Batch& batch = batches_[key];
+  if (!batch.payload.empty()) {
+    // write it out to rollcall topic
+    const RollcallShard shard = std::get<0>(key);
+    const NamespaceID& nsid = std::get<1>(key);
+    const TenantID tenant_id = std::get<2>(key);
+
+    const size_t num_entries = batch.callbacks.size();
+    stats_.batch_size_bytes->Record(batch.payload.size());
+    stats_.batch_size_entries->Record(num_entries);
+    stats_.batch_writes->Add(1);
+    stats_.entry_writes->Add(num_entries);
+
+    auto moved_callbacks = folly::makeMoveWrapper(std::move(batch.callbacks));
+    PublishCallback publish_callback =
+      [moved_callbacks] (std::unique_ptr<ResultStatus> result) {
+        for (auto& callback : *moved_callbacks) {
+          // Invoke all callbacks from the batch.
+          callback(result->GetStatus());
+        }
+      };
+    st = client_->Publish(tenant_id,
+                          GetRollcallTopicName(nsid, shard),
                           kRollcallNamespace,
                           TopicOptions(),
-                          Slice(serial),
+                          Slice(batch.payload),
                           std::move(publish_callback),
                           MsgId()).status;
+    batch.payload.clear();
+    batch.callbacks.clear();
+  }
+  return st;
 }
 
 RollcallShard RollcallImpl::GetRollcallShard(const NamespaceID& namespace_id,
-                                             const Topic& topic) {
-  return static_cast<RollcallShard>(MurmurHash2<Topic>()(topic) %
+                                             size_t shard_affinity) {
+  return static_cast<RollcallShard>(shard_affinity %
                                     GetNumShards(namespace_id));
 }
 
@@ -122,27 +204,34 @@ Topic RollcallImpl::GetRollcallTopicName(const NamespaceID& nsid,
 }
 
 void RollcallEntry::Serialize(std::string* buffer) {
-  buffer->reserve(4 + topic_name_.size());
-  buffer->resize(4);
-  (*buffer)[0] = version_;
-  (*buffer)[1] = (*buffer)[3] = '_';
-  (*buffer)[2] = entry_type_;
-  buffer->append(topic_name_);
+  buffer->push_back(entry_type_);
+  buffer->push_back('_');
+  PutLengthPrefixedSlice(buffer, Slice(topic_name_));
 }
 
-Status RollcallEntry::DeSerialize(Slice in) {
-  if (in.size() < 4) {
-    return Status::InvalidArgument("Invalid rollcall entry");
-  }
-  version_ = in[0];
-  entry_type_ = static_cast<EntryType>(in[2]);
-  if (!ValidateEnum(entry_type_)) {
+Status RollcallEntry::DeSerialize(Slice* in) {
+  if (!GetFixedEnum8(in, &entry_type_)) {
     return Status::InvalidArgument("Invalid rollcall entry type");
   }
-  in.remove_prefix(4);
-  topic_name_.clear();
-  topic_name_.append(in.data(), in.size());
+  if (in->empty() || (*in)[0] != '_') {
+    return Status::InvalidArgument("Invalid rollcall entry format");
+  }
+  in->remove_prefix(1);
+  if (!GetLengthPrefixedSlice(in, &topic_name_)) {
+    return Status::InvalidArgument("Invalid rollcall entry topic name");
+  }
   return Status::OK();
+}
+
+RollcallImpl::Stats::Stats(std::string prefix) {
+  batch_size_bytes =
+    all.AddHistogram(prefix + ".batch_size_bytes", 0, 1 << 20, 1);
+  batch_size_entries =
+    all.AddHistogram(prefix + ".batch_size_entries", 0, 1 << 20, 1);
+  batch_writes = all.AddCounter(prefix + ".batch_writes");
+  entry_writes = all.AddCounter(prefix + ".entry_writes");
+  batch_size_writes = all.AddCounter(prefix + ".batch_size_writes");
+  batch_timeout_writes = all.AddCounter(prefix + ".batch_timeout_writes");
 }
 
 }  // namespace rocketspeed

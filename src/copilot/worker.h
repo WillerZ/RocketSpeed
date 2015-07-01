@@ -23,8 +23,10 @@
 
 namespace rocketspeed {
 
+class ClientImpl;
 class Copilot;
 class ControlTowerRouter;
+class RollcallImpl;
 
 /**
  * Copilot worker. The copilot will allocate several of these, ideally one
@@ -36,7 +38,10 @@ class CopilotWorker {
   CopilotWorker(const CopilotOptions& options,
                 std::shared_ptr<ControlTowerRouter> control_tower_router,
                 const int myid,
-                Copilot* copilot);
+                Copilot* copilot,
+                std::shared_ptr<ClientImpl> client);
+
+  ~CopilotWorker();
 
   // Creates a worker command for processing.
   std::unique_ptr<Command> WorkerCommand(LogID logid,
@@ -55,7 +60,7 @@ class CopilotWorker {
     return options_.msg_loop->GetHostId();
   }
 
-  const Statistics& GetStatistics();
+  Statistics GetStatistics();
 
   /**
    * Returns human-readable info on the towers serving a particular log.
@@ -188,8 +193,7 @@ class CopilotWorker {
   // Write to Rollcall topic
   void RollcallWrite(const SubscriptionID sub_id,
                      const TenantID tenant_id,
-                     const Topic& topic_name,
-                     const NamespaceID& namespace_id,
+                     const TopicUUID& topic,
                      const MetadataType type,
                      const LogID logid,
                      int worker_id,
@@ -313,6 +317,9 @@ class CopilotWorker {
 
   // Queues for reporting back to worker from RollCall error callback.
   std::unique_ptr<ThreadLocalCommandQueues> rollcall_error_queues_;
+
+  // A client to write rollcall topic
+  std::unique_ptr<RollcallImpl> rollcall_;
 };
 
 }  // namespace rocketspeed

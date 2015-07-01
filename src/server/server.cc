@@ -13,6 +13,7 @@
 #include <gflags/gflags.h>
 #include <signal.h>
 #include <algorithm>
+#include <set>
 #include <string>
 #include "include/Types.h"
 #include "src/pilot/options.h"
@@ -67,7 +68,13 @@ DEFINE_int64(copilot_timer_interval_micros, 500000,
              "microseconds between health check ticks");
 DEFINE_int64(copilot_resubscriptions_per_second, 10000,
              "maximum number of orphaned topic resubscriptions per second");
+
+// Rollcall settings
 DEFINE_bool(rollcall, true, "enable RollCall");
+DEFINE_int32(rollcall_max_batch_size_bytes, 16 << 10,
+             "max rollcall message size (in bytes) before flush");
+DEFINE_int32(rollcall_flush_latency_ms, 500,
+             "time (milliseconds) to automatically flush rollcall writes");
 
 // Supervisor settings
 DEFINE_bool(supervisor, true, "start the supervisor");
@@ -280,6 +287,10 @@ Status RocketSpeed::Initialize(
     copilot_opts.control_towers_per_log = FLAGS_copilot_towers_per_log;
     copilot_opts.log_router = log_router;
     copilot_opts.rollcall_enabled = FLAGS_rollcall;
+    copilot_opts.rollcall_max_batch_size_bytes =
+      FLAGS_rollcall_max_batch_size_bytes;
+    copilot_opts.rollcall_flush_latency =
+      std::chrono::milliseconds(FLAGS_rollcall_flush_latency_ms);
     copilot_opts.timer_interval_micros = FLAGS_copilot_timer_interval_micros;
     copilot_opts.resubscriptions_per_second =
       FLAGS_copilot_resubscriptions_per_second;

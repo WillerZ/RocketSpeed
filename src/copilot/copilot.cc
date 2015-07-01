@@ -55,19 +55,16 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
                                          options_.consistent_hash_replicas,
                                          options_.control_towers_per_log);
 
+  std::shared_ptr<ClientImpl> shared_client(std::move(client));
   const int num_workers = options_.msg_loop->GetNumWorkers();
   for (int i = 0; i < num_workers; ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
                                             router,
                                             i,
-                                            this));
+                                            this,
+                                            shared_client));
   }
   sub_id_map_.resize(num_workers);
-
-  // Create Rollcall topic writer
-  if (options_.rollcall_enabled) {
-    rollcall_.reset(new RollcallImpl(std::move(client), InvalidTenant));
-  }
 
   // Create queues.
   for (int i = 0; i < num_workers; ++i) {

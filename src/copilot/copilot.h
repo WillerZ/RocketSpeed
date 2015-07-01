@@ -15,7 +15,6 @@
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
-#include "src/rollcall/rollcall_impl.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
@@ -58,11 +57,6 @@ class Copilot {
     return options_.msg_loop;
   }
 
-  // Get the client used for logging into rollcall topic
-  RollcallImpl* GetRollcallLogger() {
-    return rollcall_.get();
-  }
-
   // Returns an aggregated statistics object from the copilot
   Statistics GetStatisticsSync() const;
 
@@ -97,9 +91,6 @@ class Copilot {
   using SubscriptionIDToWorkerMap =
     std::unordered_map<StreamID, std::unordered_map<SubscriptionID, int>>;
   std::vector<SubscriptionIDToWorkerMap> sub_id_map_;
-
-  // A client to write rollcall topic
-  std::unique_ptr<RollcallImpl> rollcall_;
 
   // Full-mesh network of queues for the messages from clients to workers.
   std::vector<std::vector<std::shared_ptr<CommandQueue>>>

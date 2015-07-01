@@ -71,6 +71,7 @@ class RollcallStream {
  */
 class RollcallEntry {
  public:
+  static const char ROLLCALL_ENTRY_VERSION_CURRENT = '2';
 
   // The types of Rollcall Entries.
   enum EntryType : char {
@@ -86,6 +87,10 @@ class RollcallEntry {
   }
   RollcallEntry() :
     version_(ROLLCALL_ENTRY_VERSION_CURRENT),
+    entry_type_(EntryType::Error) {
+  }
+  explicit RollcallEntry(char version) :
+    version_(version),
     entry_type_(EntryType::Error) {
   }
   /*
@@ -114,14 +119,13 @@ class RollcallEntry {
   }
 
   void Serialize(std::string* buffer);
-  Status DeSerialize(Slice in);
+  Status DeSerialize(Slice* in);
   ~RollcallEntry() = default;
 
  private:
-  char  version_;
+  char version_;
   EntryType entry_type_;
   Topic topic_name_;
-  static const char ROLLCALL_ENTRY_VERSION_CURRENT = '1';
 };
 
 inline bool ValidateEnum(RollcallEntry::EntryType e) {

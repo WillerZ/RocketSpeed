@@ -11,6 +11,7 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/copilot/copilot.h"
+#include "src/rollcall/rollcall_impl.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/hostmap.h"
 
@@ -22,7 +23,8 @@ CopilotWorker::CopilotWorker(
     const CopilotOptions& options,
     std::shared_ptr<ControlTowerRouter> control_tower_router,
     const int myid,
-    Copilot* copilot)
+    Copilot* copilot,
+    std::shared_ptr<ClientImpl> client)
 : options_(options)
 , control_tower_router_(std::move(control_tower_router))
 , copilot_(copilot)
@@ -42,7 +44,17 @@ CopilotWorker::CopilotWorker(
 
   client_queues_ = options_.msg_loop->CreateWorkerQueues();
   tower_queues_ = options_.msg_loop->CreateWorkerQueues();
-  rollcall_error_queues_ = options_.msg_loop->CreateThreadLocalQueues(myid_);
+
+  // Create Rollcall topic writer
+  if (options_.rollcall_enabled) {
+    rollcall_.reset(new RollcallImpl(std::move(client),
+                                     InvalidTenant,
+                                     "copilot.rollcall"));
+    rollcall_error_queues_ = options_.msg_loop->CreateThreadLocalQueues(myid_);
+  }
+}
+
+CopilotWorker::~CopilotWorker() {
 }
 
 std::unique_ptr<Command>
@@ -121,7 +133,7 @@ CopilotWorker::WorkerCommand(std::shared_ptr<ControlTowerRouter> new_router) {
   return command;
 }
 
-const Statistics& CopilotWorker::GetStatistics() {
+Statistics CopilotWorker::GetStatistics() {
   stats_.subscribed_topics->Set(topics_.size());
 
   size_t total_sockets = 0;
@@ -130,7 +142,12 @@ const Statistics& CopilotWorker::GetStatistics() {
   }
   stats_.control_tower_sockets->Set(total_sockets);
   stats_.orphaned_topics->Set(orphan_topics_.size());
-  return stats_.all;
+
+  Statistics stats = stats_.all;
+  if (options_.rollcall_enabled) {
+    stats.Aggregate(rollcall_->GetStatistics());
+  }
+  return stats;
 }
 
 void CopilotWorker::ProcessMetadataResponse(const TopicPair& request,
@@ -408,8 +425,7 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
   // Update rollcall topic.
   RollcallWrite(sub_id,
                 tenant_id,
-                topic_name,
-                namespace_id,
+                uuid,
                 MetadataType::mSubscribe,
                 logid,
                 worker_id,
@@ -472,8 +488,8 @@ void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
     UpdateTowerSubscriptions(uuid, topic);
 
     // Update rollcall topic.
-    RollcallWrite(sub_id, tenant_id, topic_name,
-                  namespace_id, MetadataType::mUnSubscribe,
+    RollcallWrite(sub_id, tenant_id, uuid,
+                  MetadataType::mUnSubscribe,
                   logid, worker_id, subscriber);
 
     // No more subscriptions, so remove from map.
@@ -547,6 +563,10 @@ void CopilotWorker::ProcessTimerTick() {
       orphan_topics_.move_to_back(orphan_topics_.begin());
       UpdateTowerSubscriptions(uuid, it->second);
     }
+  }
+
+  if (options_.rollcall_enabled) {
+    rollcall_->CheckBatchTimeouts(options_.rollcall_flush_latency);
   }
 }
 
@@ -794,8 +814,7 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
 void
 CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
                              const TenantID tenant_id,
-                             const Topic& topic_name,
-                             const NamespaceID& namespace_id,
+                             const TopicUUID& topic,
                              const MetadataType type,
                              const LogID logid,
                              int worker_id,
@@ -841,33 +860,31 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
 
   // This callback is called when the write to the rollcall topic is complete
   auto publish_callback = [this, process_error]
-                          (std::unique_ptr<ResultStatus> status) {
-    if (!status->GetStatus().ok() && process_error) {
+                          (Status status) {
+    if (!status.ok() && process_error) {
       process_error();
     }
   };
 
   // Issue the write to rollcall topic
-  Status status = copilot_->GetRollcallLogger()->WriteEntry(
+  Status status = rollcall_->WriteEntry(
                                tenant_id,
-                               topic_name,
-                               namespace_id,
+                               topic,
+                               static_cast<size_t>(logid),
                                type == MetadataType::mSubscribe ? true : false,
-                               publish_callback);
+                               publish_callback,
+                               options_.rollcall_max_batch_size_bytes);
   stats_.rollcall_writes_total->Add(1);
   if (status.ok()) {
     LOG_INFO(options_.info_log,
-             "Send rollcall write (%ssubscribe) for Topic(%s,%s)",
+             "Send rollcall write (%ssubscribe) for %s",
              type == MetadataType::mSubscribe ? "" : "un",
-             namespace_id.c_str(),
-             topic_name.c_str());
+             topic.ToString().c_str());
   } else {
     LOG_WARN(options_.info_log,
-             "Failed to send rollcall write (%ssubscribe) for Topic(%s,%s) "
-             "status %s",
+             "Failed to send rollcall write (%ssubscribe) for %s status %s",
              type == MetadataType::mSubscribe ? "" : "un",
-             namespace_id.c_str(),
-             topic_name.c_str(),
+             topic.ToString().c_str(),
              status.ToString().c_str());
     // If we are unable to write to the rollcall topic and it is a subscription
     // request, then we need to terminate that subscription.
@@ -875,6 +892,8 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
       process_error();
     }
   }
+
+  rollcall_->CheckBatchTimeouts(options_.rollcall_flush_latency);
 }
 
 StreamSocket* CopilotWorker::GetControlTowerSocket(const HostId& tower,

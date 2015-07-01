@@ -91,6 +91,16 @@ struct CopilotOptions {
   // Default: true
   bool rollcall_enabled;
 
+  // Threshold in message size for when to automatically flush Rollcall batch.
+  // Batches will be flushed when the publish size reaches this limit, or the
+  // age of the batch reaches rollcall_flush_latency, whichever happens first.
+  // Default: 16KB
+  size_t rollcall_max_batch_size_bytes;
+
+  // Time to wait before flushing a rollcall batch.
+  // Default: 500ms
+  std::chrono::milliseconds rollcall_flush_latency;
+
   // Time between health check ticks.
   // Default: 500,000 (0.5s)
   uint64_t timer_interval_micros;
