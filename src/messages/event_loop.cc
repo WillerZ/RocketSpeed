@@ -756,9 +756,8 @@ void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
   // Read commands from the queue (there might have been multiple
   // commands added since we have received the last notification).
   CommandQueue* command_queue = incoming_queue->queue.get();
-  CommandQueue::BatchedRead batch(command_queue);
   TimestampedCommand ts_cmd;
-  while (batch.Read(ts_cmd)) {
+  while (command_queue->Read(ts_cmd)) {
     // Call registered callback.
     obj->Dispatch(std::move(ts_cmd.command), ts_cmd.issued_time);
   }
