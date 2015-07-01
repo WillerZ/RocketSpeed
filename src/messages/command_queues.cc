@@ -11,7 +11,7 @@
 namespace rocketspeed {
 
 CommandQueue::BatchedRead::BatchedRead(CommandQueue* queue)
-    : queue_(queue), performed_reads_(0) {
+    : queue_(queue), allowed_reads_(kMaxBatchSize) {
   queue_->read_check_.Check();
   // Clear notification, we will add it back if the batch doesn't empty the
   // queue.
@@ -21,19 +21,10 @@ CommandQueue::BatchedRead::BatchedRead(CommandQueue* queue)
 
 CommandQueue::BatchedRead::~BatchedRead() {
   queue_->read_check_.Check();
-  assert(performed_reads_ >= 0);
-
-  // Decrement sequentially consistent size by the number of commands read
-  // in the batch.
-  ssize_t size_after_read = queue_->synced_size_ -= performed_reads_;
-  // If there is a concurent write batch, the size fetched above can be up to
-  // batch size smaller than the number of commands in the queue (how many times
-  // read on the queue can succeed).
-  //   size_after_read = |queue| - performed_writes
-  // We need to notify when there are some elements left in the queue, that is
-  // when number of commands is >0, that is then size fetched above is > - (max
-  // size of write batch) == -1.
-  if (size_after_read > -1) {
+  // Write back notification if we haven't emptied the queue in this batch; if
+  // the queue was emptied we will be notified by the writer that inserts next
+  // command.
+  if (!queue_->queue_.isEmpty()) {
     if (queue_->ready_fd_.write_event(1)) {
       // Some internal error happened.
       LOG_ERROR(queue_->info_log_,
@@ -55,14 +46,11 @@ CommandQueue::BatchedRead::~BatchedRead() {
 bool CommandQueue::BatchedRead::Read(TimestampedCommand& ts_cmd) {
   queue_->read_check_.Check();
   // If allowed batch size would be exceeded, return false.
-  if (performed_reads_ >= kMaxBatchSize) {
+  if (allowed_reads_ == 0) {
     return false;
   }
-  bool successful = queue_->queue_.read(ts_cmd);
-  if (successful) {
-    ++performed_reads_;
-  }
-  return successful;
+  --allowed_reads_;
+  return queue_->queue_.read(ts_cmd);
 }
 
 CommandQueue::CommandQueue(BaseEnv* env,
@@ -71,7 +59,6 @@ CommandQueue::CommandQueue(BaseEnv* env,
 : env_(env)
 , info_log_(std::move(info_log))
 , queue_(static_cast<uint32_t>(size))
-, synced_size_(0)
 , ready_fd_(true, true) {
 }
 
@@ -95,17 +82,13 @@ bool CommandQueue::Write(std::unique_ptr<Command>& command,
     return false;
   }
 
-  // Increment sequentially consistent size by the number of commands written
-  // in the batch.
-  ssize_t size_after_write = ++synced_size_;
-  // If there is a concurent read batch, the size fetched above can be up to
-  // batch size bigger than the number of commands in the queue (how many times
-  // read on the queue can succeed).
-  //   size_after_write = |queue| + performed_reads
-  // We need to notify when the queue went from empty to non-empty, that is when
-  // queue size changed to 1, that is when the size fetched above is no greater
-  // than 1 + max read batch size.
-  if (size_after_write <= 1 + BatchedRead::kMaxBatchSize) {
+  // Write to the eventfd only if the queue was empty before the write.
+  // Otherwise the eventfd was already notified or there is an ongoing
+  // BatchedRead happening, in which case writing a notification is a
+  // responsibility of the reader.
+  // Size quess seen by the producer is an upper bound, which means that we can
+  // notify when it's not needed but never the other way around.
+  if (queue_.sizeGuess() == 1) {
     if (ready_fd_.write_event(1)) {
       // Some internal error happened.
       LOG_ERROR(info_log_,

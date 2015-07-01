@@ -5,11 +5,8 @@
 //
 #pragma once
 
-#include <atomic>
 #include <memory>
-
 #include "external/folly/producer_consumer_queue.h"
-
 #include "include/Status.h"
 #include "src/port/port.h"
 #include "src/util/common/thread_check.h"
@@ -33,7 +30,7 @@ class CommandQueue {
  public:
   class BatchedRead {
    public:
-    static constexpr ssize_t kMaxBatchSize = 1000;
+    static constexpr size_t kMaxBatchSize = 1000;
 
     // Noncopyable & nonmovable
     BatchedRead(const BatchedRead&) = delete;
@@ -66,7 +63,8 @@ class CommandQueue {
 
    private:
     CommandQueue* queue_;
-    ssize_t performed_reads_;
+    /** Number of commands that can be read in this batch. */
+    size_t allowed_reads_;
   };
 
   /**
@@ -111,8 +109,6 @@ class CommandQueue {
   BaseEnv* env_;
   std::shared_ptr<Logger> info_log_;
   folly::ProducerConsumerQueue<TimestampedCommand> queue_;
-  /** Sequentially consistent size of the queue. */
-  std::atomic<ssize_t> synced_size_;
   rocketspeed::port::Eventfd ready_fd_;
   ThreadCheck read_check_;
   ThreadCheck write_check_;
