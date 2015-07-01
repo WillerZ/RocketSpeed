@@ -10,15 +10,28 @@
 namespace rocketspeed {
 
 /**
- * Equivalent to static_cast, but casts between std::unique_ptrs instead of
- * regular pointers. This only works with the default deleter.
- *
- * @param p pointer to cast from
- * @return the pointer downcast to type T. No type checking is done.
+ * Coerces a void* to T* and deletes. This is undefined behaviour if the
+ * pointee's type is not T (or derived from T).
  */
-template <typename T, typename U>
-std::unique_ptr<T> unique_static_cast(std::unique_ptr<U>&& p) {
-    return std::unique_ptr<T>(static_cast<T*>(p.release()));
+template <typename T>
+void Deleter(void* p) {
+  delete static_cast<T*>(p);
+}
+
+/**
+ * Performs type-erasure on a std::unique_ptr<T> by converting it to a
+ * std::unique_ptr<void*, void(void*)> with a deleter that deletes it as a T*.
+ *
+ * This is useful when a uniform interface is needed with support for
+ * heterogeneous types, but the exact type itself is unneeded and unknown
+ * beforehand.
+ *
+ * @param p The object to be type-erased.
+ */
+template <typename T>
+std::unique_ptr<void, void(*)(void*)> EraseType(std::unique_ptr<T> p) {
+  return std::unique_ptr<void, void(*)(void*)>(
+    static_cast<void*>(p.release()), &Deleter<T>);
 }
 
 }  // namespace rocketspeed

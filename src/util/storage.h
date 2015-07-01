@@ -14,6 +14,7 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/messages/messages.h"
+#include "src/util/memory.h"
 
 namespace rocketspeed {
 
@@ -31,25 +32,36 @@ struct TopicUUID;
  */
 struct LogRecord {
  public:
+  LogRecord(LogID log_Id,
+            Slice pay_load,
+            SequenceNumber sequenceno,
+            std::chrono::microseconds time,
+            std::unique_ptr<void, void(*)(void*)> _context) :
+    log_id(log_Id),
+    payload(pay_load),
+    seqno(sequenceno),
+    timestamp(time),
+    context(std::move(_context)) {
+  }
+
+  LogRecord() :
+    log_id(0),
+    seqno(0),
+    timestamp(0),
+    context(nullptr, &DefaultDeleter) {}
+
   LogID log_id;                         // log that this record came from
   Slice payload;                        // raw record data
   SequenceNumber seqno = 0;             // sequence number of record
   std::chrono::microseconds timestamp;  // record timestamp
 
-  virtual ~LogRecord() {}
+  // Implementation can provide a pointer to some context, usually to track
+  // ownership of the payload slice.
+  std::unique_ptr<void, void(*)(void*)> context;
 
- protected:
-  LogRecord(LogID log_Id,
-            Slice pay_load,
-            SequenceNumber sequenceno,
-            std::chrono::microseconds time) :
-    log_id(log_Id),
-    payload(pay_load),
-    seqno(sequenceno),
-    timestamp(time) {
-  }
-
-  LogRecord() {}
+ private:
+  // Do nothing deleter for default empty context.
+  static void DefaultDeleter(void*) {}
 };
 
 /**
@@ -143,7 +155,8 @@ class LogStorage {
    * @param record_cb a callback that will be called on an
    *        unspecified thread when a record is read. Should return true if
    *        processed successfully, or false if the reader should retry the
-   *        same record later.
+   *        same record later. When returning false, the record argument must
+   *        not be moved.
    * @param gap_cb a callback that will be called on an
    *        unspecified thread when a gap occurs in the log.
    * @param readers output buffer for the AsyncLogReaders.
@@ -151,7 +164,7 @@ class LogStorage {
    */
   virtual Status CreateAsyncReaders(
     unsigned int parallelism,
-    std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+    std::function<bool(LogRecord&)> record_cb,
     std::function<bool(const GapRecord&)> gap_cb,
     std::vector<AsyncLogReader*>* readers) = 0;
 

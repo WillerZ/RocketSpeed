@@ -15,22 +15,22 @@ namespace rocketspeed {
 // persist the LogDevice buffer.
 struct LogRecordMessageData : public MessageData {
  public:
-  explicit LogRecordMessageData(std::unique_ptr<LogRecord> record,
+  explicit LogRecordMessageData(LogRecord record,
                                 Status* status)
   : MessageData(MessageType::mDeliver)
   , record_(std::move(record)) {
     // Deserialize
-    Slice payload = record_->payload;
+    Slice payload = record_.payload;
     *status = DeSerializeStorage(&payload);
-    SetSequenceNumbers(record_->seqno - 1, record_->seqno);
+    SetSequenceNumbers(record_.seqno - 1, record_.seqno);
   }
 
-  std::unique_ptr<LogRecord> MoveRecord() {
+  LogRecord MoveRecord() {
     return std::move(record_);
   }
 
  private:
-  std::unique_ptr<LogRecord> record_;
+  LogRecord record_;
 };
 
 LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
@@ -83,10 +83,9 @@ Status LogTailer::CreateReader(size_t reader_id,
                                OnGapCallback on_gap,
                                AsyncLogReader** out) {
   // Define a lambda for callback
-  auto record_cb = [this, reader_id, on_record, on_gap] (
-      std::unique_ptr<LogRecord>& record) {
-    LogID log_id = record->log_id;
-    SequenceNumber seqno = record->seqno;
+  auto record_cb = [this, reader_id, on_record, on_gap] (LogRecord& record) {
+    LogID log_id = record.log_id;
+    SequenceNumber seqno = record.seqno;
 
     // Convert storage record into RocketSpeed message.
     Status st;

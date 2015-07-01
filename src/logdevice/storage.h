@@ -96,7 +96,7 @@ class LogDeviceStorage : public LogStorage {
 
   Status CreateAsyncReaders(
     unsigned int parallelism,
-    std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+    std::function<bool(LogRecord&)> record_cb,
     std::function<bool(const GapRecord&)> gap_cb,
     std::vector<AsyncLogReader*>* readers);
 
@@ -119,7 +119,7 @@ class LogDeviceStorage : public LogStorage {
 class AsyncLogDeviceReader : public AsyncLogReader {
  public:
   AsyncLogDeviceReader(LogDeviceStorage* storage,
-                    std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+                    std::function<bool(LogRecord&)> record_cb,
                     std::function<bool(const GapRecord&)> gap_cb,
                     std::unique_ptr<facebook::logdevice::AsyncReader>&& reader);
 

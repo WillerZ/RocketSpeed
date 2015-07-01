@@ -140,7 +140,7 @@ TEST(IntegrationTest, TrimAll) {
     ASSERT_OK(st);
 
     // Reader callbacks
-    auto record_cb = [&] (std::unique_ptr<LogRecord>& r) {
+    auto record_cb = [&] (LogRecord& r) {
       // We should not be reading any records as they have been trimmed.
       ASSERT_TRUE(false);
       return true;
@@ -252,7 +252,7 @@ TEST(IntegrationTest, TrimFirst) {
     ASSERT_OK(st);
 
     // Reader callbacks.
-    auto record_cb = [&] (std::unique_ptr<LogRecord>& r) {
+    auto record_cb = [&] (LogRecord& r) {
       // We should not be reading any records as they have been trimmed.
       num_logs++;
       read_sem.Post();

@@ -9,22 +9,6 @@
 namespace rocketspeed {
 
 /**
- * LogDevice log record entry.
- */
-struct LogDeviceRecord : public LogRecord {
- public:
-  explicit
-  LogDeviceRecord(std::unique_ptr<facebook::logdevice::DataRecord> record);
-
-  std::unique_ptr<facebook::logdevice::DataRecord> MoveRecord() {
-    return std::move(record_);
-  }
-
- private:
-  std::unique_ptr<facebook::logdevice::DataRecord> record_;
-};
-
-/**
  * Converts a LogDevice Status to a RocketSpeed::Status.
  * The mapping isn't one-to-one, so some information is lost.
  */
@@ -89,16 +73,6 @@ static Status LogDeviceErrorToStatus(facebook::logdevice::Status error) {
 
 static LogID CastLogID(facebook::logdevice::logid_t logid) {
   return static_cast<LogID>(static_cast<uint64_t>(logid));
-}
-
-LogDeviceRecord::LogDeviceRecord(
-  std::unique_ptr<facebook::logdevice::DataRecord> record)
-: LogRecord(CastLogID(record->logid),
-            Slice((const char*)record->payload.data, record->payload.size),
-            record->attrs.lsn,
-            std::chrono::duration_cast<std::chrono::microseconds>(
-              std::chrono::milliseconds(record->attrs.timestamp)))
-, record_(std::move(record)) {
 }
 
 Status LogDeviceStorage::Create(
@@ -241,7 +215,7 @@ Status LogDeviceStorage::FindTimeAsync(
 Status
 LogDeviceStorage::CreateAsyncReaders(
   unsigned int parallelism,
-  std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+  std::function<bool(LogRecord&)> record_cb,
   std::function<bool(const GapRecord&)> gap_cb,
   std::vector<AsyncLogReader*>* readers) {
   // Validate
@@ -264,7 +238,7 @@ LogDeviceStorage::CreateAsyncReaders(
 
 AsyncLogDeviceReader::AsyncLogDeviceReader(
   LogDeviceStorage* storage,
-  std::function<bool(std::unique_ptr<LogRecord>&)> record_cb,
+  std::function<bool(LogRecord&)> record_cb,
   std::function<bool(const GapRecord&)> gap_cb,
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
 : reader_(std::move(reader)) {
@@ -272,14 +246,23 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
   reader_->setRecordCallback(
     [this, record_cb] (std::unique_ptr<facebook::logdevice::DataRecord>& data) {
       // Convert DataRecord to our LogRecord format.
-      std::unique_ptr<LogRecord> record(new LogDeviceRecord(std::move(data)));
+      LogRecord record;
+      record.log_id = CastLogID(data->logid);
+      record.payload = Slice((const char*)data->payload.data,
+                             data->payload.size);
+      record.seqno = data->attrs.lsn;
+      record.timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::milliseconds(data->attrs.timestamp));
+      record.context = EraseType(std::move(data));
+
       bool success = record_cb(record);
       if (!success) {
         // record_cb must not move record if it failed to process.
-        assert(record);
+        assert(record.context);
 
         // Put it back, since LogDevice will be expecting it there.
-        data = static_cast<LogDeviceRecord*>(record.get())->MoveRecord();
+        void* context = record.context.release();
+        data.reset(static_cast<facebook::logdevice::DataRecord*>(context));
       }
       return success;
     });
