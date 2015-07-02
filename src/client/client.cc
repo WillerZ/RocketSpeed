@@ -332,7 +332,26 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   /** A set of subscriptions pending unsubscribe message being sent out. */
   std::unordered_map<SubscriptionID, TenantID> pending_terminations_;
 
+  struct Stats {
+    Stats() {
+      const std::string prefix = "client.";
+
+      active_subscriptions = all.AddCounter(prefix + "active_subscriptions");
+      unsubscribes_invalid_handle =
+          all.AddCounter(prefix + "unsubscribes_invalid_handle");
+    }
+
+    Counter* active_subscriptions;
+    Counter* unsubscribes_invalid_handle;
+    Statistics all;
+  } stats_;
+
   bool ExpectsMessage(const std::shared_ptr<Logger>& info_log, StreamID origin);
+
+  const Statistics& GetStatistics() {
+    stats_.active_subscriptions->Set(subscriptions_.size());
+    return stats_.all;
+  }
 };
 
 bool ClientWorkerData::ExpectsMessage(const std::shared_ptr<Logger>& info_log,
@@ -680,7 +699,10 @@ Status ClientImpl::RestoreSubscriptions(
 }
 
 Statistics ClientImpl::GetStatisticsSync() const {
-  return msg_loop_->GetStatisticsSync();
+  Statistics aggregated = msg_loop_->GetStatisticsSync();
+  aggregated.Aggregate(msg_loop_->AggregateStatsSync(
+      [this](int i) -> Statistics { return worker_data_[i].GetStatistics(); }));
+  return aggregated;
 }
 
 Status ClientImpl::Start() {
@@ -748,6 +770,7 @@ void ClientImpl::TerminateSubscription(SubscriptionID sub_id) {
     LOG_WARN(info_log_,
              "Cannot remove missing subscription ID(%" PRIu64 ")",
              sub_id);
+    worker_data.stats_.unsubscribes_invalid_handle->Add(1);
     return;
   }
   SubscriptionState sub_state(std::move(it->second));
@@ -988,7 +1011,7 @@ void ClientImpl::ProcessUnsubscribe(std::unique_ptr<Message> msg,
   auto it = worker_data.subscriptions_.find(sub_id);
   if (it == worker_data.subscriptions_.end()) {
     LOG_WARN(info_log_,
-             "Received unsibscribe with unrecognised ID(%" PRIu64 ")",
+             "Received unsubscribe with unrecognised ID(%" PRIu64 ")",
              sub_id);
     return;
   }

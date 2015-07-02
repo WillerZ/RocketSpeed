@@ -130,15 +130,6 @@ class MsgLoop : public MsgLoopBase {
   std::unique_ptr<Command> ResponseCommand(const Message& msg,
                                            StreamID stream);
 
-  using WorkerStatsProvider = std::function<Statistics(int)>;
-
-  /**
-   * Call to aggregate a set of statistics provided by the
-   * worker stats provider using the gather pattern. Waits
-   * until the gather call finishes and thus is expensive.
-   */
-  Statistics AggregateStatsSync(WorkerStatsProvider stats_provider);
-
   Statistics GetStatisticsSync();
 
   // Checks that we are running on any EventLoop thread.

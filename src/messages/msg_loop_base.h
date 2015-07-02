@@ -145,6 +145,15 @@ class MsgLoopBase {
                               StreamID stream,
                               int worker_id) = 0;
 
+  using WorkerStatsProvider = std::function<Statistics(int)>;
+
+  /**
+   * Call to aggregate a set of statistics provided by the
+   * worker stats provider using the gather pattern. Waits
+   * until the gather call finishes and thus is expensive.
+   */
+  Statistics AggregateStatsSync(WorkerStatsProvider stats_provider);
+
   virtual Statistics GetStatisticsSync() = 0;
 
   // Checks that we are running on any EventLoop thread.

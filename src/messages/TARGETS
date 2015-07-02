@@ -3,6 +3,7 @@ cpp_library(
     srcs = [
         'descriptor_event.cc',
         'messages.cc',
+        'msg_loop_base.cc',
         'msg_loop.cc',
         'wrapped_message.cc',
     ],
