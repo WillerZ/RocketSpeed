@@ -104,6 +104,7 @@ TESTS = \
   supervisor_test \
 	client_test \
 	command_queues_test \
+  heterogeneous_queue_test
 
 TOOLS = \
 	rocketbench
@@ -336,6 +337,9 @@ client_test: src/client/tests/client_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 command_queues_test: src/messages/tests/command_queues_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+heterogeneous_queue_test: src/util/tests/heterogeneous_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
