@@ -89,7 +89,7 @@ size_t Histogram::BucketIndex(double sample) const {
   // Samples up to min_ + smallest_bucket_ * ratio_ ^ N go to bucket N
   // and so on.
   sample = std::max(0.0, std::min(sample, max_) - min_);
-  int32_t bucket = static_cast<int32_t>(
+  int32_t bucket = sample < smallest_bucket_ ? 0 : static_cast<int32_t>(
     (log_ratio_ + log(sample) - log_smallest_bucket_) / log_ratio_);
   if (bucket < 0) {
     return 0;
