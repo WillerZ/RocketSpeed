@@ -12,6 +12,7 @@
 
 #include "include/Status.h"
 #include "src/port/port.h"
+#include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 #include "src/util/common/thread_local.h"
 
@@ -70,14 +71,28 @@ class alignas(CACHE_LINE_SIZE) CommandQueue {
     size_t commands_read_;
   };
 
+  struct Stats {
+    explicit Stats(const std::string& prefix);
+
+    Statistics all;
+    Histogram* batched_read_size;
+    Counter* num_reads;
+    Counter* eventfd_num_writes;
+    Counter* eventfd_num_reads;
+  };
+
   /**
    * Construct a queue with a given size (number of commands).
    *
    * @param env Environment.
    * @param info_log Logging interface.
+   * @param stats A stats that can be shared with other queues.
    * @param size Maximum number of queued up commands.
    */
-  CommandQueue(BaseEnv* env, std::shared_ptr<Logger> info_log, size_t size);
+  CommandQueue(BaseEnv* env,
+               std::shared_ptr<Logger> info_log,
+               std::shared_ptr<Stats> stats,
+               size_t size);
 
   ~CommandQueue();
 
@@ -105,6 +120,7 @@ class alignas(CACHE_LINE_SIZE) CommandQueue {
  private:
   BaseEnv* env_;
   std::shared_ptr<Logger> info_log_;
+  std::shared_ptr<Stats> stats_;
   folly::ProducerConsumerQueue<TimestampedCommand> queue_;
   rocketspeed::port::Eventfd ready_fd_;
   /**

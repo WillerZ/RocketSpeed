@@ -245,11 +245,7 @@ class EventLoop {
   // Get the info log.
   const std::shared_ptr<Logger>& GetLog() { return info_log_; }
 
-  // Get event loop statistics
-  const Statistics& GetStatistics() const {
-    stats_.queue_count->Set(incoming_queues_.size());
-    return stats_.all;
-  }
+  Statistics GetStatistics() const;
 
   void ThreadCheck() const {
     thread_check_.Check();
@@ -455,6 +451,8 @@ class EventLoop {
     Counter* socket_writes;       // number of calls to write(v)
     Counter* partial_socket_writes; // number of writes that partially succeeded
   } stats_;
+
+  const std::shared_ptr<CommandQueue::Stats> queue_stats_;
 
   const uint32_t default_command_queue_size_;
 

@@ -912,6 +912,7 @@ EventLoop::Initialize() {
   control_command_queue_ =
     std::make_shared<CommandQueue>(env_,
                                    info_log_,
+                                   queue_stats_,
                                    default_command_queue_size_);
   Status st = AddIncomingQueue(control_command_queue_);
   if (!st.ok()) {
@@ -1036,7 +1037,8 @@ std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(size_t size) {
     // Use default size when size == 0.
     size = default_command_queue_size_;
   }
-  auto command_queue = std::make_shared<CommandQueue>(env_, info_log_, size);
+  auto command_queue =
+      std::make_shared<CommandQueue>(env_, info_log_, queue_stats_, size);
   Status st = AttachQueue(command_queue);
   if (!st.ok()) {
     LOG_ERROR(info_log_, "Failed to attach command queue to EventLoop");
@@ -1290,24 +1292,25 @@ EventLoop::EventLoop(BaseEnv* env,
                      EventCallbackType event_callback,
                      AcceptCallbackType accept_callback,
                      StreamAllocator allocator,
-                     EventLoop::Options options) :
-  env_(env),
-  env_options_(env_options),
-  port_number_(port_number),
-  running_(false),
-  base_(nullptr),
-  info_log_(info_log),
-  event_callback_(std::move(event_callback)),
-  accept_callback_(std::move(accept_callback)),
-  listener_(nullptr),
-  shutdown_eventfd_(rocketspeed::port::Eventfd(true, true)),
-  command_queues_(CommandQueueUnrefHandler),
-  stream_router_(allocator.Split()),
-  outbound_allocator_(std::move(allocator)),
-  active_connections_(0),
-  stats_(options.stats_prefix),
-  default_command_queue_size_(options.command_queue_size) {
-
+                     EventLoop::Options options)
+    : env_(env)
+    , env_options_(env_options)
+    , port_number_(port_number)
+    , running_(false)
+    , base_(nullptr)
+    , info_log_(info_log)
+    , event_callback_(std::move(event_callback))
+    , accept_callback_(std::move(accept_callback))
+    , listener_(nullptr)
+    , shutdown_eventfd_(rocketspeed::port::Eventfd(true, true))
+    , command_queues_(CommandQueueUnrefHandler)
+    , stream_router_(allocator.Split())
+    , outbound_allocator_(std::move(allocator))
+    , active_connections_(0)
+    , stats_(options.stats_prefix)
+    , queue_stats_(std::make_shared<CommandQueue::Stats>(options.stats_prefix +
+                                                         ".queues"))
+    , default_command_queue_size_(options.command_queue_size) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
       std::unique_ptr<Command> command, uint64_t issued_time) {
@@ -1369,6 +1372,13 @@ EventLoop::Stats::Stats(const std::string& prefix) {
     messages_received[i] = all.AddCounter(
       prefix + ".messages_received." + kMessageTypeNames[i]);
   }
+}
+
+Statistics EventLoop::GetStatistics() const {
+  stats_.queue_count->Set(incoming_queues_.size());
+  Statistics stats = stats_.all;
+  stats.Aggregate(queue_stats_->all);
+  return stats;
 }
 
 EventLoop::~EventLoop() {

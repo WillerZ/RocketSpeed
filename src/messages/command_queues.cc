@@ -17,11 +17,16 @@ CommandQueue::BatchedRead::BatchedRead(CommandQueue* queue)
     : queue_(queue), pending_reads_(0), commands_read_(0) {
   // Clear notification, it will be added if batch finishes after hitting size
   // limit.
-  eventfd_t ignored_value;
-  queue_->ready_fd_.read_event(&ignored_value);
+  eventfd_t value;
+  queue_->ready_fd_.read_event(&value);
+  // Number of eventfd writes performed equals the value of eventfd.
+  queue_->stats_->eventfd_num_writes->Add(value);
+  queue_->stats_->eventfd_num_reads->Add(1);
 }
 
 CommandQueue::BatchedRead::~BatchedRead() {
+  queue_->stats_->num_reads->Add(commands_read_);
+  queue_->stats_->batched_read_size->Record(commands_read_);
   // If we've exited batch because of size limit, we must notify regardless of
   // the locally cached number of commands, as we didn't check if there is a
   // command waiting for us.
@@ -29,6 +34,7 @@ CommandQueue::BatchedRead::~BatchedRead() {
     // Return tokens back to atomic size.
     queue_->synced_size_.fetch_add(pending_reads_);
     // Notify ourselves, so the EventLoop will pick this queue eventually.
+    queue_->stats_->eventfd_num_writes->Add(1);
     if (queue_->ready_fd_.write_event(1)) {
       // Some internal error happened.
       LOG_ERROR(queue_->info_log_,
@@ -78,11 +84,21 @@ bool CommandQueue::BatchedRead::Read(TimestampedCommand& ts_cmd) {
   return false;
 }
 
+CommandQueue::Stats::Stats(const std::string& prefix) {
+  batched_read_size = all.AddHistogram(
+      prefix + ".batched_read_size", 0, BatchedRead::kMaxBatchSize, 1, 1.1);
+  num_reads = all.AddCounter(prefix + ".num_reads");
+  eventfd_num_writes = all.AddCounter(prefix + ".eventfd_num_writes");
+  eventfd_num_reads = all.AddCounter(prefix + ".eventfd_num_reads");
+}
+
 CommandQueue::CommandQueue(BaseEnv* env,
                            std::shared_ptr<Logger> info_log,
+                           std::shared_ptr<Stats> stats,
                            size_t size)
     : env_(env)
     , info_log_(std::move(info_log))
+    , stats_(std::move(stats))
     , queue_(static_cast<uint32_t>(size))
     , ready_fd_(true, true)
     , synced_size_(0) {
