@@ -247,7 +247,7 @@ class EventLoop {
 
   // Get event loop statistics
   const Statistics& GetStatistics() const {
-    stats_.queue_count->Set(owned_command_queues_.size());
+    stats_.queue_count->Set(incoming_queues_.size());
     return stats_.all;
   }
 
@@ -388,11 +388,6 @@ class EventLoop {
 
   // Each thread has its own command queue to communicate with the EventLoop.
   ThreadLocalPtr command_queues_;
-
-  // Vector of CommandQueues to delete.
-  // command_queues_ cannot own these becase it deletes them on thread exit,
-  // and we only want to delete on EventLoop destruction.
-  std::vector<std::unique_ptr<CommandQueue>> owned_command_queues_;
 
   // Shared command queue for sending control commands.
   // This should only be used for creating new queues.
