@@ -102,7 +102,8 @@ TESTS = \
   datastore_test \
   timeout_list_test \
   supervisor_test \
-	client_test
+	client_test \
+	command_queues_test \
 
 TOOLS = \
 	rocketbench
@@ -332,6 +333,9 @@ supervisor_test: src/supervisor/test/supervisor_test.o $(LIBOBJECTS) $(TESTHARNE
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 client_test: src/client/tests/client_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+command_queues_test: src/messages/tests/command_queues_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------

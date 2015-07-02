@@ -22,7 +22,10 @@ CommandQueue::BatchedRead::BatchedRead(CommandQueue* queue)
 }
 
 CommandQueue::BatchedRead::~BatchedRead() {
-  if (pending_reads_ > 0) {
+  // If we've exited batch because of size limit, we must notify regardless of
+  // the locally cached number of commands, as we didn't check if there is a
+  // command waiting for us.
+  if (commands_read_ >= kMaxBatchSize || pending_reads_ > 0) {
     // Return tokens back to atomic size.
     queue_->synced_size_.fetch_add(pending_reads_);
     // Notify ourselves, so the EventLoop will pick this queue eventually.
