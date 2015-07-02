@@ -33,6 +33,8 @@ class alignas(CACHE_LINE_SIZE) CommandQueue {
  public:
   class BatchedRead {
    public:
+    static constexpr size_t kMaxBatchSize = 1000;
+
     // Noncopyable & nonmovable
     BatchedRead(const BatchedRead&) = delete;
     BatchedRead& operator=(const BatchedRead&) = delete;
@@ -65,6 +67,7 @@ class alignas(CACHE_LINE_SIZE) CommandQueue {
    private:
     CommandQueue* queue_;
     size_t pending_reads_;
+    size_t commands_read_;
   };
 
   /**

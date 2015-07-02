@@ -14,7 +14,7 @@
 namespace rocketspeed {
 
 CommandQueue::BatchedRead::BatchedRead(CommandQueue* queue)
-    : queue_(queue), pending_reads_(0) {
+    : queue_(queue), pending_reads_(0), commands_read_(0) {
   // Clear notification, it will be added if batch finishes after hitting size
   // limit.
   eventfd_t ignored_value;
@@ -45,6 +45,10 @@ CommandQueue::BatchedRead::~BatchedRead() {
 
 bool CommandQueue::BatchedRead::Read(TimestampedCommand& ts_cmd) {
   queue_->read_check_.Check();
+  // Check if we didn't exceed allowed batch size.
+  if (commands_read_ >= kMaxBatchSize) {
+    return false;
+  }
   if (pending_reads_ == 0) {
     // We try to leave one message to mark the fact that there is an ongoing
     // BatchedRead, this way concurrent writers will not notify the queue.
@@ -65,6 +69,7 @@ bool CommandQueue::BatchedRead::Read(TimestampedCommand& ts_cmd) {
     assert(success);
     ((void)success);
     --pending_reads_;
+    ++commands_read_;
     return true;
   }
   return false;
