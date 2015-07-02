@@ -1308,6 +1308,9 @@ void TopicTailer::RemoveSubscriberInternal(const TopicUUID& topic,
       reader->StopReading(topic, logid);
       log_closed = log_closed && !reader->IsLogOpen(logid);
     }
+    pending_reader_->StopReading(topic, logid);
+    log_closed = log_closed && !pending_reader_->IsLogOpen(logid);
+
     if (log_closed) {
       // Tail seqno cache is no longer being updated, so clear.
       tail_seqno_cached_.erase(logid);
