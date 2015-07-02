@@ -5,8 +5,11 @@
 //
 #pragma once
 
+#include <atomic>
 #include <memory>
+
 #include "external/folly/producer_consumer_queue.h"
+
 #include "include/Status.h"
 #include "src/port/port.h"
 #include "src/util/common/thread_check.h"
@@ -26,8 +29,44 @@ struct TimestampedCommand {
   uint64_t issued_time;
 };
 
-class CommandQueue {
+class alignas(CACHE_LINE_SIZE) CommandQueue {
  public:
+  class BatchedRead {
+   public:
+    // Noncopyable & nonmovable
+    BatchedRead(const BatchedRead&) = delete;
+    BatchedRead& operator=(const BatchedRead&) = delete;
+    BatchedRead(BatchedRead&&) = delete;
+    BatchedRead& operator=(BatchedRead&&) = delete;
+
+    /**
+     * Creates an object which allows reading from given queue.
+     * The object should be disposed once reader is done reading this batch,
+     * otherwise there is a risk of a reader not being notified when new command
+     * appears in the queue.
+     * Using this object from thread other than reader for provided queue yields
+     * undefined behaviour.
+     * This object cannot outlive queue that it was bound to.
+     *
+     * @param queue A queue to read from.
+     */
+    explicit BatchedRead(CommandQueue* queue);
+
+    ~BatchedRead();
+
+    /**
+     * Reads a timestamped command from the queue.
+     *
+     * @param ts_cmd Output for read command.
+     * @return true iff a command was read, false otherwise.
+     */
+    bool Read(TimestampedCommand& ts_cmd);
+
+   private:
+    CommandQueue* queue_;
+    size_t pending_reads_;
+  };
+
   /**
    * Construct a queue with a given size (number of commands).
    *
@@ -38,14 +77,6 @@ class CommandQueue {
   CommandQueue(BaseEnv* env, std::shared_ptr<Logger> info_log, size_t size);
 
   ~CommandQueue();
-
-  /**
-   * Reads a timestamped command from the queue.
-   *
-   * @param ts_cmd Output for read command.
-   * @return true iff a command was read, false otherwise.
-   */
-  bool Read(TimestampedCommand& ts_cmd);
 
   /**
    * Writes a command to the queue. If unsuccessful, the command pointer will
@@ -60,24 +91,26 @@ class CommandQueue {
   /**
    * Upper-bound estimate of queue size.
    */
-  size_t GetSize() const {
-    return queue_.sizeGuess();
-  }
+  size_t GetSize() const { return queue_.sizeGuess(); }
 
   /**
    * File descriptor for EventFd that will be written when new commands
    * are available.
    */
-  int GetReadFd() {
-    return ready_fd_.readfd();
-  }
+  int GetReadFd() { return ready_fd_.readfd(); }
 
  private:
   BaseEnv* env_;
   std::shared_ptr<Logger> info_log_;
   folly::ProducerConsumerQueue<TimestampedCommand> queue_;
   rocketspeed::port::Eventfd ready_fd_;
-  eventfd_t pending_reads_;
+  /**
+   * Sequentially consistent size of the queue.
+   * Incremented after adding command(s) to the queue and decremented before
+   * reading command(s) from it. Both increments and decrements may happen in
+   * batches.
+   */
+  std::atomic<size_t> synced_size_;
   ThreadCheck read_check_;
   ThreadCheck write_check_;
 };
@@ -93,7 +126,7 @@ class ThreadLocalCommandQueues {
    * @param create_queue Callback for creating thread-local queues.
    */
   explicit ThreadLocalCommandQueues(
-    std::function<std::shared_ptr<CommandQueue>()> create_queue);
+      std::function<std::shared_ptr<CommandQueue>()> create_queue);
 
   // non-copyable, non-moveable
   ThreadLocalCommandQueues(const ThreadLocalCommandQueues&) = delete;
