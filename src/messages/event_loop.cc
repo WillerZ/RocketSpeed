@@ -270,17 +270,18 @@ class SocketEvent {
         event_loop_->stats_.socket_writes->Add(1);
         ssize_t count = writev(fd_, iov, iovcnt);
         if (count == -1) {
+          auto e = errno;
           LOG_WARN(event_loop_->info_log_,
             "Wanted to write %zu bytes to remote host fd(%d) but encountered "
             "errno(%d) \"%s\".",
-            total, fd_, errno, strerror(errno));
+            total, fd_, e, strerror(e));
           event_loop_->stats_.write_succeed_bytes->Record(0);
           event_loop_->stats_.write_succeed_iovec->Record(0);
           event_loop_->info_log_->Flush();
-          if (errno != EAGAIN && errno != EWOULDBLOCK) {
+          if (e != EAGAIN && e != EWOULDBLOCK) {
             // write error, close connection.
             return Status::IOError("write call failed: " +
-                                   std::to_string(errno));
+                                   std::to_string(e));
           }
           return Status::OK();
         }
