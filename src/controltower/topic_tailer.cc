@@ -1205,7 +1205,7 @@ Status TopicTailer::RemoveSubscriber(HostNumber hostnum) {
 }
 
 bool TopicTailer::Forward(std::function<void()> command) {
-  std::unique_ptr<Command> cmd(new ExecuteCommand(std::move(command)));
+  std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
   Status st = msg_loop_->TrySendCommand(cmd, worker_id_);
   return st.ok();
 }

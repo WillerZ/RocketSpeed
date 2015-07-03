@@ -64,7 +64,7 @@ CopilotWorker::WorkerCommand(LogID logid,
                              StreamID origin) {
   auto moved_msg = folly::makeMoveWrapper(std::move(msg));
   std::unique_ptr<Command> command(
-    new ExecuteCommand([this, moved_msg, logid, worker_id, origin]() mutable {
+    MakeExecuteCommand([this, moved_msg, logid, worker_id, origin]() mutable {
       auto message = moved_msg.move();
       switch (message->GetMessageType()) {
         case MessageType::mMetadata: {
@@ -128,7 +128,7 @@ CopilotWorker::WorkerCommand(LogID logid,
 
 std::unique_ptr<Command>
 CopilotWorker::WorkerCommand(std::shared_ptr<ControlTowerRouter> new_router) {
-  std::unique_ptr<Command> command(new ExecuteCommand(
+  std::unique_ptr<Command> command(MakeExecuteCommand(
       std::bind(&CopilotWorker::ProcessRouterUpdate, this, new_router)));
   return command;
 }
@@ -834,7 +834,7 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
     process_error = [this, worker_id, origin, tenant_id, sub_id]() {
       // We can't do any proper error handling from this thread, as it belongs
       // to the client used by RollCall.
-      std::unique_ptr<Command> command(new ExecuteCommand(
+      std::unique_ptr<Command> command(MakeExecuteCommand(
         [this, worker_id, origin, tenant_id, sub_id]() {
           // Start the automatic unsubscribe process. We rely on the assumption
           // that the unsubscribe request can fail only if the client is

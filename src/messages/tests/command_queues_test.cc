@@ -54,7 +54,7 @@ TEST(CommandQueueTest, Liveness) {
   const auto notify_sem2 = [&]() { sem2.Post(); };
 
   auto send_command = [&](std::function<void()> cb) {
-    std::unique_ptr<Command> command(new ExecuteCommand(std::move(cb)));
+    std::unique_ptr<Command> command(MakeExecuteCommand(std::move(cb)));
     ASSERT_OK(loop.SendCommand(command));
   };
 

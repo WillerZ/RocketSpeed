@@ -41,7 +41,7 @@ ControlRoom::Forward(std::unique_ptr<Message> msg,
                      StreamID origin) {
   auto moved_msg = folly::makeMoveWrapper(std::move(msg));
   std::unique_ptr<Command> cmd(
-    new ExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
+    MakeExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
       std::unique_ptr<Message> message(moved_msg.move());
       if (message->GetMessageType() == MessageType::mMetadata) {
         assert(worker_id != -1);
@@ -147,7 +147,7 @@ ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
   auto moved_msg = folly::makeMoveWrapper(std::move(msg));
   auto moved_hosts = folly::makeMoveWrapper(std::move(hosts));
   std::unique_ptr<Command> cmd(
-    new ExecuteCommand([this, moved_msg, moved_hosts] () mutable {
+    MakeExecuteCommand([this, moved_msg, moved_hosts] () mutable {
       std::unique_ptr<Message> message(moved_msg.move());
       MessageType type = message->GetMessageType();
       if (type == MessageType::mDeliver) {

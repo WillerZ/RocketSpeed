@@ -342,7 +342,7 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
 
   const int room = LogIDToRoom(log_id);
   std::unique_ptr<Command> cmd(
-    new ExecuteCommand([this, room, log_id, callback] () mutable {
+    MakeExecuteCommand([this, room, log_id, callback] () mutable {
       SequenceNumber seqno = topic_tailer_[room]->GetTailSeqnoEstimate(log_id);
       if (seqno) {
         callback(Status::OK(), seqno);

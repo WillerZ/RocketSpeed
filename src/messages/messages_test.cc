@@ -774,7 +774,7 @@ TEST(Messaging, TrySendCommand) {
   int failures = 0;
   for (int i = 0; i < 200; ++i) {
     std::unique_ptr<Command> command(
-      new ExecuteCommand([this] () {
+      MakeExecuteCommand([this] () {
         // This will cause reading end to require backoff.
         env_->SleepForMicroseconds(1000);
       }));

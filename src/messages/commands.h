@@ -136,11 +136,8 @@ class ExecuteCommand : public Command {
  public:
   /**
    * Executes a function within the event loop thread.
-   *
-   * @param func The function to execute.
    */
-  explicit ExecuteCommand(std::function<void()> func)
-  : func_(std::move(func)) {}
+  explicit ExecuteCommand() {}
 
   virtual ~ExecuteCommand() {}
 
@@ -148,12 +145,26 @@ class ExecuteCommand : public Command {
     return kExecuteCommand;
   }
 
-  void Execute() {
+  virtual void Execute() = 0;
+};
+
+template <typename Function>
+class ExecuteCommandImpl : public ExecuteCommand {
+ public:
+  explicit ExecuteCommandImpl(Function func)
+  : func_(std::move(func)) {}
+
+  void Execute() override {
     func_();
   }
 
  private:
-  std::function<void()> func_;
+  Function func_;
 };
+
+template <typename Function>
+ExecuteCommandImpl<Function>* MakeExecuteCommand(Function func) {
+  return new ExecuteCommandImpl<Function>(std::move(func));
+}
 
 }  // namespace rocketspeed

@@ -247,7 +247,7 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
     // Schedule the per_worker function to be called on each worker.
     // Results will be accumulated in context->second.
     std::unique_ptr<Command> command(
-      new ExecuteCommand([this, i, n, context, per_worker, gather] () {
+      MakeExecuteCommand([this, i, n, context, per_worker, gather] () {
         bool done;
         T result = per_worker(i);
         {
@@ -315,7 +315,7 @@ Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
   auto done = std::make_shared<port::Semaphore>();
   auto result = std::make_shared<Result>();
   std::unique_ptr<Command> command(
-    new ExecuteCommand([this, request, done, result] () {
+    MakeExecuteCommand([this, request, done, result] () {
       *result = request();
       done->Post();
     }));

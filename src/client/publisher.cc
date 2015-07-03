@@ -323,7 +323,7 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   auto moved_serialized = folly::makeMoveWrapper(std::move(serialized));
   auto moved_callback = folly::makeMoveWrapper(std::move(callback));
   Status st = msg_loop_->SendCommand(
-      std::unique_ptr<ExecuteCommand>(new ExecuteCommand(
+      std::unique_ptr<ExecuteCommand>(MakeExecuteCommand(
           [this, worker_id, msgid, moved_serialized, moved_callback]() mutable {
             worker_data_[worker_id].Publish(
                 msgid, moved_serialized.move(), moved_callback.move());

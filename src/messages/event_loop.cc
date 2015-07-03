@@ -1050,7 +1050,7 @@ std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(size_t size) {
 Status EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
   // Attach the new command queue to the event loop.
   std::unique_ptr<Command> attach_command(
-    new ExecuteCommand([this, command_queue] () mutable {
+    MakeExecuteCommand([this, command_queue] () mutable {
       Status st = AddIncomingQueue(std::move(command_queue));
       if (!st.ok()) {
         LOG_FATAL(info_log_, "Failed to attach command queue to EventLoop: %s",

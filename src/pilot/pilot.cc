@@ -21,7 +21,7 @@ void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
   // Record latency
   uint64_t latency = pilot_->options_.env->NowMicros() - append_time_;
   Status st = pilot_->options_.msg_loop->SendCommand(
-    std::unique_ptr<Command>(new ExecuteCommand(
+    std::unique_ptr<Command>(MakeExecuteCommand(
       [this, latency, append_status, seqno] () {
         pilot_->worker_data_[worker_id_].stats_.append_latency->Record(latency);
         pilot_->worker_data_[worker_id_].stats_.append_requests->Add(1);

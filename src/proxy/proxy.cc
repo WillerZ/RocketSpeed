@@ -175,7 +175,7 @@ Status Proxy::Forward(std::string data, int64_t session) {
   // Forward message to responsible worker.
   int worker_id = WorkerForSession(session);
   auto moved_msg = folly::makeMoveWrapper(std::move(msg));
-  std::unique_ptr<Command> command(new ExecuteCommand(
+  std::unique_ptr<Command> command(MakeExecuteCommand(
       [this, moved_msg, session, sequence, origin]() mutable {
         HandleMessageForwarded(moved_msg.move(), session, sequence, origin);
       }));
@@ -184,7 +184,7 @@ Status Proxy::Forward(std::string data, int64_t session) {
 
 void Proxy::DestroySession(int64_t session) {
   int worker_id = WorkerForSession(session);
-  std::unique_ptr<Command> command(new ExecuteCommand(
+  std::unique_ptr<Command> command(MakeExecuteCommand(
       std::bind(&Proxy::HandleDestroySession, this, session)));
   auto st = msg_loop_->SendCommand(std::move(command), worker_id);
   if (!st.ok()) {

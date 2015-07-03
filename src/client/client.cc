@@ -561,7 +561,7 @@ SubscriptionHandle ClientImpl::Subscribe(
   // Send command to responsible worker.
   Status st = msg_loop_->SendCommand(
       std::unique_ptr<Command>(
-          new ExecuteCommand([this, sub_id, moved_sub_state]() mutable {
+          MakeExecuteCommand([this, sub_id, moved_sub_state]() mutable {
             StartSubscription(sub_id, moved_sub_state.move());
           })),
       worker_id);
@@ -582,7 +582,7 @@ Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
 
   // Send command to responsible worker.
   return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(new ExecuteCommand(
+      std::unique_ptr<Command>(MakeExecuteCommand(
           std::bind(&ClientImpl::TerminateSubscription, this, sub_id))),
       worker_id);
 }
@@ -620,7 +620,7 @@ Status ClientImpl::Acknowledge(const MessageReceived& message) {
 
   // Send command to responsible worker.
   return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(new ExecuteCommand(std::move(action))),
+      std::unique_ptr<Command>(MakeExecuteCommand(std::move(action))),
       worker_id);
 }
 
