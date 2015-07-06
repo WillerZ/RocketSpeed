@@ -97,17 +97,11 @@ template <class T, class Hash = std::hash<T>> class TimeoutList {
   */
   template <class OutputIterator, class Rep, class Period>
   void GetExpired(const std::chrono::duration<Rep, Period>& timeout,
-                   OutputIterator out) {
-    auto tm_now = std::chrono::steady_clock::now();
-    auto it = lmap_.begin();
-    while (it != lmap_.end()) {
-      if ((tm_now - it->second) <= timeout) {
-        // no more to process, as this is in ascending order
-        return;
-      }
-      *out++ = std::move(it->first);
-      it = lmap_.erase(it);
-    }
+                  OutputIterator out,
+                  int batch_limit = -1) {
+    return ProcessExpired(timeout,
+                          [&out] (T item) { *out++ = std::move(item); },
+                          batch_limit);
   }
 
   /**

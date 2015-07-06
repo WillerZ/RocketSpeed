@@ -109,6 +109,17 @@ struct CopilotOptions {
   // Default: 10,000
   uint64_t resubscriptions_per_second;
 
+  // Age of tower subscription before checking we are connected to the
+  // correct control towers. We may be subscribed to incorrect control tower
+  // in cases where control tower goes down and we fail-over to another.
+  // For long-lived subscriptions, this can create imbalance on control towers.
+  // Default: 10 minutes
+  std::chrono::seconds tower_subscriptions_check_period;
+
+  // Max number of tower subscriptions to rebalance at once.
+  // Default: 1000
+  int rebalances_per_second;
+
   // Create CopilotOptions with default values for all fields
   CopilotOptions();
 };

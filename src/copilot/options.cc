@@ -26,7 +26,9 @@ CopilotOptions::CopilotOptions()
     rollcall_max_batch_size_bytes(16 << 10),
     rollcall_flush_latency(500),
     timer_interval_micros(500000),
-    resubscriptions_per_second(10000) {
+    resubscriptions_per_second(10000),
+    tower_subscriptions_check_period(10 * 60),
+    rebalances_per_second(1000) {
 }
 
 }  // namespace rocketspeed

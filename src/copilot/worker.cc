@@ -39,6 +39,12 @@ CopilotWorker::CopilotWorker(
     1000000 /
     options_.msg_loop->GetNumWorkers());
 
+  rebalances_per_tick_ = std::max<uint64_t>(1,
+    options_.rebalances_per_second *
+    options_.timer_interval_micros /
+    1000000 /
+    options_.msg_loop->GetNumWorkers());
+
   LOG_VITAL(options_.info_log, "Created a new CopilotWorker");
   options_.info_log->Flush();
 
@@ -496,6 +502,7 @@ void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
     if (topic.subscriptions.empty()) {
       topics_.erase(topic_iter);
       orphan_topics_.erase(uuid);
+      topic_checkup_list_.Erase(uuid);
     }
   }
 }
@@ -562,12 +569,35 @@ void CopilotWorker::ProcessTimerTick() {
       // will be removed by UpdateTowerSubscriptions.
       orphan_topics_.move_to_back(orphan_topics_.begin());
       UpdateTowerSubscriptions(uuid, it->second);
+      stats_.orphaned_resubscribes->Add(1);
     }
   }
 
   if (options_.rollcall_enabled) {
     rollcall_->CheckBatchTimeouts(options_.rollcall_flush_latency);
   }
+
+  // Get a list of topics/tower subscriptions that are due a check up.
+  std::vector<TopicUUID> updates;
+  topic_checkup_list_.GetExpired(
+    options_.tower_subscriptions_check_period,
+    std::back_inserter(updates),
+    static_cast<int>(rebalances_per_tick_));
+
+  for (TopicUUID& uuid : updates) {
+    auto it = topics_.find(uuid);
+    if (it != topics_.end()) {
+      if (!CorrectTopicTowers(it->second)) {
+        // Remove subscriptions and resubscribe to correct towers.
+        const bool force_resub = true;
+        UpdateTowerSubscriptions(uuid, it->second, force_resub);
+        stats_.tower_rebalances_performed->Add(1);
+      }
+      // Put back in the list to check again later.
+      topic_checkup_list_.Add(std::move(uuid));
+    }
+  }
+  stats_.tower_rebalances_checked->Add(updates.size());
 }
 
 void CopilotWorker::CloseControlTowerStream(StreamID stream) {
@@ -633,7 +663,8 @@ bool CopilotWorker::SendMetadata(TenantID tenant_id,
 }
 
 void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
-                                             TopicState& topic) {
+                                             TopicState& topic,
+                                             bool force_resub) {
   LOG_INFO(options_.info_log,
     "Refreshing tower subscriptions for %s",
     uuid.ToString().c_str());
@@ -701,6 +732,8 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
       }
     }
   }
+
+  resub_needed = resub_needed || force_resub;
 
   // If needed, find a list of control tower connections.
   using TowerConnection = std::pair<StreamSocket*, int>;  // socket + worker_id
@@ -805,6 +838,12 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
   } else {
     // Ensure that we are no longer marked as an orphan.
     orphan_topics_.erase(uuid);
+
+    if (resub_needed) {
+      // We successfully resubscribed to all towers, so add to checkup list
+      // (or push to the back of the queue, since subscriptions are up to date).
+      topic_checkup_list_.Add(uuid);
+    }
   }
 }
 
@@ -997,5 +1036,25 @@ std::string CopilotWorker::GetSubscriptionInfo(std::string filter,
   }
   return result;
 }
+
+bool CopilotWorker::CorrectTopicTowers(TopicState& topic) {
+  std::vector<HostId const*> recipients;
+  if (control_tower_router_->GetControlTowers(topic.log_id, &recipients).ok()) {
+    // Update subscription on all control towers.
+    for (HostId const* recipient : recipients) {
+      // Find or open a new stream socket to this control tower.
+      int worker_id = copilot_->GetTowerWorker(topic.log_id, *recipient);
+      auto socket = GetControlTowerSocket(
+        *recipient, options_.msg_loop, worker_id);
+
+      // Check topic is subscribed to this tower.
+      if (!topic.FindTower(socket)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 
 }  // namespace rocketspeed

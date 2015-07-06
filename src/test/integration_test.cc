@@ -1501,6 +1501,79 @@ TEST(IntegrationTest, CopilotDeath) {
   ASSERT_EQ(GetNumOpenLogs(cluster.GetControlTower()), 0);
 }
 
+TEST(IntegrationTest, TowerRebalance) {
+  // Tests that subscriptions are rebalanced across control towers gradually
+  // when new towers become available.
+
+  // Setup local RocketSpeed cluster (pilot + copilot + tower).
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.start_controltower = true;
+  opts.start_copilot = true;
+  opts.start_pilot = true;
+  opts.copilot.control_towers_per_log = 1;
+  opts.copilot.rollcall_enabled = false;
+  opts.copilot.timer_interval_micros = 100000;  // 100ms
+  opts.copilot.tower_subscriptions_check_period = std::chrono::seconds(1);
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Start new control towers (only).
+  // Copilots doesn't know about these yet.
+  LocalTestCluster::Options ct_opts[2];
+  std::unique_ptr<LocalTestCluster> ct_cluster[2];
+  for (int i = 0; i < 2; ++i) {
+    ct_opts[i].info_log = info_log;
+    ct_opts[i].start_controltower = true;
+    ct_opts[i].start_copilot = false;
+    ct_opts[i].start_pilot = false;
+    ct_opts[i].controltower_port = ControlTower::DEFAULT_PORT + i + 1;
+    ct_cluster[i].reset(new LocalTestCluster(ct_opts[i]));
+    ASSERT_OK(ct_cluster[i]->GetStatus());
+  }
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+
+  // Listen on many topics (to ensure at least one goes to each tower).
+  enum { kNumTopics = 40 };
+  for (int i = 0; i < kNumTopics; ++i) {
+    client->Subscribe(GuestTenant,
+                      GuestNamespace,
+                      "TowerRebalance" + std::to_string(i),
+                      0,
+                      [] (std::unique_ptr<MessageReceived>&) {});
+  }
+
+  // The copilot should be subscribed to all topics on BOTH control towers.
+  env_->SleepForMicroseconds(200000);
+
+  // Only the first tower should have logs open.
+  ASSERT_NE(GetNumOpenLogs(cluster.GetControlTower()), 0);
+  ASSERT_EQ(GetNumOpenLogs(ct_cluster[0]->GetControlTower()), 0);
+  ASSERT_EQ(GetNumOpenLogs(ct_cluster[1]->GetControlTower()), 0);
+  auto initial_logs_open = GetNumOpenLogs(cluster.GetControlTower());
+
+  // Update the control tower mapping to include all towers.
+  std::unordered_map<uint64_t, HostId> new_towers = {
+    { 0, cluster.GetControlTower()->GetHostId() },
+    { 1, ct_cluster[0]->GetControlTower()->GetHostId() },
+    { 2, ct_cluster[1]->GetControlTower()->GetHostId() },
+  };
+  ASSERT_OK(cluster.GetCopilot()->UpdateControlTowers(std::move(new_towers)));
+  env_->SleepForMicroseconds(2000000);
+
+  // Now all should have logs open, and first should have fewer logs open.
+  ASSERT_NE(GetNumOpenLogs(cluster.GetControlTower()), 0);
+  ASSERT_NE(GetNumOpenLogs(ct_cluster[0]->GetControlTower()), 0);
+  ASSERT_NE(GetNumOpenLogs(ct_cluster[1]->GetControlTower()), 0);
+  ASSERT_LT(GetNumOpenLogs(cluster.GetControlTower()), initial_logs_open);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

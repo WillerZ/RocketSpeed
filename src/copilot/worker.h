@@ -19,6 +19,7 @@
 #include "src/messages/stream_socket.h"
 #include "src/util/common/hash.h"
 #include "src/util/common/linked_map.h"
+#include "src/util/timeout_list.h"
 #include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
@@ -107,6 +108,12 @@ class CopilotWorker {
         all.AddCounter("copilot.message_from_unexpected_tower");
       orphaned_topics =
         all.AddCounter("copilot.orphaned_topics");
+      orphaned_resubscribes =
+        all.AddCounter("copilot.orphaned_resubscribes");
+      tower_rebalances_checked =
+        all.AddCounter("copilot.tower_rebalances_checked");
+      tower_rebalances_performed =
+        all.AddCounter("copilot.tower_rebalances_performed");
     }
 
     Statistics all;
@@ -124,6 +131,9 @@ class CopilotWorker {
     Counter* gap_dropped_out_of_order;
     Counter* message_from_unexpected_tower;
     Counter* orphaned_topics;
+    Counter* orphaned_resubscribes;
+    Counter* tower_rebalances_checked;
+    Counter* tower_rebalances_performed;
   } stats_;
 
   // Send an ack message to the host for the msgid.
@@ -180,7 +190,9 @@ class CopilotWorker {
                     int worker_id);
 
   // Refreshes ustream subscriptions for a topic.
-  void UpdateTowerSubscriptions(const TopicUUID& uuid, TopicState& topic);
+  void UpdateTowerSubscriptions(const TopicUUID& uuid,
+                                TopicState& topic,
+                                bool force_resub = false);
 
   // Removes a single subscription.
   // May update subscription to control tower.
@@ -282,6 +294,8 @@ class CopilotWorker {
     uint32_t gaps_sent = 0;
   };
 
+  bool CorrectTopicTowers(TopicState& topic);
+
   // State of subscriptions for a single topic.
   std::unordered_map<TopicUUID, TopicState> topics_;
 
@@ -309,6 +323,9 @@ class CopilotWorker {
   // Maximum number of resubscriptions per ProcessTimerTick.
   uint64_t resubscriptions_per_tick_;
 
+  // Maximum number of rebalances per ProcessTimerTick;
+  uint64_t rebalances_per_tick_;
+
   // Queue for each client worker.
   std::vector<std::shared_ptr<CommandQueue>> client_queues_;
 
@@ -320,6 +337,11 @@ class CopilotWorker {
 
   // A client to write rollcall topic
   std::unique_ptr<RollcallImpl> rollcall_;
+
+  // A list of subscriptions to check topic health periodically.
+  // For long-living subscriptions, we need to ensure that the subscription
+  // is on the correct control tower.
+  TimeoutList<TopicUUID> topic_checkup_list_;
 };
 
 }  // namespace rocketspeed
