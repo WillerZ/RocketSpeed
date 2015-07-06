@@ -96,9 +96,7 @@ class SocketEvent {
     std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, false));
 
     // register only the read callback
-    if (sev->ev_ == nullptr ||
-        sev->write_ev_ == nullptr ||
-        event_add(sev->ev_, nullptr)) {
+    if (!sev->read_ev_ || !sev->write_ev_ || !sev->read_ev_->Enable()) {
       LOG_ERROR(event_loop->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
       return nullptr;
@@ -113,9 +111,7 @@ class SocketEvent {
     std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, true));
 
     // register only the read callback
-    if (sev->ev_ == nullptr ||
-        sev->write_ev_ == nullptr ||
-        event_add(sev->ev_, nullptr)) {
+    if (!sev->read_ev_ || !sev->write_ev_ || !sev->read_ev_->Enable()) {
       LOG_ERROR(event_loop->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
       return nullptr;
@@ -132,12 +128,8 @@ class SocketEvent {
              "Closing fd(%d)",
              fd_);
     event_loop_->GetLog()->Flush();
-    if (ev_) {
-      event_free(ev_);
-    }
-    if (write_ev_) {
-      event_free(write_ev_);
-    }
+    read_ev_.reset();
+    write_ev_.reset();
     close(fd_);
   }
 
@@ -150,7 +142,7 @@ class SocketEvent {
     // If the write-ready event is not currently registered, add a write
     // event and wait until its ready.
     if (!write_ev_added_) {
-      if (event_add(write_ev_, nullptr)) {
+      if (!write_ev_->Enable()) {
         LOG_ERROR(event_loop_->GetLog(),
             "Failed to add write event for fd(%d)", fd_);
         return Status::InternalError("Failed to enqueue write message");
@@ -178,8 +170,6 @@ class SocketEvent {
   , msg_idx_(0)
   , msg_size_(0)
   , fd_(fd)
-  , ev_(nullptr)
-  , write_ev_(nullptr)
   , event_loop_(event_loop)
   , write_ev_added_(false)
   , was_initiated_(initiated) {
@@ -187,52 +177,57 @@ class SocketEvent {
     event_loop->thread_check_.Check();
 
     // Create read and write events
-    ev_ = event_new(
-        event_loop->base_, fd, EV_READ|EV_PERSIST, EventCallback, this);
-    write_ev_ = event_new(
-        event_loop->base_, fd, EV_WRITE|EV_PERSIST, EventCallback, this);
+    read_ev_ = EventCallback::CreateFdReadCallback(
+      event_loop,
+      fd,
+      [this] () {
+        if (!ReadCallback().ok()) {
+          Disconnect(this);
+        } else {
+          ProcessHeartbeats();
+        }
+      });
+
+    write_ev_ = EventCallback::CreateFdWriteCallback(
+      event_loop,
+      fd,
+      [this] () {
+        if (!WriteCallback().ok()) {
+          Disconnect(this);
+        } else {
+          ProcessHeartbeats();
+        }
+      });
   }
 
-  static void EventCallback(evutil_socket_t /*fd*/, short what, void* arg) {
-    SocketEvent* sev = static_cast<SocketEvent*>(arg);
-    Status st;
-    if (what & EV_READ) {
-      st = sev->ReadCallback();
-    } else if (what & EV_WRITE) {
-      st = sev->WriteCallback();
-    } else if (what & EV_TIMEOUT) {
-    } else if (what & EV_SIGNAL) {
+  static void Disconnect(SocketEvent* sev) {
+    // Inform MsgLoop that clients have disconnected.
+    auto origin_type = sev->was_initiated_
+                           ? MessageGoodbye::OriginType::Server
+                           : MessageGoodbye::OriginType::Client;
+
+    // Remove and close streams that were assigned to this connection.
+    EventLoop* event_loop = sev->event_loop_;  // make a copy, sev is destroyed.
+    auto globals = event_loop->stream_router_.RemoveConnection(sev);
+    // Delete the socket event.
+    event_loop->teardown_connection(sev);
+    for (StreamID global : globals) {
+      // We send goodbye using the global stream IDs, as these are only
+      // known by the entity using the loop.
+      std::unique_ptr<Message> msg(
+        new MessageGoodbye(Tenant::InvalidTenant,
+                           MessageGoodbye::Code::SocketError,
+                           origin_type));
+      event_loop->Dispatch(std::move(msg), global);
     }
+  }
 
-    EventLoop* const event_loop = sev->event_loop_;
-    if (!st.ok()) {
-      // Inform MsgLoop that clients have disconnected.
-      auto origin_type = sev->was_initiated_
-                             ? MessageGoodbye::OriginType::Server
-                             : MessageGoodbye::OriginType::Client;
-
-      // Remove and close streams that were assigned to this connection.
-      auto globals = event_loop->stream_router_.RemoveConnection(sev);
-      // Delete the socket event.
-      event_loop->teardown_connection(sev);
-      sev = nullptr;
-
-      for (StreamID global : globals) {
-        // We send goodbye using the global stream IDs, as these are only
-        // known by the entity using the loop.
-        std::unique_ptr<Message> msg(
-            new MessageGoodbye(Tenant::InvalidTenant,
-                               MessageGoodbye::Code::SocketError,
-                               origin_type));
-        event_loop->Dispatch(std::move(msg), global);
-      }
-    }
-
-    if (event_loop->heartbeat_enabled_) {
-      event_loop->heartbeat_.ProcessExpired(
-        event_loop->heartbeat_timeout_,
-        event_loop->heartbeat_expired_callback_,
-        event_loop->heartbeat_expire_batch_);
+  void ProcessHeartbeats() {
+    if (event_loop_->heartbeat_enabled_) {
+      event_loop_->heartbeat_.ProcessExpired(
+        event_loop_->heartbeat_timeout_,
+        event_loop_->heartbeat_expired_callback_,
+        event_loop_->heartbeat_expire_batch_);
     }
   }
 
@@ -331,7 +326,7 @@ class SocketEvent {
         assert(partial_.size() > 0);
       } else if (write_ev_added_) {
         // No more queued messages. Switch off ready-to-write event on socket.
-        if (event_del(write_ev_)) {
+        if (!write_ev_->Disable()) {
           LOG_WARN(event_loop_->GetLog(),
               "Failed to remove write event for fd(%d)", fd_);
         } else {
@@ -490,8 +485,8 @@ class SocketEvent {
   size_t msg_size_;
   std::unique_ptr<char[]> msg_buf_;  // receive buffer
   evutil_socket_t fd_;
-  event* ev_;
-  event* write_ev_;
+  std::unique_ptr<EventCallback> read_ev_;
+  std::unique_ptr<EventCallback> write_ev_;
   EventLoop* event_loop_;
   bool write_ev_added_;    // is the write event added?
   bool was_initiated_;   // was this connection initiated by us?
@@ -741,31 +736,6 @@ EventLoop::do_timerevent(evutil_socket_t listener, short event, void *arg) {
 }
 
 void
-EventLoop::do_shutdown(evutil_socket_t listener, short event, void *arg) {
-  EventLoop* obj = static_cast<EventLoop *>(arg);
-  obj->thread_check_.Check();
-  event_base_loopexit(obj->base_, nullptr);
-}
-
-void EventLoop::do_command(evutil_socket_t listener, short event, void* arg) {
-  IncomingQueue* incoming_queue = static_cast<IncomingQueue*>(arg);
-  assert(incoming_queue);
-  EventLoop* obj = incoming_queue->event_loop;
-  assert(obj);
-  obj->thread_check_.Check();
-
-  // Read commands from the queue (there might have been multiple
-  // commands added since we have received the last notification).
-  CommandQueue* command_queue = incoming_queue->queue.get();
-  CommandQueue::BatchedRead batch(command_queue);
-  TimestampedCommand ts_cmd;
-  while (batch.Read(ts_cmd)) {
-    // Call registered callback.
-    obj->Dispatch(std::move(ts_cmd.command), ts_cmd.issued_time);
-  }
-}
-
-void
 EventLoop::do_accept(evconnlistener *listener,
                      evutil_socket_t fd,
                      sockaddr *address,
@@ -896,17 +866,17 @@ EventLoop::Initialize() {
   // is available, that indicates that the loop should stop.
   // This allows us to communicate to the event loop from another thread
   // safely without locks.
-  shutdown_event_ = event_new(
-    base_,
-    shutdown_eventfd_.readfd(),
-    EV_PERSIST|EV_READ,
-    this->do_shutdown,
-    reinterpret_cast<void*>(this));
+  shutdown_event_ =
+    EventCallback::CreateFdReadCallback(
+      this,
+      shutdown_eventfd_.readfd(),
+      [this] () {
+        event_base_loopexit(base_, nullptr);
+      });
   if (shutdown_event_ == nullptr) {
     return Status::InternalError("Failed to create shutdown event");
   }
-  rv = event_add(shutdown_event_, nullptr);
-  if (rv != 0) {
+  if (!shutdown_event_->Enable()) {
     return Status::InternalError("Failed to add shutdown event to event base");
   }
 
@@ -943,9 +913,6 @@ void EventLoop::Run() {
   }
   if (startup_event_) {
     event_free(startup_event_);
-  }
-  if (shutdown_event_) {
-    event_free(shutdown_event_);
   }
   for (auto& timer : timers_) {
     event_free(timer->loop_event);
@@ -1080,22 +1047,50 @@ Status EventLoop::AddIncomingQueue(
   // An event that signals new commands in the command queue.
   std::unique_ptr<IncomingQueue> incoming_queue(new IncomingQueue());
   incoming_queue->queue = std::move(command_queue);
-  incoming_queue->event_loop = this;
-  incoming_queue->ready_event = event_new(
-    base_,
+
+  CommandQueue* queue = incoming_queue->queue.get();
+  incoming_queue->ready_event = EventCallback::CreateFdReadCallback(
+    this,
     incoming_queue->queue->GetReadFd(),
-    EV_PERSIST|EV_READ,
-    do_command,
-    reinterpret_cast<void*>(incoming_queue.get()));
-  if (incoming_queue->ready_event == nullptr) {
+    [this, queue] () {
+      // Read commands from the queue (there might have been multiple
+      // commands added since we have received the last notification).
+      CommandQueue::BatchedRead batch(queue);
+      TimestampedCommand ts_cmd;
+      while (batch.Read(ts_cmd)) {
+        // Call registered callback.
+        Dispatch(std::move(ts_cmd.command), ts_cmd.issued_time);
+      }
+    });
+
+  if (!incoming_queue->ready_event) {
     return Status::InternalError("Failed to create command queue ready event");
   }
-  if (event_add(incoming_queue->ready_event, nullptr)) {
+  if (!incoming_queue->ready_event->Enable()) {
     return Status::InternalError("Failed to add command ready event");
   }
   LOG_INFO(info_log_, "Added new command queue to EventLoop");
   incoming_queues_.emplace_back(std::move(incoming_queue));
   return Status::OK();
+}
+
+static void EventShim(int fd, short what, void* event) {
+  assert(event);
+  if (what & (EV_READ|EV_WRITE)) {
+    static_cast<EventCallback*>(event)->Invoke();
+  }
+}
+
+event* EventLoop::CreateFdReadEvent(int fd,
+                                    void (*cb)(int, short, void*),
+                                    void* arg) {
+  return event_new(base_, fd, EV_PERSIST|EV_READ, cb, arg);
+}
+
+event* EventLoop::CreateFdWriteEvent(int fd,
+                                     void (*cb)(int, short, void*),
+                                     void* arg) {
+  return event_new(base_, fd, EV_PERSIST|EV_WRITE, cb, arg);
 }
 
 Status EventLoop::SendCommand(std::unique_ptr<Command>& command) {
@@ -1412,9 +1407,54 @@ int EventLoop::GetNumClients() const {
 }
 
 EventLoop::IncomingQueue::~IncomingQueue() {
-  if (ready_event) {
-    event_free(ready_event);
+}
+
+EventCallback::EventCallback(EventLoop* event_loop, std::function<void()> cb)
+: event_loop_(event_loop)
+, cb_(std::move(cb)) {
+}
+
+std::unique_ptr<EventCallback> EventCallback::CreateFdReadCallback(
+    EventLoop* event_loop,
+    int fd,
+    std::function<void()> cb) {
+  std::unique_ptr<EventCallback> callback(
+    new EventCallback(event_loop, std::move(cb)));
+  callback->event_ =
+    event_loop->CreateFdReadEvent(fd, &EventShim, callback.get());
+  return callback;
+}
+
+std::unique_ptr<EventCallback> EventCallback::CreateFdWriteCallback(
+    EventLoop* event_loop,
+    int fd,
+    std::function<void()> cb) {
+  std::unique_ptr<EventCallback> callback(
+    new EventCallback(event_loop, std::move(cb)));
+  callback->event_ =
+    event_loop->CreateFdWriteEvent(fd, &EventShim, callback.get());
+  return callback;
+}
+
+EventCallback::~EventCallback() {
+  if (event_) {
+    event_free(event_);
   }
+}
+
+void EventCallback::Invoke() {
+  event_loop_->ThreadCheck();
+  cb_();
+}
+
+bool EventCallback::Enable() {
+  event_loop_->ThreadCheck();
+  return event_add(event_, nullptr) == 0;
+}
+
+bool EventCallback::Disable() {
+  event_loop_->ThreadCheck();
+  return event_del(event_) == 0;
 }
 
 }  // namespace rocketspeed

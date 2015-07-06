@@ -60,6 +60,7 @@ typedef std::function<void(std::unique_ptr<Command> command,
 
 typedef std::function<void()> TimerCallbackType;
 
+class EventCallback;
 class EventLoop;
 class SocketEvent;
 
@@ -323,6 +324,28 @@ class EventLoop {
   static void GlobalShutdown();
 
   /**
+   * Create a read callback for an fd. Once enabled, whenever fd is ready for
+   * reading, cb will be invoked from the EventLoop thread.
+   *
+   * @param fd File descriptor to listen on.
+   * @param cb Callback to invoke when read is ready.
+   * @param arg Argument for callback.
+   * @return Handle for enabling and disabling the event.
+   */
+  event* CreateFdReadEvent(int fd, void (*cb)(int, short, void*), void* arg);
+
+  /**
+   * Create a write callback for an fd. Once enabled, whenever fd is ready for
+   * writing, cb will be invoked from the EventLoop thread.
+   *
+   * @param fd File descriptor to listen on.
+   * @param cb Callback to invoke when write is ready.
+   * @param arg Argument for callback.
+   * @return Handle for enabling and disabling the event.
+   */
+  event* CreateFdWriteEvent(int fd, void (*cb)(int, short, void*), void* arg);
+
+  /**
     * Option is a helper class used for passing the additional arguments to the
     * EventLoop constructor.
     */
@@ -376,7 +399,7 @@ class EventLoop {
   evconnlistener* listener_ = nullptr;
 
   // Shutdown event
-  event* shutdown_event_ = nullptr;
+  std::unique_ptr<EventCallback> shutdown_event_;
   rocketspeed::port::Eventfd shutdown_eventfd_;
 
   // Startup event
@@ -462,8 +485,7 @@ class EventLoop {
     ~IncomingQueue();
 
     std::shared_ptr<CommandQueue> queue;
-    event* ready_event;
-    EventLoop* event_loop;  // used in do_command callback.
+    std::unique_ptr<EventCallback> ready_event;
   };
   std::vector<std::unique_ptr<IncomingQueue>> incoming_queues_;
 
@@ -497,8 +519,61 @@ class EventLoop {
   static void accept_error_cb(evconnlistener *listener, void *arg);
   static void do_startevent(int listener, short event, void *arg);
   static void do_timerevent(int listener, short event, void *arg);
-  static void do_shutdown(int listener, short event, void *arg);
-  static void do_command(int listener, short event, void *arg);
+};
+
+class EventCallback {
+ public:
+  ~EventCallback();
+
+  /**
+   * Creates an EventCallback that will be invoked when fd becomes readable.
+   * cb will be invoked on the event_loop thread.
+   *
+   * @param event_loop The EventLoop to add the event to.
+   * @param fd File descriptor to listen for reads.
+   * @param cb Callback to invoke when fd is readable.
+   * @return EventCallback object.
+   */
+  static std::unique_ptr<EventCallback> CreateFdReadCallback(
+    EventLoop* event_loop,
+    int fd,
+    std::function<void()> cb);
+
+  /**
+   * Creates an EventCallback that will be invoked when fd becomes writable.
+   * cb will be invoked on the event_loop thread.
+   *
+   * @param event_loop The EventLoop to add the event to.
+   * @param fd File descriptor to listen for writes.
+   * @param cb Callback to invoke when fd is writable.
+   * @return EventCallback object.
+   */
+  static std::unique_ptr<EventCallback> CreateFdWriteCallback(
+    EventLoop* event_loop,
+    int fd,
+    std::function<void()> cb);
+
+  // non-copyable, non-moveable
+  EventCallback(const EventCallback&) = delete;
+  EventCallback(EventCallback&&) = delete;
+  EventCallback& operator=(const EventCallback&) = delete;
+  EventCallback& operator=(EventCallback&&) = delete;
+
+  /** Invokes the callback */
+  void Invoke();
+
+  /** Enables the event */
+  bool Enable();
+
+  /** Disables the event */
+  bool Disable();
+
+ private:
+  explicit EventCallback(EventLoop* event_loop, std::function<void()> cb);
+
+  EventLoop* event_loop_;
+  event* event_;
+  std::function<void()> cb_;
 };
 
 }  // namespace rocketspeed
