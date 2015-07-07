@@ -176,15 +176,8 @@ Status ControlTower::Initialize() {
   size_t reader_id = 0;
   for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
-      [this, i] (std::unique_ptr<Message> msg,
-                 std::vector<HostNumber> hosts) {
-        Status status = rooms_[i]->OnTailerMessage(std::move(msg),
-                                                   std::move(hosts));
-        if (!status.ok()) {
-          LOG_WARN(options_.info_log,
-            "OnTailerMessage failed for room %zu (%s)",
-            i, status.ToString().c_str());
-        }
+      [this, i] (std::unique_ptr<Message> msg, std::vector<HostNumber> hosts) {
+        rooms_[i]->OnTailerMessage(std::move(msg), std::move(hosts));
       };
     TopicTailer* topic_tailer;
     st = TopicTailer::CreateNewInstance(opt.env,

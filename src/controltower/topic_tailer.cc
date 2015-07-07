@@ -1097,75 +1097,74 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
   // process the subscription.
   if (start == 0) {
     stats_.add_subscriber_requests_at_0->Add(1);
-    // Create a callback to enqueue a subscribe command.
-    // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
-    // when converted to an std::function - could use an alloc pool for this.
-    auto callback = [this, topic, hostnum, logid] (Status status,
-                                                   SequenceNumber seqno) {
-      if (!status.ok()) {
-        LOG_WARN(info_log_,
-          "Failed to find latest sequence number in %s (%s)",
-          topic.ToString().c_str(),
-          status.ToString().c_str());
-        return;
-      }
-
-      bool sent = Forward([this, topic, hostnum, logid, seqno] () {
-        AddTailSubscriber(topic, hostnum, logid, seqno);
-
-        LOG_INFO(info_log_,
-          "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
-          logid,
-          seqno);
-
-        auto ts_it = tail_seqno_cached_.find(logid);
-        if (ts_it == tail_seqno_cached_.end()) {
-          tail_seqno_cached_.emplace(logid, seqno);
-        } else {
-          ts_it->second = std::max(ts_it->second, seqno);
-        }
-      });
-
-      if (!sent) {
-        LOG_WARN(info_log_,
-          "Failed to send %s@0 sub for HostNum(%d) to TopicTailer worker loop",
-          topic.ToString().c_str(),
-          hostnum);
-      }
-    };
 
     // Check if we already have a good estimate of the tail seqno first.
-    bool sent = Forward([this, topic, hostnum, logid, callback] () {
-      SequenceNumber tail_seqno = GetTailSeqnoEstimate(logid);
-      if (tail_seqno != 0) {
-        // Invoke FindLatestSeqno callback immediately.
-        stats_.add_subscriber_requests_at_0_fast->Add(1);
-        callback(Status::OK(), tail_seqno);
-      } else {
-        // Otherwise do full FindLatestSeqno request.
-        stats_.add_subscriber_requests_at_0_slow->Add(1);
-        Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
-        if (!seqno_status.ok()) {
+    SequenceNumber tail_seqno = GetTailSeqnoEstimate(logid);
+    if (tail_seqno != 0) {
+      // Can add subscriber immediately.
+      stats_.add_subscriber_requests_at_0_fast->Add(1);
+      AddTailSubscriber(topic, hostnum, logid, tail_seqno);
+    } else {
+      // Otherwise do full FindLatestSeqno request.
+      stats_.add_subscriber_requests_at_0_slow->Add(1);
+
+      // Create a callback to enqueue a subscribe command.
+      // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
+      // when converted to an std::function - could use an alloc pool for this.
+      auto callback = [this, topic, hostnum, logid] (Status status,
+                                                     SequenceNumber seqno) {
+        if (!status.ok()) {
           LOG_WARN(info_log_,
-            "Failed to find latest seqno (%s) for %s",
-            seqno_status.ToString().c_str(),
-            topic.ToString().c_str());
-        } else {
-          LOG_INFO(info_log_,
-            "Sent FindLatestSeqno request for Hostnum(%d) for %s",
-            hostnum,
-            topic.ToString().c_str());
+            "Failed to find latest sequence number in %s (%s)",
+            topic.ToString().c_str(),
+            status.ToString().c_str());
+          return;
         }
+
+        // This callback is invoked on the storage worker threads, so the
+        // response needs to be forwarded back to the TopicTailer/Room thread.
+        bool sent = Forward([this, topic, hostnum, logid, seqno] () {
+          AddTailSubscriber(topic, hostnum, logid, seqno);
+
+          LOG_INFO(info_log_,
+            "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
+            logid,
+            seqno);
+
+          auto ts_it = tail_seqno_cached_.find(logid);
+          if (ts_it == tail_seqno_cached_.end()) {
+            tail_seqno_cached_.emplace(logid, seqno);
+          } else {
+            ts_it->second = std::max(ts_it->second, seqno);
+          }
+        });
+
+        if (!sent) {
+          LOG_WARN(info_log_,
+            "Failed to send %s@0 sub for HostNum(%d) to TopicTailer worker",
+            topic.ToString().c_str(),
+            hostnum);
+        }
+      };
+
+      Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
+      if (!seqno_status.ok()) {
+        LOG_WARN(info_log_,
+          "Failed to find latest seqno (%s) for %s",
+          seqno_status.ToString().c_str(),
+          topic.ToString().c_str());
+      } else {
+        LOG_INFO(info_log_,
+          "Sent FindLatestSeqno request for Hostnum(%d) for %s",
+          hostnum,
+          topic.ToString().c_str());
       }
-    });
-    return sent ? Status::OK() : Status::NoBuffer();
-  }
-
-  bool sent = Forward([this, logid, topic, start, hostnum] () {
+    }
+  } else {
+    // Non-zero sequence number.
     AddSubscriberInternal(topic, hostnum, logid, start);
-  });
-
-  return sent ? Status::OK() : Status::NoBuffer();
+  }
+  return Status::OK();
 }
 
 // Stop reading from this log
@@ -1181,27 +1180,23 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
     return st;
   }
 
-  bool sent = Forward([this, logid, topic, hostnum] () {
-    LOG_DEBUG(info_log_,
-      "Hostnum(%d) unsubscribed for %s",
-      int(hostnum),
-      topic.ToString().c_str());
-    RemoveSubscriberInternal(topic, hostnum, logid);
-  });
+  LOG_DEBUG(info_log_,
+    "Hostnum(%d) unsubscribed for %s",
+    int(hostnum),
+    topic.ToString().c_str());
+  RemoveSubscriberInternal(topic, hostnum, logid);
 
-  return sent ? Status::OK() : Status::NoBuffer();
+  return Status::OK();
 }
 
 Status TopicTailer::RemoveSubscriber(HostNumber hostnum) {
   thread_check_.Check();
-  bool sent = Forward([this, hostnum] () {
-    LOG_DEBUG(info_log_,
-      "Hostnum(%d) unsubscribed for all topics",
-      int(hostnum));
-    RemoveSubscriberInternal(hostnum);
-  });
+  LOG_DEBUG(info_log_,
+    "Hostnum(%d) unsubscribed for all topics",
+    int(hostnum));
+  RemoveSubscriberInternal(hostnum);
 
-  return sent ? Status::OK() : Status::NoBuffer();
+  return Status::OK();
 }
 
 bool TopicTailer::Forward(std::function<void()> command) {

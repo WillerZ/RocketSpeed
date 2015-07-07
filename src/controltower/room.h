@@ -39,8 +39,8 @@ class ControlRoom {
   Status Forward(std::unique_ptr<Message> msg, int worker_id, StreamID origin);
 
   // Processes a message from the tailer.
-  Status OnTailerMessage(std::unique_ptr<Message> msg,
-                         std::vector<HostNumber> hosts);
+  void OnTailerMessage(std::unique_ptr<Message> msg,
+                       std::vector<HostNumber> hosts);
 
  private:
   // I am part of this control tower

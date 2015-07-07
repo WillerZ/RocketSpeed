@@ -141,25 +141,17 @@ ControlRoom::ProcessGoodbye(std::unique_ptr<Message> msg,
   topic_tailer_->RemoveSubscriber(hostnum);
 }
 
-Status
+void
 ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
                              std::vector<HostNumber> hosts) {
-  auto moved_msg = folly::makeMoveWrapper(std::move(msg));
-  auto moved_hosts = folly::makeMoveWrapper(std::move(hosts));
-  std::unique_ptr<Command> cmd(
-    MakeExecuteCommand([this, moved_msg, moved_hosts] () mutable {
-      std::unique_ptr<Message> message(moved_msg.move());
-      MessageType type = message->GetMessageType();
-      if (type == MessageType::mDeliver) {
-        ProcessDeliver(std::move(message), moved_hosts.move());
-      } else if (type == MessageType::mGap) {
-        ProcessGap(std::move(message), moved_hosts.move());
-      } else {
-        assert(false);
-      }
-    }));
-  MsgLoop* msg_loop = control_tower_->GetOptions().msg_loop;
-  return msg_loop->SendCommand(std::move(cmd), room_number_);
+  MessageType type = msg->GetMessageType();
+  if (type == MessageType::mDeliver) {
+    ProcessDeliver(std::move(msg), std::move(hosts));
+  } else if (type == MessageType::mGap) {
+    ProcessGap(std::move(msg), std::move(hosts));
+  } else {
+    assert(false);
+  }
 }
 
 
