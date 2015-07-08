@@ -178,7 +178,7 @@ fi
 # except for the test and benchmark files. By default, find will output a list
 # of all files matching either rule, so we need to append -print to make the
 # prune take effect.
-DIRS="src/util src/pilot src/copilot src/controltower src/client src/messages src/tools src/proxy src/rollcall src/datastore src/supervisor"
+DIRS="src/util src/pilot src/copilot src/controltower src/client src/messages src/tools src/proxy src/rollcall src/datastore src/supervisor src/engine"
 if test -z "$USE_LOGDEVICE"; then
   # If not using the "actual" LogDevice, compile and link with the mock
   # implementation in src/logdevice.

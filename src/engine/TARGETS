@@ -1,0 +1,17 @@
+cpp_library(
+    name = 'rocketeer',
+    srcs = [
+        'rocketeer.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util',
+        '@/rocketspeed/github/src/util/common',
+    ],
+)
