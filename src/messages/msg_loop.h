@@ -52,20 +52,20 @@ class MsgLoop : public MsgLoopBase {
   virtual ~MsgLoop();
 
   // Registers callbacks for a number of message types.
-  void
-  RegisterCallbacks(const std::map<MessageType, MsgCallbackType>& callbacks);
+  void RegisterCallbacks(
+    const std::map<MessageType, MsgCallbackType>& callbacks) override;
 
   // Register the timer callback at the givne period. Must be called after Init.
   Status RegisterTimerCallback(TimerCallbackType callback,
                              std::chrono::microseconds period) override;
 
-  Status Initialize();
+  Status Initialize() override;
 
   // Start this instance of the Event Loop
-  void Run(void);
+  void Run() override;
 
   // Is the MsgLoop up and running?
-  bool IsRunning() const {
+  bool IsRunning() const override {
     for (const auto& event_loop : event_loops_) {
       if (!event_loop->IsRunning()) {
         return false;
@@ -75,7 +75,7 @@ class MsgLoop : public MsgLoopBase {
   }
 
   // Stop the message loop.
-  void Stop();
+  void Stop() override;
 
   // Get the host ID of this message loop.
   const HostId& GetHostId() const { return hostid_; }
@@ -86,7 +86,7 @@ class MsgLoop : public MsgLoopBase {
   }
 
   // The client ID of a specific event loop.
-  const ClientID& GetClientId(int worker_id) const {
+  const ClientID& GetClientId(int worker_id) const override {
     return worker_client_ids_[worker_id];
   }
 
@@ -130,29 +130,29 @@ class MsgLoop : public MsgLoopBase {
   std::unique_ptr<Command> ResponseCommand(const Message& msg,
                                            StreamID stream);
 
-  Statistics GetStatisticsSync();
+  Statistics GetStatisticsSync() override;
 
   // Checks that we are running on any EventLoop thread.
-  void ThreadCheck() const {
+  void ThreadCheck() const override {
     GetThreadWorkerIndex();
   }
 
   // Retrieves the number of EventLoop threads.
-  int GetNumWorkers() const {
+  int GetNumWorkers() const override {
     return static_cast<int>(event_loops_.size());
   }
 
   // Get the worker ID of the least busy event loop.
-  int LoadBalancedWorkerId() const;
+  int LoadBalancedWorkerId() const override;
 
   // Retrieves the worker ID for the currently running thread.
   // Will assert if called from a non-EventLoop thread.
-  int GetThreadWorkerIndex() const;
+  int GetThreadWorkerIndex() const override;
 
   size_t GetQueueSize(int worker_id) const override;
 
   Status WaitUntilRunning(std::chrono::seconds timeout =
-                            std::chrono::seconds(10));
+                            std::chrono::seconds(10)) override;
 
   /**
    * Synchronously finds the total number of active clients on each event

@@ -55,7 +55,7 @@ class ClientImpl : public Client {
                                 const TopicOptions& options,
                                 const Slice& data,
                                 PublishCallback callback,
-                                const MsgId messageId);
+                                const MsgId messageId) override;
 
   SubscriptionHandle Subscribe(SubscriptionParameters parameters,
                                MessageReceivedCallback deliver_callback,
