@@ -558,7 +558,9 @@ void CopilotWorker::ProcessTimerTick() {
   // to avoid thundering herd on the control tower.
   uint64_t count = resubscriptions_per_tick_;
   while (count-- && !orphan_topics_.empty()) {
-    const TopicUUID& uuid = orphan_topics_.front();
+    // Take copy of UUID. This is necessary since UpdateTowerSubscriptions can
+    // remove the orphan_topics_ entry while still referencing the uuid arg.
+    const TopicUUID uuid = orphan_topics_.front();
     auto it = topics_.find(uuid);
     assert(it != topics_.end());
     if (it != topics_.end()) {

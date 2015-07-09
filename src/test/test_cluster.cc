@@ -120,7 +120,7 @@ void LocalTestCluster::Initialize(Options opts) {
                                            opts.storage_url,
                                            "",
                                            std::chrono::milliseconds(1000),
-                                           16,
+                                           4,
                                            env_,
                                            info_log_,
                                            &storage);
@@ -135,7 +135,7 @@ void LocalTestCluster::Initialize(Options opts) {
                                          "",
                                          "",
                                          std::chrono::milliseconds(1000),
-                                         16,
+                                         4,
                                          env_,
                                          info_log_,
                                          &storage);
@@ -167,7 +167,7 @@ void LocalTestCluster::Initialize(Options opts) {
 
   if (opts.start_controltower) {
     control_tower_loop_.reset(new MsgLoop(
-        env_, env_options, opts.controltower_port, 16, info_log_, "tower"));
+        env_, env_options, opts.controltower_port, 4, info_log_, "tower"));
     status_ = control_tower_loop_->Initialize();
     if (!status_.ok()) {
       LOG_ERROR(info_log_, "Failed to initialize Control Tower loop.");
@@ -203,7 +203,7 @@ void LocalTestCluster::Initialize(Options opts) {
 
   if (opts.start_copilot || opts.start_pilot) {
     cockpit_loop_.reset(new MsgLoop(
-        env_, env_options, opts.cockpit_port, 16, info_log_, "cockpit"));
+        env_, env_options, opts.cockpit_port, 4, info_log_, "cockpit"));
     status_ = cockpit_loop_->Initialize();
     if (!status_.ok()) {
       LOG_ERROR(info_log_, "Failed to initialize Cockpit loop.");

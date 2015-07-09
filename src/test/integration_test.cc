@@ -628,8 +628,10 @@ TEST(IntegrationTest, LostConnection) {
   auto ok_callback =
       [&](std::unique_ptr<ResultStatus> rs) { ASSERT_OK(rs->GetStatus()); };
 
+  port::Semaphore error_sem;
   auto disconnected_callback = [&](std::unique_ptr<ResultStatus> rs) {
     ASSERT_TRUE(!rs->GetStatus().ok());
+    error_sem.Post();
   };
 
   auto receive_callback = [&](std::unique_ptr<MessageReceived>& mr) {
@@ -673,6 +675,7 @@ TEST(IntegrationTest, LostConnection) {
                             topic_options,
                             Slice(data),
                             disconnected_callback).status);
+  ASSERT_TRUE(error_sem.TimedWait(timeout));
 
   cluster.reset(new LocalTestCluster(opts));
   ASSERT_OK(cluster->GetStatus());
@@ -704,9 +707,6 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
-  // Message read semaphore.
-  port::Semaphore msg_received;
-
   // Message setup.
   Topic topic = "OneMessageWithoutRollCall";
   NamespaceID namespace_id = GuestNamespace;
@@ -715,19 +715,12 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   GUIDGenerator msgid_generator;
   MsgId message_id = msgid_generator.Generate();
 
-  // RocketSpeed callbacks;
-  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
-    msg_received.Post();
-  };
-
   // Create RocketSpeed client.
   ClientOptions options;
   options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
-  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -741,11 +734,16 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   ASSERT_TRUE(ps.msgid == message_id);
 
   // Listen for the message.
-  auto handle = client->Subscribe(GuestTenant, namespace_id, topic, 1);
+  port::Semaphore msg_received1;
+  auto handle = client->Subscribe(GuestTenant, namespace_id, topic, 1,
+    [&] (std::unique_ptr<MessageReceived>& mr) {
+      ASSERT_TRUE(mr->GetContents().ToString() == data);
+      msg_received1.Post();
+    });
   ASSERT_TRUE(handle);
 
   // Wait for the message.
-  ASSERT_TRUE(msg_received.TimedWait(timeout));
+  ASSERT_TRUE(msg_received1.TimedWait(timeout));
 
   // Should have received backlog records, and no tail records.
   auto stats1 = cluster.GetControlTower()->GetStatisticsSync();
@@ -758,7 +756,12 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   client->Unsubscribe(handle);
 
   // Now subscribe at tail, and publish 1.
-  handle = client->Subscribe(GuestTenant, namespace_id, topic, 0);
+  port::Semaphore msg_received2;
+  handle = client->Subscribe(GuestTenant, namespace_id, topic, 0,
+    [&] (std::unique_ptr<MessageReceived>& mr) {
+      ASSERT_TRUE(mr->GetContents().ToString() == data);
+      msg_received2.Post();
+    });
   ASSERT_TRUE(handle);
 
   env_->SleepForMicroseconds(100000);
@@ -770,7 +773,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
                   Slice(data),
                   nullptr,
                   message_id);
-  ASSERT_TRUE(msg_received.TimedWait(timeout));
+  ASSERT_TRUE(msg_received2.TimedWait(timeout));
 
   // Should have received no more backlog records, and just 1 tail record.
   auto stats2 = cluster.GetControlTower()->GetStatisticsSync();
@@ -1326,7 +1329,7 @@ TEST(IntegrationTest, LogAvailability) {
 TEST(IntegrationTest, TowerDeathReconnect) {
   // Connect to a tower, kill it, bring back up at same host ID, and check that
   // we reconnect and resub.
-  const size_t kNumTopics = 1000;
+  const size_t kNumTopics = 100;
 
   // Setup local RocketSpeed cluster.
   LocalTestCluster::Options opts;
@@ -1426,7 +1429,7 @@ TEST(IntegrationTest, TowerDeathReconnect) {
 }
 
 TEST(IntegrationTest, CopilotDeath) {
-  const size_t kNumTopics = 100;
+  const size_t kNumTopics = 10;
 
   // Setup local RocketSpeed cluster.
   LocalTestCluster::Options opts;
@@ -1501,6 +1504,9 @@ TEST(IntegrationTest, CopilotDeath) {
   ASSERT_EQ(GetNumOpenLogs(cluster.GetControlTower()), 0);
 }
 
+#ifndef USE_LOGDEVICE
+// This test doesn't work with the LogDevice integration test utils since they
+// only support one log, meaning there is no way to balance.
 TEST(IntegrationTest, TowerRebalance) {
   // Tests that subscriptions are rebalanced across control towers gradually
   // when new towers become available.
@@ -1549,7 +1555,7 @@ TEST(IntegrationTest, TowerRebalance) {
                       [] (std::unique_ptr<MessageReceived>&) {});
   }
 
-  // The copilot should be subscribed to all topics on BOTH control towers.
+  // The copilot should be subscribed to all topics the first control tower.
   env_->SleepForMicroseconds(200000);
 
   // Only the first tower should have logs open.
@@ -1573,6 +1579,7 @@ TEST(IntegrationTest, TowerRebalance) {
   ASSERT_NE(GetNumOpenLogs(ct_cluster[1]->GetControlTower()), 0);
   ASSERT_LT(GetNumOpenLogs(cluster.GetControlTower()), initial_logs_open);
 }
+#endif
 
 }  // namespace rocketspeed
 

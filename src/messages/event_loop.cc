@@ -918,6 +918,7 @@ void EventLoop::Run() {
     event_free(timer->loop_event);
   }
   incoming_queues_.clear();
+  shutdown_event_.reset();
   teardown_all_connections();
   event_base_free(base_);
 

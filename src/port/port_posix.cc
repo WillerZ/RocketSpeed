@@ -185,7 +185,7 @@ Eventfd::Eventfd(bool nonblock, bool close_on_exec) {
   if (close_on_exec) flags |= EFD_CLOEXEC;
   fd_[0] = eventfd(initial_value, flags);
 }
-int Eventfd::status() const { return fd_[0]; }
+int Eventfd::status() const { return fd_[0] == -1 ? 1 : 0; }
 int Eventfd::closefd() { return close(fd_[0]); }
 int Eventfd::readfd() const { return fd_[0]; }
 int Eventfd::writefd() const { return fd_[0]; }

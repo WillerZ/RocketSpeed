@@ -102,6 +102,7 @@ CommandQueue::CommandQueue(BaseEnv* env,
     , queue_(static_cast<uint32_t>(size))
     , ready_fd_(true, true)
     , synced_size_(0) {
+  assert(ready_fd_.status() == 0);
 }
 
 CommandQueue::~CommandQueue() {
