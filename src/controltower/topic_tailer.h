@@ -12,6 +12,7 @@
 #include "include/Types.h"
 #include "src/port/Env.h"
 #include "src/messages/messages.h"
+#include "src/messages/msg_loop.h"
 #include "src/util/hostmap.h"
 #include "src/util/storage.h"
 #include "src/util/topic_uuid.h"
@@ -155,7 +156,8 @@ class TopicTailer {
                                  std::vector<HostNumber>)> on_message,
               Options options);
 
-  bool Forward(std::function<void()> command);
+  template <typename Function>
+  bool Forward(Function command);
 
   void AddTailSubscriber(const TopicUUID& topic,
                          HostNumber hostnum,
@@ -236,6 +238,9 @@ class TopicTailer {
 
   Options options_;
 
+  // Queues used to communicate from storage threads back to the room.
+  std::unique_ptr<ThreadLocalCommandQueues> storage_to_room_queues_;
+
   struct Stats {
     Stats() {
       const std::string prefix = "tower.topic_tailer.";
@@ -308,5 +313,11 @@ class TopicTailer {
     Counter* remove_subscriber_requests;
   } stats_;
 };
+
+template <typename Function>
+bool TopicTailer::Forward(Function command) {
+  std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
+  return storage_to_room_queues_->GetThreadLocal()->Write(cmd);
+}
 
 }  // namespace rocketspeed

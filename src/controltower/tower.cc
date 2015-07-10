@@ -63,6 +63,13 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
     hostworker_[i].store(-1, std::memory_order_release);
   }
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
+
+  for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
+    tower_to_room_queues_.emplace_back(
+      options_.msg_loop->CreateWorkerQueues());
+    find_latest_seqno_response_queues_.emplace_back(
+      options_.msg_loop->CreateThreadLocalQueues(i));
+  }
 }
 
 ControlTower::~ControlTower() {
@@ -252,17 +259,18 @@ ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
     // forward message to the destination room
     ControlRoom* room = rooms_[room_number].get();
     int worker_id = options_.msg_loop->GetThreadWorkerIndex();
-    st = room->Forward(std::move(newmessage), worker_id, origin);
-    if (!st.ok()) {
+
+    auto command = room->MsgCommand(std::move(newmessage), worker_id, origin);
+    auto& queue = tower_to_room_queues_[worker_id][room_number];
+    if (!queue->Write(command)) {
       LOG_WARN(options_.info_log,
           "Unable to forward %ssubscription for Topic(%s,%s)@%" PRIu64
-          " to rooms-%u (%s)",
+          " to rooms-%u",
           topic.topic_type == MetadataType::mSubscribe ? "" : "un",
           topic.namespace_id.c_str(),
           topic.topic_name.c_str(),
           topic.seqno,
-          room_number,
-          st.ToString().c_str());
+          room_number);
     } else {
       LOG_DEBUG(options_.info_log,
           "Forwarded %ssubscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
@@ -310,8 +318,9 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
                        GapType::kBenign,
                        0,
                        seqno - 1);
-        status = options_.msg_loop->SendResponse(gap, origin, worker_id);
-        if (status.ok()) {
+        auto command = options_.msg_loop->ResponseCommand(gap, origin);
+        auto& queues = find_latest_seqno_response_queues_[worker_id];
+        if (queues->GetThreadLocal()->Write(command)) {
           LOG_DEBUG(options_.info_log,
             "Sent latest seqno gap 0-%" PRIu64 " to %llu for Topic(%s,%s)",
             seqno - 1,
@@ -353,11 +362,11 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
         }
       }
     }));
-  st = options_.msg_loop->SendCommand(std::move(cmd), room);
-  if (!st.ok()) {
+  auto& queue = tower_to_room_queues_[worker_id][room];
+  if (!queue->Write(cmd)) {
     LOG_ERROR(options_.info_log,
-      "Failed to enqueue command to find latest seqno on Log(%" PRIu64 "): %s",
-      log_id, st.ToString().c_str());
+      "Failed to enqueue command to find latest seqno on Log(%" PRIu64 ")",
+      log_id);
   }
 }
 
@@ -366,6 +375,7 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
 void
 ControlTower::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
+  int worker_id = options_.msg_loop->GetThreadWorkerIndex();
 
   // get the request message
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
@@ -376,11 +386,12 @@ ControlTower::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
       new MessageGoodbye(goodbye->GetTenantID(),
                          goodbye->GetCode(),
                          goodbye->GetOriginType()));
-    Status st = rooms_[i]->Forward(std::move(new_msg), -1, origin);
-    if (!st.ok()) {
+    auto command = rooms_[i]->MsgCommand(std::move(new_msg), -1, origin);
+    auto& queue = tower_to_room_queues_[worker_id][i];
+    if (!queue->Write(command)) {
       LOG_WARN(options_.info_log,
-          "Unable to forward goodbye to rooms-%d (%s)",
-          i, st.ToString().c_str());
+          "Unable to forward goodbye to rooms-%d",
+          i);
     } else {
       LOG_DEBUG(options_.info_log,
           "Forwarded goodbye to rooms-%d",

@@ -15,6 +15,7 @@
 
 namespace rocketspeed {
 
+class CommandQueue;
 class ControlTower;
 class TopicTailer;
 
@@ -36,7 +37,9 @@ class ControlRoom {
   unsigned int GetRoomNumber() const { return room_number_; }
 
   // Forwards a message to this Room
-  Status Forward(std::unique_ptr<Message> msg, int worker_id, StreamID origin);
+  std::unique_ptr<Command> MsgCommand(std::unique_ptr<Message> msg,
+                                      int worker_id,
+                                      StreamID origin);
 
   // Processes a message from the tailer.
   void OnTailerMessage(std::unique_ptr<Message> msg,
@@ -54,6 +57,9 @@ class ControlRoom {
 
   // Map of host numbers to worker loop IDs.
   std::unordered_map<HostNumber, int> hostnum_to_worker_id_;
+
+  // Queues for communicating back to client threads.
+  std::vector<std::shared_ptr<CommandQueue>> room_to_client_queues_;
 
   // callbacks to process incoming messages
   void ProcessMetadata(std::unique_ptr<Message> msg,

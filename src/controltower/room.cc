@@ -27,6 +27,8 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
   control_tower_(control_tower),
   room_number_(room_number),
   topic_tailer_(control_tower->GetTopicTailer(room_number)) {
+
+  room_to_client_queues_ = options.msg_loop->CreateWorkerQueues();
 }
 
 ControlRoom::~ControlRoom() {
@@ -35,10 +37,10 @@ ControlRoom::~ControlRoom() {
 // The Control Tower uses this method to forward a message to this Room.
 // The Control Room forwards some messages (those with seqno = 0) to
 // itself by using this method.
-Status
-ControlRoom::Forward(std::unique_ptr<Message> msg,
-                     int worker_id,
-                     StreamID origin) {
+std::unique_ptr<Command>
+ControlRoom::MsgCommand(std::unique_ptr<Message> msg,
+                        int worker_id,
+                        StreamID origin) {
   auto moved_msg = folly::makeMoveWrapper(std::move(msg));
   std::unique_ptr<Command> cmd(
     MakeExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
@@ -56,8 +58,7 @@ ControlRoom::Forward(std::unique_ptr<Message> msg,
         assert(false);
       }
     }));
-  MsgLoop* msg_loop = control_tower_->GetOptions().msg_loop;
-  return msg_loop->SendCommand(std::move(cmd), room_number_);
+  return cmd;
 }
 
 // Process Metadata messages that are coming in from ControlTower.
@@ -189,9 +190,9 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
     assert(worker_id != -1);
     if (worker_id != -1) {
       // Send to correct worker loop.
-      st = options.msg_loop->SendResponse(*request, origin, worker_id);
+      auto command = options.msg_loop->ResponseCommand(*request, origin);
 
-      if (st.ok()) {
+      if (room_to_client_queues_[worker_id]->Write(command)) {
         LOG_DEBUG(options.info_log,
                  "Sent data (%.16s)@%" PRIu64 " for %s to %llu",
                  request->GetPayload().ToString().c_str(),
@@ -239,9 +240,9 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
     assert(worker_id != -1);
     if (worker_id != -1) {
       // Send to correct worker loop.
-      Status st = options.msg_loop->SendResponse(*gap, origin, worker_id);
+      auto command = options.msg_loop->ResponseCommand(*gap, origin);
 
-      if (st.ok()) {
+      if (room_to_client_queues_[worker_id]->Write(command)) {
         LOG_DEBUG(options.info_log,
                  "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
                  prev_seqno,

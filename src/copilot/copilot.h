@@ -48,11 +48,6 @@ class Copilot {
     return options_.msg_loop->GetClientId(worker_id);
   }
 
-  // Sends a command to a msgloop worker.
-  Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
-    return options_.msg_loop->SendCommand(std::move(command), worker_id);
-  }
-
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;
   }

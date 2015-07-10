@@ -729,6 +729,8 @@ TopicTailer::TopicTailer(
   on_message_(std::move(on_message)),
   prng_(std::random_device()()),
   options_(options) {
+
+  storage_to_room_queues_ = msg_loop->CreateThreadLocalQueues(worker_id);
 }
 
 TopicTailer::~TopicTailer() {
@@ -1197,12 +1199,6 @@ Status TopicTailer::RemoveSubscriber(HostNumber hostnum) {
   RemoveSubscriberInternal(hostnum);
 
   return Status::OK();
-}
-
-bool TopicTailer::Forward(std::function<void()> command) {
-  std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
-  Status st = msg_loop_->TrySendCommand(cmd, worker_id_);
-  return st.ok();
 }
 
 std::string TopicTailer::GetLogInfo(LogID log_id) const {

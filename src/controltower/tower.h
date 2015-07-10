@@ -36,11 +36,6 @@ class ControlTower {
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}
 
-  // Sends a command to the msgloop
-  Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
-    return options_.msg_loop->SendCommand(std::move(command), worker_id);
-  }
-
   // Returns the HostId to HostNumber mapping
   HostMap& GetHostMap() { return hostmap_; }
 
@@ -103,6 +98,15 @@ class ControlTower {
 
   // The id of this control tower
   const ClientID tower_id_;
+
+  // Queues for communicating from Tower processor to Rooms.
+  std::vector<std::vector<std::shared_ptr<CommandQueue>>>
+    tower_to_room_queues_;
+
+  // Queues used to communicate from FindLatestSeqno response thread back to
+  // client that issued the request.
+  std::vector<std::unique_ptr<ThreadLocalCommandQueues>>
+    find_latest_seqno_response_queues_;
 
   // private Constructor
   explicit ControlTower(const ControlTowerOptions& options);

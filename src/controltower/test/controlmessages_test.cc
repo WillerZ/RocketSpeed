@@ -218,6 +218,7 @@ TEST(ControlTowerTest, NoLogger) {
                1,
                std::make_shared<NullLogger>(),
                "test");
+  ASSERT_OK(loop.Initialize());
   ControlTower* tower = nullptr;
   ControlTowerOptions options;
   options.msg_loop = &loop;

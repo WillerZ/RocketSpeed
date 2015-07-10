@@ -87,7 +87,7 @@ class LogTailer {
   Status StopReading(LogID logid, size_t reader_id);
 
   // Asynchronously finds the latest seqno then
-  // invokes the callback.
+  // invokes the callback on an unspecified thread.
   Status FindLatestSeqno(
     LogID logid,
     std::function<void(Status, SequenceNumber)> callback);
