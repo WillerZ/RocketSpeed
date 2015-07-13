@@ -222,7 +222,9 @@ void LocalTestCluster::Initialize(Options opts) {
       opts.copilot.msg_loop = cockpit_loop_.get();
       opts.copilot.control_tower_connections =
           cockpit_loop_->GetNumWorkers();
-      opts.copilot.pilots.push_back(pilot_host);
+      if (opts.copilot.rollcall_enabled) {
+        opts.copilot.pilots.push_back(pilot_host);
+      }
       status_ = Copilot::CreateNewInstance(opts.copilot, &copilot_);
       if (!status_.ok()) {
         LOG_ERROR(info_log_, "Failed to create Copilot.");

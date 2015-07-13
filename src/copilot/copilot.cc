@@ -102,25 +102,27 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
     assert(false);
     return Status::InvalidArgument("Log router must be provided");
   }
-  // Publishing to the rollcall topic needs a pilot.
-  if (options.pilots.size() <= 0) {
-    assert(options.pilots.size());
-    return Status::InvalidArgument("At least one pilot much be provided.");
-  }
-  // Create a configuration to determine the identity of a pilot.
-  // Use a dummy copilot identifier, this is not needed and can be
-  // removed in the future.
-  ClientOptions client_options;
-  client_options.config =
-    std::make_shared<FixedConfiguration>(options.pilots[0], HostId());
-
-  // Create a client to write rollcall topic.
   std::unique_ptr<ClientImpl> client;
-  Status status = ClientImpl::Create(std::move(client_options),
-                                     &client,
-                                     true);
-  if (!status.ok()) {
-    return status;
+  if (options.rollcall_enabled) {
+    // Publishing to the rollcall topic needs a pilot.
+    if (options.pilots.size() <= 0) {
+      assert(options.pilots.size());
+      return Status::InvalidArgument("At least one pilot much be provided.");
+    }
+    // Create a configuration to determine the identity of a pilot.
+    // Use a dummy copilot identifier, this is not needed and can be
+    // removed in the future.
+    ClientOptions client_options;
+    client_options.config =
+      std::make_shared<FixedConfiguration>(options.pilots[0], HostId());
+
+    // Create a client to write rollcall topic.
+    Status status = ClientImpl::Create(std::move(client_options),
+                                       &client,
+                                       true);
+    if (!status.ok()) {
+      return status;
+    }
   }
   *copilot = new Copilot(std::move(options), std::move(client));
   return Status::OK();

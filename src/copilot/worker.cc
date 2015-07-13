@@ -53,6 +53,7 @@ CopilotWorker::CopilotWorker(
 
   // Create Rollcall topic writer
   if (options_.rollcall_enabled) {
+    assert(client);
     rollcall_.reset(new RollcallImpl(std::move(client),
                                      InvalidTenant,
                                      "copilot.rollcall"));
