@@ -54,12 +54,20 @@ bool Rocketeer::Deliver(InboundID inbound_id,
   auto command = [this, inbound_id, seqno, moved_payload, msg_id]() {
     thread_check_.Check();
     if (auto* sub = Find(inbound_id)) {
-      MessageDeliverData data(
-          sub->tenant_id, inbound_id.sub_id, msg_id, *moved_payload);
-      data.SetSequenceNumbers(sub->prev_seqno, seqno);
-      sub->prev_seqno = seqno;
-      server_->msg_loop_->SendResponse(
-          data, inbound_id.stream_id, inbound_id.worker_id);
+      if (sub->prev_seqno < seqno) {
+        MessageDeliverData data(
+            sub->tenant_id, inbound_id.sub_id, msg_id, *moved_payload);
+        data.SetSequenceNumbers(sub->prev_seqno, seqno);
+        sub->prev_seqno = seqno;
+        server_->msg_loop_->SendResponse(
+            data, inbound_id.stream_id, inbound_id.worker_id);
+      } else {
+        LOG_WARN(server_->options_.info_log,
+                 "Attempted to deliver data at %" PRIu64
+                 ", but subscription has previous seqno %" PRIu64,
+                 seqno,
+                 sub->prev_seqno);
+      }
     }
   };
   return server_->msg_loop_->SendCommand(
@@ -72,12 +80,20 @@ bool Rocketeer::Advance(InboundID inbound_id, SequenceNumber seqno) {
   auto command = [this, inbound_id, seqno]() {
     thread_check_.Check();
     if (auto* sub = Find(inbound_id)) {
-      MessageDeliverGap gap(
-          sub->tenant_id, inbound_id.sub_id, GapType::kBenign);
-      gap.SetSequenceNumbers(sub->prev_seqno, seqno);
-      sub->prev_seqno = seqno;
-      server_->msg_loop_->SendResponse(
-          gap, inbound_id.stream_id, inbound_id.worker_id);
+      if (sub->prev_seqno < seqno) {
+        MessageDeliverGap gap(
+            sub->tenant_id, inbound_id.sub_id, GapType::kBenign);
+        gap.SetSequenceNumbers(sub->prev_seqno, seqno);
+        sub->prev_seqno = seqno;
+        server_->msg_loop_->SendResponse(
+            gap, inbound_id.stream_id, inbound_id.worker_id);
+      } else {
+        LOG_WARN(server_->options_.info_log,
+                 "Attempted to deliver gap at %" PRIu64
+                 ", but subscription has previous seqno %" PRIu64,
+                 seqno,
+                 sub->prev_seqno);
+      }
     }
   };
   return server_->msg_loop_->SendCommand(
