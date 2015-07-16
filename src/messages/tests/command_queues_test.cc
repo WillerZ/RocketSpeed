@@ -86,6 +86,54 @@ TEST(CommandQueueTest, Liveness) {
   loop_thread.join();
 }
 
+TEST(CommandQueueTest, TwoItemsTwoBatches) {
+  EventLoop::Options options;
+  EventLoop loop(Env::Default(),
+                 EnvOptions(),
+                 0,
+                 std::make_shared<NullLogger>(),
+                 nullptr,
+                 nullptr,
+                 std::move(stream_allocator_),
+                 std::move(options));
+  ASSERT_OK(loop.Initialize());
+
+  // Simple unattached queue.
+  CommandQueue queue(Env::Default(),
+                     std::make_shared<NullLogger>(),
+                     std::make_shared<CommandQueue::Stats>("test"),
+                     100);
+
+  // Create callback that reads one from queue then posts to a semaphore
+  port::Semaphore sem;
+  auto callback = EventCallback::CreateFdReadCallback(
+    &loop,
+    queue.GetReadFd(),
+    [&] () {
+      CommandQueue::BatchedRead batch(&queue);
+      TimestampedCommand ts_cmd;
+      ASSERT_TRUE(batch.Read(ts_cmd));
+      sem.Post();
+    });
+
+  // Before enabling, write 2 commands.
+  // We don't care what they are, null will do.
+  std::unique_ptr<Command> cmd1, cmd2;
+  queue.Write(cmd1);
+  queue.Write(cmd2);
+
+  // Now enable and check that we read both.
+  std::thread loop_thread([&]() { loop.Run(); });
+  callback->Enable();
+  ASSERT_TRUE(sem.TimedWait(timeout_));
+  ASSERT_TRUE(sem.TimedWait(timeout_));
+
+  callback.reset();
+  loop.Stop();
+  loop_thread.join();
+}
+
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

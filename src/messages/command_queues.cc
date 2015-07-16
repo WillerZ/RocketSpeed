@@ -14,7 +14,7 @@
 namespace rocketspeed {
 
 CommandQueue::BatchedRead::BatchedRead(CommandQueue* queue)
-    : queue_(queue), pending_reads_(0), commands_read_(0) {
+    : queue_(queue), pending_reads_(0), commands_read_(0), delayed_reads_(0) {
   // Clear notification, it will be added if batch finishes after hitting size
   // limit.
   eventfd_t value;
@@ -30,7 +30,9 @@ CommandQueue::BatchedRead::~BatchedRead() {
   // If we've exited batch because of size limit, we must notify regardless of
   // the locally cached number of commands, as we didn't check if there is a
   // command waiting for us.
-  if (commands_read_ >= kMaxBatchSize || pending_reads_ > 0) {
+  if (commands_read_ >= kMaxBatchSize ||
+      pending_reads_ > 0 ||
+      delayed_reads_ > 0) {
     // Return tokens back to atomic size.
     queue_->synced_size_.fetch_add(pending_reads_);
     // Notify ourselves, so the EventLoop will pick this queue eventually.
@@ -63,14 +65,17 @@ bool CommandQueue::BatchedRead::Read(TimestampedCommand& ts_cmd) {
     // BatchedRead, this way concurrent writers will not notify the queue.
     pending_reads_ = queue_->synced_size_.load();
     if (pending_reads_ == 0) {
+      delayed_reads_ = 0;
       return false;
     } else if (pending_reads_ == 1) {
       pending_reads_ = queue_->synced_size_.exchange(0);
+      delayed_reads_ = 0;
     } else {
       // We are the sole reader, therefore synced_size_ can only be > 1 now.
       pending_reads_ = queue_->synced_size_.exchange(1);
       assert(pending_reads_ > 1);
       --pending_reads_;
+      delayed_reads_ = 1;
     }
   }
   if (pending_reads_ > 0) {

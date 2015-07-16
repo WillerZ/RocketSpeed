@@ -67,8 +67,9 @@ class alignas(CACHE_LINE_SIZE) CommandQueue {
 
    private:
     CommandQueue* queue_;
-    size_t pending_reads_;
-    size_t commands_read_;
+    size_t pending_reads_;  // pending items we intend to process.
+    size_t commands_read_;  // successful reads from the queue.
+    size_t delayed_reads_;  // pending items we intend not to process (yet).
   };
 
   struct Stats {
