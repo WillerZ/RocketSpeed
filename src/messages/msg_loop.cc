@@ -112,7 +112,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   };
 
   // Create a stream allocator for the entire stream ID space.
-  auto allocs = StreamAllocator().Divide(num_workers);
+  auto allocs = StreamAllocator().Divide(num_workers, nullptr);
   options.event_loop.stats_prefix = name;
   for (int i = 0; i < num_workers; ++i) {
     EventLoop* event_loop = new EventLoop(env,

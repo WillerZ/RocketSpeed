@@ -104,7 +104,8 @@ TESTS = \
   supervisor_test \
 	client_test \
 	command_queues_test \
-  heterogeneous_queue_test
+  heterogeneous_queue_test \
+	id_allocator_test
 
 TOOLS = \
 	rocketbench
@@ -340,6 +341,9 @@ command_queues_test: src/messages/tests/command_queues_test.o $(LIBOBJECTS) $(TE
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 heterogeneous_queue_test: src/util/tests/heterogeneous_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+id_allocator_test: src/util/tests/id_allocator_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
