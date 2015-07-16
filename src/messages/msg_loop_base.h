@@ -77,16 +77,13 @@ class MsgLoopBase {
   // Stop the message loop.
   virtual void Stop() = 0;
 
-  // The client ID of a specific event loop.
-  virtual const ClientID& GetClientId(int worker_id) const = 0;
-
   /**
    * Returns a new outbound socket. Returned socket is closed (not yet opened)
    * and its stream is bound to given worker thread of the message loop.
    * @param worker_id An ID of a worker that this stream will be assigned to.
    * @return A brand new stream socket.
    */
-  virtual StreamSocket CreateOutboundStream(ClientID destination,
+  virtual StreamSocket CreateOutboundStream(HostId destination,
                                             int worker_id) = 0;
 
   /**

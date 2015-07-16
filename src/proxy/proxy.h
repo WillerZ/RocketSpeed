@@ -136,8 +136,6 @@ class Proxy {
 
   void HandleDestroySession(int64_t session);
 
-  void HandleRemoveHost(ClientID host);
-
   void HandleMessageReceived(std::unique_ptr<Message> msg, StreamID origin);
 
   void HandleMessageForwarded(std::string msg,

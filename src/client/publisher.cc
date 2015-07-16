@@ -143,8 +143,8 @@ void PublisherWorkerData::Publish(MsgId message_id,
     }
 
     // And create socket to it.
-    pilot_socket_ = publisher_->msg_loop_->CreateOutboundStream(
-        pilot.ToClientId(), worker_id_);
+    pilot_socket_ =
+        publisher_->msg_loop_->CreateOutboundStream(pilot, worker_id_);
     pilot_socket_valid_ = true;
 
     LOG_INFO(publisher_->info_log_,

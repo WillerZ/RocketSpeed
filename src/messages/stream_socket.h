@@ -74,9 +74,9 @@ class StreamSocket {
     return *this;
   }
 
-  const ClientID& GetDestination() const {
+  const HostId& GetDestination() const {
     assert(is_valid_);
-    assert(!destination_.empty());
+    assert(!!destination_);
     return destination_;
   }
 
@@ -106,7 +106,7 @@ class StreamSocket {
    * @param destination The destination client ID.
    * @param stream_id ID of the stream.
    */
-  StreamSocket(ClientID destination, StreamID stream_id)
+  StreamSocket(HostId destination, StreamID stream_id)
       : destination_(std::move(destination))
       , stream_id_(stream_id)
       , is_open_(false) {
@@ -126,7 +126,7 @@ class StreamSocket {
 #endif  // NDEBUG
   }
 
-  ClientID destination_;
+  HostId destination_;
   StreamID stream_id_;
   bool is_open_;
 #ifndef NDEBUG

@@ -107,7 +107,7 @@ class SocketEvent {
   // this constructor is used by server-side connection initiation
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
                                              int fd,
-                                             const ClientID& destination) {
+                                             const HostId& destination) {
     std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, true));
 
     // register only the read callback
@@ -152,7 +152,7 @@ class SocketEvent {
     return Status::OK();
   }
 
-  const ClientID& GetDestination() const {
+  const HostId& GetDestination() const {
     return destination_;
   }
 
@@ -494,7 +494,7 @@ class SocketEvent {
    * A remote destination, if non-empty the socket can be reused by anyone, who
    * wants to talk the remote host.
    */
-  ClientID destination_;
+  HostId destination_;
 
   // Handle into the EventLoop's socket event list (for fast removal).
   std::list<std::unique_ptr<SocketEvent>>::iterator list_handle_;
@@ -527,7 +527,7 @@ Status StreamRouter::GetOutboundStream(const SendCommand::StreamSpec& spec,
   assert(out_sev);
   assert(out_local);
   StreamID global = spec.stream;
-  const ClientID& destination = spec.destination;
+  const HostId& destination = spec.destination;
 
   // Find global -> (connection, local).
   if (open_streams_.FindLocalAndContext(global, out_sev, out_local)) {
@@ -535,7 +535,7 @@ Status StreamRouter::GetOutboundStream(const SendCommand::StreamSpec& spec,
   }
   // We don't know about the stream, so if the destination was not provided, we
   // have to drop the message.
-  if (destination.empty()) {
+  if (!destination) {
     return Status::InternalError(
         "Stream is not opened and destination was not provided.");
   }
@@ -551,8 +551,7 @@ Status StreamRouter::GetOutboundStream(const SendCommand::StreamSpec& spec,
     }
   }
   // We know the destination, but cannot reuse connection. Create a new one.
-  HostId host = HostId::ToHostId(destination);
-  SocketEvent* new_sev = event_loop->setup_connection(host, destination);
+  SocketEvent* new_sev = event_loop->setup_connection(destination);
   if (!new_sev) {
     return Status::InternalError("Failed to create a new connection.");
   }
@@ -579,8 +578,8 @@ StreamRouter::RemapStatus StreamRouter::RemapInboundStream(
     return result;
   }
   // Insert into destination -> connection cache.
-  const ClientID& destination = sev->GetDestination();
-  if (!destination.empty()) {
+  const HostId& destination = sev->GetDestination();
+  if (!!destination) {
     // This connection has a known remote endpoint, we can reuse it later on.
     // In case of any conflicts, just remove the old connection mapping, it
     // will not disturb existing streams, but can only affect future choice
@@ -689,14 +688,14 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
       LOG_WARN(info_log_,
                "Failed to send message on stream (%llu) to host '%s': %s",
                spec.stream,
-               spec.destination.c_str(),
+               spec.destination.ToString().c_str(),
                st.ToString().c_str());
       info_log_->Flush();
     } else {
       LOG_DEBUG(info_log_,
                 "Enqueued message on stream (%llu) to host '%s': %s",
                 spec.stream,
-                spec.destination.c_str(),
+                spec.destination.ToString().c_str(),
                 st.ToString().c_str());
     }
   }
@@ -980,7 +979,7 @@ Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
   return Status::OK();
 }
 
-StreamSocket EventLoop::CreateOutboundStream(ClientID destination) {
+StreamSocket EventLoop::CreateOutboundStream(HostId destination) {
   return StreamSocket(std::move(destination), outbound_allocator_.Next());
 }
 
@@ -1156,14 +1155,14 @@ void EventLoop::teardown_all_connections() {
 
 // Creates a socket connection to specified host, returns null on error.
 SocketEvent*
-EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
+EventLoop::setup_connection(const HostId& destination) {
   thread_check_.Check();
   int fd;
-  Status status = create_connection(host, false, &fd);
+  Status status = create_connection(destination, false, &fd);
   if (!status.ok()) {
     LOG_WARN(info_log_,
              "create_connection to %s failed: %s",
-             host.ToString().c_str(),
+             destination.ToString().c_str(),
              status.ToString().c_str());
     return nullptr;
   }
@@ -1172,7 +1171,7 @@ EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
   // itself during an EOF callback.
   std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
                                                          fd,
-                                                         remote_client);
+                                                         destination);
   if (!sev) {
     return nullptr;
   }
@@ -1181,8 +1180,9 @@ EventLoop::setup_connection(const HostId& host, const ClientID& remote_client) {
   active_connections_.fetch_add(1, std::memory_order_acq_rel);
 
   LOG_INFO(info_log_,
-      "Connect to %s scheduled on socket fd(%d)",
-      host.ToString().c_str(), fd);
+           "Connect to %s scheduled on socket fd(%d)",
+           destination.ToString().c_str(),
+           fd);
   return all_sockets_.front().get();
 }
 

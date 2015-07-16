@@ -43,11 +43,6 @@ class Copilot {
     return options_.msg_loop->GetHostId();
   }
 
-  // Get the client id of a worker thread on this copilot
-  const ClientID& GetClientId(int worker_id = 0) const {
-    return options_.msg_loop->GetClientId(worker_id);
-  }
-
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;
   }

@@ -60,7 +60,7 @@ TEST(PilotTest, Publish) {
   // create a client to communicate with the Pilot
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
   StreamSocket socket(loop.CreateOutboundStream(
-      cluster.GetPilot()->GetClientId(), 0));
+      cluster.GetPilot()->GetHostId(), 0));
   loop.RegisterCallbacks({
       {MessageType::mDataAck, [&](std::unique_ptr<Message> msg,
                                   StreamID origin) {

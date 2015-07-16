@@ -85,22 +85,6 @@ MsgLoop::MsgLoop(BaseEnv* env,
   gethostname(&myname[0], sizeof(myname));
   hostid_ = HostId(std::string(myname), port);
 
-  // Generate client ID from the host ID if none was specified.
-  if (options.client_id.empty()) {
-    options.client_id = hostid_.ToClientId();
-  } else {
-    // Provided client ID shouldn't include the worker byte.
-    options.client_id.push_back('a');
-  }
-
-  // Setup event loop client IDs.
-  assert(num_workers < 256);
-  worker_client_ids_.reset(new ClientID[num_workers]);
-  for (int i = 0; i < num_workers; ++i) {
-    worker_client_ids_[i] = options.client_id;
-    worker_client_ids_[i].back() = static_cast<char>('a' + i);
-  }
-
   auto event_callback = [this] (std::unique_ptr<Message> msg,
                                 StreamID origin) {
     EventCallback(std::move(msg), origin);
@@ -265,7 +249,7 @@ StreamAllocator* MsgLoop::GetOutboundStreamAllocator(int worker_id) {
   return event_loops_[worker_id]->GetOutboundStreamAllocator();
 }
 
-StreamSocket MsgLoop::CreateOutboundStream(ClientID destination,
+StreamSocket MsgLoop::CreateOutboundStream(HostId destination,
                                            int worker_id) {
   assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
   // Corresponding call in event loop is not thread safe, so we need to provide

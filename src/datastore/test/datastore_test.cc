@@ -39,7 +39,6 @@ class DataStoreTest {
   Env* env_;
   EnvOptions env_options_;
   std::shared_ptr<Logger> info_log_;
-  ClientID client_id_ = "client1";
 
   void WaitForData(DataStore* store,
                    const std::string& key,
@@ -67,7 +66,7 @@ TEST(DataStoreTest, GetPut) {
   unique_ptr<DataStore> handle;
   std::string value;
   bool create_new = true;
-  ASSERT_TRUE(DataStore::Open(copilot, client_id_, create_new,
+  ASSERT_TRUE(DataStore::Open(copilot, create_new,
                               info_log_, &handle).ok());
   DataStoreImpl* handleimpl = static_cast<DataStoreImpl *>(handle.get());
   ASSERT_EQ(handleimpl->NumRecords(), 0);
@@ -87,7 +86,7 @@ TEST(DataStoreTest, GetPut) {
 
   // reopen the database and create new database. Older data
   // should not reapppear.
-  ASSERT_TRUE(DataStore::Open(copilot, client_id_, create_new,
+  ASSERT_TRUE(DataStore::Open(copilot, create_new,
                               info_log_, &handle).ok());
   handleimpl = static_cast<DataStoreImpl *>(handle.get());
   ASSERT_EQ(handleimpl->NumRecords(), 0);
@@ -107,7 +106,7 @@ TEST(DataStoreTest, Iteration) {
   unique_ptr<DataStore> handle;
   std::string value;
   bool create_new = true;
-  ASSERT_TRUE(DataStore::Open(copilot, client_id_, create_new,
+  ASSERT_TRUE(DataStore::Open(copilot, create_new,
                               info_log_, &handle).ok());
   DataStoreImpl* handleimpl = static_cast<DataStoreImpl *>(handle.get());
   ASSERT_EQ(handleimpl->NumRecords(), 0);

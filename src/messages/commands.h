@@ -50,11 +50,11 @@ class SendCommand : public Command {
    * client ID.
    */
   struct StreamSpec {
-    StreamSpec(StreamID _stream, ClientID _destination)
+    StreamSpec(StreamID _stream, HostId _destination)
         : stream(_stream), destination(std::move(_destination)) {
     }
     StreamID stream;
-    ClientID destination;
+    HostId destination;
   };
   /** Allocate one stream spec in-place for the common case. */
   typedef autovector<StreamSpec, 1> Recipients;
@@ -95,8 +95,9 @@ class SerializedSendCommand : public SendCommand {
       const SocketList& sockets) {
     Recipients recipients;
     for (const auto& socket : sockets) {
-      recipients.emplace_back(socket->GetStreamID(),
-                              socket->IsOpen() ? "" : socket->GetDestination());
+      recipients.emplace_back(
+          socket->GetStreamID(),
+          socket->IsOpen() ? HostId() : socket->GetDestination());
     }
     return std::unique_ptr<SerializedSendCommand>(new SerializedSendCommand(
         std::move(serialized), std::move(recipients)));
@@ -107,7 +108,7 @@ class SerializedSendCommand : public SendCommand {
       const StreamList& streams) {
     Recipients recipients;
     for (auto stream : streams) {
-      recipients.emplace_back(stream, "");
+      recipients.emplace_back(stream, HostId());
     }
     return std::unique_ptr<SerializedSendCommand>(new SerializedSendCommand(
         std::move(serialized), std::move(recipients)));

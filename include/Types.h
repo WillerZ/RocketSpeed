@@ -206,18 +206,6 @@ class ResultStatus {
 };
 
 /**
- * An object of the form scheme://host:port/path
- */
-typedef std::string URL;
-
-/**
- * A application generated identifier to represent a
- * RocketSpeed client. The RocketSpeed system uses this to
- * manage client's subscriptions and publications.
- */
-typedef std::string ClientID;
-
-/**
  * A unique ID for this RocketSpeed tenant. Each tenant will have a Service
  * Level Agreement with the RocketSpeed system used to limit the impact any one
  * tenant can have on the system as a whole. If a tenant exceeds their agreed
@@ -265,16 +253,10 @@ class HostId {
   bool operator<(const HostId& rhs) const;
   bool operator==(const HostId& rhs) const;
 
+  bool operator!() const { return hostname.empty(); }
+
   // converts a HostId to a name:port string
   std::string ToString() const;
-
-  // Converts an internal client ID to a HostId
-  // The client ID must be formatted as <host>:<port><worker_id-byte>
-  // e.g. "localhost:1234\x01"
-  static HostId ToHostId(ClientID str);
-
-  // converts a HostId to a ClientID
-  ClientID ToClientId(int worker_id = 0) const;
 };
 
 /**

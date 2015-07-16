@@ -317,7 +317,6 @@ IteratorImpl::value() const {
 // Static method to open a DataStore
 Status
 DataStore::Open(HostId machine,
-  ClientID client_id,
   bool create_new,
   std::shared_ptr<Logger> info_log,
   std::unique_ptr<DataStore>* stream) {

@@ -32,8 +32,6 @@ class MsgLoop : public MsgLoopBase {
     */
   class Options {
    public:
-    // passed client_id. default is ""
-    ClientID client_id;
     // the options used for constructing the underlying event loop. will get
     // modified within the constructor.
     EventLoop::Options event_loop;
@@ -85,11 +83,6 @@ class MsgLoop : public MsgLoopBase {
     return name_;
   }
 
-  // The client ID of a specific event loop.
-  const ClientID& GetClientId(int worker_id) const override {
-    return worker_client_ids_[worker_id];
-  }
-
   /**
    * Returns stream ID allocator used by given event loop to create outbound
    * streams.
@@ -99,7 +92,7 @@ class MsgLoop : public MsgLoopBase {
    */
   StreamAllocator* GetOutboundStreamAllocator(int worker_id);
 
-  StreamSocket CreateOutboundStream(ClientID destination,
+  StreamSocket CreateOutboundStream(HostId destination,
                                     int worker_id) override;
 
   /**
@@ -224,9 +217,6 @@ class MsgLoop : public MsgLoopBase {
 
   // Looping counter to distribute load on the message loop.
   mutable std::atomic<int> next_worker_id_;
-
-  // Client ID per event loop.
-  std::unique_ptr<ClientID[]> worker_client_ids_;
 
   // The EventLoop callback.
   void EventCallback(std::unique_ptr<Message> msg, StreamID origin);

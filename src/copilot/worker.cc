@@ -944,10 +944,10 @@ StreamSocket* CopilotWorker::GetControlTowerSocket(const HostId& tower,
   auto& tower_sockets = control_tower_sockets_[tower];
   auto it = tower_sockets.find(outgoing_worker_id);
   if (it == tower_sockets.end()) {
-    it = tower_sockets.emplace(
-      outgoing_worker_id,
-      msg_loop->CreateOutboundStream(
-        tower.ToClientId(), outgoing_worker_id)).first;
+    it = tower_sockets.emplace(outgoing_worker_id,
+                               msg_loop->CreateOutboundStream(
+                                   tower, outgoing_worker_id))
+             .first;
     stats_.control_tower_socket_creations->Add(1);
   }
   return &it->second;

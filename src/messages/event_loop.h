@@ -146,7 +146,7 @@ class StreamRouter {
  private:
   ThreadCheck thread_check_;
   /** A mapping from destination to corresponding connection. */
-  std::unordered_map<ClientID, SocketEvent*> open_connections_;
+  std::unordered_map<HostId, SocketEvent*> open_connections_;
   /** Maps global <-> (connection, local) for all open streams. */
   UniqueStreamMap<SocketEvent*> open_streams_;
 };
@@ -215,7 +215,7 @@ class EventLoop {
    * @param destination A destination for the stream.
    * @return A brand new stream socket.
    */
-  StreamSocket CreateOutboundStream(ClientID destination);
+  StreamSocket CreateOutboundStream(HostId destination);
 
   /**
    * Send a command to the event loop for processing.
@@ -505,8 +505,8 @@ class EventLoop {
                            uint64_t issued_time);
 
   // connection cache updates
-  void remove_host(const ClientID& host);
-  SocketEvent* setup_connection(const HostId& host, const ClientID& clientid);
+  void remove_host(const HostId& host);
+  SocketEvent* setup_connection(const HostId& destination);
   Status create_connection(const HostId& host, bool block, int* fd);
   void teardown_connection(SocketEvent* ev);
   void teardown_all_connections();

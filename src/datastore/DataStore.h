@@ -31,14 +31,12 @@ class DataStore {
   /*
    * Open the database that is stored in RocketSpeed itself.
    * @param machine The database name is of the form machine:port/dbname
-   * @param client_id The client who is opening this database
    * @param create_new remove older data and create a new database
    * @param info_log The logger for logging informational messages
    * @param handle The output handle to be used for accessing data from store
    * @return the status of whether this call was successful or not
    */
   static Status Open(HostId machine,
-                     ClientID client_id,
                      bool create_new,
                      std::shared_ptr<Logger> info_log,
                      std::unique_ptr<DataStore>* handle);

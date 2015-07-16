@@ -834,7 +834,7 @@ void ClientImpl::SendPendingRequests() {
 
     // And create socket to it.
     worker_data.copilot_socket =
-        msg_loop_->CreateOutboundStream(copilot.ToClientId(), worker_id);
+        msg_loop_->CreateOutboundStream(copilot, worker_id);
     worker_data.copilot_socket_valid_ = true;
 
     LOG_INFO(info_log_,

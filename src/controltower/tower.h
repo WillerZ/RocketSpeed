@@ -54,11 +54,6 @@ class ControlTower {
     return options_.msg_loop->GetHostId();
   }
 
-  // Get the client id of a worker thread on this control tower
-  const ClientID& GetClientId(int worker_id) const {
-    return options_.msg_loop->GetClientId(worker_id);
-  }
-
   // Find a host number and worker ID by client ID
   HostNumber LookupHost(StreamID origin, int* out_worker_id) const;
 
@@ -95,9 +90,6 @@ class ControlTower {
   // The Tailer to feed in data from LogStorage to Rooms
   std::unique_ptr<LogTailer> log_tailer_;
   std::vector<std::unique_ptr<TopicTailer>> topic_tailer_;
-
-  // The id of this control tower
-  const ClientID tower_id_;
 
   // Queues for communicating from Tower processor to Rooms.
   std::vector<std::vector<std::shared_ptr<CommandQueue>>>

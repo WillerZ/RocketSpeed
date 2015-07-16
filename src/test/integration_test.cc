@@ -571,7 +571,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>, StreamID) {};
   client.RegisterCallbacks(callbacks);
   StreamSocket socket(client.CreateOutboundStream(
-      cluster.GetCopilot()->GetClientId(), 0));
+      cluster.GetCopilot()->GetHostId(), 0));
   ASSERT_OK(client.Initialize());
   auto tid = env_->StartThread([&] () { client.Run(); }, "client");
   client.WaitUntilRunning();

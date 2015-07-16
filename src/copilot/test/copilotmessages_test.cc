@@ -132,7 +132,7 @@ TEST(CopilotTest, Rollcall) {
   // Create a Client mock.
   MsgLoop client(env_, env_options_, 0, 1, info_log_, "client_mock");
   StreamSocket socket(
-      client.CreateOutboundStream(cluster.GetCopilot()->GetClientId(), 0));
+      client.CreateOutboundStream(cluster.GetCopilot()->GetHostId(), 0));
   client.RegisterCallbacks({
       {MessageType::mSubscribe, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mUnsubscribe, [](std::unique_ptr<Message>, StreamID) {}},

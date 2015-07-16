@@ -73,11 +73,6 @@ class Pilot {
     return options_.msg_loop->GetHostId();
   }
 
-  // Get the client id of a worker thread on this pilot
-  const ClientID& GetClientId(int worker_id = 0) const {
-    return options_.msg_loop->GetClientId(worker_id);
-  }
-
   Statistics GetStatisticsSync() const;
 
   // Gets information about the running service.

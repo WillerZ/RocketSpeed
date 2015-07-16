@@ -171,7 +171,6 @@ class Message : public Serializer {
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
-  ClientID origin_;                 // origin stream
   std::unique_ptr<char[]> buffer_;  // owned memory for slices
 
  private:

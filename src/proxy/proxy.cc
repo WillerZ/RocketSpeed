@@ -487,7 +487,7 @@ void Proxy::HandleMessageForwardedInorder(MessageType message_type,
         // processor and corrupt memory.
         return;
     }
-    socket = StreamSocket(host.ToClientId(), global);
+    socket = StreamSocket(host, global);
     assert(!socket.IsOpen());
   }
 

@@ -136,11 +136,6 @@ class CopilotWorker {
     Counter* tower_rebalances_performed;
   } stats_;
 
-  // Send an ack message to the host for the msgid.
-  void SendAck(const ClientID& host,
-               const MsgId& msgid,
-               MessageDataAck::AckStatus status);
-
   // Add a subscriber to a topic.
   void ProcessSubscribe(TenantID tenant_id,
                         const NamespaceID& namespace_id,
