@@ -36,7 +36,8 @@ std::string InboundID::ToString() const {
 RocketeerOptions::RocketeerOptions()
     : env(Env::Default())
     , info_log(std::make_shared<NullLogger>())
-    , port(DEFAULT_PORT) {
+    , port(DEFAULT_PORT)
+    , stats_prefix("rocketeer.") {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -62,6 +63,7 @@ bool Rocketeer::Deliver(InboundID inbound_id,
         server_->msg_loop_->SendResponse(
             data, inbound_id.stream_id, inbound_id.worker_id);
       } else {
+        stats_->dropped_reordered->Add(1);
         LOG_WARN(server_->options_.info_log,
                  "Attempted to deliver data at %" PRIu64
                  ", but subscription has previous seqno %" PRIu64,
@@ -88,6 +90,7 @@ bool Rocketeer::Advance(InboundID inbound_id, SequenceNumber seqno) {
         server_->msg_loop_->SendResponse(
             gap, inbound_id.stream_id, inbound_id.worker_id);
       } else {
+        stats_->dropped_reordered->Add(1);
         LOG_WARN(server_->options_.info_log,
                  "Attempted to deliver gap at %" PRIu64
                  ", but subscription has previous seqno %" PRIu64,
@@ -116,6 +119,18 @@ bool Rocketeer::Terminate(InboundID inbound_id,
                                  std::unique_ptr<Command>(
                                      MakeExecuteCommand(std::move(command))),
                                  inbound_id.worker_id).ok();
+}
+
+void Rocketeer::Initialize(RocketeerServer* server, size_t id) {
+  assert(!server_);
+  server_ = server;
+  id_ = id;
+  stats_.reset(new Stats(server->options_.stats_prefix));
+}
+
+const Statistics& Rocketeer::GetStatisticsInternal() {
+  assert(stats_);
+  return stats_->all;
 }
 
 InboundSubscription* Rocketeer::Find(const InboundID& inbound_id) {
@@ -155,6 +170,8 @@ void Rocketeer::Receive(std::unique_ptr<MessageSubscribe> subscribe,
                                 subscribe->GetTopicName(),
                                 subscribe->GetStartSequenceNumber());
   HandleNewSubscription(InboundID(origin, sub_id, GetID()), std::move(params));
+  stats_->subscribes->Add(1);
+  stats_->inbound_subscriptions->Add(1);
 }
 
 void Rocketeer::Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
@@ -165,6 +182,8 @@ void Rocketeer::Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
   if (it != inbound_subscriptions_.end()) {
     auto removed = it->second.erase(sub_id);
     if (removed > 0) {
+      stats_->inbound_subscriptions->Add(-1);
+      stats_->unsubscribes->Add(1);
       HandleTermination(InboundID(origin, sub_id, GetID()));
       if (it->second.empty()) {
         inbound_subscriptions_.erase(it);
@@ -188,9 +207,19 @@ void Rocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
   }
   auto worker_id = server_->msg_loop_->GetThreadWorkerIndex();
   for (const auto& entry : it->second) {
+    stats_->inbound_subscriptions->Add(-1);
+    stats_->unsubscribes->Add(1);
     HandleTermination(InboundID(origin, entry.first, worker_id));
   }
   inbound_subscriptions_.erase(it);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+Rocketeer::Stats::Stats(const std::string& prefix) {
+  subscribes = all.AddCounter(prefix + "subscribes");
+  unsubscribes = all.AddCounter(prefix + "unsubscribes");
+  inbound_subscriptions = all.AddCounter(prefix + "inbound_subscriptions");
+  dropped_reordered = all.AddCounter(prefix + "dropped_reordered");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -206,11 +235,10 @@ RocketeerServer::~RocketeerServer() {
 size_t RocketeerServer::Register(Rocketeer* rocketeer) {
   assert(!msg_loop_);
   assert(rocketeer);
-  assert(!rocketeer->server_);
-  rocketeer->server_ = this;
-  rocketeer->id_ = rocketeers_.size();
+  auto id = rocketeers_.size();
+  rocketeer->Initialize(this, id);
   rocketeers_.push_back(rocketeer);
-  return rocketeer->id_;
+  return id;
 }
 
 Status RocketeerServer::Start() {
@@ -239,6 +267,13 @@ Status RocketeerServer::Start() {
 
 void RocketeerServer::Stop() {
   msg_loop_thread_.reset();
+}
+
+Statistics RocketeerServer::GetStatisticsSync() {
+  auto stats = msg_loop_->AggregateStatsSync(
+      [this](int i) { return rocketeers_[i]->GetStatisticsInternal(); });
+  stats.Aggregate(msg_loop_->GetStatisticsSync());
+  return stats;
 }
 
 template <typename Msg>

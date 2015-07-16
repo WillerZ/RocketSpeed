@@ -16,6 +16,7 @@
 #include "src/messages/stream_socket.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/hash.h"
+#include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
@@ -77,6 +78,9 @@ struct RocketeerOptions {
 
   /** Port to listen on, defaults to RocketeerServer::DEFAULT_PORT. */
   uint16_t port;
+
+  /** Stats prefix, defaults to "rocketeer.". */
+  std::string stats_prefix;
 };
 
 class Rocketeer {
@@ -136,22 +140,39 @@ class Rocketeer {
    */
   bool Terminate(InboundID inbound_id, MessageUnsubscribe::Reason reason);
 
+  /** Returns the server that this Rocketeer is registered with. */
   RocketeerServer* GetServer() { return server_; }
 
+  /** Returns a numeric ID of this Rocketeer within the server that runs it. */
   size_t GetID() const { return id_; }
 
  private:
   friend class RocketeerServer;
+
+  struct Stats {
+    explicit Stats(const std::string& prefix);
+
+    Counter* subscribes;
+    Counter* unsubscribes;
+    Counter* inbound_subscriptions;
+    Counter* dropped_reordered;
+    Statistics all;
+  };
 
   ThreadCheck thread_check_;
   // RocketeerServer, which owns both the implementation and this object.
   RocketeerServer* server_;
   // An ID assigned by the server.
   size_t id_;
+  std::unique_ptr<Stats> stats_;
 
   using SubscriptionsOnStream =
       std::unordered_map<SubscriptionID, InboundSubscription>;
   std::unordered_map<StreamID, SubscriptionsOnStream> inbound_subscriptions_;
+
+  void Initialize(RocketeerServer* server, size_t id);
+
+  const Statistics& GetStatisticsInternal();
 
   InboundSubscription* Find(const InboundID& inbound_id);
 
@@ -188,6 +209,9 @@ class RocketeerServer {
 
   /** Stops the server, no thread is running after this method returns. */
   void Stop();
+
+  /** Returns server-wide statistics. */
+  Statistics GetStatisticsSync();
 
   MsgLoop* GetMsgLoop() { return msg_loop_.get(); }
 
