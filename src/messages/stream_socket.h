@@ -11,7 +11,6 @@
 namespace rocketspeed {
 
 class EventLoop;
-class MQTTMsgLoop;
 class Proxy;
 class Slice;
 
@@ -98,7 +97,6 @@ class StreamSocket {
  private:
   /** For constructor from the outside world. */
   friend class EventLoop;
-  friend class MQTTMsgLoop;
   friend class Proxy;
 
   /**

@@ -28,16 +28,9 @@
 #include "include/WakeLock.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/msg_loop_base.h"
+#include "src/messages/msg_loop.h"
 #include "src/port/port.h"
 #include "src/util/timeout_list.h"
-
-#ifndef USE_MQTTMSGLOOP
-#include "src/messages/msg_loop.h"
-#else
-#include "rocketspeed/mqttclient/configuration.h"
-#include "rocketspeed/mqttclient/mqtt_msg_loop.h"
-#include "rocketspeed/mqttclient/proxygen_mqtt.h"
-#endif
 
 namespace rocketspeed {
 
@@ -403,7 +396,6 @@ Status ClientImpl::Create(ClientOptions options,
     options.info_log = std::make_shared<NullLogger>();
   }
 
-#ifndef USE_MQTTMSGLOOP
   std::unique_ptr<MsgLoopBase> msg_loop_(
     new MsgLoop(options.env,
                 EnvOptions(),
@@ -411,19 +403,6 @@ Status ClientImpl::Create(ClientOptions options,
                 options.num_workers,
                 options.info_log,
                 "client"));
-#else
-  MQTTConfiguration* mqtt_config =
-    static_cast<MQTTConfiguration*>(options.config.get());
-  std::unique_ptr<MsgLoopBase> msg_loop_(
-    new MQTTMsgLoop(
-      options.env,
-      mqtt_config->GetVIP(),
-      mqtt_config->GetUsername(),
-      mqtt_config->GetAccessToken(),
-      mqtt_config->UseSSL(),
-      options.info_log,
-      &ProxygenMQTTClient::Create));
-#endif
 
   Status st = msg_loop_->Initialize();
   if (!st.ok()) {

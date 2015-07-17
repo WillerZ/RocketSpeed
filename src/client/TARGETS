@@ -65,28 +65,3 @@ cpp_unittest(
         'unmanaged_test_cases',
     ],
 )
-
-cpp_library(
-    name = 'rsmqtt_client_library',
-    srcs = [
-        'client.cc',
-        'options.cc',
-        'publisher.cc',
-        'storage/file_storage.cc',
-    ],
-    preprocessor_flags = [
-        '-Irocketspeed/github/include',
-        '-Irocketspeed/github',
-        '-DROCKETSPEED_PLATFORM_POSIX',
-        '-DOS_LINUX',
-        '-DUSE_MQTTMSGLOOP',
-    ],
-    deps = [
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/messages',
-        '@/rocketspeed/mqttclient:rs_mqtt_msg_loop',
-        '@/rocketspeed/mqttclient:proxygen_mqtt_client',
-    ],
-)

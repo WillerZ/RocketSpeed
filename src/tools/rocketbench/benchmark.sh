@@ -28,7 +28,6 @@ collect_stats=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 remote_bench=''
-use_mqtt=''
 
 if [ -z ${ROCKETSPEED_ARGS+x} ]; then
   logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
@@ -52,7 +51,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,mqtt,subscribe-rate: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -109,8 +108,6 @@ while true; do
       rollcall="$2"; shift 2 ;;
     --rocketbench_host )
       rocketbench_host="$2"; remote_bench='true'; shift 2 ;;
-    --mqtt )
-      use_mqtt='true'; bench=_build/$part/rocketspeed/github/src/tools/rocketbench/mqtt/rocketbench_mqtt; shift 1 ;;
     --subscribe-rate )
       subscribe_rate="$2"; shift 2 ;;
     -- )
@@ -397,7 +394,6 @@ if [ $# -ne 1 ]; then
   echo "--strip              Strip rocketspeed (and rocketbench) binaries for deploying."
   echo "--rollcall           Enable/disable RollCall."
   echo "--rocketbench_host   Host to use for running rocketbench."
-  echo "--mqtt               Use MQTT RocketSpeed client for rocketbench."
   exit 1
  fi
 fi
@@ -421,8 +417,6 @@ if [ $remote ]; then
   const_params+=" --start_local_server=false"
   const_params+=" --pilot_hostnames=$pilots_csv"
   const_params+=" --copilot_hostnames=$copilots_csv"
-elif [ $use_mqtt ]; then
-  const_params+=" --start_local_server=false"
 else
   const_params+=" --start_local_server=true"
 fi

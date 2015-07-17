@@ -30,10 +30,6 @@
 #include "src/client/client.h"
 #include "src/util/common/client_env.h"
 
-#ifdef USE_MQTTMSGLOOP
-#include "rocketspeed/mqttclient/configuration.h"
-#endif
-
 // This tool can behave as a standalone producer, a standalone
 // consumer or both a producer and a consumer.
 DEFINE_bool(start_producer, true, "starts the producer");
@@ -65,14 +61,6 @@ DEFINE_int64(topics_mean, 0,
 DEFINE_int64(topics_stddev, 0,
 "Standard Deviation for Normal topic distribution (rounded to nearest int64)");
 DEFINE_int32(wait_for_debugger, 0, "wait for debugger to attach to me");
-
-#ifdef USE_MQTTMSGLOOP
-DEFINE_string(mqtt_vip_host, "", "MQTT VIP host");
-DEFINE_int32(mqtt_vip_port, 0, "MQTT VIP port");
-DEFINE_string(mqtt_username, "", "MQTT username");
-DEFINE_string(mqtt_access_token, "", "MQTT access token");
-DEFINE_bool(mqtt_use_ssl, true, "MQTT use SSL");
-#endif
 
 using namespace rocketspeed;
 
@@ -565,33 +553,16 @@ int main(int argc, char** argv) {
 
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;
   size_t num_clients = std::max(pilots.size(), copilots.size());
-#ifdef USE_MQTTMSGLOOP
-  // MQTTMsgLoop is single threaded, so is the client backed by MQTTClient. In
-  // order to ensure requested parallelism when using MQTT, we have to create
-  // client_workers times more clients. We also set client_workers to 1, which
-  // is the effective value for MQTT-backed client.
-  num_clients *= FLAGS_client_workers;
-  FLAGS_client_workers = 1;
-#endif
   for (size_t i = 0; i < num_clients; ++i) {
     // Create config for this client by picking pilot and copilot in a round
     // robin fashion.
     rocketspeed::ClientOptions options;
     options.info_log = info_log;
     options.num_workers = FLAGS_client_workers;
-#ifndef USE_MQTTMSGLOOP
     options.config =
       std::make_shared<rocketspeed::FixedConfiguration>(
         pilots[i % pilots.size()],
         copilots[i % copilots.size()]);
-#else
-    options.config =
-      std::make_shared<rocketspeed::MQTTConfiguration>(
-        rocketspeed::HostId(FLAGS_mqtt_vip_host, FLAGS_mqtt_vip_port),
-        FLAGS_mqtt_username,
-        FLAGS_mqtt_access_token,
-        FLAGS_mqtt_use_ssl);
-#endif
 
     std::unique_ptr<rocketspeed::ClientImpl> client;
     // Create the client.

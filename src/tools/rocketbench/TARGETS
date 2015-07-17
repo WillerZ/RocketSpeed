@@ -24,33 +24,6 @@ cpp_binary(
     ],
 )
 
-cpp_binary(
-    name = 'rocketbench_mqtt',
-    output_subdir = 'mqtt',
-    srcs = [
-        'main.cc',
-    ],
-    preprocessor_flags = [
-        '-Irocketspeed/github/include',
-        '-Irocketspeed/github',
-        '-DROCKETSPEED_PLATFORM_POSIX=1',
-        '-DOS_LINUX=1',
-        '-DGFLAGS=google',
-        '-DUSE_MQTTMSGLOOP',
-    ],
-    deps = [
-        '@/external/gflags',
-        '@/rocketspeed/github/src/client:rsmqtt_client_library',
-        '@/rocketspeed/github/src/test:test_cluster',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/messages',
-        '@/rocketspeed/mqttclient:configuration',
-        ':bench_random_distribution',
-    ],
-)
-
 cpp_library(
     name = 'bench_random_distribution',
     srcs = [
