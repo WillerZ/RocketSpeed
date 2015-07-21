@@ -551,6 +551,11 @@ int main(int argc, char** argv) {
     }
   };
 
+  // Data loss callback.
+  auto data_loss_callback = [&](std::unique_ptr<DataLossInfo>& msg) {
+    LOG_ERROR(info_log, "Data loss has been detected.");
+  };
+
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;
   size_t num_clients = std::max(pilots.size(), copilots.size());
   for (size_t i = 0; i < num_clients; ++i) {
@@ -571,7 +576,9 @@ int main(int argc, char** argv) {
       LOG_ERROR(info_log, "Failed to open client: %s.", st.ToString().c_str());
       return 1;
     }
-    client->SetDefaultCallbacks(subscribe_callback, receive_callback);
+    client->SetDefaultCallbacks(subscribe_callback,
+                                receive_callback,
+                                data_loss_callback);
     clients.emplace_back(client.release());
   }
   rocketspeed::NamespaceID nsid =

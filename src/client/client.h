@@ -47,7 +47,9 @@ class ClientImpl : public Client {
   virtual ~ClientImpl();
 
   void SetDefaultCallbacks(SubscribeCallback subscription_callback,
-                           MessageReceivedCallback deliver_callback) override;
+                           MessageReceivedCallback deliver_callback,
+                           DataLossCallback data_loss_callback)
+      override;
 
   virtual PublishStatus Publish(const TenantID tenant_id,
                                 const Topic& name,
@@ -59,7 +61,8 @@ class ClientImpl : public Client {
 
   SubscriptionHandle Subscribe(SubscriptionParameters parameters,
                                MessageReceivedCallback deliver_callback,
-                               SubscribeCallback subscription_callback)
+                               SubscribeCallback subscription_callback,
+                               DataLossCallback data_loss_callback)
       override;
 
   Status Unsubscribe(SubscriptionHandle sub_handle) override;
@@ -102,6 +105,8 @@ class ClientImpl : public Client {
   SubscribeCallback subscription_cb_fallback_;
   /** Default callbacks for delivering messages. */
   MessageReceivedCallback deliver_cb_fallback_;
+  /** Default callback for data loss */
+  DataLossCallback data_loss_callback_;
 
   /** Next subscription ID seed to be used for new subscription ID. */
   std::atomic<uint64_t> next_sub_id_;

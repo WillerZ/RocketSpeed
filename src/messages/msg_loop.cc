@@ -52,7 +52,7 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
     iter->second(std::move(msg), origin);
   } else {
     // If the user has not registered a message of this type,
-    // then this msg will be droped silently.
+    // then this msg will be dropped silently.
     LOG_WARN(info_log_,
         "No registered msg callback for msg type %d",
         static_cast<int>(type));

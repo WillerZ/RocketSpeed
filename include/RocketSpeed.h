@@ -22,6 +22,7 @@
 namespace rocketspeed {
 
 class BaseEnv;
+class DataLossInfo;
 class Logger;
 class WakeLock;
 
@@ -45,6 +46,9 @@ typedef std::function<void(const SubscriptionStatus&)> SubscribeCallback;
  */
 typedef std::function<void(std::unique_ptr<MessageReceived>&)>
     MessageReceivedCallback;
+
+typedef std::function<void(std::unique_ptr<DataLossInfo>&)>
+    DataLossCallback;
 
 /** Notifies about status of a finished subscription snapshot. */
 typedef std::function<void(Status)> SaveSubscriptionsCallback;
@@ -143,10 +147,13 @@ class Client {
    *                              subscribe method.
    * @param deliver_callback See docs for corresponding callback in
    *                         subscribe method.
+   * @param data_loss_callback See docs for corresponding callback in
+   *                           subscribe method.
    */
   virtual void SetDefaultCallbacks(
       SubscribeCallback subscription_callback = nullptr,
-      MessageReceivedCallback deliver_callback = nullptr) = 0;
+      MessageReceivedCallback deliver_callback = nullptr,
+      DataLossCallback data_loss_callback = nullptr) = 0;
 
   /**
    * Asynchronously publishes a new message to the Topic. The return parameter
@@ -184,13 +191,15 @@ class Client {
    *                         subscription.
    * @param subscription_callback Invoked to notify termination of the
    *                              subscription.
+   * @param data_loss_callback Invoked to notify there's been data loss.
    * @return A handle that identifies this subscription. The handle is unengaged
    *         iff the Client failed to create the subscription.
    */
   virtual SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
       MessageReceivedCallback deliver_callback = nullptr,
-      SubscribeCallback subscription_callback = nullptr) = 0;
+      SubscribeCallback subscription_callback = nullptr,
+      DataLossCallback data_loss_callback = nullptr) = 0;
 
   /** Convenience method, see the other overload for details. */
   SubscriptionHandle Subscribe(
@@ -199,13 +208,15 @@ class Client {
       Topic topic_name,
       SequenceNumber start_seqno,
       MessageReceivedCallback deliver_callback = nullptr,
-      SubscribeCallback subscription_callback = nullptr) {
+      SubscribeCallback subscription_callback = nullptr,
+      DataLossCallback data_loss_callback = nullptr) {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
                       std::move(topic_name),
                       start_seqno},
-                     std::move(deliver_callback),
-                     std::move(subscription_callback));
+                      std::move(deliver_callback),
+                      std::move(subscription_callback),
+                      std::move(data_loss_callback));
   }
 
   /**

@@ -199,6 +199,116 @@ TEST(IntegrationTest, TrimAll) {
 }
 
 /**
+ * Publishes N messages and trims the first K from a sender client.
+ * After this a receiver client validates DataLoss callback is correctly called.
+ */
+TEST(IntegrationTest, TestDataLossCallback) {
+  const size_t kTotalMessagesToSend = 10;
+  const size_t kTotalMessagesToTrim = 3;
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Message setup.
+  Topic topic = "TestDataLossCallback_Topic";
+  NamespaceID namespace_id = GuestNamespace;
+  TopicOptions topic_options;
+  std::string data = "TestDataLossCallback_Message";
+  GUIDGenerator msgid_generator;
+
+  // PART 1 - Create a sender client, send N messages and trim the first K.
+
+  // Create RocketSpeed sender client.
+  std::unique_ptr<ClientImpl> sender;
+  cluster.CreateClient(&sender, true);
+
+  port::Semaphore publish_sem;
+  SequenceNumber first_seqno = -1;
+  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
+
+    // Do the trimming magic only when all records have been published.
+    static size_t call_count = 0;
+    if (++call_count < kTotalMessagesToSend) {
+      return;
+    }
+
+    // Trim setup.
+    auto router = cluster.GetLogRouter();
+    LogID log_id;
+    auto st = router->GetLogID(Slice(namespace_id), Slice(topic), &log_id);
+    ASSERT_OK(st);
+
+    // Write down the first sequence number for the receiver.
+    first_seqno = rs->GetSequenceNumber() - kTotalMessagesToSend + 1;
+
+    for (size_t i = 1; i <= kTotalMessagesToTrim; ++i) {
+      // Trim message sent in the i'th place.
+      auto seqno = rs->GetSequenceNumber() - kTotalMessagesToSend + i;
+      auto storage = cluster.GetLogStorage();
+      st = storage->Trim(log_id, seqno);
+      ASSERT_OK(st);
+    }
+
+    publish_sem.Post();
+  };
+
+  // Send all messages.
+  for (size_t i = 0; i < kTotalMessagesToSend; ++i) {
+    MsgId message_id = msgid_generator.Generate();
+    auto ps = sender->Publish(GuestTenant,
+                              topic,
+                              namespace_id,
+                              topic_options,
+                              Slice(data),
+                              publish_callback,
+                              message_id);
+    ASSERT_OK(ps.status);
+    ASSERT_TRUE(ps.msgid == message_id);
+  }
+
+  // Wait on the last message to be published.
+  ASSERT_TRUE(publish_sem.TimedWait(timeout));
+
+  // PART 2 - Create a receiver client, sync to the first seqno and
+  // confirm received and lost messages.
+
+  // Create RocketSpeed receiver client.
+  std::unique_ptr<ClientImpl> receiver;
+  cluster.CreateClient(&receiver, true);
+
+  // Receiver flow control semaphores.
+  port::Semaphore receive_sem, data_loss_sem;
+
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
+    static size_t received_messages = 0;
+    if (++received_messages == kTotalMessagesToSend - kTotalMessagesToTrim) {
+      receive_sem.Post();
+    }
+  };
+
+  auto data_loss_callback = [&] (std::unique_ptr<DataLossInfo>& msg) {
+    ASSERT_EQ(DataLossType::kRetention, msg->GetLossType());
+    ASSERT_EQ(first_seqno, msg->GetFirstSequenceNumber());
+    ASSERT_EQ(first_seqno + kTotalMessagesToTrim - 1,
+              msg->GetLastSequenceNumber());
+    data_loss_sem.Post();
+  };
+
+  SubscriptionParameters sub_params = SubscriptionParameters(GuestTenant,
+                                                             namespace_id,
+                                                             topic,
+                                                             first_seqno);
+  auto rec_handle = receiver->Subscribe(sub_params,
+                                        receive_callback,
+                                        nullptr,
+                                        data_loss_callback);
+  ASSERT_TRUE(rec_handle);
+  ASSERT_TRUE(receive_sem.TimedWait(timeout));
+  ASSERT_TRUE(data_loss_sem.TimedWait(timeout));
+}
+
+/**
  * Publishes n messages. Trims the first. Attempts to read
  * range [0, n-1] and ensures that one gap is received and
  * n-1 records are read.
@@ -229,7 +339,7 @@ TEST(IntegrationTest, TrimFirst) {
 
   // Last callback trims first log and attempts to read from deleted
   // log to final log published. Gap should be received as well as
-  // n-1 messges.
+  // n-1 messages.
   auto last_pub_cb = [&] (std::unique_ptr<ResultStatus> rs) {
     // Number of gaps and logs received from reader. Should be
     // 1 and n - 1 respectively.

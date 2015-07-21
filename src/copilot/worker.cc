@@ -332,7 +332,10 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       delivered_at_least_once = true;
 
       // Send message to the client.
-      MessageDeliverGap gap(sub->tenant_id, sub->sub_id, msg->GetType());
+      MessageDeliverGap gap(
+        sub->tenant_id,
+        sub->sub_id,
+        msg->GetType());
       gap.SetSequenceNumbers(prev_seqno, next_seqno);
       auto command = options_.msg_loop->ResponseCommand(gap, recipient);
       if (client_queues_[sub->worker_id]->Write(command)) {

@@ -381,6 +381,29 @@ class MessageReceived {
   virtual ~MessageReceived() {}
 };
 
+enum class DataLossType : char {
+  kDataLoss,  // Catastrophic failure, acknowledged data was lost.
+  kRetention  // Retention period expired.
+};
+
+/** Contains information about data loss. */
+class DataLossInfo {
+ public:
+  /** The handle identifying subscription that this message arrived on. */
+  virtual SubscriptionHandle GetSubscriptionHandle() const = 0;
+
+  /** The type of data loss that occurred */
+  virtual DataLossType GetLossType() const = 0;
+
+  /** Gets the first sequence number (inclusive) of the data loss. */
+  virtual SequenceNumber GetFirstSequenceNumber() const = 0;
+
+  /** Gets the last sequence number (inclusive) of the data loss. */
+  virtual SequenceNumber GetLastSequenceNumber() const = 0;
+
+  virtual ~DataLossInfo() {}
+};
+
 }  // namespace rocketspeed
 
 namespace std {

@@ -801,13 +801,21 @@ inline MessageDeliver::~MessageDeliver() {}
 /** A message delivered on particular subscription, which carries no data. */
 class MessageDeliverGap final : public MessageDeliver {
  public:
-  MessageDeliverGap(TenantID tenant_id, SubscriptionID sub_id, GapType gap_type)
+  MessageDeliverGap(TenantID tenant_id,
+                    SubscriptionID sub_id,
+                    GapType gap_type)
       : MessageDeliver(MessageType::mDeliverGap, tenant_id, sub_id),
         gap_type_(gap_type) {}
 
   MessageDeliverGap() : MessageDeliver(MessageType::mDeliverGap) {}
 
   GapType GetGapType() const { return gap_type_; }
+
+  SequenceNumber GetFirstSequenceNumber() const {
+    return GetPrevSequenceNumber();
+  }
+
+  SequenceNumber GetLastSequenceNumber() const { return GetSequenceNumber(); }
 
   Slice Serialize() const override;
   Status DeSerialize(Slice* in) override;

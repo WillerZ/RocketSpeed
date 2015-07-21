@@ -47,12 +47,14 @@ class SubscriptionState {
 
   SubscriptionState(SubscriptionParameters parameters,
                     SubscribeCallback subscription_callback,
-                    MessageReceivedCallback deliver_callback)
+                    MessageReceivedCallback deliver_callback,
+                    DataLossCallback data_loss_callback)
       : tenant_id_(parameters.tenant_id)
       , namespace_id_(std::move(parameters.namespace_id))
       , topic_name_(std::move(parameters.topic_name))
       , subscription_callback_(std::move(subscription_callback))
       , deliver_callback_(std::move(deliver_callback))
+      , data_loss_callback_(std::move(data_loss_callback))
       , expected_seqno_(parameters.start_seqno)
       // If we were to restore state from subscription storage before the
       // subscription advances, we would restore from the next sequence number,
@@ -98,6 +100,7 @@ class SubscriptionState {
   const Topic topic_name_;
   const SubscribeCallback subscription_callback_;
   const MessageReceivedCallback deliver_callback_;
+  const DataLossCallback data_loss_callback_;
 
   /** Next expected sequence number on this subscription. */
   SequenceNumber expected_seqno_;
@@ -162,6 +165,39 @@ class MessageReceivedImpl : public MessageReceived {
   std::unique_ptr<MessageDeliverData> data_;
 };
 
+class DataLossInfoImpl : public DataLossInfo {
+ public:
+  explicit DataLossInfoImpl(std::unique_ptr<MessageDeliverGap> gap_data)
+      : gap_data_(std::move(gap_data)) {}
+
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    return gap_data_->GetSubID();
+  }
+
+  DataLossType GetLossType() const override {
+    switch (gap_data_->GetGapType()) {
+      case GapType::kDataLoss:
+        return DataLossType::kDataLoss;
+      case GapType::kRetention:
+        return DataLossType::kRetention;
+      default:
+        // No other form of gap should be reported.
+        assert(0);
+    }
+  }
+
+  SequenceNumber GetFirstSequenceNumber() const override {
+    return gap_data_->GetFirstSequenceNumber();
+  }
+
+  SequenceNumber GetLastSequenceNumber() const override {
+    return gap_data_->GetLastSequenceNumber();
+  }
+
+ private:
+  std::unique_ptr<MessageDeliverGap> gap_data_;
+};
+
 void SubscriptionState::ReceiveMessage(
     const std::shared_ptr<Logger>& info_log,
     std::unique_ptr<MessageDeliver> deliver) {
@@ -183,7 +219,16 @@ void SubscriptionState::ReceiveMessage(
       }
       break;
     case MessageType::mDeliverGap:
-      // Do not deliver gap messages.
+      if (data_loss_callback_) {
+        std::unique_ptr<MessageDeliverGap> gap(
+            static_cast<MessageDeliverGap*>(deliver.release()));
+
+        if (gap->GetGapType() != GapType::kBenign) {
+          std::unique_ptr<DataLossInfo> data_loss_info(
+              new DataLossInfoImpl(std::move(gap)));
+          data_loss_callback_(data_loss_info);
+        }
+      }
       break;
     default:
       assert(false);
@@ -463,9 +508,11 @@ ClientImpl::ClientImpl(ClientOptions options,
 }
 
 void ClientImpl::SetDefaultCallbacks(SubscribeCallback subscription_callback,
-                                     MessageReceivedCallback deliver_callback) {
+                                     MessageReceivedCallback deliver_callback,
+                                     DataLossCallback data_loss_callback) {
   subscription_cb_fallback_ = std::move(subscription_callback);
   deliver_cb_fallback_ = std::move(deliver_callback);
+  data_loss_callback_ = std::move(data_loss_callback);
 }
 
 ClientImpl::~ClientImpl() {
@@ -510,13 +557,17 @@ PublishStatus ClientImpl::Publish(const TenantID tenant_id,
 SubscriptionHandle ClientImpl::Subscribe(
     SubscriptionParameters parameters,
     MessageReceivedCallback deliver_callback,
-    SubscribeCallback subscription_callback) {
+    SubscribeCallback subscription_callback,
+    DataLossCallback data_loss_callback) {
   // Select callbacks taking fallbacks into an account.
   if (!subscription_callback) {
     subscription_callback = subscription_cb_fallback_;
   }
   if (!deliver_callback) {
     deliver_callback = deliver_cb_fallback_;
+  }
+  if (!data_loss_callback) {
+    data_loss_callback = data_loss_callback_;
   }
 
   // Choose client worker for this subscription.
@@ -535,7 +586,8 @@ SubscriptionHandle ClientImpl::Subscribe(
   auto moved_sub_state =
       folly::makeMoveWrapper(SubscriptionState(std::move(parameters),
                                                std::move(subscription_callback),
-                                               std::move(deliver_callback)));
+                                               std::move(deliver_callback),
+                                               std::move(data_loss_callback)));
 
   // Send command to responsible worker.
   Status st = msg_loop_->SendCommand(

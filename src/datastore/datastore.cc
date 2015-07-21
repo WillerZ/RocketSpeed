@@ -60,8 +60,14 @@ DataStoreImpl::DataStoreImpl(
     sem_.Post();
   };
 
+  auto data_loss_callback = [this] (std::unique_ptr<DataLossInfo>& msg) {
+    LOG_ERROR(info_log_, "Data loss has occurred.");
+  };
+
   // start the client
-  rs_client_->SetDefaultCallbacks(subscribe_callback, receive_callback);
+  rs_client_->SetDefaultCallbacks(subscribe_callback,
+                                  receive_callback,
+                                  data_loss_callback);
 
   // send a subscription request for rollcall topic
   auto handle = rs_client_->Client::Subscribe(SystemTenant,
