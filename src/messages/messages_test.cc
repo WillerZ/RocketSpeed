@@ -33,7 +33,7 @@ class Messaging {
 TEST(Messaging, Data) {
   Slice name1("Topic1");
   Slice payload1("Payload1");
-  HostId host1("host.id", 1234);
+  HostId host1(HostId::CreateLocal(1234));
   NamespaceID nsid1 = GuestNamespace;
 
   // create a message
@@ -98,9 +98,7 @@ TEST(Messaging, Metadata) {
 }
 
 TEST(Messaging, DataAck) {
-  int port = 200;
-  std::string mymachine = "machine.com";
-  HostId hostid(mymachine, port);
+  HostId hostid(HostId::CreateLocal(200));
 
   // create a message
   MessageDataAck::AckVector acks(10);

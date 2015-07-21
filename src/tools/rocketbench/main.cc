@@ -25,6 +25,7 @@
 #include "src/util/auto_roll_logger.h"
 #include "src/util/common/fixed_configuration.h"
 #include "src/util/common/guid_generator.h"
+#include "src/util/common/host_id.h"
 #include "src/util/parsing.h"
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
@@ -401,12 +402,26 @@ int main(int argc, char** argv) {
   // Configuration for RocketSpeed.
   std::vector<rocketspeed::HostId> pilots;
   for (auto hostname : rocketspeed::SplitString(FLAGS_pilot_hostnames)) {
-    pilots.emplace_back(hostname, FLAGS_pilot_port);
+    HostId resolved;
+    auto st = HostId::Resolve(
+        hostname, static_cast<uint16_t>(FLAGS_copilot_port), &resolved);
+    if (!st.ok()) {
+      LOG_ERROR(info_log, "%s", st.ToString().c_str());
+      return 1;
+    }
+    pilots.emplace_back(std::move(resolved));
   }
 
   std::vector<rocketspeed::HostId> copilots;
   for (auto hostname : rocketspeed::SplitString(FLAGS_copilot_hostnames)) {
-    copilots.emplace_back(hostname, FLAGS_copilot_port);
+    HostId resolved;
+    auto st = HostId::Resolve(
+        hostname, static_cast<uint16_t>(FLAGS_copilot_port), &resolved);
+    if (!st.ok()) {
+      LOG_ERROR(info_log, "%s", st.ToString().c_str());
+      return 1;
+    }
+    copilots.emplace_back(std::move(resolved));
   }
 
   // Start/end time for benchmark.

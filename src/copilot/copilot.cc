@@ -426,8 +426,7 @@ int Copilot::GetTowerWorker(LogID log_id, const HostId& tower) const {
   // Hash control tower to a worker.
   const int num_workers = options_.msg_loop->GetNumWorkers();
   const size_t connection = log_id % options_.control_tower_connections;
-  const size_t hash = MurmurHash2<std::string, size_t>()(tower.hostname,
-                                                         tower.port);
+  const size_t hash = tower.Hash();
   return static_cast<int>((hash + connection) % num_workers);
 }
 

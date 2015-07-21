@@ -376,7 +376,7 @@ CLIENTSOURCES =        src/client/client.cc \
                        src/util/common/coding.cc \
                        src/util/common/fixed_configuration.cc \
                        src/util/common/guid_generator.cc \
-                       src/util/common/host.cc \
+                       src/util/common/host_id.cc \
                        src/util/common/statistics.cc \
                        src/util/common/status.cc \
                        src/util/common/thread_local.cc

@@ -258,7 +258,8 @@ Status RocketSpeed::Initialize(
   }
 
   // Create Pilot.
-  HostId pilot_host("localhost", FLAGS_pilot_port);
+  HostId pilot_host(
+      HostId::CreateLocal(static_cast<uint16_t>(FLAGS_pilot_port)));
   if (FLAGS_pilot) {
     LOG_VITAL(info_log_, "Creating Pilot");
     PilotOptions pilot_opts;
@@ -299,7 +300,12 @@ Status RocketSpeed::Initialize(
     // Parse comma-separated control_towers hostname.
     ControlTowerId node_id = 0;
     for (auto hostname : SplitString(FLAGS_control_towers)) {
-      HostId host(hostname, FLAGS_tower_port);
+      HostId host;
+      auto st = HostId::Resolve(
+          hostname, static_cast<uint16_t>(FLAGS_tower_port), &host);
+      if (!st.ok()) {
+        return st;
+      }
       copilot_opts.control_towers.emplace(node_id, host);
       LOG_VITAL(info_log_, "Adding control tower '%s'",
         host.ToString().c_str());

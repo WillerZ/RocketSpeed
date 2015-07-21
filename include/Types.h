@@ -20,6 +20,8 @@
 
 namespace rocketspeed {
 
+class HostId;
+
 /**
  * A unique ID for this RocketSpeed namespace. Each namespace can have its own
  * set of topic names. Namespaces are a way to partition the set of topics in
@@ -240,26 +242,6 @@ enum Tenant : TenantID {
 };
 
 /**
- * A host:port pair that uniquely identifies a machine.
- */
-class HostId {
- public:
-  std::string hostname;      // name of a machine
-  uint64_t    port;          // port number to connect to
-
-  HostId(std::string s, uint64_t p);
-  HostId();
-
-  bool operator<(const HostId& rhs) const;
-  bool operator==(const HostId& rhs) const;
-
-  bool operator!() const { return hostname.empty(); }
-
-  // converts a HostId to a name:port string
-  std::string ToString() const;
-};
-
-/**
  * A Configuration that specifies how a client can describe a RocketSpeed Cloud.
  */
 class Configuration {
@@ -405,13 +387,6 @@ class DataLossInfo {
 };
 
 }  // namespace rocketspeed
-
-namespace std {
-  template <>
-  struct hash<rocketspeed::HostId> {
-    size_t operator()(const rocketspeed::HostId& host_id) const;
-  };
-} // namespace std
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility pop

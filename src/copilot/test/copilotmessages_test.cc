@@ -65,9 +65,10 @@ TEST(CopilotTest, WorkerMapping) {
   options.info_log = info_log_;
   for (int i = 0; i < num_towers; ++i) {
     // Generate fake control towers.
-    options.control_towers.emplace(i, HostId("tower", i));
+    options.control_towers.emplace(
+        i, HostId::CreateLocal(static_cast<uint16_t>(i)));
   }
-  options.pilots.push_back(HostId("fakepilot", 0));
+  options.pilots.push_back(HostId::CreateLocal(62777));
   options.msg_loop = &loop;
   options.control_tower_connections = 4;
   options.log_router = cluster.GetLogRouter();
@@ -113,7 +114,7 @@ TEST(CopilotTest, NoLogger) {
   ASSERT_OK(loop.Initialize());
   Copilot* copilot = nullptr;
   CopilotOptions options;
-  options.pilots.push_back(HostId("fakepilot", 0));
+  options.pilots.push_back(HostId::CreateLocal(62777));
   options.msg_loop = &loop;
   options.log_dir = "///";  // invalid dir, will fail to create LOG file.
   options.log_router = cluster.GetLogRouter();

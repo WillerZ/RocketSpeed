@@ -507,7 +507,7 @@ class EventLoop {
   // connection cache updates
   void remove_host(const HostId& host);
   SocketEvent* setup_connection(const HostId& destination);
-  Status create_connection(const HostId& host, bool block, int* fd);
+  Status create_connection(const HostId& host, int* fd);
   void teardown_connection(SocketEvent* ev);
   void teardown_all_connections();
 

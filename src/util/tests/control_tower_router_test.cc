@@ -7,7 +7,9 @@
 #include <map>
 #include <set>
 #include <string>
-#include <iostream>
+#include <unordered_map>
+
+#include "src/util/common/host_id.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
@@ -19,7 +21,7 @@ class ControlTowerRouterTest { };
 std::unordered_map<ControlTowerId, HostId> MakeControlTowers(int num) {
   std::unordered_map<ControlTowerId, HostId> control_towers;
   for (int i = 0; i < num; ++i) {
-    control_towers.emplace(i, HostId(std::to_string(i), i));
+    control_towers.emplace(i, HostId::CreateLocal(static_cast<uint16_t>(i)));
   }
   return control_towers;
 }
@@ -65,31 +67,35 @@ TEST(ControlTowerRouterTest, ConsistencyTest) {
 TEST(ControlTowerRouterTest, LogDistribution) {
   // Test that logs are well distributed among control towers
   int num_control_towers = 1000;
-  ControlTowerRouter router(MakeControlTowers(num_control_towers), 100, 1);
-  std::vector<int> log_count(num_control_towers, 0);
+  auto control_towers = MakeControlTowers(num_control_towers);
+  std::unordered_map<HostId, int> log_count;
+  for (const auto& entry : control_towers) {
+    log_count[entry.second] = 0;
+  }
+  ControlTowerRouter router(std::move(control_towers), 100, 1);
 
   // Count number of changed for 100k logs.
   int num_logs = 100000;
   for (int i = 0; i < num_logs; ++i) {
     std::vector<HostId const*> clients;
     ASSERT_TRUE(router.GetControlTowers(i, &clients).ok());
-    log_count[clients[0]->port]++;
+    log_count[*clients[0]]++;
   }
 
   // Find the minimum and maximum logs per control tower.
   auto minmax = std::minmax_element(log_count.begin(), log_count.end());
   int expected = num_logs / num_control_towers;  // perfect distribution
-  ASSERT_GT(*minmax.first, expected * 0.5);  // allow +/-50% error worst case
-  ASSERT_LT(*minmax.second, expected * 1.6);
+  ASSERT_GT(minmax.first->second, expected * 0.5);  // allow +/-50% error
+  ASSERT_LT(minmax.second->second, expected * 1.6);
 }
 
 TEST(ControlTowerRouterTest, ChangeHost) {
   // Test that we can swap an existing host with a new one, without changing
   // the mapping.
   std::unordered_map<ControlTowerId, HostId> control_towers {
-    { 0, HostId("0", 0) },
-    { 1, HostId("1", 0) },
-    { 2, HostId("2", 0) },
+    { 0, HostId::CreateLocal(0) },
+    { 1, HostId::CreateLocal(1) },
+    { 2, HostId::CreateLocal(2) },
   };
 
   ControlTowerRouter router(control_towers, 20, 1);
@@ -105,7 +111,7 @@ TEST(ControlTowerRouterTest, ChangeHost) {
 
   // Swap out node 1 with a new host:
   router.RemoveControlTower(1);
-  router.AddControlTower(1, HostId("3", 0));
+  router.AddControlTower(1, HostId::CreateLocal(3));
 
   // Re-route:
   std::unordered_map<HostId, std::set<LogID>> host_logs_after;
@@ -115,9 +121,9 @@ TEST(ControlTowerRouterTest, ChangeHost) {
     host_logs_after[*host_id].insert(i);
   }
 
-  // All logs for Host("1", 0) should now be serviced by HostId("3", 0).
-  ASSERT_TRUE(host_logs_before[HostId("1", 0)] ==
-              host_logs_after[HostId("3", 0)]);
+  // All logs for Host(1) should now be serviced by HostId(3).
+  ASSERT_TRUE(host_logs_before[HostId::CreateLocal(1)] ==
+              host_logs_after[HostId::CreateLocal(3)]);
 }
 
 }  // namespace rocketspeed

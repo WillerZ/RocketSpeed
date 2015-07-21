@@ -7,6 +7,7 @@
 
 #include "include/Status.h"
 #include "include/Types.h"
+#include "src/util/common/host_id.h"
 
 namespace rocketspeed {
 

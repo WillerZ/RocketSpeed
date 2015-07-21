@@ -10,6 +10,7 @@
 #include "include/Types.h"
 #include "src/util/consistent_hash.h"
 #include "src/util/common/hash.h"
+#include "src/util/common/host_id.h"
 #include "src/util/storage.h"
 
 namespace rocketspeed {

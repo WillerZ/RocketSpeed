@@ -214,7 +214,8 @@ void LocalTestCluster::Initialize(Options opts) {
     // pilot too. Any subscribe/unsubscribe requests to the copilot needs
     // to write to the rollcall topic (via the pilot).
     opts.start_pilot = true;
-    HostId pilot_host("localhost", opts.cockpit_port);
+    HostId pilot_host(
+        HostId::CreateLocal(static_cast<uint16_t>(opts.cockpit_port)));
     if (opts.start_copilot) {
       // Create Copilot
       opts.copilot.control_towers.emplace(0, control_tower_->GetHostId());

@@ -40,9 +40,10 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
 
   // what message have we received?
   MessageType type = msg->GetMessageType();
-  LOG_DEBUG(
-      info_log_, "Received message %d at port %ld",
-      static_cast<int>(type), (long)hostid_.port);
+  LOG_DEBUG(info_log_,
+            "Received message %d at %s",
+            static_cast<int>(type),
+            hostid_.ToString().c_str());
 
   // Search for a callback method corresponding to this msg type
   // Give up ownership of this message to the callback function
@@ -83,7 +84,8 @@ MsgLoop::MsgLoop(BaseEnv* env,
   // Setup host id
   char myname[1024];
   gethostname(&myname[0], sizeof(myname));
-  hostid_ = HostId(std::string(myname), port);
+  hostid_ = HostId::CreateLocal(static_cast<uint16_t>(port),
+                                std::string(myname) + std::to_string(port));
 
   auto event_callback = [this] (std::unique_ptr<Message> msg,
                                 StreamID origin) {
@@ -112,8 +114,9 @@ MsgLoop::MsgLoop(BaseEnv* env,
 
   // log an informational message
   LOG_INFO(info_log,
-      "Created a new Message Loop at port %ld with %zu callbacks",
-      (long)hostid_.port, msg_callbacks_.size());
+           "Created a new Message Loop listening at %s with %zu callbacks",
+           hostid_.ToString().c_str(),
+           msg_callbacks_.size());
 }
 
 void MsgLoop::RegisterCallbacks(
@@ -176,7 +179,8 @@ Status MsgLoop::Initialize() {
 }
 
 void MsgLoop::Run() {
-  LOG_INFO(info_log_, "Starting Message Loop at port %ld", (long)hostid_.port);
+  LOG_INFO(
+      info_log_, "Starting Message Loop at %s", hostid_.ToString().c_str());
   env_->SetCurrentThreadName(name_ + "-0");
 
   // Add ping callback if it hasn't already been added.
@@ -235,7 +239,8 @@ void MsgLoop::Stop() {
   }
   worker_threads_.clear();
 
-  LOG_INFO(info_log_, "Stopped a Message Loop at port %ld", (long)hostid_.port);
+  LOG_INFO(
+      info_log_, "Stopped a Message Loop at %s", hostid_.ToString().c_str());
   info_log_->Flush();
 }
 

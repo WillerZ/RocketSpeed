@@ -1158,7 +1158,7 @@ SocketEvent*
 EventLoop::setup_connection(const HostId& destination) {
   thread_check_.Check();
   int fd;
-  Status status = create_connection(destination, false, &fd);
+  Status status = create_connection(destination, &fd);
   if (!status.ok()) {
     LOG_WARN(info_log_,
              "create_connection to %s failed: %s",
@@ -1186,86 +1186,57 @@ EventLoop::setup_connection(const HostId& destination) {
   return all_sockets_.front().get();
 }
 
-
-// Create a connection to the specified host
-Status
-EventLoop::create_connection(const HostId& host,
-                             bool blocking,
-                             int* fd) {
+Status EventLoop::create_connection(const HostId& host, int* fd) {
   thread_check_.Check();
-  addrinfo hints, *servinfo, *p;
-  int rv;
-  std::string port_string(std::to_string(host.port));
   int sockfd;
-  int last_errno = 0;
 
-  // handle both IPV4 and IPV6 addresses.
-  memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-
-  if ((rv = getaddrinfo(host.hostname.c_str(), port_string.c_str(),
-                        &hints, &servinfo)) != 0) {
-      return Status::IOError("getaddrinfo: " + host.hostname +
-                             ":" + port_string + ":" + gai_strerror(rv));
+  const sockaddr* addr = host.GetSockaddr();
+  if ((sockfd = socket(addr->sa_family, SOCK_STREAM, 0)) == -1) {
+    goto abort_clean;
   }
 
-  // loop through all the results and connect to the first we can
-  for (p = servinfo; p != nullptr; p = p->ai_next) {
-      if ((sockfd = socket(p->ai_family, p->ai_socktype,
-              p->ai_protocol)) == -1) {
-          last_errno = errno;
-          continue;
-      }
-
-      // set non-blocking, if requested. Do this before the
-      // connect call.
-      if (!blocking) {
-        auto flags = fcntl(sockfd, F_GETFL, 0);
-        if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK)) {
-          last_errno = errno;
-          close(sockfd);
-          continue;
-        }
-      }
-
-      int one = 1;
-      socklen_t sizeof_one = static_cast<socklen_t>(sizeof(one));
-      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof_one);
-
-      if (env_options_.tcp_send_buffer_size) {
-        int sz = env_options_.tcp_send_buffer_size;
-        socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
-        setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof_sz);
-      }
-
-      if (env_options_.tcp_recv_buffer_size) {
-        int sz = env_options_.tcp_recv_buffer_size;
-        socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
-        setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof_sz);
-      }
-
-      if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-          last_errno = errno;
-          if (!blocking && errno == EINPROGRESS) {
-            // if this is a nonblocking socket, then connect might
-            // not be successful immediately. This is not a problem
-            // because it can still be added to select or poll.
-          } else {
-            close(sockfd);
-            continue;
-          }
-      }
-      break;
+  {  // Set into non-blocking mode before attempt to connect.
+    auto flags = fcntl(sockfd, F_GETFL, 0);
+    if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK)) {
+      goto abort_socket;
+    }
   }
-  if (p == nullptr) {
-      return Status::IOError("failed to connect: " + host.hostname +
-                             ":" + port_string +
-                             "last_errno:" + std::to_string(last_errno));
+
+  {  // Enable address reuse.
+    int one = 1;
+    socklen_t sizeof_one = static_cast<socklen_t>(sizeof(one));
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof_one);
   }
-  freeaddrinfo(servinfo);
+
+  if (env_options_.tcp_send_buffer_size) {
+    int sz = env_options_.tcp_send_buffer_size;
+    socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof_sz);
+  }
+
+  if (env_options_.tcp_recv_buffer_size) {
+    int sz = env_options_.tcp_recv_buffer_size;
+    socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof_sz);
+  }
+
+  if (connect(sockfd, addr, host.GetSocklen()) == -1) {
+    if (errno != EINPROGRESS) {
+      goto abort_socket;
+    }
+    // On non-blocking socket connect might not be successful immediately.
+    // This is not a problem because it can still be added to select or poll.
+  }
+
   *fd = sockfd;
   return Status::OK();
+
+abort_socket:
+  close(sockfd);
+
+abort_clean:
+  return Status::IOError("Failed to connect to: " + host.ToString() +
+                         " errno: " + std::to_string(errno));
 }
 
 void EventLoop::EnableDebugThreadUnsafe(DebugCallback log_cb) {

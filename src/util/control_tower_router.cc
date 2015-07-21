@@ -5,6 +5,8 @@
 
 #include "src/util/control_tower_router.h"
 
+#include "src/util/common/host_id.h"
+
 namespace rocketspeed {
 
 ControlTowerRouter::ControlTowerRouter(
