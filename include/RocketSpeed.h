@@ -97,11 +97,11 @@ class ClientOptions {
   double backoff_base;
 
   // A scaling factor of the exponential back-off curve.
-  // Default: 5 s
+  // Default: 1 s
   std::chrono::milliseconds backoff_initial;
 
   // A limit on back-off period.
-  // Default: 1 min
+  // Default: 30 s
   std::chrono::milliseconds backoff_limit;
 
   // A distribution used to determine final back-off period. If P is the period

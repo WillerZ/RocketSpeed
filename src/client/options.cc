@@ -27,8 +27,8 @@ ClientOptions::ClientOptions()
     , close_connection_with_no_subscription(true)
     , timer_period(200)
     , backoff_base(2.0)
-    , backoff_initial(5 * 1000)
-    , backoff_limit(1 * 60 * 1000)
+    , backoff_initial(1000)
+    , backoff_limit(30 * 1000)
     , backoff_distribution(DefaultBackOffDistribution())
     , unsubscribe_deduplication_timeout(10 * 1000) {
 }
