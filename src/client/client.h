@@ -65,6 +65,23 @@ class ClientImpl : public Client {
                                DataLossCallback data_loss_callback)
       override;
 
+  SubscriptionHandle Subscribe(
+      TenantID tenant_id,
+      NamespaceID namespace_id,
+      Topic topic_name,
+      SequenceNumber start_seqno,
+      MessageReceivedCallback deliver_callback = nullptr,
+      SubscribeCallback subscription_callback = nullptr,
+      DataLossCallback data_loss_callback = nullptr) override {
+    return Subscribe({tenant_id,
+                      std::move(namespace_id),
+                      std::move(topic_name),
+                      start_seqno},
+                     std::move(deliver_callback),
+                     std::move(subscription_callback),
+                     std::move(data_loss_callback));
+  }
+
   Status Unsubscribe(SubscriptionHandle sub_handle) override;
 
   Status Acknowledge(const MessageReceived& message) override;

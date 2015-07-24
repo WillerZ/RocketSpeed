@@ -70,10 +70,8 @@ DataStoreImpl::DataStoreImpl(
                                   data_loss_callback);
 
   // send a subscription request for rollcall topic
-  auto handle = rs_client_->Client::Subscribe(SystemTenant,
-                                              datastore_namespace_,
-                                              datastore_topic_,
-                                              start_point_);
+  auto handle = rs_client_->Subscribe(
+      SystemTenant, datastore_namespace_, datastore_topic_, start_point_);
   if (!handle) {
     // mark datastore as bad
     db_status_ = Status::IOError("Failed to subscribe");

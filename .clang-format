@@ -9,6 +9,8 @@ AllowShortLoopsOnASingleLine: false
 BinPackArguments: false
 BinPackParameters: false
 BreakConstructorInitializersBeforeComma: true
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ConstructorInitializerIndentWidth: 0
 Language: Cpp
 Standard: Cpp11
 ...

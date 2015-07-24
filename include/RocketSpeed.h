@@ -202,22 +202,14 @@ class Client {
       DataLossCallback data_loss_callback = nullptr) = 0;
 
   /** Convenience method, see the other overload for details. */
-  SubscriptionHandle Subscribe(
+  virtual SubscriptionHandle Subscribe(
       TenantID tenant_id,
       NamespaceID namespace_id,
       Topic topic_name,
       SequenceNumber start_seqno,
       MessageReceivedCallback deliver_callback = nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      DataLossCallback data_loss_callback = nullptr) {
-    return Subscribe({tenant_id,
-                      std::move(namespace_id),
-                      std::move(topic_name),
-                      start_seqno},
-                      std::move(deliver_callback),
-                      std::move(subscription_callback),
-                      std::move(data_loss_callback));
-  }
+      DataLossCallback data_loss_callback = nullptr) = 0;
 
   /**
    * Unsubscribes from a topic identified by provided handle.

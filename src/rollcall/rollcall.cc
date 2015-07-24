@@ -80,13 +80,12 @@ Status RollcallImpl::Subscribe(const NamespaceID& namespace_id,
     }
   };
 
-  auto handle =
-      client_->Client::Subscribe(tenant_id_,
-                                 kRollcallNamespace,
-                                 GetRollcallTopicName(namespace_id, shard_id),
-                                 0,
-                                 std::move(receive_callback),
-                                 std::move(subscribe_callback));
+  auto handle = client_->Subscribe(tenant_id_,
+                                   kRollcallNamespace,
+                                   GetRollcallTopicName(namespace_id, shard_id),
+                                   0,
+                                   std::move(receive_callback),
+                                   std::move(subscribe_callback));
   return handle ? Status::OK()
                 : Status::InternalError("Failed to create subscription.");
 }

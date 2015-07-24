@@ -279,8 +279,8 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
         seqno = it->second;
       }
     }
-    consumers[c++ % consumers.size()]
-        ->Client::Subscribe(GuestTenant, nsid, topic_name, seqno);
+    consumers[c++ % consumers.size()]->Subscribe(
+        GuestTenant, nsid, topic_name, seqno);
     if (rate) {
       int64_t have_sent = i;
       auto expired = std::chrono::steady_clock::now() - start;
