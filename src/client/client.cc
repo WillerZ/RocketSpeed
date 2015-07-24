@@ -183,6 +183,7 @@ class DataLossInfoImpl : public DataLossInfo {
       default:
         // No other form of gap should be reported.
         assert(0);
+        return DataLossType::kRetention;
     }
   }
 
