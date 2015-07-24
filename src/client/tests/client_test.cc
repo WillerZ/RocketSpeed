@@ -30,26 +30,31 @@ class MockConfiguration : public Configuration {
   Status GetCopilot(HostId* host_out) const override {
     std::lock_guard<std::mutex> lock(mutex_);
     *host_out = copilot_;
-    return copilot_ == HostId() ? Status::NotFound("") : Status::OK();
+    return !copilot_ ? Status::NotFound("") : Status::OK();
   }
+
+  uint64_t GetCopilotVersion() const override { return version_.load(); }
 
   void SetCopilot(HostId host) {
     std::lock_guard<std::mutex> lock(mutex_);
     copilot_ = host;
+    ++version_;
   }
 
  private:
   mutable std::mutex mutex_;
+  mutable std::atomic<uint64_t> version_;
   HostId copilot_;
 };
 
 class ClientTest {
  public:
   ClientTest()
-      : positive_timeout(1000)
-      , negative_timeout(100)
-      , env_(Env::Default())
-      , config_(std::make_shared<MockConfiguration>()) {
+  : positive_timeout(1000)
+  , negative_timeout(100)
+  , env_(Env::Default())
+  , config_(std::make_shared<MockConfiguration>())
+  , next_copilot_port_(5450) {
     ASSERT_OK(test::CreateLogger(env_, "ClientTest", &info_log_));
   }
 
@@ -65,46 +70,42 @@ class ClientTest {
   Env* const env_;
   const std::shared_ptr<MockConfiguration> config_;
   std::shared_ptr<rocketspeed::Logger> info_log_;
+  std::atomic<int> next_copilot_port_;
 
-  struct CopilotMock {
-    CopilotMock(Env* _env,
-                std::unique_ptr<MsgLoop> _msg_loop,
-                BaseEnv::ThreadId _tid)
-    : env(_env)
-    , msg_loop(std::move(_msg_loop))
-    , tid(_tid) {
-    }
+  class CopilotMock {
+   public:
+    // Noncopyable, movable
+    CopilotMock(CopilotMock&&) = default;
+    CopilotMock& operator=(CopilotMock&&) = default;
 
-    CopilotMock(CopilotMock&& src) noexcept
-    : env(src.env)
-    , msg_loop(std::move(src.msg_loop))
-    , tid(src.tid) {
-      src.tid = 0;
-    }
+    CopilotMock(std::unique_ptr<MsgLoop> _msg_loop, std::thread msg_loop_thread)
+    : msg_loop(std::move(_msg_loop))
+    , msg_loop_thread_(std::move(msg_loop_thread)) {}
 
     ~CopilotMock() {
       msg_loop->Stop();
-      if (tid) {
-        env->WaitForJoin(tid);
+      if (msg_loop_thread_.joinable()) {
+        msg_loop_thread_.join();
       }
     }
 
-    Env* env;
     std::unique_ptr<MsgLoop> msg_loop;
-    BaseEnv::ThreadId tid;
+
+   private:
+    std::thread msg_loop_thread_;
   };
 
   CopilotMock MockCopilot(
       const std::map<MessageType, MsgCallbackType>& callbacks) {
-    std::unique_ptr<MsgLoop> copilot(
-        new MsgLoop(env_, EnvOptions(), 58499, 1, info_log_, "copilot"));
+    std::unique_ptr<MsgLoop> copilot(new MsgLoop(
+        env_, EnvOptions(), next_copilot_port_++, 1, info_log_, "copilot"));
     copilot->RegisterCallbacks(callbacks);
     ASSERT_OK(copilot->Initialize());
-    auto tid = env_->StartThread([&]() { copilot->Run(); }, "copilot");
+    std::thread thread([&]() { copilot->Run(); });
     ASSERT_OK(copilot->WaitUntilRunning());
     // Set copilot address in the configuration.
     config_->SetCopilot(copilot->GetHostId());
-    return CopilotMock { env_, std::move(copilot), tid };
+    return CopilotMock(std::move(copilot), std::move(thread));
   }
 
   std::unique_ptr<Client> CreateClient(ClientOptions options) {
@@ -243,7 +244,7 @@ TEST(ClientTest, GetCopilotFailure) {
   // Clear configuration entry for the Copilot.
   config_->SetCopilot(HostId());
 
-  // Subscribe, not call should make it to the Copilot.
+  // Subscribe, no call should make it to the Copilot.
   auto sub_handle =
       client->Subscribe(GuestTenant, GuestNamespace, "GetCopilotFailure", 0);
   ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
@@ -328,6 +329,36 @@ TEST(ClientTest, OfflineOperations) {
   // requests.
   config_->SetCopilot(copilot.msg_loop->GetHostId());
   ASSERT_TRUE(all_ok_sem.TimedWait(positive_timeout));
+}
+
+TEST(ClientTest, CopilotSwap) {
+  port::Semaphore subscribe_sem1, subscribe_sem2;
+  auto copilot1 =
+      MockCopilot({{MessageType::mSubscribe,
+                    [&](std::unique_ptr<Message> msg, StreamID origin) {
+                      subscribe_sem1.Post();
+                    }}});
+
+  ClientOptions options;
+  options.timer_period = std::chrono::milliseconds(1);
+  // Make client retries utterly slow, to make sure that we switch host
+  // immediately.
+  options.backoff_initial = std::chrono::seconds(30);
+  options.backoff_limit = std::chrono::seconds(30);
+  options.backoff_distribution = [](ClientRNG*) { return 0.0; };
+  auto client = CreateClient(std::move(options));
+
+  // Subscribe, call should make it to the copilot.
+  client->Subscribe(GuestTenant, GuestNamespace, "CopilotSwap", 0);
+  ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
+
+  // Launch another copilot, this will automatically update configuration.
+  auto copilot2 =
+      MockCopilot({{MessageType::mSubscribe,
+                    [&](std::unique_ptr<Message> msg, StreamID origin) {
+                      subscribe_sem2.Post();
+                    }}});
+  ASSERT_TRUE(subscribe_sem2.TimedWait(positive_timeout));
 }
 
 }  // namespace rocketspeed

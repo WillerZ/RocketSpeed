@@ -242,7 +242,7 @@ enum Tenant : TenantID {
 };
 
 /**
- * A Configuration that specifies how a client can describe a RocketSpeed Cloud.
+ * A Configuration that specifies how a Client can connect to RocketSpeed.
  */
 class Configuration {
  public:
@@ -263,6 +263,13 @@ class Configuration {
    * @return ok() if successful, otherwise error.
    */
   virtual Status GetCopilot(HostId* copilot_out) const = 0;
+
+  /**
+   * Returns a version of the configuration, which increases whenever Copilot
+   * host returned by GetCopilot changes. This call should be cheap (i.e. no
+   * blocking or mutexes), Client might poll for version changes often.
+   */
+  virtual uint64_t GetCopilotVersion() const = 0;
 };
 
 enum Retention : char {

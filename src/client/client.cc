@@ -342,7 +342,8 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
       : backoff_until_time_(0)
       , last_send_time_(0)
       , consecutive_goodbyes_count_(0)
-      , copilot_socket_valid_(false) {
+      , copilot_socket_valid_(false)
+      , last_config_version_(0) {
     std::random_device r;
     rng_.seed(r());
   }
@@ -359,6 +360,8 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   StreamSocket copilot_socket;
   /** Determines whether copilot socket is valid. */
   bool copilot_socket_valid_;
+  /** Version of configuration when we last fetched hosts. */
+  uint64_t last_config_version_;
   /** All subscriptions served by this worker. */
   std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
   /**
@@ -828,6 +831,38 @@ void ClientImpl::SendPendingRequests() {
   worker_data.recent_terminations_.ProcessExpired(
       options_.unsubscribe_deduplication_timeout, [](SubscriptionID) {}, -1);
 
+  // Close the connection if the configuration has changed.
+  const auto current_config_version = options_.config->GetCopilotVersion();
+  if (worker_data.last_config_version_ != current_config_version) {
+    if (worker_data.copilot_socket_valid_) {
+      LOG_INFO(info_log_,
+               "Configuration version has changed %" PRIu64 " -> %" PRIu64,
+               worker_data.last_config_version_,
+               current_config_version);
+
+      // Send goodbye message.
+      std::unique_ptr<Message> goodbye(
+          new MessageGoodbye(GuestTenant,
+                             MessageGoodbye::Code::Graceful,
+                             MessageGoodbye::OriginType::Client));
+      StreamID stream = worker_data.copilot_socket.GetStreamID();
+      Status st = msg_loop_->SendResponse(*goodbye, stream, worker_id);
+      if (st.ok()) {
+        // Update internal state as if we received goodbye message.
+        ProcessGoodbye(std::move(goodbye), stream);
+      } else {
+        LOG_WARN(info_log_,
+                 "Failed to close stream (%llu) on configuration change",
+                 worker_data.copilot_socket.GetStreamID());
+        // No harm done, we will have a chance to try again, but need to exit
+        // now, because we shouldn't be sending more subscriptions according to
+        // the old configuration.
+        // Note that we haven't updated last configuration version.
+        return;
+      }
+    }
+  }
+
   // Return immediately if there is nothing to do.
   if (worker_data.pending_subscribes_.empty() &&
       worker_data.pending_terminations_.empty()) {
@@ -853,6 +888,8 @@ void ClientImpl::SendPendingRequests() {
       return;
     }
 
+    // Get configuration version of the host that we will fetch later on.
+    worker_data.last_config_version_ = current_config_version;
     // Get the copilot's address.
     HostId copilot;
     Status st = options_.config->GetCopilot(&copilot);

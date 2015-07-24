@@ -25,6 +25,8 @@ class FixedConfiguration : public Configuration {
 
   Status GetCopilot(HostId* host_out) const override;
 
+  uint64_t GetCopilotVersion() const override { return 0; }
+
  private:
   HostId pilot_;
   HostId copilot_;
