@@ -10,6 +10,7 @@ cpp_library(
         'statistics.cc',
         'status.cc',
         'thread_local.cc',
+        'thread_check.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',

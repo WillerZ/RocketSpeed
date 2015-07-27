@@ -41,6 +41,14 @@ struct ThreadCheck {
 #endif
     return *this;
   }
+  /**
+   * Return numerical id for current thread on all supporteed OSs
+   * Should be used only for debug purposes.
+   * On OSX returns a value unique only within one process.
+   *
+   * @return current thread id
+   */
+  static uint64_t GetCurrentThreadId();
 
   /**
    * Checks that this is always called on the same thread.
@@ -49,12 +57,11 @@ struct ThreadCheck {
    */
   inline bool Ok() const {
 #ifndef NDEBUG
-    pthread_t desired = pthread_self(), expected = 0;
-    return thread_id_.compare_exchange_strong(expected, desired) ||
-           expected == desired;
+    uint64_t desired = GetCurrentThreadId(), expected = 0;
 
+    return thread_id_.compare_exchange_strong(expected, desired) ||
+          expected == desired;
 #endif
-    return true;
   }
 
   /**
@@ -71,13 +78,13 @@ struct ThreadCheck {
    */
   inline void Reset() const {
 #ifndef NDEBUG
-    thread_id_ = pthread_self();
+    thread_id_ = GetCurrentThreadId();
 #endif
   }
 
  private:
 #ifndef NDEBUG
-  mutable std::atomic<pthread_t> thread_id_;
+    mutable std::atomic<uint64_t> thread_id_;
 #endif
 };
 
