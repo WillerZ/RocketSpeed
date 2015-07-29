@@ -62,6 +62,7 @@ struct ThreadCheck {
     return thread_id_.compare_exchange_strong(expected, desired) ||
           expected == desired;
 #endif
+    return true;
   }
 
   /**
