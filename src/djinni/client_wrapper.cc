@@ -11,10 +11,11 @@
 #include <stdexcept>
 #include <string>
 
+#include "include/RocketSpeed.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "include/RocketSpeed.h"
 #include "src/djinni/jvm_env.h"
+#include "src/djinni/type_conversions.h"
 #include "src/util/common/fixed_configuration.h"
 
 #include "src-gen/djinni/cpp/LogLevel.hpp"
@@ -28,112 +29,11 @@
 namespace rocketspeed {
 namespace djinni {
 
-namespace {
-
-int64_t FromSequenceNumber(uint64_t uval) {
-  using Limits = std::numeric_limits<int64_t>;
-  if (uval <= static_cast<uint64_t>(Limits::min()))
-    return static_cast<int64_t>(uval) + Limits::min();
-  if (uval >= static_cast<uint64_t>(Limits::min()))
-    return static_cast<int64_t>(uval - Limits::min());
-  assert(false);
-  return 0;
-}
-
-uint64_t ToSequenceNumber(int64_t uval) {
-  using Limits = std::numeric_limits<int64_t>;
-  return static_cast<uint64_t>(uval) - Limits::min();
-}
-
-int64_t FromSubscriptionHandle(uint64_t uval) {
-  using Limits = std::numeric_limits<int64_t>;
-  if (uval <= static_cast<uint64_t>(Limits::min()))
-    return static_cast<int64_t>(uval);
-  if (uval >= static_cast<uint64_t>(Limits::min()))
-    return static_cast<int64_t>(uval - Limits::min()) + Limits::min();
-  assert(false);
-  return 0;
-}
-
-uint64_t ToSubscriptionHandle(int64_t val) {
-  return static_cast<uint64_t>(val);
-}
-
-rocketspeed::InfoLogLevel ToInfoLogLevel(LogLevel log_level) {
-  using rocketspeed::InfoLogLevel;
-  static_assert(InfoLogLevel::DEBUG_LEVEL ==
-                    static_cast<InfoLogLevel>(LogLevel::DEBUG_LEVEL),
-                "Enum representations do not match.");
-  static_assert(InfoLogLevel::NUM_INFO_LOG_LEVELS ==
-                    static_cast<InfoLogLevel>(LogLevel::NUM_INFO_LOG_LEVELS),
-                "Enum representations do not match.");
-  return static_cast<InfoLogLevel>(log_level);
-}
-
-Status FromStatus(rocketspeed::Status status) {
-  StatusCode code = StatusCode::INTERNAL;
-  if (status.ok()) {
-    code = StatusCode::OK;
-  } else if (status.IsNotFound()) {
-    code = StatusCode::NOTFOUND;
-  } else if (status.IsNotSupported()) {
-    code = StatusCode::NOTSUPPORTED;
-  } else if (status.IsInvalidArgument()) {
-    code = StatusCode::INVALIDARGUMENT;
-  } else if (status.IsIOError()) {
-    code = StatusCode::IOERROR;
-  } else if (status.IsNotInitialized()) {
-    code = StatusCode::NOTINITIALIZED;
-  } else if (status.IsUnauthorized()) {
-    code = StatusCode::UNAUTHORIZED;
-  } else if (status.IsTimedOut()) {
-    code = StatusCode::TIMEDOUT;
-  } else if (status.IsInternal()) {
-    code = StatusCode::INTERNAL;
-  } else {
-    assert(false);
-  }
-  return Status(code, std::move(status.ToString()));
-}
-
-rocketspeed::MsgId ToMsgId(const MsgId& message_id) {
-  union {
-    char id[16];
-    struct {
-      int64_t hi, lo;
-    };
-  } value;
-  value.hi = message_id.hi;
-  value.lo = message_id.lo;
-  return rocketspeed::MsgId(value.id);
-}
-
-MsgId FromMsgId(const rocketspeed::MsgId& message_id) {
-  union {
-    char id[16];
-    struct {
-      int64_t hi, lo;
-    };
-  } value;
-  memcpy(value.id, message_id.id, 16);
-  return MsgId(value.hi, value.lo);
-}
-
-rocketspeed::Slice ToSlice(const std::vector<uint8_t>& data) {
-  auto first = reinterpret_cast<const char*>(data.data());
-  return rocketspeed::Slice(first, data.size());
-}
-
-std::vector<uint8_t> FromSlice(Slice slice) {
-  auto first = reinterpret_cast<const uint8_t*>(slice.data());
-  return std::vector<uint8_t>(first, first + slice.size());
-}
-
-}  // namespace
-
 std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
                                                HostId cockpit,
                                                SubscriptionStorage storage) {
+  rocketspeed::Status st;
+
   auto cockpit_port = static_cast<uint16_t>(cockpit.port);
   if (cockpit_port != cockpit.port) {
     throw std::runtime_error("Invalid port.");
@@ -146,7 +46,11 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
             "Created JVM logger for Client, log level: %s",
             rocketspeed::LogLevelToString(log_level1));
 
-  rocketspeed::HostId cockpit1(std::move(cockpit.host), cockpit_port);
+  rocketspeed::HostId cockpit1;
+  st = rocketspeed::HostId::Resolve(cockpit.host, cockpit_port, &cockpit1);
+  if (!st.ok()) {
+    throw std::runtime_error("Could not resolve cockpit host");
+  }
   auto config = std::make_shared<FixedConfiguration>(cockpit1, cockpit1);
 
   rocketspeed::ClientOptions options;
@@ -161,7 +65,7 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
       if (storage.file_path.empty()) {
         throw std::runtime_error("Missing file path for file storage.");
       }
-      auto st = rocketspeed::SubscriptionStorage::File(
+      st = rocketspeed::SubscriptionStorage::File(
           options.env, options.info_log, storage.file_path, &options.storage);
       if (!st.ok()) {
         throw std::runtime_error(st.ToString());
@@ -171,7 +75,7 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
   }
 
   std::unique_ptr<rocketspeed::Client> client;
-  auto st = rocketspeed::Client::Create(std::move(options), &client);
+  st = rocketspeed::Client::Create(std::move(options), &client);
   if (!st.ok()) {
     throw std::runtime_error(st.ToString());
   }
@@ -235,10 +139,9 @@ int64_t ClientWrapper::Subscribe(
     deliver_cb1 =
         [this, deliver_cb](std::unique_ptr<MessageReceived>& message) {
           try {
-            deliver_cb->Call(
-                FromSubscriptionHandle(message->GetSubscriptionHandle()),
-                FromSequenceNumber(message->GetSequenceNumber()),
-                FromSlice(message->GetContents()));
+            deliver_cb->Call(FromUint(message->GetSubscriptionHandle()),
+                             FromSequenceNumber(message->GetSequenceNumber()),
+                             FromSlice(message->GetContents()));
           } catch (const std::exception& e) {
             LOG_WARN(info_log_,
                      "MessageReceivedCallback caught exception: %s",
@@ -272,7 +175,7 @@ int64_t ClientWrapper::Subscribe(
   if (!sub_handle) {
     throw std::runtime_error("Failed to create subscription.");
   }
-  return FromSubscriptionHandle(sub_handle);
+  return FromUint(sub_handle);
 }
 
 int64_t ClientWrapper::Resubscribe(
@@ -288,7 +191,7 @@ int64_t ClientWrapper::Resubscribe(
 }
 
 void ClientWrapper::Unsubscribe(int64_t sub_handle) {
-  auto st = client_->Unsubscribe(ToSubscriptionHandle(sub_handle));
+  auto st = client_->Unsubscribe(ToUint(sub_handle));
   if (!st.ok()) {
     throw std::runtime_error(st.ToString());
   }
@@ -298,7 +201,7 @@ class MessageReceivedImpl : public rocketspeed::MessageReceived {
  public:
   MessageReceivedImpl(rocketspeed::SubscriptionHandle sub_handle,
                       rocketspeed::SequenceNumber seqno)
-      : sub_handle_(sub_handle), seqno_(seqno) {}
+  : sub_handle_(sub_handle), seqno_(seqno) {}
 
   SubscriptionHandle GetSubscriptionHandle() const override {
     return sub_handle_;
@@ -317,8 +220,7 @@ class MessageReceivedImpl : public rocketspeed::MessageReceived {
 };
 
 void ClientWrapper::Acknowledge(int64_t sub_handle, int64_t seqno) {
-  MessageReceivedImpl message(ToSubscriptionHandle(sub_handle),
-                              ToSequenceNumber(seqno));
+  MessageReceivedImpl message(ToUint(sub_handle), ToSequenceNumber(seqno));
   client_->Acknowledge(message);
 }
 

@@ -116,3 +116,33 @@ ClientImpl = interface +c {
 
   close();
 }
+
+InboundID = record {
+  serialised: binary;
+} deriving (eq)
+
+Rocketeer = interface +j +o {
+
+  handleNewSubscription(inbound_id: InboundID,
+                        params: SubscriptionParameters);
+
+  handleTermination(inbound_id: InboundID);
+}
+
+RocketeerServerImpl = interface +c {
+
+  static create(log_level: LogLevel,
+                listener_port: i32): RocketeerServerImpl;
+
+  register(rocketeer: Rocketeer);
+
+  start(): Status;
+
+  deliver(inbound_id: InboundID,
+          seqno: i64,
+          payload: binary): bool;
+
+  terminate(inbound_id: InboundID): bool;
+
+  close();
+}

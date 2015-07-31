@@ -3,7 +3,7 @@ package org.rocketspeed;
 public final class Builder {
 
   static {
-    System.loadLibrary("rsclientjni");
+    System.loadLibrary("rsjni");
   }
 
   private LogLevel level;

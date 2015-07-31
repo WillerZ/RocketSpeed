@@ -50,11 +50,8 @@ public class IntegrationTest {
     final Semaphore publishSemaphore = new Semaphore(0);
     PublishCallback publishCallback = new PublishCallback() {
       @Override
-      public void call(MsgId messageId,
-                       String namespaceId,
-                       String topicName,
-                       long seqno,
-                       Status status) {
+      public void call(
+          MsgId messageId, String namespaceId, String topicName, long seqno, Status status) {
         assertEquals(GUEST_NAMESPACE, namespaceId);
         assertEquals(topic, topicName);
         statuses.append(status);
@@ -92,11 +89,8 @@ public class IntegrationTest {
     final Semaphore publishSemaphore = new Semaphore(0);
     PublishCallback publishCallback = new PublishCallback() {
       @Override
-      public void call(MsgId messageId,
-                       String namespaceId,
-                       String topicName,
-                       long seqno,
-                       Status status) {
+      public void call(
+          MsgId messageId, String namespaceId, String topicName, long seqno, Status status) {
         assertEquals(GUEST_NAMESPACE, namespaceId);
         assertEquals(topic, topicName);
         statuses.append(status);
@@ -106,12 +100,13 @@ public class IntegrationTest {
     final Semaphore subscribeSemaphore = new Semaphore(0);
     SubscribeCallback subscribeCallback = new SubscribeCallback() {
       @Override
-      public void call(int tenantId,
-                       String namespaceId,
-                       String topicName,
-                       long startSeqno,
-                       boolean subscribed,
-                       Status status) {
+      public void call(
+          int tenantId,
+          String namespaceId,
+          String topicName,
+          long startSeqno,
+          boolean subscribed,
+          Status status) {
         assertEquals(GUEST_TENANT, tenantId);
         assertEquals(GUEST_NAMESPACE, namespaceId);
         assertEquals(topic, topicName);
@@ -130,28 +125,18 @@ public class IntegrationTest {
 
     try (Client client = new Builder().cockpit(testCluster.getCockpit()).build()) {
       for (int i = 1; i < 4; ++i) {
-        client.publish(GUEST_TENANT,
-            GUEST_NAMESPACE,
-            topic,
-            valueOf(i).getBytes(),
-            publishCallback);
+        client.publish(
+            GUEST_TENANT, GUEST_NAMESPACE, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
 
-      long handle0 = client.subscribe(GUEST_TENANT,
-          GUEST_NAMESPACE,
-          topic,
-          CURRENT_SEQNO,
-          receiveCallback,
-          subscribeCallback);
+      long handle0 = client.subscribe(
+          GUEST_TENANT, GUEST_NAMESPACE, topic, CURRENT_SEQNO, receiveCallback, subscribeCallback);
       Thread.sleep(300);
 
       for (int i = 3; i < 6; ++i) {
-        client.publish(GUEST_TENANT,
-            GUEST_NAMESPACE,
-            topic,
-            valueOf(i).getBytes(),
-            publishCallback);
+        client.publish(
+            GUEST_TENANT, GUEST_NAMESPACE, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
@@ -162,11 +147,8 @@ public class IntegrationTest {
       assertTrue(subscribeSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
 
       for (int i = 6; i < 9; ++i) {
-        client.publish(GUEST_TENANT,
-            GUEST_NAMESPACE,
-            topic,
-            valueOf(i).getBytes(),
-            publishCallback);
+        client.publish(
+            GUEST_TENANT, GUEST_NAMESPACE, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
 
@@ -174,11 +156,8 @@ public class IntegrationTest {
       Thread.sleep(300);
 
       for (int i = 9; i < 12; ++i) {
-        client.publish(GUEST_TENANT,
-            GUEST_NAMESPACE,
-            topic,
-            valueOf(i).getBytes(),
-            publishCallback);
+        client.publish(
+            GUEST_TENANT, GUEST_NAMESPACE, topic, valueOf(i).getBytes(), publishCallback);
         assertTrue(publishSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
         assertTrue(receiveSemaphore.tryAcquire(TIMEOUT, TIMEOUT_UNIT));
       }
@@ -206,10 +185,8 @@ public class IntegrationTest {
     String snapshotFile = testFolder.getRoot().getAbsolutePath() + "/SubscriptionStorage.bin";
     try (Client client = new Builder().cockpit(testCluster.getCockpit()).usingFileStorage(
         snapshotFile).build()) {
-      SubscriptionParameters params = new SubscriptionParameters(GUEST_TENANT,
-          GUEST_NAMESPACE,
-          "SubscriptionStorage",
-          123L);
+      SubscriptionParameters params = new SubscriptionParameters(
+          GUEST_TENANT, GUEST_NAMESPACE, "SubscriptionStorage", 123L);
       long handle0 = client.subscribe(params, null);
       client.acknowledge(handle0, 125L);
 

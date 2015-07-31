@@ -4,13 +4,13 @@ import java.util.ArrayList;
 
 public class Client implements AutoCloseable {
 
-  public static final long BEGINNING_SEQNO = Long.MIN_VALUE + 1L;
-  public static final long CURRENT_SEQNO = Long.MIN_VALUE;
+  public static final long BEGINNING_SEQNO = 1L;
+  public static final long CURRENT_SEQNO = 0L;
   public static final String GUEST_NAMESPACE = "guest";
   public static final int GUEST_TENANT = 1;
 
   static {
-    System.loadLibrary("rsclientjni");
+    System.loadLibrary("rsjni");
   }
 
   private final ClientImpl client;
@@ -19,37 +19,40 @@ public class Client implements AutoCloseable {
     this.client = client;
   }
 
-  public MsgId publish(int tenantId,
-                       String namespaceId,
-                       String topicName,
-                       byte[] data,
-                       PublishCallback publishCb) {
+  public MsgId publish(
+      int tenantId, String namespaceId, String topicName, byte[] data, PublishCallback publishCb) {
     return publish(tenantId, namespaceId, topicName, data, publishCb, MsgId.EMPTY);
   }
 
-  public MsgId publish(int tenantId,
-                       String namespaceId,
-                       String topicName,
-                       byte[] data,
-                       PublishCallback publishCb,
-                       MsgId messageId) {
+  public MsgId publish(
+      int tenantId,
+      String namespaceId,
+      String topicName,
+      byte[] data,
+      PublishCallback publishCb,
+      MsgId messageId) {
     return client.publish(tenantId, namespaceId, topicName, data, publishCb, messageId);
   }
 
-  public long subscribe(int tenantId,
-                        String namespaceId,
-                        String topicName,
-                        long startSeqno,
-                        MessageReceivedCallback deliverCb) {
+  public long subscribe(
+      int tenantId,
+      String namespaceId,
+      String topicName,
+      long startSeqno,
+      MessageReceivedCallback deliverCb) {
     return subscribe(tenantId, namespaceId, topicName, startSeqno, deliverCb, null);
   }
 
-  public long subscribe(int tenantId,
-                        String namespaceId,
-                        String topicName,
-                        long startSeqno,
-                        MessageReceivedCallback deliverCb,
-                        SubscribeCallback subscribeCb) {
+  public long subscribe(
+      int tenantId,
+      String namespaceId,
+      String topicName,
+      long startSeqno,
+      MessageReceivedCallback deliverCb,
+      SubscribeCallback subscribeCb) {
+    if (startSeqno < 0) {
+      throw new IllegalArgumentException("Sequence number must be non-negative");
+    }
     return client.subscribe(tenantId, namespaceId, topicName, startSeqno, deliverCb, subscribeCb);
   }
 
@@ -57,9 +60,13 @@ public class Client implements AutoCloseable {
     return subscribe(params, deliverCb, null);
   }
 
-  public long subscribe(SubscriptionParameters params,
-                        MessageReceivedCallback deliverCb,
-                        SubscribeCallback subscribeCb) {
+  public long subscribe(
+      SubscriptionParameters params,
+      MessageReceivedCallback deliverCb,
+      SubscribeCallback subscribeCb) {
+    if (params.getStartSeqno() < 0) {
+      throw new IllegalArgumentException("Sequence number must be non-negative");
+    }
     return client.resubscribe(params, deliverCb, subscribeCb);
   }
 

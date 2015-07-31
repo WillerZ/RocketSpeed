@@ -1,8 +1,8 @@
 JAVA_VERSION = '7'
-SO_NAME = 'librsclientjni.so'
+SO_NAME = 'librsjni.so'
 
 java_library(
-    name = 'client_java',
+    name = 'java',
     srcs = glob([
         'src/main/java/org/rocketspeed/*.java',
         'src-gen/djinni/java/org/rocketspeed/*.java',
@@ -13,7 +13,7 @@ java_library(
 )
 
 java_unittest(
-    name = 'client_java_test',
+    name = 'java_test',
     srcs = glob([
         'src/test/java/org/rocketspeed/*.java',
         'src/test/java/org/rocketspeed/util/*.java',
@@ -21,9 +21,10 @@ java_unittest(
     test_classes = [
         'org.rocketspeed.IntegrationTest',
         'org.rocketspeed.LocalTestClusterTest',
+        'org.rocketspeed.RocketeerTest',
     ],
     deps = [
-        ':client_java',
+        ':java',
         '@/rocketspeed/github/src/test:test_cluster_proc',
     ],
     aether_deps = [
@@ -35,15 +36,14 @@ java_unittest(
     ],
     env = {
         'RS_CLUSTER_BIN_PATH' : '_bin/rocketspeed/github/src/test/test_cluster_proc',
-        'LD_LIBRARY_PATH' : '_bin/rocketspeed/github/client',
+        'LD_LIBRARY_PATH' : '_bin/rocketspeed/github',
     },
     java_version = JAVA_VERSION,
     openjdk = True,
 )
 
 cpp_binary(
-    name = 'librsclientjni.so',
-    output_subdir = 'client',
+    name = SO_NAME,
     srcs = glob([
         'src/djinni/*.cc',
         'src-gen/djinni/cpp/*.cpp'
@@ -57,6 +57,7 @@ cpp_binary(
     deps = [
         ':djinni_support',
         '@/rocketspeed/github/src/client',
+        '@/rocketspeed/github/src/engine:rocketeer',
         '@/rocketspeed/github/src/util/common',
         '@/rocketspeed/github/src/util/common:fixed_configuration',
     ],
