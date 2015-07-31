@@ -33,6 +33,13 @@ Status ControlTowerRouter::GetControlTower(LogID logID,
 Status ControlTowerRouter::GetControlTowers(
     LogID logID,
     std::vector<const HostId*>* out) const {
+
+  auto control_towers_cache_it = control_towers_by_log_id_cache_.find(logID);
+  if(control_towers_cache_it != control_towers_by_log_id_cache_.end()) {
+    *out = control_towers_cache_it->second;
+    return Status::OK(); // result was populated using cached values.
+  }
+
   size_t count = std::min(control_towers_per_log_, mapping_.SlotCount());
   out->resize(count);
   if (count == 0) {
@@ -50,11 +57,16 @@ Status ControlTowerRouter::GetControlTowers(
     }
     (*out)[i] = &it->second;
   }
+
+  control_towers_by_log_id_cache_[logID] = *out;
+
   return Status::OK();
 }
 
 Status ControlTowerRouter::AddControlTower(ControlTowerId node_id,
                                            HostId host_id) {
+  control_towers_by_log_id_cache_.clear(); // invalidate cache.
+
   auto result = host_ids_.emplace(node_id, std::move(host_id));
   if (!result.second) {
     return Status::InvalidArgument("Node ID already in router");
@@ -64,6 +76,8 @@ Status ControlTowerRouter::AddControlTower(ControlTowerId node_id,
 }
 
 Status ControlTowerRouter::RemoveControlTower(ControlTowerId node_id) {
+  control_towers_by_log_id_cache_.clear(); // invalidate cache.
+
   auto iter = host_ids_.find(node_id);
   if (iter == host_ids_.end()) {
     return Status::InvalidArgument("Node ID not in router");
