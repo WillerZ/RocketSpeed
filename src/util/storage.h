@@ -214,26 +214,26 @@ class AsyncLogReader {
 class LogRouter {
  public:
   /**
-   * Routes a topic to a log ID.
+   * Routes a topic to a log ID. Default implementation uses RouteToLog.
    *
    * @param namespace_id the namespace of the topic to route.
    * @param topic_name the topic to route.
    * @param out output for logid.
    * @return on success returns OK(), otherwise errorcode.
    */
-  Status GetLogID(Slice namespace_id,
-                  Slice topic_name,
-                  LogID* out) const;
+  virtual Status GetLogID(Slice namespace_id,
+                          Slice topic_name,
+                          LogID* out) const;
 
   /**
-   * Routes a topic to a log ID.
+   * Routes a topic to a log ID. Default implementation uses RouteToLog.
    *
    * @param topic the UUID of the topic to route.
    * @param out output for logid.
    * @return on success returns OK(), otherwise errorcode.
    */
-  Status GetLogID(const TopicUUID& topic,
-                  LogID* out) const;
+  virtual Status GetLogID(const TopicUUID& topic,
+                          LogID* out) const;
 
   virtual ~LogRouter() {}
 
