@@ -96,8 +96,6 @@ class ControlTowerRouter {
                  ControlTowerIdHash> mapping_;
   unsigned int replication_;
   size_t control_towers_per_log_;
-  mutable std::unordered_map<LogID, std::vector<const HostId*>>
-    control_towers_by_log_id_cache_;
 };
 
 }  // namespace rocketspeed
