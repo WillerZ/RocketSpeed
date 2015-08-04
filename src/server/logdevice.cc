@@ -23,6 +23,7 @@ DEFINE_string(logs, "1..100000", "range of logs");
 DEFINE_string(storage_url, "", "Storage config url");
 DEFINE_string(logdevice_cluster, "", "LogDevice cluster tier name");
 DEFINE_int32(storage_workers, 16, "number of logdevice storage workers");
+DEFINE_int32(storage_timeout, 1000, "storage timeout in milliseconds");
 
 namespace rocketspeed {
 
@@ -39,7 +40,7 @@ std::shared_ptr<LogStorage> CreateLogStorage(Env* env,
     FLAGS_logdevice_cluster,
     FLAGS_storage_url,
     "",
-    std::chrono::milliseconds(1000),
+    std::chrono::milliseconds(FLAGS_storage_timeout),
     FLAGS_storage_workers,
     env,
     std::move(info_log),
