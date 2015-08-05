@@ -46,6 +46,11 @@ class HostId {
    */
   const std::string& ToString() const { return description_; }
 
+  /** Sets a human-readable form of the address. */
+  void SetDescription(std::string description) {
+    description_ = std::move(description);
+  }
+
   const sockaddr* GetSockaddr() const {
     return reinterpret_cast<const sockaddr*>(&storage_);
   }
