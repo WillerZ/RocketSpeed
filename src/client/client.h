@@ -100,13 +100,9 @@ class ClientImpl : public Client {
   /** A wake lock used on mobile devices. */
   SmartWakeLock wake_lock_;
 
-  // Incoming message loop object.
   std::unique_ptr<MsgLoopBase> msg_loop_;
   BaseEnv::ThreadId msg_loop_thread_;
   bool msg_loop_thread_spawned_;
-
-  // Main logger for the client
-  const std::shared_ptr<Logger> info_log_;
 
   /** State of the Client, sharded by workers. */
   std::unique_ptr<ClientWorkerData[]> worker_data_;
