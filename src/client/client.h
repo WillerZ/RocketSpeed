@@ -91,7 +91,7 @@ class ClientImpl : public Client {
   Status RestoreSubscriptions(
       std::vector<SubscriptionParameters>* subscriptions) override;
 
-  Statistics GetStatisticsSync() const;
+  Statistics GetStatisticsSync();
 
  private:
   /** Options provided when creating the Client. */
@@ -105,7 +105,7 @@ class ClientImpl : public Client {
   bool msg_loop_thread_spawned_;
 
   /** State of the Client, sharded by workers. */
-  std::unique_ptr<ClientWorkerData[]> worker_data_;
+  std::vector<std::unique_ptr<ClientWorkerData>> worker_data_;
 
   // If this is an internal client, then we will skip TenantId
   // checks and namespaceid checks.
@@ -141,26 +141,8 @@ class ClientImpl : public Client {
    */
   int GetWorkerID(SubscriptionHandle sub_handle) const;
 
-  /** Handles creation of a subscription on provided worker thread. */
-  void StartSubscription(SubscriptionID sub_id, SubscriptionState sub_state);
-
-  /** Handles termination of a subscription on provided worker thread. */
-  void TerminateSubscription(SubscriptionID sub_id);
-
-  /**
-   * Synchronises a portion of pending subscribe and unsubscribe requests with
-   * the Copilot. Takes into an account rate limits.
-   */
-  void SendPendingRequests();
-
-  /** Handler for data and gap messages */
-  void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);
-
-  /** Handler for unsubscribe messages. */
-  void ProcessUnsubscribe(std::unique_ptr<Message> msg, StreamID origin);
-
-  /** Handler for goodbye messages. */
-  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
+  template <typename M>
+  std::function<void(std::unique_ptr<Message>, StreamID)> CreateCallback();
 };
 
 }  // namespace rocketspeed
