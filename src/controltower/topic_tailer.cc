@@ -15,6 +15,7 @@
 #include "src/util/storage.h"
 #include "src/util/topic_uuid.h"
 #include "src/util/common/linked_map.h"
+#include "src/util/common/random.h"
 #include "src/util/common/thread_check.h"
 #include "src/messages/msg_loop.h"
 
@@ -727,7 +728,7 @@ TopicTailer::TopicTailer(
   log_router_(std::move(log_router)),
   info_log_(std::move(info_log)),
   on_message_(std::move(on_message)),
-  prng_(std::random_device()()),
+  prng_(ThreadLocalPRNG()),
   options_(options) {
 
   storage_to_room_queues_ = msg_loop->CreateThreadLocalQueues(worker_id);

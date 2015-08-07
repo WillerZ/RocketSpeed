@@ -74,9 +74,8 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
 Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))) {
 
-  std::random_device rd;
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
-    worker_data_.emplace_back(WorkerData(rd()));
+    worker_data_.emplace_back(WorkerData());
   }
   log_storage_ = options_.storage;
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());

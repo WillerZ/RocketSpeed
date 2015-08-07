@@ -30,6 +30,7 @@
 #include "src/messages/msg_loop_base.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
+#include "src/util/common/random.h"
 #include "src/util/timeout_list.h"
 
 namespace rocketspeed {
@@ -346,10 +347,9 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
       , backoff_until_time_(0)
       , last_send_time_(0)
       , consecutive_goodbyes_count_(0)
+      , rng_(ThreadLocalPRNG())
       , copilot_socket_valid_(false)
       , last_config_version_(0) {
-    std::random_device r;
-    rng_.seed(r());
   }
 
   Status Start() {
@@ -396,7 +396,7 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   /** Number of consecutive goodbye messages. */
   size_t consecutive_goodbyes_count_;
   /** Random engine used by this client. */
-  ClientRNG rng_;
+  ClientRNG& rng_;
   /** Stream socket used by this worker to talk to the copilot. */
   StreamSocket copilot_socket;
   /** Determines whether copilot socket is valid. */

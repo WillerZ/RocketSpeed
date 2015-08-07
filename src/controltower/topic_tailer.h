@@ -234,7 +234,7 @@ class TopicTailer {
   // Cached tail sequence number per log.
   std::unordered_map<LogID, SequenceNumber> tail_seqno_cached_;
 
-  std::mt19937 prng_;
+  std::mt19937_64& prng_;
 
   Options options_;
 

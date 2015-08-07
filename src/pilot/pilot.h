@@ -18,6 +18,7 @@
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"
 #include "src/util/common/object_pool.h"
+#include "src/util/common/random.h"
 #include "src/pilot/options.h"
 
 namespace rocketspeed {
@@ -131,15 +132,15 @@ class Pilot {
   std::shared_ptr<LogStorage> log_storage_;
 
   struct alignas(CACHE_LINE_SIZE) WorkerData {
-    WorkerData(unsigned int seed)
+    WorkerData()
     : append_closure_pool_(new SharedPooledObjectList<AppendClosure>())
-    , prng_(seed) {
+    , prng_(ThreadLocalPRNG()) {
     }
 
     // AppendClosure object pool and lock.
     std::unique_ptr<SharedPooledObjectList<AppendClosure>> append_closure_pool_;
     Stats stats_;
-    std::mt19937 prng_;
+    std::mt19937_64& prng_;
   };
 
   // Per-thread data.

@@ -54,7 +54,7 @@ typedef std::function<void(std::unique_ptr<DataLossInfo>&)>
 typedef std::function<void(Status)> SaveSubscriptionsCallback;
 
 /** Client random number generator. */
-typedef std::mt19937 ClientRNG;
+typedef std::mt19937_64 ClientRNG;
 
 /** Describes the Client object to be created. */
 class ClientOptions {
