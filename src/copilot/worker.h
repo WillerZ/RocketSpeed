@@ -221,6 +221,15 @@ class CopilotWorker {
   // These subscriptions will be retired periodically.
   void AddOrphanTopic(TopicUUID uuid);
 
+  /**
+   * Gets control towers for a log. Potentially cached for performance.
+   *
+   * @param log_id The log to lookup.
+   * @param out Output vector for found hosts.
+   * @return ok() if successful, otherwise error.
+   */
+  Status GetControlTowers(LogID log_id, std::vector<HostId const*>* out) const;
+
   // Copilot specific options.
   const CopilotOptions& options_;
 
@@ -337,6 +346,10 @@ class CopilotWorker {
   // For long-living subscriptions, we need to ensure that the subscription
   // is on the correct control tower.
   TimeoutList<TopicUUID> topic_checkup_list_;
+
+  // Cache of control tower mapping per log.
+  mutable std::unordered_map<LogID, std::vector<const HostId*>>
+    control_tower_cache_;
 };
 
 }  // namespace rocketspeed

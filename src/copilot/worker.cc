@@ -554,6 +554,7 @@ void CopilotWorker::ProcessRouterUpdate(
     std::shared_ptr<ControlTowerRouter> router) {
   LOG_VITAL(options_.info_log, "Updating control tower router");
   control_tower_router_ = std::move(router);
+  control_tower_cache_.clear();
 }
 
 void CopilotWorker::ProcessTimerTick() {
@@ -750,7 +751,7 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
   if (resub_needed || send_latest_request) {
     // Find control towers responsible for this topic's log.
     std::vector<HostId const*> recipients;
-    if (control_tower_router_->GetControlTowers(log_id, &recipients).ok()) {
+    if (GetControlTowers(log_id, &recipients).ok()) {
       // Update subscription on all control towers.
       for (HostId const* recipient : recipients) {
         int outgoing_worker_id = copilot_->GetTowerWorker(log_id, *recipient);
@@ -996,7 +997,7 @@ void CopilotWorker::AddOrphanTopic(TopicUUID uuid) {
 std::string CopilotWorker::GetTowersForLog(LogID log_id) const {
   std::string result;
   std::vector<HostId const*> towers;
-  if (control_tower_router_->GetControlTowers(log_id, &towers).ok()) {
+  if (GetControlTowers(log_id, &towers).ok()) {
     for (HostId const* tower : towers) {
       result += tower->ToString();
       result += '\n';
@@ -1048,7 +1049,7 @@ std::string CopilotWorker::GetSubscriptionInfo(std::string filter,
 
 bool CopilotWorker::CorrectTopicTowers(TopicState& topic) {
   std::vector<HostId const*> recipients;
-  if (control_tower_router_->GetControlTowers(topic.log_id, &recipients).ok()) {
+  if (GetControlTowers(topic.log_id, &recipients).ok()) {
     // Update subscription on all control towers.
     for (HostId const* recipient : recipients) {
       // Find or open a new stream socket to this control tower.
@@ -1063,6 +1064,21 @@ bool CopilotWorker::CorrectTopicTowers(TopicState& topic) {
     }
   }
   return true;
+}
+
+Status CopilotWorker::GetControlTowers(LogID log_id,
+                                       std::vector<HostId const*>* out) const {
+  Status st;
+  auto it = control_tower_cache_.find(log_id);
+  if (it != control_tower_cache_.end()) {
+    *out = it->second;
+  } else {
+    st = control_tower_router_->GetControlTowers(log_id, out);
+    if (st.ok()) {
+      control_tower_cache_.emplace(log_id, *out);
+    }
+  }
+  return st;
 }
 
 
