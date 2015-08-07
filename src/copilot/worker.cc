@@ -712,13 +712,16 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
 
   // Check if we need to resubscribe to control towers.
   // First check if we have enough tower subscriptions.
-  bool resub_needed = topic.towers.size() < options_.control_towers_per_log;
+  size_t expected_towers_per_log =
+    std::min(options_.control_towers_per_log,
+             control_tower_router_->GetNumTowers());
+  bool resub_needed = topic.towers.size() < expected_towers_per_log;
   if (resub_needed) {
     LOG_INFO(options_.info_log,
       "Not enough control tower subscriptions for %s (%zu/%zu), resubscribing",
       uuid.ToString().c_str(),
       topic.towers.size(),
-      options_.control_towers_per_log);
+      expected_towers_per_log);
   }
 
   // If we have enough, check that all the tower subscriptions are suitable.
@@ -836,7 +839,7 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
     }
   }
 
-  if (topic.towers.size() < options_.control_towers_per_log) {
+  if (topic.towers.size() < expected_towers_per_log) {
     // Still not enough tower subscriptions, so put onto orphan list.
     // This will happen if e.g. sending the subscription failed due to full
     // queue, or if there simply aren't any control towers currently available.

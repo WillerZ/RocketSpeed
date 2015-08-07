@@ -82,6 +82,13 @@ class ControlTowerRouter {
    */
   Status RemoveControlTower(ControlTowerId node_id);
 
+  /**
+   * @return Number of unique control towers.
+   */
+  size_t GetNumTowers() const {
+    return host_ids_.size();
+  }
+
  private:
   struct ControlTowerIdHash {
     size_t operator()(ControlTowerId id) const {
