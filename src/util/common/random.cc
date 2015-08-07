@@ -6,6 +6,7 @@
 #include "src/util/common/random.h"
 
 #include <algorithm>
+#include <array>
 #include "src/util/common/thread_local.h"
 
 namespace rocketspeed {
