@@ -23,8 +23,9 @@ namespace rocketspeed {
 class MockConfiguration : public Configuration {
  public:
   Status GetPilot(HostId* host_out) const override {
-    ASSERT_TRUE(false);
-    return Status::InternalError("");
+    std::lock_guard<std::mutex> lock(mutex_);
+    *host_out = pilot_;
+    return !pilot_ ? Status::NotFound("") : Status::OK();
   }
 
   Status GetCopilot(HostId* host_out) const override {
@@ -35,6 +36,12 @@ class MockConfiguration : public Configuration {
 
   uint64_t GetCopilotVersion() const override { return version_.load(); }
 
+  void SetPilot(HostId host) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pilot_ = host;
+    ++version_;
+  }
+
   void SetCopilot(HostId host) {
     std::lock_guard<std::mutex> lock(mutex_);
     copilot_ = host;
@@ -44,6 +51,7 @@ class MockConfiguration : public Configuration {
  private:
   mutable std::mutex mutex_;
   mutable std::atomic<uint64_t> version_;
+  HostId pilot_;
   HostId copilot_;
 };
 
@@ -359,6 +367,24 @@ TEST(ClientTest, CopilotSwap) {
                       subscribe_sem2.Post();
                     }}});
   ASSERT_TRUE(subscribe_sem2.TimedWait(positive_timeout));
+}
+
+TEST(ClientTest, NoPilot) {
+  port::Semaphore publish_sem;
+  auto client = CreateClient(ClientOptions());
+
+  // Publish (without pilot), call should invoke callback with error.
+  auto ps = client->Publish(GuestTenant,
+                            "NoPilot",
+                            GuestNamespace,
+                            TopicOptions(),
+                            "data",
+                            [&] (std::unique_ptr<ResultStatus> rs) {
+                              ASSERT_TRUE(!rs->GetStatus().ok());
+                              publish_sem.Post();
+                            });
+  ASSERT_TRUE(ps.status.ok());
+  ASSERT_TRUE(publish_sem.TimedWait(negative_timeout));
 }
 
 }  // namespace rocketspeed

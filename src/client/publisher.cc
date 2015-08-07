@@ -138,7 +138,11 @@ void PublisherWorkerData::Publish(MsgId message_id,
                st.ToString().c_str());
       // We'll try to obtain the address and reconnect on next occasion.
       // TODO(stupaq) make above comment valid.
-      assert(false);
+      std::unique_ptr<ClientResultStatus> result_status(
+        new ClientResultStatus(
+          Status::IOError("No available RocketSpeed hosts"),
+          std::move(serialized), 0));
+      callback(std::move(result_status));
       return;
     }
 
@@ -158,7 +162,7 @@ void PublisherWorkerData::Publish(MsgId message_id,
       SerializedSendCommand::Request(serialized, {&pilot_socket_}), worker_id_);
   if (!st.ok()) {
     std::unique_ptr<ClientResultStatus> result_status(
-        new ClientResultStatus(Status::NoBuffer(), serialized, 0));
+        new ClientResultStatus(Status::NoBuffer(), std::move(serialized), 0));
     callback(std::move(result_status));
     return;
   }
