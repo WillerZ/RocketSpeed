@@ -19,6 +19,7 @@
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 #include "src/controltower/options.h"
+#include "src/controltower/data_cache.h"
 #include "src/controltower/topic.h"
 #include "src/controltower/tower.h"
 
@@ -41,6 +42,8 @@ class TopicTailer {
    * @param log_tailer Tailer for logs. Will be manipulated by TopicTailer.
    * @param log_router For routing topics to logs.
    * @param info_log For logging.
+   * @param cache_size_per_room cache size in bytes
+   * @param bool cache_data_from_system_namespaces
    * @param on_message Callback for Deliver and Gap messages.
    * @param tailer Output parameter for created TopicTailer.
    * @return ok() if TopicTailer created, otherwise error.
@@ -52,6 +55,8 @@ class TopicTailer {
     LogTailer* log_tailer,
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
+    size_t cache_size_per_room,
+    bool cache_data_from_system_namespaces,
     std::function<void(std::unique_ptr<Message>,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options,
@@ -119,6 +124,25 @@ class TopicTailer {
   const Statistics& GetStatistics() const {
     return stats_.all;
   }
+  /**
+   * Clear the cache
+   */
+  std::string ClearCache();
+
+  /**
+   * Sets the size of the cache
+   */
+  std::string SetCacheCapacity(size_t newcapacity);
+
+  /**
+   * Get the current usage of the cache (in bytes)
+   */
+  std::string GetCacheUsage();
+
+  /**
+   * Get the current configured capacity of the cache (in bytes)
+   */
+  std::string GetCacheCapacity();
 
   /**
    * Get an estimate of tail seqno for a log, or 0 if unknown.
@@ -147,6 +171,8 @@ class TopicTailer {
               LogTailer* log_tailer,
               std::shared_ptr<LogRouter> log_router,
               std::shared_ptr<Logger> info_log,
+              size_t cache_size_per_room,
+              bool cache_data_from_system_namespaces,
               std::function<void(std::unique_ptr<Message>,
                                  std::vector<CopilotSub>)> on_message,
               ControlTowerOptions::TopicTailer options);
@@ -192,6 +218,13 @@ class TopicTailer {
    */
   void AttemptReaderMerges(LogReader* src, LogID log_id);
 
+  /**
+   * Deliver as much data from cache as possible.
+   * @Returns the new fast-forwarded sequence number from which to subscribe.
+   */
+  SequenceNumber DeliverFromCache(const TopicUUID& topic,
+          CopilotSub copilot_sub, LogID logid, SequenceNumber seqno);
+
   ThreadCheck thread_check_;
 
   BaseEnv* env_;
@@ -230,6 +263,9 @@ class TopicTailer {
 
   // Cached tail sequence number per log.
   std::unordered_map<LogID, SequenceNumber> tail_seqno_cached_;
+
+  // Cache of data read from storage
+  DataCache data_cache_;
 
   std::mt19937_64& prng_;
 
@@ -287,6 +323,8 @@ class TopicTailer {
         all.AddCounter(prefix + "updated_subscriptions");
       remove_subscriber_requests =
         all.AddCounter(prefix + "remove_subscriber_requests");
+      records_served_from_cache =
+        all.AddCounter(prefix + "records_served_from_cache");
     }
 
     Statistics all;
@@ -311,6 +349,7 @@ class TopicTailer {
     Counter* add_subscriber_requests_at_0_slow;
     Counter* updated_subscriptions;
     Counter* remove_subscriber_requests;
+    Counter* records_served_from_cache;
   } stats_;
 };
 

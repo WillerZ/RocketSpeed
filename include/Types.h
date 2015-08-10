@@ -42,6 +42,7 @@ typedef std::string NamespaceID;
  * @return true iff the namespace is reserved for system usage.
  */
 bool IsReserved(const NamespaceID& ns);
+bool IsReserved(const Slice& ns);
 
 /**
  * The invalid namespaceID should never be used. It is here to catch cases

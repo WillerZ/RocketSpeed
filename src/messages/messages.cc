@@ -308,6 +308,12 @@ Slice MessageData::GetStorageSlice() const {
   return storage_slice_;
 }
 
+size_t MessageData::GetTotalSize() const {
+  assert(serialize_buffer__.size() == 0);
+  return sizeof(MessageData) + topic_name_.size() +
+         payload_.size() + namespaceid_.size() + storage_slice_.size();
+}
+
 void MessageData::SerializeInternal() const {
   PutFixed16(&serialize_buffer__, tenantid_);
   PutTopicID(&serialize_buffer__, namespaceid_, topic_name_);

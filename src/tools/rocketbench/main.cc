@@ -47,6 +47,7 @@ DEFINE_string(copilot_hostnames, "localhost", "hostnames of copilots");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
 DEFINE_uint64(client_workers, 32, "number of client workers");
+DEFINE_uint64(cache_size, 0, "size of cache in bytes");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 100, "number of topics");
 DEFINE_int64(num_messages, 1000, "number of messages to send");
@@ -386,9 +387,17 @@ int main(int argc, char** argv) {
   }
 #else
   std::unique_ptr<rocketspeed::LocalTestCluster> test_cluster;
+  LocalTestCluster::Options test_options;
   if (FLAGS_start_local_server) {
-    test_cluster.reset(new rocketspeed::LocalTestCluster(
-                           info_log, true, true, true, FLAGS_storage_url));
+    test_options.info_log = info_log;
+    test_options.start_controltower = true;
+    test_options.start_copilot = true;
+    test_options.start_pilot = true;
+    test_options.storage_url = FLAGS_storage_url;
+    if (FLAGS_cache_size) {
+      test_options.tower.cache_size = FLAGS_cache_size;
+    }
+    test_cluster.reset(new rocketspeed::LocalTestCluster(test_options));
   }
 #endif
 

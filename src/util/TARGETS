@@ -4,6 +4,7 @@ cpp_library(
         'arena.cc',
         'auto_roll_logger.cc',
         'build_version.cc',
+        'cache.cc',
         'control_tower_router.cc',
         'env.cc',
         'env_posix.cc',

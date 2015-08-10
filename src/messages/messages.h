@@ -335,6 +335,11 @@ class MessageData : public Message {
    */
   Status DeSerializeStorage(Slice* in);
 
+  /**
+   * @return an approximate size in bytes of the message
+   */
+  size_t GetTotalSize() const;
+
  private:
   void SerializeInternal() const;
 

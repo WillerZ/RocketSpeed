@@ -76,6 +76,9 @@ class ControlTower {
   // Gets information about the running service.
   std::string GetInfoSync(std::vector<std::string> args);
 
+  // Sets information about the running service
+  std::string SetInfoSync(std::vector<std::string> args);
+
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;

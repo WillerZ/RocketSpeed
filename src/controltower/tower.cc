@@ -176,9 +176,16 @@ Status ControlTower::Initialize() {
     return st;
   }
 
+  // equally distribute the cache among the workers
+  size_t cache_size_per_room = 0;
+  if (opt.cache_size > 0) {
+    cache_size_per_room = std::max(opt.cache_size / num_rooms, 1024UL);
+  }
+
   // Now create the TopicTailer.
   // One per room with one reader each.
   size_t reader_id = 0;
+
   for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
       [this, i] (std::unique_ptr<Message> msg,
@@ -192,6 +199,8 @@ Status ControlTower::Initialize() {
                                         log_tailer_.get(),
                                         opt.log_router,
                                         opt.info_log,
+                                        cache_size_per_room,
+                                        opt.cache_data_from_system_namespaces,
                                         std::move(on_message),
                                         opt.topic_tailer,
                                         &topic_tailer);
@@ -478,9 +487,97 @@ std::string ControlTower::GetInfoSync(std::vector<std::string> args) {
         st = Status::TimedOut();
       }
       return st.ToString();
+    } else if (args[0] == "cache" && args.size() == 2) {
+      // returns cache configured capacity and current usage
+      bool get_capacity = false;
+      if (args[1] == "capacity") {
+        get_capacity = true;
+      } else if (args[1] == "usage") {
+        // do nothing
+      } else {
+        return "Unknown options for cache {capacity | usage}";
+      }
+      size_t sum = 0;
+      for (unsigned int room = 0; room < rooms_.size(); room++) {
+        std::string result;
+        Status st =
+          (get_capacity ?
+            options_.msg_loop->WorkerRequestSync(
+              [this, room] () {
+                return topic_tailer_[room]->GetCacheCapacity();
+              },
+              room,
+              &result) :
+            options_.msg_loop->WorkerRequestSync(
+              [this, room] () {
+                return topic_tailer_[room]->GetCacheUsage();
+              },
+              room,
+              &result)
+          );
+        if (!st.ok()) {
+          return st.ToString();
+        }
+        sum += std::stol(result); // add up the per-room caches
+      }
+      return std::to_string(sum);
     }
   }
   return "Unknown info for control tower";
+}
+
+std::string ControlTower::SetInfoSync(std::vector<std::string> args) {
+  if (args.size() >= 1) {
+    if (args[0] == "cache") {
+      std::string value = "";
+      if (args.size() >= 2 && args[1] == "clear") {
+        // clear the cache
+        for (unsigned int room = 0; room < rooms_.size(); room++) {
+          std::string result;
+          Status st =
+            options_.msg_loop->WorkerRequestSync(
+            [this, room] () {
+              return topic_tailer_[room]->ClearCache();
+            },
+            room,
+            &result);
+          if (!st.ok()) {
+            value.append(result);
+          }
+        }
+      } else if (args.size() >= 3 && args[1] == "setsize") {
+        // set new cache with global cache size
+        size_t newsize = std::stol(args[2]);
+
+        // Equally distribute the cache among the workers. Also check to
+        // see that the new size is not above some resonable limit, e.g. 1TB
+        size_t cache_size_per_room = 0;
+        if (newsize <= 1024L * 1024L * 1024L * 1024L) {
+          if (newsize > 0) {
+            cache_size_per_room = std::max(newsize / rooms_.size(), 1024UL);
+          }
+          for (unsigned int room = 0; room < rooms_.size(); room++) {
+            std::string result;
+            Status st =
+              options_.msg_loop->WorkerRequestSync(
+              [this, room, cache_size_per_room] () {
+                return
+                  topic_tailer_[room]->SetCacheCapacity(cache_size_per_room);
+              },
+              room,
+              &result);
+            if (!st.ok()) {
+              value.append(result);
+            }
+          }
+        } else {
+          value = "Specified cache size is too large";
+        }
+      }
+      return value;
+    }
+  }
+  return "Unknown command for control tower";
 }
 
 int ControlTower::LogIDToRoom(LogID log_id) const {

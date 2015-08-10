@@ -18,7 +18,9 @@ ControlTowerOptions::ControlTowerOptions()
     max_log_file_size(0),
     log_file_time_to_roll(0),
     max_subscription_lag(10000),
-    readers_per_room(2) {
+    readers_per_room(2),
+    cache_size(0),
+    cache_data_from_system_namespaces(true) {
 }
 
 }  // namespace rocketspeed

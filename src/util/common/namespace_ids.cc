@@ -7,8 +7,11 @@
 
 namespace rocketspeed {
 
+bool IsReserved(const Slice& ns) {
+  return !ns.empty() && (*ns.data() == '_');
+}
 bool IsReserved(const NamespaceID& ns) {
-  return !ns.empty() && ns[0] == '_';
+  return IsReserved(Slice(ns));
 }
 
 const NamespaceID InvalidNamespace("");

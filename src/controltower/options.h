@@ -87,6 +87,14 @@ struct ControlTowerOptions {
     double FAULT_send_log_record_failure_rate = 0.0;
   } topic_tailer;
 
+  // Cache size in bytes. A size of 0 indicates no cache.
+  // Default: 0
+  size_t cache_size;
+
+  // Should the cache store data in system namespaces?
+  // Default: false
+  bool cache_data_from_system_namespaces;
+
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
 };

@@ -27,6 +27,7 @@ collect_logs=''
 collect_stats=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
+cache_size=''     # use the default set by the control tower
 remote_bench=''
 
 if [ -z ${ROCKETSPEED_ARGS+x} ]; then
@@ -42,7 +43,7 @@ fi
 # runs of this benchmark do not pollute one another.
 namespaceid=`id -u`
 
-# If you want to use the debug build, then set an environment varibale
+# If you want to use the debug build, then set an environment variable
 # called DBG=dbg. By default, pick the optimized build.
 part=${DBG:-opt}
 
@@ -51,7 +52,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -88,6 +89,8 @@ while true; do
       num_copilots="$2"; shift 2 ;;
     -z | --towers )
       num_towers="$2"; shift 2 ;;
+    --cache-size )
+      cache_size="$2"; shift 2 ;;
     --pilot-port )
       pilot_port="$2"; shift 2 ;;
     --copilot-port )
@@ -287,6 +290,9 @@ function start_servers {
       fi
       if [ $log_dir ]; then
         cmd="${cmd} --rs_log_dir=$log_dir"
+      fi
+      if [ $cache_size ]; then
+        cmd="${cmd} --tower_cache_size=$cache_size"
       fi
       cmd="${cmd} 2>&1 | sed 's/^/${host}: /'"
       echo "$host: $cmd"

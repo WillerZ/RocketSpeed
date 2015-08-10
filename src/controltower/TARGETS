@@ -2,6 +2,7 @@
 cpp_library(
     name = 'control_tower_library',
     srcs = [
+        'data_cache.cc',
         'log_tailer.cc',
         'options.cc',
         'room.cc',

@@ -515,6 +515,7 @@ TEST(IntegrationTest, TrimGapHandling) {
 
   // Trim first 6, so should be 2 of each left.
   ASSERT_OK(cluster.GetLogStorage()->Trim(log_id, seqnos[5]));
+  cluster.GetControlTower()->SetInfoSync({"cache", "clear"});
   test_receipt(0, seqnos[0], 2);
   test_receipt(1, seqnos[0], 2);
 
@@ -1613,6 +1614,381 @@ TEST(IntegrationTest, CopilotDeath) {
 
   // All logs should be closed now.
   ASSERT_EQ(GetNumOpenLogs(cluster.GetControlTower()), 0);
+}
+
+TEST(IntegrationTest, ControlTowerCache) {
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.tower.cache_size = 1024 * 1024;
+  opts.info_log = info_log;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // check that we have a non-zero cache capacity
+  std::string capacity_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "capacity"});
+  size_t capacity = std::stol(capacity_str);
+  ASSERT_GT(capacity, 0);
+
+  // check that we initially have no cache usage
+  std::string usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "usage"});
+  size_t usage = std::stol(usage_str);
+  ASSERT_EQ(usage, 0);
+
+  // Message write semaphore.
+  port::Semaphore msg_written;
+
+  // Message read semaphore.
+  port::Semaphore msg_received, msg_received2,
+                  msg_received3, msg_received4, msg_received5;
+
+  // Message setup.
+  Topic topic = "OneMessage";
+  NamespaceID namespace_id = GuestNamespace;
+  TopicOptions topic_options;
+  std::string data = "test_message";
+  GUIDGenerator msgid_generator;
+  MsgId message_id = msgid_generator.Generate();
+
+  // RocketSpeed callbacks;
+  auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
+    msg_written.Post();
+  };
+
+  auto subscription_callback = [&](const SubscriptionStatus& ss) {
+    ASSERT_TRUE(ss.GetTopicName() == topic);
+    ASSERT_TRUE(ss.GetNamespace() == namespace_id);
+  };
+
+  auto receive_callback = [&] (std::unique_ptr<MessageReceived>& mr) {
+    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    msg_received.Post();
+  };
+
+  auto receive_callback2 = [&] (std::unique_ptr<MessageReceived>& mr) {
+    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    msg_received2.Post();
+  };
+
+  auto receive_callback3 = [&] (std::unique_ptr<MessageReceived>& mr) {
+    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    msg_received3.Post();
+  };
+
+  auto receive_callback4 = [&] (std::unique_ptr<MessageReceived>& mr) {
+    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    msg_received4.Post();
+  };
+
+  auto receive_callback5 = [&] (std::unique_ptr<MessageReceived>& mr) {
+    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    msg_received5.Post();
+  };
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+
+  // Send a message.
+  auto ps = client->Publish(GuestTenant,
+                            topic,
+                            namespace_id,
+                            topic_options,
+                            Slice(data),
+                            publish_callback,
+                            message_id);
+  ASSERT_TRUE(ps.status.ok());
+  ASSERT_TRUE(ps.msgid == message_id);
+  // Wait for the message to be written
+  bool result = msg_written.TimedWait(timeout);
+  ASSERT_TRUE(result);
+
+  // Listen for the message.
+  ASSERT_TRUE(client->Subscribe(GuestTenant,
+                                namespace_id,
+                                topic,
+                                1,
+                                receive_callback,
+                                subscription_callback));
+  // Wait for the message to arrive
+  result = msg_received.TimedWait(timeout);
+  ASSERT_TRUE(result);
+
+  // The first read should not hit any data in the cache
+  auto stats1 = cluster.GetControlTower()->GetStatisticsSync();
+  auto cached_hits =
+    stats1.GetCounterValue("tower.topic_tailer.records_served_from_cache");
+  ASSERT_EQ(cached_hits, 0);
+
+  // Resubscribe to the same topic
+  ASSERT_TRUE(client->Subscribe(GuestTenant,
+                                namespace_id,
+                                topic,
+                                1,
+                                receive_callback2,
+                                subscription_callback));
+  // Wait for the message to arrive
+  result = msg_received2.TimedWait(timeout);
+  ASSERT_TRUE(result);
+
+  // The second read should fetch data from the cache
+  auto stats2 = cluster.GetControlTower()->GetStatisticsSync();
+  auto cached_hits2 =
+    stats2.GetCounterValue("tower.topic_tailer.records_served_from_cache");
+  ASSERT_GE(cached_hits2, 1);
+
+  // check that we have some cache usage
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "usage"});
+  usage = std::stol(usage_str);
+  ASSERT_GT(usage, 0);
+
+  // clear cache
+  cluster.GetControlTower()->SetInfoSync({"cache", "clear"});
+
+  // check that we do not have any cache usage
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "usage"});
+  usage = std::stol(usage_str);
+  ASSERT_EQ(usage, 0);
+
+  // check that capacity remains the same as before
+  std::string new_capacity_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "capacity"});
+  size_t new_capacity = std::stol(new_capacity_str);
+  ASSERT_EQ(new_capacity, capacity);
+
+  // resubscribe and re-read. The cache should get repopulated.
+  ASSERT_TRUE(client->Subscribe(GuestTenant,
+                                namespace_id,
+                                topic,
+                                1,
+                                receive_callback3,
+                                subscription_callback));
+  // Wait for the message to arrive
+  result = msg_received3.TimedWait(timeout);
+  ASSERT_TRUE(result);
+
+  // check that we do have some cache usage
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "usage"});
+  usage = std::stol(usage_str);
+  ASSERT_GT(usage, 0);
+
+  // Set the capacity to zero. This should disable the cache and
+  // purge existing entries.
+  new_capacity_str =
+    cluster.GetControlTower()->SetInfoSync({"cache", "setsize", "0"});
+  ASSERT_EQ(new_capacity_str, "");
+
+  // verify that cache is purged
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "usage"});
+  usage = std::stol(usage_str);
+  ASSERT_EQ(usage, 0);
+
+  // verify that cache is disabled
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "capacity"});
+  usage = std::stol(usage_str);
+  ASSERT_EQ(usage, 0);
+
+  // Since the cache is now disabled, resubscribing and re-reading data
+  // should not populate it
+  ASSERT_TRUE(client->Subscribe(GuestTenant,
+                                namespace_id,
+                                topic,
+                                1,
+                                receive_callback4,
+                                subscription_callback));
+  // Wait for the message to arrive
+  result = msg_received4.TimedWait(timeout);
+  ASSERT_TRUE(result);
+
+  // verify that cache is still empty
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "usage"});
+  usage = std::stol(usage_str);
+  ASSERT_EQ(usage, 0);
+
+  // remember cache statistics
+  auto stats3 = cluster.GetControlTower()->GetStatisticsSync();
+  auto cached_hits3 =
+    stats3.GetCounterValue("tower.topic_tailer.records_served_from_cache");
+
+  // set a  1 MB cache capacity
+  size_t set_capacity = 1024000;
+  new_capacity_str =
+    cluster.GetControlTower()->SetInfoSync({"cache", "setsize",
+                                            std::to_string(set_capacity)});
+  ASSERT_EQ(new_capacity_str, "");
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "capacity"});
+  usage = std::stol(usage_str);
+  ASSERT_EQ(usage, set_capacity);
+
+  // re-read data into cache
+  ASSERT_TRUE(client->Subscribe(GuestTenant,
+                                namespace_id,
+                                topic,
+                                1,
+                                receive_callback5,
+                                subscription_callback));
+  // Wait for the message to arrive
+  result = msg_received5.TimedWait(timeout);
+  ASSERT_TRUE(result);
+
+  // verify that cache has some data now
+  usage_str =
+    cluster.GetControlTower()->GetInfoSync({"cache", "usage"});
+  usage = std::stol(usage_str);
+  ASSERT_GT(usage, 0);
+
+  // Verify that there were no additional cache hits
+  auto stats4 = cluster.GetControlTower()->GetStatisticsSync();
+  auto cached_hits4 =
+    stats4.GetCounterValue("tower.topic_tailer.records_served_from_cache");
+  ASSERT_EQ(cached_hits4, cached_hits3);
+}
+
+TEST(IntegrationTest, ReadingFromCache) {
+  // Run this test twice, the first time with cache enabled and the
+  // second time with cache disabled.
+  bool cache_enabled = true;
+  for (int iteration = 0; iteration < 2; iteration++) {
+    if (iteration == 1) {
+      cache_enabled = false;
+    }
+    // Create cluster with rollcall disabled.
+    LocalTestCluster::Options opts;
+    opts.copilot.rollcall_enabled = false;
+    if (cache_enabled) {
+      opts.tower.cache_size = 1024 * 1024;
+    } else {
+      opts.tower.cache_size = 0;    // cache disabled
+    }
+    opts.info_log = info_log;
+    LocalTestCluster cluster(opts);
+    ASSERT_OK(cluster.GetStatus());
+
+    // Message setup.
+    Topic topic = "ReadingFromCache" + std::to_string(iteration);
+    NamespaceID namespace_id = GuestNamespace;
+    TopicOptions topic_options;
+    std::string data1 = "test_message1";
+    std::string data2 = "test_message2";
+    GUIDGenerator msgid_generator;
+    MsgId message_id = msgid_generator.Generate();
+
+    // Create RocketSpeed client.
+    ClientOptions options;
+    options.config = cluster.GetConfiguration();
+    options.info_log = info_log;
+    std::unique_ptr<Client> client;
+    ASSERT_OK(Client::Create(std::move(options), &client));
+
+    // Send a message.
+    auto ps = client->Publish(GuestTenant,
+                              topic,
+                              namespace_id,
+                              topic_options,
+                              Slice(data1),
+                              nullptr,
+                              message_id);
+    ASSERT_TRUE(ps.status.ok());
+    ASSERT_TRUE(ps.msgid == message_id);
+
+    // Listen for the message.
+    port::Semaphore msg_received1;
+    SequenceNumber lastReceived;
+    auto handle = client->Subscribe(GuestTenant, namespace_id, topic, 1,
+    [&] (std::unique_ptr<MessageReceived>& mr) {
+      ASSERT_TRUE(mr->GetContents().ToString() == data1);
+      lastReceived = mr->GetSequenceNumber();
+      ASSERT_EQ(lastReceived, 1);
+      msg_received1.Post();
+    });
+    ASSERT_TRUE(handle);
+
+    // Wait for the message.
+    ASSERT_TRUE(msg_received1.TimedWait(timeout));
+
+    // Should have received backlog records, and no tail records.
+    auto stats1 = cluster.GetControlTower()->GetStatisticsSync();
+    auto backlog1 =
+      stats1.GetCounterValue("tower.topic_tailer.backlog_records_received");
+    auto tail1 =
+      stats1.GetCounterValue("tower.topic_tailer.tail_records_received");
+    ASSERT_EQ(backlog1, 1);
+    ASSERT_EQ(tail1, 0);
+    client->Unsubscribe(handle);
+
+    // Now subscribe at tail, and publish 1.
+    port::Semaphore msg_received2;
+    handle = client->Subscribe(GuestTenant, namespace_id, topic, 0,
+      [&] (std::unique_ptr<MessageReceived>& mr) {
+        ASSERT_TRUE((mr->GetContents().ToString() == data2));
+        ASSERT_EQ(lastReceived + 1 , mr->GetSequenceNumber());
+        lastReceived = mr->GetSequenceNumber();
+        msg_received2.Post();
+      });
+    ASSERT_TRUE(handle);
+
+    env_->SleepForMicroseconds(100000);
+
+    client->Publish(GuestTenant,
+                    topic,
+                    namespace_id,
+                    topic_options,
+                    Slice(data2),
+                    nullptr,
+                    message_id);
+    ASSERT_TRUE(msg_received2.TimedWait(timeout));
+
+    // Should have received no more backlog records, and just 1 tail record.
+    auto stats2 = cluster.GetControlTower()->GetStatisticsSync();
+    auto backlog2 =
+      stats2.GetCounterValue("tower.topic_tailer.backlog_records_received");
+    auto tail2 =
+      stats2.GetCounterValue("tower.topic_tailer.tail_records_received");
+    ASSERT_EQ(backlog2, backlog1);
+    ASSERT_EQ(tail2, 1);
+    client->Unsubscribe(handle);
+
+    // At this point, there are two records in the topic and both these
+    // two records should be in the cache. Reseek to beginning of the
+    // topic and re-read both these two records. If the cache was enabled,
+    // then this should not enable backlog reading.
+    int numRecords = 2;
+    port::Semaphore msg_received3;
+    handle = client->Subscribe(GuestTenant, namespace_id, topic, 1,
+      [&] (std::unique_ptr<MessageReceived>& mr) {
+        msg_received3.Post();
+      });
+    ASSERT_TRUE(handle);
+    for (int i = 0; i < numRecords; i++) {
+      ASSERT_TRUE(msg_received3.TimedWait(timeout));
+    }
+
+    // collect current statistics
+    auto stats3 = cluster.GetControlTower()->GetStatisticsSync();
+    auto backlog3 =
+      stats3.GetCounterValue("tower.topic_tailer.backlog_records_received");
+
+    // If the cache was enabled, then there should not have been any
+    // backlog reading. if the cache was disabled, then this should
+    // trigger backlog reading.
+    if (cache_enabled) {
+      ASSERT_EQ(backlog3, backlog2);
+    } else {
+      ASSERT_EQ(backlog3, backlog2 + numRecords);
+    }
+    client->Unsubscribe(handle);
+  }
 }
 
 #ifndef USE_LOGDEVICE

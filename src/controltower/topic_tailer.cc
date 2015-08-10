@@ -719,6 +719,8 @@ TopicTailer::TopicTailer(
     LogTailer* log_tailer,
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
+    size_t cache_size_per_room,
+    bool cache_data_from_system_namespaces,
     std::function<void(std::unique_ptr<Message>,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options) :
@@ -729,6 +731,7 @@ TopicTailer::TopicTailer(
   log_router_(std::move(log_router)),
   info_log_(std::move(info_log)),
   on_message_(std::move(on_message)),
+  data_cache_(cache_size_per_room, cache_data_from_system_namespaces),
   prng_(ThreadLocalPRNG()),
   options_(options) {
 
@@ -771,6 +774,26 @@ Status TopicTailer::SendLogRecord(
                                       next_seqno,
                                       uuid,
                                       &prev_seqno);
+
+    // Store a copy of the message for caching
+    // TODO(dhruba) Avoid this copy by using a UnsafeSharedPtr
+    if (data_cache_.GetCapacity() > 0) {
+      std::unique_ptr<MessageData> cached_msg;
+      cached_msg.reset(static_cast<MessageData *>
+                       (Message::Copy(*data_raw).release()));
+      data_cache_.StoreData(data->GetNamespaceId(), data->GetTopicName(),
+                          log_id, std::move(cached_msg));
+    }
+
+    if (0) {
+      LOG_DEBUG(info_log_,
+                "Inserted seqno %" PRIu64 " on Log(%" PRIu64 ")"
+                " Topic(%s, %s)",
+                next_seqno,
+                log_id,
+                data->GetNamespaceId().ToString().c_str(),
+                data->GetTopicName().ToString().c_str());
+    }
 
     auto ts_it = tail_seqno_cached_.find(log_id);
     bool is_tail = false;
@@ -1027,6 +1050,8 @@ TopicTailer::CreateNewInstance(
     LogTailer* log_tailer,
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
+    size_t cache_size_per_room,
+    bool cache_data_from_system_namespaces,
     std::function<void(std::unique_ptr<Message>,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options,
@@ -1037,6 +1062,8 @@ TopicTailer::CreateNewInstance(
                             log_tailer,
                             std::move(log_router),
                             std::move(info_log),
+                            cache_size_per_room,
+                            cache_data_from_system_namespaces,
                             std::move(on_message),
                             options);
   return Status::OK();
@@ -1168,6 +1195,31 @@ Status TopicTailer::RemoveSubscriber(StreamID stream_id) {
   return Status::OK();
 }
 
+std::string TopicTailer::ClearCache() {
+  thread_check_.Check();
+  LOG_INFO(info_log_, "Clearing cache for worker_id %d", worker_id_);
+  data_cache_.ClearCache();
+  return "";
+}
+
+std::string TopicTailer::SetCacheCapacity(size_t newcapacity) {
+  thread_check_.Check();
+  LOG_INFO(info_log_, "Setting new cache capacity for worker_id %d",
+           worker_id_);
+  data_cache_.SetCapacity(newcapacity);
+  return "";
+}
+
+std::string TopicTailer::GetCacheUsage() {
+  thread_check_.Check();
+  return std::to_string(data_cache_.GetUsage());
+}
+
+std::string TopicTailer::GetCacheCapacity() {
+  thread_check_.Check();
+  return std::to_string(data_cache_.GetCapacity());
+}
+
 std::string TopicTailer::GetLogInfo(LogID log_id) const {
   thread_check_.Check();
   char buffer[256];
@@ -1222,12 +1274,108 @@ void TopicTailer::AddTailSubscriber(const TopicUUID& topic,
   AddSubscriberInternal(topic, id, logid, seqno);
 }
 
+SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
+                                             CopilotSub copilot,
+                                             LogID logid,
+                                             SequenceNumber seqno) {
+  // if cache is not enabled, then short-circuit
+  if (data_cache_.GetCapacity() == 0) {
+    return seqno;
+  }
+
+  assert(seqno != 0);
+  thread_check_.Check();
+  SequenceNumber delivered = seqno;
+  SequenceNumber largest_cached = 0;
+  std::vector<CopilotSub> recipient;
+  recipient.emplace_back(copilot);
+
+  // callback to process a data message from cache
+  auto on_message_cache =
+    [&] (MessageData* data_raw) {
+
+    TopicUUID uuid(data_raw->GetNamespaceId(), data_raw->GetTopicName());
+    largest_cached = data_raw->GetSequenceNumber();
+    assert(largest_cached >= seqno);
+
+    LOG_DEBUG(info_log_,
+        "CacheTailer received data (%.16s)@%" PRIu64
+        " for Topic(%s,%s) in Log(%" PRIu64 ").",
+        data_raw->GetPayload().ToString().c_str(),
+        largest_cached,
+        data_raw->GetNamespaceId().ToString().c_str(),
+        data_raw->GetTopicName().ToString().c_str(),
+        logid);
+
+    // If this message is for our topic, then deliver
+    if (uuid == topic) {
+      this->stats_.records_served_from_cache->Add(1);
+      if (0) {
+        LOG_DEBUG(info_log_,
+                  "Delivering data to %s@%" PRIu64 " on Log(%" PRIu64
+                  ") from cache",
+                  uuid.ToString().c_str(),
+                  largest_cached,
+                  logid);
+      }
+      // copy and deliver message to subscriber
+      std::unique_ptr<Message> copy(Message::Copy(*data_raw));
+      MessageData* d = static_cast<MessageData*>(copy.get());
+      d->SetSequenceNumbers(delivered, largest_cached);
+      delivered = largest_cached + 1;
+      on_message_(std::move(copy), recipient);
+    }
+  };
+
+  // Deliver as much data as possible from the cache.
+  SequenceNumber old = seqno;
+  seqno = data_cache_.VisitCache(logid, seqno,
+                                 std::move(on_message_cache));
+  assert(largest_cached == 0 || seqno == largest_cached + 1);
+
+  // If there a gap between the last message delivered from the cache
+  // and the largest seqno number in cache, then deliver a gap.
+  if (seqno > delivered) {
+    Slice ns, name;
+    topic.GetTopicID(&ns, &name);
+    if (0) {
+      LOG_DEBUG(info_log_,
+                "Delivering gap to %s(@%" PRIu64 "-%" PRIu64
+                ") on Log(%" PRIu64 ") from cache",
+                topic.ToString().c_str(),
+                delivered,
+                seqno - 1,
+                logid);
+    }
+    std::unique_ptr<Message> msg(new MessageGap(Tenant::GuestTenant,
+                                                ns.ToString(),
+                                                name.ToString(),
+                                                GapType::kBenign,
+                                                delivered,
+                                                seqno-1));
+    on_message_(std::move(msg), recipient);
+  }
+  if (old != seqno) {
+    LOG_DEBUG(info_log_,
+      "Subscription(%s) subscription fastforward %s from %" PRIu64
+      " to %" PRIu64,
+      copilot.ToString().c_str(),
+      topic.ToString().c_str(),
+      old,
+      seqno);
+  }
+  return seqno;
+}
+
 void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
                                         CopilotSub id,
                                         LogID logid,
                                         SequenceNumber seqno) {
   assert(seqno != 0);
   thread_check_.Check();
+
+  // Deliver the earliest part of this topic from cache
+  seqno = DeliverFromCache(topic, id, logid, seqno);
 
   // Add the new subscription.
   bool was_added = topic_map_[logid].AddSubscriber(topic, seqno, id);
@@ -1238,11 +1386,11 @@ void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
   // Using 'seqno - 1' to ensure that we start reading at a sequence
   // number that exists. FindLatestSeqno returns the *next* seqno to be
   // written to the log.
-  SequenceNumber start =
+  SequenceNumber from =
     log_tailer_->CanSubscribePastEnd() ? seqno : seqno - 1;
-  LogReader* reader = ReaderForNewSubscription(id, topic, logid, start);
+  LogReader* reader = ReaderForNewSubscription(id, topic, logid, from);
   assert(reader);
-  reader->StartReading(topic, logid, start);
+  reader->StartReading(topic, logid, from);
 
   LOG_DEBUG(info_log_,
     "%s subscribed for %s@%" PRIu64 " (%s) on %sReader(%zu)",

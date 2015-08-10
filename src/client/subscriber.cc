@@ -290,7 +290,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
   }
 
   LOG_INFO(options_.info_log,
-           "Subscribed on Topic(%s, %s)@%" PRIu64 " Tenant(%u) ID(%" PRIu64 ")",
+           "Subscribed on Topic(%s,%s)@%" PRIu64 " Tenant(%u) ID(%" PRIu64 ")",
            sub_state->GetNamespace().c_str(),
            sub_state->GetTopicName().c_str(),
            sub_state->GetExpected(),
