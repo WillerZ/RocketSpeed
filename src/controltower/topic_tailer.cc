@@ -807,54 +807,13 @@ Status TopicTailer::SendLogRecord(
             reader_id);
         });
 
-      std::vector<HostNumber> tail_hosts;
-      if (is_tail) {
-        // This is a message at the tail.
-        // Find all hosts subscribed at 0.
-        topic_manager.VisitSubscribers(
-          uuid, 0, 0,
-          [&] (TopicSubscription* sub) {
-            const HostNumber hostnum = sub->GetHostNum();
-            tail_hosts.emplace_back(hostnum);
-            sub->SetSequenceNumber(next_seqno + 1);
-            LOG_DEBUG(info_log_,
-              "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
-              " Reader(%zu)",
-              int(hostnum),
-              uuid.ToString().c_str(),
-              next_seqno + 1,
-              log_id,
-              reader_id);
-          });
-
-        // Hosts subscribed at the tail need the message previous sequence
-        // number to be 0, so we need to send a different message to these
-        // hosts.
-        if (!tail_hosts.empty()) {
-          std::unique_ptr<Message> tail_data;
-          data->SetSequenceNumbers(0, next_seqno);
-          if (hosts.empty()) {
-            // No hosts subscribed at non-0, so just use the data message.
-            tail_data = std::move(data);
-          } else {
-            // We need to send 'data' to the non-0 subscribing hosts.
-            tail_data = Message::Copy(*data);
-          }
-          // Send message downstream.
-          stats_.new_tail_records_sent->Add(1);
-          on_message_(std::move(tail_data), std::move(tail_hosts));
-        }
-      }
-
       if (!hosts.empty()) {
         // Send message downstream.
         assert(data);
         data->SetSequenceNumbers(prev_seqno, next_seqno);
         stats_.log_records_with_subscriptions->Add(1);
         on_message_(std::unique_ptr<Message>(data.release()), std::move(hosts));
-      }
-
-      if (data) {
+      } else {
         stats_.log_records_without_subscriptions->Add(1);
         LOG_DEBUG(info_log_,
           "Reader(%zu) found no hosts for %smessage on %s@%" PRIu64 "-%" PRIu64,
@@ -1260,6 +1219,7 @@ void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
                                         HostNumber hostnum,
                                         LogID logid,
                                         SequenceNumber seqno) {
+  assert(seqno != 0);
   thread_check_.Check();
 
   // Add the new subscription.
