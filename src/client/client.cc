@@ -352,11 +352,7 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
       , last_config_version_(0) {
   }
 
-  Status Start() {
-    return msg_loop_->RegisterTimerCallback(
-        std::bind(&ClientWorkerData::SendPendingRequests, this),
-        options_.timer_period);
-  }
+  Status Start() { return Status::OK(); }
 
   const Statistics& GetStatistics() {
     stats_.active_subscriptions->Set(subscriptions_.size());
@@ -388,6 +384,7 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   const ClientOptions& options_;
   /** A message loop object owned by the client. */
   MsgLoopBase* const msg_loop_;
+  ThreadCheck thread_check_;
 
   /** Time point (in us) until which client should not attemt to reconnect. */
   uint64_t backoff_until_time_;
@@ -792,6 +789,14 @@ Status ClientImpl::Start() {
     }
   }
 
+  auto st = msg_loop_->RegisterTimerCallback([this]() {
+    const auto worker_id = msg_loop_->GetThreadWorkerIndex();
+    worker_data_[worker_id]->SendPendingRequests();
+  }, options_.timer_period);
+  if (!st.ok()) {
+    return st;
+  }
+
   msg_loop_thread_ =
       options_.env->StartThread([this]() { msg_loop_->Run(); }, "client");
   msg_loop_thread_spawned_ = true;
@@ -880,6 +885,7 @@ void ClientWorkerData::TerminateSubscription(SubscriptionID sub_id) {
 }
 
 void ClientWorkerData::SendPendingRequests() {
+  thread_check_.Check();
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
 
   // Evict entries from a list of recently sent unsubscribe messages.
