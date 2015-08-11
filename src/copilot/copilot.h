@@ -15,6 +15,7 @@
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
+#include "src/messages/queues.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"

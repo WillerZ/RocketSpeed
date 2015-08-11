@@ -159,6 +159,8 @@ class TopicTailer {
   template <typename Function>
   bool Forward(Function command);
 
+  bool Forward(std::unique_ptr<Command> command);
+
   void AddTailSubscriber(const TopicUUID& topic,
                          HostNumber hostnum,
                          LogID logid,
@@ -317,7 +319,7 @@ class TopicTailer {
 template <typename Function>
 bool TopicTailer::Forward(Function command) {
   std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
-  return storage_to_room_queues_->GetThreadLocal()->Write(cmd);
+  return Forward(std::move(cmd));
 }
 
 }  // namespace rocketspeed

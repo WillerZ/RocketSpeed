@@ -18,6 +18,7 @@
 #include "src/util/common/random.h"
 #include "src/util/common/thread_check.h"
 #include "src/messages/msg_loop.h"
+#include "src/messages/queues.h"
 
 namespace rocketspeed {
 
@@ -1342,5 +1343,8 @@ void TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
   }
 }
 
+bool TopicTailer::Forward(std::unique_ptr<Command> command) {
+  return storage_to_room_queues_->GetThreadLocal()->Write(command);
+}
 
 }  // namespace rocketspeed

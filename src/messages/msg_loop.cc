@@ -13,11 +13,11 @@
 
 #include "include/Logger.h"
 #include "src/port/port.h"
-#include "src/messages/command_queues.h"
 #include "src/messages/event_loop.h"
-#include "src/messages/stream_allocator.h"
 #include "src/messages/messages.h"
+#include "src/messages/queues.h"
 #include "src/messages/serializer.h"
+#include "src/messages/stream_allocator.h"
 #include "src/util/common/base_env.h"
 
 namespace {
@@ -264,12 +264,11 @@ StreamSocket MsgLoop::CreateOutboundStream(HostId destination,
 }
 
 void MsgLoop::SendCommandToSelf(std::unique_ptr<Command> command) {
-  event_loops_[GetThreadWorkerIndex()]->Dispatch(std::move(command),
-                                                 env_->NowMicros());
+  event_loops_[GetThreadWorkerIndex()]->Dispatch(std::move(command));
 }
 
-Status MsgLoop::TrySendCommand(std::unique_ptr<Command>& command,
-                               int worker_id) {
+Status MsgLoop::SendCommand(std::unique_ptr<Command> command,
+                            int worker_id) {
   assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
   return event_loops_[worker_id]->SendCommand(command);
 }

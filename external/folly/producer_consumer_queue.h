@@ -165,6 +165,10 @@ struct ProducerConsumerQueue {
     return ret;
   }
 
+  size_t maxSize() const {
+    return size_ - 1;
+  }
+
 private:
   const uint32_t size_;
   T* const records_;

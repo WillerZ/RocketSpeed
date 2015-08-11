@@ -27,6 +27,7 @@
 #include "external/folly/move_wrapper.h"
 
 #include "src/port/port.h"
+#include "src/messages/queues.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_socket.h"
 #include "src/util/common/coding.h"
@@ -96,11 +97,12 @@ class SocketEvent {
     std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, false));
 
     // register only the read callback
-    if (!sev->read_ev_ || !sev->write_ev_ || !sev->read_ev_->Enable()) {
+    if (!sev->read_ev_ || !sev->write_ev_) {
       LOG_ERROR(event_loop->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
       return nullptr;
     }
+    sev->read_ev_->Enable();
     return sev;
   }
 
@@ -111,11 +113,12 @@ class SocketEvent {
     std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, true));
 
     // register only the read callback
-    if (!sev->read_ev_ || !sev->write_ev_ || !sev->read_ev_->Enable()) {
+    if (!sev->read_ev_ || !sev->write_ev_) {
       LOG_ERROR(event_loop->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
       return nullptr;
     }
+    sev->read_ev_->Enable();
 
     // Set destination of the socket, so that it can be reused.
     sev->destination_ = std::move(destination);
@@ -142,11 +145,7 @@ class SocketEvent {
     // If the write-ready event is not currently registered, add a write
     // event and wait until its ready.
     if (!write_ev_added_) {
-      if (!write_ev_->Enable()) {
-        LOG_ERROR(event_loop_->GetLog(),
-            "Failed to add write event for fd(%d)", fd_);
-        return Status::InternalError("Failed to enqueue write message");
-      }
+      write_ev_->Enable();
       write_ev_added_ = true;
     }
     return Status::OK();
@@ -326,12 +325,8 @@ class SocketEvent {
         assert(partial_.size() > 0);
       } else if (write_ev_added_) {
         // No more queued messages. Switch off ready-to-write event on socket.
-        if (!write_ev_->Disable()) {
-          LOG_WARN(event_loop_->GetLog(),
-              "Failed to remove write event for fd(%d)", fd_);
-        } else {
-          write_ev_added_ = false;
-        }
+        write_ev_->Disable();
+        write_ev_added_ = false;
       }
     }
     return Status::OK();
@@ -631,15 +626,15 @@ std::vector<StreamID> StreamRouter::RemoveConnection(SocketEvent* sev) {
   return result;
 }
 
-void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
-                                  uint64_t issued_time) {
+void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
   // Need using otherwise SendCommand is confused with the member function.
   using rocketspeed::SendCommand;
   SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
 
+  auto now = env_->NowMicros();
   auto msg = std::make_shared<TimestampedString>();
   send_cmd->GetMessage(&msg->string);
-  msg->issued_time = issued_time;
+  msg->issued_time = now;
   assert (!msg->string.empty());
 
   // Have to handle the case when the message-send failed to write
@@ -664,14 +659,14 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
       // when the output socket is ready to write.
       auto destinations = std::make_shared<TimestampedString>();
       EncodeOrigin(&destinations->string, local);
-      destinations->issued_time = issued_time;
+      destinations->issued_time = now;
 
       size_t frame_size = destinations->string.size() + msg->string.size();
       MessageHeader header { ROCKETSPEED_CURRENT_MSG_VERSION,
                              static_cast<uint32_t>(frame_size) };
       auto hdr = std::make_shared<TimestampedString>();
       hdr->string = header.ToString();
-      hdr->issued_time = issued_time;
+      hdr->issued_time = now;
 
       // Add message header, destinations, and contents.
       st = sev->Enqueue(std::move(hdr));
@@ -701,8 +696,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command,
   }
 }
 
-void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command,
-                                    uint64_t issued_time) {
+void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
   // This object is managed by the event that it creates, and will destroy
   // itself during an EOF callback.
   thread_check_.Check();
@@ -875,13 +869,10 @@ EventLoop::Initialize() {
   if (shutdown_event_ == nullptr) {
     return Status::InternalError("Failed to create shutdown event");
   }
-  if (!shutdown_event_->Enable()) {
-    return Status::InternalError("Failed to add shutdown event to event base");
-  }
+  shutdown_event_->Enable();
 
   control_command_queue_ =
-    std::make_shared<CommandQueue>(env_,
-                                   info_log_,
+    std::make_shared<CommandQueue>(info_log_,
                                    queue_stats_,
                                    default_command_queue_size_);
   Status st = AddIncomingQueue(control_command_queue_);
@@ -1006,7 +997,7 @@ std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(size_t size) {
     size = default_command_queue_size_;
   }
   auto command_queue =
-      std::make_shared<CommandQueue>(env_, info_log_, queue_stats_, size);
+      std::make_shared<CommandQueue>(info_log_, queue_stats_, size);
   Status st = AttachQueue(command_queue);
   if (!st.ok()) {
     LOG_ERROR(info_log_, "Failed to attach command queue to EventLoop");
@@ -1049,26 +1040,15 @@ Status EventLoop::AddIncomingQueue(
   incoming_queue->queue = std::move(command_queue);
 
   CommandQueue* queue = incoming_queue->queue.get();
-  incoming_queue->ready_event = EventCallback::CreateFdReadCallback(
+  queue->RegisterReadCallback(
     this,
-    incoming_queue->queue->GetReadFd(),
-    [this, queue] () {
-      // Read commands from the queue (there might have been multiple
-      // commands added since we have received the last notification).
-      CommandQueue::BatchedRead batch(queue);
-      TimestampedCommand ts_cmd;
-      while (batch.Read(ts_cmd)) {
-        // Call registered callback.
-        Dispatch(std::move(ts_cmd.command), ts_cmd.issued_time);
-      }
+    [this] (std::unique_ptr<Command> cmd) {
+      // Call registered callback.
+      Dispatch(std::move(cmd));
+      return true;
     });
+  queue->SetReadEnabled(true);
 
-  if (!incoming_queue->ready_event) {
-    return Status::InternalError("Failed to create command queue ready event");
-  }
-  if (!incoming_queue->ready_event->Enable()) {
-    return Status::InternalError("Failed to add command ready event");
-  }
   LOG_INFO(info_log_, "Added new command queue to EventLoop");
   incoming_queues_.emplace_back(std::move(incoming_queue));
   return Status::OK();
@@ -1095,7 +1075,7 @@ event* EventLoop::CreateFdWriteEvent(int fd,
 
 Status EventLoop::SendCommand(std::unique_ptr<Command>& command) {
   // Send command using thread local queue.
-  return GetThreadLocalQueue()->Write(command) ?
+  return GetThreadLocalQueue()->TryWrite(command) ?
     Status::OK() : Status::NoBuffer();
 }
 
@@ -1109,10 +1089,7 @@ void EventLoop::Dispatch(std::unique_ptr<Message> message, StreamID origin) {
   event_callback_(std::move(message), origin);
 }
 
-void EventLoop::Dispatch(std::unique_ptr<Command> command,
-                         int64_t issued_time) {
-  uint64_t now = env_->NowMicros();
-  stats_.command_latency->Record(now - issued_time);
+void EventLoop::Dispatch(std::unique_ptr<Command> command) {
   stats_.commands_processed->Add(1);
 
   // Search for callback registered for this command type.
@@ -1120,7 +1097,7 @@ void EventLoop::Dispatch(std::unique_ptr<Command> command,
   const auto type = command->GetCommandType();
   auto iter = command_callbacks_.find(type);
   if (iter != command_callbacks_.end()) {
-    iter->second(std::move(command), issued_time);
+    iter->second(std::move(command));
   } else {
     // If the user has not registered a callback for this command type, then
     // the command will be droped silently.
@@ -1276,20 +1253,20 @@ EventLoop::EventLoop(BaseEnv* env,
     , outbound_allocator_(std::move(allocator))
     , active_connections_(0)
     , stats_(options.stats_prefix)
-    , queue_stats_(std::make_shared<CommandQueue::Stats>(options.stats_prefix +
-                                                         ".queues"))
+    , queue_stats_(std::make_shared<QueueStats>(options.stats_prefix +
+                                                ".queues"))
     , default_command_queue_size_(options.command_queue_size) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
-      std::unique_ptr<Command> command, uint64_t issued_time) {
-    HandleAcceptCommand(std::move(command), issued_time);
+      std::unique_ptr<Command> command) {
+    HandleAcceptCommand(std::move(command));
   };
   command_callbacks_[CommandType::kSendCommand] = [this](
-      std::unique_ptr<Command> command, uint64_t issued_time) {
-    HandleSendCommand(std::move(command), issued_time);
+      std::unique_ptr<Command> command) {
+    HandleSendCommand(std::move(command));
   };
   command_callbacks_[CommandType::kExecuteCommand] = [](
-      std::unique_ptr<Command> command, uint64_t issued_time) {
+      std::unique_ptr<Command> command) {
     static_cast<ExecuteCommand*>(command.get())->Execute();
   };
 
@@ -1312,15 +1289,13 @@ EventLoop::EventLoop(BaseEnv* env,
       // note that we do not check the command queue size in HandleSendCommand
       // right now, as we would do in SendCommand
       HandleSendCommand(
-        SerializedSendCommand::Response(std::move(serial), {global}),
-        env_->NowMicros());
+        SerializedSendCommand::Response(std::move(serial), {global}));
     };
 
   LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
 }
 
 EventLoop::Stats::Stats(const std::string& prefix) {
-  command_latency = all.AddLatency(prefix + ".command_latency");
   write_latency = all.AddLatency(prefix + ".write_latency");
   write_size_bytes =
     all.AddHistogram(prefix + ".write_size_bytes", 0, kMaxIovecs, 1, 1.1);
@@ -1378,12 +1353,17 @@ int EventLoop::GetNumClients() const {
   return static_cast<int>(stream_router_.GetNumStreams());
 }
 
+size_t EventLoop::GetQueueSize() const {
+  return const_cast<EventLoop*>(this)->GetThreadLocalQueue()->GetSize();
+}
+
 EventLoop::IncomingQueue::~IncomingQueue() {
 }
 
 EventCallback::EventCallback(EventLoop* event_loop, std::function<void()> cb)
 : event_loop_(event_loop)
-, cb_(std::move(cb)) {
+, cb_(std::move(cb))
+, enabled_(false) {
 }
 
 std::unique_ptr<EventCallback> EventCallback::CreateFdReadCallback(
@@ -1419,14 +1399,24 @@ void EventCallback::Invoke() {
   cb_();
 }
 
-bool EventCallback::Enable() {
+void EventCallback::Enable() {
   event_loop_->ThreadCheck();
-  return event_add(event_, nullptr) == 0;
+  if (!enabled_) {
+    if (event_add(event_, nullptr)) {
+      exit(137);
+    }
+    enabled_ = true;
+  }
 }
 
-bool EventCallback::Disable() {
+void EventCallback::Disable() {
   event_loop_->ThreadCheck();
-  return event_del(event_) == 0;
+  if (enabled_) {
+    if (event_del(event_)) {
+      exit(137);
+    }
+    enabled_ = false;
+  }
 }
 
 }  // namespace rocketspeed

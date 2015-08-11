@@ -16,6 +16,7 @@
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"
+#include "src/messages/queues.h"
 
 #include "src/controltower/log_tailer.h"
 #include "src/controltower/room.h"

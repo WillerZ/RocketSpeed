@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "src/messages/event_loop.h"
+#include "src/messages/queues.h"
 #include "src/util/random.h"
 #include "src/util/testharness.h"
 #include "src/port/Env.h"
@@ -62,7 +63,7 @@ TEST(CommandQueueTest, Liveness) {
   // processed, they will be read in one batch. Wait for all of them, to verify
   // that we didn't lost the wakup due to batch size limit.
   send_command(wait_sem1);
-  for (size_t i = 1; i < CommandQueue::BatchedRead::kMaxBatchSize; ++i) {
+  for (size_t i = 1; i < kMaxQueueBatchReadSize; ++i) {
     send_command(no_op);
   }
   send_command(notify_sem2);
@@ -99,36 +100,31 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
   ASSERT_OK(loop.Initialize());
 
   // Simple unattached queue.
-  CommandQueue queue(Env::Default(),
-                     std::make_shared<NullLogger>(),
-                     std::make_shared<CommandQueue::Stats>("test"),
-                     100);
+  Queue<int> queue(std::make_shared<NullLogger>(),
+                   std::make_shared<QueueStats>("test"),
+                   100);
 
   // Create callback that reads one from queue then posts to a semaphore
   port::Semaphore sem;
-  auto callback = EventCallback::CreateFdReadCallback(
+  queue.RegisterReadCallback(
     &loop,
-    queue.GetReadFd(),
-    [&] () {
-      CommandQueue::BatchedRead batch(&queue);
-      TimestampedCommand ts_cmd;
-      ASSERT_TRUE(batch.Read(ts_cmd));
+    [&] (int) {
       sem.Post();
+      return true;
     });
 
   // Before enabling, write 2 commands.
   // We don't care what they are, null will do.
-  std::unique_ptr<Command> cmd1, cmd2;
-  queue.Write(cmd1);
-  queue.Write(cmd2);
+  int x = 0, y = 1;
+  queue.Write(x);
+  queue.Write(y);
 
   // Now enable and check that we read both.
   std::thread loop_thread([&]() { loop.Run(); });
-  callback->Enable();
+  queue.SetReadEnabled(true);
   ASSERT_TRUE(sem.TimedWait(timeout_));
   ASSERT_TRUE(sem.TimedWait(timeout_));
 
-  callback.reset();
   loop.Stop();
   loop_thread.join();
 }

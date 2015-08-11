@@ -87,11 +87,7 @@ class MsgLoopBase {
                                             int worker_id) = 0;
 
   /**
-   * Attempts to send a command to a specific event loop for processing.
-   *
-   * If the command is successfully queued then it will be moved from its
-   * source location, otherwise an error will be returned and command will
-   * be left intact, in case the caller wishes to retry later.
+   * Sends a command to a specific event loop for processing.
    *
    * This call is thread-safe.
    *
@@ -100,12 +96,8 @@ class MsgLoopBase {
    * @return OK if enqueued.
    *         NoBuffer if queue is full.
    */
-  virtual Status TrySendCommand(std::unique_ptr<Command>& command,
-                                int worker_id) = 0;
-
-  Status SendCommand(std::unique_ptr<Command> command, int worker_id) {
-    return TrySendCommand(command, worker_id);
-  }
+  virtual Status SendCommand(std::unique_ptr<Command> command,
+                             int worker_id) = 0;
 
   /**
    * Sends a request message to a recipient.

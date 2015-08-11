@@ -27,7 +27,6 @@
 #include "external/folly/producer_consumer_queue.h"
 
 #include "include/Logger.h"
-#include "src/messages/command_queues.h"
 #include "src/messages/commands.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
@@ -54,14 +53,15 @@ typedef std::function<void(int fd)> AcceptCallbackType;
 
 // Callback registered for a command type is invoked for all commands of the
 // type.
-typedef std::function<void(std::unique_ptr<Command> command,
-                           uint64_t issued_time)>
+typedef std::function<void(std::unique_ptr<Command> command)>
   CommandCallbackType;
 
 typedef std::function<void()> TimerCallbackType;
 
+class CommandQueue;
 class EventCallback;
 class EventLoop;
+struct QueueStats;
 class SocketEvent;
 
 /**
@@ -241,7 +241,7 @@ class EventLoop {
    *
    * @param command A command to be executed
    */
-  void Dispatch(std::unique_ptr<Command> command, int64_t issued_time);
+  void Dispatch(std::unique_ptr<Command> command);
 
   // Get the info log.
   const std::shared_ptr<Logger>& GetLog() { return info_log_; }
@@ -269,10 +269,7 @@ class EventLoop {
   int GetNumClients() const;
 
   /** @return Current size of this thread's command queue. */
-  size_t GetQueueSize() const {
-    return
-      const_cast<EventLoop*>(this)->GetThreadLocalQueue()->GetSize();
-  }
+  size_t GetQueueSize() const;
 
   /**
    * Creates a new queue that will be read by the EventLoop.
@@ -460,7 +457,6 @@ class EventLoop {
     explicit Stats(const std::string& prefix);
 
     Statistics all;
-    Histogram* command_latency;   // time from SendCommand to do_command
     Histogram* write_latency;     // time from SendCommand to socket write
     Histogram* write_size_bytes;  // total bytes in write calls
     Histogram* write_size_iovec;  // total iovecs in write calls.
@@ -475,7 +471,7 @@ class EventLoop {
     Counter* partial_socket_writes; // number of writes that partially succeeded
   } stats_;
 
-  const std::shared_ptr<CommandQueue::Stats> queue_stats_;
+  const std::shared_ptr<QueueStats> queue_stats_;
 
   const uint32_t default_command_queue_size_;
 
@@ -485,7 +481,6 @@ class EventLoop {
     ~IncomingQueue();
 
     std::shared_ptr<CommandQueue> queue;
-    std::unique_ptr<EventCallback> ready_event;
   };
   std::vector<std::unique_ptr<IncomingQueue>> incoming_queues_;
 
@@ -497,12 +492,8 @@ class EventLoop {
 
   Status AddIncomingQueue(std::shared_ptr<CommandQueue> command_queue);
 
-  // A callback for handling SendCommands.
-  void HandleSendCommand(std::unique_ptr<Command> command,
-                         uint64_t issued_time);
-  // A callback for handling AcceptCommands.
-  void HandleAcceptCommand(std::unique_ptr<Command> command,
-                           uint64_t issued_time);
+  void HandleSendCommand(std::unique_ptr<Command> command);
+  void HandleAcceptCommand(std::unique_ptr<Command> command);
 
   // connection cache updates
   void remove_host(const HostId& host);
@@ -563,10 +554,15 @@ class EventCallback {
   void Invoke();
 
   /** Enables the event */
-  bool Enable();
+  void Enable();
 
   /** Disables the event */
-  bool Disable();
+  void Disable();
+
+  /** @return true iff currently enabled. */
+  bool IsEnabled() const {
+    return enabled_;
+  }
 
  private:
   explicit EventCallback(EventLoop* event_loop, std::function<void()> cb);
@@ -574,6 +570,7 @@ class EventCallback {
   EventLoop* event_loop_;
   event* event_;
   std::function<void()> cb_;
+  bool enabled_;
 };
 
 }  // namespace rocketspeed

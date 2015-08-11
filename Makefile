@@ -106,7 +106,8 @@ TESTS = \
 	command_queues_test \
   heterogeneous_queue_test \
 	id_allocator_test \
-	unsafe_shared_ptr_test
+	unsafe_shared_ptr_test \
+  flow_test
 
 TOOLS = \
 	rocketbench
@@ -348,6 +349,9 @@ id_allocator_test: src/util/tests/id_allocator_test.o $(LIBOBJECTS) $(TESTHARNES
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 unsafe_shared_ptr_test: src/util/tests/unsafe_shared_ptr_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+flow_test: src/util/tests/flow_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------

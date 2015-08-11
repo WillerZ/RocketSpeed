@@ -14,6 +14,7 @@
 
 #include "src/controltower/topic_tailer.h"
 #include "src/controltower/tower.h"
+#include "src/messages/queues.h"
 #include "src/util/common/coding.h"
 #include "src/util/topic_uuid.h"
 

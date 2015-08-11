@@ -21,9 +21,10 @@ namespace rocketspeed {
 
 typedef std::function<void()> TimerCallbackType;
 
-class StreamAllocator;
 class EventLoop;
 class Logger;
+class StreamAllocator;
+class ThreadLocalCommandQueues;
 
 class MsgLoop : public MsgLoopBase {
  public:
@@ -107,8 +108,8 @@ class MsgLoop : public MsgLoopBase {
    */
   void SendCommandToSelf(std::unique_ptr<Command> command);
 
-  Status TrySendCommand(std::unique_ptr<Command>& command,
-                        int worker_id) override;
+  Status SendCommand(std::unique_ptr<Command> command,
+                     int worker_id) override;
 
   Status SendRequest(const Message& msg,
                      StreamSocket* socket,
@@ -129,6 +130,11 @@ class MsgLoop : public MsgLoopBase {
   // Checks that we are running on any EventLoop thread.
   void ThreadCheck() const override {
     GetThreadWorkerIndex();
+  }
+
+  EventLoop* GetEventLoop(int worker_id) {
+    assert(worker_id < GetNumWorkers());
+    return event_loops_[worker_id].get();
   }
 
   // Retrieves the number of EventLoop threads.
