@@ -401,6 +401,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
   if (it == data.open_sessions_.end()) {
     // Not there, so create it.
     SessionProcessor processor(
+        info_log_,
         ordering_buffer_size_,
         [this, session, &data](SessionProcessor::EventType event) {
           // It's safe to capture data reference.

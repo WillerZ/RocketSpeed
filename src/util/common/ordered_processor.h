@@ -6,10 +6,12 @@
 #pragma once
 
 #include <assert.h>
+#include <inttypes.h>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <queue>
+#include "include/Logger.h"
 #include "include/Status.h"
 
 namespace rocketspeed {
@@ -86,13 +88,15 @@ struct OrderedProcessor {
   };
 
   OrderedProcessor(
+      std::shared_ptr<Logger> info_log,
       int max_size,
       std::function<void(T)> processor,
       OrderedProcessorMode mode = OrderedProcessorMode::kLossless)
   : max_size_(max_size)
   , next_seqno_(0)
   , processor_(std::move(processor))
-  , mode_(mode) {
+  , mode_(mode)
+  , info_log_(std::move(info_log)) {
     assert(processor_);
   }
 
@@ -112,9 +116,8 @@ struct OrderedProcessor {
     if (mode_ == OrderedProcessorMode::kLossy) {
       // Skip head records until this record fits in the buffer.
       if (queue_.size() >= max_size_) {
-        do {
-          SkipNext();
-        } while (queue_.size() >= max_size_);
+        SkipToNext();
+        assert(queue_.size() < max_size_);
         st = Status::NoBuffer();
       }
     } else if (mode_ == OrderedProcessorMode::kLossless) {
@@ -141,18 +144,24 @@ struct OrderedProcessor {
     queue_.clear();
   }
 
-  /**
-   * Skips the next expected sequence number.
-   */
-  void SkipNext() {
-    ++next_seqno_;
-    ProcessHead();
-  }
-
  private:
   enum : uint64_t {
     kInvalidSeqno = std::numeric_limits<uint64_t>::max()
   };
+
+  /**
+   * Skips sequence numbers until the next item. This only happens in lossy
+   * mode where the queue has become full, and the next item isn't available
+   * for processing, so we have to skip some sequence numbers.
+   */
+  void SkipToNext() {
+    assert(!queue_.empty());
+    uint64_t next_available = queue_.top().seqno;
+    LOG_WARN(info_log_, "Dropped %" PRIu64 " sequence numbers (queue full)",
+      next_available - next_seqno_);
+    next_seqno_ = next_available;
+    ProcessHead();
+  }
 
   /**
    * Process any pending objects at the head.
@@ -179,6 +188,7 @@ struct OrderedProcessor {
   uint64_t next_seqno_;               // seqno of next object to process
   std::function<void(T)> processor_;  // function for processing data
   OrderedProcessorMode mode_;
+  std::shared_ptr<Logger> info_log_;
 };
 
 }  // namespace rocketspeed
