@@ -148,7 +148,7 @@ Statistics CopilotWorker::GetStatistics() {
     total_sockets += entry.second.size();
   }
   stats_.control_tower_sockets->Set(total_sockets);
-  stats_.orphaned_topics->Set(orphan_topics_.size());
+  stats_.orphaned_topics->Set(active_resubscribe_requests_by_topic_.size());
 
   Statistics stats = stats_.all;
   if (options_.rollcall_enabled) {
@@ -494,8 +494,11 @@ void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
       }
     }
 
-    // Update subscriptions to the control tower if necessary.
-    UpdateTowerSubscriptions(uuid, topic);
+    // Unsubscribe from control towers if necessary.
+    if (topic.subscriptions.empty()) {
+      UnsubscribeControlTowers(uuid, topic);
+      topic.towers.clear();
+    }
 
     // Update rollcall topic.
     RollcallWrite(sub_id, tenant_id, uuid,
@@ -505,9 +508,25 @@ void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
     // No more subscriptions, so remove from map.
     if (topic.subscriptions.empty()) {
       topics_.erase(topic_iter);
-      orphan_topics_.erase(uuid);
+      CancelResubscribeRequest(uuid);
       topic_checkup_list_.Erase(uuid);
     }
+  }
+}
+
+void CopilotWorker::UnsubscribeControlTowers(
+    const TopicUUID& topic_uuid, TopicState& topic) {
+
+  const TenantID tenant_id = GuestTenant;
+
+  // No more subscriptions on this topic, so unsubscribe from control towers.
+  for (auto& tower : topic.towers) {
+    SendMetadata(tenant_id,
+                 MetadataType::mUnSubscribe,
+                 topic_uuid,
+                 0,  // seqno: irrelevant for unsubscribe
+                 tower.stream,
+                 tower.worker_id);
   }
 }
 
@@ -562,20 +581,17 @@ void CopilotWorker::ProcessTimerTick() {
   // a control tower subscription for then. We limit the number sent per second
   // to avoid thundering herd on the control tower.
   uint64_t count = resubscriptions_per_tick_;
-  while (count-- && !orphan_topics_.empty()) {
-    // Take copy of UUID. This is necessary since UpdateTowerSubscriptions can
-    // remove the orphan_topics_ entry while still referencing the uuid arg.
-    const TopicUUID uuid = orphan_topics_.front();
-    auto it = topics_.find(uuid);
-    assert(it != topics_.end());
-    if (it != topics_.end()) {
-      // It's possible the UpdateTowerSubscriptions will fail to find
-      // subscriptions. We move the first orpan topic to the back of the list
-      // in case this happens to ensure that the same topic isn't retried in
-      // a tight loop. If the subscription is successful, the orpan topic
-      // will be removed by UpdateTowerSubscriptions.
-      orphan_topics_.move_to_back(orphan_topics_.begin());
-      UpdateTowerSubscriptions(uuid, it->second);
+  while (count-- && HasActiveResubscribeRequests()) {
+    SafeResubscribeRequest resubscribe_request = PopNextResubscribeRequest();
+    auto topic_it = topics_.find(resubscribe_request->topic_uuid);
+    bool topic_valid = topic_it != topics_.end();
+    assert(topic_valid);
+    if (topic_valid) {
+      UpdateTowerSubscriptions(
+        resubscribe_request->topic_uuid,
+        topic_it->second, /* topic */
+        resubscribe_request->sequence_number,
+        resubscribe_request->have_zero_sub);
       stats_.orphaned_resubscribes->Add(1);
     }
   }
@@ -615,7 +631,7 @@ void CopilotWorker::CloseControlTowerStream(StreamID stream) {
     for (auto it = topic.towers.begin(); it != topic.towers.end(); ) {
       if (it->stream->GetStreamID() == stream) {
         it = topic.towers.erase(it);
-        AddOrphanTopic(uuid);
+        ScheduleResubscribeRequest(uuid, topic);
       } else {
         ++it;
       }
@@ -669,32 +685,10 @@ bool CopilotWorker::SendMetadata(TenantID tenant_id,
   }
 }
 
-void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
-                                             TopicState& topic,
-                                             bool force_resub) {
-  LOG_INFO(options_.info_log,
-    "Refreshing tower subscriptions for %s",
-    uuid.ToString().c_str());
+// Find earliest non-zero subscription, or zero if only zero subscriptions.
+SequenceNumber CopilotWorker::FindLowestSequenceNumber(
+    const TopicState& topic, bool* have_zero_sub) {
 
-  const LogID log_id = topic.log_id;
-  const TenantID tenant_id = GuestTenant;
-
-  if (topic.subscriptions.empty()) {
-    // No more subscriptions on this topic, so unsubscribe from control towers.
-    for (auto& tower : topic.towers) {
-      SendMetadata(tenant_id,
-                   MetadataType::mUnSubscribe,
-                   uuid,
-                   0,  // seqno: irrelevant for unsubscribe
-                   tower.stream,
-                   tower.worker_id);
-    }
-    topic.towers.clear();
-    return;
-  }
-
-  // Find earliest non-zero subscription, or zero if only zero subscriptions.
-  bool have_zero_sub = false;
   SequenceNumber new_seqno = 0;
   for (auto& sub : topic.subscriptions) {
     if (sub->seqno != 0) {
@@ -702,9 +696,36 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
         new_seqno = sub->seqno;
       }
     } else {
-      have_zero_sub = true;
+      *have_zero_sub = true;
     }
   }
+  return new_seqno;
+}
+
+
+void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
+                                             TopicState& topic,
+                                             bool force_resub) {
+  bool have_zero_sub = false;
+  SequenceNumber new_seqno = FindLowestSequenceNumber(topic, &have_zero_sub);
+
+  UpdateTowerSubscriptions(
+      uuid, topic, new_seqno, have_zero_sub, force_resub);
+}
+
+void CopilotWorker::UpdateTowerSubscriptions(
+    const TopicUUID& uuid,
+    TopicState& topic,
+    const SequenceNumber new_seqno,
+    const bool have_zero_sub,
+    bool force_resub) {
+
+  LOG_INFO(options_.info_log,
+    "Refreshing tower subscriptions for %s",
+    uuid.ToString().c_str());
+
+  const LogID log_id = topic.log_id;
+  const TenantID tenant_id = GuestTenant;
 
   // Note: it could be the case that the only subscriptions we have are
   // subscriptions at 0, so new_seqno will be 0 in that case, and we will
@@ -844,11 +865,8 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
     // Still not enough tower subscriptions, so put onto orphan list.
     // This will happen if e.g. sending the subscription failed due to full
     // queue, or if there simply aren't any control towers currently available.
-    AddOrphanTopic(uuid);
+    ReScheduleResubscribeRequest(uuid, topic, new_seqno, have_zero_sub);
   } else {
-    // Ensure that we are no longer marked as an orphan.
-    orphan_topics_.erase(uuid);
-
     if (resub_needed) {
       // We successfully resubscribed to all towers, so add to checkup list
       // (or push to the back of the queue, since subscriptions are up to date).
@@ -987,12 +1005,6 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
   stats_.message_from_unexpected_tower->Add(1);
 }
 
-void CopilotWorker::AddOrphanTopic(TopicUUID uuid) {
-  if (!orphan_topics_.contains(uuid)) {
-    // Add to the queue of topics that need tower subscriptions.
-    orphan_topics_.emplace_back(std::move(uuid));
-  }
-}
 
 std::string CopilotWorker::GetTowersForLog(LogID log_id) const {
   std::string result;
@@ -1081,5 +1093,124 @@ Status CopilotWorker::GetControlTowers(LogID log_id,
   return st;
 }
 
+/***
+ * Resubscription
+ */
+
+// Gets rid of all cancelled requests
+void CopilotWorker::CleanRequestQueues() {
+  CleanRequestQueue(current_resubscribe_request_queue_);
+  CleanRequestQueue(pending_resubscribe_request_queue_);
+
+
+  // Queue with next active request should always be the 'current' queue.
+  if (current_resubscribe_request_queue_.size() == 0
+      && pending_resubscribe_request_queue_.size() > 0) {
+    std::swap(
+        current_resubscribe_request_queue_,
+        pending_resubscribe_request_queue_);
+  }
+
+}
+
+void CopilotWorker::CleanRequestQueue(ResubscribeRequestQueue& request_queue) {
+  while (request_queue.size() > 0) {
+    if (!request_queue.top()->cancelled) {
+      return; // Active request is now at front
+    }
+    request_queue.pop();
+  }
+}
+
+bool CopilotWorker::HasActiveResubscribeRequests() {
+  return !active_resubscribe_requests_by_topic_.empty();
+}
+
+bool CopilotWorker::HasActiveResubscribeRequest(const TopicUUID& topic_uuid) {
+  auto active_subscription_it
+    = active_resubscribe_requests_by_topic_.find(topic_uuid);
+
+  return active_subscription_it != active_resubscribe_requests_by_topic_.end();
+}
+
+void CopilotWorker::CancelResubscribeRequest(const TopicUUID& topic_uuid) {
+  auto request_it = active_resubscribe_requests_by_topic_.find(topic_uuid);
+  if (request_it != active_resubscribe_requests_by_topic_.end()) {
+    request_it->second->cancelled = true;
+    active_resubscribe_requests_by_topic_.erase(request_it);
+  }
+  // Note: cancelled request will be destroyed when it is popped.
+}
+
+CopilotWorker::SafeResubscribeRequest
+CopilotWorker::PopNextResubscribeRequest() {
+  CleanRequestQueues();
+
+  // const_cast is to get around bug in priority_queue,
+  // which prevents moving unique_ptr item when calling top().
+  SafeResubscribeRequest top_request
+    = std::move(const_cast<SafeResubscribeRequest&>(
+          current_resubscribe_request_queue_.top()));
+
+  current_resubscribe_request_queue_.pop();
+  active_resubscribe_requests_by_topic_.erase(top_request->topic_uuid);
+
+  return top_request;
+}
+
+void CopilotWorker::ReScheduleResubscribeRequest(
+    const TopicUUID& topic_uuid,
+    const TopicState& topic_state,
+    const SequenceNumber new_seqno,
+    const bool have_zero_sub) {
+
+  // A re-scheduled request should go in the next batch.
+  ScheduleResubscribeRequest(
+      topic_uuid,
+      topic_state,
+      new_seqno,
+      have_zero_sub,
+      pending_resubscribe_request_queue_);
+}
+
+void CopilotWorker::ScheduleResubscribeRequest(
+    const TopicUUID& topic_uuid, const TopicState& topic_state) {
+
+  bool have_zero_sub = false;
+  auto new_seqno = FindLowestSequenceNumber(topic_state, &have_zero_sub);
+
+  // If the next batch has started filling up (i.e. there was a previous error),
+  // then use next batch, otherwise use current batch.
+  ResubscribeRequestQueue& request_queue =
+      pending_resubscribe_request_queue_.size() > 0 ?
+          pending_resubscribe_request_queue_ :
+          current_resubscribe_request_queue_;
+
+  ScheduleResubscribeRequest(
+      topic_uuid,
+      topic_state,
+      new_seqno,
+      have_zero_sub,
+      request_queue);
+}
+
+void CopilotWorker::ScheduleResubscribeRequest(
+    const TopicUUID& topic_uuid,
+    const TopicState& topic_state,
+    const SequenceNumber new_seqno,
+    const bool have_zero_sub,
+    ResubscribeRequestQueue& resubscribe_request_queue) {
+
+  if (HasActiveResubscribeRequest(topic_uuid)) {
+    return;
+  }
+
+  auto request = new ResubscribeRequest(
+      topic_uuid, new_seqno, have_zero_sub, false);
+
+  resubscribe_request_queue.push(SafeResubscribeRequest(request));
+  active_resubscribe_requests_by_topic_.insert(
+      std::make_pair(topic_uuid, request));
+}
 
 }  // namespace rocketspeed

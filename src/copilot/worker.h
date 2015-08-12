@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <queue>
 
 #include "include/Types.h"
 #include "src/copilot/options.h"
@@ -184,10 +185,7 @@ class CopilotWorker {
                     StreamSocket* stream,
                     int worker_id);
 
-  // Refreshes ustream subscriptions for a topic.
-  void UpdateTowerSubscriptions(const TopicUUID& uuid,
-                                TopicState& topic,
-                                bool force_resub = false);
+
 
   // Removes a single subscription.
   // May update subscription to control tower.
@@ -217,9 +215,7 @@ class CopilotWorker {
                      SequenceNumber next,
                      StreamID origin);
 
-  // Add a topic to the orphan queue.
-  // These subscriptions will be retired periodically.
-  void AddOrphanTopic(TopicUUID uuid);
+
 
   /**
    * Gets control towers for a log. Potentially cached for performance.
@@ -300,6 +296,11 @@ class CopilotWorker {
 
   bool CorrectTopicTowers(TopicState& topic);
 
+  SequenceNumber FindLowestSequenceNumber(
+      const TopicState& topic, bool* have_zero_sub_res);
+
+  void UnsubscribeControlTowers(const TopicUUID& topic_uuid, TopicState& topic);
+
   // State of subscriptions for a single topic.
   std::unordered_map<TopicUUID, TopicState> topics_;
 
@@ -321,8 +322,7 @@ class CopilotWorker {
   std::unordered_map<HostId, std::unordered_map<int, StreamSocket>>
       control_tower_sockets_;
 
-  // Queue of topics that are missing upstream subscriptions.
-  LinkedSet<TopicUUID> orphan_topics_;
+
 
   // Maximum number of resubscriptions per ProcessTimerTick.
   uint64_t resubscriptions_per_tick_;
@@ -350,6 +350,108 @@ class CopilotWorker {
   // Cache of control tower mapping per log.
   mutable std::unordered_map<LogID, std::vector<const HostId*>>
     control_tower_cache_;
+
+  /***
+   * Re-subscription data structures
+   */
+
+  struct ResubscribeRequest {
+    ResubscribeRequest(
+        TopicUUID _topic_uuid,
+        SequenceNumber _sequence_number,
+        bool _have_zero_sub,
+        bool _cancelled)
+    : topic_uuid(std::move(_topic_uuid))
+    , sequence_number(_sequence_number)
+    , have_zero_sub(_have_zero_sub)
+    , cancelled(_cancelled) {}
+
+    const TopicUUID topic_uuid;
+    const SequenceNumber sequence_number;
+    const bool have_zero_sub;
+    bool cancelled; // quicker than removing item from middle of priority_queue
+  };
+
+  using SafeResubscribeRequest = std::unique_ptr<ResubscribeRequest>;
+
+  // Comparator for priority_queue. Request with lowest seq number is top().
+  // Zero (i.e. tail) is higher than any other seq number.
+  struct GreaterResubscribeRequest {
+    bool operator()(
+    const SafeResubscribeRequest& x, const SafeResubscribeRequest& y) {
+      return  (x->sequence_number == 0 && y->sequence_number != 0)
+          || (y->sequence_number != 0
+              && x->sequence_number > y->sequence_number);
+    }
+  };
+
+  using ResubscribeRequestQueue
+      = std::priority_queue<
+        SafeResubscribeRequest,
+        std::vector<SafeResubscribeRequest>,
+        GreaterResubscribeRequest>;
+
+  ResubscribeRequestQueue current_resubscribe_request_queue_;
+  ResubscribeRequestQueue pending_resubscribe_request_queue_;
+
+  std::unordered_map<TopicUUID,ResubscribeRequest*>
+    active_resubscribe_requests_by_topic_;
+
+  /***
+   * Re-subscribe helper methods
+   */
+
+  void CleanRequestQueues();
+
+  void CleanRequestQueue(ResubscribeRequestQueue& request_queue);
+
+  bool HasActiveResubscribeRequests();
+
+  bool HasActiveResubscribeRequest(const TopicUUID& topic_uuid);
+
+  void CancelResubscribeRequest(const TopicUUID& topic_uuid);
+
+  SafeResubscribeRequest PopNextResubscribeRequest();
+
+  // Called when a re-subscribe request has failed and needs to be re-tried.
+  // (At a later time, not immediately).
+  void ReScheduleResubscribeRequest(
+      const TopicUUID& topic_uuid,
+      const TopicState& topic_state,
+      const SequenceNumber new_seqno,
+      const bool have_zero_sub);
+
+  // Called when a topic needs to be re-subscribed.
+  // Calculates the sequence number to re-subscribe at.
+  void ScheduleResubscribeRequest(
+      const TopicUUID& topic_uuid, const TopicState& topic_state);
+
+  // Called when a topic needs to be re-subscribed.
+  void ScheduleResubscribeRequest(
+      const TopicUUID& topic_uuid,
+      const TopicState& topic_state,
+      const SequenceNumber new_seqno,
+      const bool have_zero_sub,
+      ResubscribeRequestQueue& resubscribe_request_queue);
+
+  /***
+   * Update stuff
+   */
+
+  // Refreshes ustream subscriptions for a topic.
+  void UpdateTowerSubscriptions(const TopicUUID& uuid,
+                                TopicState& topic,
+                                bool force_resub = false);
+
+  // Refreshes ustream subscriptions for a topic.
+  void UpdateTowerSubscriptions(
+      const TopicUUID& uuid,
+      TopicState& topic,
+      const SequenceNumber new_seqno,
+      const bool have_zero_sub,
+      bool force_resub = false);
+
 };
+
 
 }  // namespace rocketspeed
