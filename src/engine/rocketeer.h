@@ -144,7 +144,7 @@ class Rocketeer {
   RocketeerServer* GetServer() { return server_; }
 
   /** Returns a numeric ID of this Rocketeer within the server that runs it. */
-  size_t GetID() const { return id_; }
+  size_t GetID() const;
 
  private:
   friend class RocketeerServer;

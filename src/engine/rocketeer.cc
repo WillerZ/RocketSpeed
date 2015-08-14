@@ -121,6 +121,13 @@ bool Rocketeer::Terminate(InboundID inbound_id,
                                  inbound_id.worker_id).ok();
 }
 
+size_t Rocketeer::GetID() const {
+  auto worker_id = server_->msg_loop_->GetThreadWorkerIndex();
+  assert(static_cast<size_t>(worker_id) == id_);
+  ((void)worker_id);
+  return id_;
+}
+
 void Rocketeer::Initialize(RocketeerServer* server, size_t id) {
   assert(!server_);
   server_ = server;
@@ -205,11 +212,10 @@ void Rocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
     LOG_WARN(server_->options_.info_log, "Missing stream: %llu", origin);
     return;
   }
-  auto worker_id = server_->msg_loop_->GetThreadWorkerIndex();
   for (const auto& entry : it->second) {
     stats_->inbound_subscriptions->Add(-1);
     stats_->unsubscribes->Add(1);
-    HandleTermination(InboundID(origin, entry.first, worker_id));
+    HandleTermination(InboundID(origin, entry.first, GetID()));
   }
   inbound_subscriptions_.erase(it);
 }
@@ -224,8 +230,7 @@ Rocketeer::Stats::Stats(const std::string& prefix) {
 
 ////////////////////////////////////////////////////////////////////////////////
 RocketeerServer::RocketeerServer(RocketeerOptions options)
-    : options_(std::move(options)) {
-}
+: options_(std::move(options)) {}
 
 RocketeerServer::~RocketeerServer() {
   // Stop threads before any Rocketeer is destroyed.
