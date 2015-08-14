@@ -133,7 +133,25 @@ else
                     rocketspeed004.11.lla1.facebook.com \
                     rocketspeed005.11.lla1.facebook.com \
                     rocketspeed006.11.lla1.facebook.com \
-                    rocketspeed007.11.lla1.facebook.com )
+                    rocketspeed007.11.lla1.facebook.com \
+                    rocketspeed009.11.lla1.facebook.com \
+                    rocketspeed010.11.lla1.facebook.com \
+                    rocketspeed011.11.lla1.facebook.com \
+                    rocketspeed012.11.lla1.facebook.com \
+                    rocketspeed013.11.lla1.facebook.com \
+                    rocketspeed014.11.lla1.facebook.com \
+                    rocketspeed019.11.lla1.facebook.com \
+                    rocketspeed020.11.lla1.facebook.com \
+                    rocketspeed021.11.lla1.facebook.com \
+                    rocketspeed022.11.lla1.facebook.com \
+                    rocketspeed023.11.lla1.facebook.com \
+                    rocketspeed024.11.lla1.facebook.com \
+                    rocketspeed030.11.lla1.facebook.com \
+                    rocketspeed031.11.lla1.facebook.com \
+                    rocketspeed032.11.lla1.facebook.com \
+                    rocketspeed033.11.lla1.facebook.com \
+                    rocketspeed034.11.lla1.facebook.com \
+                    rocketspeed036.11.lla1.facebook.com )
 fi
 
 if [ $strip ]; then
