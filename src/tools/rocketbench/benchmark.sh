@@ -304,21 +304,6 @@ function deploy_servers {
       exit 1
     fi
   done
-
-  if [ $remote_bench ]; then
-    # Deploy rocketbench to remote host
-    echo
-    echo "===== Deploying $bench to ${remote_path} on remote host ====="
-
-    src=$bench
-    host=$rocketbench_host
-    echo "$host"
-    dest=root@$host:${remote_path}/rocketbench
-    if ! rsync -az $src $dest; then
-      echo "Error deploying to $host"
-      exit 1
-    fi
-  fi
 }
 
 function collect_logs {
@@ -351,6 +336,21 @@ if [ $deploy ]; then
   stop_servers
   deploy_servers
   progress='true'
+fi
+
+if [ $remote_bench ]; then
+  # Deploy rocketbench to remote host
+  echo
+  echo "===== Deploying $bench to ${remote_path} on remote host ====="
+
+  src=$bench
+  host=$rocketbench_host
+  echo "$host"
+  dest=root@$host:${remote_path}/rocketbench
+  if ! rsync -az $src $dest; then
+    echo "Error deploying to $host"
+    exit 1
+  fi
 fi
 
 # Start servers if specified
