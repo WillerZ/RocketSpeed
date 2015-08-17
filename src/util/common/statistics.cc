@@ -273,6 +273,12 @@ Statistics::Statistics(Statistics&& src)
 , histograms_(std::move(src.histograms_)) {
 }
 
+Statistics& Statistics::operator=(Statistics&& src) {
+  counters_ = std::move(src.counters_);
+  histograms_ = std::move(src.histograms_);
+  return *this;
+}
+
 Statistics Statistics::MoveThread() {
   Statistics stats = std::move(*this);
   for (auto& p : stats.counters_) {

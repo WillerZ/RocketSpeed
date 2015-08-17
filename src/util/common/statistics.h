@@ -170,6 +170,7 @@ class Statistics {
 
   Statistics(const Statistics& s);
   Statistics(Statistics&& src) /* may throw */;
+  Statistics& operator=(Statistics&& src);
 
   /**
    * Moves ownership of the statistics to the current thread.
