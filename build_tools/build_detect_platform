@@ -22,6 +22,7 @@
 #       -DSNAPPY                    if the Snappy library is present
 #       -DLZ4                       if the LZ4 library is present
 #       -DNUMA                      if the NUMA library is present
+#       -DUUID                      if the UUID library is present
 #
 # Using gflags in rocketspeed:
 # Our project depends on gflags, which requires users to take some extra steps
@@ -309,6 +310,16 @@ EOF
     if [ "$?" = 0 ]; then
         COMMON_FLAGS="$COMMON_FLAGS -DNUMA"
         PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lnuma"
+    fi
+
+    # Test whether libuuid is available
+    $CXX $CFLAGS -x c++ - -o /dev/null -luuid 2>/dev/null  <<EOF
+      #include <uuid/uuid.h>
+      int main() {}
+EOF
+    if [ "$?" = 0 ]; then
+        COMMON_FLAGS="$COMMON_FLAGS -DUUID"
+        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -luuid"
     fi
 
     # Test whether tcmalloc is available

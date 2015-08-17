@@ -22,6 +22,9 @@ cpp_library(
     deps = [
         '@/rocketspeed/github/src/port',
     ],
+    external_deps = [
+        ('e2fsprogs', None, 'uuid'),
+    ],
     link_whole = True,
 )
 
