@@ -149,6 +149,25 @@ void Histogram::Aggregate(const Histogram& histogram) {
   }
 }
 
+void Histogram::Disaggregate(const Histogram& histogram) {
+  thread_check_.Check();
+  histogram.thread_check_.Check();
+
+  // Parameters must match exactly for histograms to aggregate.
+  assert(histogram.min_ == min_);
+  assert(histogram.max_ == max_);
+  assert(histogram.smallest_bucket_ == smallest_bucket_);
+  assert(histogram.ratio_ == ratio_);
+  assert(histogram.num_buckets_ == num_buckets_);
+
+  // Just subtract the bucket counts and number of samples.
+  for (size_t i = 0; i < num_buckets_; ++i) {
+    uint64_t n = histogram.bucket_counts_[i];
+    bucket_counts_[i] -= n;
+    num_samples_ -= n;
+  }
+}
+
 std::string Histogram::Report() const {
   thread_check_.Check();
   // Reports the p50, p90, p99, and p99.9 percentiles.
@@ -167,6 +186,12 @@ void Statistics::Aggregate(const Statistics& stats) {
   thread_check_.Check();
   AggregateOne(&counters_, stats.counters_);
   AggregateOne(&histograms_, stats.histograms_);
+}
+
+void Statistics::Disaggregate(const Statistics& stats) {
+  thread_check_.Check();
+  DisaggregateOne(&counters_, stats.counters_);
+  DisaggregateOne(&histograms_, stats.histograms_);
 }
 
 Counter* Statistics::AddCounter(const std::string& name) {
@@ -257,6 +282,20 @@ Statistics Statistics::MoveThread() {
     p.second.reset(new Histogram(std::move(*p.second)));
   }
   return stats;
+}
+
+StatisticsWindowAggregator::StatisticsWindowAggregator(size_t window_size)
+: window_size_(window_size) {
+  assert(window_size != 0);
+}
+
+void StatisticsWindowAggregator::AddSample(Statistics sample) {
+  aggregate_.Aggregate(sample);
+  if (samples_.size() == window_size_) {
+    aggregate_.Disaggregate(samples_.front());
+    samples_.pop_front();
+  }
+  samples_.emplace_back(std::move(sample));
 }
 
 }  // namespace rocketspeed

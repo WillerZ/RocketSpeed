@@ -156,6 +156,70 @@ TEST(StatisticsTest, HistogramPercentilesOneBucket) {
   ASSERT_LT(histogram.Percentile(0.1), histogram.Percentile(0.9));
 }
 
+TEST(StatisticsTest, StatisticsWindowAggregator) {
+  Statistics s0, s1, s2, s3;
+  s1.AddCounter("a")->Add(1);
+  s2.AddCounter("a")->Add(2);
+  s3.AddCounter("a")->Add(3);
+
+  s1.AddLatency("b")->Record(1.0);
+  s2.AddLatency("b")->Record(2.0);
+  s3.AddLatency("b")->Record(4.0);
+
+  StatisticsWindowAggregator window(4);
+  auto GetA = [&] () {
+    return window.GetAggregate().GetCounterValue("a");
+  };
+  auto GetB = [&] () {
+    return window.GetAggregate().GetHistograms().find("b")->second.get();
+  };
+
+  // Fill up window.
+  window.AddSample(s1);
+  ASSERT_EQ(GetA(), 1);
+  window.AddSample(s2);
+  ASSERT_EQ(GetA(), 1+2);
+  window.AddSample(s3);
+  ASSERT_EQ(GetA(), 1+2+3);
+  window.AddSample(s1);
+  ASSERT_EQ(GetA(), 1+2+3+1);
+
+  // Old values should start dropping off now.
+  window.AddSample(s2);
+  ASSERT_EQ(GetA(), 2+3+1+2);
+  window.AddSample(s3);
+  ASSERT_EQ(GetA(), 3+1+2+3);
+  window.AddSample(s1);
+  ASSERT_EQ(GetA(), 1+2+3+1);
+
+  // Add empty statistics and rest will clear out.
+  window.AddSample(s0);
+  ASSERT_EQ(GetA(), 2+3+1);
+  window.AddSample(s0);
+  ASSERT_EQ(GetA(), 3+1);
+  window.AddSample(s0);
+  ASSERT_EQ(GetA(), 1);
+  window.AddSample(s0);
+  ASSERT_EQ(GetA(), 0);
+
+  // Now test histogram similarly.
+  window.AddSample(s1);
+  ASSERT_GE(GetB()->Percentile(0.5), 0.5);
+  ASSERT_LE(GetB()->Percentile(0.5), 1.5);
+  window.AddSample(s2);
+  window.AddSample(s2);
+  window.AddSample(s2);
+  window.AddSample(s2);
+  ASSERT_GE(GetB()->Percentile(0.5), 1.5);
+  ASSERT_LE(GetB()->Percentile(0.5), 2.5);
+  window.AddSample(s3);
+  window.AddSample(s3);
+  window.AddSample(s3);
+  window.AddSample(s3);
+  ASSERT_GE(GetB()->Percentile(0.5), 3.5);
+  ASSERT_LE(GetB()->Percentile(0.5), 4.5);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

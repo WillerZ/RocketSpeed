@@ -6,10 +6,11 @@
 #pragma once
 
 #include <cassert>
+#include <list>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <memory>
 
 #include "src/util/common/thread_check.h"
 
@@ -34,17 +35,17 @@ class Counter {
     src.thread_check_.Reset();
   }
 
-  void Add(uint64_t delta) {
+  void Add(int64_t delta) {
     thread_check_.Check();
     count_ += delta;
   }
 
-  void Set(uint64_t count) {
+  void Set(int64_t count) {
     thread_check_.Check();
     count_ = count;
   }
 
-  uint64_t Get() const {
+  int64_t Get() const {
     thread_check_.Check();
     return count_;
   }
@@ -52,6 +53,11 @@ class Counter {
   void Aggregate(const Counter& counter) {
     thread_check_.Check();
     Add(counter.Get());
+  }
+
+  void Disaggregate(const Counter& counter) {
+    thread_check_.Check();
+    Add(-counter.Get());
   }
 
   std::string Report() const;
@@ -63,7 +69,7 @@ class Counter {
   }
 
 private:
-  uint64_t count_{0};
+  int64_t count_{0};
   ThreadCheck thread_check_;
 };
 
@@ -116,6 +122,12 @@ class Histogram {
    * The other histogram must have the *exact* same parameters.
    */
   void Aggregate(const Histogram& histogram);
+
+  /**
+   * Disaggregates with another histogram, the inverse operation from Aggregate.
+   * The other histogram must have the *exact* same parameters.
+   */
+  void Disaggregate(const Histogram& histogram);
 
   /**
    * Report some statistics on the histogram.
@@ -195,6 +207,12 @@ class Statistics {
    */
   void Aggregate(const Statistics& stats);
 
+  /**
+   * Reverts a previous Aggregate operation.
+   * Statistics with the same name should have the same parameters.
+   */
+  void Disaggregate(const Statistics& stats);
+
   const std::unordered_map<std::string, std::unique_ptr<Counter>>&
     GetCounters() const {
     thread_check_.Check();
@@ -207,7 +225,7 @@ class Statistics {
     return histograms_;
   }
 
-  uint64_t GetCounterValue(const std::string& name) const {
+  int64_t GetCounterValue(const std::string& name) const {
     thread_check_.Check();
     auto it = counters_.find(name);
     if (it == counters_.end()) {
@@ -220,6 +238,12 @@ class Statistics {
   // Aggregates one set of statistics into another.
   template <typename T>
   static void AggregateOne(
+    std::unordered_map<std::string, std::unique_ptr<T>>* dst,
+    const std::unordered_map<std::string, std::unique_ptr<T>>& src);
+
+  // Disaggregates one set of statistics into another.
+  template <typename T>
+  static void DisaggregateOne(
     std::unordered_map<std::string, std::unique_ptr<T>>* dst,
     const std::unordered_map<std::string, std::unique_ptr<T>>& src);
 
@@ -246,5 +270,42 @@ void Statistics::AggregateOne(
     }
   }
 }
+
+template <typename T>
+void Statistics::DisaggregateOne(
+  std::unordered_map<std::string, std::unique_ptr<T>>* dst,
+  const std::unordered_map<std::string, std::unique_ptr<T>>& src) {
+  for (const auto& stat : src) {
+    const std::string& name = stat.first;
+    auto it = dst->find(name);
+    assert(it != dst->end());
+    it->second->Disaggregate(*stat.second);
+  }
+}
+
+/**
+ * Aggregates regular statistics samples within a sliding window with a fixed
+ * number of samples.
+ */
+class StatisticsWindowAggregator {
+ public:
+  /**
+   * Constructs an StatisticsWindowAggregator with fixed window size (samples).
+   *
+   * @param window_size Number of samples to aggregate.
+   */
+  explicit StatisticsWindowAggregator(size_t window_size);
+
+  void AddSample(Statistics sample);
+
+  const Statistics& GetAggregate() const {
+    return aggregate_;
+  }
+
+ private:
+  Statistics aggregate_;
+  std::list<Statistics> samples_;
+  size_t window_size_;
+};
 
 }  // namespace rocketspeed
