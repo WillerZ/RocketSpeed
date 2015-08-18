@@ -13,6 +13,7 @@
 #include "src/test/test_cluster.h"
 #include "src/pilot/pilot.h"
 #include "src/util/testharness.h"
+#include "src/util/common/guid_generator.h"
 
 namespace rocketspeed {
 
@@ -56,6 +57,7 @@ TEST(PilotTest, Publish) {
   ASSERT_OK(cluster.GetStatus());
 
   port::Semaphore checkpoint;
+  static const size_t kNumMessages = 100;
 
   // create a client to communicate with the Pilot
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
@@ -66,7 +68,7 @@ TEST(PilotTest, Publish) {
                                   StreamID origin) {
         ASSERT_EQ(socket.GetStreamID(), origin);
         ProcessDataAck(std::move(msg), origin);
-        if (sent_msgs_.size() == acked_msgs_.size()) {
+        if (acked_msgs_.size() == kNumMessages) {
           checkpoint.Post();
         }
       }},
@@ -77,21 +79,21 @@ TEST(PilotTest, Publish) {
 
   // send messages to pilot
   NamespaceID nsid = GuestNamespace;
-  for (int i = 0; i < 100; ++i) {
+  for (size_t i = 0; i < kNumMessages; ++i) {
     std::string payload = std::to_string(i);
     std::string topic = "test" + std::to_string(i);
-    std::string serial;
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
                      Slice(topic),
                      nsid,
                      Slice(payload));
+    data.SetMessageId(GUIDGenerator::ThreadLocalGUIDGenerator()->Generate());
     sent_msgs_.insert(data.GetMessageId());
     ASSERT_OK(loop.SendRequest(data, &socket, 0));
   }
 
   // Ensure all messages were ack'd
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(100)));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(5)));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
   Statistics stats = cluster.GetPilot()->GetStatisticsSync();

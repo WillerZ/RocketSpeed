@@ -86,18 +86,7 @@ void LocalTestCluster::Initialize(Options opts) {
     if (opts.single_log) {
       log_range = std::pair<LogID, LogID>(1, 1);
     } else {
-#ifdef USE_LOGDEVICE
-      if (opts.storage_url.empty()) {
-        // Can only use one log as the logdevice test utils only supports that.
-        // See T4894216
-        log_range = std::pair<LogID, LogID>(1, 1);
-      } else {
-        log_range = std::pair<LogID, LogID>(1, 100000);
-      }
-#else
-      // Something more substantial for the mock logdevice.
       log_range = std::pair<LogID, LogID>(1, 1000);
-#endif  // USE_LOGDEVICE
     }
 
     LogDeviceStorage* storage = nullptr;
@@ -108,6 +97,7 @@ void LocalTestCluster::Initialize(Options opts) {
         if (!TestStorage::cluster_) {
           TestStorage::cluster_ =
             facebook::logdevice::IntegrationTestUtils::ClusterFactory()
+              .setNumLogs(log_range.second - log_range.first + 1)
               .create(3);
         }
         storage_->client_ = TestStorage::cluster_->createClient();

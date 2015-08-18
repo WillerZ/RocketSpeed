@@ -16,6 +16,7 @@
 #include "src/port/Env.h"
 #include "src/port/stack_trace.h"
 #include "src/util/auto_roll_logger.h"
+#include "src/util/scoped_file_lock.h"
 
 namespace rocketspeed {
 namespace test {
@@ -43,6 +44,19 @@ bool RegisterTest(const char* base, const char* name, void (*func)()) {
 
 int RunAllTests() {
   rocketspeed::Env::InstallSignalHandlers();
+  Env* env = Env::Default();
+
+  std::string test_dir;
+  Status st = env->GetTestDirectory(&test_dir);
+  if (!st.ok()) {
+    fprintf(stderr, "Failed to GetTestDirectory: %s\n", st.ToString().c_str());
+    return 1;
+  }
+  std::string lock_filename = test_dir + "/test_serialize_lock";
+
+  // Grab file lock
+  // This serializes tests that are run in parallel.
+  ScopedFileLock file_lock(env, lock_filename, true);
 
   const char* matcher = getenv("ROCKETSPEED_TESTS");
 

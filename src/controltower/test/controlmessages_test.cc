@@ -71,6 +71,7 @@ TEST(ControlTowerTest, Subscribe) {
   // Define a callback to process the subscribe response at the client
   loop.RegisterCallbacks({
       {MessageType::mMetadata, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop.Initialize());
   MsgLoopThread t1(env_, &loop, "client");
