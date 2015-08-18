@@ -362,23 +362,36 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   /** Handles creation of a subscription on provided worker thread. */
   void StartSubscription(SubscriptionID sub_id, SubscriptionState sub_state);
 
+  /** Marks message of given seqno on given subscription as acknowledged. */
+  void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
+
   /** Handles termination of a subscription on provided worker thread. */
   void TerminateSubscription(SubscriptionID sub_id);
 
-  /**
-   * Synchronises a portion of pending subscribe and unsubscribe requests with
-   * the Copilot. Takes into an account rate limits.
-   */
-  void SendPendingRequests();
+  /** Saves state of the subscriber using provided storage strategy. */
+  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id) {
+    for (const auto& entry : subscriptions_) {
+      const SubscriptionState* sub_state = &entry.second;
+      SequenceNumber start_seqno = sub_state->GetLastAcknowledged();
+      // Subscription storage stores parameters of subscribe requests that shall
+      // be reissued, therefore we must persiste the next sequence number.
+      if (start_seqno > 0) {
+        ++start_seqno;
+      }
+      Status status = snapshot->Append(worker_id,
+                                       sub_state->GetTenant(),
+                                       sub_state->GetNamespace(),
+                                       sub_state->GetTopicName(),
+                                       start_seqno);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+    return Status::OK();
+  }
 
-  /** Handler for data and gap messages */
-  void Receive(std::unique_ptr<MessageDeliver> msg, StreamID origin);
-
-  /** Handler for unsubscribe messages. */
-  void Receive(std::unique_ptr<MessageUnsubscribe> msg, StreamID origin);
-
-  /** Handler for goodbye messages. */
-  void Receive(std::unique_ptr<MessageGoodbye> msg, StreamID origin);
+ private:
+  friend class ClientImpl;
 
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;
@@ -427,6 +440,21 @@ class alignas(CACHE_LINE_SIZE) ClientWorkerData {
   } stats_;
 
   bool ExpectsMessage(const std::shared_ptr<Logger>& info_log, StreamID origin);
+
+  /**
+   * Synchronises a portion of pending subscribe and unsubscribe requests with
+   * the Copilot. Takes into an account rate limits.
+   */
+  void SendPendingRequests();
+
+  /** Handler for data and gap messages */
+  void Receive(std::unique_ptr<MessageDeliver> msg, StreamID origin);
+
+  /** Handler for unsubscribe messages. */
+  void Receive(std::unique_ptr<MessageUnsubscribe> msg, StreamID origin);
+
+  /** Handler for goodbye messages. */
+  void Receive(std::unique_ptr<MessageGoodbye> msg, StreamID origin);
 };
 
 bool ClientWorkerData::ExpectsMessage(const std::shared_ptr<Logger>& info_log,
@@ -671,30 +699,14 @@ Status ClientImpl::Acknowledge(const MessageReceived& message) {
   if (worker_id < 0) {
     return Status::InvalidArgument("Invalid handle.");
   }
-  const SubscriptionID sub_id = sub_handle;
-
-  // Prepare command to be executed.
-  SequenceNumber acked_seqno = message.GetSequenceNumber();
-  auto action = [this, worker_id, sub_id, acked_seqno]() {
-    auto& worker_data = worker_data_[worker_id];
-
-    // Find corresponding subscription state.
-    auto it = worker_data->subscriptions_.find(sub_id);
-    if (it == worker_data->subscriptions_.end()) {
-      LOG_WARN(options_.info_log,
-               "Cannot acknowledge missing subscription ID (%" PRIu64 ")",
-               sub_id);
-      return;
-    }
-
-    // Record acknowledgement in the state.
-    it->second.Acknowledge(acked_seqno);
-  };
 
   // Send command to responsible worker.
-  return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(MakeExecuteCommand(std::move(action))),
-      worker_id);
+  return msg_loop_->SendCommand(std::unique_ptr<Command>(MakeExecuteCommand(
+                                    std::bind(&ClientWorkerData::Acknowledge,
+                                              worker_data_[worker_id].get(),
+                                              sub_handle,
+                                              message.GetSequenceNumber()))),
+                                worker_id);
 }
 
 void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
@@ -717,25 +729,7 @@ void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
   // For each worker we attemp to append entries for all subscriptions.
   auto map = [this, snapshot](int worker_id) {
     const auto& worker_data = worker_data_[worker_id];
-
-    for (const auto& entry : worker_data->subscriptions_) {
-      const SubscriptionState* sub_state = &entry.second;
-      SequenceNumber start_seqno = sub_state->GetLastAcknowledged();
-      // Subscription storage stores parameters of subscribe requests that shall
-      // be reissued, therefore we must persiste the next sequence number.
-      if (start_seqno > 0) {
-        ++start_seqno;
-      }
-      Status status = snapshot->Append(worker_id,
-                                       sub_state->GetTenant(),
-                                       sub_state->GetNamespace(),
-                                       sub_state->GetTopicName(),
-                                       start_seqno);
-      if (!status.ok()) {
-        return status;
-      }
-    }
-    return Status::OK();
+    return worker_data->SaveState(snapshot.get(), worker_id);
   };
 
   // Once all workers are done, we commit the snapshot and call the callback if
@@ -857,6 +851,21 @@ void ClientWorkerData::StartSubscription(SubscriptionID sub_id,
   // Issue subscription.
   pending_subscribes_.emplace(sub_id);
   SendPendingRequests();
+}
+
+void ClientWorkerData::Acknowledge(SubscriptionID sub_id,
+                                   SequenceNumber acked_seqno) {
+  // Find corresponding subscription state.
+  auto it = subscriptions_.find(sub_id);
+  if (it == subscriptions_.end()) {
+    LOG_WARN(options_.info_log,
+             "Cannot acknowledge missing subscription ID (%" PRIu64 ")",
+             sub_id);
+    return;
+  }
+
+  // Record acknowledgement in the state.
+  it->second.Acknowledge(acked_seqno);
 }
 
 void ClientWorkerData::TerminateSubscription(SubscriptionID sub_id) {
