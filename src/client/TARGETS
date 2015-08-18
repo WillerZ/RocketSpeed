@@ -5,6 +5,7 @@ cpp_library(
         'options.cc',
         'publisher.cc',
         'storage/file_storage.cc',
+        'subscriber.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',
