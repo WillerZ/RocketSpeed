@@ -41,7 +41,8 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
  * Private constructor for a Copilot
  */
 Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
-  options_(SanitizeOptions(std::move(options))) {
+  options_(SanitizeOptions(std::move(options))),
+  client_(std::move(client)) {
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
   options_.msg_loop->RegisterTimerCallback(
     [this] () {
@@ -55,14 +56,13 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
                                          options_.consistent_hash_replicas,
                                          options_.control_towers_per_log);
 
-  std::shared_ptr<ClientImpl> shared_client(std::move(client));
   const int num_workers = options_.msg_loop->GetNumWorkers();
   for (int i = 0; i < num_workers; ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
                                             router,
                                             i,
                                             this,
-                                            shared_client));
+                                            client_));
   }
   sub_id_map_.resize(num_workers);
 
@@ -89,6 +89,9 @@ Copilot::~Copilot() {
 void Copilot::Stop() {
   assert(!options_.msg_loop->IsRunning());
 
+  if (client_) {
+    client_->Stop();
+  }
   workers_.clear();
   options_.log_router.reset();
 }

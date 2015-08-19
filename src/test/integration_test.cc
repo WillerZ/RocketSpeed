@@ -1531,7 +1531,7 @@ TEST(IntegrationTest, TowerDeathReconnect) {
 
   // Should have taken ~1 second to resubscribe all topics.
   ASSERT_GE(end - start, 900000);
-  ASSERT_LE(end - start, 1500000);
+  ASSERT_LE(end - start, 2000000);
 
   // Check that there are no more orhpaned topics.
   auto stats2 = cluster.GetCopilot()->GetStatisticsSync();

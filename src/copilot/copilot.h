@@ -95,6 +95,9 @@ class Copilot {
   // Thread-local queue mesh for updating workers with new tower routing info.
   std::vector<std::unique_ptr<ThreadLocalCommandQueues>> router_update_queues_;
 
+  // Client used for RollCall.
+  std::shared_ptr<ClientImpl> client_;
+
   // private Constructor
   Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client);
 

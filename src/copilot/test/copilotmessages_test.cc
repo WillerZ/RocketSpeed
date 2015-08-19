@@ -68,6 +68,7 @@ TEST(CopilotTest, WorkerMapping) {
     options.control_towers.emplace(
         i, HostId::CreateLocal(static_cast<uint16_t>(i)));
   }
+
   options.pilots.push_back(HostId::CreateLocal(62777));
   options.msg_loop = &loop;
   options.control_tower_connections = 4;
@@ -75,6 +76,8 @@ TEST(CopilotTest, WorkerMapping) {
   Copilot* copilot;
   Status st = Copilot::CreateNewInstance(options, &copilot);
   ASSERT_TRUE(st.ok());
+  loop.Stop();
+  loop.Run();
 
   // Now check that each control tower is mapped to one worker.
   std::unordered_map<HostId, std::set<int>> tower_to_workers;
@@ -119,6 +122,8 @@ TEST(CopilotTest, NoLogger) {
   options.log_dir = "///";  // invalid dir, will fail to create LOG file.
   options.log_router = cluster.GetLogRouter();
   ASSERT_OK(Copilot::CreateNewInstance(options, &copilot));
+  loop.Stop();
+  loop.Run();
   copilot->Stop();
   delete copilot;
 }

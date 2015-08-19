@@ -145,12 +145,17 @@ void ClientImpl::SetDefaultCallbacks(SubscribeCallback subscription_callback,
 }
 
 ClientImpl::~ClientImpl() {
+  Stop();
+}
+
+void ClientImpl::Stop() {
   // Stop the event loop. May block.
   msg_loop_->Stop();
 
   if (msg_loop_thread_spawned_) {
     // Wait for thread to join.
     options_.env->WaitForJoin(msg_loop_thread_);
+    msg_loop_thread_spawned_ = false;
   }
 }
 

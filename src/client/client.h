@@ -92,6 +92,13 @@ class ClientImpl : public Client {
 
   Statistics GetStatisticsSync();
 
+  /**
+   * Stop the event loop processing, and wait for thread join.
+   * Client callbacks will not be invoked after this point.
+   * Stop() is idempotent.
+   */
+  void Stop();
+
  private:
   /** Options provided when creating the Client. */
   ClientOptions options_;
