@@ -90,6 +90,7 @@ class Rocketeer {
 
   /**
    * Notifies about new inbound subscription.
+   * This method is guarenteed to always be called on the same thread.
    *
    * @param inbound_id Globally unique ID of this subscription.
    * @param params Parameters of the subscription provided by the subscriber.
@@ -99,21 +100,28 @@ class Rocketeer {
 
   /**
    * Notifies that given subscription was terminated by the user.
+   * This method is guarenteed to always be called on the same thread.
    *
    * @param inbound_id ID of the subscription to be terminated.
+   * @param source Who terminated the subscription.
    */
-  virtual void HandleTermination(InboundID inbound_id) = 0;
+  enum class TerminationSource {
+    Subscriber,
+    Rocketeer,
+  };
+  virtual void HandleTermination(InboundID inbound_id,
+                                 TerminationSource source) = 0;
 
   /**
    * Sends a message on given subscription.
+   * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to send message on.
    * @param seqno Sequence number of the message.
    * @param payload Payload of the message.
    * @param msg_id The ID of the message.
-   * @return true iff operation was successfully sheduled.
    */
-  bool Deliver(InboundID inbound_id,
+  void Deliver(InboundID inbound_id,
                SequenceNumber seqno,
                std::string payload,
                MsgId msg_id = MsgId());
@@ -123,22 +131,24 @@ class Rocketeer {
    * data on it. Client might be notified, so that the next time it
    * resubscribes, it will send advanced sequence number as a part of
    * subscription parameters.
+   * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to advance.
    * @param seqno The subscription will be advanced, so that it expects the next
    *              sequence number.
    * @return true iff operation was successfully sheduled.
    */
-  bool Advance(InboundID inbound_id, SequenceNumber seqno);
+  void Advance(InboundID inbound_id, SequenceNumber seqno);
 
   /**
    * Terminates given subscription.
+   * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to terminate.
    * @param reason A reason why this subscription was terminated.
    * @return true iff operation was successfully sheduled.
    */
-  bool Terminate(InboundID inbound_id, MessageUnsubscribe::Reason reason);
+  void Terminate(InboundID inbound_id, MessageUnsubscribe::Reason reason);
 
   /** Returns the server that this Rocketeer is registered with. */
   RocketeerServer* GetServer() { return server_; }
@@ -154,6 +164,7 @@ class Rocketeer {
 
     Counter* subscribes;
     Counter* unsubscribes;
+    Counter* terminations;
     Counter* inbound_subscriptions;
     Counter* dropped_reordered;
     Statistics all;
@@ -209,6 +220,29 @@ class RocketeerServer {
 
   /** Stops the server, no thread is running after this method returns. */
   void Stop();
+
+  /**
+   * A thread-safe version of Rocketeer::Deliver.
+   *
+   * @return true iff operation was successfully sheduled.
+   */
+  bool Deliver(InboundID inbound_id,
+               SequenceNumber seqno,
+               std::string payload,
+               MsgId msg_id = MsgId());
+
+  /**
+   * A thread-safe version of Rocketeer::Advance.
+   *
+   * @return true iff operation was successfully sheduled.
+   */
+  bool Advance(InboundID inbound_id, SequenceNumber seqno);
+
+  /** A thread-safe version of Rocketeer::.
+   *
+   * @return true iff operation was successfully sheduled.
+   */
+  bool Terminate(InboundID inbound_id, MessageUnsubscribe::Reason reason);
 
   /** Returns server-wide statistics. */
   Statistics GetStatisticsSync();

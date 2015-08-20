@@ -44,81 +44,83 @@ RocketeerOptions::RocketeerOptions()
 Rocketeer::Rocketeer() : server_(nullptr) {
 }
 
-bool Rocketeer::Deliver(InboundID inbound_id,
+void Rocketeer::Deliver(InboundID inbound_id,
                         SequenceNumber seqno,
                         std::string payload,
                         MsgId msg_id) {
+  thread_check_.Check();
+
   if (msg_id.Empty()) {
     msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
   }
-  auto moved_payload = folly::makeMoveWrapper(std::move(payload));
-  auto command = [this, inbound_id, seqno, moved_payload, msg_id]() {
-    thread_check_.Check();
-    if (auto* sub = Find(inbound_id)) {
-      if (sub->prev_seqno < seqno) {
-        MessageDeliverData data(
-            sub->tenant_id, inbound_id.sub_id, msg_id, *moved_payload);
-        data.SetSequenceNumbers(sub->prev_seqno, seqno);
-        sub->prev_seqno = seqno;
-        server_->msg_loop_->SendResponse(
-            data, inbound_id.stream_id, inbound_id.worker_id);
-      } else {
-        stats_->dropped_reordered->Add(1);
-        LOG_WARN(server_->options_.info_log,
-                 "Attempted to deliver data at %" PRIu64
-                 ", but subscription has previous seqno %" PRIu64,
-                 seqno,
-                 sub->prev_seqno);
-      }
+  if (auto* sub = Find(inbound_id)) {
+    if (sub->prev_seqno < seqno) {
+      MessageDeliverData data(
+          sub->tenant_id, inbound_id.sub_id, msg_id, payload);
+      data.SetSequenceNumbers(sub->prev_seqno, seqno);
+      sub->prev_seqno = seqno;
+      server_->msg_loop_->SendResponse(
+          data, inbound_id.stream_id, inbound_id.worker_id);
+    } else {
+      stats_->dropped_reordered->Add(1);
+      LOG_WARN(server_->options_.info_log,
+               "Attempted to deliver data at %" PRIu64
+               ", but subscription has previous seqno %" PRIu64,
+               seqno,
+               sub->prev_seqno);
     }
-  };
-  return server_->msg_loop_->SendCommand(
-                                 std::unique_ptr<Command>(
-                                     MakeExecuteCommand(std::move(command))),
-                                 inbound_id.worker_id).ok();
+  }
 }
 
-bool Rocketeer::Advance(InboundID inbound_id, SequenceNumber seqno) {
-  auto command = [this, inbound_id, seqno]() {
-    thread_check_.Check();
-    if (auto* sub = Find(inbound_id)) {
-      if (sub->prev_seqno < seqno) {
-        MessageDeliverGap gap(
-            sub->tenant_id, inbound_id.sub_id, GapType::kBenign);
-        gap.SetSequenceNumbers(sub->prev_seqno, seqno);
-        sub->prev_seqno = seqno;
-        server_->msg_loop_->SendResponse(
-            gap, inbound_id.stream_id, inbound_id.worker_id);
-      } else {
-        stats_->dropped_reordered->Add(1);
-        LOG_WARN(server_->options_.info_log,
-                 "Attempted to deliver gap at %" PRIu64
-                 ", but subscription has previous seqno %" PRIu64,
-                 seqno,
-                 sub->prev_seqno);
-      }
+void Rocketeer::Advance(InboundID inbound_id, SequenceNumber seqno) {
+  thread_check_.Check();
+
+  if (auto* sub = Find(inbound_id)) {
+    if (sub->prev_seqno < seqno) {
+      MessageDeliverGap gap(
+          sub->tenant_id, inbound_id.sub_id, GapType::kBenign);
+      gap.SetSequenceNumbers(sub->prev_seqno, seqno);
+      sub->prev_seqno = seqno;
+      server_->msg_loop_->SendResponse(
+          gap, inbound_id.stream_id, inbound_id.worker_id);
+    } else {
+      stats_->dropped_reordered->Add(1);
+      LOG_WARN(server_->options_.info_log,
+               "Attempted to deliver gap at %" PRIu64
+               ", but subscription has previous seqno %" PRIu64,
+               seqno,
+               sub->prev_seqno);
     }
-  };
-  return server_->msg_loop_->SendCommand(
-                                 std::unique_ptr<Command>(
-                                     MakeExecuteCommand(std::move(command))),
-                                 inbound_id.worker_id).ok();
+  }
 }
 
-bool Rocketeer::Terminate(InboundID inbound_id,
+void Rocketeer::Terminate(InboundID inbound_id,
                           MessageUnsubscribe::Reason reason) {
-  auto command = [this, inbound_id, reason]() {
-    thread_check_.Check();
-    if (auto* sub = Find(inbound_id)) {
-      MessageUnsubscribe unsubscribe(sub->tenant_id, inbound_id.sub_id, reason);
+  thread_check_.Check();
+
+  StreamID origin = inbound_id.stream_id;
+  SubscriptionID sub_id = inbound_id.sub_id;
+  auto it = inbound_subscriptions_.find(origin);
+  if (it != inbound_subscriptions_.end()) {
+    auto it1 = it->second.find(sub_id);
+    if (it1 != it->second.end()) {
+      TenantID tenant_id = it1->second.tenant_id;
+      it->second.erase(it1);
+      stats_->inbound_subscriptions->Add(-1);
+      stats_->terminations->Add(1);
+      HandleTermination(InboundID(origin, sub_id, GetID()),
+                        TerminationSource::Rocketeer);
+
+      MessageUnsubscribe unsubscribe(tenant_id, inbound_id.sub_id, reason);
       server_->msg_loop_->SendResponse(
           unsubscribe, inbound_id.stream_id, inbound_id.worker_id);
+      return;
     }
-  };
-  return server_->msg_loop_->SendCommand(
-                                 std::unique_ptr<Command>(
-                                     MakeExecuteCommand(std::move(command))),
-                                 inbound_id.worker_id).ok();
+  }
+  LOG_WARN(server_->options_.info_log,
+           "Missing subscription on stream: %llu, sub_id: %" PRIu64,
+           origin,
+           sub_id);
 }
 
 size_t Rocketeer::GetID() const {
@@ -158,6 +160,7 @@ InboundSubscription* Rocketeer::Find(const InboundID& inbound_id) {
 void Rocketeer::Receive(std::unique_ptr<MessageSubscribe> subscribe,
                         StreamID origin) {
   thread_check_.Check();
+
   SubscriptionID sub_id = subscribe->GetSubID();
   SequenceNumber start_seqno = subscribe->GetStartSequenceNumber();
   auto result = inbound_subscriptions_[origin].emplace(
@@ -184,6 +187,7 @@ void Rocketeer::Receive(std::unique_ptr<MessageSubscribe> subscribe,
 void Rocketeer::Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
                         StreamID origin) {
   thread_check_.Check();
+
   SubscriptionID sub_id = unsubscribe->GetSubID();
   auto it = inbound_subscriptions_.find(origin);
   if (it != inbound_subscriptions_.end()) {
@@ -191,7 +195,8 @@ void Rocketeer::Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
     if (removed > 0) {
       stats_->inbound_subscriptions->Add(-1);
       stats_->unsubscribes->Add(1);
-      HandleTermination(InboundID(origin, sub_id, GetID()));
+      HandleTermination(InboundID(origin, sub_id, GetID()),
+                        TerminationSource::Subscriber);
       if (it->second.empty()) {
         inbound_subscriptions_.erase(it);
       }
@@ -207,6 +212,7 @@ void Rocketeer::Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
 void Rocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
                         StreamID origin) {
   thread_check_.Check();
+
   auto it = inbound_subscriptions_.find(origin);
   if (it == inbound_subscriptions_.end()) {
     LOG_WARN(server_->options_.info_log, "Missing stream: %llu", origin);
@@ -215,7 +221,8 @@ void Rocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
   for (const auto& entry : it->second) {
     stats_->inbound_subscriptions->Add(-1);
     stats_->unsubscribes->Add(1);
-    HandleTermination(InboundID(origin, entry.first, GetID()));
+    HandleTermination(InboundID(origin, entry.first, GetID()),
+                      TerminationSource::Subscriber);
   }
   inbound_subscriptions_.erase(it);
 }
@@ -224,6 +231,7 @@ void Rocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
 Rocketeer::Stats::Stats(const std::string& prefix) {
   subscribes = all.AddCounter(prefix + "subscribes");
   unsubscribes = all.AddCounter(prefix + "unsubscribes");
+  terminations = all.AddCounter(prefix + "terminations");
   inbound_subscriptions = all.AddCounter(prefix + "inbound_subscriptions");
   dropped_reordered = all.AddCounter(prefix + "dropped_reordered");
 }
@@ -272,6 +280,44 @@ Status RocketeerServer::Start() {
 
 void RocketeerServer::Stop() {
   msg_loop_thread_.reset();
+}
+
+bool RocketeerServer::Deliver(InboundID inbound_id,
+                              SequenceNumber seqno,
+                              std::string payload,
+                              MsgId msg_id) {
+  auto moved_payload = folly::makeMoveWrapper(std::move(payload));
+  auto command = [this, inbound_id, seqno, moved_payload, msg_id]() mutable {
+    rocketeers_[inbound_id.worker_id]->Deliver(
+        inbound_id, seqno, moved_payload.move(), msg_id);
+  };
+  return msg_loop_->SendCommand(std::unique_ptr<Command>(
+                                    MakeExecuteCommand(std::move(command))),
+                                inbound_id.worker_id)
+      .ok();
+}
+
+bool RocketeerServer::Advance(InboundID inbound_id, SequenceNumber seqno) {
+  auto command = std::bind(&Rocketeer::Advance,
+                           rocketeers_[inbound_id.worker_id],
+                           inbound_id,
+                           seqno);
+  return msg_loop_->SendCommand(std::unique_ptr<Command>(
+                                    MakeExecuteCommand(std::move(command))),
+                                inbound_id.worker_id)
+      .ok();
+}
+
+bool RocketeerServer::Terminate(InboundID inbound_id,
+                                MessageUnsubscribe::Reason reason) {
+  auto command = std::bind(&Rocketeer::Terminate,
+                           rocketeers_[inbound_id.worker_id],
+                           inbound_id,
+                           reason);
+  return msg_loop_->SendCommand(std::unique_ptr<Command>(
+                                    MakeExecuteCommand(std::move(command))),
+                                inbound_id.worker_id)
+      .ok();
 }
 
 Statistics RocketeerServer::GetStatisticsSync() {
