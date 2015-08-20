@@ -126,7 +126,8 @@ Rocketeer = interface +j +o {
   handleNewSubscription(inbound_id: InboundID,
                         params: SubscriptionParameters);
 
-  handleTermination(inbound_id: InboundID);
+  handleTermination(inbound_id: InboundID,
+                    from_client: bool);
 }
 
 RocketeerServerImpl = interface +c {

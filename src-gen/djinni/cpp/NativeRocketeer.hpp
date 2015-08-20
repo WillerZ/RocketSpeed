@@ -32,7 +32,7 @@ private:
         ~JavaProxy();
 
         void HandleNewSubscription(::rocketspeed::djinni::InboundID inbound_id, ::rocketspeed::djinni::SubscriptionParameters params) override;
-        void HandleTermination(::rocketspeed::djinni::InboundID inbound_id) override;
+        void HandleTermination(::rocketspeed::djinni::InboundID inbound_id, bool from_client) override;
 
     private:
         using ::djinni::JavaProxyCacheEntry::getGlobalRef;
@@ -42,7 +42,7 @@ private:
 
     const ::djinni::GlobalRef<jclass> clazz { ::djinni::jniFindClass("org/rocketspeed/Rocketeer") };
     const jmethodID method_handleNewSubscription { ::djinni::jniGetMethodID(clazz.get(), "handleNewSubscription", "(Lorg/rocketspeed/InboundID;Lorg/rocketspeed/SubscriptionParameters;)V") };
-    const jmethodID method_handleTermination { ::djinni::jniGetMethodID(clazz.get(), "handleTermination", "(Lorg/rocketspeed/InboundID;)V") };
+    const jmethodID method_handleTermination { ::djinni::jniGetMethodID(clazz.get(), "handleTermination", "(Lorg/rocketspeed/InboundID;Z)V") };
 };
 
 }  // namespace djinni_generated

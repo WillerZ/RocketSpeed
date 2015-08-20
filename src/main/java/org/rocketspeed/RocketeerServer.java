@@ -1,5 +1,8 @@
 package org.rocketspeed;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class RocketeerServer implements AutoCloseable {
 
   static {
@@ -14,6 +17,33 @@ public class RocketeerServer implements AutoCloseable {
 
   public void register(Rocketeer rocketeer) {
     rocketeerServer.register(rocketeer);
+  }
+
+  public void register(final RocketeerWithParams rocketeer) {
+    rocketeerServer.register(
+        new Rocketeer() {
+          private final Map<InboundID, SubscriptionParameters> activeSubscriptions =
+              new HashMap<>();
+
+          @Override
+          public void handleNewSubscription(
+              InboundID inboundId, SubscriptionParameters params) {
+            rocketeer.handleNewSubscription(inboundId, params);
+            activeSubscriptions.put(inboundId, params);
+          }
+
+          @Override
+          public void handleTermination(InboundID inboundId, boolean fromClient) {
+            SubscriptionParameters params = activeSubscriptions.remove(inboundId);
+            if (!fromClient) {
+              return;
+            }
+            if (params == null) {
+              throw new IllegalStateException("Missing subscription parameters");
+            }
+            rocketeer.handleTermination(inboundId, params);
+          }
+        });
   }
 
   public void start() throws Exception {

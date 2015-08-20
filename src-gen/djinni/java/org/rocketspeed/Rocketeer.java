@@ -6,5 +6,5 @@ package org.rocketspeed;
 public abstract class Rocketeer {
     public abstract void handleNewSubscription(InboundID inboundId, SubscriptionParameters params);
 
-    public abstract void handleTermination(InboundID inboundId);
+    public abstract void handleTermination(InboundID inboundId, boolean fromClient);
 }

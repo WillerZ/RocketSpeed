@@ -82,8 +82,10 @@ class ForwardingRocketeer : public rs::Rocketeer {
                                       FromSubscriptionParameters(params));
   }
 
-  void HandleTermination(rs::InboundID inbound_id) override {
-    rocketeer_->HandleTermination(FromInboundID(inbound_id));
+  void HandleTermination(rs::InboundID inbound_id,
+                         TerminationSource source) override {
+    rocketeer_->HandleTermination(FromInboundID(inbound_id),
+                                  source == TerminationSource::Subscriber);
   }
 
  private:

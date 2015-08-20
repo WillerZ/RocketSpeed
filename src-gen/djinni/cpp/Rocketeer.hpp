@@ -14,7 +14,7 @@ public:
 
     virtual void HandleNewSubscription(InboundID inbound_id, SubscriptionParameters params) = 0;
 
-    virtual void HandleTermination(InboundID inbound_id) = 0;
+    virtual void HandleTermination(InboundID inbound_id, bool from_client) = 0;
 };
 
 } }  // namespace rocketspeed::djinni

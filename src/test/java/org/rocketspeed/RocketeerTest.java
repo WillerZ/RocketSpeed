@@ -27,7 +27,7 @@ public class RocketeerTest {
       final Semaphore newSubscriptionSemaphore = new Semaphore(0);
       final Semaphore terminateSemaphore = new Semaphore(0);
       rocketeerServer.register(
-          new Rocketeer() {
+          new RocketeerWithParams() {
             InboundID inboundID;
 
             @Override
@@ -43,7 +43,11 @@ public class RocketeerTest {
             }
 
             @Override
-            public void handleTermination(InboundID inboundId) {
+            public void handleTermination(InboundID inboundId, SubscriptionParameters params) {
+              assertEquals(parameters.getTenantId(), params.getTenantId());
+              assertEquals(parameters.getNamespaceId(), params.getNamespaceId());
+              assertEquals(parameters.getTopicName(), params.getTopicName());
+              assertEquals(parameters.getStartSeqno(), params.getStartSeqno());
               assertNotNull(this.inboundID);
               assertEquals(this.inboundID, inboundId);
               this.inboundID = null;
