@@ -29,8 +29,8 @@ struct LocalTestCluster::TestStorage {
     cluster_;
   std::shared_ptr<facebook::logdevice::Client> client_;
 #endif  // USE_LOGDEVICE
-  std::shared_ptr<LogStorage> storage_;
-  std::shared_ptr<LogRouter> log_router_;
+  std::shared_ptr<LogDeviceStorage> storage_;
+  std::shared_ptr<LogDeviceLogRouter> log_router_;
 };
 
 #ifdef USE_LOGDEVICE
@@ -324,11 +324,11 @@ Statistics LocalTestCluster::GetStatisticsSync() const {
   return aggregated;
 }
 
-std::shared_ptr<LogStorage> LocalTestCluster::GetLogStorage() {
+std::shared_ptr<LogDeviceStorage> LocalTestCluster::GetLogStorage() {
   return storage_->storage_;
 }
 
-std::shared_ptr<LogRouter> LocalTestCluster::GetLogRouter() {
+std::shared_ptr<LogDeviceLogRouter> LocalTestCluster::GetLogRouter() {
   return storage_->log_router_;
 }
 

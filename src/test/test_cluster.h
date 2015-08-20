@@ -19,6 +19,8 @@
 #include "src/messages/msg_loop.h"
 #include "src/util/storage.h"
 #include "src/util/common/statistics.h"
+#include "src/logdevice/storage.h"
+#include "src/logdevice/log_router.h"
 
 namespace rocketspeed {
 
@@ -49,8 +51,8 @@ class LocalTestCluster {
     ControlTowerOptions tower;
     int controltower_port = ControlTower::DEFAULT_PORT;
     int cockpit_port = Copilot::DEFAULT_PORT;
-    std::shared_ptr<LogStorage> log_storage;
-    std::shared_ptr<LogRouter> log_router;
+    std::shared_ptr<LogDeviceStorage> log_storage;
+    std::shared_ptr<LogDeviceLogRouter> log_router;
   };
 
   /**
@@ -117,9 +119,9 @@ class LocalTestCluster {
     return control_tower_loop_.get();
   }
 
-  std::shared_ptr<LogStorage> GetLogStorage();
+  std::shared_ptr<LogDeviceStorage> GetLogStorage();
 
-  std::shared_ptr<LogRouter> GetLogRouter();
+  std::shared_ptr<LogDeviceLogRouter> GetLogRouter();
 
   Statistics GetStatisticsSync() const;
 
