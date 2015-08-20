@@ -13,10 +13,10 @@ cpp_library(
       '-DGFLAGS=google',
     ],
     deps = [
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/messages:messages',
     ],
     link_whole = True,
 )

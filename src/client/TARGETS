@@ -14,9 +14,9 @@ cpp_library(
         '-DOS_LINUX=1',
     ],
     deps = [
-        '@/rocketspeed/github/src/messages',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/messages:messages',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util/common:common',
     ],
 )
 
@@ -32,10 +32,10 @@ cpp_unittest(
     ],
     deps = [
         ':client',
-        '@/rocketspeed/github/src/messages',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/messages:messages',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/src/util/common:common',
     ],
     tags = [
         'serialize',
@@ -56,9 +56,9 @@ cpp_unittest(
     ],
     deps = [
         ':client',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/src/util/common:common',
     ],
     tags = [
         'serialize',

@@ -14,8 +14,8 @@ cpp_library(
         '-DOS_LINUX=1',
     ],
     deps = [
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util/common:common',
         ':event_loop',
         ':streams',
     ],
@@ -35,8 +35,8 @@ cpp_library(
     deps = [
         ':streams',
         ':queues',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util/common:common',
         '@/logdevice/external/libevent-2.1.3-alpha:event_core',
     ],
     compiler_flags = [
@@ -54,7 +54,7 @@ cpp_library(
         '-DROCKETSPEED_PLATFORM_POSIX=1',
     ],
     deps = [
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:common',
     ],
 )
 
@@ -68,6 +68,6 @@ cpp_library(
         '-DROCKETSPEED_PLATFORM_POSIX=1',
     ],
     deps = [
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:common',
     ],
 )

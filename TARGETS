@@ -56,9 +56,9 @@ cpp_binary(
     ],
     deps = [
         ':djinni_support',
-        '@/rocketspeed/github/src/client',
+        '@/rocketspeed/github/src/client:client',
         '@/rocketspeed/github/src/engine:rocketeer',
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:common',
         '@/rocketspeed/github/src/util/common:fixed_configuration',
     ],
     external_deps = [

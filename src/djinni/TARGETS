@@ -11,7 +11,7 @@ cpp_library(
         '-Irocketspeed/github/external/djinni/support-lib/jni',
     ],
     deps = [
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/util/common:common',
     ],
     external_deps = [
         ('openjdk', None, 'jvm'),

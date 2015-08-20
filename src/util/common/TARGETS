@@ -20,7 +20,7 @@ cpp_library(
         '-DOS_LINUX=1',
     ],
     deps = [
-        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/port:port',
     ],
     external_deps = [
         ('e2fsprogs', None, 'uuid'),

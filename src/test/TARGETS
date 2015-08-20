@@ -14,9 +14,9 @@ cpp_library(
         '@/rocketspeed/github/src/pilot:pilot_library',
         '@/rocketspeed/github/src/copilot:copilot_library',
         '@/rocketspeed/github/src/controltower:control_tower_library',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/src/util/common:common',
         '@/rocketspeed/github/src/logdevice:logdevice_storage',
     ],
 )
@@ -53,10 +53,10 @@ cpp_unittest(
     deps = [
         ':test_cluster',
         '@/rocketspeed/github/src/client:client',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/messages:messages',
     ],
     tags = [
         'serialize',

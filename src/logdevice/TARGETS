@@ -14,9 +14,9 @@ cpp_binary(
     ],
     deps = [
         ':logdevice_storage',
-        '@/rocketspeed/github/src/port',
-        '@/rocketspeed/github/src/util',
-        '@/rocketspeed/github/src/messages',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/src/messages:messages',
     ],
 )
 
@@ -34,10 +34,10 @@ cpp_library(
         '-DUSE_LOGDEVICE',
     ],
     deps = [
-        '@/rocketspeed/github/src/util/common',
-        '@/rocketspeed/github/src/port',
+        '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/port:port',
         '@/common/network:address',
-        '@/logdevice/lib',
-        '@/logdevice/test/utils',
+        '@/logdevice/lib:lib',
+        '@/logdevice/test/utils:utils',
     ],
 )
