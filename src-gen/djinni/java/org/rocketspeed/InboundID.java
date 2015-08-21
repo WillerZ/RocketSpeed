@@ -18,6 +18,11 @@ public final class InboundID {
     }
 
     @Override
+    public int hashCode() {
+        return java.util.Arrays.hashCode(serialised);
+    }
+
+    @Override
     public boolean equals(Object obj) {
         if (!(obj instanceof InboundID)) {
             return false;

@@ -73,23 +73,34 @@ jni::SubscriptionParameters FromSubscriptionParameters(
 
 class ForwardingRocketeer : public rs::Rocketeer {
  public:
-  explicit ForwardingRocketeer(std::shared_ptr<jni::Rocketeer> rocketeer)
-  : rocketeer_(std::move(rocketeer)) {}
+  ForwardingRocketeer(std::shared_ptr<jni::Rocketeer> rocketeer,
+                      std::shared_ptr<Logger> info_log)
+  : rocketeer_(std::move(rocketeer)), info_log_(std::move(info_log)) {}
 
   void HandleNewSubscription(rs::InboundID inbound_id,
                              rs::SubscriptionParameters params) override {
-    rocketeer_->HandleNewSubscription(FromInboundID(inbound_id),
-                                      FromSubscriptionParameters(params));
+    try {
+      rocketeer_->HandleNewSubscription(FromInboundID(inbound_id),
+                                        FromSubscriptionParameters(params));
+    } catch (const std::exception& e) {
+      LOG_WARN(
+          info_log_, "HandleNewSubscription caught exception: %s", e.what());
+    };
   }
 
   void HandleTermination(rs::InboundID inbound_id,
                          TerminationSource source) override {
-    rocketeer_->HandleTermination(FromInboundID(inbound_id),
-                                  source == TerminationSource::Subscriber);
+    try {
+      rocketeer_->HandleTermination(FromInboundID(inbound_id),
+                                    source == TerminationSource::Subscriber);
+    } catch (const std::exception& e) {
+      LOG_WARN(info_log_, "HandleTermination caught exception: %s", e.what());
+    };
   }
 
  private:
   std::shared_ptr<jni::Rocketeer> rocketeer_;
+  std::shared_ptr<Logger> info_log_;
 };
 
 }  // namespace
@@ -120,7 +131,8 @@ std::shared_ptr<RocketeerServerImpl> RocketeerServerImpl::Create(
 }
 
 void RocketeerServerWrapper::Register(std::shared_ptr<Rocketeer> rocketeer) {
-  rocketeers_.emplace_back(new ForwardingRocketeer(std::move(rocketeer)));
+  rocketeers_.emplace_back(
+      new ForwardingRocketeer(std::move(rocketeer), info_log_));
   server_->Register(rocketeers_.back().get());
 }
 
@@ -140,7 +152,7 @@ bool RocketeerServerWrapper::Deliver(jni::InboundID inbound_id,
   }
   assert(inbound_id1.worker_id >= 0);
   assert(inbound_id1.worker_id < rocketeers_.size());
-  return rocketeers_[inbound_id1.worker_id]->Deliver(
+  return server_->Deliver(
       inbound_id1, ToSequenceNumber(seqno), ToSlice(payload).ToString());
 }
 
@@ -154,8 +166,7 @@ bool RocketeerServerWrapper::Terminate(jni::InboundID inbound_id) {
   }
   assert(inbound_id1.worker_id >= 0);
   assert(inbound_id1.worker_id < rocketeers_.size());
-  return rocketeers_[inbound_id1.worker_id]->Terminate(
-      inbound_id1, MessageUnsubscribe::Reason::kInvalid);
+  return server_->Terminate(inbound_id1, MessageUnsubscribe::Reason::kInvalid);
 }
 
 void RocketeerServerWrapper::Close() {

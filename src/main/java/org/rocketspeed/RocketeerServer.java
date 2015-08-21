@@ -28,8 +28,8 @@ public class RocketeerServer implements AutoCloseable {
           @Override
           public void handleNewSubscription(
               InboundID inboundId, SubscriptionParameters params) {
-            rocketeer.handleNewSubscription(inboundId, params);
             activeSubscriptions.put(inboundId, params);
+            rocketeer.handleNewSubscription(inboundId, params);
           }
 
           @Override
