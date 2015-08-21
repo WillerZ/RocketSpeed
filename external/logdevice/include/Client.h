@@ -289,7 +289,7 @@ public:
    *                          log, so records with LSNs less than or equal to
    *                          'lsn' might still be delivered).
    */
-  int trim(logid_t logid, lsn_t lsn) noexcept;
+  int trimSync(logid_t logid, lsn_t lsn) noexcept;
 
 
   /**

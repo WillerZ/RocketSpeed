@@ -44,7 +44,7 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
   auto client = cluster->createClient();
   lsn_t now_lsn = client->appendSync(logid_t(1), payload(""));
   ASSERT_NE(now_lsn, LSN_INVALID);
-  ASSERT_EQ(client->trim(logid_t(1), now_lsn), 0);
+  ASSERT_EQ(client->trimSync(logid_t(1), now_lsn), 0);
   return client;
 }
 
@@ -228,7 +228,7 @@ TEST(MockLogDeviceTest, Trim) {
   ASSERT_NE(lsn[3] = client->appendSync(logid, payload("test3")), LSN_INVALID);
 
   // Trim away the first two messages.
-  client->trim(logid, lsn[1]);
+  client->trimSync(logid, lsn[1]);
 
   auto reader = client->createAsyncReader();
   port::Semaphore checkpoint;
@@ -304,7 +304,7 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
     std::this_thread::sleep_for(std::chrono::microseconds(100));
     if (i % 25 == 0) {
       // Trim the log every so often to test reading while trimming also.
-      client->trim(logid, std::min(lsn1, lsn2) - 1);
+      client->trimSync(logid, std::min(lsn1, lsn2) - 1);
     }
   }
 

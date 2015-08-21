@@ -177,7 +177,7 @@ Status LogDeviceStorage::AppendAsync(LogID id,
 
 Status LogDeviceStorage::Trim(LogID id,
                               SequenceNumber seqno) {
-  int result = client_->trim(facebook::logdevice::logid_t(id), seqno);
+  int result = client_->trimSync(facebook::logdevice::logid_t(id), seqno);
   if (result != 0) {
     return LogDeviceErrorToStatus(facebook::logdevice::err);
   }

@@ -175,7 +175,7 @@ void Client::setTimeout(std::chrono::milliseconds timeout) noexcept {
   impl()->timeout_ = timeout;
 }
 
-int Client::trim(logid_t logid, lsn_t lsn) noexcept {
+int Client::trimSync(logid_t logid, lsn_t lsn) noexcept {
   // Find file offset to trim to.
   std::string fname = LogFilename(logid);
   uint64_t offset = 0;
