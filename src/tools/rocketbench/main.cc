@@ -404,7 +404,7 @@ int main(int argc, char** argv) {
   for (auto hostname : rocketspeed::SplitString(FLAGS_pilot_hostnames)) {
     HostId resolved;
     auto st = HostId::Resolve(
-        hostname, static_cast<uint16_t>(FLAGS_copilot_port), &resolved);
+        hostname, static_cast<uint16_t>(FLAGS_pilot_port), &resolved);
     if (!st.ok()) {
       LOG_ERROR(info_log, "%s", st.ToString().c_str());
       return 1;
