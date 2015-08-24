@@ -24,6 +24,7 @@ DECLARE_int32(copilot_port);
 DECLARE_string(loglevel);
 DECLARE_string(rs_log_dir);
 DECLARE_bool(log_to_stderr);
+DECLARE_bool(supervisor);
 
 namespace rocketspeed {
 
@@ -88,6 +89,9 @@ class RocketSpeed {
   ControlTower* GetControlTower() { return tower_.get(); }
 
   Statistics GetStatisticsSync();
+
+  /** SupervisorLoop **/
+  SupervisorLoop* GetSupervisorLoop() { return supervisor_loop_.get(); }
 
  protected:
   Env* env_;

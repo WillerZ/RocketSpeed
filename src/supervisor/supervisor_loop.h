@@ -57,6 +57,8 @@ class SupervisorLoop {
   Status WaitUntilRunning(std::chrono::seconds timeout =
                             std::chrono::seconds(10));
 
+  std::string ExecuteCommand(std::string cmd);
+
  private:
   explicit SupervisorLoop(SupervisorOptions opts);
 
@@ -70,8 +72,6 @@ class SupervisorLoop {
   static void ShutdownCallback(int listener, short event, void* arg);
   static void CommandCallback(bufferevent *bev, void *arg);
   static void ErrorCallback(bufferevent *bev, short error, void *arg);
-
-  std::string ExecuteCommand(std::string cmd);
 
   // Passed options
   SupervisorOptions options_;
