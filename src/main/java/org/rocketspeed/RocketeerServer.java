@@ -23,7 +23,7 @@ public class RocketeerServer implements AutoCloseable {
     rocketeerServer.register(
         new Rocketeer() {
           private final Map<InboundID, SubscriptionParameters> activeSubscriptions =
-              new HashMap<>();
+              new HashMap<InboundID, SubscriptionParameters>();
 
           @Override
           public void handleNewSubscription(
