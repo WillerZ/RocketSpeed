@@ -26,7 +26,7 @@
 #include "src/util/common/fixed_configuration.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/host_id.h"
-#include "src/util/parsing.h"
+#include "src/util/common/parsing.h"
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
 #include "src/util/common/client_env.h"

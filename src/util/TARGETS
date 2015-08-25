@@ -10,7 +10,6 @@ cpp_library(
         'hostmap.cc',
         'log_buffer.cc',
         'logging.cc',
-        'parsing.cc',
         'scoped_file_lock.cc',
         'storage.cc',
         'testharness.cc',
