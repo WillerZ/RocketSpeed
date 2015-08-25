@@ -760,6 +760,38 @@ TEST(Messaging, TimeoutTest) {
   ASSERT_EQ(st.ToString(), "Timed out: Queue sizes = 1, 1, 2, 1");
 }
 
+TEST(Messaging, ConnectTimeout) {
+  MsgLoop::Options opts;
+  opts.event_loop.connect_timeout = std::chrono::milliseconds(200);
+  MsgLoop loop(env_, env_options_, -1, 1, info_log_, "loop", opts);
+  ASSERT_OK(loop.Initialize());
+
+  // Register callback for a goodbye message.
+  port::Semaphore goodbye;
+  std::map<MessageType, MsgCallbackType> callbacks = {
+    {MessageType::mGoodbye, [&](std::unique_ptr<Message> msg,
+                                StreamID origin) {
+      goodbye.Post();
+    }},
+  };
+  loop.RegisterCallbacks(callbacks);
+
+  // Start loop.
+  MsgLoopThread t1(env_, &loop, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  // Send a message to a bad host (10.0.0.0 is non-routable).
+  HostId bad_host;
+  ASSERT_OK(HostId::CreateFromIP("10.0.0.0", 666, &bad_host));
+  StreamSocket socket(loop.CreateOutboundStream(bad_host, 0));
+  MessagePing msg(Tenant::GuestTenant, MessagePing::PingType::Request, "ping");
+  ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+
+  // Check that we receive a goodbye, but not immediately.
+  ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.connect_timeout / 2));
+  ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.connect_timeout * 2));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

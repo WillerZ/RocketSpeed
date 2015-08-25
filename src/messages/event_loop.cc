@@ -126,6 +126,7 @@ class SocketEvent {
   }
 
   ~SocketEvent() {
+    assert(!event_loop_->connect_timeout_.Contains(this));
     event_loop_->thread_check_.Check();
     LOG_INFO(event_loop_->GetLog(),
              "Closing fd(%d)",
@@ -163,6 +164,34 @@ class SocketEvent {
     list_handle_ = it;
   }
 
+  /**
+   * Does everything necessary to close a socket connection: removes streams,
+   * cleans up connection cache, dispatches goodbyes, and frees the SocketEvent.
+   *
+   * @param sev The SocketEvent to disconnect.
+   */
+  static void Disconnect(SocketEvent* sev) {
+    // Inform MsgLoop that clients have disconnected.
+    auto origin_type = sev->was_initiated_
+                           ? MessageGoodbye::OriginType::Server
+                           : MessageGoodbye::OriginType::Client;
+
+    // Remove and close streams that were assigned to this connection.
+    EventLoop* event_loop = sev->event_loop_;  // make a copy, sev is destroyed.
+    auto globals = event_loop->stream_router_.RemoveConnection(sev);
+    // Delete the socket event.
+    event_loop->teardown_connection(sev);
+    for (StreamID global : globals) {
+      // We send goodbye using the global stream IDs, as these are only
+      // known by the entity using the loop.
+      std::unique_ptr<Message> msg(
+        new MessageGoodbye(Tenant::InvalidTenant,
+                           MessageGoodbye::Code::SocketError,
+                           origin_type));
+      event_loop->Dispatch(std::move(msg), global);
+    }
+  }
+
  private:
   SocketEvent(EventLoop* event_loop, int fd, bool initiated)
   : hdr_idx_(0)
@@ -171,7 +200,8 @@ class SocketEvent {
   , fd_(fd)
   , event_loop_(event_loop)
   , write_ev_added_(false)
-  , was_initiated_(initiated) {
+  , was_initiated_(initiated)
+  , timeout_cancelled_(false) {
     // Can only add events from the event loop thread.
     event_loop->thread_check_.Check();
 
@@ -199,28 +229,6 @@ class SocketEvent {
       });
   }
 
-  static void Disconnect(SocketEvent* sev) {
-    // Inform MsgLoop that clients have disconnected.
-    auto origin_type = sev->was_initiated_
-                           ? MessageGoodbye::OriginType::Server
-                           : MessageGoodbye::OriginType::Client;
-
-    // Remove and close streams that were assigned to this connection.
-    EventLoop* event_loop = sev->event_loop_;  // make a copy, sev is destroyed.
-    auto globals = event_loop->stream_router_.RemoveConnection(sev);
-    // Delete the socket event.
-    event_loop->teardown_connection(sev);
-    for (StreamID global : globals) {
-      // We send goodbye using the global stream IDs, as these are only
-      // known by the entity using the loop.
-      std::unique_ptr<Message> msg(
-        new MessageGoodbye(Tenant::InvalidTenant,
-                           MessageGoodbye::Code::SocketError,
-                           origin_type));
-      event_loop->Dispatch(std::move(msg), global);
-    }
-  }
-
   void ProcessHeartbeats() {
     if (event_loop_->heartbeat_enabled_) {
       event_loop_->heartbeat_.ProcessExpired(
@@ -232,6 +240,13 @@ class SocketEvent {
 
   Status WriteCallback() {
     event_loop_->thread_check_.Check();
+
+    if (!timeout_cancelled_) {
+      // This socket is now writable, so we can cancel the connect timeout.
+      event_loop_->connect_timeout_.Erase(this);
+      timeout_cancelled_ = true;
+    }
+
     assert(send_queue_.size() > 0);
 
     // Sanity check stats.
@@ -485,6 +500,8 @@ class SocketEvent {
   EventLoop* event_loop_;
   bool write_ev_added_;    // is the write event added?
   bool was_initiated_;   // was this connection initiated by us?
+  bool timeout_cancelled_;   // have we removed from EventLoop connect_timeout_?
+
   /**
    * A remote destination, if non-empty the socket can be reused by anyone, who
    * wants to talk the remote host.
@@ -891,6 +908,16 @@ void EventLoop::Run() {
   LOG_VITAL(info_log_, "Starting EventLoop at port %d", port_number_);
   info_log_->Flush();
 
+  // Register a timer for checking expired connections.
+  RegisterTimerCallback(
+    [this] () {
+      connect_timeout_.ProcessExpired(
+        options_.connect_timeout,
+        &SocketEvent::Disconnect,
+        -1);
+    },
+    options_.connect_timeout);
+
   // Start the event loop.
   // This will not exit until Stop is called, or some error
   // happens within libevent.
@@ -1119,6 +1146,7 @@ Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
 // Removes an socket event created by setup_connection.
 void EventLoop::teardown_connection(SocketEvent* sev) {
   thread_check_.Check();
+  connect_timeout_.Erase(sev);
   all_sockets_.erase(sev->GetListHandle());
   active_connections_.fetch_sub(1, std::memory_order_acq_rel);
 }
@@ -1152,6 +1180,7 @@ EventLoop::setup_connection(const HostId& destination) {
   if (!sev) {
     return nullptr;
   }
+  connect_timeout_.Add(sev.get());
   all_sockets_.emplace_front(std::move(sev));
   all_sockets_.front()->SetListHandle(all_sockets_.begin());
   active_connections_.fetch_add(1, std::memory_order_acq_rel);
@@ -1238,7 +1267,8 @@ EventLoop::EventLoop(BaseEnv* env,
                      AcceptCallbackType accept_callback,
                      StreamAllocator allocator,
                      EventLoop::Options options)
-    : env_(env)
+    : options_(std::move(options))
+    , env_(env)
     , env_options_(env_options)
     , port_number_(port_number)
     , running_(false)
@@ -1252,10 +1282,10 @@ EventLoop::EventLoop(BaseEnv* env,
     , stream_router_(allocator.Split())
     , outbound_allocator_(std::move(allocator))
     , active_connections_(0)
-    , stats_(options.stats_prefix)
-    , queue_stats_(std::make_shared<QueueStats>(options.stats_prefix +
+    , stats_(options_.stats_prefix)
+    , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix +
                                                 ".queues"))
-    , default_command_queue_size_(options.command_queue_size) {
+    , default_command_queue_size_(options_.command_queue_size) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
       std::unique_ptr<Command> command) {
@@ -1270,9 +1300,9 @@ EventLoop::EventLoop(BaseEnv* env,
     static_cast<ExecuteCommand*>(command.get())->Execute();
   };
 
-  heartbeat_enabled_ = options.heartbeat_enabled;
-  heartbeat_timeout_ = options.heartbeat_timeout;
-  heartbeat_expire_batch_ = options.heartbeat_expire_batch;
+  heartbeat_enabled_ = options_.heartbeat_enabled;
+  heartbeat_timeout_ = options_.heartbeat_timeout;
+  heartbeat_expire_batch_ = options_.heartbeat_expire_batch;
   heartbeat_expired_callback_ =
     [this](StreamID global) {
       std::unique_ptr<Message> msg(

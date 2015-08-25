@@ -359,11 +359,15 @@ class EventLoop {
     int heartbeat_expire_batch = -1;
     // whether the stream heartbeat check is enabled
     bool heartbeat_enabled = false;
+    // timeout for asynchronous ::connect calls
+    std::chrono::milliseconds connect_timeout{10000};
   };
 
  private:
   friend class SocketEvent;
   friend class StreamRouter;
+
+  const Options options_;
 
   // Internal status of the EventLoop.
   // If something fatally fails internally then the event loop will stop
@@ -433,6 +437,12 @@ class EventLoop {
   // the callback invoked on the expired streams in the heartbeat_. it should
   // be responsible for closing the stream properly
   std::function<void(StreamID)> heartbeat_expired_callback_;
+
+  // Timeouts for connect calls.
+  // Non-blocking connects do eventually timeout after ~2 minutes, but this
+  // is too long, and generally non-configurable, so we actively close the
+  // socket if it doesn't become writable after some time.
+  TimeoutList<SocketEvent*> connect_timeout_;
 
   // Timer callbacks.
   struct Timer {
