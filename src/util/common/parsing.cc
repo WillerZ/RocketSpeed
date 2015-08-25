@@ -5,6 +5,7 @@
 //
 #include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace rocketspeed {
@@ -21,6 +22,17 @@ std::vector<std::string> SplitString(const std::string& s, char delim = ',') {
     }
   }
   return r;
+}
+
+std::unordered_map<std::string, std::string> ParseMap(const std::string& s) {
+  auto list = SplitString(s, ';');
+  std::unordered_map<std::string, std::string> map;
+  for (const auto& entry : list) {
+    auto pair = SplitString(entry, '=');
+    pair.resize(2);
+    map.emplace(pair[0], pair[1]);
+  }
+  return map;
 }
 
 }  // namespace rocketspeed

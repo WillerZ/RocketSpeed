@@ -13,6 +13,7 @@ cpp_binary(
     ],
     deps = [
         '@/external/gflags:gflags',
+        '@/rocketspeed/fb:configuration_create',
         '@/rocketspeed/github/src/client:client',
         '@/rocketspeed/github/src/test:test_cluster',
         '@/rocketspeed/github/src/port:port',

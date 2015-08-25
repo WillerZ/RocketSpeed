@@ -39,11 +39,14 @@ DEFINE_bool(start_local_server, false, "starts an embedded rocketspeed server");
 DEFINE_string(storage_url, "", "Storage service URL for local server");
 
 DEFINE_int32(num_threads, 8, "number of threads");
+DEFINE_string(config,
+              "",
+              "Configuration string, if absent uses pilot and copilot lists");
 DEFINE_string(pilot_hostnames, "localhost", "hostnames of pilots");
 DEFINE_string(copilot_hostnames, "localhost", "hostnames of copilots");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
-DEFINE_int32(client_workers, 32, "number of client workers");
+DEFINE_uint64(client_workers, 32, "number of client workers");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 100, "number of topics");
 DEFINE_int64(num_messages, 1000, "number of messages to send");
@@ -336,16 +339,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (FLAGS_pilot_port > 65535 || FLAGS_pilot_port < 0) {
-    fprintf(stderr, "pilot_port must be 0-65535.\n");
-    return 1;
-  }
-
-  if (FLAGS_copilot_port > 65535 || FLAGS_copilot_port < 0) {
-    fprintf(stderr, "copilot_port must be 0-65535.\n");
-    return 1;
-  }
-
   if (FLAGS_message_size <= 0 || FLAGS_message_size > 1024*1024) {
     fprintf(stderr, "message_size must be 0-1MB.\n");
     return 1;
@@ -572,17 +565,28 @@ int main(int argc, char** argv) {
   };
 
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;
-  size_t num_clients = std::max(pilots.size(), copilots.size());
-  for (size_t i = 0; i < num_clients; ++i) {
-    // Create config for this client by picking pilot and copilot in a round
-    // robin fashion.
+  for (size_t i = 0; i < FLAGS_client_workers; ++i) {
     rocketspeed::ClientOptions options;
     options.info_log = info_log;
-    options.num_workers = FLAGS_client_workers;
-    options.config =
-      std::make_shared<rocketspeed::FixedConfiguration>(
-        pilots[i % pilots.size()],
-        copilots[i % copilots.size()]);
+    options.num_workers = 1;
+
+    if (!FLAGS_config.empty()) {
+      // Use provided configuration string.
+      std::unique_ptr<Configuration> config;
+      auto st = rocketspeed::Configuration::CreateConfiguration(
+          info_log, FLAGS_config, &config);
+      if (!st.ok()) {
+        LOG_FATAL(info_log,
+                  "Failed to parse configuration: %s",
+                  st.ToString().c_str());
+        return 1;
+      }
+      options.config = std::move(config);
+    } else {
+      // Fall back to picking pilot and copilot in a round robin fashion.
+      options.config = std::make_shared<rocketspeed::FixedConfiguration>(
+          pilots[i % pilots.size()], copilots[i % copilots.size()]);
+    }
 
     std::unique_ptr<rocketspeed::ClientImpl> client;
     // Create the client.

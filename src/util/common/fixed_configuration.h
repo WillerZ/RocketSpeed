@@ -19,6 +19,9 @@ namespace rocketspeed {
  */
 class FixedConfiguration : public Configuration {
  public:
+  static Status CreateConfiguration(const std::string& config_str,
+                                    std::unique_ptr<Configuration>* out);
+
   FixedConfiguration(HostId pilot, HostId copilot);
 
   Status GetPilot(HostId* host_out) const override;

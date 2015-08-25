@@ -21,6 +21,7 @@
 namespace rocketspeed {
 
 class HostId;
+class Logger;
 
 /**
  * A unique ID for this RocketSpeed namespace. Each namespace can have its own
@@ -246,6 +247,13 @@ enum Tenant : TenantID {
  */
 class Configuration {
  public:
+  /**
+   * Factory method for creating Configuration from human-readable string.
+   */
+  static Status CreateConfiguration(const std::shared_ptr<Logger>& info_log,
+                                    const std::string& config_str,
+                                    std::unique_ptr<Configuration>* out);
+
   virtual ~Configuration() {}
 
   /**

@@ -5,19 +5,36 @@
 //
 #include "host_id.h"
 
+#include <climits>
 #include <cstdint>
-#include <string.h>
+#include <cstring>
 #include <string>
 
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "src/util/common/hash.h"
+#include "src/util/common/parsing.h"
 
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
 namespace rocketspeed {
+
+Status HostId::Resolve(const std::string& str, HostId* out) {
+  auto host_and_port = SplitString(str, ':');
+  if (host_and_port.size() != 2) {
+    return Status::InvalidArgument("Malformed or missing port");
+  }
+  const auto& port_str = host_and_port[1];
+  char* end_ptr;
+  long int port_val = strtol(port_str.c_str(), &end_ptr, 10);
+  if (port_val < 0 || port_val > 65535 ||
+      end_ptr != port_str.c_str() + port_str.length()) {
+    return Status::InvalidArgument("Invalid port: " + port_str);
+  }
+  return Resolve(host_and_port[0], static_cast<uint16_t>(port_val), out);
+}
 
 Status HostId::Resolve(const std::string& hostname,
                        uint16_t port,
@@ -100,7 +117,7 @@ Status HostId::ResolveInternal(const std::string& hostname,
 }
 
 HostId::HostId(const sockaddr* addr, socklen_t addrlen, std::string description)
-    : addrlen_(addrlen), description_(std::move(description)) {
+: addrlen_(addrlen), description_(std::move(description)) {
   assert(addrlen_ > 0);
   assert(sizeof(storage_) >= addrlen_);
   memset(&storage_, 0, sizeof(storage_));

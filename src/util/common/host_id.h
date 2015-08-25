@@ -20,6 +20,12 @@ class Status;
 /** Address of a remote service. */
 class HostId {
  public:
+  /**
+   * Resolves host address and port from provided host:port string, performs DNS
+   * resolution if necessary.
+   */
+  static Status Resolve(const std::string& host_and_port, HostId* out);
+
   static Status Resolve(const std::string& hostname,
                         uint16_t port,
                         HostId* out);
