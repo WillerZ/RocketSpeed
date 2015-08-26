@@ -1343,7 +1343,7 @@ EventLoop::Stats::Stats(const std::string& prefix) {
   partial_socket_writes = all.AddCounter(prefix + ".partial_socket_writes");
   for (int i = 0; i < int(MessageType::max) + 1; ++i) {
     messages_received[i] = all.AddCounter(
-      prefix + ".messages_received." + kMessageTypeNames[i]);
+      prefix + ".messages_received." + MessageTypeName(MessageType(i)));
   }
 }
 

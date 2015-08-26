@@ -54,6 +54,10 @@ inline bool ValidateEnum(MessageType e) {
 
 extern const char* const kMessageTypeNames[size_t(MessageType::max) + 1];
 
+inline const char* MessageTypeName(MessageType type) {
+  return ValidateEnum(type) ? kMessageTypeNames[size_t(type)] : "invalid";
+}
+
 /*
  * The metadata messages can be of two subtypes
  */

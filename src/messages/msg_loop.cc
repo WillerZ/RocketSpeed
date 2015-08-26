@@ -41,8 +41,8 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
   // what message have we received?
   MessageType type = msg->GetMessageType();
   LOG_DEBUG(info_log_,
-            "Received message %d at %s",
-            static_cast<int>(type),
+            "Received message %s at %s",
+            MessageTypeName(type),
             hostid_.ToString().c_str());
 
   // Search for a callback method corresponding to this msg type
