@@ -107,7 +107,7 @@ TEST(RocketeerTest, SubscribeUnsubscribe) {
   server_->Register(&rocketeer);
   ASSERT_OK(server_->Start());
 
-  auto client = MockClient({});
+  auto client = MockClient(std::map<MessageType, MsgCallbackType>());
   auto socket = client.msg_loop->CreateOutboundStream(server_addr_, 0);
 
   // Subscribe.
