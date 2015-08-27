@@ -572,16 +572,14 @@ int main(int argc, char** argv) {
 
     if (!FLAGS_config.empty()) {
       // Use provided configuration string.
-      std::unique_ptr<Configuration> config;
       auto st = rocketspeed::Configuration::CreateConfiguration(
-          info_log, FLAGS_config, &config);
+          info_log, FLAGS_config, &options.config);
       if (!st.ok()) {
         LOG_FATAL(info_log,
                   "Failed to parse configuration: %s",
                   st.ToString().c_str());
         return 1;
       }
-      options.config = std::move(config);
     } else {
       // Fall back to picking pilot and copilot in a round robin fashion.
       options.config = std::make_shared<rocketspeed::FixedConfiguration>(

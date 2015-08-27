@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -253,6 +254,17 @@ class Configuration {
   static Status CreateConfiguration(const std::shared_ptr<Logger>& info_log,
                                     const std::string& config_str,
                                     std::unique_ptr<Configuration>* out);
+
+  static Status CreateConfiguration(const std::shared_ptr<Logger>& info_log,
+                                    const std::string& config_str,
+                                    std::shared_ptr<Configuration>* out) {
+    std::unique_ptr<Configuration> config;
+    Status st = CreateConfiguration(info_log, config_str, &config);
+    if (st.ok()) {
+      *out = std::move(config);
+    }
+    return st;
+  }
 
   virtual ~Configuration() {}
 
