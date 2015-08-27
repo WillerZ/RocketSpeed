@@ -288,7 +288,9 @@ bool BatchedRead<Item>::Read(Item& item) {
     Timestamped<Item> entry;
     bool success = queue_->queue_.read(entry);
     assert(success);
-    ((void)success);
+    if (!success) {
+      return false;
+    }
     auto now = std::chrono::steady_clock::now();
     auto delta = now - entry.timestamp;
     auto micros = std::chrono::duration_cast<std::chrono::microseconds>(delta);
