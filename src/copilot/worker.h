@@ -167,6 +167,10 @@ class CopilotWorker {
   void ProcessGap(std::unique_ptr<Message> msg,
                   StreamID origin);
 
+  // Forward tail senqo to subscribers.
+  void ProcessTailSeqno(std::unique_ptr<Message> msg,
+                        StreamID origin);
+
   // Remove all subscriptions for a client.
   void ProcessGoodbye(std::unique_ptr<Message> msg,
                       StreamID origin);

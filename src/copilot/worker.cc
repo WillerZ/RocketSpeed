@@ -98,6 +98,10 @@ CopilotWorker::WorkerCommand(LogID logid,
           ProcessGap(std::move(message), origin);
         } break;
 
+        case MessageType::mTailSeqno: {
+          ProcessTailSeqno(std::move(message), origin);
+        } break;
+
         case MessageType::mSubscribe: {
           auto subscribe = static_cast<MessageSubscribe*>(message.get());
           ProcessSubscribe(subscribe->GetTenantID(),
@@ -372,6 +376,62 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       // received messages then we can use that as a more accurate tail
       // position, and avoid a resubscribe.
     }
+  } else {
+    stats_.gap_on_unsubscribed_topic->Add(1);
+  }
+}
+
+void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
+                                     StreamID origin) {
+  MessageTailSeqno* msg = static_cast<MessageTailSeqno*>(message.get());
+  // Get the list of subscriptions for this topic.
+  TopicUUID uuid(msg->GetNamespace(), msg->GetTopicName());
+  LOG_DEBUG(options_.info_log,
+            "Copilot received tail senqo %" PRIu64 " for %s",
+            msg->GetSequenceNumber(),
+            uuid.ToString().c_str());
+  auto it = topics_.find(uuid);
+  if (it != topics_.end()) {
+    TopicState& topic = it->second;
+    const auto next_seqno = msg->GetSequenceNumber();
+
+    // Advance all towers subscribed at 0.
+    AdvanceTowers(&topic, 0, next_seqno, origin);
+
+    // Send to all subscribers subscribed at 0.
+    for (auto& sub : topic.subscriptions) {
+      StreamID recipient = sub->stream_id;
+
+      if (sub->seqno != 0) {
+        continue;
+      }
+
+      // Send gap to the client.
+      MessageDeliverGap gap(sub->tenant_id,
+                            sub->sub_id,
+                            GapType::kBenign);
+      gap.SetSequenceNumbers(0, next_seqno - 1);
+      auto command = options_.msg_loop->ResponseCommand(gap, recipient);
+      if (client_queues_[sub->worker_id]->Write(command)) {
+        sub->seqno = next_seqno;
+        ++topic.gaps_sent;
+
+        LOG_DEBUG(options_.info_log,
+                 "Sent tail senqo %" PRIu64
+                 " for subscription ID(%" PRIu64 ") %s to %llu",
+                 next_seqno,
+                 gap.GetSubID(),
+                 uuid.ToString().c_str(),
+                 recipient);
+      } else {
+        LOG_WARN(options_.info_log,
+                 "Failed to distribute tail seqno to %llu",
+                 recipient);
+      }
+    }
+    // Now that we know tail seqno, we may need to actually subscribe to it
+    // (if any existing subscription is ahead of that point).
+    UpdateTowerSubscriptions(uuid, topic);
   } else {
     stats_.gap_on_unsubscribed_topic->Add(1);
   }

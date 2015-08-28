@@ -271,6 +271,47 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   }
 }
 
+void Copilot::ProcessTailSeqno(std::unique_ptr<Message> msg, StreamID origin) {
+  options_.msg_loop->ThreadCheck();
+
+  const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
+
+  // get the tail seqno message
+  MessageTailSeqno* tail_seqno = static_cast<MessageTailSeqno*>(msg.get());
+
+  LOG_DEBUG(options_.info_log,
+            "Received tail seqno %" PRIu64 " for Topic(%s,%s)",
+            tail_seqno->GetSequenceNumber(),
+            tail_seqno->GetNamespace().c_str(),
+            tail_seqno->GetTopicName().c_str());
+
+  // map the topic to a logid
+  LogID logid;
+  Status st = options_.log_router->GetLogID(tail_seqno->GetNamespace(),
+                                            tail_seqno->GetTopicName(),
+                                            &logid);
+  if (!st.ok()) {
+    LOG_WARN(options_.info_log,
+             "Unable to map msg to logid %s",
+             st.ToString().c_str());
+    return;
+  }
+
+  // calculate the destination worker
+  int worker_id = GetLogWorker(logid);
+  auto& worker = workers_[worker_id];
+
+  // forward message to worker
+  auto command =
+    worker->WorkerCommand(logid, std::move(msg), event_loop_worker, origin);
+  auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
+  if (!queue->Write(command)) {
+    LOG_WARN(options_.info_log,
+        "Worker %d queue is full.",
+        static_cast<int>(worker_id));
+  }
+}
+
 void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
@@ -409,6 +450,10 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   cb[MessageType::mGap] = [this] (std::unique_ptr<Message> msg,
                                   StreamID origin) {
     ProcessGap(std::move(msg), origin);
+  };
+  cb[MessageType::mTailSeqno] = [this] (std::unique_ptr<Message> msg,
+                                        StreamID origin) {
+    ProcessTailSeqno(std::move(msg), origin);
   };
   cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg,
                                       StreamID origin) {

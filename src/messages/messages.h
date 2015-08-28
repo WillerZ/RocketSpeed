@@ -43,9 +43,10 @@ enum class MessageType : uint8_t {
   mDeliverGap = 0x0A,    // MessageDeliverGap
   mDeliverData = 0x0B,   // MessageDeliverData
   mFindTailSeqno = 0x0C, // MessageFindTailSeqno
+  mTailSeqno = 0x0D,     // MessageTailSeqno
 
   min = mPing,
-  max = mFindTailSeqno,
+  max = mTailSeqno,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -646,7 +647,7 @@ inline bool ValidateEnum(MessageGoodbye::OriginType e) {
 
 /**
  * A request for the tail sequence number.
- * Servers respond by sending a benign gap from 0-[tail seqno].
+ * Servers respond by sending a TailSeqno message.
  * The tail sequence number is computed with best effort.
  */
 class MessageFindTailSeqno final : public Message {
@@ -670,6 +671,40 @@ class MessageFindTailSeqno final : public Message {
  private:
   NamespaceID namespace_id_;
   Topic topic_name_;
+};
+
+/**
+ * Best effort estimate of tail sequence number on a topic.
+ * If TailSeqno reports sequence number N, then it is guaranteed that a
+ * subsequent publish will be to a sequence number >= N. There is no
+ * guaranteed lower bound on N.
+ */
+class MessageTailSeqno final : public Message {
+ public:
+  MessageTailSeqno(TenantID tenant_id,
+                   NamespaceID namespace_id,
+                   Topic topic_name,
+                   SequenceNumber seqno)
+      : Message(MessageType::mTailSeqno, tenant_id)
+      , namespace_id_(std::move(namespace_id))
+      , topic_name_(std::move(topic_name))
+      , seqno_(seqno) {}
+
+  MessageTailSeqno() : Message(MessageType::mTailSeqno) {}
+
+  const NamespaceID& GetNamespace() const { return namespace_id_; }
+
+  const Topic& GetTopicName() const { return topic_name_; }
+
+  SequenceNumber GetSequenceNumber() const { return seqno_; }
+
+  Slice Serialize() const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  NamespaceID namespace_id_;
+  Topic topic_name_;
+  SequenceNumber seqno_;
 };
 
 /**

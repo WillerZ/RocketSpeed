@@ -312,24 +312,22 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
         static_cast<MessageFindTailSeqno*>(msg_moved->get());
       if (status.ok()) {
         // Sequence number found, so send gap back to clinet.
-        MessageGap gap(req->GetTenantID(),
-                       req->GetNamespace(),
-                       req->GetTopicName(),
-                       GapType::kBenign,
-                       0,
-                       seqno - 1);
-        auto command = options_.msg_loop->ResponseCommand(gap, origin);
+        MessageTailSeqno response(req->GetTenantID(),
+                                  req->GetNamespace(),
+                                  req->GetTopicName(),
+                                  seqno);
+        auto command = options_.msg_loop->ResponseCommand(response, origin);
         auto& queues = find_latest_seqno_response_queues_[worker_id];
         if (queues->GetThreadLocal()->Write(command)) {
           LOG_DEBUG(options_.info_log,
-            "Sent latest seqno gap 0-%" PRIu64 " to %llu for Topic(%s,%s)",
-            seqno - 1,
+            "Sent latest seqno %" PRIu64 " to %llu for Topic(%s,%s)",
+            seqno,
             origin,
             req->GetNamespace().c_str(),
             req->GetTopicName().c_str());
         } else {
           LOG_WARN(options_.info_log,
-            "Failed to send latest seqno gap to %llu for Topic(%s,%s)",
+            "Failed to send latest seqno to %llu for Topic(%s,%s)",
             origin,
             req->GetNamespace().c_str(),
             req->GetTopicName().c_str());

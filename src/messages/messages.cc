@@ -37,6 +37,7 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "deliver_gap",
   "deliver_data",
   "find_tail_seqno",
+  "tail_seqno",
 };
 
  /**
@@ -149,6 +150,15 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mFindTailSeqno: {
       std::unique_ptr<MessageFindTailSeqno> msg(new MessageFindTailSeqno());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mTailSeqno: {
+      std::unique_ptr<MessageTailSeqno> msg(new MessageTailSeqno());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -620,6 +630,27 @@ Status MessageFindTailSeqno::DeSerialize(Slice* in) {
   }
   if (!GetTopicID(in, &namespace_id_, &topic_name_)) {
     return Status::InvalidArgument("Bad NamespaceID and/or TopicName");
+  }
+  return Status::OK();
+}
+
+Slice MessageTailSeqno::Serialize() const {
+  Message::Serialize();
+  PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
+  PutVarint64(&serialize_buffer__, seqno_);
+  return Slice(serialize_buffer__);
+}
+
+Status MessageTailSeqno::DeSerialize(Slice* in) {
+  Status st = Message::DeSerialize(in);
+  if (!st.ok()) {
+    return st;
+  }
+  if (!GetTopicID(in, &namespace_id_, &topic_name_)) {
+    return Status::InvalidArgument("Bad NamespaceID and/or TopicName");
+  }
+  if (!GetVarint64(in, &seqno_)) {
+    return Status::InvalidArgument("Bad sequence number");
   }
   return Status::OK();
 }

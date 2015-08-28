@@ -192,6 +192,20 @@ TEST(Messaging, FindTailSeqno) {
   ASSERT_EQ(msg2.GetTopicName(), msg1.GetTopicName());
 }
 
+TEST(Messaging, TailSeqno) {
+  MessageTailSeqno msg1(Tenant::GuestTenant,
+                        "TestNamespace",
+                        "TestTopic",
+                        123123);
+  Slice original = msg1.Serialize();
+  MessageTailSeqno msg2;
+  msg2.DeSerialize(&original);
+  ASSERT_EQ(msg2.GetTenantID(), (TenantID)Tenant::GuestTenant);
+  ASSERT_EQ(msg2.GetNamespace(), msg1.GetNamespace());
+  ASSERT_EQ(msg2.GetTopicName(), msg1.GetTopicName());
+  ASSERT_EQ(msg2.GetSequenceNumber(), msg1.GetSequenceNumber());
+}
+
 TEST(Messaging, MessageSubscribe) {
   MessageSubscribe msg1(Tenant::GuestTenant,
                               GuestNamespace,
