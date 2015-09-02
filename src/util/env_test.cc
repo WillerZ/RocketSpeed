@@ -661,19 +661,20 @@ class TestLogger : public Logger {
   virtual void Append(const char* format, va_list ap) override {
     log_count++;
 
-    char new_format[550];
+    char new_format[650];
     std::fill_n(new_format, sizeof(new_format), '2');
     {
       va_list backup_ap;
       va_copy(backup_ap, ap);
       int n = vsnprintf(new_format, sizeof(new_format) - 1, format, backup_ap);
-      // 48 bytes for extra information + bytes allocated
+      // 148 bytes for extra information + bytes allocated
+      int buffer_size = (512 - static_cast<int>(sizeof(struct timeval)));
 
       if (new_format[0] == '[') {
         // "[DEBUG] "
-        ASSERT_TRUE(n <= 56 + (512 - static_cast<int>(sizeof(struct timeval))));
+        ASSERT_TRUE(n <= 156 + buffer_size);
       } else {
-        ASSERT_TRUE(n <= 48 + (512 - static_cast<int>(sizeof(struct timeval))));
+        ASSERT_TRUE(n <= 148 + buffer_size);
       }
       va_end(backup_ap);
     }

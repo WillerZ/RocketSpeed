@@ -17,7 +17,7 @@
     ::rocketspeed::InfoLogLevel _log_level = (log_level_expr); \
     const auto& _info_log = (info_log_expr); \
     if (_info_log && _log_level >= _info_log->GetInfoLogLevel()) { \
-      _info_log->Log(_log_level, __VA_ARGS__); \
+      _info_log->Log(_log_level, __FILE__, __LINE__, __VA_ARGS__); \
       if (_log_level >= ::rocketspeed::InfoLogLevel::FATAL_LEVEL) { \
         _info_log->Flush(); \
       } \
@@ -133,6 +133,8 @@ class Logger {
    * By default entries are appended using pure virtual Append function.
    */
   virtual void Logv(const InfoLogLevel log_level,
+                    const char* filename,
+                    int line,
                     const char* format,
                     va_list ap) {
 
@@ -143,20 +145,26 @@ class Logger {
     char new_format[500];
     snprintf(new_format,
              sizeof(new_format) - 1,
-             "[%s] %s",
+             "[%s] %s:%d: %s",
              LogLevelToString(log_level),
+             basename(filename),
+             line,
              format);
     Append(new_format, ap);
   }
 
-  virtual void Log(const InfoLogLevel log_level, const char* format, ...) final
+  virtual void Log(const InfoLogLevel log_level,
+                   const char* filename,
+                   int line,
+                   const char* format,
+                   ...) final
 #if defined(__GNUC__) || defined(__clang__)
-      __attribute__((__format__(__printf__, 3, 4)))
+      __attribute__((__format__(__printf__, 5, 6)))
 #endif
   {
     va_list ap;
     va_start(ap, format);
-    Logv(log_level, format, ap);
+    Logv(log_level, filename, line, format, ap);
     va_end(ap);
   }
 
@@ -184,8 +192,16 @@ class Logger {
   void operator=(const Logger&);
 
   std::atomic<InfoLogLevel> log_level_;
-};
 
+  const char* Basename(const char* filename) {
+    const char* result = strrchr(filename, '/');
+    if (result == nullptr) {
+      return filename;
+    } else {
+      return result + 1;
+    }
+  }
+};
 
 /**
  * "Blackhole" logger implementation - doesn't log anything.
