@@ -53,37 +53,28 @@ TEST(ControlTowerTest, Subscribe) {
   LocalTestCluster cluster(info_log_, true, true, false);
   ASSERT_OK(cluster.GetStatus());
 
-  std::vector<TopicPair> topics;
-  const int num_topics = 5;
-
-  // create a few topics
-  for (int i = 0; i < num_topics; i++) {
-    // alternate between types
-    MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    NamespaceID ns = "test" + std::to_string(i);
-    topics.push_back(TopicPair(4 + i, std::to_string(i), type, ns));
-  }
-
   // create a client to communicate with the ControlTower
   MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "client");
   StreamSocket socket(
       loop.CreateOutboundStream(cluster.GetControlTower()->GetHostId(), 0));
   // Define a callback to process the subscribe response at the client
   loop.RegisterCallbacks({
-      {MessageType::mMetadata, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop.Initialize());
   MsgLoopThread t1(env_, &loop, "client");
   ASSERT_OK(loop.WaitUntilRunning());
 
-  // create a message
-  MessageMetadata meta1(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        topics);
-
-  // send message to control tower
-  ASSERT_OK(loop.SendRequest(meta1, &socket, 0));
+  // create a few topics
+  const int num_topics = 5;
+  for (int i = 0; i < num_topics; i++) {
+    MessageSubscribe subscribe(Tenant::GuestTenant,
+                               "test" + std::to_string(i),
+                               std::to_string(i),
+                               SequenceNumber(4 + i),
+                               SubscriptionID(i));
+    ASSERT_OK(loop.SendRequest(subscribe, &socket, 0));
+  }
 
   /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -103,22 +94,10 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   ASSERT_OK(cluster.GetStatus());
   auto ct = cluster.GetControlTower();
 
-  std::vector<TopicPair> topics;
-  int num_topics = 5;
-
-  // create a few topics
-  for (int i = 0; i < num_topics; i++) {
-    // alternate between types
-    MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    NamespaceID ns = "test" + std::to_string(i);
-    topics.push_back(TopicPair(4 + i, std::to_string(i), type, ns));
-  }
-
   // create a client to communicate with the ControlTower
   MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
   StreamSocket socket1(loop1.CreateOutboundStream(ct->GetHostId(), 0));
   loop1.RegisterCallbacks({
-      {MessageType::mMetadata, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
@@ -127,9 +106,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   ASSERT_OK(loop1.WaitUntilRunning());
 
   // first subscriber *******
-  MessageMetadata meta1(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        topics);
+  MessageSubscribe meta1(Tenant::GuestTenant, "test", "topic", 1, 1);
 
   // send message to control tower
   ASSERT_OK(loop1.SendRequest(meta1, &socket1, 0));
@@ -140,14 +117,12 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   int numopenlogs1 = GetNumOpenLogs(ct);
-  ASSERT_LE(numopenlogs1, num_topics);
-  ASSERT_NE(numopenlogs1, 0);
+  ASSERT_EQ(numopenlogs1, 1);
 
   // create second client to communicate with the ControlTower
   MsgLoop loop2(env_, env_options_, 58489, 1, info_log_, "loop2");
   StreamSocket socket2(loop2.CreateOutboundStream(ct->GetHostId(), 0));
   loop2.RegisterCallbacks({
-      {MessageType::mMetadata, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
   });
@@ -156,9 +131,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   ASSERT_OK(loop2.WaitUntilRunning());
 
   // The second subscriber subscribes to the same topics.
-  MessageMetadata meta2(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        topics);
+  MessageSubscribe meta2(Tenant::GuestTenant, "test", "topic", 2, 2);
 
   // send message to control tower
   ASSERT_OK(loop2.SendRequest(meta2, &socket2, 0));
@@ -169,19 +142,9 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(numopenlogs1, GetNumOpenLogs(ct));
 
-  // Create unsubscription request for all topics
-  topics.clear();
-  for (int i = 0; i < num_topics; i++) {
-    // alternate between types
-    MetadataType type = mUnSubscribe;
-    NamespaceID ns = "test" + std::to_string(i);
-    topics.push_back(TopicPair(4 + i, std::to_string(i), type, ns));
-  }
-
   // Unsubscribe all the topics from the first client.
-  MessageMetadata meta3(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        topics);
+  MessageUnsubscribe meta3(
+    Tenant::GuestTenant, 1, MessageUnsubscribe::Reason::kRequested);
 
   // send message to control tower
   ASSERT_OK(loop1.SendRequest(meta3, &socket1, 0));
@@ -193,9 +156,8 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   ASSERT_EQ(numopenlogs1, GetNumOpenLogs(ct));
 
   // Finally, unsubscribe from the second client too.
-  MessageMetadata meta4(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        topics);
+  MessageUnsubscribe meta4(
+    Tenant::GuestTenant, 2, MessageUnsubscribe::Reason::kRequested);
 
   // send message to control tower
   ASSERT_OK(loop2.SendRequest(meta4, &socket2, 0));

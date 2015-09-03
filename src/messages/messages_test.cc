@@ -58,45 +58,6 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetSequenceNumber(), 2000200020002000ULL);
 }
 
-TEST(Messaging, Metadata) {
-  std::string mymachine = "machine.com";
-  std::vector<TopicPair> topics;
-  int num_topics = 5;
-
-  // create a few topics
-  for (int i = 0; i < num_topics; i++)  {
-    // alternate between types
-    MetadataType type = (i % 2 == 0 ? mSubscribe : mUnSubscribe);
-    NamespaceID ns = "test" + std::to_string(i);
-    topics.push_back(TopicPair(3 + i, std::to_string(i), type, ns));
-  }
-
-  // create a message
-  MessageMetadata meta1(Tenant::GuestTenant,
-                        MessageMetadata::MetaType::Request,
-                        topics);
-
-  // serialize the message
-  Slice original = meta1.Serialize();
-
-  // un-serialize to a new message
-  MessageMetadata data2;
-  data2.DeSerialize(&original);
-
-  // verify that the new message is the same as original
-  ASSERT_EQ((TenantID)Tenant::GuestTenant, data2.GetTenantID());
-
-  // verify that the new message is the same as original
-  std::vector<TopicPair> nt = data2.GetTopicInfo();
-  ASSERT_EQ(nt.size(), topics.size());
-  for (unsigned int i = 0; i < topics.size(); i++) {
-    ASSERT_EQ(nt[i].seqno, topics[i].seqno);
-    ASSERT_EQ(nt[i].topic_name, topics[i].topic_name);
-    ASSERT_EQ(nt[i].topic_type, topics[i].topic_type);
-    ASSERT_EQ(nt[i].namespace_id, topics[i].namespace_id);
-  }
-}
-
 TEST(Messaging, DataAck) {
   HostId hostid(HostId::CreateLocal(200));
 
@@ -301,12 +262,6 @@ TEST(Messaging, ErrorHandling) {
   MessageData msg1(MessageType::mPublish,
                    tenant, "topic", nsid, "payload");
   TestMessage(msg1);
-
-  std::vector<TopicPair> topics = {{ 100, "topic", mSubscribe, nsid }};
-  MessageMetadata msg2(tenant,
-                       MessageMetadata::MetaType::Request,
-                       topics);
-  TestMessage(msg2);
 
   MessageDataAck::AckVector acks(1);
   MessageDataAck msg3(100, acks);

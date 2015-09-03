@@ -14,6 +14,8 @@ namespace rocketspeed {
  */
 struct TopicUUID {
  public:
+  TopicUUID() : routing_hash_(0) {}
+
   /**
    * Construct a TopicUUID from a namespace and topic.
    *

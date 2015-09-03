@@ -20,6 +20,7 @@
 #include "src/messages/stream_socket.h"
 #include "src/util/common/hash.h"
 #include "src/util/common/linked_map.h"
+#include "src/util/subscription_map.h"
 #include "src/util/timeout_list.h"
 #include "src/util/topic_uuid.h"
 
@@ -76,6 +77,32 @@ class CopilotWorker {
    * @param max Maximum number of subscriptions to return.
    */
   std::string GetSubscriptionInfo(std::string filter, int max) const;
+
+  /**
+   * Generates a unique SubscriptionID for a worker. The provided state will
+   * be advanced for the next call.
+   */
+  static SubscriptionID GenerateSubscriptionID(uint64_t* state,
+                                               int worker_id,
+                                               size_t num_workers) {
+    // Generates a unique ID for this copilot.
+    assert(state);
+    uint64_t local_id = (*state)++;
+    uint64_t global_id = static_cast<uint64_t>(worker_id);
+    uint64_t base = static_cast<uint64_t>(num_workers);
+    return global_id + local_id * base;
+  }
+
+  /**
+   * Finds the worker_id used to generate a subscription ID.
+   */
+  static int SubscriptionIDWorker(SubscriptionID sub_id,
+                                  size_t num_workers) {
+    // Finds worker_id used to generate subscription ID.
+    uint64_t base = static_cast<uint64_t>(num_workers);
+    uint64_t global_id = sub_id % base;
+    return static_cast<int>(global_id);
+  }
 
  private:
   struct Subscription;
@@ -154,14 +181,9 @@ class CopilotWorker {
                           int worker_id,
                           StreamID subscriber);
 
-  // Process a metadata response from control tower.
-  void ProcessMetadataResponse(const TopicPair& request,
-                               LogID logid,
-                               int worker_id);
-
   // Forward data to subscribers.
-  void ProcessDeliver(std::unique_ptr<Message> msg,
-                      StreamID origin);
+  void ProcessData(std::unique_ptr<Message> msg,
+                   StreamID origin);
 
   // Forward gap to subscribers.
   void ProcessGap(std::unique_ptr<Message> msg,
@@ -180,15 +202,19 @@ class CopilotWorker {
   // Closes stream to a control tower, and updates all affected subscriptions.
   void CloseControlTowerStream(StreamID stream);
 
-  // Sends a metadata request.
-  // Returns true if successful.
-  bool SendMetadata(TenantID tenant_id,
-                    MetadataType type,
-                    const TopicUUID& uuid,
-                    SequenceNumber seqno,
-                    StreamSocket* stream,
-                    int worker_id);
+  /** Sends a subscription message to a control tower. */
+  bool SendSubscribe(TenantID tenant_id,
+                     TopicUUID uuid,
+                     SequenceNumber seqno,
+                     StreamSocket* stream,
+                     SubscriptionID sub_id,
+                     int worker_id);
 
+  /** Sends an unsubscription message to a control tower. */
+  bool SendUnsubscribe(TenantID tenant_id,
+                       StreamSocket* stream,
+                       SubscriptionID sub_id,
+                       int worker_id);
 
 
   // Removes a single subscription.
@@ -217,9 +243,8 @@ class CopilotWorker {
   void AdvanceTowers(TopicState* topic,
                      SequenceNumber prev,
                      SequenceNumber next,
-                     StreamID origin);
-
-
+                     StreamID origin,
+                     SubscriptionID sub_id);
 
   /**
    * Gets control towers for a log. Potentially cached for performance.
@@ -269,13 +294,16 @@ class CopilotWorker {
 
     struct Tower {
       explicit Tower(StreamSocket* _stream,
+                     SubscriptionID _sub_id,
                      SequenceNumber _next_seqno,
                      int _worker_id)
       : stream(_stream)
+      , sub_id(_sub_id)
       , next_seqno(_next_seqno)
       , worker_id(_worker_id) {}
 
       StreamSocket* stream;       // Tower connection stream socket.
+      SubscriptionID sub_id;      // Subscription ID.
       SequenceNumber next_seqno;  // Next expected seqno (i.e. where subscribed)
       int worker_id;              // Worker ID for Tower.
     };
@@ -326,8 +354,6 @@ class CopilotWorker {
   std::unordered_map<HostId, std::unordered_map<int, StreamSocket>>
       control_tower_sockets_;
 
-
-
   // Maximum number of resubscriptions per ProcessTimerTick.
   uint64_t resubscriptions_per_tick_;
 
@@ -354,6 +380,9 @@ class CopilotWorker {
   // Cache of control tower mapping per log.
   mutable std::unordered_map<LogID, std::vector<const HostId*>>
     control_tower_cache_;
+
+  // State of subscription ID generator.
+  uint64_t next_sub_id_state_{0};
 
   /***
    * Re-subscription data structures
@@ -400,6 +429,8 @@ class CopilotWorker {
 
   std::unordered_map<TopicUUID,ResubscribeRequest*>
     active_resubscribe_requests_by_topic_;
+
+  SubscriptionMap<TopicUUID> sub_to_topic_;
 
   /***
    * Re-subscribe helper methods
@@ -454,7 +485,6 @@ class CopilotWorker {
       const SequenceNumber new_seqno,
       const bool have_zero_sub,
       bool force_resub = false);
-
 };
 
 

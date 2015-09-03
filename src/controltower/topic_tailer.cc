@@ -720,8 +720,8 @@ TopicTailer::TopicTailer(
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
-                       std::vector<HostNumber>)> on_message,
-    Options options) :
+                       std::vector<CopilotSub>)> on_message,
+    ControlTowerOptions::TopicTailer options) :
   env_(env),
   msg_loop_(msg_loop),
   worker_id_(worker_id),
@@ -791,29 +791,30 @@ Status TopicTailer::SendLogRecord(
       // Find subscribed hosts.
       TopicManager& topic_manager = topic_map_[log_id];
 
-      std::vector<HostNumber> hosts;
+      std::vector<CopilotSub> recipients;
       topic_manager.VisitSubscribers(
         uuid, prev_seqno, next_seqno,
         [&] (TopicSubscription* sub) {
-          const HostNumber hostnum = sub->GetHostNum();
-          hosts.emplace_back(hostnum);
+          const CopilotSub id = sub->GetID();
+          recipients.emplace_back(id);
           sub->SetSequenceNumber(next_seqno + 1);
           LOG_DEBUG(info_log_,
-            "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
+            "%s advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
             " Reader(%zu)",
-            int(hostnum),
+            id.ToString().c_str(),
             uuid.ToString().c_str(),
             next_seqno + 1,
             log_id,
             reader_id);
         });
 
-      if (!hosts.empty()) {
+      if (!recipients.empty()) {
         // Send message downstream.
         assert(data);
         data->SetSequenceNumbers(prev_seqno, next_seqno);
         stats_.log_records_with_subscriptions->Add(1);
-        on_message_(std::unique_ptr<Message>(data.release()), std::move(hosts));
+        on_message_(std::unique_ptr<Message>(data.release()),
+                                             std::move(recipients));
       } else {
         stats_.log_records_without_subscriptions->Add(1);
         LOG_DEBUG(info_log_,
@@ -839,27 +840,27 @@ Status TopicTailer::SendLogRecord(
           // bump_seqno is the last known seqno for the topic.
 
           // Find subscribed hosts between bump_seqno and next_seqno.
-          std::vector<HostNumber> bumped_hosts;
+          std::vector<CopilotSub> bumped_subscriptions;
           topic_manager.VisitSubscribers(
             topic, bump_seqno, next_seqno,
             [&] (TopicSubscription* sub) {
-              const HostNumber hostnum = sub->GetHostNum();
+              const CopilotSub id = sub->GetID();
               // Add host to list.
-              bumped_hosts.emplace_back(hostnum);
+              bumped_subscriptions.emplace_back(id);
 
               // Advance subscription.
               sub->SetSequenceNumber(next_seqno + 1);
               LOG_DEBUG(info_log_,
-                "Hostnum(%d) bumped to %s@%" PRIu64 " on Log(%" PRIu64 ")"
+                "%s bumped to %s@%" PRIu64 " on Log(%" PRIu64 ")"
                 " Reader(%zu)",
-                int(hostnum),
+                id.ToString().c_str(),
                 topic.ToString().c_str(),
                 next_seqno + 1,
                 log_id,
                 reader_id);
             });
 
-          if (!bumped_hosts.empty()) {
+          if (!bumped_subscriptions.empty()) {
             // Send gap message.
             Slice namespace_id;
             Slice topic_name;
@@ -871,8 +872,8 @@ Status TopicTailer::SendLogRecord(
                              GapType::kBenign,
                              bump_seqno,
                              next_seqno));
-            stats_.bumped_subscriptions->Add(bumped_hosts.size());
-            on_message_(std::move(trim_msg), std::move(bumped_hosts));
+            stats_.bumped_subscriptions->Add(bumped_subscriptions.size());
+            on_message_(std::move(trim_msg), std::move(bumped_subscriptions));
           }
         });
     } else {
@@ -937,16 +938,16 @@ Status TopicTailer::SendGapRecord(
         }
 
         // Find subscribed hosts.
-        std::vector<HostNumber> hosts;
+        std::vector<CopilotSub> recipients;
         topic_map_[log_id].VisitSubscribers(
           topic, prev_seqno, to,
           [&] (TopicSubscription* sub) {
-            hosts.emplace_back(sub->GetHostNum());
+            recipients.emplace_back(sub->GetID());
             sub->SetSequenceNumber(to + 1);
             LOG_DEBUG(info_log_,
-              "Hostnum(%d) advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
+              "%s advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
               " Reader(%zu)",
-              int(sub->GetHostNum()),
+              sub->GetID().ToString().c_str(),
               topic.ToString().c_str(),
               to,
               log_id,
@@ -954,7 +955,7 @@ Status TopicTailer::SendGapRecord(
           });
 
         // Send message.
-        if (!hosts.empty()){
+        if (!recipients.empty()){
           Slice namespace_id;
           Slice topic_name;
           topic.GetTopicID(&namespace_id, &topic_name);
@@ -966,7 +967,7 @@ Status TopicTailer::SendGapRecord(
                            prev_seqno,
                            to));
           stats_.gap_records_with_subscriptions->Add(1);
-          on_message_(std::move(msg), std::move(hosts));
+          on_message_(std::move(msg), std::move(recipients));
         } else {
           stats_.gap_records_without_subscriptions->Add(1);
         }
@@ -1027,8 +1028,8 @@ TopicTailer::CreateNewInstance(
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
-                       std::vector<HostNumber>)> on_message,
-    Options options,
+                       std::vector<CopilotSub>)> on_message,
+    ControlTowerOptions::TopicTailer options,
     TopicTailer** tailer) {
   *tailer = new TopicTailer(env,
                             msg_loop,
@@ -1043,7 +1044,7 @@ TopicTailer::CreateNewInstance(
 
 Status TopicTailer::AddSubscriber(const TopicUUID& topic,
                                   SequenceNumber start,
-                                  HostNumber hostnum) {
+                                  CopilotSub id) {
   thread_check_.Check();
   stats_.add_subscriber_requests->Add(1);
 
@@ -1066,7 +1067,7 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
     if (tail_seqno != 0) {
       // Can add subscriber immediately.
       stats_.add_subscriber_requests_at_0_fast->Add(1);
-      AddTailSubscriber(topic, hostnum, logid, tail_seqno);
+      AddTailSubscriber(topic, id, logid, tail_seqno);
     } else {
       // Otherwise do full FindLatestSeqno request.
       stats_.add_subscriber_requests_at_0_slow->Add(1);
@@ -1074,7 +1075,7 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
       // Create a callback to enqueue a subscribe command.
       // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
       // when converted to an std::function - could use an alloc pool for this.
-      auto callback = [this, topic, hostnum, logid] (Status status,
+      auto callback = [this, topic, id, logid] (Status status,
                                                      SequenceNumber seqno) {
         if (!status.ok()) {
           LOG_WARN(info_log_,
@@ -1086,8 +1087,8 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
 
         // This callback is invoked on the storage worker threads, so the
         // response needs to be forwarded back to the TopicTailer/Room thread.
-        bool sent = Forward([this, topic, hostnum, logid, seqno] () {
-          AddTailSubscriber(topic, hostnum, logid, seqno);
+        bool sent = Forward([this, topic, id, logid, seqno] () {
+          AddTailSubscriber(topic, id, logid, seqno);
 
           LOG_INFO(info_log_,
             "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
@@ -1104,9 +1105,9 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
 
         if (!sent) {
           LOG_WARN(info_log_,
-            "Failed to send %s@0 sub for HostNum(%d) to TopicTailer worker",
+            "Failed to send %s@0 sub for %s to TopicTailer worker",
             topic.ToString().c_str(),
-            hostnum);
+            id.ToString().c_str());
         }
       };
 
@@ -1118,23 +1119,30 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
           topic.ToString().c_str());
       } else {
         LOG_INFO(info_log_,
-          "Sent FindLatestSeqno request for Hostnum(%d) for %s",
-          hostnum,
+          "Sent FindLatestSeqno request for %s for %s",
+          id.ToString().c_str(),
           topic.ToString().c_str());
       }
     }
   } else {
     // Non-zero sequence number.
-    AddSubscriberInternal(topic, hostnum, logid, start);
+    AddSubscriberInternal(topic, id, logid, start);
   }
   return Status::OK();
 }
 
 // Stop reading from this log
-Status
-TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
+Status TopicTailer::RemoveSubscriber(CopilotSub id) {
   thread_check_.Check();
   stats_.remove_subscriber_requests->Add(1);
+
+  TopicUUID topic;
+  if (!stream_subscriptions_.MoveOut(id.stream_id, id.sub_id, &topic)) {
+    LOG_WARN(info_log_,
+      "Cannot remove unknown subscription %s",
+      id.ToString().c_str());
+    return Status::NotFound();
+  }
 
   // Map topic to log.
   LogID logid;
@@ -1144,21 +1152,19 @@ TopicTailer::RemoveSubscriber(const TopicUUID& topic, HostNumber hostnum) {
   }
 
   LOG_DEBUG(info_log_,
-    "Hostnum(%d) unsubscribed for %s",
-    int(hostnum),
+    "%s unsubscribed for %s",
+    id.ToString().c_str(),
     topic.ToString().c_str());
-  RemoveSubscriberInternal(topic, hostnum, logid);
+  RemoveSubscriberInternal(topic, id, logid);
+  stream_subscriptions_.Remove(id.stream_id, id.sub_id);
 
   return Status::OK();
 }
 
-Status TopicTailer::RemoveSubscriber(HostNumber hostnum) {
+Status TopicTailer::RemoveSubscriber(StreamID stream_id) {
   thread_check_.Check();
-  LOG_DEBUG(info_log_,
-    "Hostnum(%d) unsubscribed for all topics",
-    int(hostnum));
-  RemoveSubscriberInternal(hostnum);
-
+  LOG_DEBUG(info_log_, "StreamID(%llu) unsubscribed for all topics", stream_id);
+  RemoveSubscriberInternal(stream_id);
   return Status::OK();
 }
 
@@ -1192,7 +1198,7 @@ std::string TopicTailer::GetAllLogsInfo() const {
 }
 
 void TopicTailer::AddTailSubscriber(const TopicUUID& topic,
-                                    HostNumber hostnum,
+                                    CopilotSub id,
                                     LogID logid,
                                     SequenceNumber seqno) {
   // Send message to inform subscriber of latest seqno.
@@ -1211,20 +1217,20 @@ void TopicTailer::AddTailSubscriber(const TopicUUID& topic,
                    GapType::kBenign,
                    0,
                    seqno - 1));
-  on_message_(std::move(msg), { hostnum });
+  on_message_(std::move(msg), { id });
 
-  AddSubscriberInternal(topic, hostnum, logid, seqno);
+  AddSubscriberInternal(topic, id, logid, seqno);
 }
 
 void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
-                                        HostNumber hostnum,
+                                        CopilotSub id,
                                         LogID logid,
                                         SequenceNumber seqno) {
   assert(seqno != 0);
   thread_check_.Check();
 
   // Add the new subscription.
-  bool was_added = topic_map_[logid].AddSubscriber(topic, seqno, hostnum);
+  bool was_added = topic_map_[logid].AddSubscriber(topic, seqno, id);
   if (was_added) {
     stats_.updated_subscriptions->Add(1);
   }
@@ -1234,26 +1240,28 @@ void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
   // written to the log.
   SequenceNumber start =
     log_tailer_->CanSubscribePastEnd() ? seqno : seqno - 1;
-  LogReader* reader = ReaderForNewSubscription(hostnum, topic, logid, start);
+  LogReader* reader = ReaderForNewSubscription(id, topic, logid, start);
   assert(reader);
   reader->StartReading(topic, logid, start);
 
   LOG_DEBUG(info_log_,
-    "Hostnum(%d) subscribed for %s@%" PRIu64 " (%s) on %sReader(%zu)",
-    int(hostnum),
+    "%s subscribed for %s@%" PRIu64 " (%s) on %sReader(%zu)",
+    id.ToString().c_str(),
     topic.ToString().c_str(),
     seqno,
     was_added ? "new" : "update",
     reader->IsVirtual() ? "Virtual" : "",
     reader->GetReaderId());
+
+  stream_subscriptions_.Insert(id.stream_id, id.sub_id, topic);
 }
 
 void TopicTailer::RemoveSubscriberInternal(const TopicUUID& topic,
-                                           HostNumber hostnum,
+                                           CopilotSub id,
                                            LogID logid) {
   thread_check_.Check();
 
-  bool all_removed = topic_map_[logid].RemoveSubscriber(topic, hostnum);
+  bool all_removed = topic_map_[logid].RemoveSubscriber(topic, id);
   if (all_removed) {
     // No more subscribers left on this topic. Inform readers.
     bool log_closed = true;
@@ -1271,19 +1279,22 @@ void TopicTailer::RemoveSubscriberInternal(const TopicUUID& topic,
   }
 }
 
-void TopicTailer::RemoveSubscriberInternal(HostNumber hostnum) {
+void TopicTailer::RemoveSubscriberInternal(StreamID stream_id) {
   thread_check_.Check();
 
-  // Remove hostnum subscription from every log and every topic.
-  for (auto& entry : topic_map_) {
-    const LogID log_id = entry.first;
-    TopicManager& topic_manager = entry.second;
-    topic_manager.VisitTopics([&] (const TopicUUID& topic) {
-        // Need to copy since RemoveSubscriber may invalidate reference.
-        const TopicUUID topic_copy(topic);
-        RemoveSubscriberInternal(topic_copy, hostnum, log_id);
-      });
-  }
+  // Remove all subscriptions on this stream.
+  stream_subscriptions_.VisitSubscriptions(
+    stream_id,
+    [&] (SubscriptionID sub_id, const TopicUUID& topic) {
+      LogID log_id;
+      Status st = log_router_->GetLogID(topic, &log_id);
+      if (st.ok()) {
+        CopilotSub id(stream_id, sub_id);
+        RemoveSubscriberInternal(topic, id, log_id);
+      }
+    });
+
+  stream_subscriptions_.Remove(stream_id);
 }
 
 LogReader* TopicTailer::FindLogReader(size_t reader_id) {
@@ -1298,7 +1309,7 @@ LogReader* TopicTailer::FindLogReader(size_t reader_id) {
 }
 
 
-LogReader* TopicTailer::ReaderForNewSubscription(HostNumber hostnum,
+LogReader* TopicTailer::ReaderForNewSubscription(CopilotSub id,
                                                  const TopicUUID& topic,
                                                  LogID logid,
                                                  SequenceNumber seqno) {

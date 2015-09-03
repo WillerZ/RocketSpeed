@@ -46,9 +46,12 @@ ControlRoom::MsgCommand(std::unique_ptr<Message> msg,
   std::unique_ptr<Command> cmd(
     MakeExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
       std::unique_ptr<Message> message(moved_msg.move());
-      if (message->GetMessageType() == MessageType::mMetadata) {
+      if (message->GetMessageType() == MessageType::mSubscribe) {
         assert(worker_id != -1);
-        ProcessMetadata(std::move(message), worker_id, origin);
+        ProcessSubscribe(std::move(message), worker_id, origin);
+      } else if (message->GetMessageType() == MessageType::mUnsubscribe) {
+        assert(worker_id != -1);
+        ProcessUnsubscribe(std::move(message), worker_id, origin);
       } else if (message->GetMessageType() == MessageType::mGoodbye) {
         assert(worker_id == -1);
         ProcessGoodbye(std::move(message), origin);
@@ -62,59 +65,43 @@ ControlRoom::MsgCommand(std::unique_ptr<Message> msg,
   return cmd;
 }
 
-// Process Metadata messages that are coming in from ControlTower.
-void
-ControlRoom::ProcessMetadata(std::unique_ptr<Message> msg,
-                             int worker_id,
-                             StreamID origin) {
+void ControlRoom::ProcessSubscribe(std::unique_ptr<Message> msg,
+                                   int worker_id,
+                                   StreamID origin) {
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
-  Status st;
 
-  // get the request message
-  MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
-  assert(request->GetMetaType() == MessageMetadata::MetaType::Request);
-  if (request->GetMetaType() != MessageMetadata::MetaType::Request) {
-    LOG_WARN(options.info_log,
-        "MessageMetadata with bad type %d received, ignoring...",
-        request->GetMetaType());
-    return;
-  }
+  MessageSubscribe* subscribe = static_cast<MessageSubscribe*>(msg.get());
+  CopilotSub id(origin, subscribe->GetSubID());
+  TopicUUID uuid(subscribe->GetNamespace(), subscribe->GetTopicName());
+  const SequenceNumber seqno = subscribe->GetStartSequenceNumber();
 
-  // There should be only one topic for this message. The ControlTower
-  // splits every topic into a distinct separate messages per ControlRoom.
-  const std::vector<TopicPair>& topic = request->GetTopicInfo();
-  assert(topic.size() == 1);
+  sub_worker_.Insert(id.stream_id, id.sub_id, worker_id);
 
-  // Map the origin to a HostNumber
-  int test_worker_id = -1;
-  HostNumber hostnum = ct->LookupHost(origin, &test_worker_id);
-  if (hostnum == -1) {
-    hostnum = ct->InsertHost(origin, worker_id);
-  } else {
-    assert(test_worker_id == worker_id);
-  }
-  assert(hostnum >= 0);
+  topic_tailer_->AddSubscriber(uuid, seqno, id);
+  LOG_INFO(options.info_log,
+    "Added subscriber %llu for %s@%" PRIu64,
+    origin,
+    uuid.ToString().c_str(),
+    seqno);
 
+}
 
-  // Remember this subscription request
-  TopicUUID uuid(topic[0].namespace_id, topic[0].topic_name);
-  if (topic[0].topic_type == MetadataType::mSubscribe) {
-    topic_tailer_->AddSubscriber(uuid, topic[0].seqno, hostnum);
-    LOG_INFO(options.info_log,
-        "Added subscriber %llu for Topic(%s,%s)@%" PRIu64,
-        origin,
-        topic[0].namespace_id.c_str(),
-        topic[0].topic_name.c_str(),
-        topic[0].seqno);
-  } else if (topic[0].topic_type == MetadataType::mUnSubscribe) {
-    topic_tailer_->RemoveSubscriber(uuid, hostnum);
-    LOG_INFO(options.info_log,
-        "Removed subscriber %llu from Topic(%s,%s)",
-        origin,
-        topic[0].namespace_id.c_str(),
-        topic[0].topic_name.c_str());
-  }
+void ControlRoom::ProcessUnsubscribe(std::unique_ptr<Message> msg,
+                                     int worker_id,
+                                     StreamID origin) {
+  ControlTower* ct = control_tower_;
+  ControlTowerOptions& options = ct->GetOptions();
+  MessageUnsubscribe* unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
+  CopilotSub id(origin, unsubscribe->GetSubID());
+
+  // Remove this subscription request
+  topic_tailer_->RemoveSubscriber(id);
+  LOG_INFO(options.info_log,
+    "Removed subscriber %llu",
+    origin);
+
+  sub_worker_.Remove(id.stream_id, id.sub_id);
 }
 
 // Process Goodbye messages that are coming in from ControlTower.
@@ -124,33 +111,23 @@ ControlRoom::ProcessGoodbye(std::unique_ptr<Message> msg,
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
 
-  // Map the origin to a HostNumber
-  int test_worker_id = -1;
-  HostNumber hostnum = ct->LookupHost(origin, &test_worker_id);
-  if (hostnum == -1) {
-    // Unknown host, ignore.
-    LOG_WARN(options.info_log,
-      "Received goodbye from unknown origin Stream(%llu)",
-      origin);
-    return;
-  }
-  assert(hostnum >= 0);
   LOG_INFO(options.info_log,
-    "Received goodbye for Stream(%llu) Hostnum(%d)",
-    origin,
-    int(hostnum));
+    "Received goodbye for Stream(%llu)",
+    origin);
 
-  topic_tailer_->RemoveSubscriber(hostnum);
+  topic_tailer_->RemoveSubscriber(origin);
+
+  sub_worker_.Remove(origin);
 }
 
 void
 ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
-                             std::vector<HostNumber> hosts) {
+                             std::vector<CopilotSub> recipients) {
   MessageType type = msg->GetMessageType();
   if (type == MessageType::mDeliver) {
-    ProcessDeliver(std::move(msg), std::move(hosts));
+    ProcessDeliver(std::move(msg), std::move(recipients));
   } else if (type == MessageType::mGap) {
-    ProcessGap(std::move(msg), std::move(hosts));
+    ProcessGap(std::move(msg), std::move(recipients));
   } else {
     assert(false);
   }
@@ -160,7 +137,7 @@ ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
 // Process Data messages that are coming in from Tailer.
 void
 ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
-                            const std::vector<HostNumber>& hosts) {
+                            const std::vector<CopilotSub>& recipients) {
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
   Status st;
@@ -178,39 +155,45 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
       request->GetNamespaceId().ToString().c_str(),
       request->GetTopicName().ToString().c_str());
 
-  // serialize msg
-  std::string serial;
-
   // For each subscriber on this topic at prev_seqno, deliver the message and
   // advance the subscription to next_seqno.
   TopicUUID uuid(request->GetNamespaceId(), request->GetTopicName());
-  for (HostNumber hostnum : hosts) {
-    // Convert HostNumber to origin StreamID.
-    int worker_id = -1;
-    StreamID origin = ct->LookupHost(hostnum, &worker_id);
-    assert(worker_id != -1);
-    if (worker_id != -1) {
-      // Send to correct worker loop.
-      auto command = options.msg_loop->ResponseCommand(*request, origin);
+  for (CopilotSub recipient : recipients) {
+    // Send to correct worker loop.
+    int* ptr = sub_worker_.Find(recipient.stream_id, recipient.sub_id);
+    if (!ptr) {
+      LOG_WARN(options.info_log,
+        "Unknown worker for subscription %s",
+        recipient.ToString().c_str());
+      continue;
+    }
+    const int worker_id = *ptr;
 
-      if (room_to_client_queues_[worker_id]->Write(command)) {
-        LOG_DEBUG(options.info_log,
-                 "Sent data (%.16s)@%" PRIu64 " for %s to %llu",
-                 request->GetPayload().ToString().c_str(),
-                 request->GetSequenceNumber(),
-                 uuid.ToString().c_str(),
-                 origin);
-      } else {
-        LOG_WARN(options.info_log,
-                 "Unable to forward Data message to subscriber %llu",
-                 origin);
-      }
+    MessageDeliverData deliver(request->GetTenantID(),
+                               recipient.sub_id,
+                               request->GetMessageId(),
+                               request->GetPayload());
+    deliver.SetSequenceNumbers(prev_seqno, next_seqno);
+    auto command =
+      options.msg_loop->ResponseCommand(deliver, recipient.stream_id);
+
+    if (room_to_client_queues_[worker_id]->Write(command)) {
+      LOG_DEBUG(options.info_log,
+               "Sent data (%.16s)@%" PRIu64 " for %s to %s",
+               request->GetPayload().ToString().c_str(),
+               request->GetSequenceNumber(),
+               uuid.ToString().c_str(),
+               recipient.ToString().c_str());
+    } else {
+      LOG_WARN(options.info_log,
+               "Unable to forward data message to %s",
+               recipient.ToString().c_str());
     }
   }
 
-  if (hosts.empty()) {
+  if (recipients.empty()) {
     LOG_WARN(options.info_log,
-      "No hosts for record in %s@%" PRIu64 ": no message sent.",
+      "No recipients for record in %s@%" PRIu64 ": no message sent.",
       uuid.ToString().c_str(),
       request->GetSequenceNumber());
   }
@@ -219,14 +202,14 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
 // Process Gap messages that are coming in from Tailer.
 void
 ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
-                        const std::vector<HostNumber>& hosts) {
+                        const std::vector<CopilotSub>& recipients) {
   MessageGap* gap = static_cast<MessageGap*>(msg.get());
 
   SequenceNumber prev_seqno = gap->GetStartSequenceNumber();
   SequenceNumber next_seqno = gap->GetEndSequenceNumber();
 
   ControlTower* ct = control_tower_;
-  ControlTowerOptions& options = control_tower_->GetOptions();
+  ControlTowerOptions& options = ct->GetOptions();
   LOG_DEBUG(options.info_log,
       "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
       prev_seqno,
@@ -234,33 +217,39 @@ ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
       gap->GetNamespaceId().c_str(),
       gap->GetTopicName().c_str());
 
-  for (HostNumber hostnum : hosts) {
-    // Convert HostNumber to origin StreamID.
-    int worker_id = -1;
-    StreamID origin = ct->LookupHost(hostnum, &worker_id);
-    assert(worker_id != -1);
-    if (worker_id != -1) {
-      // Send to correct worker loop.
-      auto command = options.msg_loop->ResponseCommand(*gap, origin);
+  for (CopilotSub recipient : recipients) {
+    int* ptr = sub_worker_.Find(recipient.stream_id, recipient.sub_id);
+    if (!ptr) {
+      LOG_WARN(options.info_log,
+        "Unknown worker for subscription %s",
+        recipient.ToString().c_str());
+      continue;
+    }
+    const int worker_id = *ptr;
+    MessageDeliverGap deliver(gap->GetTenantID(),
+                              recipient.sub_id,
+                              gap->GetType());
+    deliver.SetSequenceNumbers(prev_seqno, next_seqno);
+    auto command =
+      options.msg_loop->ResponseCommand(deliver, recipient.stream_id);
 
-      if (room_to_client_queues_[worker_id]->Write(command)) {
-        LOG_DEBUG(options.info_log,
-                 "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
-                 prev_seqno,
-                 next_seqno,
-                 gap->GetNamespaceId().c_str(),
-                 gap->GetTopicName().c_str(),
-                 origin);
-      } else {
-        LOG_WARN(options.info_log,
-                 "Unable to forward Gap message to subscriber %llu",
-                 origin);
-      }
+    if (room_to_client_queues_[worker_id]->Write(command)) {
+      LOG_DEBUG(options.info_log,
+               "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
+               prev_seqno,
+               next_seqno,
+               gap->GetNamespaceId().c_str(),
+               gap->GetTopicName().c_str(),
+               recipient.stream_id);
+    } else {
+      LOG_WARN(options.info_log,
+               "Unable to forward Gap message to subscriber %llu",
+               recipient.stream_id);
     }
   }
 
-  if (hosts.empty()) {
-    LOG_WARN(options.info_log, "No hosts for gap: no message sent.");
+  if (recipients.empty()) {
+    LOG_WARN(options.info_log, "No recipients for gap: no message sent.");
   }
 }
 

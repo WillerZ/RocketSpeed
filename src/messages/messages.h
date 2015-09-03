@@ -33,7 +33,7 @@ enum class MessageType : uint8_t {
   NotInitialized = 0,    // not initialized yet
   mPing = 0x01,          // ping data
   mPublish = 0x02,       // data publish
-  mMetadata = 0x03,      // subscription information
+//mMetadata = 0x03,      // subscription information (DEPRECATED)
   mDataAck = 0x04,       // ack for user data
   mGap = 0x05,           // gap in the log
   mDeliver = 0x06,       // data delivery
@@ -349,83 +349,6 @@ class MessageData : public Message {
 };
 
 /*
- * This is a subscribe/unsubscribe message.
- */
-class MessageMetadata : public Message {
- public:
-  // Two types of metadata messages
-  enum MetaType : char {
-    NotInitialized = 0x00,        // message not yet initialized
-    Request = 0x01,               // request
-    Response = 0x02               // request processed ack
-  };
-  /**
-   * Creates a message by specifying its contents.
-   * @param seqno The client-supplied sequence number of this metadata msg
-   * @param metatype Request or response.
-   * @param topics The list of topics to subscribe-to/unsubscribe-from
-   */
-  MessageMetadata(TenantID tenantID,
-                  const MetaType metatype,
-                  const std::vector<TopicPair>& topics);
-
-  /*
-   * default constructor
-   */
-  MessageMetadata();
-
-  /*
-   * copy constructor
-   */
-  explicit MessageMetadata(MessageMetadata* in) :
-    Message(MessageType::mMetadata, in->GetTenantID()),
-    metatype_(in->GetMetaType()),
-    topics_(in->GetTopicInfo()) {
-  }
-
-  /**
-   * This message is not needed any more
-   */
-  virtual ~MessageMetadata();
-
-  /**
-   * Is it a request or a response?
-   */
-  MetaType GetMetaType() const {
-    return metatype_;
-  }
-
-  /**
-   * Set the metatype response/request
-   */
-  void SetMetaType(MetaType metatype) {
-    metatype_ = metatype;
-  }
-
-  /**
-   * @return Information about all topics
-   */
-  const std::vector<TopicPair>& GetTopicInfo() const { return topics_; }
-  std::vector<TopicPair>& GetTopicInfo() { return topics_; }
-
-  /*
-   * Inherited from Serializer
-   */
-  virtual Slice Serialize() const;
-  virtual Status DeSerialize(Slice* in);
-
- private:
-  MetaType metatype_;         // request or response
-
-  // The List of topics to subscribe-to/unsubscribe-from
-  std::vector<TopicPair> topics_;
-};
-
-inline bool ValidateEnum(MessageMetadata::MetaType e) {
-  return e >= MessageMetadata::Request && e <= MessageMetadata::Response;
-}
-
-/*
  * This is a data ack message.
  * The ack is sent back to the producer after a publish.
  */
@@ -722,13 +645,13 @@ typedef uint64_t SubscriptionID;
 class MessageSubscribe final : public Message {
  public:
   MessageSubscribe(TenantID tenant_id,
-                   const NamespaceID& namespace_id,
-                   const Topic& topic_name,
+                   NamespaceID namespace_id,
+                   Topic topic_name,
                    SequenceNumber start_seqno,
                    SubscriptionID sub_id)
       : Message(MessageType::mSubscribe, tenant_id),
-        namespace_id_(namespace_id),
-        topic_name_(topic_name),
+        namespace_id_(std::move(namespace_id)),
+        topic_name_(std::move(topic_name)),
         start_seqno_(start_seqno),
         sub_id_(sub_id) {}
 

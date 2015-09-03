@@ -27,7 +27,7 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "invalid",
   "ping",
   "publish",
-  "metadata",
+  "metadata (DEPRECATED)",
   "data_ack",
   "gap",
   "deliver",
@@ -69,15 +69,6 @@ Message::CreateNewInstance(Slice* in) {
     case MessageType::mPublish:
     case MessageType::mDeliver: {
       std::unique_ptr<MessageData> msg(new MessageData());
-      st = msg->DeSerialize(in);
-      if (st.ok()) {
-        return std::unique_ptr<Message>(msg.release());
-      }
-      break;
-    }
-
-    case MessageType::mMetadata: {
-      std::unique_ptr<MessageMetadata> msg(new MessageMetadata());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -348,90 +339,6 @@ Status MessageData::DeSerializeStorage(Slice* in) {
   // extract payload (the rest of the message)
   if (!GetLengthPrefixedSlice(in, &payload_)) {
     return Status::InvalidArgument("Bad payload");
-  }
-  return Status::OK();
-}
-
-
-MessageMetadata::MessageMetadata(TenantID tenantID,
-  const MetaType metatype,
-  const std::vector<TopicPair>& topics):
-  metatype_(metatype),
-  topics_(topics) {
-  type_ = MessageType::mMetadata;
-  tenantid_ = tenantID;
-}
-
-MessageMetadata::MessageMetadata() {
-  type_ = MessageType::mMetadata;
-  tenantid_ = Tenant::InvalidTenant;
-  metatype_ = MetaType::NotInitialized;
-}
-
-MessageMetadata::~MessageMetadata() {
-}
-
-Slice MessageMetadata::Serialize() const {
-  // Type, tenantId and origin
-  PutFixedEnum8(&serialize_buffer__, type_);
-  PutFixed16(&serialize_buffer__, tenantid_);
-
-  // Now serialize message specific data
-  PutFixedEnum8(&serialize_buffer__, metatype_);
-  //  origin
-
-  // Topics and metadata state
-  PutVarint32(&serialize_buffer__, static_cast<uint32_t>(topics_.size()));
-  for (TopicPair p : topics_) {
-    PutVarint64(&serialize_buffer__, p.seqno);
-    PutTopicID(&serialize_buffer__, p.namespace_id, p.topic_name);
-    PutFixedEnum8(&serialize_buffer__, p.topic_type);
-  }
-  return Slice(serialize_buffer__);
-}
-
-Status MessageMetadata::DeSerialize(Slice* in) {
-  // extract type
-  if (!GetFixedEnum8(in, &type_)) {
-    return Status::InvalidArgument("Bad type");
-  }
-
-  // extrant tenant ID
-  if (!GetFixed16(in, &tenantid_)) {
-    return Status::InvalidArgument("Bad tenant ID");
-  }
-
-  // extract metadata type
-  if (!GetFixedEnum8(in, &metatype_)) {
-    return Status::InvalidArgument("Bad metadata type");
-  }
-
-  // extract number of topics
-  uint32_t num_topics;
-  if (!GetVarint32(in, &num_topics)) {
-    return Status::InvalidArgument("Bad Number Of Topics");
-  }
-
-  // extract each topic
-  for (uint32_t i = 0; i < num_topics; i++) {
-    TopicPair p;
-
-    // extract start seqno for this topic subscription
-    if (!GetVarint64(in, &p.seqno)) {
-      return Status::InvalidArgument("Bad Message Payload: seqno");
-    }
-
-    // extract one topic name
-    if (!GetTopicID(in, &p.namespace_id, &p.topic_name)) {
-      return Status::InvalidArgument("Bad Namespace/Topic");
-    }
-
-    // extract one topic type
-    if (!GetFixedEnum8(in, &p.topic_type)) {
-      return Status::InvalidArgument("Bad topic type");
-    }
-
-    topics_.push_back(p);
   }
   return Status::OK();
 }

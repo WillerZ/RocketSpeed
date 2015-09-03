@@ -7,7 +7,6 @@ cpp_library(
         'control_tower_router.cc',
         'env.cc',
         'env_posix.cc',
-        'hostmap.cc',
         'log_buffer.cc',
         'logging.cc',
         'scoped_file_lock.cc',

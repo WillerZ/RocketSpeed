@@ -12,23 +12,23 @@ namespace rocketspeed {
 
 /// @return true iff new subscription was inserted.
 static bool UpdateSubscription(TopicList& list,
-                               HostNumber hostnum,
+                               CopilotSub id,
                                SequenceNumber seqno) {
   for (TopicSubscription& sub : list) {
-    if (sub.GetHostNum() == hostnum) {
+    if (sub.GetID() == id) {
       sub.SetSequenceNumber(seqno);
       return false;
     }
   }
-  list.emplace_back(hostnum, seqno);
+  list.emplace_back(id, seqno);
   return true;
 }
 
 /// @return true iff no more subscriptions on this topic.
 static bool RemoveSubscription(TopicList& list,
-                               HostNumber hostnum) {
+                               CopilotSub id) {
   for (auto it = list.begin(); it != list.end(); ++it) {
-    if (it->GetHostNum() == hostnum) {
+    if (it->GetID() == id) {
       list.erase(it);
       break;
     }
@@ -42,14 +42,14 @@ static bool RemoveSubscription(TopicList& list,
 bool
 TopicManager::AddSubscriber(const TopicUUID& topic,
                             SequenceNumber start,
-                            HostNumber subscriber) {
+                            CopilotSub subscriber) {
   thread_check_.Check();
   return UpdateSubscription(topic_map_[topic], subscriber, start);
 }
 
 // remove a subscriber to the topic
 bool
-TopicManager::RemoveSubscriber(const TopicUUID& topic, HostNumber subscriber) {
+TopicManager::RemoveSubscriber(const TopicUUID& topic, CopilotSub subscriber) {
   thread_check_.Check();
   // find list of subscribers for this topic
   auto iter = topic_map_.find(topic);

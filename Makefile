@@ -90,7 +90,6 @@ TESTS = \
   control_tower_router_test \
   mock_logdevice_test \
   logdevice_storage_test \
-  hostmap_test \
   integration_test \
   statistics_test \
   thread_check_test \
@@ -299,9 +298,6 @@ mock_logdevice_test: src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 logdevice_storage_test: src/util/logdevice_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-hostmap_test: src/util/hostmap_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS)

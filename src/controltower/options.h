@@ -10,7 +10,6 @@
 #include "include/Types.h"
 #include "src/port/Env.h"
 #include "src/util/storage.h"
-#include "src/controltower/topic_tailer.h"
 
 namespace rocketspeed {
 
@@ -64,12 +63,6 @@ struct ControlTowerOptions {
   // Default: 0 (disabled)
   size_t log_file_time_to_roll;
 
-  // The maximum number of hosts that a machine can connect to. This
-  // is used to optimize the mapping from a HostName to a simple
-  // integer called the HostNumber
-  // Default: 10K
-  unsigned int max_number_of_hosts;
-
   // Pointer to persistent log storage to use.
   std::shared_ptr<LogStorage> storage;
 
@@ -88,7 +81,11 @@ struct ControlTowerOptions {
   size_t readers_per_room;
 
   // Options for TopicTailer
-  TopicTailer::Options topic_tailer;
+  struct TopicTailer {
+    // Probability of failing to enqueue a log record to the TopicTailer queue.
+    // For testing the log storage backoff/flow control.
+    double FAULT_send_log_record_failure_rate = 0.0;
+  } topic_tailer;
 
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();

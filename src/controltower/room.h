@@ -10,8 +10,9 @@
 #include "src/port/Env.h"
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
-#include "src/util/hostmap.h"
 #include "src/controltower/options.h"
+#include "src/controltower/tower.h"
+#include "src/util/subscription_map.h"
 
 namespace rocketspeed {
 
@@ -43,7 +44,7 @@ class ControlRoom {
 
   // Processes a message from the tailer.
   void OnTailerMessage(std::unique_ptr<Message> msg,
-                       std::vector<HostNumber> hosts);
+                       std::vector<CopilotSub> recipients);
 
  private:
   // I am part of this control tower
@@ -55,21 +56,27 @@ class ControlRoom {
   // Per-topic tailer
   TopicTailer* topic_tailer_;
 
-  // Map of host numbers to worker loop IDs.
-  std::unordered_map<HostNumber, int> hostnum_to_worker_id_;
-
   // Queues for communicating back to client threads.
   std::vector<std::shared_ptr<CommandQueue>> room_to_client_queues_;
 
+  SubscriptionMap<int> sub_worker_;
+
   // callbacks to process incoming messages
-  void ProcessMetadata(std::unique_ptr<Message> msg,
-                       int worker_id,
-                       StreamID origin);
+  void ProcessSubscribe(std::unique_ptr<Message> msg,
+                        int worker_id,
+                        StreamID origin);
+  void ProcessUnsubscribe(std::unique_ptr<Message> msg,
+                          int worker_id,
+                          StreamID origin);
   void ProcessDeliver(std::unique_ptr<Message> msg,
-                      const std::vector<HostNumber>& hosts);
+                      const std::vector<CopilotSub>& recipients);
   void ProcessGap(std::unique_ptr<Message> msg,
-                  const std::vector<HostNumber>& hosts);
+                  const std::vector<CopilotSub>& recipients);
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
+
+  /** Find worker for CopilotSub (from sub_worker_) or -1 if not found. */
+  int CopilotWorker(const CopilotSub& id) const;
+
 };
 
 }  // namespace rocketspeed

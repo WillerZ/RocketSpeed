@@ -13,7 +13,6 @@
 #include "src/copilot/copilot.h"
 #include "src/rollcall/rollcall_impl.h"
 #include "src/util/control_tower_router.h"
-#include "src/util/hostmap.h"
 
 #include "external/folly/move_wrapper.h"
 
@@ -74,27 +73,11 @@ CopilotWorker::WorkerCommand(LogID logid,
     MakeExecuteCommand([this, moved_msg, logid, worker_id, origin]() mutable {
       auto message = moved_msg.move();
       switch (message->GetMessageType()) {
-        case MessageType::mMetadata: {
-          auto metadata = static_cast<MessageMetadata*>(message.get());
-          const std::vector<TopicPair>& topics = metadata->GetTopicInfo();
-          // Workers only handle 1 topic at a time.
-          assert(topics.size() == 1);
-          const TopicPair& request = topics[0];
-
-          if (metadata->GetMetaType() ==
-              MessageMetadata::MetaType::Response) {
-            if (request.topic_type == MetadataType::mSubscribe) {
-              // Response from Control Tower.
-              ProcessMetadataResponse(request, logid, worker_id);
-            }
-          }
+        case MessageType::mDeliverData: {
+          ProcessData(std::move(message), origin);
         } break;
 
-        case MessageType::mDeliver: {
-          ProcessDeliver(std::move(message), origin);
-        } break;
-
-        case MessageType::mGap: {
+        case MessageType::mDeliverGap: {
           ProcessGap(std::move(message), origin);
         } break;
 
@@ -161,35 +144,26 @@ Statistics CopilotWorker::GetStatistics() {
   return stats;
 }
 
-void CopilotWorker::ProcessMetadataResponse(const TopicPair& request,
-                                            LogID logid,
-                                            int worker_id) {
-  LOG_INFO(options_.info_log,
-      "Received %ssubscribe response for Topic(%s,%s)",
-      request.topic_type == MetadataType::mSubscribe ? "" : "un",
-      request.namespace_id.c_str(),
-      request.topic_name.c_str());
+void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
+                                StreamID origin) {
+  MessageDeliverData* msg = static_cast<MessageDeliverData*>(message.get());
 
-  if (request.topic_type == MetadataType::mUnSubscribe) {
-    // TODO(pja) 1 : Need to handle this, but control tower doesn't currently
-    // send unsolicited unsubscribes, so there's no use case for this yet.
-    // The only time control tower will send us an unsubscribe is if we ask
-    // for one, in which case we've already handled it.
+  auto ptr = sub_to_topic_.Find(origin, msg->GetSubID());
+  if (!ptr) {
+    LOG_WARN(options_.info_log,
+      "Deliver for unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
+      origin, msg->GetSubID());
+    return;
   }
-}
+  const TopicUUID uuid = *ptr;
 
-void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
-                                   StreamID origin) {
-  MessageData* msg = static_cast<MessageData*>(message.get());
   // Get the list of subscriptions for this topic.
   LOG_DEBUG(options_.info_log,
-            "Copilot received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
+            "Copilot received deliver (%.16s)@%" PRIu64 " for %s",
             msg->GetPayload().ToString().c_str(),
             msg->GetSequenceNumber(),
-            msg->GetNamespaceId().ToString().c_str(),
-            msg->GetTopicName().ToString().c_str());
+            uuid.ToString().c_str());
 
-  TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
   auto it = topics_.find(uuid);
   if (it != topics_.end()) {
     TopicState& topic = it->second;
@@ -197,7 +171,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
     const auto prev_seqno = msg->GetPrevSequenceNumber();
 
     // Find tower for this origin and update its state.
-    AdvanceTowers(&topic, prev_seqno, seqno, origin);
+    AdvanceTowers(&topic, prev_seqno, seqno, origin, msg->GetSubID());
 
     // Send to all subscribers.
     bool delivered_at_least_once = false;
@@ -207,9 +181,10 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
       // Do not send a response if the seqno is too low.
       if (sub->seqno > seqno) {
         LOG_DEBUG(options_.info_log,
-                  "Data not delivered to %llu"
+                  "Data not delivered to %llu ID(%" PRIu64 ")"
                   " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
                   recipient,
+                  sub->sub_id,
                   seqno,
                   sub->seqno);
         continue;
@@ -218,9 +193,10 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
       // or too high.
       if (sub->seqno < prev_seqno) {
         LOG_DEBUG(options_.info_log,
-                  "Data not delivered to %llu"
+                  "Data not delivered to %llu ID(%" PRIu64 ")"
                   " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
                   recipient,
+                  sub->sub_id,
                   prev_seqno,
                   sub->seqno);
         continue;
@@ -230,9 +206,10 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
       if ((sub->seqno == 0 && prev_seqno != 0) ||
           (sub->seqno != 0 && prev_seqno == 0)) {
         LOG_DEBUG(options_.info_log,
-                  "Data not delivered to %llu"
+                  "Data not delivered to %llu ID(%" PRIu64 ")"
                   " (prev_seqno@%" PRIu64 " not 0)",
                   recipient,
+                  sub->sub_id,
                   prev_seqno);
         continue;
       }
@@ -244,7 +221,7 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
       // Send message to the client.
       MessageDeliverData data(sub->tenant_id,
                               sub->sub_id,
-                              msg->GetMessageId(),
+                              msg->GetMessageID(),
                               msg->GetPayload());
       data.SetSequenceNumbers(prev_seqno, seqno);
       auto command = options_.msg_loop->ResponseCommand(data, recipient);
@@ -276,22 +253,31 @@ void CopilotWorker::ProcessDeliver(std::unique_ptr<Message> message,
 
 void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
                                StreamID origin) {
-  MessageGap* msg = static_cast<MessageGap*>(message.get());
+  MessageDeliverGap* msg = static_cast<MessageDeliverGap*>(message.get());
+
+  auto ptr = sub_to_topic_.Find(origin, msg->GetSubID());
+  if (!ptr) {
+    LOG_WARN(options_.info_log,
+      "Gap for unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
+      origin, msg->GetSubID());
+    return;
+  }
+  const TopicUUID uuid = *ptr;
+
   // Get the list of subscriptions for this topic.
-  TopicUUID uuid(msg->GetNamespaceId(), msg->GetTopicName());
   LOG_DEBUG(options_.info_log,
             "Copilot received gap %" PRIu64 "-%" PRIu64 " for %s",
-            msg->GetStartSequenceNumber(),
-            msg->GetEndSequenceNumber(),
+            msg->GetFirstSequenceNumber(),
+            msg->GetLastSequenceNumber(),
             uuid.ToString().c_str());
   auto it = topics_.find(uuid);
   if (it != topics_.end()) {
     TopicState& topic = it->second;
-    const auto prev_seqno = msg->GetStartSequenceNumber();
-    const auto next_seqno = msg->GetEndSequenceNumber();
+    const auto prev_seqno = msg->GetFirstSequenceNumber();
+    const auto next_seqno = msg->GetLastSequenceNumber();
 
     // Find tower for this origin and update its state.
-    AdvanceTowers(&topic, prev_seqno, next_seqno, origin);
+    AdvanceTowers(&topic, prev_seqno, next_seqno, origin, msg->GetSubID());
 
     // Send to all subscribers.
     bool delivered_at_least_once = false;
@@ -339,7 +325,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       MessageDeliverGap gap(
         sub->tenant_id,
         sub->sub_id,
-        msg->GetType());
+        msg->GetGapType());
       gap.SetSequenceNumbers(prev_seqno, next_seqno);
       auto command = options_.msg_loop->ResponseCommand(gap, recipient);
       if (client_queues_[sub->worker_id]->Write(command)) {
@@ -349,8 +335,8 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
         LOG_DEBUG(options_.info_log,
                  "Sent gap %" PRIu64 "-%" PRIu64
                  " for subscription ID(%" PRIu64 ") %s to %llu",
-                 msg->GetStartSequenceNumber(),
-                 msg->GetEndSequenceNumber(),
+                 msg->GetFirstSequenceNumber(),
+                 msg->GetLastSequenceNumber(),
                  gap.GetSubID(),
                  uuid.ToString().c_str(),
                  recipient);
@@ -396,7 +382,17 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
     const auto next_seqno = msg->GetSequenceNumber();
 
     // Advance all towers subscribed at 0.
-    AdvanceTowers(&topic, 0, next_seqno, origin);
+    for (auto& tower : topic.towers) {
+      if (tower.stream->GetStreamID() == origin) {
+        if (tower.next_seqno == 0) {
+          LOG_DEBUG(options_.info_log,
+                    "Tower subscription %llu advanced from 0 to %" PRIu64,
+                    tower.stream->GetStreamID(),
+                    next_seqno);
+          tower.next_seqno = next_seqno;
+        }
+      }
+    }
 
     // Send to all subscribers subscribed at 0.
     for (auto& sub : topic.subscriptions) {
@@ -581,12 +577,10 @@ void CopilotWorker::UnsubscribeControlTowers(
 
   // No more subscriptions on this topic, so unsubscribe from control towers.
   for (auto& tower : topic.towers) {
-    SendMetadata(tenant_id,
-                 MetadataType::mUnSubscribe,
-                 topic_uuid,
-                 0,  // seqno: irrelevant for unsubscribe
-                 tower.stream,
-                 tower.worker_id);
+    SendUnsubscribe(tenant_id,
+                    tower.stream,
+                    tower.sub_id,
+                    tower.worker_id);
   }
 }
 
@@ -684,6 +678,8 @@ void CopilotWorker::ProcessTimerTick() {
 }
 
 void CopilotWorker::CloseControlTowerStream(StreamID stream) {
+  sub_to_topic_.Remove(stream);
+
   // Removes upstream connection for affected subscriptions.
   for (auto& uuid_topic : topics_) {
     const TopicUUID& uuid = uuid_topic.first;
@@ -712,34 +708,60 @@ void CopilotWorker::CloseControlTowerStream(StreamID stream) {
   }
 }
 
-bool CopilotWorker::SendMetadata(TenantID tenant_id,
-                                 MetadataType type,
-                                 const TopicUUID& uuid,
-                                 SequenceNumber seqno,
-                                 StreamSocket* stream,
-                                 int worker_id) {
+bool CopilotWorker::SendSubscribe(TenantID tenant_id,
+                                  TopicUUID uuid,
+                                  SequenceNumber seqno,
+                                  StreamSocket* stream,
+                                  SubscriptionID sub_id,
+                                  int worker_id) {
   Slice namespace_id;
   Slice topic_name;
   uuid.GetTopicID(&namespace_id, &topic_name);
 
-  MessageMetadata message(
-    tenant_id,
-    MessageMetadata::MetaType::Request,
-    {TopicPair(seqno, topic_name.ToString(), type, namespace_id.ToString())});
+  MessageSubscribe message(tenant_id,
+                           namespace_id.ToString(),
+                           topic_name.ToString(),
+                           seqno,
+                           sub_id);
 
   auto command = options_.msg_loop->RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {
     LOG_DEBUG(options_.info_log,
-      "Sent %s %ssubscription to tower stream %llu",
+      "Sent %s@%" PRIu64 " subscription to tower stream %llu ID(%" PRIu64 ")",
       uuid.ToString().c_str(),
-      type == MetadataType::mUnSubscribe ? "un" : "",
-      stream->GetStreamID());
+      seqno,
+      stream->GetStreamID(),
+      sub_id);
+    sub_to_topic_.Insert(stream->GetStreamID(), sub_id, std::move(uuid));
     return true;
   } else {
     LOG_WARN(options_.info_log,
-      "Failed to send %s %ssubscribe to tower stream %llu",
+      "Failed to send %s subscribe to tower stream %llu",
       uuid.ToString().c_str(),
-      type == MetadataType::mUnSubscribe ? "un" : "",
+      stream->GetStreamID());
+    return false;
+  }
+
+}
+
+bool CopilotWorker::SendUnsubscribe(TenantID tenant_id,
+                                    StreamSocket* stream,
+                                    SubscriptionID sub_id,
+                                    int worker_id) {
+  MessageUnsubscribe message(tenant_id,
+                             sub_id,
+                             MessageUnsubscribe::Reason::kRequested);
+
+  auto command = options_.msg_loop->RequestCommand(message, stream);
+  if (tower_queues_[worker_id]->Write(command)) {
+    LOG_DEBUG(options_.info_log,
+      "Sent unsubscription to tower stream %llu",
+      stream->GetStreamID());
+    sub_to_topic_.Remove(stream->GetStreamID(), sub_id);
+    return true;
+  } else {
+    LOG_WARN(options_.info_log,
+      "Failed to send unsubscribe to tower stream %llu",
       stream->GetStreamID());
     return false;
   }
@@ -853,9 +875,13 @@ void CopilotWorker::UpdateTowerSubscriptions(
 
   // Do we need new tower subscription for this subscriber?
   if (resub_needed) {
-    // Keep track of previous susbcriptions. If we subscribe to different
-    // towers then we need to unsubscribe to the old ones.
-    auto old_towers = std::move(topic.towers);
+    // Unsubscribe all current subscriptions.
+    for (TopicState::Tower& tower : topic.towers) {
+      SendUnsubscribe(tenant_id,
+                      tower.stream,
+                      tower.sub_id,
+                      tower.worker_id);
+    }
 
     // Clear old subscriptions.
     topic.towers.clear();
@@ -865,29 +891,24 @@ void CopilotWorker::UpdateTowerSubscriptions(
       StreamSocket* const socket = tower_conn.first;
       const int outgoing_worker_id = tower_conn.second;
 
-      bool success = SendMetadata(tenant_id,
-                                  MetadataType::mSubscribe,
-                                  uuid,
-                                  new_seqno,
-                                  socket,
-                                  outgoing_worker_id);
+      SubscriptionID sub_id =
+        GenerateSubscriptionID(&next_sub_id_state_,
+                               myid_,
+                               options_.msg_loop->GetNumWorkers());
+
+      bool success = SendSubscribe(tenant_id,
+                                   uuid,
+                                   new_seqno,
+                                   socket,
+                                   sub_id,
+                                   outgoing_worker_id);
       if (success) {
         // Update the towers for the subscription.
         assert(!topic.FindTower(socket));  // we just cleared all towers.
-        topic.towers.emplace_back(socket, new_seqno, outgoing_worker_id);
-      }
-    }
-
-    // Find old_towers that aren't in the new towers.
-    for (TopicState::Tower& tower : old_towers) {
-      if (!topic.FindTower(tower.stream)) {
-        // No longer want to be subscribed to this tower, so unsubscribe.
-        SendMetadata(tenant_id,
-                     MetadataType::mUnSubscribe,
-                     uuid,
-                     0,  // seqno: irrelevant for unsubscribe
-                     tower.stream,
-                     tower.worker_id);
+        topic.towers.emplace_back(socket,
+                                  sub_id,
+                                  new_seqno,
+                                  outgoing_worker_id);
       }
     }
   }
@@ -1041,10 +1062,11 @@ StreamSocket* CopilotWorker::GetControlTowerSocket(const HostId& tower,
 void CopilotWorker::AdvanceTowers(TopicState* topic,
                                   SequenceNumber prev,
                                   SequenceNumber next,
-                                  StreamID origin) {
+                                  StreamID origin,
+                                  SubscriptionID sub_id) {
   assert(topic);
   for (auto& tower : topic->towers) {
-    if (tower.stream->GetStreamID() == origin) {
+    if (tower.stream->GetStreamID() == origin && tower.sub_id == sub_id) {
       if (prev <= tower.next_seqno &&
           next >= tower.next_seqno &&
           !(prev == 0 && tower.next_seqno != 0) &&

@@ -8,22 +8,22 @@
 #include <unordered_set>
 #include <unordered_map>
 #include "include/Types.h"
-#include "src/util/hostmap.h"
 #include "src/util/topic_uuid.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/thread_check.h"
+#include "src/controltower/tower.h"
 
 namespace rocketspeed {
 
 class TopicSubscription {
  public:
-  TopicSubscription(HostNumber hostnum, SequenceNumber seqno)
-  : hostnum_(hostnum)
+  TopicSubscription(CopilotSub id, SequenceNumber seqno)
+  : id_(id)
   , seqno_(seqno) {
   }
 
-  HostNumber GetHostNum() const {
-    return hostnum_;
+  CopilotSub GetID() const {
+    return id_;
   }
 
   SequenceNumber GetSequenceNumber() const {
@@ -35,7 +35,7 @@ class TopicSubscription {
   }
 
  private:
-  HostNumber hostnum_;
+  CopilotSub id_;
   SequenceNumber seqno_;  // next expected seqno
 };
 
@@ -66,7 +66,7 @@ class TopicManager {
    */
   bool AddSubscriber(const TopicUUID& topic,
                      SequenceNumber start,
-                     HostNumber subscriber);
+                     CopilotSub subscriber);
 
   /**
    * Remove an existing subscriber for a topic.
@@ -74,7 +74,7 @@ class TopicManager {
    * @return true iff no subscribers left on this topic.
    */
   bool RemoveSubscriber(const TopicUUID& topic,
-                        HostNumber subscriber);
+                        CopilotSub subscriber);
 
   /**
    * Visits the list of subscribers for a specific topic and sequence number

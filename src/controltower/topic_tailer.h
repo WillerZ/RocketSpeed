@@ -13,12 +13,14 @@
 #include "src/port/Env.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
-#include "src/util/hostmap.h"
 #include "src/util/storage.h"
+#include "src/util/subscription_map.h"
 #include "src/util/topic_uuid.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
+#include "src/controltower/options.h"
 #include "src/controltower/topic.h"
+#include "src/controltower/tower.h"
 
 namespace rocketspeed {
 
@@ -30,12 +32,6 @@ class MsgLoop;
 class TopicTailer {
  friend class ControlTowerTest;
  public:
-  struct Options {
-    // Probability of failing to enqueue a log record to the TopicTailer queue.
-    // For testing the log storage backoff/flow control.
-    double FAULT_send_log_record_failure_rate = 0.0;
-  };
-
   /**
    * Create a TopicTailer.
    *
@@ -57,8 +53,8 @@ class TopicTailer {
     std::shared_ptr<LogRouter> log_router,
     std::shared_ptr<Logger> info_log,
     std::function<void(std::unique_ptr<Message>,
-                       std::vector<HostNumber>)> on_message,
-    Options options,
+                       std::vector<CopilotSub>)> on_message,
+    ControlTowerOptions::TopicTailer options,
     TopicTailer** tailer);
 
   /**
@@ -78,18 +74,17 @@ class TopicTailer {
    */
   Status AddSubscriber(const TopicUUID& topic,
                        SequenceNumber start,
-                       HostNumber hostnum);
+                       CopilotSub id);
 
   /**
-   * Removes a subscriber from a topic. This call is not thread-safe.
+   * Removes a single subscription. This call is not thread-safe.
    */
-  Status RemoveSubscriber(const TopicUUID& topic,
-                          HostNumber hostnum);
+  Status RemoveSubscriber(CopilotSub id);
 
   /**
-   * Removes all subscriptions for a host.
+   * Removes all subscriptions for a stream.
    */
-  Status RemoveSubscriber(HostNumber hostnum);
+  Status RemoveSubscriber(StreamID stream_id);
 
   /**
    * Process a data record from a log tailer, and forward to on_message.
@@ -153,8 +148,8 @@ class TopicTailer {
               std::shared_ptr<LogRouter> log_router,
               std::shared_ptr<Logger> info_log,
               std::function<void(std::unique_ptr<Message>,
-                                 std::vector<HostNumber>)> on_message,
-              Options options);
+                                 std::vector<CopilotSub>)> on_message,
+              ControlTowerOptions::TopicTailer options);
 
   template <typename Function>
   bool Forward(Function command);
@@ -162,20 +157,20 @@ class TopicTailer {
   bool Forward(std::unique_ptr<Command> command);
 
   void AddTailSubscriber(const TopicUUID& topic,
-                         HostNumber hostnum,
+                         CopilotSub id,
                          LogID logid,
                          SequenceNumber seqno);
 
   void AddSubscriberInternal(const TopicUUID& topic,
-                             HostNumber hostnum,
+                             CopilotSub id,
                              LogID logid,
                              SequenceNumber start);
 
   void RemoveSubscriberInternal(const TopicUUID& topic,
-                                HostNumber hostnum,
+                                CopilotSub id,
                                 LogID logid);
 
-  void RemoveSubscriberInternal(HostNumber hostnum);
+  void RemoveSubscriberInternal(StreamID stream_id);
 
   /**
    * Finds the LogReader* with given reader_id, or nullptr if none found.
@@ -183,9 +178,9 @@ class TopicTailer {
   LogReader* FindLogReader(size_t reader_id);
 
   /**
-   * Assign a new subscription (hostnum + topic) to a LogReader.
+   * Assign a new subscription (id + topic) to a LogReader.
    */
-  LogReader* ReaderForNewSubscription(HostNumber hostnum,
+  LogReader* ReaderForNewSubscription(CopilotSub id,
                                       const TopicUUID& topic,
                                       LogID logid,
                                       SequenceNumber seqno);
@@ -228,7 +223,7 @@ class TopicTailer {
 
   // Callback for outgoing messages.
   std::function<void(std::unique_ptr<Message>,
-                     std::vector<HostNumber>)> on_message_;
+                     std::vector<CopilotSub>)> on_message_;
 
   // Subscription information per topic
   std::unordered_map<LogID, TopicManager> topic_map_;
@@ -238,10 +233,13 @@ class TopicTailer {
 
   std::mt19937_64& prng_;
 
-  Options options_;
+  ControlTowerOptions::TopicTailer options_;
 
   // Queues used to communicate from storage threads back to the room.
   std::unique_ptr<ThreadLocalCommandQueues> storage_to_room_queues_;
+
+  // Map of subscriptions per stream.
+  SubscriptionMap<TopicUUID> stream_subscriptions_;
 
   struct Stats {
     Stats() {

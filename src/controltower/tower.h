@@ -10,7 +10,7 @@
 #include <vector>
 #include "src/messages/msg_loop.h"
 #include "src/controltower/options.h"
-#include "src/util/hostmap.h"
+#include "src/util/subscription_map.h"
 
 namespace rocketspeed {
 
@@ -18,6 +18,22 @@ class ControlRoom;
 class LogTailer;
 class TopicTailer;
 class Statistics;
+
+struct CopilotSub {
+  CopilotSub(StreamID _stream_id, SubscriptionID _sub_id)
+  : stream_id(_stream_id)
+  , sub_id(_sub_id) {
+  }
+
+  bool operator==(const CopilotSub& rhs) const {
+    return rhs.stream_id == stream_id && rhs.sub_id == sub_id;
+  }
+
+  std::string ToString() const;
+
+  StreamID stream_id;
+  SubscriptionID sub_id;
+};
 
 class ControlTower {
  public:
@@ -36,9 +52,6 @@ class ControlTower {
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}
 
-  // Returns the HostId to HostNumber mapping
-  HostMap& GetHostMap() { return hostmap_; }
-
   // The Storage Reader
   LogTailer* GetLogTailer() {
     return log_tailer_.get();
@@ -54,15 +67,6 @@ class ControlTower {
     return options_.msg_loop->GetHostId();
   }
 
-  // Find a host number and worker ID by client ID
-  HostNumber LookupHost(StreamID origin, int* out_worker_id) const;
-
-  // Find a client ID and worker ID by host number
-  StreamID LookupHost(HostNumber hostnum, int* out_worker_id) const;
-
-  // Add a new client ID and worker ID then return its host number
-  HostNumber InsertHost(StreamID origin, int worker_id);
-
   MsgLoop* GetMsgLoop() {
     return options_.msg_loop;
   }
@@ -75,12 +79,6 @@ class ControlTower {
  private:
   // The options used by the Control Tower
   ControlTowerOptions options_;
-
-  // Maps a HostId to a HostNumber.
-  HostMap hostmap_;
-
-  // Maps a HostNumber to a worker_id
-  std::unique_ptr<std::atomic<int>[]> hostworker_;
 
   // A control tower has multiple ControlRooms.
   // Each Room handles its own set of topics. Each room has its own
@@ -100,6 +98,8 @@ class ControlTower {
   std::vector<std::unique_ptr<ThreadLocalCommandQueues>>
     find_latest_seqno_response_queues_;
 
+  std::vector<SubscriptionMap<int>> sub_to_room_;
+
   // private Constructor
   explicit ControlTower(const ControlTowerOptions& options);
 
@@ -107,7 +107,8 @@ class ControlTower {
   ControlTowerOptions SanitizeOptions(const ControlTowerOptions& src);
 
   // callbacks to process incoming messages
-  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessUnsubscribe(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessFindTailSeqno(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
   std::map<MessageType, MsgCallbackType> InitializeCallbacks();

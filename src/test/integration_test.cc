@@ -672,7 +672,6 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   // Start client loop.
   MsgLoop client(env_, EnvOptions(), 58499, 1, info_log, "client");
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mMetadata] = [](std::unique_ptr<Message>, StreamID) {};
   callbacks[MessageType::mDeliver] =
     [&] (std::unique_ptr<Message> msg, StreamID origin) {
       received_data.Post();
@@ -689,9 +688,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   // Subscribe.
   NamespaceID ns = GuestNamespace;
   Topic topic = "UnsubscribeOnGoodbye";
-  MessageMetadata sub(Tenant::GuestTenant,
-                      MessageMetadata::MetaType::Request,
-                      { TopicPair(1, topic, MetadataType::mSubscribe, ns) });
+  MessageSubscribe sub(Tenant::GuestTenant, ns, topic, 1, 1);
   ASSERT_OK(client.SendRequest(sub, &socket, 0));
 
   // Now say goodbye.

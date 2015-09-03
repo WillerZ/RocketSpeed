@@ -9,6 +9,7 @@
 
 #include <map>
 #include <numeric>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -53,15 +54,10 @@ ControlTower::SanitizeOptions(const ControlTowerOptions& src) {
  * Private constructor for a Control Tower
  */
 ControlTower::ControlTower(const ControlTowerOptions& options):
-  options_(SanitizeOptions(options)),
-  hostmap_(options.max_number_of_hosts),
-  hostworker_(new std::atomic<int>[options.max_number_of_hosts]) {
+  options_(SanitizeOptions(options))  {
   // The rooms and that tailers are not initialized here.
   // The reason being that those initializations could fail and
   // return error Status.
-  for (unsigned int i = 0; i < options.max_number_of_hosts; ++i) {
-    hostworker_[i].store(-1, std::memory_order_release);
-  }
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
@@ -70,6 +66,8 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
     find_latest_seqno_response_queues_.emplace_back(
       options_.msg_loop->CreateThreadLocalQueues(i));
   }
+
+  sub_to_room_.resize(options_.msg_loop->GetNumWorkers());
 }
 
 ControlTower::~ControlTower() {
@@ -183,8 +181,9 @@ Status ControlTower::Initialize() {
   size_t reader_id = 0;
   for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
-      [this, i] (std::unique_ptr<Message> msg, std::vector<HostNumber> hosts) {
-        rooms_[i]->OnTailerMessage(std::move(msg), std::move(hosts));
+      [this, i] (std::unique_ptr<Message> msg,
+                 std::vector<CopilotSub> recipients) {
+        rooms_[i]->OnTailerMessage(std::move(msg), std::move(recipients));
       };
     TopicTailer* topic_tailer;
     st = TopicTailer::CreateNewInstance(opt.env,
@@ -216,70 +215,73 @@ Status ControlTower::Initialize() {
   return Status::OK();
 }
 
-// A callback method to process MessageMetadata
-// The message is forwarded to the appropriate ControlRoom
-void
-ControlTower::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
+void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
+                                    StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
-  // get the request message
-  MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
-  if (request->GetMetaType() != MessageMetadata::MetaType::Request) {
+  MessageSubscribe* subscribe = static_cast<MessageSubscribe*>(msg.get());
+  LogID log_id;
+  Status st = options_.log_router->GetLogID(subscribe->GetNamespace().c_str(),
+                                            subscribe->GetTopicName().c_str(),
+                                            &log_id);
+  if (!st.ok()) {
     LOG_WARN(options_.info_log,
-        "MessageMetadata with bad type %d received, ignoring...",
-        request->GetMetaType());
+        "Unable to map Topic(%s,%s) to logid %s",
+        subscribe->GetNamespace().c_str(),
+        subscribe->GetTopicName().c_str(),
+        st.ToString().c_str());
+    return;
+  }
+  const int room_number = LogIDToRoom(log_id);
+  ControlRoom* room = rooms_[room_number].get();
+  int worker_id = options_.msg_loop->GetThreadWorkerIndex();
+
+  auto command = room->MsgCommand(std::move(msg), worker_id, origin);
+  auto& queue = tower_to_room_queues_[worker_id][room_number];
+  if (!queue->Write(command)) {
+    LOG_WARN(options_.info_log,
+        "Unable to forward subscription for Topic(%s,%s)@%" PRIu64
+        " to rooms-%u",
+        subscribe->GetNamespace().c_str(),
+        subscribe->GetTopicName().c_str(),
+        subscribe->GetStartSequenceNumber(),
+        room_number);
+  } else {
+    LOG_DEBUG(options_.info_log,
+        "Forwarded subscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
+        subscribe->GetNamespace().c_str(),
+        subscribe->GetTopicName().c_str(),
+        subscribe->GetStartSequenceNumber(),
+        room_number);
   }
 
-  // Process each topic
-  for (size_t i = 0; i < request->GetTopicInfo().size(); i++) {
-    // map the topic to a logid
-    TopicPair topic = request->GetTopicInfo()[i];
-    LogID logid;
-    Status st = options_.log_router->GetLogID(topic.namespace_id,
-                                              topic.topic_name,
-                                              &logid);
-    if (!st.ok()) {
-      LOG_WARN(options_.info_log,
-          "Unable to map Topic(%s,%s) to logid %s",
-          topic.namespace_id.c_str(),
-          topic.topic_name.c_str(),
-          st.ToString().c_str());
-      continue;
-    }
-    // calculate the destination room number
-    int room_number = LogIDToRoom(logid);
+  auto& room_map = sub_to_room_[worker_id];
+  room_map.Insert(origin, subscribe->GetSubID(), room_number);
+}
 
-    // Copy out only the ith topic into a new message.
-    MessageMetadata* newmsg = new MessageMetadata(
-                            request->GetTenantID(),
-                            request->GetMetaType(),
-                            std::vector<TopicPair> {topic});
-    std::unique_ptr<Message> newmessage(newmsg);
+void ControlTower::ProcessUnsubscribe(std::unique_ptr<Message> msg,
+                                      StreamID origin) {
+  options_.msg_loop->ThreadCheck();
+  int worker_id = options_.msg_loop->GetThreadWorkerIndex();
 
-    // forward message to the destination room
-    ControlRoom* room = rooms_[room_number].get();
-    int worker_id = options_.msg_loop->GetThreadWorkerIndex();
+  MessageUnsubscribe* unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
+  auto& room_map = sub_to_room_[worker_id];
+  int room_number;
+  if (!room_map.MoveOut(origin, unsubscribe->GetSubID(), &room_number)) {
+    return;
+  }
+  ControlRoom* room = rooms_[room_number].get();
 
-    auto command = room->MsgCommand(std::move(newmessage), worker_id, origin);
-    auto& queue = tower_to_room_queues_[worker_id][room_number];
-    if (!queue->Write(command)) {
-      LOG_WARN(options_.info_log,
-          "Unable to forward %ssubscription for Topic(%s,%s)@%" PRIu64
-          " to rooms-%u",
-          topic.topic_type == MetadataType::mSubscribe ? "" : "un",
-          topic.namespace_id.c_str(),
-          topic.topic_name.c_str(),
-          topic.seqno,
-          room_number);
-    } else {
-      LOG_DEBUG(options_.info_log,
-          "Forwarded %ssubscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
-          topic.topic_type == MetadataType::mSubscribe ? "" : "un",
-          topic.namespace_id.c_str(),
-          topic.topic_name.c_str(),
-          topic.seqno,
-          room_number);
-    }
+  auto command = room->MsgCommand(std::move(msg), worker_id, origin);
+  auto& queue = tower_to_room_queues_[worker_id][room_number];
+  if (!queue->Write(command)) {
+    LOG_WARN(options_.info_log,
+        "Unable to forward unsubscription to rooms-%u",
+        room_number);
+  } else {
+    LOG_DEBUG(options_.info_log,
+        "Forwarded unsubscription to rooms-%u",
+        room_number);
   }
 }
 
@@ -368,7 +370,6 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
   }
 }
 
-// A callback method to process MessageMetadata
 // The message is forwarded to the appropriate ControlRoom
 void
 ControlTower::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
@@ -396,6 +397,7 @@ ControlTower::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
           i);
     }
   }
+  sub_to_room_[worker_id].Remove(origin);
 }
 
 // A static method to initialize the callback map
@@ -403,9 +405,13 @@ std::map<MessageType, MsgCallbackType>
 ControlTower::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg,
-                                       StreamID origin) {
-    ProcessMetadata(std::move(msg), origin);
+  cb[MessageType::mSubscribe] = [this] (std::unique_ptr<Message> msg,
+                                        StreamID origin) {
+    ProcessSubscribe(std::move(msg), origin);
+  };
+  cb[MessageType::mUnsubscribe] = [this] (std::unique_ptr<Message> msg,
+                                          StreamID origin) {
+    ProcessUnsubscribe(std::move(msg), origin);
   };
   cb[MessageType::mFindTailSeqno] = [this] (std::unique_ptr<Message> msg,
                                             StreamID origin) {
@@ -418,33 +424,6 @@ ControlTower::InitializeCallbacks() {
 
   // return the updated map
   return cb;
-}
-
-HostNumber ControlTower::LookupHost(StreamID origin, int* out_worker_id) const {
-  HostNumber hostnum = hostmap_.Lookup(origin);
-  if (hostnum != -1) {
-    assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
-    *out_worker_id = hostworker_[hostnum].load(std::memory_order_acquire);
-  }
-  return hostnum;
-}
-
-StreamID ControlTower::LookupHost(HostNumber hostnum,
-                                  int* out_worker_id) const {
-  StreamID origin = hostmap_.Lookup(hostnum);
-  if (hostnum != -1) {
-    assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
-    *out_worker_id = hostworker_[hostnum].load(std::memory_order_acquire);
-  }
-  return origin;
-}
-
-HostNumber ControlTower::InsertHost(StreamID origin, int worker_id) {
-  HostNumber hostnum = hostmap_.Insert(origin, hostworker_.get(), worker_id);
-  if (hostnum != -1) {
-    assert(static_cast<unsigned int>(hostnum) < options_.max_number_of_hosts);
-  }
-  return hostnum;
 }
 
 Statistics ControlTower::GetStatisticsSync() {
@@ -506,6 +485,12 @@ std::string ControlTower::GetInfoSync(std::vector<std::string> args) {
 
 int ControlTower::LogIDToRoom(LogID log_id) const {
   return static_cast<int>(log_id % rooms_.size());
+}
+
+std::string CopilotSub::ToString() const {
+  std::ostringstream ss;
+  ss << "CopilotSub(" << stream_id << ", " << sub_id << ")";
+  return ss.str();
 }
 
 }  // namespace rocketspeed

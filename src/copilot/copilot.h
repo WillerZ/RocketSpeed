@@ -20,6 +20,7 @@
 #include "src/util/logging.h"
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"
+#include "src/util/subscription_map.h"
 #include "src/util/common/host_id.h"
 
 namespace rocketspeed {
@@ -80,9 +81,7 @@ class Copilot {
   std::vector<std::unique_ptr<CopilotWorker>> workers_;
 
   // For each thread, maps (StreamID, SubscriptionID) pairs to copilot workers.
-  using SubscriptionIDToWorkerMap =
-    std::unordered_map<StreamID, std::unordered_map<SubscriptionID, int>>;
-  std::vector<SubscriptionIDToWorkerMap> sub_id_map_;
+  std::vector<SubscriptionMap<int>> sub_id_map_;
 
   // Full-mesh network of queues for the messages from clients to workers.
   std::vector<std::vector<std::shared_ptr<CommandQueue>>>
@@ -106,7 +105,6 @@ class Copilot {
 
   // callbacks to process incoming messages
   void ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin);
-  void ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessGap(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessTailSeqno(std::unique_ptr<Message> msg, StreamID origin);
   void ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin);

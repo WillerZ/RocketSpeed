@@ -137,95 +137,25 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
 
   const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
 
-  // get the request message
-  MessageData* data = static_cast<MessageData*>(msg.get());
-
+  // get the data message
+  MessageDeliverData* data = static_cast<MessageDeliverData*>(msg.get());
+  int worker_id = CopilotWorker::SubscriptionIDWorker(data->GetSubID(),
+                                                      workers_.size());
   LOG_DEBUG(options_.info_log,
-            "Received deliver (%.16s)@%" PRIu64 " for Topic(%s,%s)",
+            "Received deliver (%.16s)@%" PRIu64 " for worker %d",
             data->GetPayload().ToString().c_str(),
             data->GetSequenceNumber(),
-            data->GetNamespaceId().ToString().c_str(),
-            data->GetTopicName().ToString().c_str());
-
-  // map the topic to a logid
-  LogID logid;
-  Status st = options_.log_router->GetLogID(data->GetNamespaceId(),
-                                            data->GetTopicName(),
-                                            &logid);
-  if (!st.ok()) {
-    LOG_WARN(options_.info_log,
-             "Unable to map msg to logid %s",
-             st.ToString().c_str());
-    return;
-  }
-
-  // calculate the destination worker
-  int worker_id = GetLogWorker(logid);
-  auto& worker = workers_[worker_id];
+            worker_id);
 
   // forward message to worker
+  auto& worker = workers_[worker_id];
   auto command =
-    worker->WorkerCommand(logid, std::move(msg), event_loop_worker, origin);
+    worker->WorkerCommand(LogID(0), std::move(msg), event_loop_worker, origin);
   auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
   if (!queue->Write(command)) {
     LOG_WARN(options_.info_log,
         "Worker %d queue is full.",
         static_cast<int>(worker_id));
-  }
-}
-
-// A static callback method to process MessageMetadata
-void Copilot::ProcessMetadata(std::unique_ptr<Message> msg, StreamID origin) {
-  options_.msg_loop->ThreadCheck();
-
-  // get the request message
-  MessageMetadata* request = static_cast<MessageMetadata*>(msg.get());
-
-  // Process each topic
-  for (size_t i = 0; i < request->GetTopicInfo().size(); i++) {
-    // map the topic to a logid
-    const TopicPair& topic = request->GetTopicInfo()[i];
-
-    LOG_DEBUG(options_.info_log,
-              "Received %s %s for Topic(%s,%s)@%" PRIu64,
-              topic.topic_type == MetadataType::mSubscribe ? "subscribe"
-                                                           : "unsubscribe",
-              request->GetMetaType() == MessageMetadata::MetaType::Request
-                  ? "request"
-                  : "response",
-              topic.namespace_id.c_str(),
-              topic.topic_name.c_str(),
-              topic.seqno);
-
-    LogID logid;
-    Status st = options_.log_router->GetLogID(topic.namespace_id,
-                                              topic.topic_name,
-                                              &logid);
-    if (!st.ok()) {
-      LOG_WARN(options_.info_log,
-               "Unable to map msg to logid %s",
-               st.ToString().c_str());
-      continue;
-    }
-    // calculate the destination worker
-    int worker_id = GetLogWorker(logid);
-    auto& worker = workers_[worker_id];
-
-    // Copy out only the ith topic into a new message.
-    MessageMetadata* newmsg = new MessageMetadata(
-                            request->GetTenantID(),
-                            request->GetMetaType(),
-                            std::vector<TopicPair> {topic});
-    std::unique_ptr<Message> newmessage(newmsg);
-
-    // forward message to worker
-    int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
-    auto command = worker->WorkerCommand(logid,
-                                         std::move(newmessage),
-                                         event_loop_worker,
-                                         origin);
-    auto& queue = client_to_worker_queues_[event_loop_worker][worker_id];
-    queue->Write(command);
   }
 }
 
@@ -235,34 +165,19 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
   const int event_loop_worker = options_.msg_loop->GetThreadWorkerIndex();
 
   // get the gap message
-  MessageGap* gap = static_cast<MessageGap*>(msg.get());
-
+  MessageDeliverGap* gap = static_cast<MessageDeliverGap*>(msg.get());
+  int worker_id = CopilotWorker::SubscriptionIDWorker(gap->GetSubID(),
+                                                      workers_.size());
   LOG_DEBUG(options_.info_log,
-            "Received gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s)",
-            gap->GetStartSequenceNumber(),
-            gap->GetEndSequenceNumber(),
-            gap->GetNamespaceId().c_str(),
-            gap->GetTopicName().c_str());
-
-  // map the topic to a logid
-  LogID logid;
-  Status st = options_.log_router->GetLogID(gap->GetNamespaceId(),
-                                            gap->GetTopicName(),
-                                            &logid);
-  if (!st.ok()) {
-    LOG_WARN(options_.info_log,
-             "Unable to map msg to logid %s",
-             st.ToString().c_str());
-    return;
-  }
-
-  // calculate the destination worker
-  int worker_id = GetLogWorker(logid);
-  auto& worker = workers_[worker_id];
+            "Received gap %" PRIu64 "-%" PRIu64 " for worker %d",
+            gap->GetFirstSequenceNumber(),
+            gap->GetLastSequenceNumber(),
+            worker_id);
 
   // forward message to worker
+  auto& worker = workers_[worker_id];
   auto command =
-    worker->WorkerCommand(logid, std::move(msg), event_loop_worker, origin);
+    worker->WorkerCommand(LogID(0), std::move(msg), event_loop_worker, origin);
   auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
   if (!queue->Write(command)) {
     LOG_WARN(options_.info_log,
@@ -341,7 +256,7 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker = workers_[dest_worker_id];
 
   auto worker_id = options_.msg_loop->GetThreadWorkerIndex();
-  sub_id_map_[worker_id][origin].emplace(subscribe->GetSubID(), dest_worker_id);
+  sub_id_map_[worker_id].Insert(origin, subscribe->GetSubID(), dest_worker_id);
 
   auto command =
     worker->WorkerCommand(logid, std::move(msg), worker_id, origin);
@@ -364,31 +279,18 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
             unsubscribe->GetSubID(),
             origin);
 
-  const LogID logid = 0;  // unused
   const int this_worker = options_.msg_loop->GetThreadWorkerIndex();
   const auto sub_id = unsubscribe->GetSubID();
-
-  // Subscription map for this worker.
-  auto& worker_map = sub_id_map_[this_worker];
-
-  // Find subscription map for this incoming stream.
-  auto stream_it = worker_map.find(origin);
-  if (stream_it != worker_map.end()) {
-    auto& subscription_map = stream_it->second;
-
-    // Find worker for this subscription ID.
-    auto sub_it = subscription_map.find(sub_id);
-    if (sub_it != subscription_map.end()) {
-      const int worker_id = sub_it->second;
-      auto command = workers_[worker_id]->WorkerCommand(logid,
-                                                        std::move(msg),
-                                                        this_worker,
-                                                        origin);
-      auto& queue = client_to_worker_queues_[this_worker][worker_id];
-      queue->Write(command);
-      subscription_map.erase(sub_it);
-    }
+  int worker_id;
+  if (!sub_id_map_[this_worker].MoveOut(origin, sub_id, &worker_id)) {
+    return;
   }
+  auto command = workers_[worker_id]->WorkerCommand(LogID(0),
+                                                    std::move(msg),
+                                                    this_worker,
+                                                    origin);
+  auto& queue = client_to_worker_queues_[this_worker][worker_id];
+  queue->Write(command);
 }
 
 void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
@@ -398,7 +300,7 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   switch (goodbye->GetOriginType()) {
     case MessageGoodbye::OriginType::Client: {
-      sub_id_map_[event_loop_worker].erase(origin);
+      sub_id_map_[event_loop_worker].Remove(origin);
       LOG_DEBUG(options_.info_log, "Received goodbye for client %llu", origin);
       break;
     }
@@ -415,8 +317,7 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
       new MessageGoodbye(goodbye->GetTenantID(),
                          goodbye->GetCode(),
                          goodbye->GetOriginType()));
-    LogID logid = 0;  // unused
-    auto command = workers_[i]->WorkerCommand(logid,
+    auto command = workers_[i]->WorkerCommand(LogID(0),
                                               std::move(new_msg),
                                               event_loop_worker,
                                               origin);
@@ -439,16 +340,12 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   using namespace std::placeholders;
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mDeliver] = [this] (std::unique_ptr<Message> msg,
-                                      StreamID origin) {
+  cb[MessageType::mDeliverData] = [this] (std::unique_ptr<Message> msg,
+                                          StreamID origin) {
     ProcessDeliver(std::move(msg), origin);
   };
-  cb[MessageType::mMetadata] = [this] (std::unique_ptr<Message> msg,
-                                       StreamID origin) {
-    ProcessMetadata(std::move(msg), origin);
-  };
-  cb[MessageType::mGap] = [this] (std::unique_ptr<Message> msg,
-                                  StreamID origin) {
+  cb[MessageType::mDeliverGap] = [this] (std::unique_ptr<Message> msg,
+                                         StreamID origin) {
     ProcessGap(std::move(msg), origin);
   };
   cb[MessageType::mTailSeqno] = [this] (std::unique_ptr<Message> msg,
