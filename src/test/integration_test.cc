@@ -1390,7 +1390,7 @@ TEST(IntegrationTest, LogAvailability) {
   new_towers = {
     { 2, ct_cluster[1]->GetControlTower()->GetHostId() },
   };
-  new_router = std::make_shared<ConsistentHashTowerRouter>(new_towers, 20, 2);
+  new_router = std::make_shared<ConsistentHashTowerRouter>(new_towers, 20, 1);
   ASSERT_OK(cluster.GetCopilot()->UpdateTowerRouter(std::move(new_router)));
   env_->SleepForMicroseconds(200000);
 
