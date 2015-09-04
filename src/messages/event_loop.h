@@ -509,7 +509,7 @@ class EventLoop {
   void remove_host(const HostId& host);
   SocketEvent* setup_connection(const HostId& destination);
   Status create_connection(const HostId& host, int* fd);
-  void teardown_connection(SocketEvent* ev);
+  void teardown_connection(SocketEvent* ev, bool timed_out);
   void teardown_all_connections();
 
   // callbacks needed by libevent

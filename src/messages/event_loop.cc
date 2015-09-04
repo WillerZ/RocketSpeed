@@ -126,7 +126,6 @@ class SocketEvent {
   }
 
   ~SocketEvent() {
-    assert(!event_loop_->connect_timeout_.Contains(this));
     event_loop_->thread_check_.Check();
     LOG_INFO(event_loop_->GetLog(),
              "Closing fd(%d)",
@@ -169,8 +168,9 @@ class SocketEvent {
    * cleans up connection cache, dispatches goodbyes, and frees the SocketEvent.
    *
    * @param sev The SocketEvent to disconnect.
+   * @param timed_out True is the socked is descroyed due to connect timeout.
    */
-  static void Disconnect(SocketEvent* sev) {
+  static void Disconnect(SocketEvent* sev, bool timed_out) {
     // Inform MsgLoop that clients have disconnected.
     auto origin_type = sev->was_initiated_
                            ? MessageGoodbye::OriginType::Server
@@ -180,7 +180,7 @@ class SocketEvent {
     EventLoop* event_loop = sev->event_loop_;  // make a copy, sev is destroyed.
     auto globals = event_loop->stream_router_.RemoveConnection(sev);
     // Delete the socket event.
-    event_loop->teardown_connection(sev);
+    event_loop->teardown_connection(sev, timed_out);
     for (StreamID global : globals) {
       // We send goodbye using the global stream IDs, as these are only
       // known by the entity using the loop.
@@ -211,7 +211,7 @@ class SocketEvent {
       fd,
       [this] () {
         if (!ReadCallback().ok()) {
-          Disconnect(this);
+          Disconnect(this, false);
         } else {
           ProcessHeartbeats();
         }
@@ -222,7 +222,7 @@ class SocketEvent {
       fd,
       [this] () {
         if (!WriteCallback().ok()) {
-          Disconnect(this);
+          Disconnect(this, false);
         } else {
           ProcessHeartbeats();
         }
@@ -913,7 +913,7 @@ void EventLoop::Run() {
     [this] () {
       connect_timeout_.ProcessExpired(
         options_.connect_timeout,
-        &SocketEvent::Disconnect,
+        [](SocketEvent* sev) { SocketEvent::Disconnect(sev, true); },
         -1);
     },
     options_.connect_timeout);
@@ -1144,9 +1144,11 @@ Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
 }
 
 // Removes an socket event created by setup_connection.
-void EventLoop::teardown_connection(SocketEvent* sev) {
+void EventLoop::teardown_connection(SocketEvent* sev, bool timed_out) {
   thread_check_.Check();
-  connect_timeout_.Erase(sev);
+  if (!timed_out) {
+    connect_timeout_.Erase(sev);
+  }
   all_sockets_.erase(sev->GetListHandle());
   active_connections_.fetch_sub(1, std::memory_order_acq_rel);
 }
@@ -1154,7 +1156,7 @@ void EventLoop::teardown_connection(SocketEvent* sev) {
 // Clears out the connection cache
 void EventLoop::teardown_all_connections() {
   while (!all_sockets_.empty()) {
-    teardown_connection(all_sockets_.front().get());
+    teardown_connection(all_sockets_.front().get(), false);
   }
 }
 
