@@ -20,16 +20,6 @@ ConsistentHashTowerRouter::ConsistentHashTowerRouter(
   }
 }
 
-Status ConsistentHashTowerRouter::GetControlTower(LogID logID,
-                                           const HostId** out) const {
-  std::vector<const HostId*> towers;
-  Status status = GetControlTowers(logID, &towers);
-  if (status.ok()) {
-    *out = towers[0];
-  }
-  return status;
-}
-
 Status ConsistentHashTowerRouter::GetControlTowers(
     LogID logID,
     std::vector<const HostId*>* out) const {

@@ -30,15 +30,6 @@ class ControlTowerRouter {
   virtual ~ControlTowerRouter() = default;
 
   /**
-    * Gets the host ID of the control tower ring that is tailing this log.
-    *
-    * @param logID The ID of the log to lookup.
-    * @param out Where to place the resulting control tower ring host ID.
-    * @return on success OK(), otherwise errorcode.
-    */
-  virtual Status GetControlTower(LogID logID, HostId const** out) const = 0;
-
-  /**
    * Gets the IDs of the control tower rings that are tailing this log.
    *
    * @param logID The ID of the log to lookup.

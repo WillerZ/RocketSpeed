@@ -104,9 +104,10 @@ TEST(ConsistentHashTowerRouterTest, ChangeHost) {
   {  // Determine logs serviced by each host.
     ConsistentHashTowerRouter router(control_towers, 20, 1);
     for (int i = 0; i < num_logs; ++i) {
-      HostId const* host_id;
-      ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());
-      host_logs_before[*host_id].insert(i);
+      std::vector<HostId const*> host_ids;
+      ASSERT_OK(router.GetControlTowers(i, &host_ids));
+      ASSERT_TRUE(!host_ids.empty());
+      host_logs_before[*host_ids[0]].insert(i);
     }
   }
 
@@ -117,9 +118,10 @@ TEST(ConsistentHashTowerRouterTest, ChangeHost) {
   {  // Determine logs serviced by each host after the swap.
     ConsistentHashTowerRouter router(control_towers, 20, 1);
     for (int i = 0; i < num_logs; ++i) {
-      HostId const* host_id;
-      ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());
-      host_logs_after[*host_id].insert(i);
+      std::vector<HostId const*> host_ids;
+      ASSERT_OK(router.GetControlTowers(i, &host_ids));
+      ASSERT_TRUE(!host_ids.empty());
+      host_logs_after[*host_ids[0]].insert(i);
     }
   }
 

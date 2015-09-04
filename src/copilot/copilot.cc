@@ -23,10 +23,6 @@ namespace rocketspeed {
 namespace {
 class EmptyTowerRouter : public ControlTowerRouter {
  public:
-  Status GetControlTower(LogID logID, HostId const** out) const override {
-    return Status::NotFound("Empty CT router");
-  }
-
   Status GetControlTowers(LogID logID,
                           std::vector<HostId const*>* out) const override {
     return Status::NotFound("Empty CT router");

@@ -17,7 +17,7 @@
 namespace rocketspeed {
 
 /**
- * The log to control tower mapping uses ring consistent hashing, which
+ * The log to control tower mapping which uses ring consistent hashing, that
  * distributes logs to control towers evenly, and in a way that changes the
  * mapping minimally when control towers are added or lost.
  */
@@ -43,8 +43,6 @@ class ConsistentHashTowerRouter : public ControlTowerRouter {
       default;
   ConsistentHashTowerRouter(ConsistentHashTowerRouter&&) = default;
   ConsistentHashTowerRouter& operator=(ConsistentHashTowerRouter&&) = default;
-
-  Status GetControlTower(LogID logID, HostId const** out) const override;
 
   Status GetControlTowers(LogID logID,
                           std::vector<HostId const*>* out) const override;

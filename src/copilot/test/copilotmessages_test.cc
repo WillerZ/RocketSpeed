@@ -88,17 +88,16 @@ TEST(CopilotTest, WorkerMapping) {
        logid <= log_range.second;
        ++logid) {
     // Find the tower responsible for this log.
-    HostId const* control_tower = nullptr;
-    ASSERT_TRUE(
-        options.control_tower_router->GetControlTower(logid, &control_tower)
-            .ok());
+    std::vector<HostId const*> host_ids;
+    ASSERT_OK(options.control_tower_router->GetControlTowers(logid, &host_ids));
+    ASSERT_TRUE(!host_ids.empty());
 
     // Find the worker responsible for this log.
-    int worker_id = copilot->GetTowerWorker(logid, *control_tower);
-    tower_to_workers[*control_tower].insert(worker_id);
+    int worker_id = copilot->GetTowerWorker(logid, *host_ids[0]);
+    tower_to_workers[*host_ids[0]].insert(worker_id);
 
     // Check that the tower maps to only one worker.
-    ASSERT_LE(tower_to_workers[*control_tower].size(),
+    ASSERT_LE(tower_to_workers[*host_ids[0]].size(),
               options.control_tower_connections);
   }
   copilot->Stop();
