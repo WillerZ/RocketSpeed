@@ -257,6 +257,7 @@ function start_servers {
         --pilot \
         --copilot \
         --control_towers=$towers_csv \
+        --copilot_towers_per_log=1 \
         --rollcall=$rollcall"
       if [ $pilot_port ]; then
         cmd="${cmd} --pilot_port=$pilot_port"
