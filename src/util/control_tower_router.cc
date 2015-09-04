@@ -53,24 +53,4 @@ Status ControlTowerRouter::GetControlTowers(
   return Status::OK();
 }
 
-Status ControlTowerRouter::AddControlTower(ControlTowerId node_id,
-                                           HostId host_id) {
-  auto result = host_ids_.emplace(node_id, std::move(host_id));
-  if (!result.second) {
-    return Status::InvalidArgument("Node ID already in router");
-  }
-  mapping_.Add(node_id, replication_);
-  return Status::OK();
-}
-
-Status ControlTowerRouter::RemoveControlTower(ControlTowerId node_id) {
-  auto iter = host_ids_.find(node_id);
-  if (iter == host_ids_.end()) {
-    return Status::InvalidArgument("Node ID not in router");
-  }
-  mapping_.Remove(node_id);
-  host_ids_.erase(iter);
-  return Status::OK();
-}
-
 }  // namespace rocketspeed

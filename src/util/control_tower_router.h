@@ -66,23 +66,6 @@ class ControlTowerRouter {
   Status GetControlTowers(LogID logID, std::vector<HostId const*>* out) const;
 
   /**
-   * Adds a control tower from the mapping.
-   *
-   * @param node_id The node ID of the control tower to add.
-   * @param host_id The host ID of the control tower to add.
-   * @return on success OK(), otherwise errorcode.
-   */
-  Status AddControlTower(ControlTowerId node_id, HostId host_id);
-
-  /**
-   * Removes a control tower from the mapping.
-   *
-   * @param node_id The ControlTowerId of the node to remove.
-   * @return on success OK(), otherwise errorcode.
-   */
-  Status RemoveControlTower(ControlTowerId node_id);
-
-  /**
    * @return Number of unique control towers.
    */
   size_t GetNumTowers() const {

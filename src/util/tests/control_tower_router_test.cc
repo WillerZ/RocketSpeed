@@ -97,28 +97,29 @@ TEST(ControlTowerRouterTest, ChangeHost) {
     { 1, HostId::CreateLocal(1) },
     { 2, HostId::CreateLocal(2) },
   };
-
-  ControlTowerRouter router(control_towers, 20, 1);
-
-  // Logs serviced by each host:
-  std::unordered_map<HostId, std::set<LogID>> host_logs_before;
   const int num_logs = 10000;
-  for (int i = 0; i < num_logs; ++i) {
-    HostId const* host_id;
-    ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());
-    host_logs_before[*host_id].insert(i);
+
+  std::unordered_map<HostId, std::set<LogID>> host_logs_before;
+  {  // Determine logs serviced by each host.
+    ControlTowerRouter router(control_towers, 20, 1);
+    for (int i = 0; i < num_logs; ++i) {
+      HostId const* host_id;
+      ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());
+      host_logs_before[*host_id].insert(i);
+    }
   }
 
   // Swap out node 1 with a new host:
-  router.RemoveControlTower(1);
-  router.AddControlTower(1, HostId::CreateLocal(3));
+  control_towers[1] = HostId::CreateLocal(3);
 
-  // Re-route:
   std::unordered_map<HostId, std::set<LogID>> host_logs_after;
-  for (int i = 0; i < num_logs; ++i) {
-    HostId const* host_id;
-    ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());
-    host_logs_after[*host_id].insert(i);
+  {  // Determine logs serviced by each host after the swap.
+    ControlTowerRouter router(control_towers, 20, 1);
+    for (int i = 0; i < num_logs; ++i) {
+      HostId const* host_id;
+      ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());
+      host_logs_after[*host_id].insert(i);
+    }
   }
 
   // All logs for Host(1) should now be serviced by HostId(3).
