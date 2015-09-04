@@ -9,7 +9,7 @@
 
 namespace rocketspeed {
 
-ControlTowerRouter::ControlTowerRouter(
+ConsistentHashTowerRouter::ConsistentHashTowerRouter(
   std::unordered_map<ControlTowerId, HostId> control_towers,
   unsigned int replicas, size_t control_towers_per_log)
 : host_ids_(std::move(control_towers))
@@ -20,7 +20,7 @@ ControlTowerRouter::ControlTowerRouter(
   }
 }
 
-Status ControlTowerRouter::GetControlTower(LogID logID,
+Status ConsistentHashTowerRouter::GetControlTower(LogID logID,
                                            const HostId** out) const {
   std::vector<const HostId*> towers;
   Status status = GetControlTowers(logID, &towers);
@@ -30,7 +30,7 @@ Status ControlTowerRouter::GetControlTower(LogID logID,
   return status;
 }
 
-Status ControlTowerRouter::GetControlTowers(
+Status ConsistentHashTowerRouter::GetControlTowers(
     LogID logID,
     std::vector<const HostId*>* out) const {
   size_t count = std::min(control_towers_per_log_, mapping_.SlotCount());

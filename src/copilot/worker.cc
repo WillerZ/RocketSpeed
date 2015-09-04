@@ -20,7 +20,7 @@ namespace rocketspeed {
 
 CopilotWorker::CopilotWorker(
     const CopilotOptions& options,
-    std::shared_ptr<ControlTowerRouter> control_tower_router,
+    std::shared_ptr<ConsistentHashTowerRouter> control_tower_router,
     const int myid,
     Copilot* copilot,
     std::shared_ptr<ClientImpl> client)
@@ -120,8 +120,8 @@ CopilotWorker::WorkerCommand(LogID logid,
   return command;
 }
 
-std::unique_ptr<Command>
-CopilotWorker::WorkerCommand(std::shared_ptr<ControlTowerRouter> new_router) {
+std::unique_ptr<Command> CopilotWorker::WorkerCommand(
+    std::shared_ptr<ConsistentHashTowerRouter> new_router) {
   std::unique_ptr<Command> command(MakeExecuteCommand(
       std::bind(&CopilotWorker::ProcessRouterUpdate, this, new_router)));
   return command;
@@ -624,7 +624,7 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
 }
 
 void CopilotWorker::ProcessRouterUpdate(
-    std::shared_ptr<ControlTowerRouter> router) {
+    std::shared_ptr<ConsistentHashTowerRouter> router) {
   LOG_VITAL(options_.info_log, "Updating control tower router");
   control_tower_router_ = std::move(router);
   control_tower_cache_.clear();

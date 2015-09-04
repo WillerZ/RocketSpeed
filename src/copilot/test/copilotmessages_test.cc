@@ -81,7 +81,7 @@ TEST(CopilotTest, WorkerMapping) {
 
   // Now check that each control tower is mapped to one worker.
   std::unordered_map<HostId, std::set<int>> tower_to_workers;
-  ControlTowerRouter router(options.control_towers,
+  ConsistentHashTowerRouter router(options.control_towers,
                             options.consistent_hash_replicas,
                             options.control_towers_per_log);
   for (LogID logid = log_range.first;

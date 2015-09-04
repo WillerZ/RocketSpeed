@@ -25,10 +25,10 @@ using ControlTowerId = uint64_t;
  * distributes logs to control towers evenly, and in a way that changes the
  * mapping minimally when control towers are added or lost.
  */
-class ControlTowerRouter {
+class ConsistentHashTowerRouter {
  public:
   /**
-   * Constructs a new ControlTowerRouter.
+   * Constructs a new ConsistentHashTowerRouter.
    *
    * @param control_towers Map of control tower IDs to hosts.
    * @param replicas Number of hash ring replicas (higher means better
@@ -36,16 +36,17 @@ class ControlTowerRouter {
    * @param control_towers_per_log Each log is mapped to this many
    *        control towers.
    */
-  explicit ControlTowerRouter(
+  explicit ConsistentHashTowerRouter(
     std::unordered_map<ControlTowerId, HostId> control_towers,
     unsigned int replicas,
     size_t control_towers_per_log);
 
   /** Copyable and movable */
-  ControlTowerRouter(const ControlTowerRouter&) = default;
-  ControlTowerRouter& operator=(const ControlTowerRouter&) = default;
-  ControlTowerRouter(ControlTowerRouter&&) = default;
-  ControlTowerRouter& operator=(ControlTowerRouter&&) = default;
+  ConsistentHashTowerRouter(const ConsistentHashTowerRouter&) = default;
+  ConsistentHashTowerRouter& operator=(const ConsistentHashTowerRouter&) =
+      default;
+  ConsistentHashTowerRouter(ConsistentHashTowerRouter&&) = default;
+  ConsistentHashTowerRouter& operator=(ConsistentHashTowerRouter&&) = default;
 
   /**
     * Gets the host ID of the control tower ring that is tailing this log.

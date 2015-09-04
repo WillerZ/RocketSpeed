@@ -25,7 +25,7 @@
 
 namespace rocketspeed {
 
-class ControlTowerRouter;
+class ConsistentHashTowerRouter;
 class Statistics;
 
 class Copilot {
@@ -63,7 +63,7 @@ class Copilot {
    * @param router The router that should be propagated to all of the workers.
    * @return ok() if successfully propagated to all workers, error otherwise.
    */
-  Status UpdateTowerRouter(std::shared_ptr<ControlTowerRouter> router);
+  Status UpdateTowerRouter(std::shared_ptr<ConsistentHashTowerRouter> nodes);
 
   // Get the worker loop associated with a log.
   int GetLogWorker(LogID log_id) const;

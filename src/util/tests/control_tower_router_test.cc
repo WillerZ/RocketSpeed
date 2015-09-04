@@ -16,7 +16,7 @@
 
 namespace rocketspeed {
 
-class ControlTowerRouterTest { };
+class ConsistentHashTowerRouterTest { };
 
 std::unordered_map<ControlTowerId, HostId> MakeControlTowers(int num) {
   std::unordered_map<ControlTowerId, HostId> control_towers;
@@ -26,12 +26,13 @@ std::unordered_map<ControlTowerId, HostId> MakeControlTowers(int num) {
   return control_towers;
 }
 
-TEST(ControlTowerRouterTest, ConsistencyTest) {
+TEST(ConsistentHashTowerRouterTest, ConsistencyTest) {
   // Test that log mapping changes minimally when increasing number of CTs.
   const int num_towers = 1000;
   const size_t num_copies = 3;
-  ControlTowerRouter router1(MakeControlTowers(num_towers), 100, num_copies);
-  ControlTowerRouter router2(
+  ConsistentHashTowerRouter router1(
+      MakeControlTowers(num_towers), 100, num_copies);
+  ConsistentHashTowerRouter router2(
     MakeControlTowers(num_towers * 105 / 100), 100, num_copies);
 
   // Count number of changes for 100k logs.
@@ -64,7 +65,7 @@ TEST(ControlTowerRouterTest, ConsistencyTest) {
   ASSERT_GT(num_relocations, (num_logs * num_copies) * 2 / 100);
 }
 
-TEST(ControlTowerRouterTest, LogDistribution) {
+TEST(ConsistentHashTowerRouterTest, LogDistribution) {
   // Test that logs are well distributed among control towers
   int num_control_towers = 1000;
   auto control_towers = MakeControlTowers(num_control_towers);
@@ -72,7 +73,7 @@ TEST(ControlTowerRouterTest, LogDistribution) {
   for (const auto& entry : control_towers) {
     log_count[entry.second] = 0;
   }
-  ControlTowerRouter router(std::move(control_towers), 100, 1);
+  ConsistentHashTowerRouter router(std::move(control_towers), 100, 1);
 
   // Count number of changed for 100k logs.
   int num_logs = 100000;
@@ -89,7 +90,7 @@ TEST(ControlTowerRouterTest, LogDistribution) {
   ASSERT_LT(minmax.second->second, expected * 1.6);
 }
 
-TEST(ControlTowerRouterTest, ChangeHost) {
+TEST(ConsistentHashTowerRouterTest, ChangeHost) {
   // Test that we can swap an existing host with a new one, without changing
   // the mapping.
   std::unordered_map<ControlTowerId, HostId> control_towers {
@@ -101,7 +102,7 @@ TEST(ControlTowerRouterTest, ChangeHost) {
 
   std::unordered_map<HostId, std::set<LogID>> host_logs_before;
   {  // Determine logs serviced by each host.
-    ControlTowerRouter router(control_towers, 20, 1);
+    ConsistentHashTowerRouter router(control_towers, 20, 1);
     for (int i = 0; i < num_logs; ++i) {
       HostId const* host_id;
       ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());
@@ -114,7 +115,7 @@ TEST(ControlTowerRouterTest, ChangeHost) {
 
   std::unordered_map<HostId, std::set<LogID>> host_logs_after;
   {  // Determine logs serviced by each host after the swap.
-    ControlTowerRouter router(control_towers, 20, 1);
+    ConsistentHashTowerRouter router(control_towers, 20, 1);
     for (int i = 0; i < num_logs; ++i) {
       HostId const* host_id;
       ASSERT_TRUE(router.GetControlTower(i, &host_id).ok());

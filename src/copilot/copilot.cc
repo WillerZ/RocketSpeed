@@ -51,8 +51,8 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
     std::chrono::microseconds(options_.timer_interval_micros));
 
   // Create workers.
-  std::shared_ptr<ControlTowerRouter> router =
-    std::make_shared<ControlTowerRouter>(options_.control_towers,
+  std::shared_ptr<ConsistentHashTowerRouter> router =
+    std::make_shared<ConsistentHashTowerRouter>(options_.control_towers,
                                          options_.consistent_hash_replicas,
                                          options_.control_towers_per_log);
 
@@ -420,7 +420,8 @@ std::string Copilot::GetInfoSync(std::vector<std::string> args) {
   return "Unknown info for copilot";
 }
 
-Status Copilot::UpdateTowerRouter(std::shared_ptr<ControlTowerRouter> router) {
+Status Copilot::UpdateTowerRouter(
+    std::shared_ptr<ConsistentHashTowerRouter> router) {
   Status result;
   // Send the new nodes to all workers.
   // If we fail to forward to any single worker then return failure so that
