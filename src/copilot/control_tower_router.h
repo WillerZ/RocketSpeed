@@ -38,15 +38,6 @@ class ControlTowerRouter {
    */
   virtual Status GetControlTowers(LogID logID,
                                   std::vector<HostId const*>* out) const = 0;
-
-  /**
-   * Gets the expected number of ControlTowers that should be tailed by Copilot
-   * for this log.
-   *
-   * @param log_id The ID of the log.
-   * @return Number of control towers to tail for the log.
-   */
-  virtual size_t GetNumTowersPerLog(LogID log_id) const = 0;
 };
 
 }  // namespace rocketspeed

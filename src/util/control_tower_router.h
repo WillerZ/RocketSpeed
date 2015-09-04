@@ -47,10 +47,6 @@ class ConsistentHashTowerRouter : public ControlTowerRouter {
   Status GetControlTowers(LogID logID,
                           std::vector<HostId const*>* out) const override;
 
-  size_t GetNumTowersPerLog(LogID log_id) const override {
-    return control_towers_per_log_;
-  }
-
  private:
   struct ControlTowerIdHash {
     size_t operator()(ControlTowerId id) const {

@@ -27,8 +27,6 @@ class EmptyTowerRouter : public ControlTowerRouter {
                           std::vector<HostId const*>* out) const override {
     return Status::NotFound("Empty CT router");
   }
-
-  size_t GetNumTowersPerLog(LogID log_id) const override { return 0; }
 };
 }  // namespace
 

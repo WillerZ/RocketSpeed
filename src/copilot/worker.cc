@@ -810,10 +810,18 @@ void CopilotWorker::UpdateTowerSubscriptions(
   const LogID log_id = topic.log_id;
   const TenantID tenant_id = GuestTenant;
 
+  // Find control towers responsible for this topic's log.
+  std::vector<HostId const*> recipients;
+  if (!GetControlTowers(log_id, &recipients).ok()) {
+    // This should only ever happen if all control towers are offline.
+    LOG_WARN(options_.info_log,
+      "Failed to find control towers for log ID %" PRIu64,
+      static_cast<uint64_t>(log_id));
+  }
+
   // Check if we need to resubscribe to control towers.
   // First check if we have enough tower subscriptions.
-  size_t expected_towers_per_log =
-    control_tower_router_->GetNumTowersPerLog(log_id);
+  size_t expected_towers_per_log = recipients.size();
 
   // With one control tower, we can always subscribe directly to 0 since there
   // is no possibility of multiple towers subscribing to different seqnos.
@@ -862,24 +870,14 @@ void CopilotWorker::UpdateTowerSubscriptions(
   using TowerConnection = std::pair<StreamSocket*, int>;  // socket + worker_id
   autovector<TowerConnection, kMaxTowerConnections> tower_conns;
   if (resub_needed || send_latest_request) {
-    // Find control towers responsible for this topic's log.
-    std::vector<HostId const*> recipients;
-    if (GetControlTowers(log_id, &recipients).ok()) {
-      // Update subscription on all control towers.
-      for (HostId const* recipient : recipients) {
-        int outgoing_worker_id = copilot_->GetTowerWorker(log_id, *recipient);
+    for (HostId const* recipient : recipients) {
+      int outgoing_worker_id = copilot_->GetTowerWorker(log_id, *recipient);
 
-        // Find or open a new stream socket to this control tower.
-        auto socket = GetControlTowerSocket(
-            *recipient, options_.msg_loop, outgoing_worker_id);
+      // Find or open a new stream socket to this control tower.
+      auto socket = GetControlTowerSocket(
+          *recipient, options_.msg_loop, outgoing_worker_id);
 
-        tower_conns.emplace_back(socket, outgoing_worker_id);
-      }
-    } else {
-      // This should only ever happen if all control towers are offline.
-      LOG_WARN(options_.info_log,
-        "Failed to find control towers for log ID %" PRIu64,
-        static_cast<uint64_t>(log_id));
+      tower_conns.emplace_back(socket, outgoing_worker_id);
     }
   }
 
