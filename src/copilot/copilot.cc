@@ -420,19 +420,14 @@ std::string Copilot::GetInfoSync(std::vector<std::string> args) {
   return "Unknown info for copilot";
 }
 
-Status Copilot::UpdateControlTowers(
-    std::unordered_map<uint64_t, HostId> nodes) {
+Status Copilot::UpdateTowerRouter(std::shared_ptr<ControlTowerRouter> router) {
   Status result;
   // Send the new nodes to all workers.
   // If we fail to forward to any single worker then return failure so that
   // whoever is providing the updated hosts can retry later.
-  std::shared_ptr<ControlTowerRouter> new_router =
-    std::make_shared<ControlTowerRouter>(std::move(nodes),
-                                         options_.consistent_hash_replicas,
-                                         options_.control_towers_per_log);
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     // Send command to worker on the thread-local queue.
-    auto command = workers_[i]->WorkerCommand(new_router);
+    auto command = workers_[i]->WorkerCommand(router);
     if (!router_update_queues_[i]->GetThreadLocal()->Write(command)) {
       LOG_WARN(options_.info_log,
         "Failed to forward control tower update to worker %" PRIu32, i);

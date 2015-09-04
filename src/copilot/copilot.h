@@ -25,6 +25,7 @@
 
 namespace rocketspeed {
 
+class ControlTowerRouter;
 class Statistics;
 
 class Copilot {
@@ -59,12 +60,10 @@ class Copilot {
   /**
    * Updates the control tower routing information.
    *
-   * @param nodes Map of NodeIds to control tower hosts. The node IDs
-   *              determine what logs are routed to each host. This is a
-   *              a completely new set of nodes, not a delta.
+   * @param router The router that should be propagated to all of the workers.
    * @return ok() if successfully propagated to all workers, error otherwise.
    */
-  Status UpdateControlTowers(std::unordered_map<uint64_t, HostId> nodes);
+  Status UpdateTowerRouter(std::shared_ptr<ControlTowerRouter> router);
 
   // Get the worker loop associated with a log.
   int GetLogWorker(LogID log_id) const;
