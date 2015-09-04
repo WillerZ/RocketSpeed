@@ -59,7 +59,6 @@ class ConsistentHashTowerRouter : public ControlTowerRouter {
                  ControlTowerId,
                  MurmurHash2<LogID>,
                  ControlTowerIdHash> mapping_;
-  unsigned int replication_;
   size_t control_towers_per_log_;
 };
 

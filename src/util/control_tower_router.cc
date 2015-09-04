@@ -13,7 +13,6 @@ ConsistentHashTowerRouter::ConsistentHashTowerRouter(
   std::unordered_map<ControlTowerId, HostId> control_towers,
   unsigned int replicas, size_t control_towers_per_log)
 : host_ids_(std::move(control_towers))
-, replication_(replicas)
 , control_towers_per_log_(control_towers_per_log) {
   for (auto const& node_host : host_ids_) {
     mapping_.Add(node_host.first, replicas);
