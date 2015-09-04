@@ -29,6 +29,7 @@ namespace rocketspeed {
 class ClientEnv;
 class Subscriber;
 class MessageReceived;
+class MsgLoop;
 class Logger;
 class WakeLock;
 
@@ -40,7 +41,7 @@ class ClientImpl : public Client {
                        bool is_internal = false);
 
   ClientImpl(ClientOptions options,
-             std::unique_ptr<MsgLoopBase> msg_loop,
+             std::unique_ptr<MsgLoop> msg_loop,
              bool is_internal);
 
   virtual ~ClientImpl();
@@ -106,7 +107,7 @@ class ClientImpl : public Client {
   /** A wake lock used on mobile devices. */
   SmartWakeLock wake_lock_;
 
-  std::unique_ptr<MsgLoopBase> msg_loop_;
+  std::unique_ptr<MsgLoop> msg_loop_;
   BaseEnv::ThreadId msg_loop_thread_;
   bool msg_loop_thread_spawned_;
 

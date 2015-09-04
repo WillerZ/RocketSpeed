@@ -27,8 +27,7 @@
 #include "include/Types.h"
 #include "include/WakeLock.h"
 #include "src/client/smart_wake_lock.h"
-#include "src/messages/msg_loop_base.h"
-#include "src/messages/msg_loop.h"
+#include "src/messages/event_loop.h"
 #include "src/port/port.h"
 #include "src/util/common/random.h"
 #include "src/util/timeout_list.h"
@@ -247,9 +246,9 @@ void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Subscriber::Subscriber(const ClientOptions& options, MsgLoopBase* msg_loop)
+Subscriber::Subscriber(const ClientOptions& options, EventLoop* event_loop)
 : options_(options)
-, msg_loop_(msg_loop)
+, event_loop_(event_loop)
 , backoff_until_time_(0)
 , last_send_time_(0)
 , consecutive_goodbyes_count_(0)
@@ -385,7 +384,6 @@ bool Subscriber::ExpectsMessage(const std::shared_ptr<Logger>& info_log,
 
 void Subscriber::SendPendingRequests() {
   thread_check_.Check();
-  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
 
   // Evict entries from a list of recently sent unsubscribe messages.
   recent_terminations_.ProcessExpired(
@@ -406,7 +404,7 @@ void Subscriber::SendPendingRequests() {
                              MessageGoodbye::Code::Graceful,
                              MessageGoodbye::OriginType::Client));
       StreamID stream = copilot_socket.GetStreamID();
-      Status st = msg_loop_->SendResponse(*goodbye, stream, worker_id);
+      Status st = event_loop_->SendResponse(*goodbye, stream);
       if (st.ok()) {
         // Update internal state as if we received goodbye message.
         Receive(std::move(goodbye), stream);
@@ -461,7 +459,7 @@ void Subscriber::SendPendingRequests() {
     }
 
     // And create socket to it.
-    copilot_socket = msg_loop_->CreateOutboundStream(copilot, worker_id);
+    copilot_socket = event_loop_->CreateOutboundStream(copilot);
     copilot_socket_valid_ = true;
 
     LOG_INFO(options_.info_log,
@@ -482,7 +480,7 @@ void Subscriber::SendPendingRequests() {
                            MessageGoodbye::Code::Graceful,
                            MessageGoodbye::OriginType::Client);
 
-    Status st = msg_loop_->SendRequest(goodbye, &copilot_socket, worker_id);
+    Status st = event_loop_->SendRequest(goodbye, &copilot_socket);
     if (st.ok()) {
       LOG_INFO(options_.info_log,
                "Closed stream (%llu) with no active subscriptions",
@@ -518,7 +516,7 @@ void Subscriber::SendPendingRequests() {
     MessageUnsubscribe unsubscribe(
         tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested);
 
-    Status st = msg_loop_->SendRequest(unsubscribe, &copilot_socket, worker_id);
+    Status st = event_loop_->SendRequest(unsubscribe, &copilot_socket);
     if (st.ok()) {
       LOG_INFO(options_.info_log, "Unsubscribed ID (%" PRIu64 ")", sub_id);
       last_send_time_ = now;
@@ -557,7 +555,7 @@ void Subscriber::SendPendingRequests() {
                                sub_state->GetExpected(),
                                sub_id);
 
-    Status st = msg_loop_->SendRequest(subscribe, &copilot_socket, worker_id);
+    Status st = event_loop_->SendRequest(subscribe, &copilot_socket);
     if (st.ok()) {
       LOG_INFO(options_.info_log, "Subscribed ID (%" PRIu64 ")", sub_id);
       last_send_time_ = now;

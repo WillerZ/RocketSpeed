@@ -27,7 +27,7 @@ class ClientOptions;
 class MessageDeliver;
 class MessageUnsubscribe;
 class MessageGoodbye;
-class MsgLoopBase;
+class EventLoop;
 class SubscriptionState;
 
 typedef uint64_t SubscriptionID;
@@ -122,7 +122,7 @@ class alignas(CACHE_LINE_SIZE) Subscriber {
   Subscriber(Subscriber&&) = delete;
   Subscriber& operator=(Subscriber&&) = delete;
 
-  Subscriber(const ClientOptions& options, MsgLoopBase* msg_loop);
+  Subscriber(const ClientOptions& options, EventLoop* event_loop);
 
   ~Subscriber();
 
@@ -151,8 +151,8 @@ class alignas(CACHE_LINE_SIZE) Subscriber {
 
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;
-  /** A message loop object owned by the client. */
-  MsgLoopBase* const msg_loop_;
+  /** An event loop object this subscriber runs on. */
+  EventLoop* const event_loop_;
   ThreadCheck thread_check_;
 
   /** Time point (in us) until which client should not attemt to reconnect. */

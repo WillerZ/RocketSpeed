@@ -29,7 +29,6 @@
 #include "include/WakeLock.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/client/subscriber.h"
-#include "src/messages/msg_loop_base.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
 #include "src/util/common/random.h"
@@ -68,7 +67,7 @@ Status ClientImpl::Create(ClientOptions options,
     options.info_log = std::make_shared<NullLogger>();
   }
 
-  std::unique_ptr<MsgLoopBase> msg_loop_(
+  std::unique_ptr<MsgLoop> msg_loop_(
     new MsgLoop(options.env,
                 EnvOptions(),
                 0,
@@ -94,7 +93,7 @@ Status ClientImpl::Create(ClientOptions options,
 }
 
 ClientImpl::ClientImpl(ClientOptions options,
-                       std::unique_ptr<MsgLoopBase> msg_loop,
+                       std::unique_ptr<MsgLoop> msg_loop,
                        bool is_internal)
     : options_(std::move(options))
     , wake_lock_(std::move(options_.wake_lock))
@@ -110,7 +109,8 @@ ClientImpl::ClientImpl(ClientOptions options,
   LOG_VITAL(options_.info_log, "Creating Client");
 
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    worker_data_.emplace_back(new Subscriber(options_, msg_loop_.get()));
+    worker_data_.emplace_back(
+        new Subscriber(options_, msg_loop_->GetEventLoop(i)));
   }
 
   // TODO(stupaq) kill it with fire

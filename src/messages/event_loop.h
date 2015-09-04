@@ -228,6 +228,10 @@ class EventLoop {
    */
   Status SendCommand(std::unique_ptr<Command>& command);
 
+  Status SendRequest(const Message& msg, StreamSocket* socket);
+
+  Status SendResponse(const Message& msg, StreamID stream_id);
+
   // Start communicating on a fd.
   // This call is thread-safe.
   void Accept(int fd);

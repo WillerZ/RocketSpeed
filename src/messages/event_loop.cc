@@ -1106,6 +1106,26 @@ Status EventLoop::SendCommand(std::unique_ptr<Command>& command) {
     Status::OK() : Status::NoBuffer();
 }
 
+Status EventLoop::SendRequest(const Message& msg, StreamSocket* socket) {
+  std::string serial;
+  msg.SerializeToString(&serial);
+  std::unique_ptr<Command> command(
+      SerializedSendCommand::Request(std::move(serial), {socket}));
+  Status st = SendCommand(command);
+  if (st.ok()) {
+    socket->Open();
+  }
+  return st;
+}
+
+Status EventLoop::SendResponse(const Message& msg, StreamID stream_id) {
+  std::string serial;
+  msg.SerializeToString(&serial);
+  std::unique_ptr<Command> command(
+      SerializedSendCommand::Response(std::move(serial), {stream_id}));
+  return SendCommand(command);
+}
+
 void EventLoop::Accept(int fd) {
   // May be called from another thread, so must add to the command queue.
   std::unique_ptr<Command> command(new AcceptCommand(fd));
