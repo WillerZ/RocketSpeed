@@ -799,7 +799,7 @@ void CopilotWorker::UpdateTowerSubscriptions(const TopicUUID& uuid,
 void CopilotWorker::UpdateTowerSubscriptions(
     const TopicUUID& uuid,
     TopicState& topic,
-    const SequenceNumber new_seqno,
+    SequenceNumber new_seqno,
     const bool have_zero_sub,
     bool force_resub) {
 
@@ -810,15 +810,25 @@ void CopilotWorker::UpdateTowerSubscriptions(
   const LogID log_id = topic.log_id;
   const TenantID tenant_id = GuestTenant;
 
+  // Check if we need to resubscribe to control towers.
+  // First check if we have enough tower subscriptions.
+  size_t expected_towers_per_log =
+    control_tower_router_->GetNumTowersPerLog(log_id);
+
+  // With one control tower, we can always subscribe directly to 0 since there
+  // is no possibility of multiple towers subscribing to different seqnos.
+  if (expected_towers_per_log == 1) {
+    if (have_zero_sub) {
+      // Actually subscribe to 0 instead of sending request for latest seqno.
+      new_seqno = 0;
+    }
+  }
+
   // Note: it could be the case that the only subscriptions we have are
   // subscriptions at 0, so new_seqno will be 0 in that case, and we will
   // subscribe the copilot at 0 without sending a FindTailSeqno request.
   const bool send_latest_request = have_zero_sub && new_seqno != 0;
 
-  // Check if we need to resubscribe to control towers.
-  // First check if we have enough tower subscriptions.
-  size_t expected_towers_per_log =
-      control_tower_router_->GetNumTowersPerLog(log_id);
   bool resub_needed = topic.towers.size() < expected_towers_per_log;
   if (resub_needed) {
     LOG_INFO(options_.info_log,

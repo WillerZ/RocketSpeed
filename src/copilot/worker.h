@@ -483,7 +483,7 @@ class CopilotWorker {
   void UpdateTowerSubscriptions(
       const TopicUUID& uuid,
       TopicState& topic,
-      const SequenceNumber new_seqno,
+      SequenceNumber new_seqno,
       const bool have_zero_sub,
       bool force_resub = false);
 };
