@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/test/test_cluster.h"
+
 #include <memory>
 #include <utility>
 #include <vector>
@@ -12,6 +13,7 @@
 #include "src/logdevice/storage.h"
 #include "src/logdevice/log_router.h"
 #include "src/util/common/fixed_configuration.h"
+#include "src/util/control_tower_router.h"
 
 #ifdef USE_LOGDEVICE
 #include "logdevice/include/debug.h"
@@ -208,7 +210,11 @@ void LocalTestCluster::Initialize(Options opts) {
         HostId::CreateLocal(static_cast<uint16_t>(opts.cockpit_port)));
     if (opts.start_copilot) {
       // Create Copilot
-      opts.copilot.control_towers.emplace(0, control_tower_->GetHostId());
+      std::unordered_map<ControlTowerId, HostId> tower_hosts = {
+          {0, control_tower_->GetHostId()},
+      };
+      opts.copilot.control_tower_router =
+          std::make_shared<ConsistentHashTowerRouter>(tower_hosts, 20, 1);
       opts.copilot.info_log = info_log_;
       opts.copilot.msg_loop = cockpit_loop_.get();
       opts.copilot.control_tower_connections =

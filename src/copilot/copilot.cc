@@ -4,17 +4,37 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
-#include "src/copilot/copilot.h"
+#include "copilot.h"
+
 #include <map>
 #include <numeric>
 #include <string>
 #include <thread>
 #include <vector>
+
 #include "src/client/client.h"
-#include "src/util/memory.h"
+#include "src/copilot/control_tower_router.h"
 #include "src/util/common/fixed_configuration.h"
+#include "src/util/memory.h"
+#include "src/util/storage.h"
 
 namespace rocketspeed {
+
+namespace {
+class EmptyTowerRouter : public ControlTowerRouter {
+ public:
+  Status GetControlTower(LogID logID, HostId const** out) const override {
+    return Status::NotFound("Empty CT router");
+  }
+
+  Status GetControlTowers(LogID logID,
+                          std::vector<HostId const*>* out) const override {
+    return Status::NotFound("Empty CT router");
+  }
+
+  size_t GetNumTowersPerLog(LogID log_id) const override { return 0; }
+};
+}  // namespace
 
 /**
  * Sanitize user-specified options
@@ -34,6 +54,10 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
     }
   }
 
+  if (options.control_tower_router == nullptr) {
+    options.control_tower_router = std::make_shared<EmptyTowerRouter>();
+  }
+
   return std::move(options);
 }
 
@@ -51,15 +75,10 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
     std::chrono::microseconds(options_.timer_interval_micros));
 
   // Create workers.
-  std::shared_ptr<ConsistentHashTowerRouter> router =
-    std::make_shared<ConsistentHashTowerRouter>(options_.control_towers,
-                                         options_.consistent_hash_replicas,
-                                         options_.control_towers_per_log);
-
   const int num_workers = options_.msg_loop->GetNumWorkers();
   for (int i = 0; i < num_workers; ++i) {
     workers_.emplace_back(new CopilotWorker(options_,
-                                            router,
+                                            options_.control_tower_router,
                                             i,
                                             this,
                                             client_));
@@ -420,8 +439,7 @@ std::string Copilot::GetInfoSync(std::vector<std::string> args) {
   return "Unknown info for copilot";
 }
 
-Status Copilot::UpdateTowerRouter(
-    std::shared_ptr<ConsistentHashTowerRouter> router) {
+Status Copilot::UpdateTowerRouter(std::shared_ptr<ControlTowerRouter> router) {
   Status result;
   // Send the new nodes to all workers.
   // If we fail to forward to any single worker then return failure so that

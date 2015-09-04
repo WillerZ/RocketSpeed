@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <set>
 #include <string>
+
 #include "include/Types.h"
 #include "src/pilot/options.h"
 #include "src/pilot/pilot.h"
@@ -22,9 +23,9 @@
 #include "src/copilot/copilot.h"
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
-#include "src/util/control_tower_router.h"
 #include "src/supervisor/supervisor_loop.h"
 #include "src/util/common/parsing.h"
+#include "src/util/control_tower_router.h"
 #include "src/util/storage.h"
 
 // Common settings
@@ -285,7 +286,6 @@ Status RocketSpeed::Initialize(
     copilot_opts.msg_loop = copilot_loop.get();
     copilot_opts.info_log = info_log_;
     copilot_opts.control_tower_connections = FLAGS_copilot_connections;
-    copilot_opts.control_towers_per_log = FLAGS_copilot_towers_per_log;
     copilot_opts.log_router = log_router;
     copilot_opts.rollcall_enabled = FLAGS_rollcall;
     copilot_opts.rollcall_max_batch_size_bytes =
@@ -299,6 +299,7 @@ Status RocketSpeed::Initialize(
     // TODO(pja) 1 : Configure control tower hosts from config file.
     // Parse comma-separated control_towers hostname.
     ControlTowerId node_id = 0;
+    std::unordered_map<ControlTowerId, HostId> nodes;
     for (auto hostname : SplitString(FLAGS_control_towers)) {
       HostId host;
       auto st = HostId::Resolve(
@@ -306,11 +307,14 @@ Status RocketSpeed::Initialize(
       if (!st.ok()) {
         return st;
       }
-      copilot_opts.control_towers.emplace(node_id, host);
+      nodes.emplace(node_id, host);
       LOG_VITAL(info_log_, "Adding control tower '%s'",
         host.ToString().c_str());
       ++node_id;
     }
+    copilot_opts.control_tower_router =
+        std::make_shared<ConsistentHashTowerRouter>(
+            std::move(nodes), 20, FLAGS_copilot_towers_per_log);
     if (FLAGS_pilot) {
       copilot_opts.pilots.push_back(pilot_host);
     }

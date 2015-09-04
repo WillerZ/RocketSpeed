@@ -7,25 +7,21 @@
 
 #include <vector>
 #include <unordered_map>
+
 #include "include/Types.h"
+#include "src/copilot/control_tower_router.h"
 #include "src/util/consistent_hash.h"
 #include "src/util/common/hash.h"
 #include "src/util/common/host_id.h"
-#include "src/util/storage.h"
 
 namespace rocketspeed {
 
-using ControlTowerId = uint64_t;
-
 /**
- * Class that provides logic for routing logs to control towers.
- * This will primarily be used by the CoPilots when subscribing to topics.
- *
  * The log to control tower mapping uses ring consistent hashing, which
  * distributes logs to control towers evenly, and in a way that changes the
  * mapping minimally when control towers are added or lost.
  */
-class ConsistentHashTowerRouter {
+class ConsistentHashTowerRouter : public ControlTowerRouter {
  public:
   /**
    * Constructs a new ConsistentHashTowerRouter.
@@ -48,29 +44,13 @@ class ConsistentHashTowerRouter {
   ConsistentHashTowerRouter(ConsistentHashTowerRouter&&) = default;
   ConsistentHashTowerRouter& operator=(ConsistentHashTowerRouter&&) = default;
 
-  /**
-    * Gets the host ID of the control tower ring that is tailing this log.
-    *
-    * @param logID The ID of the log to lookup.
-    * @param out Where to place the resulting control tower ring host ID.
-    * @return on success OK(), otherwise errorcode.
-    */
-  Status GetControlTower(LogID logID, HostId const** out) const;
+  Status GetControlTower(LogID logID, HostId const** out) const override;
 
-  /**
-   * Gets the IDs of the control tower rings that are tailing this log.
-   *
-   * @param logID The ID of the log to lookup.
-   * @param out Where to place the resulting control tower ring host IDs.
-   * @return on success OK(), otherwise errorcode.
-   */
-  Status GetControlTowers(LogID logID, std::vector<HostId const*>* out) const;
+  Status GetControlTowers(LogID logID,
+                          std::vector<HostId const*>* out) const override;
 
-  /**
-   * @return Number of unique control towers.
-   */
-  size_t GetNumTowers() const {
-    return host_ids_.size();
+  size_t GetNumTowersPerLog(LogID log_id) const override {
+    return control_towers_per_log_;
   }
 
  private:

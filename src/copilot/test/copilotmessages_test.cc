@@ -20,6 +20,7 @@
 #include "src/copilot/options.h"
 #include "src/test/test_cluster.h"
 #include "src/util/testharness.h"
+#include "src/util/control_tower_router.h"
 #include "src/rollcall/rollcall_impl.h"
 
 namespace rocketspeed {
@@ -60,19 +61,20 @@ TEST(CopilotTest, WorkerMapping) {
   MsgLoop loop(env_, EnvOptions(), port, num_workers, info_log_, "test");
   ASSERT_OK(loop.Initialize());
 
-  CopilotOptions options;
-  auto log_range = std::pair<LogID, LogID>(1, 10000);
-  options.info_log = info_log_;
+  std::unordered_map<ControlTowerId, HostId> control_towers;
   for (int i = 0; i < num_towers; ++i) {
     // Generate fake control towers.
-    options.control_towers.emplace(
-        i, HostId::CreateLocal(static_cast<uint16_t>(i)));
+    control_towers.emplace(i, HostId::CreateLocal(static_cast<uint16_t>(i)));
   }
 
+  CopilotOptions options;
+  options.info_log = info_log_;
   options.pilots.push_back(HostId::CreateLocal(62777));
   options.msg_loop = &loop;
   options.control_tower_connections = 4;
   options.log_router = cluster.GetLogRouter();
+  options.control_tower_router = std::make_shared<ConsistentHashTowerRouter>(
+      std::move(control_towers), 20, 1);
   Copilot* copilot;
   Status st = Copilot::CreateNewInstance(options, &copilot);
   ASSERT_TRUE(st.ok());
@@ -81,15 +83,15 @@ TEST(CopilotTest, WorkerMapping) {
 
   // Now check that each control tower is mapped to one worker.
   std::unordered_map<HostId, std::set<int>> tower_to_workers;
-  ConsistentHashTowerRouter router(options.control_towers,
-                            options.consistent_hash_replicas,
-                            options.control_towers_per_log);
+  auto log_range = std::pair<LogID, LogID>(1, 10000);
   for (LogID logid = log_range.first;
        logid <= log_range.second;
        ++logid) {
     // Find the tower responsible for this log.
     HostId const* control_tower = nullptr;
-    ASSERT_TRUE(router.GetControlTower(logid, &control_tower).ok());
+    ASSERT_TRUE(
+        options.control_tower_router->GetControlTower(logid, &control_tower)
+            .ok());
 
     // Find the worker responsible for this log.
     int worker_id = copilot->GetTowerWorker(logid, *control_tower);

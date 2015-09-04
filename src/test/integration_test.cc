@@ -14,6 +14,7 @@
 #include "src/port/port.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/thread_check.h"
+#include "src/util/control_tower_router.h"
 #include "src/util/testharness.h"
 #include "src/test/test_cluster.h"
 
@@ -1313,7 +1314,6 @@ TEST(IntegrationTest, LogAvailability) {
   opts.start_controltower = true;
   opts.start_copilot = true;
   opts.start_pilot = true;
-  opts.copilot.control_towers_per_log = 2;
   opts.copilot.rollcall_enabled = false;
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
@@ -1628,7 +1628,6 @@ TEST(IntegrationTest, TowerRebalance) {
   opts.start_controltower = true;
   opts.start_copilot = true;
   opts.start_pilot = true;
-  opts.copilot.control_towers_per_log = 1;
   opts.copilot.rollcall_enabled = false;
   opts.copilot.timer_interval_micros = 100000;  // 100ms
   opts.copilot.tower_subscriptions_check_period = std::chrono::seconds(1);

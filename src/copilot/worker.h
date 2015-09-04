@@ -21,6 +21,7 @@
 #include "src/util/common/hash.h"
 #include "src/util/common/linked_map.h"
 #include "src/util/subscription_map.h"
+#include "src/util/storage.h"
 #include "src/util/timeout_list.h"
 #include "src/util/topic_uuid.h"
 
@@ -28,7 +29,7 @@ namespace rocketspeed {
 
 class ClientImpl;
 class Copilot;
-class ConsistentHashTowerRouter;
+class ControlTowerRouter;
 class RollcallImpl;
 
 /**
@@ -39,7 +40,7 @@ class CopilotWorker {
  public:
   // Constructs a new CopilotWorker (does not start a thread).
   CopilotWorker(const CopilotOptions& options,
-                std::shared_ptr<ConsistentHashTowerRouter> control_tower_router,
+                std::shared_ptr<ControlTowerRouter> control_tower_router,
                 const int myid,
                 Copilot* copilot,
                 std::shared_ptr<ClientImpl> client);
@@ -53,7 +54,7 @@ class CopilotWorker {
                                          StreamID origin);
 
   std::unique_ptr<Command> WorkerCommand(
-    std::shared_ptr<ConsistentHashTowerRouter> new_router);
+    std::shared_ptr<ControlTowerRouter> new_router);
 
   // Invoked on a regularly clock interval.
   void ProcessTimerTick();
@@ -197,7 +198,7 @@ class CopilotWorker {
   void ProcessGoodbye(std::unique_ptr<Message> msg,
                       StreamID origin);
 
-  void ProcessRouterUpdate(std::shared_ptr<ConsistentHashTowerRouter> router);
+  void ProcessRouterUpdate(std::shared_ptr<ControlTowerRouter> router);
 
   // Closes stream to a control tower, and updates all affected subscriptions.
   void CloseControlTowerStream(StreamID stream);
@@ -259,7 +260,7 @@ class CopilotWorker {
   const CopilotOptions& options_;
 
   // Router for control towers.
-  std::shared_ptr<ConsistentHashTowerRouter> control_tower_router_;
+  std::shared_ptr<ControlTowerRouter> control_tower_router_;
 
   // Reference to the copilot
   Copilot* copilot_;

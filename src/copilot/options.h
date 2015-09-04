@@ -11,11 +11,11 @@
 #include <utility>
 #include "include/Types.h"
 #include "src/port/Env.h"
-#include "src/util/control_tower_router.h"
 #include "src/util/common/host_id.h"
 
 namespace rocketspeed {
 
+class ControlTowerRouter;
 class LogRouter;
 class MsgLoop;
 
@@ -65,20 +65,11 @@ struct CopilotOptions {
   // Default: 0 (disabled)
   size_t log_file_time_to_roll;
 
-  // Control Tower host IDs.
-  std::unordered_map<ControlTowerId, HostId> control_towers;
+  // Control Tower router
+  std::shared_ptr<ControlTowerRouter> control_tower_router;
 
   // Pilot hostids (needed for writing rollcall topic).
   std::vector<HostId> pilots;
-
-  // Number of replicas for the consistent hash ring for control tower lookup.
-  // Trade-off: higher means better distribution of log IDs to control towers,
-  // but also higher memory usage (linear with num replicas), and slower
-  // lookups (logarithmic).
-  uint32_t consistent_hash_replicas;
-
-  // Each topic should be tailed by this many control towers.
-  size_t control_towers_per_log;
 
   // Number of connections between this copilot and each control tower.
   // Should be <= number of message loop workers.
