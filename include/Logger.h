@@ -147,7 +147,7 @@ class Logger {
              sizeof(new_format) - 1,
              "[%s] %s:%d: %s",
              LogLevelToString(log_level),
-             basename(filename),
+             Basename(filename),
              line,
              format);
     Append(new_format, ap);
