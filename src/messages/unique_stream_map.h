@@ -182,6 +182,10 @@ class UniqueStreamMap {
     global_to_local_.clear();
   }
 
+  const StreamAllocator& GetAllocator() const {
+    return allocator_;
+  }
+
  private:
   ThreadCheck thread_check_;
   /** Allocator used when building mapping (ctx, local) -> global. */

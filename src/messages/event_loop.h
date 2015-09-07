@@ -129,6 +129,15 @@ class StreamRouter {
    */
   std::vector<StreamID> RemoveConnection(SocketEvent* sev);
 
+  /**
+   * Returns true if the global stream ID is for an inbound stream.
+   *
+   * This call is thread safe.
+   */
+  bool IsInboundStream(StreamID stream_id) const {
+    return open_streams_.GetAllocator().IsSourceOf(stream_id);
+  }
+
   /** Returns mappings for all connections. */
   void CloseAll() {
     // This will typically be called after the event loop thread terminates.
@@ -206,6 +215,24 @@ class EventLoop {
    */
   StreamAllocator* GetOutboundStreamAllocator() {
     return &outbound_allocator_;
+  }
+
+  /**
+   * Returns true if the global stream ID is for an outbound stream.
+   *
+   * This call is thread safe.
+   */
+  bool IsOutboundStream(StreamID global) const {
+    return outbound_allocator_.IsSourceOf(global);
+  }
+
+  /**
+   * Returns true if the global stream ID is for an inbound stream.
+   *
+   * This call is thread safe.
+   */
+  bool IsInboundStream(StreamID global) const {
+    return stream_router_.IsInboundStream(global);
   }
 
   /**

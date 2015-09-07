@@ -277,6 +277,7 @@ Status MsgLoop::SendRequest(const Message& msg,
                             StreamSocket* socket,
                             int worker_id) {
   // Create command and append it to the proper event loop.
+  assert(event_loops_[worker_id]->IsOutboundStream(socket->GetStreamID()));
   Status st = SendCommand(RequestCommand(msg, socket), worker_id);
   if (st.ok()) {
     socket->Open();
@@ -288,6 +289,7 @@ Status MsgLoop::SendResponse(const Message& msg,
                              StreamID stream,
                              int worker_id) {
   // Create command and append it to the proper event loop.
+  assert(event_loops_[worker_id]->IsInboundStream(stream));
   return SendCommand(ResponseCommand(msg, stream), worker_id);
 }
 
