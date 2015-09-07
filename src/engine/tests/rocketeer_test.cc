@@ -128,6 +128,9 @@ TEST(RocketeerTest, SubscribeUnsubscribe) {
   ASSERT_OK(client.msg_loop->SendRequest(unsubscribe, &socket, 0));
 
   ASSERT_TRUE(rocketeer.terminate_sem_.TimedWait(positive_timeout));
+
+  // Stop explicitly, as the Rocketeer is destroyed before the Server.
+  server_->Stop();
 }
 
 struct SubscribeTerminate : public Rocketeer {
@@ -173,6 +176,9 @@ TEST(RocketeerTest, SubscribeTerminate) {
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
   // Rocketeer should also be called.
   ASSERT_TRUE(rocketeer.terminate_sem_.TimedWait(positive_timeout));
+
+  // Stop explicitly, as the Rocketeer is destroyed before the Server.
+  server_->Stop();
 }
 
 }  // namespace rocketspeed
