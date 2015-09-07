@@ -347,6 +347,22 @@ class EventLoop {
   event* CreateFdWriteEvent(int fd, void (*cb)(int, short, void*), void* arg);
 
   /**
+   * Registers a callback for read events on a file descriptor.
+   *
+   * @param fd File descriptor to listen on.
+   * @param callback Callback to invoke when write is ready.
+   */
+  void RegisterFdReadEvent(int fd, std::function<void()> callback);
+
+  /**
+   * Enables/disables read events on a previously registered fd.
+   *
+   * @param fd File descriptor to enable/disable read events for.
+   * @param enabled True enabled, false disabled.
+   */
+  void SetFdReadEnabled(int fd, bool enabled);
+
+  /**
     * Option is a helper class used for passing the additional arguments to the
     * EventLoop constructor.
     */
@@ -489,14 +505,9 @@ class EventLoop {
 
   const uint32_t default_command_queue_size_;
 
-  // libevent read notification events for
-  struct IncomingQueue {
-    IncomingQueue() {}
-    ~IncomingQueue();
+  std::vector<std::shared_ptr<CommandQueue>> incoming_queues_;
 
-    std::shared_ptr<CommandQueue> queue;
-  };
-  std::vector<std::unique_ptr<IncomingQueue>> incoming_queues_;
+  std::unordered_map<int, std::unique_ptr<EventCallback>> fd_read_events_;
 
   // Send a command using a particular command queue.
   Status SendCommand(std::unique_ptr<Command>& command,

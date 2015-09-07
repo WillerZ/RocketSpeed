@@ -121,7 +121,7 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
 
   // Now enable and check that we read both.
   std::thread loop_thread([&]() { loop.Run(); });
-  queue.SetReadEnabled(true);
+  queue.SetReadEnabled(&loop, true);
   ASSERT_TRUE(sem.TimedWait(timeout_));
   ASSERT_TRUE(sem.TimedWait(timeout_));
 

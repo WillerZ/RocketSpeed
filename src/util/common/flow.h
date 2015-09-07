@@ -24,9 +24,10 @@ class AbstractSource {
   /**
    * Enable or disable the read callback.
    *
+   * @param event_loop The EventLoop to enable/disable on.
    * @param enabled Should callback be enabled or disabled.
    */
-  virtual void SetReadEnabled(bool enabled) const = 0;
+  virtual void SetReadEnabled(EventLoop* event_loop, bool enabled) = 0;
 };
 
 /**

@@ -84,7 +84,7 @@ class FlowControl {
         on_read(&flow, std::move(item));
         return !flow.WriteHasFailed();
       });
-    source->SetReadEnabled(true);
+    source->SetReadEnabled(event_loop_, true);
   }
 
  private:
@@ -154,7 +154,7 @@ class FlowControl {
     SourceState& source_state = sources_[source];
 
     // Disable events from the source that caused the write.
-    source->SetReadEnabled(false);
+    source->SetReadEnabled(event_loop_, false);
 
     // Add this source as one that will be re-enabled on the sink write event.
     auto result = sink_state.backpressure.emplace(source);

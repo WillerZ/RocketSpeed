@@ -934,6 +934,7 @@ void EventLoop::Run() {
   for (auto& timer : timers_) {
     event_free(timer->loop_event);
   }
+  fd_read_events_.clear();
   incoming_queues_.clear();
   shutdown_event_.reset();
   teardown_all_connections();
@@ -1063,21 +1064,17 @@ Status EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
 Status EventLoop::AddIncomingQueue(
     std::shared_ptr<CommandQueue> command_queue) {
   // An event that signals new commands in the command queue.
-  std::unique_ptr<IncomingQueue> incoming_queue(new IncomingQueue());
-  incoming_queue->queue = std::move(command_queue);
-
-  CommandQueue* queue = incoming_queue->queue.get();
-  queue->RegisterReadCallback(
+  command_queue->RegisterReadCallback(
     this,
     [this] (std::unique_ptr<Command> cmd) {
       // Call registered callback.
       Dispatch(std::move(cmd));
       return true;
     });
-  queue->SetReadEnabled(true);
+  command_queue->SetReadEnabled(this, true);
 
   LOG_INFO(info_log_, "Added new command queue to EventLoop");
-  incoming_queues_.emplace_back(std::move(incoming_queue));
+  incoming_queues_.emplace_back(std::move(command_queue));
   return Status::OK();
 }
 
@@ -1409,9 +1406,6 @@ size_t EventLoop::GetQueueSize() const {
   return const_cast<EventLoop*>(this)->GetThreadLocalQueue()->GetSize();
 }
 
-EventLoop::IncomingQueue::~IncomingQueue() {
-}
-
 EventCallback::EventCallback(EventLoop* event_loop, std::function<void()> cb)
 : event_loop_(event_loop)
 , cb_(std::move(cb))
@@ -1438,6 +1432,22 @@ std::unique_ptr<EventCallback> EventCallback::CreateFdWriteCallback(
   callback->event_ =
     event_loop->CreateFdWriteEvent(fd, &EventShim, callback.get());
   return callback;
+}
+
+void EventLoop::RegisterFdReadEvent(int fd, std::function<void()> callback) {
+  auto event_callback =
+    EventCallback::CreateFdReadCallback(this, fd, std::move(callback));
+  fd_read_events_.emplace(fd, std::move(event_callback));
+}
+
+void EventLoop::SetFdReadEnabled(int fd, bool enabled) {
+  auto it = fd_read_events_.find(fd);
+  assert(it != fd_read_events_.end());
+  if (enabled) {
+    it->second->Enable();
+  } else {
+    it->second->Disable();
+  }
 }
 
 EventCallback::~EventCallback() {

@@ -88,19 +88,12 @@ class Queue : public Source<Item>, public Sink<Item> {
   size_t GetSize() const { return queue_.sizeGuess(); }
 
   void RegisterReadEvent(EventLoop* event_loop) final override {
-    assert(!read_event_);
-    read_event_ =
-      CreateEventFdReadCallback(event_loop,
-                                read_ready_fd_.readfd(),
-                                [this] () { this->Drain(); });
+    event_loop->RegisterFdReadEvent(read_ready_fd_.readfd(),
+                                    [this] () { this->Drain(); });
   }
 
-  void SetReadEnabled(bool enabled) const final override {
-    if (enabled) {
-      read_event_->Enable();
-    } else {
-      read_event_->Disable();
-    }
+  void SetReadEnabled(EventLoop* event_loop, bool enabled) final override {
+    event_loop->SetFdReadEnabled(read_ready_fd_.readfd(), enabled);
   }
 
   std::unique_ptr<EventCallback>
@@ -119,7 +112,6 @@ class Queue : public Source<Item>, public Sink<Item> {
   folly::ProducerConsumerQueue<Timestamped<Item>> queue_;
   rocketspeed::port::Eventfd read_ready_fd_;
   rocketspeed::port::Eventfd write_ready_fd_;
-  std::unique_ptr<EventCallback> read_event_;
 
   /**
    * Sequentially consistent size of the queue.
