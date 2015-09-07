@@ -29,6 +29,7 @@ strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 cache_size=''     # use the default set by the control tower
 remote_bench=''
+idle_timeout="5"  # if no new messages within this time, then declare done
 
 if [ -z ${ROCKETSPEED_ARGS+x} ]; then
   logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
@@ -52,7 +53,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size:,idle-timeout: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -91,6 +92,8 @@ while true; do
       num_towers="$2"; shift 2 ;;
     --cache-size )
       cache_size="$2"; shift 2 ;;
+    --idle-timeout )
+      idle_timeout="$2"; shift 2 ;;
     --pilot-port )
       pilot_port="$2"; shift 2 ;;
     --copilot-port )
@@ -116,6 +119,7 @@ while true; do
     -- )
       shift; break ;;
     * )
+      echo "Unknown option to command"
       exit 1 ;;
   esac
 done
@@ -452,9 +456,12 @@ if [ $copilot_port ]; then
   const_params+=" --copilot_port=$copilot_port"
 fi
 
+# setup parameters to rocketbench
+bench_param=" --idle_timeout=$idle_timeout"
+
 function run_produce {
   echo "Burst writing $num_messages messages into log storage..."
-  cmd="$bench_cmd $const_params \
+  cmd="$bench_cmd $const_params $bench_param \
        --start_producer=true \
        --start_consumer=false \
        --delay_subscribe=false \
@@ -469,7 +476,7 @@ function run_produce {
 
 function run_readwrite {
   echo "Writing and reading $num_messages simultaneously..."
-  cmd="$bench_cmd $const_params \
+  cmd="$bench_cmd $const_params $bench_param \
        --start_producer=true \
        --start_consumer=true \
        --delay_subscribe=false \
@@ -484,7 +491,7 @@ function run_readwrite {
 
 function run_consume {
   echo "Reading a backlog of $num_messages..."
-  cmd="$bench_cmd $const_params \
+  cmd="$bench_cmd $const_params $bench_param\
        --start_producer=true \
        --start_consumer=true \
        --delay_subscribe=true \

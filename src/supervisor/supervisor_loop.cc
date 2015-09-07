@@ -294,6 +294,8 @@ std::map<std::string, SupervisorCommand> SupervisorLoop::commands_ = {
     "info",
     SupervisorCommand(
       "info",
+      "info tower cache usage \n"
+      "info tower cache capacity\n"
       "info tower log N\n"
       "info tower logs\n"
       "info tower tail_seqno N\n"
@@ -314,6 +316,28 @@ std::map<std::string, SupervisorCommand> SupervisorLoop::commands_ = {
           return supervisor->options_.copilot->GetInfoSync(std::move(args));
         } else if (handler == "tower" && supervisor->options_.tower) {
           return supervisor->options_.tower->GetInfoSync(std::move(args));
+        } else {
+          return "Invalid command";
+        }
+      }
+    )
+  },
+  {
+    "set",
+    SupervisorCommand(
+      "set",
+      "set tower cache clear \n"
+      "set tower cache capacity\n",
+      [](std::vector<std::string> args, SupervisorLoop* supervisor)
+        -> std::string {
+
+        if (args.size() < 2) {
+          return "Invalid command";
+        }
+        std::string handler = args[1];
+        args.erase(args.begin(), args.begin() + 2);
+        if (handler == "tower" && supervisor->options_.tower) {
+          return supervisor->options_.tower->SetInfoSync(std::move(args));
         } else {
           return "Invalid command";
         }

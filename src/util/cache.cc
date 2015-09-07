@@ -447,7 +447,24 @@ void* LRUCache::Value(Cache::Handle* handle) {
 
 void LRUCache::ChargeDelta(Cache::Handle* handle, size_t delta) {
   LRUHandle* e = reinterpret_cast<LRUHandle*>(handle);
+
+  // if the cache has exceeded in size, then evict
+  autovector<LRUHandle*> last_reference_list;
+
+  // Free the space following strict LRU policy until enough space
+  // is freed or the lru list is empty
+  EvictFromLRU(delta, &last_reference_list);
+  for (auto entry : last_reference_list) {
+    entry->Free();
+  }
+
+  // The cache is this much biger in size now
   e->charge += delta;
+  usage_ += delta;
+
+  // Assert that the entry is not in the lru so no need to
+  // modify lru_usage_.
+  assert(e->refs > 1);
 }
 }  // end anonymous namespace
 

@@ -1782,7 +1782,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   // Set the capacity to zero. This should disable the cache and
   // purge existing entries.
   new_capacity_str =
-    cluster.GetControlTower()->SetInfoSync({"cache", "setsize", "0"});
+    cluster.GetControlTower()->SetInfoSync({"cache", "capacity", "0"});
   ASSERT_EQ(new_capacity_str, "");
 
   // verify that cache is purged
@@ -1823,7 +1823,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   // set a  1 MB cache capacity
   size_t set_capacity = 1024000;
   new_capacity_str =
-    cluster.GetControlTower()->SetInfoSync({"cache", "setsize",
+    cluster.GetControlTower()->SetInfoSync({"cache", "capacity",
                                             std::to_string(set_capacity)});
   ASSERT_EQ(new_capacity_str, "");
   usage_str =

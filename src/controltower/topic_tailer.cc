@@ -721,7 +721,7 @@ TopicTailer::TopicTailer(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
-    std::function<void(std::unique_ptr<Message>,
+    std::function<void(const Message&,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options) :
   env_(env),
@@ -745,6 +745,7 @@ Status TopicTailer::SendLogRecord(
     std::unique_ptr<MessageData>& msg,
     LogID log_id,
     size_t reader_id) {
+  // This method in invoked in the Logdevice client thread.
   // Send to worker loop.
   MessageData* data_raw = msg.release();
 
@@ -758,15 +759,18 @@ Status TopicTailer::SendLogRecord(
   }
 
   bool sent = !force_failure && Forward([this, data_raw, log_id, reader_id] () {
+    // This portion of code is invoked in the room-thread.
+    thread_check_.Check();
+    std::unique_ptr<MessageData> data(data_raw);
+
     // Validate.
     LogReader* reader = FindLogReader(reader_id);
     assert(reader != nullptr);
 
     // Process message from the log tailer.
     stats_.log_records_received->Add(1);
-    stats_.log_records_received_payload_size->Add(data_raw->GetPayload().
+    stats_.log_records_received_payload_size->Add(data->GetPayload().
                                                   size());
-    std::unique_ptr<MessageData> data(data_raw);
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno = 0;
@@ -774,17 +778,6 @@ Status TopicTailer::SendLogRecord(
                                       next_seqno,
                                       uuid,
                                       &prev_seqno);
-
-    // Store a copy of the message for caching
-    // TODO(dhruba) Avoid this copy by using a UnsafeSharedPtr
-    if (data_cache_.GetCapacity() > 0) {
-      std::unique_ptr<MessageData> cached_msg;
-      cached_msg.reset(static_cast<MessageData *>
-                       (Message::Copy(*data_raw).release()));
-      data_cache_.StoreData(data->GetNamespaceId(), data->GetTopicName(),
-                          log_id, std::move(cached_msg));
-    }
-
     if (0) {
       LOG_DEBUG(info_log_,
                 "Inserted seqno %" PRIu64 " on Log(%" PRIu64 ")"
@@ -833,11 +826,12 @@ Status TopicTailer::SendLogRecord(
 
       if (!recipients.empty()) {
         // Send message downstream.
-        assert(data);
-        data->SetSequenceNumbers(prev_seqno, next_seqno);
+        assert(data_raw);
+
+        // Modify message and send it out.
+        data->SetPreviousSequenceNumber(prev_seqno);
         stats_.log_records_with_subscriptions->Add(1);
-        on_message_(std::unique_ptr<Message>(data.release()),
-                                             std::move(recipients));
+        on_message_(*data_raw, std::move(recipients));
       } else {
         stats_.log_records_without_subscriptions->Add(1);
         LOG_DEBUG(info_log_,
@@ -888,15 +882,14 @@ Status TopicTailer::SendLogRecord(
             Slice namespace_id;
             Slice topic_name;
             topic.GetTopicID(&namespace_id, &topic_name);
-            std::unique_ptr<Message> trim_msg(
-              new MessageGap(Tenant::GuestTenant,
+            MessageGap trim_msg(Tenant::GuestTenant,
                              namespace_id.ToString(),
                              topic_name.ToString(),
                              GapType::kBenign,
                              bump_seqno,
-                             next_seqno));
+                             next_seqno);
             stats_.bumped_subscriptions->Add(bumped_subscriptions.size());
-            on_message_(std::move(trim_msg), std::move(bumped_subscriptions));
+            on_message_(trim_msg, std::move(bumped_subscriptions));
           }
         });
     } else {
@@ -914,6 +907,11 @@ Status TopicTailer::SendLogRecord(
     }
 
     AttemptReaderMerges(reader, log_id);
+
+    // Transfer ownership of this message to the cache.
+    data_cache_.StoreData(data_raw->GetNamespaceId(),
+                            data_raw->GetTopicName(),
+                            log_id, std::move(data));
   });
 
   Status st;
@@ -982,15 +980,14 @@ Status TopicTailer::SendGapRecord(
           Slice namespace_id;
           Slice topic_name;
           topic.GetTopicID(&namespace_id, &topic_name);
-          std::unique_ptr<Message> msg(
-            new MessageGap(Tenant::GuestTenant,
+          MessageGap mgap(Tenant::GuestTenant,
                            namespace_id.ToString(),
                            topic_name.ToString(),
                            type,
                            prev_seqno,
-                           to));
+                           to);
           stats_.gap_records_with_subscriptions->Add(1);
-          on_message_(std::move(msg), std::move(recipients));
+          on_message_(mgap, std::move(recipients));
         } else {
           stats_.gap_records_without_subscriptions->Add(1);
         }
@@ -1052,7 +1049,7 @@ TopicTailer::CreateNewInstance(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
-    std::function<void(std::unique_ptr<Message>,
+    std::function<void(const Message&,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options,
     TopicTailer** tailer) {
@@ -1204,8 +1201,8 @@ std::string TopicTailer::ClearCache() {
 
 std::string TopicTailer::SetCacheCapacity(size_t newcapacity) {
   thread_check_.Check();
-  LOG_INFO(info_log_, "Setting new cache capacity for worker_id %d",
-           worker_id_);
+  LOG_INFO(info_log_, "Setting new cache capacity %lu for worker_id %d",
+           newcapacity, worker_id_);
   data_cache_.SetCapacity(newcapacity);
   return "";
 }
@@ -1262,14 +1259,13 @@ void TopicTailer::AddTailSubscriber(const TopicUUID& topic,
   Slice namespace_id;
   Slice topic_name;
   topic.GetTopicID(&namespace_id, &topic_name);
-  std::unique_ptr<Message> msg(
-    new MessageGap(Tenant::GuestTenant,
+  MessageGap mgap(Tenant::GuestTenant,
                    namespace_id.ToString(),
                    topic_name.ToString(),
                    GapType::kBenign,
                    0,
-                   seqno - 1));
-  on_message_(std::move(msg), { id });
+                   seqno - 1);
+  on_message_(mgap, { id });
 
   AddSubscriberInternal(topic, id, logid, seqno);
 }
@@ -1318,12 +1314,10 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
                   largest_cached,
                   logid);
       }
-      // copy and deliver message to subscriber
-      std::unique_ptr<Message> copy(Message::Copy(*data_raw));
-      MessageData* d = static_cast<MessageData*>(copy.get());
-      d->SetSequenceNumbers(delivered, largest_cached);
+      // Deliver message
+      data_raw->SetPreviousSequenceNumber(delivered);
       delivered = largest_cached + 1;
-      on_message_(std::move(copy), recipient);
+      on_message_(*data_raw, recipient);
     }
   };
 
@@ -1347,13 +1341,13 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
                 seqno - 1,
                 logid);
     }
-    std::unique_ptr<Message> msg(new MessageGap(Tenant::GuestTenant,
-                                                ns.ToString(),
-                                                name.ToString(),
-                                                GapType::kBenign,
-                                                delivered,
-                                                seqno-1));
-    on_message_(std::move(msg), recipient);
+    MessageGap mgap(Tenant::GuestTenant,
+                    ns.ToString(),
+                    name.ToString(),
+                    GapType::kBenign,
+                    delivered,
+                    seqno-1);
+    on_message_(mgap, recipient);
   }
   if (old != seqno) {
     LOG_DEBUG(info_log_,

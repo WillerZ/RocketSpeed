@@ -121,13 +121,13 @@ ControlRoom::ProcessGoodbye(std::unique_ptr<Message> msg,
 }
 
 void
-ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
+ControlRoom::OnTailerMessage(const Message& msg,
                              std::vector<CopilotSub> recipients) {
-  MessageType type = msg->GetMessageType();
+  MessageType type = msg.GetMessageType();
   if (type == MessageType::mDeliver) {
-    ProcessDeliver(std::move(msg), std::move(recipients));
+    ProcessDeliver(msg, std::move(recipients));
   } else if (type == MessageType::mGap) {
-    ProcessGap(std::move(msg), std::move(recipients));
+    ProcessGap(msg, std::move(recipients));
   } else {
     assert(false);
   }
@@ -136,14 +136,14 @@ ControlRoom::OnTailerMessage(std::unique_ptr<Message> msg,
 
 // Process Data messages that are coming in from Tailer.
 void
-ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
+ControlRoom::ProcessDeliver(const Message& msg,
                             const std::vector<CopilotSub>& recipients) {
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
   Status st;
 
   // get the request message
-  MessageData* request = static_cast<MessageData*>(msg.get());
+  const MessageData* request = static_cast<const MessageData*>(&msg);
 
   const SequenceNumber prev_seqno = request->GetPrevSequenceNumber();
   const SequenceNumber next_seqno = request->GetSequenceNumber();
@@ -201,9 +201,9 @@ ControlRoom::ProcessDeliver(std::unique_ptr<Message> msg,
 
 // Process Gap messages that are coming in from Tailer.
 void
-ControlRoom::ProcessGap(std::unique_ptr<Message> msg,
+ControlRoom::ProcessGap(const Message& msg,
                         const std::vector<CopilotSub>& recipients) {
-  MessageGap* gap = static_cast<MessageGap*>(msg.get());
+  const MessageGap* gap = static_cast<const MessageGap*>(&msg);
 
   SequenceNumber prev_seqno = gap->GetStartSequenceNumber();
   SequenceNumber next_seqno = gap->GetEndSequenceNumber();

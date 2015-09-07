@@ -211,6 +211,9 @@ void DataCache::StoreData(const Slice& namespace_id, const Slice& topic,
   if (rs_cache_ == nullptr) { // No caching specified
     return;
   }
+  // Assert that no blocks are pinned
+  assert(rs_cache_->GetPinnedUsage() == 0);
+
   // Check to see if we do not need to store data
   if (!(characteristics_ & Characteristics::StoreDataRecords)) {
     return;
@@ -286,6 +289,9 @@ SequenceNumber DataCache::VisitCache(LogID logid,
   if (rs_cache_ == nullptr) { // No caching specified
     return start;
   }
+  // Assert that no blocks are pinned
+  assert(rs_cache_->GetPinnedUsage() == 0);
+
   // compute sequence number of block start
   SequenceNumber seqno_block = AlignToBlockStart(start);
 

@@ -188,9 +188,9 @@ Status ControlTower::Initialize() {
 
   for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
-      [this, i] (std::unique_ptr<Message> msg,
+      [this, i] (const Message& msg,
                  std::vector<CopilotSub> recipients) {
-        rooms_[i]->OnTailerMessage(std::move(msg), std::move(recipients));
+        rooms_[i]->OnTailerMessage(msg, std::move(recipients));
       };
     TopicTailer* topic_tailer;
     st = TopicTailer::CreateNewInstance(opt.env,
@@ -545,7 +545,7 @@ std::string ControlTower::SetInfoSync(std::vector<std::string> args) {
             value.append(result);
           }
         }
-      } else if (args.size() >= 3 && args[1] == "setsize") {
+      } else if (args.size() >= 3 && args[1] == "capacity") {
         // set new cache with global cache size
         size_t newsize = std::stol(args[2]);
 
@@ -573,6 +573,8 @@ std::string ControlTower::SetInfoSync(std::vector<std::string> args) {
         } else {
           value = "Specified cache size is too large";
         }
+      } else {
+        value = "Unknown command. Use set tower cache { clear | capacity }";
       }
       return value;
     }

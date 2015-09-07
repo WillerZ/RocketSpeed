@@ -43,7 +43,7 @@ class ControlRoom {
                                       StreamID origin);
 
   // Processes a message from the tailer.
-  void OnTailerMessage(std::unique_ptr<Message> msg,
+  void OnTailerMessage(const Message& msg,
                        std::vector<CopilotSub> recipients);
 
  private:
@@ -68,9 +68,9 @@ class ControlRoom {
   void ProcessUnsubscribe(std::unique_ptr<Message> msg,
                           int worker_id,
                           StreamID origin);
-  void ProcessDeliver(std::unique_ptr<Message> msg,
+  void ProcessDeliver(const Message& msg,
                       const std::vector<CopilotSub>& recipients);
-  void ProcessGap(std::unique_ptr<Message> msg,
+  void ProcessGap(const Message& msg,
                   const std::vector<CopilotSub>& recipients);
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 

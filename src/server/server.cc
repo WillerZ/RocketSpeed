@@ -40,7 +40,7 @@ DEFINE_int32(tower_workers, 40, "tower rooms");
 DEFINE_int64(tower_max_subscription_lag, 10000,
              "max seqno lag on subscriptions");
 DEFINE_int32(tower_readers_per_room, 2, "log readers per room");
-DEFINE_int32(tower_cache_size, -1, "cache size in bytes");
+DEFINE_int64(tower_cache_size, -1, "cache size in bytes");
 DEFINE_double(FAULT_tower_send_log_record_failure_rate, 0.0,
   "probability of failing to append to topic tailer queue from log storage");
 

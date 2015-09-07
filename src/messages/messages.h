@@ -291,6 +291,13 @@ class MessageData : public Message {
   }
 
   /**
+   * @Sets the previous Sequence Number.
+   */
+  void SetPreviousSequenceNumber(SequenceNumber prev) {
+    seqno_prev_ = prev;
+  }
+
+  /**
    * @return The Message ID.
    */
   const MsgId& GetMessageId() const { return msgid_; }
