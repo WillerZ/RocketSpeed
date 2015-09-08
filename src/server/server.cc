@@ -62,7 +62,7 @@ DEFINE_int32(copilot_workers, 40, "copilot worker threads");
 DEFINE_string(control_towers,
               "localhost",
               "comma-separated control tower hostnames");
-DEFINE_int32(copilot_connections, 8,
+DEFINE_int32(copilot_connections, 40,
              "num connections between one copilot and one control tower");
 DEFINE_int32(copilot_towers_per_log, 2,
              "number of towers to subscribe to for each log");
