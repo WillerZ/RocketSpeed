@@ -45,6 +45,19 @@ cpp_library(
 )
 
 cpp_library(
+    name = 'configuration_create',
+    srcs = [
+        'configuration_create.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    link_whole = True,
+)
+
+cpp_library(
     name = 'flow_control',
     srcs = [
         'flow_control.cc',
