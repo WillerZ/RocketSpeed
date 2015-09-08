@@ -9,6 +9,7 @@ cpp_library(
         'namespace_ids.cc',
         'parsing.cc',
         'random.cc',
+        'rate_limiter.cc',
         'statistics.cc',
         'status.cc',
         'thread_local.cc',
