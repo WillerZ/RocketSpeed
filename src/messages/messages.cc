@@ -187,10 +187,10 @@ std::unique_ptr<Message> Message::Copy(const Message& msg) {
   return CreateNewInstance(slice.ToUniqueChars(), slice.size());
 }
 
-Slice Message::Serialize() const {
-  PutFixedEnum8(&serialize_buffer__, type_);
-  PutFixed16(&serialize_buffer__, tenantid_);
-  return Slice(serialize_buffer__);
+Status Message::Serialize(std::string* out) const {
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
+  return Status::OK();
 }
 
 Status Message::DeSerialize(Slice* in) {
@@ -204,21 +204,19 @@ Status Message::DeSerialize(Slice* in) {
 }
 
 void Message::SerializeToString(std::string* out) const {
-  Serialize();  // serialize into local buffer
-  out->assign(std::move(serialize_buffer__));
+  Serialize(out);
 }
 
-Slice MessagePing::Serialize() const {
-  PutFixedEnum8(&serialize_buffer__, type_);
-  PutFixed16(&serialize_buffer__, tenantid_);
+Status MessagePing::Serialize(std::string* out) const {
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
 
   // serialize message specific contents
   // pingtype
-  PutFixedEnum8(&serialize_buffer__, pingtype_);
+  PutFixedEnum8(out, pingtype_);
   // cookie
-  PutLengthPrefixedSlice(&serialize_buffer__, Slice(cookie_));
-
-  return Slice(serialize_buffer__);
+  PutLengthPrefixedSlice(out, Slice(cookie_));
+  return Status::OK();
 }
 
 Status MessagePing::DeSerialize(Slice* in) {
@@ -269,16 +267,16 @@ MessageData::MessageData():
 MessageData::~MessageData() {
 }
 
-Slice MessageData::Serialize() const {
-  PutFixedEnum8(&serialize_buffer__, type_);
+Status MessageData::Serialize(std::string* out) const {
+  PutFixedEnum8(out, type_);
 
   // seqno
-  PutVarint64(&serialize_buffer__, seqno_prev_);
-  PutVarint64(&serialize_buffer__, seqno_);
+  PutVarint64(out, seqno_prev_);
+  PutVarint64(out, seqno_);
 
   // The rest of the message is what goes into log storage.
-  SerializeInternal();
-  return Slice(serialize_buffer__);
+  SerializeInternal(out);
+  return Status::OK();
 }
 
 Status MessageData::DeSerialize(Slice* in) {
@@ -309,18 +307,17 @@ Slice MessageData::GetStorageSlice() const {
 }
 
 size_t MessageData::GetTotalSize() const {
-  assert(serialize_buffer__.size() == 0);
   return sizeof(MessageData) + topic_name_.size() +
          payload_.size() + namespaceid_.size() + storage_slice_.size();
 }
 
-void MessageData::SerializeInternal() const {
-  PutFixed16(&serialize_buffer__, tenantid_);
-  PutTopicID(&serialize_buffer__, namespaceid_, topic_name_);
-  PutLengthPrefixedSlice(&serialize_buffer__,
+void MessageData::SerializeInternal(std::string* out) const {
+  PutFixed16(out, tenantid_);
+  PutTopicID(out, namespaceid_, topic_name_);
+  PutLengthPrefixedSlice(out,
                          Slice((const char*)&msgid_, sizeof(msgid_)));
 
-  PutLengthPrefixedSlice(&serialize_buffer__, payload_);
+  PutLengthPrefixedSlice(out, payload_);
 }
 
 Status MessageData::DeSerializeStorage(Slice* in) {
@@ -363,20 +360,19 @@ const MessageDataAck::AckVector& MessageDataAck::GetAcks() const {
   return acks_;
 }
 
-Slice MessageDataAck::Serialize() const {
+Status MessageDataAck::Serialize(std::string* out) const {
   // Type, tenantId and origin
-  PutFixedEnum8(&serialize_buffer__, type_);
-  PutFixed16(&serialize_buffer__, tenantid_);
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
 
   // serialize message specific contents
-  PutVarint32(&serialize_buffer__, static_cast<uint32_t>(acks_.size()));
+  PutVarint32(out, static_cast<uint32_t>(acks_.size()));
   for (const Ack& ack : acks_) {
-    PutFixedEnum8(&serialize_buffer__, ack.status);
-    PutBytes(&serialize_buffer__, ack.msgid.id, sizeof(ack.msgid.id));
-    PutVarint64(&serialize_buffer__, ack.seqno);
+    PutFixedEnum8(out, ack.status);
+    PutBytes(out, ack.msgid.id, sizeof(ack.msgid.id));
+    PutVarint64(out, ack.seqno);
   }
-
-  return Slice(serialize_buffer__);
+  return Status::OK();
 }
 
 Status MessageDataAck::DeSerialize(Slice* in) {
@@ -438,18 +434,17 @@ MessageGap::MessageGap(TenantID tenantID,
 MessageGap::~MessageGap() {
 }
 
-Slice MessageGap::Serialize() const {
+Status MessageGap::Serialize(std::string* out) const {
   // Type, tenantId and origin
-  PutFixedEnum8(&serialize_buffer__, type_);
-  PutFixed16(&serialize_buffer__, tenantid_);
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
 
   // Write the gap information.
-  PutTopicID(&serialize_buffer__, Slice(namespace_id_), Slice(topic_name_));
-  PutFixedEnum8(&serialize_buffer__, gap_type_);
-  PutVarint64(&serialize_buffer__, gap_from_);
-  PutVarint64(&serialize_buffer__, gap_to_);
-
-  return Slice(serialize_buffer__);
+  PutTopicID(out, Slice(namespace_id_), Slice(topic_name_));
+  PutFixedEnum8(out, gap_type_);
+  PutVarint64(out, gap_from_);
+  PutVarint64(out, gap_to_);
+  return Status::OK();
 }
 
 Status MessageGap::DeSerialize(Slice* in) {
@@ -494,16 +489,15 @@ MessageGoodbye::MessageGoodbye(TenantID tenant_id,
   tenantid_ = tenant_id;
 }
 
-Slice MessageGoodbye::Serialize() const {
+Status MessageGoodbye::Serialize(std::string* out) const {
   // Type, tenantId and origin
-  PutFixedEnum8(&serialize_buffer__, type_);
-  PutFixed16(&serialize_buffer__, tenantid_);
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
 
   // MessageGoodbye specifics
-  PutFixedEnum8(&serialize_buffer__, code_);
-  PutFixedEnum8(&serialize_buffer__, origin_type_);
-
-  return Slice(serialize_buffer__);
+  PutFixedEnum8(out, code_);
+  PutFixedEnum8(out, origin_type_);
+  return Status::OK();
 }
 
 Status MessageGoodbye::DeSerialize(Slice* in) {
@@ -530,10 +524,10 @@ Status MessageGoodbye::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-Slice MessageFindTailSeqno::Serialize() const {
-  Message::Serialize();
-  PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
-  return Slice(serialize_buffer__);
+Status MessageFindTailSeqno::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutTopicID(out, namespace_id_, topic_name_);
+  return Status::OK();
 }
 
 Status MessageFindTailSeqno::DeSerialize(Slice* in) {
@@ -547,11 +541,11 @@ Status MessageFindTailSeqno::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-Slice MessageTailSeqno::Serialize() const {
-  Message::Serialize();
-  PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
-  PutVarint64(&serialize_buffer__, seqno_);
-  return Slice(serialize_buffer__);
+Status MessageTailSeqno::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutTopicID(out, namespace_id_, topic_name_);
+  PutVarint64(out, seqno_);
+  return Status::OK();
 }
 
 Status MessageTailSeqno::DeSerialize(Slice* in) {
@@ -569,12 +563,12 @@ Status MessageTailSeqno::DeSerialize(Slice* in) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Slice MessageSubscribe::Serialize() const {
-  Message::Serialize();
-  PutTopicID(&serialize_buffer__, namespace_id_, topic_name_);
-  PutVarint64(&serialize_buffer__, start_seqno_);
-  PutVarint64(&serialize_buffer__, sub_id_);
-  return Slice(serialize_buffer__);
+Status MessageSubscribe::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutTopicID(out, namespace_id_, topic_name_);
+  PutVarint64(out, start_seqno_);
+  PutVarint64(out, sub_id_);
+  return Status::OK();
 }
 
 Status MessageSubscribe::DeSerialize(Slice* in) {
@@ -594,11 +588,11 @@ Status MessageSubscribe::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-Slice MessageUnsubscribe::Serialize() const {
-  Message::Serialize();
-  PutVarint64(&serialize_buffer__, sub_id_);
-  PutFixedEnum8(&serialize_buffer__, reason_);
-  return Slice(serialize_buffer__);
+Status MessageUnsubscribe::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutVarint64(out, sub_id_);
+  PutFixedEnum8(out, reason_);
+  return Status::OK();
 }
 
 Status MessageUnsubscribe::DeSerialize(Slice* in) {
@@ -615,14 +609,14 @@ Status MessageUnsubscribe::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-Slice MessageDeliver::Serialize() const {
-  Message::Serialize();
-  PutVarint64(&serialize_buffer__, sub_id_);
-  PutVarint64(&serialize_buffer__, seqno_prev_);
+Status MessageDeliver::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutVarint64(out, sub_id_);
+  PutVarint64(out, seqno_prev_);
   assert(seqno_ >= seqno_prev_);
   uint64_t seqno_diff = seqno_ - seqno_prev_;
-  PutVarint64(&serialize_buffer__, seqno_diff);
-  return Slice(serialize_buffer__);
+  PutVarint64(out, seqno_diff);
+  return Status::OK();
 }
 
 Status MessageDeliver::DeSerialize(Slice* in) {
@@ -645,10 +639,10 @@ Status MessageDeliver::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-Slice MessageDeliverGap::Serialize() const {
-  MessageDeliver::Serialize();
-  PutFixedEnum8(&serialize_buffer__, gap_type_);
-  return Slice(serialize_buffer__);
+Status MessageDeliverGap::Serialize(std::string* out) const {
+  MessageDeliver::Serialize(out);
+  PutFixedEnum8(out, gap_type_);
+  return Status::OK();
 }
 
 Status MessageDeliverGap::DeSerialize(Slice* in) {
@@ -662,12 +656,12 @@ Status MessageDeliverGap::DeSerialize(Slice* in) {
   return Status::OK();
 }
 
-Slice MessageDeliverData::Serialize() const {
-  MessageDeliver::Serialize();
-  PutLengthPrefixedSlice(&serialize_buffer__,
+Status MessageDeliverData::Serialize(std::string* out) const {
+  MessageDeliver::Serialize(out);
+  PutLengthPrefixedSlice(out,
                          Slice((const char*)&message_id_, sizeof(message_id_)));
-  PutLengthPrefixedSlice(&serialize_buffer__, payload_);
-  return Slice(serialize_buffer__);
+  PutLengthPrefixedSlice(out, payload_);
+  return Status::OK();
 }
 
 Status MessageDeliverData::DeSerialize(Slice* in) {

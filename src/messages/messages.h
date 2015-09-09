@@ -121,7 +121,7 @@ class TopicPair {
  * among multiple users of the system.
  * The Origin identifies the entity that produced this message.
  */
-class Message : public Serializer {
+class Message : private Serializer {
  public:
   /**
    * @return The message Tupe
@@ -172,7 +172,7 @@ class Message : public Serializer {
   Message() : type_(MessageType::NotInitialized) {
   }
 
-  Slice Serialize() const override;
+  Status Serialize(std::string* out) const override;
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
@@ -224,7 +224,7 @@ class MessagePing : public Message {
   /*
    * Inherited from Serializer
    */
-  virtual Slice Serialize() const;
+  virtual Status Serialize(std::string* out) const override;
   virtual Status DeSerialize(Slice* in);
 
  protected:
@@ -328,12 +328,6 @@ class MessageData : public Message {
    */
   Slice GetStorageSlice() const;
 
-  /*
-   * Inherited from Serializer
-   */
-  virtual Slice Serialize() const;
-  virtual Status DeSerialize(Slice* in);
-
   /**
    * @return Deserializes the message from the log storage format.
    *         Only the tenant ID, topic_name, and payload are deserialized.
@@ -347,8 +341,14 @@ class MessageData : public Message {
    */
   size_t GetTotalSize() const;
 
+  /*
+   * Inherited from Serializer
+   */
+  virtual Status Serialize(std::string* out) const override;
+  virtual Status DeSerialize(Slice* in);
+
  private:
-  void SerializeInternal() const;
+  void SerializeInternal(std::string* out) const;
 
   // type of this message: mPublish or mDeliver
   SequenceNumber seqno_prev_; // previous sequence number on topic
@@ -426,7 +426,7 @@ class MessageDataAck : public Message {
   /*
    * Inherited from Serializer
    */
-  virtual Slice Serialize() const;
+  virtual Status Serialize(std::string* out) const override;
   virtual Status DeSerialize(Slice* in);
 
  private:
@@ -493,11 +493,10 @@ class MessageGap : public Message {
   SequenceNumber GetEndSequenceNumber() const {
     return gap_to_;
   }
-
   /*
    * Inherited from Serializer
    */
-  virtual Slice Serialize() const;
+  virtual Status Serialize(std::string* out) const override;
   virtual Status DeSerialize(Slice* in);
 
  private:
@@ -561,8 +560,7 @@ class MessageGoodbye : public Message {
   OriginType GetOriginType() const {
     return origin_type_;
   }
-
-  virtual Slice Serialize() const;
+  virtual Status Serialize(std::string* out) const override;
   virtual Status DeSerialize(Slice* in);
 
  private:
@@ -600,7 +598,7 @@ class MessageFindTailSeqno final : public Message {
 
   const Topic& GetTopicName() const { return topic_name_; }
 
-  Slice Serialize() const override;
+  virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
@@ -633,7 +631,7 @@ class MessageTailSeqno final : public Message {
 
   SequenceNumber GetSequenceNumber() const { return seqno_; }
 
-  Slice Serialize() const override;
+  virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
@@ -677,7 +675,7 @@ class MessageSubscribe final : public Message {
 
   SubscriptionID GetSubID() const { return sub_id_; }
 
-  Slice Serialize() const override;
+  virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
@@ -718,7 +716,7 @@ class MessageUnsubscribe final : public Message {
 
   Reason GetReason() const { return reason_; }
 
-  Slice Serialize() const override;
+  virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
@@ -758,7 +756,7 @@ class MessageDeliver : public Message {
     seqno_ = seqno;
   }
 
-  Slice Serialize() const override;
+  virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
@@ -791,7 +789,7 @@ class MessageDeliverGap final : public MessageDeliver {
 
   SequenceNumber GetLastSequenceNumber() const { return GetSequenceNumber(); }
 
-  Slice Serialize() const override;
+  virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
@@ -815,7 +813,7 @@ class MessageDeliverData final : public MessageDeliver {
 
   Slice GetPayload() const { return payload_; }
 
-  Slice Serialize() const override;
+  virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:

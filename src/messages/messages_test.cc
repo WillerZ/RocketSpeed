@@ -42,11 +42,13 @@ TEST(Messaging, Data) {
   data1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   // serialize the message
-  Slice original = data1.Serialize();
+  std::string str;
+  Status stx = data1.Serialize(&str);
 
   // un-serialize to a new message
   MessageData data2;
-  data2.DeSerialize(&original);
+  Slice slx(str);
+  data2.DeSerialize(&slx);
 
   // verify that the new message is the same as original
   ASSERT_TRUE(data2.GetMessageId() == data1.GetMessageId());
@@ -73,11 +75,13 @@ TEST(Messaging, DataAck) {
   MessageDataAck ack1(101, acks);
 
   // serialize the message
-  Slice original = ack1.Serialize();
+  std::string str;
+  ack1.Serialize(&str);
 
   // un-serialize to a new message
   MessageDataAck ack2;
-  ack2.DeSerialize(&original);
+  Slice slx(str);
+  ack2.DeSerialize(&slx);
 
   // verify that the new message is the same as original
   ASSERT_TRUE(ack1.GetAcks() == ack2.GetAcks());
@@ -93,11 +97,13 @@ TEST(Messaging, DataGap) {
                   200);
 
   // serialize the message
-  Slice original = gap1.Serialize();
+  std::string stx;
+  gap1.Serialize(&stx);
 
   // un-serialize to a new message
   MessageGap gap2;
-  gap2.DeSerialize(&original);
+  Slice slx(stx);
+  gap2.DeSerialize(&slx);
 
   // verify that the new message is the same as original
   ASSERT_EQ(gap2.GetTopicName(), "topic");
@@ -107,8 +113,10 @@ TEST(Messaging, DataGap) {
   ASSERT_EQ(gap2.GetEndSequenceNumber(), 200);
 }
 
-static void TestMessage(const Serializer& msg) {
-  Slice slice = msg.Serialize();
+static void TestMessage(const Message& msg) {
+  std::string str;
+  msg.SerializeToString(&str);
+  Slice slice(str);
 
   // Should successfully parse.
   ASSERT_TRUE(Message::CreateNewInstance(slice.ToUniqueChars(),
@@ -129,11 +137,13 @@ TEST(Messaging, Goodbye) {
                           MessageGoodbye::Server);
 
   // serialize the message
-  Slice original = goodbye1.Serialize();
+  std::string str;
+  goodbye1.Serialize(&str);
 
   // un-serialize to a new message
   MessageGoodbye goodbye2;
-  goodbye2.DeSerialize(&original);
+  Slice slx(str);
+  goodbye2.DeSerialize(&slx);
 
   // verify that the new message is the same as original
   ASSERT_EQ(goodbye2.GetTenantID(), (TenantID)Tenant::GuestTenant);
@@ -145,7 +155,9 @@ TEST(Messaging, FindTailSeqno) {
   MessageFindTailSeqno msg1(Tenant::GuestTenant,
                             "TestNamespace",
                             "TestTopic");
-  Slice original = msg1.Serialize();
+  std::string str;
+  msg1.Serialize(&str);
+  Slice original(str);
   MessageFindTailSeqno msg2;
   msg2.DeSerialize(&original);
   ASSERT_EQ(msg2.GetTenantID(), (TenantID)Tenant::GuestTenant);
@@ -158,7 +170,9 @@ TEST(Messaging, TailSeqno) {
                         "TestNamespace",
                         "TestTopic",
                         123123);
-  Slice original = msg1.Serialize();
+  std::string str;
+  msg1.Serialize(&str);
+  Slice original(str);
   MessageTailSeqno msg2;
   msg2.DeSerialize(&original);
   ASSERT_EQ(msg2.GetTenantID(), (TenantID)Tenant::GuestTenant);
@@ -174,9 +188,11 @@ TEST(Messaging, MessageSubscribe) {
                               123123,
                               42);
 
-  Slice original = msg1.Serialize();
+  std::string str;
+  msg1.Serialize(&str);
+  Slice slx(str);
   MessageSubscribe msg2;
-  ASSERT_OK(msg2.DeSerialize(&original));
+  ASSERT_OK(msg2.DeSerialize(&slx));
 
   ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
@@ -191,9 +207,11 @@ TEST(Messaging, MessageUnsubscribe) {
                           42,
                           MessageUnsubscribe::Reason::kBackOff);
 
-  Slice original = msg1.Serialize();
+  std::string str;
+  msg1.Serialize(&str);
+  Slice slx(str);
   MessageUnsubscribe msg2;
-  ASSERT_OK(msg2.DeSerialize(&original));
+  ASSERT_OK(msg2.DeSerialize(&slx));
 
   ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
@@ -204,7 +222,9 @@ TEST(Messaging, MessageDeliverGap) {
   MessageDeliverGap msg1(Tenant::GuestTenant, 42, GapType::kRetention);
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
-  Slice original = msg1.Serialize();
+  std::string str;
+  msg1.Serialize(&str);
+  Slice original(str);
   MessageDeliverGap msg2;
   ASSERT_OK(msg2.DeSerialize(&original));
 
@@ -223,7 +243,9 @@ TEST(Messaging, MessageDeliverData) {
                           Slice("payload"));
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
-  Slice original = msg1.Serialize();
+  std::string str;
+  msg1.Serialize(&str);
+  Slice original(str);
   MessageDeliverData msg2;
   ASSERT_OK(msg2.DeSerialize(&original));
 
@@ -244,7 +266,9 @@ TEST(Messaging, InvalidEnum) {
     MessageGoodbye::Server);
 
   // serialize the message
-  Slice original = goodbye1.Serialize();
+  std::string str;
+  goodbye1.Serialize(&str);
+  Slice original(str);
 
   // Should fail to deserialize.
   MessageGoodbye goodbye2;

@@ -15,13 +15,12 @@ namespace rocketspeed {
 class Serializer {
  public:
   /**
-   * Serializes an object. The lifecycle of the returned slice is tied to the
-   * lifecycle of this object.
+   * Serializes an object.
    *
-   * @return Returns the serialized version of this object
+   * @return Returns OK() on success, otherwise returns failure
    *
    */
-  virtual Slice Serialize() const = 0;
+  virtual Status Serialize(std::string* str) const = 0;
 
   /**
    * Deserializes an object. Populates the current object with the
@@ -34,11 +33,6 @@ class Serializer {
   virtual Status DeSerialize(Slice* in) = 0;
 
   virtual ~Serializer() {}
-
- protected:
-  // This buffer is here to avoid malloc/free of tmp space at
-  // every serialization/deserialization
-  mutable std::string serialize_buffer__;
 };
 
 }  // namespace rocketspeed
