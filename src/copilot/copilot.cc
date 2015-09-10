@@ -285,19 +285,41 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
                                  StreamID origin) {
   options_.msg_loop->ThreadCheck();
 
-  auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
-  LOG_DEBUG(options_.info_log,
-            "Received unsubscribe for subscription (%" PRIu64
-            ") at stream (%llu)",
-            unsubscribe->GetSubID(),
-            origin);
-
   const int this_worker = options_.msg_loop->GetThreadWorkerIndex();
+  auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
   const auto sub_id = unsubscribe->GetSubID();
-  int worker_id;
-  if (!sub_id_map_[this_worker].MoveOut(origin, sub_id, &worker_id)) {
-    return;
+
+  int worker_id = -1;
+  switch (unsubscribe->GetReason()) {
+    case MessageUnsubscribe::Reason::kRequested:
+      // Inbound unsubscription from client.
+      LOG_DEBUG(options_.info_log,
+                "Received client unsubscribe for subscription (%" PRIu64
+                ") at stream (%llu)",
+                sub_id,
+                origin);
+
+      // Use client subscription ID map to find worker.
+      if (!sub_id_map_[this_worker].MoveOut(origin, sub_id, &worker_id)) {
+        return;
+      }
+      break;
+
+    case MessageUnsubscribe::Reason::kBackOff:
+    case MessageUnsubscribe::Reason::kInvalid:
+      // Outbound unsubscription from control tower.
+      LOG_WARN(options_.info_log,
+               "Received server unsubscribe for subscription (%" PRIu64
+               ") at stream (%llu)",
+               sub_id,
+               origin);
+
+      // Map subscription ID back using CopilotWorker mapping.
+      worker_id = CopilotWorker::SubscriptionIDWorker(sub_id, workers_.size());
+      break;
   }
+
+  assert(worker_id != -1);
   auto command = workers_[worker_id]->WorkerCommand(LogID(0),
                                                     std::move(msg),
                                                     this_worker,

@@ -332,6 +332,8 @@ class CopilotWorker {
   SequenceNumber FindLowestSequenceNumber(
       const TopicState& topic, bool* have_zero_sub_res);
 
+  void HandleInvalidSubscription(StreamID origin, SubscriptionID sub_id);
+
   void UnsubscribeControlTowers(const TopicUUID& topic_uuid, TopicState& topic);
 
   // State of subscriptions for a single topic.

@@ -229,6 +229,16 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
   options_.msg_loop->ThreadCheck();
 
   MessageSubscribe* subscribe = static_cast<MessageSubscribe*>(msg.get());
+  if (subscribe->GetNamespace() == InvalidNamespace) {
+    // Invalid namespace, so respond with forced unsubscription.
+    MessageUnsubscribe message(subscribe->GetTenantID(),
+                               subscribe->GetSubID(),
+                               MessageUnsubscribe::Reason::kInvalid);
+    auto command = options_.msg_loop->ResponseCommand(message, origin);
+    options_.msg_loop->SendCommandToSelf(std::move(command));
+    return;
+  }
+
   LogID log_id;
   Status st = options_.log_router->GetLogID(subscribe->GetNamespace().c_str(),
                                             subscribe->GetTopicName().c_str(),

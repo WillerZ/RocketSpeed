@@ -2069,6 +2069,34 @@ TEST(IntegrationTest, TowerRebalance) {
 }
 #endif
 
+TEST(IntegrationTest, InvalidSubscription) {
+  // Subscribes to InvalidNamespace, expects bad subscription status.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  std::unique_ptr<ClientImpl> client;
+  ASSERT_OK(cluster.CreateClient(&client, false));
+
+  port::Semaphore sem;
+  ASSERT_TRUE(client->Subscribe(
+    GuestTenant,
+    InvalidNamespace,
+    "InvalidSubscription",
+    1,
+    [&] (std::unique_ptr<MessageReceived>& mr) {
+      ASSERT_TRUE(false);
+    },
+    [&](const SubscriptionStatus& ss) {
+      ASSERT_EQ(ss.GetNamespace(), InvalidNamespace);
+      ASSERT_EQ(ss.GetTopicName(), "InvalidSubscription");
+      ASSERT_EQ(ss.GetSequenceNumber(), 1);
+      ASSERT_TRUE(!ss.IsSubscribed());
+      ASSERT_TRUE(!ss.GetStatus().ok());
+      sem.Post();
+    }));
+  ASSERT_TRUE(sem.TimedWait(timeout));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

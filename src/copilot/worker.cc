@@ -509,7 +509,21 @@ void CopilotWorker::ProcessUnsubscribe(TenantID tenant_id,
            sub_id,
            subscriber);
 
-  RemoveSubscription(tenant_id, sub_id, subscriber, worker_id);
+  switch (reason) {
+    case MessageUnsubscribe::Reason::kRequested:
+      // Inbound unsubscription from client.
+      RemoveSubscription(tenant_id, sub_id, subscriber, worker_id);
+      break;
+
+    case MessageUnsubscribe::Reason::kBackOff:
+      // Not used.
+      break;
+
+    case MessageUnsubscribe::Reason::kInvalid:
+      // Control Tower has rejected our subscription.
+      HandleInvalidSubscription(subscriber, sub_id);
+      break;
+  }
 }
 
 void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
@@ -568,6 +582,56 @@ void CopilotWorker::RemoveSubscription(const TenantID tenant_id,
       CancelResubscribeRequest(uuid);
       topic_checkup_list_.Erase(uuid);
     }
+  }
+}
+
+void CopilotWorker::HandleInvalidSubscription(StreamID origin,
+                                              SubscriptionID sub_id) {
+  // HandleInvalidSubscription is invoked when a control tower has responded
+  // to a subscribe message with an unsubscribe message (with reason kInvalid).
+  // This means that the topic is invalid, for whatever reason.
+
+  // Find the topic that this subscription was for.
+  auto ptr = sub_to_topic_.Find(origin, sub_id);
+  if (!ptr) {
+    LOG_WARN(options_.info_log,
+      "Unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
+      origin, sub_id);
+    return;
+  }
+  const TopicUUID uuid = *ptr;
+
+  auto it = topics_.find(uuid);
+  if (it != topics_.end()) {
+    TopicState& topic = it->second;
+
+    // Forward the unsubscribe to all clients.
+    for (auto& sub : topic.subscriptions) {
+      RollcallWrite(sub->sub_id, sub->tenant_id, uuid,
+                    MetadataType::mUnSubscribe,
+                    topic.log_id, sub->worker_id, sub->stream_id);
+
+      MessageUnsubscribe message(sub->tenant_id,
+                                 sub->sub_id,
+                                 MessageUnsubscribe::Reason::kInvalid);
+      auto cmd = options_.msg_loop->ResponseCommand(message, sub->stream_id);
+      if (client_queues_[sub->worker_id]->Write(cmd)) {
+        LOG_DEBUG(options_.info_log,
+          "Sent unsubscribe (invalid) for StreamID(%llu) SubID(%" PRIu64 ")",
+          sub->stream_id, sub->sub_id);
+      } else {
+        LOG_WARN(options_.info_log,
+          "Failed unsubscribe (invalid) for StreamID(%llu) SubID(%" PRIu64 ")",
+          sub->stream_id, sub->sub_id);
+      }
+    }
+    stats_.incoming_subscriptions->Add(-int64_t(topic.subscriptions.size()));
+
+    // Unsubscribe all other control towers too -- we no longer need them.
+    UnsubscribeControlTowers(uuid, topic);
+    topics_.erase(it);
+    CancelResubscribeRequest(uuid);
+    topic_checkup_list_.Erase(uuid);
   }
 }
 
