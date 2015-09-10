@@ -26,15 +26,13 @@ Status FixedConfiguration::CreateConfiguration(
 
   std::vector<HostId> hosts;
   for (const auto& name : {"pilot", "copilot"}) {
-    auto it = config.find(name);
-    if (it == config.end()) {
-      return Status::InvalidArgument(std::string("Missing ") +
-                                     std::string(name));
-    }
     HostId host;
-    Status st = HostId::Resolve(it->second, &host);
-    if (!st.ok()) {
-      return st;
+    auto it = config.find(name);
+    if (it != config.end()) {
+      Status st = HostId::Resolve(it->second, &host);
+      if (!st.ok()) {
+        return st;
+      }
     }
     hosts.emplace_back(std::move(host));
   }
@@ -48,11 +46,17 @@ FixedConfiguration::FixedConfiguration(HostId pilot, HostId copilot)
 : pilot_(std::move(pilot)), copilot_(std::move(copilot)) {}
 
 Status FixedConfiguration::GetPilot(HostId* host_out) const {
+  if (!pilot_) {
+    return Status::NotFound();
+  }
   *host_out = pilot_;
   return Status::OK();
 }
 
 Status FixedConfiguration::GetCopilot(HostId* host_out) const {
+  if (!copilot_) {
+    return Status::NotFound();
+  }
   *host_out = copilot_;
   return Status::OK();
 }
