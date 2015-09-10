@@ -38,7 +38,7 @@ DEFINE_bool(start_consumer, true, "starts the consumer");
 DEFINE_bool(start_local_server, false, "starts an embedded rocketspeed server");
 DEFINE_string(storage_url, "", "Storage service URL for local server");
 
-DEFINE_int32(num_threads, 8, "number of threads");
+DEFINE_int32(num_threads, 40, "number of threads");
 DEFINE_string(config,
               "",
               "Configuration string, if absent uses pilot and copilot lists");
@@ -52,6 +52,7 @@ DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 100, "number of topics");
 DEFINE_int64(num_messages, 1000, "number of messages to send");
 DEFINE_int64(message_rate, 100, "messages per second (0 = unlimited)");
+DEFINE_uint64(max_inflight, 10000, "maximum publishes in flight");
 DEFINE_int64(subscribe_rate, 10, "subscribes per second (0 = unlimited)");
 DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
@@ -96,6 +97,7 @@ struct ProducerWorkerArgs {
   rocketspeed::PublishCallback publish_callback;
   bool result;
   uint64_t seed;
+  uint64_t max_inflight;
 };
 
 struct ConsumerArgs {
@@ -137,6 +139,11 @@ static void ProducerWorker(void* param) {
 
   // Calculate message rate for this worker.
   int64_t rate = FLAGS_message_rate / FLAGS_num_threads + 1;
+  uint64_t window_max = args->max_inflight;
+  assert(window_max <= SEM_VALUE_MAX);
+
+  auto window = std::make_shared<std::atomic<unsigned int>>(1);
+  auto pacer = std::make_shared<port::Semaphore>(*window);
 
   auto start = std::chrono::steady_clock::now();
   for (int64_t i = 0; i < num_messages; ++i) {
@@ -159,13 +166,29 @@ static void ProducerWorker(void* param) {
              static_cast<long long unsigned int>(index),
              static_cast<long long unsigned int>(send_time));
 
+    // Wait until we are allowed to send another message.
+    pacer->TimedWait(std::chrono::seconds(5));
+
     // Send the message
-    PublishStatus ps = producer->Publish(GuestTenant,
-                                         topic_name,
-                                         namespaceid,
-                                         topic_options,
-                                         payload,
-                                         publish_callback);
+    PublishStatus ps = producer->Publish(
+      GuestTenant,
+      topic_name,
+      namespaceid,
+      topic_options,
+      payload,
+      [publish_callback, pacer, window, window_max]
+      (std::unique_ptr<ResultStatus> rs) {
+        // Allow another message now.
+        pacer->Post();
+
+        if (window->load() < window_max) {
+          // TCP-style slow start additive (exponential) increase (up to max)
+          window->fetch_add(1);
+          pacer->Post();
+        }
+
+        publish_callback(std::move(rs));
+      });
 
     if (!ps.status.ok()) {
       LOG_WARN(info_log,
@@ -174,6 +197,7 @@ static void ProducerWorker(void* param) {
         ps.status.ToString().c_str());
       info_log->Flush();
       args->result = false;
+      pacer->Post();  // failed, so immediately allow another publish.
     }
 
     if (FLAGS_message_rate) {
@@ -216,6 +240,7 @@ static void DoProduce(void* params) {
   int64_t total_messages = FLAGS_num_messages;
   size_t p = 0;
   ProducerWorkerArgs pargs[1024]; // no more than 1K threads
+  uint64_t max_inflight = FLAGS_max_inflight;
 
   for (int32_t remaining = FLAGS_num_threads; remaining; --remaining) {
     int64_t num_messages = total_messages / remaining;
@@ -225,9 +250,11 @@ static void DoProduce(void* params) {
     parg->producer = (*producers)[p % producers->size()].get();
     parg->publish_callback = publish_callback;
     parg->seed = p << 32;  // should be consistent between runs.
+    parg->max_inflight = std::max<uint64_t>(1, max_inflight / remaining);
 
     thread_ids.push_back(env->StartThread(rocketspeed::ProducerWorker, parg));
     total_messages -= num_messages;
+    max_inflight -= parg->max_inflight;
     p++;
     if (p > sizeof(pargs)/sizeof(pargs[0])) {
       break;

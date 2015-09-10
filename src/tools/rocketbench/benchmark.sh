@@ -9,6 +9,7 @@ message_size=100
 num_messages=1000
 message_rate=100
 subscribe_rate=10
+max_inflight=1000
 remote=''
 deploy=''
 client_workers=32
@@ -53,7 +54,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size:,idle-timeout: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -116,6 +117,8 @@ while true; do
       rocketbench_host="$2"; remote_bench='true'; shift 2 ;;
     --subscribe-rate )
       subscribe_rate="$2"; shift 2 ;;
+    --max-inflight )
+      max_inflight="$2"; shift 2 ;;
     -- )
       shift; break ;;
     * )
@@ -439,7 +442,8 @@ const_params="
   --message_rate=$message_rate \
   --subscribe_rate=$subscribe_rate \
   --client_workers=$client_workers \
-  --num_topics=$num_topics"
+  --num_topics=$num_topics \
+  --max_inflight=$max_inflight"
 
 # Setup const params
 if [ $remote ]; then
