@@ -29,6 +29,7 @@ collect_stats=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 cache_size=''     # use the default set by the control tower
+num_bench=''
 remote_bench=''
 idle_timeout="5"  # if no new messages within this time, then declare done
 max_latency_micros=10000
@@ -55,7 +56,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -114,8 +115,8 @@ while true; do
       strip='true'; shift ;;
     --rollcall )
       rollcall="$2"; shift 2 ;;
-    --rocketbench_host )
-      rocketbench_host="$2"; remote_bench='true'; shift 2 ;;
+    --remote-bench )
+      num_bench="$2"; remote_bench='true'; remote='true'; shift 2 ;;
     --subscribe-rate )
       subscribe_rate="$2"; shift 2 ;;
     --max-inflight )
@@ -137,6 +138,8 @@ if [ ! -f $bench ]; then
   exit 1
 fi
 
+# rocketspeed binaries on these hosts
+#
 if [ $ROCKETSPEED_HOSTS ]; then
   IFS=',' read -a available_hosts <<< "$ROCKETSPEED_HOSTS"
 else
@@ -219,6 +222,19 @@ available_hosts=("${available_hosts[@]:num_copilots}")  # pop num_copilots off
 
 control_towers=("${available_hosts[@]::num_towers}")
 available_hosts=("${available_hosts[@]:num_towers}")  # pop num_towers off
+
+# rocketbench binary on these hosts
+#
+rocketbench_hosts=""
+if [ $remote_bench ]; then
+  bench_cmd="$remote_path/rocketbench"
+  if [ $ROCKETBENCH_HOSTS ]; then
+    IFS=',' read -a rocketbench_hosts <<< "$ROCKETBENCH_HOSTS"
+  else 
+    rocketbench_hosts=("${available_hosts[@]::num_bench}")
+    available_hosts=("${available_hosts[@]:num_bench}")  # pop num_bench off
+  fi
+fi
 
 # Override default machines with specific ones
 if [ $cockpit_host ]; then
@@ -364,7 +380,9 @@ function collect_logs {
       # sed "s/^/${host:0:22}: /   prefix 22 chars of hostname (ignored in sort)
       sort -k 2 -m <(ssh root@$host "${cmd}" | sed "s/^/${host:0:22}: /") LOG.tmp > LOG.remote
       cmd="rm -f ${log_dir}/LOG*"
-      ssh root@$host "${cmd}"  # tidy up
+      if [ $stop_servers ]; then
+        ssh root@$host "${cmd}"  # tidy up
+      fi
       cp LOG.remote LOG.tmp
     done
     rm LOG.tmp
@@ -384,17 +402,19 @@ fi
 
 if [ $remote_bench ]; then
   # Deploy rocketbench to remote host
-  echo
-  echo "===== Deploying $bench to ${remote_path} on remote host ====="
+  for host in ${rocketbench_hosts[@]}; do
 
-  src=$bench
-  host=$rocketbench_host
-  echo "$host"
-  dest=root@$host:${remote_path}/rocketbench
-  if ! rsync -az $src $dest; then
-    echo "Error deploying to $host"
-    exit 1
-  fi
+    echo
+    echo "===== Deploying $bench to ${remote_path} on remote host ====="
+
+    src=$bench
+    echo "$host"
+    dest=root@$host:${remote_path}/rocketbench
+    if ! rsync -az $src $dest; then
+      echo "Error deploying $bench to $host"
+      exit 1
+    fi
+  done
 fi
 
 # Start servers if specified
@@ -433,11 +453,12 @@ if [ $# -ne 1 ]; then
   echo "--controltower-port  The port number for the control tower"
   echo "--cockpit-host       The machine name that runs the pilot and the copilot."
   echo "--controltower-host  The machine name that runs the control tower."
+  echo "--idle-timeout       Exit test if a message is not received for this time suration."
   echo "--remote-path        The directory where the rocketspeed binary is installed."
   echo "--log-dir            The directory for server logs."
   echo "--strip              Strip rocketspeed (and rocketbench) binaries for deploying."
   echo "--rollcall           Enable/disable RollCall."
-  echo "--rocketbench_host   Host to use for running rocketbench."
+  echo "--remote_bench       Use specified number of remote machines to run rocketbench."
   echo "--max_latency_micros Maximum average latency in microseconds for tunelatency."
   exit 1
  fi
@@ -491,10 +512,26 @@ function run_tunelatency {
          --max_inflight=$inflight \
          2>&1 | tee $output_dir/benchmark_tunelatency.log"
     if [ $remote_bench ]; then
-      cmd="ssh root@$rocketbench_host -- $cmd"
+      for host in ${rocketbench_hosts[@]}; do
+        cmdnew="ssh root@$host -- $cmd"
+        echo $cmdnew >> $output_dir/benchmark_produce.log
+        eval $cmdnew >  $output_dir/result &
+        # output file clobbered if more than one remote_bench?
+      done
+      # wait for all jobs to finish
+      fail=0
+      for bench_job in `jobs -p`
+      do
+        wait $bench_job || let "fail+=1"   # ignore race condition here
+      done
+      if [ "$fail" != "0" ];
+      then
+        echo "Remote rocketbench failed to complete successfully."
+      fi
+    else
+      echo $cmd >> $output_dir/benchmark_produce.log
+      eval $cmd > $output_dir/result
     fi
-    echo $cmd >> $output_dir/benchmark_produce.log
-    eval $cmd > $output_dir/result
     latency=`grep "ack-latency" $output_dir/result | awk '{ print $3 }' | xargs printf "%.0f\n"`
     throughput=`grep "messages/s" $output_dir/result | awk '{ print $1 }'`
     echo "max_inflight: ${inflight}  latency(micros): ${latency}  throughput(qps): ${throughput}"
@@ -509,17 +546,33 @@ function run_tunelatency {
 
 function run_produce {
   echo "Burst writing $num_messages messages into log storage..."
+  rm -rf $output_dir/benchmark_produce.log
   cmd="$bench_cmd $const_params $bench_param \
        --start_producer=true \
        --start_consumer=false \
        --delay_subscribe=false \
        --max_inflight=$max_inflight \
-       2>&1 | tee $output_dir/benchmark_produce.log"
+       2>&1 | tee -a $output_dir/benchmark_produce.log"
   if [ $remote_bench ]; then
-    cmd="ssh root@$rocketbench_host -- $cmd"
+    # start all remote benchmark clients
+    for host in ${rocketbench_hosts[@]}; do
+      cmdnew="ssh root@$host -- $cmd"
+      echo $cmdnew | tee -a $output_dir/benchmark_produce.log
+      eval $cmdnew | sed "s/^/${host:0:22}: /" &
+    done
+    # wait for all jobs to finish
+    fail=0
+    for bench_job in `jobs -p`
+    do
+      wait $bench_job || let "fail+=1"   # ignore race condition here
+    done
+    if [ "$fail" != "0" ]; then
+      echo "Remote rocketbench failed to complete successfully."
+    fi
+  else 
+    echo $cmd | tee -a $output_dir/benchmark_produce.log
+    eval $cmd
   fi
-  echo $cmd | tee $output_dir/benchmark_produce.log
-  eval $cmd
   echo
 }
 
@@ -532,10 +585,24 @@ function run_readwrite {
        --max_inflight=$max_inflight \
        2>&1 | tee $output_dir/benchmark_readwrite.log"
   if [ $remote_bench ]; then
-    cmd="ssh root@$rocketbench_host -- $cmd"
+    for host in ${rocketbench_hosts[@]}; do
+      cmdnew="ssh root@$host -- $cmd"
+      echo $cmdnew | tee -a $output_dir/benchmark_readwrite.log
+      eval $cmdnew| sed "s/^/${host:0:22}: /" &
+    done
+    # wait for all jobs to finish
+    fail=0
+    for bench_job in `jobs -p`
+    do
+      wait $bench_job || let "fail+=1"   # ignore race condition here
+    done
+    if [ "$fail" != "0" ]; then
+      echo "Remote rocketbench failed to complete successfully."
+    fi
+  else
+    echo $cmd | tee $output_dir/benchmark_readwrite.log
+    eval $cmd
   fi
-  echo $cmd | tee $output_dir/benchmark_readwrite.log
-  eval $cmd
   echo
 }
 
@@ -548,10 +615,15 @@ function run_consume {
        --max_inflight=$max_inflight \
        2>&1 | tee $output_dir/benchmark_consume.log"
   if [ $remote_bench ]; then
-    cmd="ssh root@$rocketbench_host -- $cmd"
+    for host in ${rocketbench_hosts[@]}; do
+      cmdnew="ssh root@$host -- $cmd"
+      echo $cmdnew | tee -a $output_dir/benchmark_readwrite.log
+      eval $cmdnew | sed "s/^/${host:0:22}: /" &
+    done
+  else
+    echo $cmd | tee $output_dir/benchmark_consume.log
+    eval $cmd
   fi
-  echo $cmd | tee $output_dir/benchmark_consume.log
-  eval $cmd
   echo
 }
 
