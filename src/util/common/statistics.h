@@ -118,6 +118,11 @@ class Histogram {
   double Percentile(double p) const;
 
   /**
+   * Computes the mean of all samples.
+   */
+  double Mean() const;
+
+  /**
    * Aggregate another histogram into this histogram.
    * The other histogram must have the *exact* same parameters.
    */
@@ -151,6 +156,7 @@ private:
   double max_;
   double smallest_bucket_;
   double ratio_;
+  double sample_total_;
   uint64_t num_samples_;
   std::unique_ptr<uint64_t[]> bucket_counts_;
   size_t num_buckets_;

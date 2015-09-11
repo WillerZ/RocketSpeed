@@ -28,6 +28,7 @@ Histogram::Histogram(double min,
 , max_(max)
 , smallest_bucket_(smallest_bucket)
 , ratio_(ratio)
+, sample_total_(0.0)
 , num_samples_(0)
 , log_ratio_(log(ratio))
 , log_smallest_bucket_(log(smallest_bucket)) {
@@ -45,6 +46,7 @@ Histogram::Histogram(const Histogram& src)
 , max_(src.max_)
 , smallest_bucket_(src.smallest_bucket_)
 , ratio_(src.ratio_)
+, sample_total_(0.0)
 , num_samples_(0)
 , num_buckets_(src.num_buckets_)
 , log_ratio_(src.log_ratio_)
@@ -62,6 +64,7 @@ Histogram::Histogram(Histogram&& src)
 , max_(src.max_)
 , smallest_bucket_(src.smallest_bucket_)
 , ratio_(src.ratio_)
+, sample_total_(src.sample_total_)
 , num_samples_(src.num_samples_)
 , bucket_counts_(std::move(src.bucket_counts_))
 , num_buckets_(src.num_buckets_)
@@ -80,6 +83,7 @@ void Histogram::Record(double sample) {
   size_t index = std::min(BucketIndex(sample), num_buckets_ - 1);
   bucket_counts_[index] += 1;
   num_samples_ += 1;
+  sample_total_ += sample;
 }
 
 size_t Histogram::BucketIndex(double sample) const {
@@ -130,6 +134,10 @@ double Histogram::Percentile(double p) const {
   return 0.0;
 }
 
+double Histogram::Mean() const {
+  return sample_total_ / static_cast<double>(num_samples_);
+}
+
 void Histogram::Aggregate(const Histogram& histogram) {
   thread_check_.Check();
   histogram.thread_check_.Check();
@@ -147,6 +155,7 @@ void Histogram::Aggregate(const Histogram& histogram) {
     bucket_counts_[i] += n;
     num_samples_ += n;
   }
+  sample_total_ += histogram.sample_total_;
 }
 
 void Histogram::Disaggregate(const Histogram& histogram) {
@@ -166,18 +175,24 @@ void Histogram::Disaggregate(const Histogram& histogram) {
     bucket_counts_[i] -= n;
     num_samples_ -= n;
   }
+  sample_total_ -= histogram.sample_total_;
 }
 
 std::string Histogram::Report() const {
   thread_check_.Check();
   // Reports the p50, p90, p99, and p99.9 percentiles.
   char buffer[256];
-  snprintf(buffer, 256, "p50: %-8.1lf  "
+  snprintf(buffer, 256, "mean: %-8.1lf  "
+                        "p50: %-8.1lf  "
                         "p90: %-8.1lf  "
                         "p99: %-8.1lf  "
                         "p99.9: %-8.1lf  "
                         "(%llu samples)",
-    Percentile(0.50), Percentile(0.90), Percentile(0.99), Percentile(0.999),
+    Mean(),  // NaN for 0 samples -- intentional
+    Percentile(0.50),
+    Percentile(0.90),
+    Percentile(0.99),
+    Percentile(0.999),
     static_cast<long long unsigned int>(num_samples_));
   return std::string(buffer);
 }
