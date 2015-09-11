@@ -137,7 +137,9 @@ fi
 if [ $ROCKETSPEED_HOSTS ]; then
   IFS=',' read -a available_hosts <<< "$ROCKETSPEED_HOSTS"
 else
-  available_hosts=( rocketspeed001.11.lla1.facebook.com \
+  if [ $USER == "pja" ]; then
+    available_hosts=( \
+                    rocketspeed001.11.lla1.facebook.com \
                     rocketspeed002.11.lla1.facebook.com \
                     rocketspeed003.11.lla1.facebook.com \
                     rocketspeed004.11.lla1.facebook.com \
@@ -146,15 +148,21 @@ else
                     rocketspeed007.11.lla1.facebook.com \
                     rocketspeed009.11.lla1.facebook.com \
                     rocketspeed010.11.lla1.facebook.com \
-                    rocketspeed011.11.lla1.facebook.com \
+                    rocketspeed011.11.lla1.facebook.com )
+  elif [ $USER == "dhruba" ]; then
+    available_hosts=( \
                     rocketspeed012.11.lla1.facebook.com \
                     rocketspeed013.11.lla1.facebook.com \
                     rocketspeed014.11.lla1.facebook.com \
                     rocketspeed019.11.lla1.facebook.com \
-                    rocketspeed020.11.lla1.facebook.com \
+                    rocketspeed020.11.lla1.facebook.com )
+  elif [ $USER == "stupaq" ]; then
+    available_hosts=( \
                     rocketspeed021.11.lla1.facebook.com \
                     rocketspeed022.11.lla1.facebook.com \
-                    rocketspeed023.11.lla1.facebook.com \
+                    rocketspeed023.11.lla1.facebook.com )
+  else
+    available_hosts=( \
                     rocketspeed024.11.lla1.facebook.com \
                     rocketspeed030.11.lla1.facebook.com \
                     rocketspeed031.11.lla1.facebook.com \
@@ -162,6 +170,7 @@ else
                     rocketspeed033.11.lla1.facebook.com \
                     rocketspeed034.11.lla1.facebook.com \
                     rocketspeed036.11.lla1.facebook.com )
+  fi
 fi
 
 if [ $strip ]; then
