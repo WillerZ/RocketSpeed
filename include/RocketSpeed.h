@@ -87,8 +87,8 @@ class ClientOptions {
   // Default: true
   bool close_connection_with_no_subscription;
 
-  // Period of internal client clock. Determines resolution of backoff and rate
-  // limiting time measurements.
+  // Period of internal client clock. Determines resolution of backoff, rate
+  // limiting time measurements, and publish timeouts.
   // Default: 200 ms
   std::chrono::milliseconds timer_period;
 
@@ -115,6 +115,10 @@ class ClientOptions {
   // will respond with unsubscribe message only once every specified duration.
   // Default: 10s
   std::chrono::milliseconds unsubscribe_deduplication_timeout;
+
+  // Minimum time to wait before declaring a publish as failed due to timeout.
+  // Default: 5s
+  std::chrono::milliseconds publish_timeout;
 
   /** Creates options with default values. */
   ClientOptions();

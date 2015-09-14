@@ -62,7 +62,7 @@ class ClientTest {
   , negative_timeout(100)
   , env_(Env::Default())
   , config_(std::make_shared<MockConfiguration>())
-  , next_copilot_port_(5450) {
+  , next_server_port_(5450) {
     ASSERT_OK(test::CreateLogger(env_, "ClientTest", &info_log_));
   }
 
@@ -78,19 +78,19 @@ class ClientTest {
   Env* const env_;
   const std::shared_ptr<MockConfiguration> config_;
   std::shared_ptr<rocketspeed::Logger> info_log_;
-  std::atomic<int> next_copilot_port_;
+  std::atomic<int> next_server_port_;
 
-  class CopilotMock {
+  class ServerMock {
    public:
     // Noncopyable, movable
-    CopilotMock(CopilotMock&&) = default;
-    CopilotMock& operator=(CopilotMock&&) = default;
+    ServerMock(ServerMock&&) = default;
+    ServerMock& operator=(ServerMock&&) = default;
 
-    CopilotMock(std::unique_ptr<MsgLoop> _msg_loop, std::thread msg_loop_thread)
+    ServerMock(std::unique_ptr<MsgLoop> _msg_loop, std::thread msg_loop_thread)
     : msg_loop(std::move(_msg_loop))
     , msg_loop_thread_(std::move(msg_loop_thread)) {}
 
-    ~CopilotMock() {
+    ~ServerMock() {
       msg_loop->Stop();
       if (msg_loop_thread_.joinable()) {
         msg_loop_thread_.join();
@@ -103,17 +103,18 @@ class ClientTest {
     std::thread msg_loop_thread_;
   };
 
-  CopilotMock MockCopilot(
+  ServerMock MockServer(
       const std::map<MessageType, MsgCallbackType>& callbacks) {
-    std::unique_ptr<MsgLoop> copilot(new MsgLoop(
-        env_, EnvOptions(), next_copilot_port_++, 1, info_log_, "copilot"));
-    copilot->RegisterCallbacks(callbacks);
-    ASSERT_OK(copilot->Initialize());
-    std::thread thread([&]() { copilot->Run(); });
-    ASSERT_OK(copilot->WaitUntilRunning());
-    // Set copilot address in the configuration.
-    config_->SetCopilot(copilot->GetHostId());
-    return CopilotMock(std::move(copilot), std::move(thread));
+    std::unique_ptr<MsgLoop> server(new MsgLoop(
+        env_, EnvOptions(), next_server_port_++, 1, info_log_, "server"));
+    server->RegisterCallbacks(callbacks);
+    ASSERT_OK(server->Initialize());
+    std::thread thread([&]() { server->Run(); });
+    ASSERT_OK(server->WaitUntilRunning());
+    // Set pilot/copilot address in the configuration.
+    config_->SetCopilot(server->GetHostId());
+    config_->SetPilot(server->GetHostId());
+    return ServerMock(std::move(server), std::move(thread));
   }
 
   std::unique_ptr<Client> CreateClient(ClientOptions options) {
@@ -133,7 +134,7 @@ TEST(ClientTest, UnsubscribeDedup) {
   std::atomic<StreamID> last_origin;
   std::atomic<SubscriptionID> last_sub_id;
   port::Semaphore subscribe_sem, unsubscribe_sem;
-  auto copilot = MockCopilot({
+  auto copilot = MockServer({
       {MessageType::mSubscribe,
        [&](std::unique_ptr<Message> msg, StreamID origin) {
          auto subscribe = static_cast<MessageDeliver*>(msg.get());
@@ -186,7 +187,7 @@ TEST(ClientTest, BackOff) {
   std::vector<TestClock::duration> subscribe_attempts;
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
-  auto copilot = MockCopilot(
+  auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](std::unique_ptr<Message> msg, StreamID origin) {
           if (subscribe_attempts.size() >= num_attempts) {
@@ -238,7 +239,7 @@ TEST(ClientTest, BackOff) {
 TEST(ClientTest, GetCopilotFailure) {
   port::Semaphore subscribe_sem;
   auto copilot =
-      MockCopilot({{MessageType::mSubscribe,
+      MockServer({{MessageType::mSubscribe,
                     [&](std::unique_ptr<Message> msg, StreamID origin) {
                       subscribe_sem.Post();
                     }}});
@@ -288,7 +289,7 @@ TEST(ClientTest, OfflineOperations) {
       all_ok_sem.Post();
     }
   };
-  auto copilot = MockCopilot({{MessageType::mSubscribe, subscribe_cb}});
+  auto copilot = MockServer({{MessageType::mSubscribe, subscribe_cb}});
 
   ClientOptions options;
   // Speed up client retries.
@@ -342,7 +343,7 @@ TEST(ClientTest, OfflineOperations) {
 TEST(ClientTest, CopilotSwap) {
   port::Semaphore subscribe_sem1, subscribe_sem2;
   auto copilot1 =
-      MockCopilot({{MessageType::mSubscribe,
+      MockServer({{MessageType::mSubscribe,
                     [&](std::unique_ptr<Message> msg, StreamID origin) {
                       subscribe_sem1.Post();
                     }}});
@@ -362,7 +363,7 @@ TEST(ClientTest, CopilotSwap) {
 
   // Launch another copilot, this will automatically update configuration.
   auto copilot2 =
-      MockCopilot({{MessageType::mSubscribe,
+      MockServer({{MessageType::mSubscribe,
                     [&](std::unique_ptr<Message> msg, StreamID origin) {
                       subscribe_sem2.Post();
                     }}});
@@ -381,6 +382,33 @@ TEST(ClientTest, NoPilot) {
                             "data",
                             [&] (std::unique_ptr<ResultStatus> rs) {
                               ASSERT_TRUE(!rs->GetStatus().ok());
+                              publish_sem.Post();
+                            });
+  ASSERT_TRUE(ps.status.ok());
+  ASSERT_TRUE(publish_sem.TimedWait(negative_timeout));
+}
+
+TEST(ClientTest, PublishTimeout) {
+  port::Semaphore publish_sem;
+  auto pilot =
+      MockServer({{MessageType::mPublish,
+                    [&](std::unique_ptr<Message> msg, StreamID origin) {
+                      // Do nothing.
+                    }}});
+
+  ClientOptions opts;
+  opts.timer_period = std::chrono::milliseconds(1);
+  opts.publish_timeout = negative_timeout / 2;
+  auto client = CreateClient(std::move(opts));
+
+  auto ps = client->Publish(GuestTenant,
+                            "UselessPilot",
+                            GuestNamespace,
+                            TopicOptions(),
+                            "data",
+                            [&] (std::unique_ptr<ResultStatus> rs) {
+                              ASSERT_TRUE(!rs->GetStatus().ok());
+                              ASSERT_TRUE(rs->GetStatus().IsTimedOut());
                               publish_sem.Post();
                             });
   ASSERT_TRUE(ps.status.ok());

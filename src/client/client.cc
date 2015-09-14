@@ -104,7 +104,8 @@ ClientImpl::ClientImpl(ClientOptions options,
                  options_.config,
                  options_.info_log,
                  msg_loop_.get(),
-                 &wake_lock_)
+                 &wake_lock_,
+                 options_.publish_timeout)
     , next_sub_id_(0) {
   LOG_VITAL(options_.info_log, "Creating Client");
 
@@ -357,6 +358,7 @@ Status ClientImpl::Start() {
   auto st = msg_loop_->RegisterTimerCallback([this]() {
     const auto worker_id = msg_loop_->GetThreadWorkerIndex();
     worker_data_[worker_id]->SendPendingRequests();
+    publisher_.CheckTimeouts();
   }, options_.timer_period);
   if (!st.ok()) {
     return st;

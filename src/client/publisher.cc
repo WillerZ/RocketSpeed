@@ -18,6 +18,7 @@
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/hash.h"
 #include "src/util/common/thread_check.h"
+#include "src/util/timeout_list.h"
 
 namespace rocketspeed {
 
@@ -91,9 +92,12 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
   PublisherWorkerData(PublisherWorkerData&&) = default;
   PublisherWorkerData& operator=(PublisherWorkerData&&) = default;
 
-  PublisherWorkerData(PublisherImpl* publisher, int worker_id)
+  PublisherWorkerData(PublisherImpl* publisher,
+                      int worker_id,
+                      std::chrono::milliseconds timeout)
       : publisher_(publisher)
       , worker_id_(worker_id)
+      , publish_timeout_(timeout)
       , pilot_socket_valid_(false) {}
 
   /** Publishes message to the Pilot. */
@@ -107,17 +111,24 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
   /** Handles goodbye messages for publisher streams. */
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 
+  /** Checks for publish timeouts. */
+  void CheckTimeouts();
+
  private:
   ThreadCheck thread_check_;
   PublisherImpl* const publisher_;
   /** Index of this worker. */
   const int worker_id_;
+  /** Timeout for publishes. */
+  const std::chrono::milliseconds publish_timeout_;
   /** Stream socket used by this worker to talk to the pilot. */
   StreamSocket pilot_socket_;
   /** Determines whether pilot socket is valid. */
   bool pilot_socket_valid_;
-  /** Messages sent, awaiting ack. Maps message ID -> pre-serialized message. */
+  /** Messages sent, awaiting ack. */
   std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent_;
+  /** List of messages to timeout. */
+  TimeoutList<MsgId, MsgId::Hash> timeouts_;
 
   bool ExpectsMessage(StreamID origin);
 };
@@ -168,10 +179,11 @@ void PublisherWorkerData::Publish(MsgId message_id,
   }
 
   // Add message to the sent list.
-  auto emplace_result = messages_sent_.emplace(
-      message_id, PendingAck(std::move(callback), std::move(serialized)));
-  ((void)emplace_result);
-  assert(emplace_result.second);
+  timeouts_.Add(message_id);
+  auto result = messages_sent_.emplace(
+    message_id, PendingAck(std::move(callback), std::move(serialized)));
+  (void)result;
+  assert(result.second);
 }
 
 void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
@@ -182,11 +194,11 @@ void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
     return;
   }
 
-  const MessageDataAck* ackMsg = static_cast<const MessageDataAck*>(msg.get());
+  const MessageDataAck* ack_msg = static_cast<const MessageDataAck*>(msg.get());
 
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
-  for (const auto& ack : ackMsg->GetAcks()) {
+  for (const auto& ack : ack_msg->GetAcks()) {
     LOG_DEBUG(publisher_->info_log_,
               "Received DataAck for message ID %s",
               ack.msgid.ToHexString().c_str());
@@ -217,6 +229,7 @@ void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
       // (or was never sent). This is possible if a message was sent twice
       // before the first ack arrived, so just ignore.
     }
+    timeouts_.Erase(ack.msgid);
   }
 }
 
@@ -245,6 +258,25 @@ void PublisherWorkerData::ProcessGoodbye(std::unique_ptr<Message> msg,
     }
   }
   messages_sent_.clear();
+  timeouts_.Clear();
+}
+
+void PublisherWorkerData::CheckTimeouts() {
+  timeouts_.ProcessExpired(
+    publish_timeout_,
+    [&] (MsgId msg_id) {
+      auto it = messages_sent_.find(msg_id);
+      assert(it != messages_sent_.end());
+      if (it != messages_sent_.end() && it->second.callback) {
+        std::unique_ptr<ClientResultStatus> result_status(
+            new ClientResultStatus(Status::TimedOut(),
+                                   std::move(it->second.data),
+                                   0));
+        it->second.callback(std::move(result_status));
+        messages_sent_.erase(it);
+      }
+    },
+    -1 /* no batch limit */);
 }
 
 bool PublisherWorkerData::ExpectsMessage(StreamID origin) {
@@ -269,7 +301,8 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
                              std::shared_ptr<Configuration> config,
                              std::shared_ptr<Logger> info_log,
                              MsgLoopBase* msg_loop,
-                             SmartWakeLock* wake_lock)
+                             SmartWakeLock* wake_lock,
+                             std::chrono::milliseconds publish_timeout)
     : config_(std::move(config))
     , info_log_(std::move(info_log))
     , msg_loop_(msg_loop)
@@ -281,7 +314,7 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
   (void)wake_lock_;
 
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    worker_data_.emplace_back(this, i);
+    worker_data_.emplace_back(this, i, publish_timeout);
   }
 
   // Register our callbacks.
@@ -349,6 +382,11 @@ void PublisherImpl::ProcessGoodbye(std::unique_ptr<Message> msg,
                                    StreamID origin) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   worker_data_[worker_id].ProcessGoodbye(std::move(msg), origin);
+}
+
+void PublisherImpl::CheckTimeouts() {
+  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
+  worker_data_[worker_id].CheckTimeouts();
 }
 
 int PublisherImpl::GetWorkerForTopic(const Topic& name) const {

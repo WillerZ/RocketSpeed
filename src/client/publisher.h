@@ -35,14 +35,16 @@ class PublisherImpl {
    * @param env the environment used by the client
    * @param config configuration of RocketSpeed service
    * @param info_log a logger object
-   * @param wake_lock a non-owning pointer to the wake lock
    * @param msg_loop a non-owning pointer to the message loop
+   * @param wake_lock a non-owning pointer to the wake lock
+   * @param publish_timeout timeout for publish invokations
    */
   PublisherImpl(BaseEnv* env,
                 std::shared_ptr<Configuration> config,
                 std::shared_ptr<Logger> info_log,
                 MsgLoopBase* msg_loop,
-                SmartWakeLock* wake_lock);
+                SmartWakeLock* wake_lock,
+                std::chrono::milliseconds publish_timeout);
 
   ~PublisherImpl();
 
@@ -60,6 +62,13 @@ class PublisherImpl {
   /** Handles goodbye messages for publisher streams. */
   // TODO(stupaq) hide and register callback once we get multi guest MsgLoop
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
+
+  /**
+   * Checks for timeouts on a particular worker, invoking publish callbacks
+   * with error status where necessary.
+   * Must be called on a worker thread.
+   */
+  void CheckTimeouts();
 
  private:
   friend class PublisherWorkerData;

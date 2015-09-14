@@ -85,7 +85,6 @@ struct ProducerArgs {
   rocketspeed::NamespaceID nsid;
   rocketspeed::port::Semaphore* all_ack_messages_received;
   std::atomic<int64_t>* ack_messages_received;
-  std::chrono::time_point<std::chrono::steady_clock>* last_ack_message;
   rocketspeed::PublishCallback publish_callback;
   bool result;
 };
@@ -231,8 +230,6 @@ static void DoProduce(void* params) {
   rocketspeed::port::Semaphore* all_ack_messages_received =
     args->all_ack_messages_received;
   std::atomic<int64_t>* ack_messages_received = args->ack_messages_received;
-  std::chrono::time_point<std::chrono::steady_clock>* last_ack_message =
-    args->last_ack_message;
   rocketspeed::PublishCallback publish_callback = args->publish_callback;
 
   // Distribute total number of messages among them.
@@ -277,14 +274,7 @@ static void DoProduce(void* params) {
 
   if (FLAGS_await_ack) {
     // Wait for the all_ack_messages_received semaphore to be posted.
-    // Keep waiting as long as a message was received in the last 5 seconds.
-    auto timeout = std::chrono::seconds(FLAGS_idle_timeout);
-    do {
-      all_ack_messages_received->TimedWait(timeout);
-    } while (ack_messages_received->load() != FLAGS_num_messages &&
-             std::chrono::steady_clock::now() - *last_ack_message < timeout);
-
-    ret = ack_messages_received->load() == FLAGS_num_messages ? 0 : 1;
+    all_ack_messages_received->Wait();
   }
   args->result = ret; // 0: success, 1: error
 }
@@ -459,8 +449,7 @@ int main(int argc, char** argv) {
   // Semaphore to signal when all messages have been ack'd
   rocketspeed::port::Semaphore all_ack_messages_received;
 
-  // Time last ack/data message was received.
-  std::chrono::time_point<std::chrono::steady_clock> last_ack_message;
+  // Time last data message was received.
   std::chrono::time_point<std::chrono::steady_clock> last_data_message;
 
   // Benchmark statistics.
@@ -535,7 +524,6 @@ int main(int argc, char** argv) {
     if (FLAGS_await_ack) {
       // This may be the last ack we receive, so set end to the time now.
       end = std::chrono::steady_clock::now();
-      last_ack_message = std::chrono::steady_clock::now();
 
       // If we've received all messages, let the main thread know to finish up.
       if (++ack_messages_received == FLAGS_num_messages) {
@@ -665,7 +653,6 @@ int main(int argc, char** argv) {
     pargs.nsid = nsid;
     pargs.all_ack_messages_received = &all_ack_messages_received;
     pargs.ack_messages_received = &ack_messages_received;
-    pargs.last_ack_message = &last_ack_message;
     pargs.publish_callback = publish_callback;
     producer_threadid = env->StartThread(rocketspeed::DoProduce,
                                          static_cast<void*>(&pargs),
