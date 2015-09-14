@@ -108,7 +108,8 @@ TESTS = \
 	unsafe_shared_ptr_test \
   flow_test \
 	rocketeer_test \
-  cache_test
+  cache_test \
+  pacer_test
 
 TOOLS = \
 	rocketbench
@@ -356,6 +357,9 @@ flow_test: src/util/tests/flow_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 rocketeer_test: src/engine/tests/rocketeer_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+pacer_test: src/util/tests/pacer_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
