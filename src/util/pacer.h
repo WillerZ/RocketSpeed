@@ -55,6 +55,10 @@ class Pacer {
   using clock = std::chrono::steady_clock;
 
   /**
+   * Creates a Pacer that will adjust the inflight requests window to tune for
+   * the maximum latency specified. Use HasConverged() to check if convergence
+   * has been reached.
+   *
    * @param max_throughput Maximum requests to send per second.
    * @param max_latency Maximum mean latency to tune for.
    * @param max_inflight Maximum number of requests to have inflight at once.
@@ -64,6 +68,16 @@ class Pacer {
         std::chrono::microseconds max_latency,
         uint64_t max_inflight,
         uint64_t convergence_samples);
+
+  /**
+   * Creates a Pacer that simply limits the maximum throughput and inflight
+   * requests. In this case, HasConverged() will always be true.
+   *
+   * @param max_throughput Maximum requests to send per second.
+   * @param max_inflight Maximum number of requests to have inflight at once.
+   */
+  Pacer(uint64_t max_throughput,
+        uint64_t max_inflight);
 
   /**
    * Waits until its time for the next request.

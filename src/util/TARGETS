@@ -10,6 +10,7 @@ cpp_library(
         'env_posix.cc',
         'log_buffer.cc',
         'logging.cc',
+        'pacer.cc',
         'scoped_file_lock.cc',
         'storage.cc',
         'testharness.cc',

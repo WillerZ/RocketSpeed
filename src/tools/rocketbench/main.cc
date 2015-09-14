@@ -30,6 +30,7 @@
 #include "src/tools/rocketbench/random_distribution.h"
 #include "src/client/client.h"
 #include "src/util/common/client_env.h"
+#include "src/util/pacer.h"
 
 // This tool can behave as a standalone producer, a standalone
 // consumer or both a producer and a consumer.
@@ -84,7 +85,6 @@ struct ProducerArgs {
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* producers;
   rocketspeed::NamespaceID nsid;
   rocketspeed::port::Semaphore* all_ack_messages_received;
-  std::atomic<int64_t>* ack_messages_received;
   rocketspeed::PublishCallback publish_callback;
   bool result;
 };
@@ -229,7 +229,6 @@ static void DoProduce(void* params) {
   rocketspeed::NamespaceID namespaceid = args->nsid;
   rocketspeed::port::Semaphore* all_ack_messages_received =
     args->all_ack_messages_received;
-  std::atomic<int64_t>* ack_messages_received = args->ack_messages_received;
   rocketspeed::PublishCallback publish_callback = args->publish_callback;
 
   // Distribute total number of messages among them.
@@ -285,9 +284,8 @@ static void DoProduce(void* params) {
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
                  std::unordered_map<std::string, SequenceNumber> first_seqno) {
-  auto start = std::chrono::steady_clock::now();
   size_t c = 0;
-  auto rate = FLAGS_subscribe_rate;
+  Pacer pacer(FLAGS_subscribe_rate, 1);
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     std::string topic_name("benchmark." + std::to_string(i));
     SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
@@ -300,17 +298,10 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
         seqno = it->second;
       }
     }
+    pacer.Wait();
     consumers[c++ % consumers.size()]->Subscribe(
         GuestTenant, nsid, topic_name, seqno);
-    if (rate) {
-      int64_t have_sent = i;
-      auto expired = std::chrono::steady_clock::now() - start;
-      auto expected = std::chrono::microseconds(1000000 * have_sent / rate);
-      if (expected > expired) {
-        /* sleep override */
-        std::this_thread::sleep_for(expected - expired);
-      }
-    }
+    pacer.EndRequest();
   }
 }
 
@@ -652,7 +643,6 @@ int main(int argc, char** argv) {
     pargs.producers = &clients;
     pargs.nsid = nsid;
     pargs.all_ack_messages_received = &all_ack_messages_received;
-    pargs.ack_messages_received = &ack_messages_received;
     pargs.publish_callback = publish_callback;
     producer_threadid = env->StartThread(rocketspeed::DoProduce,
                                          static_cast<void*>(&pargs),

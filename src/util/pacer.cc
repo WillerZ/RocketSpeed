@@ -24,6 +24,28 @@ Pacer::Pacer(uint64_t max_throughput,
   assert(max_throughput_ > 0);
   assert(max_inflight_ > 0);
   assert(convergence_samples_ > 0);
+
+  if (max_latency == std::chrono::microseconds::max()) {
+    // This is a special setting for max_latency, which essentially means to
+    // ignore it and rely on max_throughput and max_inflight.
+    // We won't need to binary search to tune the latency, so set the inflight
+    // range to 0 to signal that we have immediately converged.
+    min_inflight_ = max_inflight_;
+  }
+}
+
+Pacer::Pacer(uint64_t max_throughput,
+             uint64_t max_inflight)
+: max_throughput_(max_throughput)
+, max_latency_(0)
+, convergence_samples_(0)
+, min_inflight_(max_inflight)  // == max_inflight, so converges immediately
+, max_inflight_(max_inflight)
+, current_inflight_(max_inflight)
+, requests_(static_cast<unsigned int>(current_inflight_)) {
+  // Validate.
+  assert(max_throughput_ > 0);
+  assert(max_inflight_ > 0);
 }
 
 void Pacer::Wait() {
