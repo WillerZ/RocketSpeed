@@ -665,6 +665,29 @@ int main(int argc, char** argv) {
   rocketspeed::Env::ThreadId producer_threadid = 0;
   rocketspeed::Env::ThreadId consumer_threadid = 0;
 
+  port::Semaphore progress_stop;
+  auto progress_thread = env->StartThread(
+    [&] () {
+      while (!progress_stop.TimedWait(std::chrono::milliseconds(200))) {
+        const uint64_t pubacks = ack_messages_received.load();
+        const uint64_t received = messages_received.load();
+        const uint64_t failed = failed_publishes.load();
+        printf("publish-ack'd: %" PRIu64 "/%" PRIu64 " (%.1lf%%)"
+             "  received: %" PRIu64 "/%" PRIu64 " (%.1lf%%)"
+             "  failed: %" PRIu64
+             "\r",
+          pubacks,
+          FLAGS_num_messages,
+          100.0 * pubacks / FLAGS_num_messages,
+          received,
+          FLAGS_num_messages,
+          100.0 * received / FLAGS_num_messages,
+          failed);
+        fflush(stdout);
+      }
+    },
+    "progress");
+
   // Start producing messages
   if (FLAGS_start_producer) {
     printf("Publishing messages.\n");
@@ -750,6 +773,9 @@ int main(int argc, char** argv) {
   }
 
   end = std::chrono::steady_clock::now();
+
+  progress_stop.Post();
+  env->WaitForJoin(progress_thread);
 
   // Calculate total time.
   auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
