@@ -31,6 +31,7 @@ rollcall='false'  # disable rollcall for benchmarks by default
 cache_size=''     # use the default set by the control tower
 remote_bench=''
 idle_timeout="5"  # if no new messages within this time, then declare done
+max_latency_micros=10000
 
 if [ -z ${ROCKETSPEED_ARGS+x} ]; then
   logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
@@ -54,7 +55,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,rocketbench_host:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -119,6 +120,8 @@ while true; do
       subscribe_rate="$2"; shift 2 ;;
     --max-inflight )
       max_inflight="$2"; shift 2 ;;
+    --max_latency_micros )
+      max_latency_micros="$2"; shift 2 ;;
     -- )
       shift; break ;;
     * )
@@ -409,7 +412,7 @@ fi
 
 if [ $# -ne 1 ]; then
  if [ $progress == "false" ]; then
-  echo "./benchmark.sh [-bcdnrstxyz] [produce|readwrite|consume]"
+  echo "./benchmark.sh [-bcdnrstxyz] [tunelatency|produce|readwrite|consume]"
   echo
   echo "-b --size            Message size (bytes)."
   echo "-c --client_threads  Number of client threads."
@@ -435,6 +438,7 @@ if [ $# -ne 1 ]; then
   echo "--strip              Strip rocketspeed (and rocketbench) binaries for deploying."
   echo "--rollcall           Enable/disable RollCall."
   echo "--rocketbench_host   Host to use for running rocketbench."
+  echo "--max_latency_micros Maximum average latency in microseconds for tunelatency."
   exit 1
  fi
 fi
@@ -451,8 +455,7 @@ const_params="
   --message_rate=$message_rate \
   --subscribe_rate=$subscribe_rate \
   --client_workers=$client_workers \
-  --num_topics=$num_topics \
-  --max_inflight=$max_inflight"
+  --num_topics=$num_topics"
 
 # Setup const params
 if [ $remote ]; then
@@ -472,12 +475,45 @@ fi
 # setup parameters to rocketbench
 bench_param=" --idle_timeout=$idle_timeout"
 
+function run_tunelatency {
+  # Binary searches the --max_inflight parameter to achieve a mean latency
+  # bound of max_latency_micros. This essentially runs the produce benchmark
+  # a number of times, with different --max_inflight values until it converges
+  # on the correct latency (retrieved from stdout).
+  echo "Tuning in-flight messages to achieve latency bound..."
+  min_inflight=1
+  while [ $max_inflight -gt $min_inflight ]; do
+    inflight=$(((max_inflight + min_inflight) / 2))
+    cmd="$bench_cmd $const_params $bench_param \
+         --start_producer=true \
+         --start_consumer=false \
+         --delay_subscribe=false \
+         --max_inflight=$inflight \
+         2>&1 | tee $output_dir/benchmark_tunelatency.log"
+    if [ $remote_bench ]; then
+      cmd="ssh root@$rocketbench_host -- $cmd"
+    fi
+    echo $cmd >> $output_dir/benchmark_produce.log
+    eval $cmd > $output_dir/result
+    latency=`grep "ack-latency" $output_dir/result | awk '{ print $3 }' | xargs printf "%.0f\n"`
+    throughput=`grep "messages/s" $output_dir/result | awk '{ print $1 }'`
+    echo "max_inflight: ${inflight}  latency(micros): ${latency}  throughput(qps): ${throughput}"
+    if [ $latency -ge $max_latency_micros ]; then
+      max_inflight=$((inflight))
+    else
+      min_inflight=$((inflight + 1))
+    fi
+  done
+  echo
+}
+
 function run_produce {
   echo "Burst writing $num_messages messages into log storage..."
   cmd="$bench_cmd $const_params $bench_param \
        --start_producer=true \
        --start_consumer=false \
        --delay_subscribe=false \
+       --max_inflight=$max_inflight \
        2>&1 | tee $output_dir/benchmark_produce.log"
   if [ $remote_bench ]; then
     cmd="ssh root@$rocketbench_host -- $cmd"
@@ -493,6 +529,7 @@ function run_readwrite {
        --start_producer=true \
        --start_consumer=true \
        --delay_subscribe=false \
+       --max_inflight=$max_inflight \
        2>&1 | tee $output_dir/benchmark_readwrite.log"
   if [ $remote_bench ]; then
     cmd="ssh root@$rocketbench_host -- $cmd"
@@ -508,6 +545,7 @@ function run_consume {
        --start_producer=true \
        --start_consumer=true \
        --delay_subscribe=true \
+       --max_inflight=$max_inflight \
        2>&1 | tee $output_dir/benchmark_consume.log"
   if [ $remote_bench ]; then
     cmd="ssh root@$rocketbench_host -- $cmd"
@@ -537,7 +575,9 @@ for job in ${jobs[@]}; do
   echo "Start $job at `date`" | tee -a $report
   echo
   start=$(now)
-  if [ $job = produce ]; then
+  if [ $job = tunelatency ]; then
+    run_tunelatency
+  elif [ $job = produce ]; then
     run_produce
   elif [ $job = readwrite ]; then
     run_readwrite

@@ -32,14 +32,28 @@
 #include "src/util/common/client_env.h"
 #include "src/util/pacer.h"
 
-// This tool can behave as a standalone producer, a standalone
-// consumer or both a producer and a consumer.
+/**
+ * This tool can behave as a standalone producer, a standalone
+ * consumer or both a producer and a consumer.
+ */
 DEFINE_bool(start_producer, true, "starts the producer");
 DEFINE_bool(start_consumer, true, "starts the consumer");
+DEFINE_bool(await_ack, true, "wait for and include acks in times");
+DEFINE_bool(delay_subscribe, false, "start reading after publishing");
+
+/**
+ * RocketBench can optionally start an instance of RocketSpeed locally.
+ * It will talk to the LogDevice cluster specified by storage_url, and use
+ * the cache_size specified.
+ */
 DEFINE_bool(start_local_server, false, "starts an embedded rocketspeed server");
 DEFINE_string(storage_url, "", "Storage service URL for local server");
+DEFINE_uint64(cache_size, 0, "size of cache in bytes");
 
-DEFINE_int32(num_threads, 40, "number of threads");
+/**
+ * Configuration for the RocketSpeed machines to talk to.
+ * If config is not provided then (co)pilot_{hostnames,port} are used.
+ */
 DEFINE_string(config,
               "",
               "Configuration string, if absent uses pilot and copilot lists");
@@ -47,19 +61,16 @@ DEFINE_string(pilot_hostnames, "localhost", "hostnames of pilots");
 DEFINE_string(copilot_hostnames, "localhost", "hostnames of copilots");
 DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
+
+DEFINE_int32(num_threads, 40, "number of threads");
 DEFINE_uint64(client_workers, 32, "number of client workers");
-DEFINE_uint64(cache_size, 0, "size of cache in bytes");
+
+/**
+ * These parameters control the load generated.
+ */
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 100, "number of topics");
 DEFINE_int64(num_messages, 1000, "number of messages to send");
-DEFINE_int64(message_rate, 100, "messages per second (0 = unlimited)");
-DEFINE_uint64(max_inflight, 10000, "maximum publishes in flight");
-DEFINE_int64(subscribe_rate, 10, "subscribes per second (0 = unlimited)");
-DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
-DEFINE_bool(await_ack, true, "wait for and include acks in times");
-DEFINE_bool(delay_subscribe, false, "start reading after publishing");
-DEFINE_bool(logging, true, "enable/disable logging");
-DEFINE_bool(report, true, "report results to stdout");
 DEFINE_string(namespaceid, rocketspeed::GuestNamespace, "namespace id");
 DEFINE_string(topics_distribution, "uniform",
 "uniform, normal, poisson, fixed");
@@ -67,7 +78,25 @@ DEFINE_int64(topics_mean, 0,
 "Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
 DEFINE_int64(topics_stddev, 0,
 "Standard Deviation for Normal topic distribution (rounded to nearest int64)");
+DEFINE_int64(subscribe_rate, 10, "subscribes per second (0 = unlimited)");
+
+/**
+ * These parameters control the rate of publish requests sent to RocketSpeed.
+ * They are complementary.
+ * message_rate control the maximum number of publishes to send per second.
+ * max_inflight controls the maximum number of unacknowledged publishes to have
+ * "in-flight" at once.
+ */
+DEFINE_int64(message_rate, 100, "messages per second (0 = unlimited)");
+DEFINE_uint64(max_inflight, 10000, "maximum publishes in flight");
+
+/**
+ * Miscellaneous parameters.
+ */
+DEFINE_bool(logging, true, "enable/disable logging");
+DEFINE_bool(report, true, "report results to stdout");
 DEFINE_int32(wait_for_debugger, 0, "wait for debugger to attach to me");
+DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
 
 using namespace rocketspeed;
 
@@ -250,7 +279,7 @@ static void DoProduce(void* params) {
 
     thread_ids.push_back(env->StartThread(rocketspeed::ProducerWorker, parg));
     total_messages -= num_messages;
-    max_inflight -= parg->max_inflight;
+    max_inflight -= std::min(max_inflight, parg->max_inflight);
     p++;
     if (p > sizeof(pargs)/sizeof(pargs[0])) {
       break;
