@@ -5,6 +5,9 @@
 //
 #include "src/util/buffered_storage.h"
 
+#include "external/folly/move_wrapper.h"
+#include "src/util/common/coding.h"
+
 namespace rocketspeed {
 
 class BufferedAsyncLogReader : public AsyncLogReader {
@@ -53,14 +56,49 @@ BufferedLogStorage::~BufferedLogStorage() {
 Status BufferedLogStorage::AppendAsync(LogID id,
                                        const Slice& data,
                                        AppendCallback callback) {
-  return Status::OK();
+  // Encode into batch of 1.
+  // Using unique_ptr here because string slice needs to be valid even
+  // after move into append callback capture.
+  std::unique_ptr<std::string> encoded(new std::string());
+
+  // Format is 1 byte batch size followed by length-prefixed slice for each
+  // entry in the batch.
+  uint8_t batch_size = 1;
+  PutFixed8(encoded.get(), batch_size);
+  PutLengthPrefixedSlice(encoded.get(), data);
+
+  // Capture string to ensure slice is valid throughput asynchronous append.
+  Slice append_data(*encoded);
+  auto context = folly::makeMoveWrapper(std::move(encoded));
+  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
+
+  // Forward encoded data to underlying storage.
+  return storage_->AppendAsync(
+    id,
+    append_data,
+    [this, moved_callback, context, batch_size]
+    (Status st, SequenceNumber seqno) {
+      // Can acknowledge all batch entries now.
+      for (uint8_t batch_index = 0; batch_index < batch_size; ++batch_index) {
+        // Adjust seqno and invoke callback.
+        (*moved_callback)(st, seqno << batch_bits_ | batch_index);
+      }
+    });
 }
 
 Status BufferedLogStorage::FindTimeAsync(
   LogID id,
   std::chrono::milliseconds timestamp,
   std::function<void(Status, SequenceNumber)> callback) {
-  return Status::OK();
+  // Forward to underlying storage.
+  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
+  return storage_->FindTimeAsync(
+    id,
+    timestamp,
+    [this, moved_callback] (Status st, SequenceNumber seqno) {
+      // Adjust seqno and invoke callback.
+      (*moved_callback)(st, seqno << batch_bits_);
+    });
 }
 
 Status BufferedLogStorage::CreateAsyncReaders(
