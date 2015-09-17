@@ -13,6 +13,7 @@
 #include <gflags/gflags.h>
 #include <signal.h>
 #include <algorithm>
+#include <limits>
 #include <set>
 #include <string>
 
@@ -24,12 +25,22 @@
 #include "src/controltower/options.h"
 #include "src/controltower/tower.h"
 #include "src/supervisor/supervisor_loop.h"
+#include "src/util/buffered_storage.h"
 #include "src/util/common/parsing.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/storage.h"
 
 // Common settings
 DEFINE_bool(log_to_stderr, false, "log to stderr (otherwise LOG file)");
+DEFINE_uint64(buffered_storage_max_messages,
+              0,
+              "how many messages to batch in a storage record, <= 1 disables");
+DEFINE_uint64(buffered_storage_max_bytes,
+              std::numeric_limits<size_t>::max(),
+              "how many bytes worth of messages to batch");
+DEFINE_uint64(buffered_storage_max_latency_us,
+              100,
+              "for how long to wait before filling sending unfinished batch");
 
 // Control tower settings
 DEFINE_bool(tower, false, "start the control tower");
@@ -186,16 +197,6 @@ Status RocketSpeed::Initialize(
                                    "tower"));
   }
 
-  std::shared_ptr<LogStorage> storage;
-  if (FLAGS_pilot || FLAGS_tower) {
-    // Only need storage for pilot and control tower.
-    LOG_VITAL(info_log_, "Creating LogStorage");
-    storage = get_storage(env_, info_log_);
-    if (!storage) {
-      return Status::InternalError("Failed to construct log storage");
-    }
-  }
-
   if (FLAGS_pilot && FLAGS_copilot && FLAGS_pilot_port == FLAGS_copilot_port) {
     // Pilot + Copilot sharing message loop.
     LOG_VITAL(info_log_, "Pilot and copilot sharing MsgLoop port=%d",
@@ -235,6 +236,43 @@ Status RocketSpeed::Initialize(
     Status st = msg_loop->Initialize();
     if (!st.ok()) {
       return st;
+    }
+  }
+
+  // Create LogStorage and wrap if necessary.
+  std::shared_ptr<LogStorage> storage;
+  if (FLAGS_pilot || FLAGS_tower) {
+    // Only need storage for pilot and control tower.
+    LOG_VITAL(info_log_, "Creating LogStorage");
+    storage = get_storage(env_, info_log_);
+
+    // Wrap in the buffered storage if configured.
+    if (FLAGS_buffered_storage_max_messages > 1 &&
+        FLAGS_buffered_storage_max_bytes > 0 &&
+        FLAGS_buffered_storage_max_latency_us) {
+      LOG_VITAL(info_log_,
+                "Using BufferedLogStorage, messages: %" PRIu64
+                ", bytes: %" PRIu64 ", latency: %" PRIu64 " us",
+                FLAGS_buffered_storage_max_messages,
+                FLAGS_buffered_storage_max_bytes,
+                FLAGS_buffered_storage_max_latency_us);
+      LogStorage* raw_storage;
+      Status st = BufferedLogStorage::Create(
+          env_,
+          info_log_,
+          std::move(storage),
+          pilot_loop.get(),
+          FLAGS_buffered_storage_max_messages,
+          FLAGS_buffered_storage_max_bytes,
+          std::chrono::microseconds(FLAGS_buffered_storage_max_latency_us),
+          &raw_storage);
+      if (!st.ok()) {
+        return st;
+      }
+      storage.reset(raw_storage);
+    }
+    if (!storage) {
+      return Status::InternalError("Failed to construct log storage");
     }
   }
 

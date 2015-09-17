@@ -3,6 +3,7 @@ cpp_library(
     srcs = [
         'arena.cc',
         'auto_roll_logger.cc',
+        'buffered_storage.cc',
         'build_version.cc',
         'cache.cc',
         'control_tower_router.cc',
