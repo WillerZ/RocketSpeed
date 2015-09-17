@@ -678,10 +678,12 @@ int main(int argc, char** argv) {
              "\r",
           pubacks,
           FLAGS_num_messages,
-          100.0 * pubacks / FLAGS_num_messages,
+          100.0 * static_cast<double>(pubacks) /
+            static_cast<double>(FLAGS_num_messages),
           received,
           FLAGS_num_messages,
-          100.0 * received / FLAGS_num_messages,
+          100.0 * static_cast<double>(received) /
+            static_cast<double>(FLAGS_num_messages),
           failed);
         fflush(stdout);
       }
