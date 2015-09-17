@@ -21,7 +21,7 @@ class BufferedLogStorage : public LogStorage {
  public:
   static Status Create(Env* env,
                        std::shared_ptr<Logger> info_log,
-                       std::unique_ptr<LogStorage> wrapped_storage,
+                       std::shared_ptr<LogStorage> wrapped_storage,
                        MsgLoop* msg_loop,
                        size_t max_batch_entries,
                        size_t max_batch_bytes,
@@ -51,7 +51,7 @@ class BufferedLogStorage : public LogStorage {
  private:
   BufferedLogStorage(Env* env,
                      std::shared_ptr<Logger> info_log,
-                     std::unique_ptr<LogStorage> wrapped_storage,
+                     std::shared_ptr<LogStorage> wrapped_storage,
                      MsgLoop* msg_loop,
                      size_t max_batch_entries,
                      size_t max_batch_bytes,
@@ -59,7 +59,7 @@ class BufferedLogStorage : public LogStorage {
 
   Env* env_;
   std::shared_ptr<Logger> info_log_;
-  std::unique_ptr<LogStorage> storage_;
+  std::shared_ptr<LogStorage> storage_;
   MsgLoop* msg_loop_;
   size_t max_batch_entries_;
   size_t max_batch_bytes_;

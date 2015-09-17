@@ -24,6 +24,16 @@
 
 namespace rocketspeed {
 
+struct TestStorage {
+ public:
+  virtual ~TestStorage() {}
+  virtual std::shared_ptr<LogStorage> GetLogStorage() = 0;
+  virtual std::shared_ptr<LogRouter> GetLogRouter() = 0;
+
+ protected:
+  TestStorage() {}
+};
+
 /**
  * Creates a test cluster consisting of one pilot, one copilot, one control
  * tower, and a logdevice instance, all running on the same process. This is
@@ -94,6 +104,15 @@ class LocalTestCluster {
   }
 
   /**
+   * Creates storage.
+   */
+  static std::unique_ptr<TestStorage>
+  CreateStorage(Env* env,
+                std::shared_ptr<Logger> info_log,
+                std::pair<LogID, LogID> log_range,
+                std::string storage_url = "");
+
+  /**
    * Creates a Configuration, which can be used by a client to talk to the
    * test cluster.
    */
@@ -119,9 +138,9 @@ class LocalTestCluster {
     return control_tower_loop_.get();
   }
 
-  std::shared_ptr<LogDeviceStorage> GetLogStorage();
+  std::shared_ptr<LogStorage> GetLogStorage();
 
-  std::shared_ptr<LogDeviceLogRouter> GetLogRouter();
+  std::shared_ptr<LogRouter> GetLogRouter();
 
   Statistics GetStatisticsSync() const;
 
@@ -135,7 +154,6 @@ class LocalTestCluster {
  private:
   void Initialize(Options opts);
 
-  struct TestStorage;
   std::unique_ptr<TestStorage> storage_;
 
   // General cluster status.

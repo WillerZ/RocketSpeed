@@ -137,6 +137,13 @@ class LogStorage {
                       std::function<void(Status, SequenceNumber)> callback) = 0;
 
   /**
+   * Trim log up to a sequence number.
+   */
+  virtual Status Trim(LogID id, SequenceNumber seqno) {
+    return Status::NotSupported("Trimming not supported");
+  }
+
+  /**
    * Creates a group of AsyncLogReaders that will execute in parallel.
    *
    * @param parallelism number of parallel readers to create.

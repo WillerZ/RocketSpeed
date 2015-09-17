@@ -109,7 +109,8 @@ TESTS = \
   flow_test \
 	rocketeer_test \
   cache_test \
-  pacer_test
+  pacer_test \
+  buffered_storage_test
 
 TOOLS = \
 	rocketbench
@@ -360,6 +361,9 @@ rocketeer_test: src/engine/tests/rocketeer_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 pacer_test: src/util/tests/pacer_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+buffered_storage_test: src/util/tests/buffered_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------

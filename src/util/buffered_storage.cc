@@ -30,7 +30,7 @@ class BufferedAsyncLogReader : public AsyncLogReader {
 
 Status BufferedLogStorage::Create(Env* env,
                                   std::shared_ptr<Logger> info_log,
-                                  std::unique_ptr<LogStorage> wrapped_storage,
+                                  std::shared_ptr<LogStorage> wrapped_storage,
                                   MsgLoop* msg_loop,
                                   size_t max_batch_entries,
                                   size_t max_batch_bytes,
@@ -74,7 +74,7 @@ Status BufferedLogStorage::CreateAsyncReaders(
 BufferedLogStorage::BufferedLogStorage(
   Env* env,
   std::shared_ptr<Logger> info_log,
-  std::unique_ptr<LogStorage> wrapped_storage,
+  std::shared_ptr<LogStorage> wrapped_storage,
   MsgLoop* msg_loop,
   size_t max_batch_entries,
   size_t max_batch_bytes,
