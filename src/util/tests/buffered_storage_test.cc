@@ -31,7 +31,6 @@ class BufferedLogStorageTest {
 TEST(BufferedLogStorageTest, Creation) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
-  MsgLoopThread t1(env, &loop, "loop");
 
   std::unique_ptr<TestStorage> underlying_storage =
     LocalTestCluster::CreateStorage(env, info_log, log_range);
@@ -50,6 +49,10 @@ TEST(BufferedLogStorageTest, Creation) {
   std::unique_ptr<LogStorage> owned_storage(storage);
   ASSERT_OK(st);
   ASSERT_TRUE(owned_storage);
+
+  // Must live shorter than storage.
+  MsgLoopThread t1(env, &loop, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
 }
 
 class VerifyingStorage : public LogStorage {
@@ -95,12 +98,12 @@ class VerifyingStorage : public LogStorage {
 TEST(BufferedLogStorageTest, SingleBatching) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
-  MsgLoopThread t1(env, &loop, "loop");
 
   std::vector<LogID> logs { 123, 123, 456 };
   std::vector<std::string> msgs = { "foo", "bar", "baz" };
   size_t received = 0;
 
+  port::Semaphore sem;
   auto verify_storage = std::make_shared<VerifyingStorage>(
     [&] (LogID log_id, Slice slice) {
       ASSERT_EQ(log_id, logs[received]);
@@ -111,6 +114,7 @@ TEST(BufferedLogStorageTest, SingleBatching) {
       ASSERT_TRUE(GetLengthPrefixedSlice(&slice, &data));
       ASSERT_TRUE(data.ToString() == msgs[received]);
       ++received;
+      sem.Post();
     });
 
   // Buffered storage that writes 1 per batch.
@@ -128,21 +132,221 @@ TEST(BufferedLogStorageTest, SingleBatching) {
   ASSERT_OK(st);
   ASSERT_TRUE(owned_storage);
 
+  // Must live shorter than storage.
+  MsgLoopThread t1(env, &loop, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
   ASSERT_OK(storage->AppendAsync(123, "foo",
     [] (Status status, SequenceNumber seqno) {
       ASSERT_OK(status);
       ASSERT_EQ(seqno, 0);
     }));
+  sem.TimedWait(std::chrono::seconds(1));
+
   ASSERT_OK(storage->AppendAsync(123, "bar",
     [] (Status status, SequenceNumber seqno) {
       ASSERT_OK(status);
       ASSERT_EQ(seqno, 8);
     }));
+  sem.TimedWait(std::chrono::seconds(1));
+
   ASSERT_OK(storage->AppendAsync(456, "baz",
     [] (Status status, SequenceNumber seqno) {
       ASSERT_OK(status);
       ASSERT_EQ(seqno, 0);
     }));
+  sem.TimedWait(std::chrono::seconds(1));
+}
+
+TEST(BufferedLogStorageTest, CountLimitedBatch) {
+  MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
+  ASSERT_OK(loop.Initialize());
+
+  const uint8_t kBatchSize = 16;
+  const size_t kNumMessages = 1600;
+  const LogID kLogID = 123;
+  size_t received = 0;
+  port::Semaphore sem;
+  auto verify_storage = std::make_shared<VerifyingStorage>(
+    [&] (LogID log_id, Slice slice) {
+      ASSERT_EQ(log_id, kLogID);
+      uint8_t batch_size;
+      ASSERT_TRUE(GetFixed8(&slice, &batch_size));
+      ASSERT_EQ(batch_size, kBatchSize);
+      for (int i = 0; i < batch_size; ++i) {
+        Slice data;
+        ASSERT_TRUE(GetLengthPrefixedSlice(&slice, &data));
+        ASSERT_EQ(data.ToString(), std::to_string(received));
+        ++received;
+        sem.Post();
+      }
+    });
+
+  // Buffered storage that writes 10 elements per batch.
+  LogStorage* storage;
+  Status st =
+    BufferedLogStorage::Create(env,
+                               info_log,
+                               verify_storage,
+                               &loop,
+                               kBatchSize,
+                               std::numeric_limits<size_t>::max(),
+                               std::chrono::microseconds(1000000),
+                               &storage);
+  std::unique_ptr<LogStorage> owned_storage(storage);
+  ASSERT_OK(st);
+  ASSERT_TRUE(owned_storage);
+
+  // Must live shorter than storage.
+  MsgLoopThread t1(env, &loop, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  std::string msgs[kNumMessages];  // to keep slice memory around
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    msgs[i] = std::to_string(i);
+    ASSERT_OK(storage->AppendAsync(kLogID, msgs[i],
+      [i] (Status status, SequenceNumber seqno) {
+        ASSERT_OK(status);
+        ASSERT_EQ(seqno, i);  // we fill entire batches, so seqno == #sent
+      }));
+  }
+
+  // Wait for all to be received.
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
+  }
+}
+
+TEST(BufferedLogStorageTest, ByteLimitedBatches) {
+  MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
+  ASSERT_OK(loop.Initialize());
+
+  const size_t kByteLimit = 100;
+  const size_t kNumMessages = 1000;
+  const LogID kLogID = 456;
+  size_t received = 0;
+  port::Semaphore sem;
+  auto verify_storage = std::make_shared<VerifyingStorage>(
+    [&] (LogID log_id, Slice slice) {
+      ASSERT_EQ(log_id, kLogID);
+      uint8_t batch_size;
+      ASSERT_TRUE(GetFixed8(&slice, &batch_size));
+      size_t bytes = 0;
+      for (int i = 0; i < batch_size; ++i) {
+        ASSERT_LE(bytes, kByteLimit);
+        Slice data;
+        ASSERT_TRUE(GetLengthPrefixedSlice(&slice, &data));
+        ASSERT_EQ(data.ToString(), std::to_string(received));
+        ++received;
+        sem.Post();
+        bytes += data.size();
+      }
+      if (received < kNumMessages) {
+        // Last one might not hit limit.
+        ASSERT_GE(bytes, kByteLimit);
+      }
+    });
+
+  // Buffered storage that writes 10 elements per batch.
+  LogStorage* storage;
+  Status st =
+    BufferedLogStorage::Create(env,
+                               info_log,
+                               verify_storage,
+                               &loop,
+                               255,
+                               kByteLimit,
+                               std::chrono::microseconds(100000),
+                               &storage);
+  std::unique_ptr<LogStorage> owned_storage(storage);
+  ASSERT_OK(st);
+  ASSERT_TRUE(owned_storage);
+
+  // Must live shorter than storage.
+  MsgLoopThread t1(env, &loop, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  std::string msgs[kNumMessages];  // to keep slice memory around
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    msgs[i] = std::to_string(i);
+    ASSERT_OK(storage->AppendAsync(kLogID, msgs[i],
+      [i] (Status status, SequenceNumber seqno) {
+        ASSERT_OK(status);
+      }));
+  }
+
+  // Wait for all to be received.
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
+  }
+}
+
+TEST(BufferedLogStorageTest, LatencyLimitedBatches) {
+  MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
+  ASSERT_OK(loop.Initialize());
+
+  const std::chrono::microseconds time_limit(10000);
+  const std::chrono::microseconds between_messages(3000);
+  const uint8_t min_batch = 3;
+  const uint8_t max_batch = 4;
+  const size_t kNumMessages = 100;
+  const LogID kLogID = 789;
+  size_t received = 0;
+  port::Semaphore sem;
+  auto verify_storage = std::make_shared<VerifyingStorage>(
+    [&] (LogID log_id, Slice slice) {
+      ASSERT_EQ(log_id, kLogID);
+      uint8_t batch_size;
+      ASSERT_TRUE(GetFixed8(&slice, &batch_size));
+      if (received + batch_size != kNumMessages) {
+        // Due to latency limit, batch size should be constant.
+        // (except last batch).
+        ASSERT_GE(batch_size, min_batch);
+        ASSERT_LE(batch_size, max_batch);
+      }
+      for (int i = 0; i < batch_size; ++i) {
+        Slice data;
+        ASSERT_TRUE(GetLengthPrefixedSlice(&slice, &data));
+        ASSERT_EQ(data.ToString(), std::to_string(received));
+        ++received;
+        sem.Post();
+      }
+    });
+
+  // Buffered storage that writes 10 elements per batch.
+  LogStorage* storage;
+  Status st =
+    BufferedLogStorage::Create(env,
+                               info_log,
+                               verify_storage,
+                               &loop,
+                               255,
+                               std::numeric_limits<size_t>::max(),
+                               time_limit,
+                               &storage);
+  std::unique_ptr<LogStorage> owned_storage(storage);
+  ASSERT_OK(st);
+  ASSERT_TRUE(owned_storage);
+
+  // Must live shorter than storage.
+  MsgLoopThread t1(env, &loop, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  std::string msgs[kNumMessages];  // to keep slice memory around
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    msgs[i] = std::to_string(i);
+    ASSERT_OK(storage->AppendAsync(kLogID, msgs[i],
+      [i] (Status status, SequenceNumber seqno) {
+        ASSERT_OK(status);
+      }));
+    /* sleep override */
+    std::this_thread::sleep_for(between_messages);
+  }
+
+  // Wait for all to be received.
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
+  }
 }
 
 }  // namespace rocketspeed

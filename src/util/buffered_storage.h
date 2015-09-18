@@ -13,6 +13,8 @@ class Env;
 class Logger;
 class MsgLoop;
 
+class BufferedLogStorageWorker;
+
 /**
  * BufferedLogStorage wraps another LogStorage implementation, providing
  * buffered writes to increase throughput.
@@ -65,6 +67,7 @@ class BufferedLogStorage : public LogStorage {
   size_t max_batch_bytes_;
   std::chrono::microseconds max_batch_latency_;
   size_t batch_bits_;
+  std::vector<std::unique_ptr<BufferedLogStorageWorker>> workers_;
 };
 
 }  // namespace rocketspeed

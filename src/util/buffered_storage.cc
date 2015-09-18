@@ -4,8 +4,10 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/util/buffered_storage.h"
+#include "src/util/timeout_list.h"
 
 #include "external/folly/move_wrapper.h"
+#include "src/messages/msg_loop.h"
 #include "src/util/common/coding.h"
 
 namespace rocketspeed {
@@ -29,6 +31,121 @@ class BufferedAsyncLogReader : public AsyncLogReader {
  private:
   std::unique_ptr<AsyncLogReader> reader_;
   BufferedLogStorage* storage_;
+};
+
+class BufferedLogStorageWorker {
+ public:
+  using clock = std::chrono::steady_clock;
+
+  BufferedLogStorageWorker(std::shared_ptr<LogStorage> storage,
+                           size_t max_batch_entries,
+                           size_t max_batch_bytes,
+                           std::chrono::microseconds max_batch_latency,
+                           size_t batch_bits)
+  : storage_(std::move(storage))
+  , max_batch_entries_(max_batch_entries)
+  , max_batch_bytes_(max_batch_bytes)
+  , max_batch_latency_(max_batch_latency)
+  , batch_bits_(batch_bits) {
+  }
+
+  void Enqueue(LogID log_id, Slice data, AppendCallback callback) {
+    thread_check_.Check();
+    auto it = queues_.find(log_id);
+    if (it == queues_.end()) {
+      // No queue for this log yet, so create one and start timeout.
+      auto result = queues_.emplace(log_id, RequestQueue(clock::now()));
+      assert(result.second);
+      it = result.first;
+      timeouts_.Add(log_id);
+    }
+    // Enqueue request.
+    it->second.requests.emplace_back(data, std::move(callback));
+    it->second.bytes += data.size();
+
+    // Check if we are at max requests or bytes.
+    if (it->second.requests.size() >= max_batch_entries_ ||
+        it->second.bytes >= max_batch_bytes_) {
+      Flush(log_id);
+    }
+  }
+
+  void FlushCheck() {
+    thread_check_.Check();
+    timeouts_.ProcessExpired(
+      max_batch_latency_,
+      [this] (LogID log_id) {
+        // Log requests have been in queue for too long, flush.
+        Flush(log_id);
+      },
+      -1);
+  }
+
+  void Flush(LogID log_id) {
+    thread_check_.Check();
+    auto it = queues_.find(log_id);
+    if (it != queues_.end()) {
+      // Create encoded string.
+      // Consists of 1-byte batch size followed by a serious of
+      // length-prefixed slices for each entry.
+      std::unique_ptr<std::string> encoded(new std::string());
+      encoded->reserve(1 + it->second.bytes);
+      uint8_t batch_size = static_cast<uint8_t>(it->second.requests.size());
+      PutFixed8(encoded.get(), batch_size);
+      for (Request& req : it->second.requests) {
+        PutLengthPrefixedSlice(encoded.get(), req.data);
+      }
+
+      // Capture the context so that the slices are still valid.
+      auto context = folly::makeMoveWrapper(std::move(it->second.requests));
+
+      // Forward encoded string to underlying storage.
+      Slice encoded_slice(*encoded);
+      storage_->AppendAsync(
+        log_id,
+        encoded_slice,
+        [this, context] (Status st, SequenceNumber seqno) {
+          for (size_t i = 0; i < context->size(); ++i) {
+            // Invoke callback on original requests with modified seqno.
+            (*context)[i].callback(st, seqno << batch_bits_ | i);
+          }
+        });
+      queues_.erase(it);
+    }
+  }
+
+ private:
+  // Single request.
+  // Assumes that the context for the data is captured in the callback,
+  // or otherwise available through some higher level organization.
+  struct Request {
+    explicit Request(Slice _data, AppendCallback _callback)
+    : data(_data)
+    , callback(_callback) {}
+
+    Slice data;
+    AppendCallback callback;
+  };
+
+  // Queue of request that have not yet been sent to underlying storage.
+  struct RequestQueue {
+    explicit RequestQueue(clock::time_point _timestamp)
+    : timestamp(_timestamp)
+    , bytes(0) {}
+
+    std::vector<Request> requests;
+    clock::time_point timestamp;
+    size_t bytes;
+  };
+
+  ThreadCheck thread_check_;
+  std::unordered_map<LogID, RequestQueue> queues_;
+  TimeoutList<LogID> timeouts_;
+  std::shared_ptr<LogStorage> storage_;
+  size_t max_batch_entries_;
+  size_t max_batch_bytes_;
+  std::chrono::microseconds max_batch_latency_;
+  size_t batch_bits_;
 };
 
 Status BufferedLogStorage::Create(Env* env,
@@ -56,34 +173,16 @@ BufferedLogStorage::~BufferedLogStorage() {
 Status BufferedLogStorage::AppendAsync(LogID id,
                                        const Slice& data,
                                        AppendCallback callback) {
-  // Encode into batch of 1.
-  // Using unique_ptr here because string slice needs to be valid even
-  // after move into append callback capture.
-  std::unique_ptr<std::string> encoded(new std::string());
-
-  // Format is 1 byte batch size followed by length-prefixed slice for each
-  // entry in the batch.
-  uint8_t batch_size = 1;
-  PutFixed8(encoded.get(), batch_size);
-  PutLengthPrefixedSlice(encoded.get(), data);
-
-  // Capture string to ensure slice is valid throughput asynchronous append.
-  Slice append_data(*encoded);
-  auto context = folly::makeMoveWrapper(std::move(encoded));
+  // Send to the worker thread for batching, sharded by log so that all
+  // requests for a log go to the same thread (better batching).
+  int worker_id = static_cast<int>(id % msg_loop_->GetNumWorkers());
+  Slice data_copy(data);
   auto moved_callback = folly::makeMoveWrapper(std::move(callback));
-
-  // Forward encoded data to underlying storage.
-  return storage_->AppendAsync(
-    id,
-    append_data,
-    [this, moved_callback, context, batch_size]
-    (Status st, SequenceNumber seqno) {
-      // Can acknowledge all batch entries now.
-      for (uint8_t batch_index = 0; batch_index < batch_size; ++batch_index) {
-        // Adjust seqno and invoke callback.
-        (*moved_callback)(st, seqno << batch_bits_ | batch_index);
-      }
-    });
+  std::unique_ptr<Command> cmd(MakeExecuteCommand(
+    [this, id, data_copy, moved_callback, worker_id] () mutable {
+      workers_[worker_id]->Enqueue(id, data_copy, moved_callback.move());
+    }));
+  return msg_loop_->SendCommand(std::move(cmd), worker_id);
 }
 
 Status BufferedLogStorage::FindTimeAsync(
@@ -130,6 +229,24 @@ BufferedLogStorage::BufferedLogStorage(
     ++batch_bits_;
   }
   assert(batch_bits_ <= 8);  // up to 8 bits supported
+
+  int num_workers = msg_loop_->GetNumWorkers();
+  for (int i = 0; i < num_workers; ++i) {
+    workers_.emplace_back(
+      new BufferedLogStorageWorker(storage_,
+                                   max_batch_entries_,
+                                   max_batch_bytes_,
+                                   max_batch_latency_,
+                                   batch_bits_));
+  }
+
+  // Register timer to check latency induced flushes.
+  msg_loop_->RegisterTimerCallback(
+    [this] () {
+      int worker_id = msg_loop_->GetThreadWorkerIndex();
+      workers_[worker_id]->FlushCheck();
+    },
+    max_batch_latency_ / 10);
 }
 
 BufferedAsyncLogReader::BufferedAsyncLogReader(
