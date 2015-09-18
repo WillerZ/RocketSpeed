@@ -177,10 +177,25 @@ class TopicTailer {
                                  std::vector<CopilotSub>)> on_message,
               ControlTowerOptions::TopicTailer options);
 
+  /**
+   * Forwards a command from a storage thread to a TopicTailer thread.
+   * The command will always be sent, but will return false if back-off should
+   * be applied.
+   */
   template <typename Function>
   bool Forward(Function command);
 
   bool Forward(std::unique_ptr<Command> command);
+
+  /**
+   * Forwards a command from a storage thread to a TopicTailer thread.
+   * The command will only be sent when returning true. On a return of false,
+   * the caller should attempt to resend the command later.
+   */
+  template <typename Function>
+  bool TryForward(Function command);
+
+  bool TryForward(std::unique_ptr<Command> command);
 
   void AddTailSubscriber(const TopicUUID& topic,
                          CopilotSub id,
@@ -357,6 +372,12 @@ template <typename Function>
 bool TopicTailer::Forward(Function command) {
   std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
   return Forward(std::move(cmd));
+}
+
+template <typename Function>
+bool TopicTailer::TryForward(Function command) {
+  std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
+  return TryForward(std::move(cmd));
 }
 
 }  // namespace rocketspeed

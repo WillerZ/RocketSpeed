@@ -758,7 +758,8 @@ Status TopicTailer::SendLogRecord(
     }
   }
 
-  bool sent = !force_failure && Forward([this, data_raw, log_id, reader_id] () {
+  bool sent = !force_failure &&
+              TryForward([this, data_raw, log_id, reader_id] () {
     // This portion of code is invoked in the room-thread.
     thread_check_.Check();
     std::unique_ptr<MessageData> data(data_raw);
@@ -930,7 +931,7 @@ Status TopicTailer::SendGapRecord(
     SequenceNumber to,
     size_t reader_id) {
   // Send to worker loop.
-  bool sent = Forward([this, log_id, type, from, to, reader_id] () {
+  bool sent = TryForward([this, log_id, type, from, to, reader_id] () {
     // Validate.
     LogReader* reader = FindLogReader(reader_id);
     assert(reader != nullptr);
@@ -1127,6 +1128,12 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
           }
         });
 
+        // TODO: We use Forward for the response because we have no way to
+        // signal to LogDevice to backoff-and-retry the FindLatestSeqno
+        // response. However, this means that a large number of responses
+        // could massively overflow the queues. In practice, we shouldn't have
+        // too many requests/responses in flight for FindLatestSeqno so it is
+        // unlikely to be an issue (compared to incoming data records).
         if (!sent) {
           LOG_WARN(info_log_,
             "Failed to send %s@0 sub for %s to TopicTailer worker",
@@ -1498,6 +1505,10 @@ void TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
 
 bool TopicTailer::Forward(std::unique_ptr<Command> command) {
   return storage_to_room_queues_->GetThreadLocal()->Write(command);
+}
+
+bool TopicTailer::TryForward(std::unique_ptr<Command> command) {
+  return storage_to_room_queues_->GetThreadLocal()->TryWrite(command);
 }
 
 }  // namespace rocketspeed
