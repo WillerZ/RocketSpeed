@@ -119,7 +119,6 @@ struct ProducerArgs {
 };
 
 struct ProducerWorkerArgs {
-  int64_t num_messages;
   rocketspeed::NamespaceID namespaceid;
   rocketspeed::Client* producer;
   rocketspeed::PublishCallback publish_callback;
@@ -139,11 +138,16 @@ namespace rocketspeed {
 
 static void ProducerWorker(void* param) {
   ProducerWorkerArgs* args = static_cast<ProducerWorkerArgs*>(param);
-  int64_t num_messages = args->num_messages;
+  if (args->max_inflight == 0) {
+    // Not allowed to send any messages, so immediately return.
+    args->result = true;
+    return;
+  }
+  args->result = false;
+
   NamespaceID namespaceid = args->namespaceid;
   Client* producer = args->producer;
   PublishCallback publish_callback = args->publish_callback;
-  args->result = false;
 
   // Random number generator.
   std::unique_ptr<rocketspeed::RandomDistributionBase>
@@ -167,35 +171,30 @@ static void ProducerWorker(void* param) {
 
   // Calculate message rate for this worker.
   int64_t rate = FLAGS_message_rate / FLAGS_num_threads + 1;
-  uint64_t window_max = args->max_inflight;
-  assert(window_max <= SEM_VALUE_MAX);
-
-  auto window = std::make_shared<std::atomic<unsigned int>>(1);
-  auto pacer = std::make_shared<port::Semaphore>(*window);
-
-  auto start = std::chrono::steady_clock::now();
-  for (int64_t i = 0; i < num_messages; ++i) {
+  auto pacer = std::make_shared<Pacer>(rate, args->max_inflight);
+  uint64_t index = 0;
+  static std::atomic<uint64_t> message_index{0};
+  while (static_cast<int64_t>(index = message_index++) < FLAGS_num_messages) {
     // Create random topic name
     char topic_name[64];
     uint64_t topic_num = distr.get() != nullptr ?
                          distr->generateRandomInt() :
-                         i % 100;  // "fixed", 100 messages per topic
+                         index % 100;  // "fixed", 100 messages per topic
     snprintf(topic_name, sizeof(topic_name),
              "benchmark.%llu",
              static_cast<long long unsigned int>(topic_num));
 
     TopicOptions topic_options;
+
+    // Wait until we are allowed to send another message.
+    pacer->Wait();
+
     // Add ID and timestamp to message ID.
-    static std::atomic<uint64_t> message_index;
     uint64_t send_time = env->NowMicros();
-    uint64_t index = message_index++;
     snprintf(data.data(), data.size(),
              "%llu %llu",
              static_cast<long long unsigned int>(index),
              static_cast<long long unsigned int>(send_time));
-
-    // Wait until we are allowed to send another message.
-    pacer->TimedWait(std::chrono::seconds(5));
 
     // Send the message
     PublishStatus ps = producer->Publish(
@@ -204,44 +203,20 @@ static void ProducerWorker(void* param) {
       namespaceid,
       topic_options,
       payload,
-      [publish_callback, pacer, window, window_max]
-      (std::unique_ptr<ResultStatus> rs) {
+      [publish_callback, pacer] (std::unique_ptr<ResultStatus> rs) {
         // Allow another message now.
-        pacer->Post();
-
-        if (window->load() < window_max) {
-          // TCP-style slow start additive (exponential) increase (up to max)
-          window->fetch_add(1);
-          pacer->Post();
-        }
-
         publish_callback(std::move(rs));
+        pacer->EndRequest();
       });
 
     if (!ps.status.ok()) {
       LOG_WARN(info_log,
         "Failed to send message number %llu (%s)",
-        static_cast<long long unsigned int>(i),
+        static_cast<long long unsigned int>(index),
         ps.status.ToString().c_str());
       info_log->Flush();
       args->result = false;
-      pacer->Post();  // failed, so immediately allow another publish.
-    }
-
-    if (FLAGS_message_rate) {
-      // Check if we are sending messages too fast, and if so, sleep.
-      int64_t have_sent = i;
-
-      // Time since we started sending messages.
-      auto expired = std::chrono::steady_clock::now() - start;
-
-      // Time that should have expired if we were sending at the desired rate.
-      auto expected = std::chrono::microseconds(1000000 * have_sent / rate);
-
-      // If we are ahead of schedule then sleep for the difference.
-      if (expected > expired) {
-        std::this_thread::sleep_for(expected - expired);
-      }
+      pacer->EndRequest();
     }
   }
   args->result = true;
@@ -262,31 +237,23 @@ static void DoProduce(void* params) {
 
   // Distribute total number of messages among them.
   std::vector<Env::ThreadId> thread_ids;
-  int64_t total_messages = FLAGS_num_messages;
   size_t p = 0;
   ProducerWorkerArgs pargs[1024]; // no more than 1K threads
+  assert(FLAGS_num_threads <= 1024);
   uint64_t max_inflight = FLAGS_max_inflight;
 
   for (int32_t remaining = FLAGS_num_threads; remaining; --remaining) {
-    int64_t num_messages = total_messages / remaining;
     ProducerWorkerArgs* parg = &pargs[p];
-    parg->num_messages = num_messages;
     parg->namespaceid = namespaceid;
     parg->producer = (*producers)[p % producers->size()].get();
     parg->publish_callback = publish_callback;
     parg->seed = p << 32;  // should be consistent between runs.
-    parg->max_inflight = std::max<uint64_t>(1, max_inflight / remaining);
+    parg->max_inflight = max_inflight / remaining;
 
     thread_ids.push_back(env->StartThread(rocketspeed::ProducerWorker, parg));
-    total_messages -= num_messages;
-    max_inflight -= std::min(max_inflight, parg->max_inflight);
+    max_inflight -= parg->max_inflight;
     p++;
-    if (p > sizeof(pargs)/sizeof(pargs[0])) {
-      break;
-    }
   }
-  assert(total_messages == 0);
-  assert(p == thread_ids.size());
 
   // Join all the threads to finish production.
   int ret = 0;
@@ -479,6 +446,9 @@ int main(int argc, char** argv) {
   rocketspeed::ThreadLocalPtr ack_latency;
   rocketspeed::ThreadLocalPtr recv_latency;
 
+  // Do not show receive latency if we delayed subscription.
+  const bool show_recv_latency = !FLAGS_delay_subscribe;
+
   // Initializes stats for current thread.
   auto InitThreadLocalStats = [&] () {
     if (!per_thread_stats.Get()) {
@@ -486,7 +456,9 @@ int main(int argc, char** argv) {
         new rocketspeed::Statistics());
       per_thread_stats.Reset(stats.get());
       ack_latency.Reset(stats->AddLatency("ack-latency"));
-      recv_latency.Reset(stats->AddLatency("recv-latency"));
+      if (show_recv_latency) {
+        recv_latency.Reset(stats->AddLatency("recv-latency"));
+      }
       std::lock_guard<std::mutex> lock(all_stats_mutex);
       all_stats.emplace_back(std::move(stats));
     }
@@ -500,6 +472,7 @@ int main(int argc, char** argv) {
 
   // Get thread local recv latency histogram.
   auto GetRecvLatency = [&] () {
+    assert(!show_recv_latency);
     InitThreadLocalStats();
     return static_cast<rocketspeed::Histogram*>(recv_latency.Get());
   };
@@ -574,7 +547,9 @@ int main(int argc, char** argv) {
           "Received message %llu with timestamp %llu",
           static_cast<long long unsigned int>(message_index),
           static_cast<long long unsigned int>(send_time));
-      GetRecvLatency()->Record(static_cast<uint64_t>(now - send_time));
+      if (show_recv_latency) {
+        GetRecvLatency()->Record(static_cast<uint64_t>(now - send_time));
+      }
       std::lock_guard<std::mutex> lock(is_received_mutex);
       if (is_received[message_index]) {
         LOG_WARN(info_log,

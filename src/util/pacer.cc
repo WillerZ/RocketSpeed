@@ -108,7 +108,10 @@ void Pacer::Wait() {
   }
 
   ++window_sent_;
-  start_times_.emplace_back(clock::now());
+  if (convergence_samples_ != 0) {
+    std::lock_guard<std::mutex> lock(end_request_mutex_);
+    start_times_.emplace_back(clock::now());
+  }
 }
 
 void Pacer::EndRequest() {
@@ -116,7 +119,7 @@ void Pacer::EndRequest() {
   // Note: it doesn't matter what order the requests come back because
   // (e1-s1)+(e2-s2) = (e1-s2)+(e2-s1)
   // and we only care about the sum, so we can just take the earliest.
-  {
+  if (convergence_samples_ != 0) {
     std::lock_guard<std::mutex> lock(end_request_mutex_);
     assert(!start_times_.empty());
     latency_sum_ += ToMicros(clock::now() - start_times_.front());

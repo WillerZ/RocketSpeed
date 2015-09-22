@@ -230,7 +230,7 @@ if [ $remote_bench ]; then
   bench_cmd="$remote_path/rocketbench"
   if [ $ROCKETBENCH_HOSTS ]; then
     IFS=',' read -a rocketbench_hosts <<< "$ROCKETBENCH_HOSTS"
-  else 
+  else
     rocketbench_hosts=("${available_hosts[@]::num_bench}")
     available_hosts=("${available_hosts[@]:num_bench}")  # pop num_bench off
   fi
@@ -296,7 +296,8 @@ function start_servers {
         --copilot \
         --control_towers=$towers_csv \
         --copilot_towers_per_log=1 \
-        --rollcall=$rollcall"
+        --rollcall=$rollcall \
+        --storage_workers=40"
       if [ $pilot_port ]; then
         cmd="${cmd} --pilot_port=$pilot_port"
       fi
@@ -569,7 +570,7 @@ function run_produce {
     if [ "$fail" != "0" ]; then
       echo "Remote rocketbench failed to complete successfully."
     fi
-  else 
+  else
     echo $cmd | tee -a $output_dir/benchmark_produce.log
     eval $cmd
   fi
