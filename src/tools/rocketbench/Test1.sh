@@ -11,12 +11,20 @@
 base=`dirname $0`
 BENCHMARK=$base/benchmark.sh
 
-if [ -f $BENCHMARK ]; then
+if [ ! -f $BENCHMARK ]; then
   echo "Unable to find benchmark script at $BENCHMARK
   echo "cd to fbcode and then run benchmark
+  exit 1
 fi
 
-cmd="$BENCHMARK --messages 1000000000 --rate 100000 --max-inflight 150 --topics 1 --size 100 --remote-bench 1 produce"
+echo Starting Servers...
+cmd="$BENCHMARK --remote --deploy --start-servers --cache-size 1000000000 --cockpits=1"
+eval $cmd
 
+cmd="$BENCHMARK --messages 1000000000 --rate 100000 --max-inflight 150 --topics 1 --size 100 --remote-bench 1 produce"
 echo $cmd
+eval $cmd
+
+echo Stopping Servers...
+cmd="$BENCHMARK --remote --stop-servers --cockpits=5"
 eval $cmd

@@ -9,13 +9,13 @@ message_size=100
 num_messages=1000
 message_rate=100
 subscribe_rate=10
+subscription_backlog_distribution='fixed' # subscribe from start of topic
 max_inflight=1000
 remote=''
 deploy=''
 client_workers=32
 num_topics=100
-num_pilots=1
-num_copilots=1
+num_cockpits=1
 num_towers=1
 remote_path="/tmp"
 cockpit_host=''
@@ -56,7 +56,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,pilots:,copilots:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -87,10 +87,8 @@ while true; do
       remote='true'; shift ;;
     -t | --topics )
       num_topics="$2"; shift 2 ;;
-    -x | --pilots )
-      num_pilots="$2"; shift 2 ;;
-    -y | --copilots )
-      num_copilots="$2"; shift 2 ;;
+    -x | --cockpits )
+      num_cockpits="$2"; shift 2 ;;
     -z | --towers )
       num_towers="$2"; shift 2 ;;
     --cache-size )
@@ -125,6 +123,8 @@ while true; do
       num_bench="$2"; remote_bench='true'; remote='true'; shift 2 ;;
     --subscribe-rate )
       subscribe_rate="$2"; shift 2 ;;
+    --subscription-backlog-distribution )
+      subscription_backlog_distribution="$2"; shift 2 ;;
     --max-inflight )
       max_inflight="$2"; shift 2 ;;
     --max_latency_micros )
@@ -220,11 +220,8 @@ else
 fi
 bench_cmd="${bench_cmd} ${ROCKETBENCH_ARGS}"
 
-pilots=("${available_hosts[@]::num_pilots}")
-available_hosts=("${available_hosts[@]:num_pilots}")  # pop num_pilots off
-
-copilots=("${available_hosts[@]::num_copilots}")
-available_hosts=("${available_hosts[@]:num_copilots}")  # pop num_copilots off
+cockpits=("${available_hosts[@]::num_cockpits}")
+available_hosts=("${available_hosts[@]:num_cockpits}")  # pop num_cockpits off
 
 control_towers=("${available_hosts[@]::num_towers}")
 available_hosts=("${available_hosts[@]:num_towers}")  # pop num_towers off
@@ -245,10 +242,6 @@ fi
 # Override default machines with specific ones
 if [ $cockpit_host ]; then
   cockpits=( $cockpit_host )
-  pilots=( $cockpit_host )
-  copilots=( $cockpit_host )
-else
-  cockpits=("${pilots[@]} ${copilots[@]}")
 fi
 if [ $controltower_host ]; then
   control_towers=( $controltower_host )
@@ -260,18 +253,15 @@ function join {
   local IFS="$1"; shift; echo "$*";
 }
 
-pilots_csv=$(join , ${pilots[@]})
-copilots_csv=$(join , ${copilots[@]})
+cockpits_csv=$(join , ${cockpits[@]})
 towers_csv=$(join , ${control_towers[@]})
 
 function collect_stats {
   if [ $remote ]; then
     echo
     echo "===== Collecting server stats ====="
-    for host in ${pilots[@]}; do
+    for host in ${cockpits[@]}; do
       echo stats pilot | nc $host 58800 > "pilot.$host.stats"
-    done
-    for host in ${copilots[@]}; do
       echo stats copilot | nc $host 58800 > "copilot.$host.stats"
     done
     for host in ${control_towers[@]}; do
@@ -450,10 +440,10 @@ if [ $# -ne 1 ]; then
   echo "-q --stop-servers    Stop the rocketspeed binary on remote servers."
   echo "-r --rate            Messages to send per second."
   echo "--subscribe-rate     Number of subscriptions to send per second."
+  echo "--subscribe-backlog  Subsciption requests read backlog data."
   echo "-s --remote          Use remote server(s) for pilot, copilot, control towers."
   echo "-t --topics          Number of topics."
-  echo "-x --pilots          Number of pilots to use."
-  echo "-y --copilots        Number of copilots to use."
+  echo "-x --cockpits        Number of cockpits to use."
   echo "-z --towers          Number of control towers to use."
   echo "--pilot-port         The port number for the pilot."
   echo "--copilot-port       The port number for the copilot."
@@ -491,8 +481,8 @@ const_params="
 # Setup const params
 if [ $remote ]; then
   const_params+=" --start_local_server=false"
-  const_params+=" --pilot_hostnames=$pilots_csv"
-  const_params+=" --copilot_hostnames=$copilots_csv"
+  const_params+=" --pilot_hostnames=$cockpits_csv"
+  const_params+=" --copilot_hostnames=$cockpits_csv"
 else
   const_params+=" --start_local_server=true"
 fi
@@ -627,10 +617,24 @@ function run_subscriptionchurn {
        --delay_subscribe=false \
        2>&1 | tee $output_dir/benchmark_subscriptionchurn.log"
   if [ $remote_bench ]; then
-    cmd="ssh root@$rocketbench_host -- $cmd"
+    for host in ${rocketbench_hosts[@]}; do
+      cmdnew="ssh root@$_host -- $cmd"
+      echo $cmdnew | tee -a $output_dir/benchmark_subscriptionchurn.log
+      eval $cmdnew | sed "s/^/${host:0:22}: /" &
+    done
+    # wait for all jobs to finish
+    fail=0
+    for bench_job in `jobs -p`
+    do
+      wait $bench_job || let "fail+=1"   # ignore race condition here
+    done
+    if [ "$fail" != "0" ]; then
+      echo "Remote rocketbench failed to complete successfully."
+    fi
+  else
+    echo $cmd | tee $output_dir/benchmark_subscriptionchurn.log
+    eval $cmd
   fi
-  echo $cmd | tee $output_dir/benchmark_subscriptionchurn.log
-  eval $cmd
   echo
 }
 function run_consume {
@@ -640,6 +644,7 @@ function run_consume {
        --start_consumer=true \
        --delay_subscribe=true \
        --subscriptionchurn=false \
+       --subscription_backlog_distribution=$subscription_backlog_distribution \
        --max_inflight=$max_inflight \
        2>&1 | tee $output_dir/benchmark_consume.log"
   if [ $remote_bench ]; then
@@ -648,6 +653,15 @@ function run_consume {
       echo $cmdnew | tee -a $output_dir/benchmark_readwrite.log
       eval $cmdnew | sed "s/^/${host:0:22}: /" &
     done
+    # wait for all jobs to finish
+    fail=0
+    for bench_job in `jobs -p`
+    do
+      wait $bench_job || let "fail+=1"   # ignore race condition here
+    done
+    if [ "$fail" != "0" ]; then
+      echo "Remote rocketbench failed to complete successfully."
+    fi
   else
     echo $cmd | tee $output_dir/benchmark_consume.log
     eval $cmd

@@ -78,9 +78,15 @@ DEFINE_string(topics_distribution, "uniform",
 "uniform, normal, poisson, fixed");
 DEFINE_string(subscription_length_distribution, "weibull",
 "distribution used for generating unsubscribe time in subscription churn");
+DEFINE_string(subscription_backlog_distribution, "fixed",
+"distribution used for generating subscription request with a backlog");
 DEFINE_int64(topics_mean, 0,
 "Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
 DEFINE_int64(topics_stddev, 0,
+"Standard Deviation for Normal topic distribution (rounded to nearest int64)");
+DEFINE_int64(subscription_backlog_mean, 0,
+"Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
+DEFINE_int64(subscription_backlog_stddev, 0,
 "Standard Deviation for Normal topic distribution (rounded to nearest int64)");
 DEFINE_int64(subscribe_rate, 10, "subscribes per second (0 = unlimited)");
 // shape > 1 implies negative aging . scale ~ 100 ensures the milliseconds
@@ -147,6 +153,17 @@ struct SubscriptionChurnArgs {
   rocketspeed::NamespaceID nsid;
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* subscribers;
   rocketspeed::port::Semaphore* producer_thread_over;
+};
+
+struct TopicInfo {
+  SequenceNumber first;
+  SequenceNumber last;
+  uint64_t total_num;
+  TopicInfo(SequenceNumber f, SequenceNumber l,
+            uint64_t count) : first(f), last(l), total_num(count) {
+  }
+  TopicInfo() : TopicInfo(0, 0, 0) {
+  }
 };
 
 namespace rocketspeed {
@@ -312,13 +329,17 @@ static void DoProduce(void* params) {
 }
 
 /**
- * Subscribe to topics.
+ * Subscribe to topics. If this instance of the test run did not
+ * publish any messages, then start to subscribe all topics from
+ * the start. Otherwise, start to subscribe from a random point
+ * on messages in that topic.
  */
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
-                 std::unordered_map<std::string, SequenceNumber> first_seqno) {
+                 std::unordered_map<std::string, TopicInfo> first_seqno) {
   size_t c = 0;
   Pacer pacer(FLAGS_subscribe_rate, 1);
+
   for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
     std::string topic_name("benchmark." + std::to_string(i));
     SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
@@ -327,11 +348,28 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
       auto it = first_seqno.find(topic_name);
       if (it == first_seqno.end()) {
         seqno = 0;
+      } else if (it->second.first == 0 ||
+                 it->second.first == it->second.last ||
+                 FLAGS_subscription_backlog_distribution == "fixed") {
+        seqno = it->second.first;
       } else {
-        seqno = it->second;
+        uint64_t seed = i << 32;  // should be consistent between runs.
+
+        // backlog subscription point
+        std::unique_ptr<RandomDistributionBase>
+          distr(GetDistributionByName(FLAGS_subscription_backlog_distribution,
+                it->second.first,
+                it->second.last,
+                static_cast<double>(FLAGS_subscription_backlog_mean),
+                static_cast<double>(FLAGS_subscription_backlog_stddev),
+                seed));
+        seqno = distr->generateRandomInt();
       }
     }
     pacer.Wait();
+    LOG_DEBUG(info_log, "Subscribing to %s at %llu",
+              topic_name.c_str(),
+              static_cast<long long unsigned int>(seqno));
     consumers[c++ % consumers.size()]->Subscribe(
         GuestTenant, nsid, topic_name, seqno);
     pacer.EndRequest();
@@ -635,8 +673,8 @@ int main(int argc, char** argv) {
   std::atomic<int64_t> ack_messages_received{0};
   std::atomic<int64_t> failed_publishes{0};
 
-  // Map of topics to the first sequence number in that topic.
-  std::unordered_map<std::string, rocketspeed::SequenceNumber> first_seqno;
+  // Map of topics to the (first, last, total#msg) in that topic.
+  std::unordered_map<std::string, TopicInfo> first_seqno;
   std::mutex first_seqno_mutex;
 
   auto publish_callback =
@@ -654,12 +692,14 @@ int main(int argc, char** argv) {
         if (rs->GetStatus().ok()) {
           // Get the min sequence number for this topic to subscribe to later.
           std::string topic = rs->GetTopicName().ToString();
+          SequenceNumber seq = rs->GetSequenceNumber();
           std::lock_guard<std::mutex> lock(first_seqno_mutex);
           auto it = first_seqno.find(topic);
           if (it == first_seqno.end()) {
-            first_seqno[topic] = rs->GetSequenceNumber();
+            first_seqno[topic] = TopicInfo(seq, seq, 1);
           } else {
-            it->second = std::min(it->second, rs->GetSequenceNumber());
+            it->second.first = std::min(it->second.first, seq);
+            it->second.last = std::max(it->second.last, seq);
           }
         }
       }
@@ -900,7 +940,7 @@ int main(int argc, char** argv) {
     subscribe_time = env->NowMicros();
     DoSubscribe(clients, nsid, std::move(first_seqno));
     subscribe_time = env->NowMicros() - subscribe_time;
-    printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics",
+    printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics\n",
       subscribe_time / 1000,
       FLAGS_num_topics);
 
@@ -982,7 +1022,8 @@ int main(int argc, char** argv) {
 
     if (FLAGS_start_consumer &&
         messages_received.load() != FLAGS_num_messages &&
-        !FLAGS_subscriptionchurn) {
+        !FLAGS_subscriptionchurn &&
+        FLAGS_subscription_backlog_distribution == "fixed") {
       // Print out dropped messages if there are any. This helps when
       // debugging problems.
       printf("\n");
