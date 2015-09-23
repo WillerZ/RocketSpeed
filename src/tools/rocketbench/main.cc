@@ -472,7 +472,7 @@ int main(int argc, char** argv) {
 
   // Get thread local recv latency histogram.
   auto GetRecvLatency = [&] () {
-    assert(!show_recv_latency);
+    assert(show_recv_latency);
     InitThreadLocalStats();
     return static_cast<rocketspeed::Histogram*>(recv_latency.Get());
   };
