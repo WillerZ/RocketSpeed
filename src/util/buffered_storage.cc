@@ -101,10 +101,12 @@ class BufferedLogStorageWorker {
 
       // Forward encoded string to underlying storage.
       Slice encoded_slice(*encoded);
+      // Capture the serialised payload as well.
+      auto moved_encoded = folly::makeMoveWrapper(std::move(encoded));
       storage_->AppendAsync(
         log_id,
         encoded_slice,
-        [this, context] (Status st, SequenceNumber seqno) {
+        [this, context, moved_encoded] (Status st, SequenceNumber seqno) {
           for (size_t i = 0; i < context->size(); ++i) {
             // Invoke callback on original requests with modified seqno.
             (*context)[i].callback(st, seqno << batch_bits_ | i);
