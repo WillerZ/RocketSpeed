@@ -229,10 +229,11 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
   options_.msg_loop->ThreadCheck();
 
   MessageSubscribe* subscribe = static_cast<MessageSubscribe*>(msg.get());
+  auto sub_id = subscribe->GetSubID();
   if (subscribe->GetNamespace() == InvalidNamespace) {
     // Invalid namespace, so respond with forced unsubscription.
     MessageUnsubscribe message(subscribe->GetTenantID(),
-                               subscribe->GetSubID(),
+                               sub_id,
                                MessageUnsubscribe::Reason::kInvalid);
     auto command = options_.msg_loop->ResponseCommand(message, origin);
     options_.msg_loop->SendCommandToSelf(std::move(command));
@@ -275,7 +276,7 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
   }
 
   auto& room_map = sub_to_room_[worker_id];
-  room_map.Insert(origin, subscribe->GetSubID(), room_number);
+  room_map.Insert(origin, sub_id, room_number);
 }
 
 void ControlTower::ProcessUnsubscribe(std::unique_ptr<Message> msg,

@@ -1187,8 +1187,6 @@ Status TopicTailer::RemoveSubscriber(CopilotSub id) {
     id.ToString().c_str(),
     topic.ToString().c_str());
   RemoveSubscriberInternal(topic, id, logid);
-  stream_subscriptions_.Remove(id.stream_id, id.sub_id);
-
   return Status::OK();
 }
 

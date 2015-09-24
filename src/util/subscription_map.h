@@ -37,12 +37,18 @@ class SubscriptionMap {
 
   bool MoveOut(StreamID stream_id, SubscriptionID sub_id, T* out) {
     assert(out);
-    T* ptr = Find(stream_id, sub_id);
-    if (ptr) {
-      *out = std::move(*ptr);
-      return true;
+    thread_check_.Check();
+    auto it = map_.find(stream_id);
+    if (it == map_.end()) {
+      return false;
     }
-    return false;
+    auto it2 = it->second.find(sub_id);
+    if (it2 == it->second.end()) {
+      return false;
+    }
+    *out = std::move(it2->second);
+    it->second.erase(it2);
+    return true;
   }
 
   void Insert(StreamID stream_id, SubscriptionID sub_id, T value) {
