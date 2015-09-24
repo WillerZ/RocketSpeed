@@ -86,10 +86,11 @@ class PacerTest {
 
 
 TEST(PacerTest, MaxLatencyLimited) {
-  // This system can handle > 100qps, but at high latency.
-  // Limiting latency to 2ms forces QPS and windows size down, but we should
-  // reach a final latency of ~2ms after tuning.
-  auto latency = RunTests(100, 100, std::chrono::microseconds(2000), 100,
+  // With 10x parallelism and 1ms service time, this system can handle 1kqps,
+  // with 1ms latency. If we try to put significantly more load then latency
+  // will suffer. Limiting latency to 2ms forces QPS and windows size down,
+  // but we should reach a final latency of ~2ms after tuning.
+  auto latency = RunTests(10000, 1000, std::chrono::microseconds(2000), 10000,
     [] () {
       /* sleep override */
       std::this_thread::sleep_for(std::chrono::milliseconds(1));

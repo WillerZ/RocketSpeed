@@ -643,7 +643,7 @@ int main(int argc, char** argv) {
   port::Semaphore progress_stop;
   auto progress_thread = env->StartThread(
     [&] () {
-      while (!progress_stop.TimedWait(std::chrono::milliseconds(200))) {
+      while (!progress_stop.TimedWait(std::chrono::milliseconds(10))) {
         const uint64_t pubacks = ack_messages_received.load();
         const uint64_t received = messages_received.load();
         const uint64_t failed = failed_publishes.load();

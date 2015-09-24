@@ -100,7 +100,8 @@ void Pacer::Wait() {
   } else {
     // Check that we aren't exceeding throughput for this window.
     auto elapsed = clock::now() - window_start_;
-    auto expected = std::chrono::seconds(1) * window_sent_ / max_throughput_;
+    auto expected =
+      std::chrono::microseconds(1000000) * window_sent_ / max_throughput_;
     if (expected > elapsed) {
       /* sleep override */
       std::this_thread::sleep_for(expected - elapsed);
