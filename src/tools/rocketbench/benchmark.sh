@@ -161,19 +161,19 @@ else
                     rocketspeed013.11.lla1.facebook.com \
                     rocketspeed014.11.lla1.facebook.com \
                     rocketspeed019.11.lla1.facebook.com \
-                    rocketspeed020.11.lla1.facebook.com )
-  elif [ $USER == "stupaq" ]; then
-    available_hosts=( \
+                    rocketspeed020.11.lla1.facebook.com \
                     rocketspeed021.11.lla1.facebook.com \
                     rocketspeed022.11.lla1.facebook.com \
-                    rocketspeed023.11.lla1.facebook.com )
-  else
-    available_hosts=( \
+                    rocketspeed023.11.lla1.facebook.com \
                     rocketspeed024.11.lla1.facebook.com \
-                    rocketspeed030.11.lla1.facebook.com \
+                    rocketspeed030.11.lla1.facebook.com )
+  elif [ $USER == "stupaq" ]; then
+    available_hosts=( \
                     rocketspeed031.11.lla1.facebook.com \
                     rocketspeed032.11.lla1.facebook.com \
-                    rocketspeed033.11.lla1.facebook.com \
+                    rocketspeed033.11.lla1.facebook.com )
+  else
+    available_hosts=( \
                     rocketspeed034.11.lla1.facebook.com \
                     rocketspeed036.11.lla1.facebook.com )
   fi
