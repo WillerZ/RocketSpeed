@@ -224,8 +224,8 @@ class MessagePing : public Message {
   /*
    * Inherited from Serializer
    */
-  virtual Status Serialize(std::string* out) const override;
-  virtual Status DeSerialize(Slice* in);
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
 
  protected:
   PingType pingtype_;
@@ -344,8 +344,8 @@ class MessageData : public Message {
   /*
    * Inherited from Serializer
    */
-  virtual Status Serialize(std::string* out) const override;
-  virtual Status DeSerialize(Slice* in);
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
 
  private:
   void SerializeInternal(std::string* out) const;
@@ -426,8 +426,8 @@ class MessageDataAck : public Message {
   /*
    * Inherited from Serializer
    */
-  virtual Status Serialize(std::string* out) const override;
-  virtual Status DeSerialize(Slice* in);
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
 
  private:
   // type of this message: mDataAck
@@ -496,8 +496,8 @@ class MessageGap : public Message {
   /*
    * Inherited from Serializer
    */
-  virtual Status Serialize(std::string* out) const override;
-  virtual Status DeSerialize(Slice* in);
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
 
  private:
   // type of this message: mGap
@@ -560,8 +560,9 @@ class MessageGoodbye : public Message {
   OriginType GetOriginType() const {
     return origin_type_;
   }
-  virtual Status Serialize(std::string* out) const override;
-  virtual Status DeSerialize(Slice* in);
+
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
 
  private:
   // type of this message: mGoodbye

@@ -225,6 +225,7 @@ BufferedLogStorage::BufferedLogStorage(
 , max_batch_entries_(max_batch_entries)
 , max_batch_bytes_(max_batch_bytes)
 , max_batch_latency_(max_batch_latency) {
+  ((void)env_);
   // Calculate bits for batch.
   batch_bits_ = 0;
   while ((1u << batch_bits_) < max_batch_entries_) {
@@ -258,7 +259,7 @@ BufferedAsyncLogReader::BufferedAsyncLogReader(
   std::unique_ptr<AsyncLogReader> reader)
 : reader_(std::move(reader))
 , storage_(storage) {
-
+  ((void)storage_);
 }
 
 BufferedAsyncLogReader::~BufferedAsyncLogReader() {
