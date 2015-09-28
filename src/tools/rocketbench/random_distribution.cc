@@ -48,7 +48,11 @@ RandomDistributionBase* GetDistributionByName(
     }
     else if (dist_name.compare("uniform") == 0) {
         pDistribution = new UniformDistribution(a, b, seed);
-    } else if (dist_name.compare("fixed") == 0) {
+    }
+    else if (dist_name.compare("weibull") == 0) {
+        pDistribution = new WeibullDistribution(amean, stdd, seed);
+    }
+    else if (dist_name.compare("fixed") == 0) {
         pDistribution = nullptr;
     }
     return pDistribution;

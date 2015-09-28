@@ -9,7 +9,6 @@
 #include <cmath>
 #include <string>
 
-
 namespace rocketspeed {
 
 class RandomDistributionBase {
@@ -67,6 +66,21 @@ class PoissonDistribution : public RandomDistributionBase
 
  private:
   std::poisson_distribution<uint64_t> distr;
+};
+
+class WeibullDistribution : public RandomDistributionBase {
+ public:
+  explicit WeibullDistribution(double shape,
+                               double scale,
+                               uint64_t seed)
+  : RandomDistributionBase(seed), distr(shape, scale) {}
+
+  virtual uint64_t generateRandomInt() {
+    return static_cast<uint64_t>(distr(RandomDistributionBase::rng));
+  }
+
+ private:
+  std::weibull_distribution<double> distr;
 };
 
 //Calculate the standard deviation of the sequence of numbers, given the mean

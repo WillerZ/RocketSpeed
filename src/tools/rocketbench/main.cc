@@ -40,6 +40,8 @@ DEFINE_bool(start_producer, true, "starts the producer");
 DEFINE_bool(start_consumer, true, "starts the consumer");
 DEFINE_bool(await_ack, true, "wait for and include acks in times");
 DEFINE_bool(delay_subscribe, false, "start reading after publishing");
+DEFINE_bool(subscriptionchurn, false, "start constant rate of "
+  "subscriptions with random unsubscriptions");
 
 /**
  * RocketBench can optionally start an instance of RocketSpeed locally.
@@ -74,11 +76,19 @@ DEFINE_int64(num_messages, 1000, "number of messages to send");
 DEFINE_string(namespaceid, rocketspeed::GuestNamespace, "namespace id");
 DEFINE_string(topics_distribution, "uniform",
 "uniform, normal, poisson, fixed");
+DEFINE_string(subscription_length_distribution, "weibull",
+"distribution used for generating unsubscribe time in subscription churn");
 DEFINE_int64(topics_mean, 0,
 "Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
 DEFINE_int64(topics_stddev, 0,
 "Standard Deviation for Normal topic distribution (rounded to nearest int64)");
 DEFINE_int64(subscribe_rate, 10, "subscribes per second (0 = unlimited)");
+// shape > 1 implies negative aging . scale ~ 100 ensures the milliseconds
+// are not too low or too huge
+DEFINE_double(weibull_scale, 100.0, "scale of weibull distribution");
+DEFINE_double(weibull_shape, 1.5, "scale of weibull distribution");
+DEFINE_uint64(subscriptionchurn_max_time, 200, "max time of generated "
+  "value from dist.");
 
 /**
  * These parameters control the rate of publish requests sent to RocketSpeed.
@@ -102,7 +112,6 @@ using namespace rocketspeed;
 
 rocketspeed::Env* env;
 std::shared_ptr<rocketspeed::Logger> info_log;
-
 
 typedef std::pair<rocketspeed::MsgId, uint64_t> MsgTime;
 
@@ -134,7 +143,35 @@ struct ConsumerArgs {
   bool result;
 };
 
+struct SubscriptionChurnArgs {
+  rocketspeed::NamespaceID nsid;
+  std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* subscribers;
+  rocketspeed::port::Semaphore* producer_thread_over;
+};
+
 namespace rocketspeed {
+
+struct SubscriptionChurnTimeout {
+  bool is_subscribe;
+  SubscriptionHandle sh;
+  std::chrono::time_point<std::chrono::steady_clock> event_time;
+  uint64_t client_number;
+
+  SubscriptionChurnTimeout(
+    bool is_sub,
+    SubscriptionHandle handle,
+    std::chrono::time_point<std::chrono::steady_clock> ev,
+    uint64_t c_no
+  ): is_subscribe{is_sub},
+     sh{handle},
+     event_time{ev},
+     client_number{c_no}
+    {}
+
+    bool operator<(const SubscriptionChurnTimeout& rhs) const {
+      return ((event_time) > (rhs.event_time));
+  }
+};
 
 static void ProducerWorker(void* param) {
   ProducerWorkerArgs* args = static_cast<ProducerWorkerArgs*>(param);
@@ -302,6 +339,120 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
 }
 
 /*
+ * Generate the sub and unsub time for subscription churn
+ */
+void PushSubUnsubTimeToQueue(
+  std::unique_ptr<rocketspeed::RandomDistributionBase>& distr,
+  std::priority_queue<SubscriptionChurnTimeout>& pq,
+  int client_index,
+  SubscriptionHandle sub_handle) {
+  auto curtime = std::chrono::steady_clock::now();
+  std::chrono::microseconds interval(1000000/FLAGS_subscribe_rate);
+  uint64_t gen_number = 0;
+
+  do {
+    gen_number = distr->generateRandomInt();
+  } while (gen_number > FLAGS_subscriptionchurn_max_time);
+
+  auto gen_time = std::chrono::milliseconds(gen_number);
+  auto sub_time(curtime + interval);
+  auto unsub_time(curtime + gen_time);
+
+  //push the next subscribe to the queue after interval time
+  pq.push(SubscriptionChurnTimeout(true, 0, sub_time, client_index));
+  //push the next unsubscribe to the queue after random time
+  pq.push(SubscriptionChurnTimeout(false, sub_handle, unsub_time,
+    client_index));
+}
+
+/**
+* Subscription churn thread
+*/
+void DoSubscriptionChurn(void* params) {
+  struct SubscriptionChurnArgs* args =
+    static_cast<SubscriptionChurnArgs*>(params);
+
+  std::vector<std::unique_ptr<ClientImpl>>* subscribers =
+    args->subscribers;
+  rocketspeed::NamespaceID nsid = args->nsid;
+  rocketspeed::port::Semaphore* producer_thread_over =
+    args->producer_thread_over;
+
+  // the priority queue is to store all sub and unsub events
+  // earliest event is at the top
+  std::priority_queue<SubscriptionChurnTimeout> pq;
+  int seq = 0;
+  int client_index = 0;
+  SubscriptionHandle sub_handle;
+  auto curtime = std::chrono::steady_clock::now();
+  const uint64_t seed = 279470273; // using constant seed for comparable result
+                                   // across benchmark runs
+
+  // seed and generate a random number distribution , currently using:
+  // en.cppreference.com/w/cpp/numeric/random/weibull_distribution
+  std::unique_ptr<rocketspeed::RandomDistributionBase>
+    distr(GetDistributionByName(FLAGS_subscription_length_distribution,
+                                0,
+                                0,
+                                static_cast<double>(FLAGS_weibull_shape),
+                                static_cast<double>(FLAGS_weibull_scale),
+                                seed));
+
+  // topic_distr is to generate a random topic number
+  std::unique_ptr<rocketspeed::RandomDistributionBase>
+    topic_distr(GetDistributionByName(FLAGS_topics_distribution,
+                                0,
+                                FLAGS_num_topics - 1,
+                                static_cast<double>(FLAGS_topics_mean),
+                                static_cast<double>(FLAGS_topics_stddev),
+                                seed));
+
+  /*
+   * subscribes client 0 initally to topic 0,
+   * and pushes the initial sub and unsub time to pq
+   */
+  sub_handle = (*subscribers)[0]->Subscribe(GuestTenant, nsid, "benchmark.0",
+    seq);
+  PushSubUnsubTimeToQueue(distr, pq, 0,sub_handle);
+  do {
+    curtime = std::chrono::steady_clock::now();
+    // top of the q should contain oldest event
+    auto w = pq.top();
+    /*
+     * there are 2 types of events : subscribe and unsubscribe . If
+     * subscribe then push the next subscribe in the queue after an interval
+     * and generate the unsub time for this sub , pushing the handle in the q
+     * If its a unsubscribe event , just unsubscribe
+     */
+    if (w.is_subscribe) {
+      // if event is subscribe : subscribe and generate the unsub time
+      // use the difference to calculate all intermediate sub events
+
+      //generate a random topic to subscribe to
+      char topic_name[64];
+      uint64_t topic_num = topic_distr.get() != nullptr ?
+                           topic_distr->generateRandomInt() :
+                           client_index % 100;
+      snprintf(topic_name, sizeof(topic_name),
+              "benchmark.%llu",
+              static_cast<long long unsigned int>(topic_num));
+      sub_handle = (*subscribers)[w.client_number]->
+        Subscribe(GuestTenant, nsid, topic_name, seq);
+      PushSubUnsubTimeToQueue(distr,
+                              pq,
+                              (int)(client_index++ % (subscribers->size())),
+                              sub_handle);
+    } else {
+      //if its unsubscribe : just unsubscribe, no other action needed
+      (*subscribers)[w.client_number]->Unsubscribe((w.sh));
+    }
+    pq.pop();
+    assert(!pq.empty());
+  } while (!producer_thread_over->TimedWait(pq.top().event_time
+      - curtime));
+}
+
+/*
  ** Receive messages
  */
 static void DoConsume(void* param) {
@@ -435,6 +586,9 @@ int main(int argc, char** argv) {
 
   // Semaphore to signal when all messages have been ack'd
   rocketspeed::port::Semaphore all_ack_messages_received;
+
+  // Semaphore to signal subscriptionchurn thread when producer is over
+  rocketspeed::port::Semaphore producer_thread_over;
 
   // Time last data message was received.
   std::chrono::time_point<std::chrono::steady_clock> last_data_message;
@@ -622,7 +776,7 @@ int main(int argc, char** argv) {
 
   // Subscribe to topics (don't count this as part of the time)
   // Also waits for the subscription responses.
-  if (!FLAGS_delay_subscribe) {
+  if (!FLAGS_delay_subscribe && !FLAGS_subscriptionchurn) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
@@ -637,8 +791,10 @@ int main(int argc, char** argv) {
 
   ProducerArgs pargs;
   ConsumerArgs cargs;
+  SubscriptionChurnArgs scargs;
   rocketspeed::Env::ThreadId producer_threadid = 0;
   rocketspeed::Env::ThreadId consumer_threadid = 0;
+  rocketspeed::Env::ThreadId subscriptionchurn_threadid = 0;
 
   port::Semaphore progress_stop;
   auto progress_thread = env->StartThread(
@@ -681,15 +837,32 @@ int main(int argc, char** argv) {
   // If we are not 'delayed', then we are already subscribed to
   // topics, simply starts threads to consume
   if (FLAGS_start_consumer && !FLAGS_delay_subscribe) {
-    printf("Waiting for messages.\n");
-    fflush(stdout);
-    cargs.all_messages_received = &all_messages_received;
-    cargs.messages_received = &messages_received;
-    cargs.last_data_message = &last_data_message;
-    consumer_threadid = env->StartThread(rocketspeed::DoConsume,
-                                         &cargs,
-                                         "ConsumerMain");
-  }
+    if (FLAGS_subscriptionchurn) {
+      printf("Starting the subscription churn .\n");
+      fflush(stdout);
+
+      // Start the clock.
+      start = std::chrono::steady_clock::now();
+
+      fflush(stdout);
+      scargs.producer_thread_over = &producer_thread_over;
+      scargs.subscribers = &clients;
+      scargs.nsid = nsid;
+      subscriptionchurn_threadid = env->StartThread(
+                                     rocketspeed::DoSubscriptionChurn,
+                                     &scargs,
+                                     "Subscription Churn");
+    } else { // regular case
+      printf("Waiting for messages.\n");
+      fflush(stdout);
+      cargs.all_messages_received = &all_messages_received;
+      cargs.messages_received = &messages_received;
+      cargs.last_data_message = &last_data_message;
+      consumer_threadid = env->StartThread(rocketspeed::DoConsume,
+        &cargs,
+        "ConsumerMain");
+      }
+    }
 
   // Wait for all producers to finish
   int ret = 0;
@@ -704,6 +877,12 @@ int main(int argc, char** argv) {
       printf("All messages published.\n");
       fflush(stdout);
     }
+  }
+
+  if (FLAGS_subscriptionchurn) {
+    printf("Publisher over. Signalling subscription churn to stop. \n");
+    producer_thread_over.Post();
+    env->WaitForJoin(subscriptionchurn_threadid);
   }
 
   // If we are delayed, then start subscriptions after all
@@ -736,7 +915,7 @@ int main(int argc, char** argv) {
                                          "ConsumerMain");
   }
 
-  if (FLAGS_start_consumer) {
+  if (FLAGS_start_consumer && !FLAGS_subscriptionchurn) {
     // Wait for Consumer thread to exit
     env->WaitForJoin(consumer_threadid);
     ret = cargs.result;
@@ -802,7 +981,8 @@ int main(int argc, char** argv) {
     }
 
     if (FLAGS_start_consumer &&
-        messages_received.load() != FLAGS_num_messages) {
+        messages_received.load() != FLAGS_num_messages &&
+        !FLAGS_subscriptionchurn) {
       // Print out dropped messages if there are any. This helps when
       // debugging problems.
       printf("\n");
