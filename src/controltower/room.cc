@@ -78,13 +78,12 @@ void ControlRoom::ProcessSubscribe(std::unique_ptr<Message> msg,
 
   sub_worker_.Insert(id.stream_id, id.sub_id, worker_id);
 
-  topic_tailer_->AddSubscriber(uuid, seqno, id);
   LOG_INFO(options.info_log,
-    "Added subscriber %llu for %s@%" PRIu64,
-    origin,
+    "Adding subscriber %s for %s@%" PRIu64,
+    id.ToString().c_str(),
     uuid.ToString().c_str(),
     seqno);
-
+  topic_tailer_->AddSubscriber(uuid, seqno, id);
 }
 
 void ControlRoom::ProcessUnsubscribe(std::unique_ptr<Message> msg,
@@ -96,10 +95,11 @@ void ControlRoom::ProcessUnsubscribe(std::unique_ptr<Message> msg,
   CopilotSub id(origin, unsubscribe->GetSubID());
 
   // Remove this subscription request
-  topic_tailer_->RemoveSubscriber(id);
   LOG_INFO(options.info_log,
-    "Removed subscriber %llu",
-    origin);
+    "Removing subscriber %s",
+    id.ToString().c_str());
+
+  topic_tailer_->RemoveSubscriber(id);
 
   sub_worker_.Remove(id.stream_id, id.sub_id);
 }

@@ -1101,7 +1101,7 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
       // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
       // when converted to an std::function - could use an alloc pool for this.
       auto callback = [this, topic, id, logid] (Status status,
-                                                     SequenceNumber seqno) {
+                                                SequenceNumber seqno) {
         if (!status.ok()) {
           LOG_WARN(info_log_,
             "Failed to find latest sequence number in %s (%s)",
@@ -1113,7 +1113,19 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
         // This callback is invoked on the storage worker threads, so the
         // response needs to be forwarded back to the TopicTailer/Room thread.
         bool sent = Forward([this, topic, id, logid, seqno] () {
-          AddTailSubscriber(topic, id, logid, seqno);
+          // IMPORTANT: Since this callback is asynchronous, the subscriber
+          // may have unsubscribed since they issued the subscribe(0) request.
+          // We need to check this otherwise we may open a reader for a
+          // non-existent subscription, which will never be closed.
+          if (stream_subscriptions_.Find(id.stream_id, id.sub_id)) {
+            // Subscription exists: add subscriber.
+            AddTailSubscriber(topic, id, logid, seqno);
+          } else {
+            LOG_DEBUG(info_log_,
+              "%s on %s unsubscribed before FindLatestSeqno response arrived.",
+              id.ToString().c_str(),
+              topic.ToString().c_str());
+          }
 
           LOG_INFO(info_log_,
             "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
@@ -1141,6 +1153,10 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
             id.ToString().c_str());
         }
       };
+
+      // First insert into the stream subscriptions map to indicate that the
+      // subscription exists (and allow unsubscriptions to work).
+      stream_subscriptions_.Insert(id.stream_id, id.sub_id, topic);
 
       Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
       if (!seqno_status.ok()) {

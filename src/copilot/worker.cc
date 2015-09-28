@@ -151,7 +151,9 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
 
   auto ptr = sub_to_topic_.Find(origin, msg->GetSubID());
   if (!ptr) {
-    LOG_WARN(options_.info_log,
+    // This is somewhat expected due to the lag of propagating unsubscription
+    // to the control tower.
+    LOG_DEBUG(options_.info_log,
       "Deliver for unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
       origin, msg->GetSubID());
     return;
@@ -258,7 +260,9 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
 
   auto ptr = sub_to_topic_.Find(origin, msg->GetSubID());
   if (!ptr) {
-    LOG_WARN(options_.info_log,
+    // This is somewhat expected due to the lag of propagating unsubscription
+    // to the control tower.
+    LOG_DEBUG(options_.info_log,
       "Gap for unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
       origin, msg->GetSubID());
     return;
