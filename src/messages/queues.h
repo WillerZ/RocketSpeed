@@ -331,7 +331,9 @@ bool Queue<Item>::TryWrite(Item& item, bool check_thread) {
   Timestamped<Item> entry { std::move(item), std::chrono::steady_clock::now() };
   if (!queue_.write(std::move(entry))) {
     // The queue was full and the write failed.
-    LOG_WARN(info_log_, "The command queue is full");
+    LOG_WARN_RATELIMIT(info_log_,
+                       3, std::chrono::milliseconds(30000), // 3msg in 30s
+                       "The command queue is full");
 
     // Put the item back.
     item = std::move(entry.item);

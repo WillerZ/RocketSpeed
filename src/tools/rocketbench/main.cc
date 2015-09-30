@@ -88,7 +88,7 @@ DEFINE_int64(subscription_backlog_mean, 0,
 "Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
 DEFINE_int64(subscription_backlog_stddev, 0,
 "Standard Deviation for Normal topic distribution (rounded to nearest int64)");
-DEFINE_int64(subscribe_rate, 10, "subscribes per second (0 = unlimited)");
+DEFINE_int64(subscribe_rate, 10, "subscribes per second ");
 // shape > 1 implies negative aging . scale ~ 100 ensures the milliseconds
 // are not too low or too huge
 DEFINE_double(weibull_scale, 100.0, "scale of weibull distribution");
@@ -113,6 +113,8 @@ DEFINE_bool(logging, true, "enable/disable logging");
 DEFINE_bool(report, true, "report results to stdout");
 DEFINE_int32(wait_for_debugger, 0, "wait for debugger to attach to me");
 DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
+DEFINE_string(save_path, "./RocketBenchProducer.dat",
+              "Name of file where producer stores per-topic information");
 
 using namespace rocketspeed;
 
@@ -336,7 +338,7 @@ static void DoProduce(void* params) {
  */
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
-                 std::unordered_map<std::string, TopicInfo> first_seqno) {
+                 std::unordered_map<std::string, TopicInfo>& first_seqno) {
   size_t c = 0;
   Pacer pacer(FLAGS_subscribe_rate, 1);
 
@@ -364,6 +366,8 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                 static_cast<double>(FLAGS_subscription_backlog_stddev),
                 seed));
         seqno = distr->generateRandomInt();
+        assert(seqno >= it->second.first);
+        assert(seqno <= it->second.last);
       }
     }
     pacer.Wait();
@@ -509,6 +513,66 @@ static void DoConsume(void* param) {
            std::chrono::steady_clock::now() - *last_data_message < timeout);
 
   args->result = messages_received->load() == FLAGS_num_messages ? 0 : 1;
+}
+
+/*
+ * Save topicmap to a file on disk. Returns 0 on success, errno on error.
+ * Each line of the file is of the form
+ *   topic_name<tab>first_seqno<tab>last_seqno<tab>number_of_messages</n>
+ */
+static int SaveFile(std::string filename,
+                    std::unordered_map<std::string, TopicInfo>& tinfo) {
+  FILE* fh = fopen((const char*)filename.c_str(), "w");
+  if (fh == nullptr) {
+    return errno;
+  }
+  for (auto it = tinfo.begin(); it != tinfo.end(); ++it ) {
+    fprintf(fh, "topic=%s\tfirst=%" PRIu64 "\tlast=%" PRIu64
+            "\ttotal=%" PRIu64 "\n",
+            it->first.c_str(),
+            it->second.first,
+            it->second.last,
+            it->second.total_num);
+  }
+  if (fclose(fh)) {
+    return errno;
+  }
+  return 0; // success
+}
+/*
+ * Read topicmap to a file on disk. Returns 0 on success, errno on error.
+ * Each line of the file is of the form
+ *   topic_name<tab>first_seqno<tab>last_seqno<tab>number_of_messages</n>
+ */
+static int ReadFile(std::string filename,
+                    std::unordered_map<std::string, TopicInfo>& tinfo) {
+  char buffer[10240];
+  SequenceNumber num1, num2;
+  uint64_t total_num;
+  FILE* fh = fopen(filename.c_str(), "r");
+  if (fh == nullptr) {
+    return errno;
+  }
+  while (true) {
+    int val = fscanf(fh,
+                     "topic=%s\tfirst=%" PRIu64 "\tlast=%" PRIu64
+                     "\ttotal=%" PRIu64 "\n",
+                     buffer,
+                     &num1,
+                     &num2,
+                     &total_num);
+    if (val == EOF) {
+      break;
+    }
+    if (val != 4) {
+      return -1;
+    }
+    tinfo[buffer] =  TopicInfo(num1, num2, total_num);
+  }
+  if (fclose(fh)) {
+    return errno;
+  }
+  return 0; // success
 }
 
 }  // namespace rocketspeed
@@ -726,6 +790,7 @@ int main(int argc, char** argv) {
   std::atomic<int64_t> messages_received{0};
   std::vector<bool> is_received(FLAGS_num_messages, false);
   std::mutex is_received_mutex;
+
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived>& rs) {
     uint64_t now = env->NowMicros();
@@ -820,7 +885,7 @@ int main(int argc, char** argv) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
-      DoSubscribe(clients, nsid, std::move(first_seqno));
+      DoSubscribe(clients, nsid, first_seqno);
       env->SleepForMicroseconds(1000000);  // allow 1 seconds for subscribe
       printf("done\n");
     }
@@ -929,6 +994,20 @@ int main(int argc, char** argv) {
   // publishers are completed.
   uint64_t subscribe_time = 0;
   if (FLAGS_delay_subscribe) {
+
+    // If we did not produce any message in this current run but have
+    // saved topic-metadata in a file in some previous run, then
+    // use that topic-metadata to start subscriptions.
+    if (!FLAGS_start_producer) {
+      int val = ReadFile(FLAGS_save_path, first_seqno);
+      if (val == 0) {
+        printf("Restored topic metadata from file %s\n",
+               FLAGS_save_path.c_str());
+      } else {
+        printf("Error (%d) in reading topic metadat from file %s\n",
+               val, FLAGS_save_path.c_str());
+      }
+    }
     assert(FLAGS_start_consumer);
     printf("Subscribing (delayed) to topics.\n");
     fflush(stdout);
@@ -938,7 +1017,7 @@ int main(int argc, char** argv) {
 
     // Subscribe to topics
     subscribe_time = env->NowMicros();
-    DoSubscribe(clients, nsid, std::move(first_seqno));
+    DoSubscribe(clients, nsid, first_seqno);
     subscribe_time = env->NowMicros() - subscribe_time;
     printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics\n",
       subscribe_time / 1000,
@@ -1079,6 +1158,18 @@ int main(int argc, char** argv) {
       printf("\n");
       printf("Statistics\n");
       printf("%s", stats.Report().c_str());
+    }
+
+    // Save metadata about the published topics into a file
+    if (FLAGS_start_producer && !FLAGS_save_path.empty()) {
+      int val = SaveFile(FLAGS_save_path, first_seqno);
+      if (val == 0) {
+        printf("Saved topic metadata into file %s\n", FLAGS_save_path.c_str());
+      } else {
+        printf("Error (%d) in saving topic metadat into file %s\n",
+               val, FLAGS_save_path.c_str());
+        ret = val;
+      }
     }
   }
   fflush(stdout);

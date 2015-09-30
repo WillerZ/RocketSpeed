@@ -104,6 +104,9 @@ DEFINE_int32(heartbeat_expire_batch, -1 /* unbounded */,
 
 DEFINE_string(rs_log_dir, "", "directory for server logs");
 
+DEFINE_int32(socket_buffer_size, 0,
+             "The size of a send or receive window associated with a socket");
+
 #ifdef NDEBUG
 DEFINE_string(loglevel, "warn", "debug|info|warn|error|fatal|vital|none");
 #else
@@ -142,6 +145,12 @@ RocketSpeed::RocketSpeed(Env* env, EnvOptions env_options)
     fprintf(stderr, "RocketSpeed failed to create Logger\n");
     info_log_ = std::make_shared<NullLogger>();
   }
+
+  // Update our local copy of the environment
+  if (FLAGS_socket_buffer_size != 0) {
+    env_options_.tcp_send_buffer_size = FLAGS_socket_buffer_size;
+    env_options_.tcp_recv_buffer_size = FLAGS_socket_buffer_size;
+  }
 }
 
 Status RocketSpeed::Initialize(
@@ -166,8 +175,9 @@ Status RocketSpeed::Initialize(
 
   // Utility for creating a message loop.
   auto make_msg_loop = [&] (int port, int workers, std::string name) {
-    LOG_VITAL(info_log_, "Constructing MsgLoop port=%d workers=%d name=%s",
-      port, workers, name.c_str());
+    LOG_VITAL(info_log_,
+      "Constructing MsgLoop port=%d workers=%d name=%s socketbuf=%d",
+      port, workers, name.c_str(), env_options_.tcp_send_buffer_size);
     MsgLoop::Options options;
     options.event_loop.heartbeat_timeout =
       std::chrono::seconds(FLAGS_heartbeat_timeout);

@@ -112,7 +112,8 @@ CopilotWorker::WorkerCommand(LogID logid,
         } break;
 
         default: {
-          LOG_WARN(options_.info_log,
+          LOG_WARN_RATELIMIT(options_.info_log,
+                   3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
                    "Unexpected message type in copilot worker %d",
                    static_cast<int>(message->GetMessageType()));
         }
@@ -241,7 +242,8 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
                   uuid.ToString().c_str(),
                   recipient);
       } else {
-        LOG_WARN(options_.info_log,
+        LOG_WARN_RATELIMIT(options_.info_log,
+                 3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
                  "Failed to distribute message to %llu",
                  recipient);
       }
@@ -346,8 +348,9 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
                  uuid.ToString().c_str(),
                  recipient);
       } else {
-        LOG_WARN(
-            options_.info_log, "Failed to distribute gap to %llu", recipient);
+        LOG_WARN_RATELIMIT(options_.info_log,
+            3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
+            "Failed to distribute gap to %llu", recipient);
       }
     }
 
@@ -425,7 +428,8 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
                  uuid.ToString().c_str(),
                  recipient);
       } else {
-        LOG_WARN(options_.info_log,
+        LOG_WARN_RATELIMIT(options_.info_log,
+                 3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
                  "Failed to distribute tail seqno to %llu",
                  recipient);
       }
@@ -598,7 +602,8 @@ void CopilotWorker::HandleInvalidSubscription(StreamID origin,
   // Find the topic that this subscription was for.
   auto ptr = sub_to_topic_.Find(origin, sub_id);
   if (!ptr) {
-    LOG_WARN(options_.info_log,
+    LOG_WARN_RATELIMIT(options_.info_log,
+      3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
       "Unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
       origin, sub_id);
     return;
@@ -624,7 +629,8 @@ void CopilotWorker::HandleInvalidSubscription(StreamID origin,
           "Sent unsubscribe (invalid) for StreamID(%llu) SubID(%" PRIu64 ")",
           sub->stream_id, sub->sub_id);
       } else {
-        LOG_WARN(options_.info_log,
+        LOG_WARN_RATELIMIT(options_.info_log,
+          3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
           "Failed unsubscribe (invalid) for StreamID(%llu) SubID(%" PRIu64 ")",
           sub->stream_id, sub->sub_id);
       }
@@ -683,7 +689,8 @@ void CopilotWorker::ProcessGoodbye(std::unique_ptr<Message> message,
     }
 
     case MessageGoodbye::OriginType::Server: {
-      LOG_WARN(options_.info_log,
+      LOG_WARN_RATELIMIT(options_.info_log,
+           3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
            "Copilot received goodbye for server %llu",
            origin);
       CloseControlTowerStream(origin);
@@ -804,7 +811,8 @@ bool CopilotWorker::SendSubscribe(TenantID tenant_id,
     sub_to_topic_.Insert(stream->GetStreamID(), sub_id, std::move(uuid));
     return true;
   } else {
-    LOG_WARN(options_.info_log,
+    LOG_WARN_RATELIMIT(options_.info_log,
+      3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
       "Failed to send %s subscribe to tower stream %llu",
       uuid.ToString().c_str(),
       stream->GetStreamID());
@@ -829,7 +837,8 @@ bool CopilotWorker::SendUnsubscribe(TenantID tenant_id,
     sub_to_topic_.Remove(stream->GetStreamID(), sub_id);
     return true;
   } else {
-    LOG_WARN(options_.info_log,
+    LOG_WARN_RATELIMIT(options_.info_log,
+      3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
       "Failed to send unsubscribe to tower stream %llu",
       stream->GetStreamID());
     return false;
@@ -882,7 +891,8 @@ void CopilotWorker::UpdateTowerSubscriptions(
   std::vector<HostId const*> recipients;
   if (!GetControlTowers(log_id, &recipients).ok()) {
     // This should only ever happen if all control towers are offline.
-    LOG_WARN(options_.info_log,
+    LOG_WARN_RATELIMIT(options_.info_log,
+      3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
       "Failed to find control towers for log ID %" PRIu64,
       static_cast<uint64_t>(log_id));
   }
@@ -1005,7 +1015,8 @@ void CopilotWorker::UpdateTowerSubscriptions(
       const int worker_id = tower_conn.second;
       auto command = options_.msg_loop->RequestCommand(msg, stream);
       if (!tower_queues_[worker_id]->Write(command)) {
-        LOG_WARN(options_.info_log,
+        LOG_WARN_RATELIMIT(options_.info_log,
+          3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
           "Failed to send %s FindTailSeqno to tower stream %llu",
           uuid.ToString().c_str(),
           stream->GetStreamID());
@@ -1105,7 +1116,8 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
              type == MetadataType::mSubscribe ? "" : "un",
              topic.ToString().c_str());
   } else {
-    LOG_WARN(options_.info_log,
+    LOG_WARN_RATELIMIT(options_.info_log,
+             3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
              "Failed to send rollcall write (%ssubscribe) for %s status %s",
              type == MetadataType::mSubscribe ? "" : "un",
              topic.ToString().c_str(),
