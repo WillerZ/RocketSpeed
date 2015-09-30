@@ -216,12 +216,16 @@ crash_test:
 
 asan_check:
 	$(MAKE) clean
-	COMPILE_WITH_ASAN=1 $(MAKE) check -j32
+	which asan_symbolize.py && \
+		COMPILE_WITH_ASAN=1 $(MAKE) check -j32 2>&1 | asan_symbolize.py || \
+		COMPILE_WITH_ASAN=1 $(MAKE) check -j32
 	$(MAKE) clean
 
 asan_crash_test:
 	$(MAKE) clean
-	COMPILE_WITH_ASAN=1 $(MAKE) crash_test
+	which asan_symbolize.py && \
+		COMPILE_WITH_ASAN=1 $(MAKE) crash_test -j32 2>&1 | asan_symbolize.py || \
+		COMPILE_WITH_ASAN=1 $(MAKE) crash_test -j32
 	$(MAKE) clean
 
 valgrind_check: all $(PROGRAMS) $(TESTS)
