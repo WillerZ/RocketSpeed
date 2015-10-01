@@ -2097,6 +2097,146 @@ TEST(IntegrationTest, InvalidSubscription) {
   ASSERT_TRUE(sem.TimedWait(timeout));
 }
 
+TEST(IntegrationTest, ReaderRestarts) {
+  // Test that messages are still received with frequent reader restarts.
+  const size_t kNumTopics = 10;
+  const size_t kNumMessages = 1000;
+  const std::chrono::milliseconds kMessageDelay(1);
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.tower.timer_interval = std::chrono::microseconds(10000); // 10ms
+  opts.tower.topic_tailer.min_reader_restart_duration =
+    std::chrono::milliseconds(20);
+  opts.tower.topic_tailer.max_reader_restart_duration =
+    std::chrono::milliseconds(40);
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+
+  // Subscribe to all topics.
+  port::Semaphore msg_received;
+  for (size_t t = 0; t < kNumTopics; ++t) {
+    ASSERT_TRUE(
+      client->Subscribe(GuestTenant,
+                        GuestNamespace,
+                        "ReaderRestarts" + std::to_string(t),
+                        0,
+                        [&] (std::unique_ptr<MessageReceived>& mr) {
+                          msg_received.Post();
+                        }));
+  }
+  env_->SleepForMicroseconds(100000);
+
+  // Send messages.
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    size_t t = i % kNumTopics;
+    ASSERT_OK(client->Publish(GuestTenant,
+                              "ReaderRestarts" + std::to_string(t),
+                              GuestNamespace,
+                              TopicOptions(),
+                              std::to_string(i)).status);
+    /* sleep override */
+    std::this_thread::sleep_for(kMessageDelay);
+  }
+
+  // Wait for all messages.
+  for (size_t t = 0; t < kNumMessages; ++t) {
+    ASSERT_TRUE(msg_received.TimedWait(timeout));
+  }
+  ASSERT_TRUE(!msg_received.TimedWait(std::chrono::milliseconds(10)));
+
+  auto stats = cluster.GetControlTower()->GetStatisticsSync();
+  auto restarts = stats.GetCounterValue("tower.topic_tailer.reader_restarts");
+  size_t min_expected = kNumTopics * kNumMessages * kMessageDelay /
+    opts.tower.topic_tailer.max_reader_restart_duration;
+  size_t max_expected = kNumTopics * kNumMessages * kMessageDelay /
+    opts.tower.topic_tailer.min_reader_restart_duration;
+  ASSERT_GE(restarts, min_expected - 1);  // - 1 for timer tolerance
+  ASSERT_LE(restarts, max_expected + 1);  // + 1 for timer tolerance
+}
+
+TEST(IntegrationTest, VirtualReaderMerge) {
+  // Tests the virtual reader merge path.
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.single_log = true;
+  opts.tower.readers_per_room = 2;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Create RocketSpeed client.
+  ClientOptions options;
+  options.config = cluster.GetConfiguration();
+  options.info_log = info_log;
+  std::unique_ptr<Client> client;
+  ASSERT_OK(Client::Create(std::move(options), &client));
+
+  // Publish a message to find the current seqno for the topic.
+  SequenceNumber seqno;
+  port::Semaphore pub_sem;
+  ASSERT_OK(client->Publish(GuestTenant,
+                            "VirtualReaderMerge",
+                            GuestNamespace,
+                            TopicOptions(),
+                            "test",
+                            [&] (std::unique_ptr<ResultStatus> rs) {
+                              seqno = rs->GetSequenceNumber();
+                              pub_sem.Post();
+                            }).status);
+  ASSERT_TRUE(pub_sem.TimedWait(timeout));
+
+  // Subscribe to three topics (on same log).
+  // One at seqno + 200.
+  // One at seqno + 100.
+  // One at seqno.
+  // Since they are in the future, we ensure that none of the readers will
+  // receive messages and merge.
+  port::Semaphore recv[3];
+  SubscriptionHandle sub[3];
+  for (int i = 0; i < 3; ++i) {
+    sub[i] = client->Subscribe(GuestTenant,
+                               GuestNamespace,
+                               "VirtualReaderMerge" + std::to_string(i),
+                               seqno + (2 - i) * 100,
+                               [&, i] (std::unique_ptr<MessageReceived>& mr) {
+                                 recv[i].Post();
+                               });
+    env_->SleepForMicroseconds(100000);
+  }
+
+  // Now publish messages to VirtualReaderMerge2.
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_OK(client->Publish(GuestTenant,
+                              "VirtualReaderMerge2",
+                              GuestNamespace,
+                              TopicOptions(),
+                              "test").status);
+  }
+
+  // Check all messages received.
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_TRUE(recv[2].TimedWait(timeout));
+  }
+
+  // Check that no more message came through, then close the subscription to
+  // test the stop reading path.
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_TRUE(!recv[i].TimedWait(std::chrono::milliseconds(10)));
+    client->Unsubscribe(sub[i]);
+  }
+  env_->SleepForMicroseconds(100000);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

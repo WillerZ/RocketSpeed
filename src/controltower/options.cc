@@ -20,7 +20,15 @@ ControlTowerOptions::ControlTowerOptions()
     max_subscription_lag(10000),
     readers_per_room(2),
     cache_size(0),
-    cache_data_from_system_namespaces(true) {
+    cache_data_from_system_namespaces(true),
+    timer_interval(std::chrono::milliseconds(100)) {
 }
+
+ControlTowerOptions::TopicTailer::TopicTailer()
+: min_reader_restart_duration(std::chrono::seconds(30))
+, max_reader_restart_duration(std::chrono::seconds(60))
+, FAULT_send_log_record_failure_rate(0) {
+}
+
 
 }  // namespace rocketspeed

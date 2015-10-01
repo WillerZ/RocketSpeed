@@ -59,11 +59,13 @@ class LogReader {
   explicit LogReader(std::shared_ptr<Logger> info_log,
                      LogTailer* tailer,
                      size_t reader_id,
-                     int64_t max_subscription_lag)
+                     int64_t max_subscription_lag,
+                     TopicTailer::RestartEvents* restart_events)
   : info_log_(info_log)
   , tailer_(tailer)
   , reader_id_(reader_id)
-  , max_subscription_lag_(max_subscription_lag) {
+  , max_subscription_lag_(max_subscription_lag)
+  , restart_events_(restart_events) {
   }
 
   /**
@@ -135,6 +137,18 @@ class LogReader {
    * @return ok() if successful, otherwise error.
    */
   Status StopReading(const TopicUUID& topic, LogID log_id);
+
+  /**
+   * Restarts a reader at its current position.
+   * The purpose of this call is to try and save a reader from a bad state by
+   * re-issuing the StartReading command. It also gives the storage client a
+   * chance to re-balance the reader thread affinity, which can cluster due to
+   * our usage pattern.
+   *
+   * @param log_id ID of the log to restart reading on.
+   * @return ok() if successful, otherwise error.
+   */
+  Status RestartReading(LogID log_id);
 
   /**
    * Flushes the log state for a log.
@@ -250,6 +264,9 @@ class LogReader {
     // This value can become inaccurate if a reader is receiving records
     // slower than they are produced.
     SequenceNumber tail_seqno = 0;
+
+    // Handle for the restart event for this log reader.
+    TopicTailer::RestartEvents::Handle restart_event_handle;
   };
 
   ThreadCheck thread_check_;
@@ -258,6 +275,7 @@ class LogReader {
   size_t reader_id_;
   std::unordered_map<LogID, LogState> log_state_;
   int64_t max_subscription_lag_;
+  TopicTailer::RestartEvents* restart_events_;
 };
 
 Status LogReader::ProcessRecord(LogID log_id,
@@ -470,6 +488,7 @@ Status LogReader::StartReading(const TopicUUID& topic,
     }
 
     if (!IsVirtual()) {
+      // Start the LogTailer.
       st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
       if (!st.ok()) {
         LOG_ERROR(info_log_,
@@ -478,8 +497,15 @@ Status LogReader::StartReading(const TopicUUID& topic,
           log_id,
           seqno,
           st.ToString().c_str());
-        return st;
       }
+
+      // Remove old restart event (if there was one), and add the new event.
+      assert(restart_events_);
+      if (!first_open) {
+        restart_events_->RemoveEvent(log_state.restart_event_handle);
+      }
+      log_state.restart_event_handle =
+        restart_events_->AddEvent(this, log_id);
     }
     log_state.start_seqno = std::min(log_state.start_seqno, seqno);
     log_state.last_read = seqno - 1;
@@ -507,6 +533,8 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
       if (log_state.topics.empty()) {
         // Last subscriber for this log, so stop reading.
         if (!IsVirtual()) {
+          assert(restart_events_);
+          restart_events_->RemoveEvent(log_state.restart_event_handle);
           st = tailer_->StopReading(log_id, reader_id_);
         }
         if (st.ok()) {
@@ -526,6 +554,40 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
         }
       }
     }
+  }
+  return st;
+}
+
+Status LogReader::RestartReading(LogID log_id) {
+  thread_check_.Check();
+  assert(!IsVirtual());
+
+  Status st;
+  auto log_it = log_state_.find(log_id);
+  if (log_it == log_state_.end()) {
+    assert(false);
+    return Status::NotFound();
+  }
+
+  // StartReading again.
+  // Don't need to stop first because LogTailer handles this.
+  LogState& log_state = log_it->second;
+
+  // Add a new event for the next restart.
+  assert(restart_events_);
+  restart_events_->RemoveEvent(log_state.restart_event_handle);
+  log_state.restart_event_handle = restart_events_->AddEvent(this, log_id);
+
+  auto seqno = log_state.last_read + 1;
+  bool first_open = false;  // it's already open
+  st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
+  if (!st.ok()) {
+    LOG_ERROR(info_log_,
+      "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64": %s",
+      reader_id_,
+      log_id,
+      seqno,
+      st.ToString().c_str());
   }
   return st;
 }
@@ -637,6 +699,8 @@ void LogReader::MergeInto(LogReader* reader, LogID log_id) {
   }
 
   // Now clear our state and stop reading the log.
+  assert(restart_events_);
+  restart_events_->RemoveEvent(log_it1->second.restart_event_handle);
   log_state_.erase(log_it1);
   Status st = tailer_->StopReading(log_id, reader_id_);
   if (st.ok()) {
@@ -662,6 +726,8 @@ void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
   assert(log_it != reader->log_state_.end());
   LogState& log_state = log_it->second;
 
+  assert(restart_events_);
+  log_state.restart_event_handle = restart_events_->AddEvent(this, log_id);
   const bool first_open = true;
   Status st = tailer_->StartReading(log_id,
                                     log_state.start_seqno,
@@ -733,7 +799,9 @@ TopicTailer::TopicTailer(
   on_message_(std::move(on_message)),
   data_cache_(cache_size_per_room, cache_data_from_system_namespaces),
   prng_(ThreadLocalPRNG()),
-  options_(options) {
+  options_(options),
+  restart_events_(options_.min_reader_restart_duration,
+                  options_.max_reader_restart_duration) {
 
   storage_to_room_queues_ = msg_loop->CreateThreadLocalQueues(worker_id);
 }
@@ -1015,6 +1083,21 @@ Status TopicTailer::SendGapRecord(
   return sent ? Status::OK() : Status::NoBuffer();
 }
 
+void TopicTailer::Tick() {
+  // Process due events on LogReaders.
+  auto now = std::chrono::steady_clock::now();
+  while (!restart_events_.empty() &&
+         restart_events_.begin()->restart_time < now) {
+    auto& ev = *restart_events_.begin();
+    auto reader = ev.reader;
+    auto log_id = ev.log_id;
+
+    // Note: this will remove and re-add the event to restart_events_.
+    reader->RestartReading(log_id);
+    stats_.reader_restarts->Add(1);
+  }
+}
+
 SequenceNumber TopicTailer::GetTailSeqnoEstimate(LogID log_id) const {
   thread_check_.Check();
   auto ts_it = tail_seqno_cached_.find(log_id);
@@ -1029,13 +1112,15 @@ Status TopicTailer::Initialize(const std::vector<size_t>& reader_ids,
       new LogReader(info_log_,
                     log_tailer_,
                     reader_id,
-                    max_subscription_lag));
+                    max_subscription_lag,
+                    &restart_events_));
   }
   pending_reader_.reset(
     new LogReader(info_log_,
                   nullptr,  // null LogTailer <=> virtual reader
                   0,
-                  max_subscription_lag));
+                  max_subscription_lag,
+                  nullptr));
   return Status::OK();
 }
 
@@ -1523,6 +1608,26 @@ bool TopicTailer::Forward(std::unique_ptr<Command> command) {
 
 bool TopicTailer::TryForward(std::unique_ptr<Command> command) {
   return storage_to_room_queues_->GetThreadLocal()->TryWrite(command);
+}
+
+TopicTailer::RestartEvents::Handle
+TopicTailer::RestartEvents::AddEvent(LogReader* reader, LogID log_id) {
+  // Generate random restart time.
+  auto& prng = ThreadLocalPRNG();
+  std::uniform_int_distribution<std::chrono::milliseconds::rep>
+    distribution(min_restart_duration_.count(),
+                 max_restart_duration_.count());
+  auto restart_time = std::chrono::steady_clock::now() +
+    std::chrono::milliseconds(distribution(prng));
+
+  // Add to ordered set of events.
+  auto result = emplace(restart_time, reader, log_id);
+  assert(result.second);
+  return result.first;
+}
+
+void TopicTailer::RestartEvents::RemoveEvent(Handle handle) {
+  erase(handle);
 }
 
 }  // namespace rocketspeed

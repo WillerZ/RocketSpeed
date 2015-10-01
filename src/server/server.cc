@@ -52,6 +52,10 @@ DEFINE_int64(tower_max_subscription_lag, 10000,
              "max seqno lag on subscriptions");
 DEFINE_int32(tower_readers_per_room, 2, "log readers per room");
 DEFINE_int64(tower_cache_size, -1, "cache size in bytes");
+DEFINE_uint64(tower_min_reader_restart_ms, 30000,
+  "minimum time to wait before restarting a log reader");
+DEFINE_uint64(tower_max_reader_restart_ms, 60000,
+  "maximum time to wait before restarting a log reader");
 DEFINE_double(FAULT_tower_send_log_record_failure_rate, 0.0,
   "probability of failing to append to topic tailer queue from log storage");
 
@@ -301,6 +305,10 @@ Status RocketSpeed::Initialize(
     }
     tower_opts.topic_tailer.FAULT_send_log_record_failure_rate =
       FLAGS_FAULT_tower_send_log_record_failure_rate;
+    tower_opts.topic_tailer.min_reader_restart_duration =
+      std::chrono::milliseconds(FLAGS_tower_min_reader_restart_ms);
+    tower_opts.topic_tailer.max_reader_restart_duration =
+      std::chrono::milliseconds(FLAGS_tower_max_reader_restart_ms);
 
     Status st = ControlTower::CreateNewInstance(std::move(tower_opts),
                                                 &tower);

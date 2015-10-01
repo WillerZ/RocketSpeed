@@ -60,6 +60,13 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
   // return error Status.
   options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
 
+  options_.msg_loop->RegisterTimerCallback(
+    [this] () {
+      int worker_id = options_.msg_loop->GetThreadWorkerIndex();
+      topic_tailer_[worker_id]->Tick();
+    },
+    options_.timer_interval);
+
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
     tower_to_room_queues_.emplace_back(
       options_.msg_loop->CreateWorkerQueues());

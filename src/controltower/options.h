@@ -82,9 +82,17 @@ struct ControlTowerOptions {
 
   // Options for TopicTailer
   struct TopicTailer {
+    TopicTailer();
+
+    // Log readers are restarted periodically to improve load balancing.
+    // These control the allowable range of durations between restarts.
+    // Default: 30 - 60 seconds
+    std::chrono::milliseconds min_reader_restart_duration;
+    std::chrono::milliseconds max_reader_restart_duration;
+
     // Probability of failing to enqueue a log record to the TopicTailer queue.
     // For testing the log storage backoff/flow control.
-    double FAULT_send_log_record_failure_rate = 0.0;
+    double FAULT_send_log_record_failure_rate;
   } topic_tailer;
 
   // Cache size in bytes. A size of 0 indicates no cache.
@@ -94,6 +102,10 @@ struct ControlTowerOptions {
   // Should the cache store data in system namespaces?
   // Default: false
   bool cache_data_from_system_namespaces;
+
+  // Interval for tower timer tick for running time-based logic.
+  // Default: 100ms
+  std::chrono::microseconds timer_interval;
 
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();
