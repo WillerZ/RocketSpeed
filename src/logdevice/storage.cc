@@ -81,6 +81,7 @@ Status LogDeviceStorage::Create(
   std::string credentials,
   std::chrono::milliseconds timeout,
   int num_workers,
+  size_t max_payload_size,
   Env* env,
   std::shared_ptr<Logger> info_log,
   LogDeviceStorage** storage) {
@@ -101,6 +102,7 @@ Status LogDeviceStorage::Create(
   std::unique_ptr<facebook::logdevice::ClientSettings> settings(
     facebook::logdevice::ClientSettings::create());
   settings->set("num-workers", num_workers);
+  settings->set("max-payload-size", max_payload_size);
 
   // Attempt to create internal LogDevice Client.
   // Returns null on error.

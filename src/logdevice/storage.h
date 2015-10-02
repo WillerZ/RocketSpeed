@@ -33,26 +33,27 @@ class LogDeviceStorage : public LogStorage {
   /**
    * Constructs a LogDeviceStorage.
    *
-   * @param cluster_name   name of the LogDevice cluster to connect to
-   * @param config_url     a URL that identifies at a LogDevice configuration
-   *                       resource (such as a file) describing the LogDevice
-   *                       cluster this client will talk to. The only supported
-   *                       formats are currently
-   *                       file:<path-to-configuration-file> and
-   *                       configerator:<configerator-path>. Examples:
-   *                         "file:logdevice.test.conf"
-   *                         "configerator:logdevice/logdevice.test.conf"
-   * @param credentials    credentials specification. This may include
-   *                       credentials to present to the LogDevice cluster
-   *                       along with authentication and encryption specifiers.
-   *                       Format TBD. Currently ignored.
-   * @param timeout        construction timeout. This value also serves as the
-   *                       default timeout for methods on the created object
-   * @param num_workers    number of client workers.
-   * @param env            environment.
-   * @param info_log       for logging.
-   * @param storage        output parameter to store the constructed
-   *                       LogDeviceStorage object.
+   * @param cluster_name      name of the LogDevice cluster to connect to
+   * @param config_url        a URL that identifies at a LogDevice configuration
+   *                          resource (such as a file) describing the LogDevice
+   *                          cluster this client will talk to.
+   *                          The only supported formats are currently:
+   *                            file:<path-to-configuration-file> and
+   *                            configerator:<configerator-path>. Examples:
+   *                              "file:logdevice.test.conf"
+   *                              "configerator:logdevice/logdevice.test.conf"
+   * @param credentials       credentials specification. This may include
+   *                          credentials to present to the LogDevice cluster
+   *                          along with authentication and encryption
+   *                          specifiers. Format TBD. Currently ignored.
+   * @param timeout           construction timeout. This value also serves as
+   *                          default timeout for methods on the created object
+   * @param num_workers       number of client workers.
+   * @param max_payload_size  max payload size in bytes
+   * @param env               environment.
+   * @param info_log          for logging.
+   * @param storage           output parameter to store the constructed
+   *                          LogDeviceStorage object.
    * @return on success returns OK(), otherwise errorcode.
    */
   static Status Create(
@@ -61,6 +62,7 @@ class LogDeviceStorage : public LogStorage {
     std::string credentials,
     std::chrono::milliseconds timeout,
     int num_workers,
+    size_t max_payload_size,
     Env* env,
     std::shared_ptr<Logger> info_log,
     LogDeviceStorage** storage);
