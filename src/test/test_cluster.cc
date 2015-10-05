@@ -105,6 +105,7 @@ LocalTestCluster::CreateStorage(Env* env,
                                   "",
                                   std::chrono::milliseconds(1000),
                                   4,
+                                  1024 * 1024,
                                   env,
                                   info_log,
                                   &storage);
