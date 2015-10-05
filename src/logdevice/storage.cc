@@ -82,6 +82,8 @@ Status LogDeviceStorage::Create(
   std::chrono::milliseconds timeout,
   int num_workers,
   size_t max_payload_size,
+  std::string ssl_boundary,
+  std::string my_location,
   Env* env,
   std::shared_ptr<Logger> info_log,
   LogDeviceStorage** storage) {
@@ -103,6 +105,8 @@ Status LogDeviceStorage::Create(
     facebook::logdevice::ClientSettings::create());
   settings->set("num-workers", num_workers);
   settings->set("max-payload-size", max_payload_size);
+  settings->set("ssl-boundary", ssl_boundary.c_str());
+  settings->set("my-location", my_location.c_str());
 
   // Attempt to create internal LogDevice Client.
   // Returns null on error.

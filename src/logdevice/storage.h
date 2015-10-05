@@ -49,7 +49,11 @@ class LogDeviceStorage : public LogStorage {
    * @param timeout           construction timeout. This value also serves as
    *                          default timeout for methods on the created object
    * @param num_workers       number of client workers.
-   * @param max_payload_size  max payload size in bytes
+   * @param max_payload_size  max payload size in bytes.
+   * @param ssl_boundary      boundary to use SSL, must be one of:
+   *                          none, node, rack, row, cluster, dc, or region.
+   * @param my_location       location for determining SSL boundaries:
+   *                          {region}.{dc}.{cluster}.{row}.{rack}
    * @param env               environment.
    * @param info_log          for logging.
    * @param storage           output parameter to store the constructed
@@ -63,6 +67,8 @@ class LogDeviceStorage : public LogStorage {
     std::chrono::milliseconds timeout,
     int num_workers,
     size_t max_payload_size,
+    std::string ssl_boundary,
+    std::string my_location,
     Env* env,
     std::shared_ptr<Logger> info_log,
     LogDeviceStorage** storage);

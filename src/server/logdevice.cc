@@ -10,6 +10,7 @@
 #include <memory>
 #include <utility>
 
+#include "src/server/server.h"
 #include "src/server/storage_setup.h"
 #include "src/logdevice/storage.h"
 #include "src/logdevice/log_router.h"
@@ -26,6 +27,11 @@ DEFINE_int32(storage_workers, 16, "number of logdevice storage workers");
 DEFINE_int32(storage_timeout, 1000, "storage timeout in milliseconds");
 DEFINE_uint64(storage_max_payload_size, 32 * 1024 * 1024,
   "maximum storage payload size (bytes)");
+DEFINE_string(logdevice_ssl_boundary, "none",
+  "boundary for SSL usage: none, node, rack, row, cluster, dc, or region.");
+DEFINE_string(logdevice_my_location, "auto",
+  "location of this node for SSL: {region}.{dc}.{cluster}.{row}.{rack} or "
+  "\"auto\" to copy from RocketSpeed --node_location flag");
 
 namespace rocketspeed {
 
@@ -37,6 +43,14 @@ std::shared_ptr<LogStorage> CreateLogStorage(Env* env,
     facebook::logdevice::dbg::Level::WARNING;
 #endif
 
+  if (FLAGS_logdevice_my_location == "auto") {
+    // Use the --node_location flag.
+    FLAGS_logdevice_my_location = FLAGS_node_location;
+    LOG_VITAL(info_log,
+      "Using --node_location (%s) for LogDevice --my-location",
+      FLAGS_node_location.c_str());
+  }
+
   rocketspeed::LogDeviceStorage* storage = nullptr;
   rocketspeed::LogDeviceStorage::Create(
     FLAGS_logdevice_cluster,
@@ -45,6 +59,8 @@ std::shared_ptr<LogStorage> CreateLogStorage(Env* env,
     std::chrono::milliseconds(FLAGS_storage_timeout),
     FLAGS_storage_workers,
     FLAGS_storage_max_payload_size,
+    FLAGS_logdevice_ssl_boundary,
+    FLAGS_logdevice_my_location,
     env,
     std::move(info_log),
     &storage);

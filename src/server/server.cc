@@ -41,6 +41,8 @@ DEFINE_uint64(buffered_storage_max_bytes,
 DEFINE_uint64(buffered_storage_max_latency_us,
               100,
               "for how long to wait before filling sending unfinished batch");
+DEFINE_string(node_location, "",
+  "location of this node for SSL: {region}.{dc}.{cluster}.{row}.{rack}");
 
 // Control tower settings
 DEFINE_bool(tower, false, "start the control tower");

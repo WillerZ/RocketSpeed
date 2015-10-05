@@ -25,6 +25,7 @@ DECLARE_string(loglevel);
 DECLARE_string(rs_log_dir);
 DECLARE_bool(log_to_stderr);
 DECLARE_bool(supervisor);
+DECLARE_string(node_location);
 
 namespace rocketspeed {
 
