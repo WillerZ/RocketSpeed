@@ -150,8 +150,8 @@ class LogStorage {
    * @param record_cb a callback that will be called on an
    *        unspecified thread when a record is read. Should return true if
    *        processed successfully, or false if the reader should retry the
-   *        same record later. When returning false, the record argument must
-   *        not be moved.
+   *        same record later. If the callback returned false and the record
+   *        was moved, the callback will be invoked again with empty record.
    * @param gap_cb a callback that will be called on an
    *        unspecified thread when a gap occurs in the log.
    * @param readers output buffer for the AsyncLogReaders.

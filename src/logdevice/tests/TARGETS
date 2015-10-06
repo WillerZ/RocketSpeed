@@ -1,0 +1,25 @@
+cpp_unittest(
+    name = 'storage_test',
+    srcs = [
+        'storage_test.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX',
+        '-DOS_LINUX',
+        '-DUSE_LOGDEVICE',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/client:client',
+        '@/rocketspeed/github/src/logdevice:logdevice_storage',
+        '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/test:test_cluster',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/src/util/common:common',
+    ],
+    tags = [
+        'serialize',
+        'serialize_test_cases',
+        'unmanaged_test_cases',
+    ],
+)

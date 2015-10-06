@@ -6,6 +6,13 @@
 #include "src/logdevice/storage.h"
 #include <algorithm>
 
+#ifdef USE_LOGDEVICE
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#include "logdevice/common/DataRecordOwnsPayload.h"
+#pragma GCC diagnostic pop
+#endif  // USE_LOGDEVICE
+
 namespace rocketspeed {
 
 /**
@@ -249,29 +256,56 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
   std::unique_ptr<facebook::logdevice::AsyncReader>&& reader)
 : reader_(std::move(reader)) {
   // Setup LogDevice AsyncReader callbacks
-  reader_->setRecordCallback(
-    [this, record_cb] (std::unique_ptr<facebook::logdevice::DataRecord>& data) {
-      // Convert DataRecord to our LogRecord format.
-      LogRecord record;
-      record.log_id = CastLogID(data->logid);
-      record.payload = Slice((const char*)data->payload.data,
-                             data->payload.size);
-      record.seqno = data->attrs.lsn;
-      record.timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
-          std::chrono::milliseconds(data->attrs.timestamp));
-      record.context = EraseType(std::move(data));
+  reader_->setRecordCallback([this, record_cb](
+      std::unique_ptr<facebook::logdevice::DataRecord>& data) {
+    // Create an empty DataRecord, in case the callback returns false and the
+    // LogRecord's context is stolen.
+    std::unique_ptr<facebook::logdevice::DataRecord> empty_record;
+#ifdef USE_LOGDEVICE
+    // The clowniness with lazy construction of DataRecordOwnsPayload aims at
+    // removing allocation from hot path.
+    using facebook::logdevice::DataRecordOwnsPayload;
+    // This clowniness is necessary, because LogDevice static_casts record to
+    // DataRecordOwnsPayload internally for whatever reason.
+    auto actual_data = static_cast<const DataRecordOwnsPayload*>(data.get());
+    const auto ld_logid = data->logid;
+    const auto ld_lsn = data->attrs.lsn;
+    const auto ld_timestamp = data->attrs.timestamp;
+    const auto ld_flags = actual_data->flags_;
+#endif  // USE_LOGDEVICE
+    // Backoff is not implemented in mock LogDevice, therefore we can leave the
+    // record empty.
 
-      bool success = record_cb(record);
-      if (!success) {
-        // record_cb must not move record if it failed to process.
-        assert(record.context);
+    // Convert DataRecord to our LogRecord format.
+    LogRecord record;
+    record.log_id = CastLogID(data->logid);
+    record.payload = Slice((const char*)data->payload.data, data->payload.size);
+    record.seqno = data->attrs.lsn;
+    record.timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::milliseconds(data->attrs.timestamp));
+    record.context = EraseType(std::move(data));
 
-        // Put it back, since LogDevice will be expecting it there.
+    bool success = record_cb(record);
+    if (!success) {
+      // Record callback is free to move out the record.
+      if (record.context) {
+        // Put back the original record, since LogDevice will be expecting it
+        // there.
         void* context = record.context.release();
         data.reset(static_cast<facebook::logdevice::DataRecord*>(context));
+      } else {
+#ifdef USE_LOGDEVICE
+        // Put back an empty record instead.
+        data.reset(new DataRecordOwnsPayload(ld_logid,
+                                             facebook::logdevice::Payload(),
+                                             ld_lsn,
+                                             ld_timestamp,
+                                             ld_flags));
+#endif  // USE_LOGDEVICE
       }
-      return success;
-    });
+    }
+    return success;
+  });
 
   reader_->setGapCallback(
     [this, gap_cb] (const facebook::logdevice::GapRecord& gap) {
