@@ -60,6 +60,7 @@ TEST(ControlTowerTest, Subscribe) {
   // Define a callback to process the subscribe response at the client
   loop.RegisterCallbacks({
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop.Initialize());
   MsgLoopThread t1(env_, &loop, "client");
@@ -100,6 +101,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   loop1.RegisterCallbacks({
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
+      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID){}},
   });
   ASSERT_OK(loop1.Initialize());
   MsgLoopThread t1(env_, &loop1, "loop1");
@@ -125,6 +127,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   loop2.RegisterCallbacks({
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
       {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
+      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID){}},
   });
   ASSERT_OK(loop2.Initialize());
   MsgLoopThread t2(env_, &loop2, "loop2");

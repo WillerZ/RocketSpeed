@@ -1639,12 +1639,15 @@ TEST(IntegrationTest, ControlTowerCache) {
   // Message write semaphore.
   port::Semaphore msg_written;
 
+  // Sequence number of first written message.
+  SequenceNumber msg_seqno;
+
   // Message read semaphore.
   port::Semaphore msg_received, msg_received2,
                   msg_received3, msg_received4, msg_received5;
 
   // Message setup.
-  Topic topic = "OneMessage";
+  Topic topic = "ControlTowerCache";
   NamespaceID namespace_id = GuestNamespace;
   TopicOptions topic_options;
   std::string data = "test_message";
@@ -1653,6 +1656,7 @@ TEST(IntegrationTest, ControlTowerCache) {
 
   // RocketSpeed callbacks;
   auto publish_callback = [&] (std::unique_ptr<ResultStatus> rs) {
+    msg_seqno = rs->GetSequenceNumber();
     msg_written.Post();
   };
 
@@ -1711,7 +1715,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   ASSERT_TRUE(client->Subscribe(GuestTenant,
                                 namespace_id,
                                 topic,
-                                1,
+                                msg_seqno,
                                 receive_callback,
                                 subscription_callback));
   // Wait for the message to arrive
@@ -1728,7 +1732,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   ASSERT_TRUE(client->Subscribe(GuestTenant,
                                 namespace_id,
                                 topic,
-                                1,
+                                msg_seqno,
                                 receive_callback2,
                                 subscription_callback));
   // Wait for the message to arrive
@@ -1766,7 +1770,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   ASSERT_TRUE(client->Subscribe(GuestTenant,
                                 namespace_id,
                                 topic,
-                                1,
+                                msg_seqno,
                                 receive_callback3,
                                 subscription_callback));
   // Wait for the message to arrive
@@ -1802,7 +1806,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   ASSERT_TRUE(client->Subscribe(GuestTenant,
                                 namespace_id,
                                 topic,
-                                1,
+                                msg_seqno,
                                 receive_callback4,
                                 subscription_callback));
   // Wait for the message to arrive
@@ -1835,7 +1839,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   ASSERT_TRUE(client->Subscribe(GuestTenant,
                                 namespace_id,
                                 topic,
-                                1,
+                                msg_seqno,
                                 receive_callback5,
                                 subscription_callback));
   // Wait for the message to arrive
@@ -1892,24 +1896,30 @@ TEST(IntegrationTest, ReadingFromCache) {
     ASSERT_OK(Client::Create(std::move(options), &client));
 
     // Send a message.
+    port::Semaphore msg_written;
+    SequenceNumber msg_seqno = 0;
     auto ps = client->Publish(GuestTenant,
                               topic,
                               namespace_id,
                               topic_options,
                               Slice(data1),
-                              nullptr,
+                              [&] (std::unique_ptr<ResultStatus> rs) {
+                                msg_seqno = rs->GetSequenceNumber();
+                                msg_written.Post();
+                              },
                               message_id);
     ASSERT_TRUE(ps.status.ok());
     ASSERT_TRUE(ps.msgid == message_id);
+    ASSERT_TRUE(msg_written.TimedWait(timeout));
 
     // Listen for the message.
     port::Semaphore msg_received1;
     SequenceNumber lastReceived;
-    auto handle = client->Subscribe(GuestTenant, namespace_id, topic, 1,
+    auto handle = client->Subscribe(GuestTenant, namespace_id, topic, msg_seqno,
     [&] (std::unique_ptr<MessageReceived>& mr) {
       ASSERT_TRUE(mr->GetContents().ToString() == data1);
       lastReceived = mr->GetSequenceNumber();
-      ASSERT_EQ(lastReceived, 1);
+      ASSERT_EQ(lastReceived, msg_seqno);
       msg_received1.Post();
     });
     ASSERT_TRUE(handle);
@@ -1965,7 +1975,7 @@ TEST(IntegrationTest, ReadingFromCache) {
     // then this should not enable backlog reading.
     int numRecords = 2;
     port::Semaphore msg_received3;
-    handle = client->Subscribe(GuestTenant, namespace_id, topic, 1,
+    handle = client->Subscribe(GuestTenant, namespace_id, topic, msg_seqno,
       [&] (std::unique_ptr<MessageReceived>& mr) {
         msg_received3.Post();
       });
