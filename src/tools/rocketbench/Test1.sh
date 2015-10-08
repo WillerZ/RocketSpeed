@@ -26,5 +26,5 @@ echo $cmd
 eval $cmd
 
 echo Stopping Servers...
-cmd="$BENCHMARK --remote --stop-servers --cockpits=5"
+cmd="$BENCHMARK --remote --stop-servers --cockpits=1"
 eval $cmd

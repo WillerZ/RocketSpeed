@@ -752,7 +752,7 @@ int main(int argc, char** argv) {
       std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
       GetAckLatency()->Record(static_cast<uint64_t>(now - send_time));
 
-      if (FLAGS_delay_subscribe) {
+      if (FLAGS_delay_subscribe || !FLAGS_save_path.empty()) {
         if (rs->GetStatus().ok()) {
           // Get the min sequence number for this topic to subscribe to later.
           std::string topic = rs->GetTopicName().ToString();
