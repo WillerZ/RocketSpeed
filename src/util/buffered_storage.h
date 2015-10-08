@@ -5,6 +5,9 @@
 //
 #pragma once
 
+#include <chrono>
+#include <memory>
+
 #include "src/util/storage.h"
 
 namespace rocketspeed {
@@ -51,6 +54,8 @@ class BufferedLogStorage : public LogStorage {
   }
 
  private:
+  friend class BufferedAsyncLogReader;
+
   BufferedLogStorage(Env* env,
                      std::shared_ptr<Logger> info_log,
                      std::shared_ptr<LogStorage> wrapped_storage,

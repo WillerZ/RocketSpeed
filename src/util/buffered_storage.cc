@@ -3,22 +3,27 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-#include "src/util/buffered_storage.h"
-#include "src/util/timeout_list.h"
+#include "buffered_storage.h"
+
+#include <chrono>
+#include <deque>
+#include <memory>
+#include <unordered_map>
 
 #include "external/folly/move_wrapper.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/thread_check.h"
+#include "src/util/timeout_list.h"
+#include "src/util/unsafe_shared_ptr.h"
 
 namespace rocketspeed {
 
 class BufferedAsyncLogReader : public AsyncLogReader {
  public:
-  BufferedAsyncLogReader(
-    BufferedLogStorage* storage,
-    std::function<bool(LogRecord&)> record_cb,
-    std::function<bool(const GapRecord&)> gap_cb,
-    std::unique_ptr<AsyncLogReader> reader);
+  BufferedAsyncLogReader(BufferedLogStorage* storage,
+                         std::function<bool(LogRecord&)> record_cb,
+                         std::function<bool(const GapRecord&)> gap_cb);
 
   ~BufferedAsyncLogReader() final;
 
@@ -29,8 +34,15 @@ class BufferedAsyncLogReader : public AsyncLogReader {
   Status Close(LogID id) final;
 
  private:
-  std::unique_ptr<AsyncLogReader> reader_;
-  BufferedLogStorage* storage_;
+  friend class ReaderCallbacks;
+
+  BufferedLogStorage* const buffered_storage_;
+  const std::function<bool(LogRecord&)> record_cb_;
+  const std::function<bool(const GapRecord&)> gap_cb_;
+
+  ThreadCheck thread_check_;
+  std::unordered_map<LogID, std::unique_ptr<AsyncLogReader>>
+      underlying_readers_;
 };
 
 class BufferedLogStorageWorker {
@@ -203,10 +215,19 @@ Status BufferedLogStorage::FindTimeAsync(
 }
 
 Status BufferedLogStorage::CreateAsyncReaders(
-  unsigned int parallelism,
-  std::function<bool(LogRecord&)> record_cb,
-  std::function<bool(const GapRecord&)> gap_cb,
-  std::vector<AsyncLogReader*>* readers) {
+    unsigned int parallelism,
+    const std::function<bool(LogRecord&)> record_cb,
+    const std::function<bool(const GapRecord&)> gap_cb,
+    std::vector<AsyncLogReader*>* out) {
+  if (!out) {
+    return Status::InvalidArgument("out parameter must not be null.");
+  }
+
+  out->reserve(parallelism);
+  while (parallelism-- > 0) {
+    out->push_back(new BufferedAsyncLogReader(this, record_cb, gap_cb));
+  }
+
   return Status::OK();
 }
 
@@ -253,26 +274,240 @@ BufferedLogStorage::BufferedLogStorage(
 }
 
 BufferedAsyncLogReader::BufferedAsyncLogReader(
-  BufferedLogStorage* storage,
-  std::function<bool(LogRecord&)> record_cb,
-  std::function<bool(const GapRecord&)> gap_cb,
-  std::unique_ptr<AsyncLogReader> reader)
-: reader_(std::move(reader))
-, storage_(storage) {
-  ((void)storage_);
-}
+    BufferedLogStorage* buffered_storage,
+    std::function<bool(LogRecord&)> record_cb,
+    std::function<bool(const GapRecord&)> gap_cb)
+: buffered_storage_(buffered_storage)
+, record_cb_(std::move(record_cb))
+, gap_cb_(std::move(gap_cb)) {}
 
-BufferedAsyncLogReader::~BufferedAsyncLogReader() {
+BufferedAsyncLogReader::~BufferedAsyncLogReader() {}
 
-}
+class ReaderCallbacks {
+ public:
+  ReaderCallbacks(BufferedAsyncLogReader* buffered_reader, size_t batch_bits)
+  : buffered_reader_(buffered_reader)
+  , batch_bits_(batch_bits)
+  , overflow_gap_present_(false) {}
 
-Status BufferedAsyncLogReader::Open(LogID id,
-            SequenceNumber startPoint,
-            SequenceNumber endPoint) {
+  bool DeliverRecord(LogRecord& batch_record) {
+    thread_check_.Check();
+
+    // We never start processing a new record until we're done flushing the
+    // overflow queue and gap.
+    if (!FlushOverflow()) {
+      return false;
+    }
+    assert(overflow_records_.empty());
+
+    // If we've returned false to apply backpressure in the middle of processing
+    // a payload, then the LogRecord will be empty. In this case we skip it
+    // after flusing the overflow queue.
+    // BufferedStorage's write path will never append an empty record.
+    if (batch_record.payload.empty()) {
+      return true;
+    }
+    // Capture the context in a shared pointer. All records in a batch share
+    // the ownership of the batch record.
+    std::shared_ptr<void> shared_context(batch_record.context.release(),
+                                         batch_record.context.get_deleter());
+    // Even though we've moved away the LogRecord's context, we can still return
+    // false to apply backpressure, see documentation of CreateAsyncReaders.
+    // In this case, we will be delivered an empty record with the same sequence
+    // number on the next attempt, which is handled above.
+
+    SequenceNumber current_seqno = batch_record.seqno << batch_bits_,
+                   last_seqno = current_seqno + (1 << batch_bits_) - 1;
+    Slice remaining = batch_record.payload;
+    // Deserialize the number of records.
+    uint8_t batch_size;
+    if (!GetFixed8(&remaining, &batch_size)) {
+      // There are not pending records, so this gap will be delivered first.
+      return EnqueueGap({
+          GapType::kDataLoss,
+          batch_record.log_id,
+          current_seqno,
+          last_seqno,
+      });
+    }
+
+    // Deserialize individual records from the batch and add to the queue.
+    while (batch_size-- > 0) {
+      Slice payload;
+      if (!GetLengthPrefixedSlice(&remaining, &payload)) {
+        return EnqueueGap({
+            GapType::kDataLoss,
+            batch_record.log_id,
+            current_seqno,
+            last_seqno,
+        });
+      }
+
+      // Prepare a handle to the context.
+      std::unique_ptr<std::shared_ptr<void>> context(new std::shared_ptr<void>);
+      *context = shared_context;
+
+      // Add the record.
+      EnqueueRecord(LogRecord(batch_record.log_id,
+                              payload,
+                              current_seqno,
+                              batch_record.timestamp,
+                              EraseType(std::move(context))));
+      ++current_seqno;
+    }
+    assert(remaining.empty());
+
+    // Add a gap to cover missing sequence numbers.
+    if (current_seqno <= last_seqno) {
+      EnqueueGap({
+          GapType::kBenign,
+          batch_record.log_id,
+          current_seqno,
+          last_seqno,
+      });
+    }
+
+    return IsOverflowEmpty();
+  }
+
+  bool DeliverGap(const GapRecord& batch_gap) {
+    thread_check_.Check();
+
+    // We never start processing a new record until we're done flushing the
+    // overflow queue and gap.
+    if (!FlushOverflow()) {
+      return false;
+    }
+    assert(overflow_records_.empty());
+
+    // Since a batched gap always maps to a single call of the callback, we can
+    // use backoff straight away.
+    size_t length = batch_gap.to - batch_gap.from + 1;
+    SequenceNumber current_seqno = batch_gap.from << batch_bits_,
+                   last_seqno = current_seqno + (length << batch_bits_) - 1;
+    return buffered_reader_->gap_cb_(
+        {batch_gap.type, batch_gap.log_id, current_seqno, last_seqno});
+  }
+
+ private:
+  BufferedAsyncLogReader* const buffered_reader_;
+  const size_t batch_bits_;
+
+  ThreadCheck thread_check_;
+  std::deque<LogRecord> overflow_records_;
+  bool overflow_gap_present_;
+  GapRecord overflow_gap_;
+
+  bool EnqueueGap(GapRecord gap) {
+    assert(!overflow_gap_present_);
+    if (!IsOverflowEmpty() || !buffered_reader_->gap_cb_(gap)) {
+      overflow_gap_ = std::move(gap);
+      overflow_gap_present_ = true;
+      return false;
+    }
+    return true;
+  }
+
+  bool EnqueueRecord(LogRecord record) {
+    assert(!overflow_gap_present_);
+    if (!IsOverflowEmpty() || !buffered_reader_->record_cb_(record)) {
+      overflow_records_.emplace_back(std::move(record));
+      return false;
+    }
+    return true;
+  }
+
+  bool IsOverflowEmpty() {
+    return overflow_records_.empty() && !overflow_gap_present_;
+  }
+
+  bool FlushOverflow() {
+    // Flush records first.
+    while (!overflow_records_.empty()) {
+      if (!buffered_reader_->record_cb_(overflow_records_.front())) {
+        return false;
+      }
+      assert(!overflow_records_.front().context.get() ||
+             overflow_records_.front().context.get_deleter());
+      overflow_records_.pop_front();
+    }
+    // And then any gap.
+    if (overflow_gap_present_) {
+      if (!buffered_reader_->gap_cb_(overflow_gap_)) {
+        return false;
+      }
+      overflow_gap_present_ = false;
+    }
+    return true;
+  }
+};
+
+Status BufferedAsyncLogReader::Open(LogID log_id,
+                                    SequenceNumber start_point,
+                                    SequenceNumber end_point) {
+  thread_check_.Check();
+
+  // Close the log before (re)starting reading it.
+  auto st = Close(log_id);
+  if (!st.ok()) {
+    return st;
+  }
+
+  // Each log needs independent flow control state, which has to be shared by
+  // record and gap callback.
+  auto callback =
+      std::make_shared<ReaderCallbacks>(this, buffered_storage_->batch_bits_);
+  auto record_cb1 = [callback](LogRecord& record) -> bool {
+    return callback->DeliverRecord(record);
+  };
+  auto gap_cb1 = [callback](const GapRecord& batch_gap) -> bool {
+    return callback->DeliverGap(batch_gap);
+  };
+
+  std::unique_ptr<AsyncLogReader> underlying_reader;
+  {  // Create a new reader.
+    std::vector<AsyncLogReader*> raw_reader;
+    st = buffered_storage_->storage_->CreateAsyncReaders(
+        1, std::move(record_cb1), std::move(gap_cb1), &raw_reader);
+    if (!st.ok()) {
+      return st;
+    }
+    assert(raw_reader.size() == 1);
+    underlying_reader.reset(raw_reader.front());
+  }
+
+  // Compute sequence numbers which the underlying reader operates on.
+  start_point >>= buffered_storage_->batch_bits_;
+  if (end_point != SequencePoint::kEndOfTimeSeqno) {
+    end_point = (end_point >> buffered_storage_->batch_bits_) + 1;
+  }
+
+  // Start reading.
+  st = underlying_reader->Open(log_id, start_point, end_point);
+  if (!st.ok()) {
+    return st;
+  }
+
+  // Keep a reader so that it can be closed.
+  underlying_readers_.emplace(log_id, std::move(underlying_reader));
   return Status::OK();
 }
 
-Status BufferedAsyncLogReader::Close(LogID id) {
+Status BufferedAsyncLogReader::Close(LogID log_id) {
+  thread_check_.Check();
+
+  // Find the reader, do nothing if it doesn't exist.
+  auto it = underlying_readers_.find(log_id);
+  if (it == underlying_readers_.end()) {
+    return Status::OK();
+  }
+
+  auto st = it->second->Close(log_id);
+  if (!st.ok()) {
+    return st;
+  }
+
+  underlying_readers_.erase(it);
   return Status::OK();
 }
 

@@ -33,13 +33,13 @@
 // Common settings
 DEFINE_bool(log_to_stderr, false, "log to stderr (otherwise LOG file)");
 DEFINE_uint64(buffered_storage_max_messages,
-              0,
+              255,
               "how many messages to batch in a storage record, <= 1 disables");
 DEFINE_uint64(buffered_storage_max_bytes,
               std::numeric_limits<size_t>::max(),
               "how many bytes worth of messages to batch");
 DEFINE_uint64(buffered_storage_max_latency_us,
-              100,
+              1000,
               "for how long to wait before filling sending unfinished batch");
 DEFINE_string(node_location, "",
   "location of this node for SSL: {region}.{dc}.{cluster}.{row}.{rack}");
@@ -277,7 +277,7 @@ Status RocketSpeed::Initialize(
           env_,
           info_log_,
           std::move(storage),
-          pilot_loop.get(),
+          pilot_loop ? pilot_loop.get() : tower_loop.get(),
           FLAGS_buffered_storage_max_messages,
           FLAGS_buffered_storage_max_bytes,
           std::chrono::microseconds(FLAGS_buffered_storage_max_latency_us),
