@@ -141,11 +141,10 @@ Status ControlTower::Initialize() {
       log_id,
       reader_id);
     if (!status.ok()) {
-      LOG_ERROR_RATELIMIT(options_.info_log,
-        3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
-        "Failed to SendLogRecord to topic tailer %d (%s)",
-        room_number,
-        status.ToString().c_str());
+      LOG_ERROR(options_.info_log,
+                "Failed to SendLogRecord to topic tailer %d (%s)",
+                room_number,
+                status.ToString().c_str());
       assert(msg);
       return false;
     }
@@ -166,11 +165,10 @@ Status ControlTower::Initialize() {
       to,
       reader_id);
     if (!status.ok()) {
-      LOG_ERROR_RATELIMIT(options_.info_log,
-        3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
-        "Failed to SendGapRecord to topic tailer %d (%s)",
-        room_number,
-        status.ToString().c_str());
+      LOG_ERROR(options_.info_log,
+                "Failed to SendGapRecord to topic tailer %d (%s)",
+                room_number,
+                status.ToString().c_str());
       return false;
     }
     return true;

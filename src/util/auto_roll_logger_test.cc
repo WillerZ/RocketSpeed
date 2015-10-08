@@ -274,10 +274,13 @@ TEST(AutoRollLoggerTest, InfoLogLevel) {
       // again, messages with level smaller than log_level will not be logged.
       LOG_DEBUG(&logger, "%s", kSampleMessage.c_str());
       LOG_INFO(&logger, "%s", kSampleMessage.c_str());
-      LOG_WARN(&logger, "%s", kSampleMessage.c_str());
-      LOG_ERROR(&logger, "%s", kSampleMessage.c_str());
-      LOG_FATAL(&logger, "%s", kSampleMessage.c_str());
-      log_lines += InfoLogLevel::FATAL_LEVEL - log_level + 1;
+      LOG_WARN_NOLIMIT(&logger, "%s", kSampleMessage.c_str());
+      LOG_ERROR_NOLIMIT(&logger, "%s", kSampleMessage.c_str());
+      // LOG_FATAL calls std::abort by default, therefore we have to use
+      // lo-level API.
+      RS_LOG(InfoLogLevel::FATAL_LEVEL, &logger, "%s", kSampleMessage.c_str());
+      LOG_VITAL(&logger, "%s", kSampleMessage.c_str());
+      log_lines += InfoLogLevel::VITAL_LEVEL - log_level + 1;
     }
   }
   std::ifstream inFile(AutoRollLoggerTest::kLogFile.c_str());

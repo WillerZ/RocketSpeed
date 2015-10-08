@@ -9,6 +9,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include "include/RateLimiter.h"
@@ -28,28 +29,28 @@
 #define RS_LOG_RATELIMIT(log_level_expr, info_log_expr, \
                          limit_events, duration, ...) \
   do { \
-    static RateLimiter limiter(limit_events, duration); \
-    static std::atomic<bool> lock; \
+    static RateLimiter rs_log_limiter(limit_events, duration); \
+    static std::atomic<bool> rs_log_lock; \
     \
     /* If someone is holding the lock, we don't print a message and */ \
     /* don't even increment skipped. This would increase overhead   */ \
     /* considerably because of cache contention.                    */ \
-    if (lock.load(std::memory_order_acquire) || \
-        lock.exchange(true, std::memory_order_acquire)) { \
+    if (rs_log_lock.load(std::memory_order_acquire) || \
+        rs_log_lock.exchange(true, std::memory_order_acquire)) { \
       break; \
     } \
     static size_t skipped; \
-    if (limiter.IsAllowed()) { \
+    if (rs_log_limiter.IsAllowed()) { \
       if (skipped > 0) { \
         RS_LOG(log_level_expr, info_log_expr, \
-            "Skipped at least %zu log entries", skipped); \
+            "Skipped at least %zu log entries as below", skipped); \
         skipped = 0; \
       } \
       RS_LOG(log_level_expr, info_log_expr, __VA_ARGS__); \
     } else { \
       ++skipped; \
     } \
-    lock.store(false); \
+    rs_log_lock.store(false); \
   } while (0)
 
 #define LOG_DEBUG(info_log_expr, ...) \
@@ -61,50 +62,35 @@
       info_log_expr, __VA_ARGS__)
 
 #define LOG_WARN(info_log_expr, ...) \
-  RS_LOG(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
-      info_log_expr, __VA_ARGS__)
+  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
+                   info_log_expr, \
+                   10, std::chrono::seconds(10), \
+                   __VA_ARGS__)
 
 #define LOG_ERROR(info_log_expr, ...) \
-  RS_LOG(::rocketspeed::InfoLogLevel::ERROR_LEVEL, \
-      info_log_expr, __VA_ARGS__)
+  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::ERROR_LEVEL, \
+                   info_log_expr, \
+                   10, std::chrono::seconds(10), \
+                   __VA_ARGS__)
 
 #define LOG_FATAL(info_log_expr, ...) \
-  RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
-      info_log_expr, __VA_ARGS__)
+  do { \
+    RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
+        info_log_expr, __VA_ARGS__); \
+    std::abort(); \
+  } while (0)
 
 #define LOG_VITAL(info_log_expr, ...) \
   RS_LOG(::rocketspeed::InfoLogLevel::VITAL_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
-#define LOG_DEBUG_RATELIMIT(info_log_expr, limit_events, duration, ...) \
-  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::DEBUG_LEVEL, info_log_expr, \
-      limit_events, duration, \
-      __VA_ARGS__)
+#define LOG_WARN_NOLIMIT(info_log_expr, ...) \
+  RS_LOG(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
+      info_log_expr, __VA_ARGS__)
 
-#define LOG_INFO_RATELIMIT(info_log_expr, limit_events, duration, ...) \
-  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::INFO_LEVEL, info_log_expr, \
-      limit_events, duration, \
-      __VA_ARGS__)
-
-#define LOG_WARN_RATELIMIT(info_log_expr, limit_events, duration, ...) \
-  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::WARN_LEVEL, info_log_expr, \
-      limit_events, duration, \
-      __VA_ARGS__)
-
-#define LOG_ERROR_RATELIMIT(info_log_expr, limit_events, duration, ...) \
-  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::ERROR_LEVEL, info_log_expr, \
-      limit_events, duration, \
-      __VA_ARGS__)
-
-#define LOG_FATAL_RATELIMIT(info_log_expr, limit_events, duration, ...) \
-  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::FATAL_LEVEL, info_log_expr, \
-      limit_events, duration, \
-      __VA_ARGS__)
-
-#define LOG_VITAL_RATELIMIT(info_log_expr, limit_events, duration, ...) \
-  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::VITAL_LEVEL, info_log_expr, \
-      limit_events, duration, \
-      __VA_ARGS__)
+#define LOG_ERROR_NOLIMIT(info_log_expr, ...) \
+  RS_LOG(::rocketspeed::InfoLogLevel::ERROR_LEVEL, \
+      info_log_expr, __VA_ARGS__)
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)

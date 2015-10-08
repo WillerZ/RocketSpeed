@@ -166,10 +166,9 @@ void Copilot::ProcessDeliver(std::unique_ptr<Message> msg, StreamID origin) {
     worker->WorkerCommand(LogID(0), std::move(msg), event_loop_worker, origin);
   auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
   if (!queue->Write(command)) {
-    LOG_WARN_RATELIMIT(options_.info_log,
-        3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
-        "Worker %d queue is full.",
-        static_cast<int>(worker_id));
+    LOG_WARN(options_.info_log,
+             "Worker %d queue is full.",
+             static_cast<int>(worker_id));
   }
 }
 
@@ -194,10 +193,9 @@ void Copilot::ProcessGap(std::unique_ptr<Message> msg, StreamID origin) {
     worker->WorkerCommand(LogID(0), std::move(msg), event_loop_worker, origin);
   auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
   if (!queue->Write(command)) {
-    LOG_WARN_RATELIMIT(options_.info_log,
-        3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
-        "Worker %d queue is full.",
-        static_cast<int>(worker_id));
+    LOG_WARN(options_.info_log,
+             "Worker %d queue is full.",
+             static_cast<int>(worker_id));
   }
 }
 
@@ -236,10 +234,9 @@ void Copilot::ProcessTailSeqno(std::unique_ptr<Message> msg, StreamID origin) {
     worker->WorkerCommand(logid, std::move(msg), event_loop_worker, origin);
   auto& queue = tower_to_worker_queues_[event_loop_worker][worker_id];
   if (!queue->Write(command)) {
-    LOG_WARN_RATELIMIT(options_.info_log,
-        3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
-        "Worker %d queue is full.",
-        static_cast<int>(worker_id));
+    LOG_WARN(options_.info_log,
+             "Worker %d queue is full.",
+             static_cast<int>(worker_id));
   }
 }
 
@@ -280,9 +277,7 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
 
   // Forward message to responsible worker.
   if (!queue->Write(command)) {
-    LOG_WARN_RATELIMIT(options_.info_log,
-             3, std::chrono::milliseconds(30000), // 3 msg every 30 sec
-             "Worker %d queue is full.", worker_id);
+    LOG_WARN(options_.info_log, "Worker %d queue is full.", worker_id);
   }
 }
 
