@@ -18,7 +18,9 @@ enum class GapType {
   HOLE = 2,     // a hole in the numbering sequence that appeared due
                 // to a sequencer crash. No acknowledged records were lost.
   DATALOSS = 3, // all records in the gap were permanently lost
-  TRIM = 4      // a gap caused by trimming the log
+  TRIM = 4,     // a gap caused by trimming the log
+
+  MAX
 };
 
 

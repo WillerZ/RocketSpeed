@@ -328,6 +328,11 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
         case facebook::logdevice::GapType::TRIM:
           record.type = GapType::kRetention;
           break;
+
+        case facebook::logdevice::GapType::MAX:
+          assert(false);
+          std::abort();
+          break;
       }
 
       return gap_cb(record);
