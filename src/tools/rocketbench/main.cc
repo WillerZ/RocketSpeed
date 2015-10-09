@@ -490,8 +490,9 @@ void DoSubscriptionChurn(void* params) {
     }
     pq.pop();
     assert(!pq.empty());
-  } while (!producer_thread_over->TimedWait(pq.top().event_time
-      - curtime));
+  } while (!producer_thread_over->TimedWait(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          pq.top().event_time - curtime)));
 }
 
 /*

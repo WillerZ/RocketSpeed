@@ -191,32 +191,32 @@ class LRUCache : public Cache {
 
   // If current usage is more than new capacity, the function will attempt to
   // free the needed space
-  void SetCapacity(size_t capacity);
+  void SetCapacity(size_t capacity) override;
 
   // Like Cache methods, but with an extra "hash" parameter.
   Cache::Handle* Insert(const Slice& key,
-                        void* value, size_t charge,
-                        void (*deleter)(const Slice& key, void* value));
-  Cache::Handle* Lookup(const Slice& key);
-  void Release(Cache::Handle* handle);
-  void Erase(const Slice& key);
-  void* Value(Cache::Handle* handle);
+                        void* value,
+                        size_t charge,
+                        void (*deleter)(const Slice& key,
+                                        void* value)) override;
+  Cache::Handle* Lookup(const Slice& key) override;
+  void Release(Cache::Handle* handle) override;
+  void Erase(const Slice& key) override;
+  void* Value(Cache::Handle* handle) override;
 
   size_t GetCapacity() const override {
     return capacity_;
   }
 
-  size_t GetUsage() const {
-    return usage_;
-  }
+  size_t GetUsage() const override { return usage_; }
 
-  size_t GetPinnedUsage() const {
+  size_t GetPinnedUsage() const override {
     assert(usage_ >= lru_usage_);
     return usage_ - lru_usage_;
   }
 
-  void ApplyToAllCacheEntries(void (*callback)(void*, size_t));
-  void ChargeDelta(Handle* handle, size_t delta);
+  void ApplyToAllCacheEntries(void (*callback)(void*, size_t)) override;
+  void ChargeDelta(Handle* handle, size_t delta) override;
 
  private:
   void LRU_Remove(LRUHandle* e);

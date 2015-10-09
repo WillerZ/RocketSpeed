@@ -7,6 +7,7 @@
 
 #include <cassert>
 #include <cstdarg>
+#include <cstdlib>
 #include <cstring>
 #include <atomic>
 #include <chrono>
