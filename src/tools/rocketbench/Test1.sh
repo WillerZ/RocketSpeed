@@ -18,10 +18,10 @@ if [ ! -f $BENCHMARK ]; then
 fi
 
 echo Starting Servers...
-cmd="$BENCHMARK --remote --deploy --start-servers --cache-size 1000000000 --cockpits=1"
+cmd="$BENCHMARK --remote --deploy --start-servers --cache-size 1000000000 --buffered_storage_max_latency_us=1000 --cockpits=1"
 eval $cmd
 
-cmd="$BENCHMARK --messages 1000000000 --rate 100000 --max-inflight 150 --topics 1 --size 100 --remote-bench 1 produce"
+cmd="$BENCHMARK --messages 1000000000 --rate 500000 --max-inflight 7000 --topics 1 --size 100 --progress_period=10000 --cockpits=1 --remote-bench 1 produce"
 echo $cmd
 eval $cmd
 

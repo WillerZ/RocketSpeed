@@ -115,6 +115,8 @@ DEFINE_int32(wait_for_debugger, 0, "wait for debugger to attach to me");
 DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
 DEFINE_string(save_path, "./RocketBenchProducer.dat",
               "Name of file where producer stores per-topic information");
+DEFINE_int64(progress_period, 10,
+              "Number of milliseconds between updates to progress bar");
 
 using namespace rocketspeed;
 
@@ -905,7 +907,8 @@ int main(int argc, char** argv) {
   port::Semaphore progress_stop;
   auto progress_thread = env->StartThread(
     [&] () {
-      while (!progress_stop.TimedWait(std::chrono::milliseconds(10))) {
+      while (!progress_stop.TimedWait(std::chrono::milliseconds
+                                      (FLAGS_progress_period))) {
         const uint64_t pubacks = ack_messages_received.load();
         const uint64_t received = messages_received.load();
         const uint64_t failed = failed_publishes.load();
