@@ -75,11 +75,8 @@
                    __VA_ARGS__)
 
 #define LOG_FATAL(info_log_expr, ...) \
-  do { \
-    RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
-        info_log_expr, __VA_ARGS__); \
-    std::abort(); \
-  } while (0)
+  RS_LOG(::rocketspeed::InfoLogLevel::FATAL_LEVEL, \
+      info_log_expr, __VA_ARGS__); \
 
 #define LOG_VITAL(info_log_expr, ...) \
   RS_LOG(::rocketspeed::InfoLogLevel::VITAL_LEVEL, \
