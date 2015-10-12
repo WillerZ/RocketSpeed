@@ -19,6 +19,7 @@
 namespace rocketspeed {
 
 typedef uint64_t LogID;
+class Statistics;
 
 enum SequencePoint : SequenceNumber {
   kBeginningOfTimeSeqno = 0,
@@ -98,6 +99,11 @@ class LogStorage {
    * Closes the connection to the log storage.
    */
   virtual ~LogStorage() {}
+
+  /**
+   * Exports statistics from the storage.
+   */
+  virtual Statistics GetStatistics();
 
   /**
    * Appends data to a topic asynchronously. The call will return immediately,

@@ -4,6 +4,8 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/util/storage.h"
+
+#include "src/util/common/statistics.h"
 #include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
@@ -17,6 +19,10 @@ Status LogRouter::GetLogID(Slice namespace_id,
 Status LogRouter::GetLogID(const TopicUUID& topic,
                            LogID* out) const {
   return RouteToLog(topic.RoutingHash(), out);
+}
+
+Statistics LogStorage::GetStatistics() {
+  return Statistics();
 }
 
 }

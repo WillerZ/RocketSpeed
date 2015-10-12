@@ -33,6 +33,8 @@ class BufferedLogStorage : public LogStorage {
                        std::chrono::microseconds max_batch_latency,
                        LogStorage** storage);
 
+  Statistics GetStatistics() final;
+
   ~BufferedLogStorage() final;
 
   Status AppendAsync(LogID id,

@@ -58,8 +58,8 @@ class BufferedLogStorageWorker {
   , max_batch_entries_(max_batch_entries)
   , max_batch_bytes_(max_batch_bytes)
   , max_batch_latency_(max_batch_latency)
-  , batch_bits_(batch_bits) {
-  }
+  , batch_bits_(batch_bits)
+  , stats_(max_batch_entries, max_batch_bytes) {}
 
   void Enqueue(LogID log_id, Slice data, AppendCallback callback) {
     thread_check_.Check();
@@ -98,15 +98,22 @@ class BufferedLogStorageWorker {
     auto it = queues_.find(log_id);
     if (it != queues_.end()) {
       // Create encoded string.
-      // Consists of 1-byte batch size followed by a serious of
+      // Consists of 1-byte batch size followed by a series of
       // length-prefixed slices for each entry.
       std::unique_ptr<std::string> encoded(new std::string());
       encoded->reserve(1 + it->second.bytes);
-      uint8_t batch_size = static_cast<uint8_t>(it->second.requests.size());
+      const auto batch_size = static_cast<uint8_t>(it->second.requests.size());
       PutFixed8(encoded.get(), batch_size);
       for (Request& req : it->second.requests) {
         PutLengthPrefixedSlice(encoded.get(), req.data);
       }
+
+      stats_.batch_entries->Record(batch_size);
+      stats_.batch_bytes->Record(it->second.bytes);
+      auto batch_latency =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              clock::now() - it->second.timestamp);
+      stats_.batch_latency_us->Record(batch_latency.count());
 
       // Capture the context so that the slices are still valid.
       auto context = folly::makeMoveWrapper(std::move(it->second.requests));
@@ -127,6 +134,8 @@ class BufferedLogStorageWorker {
       queues_.erase(it);
     }
   }
+
+  const Statistics& GetStatistics() const { return stats_.all; }
 
  private:
   // Single request.
@@ -160,6 +169,26 @@ class BufferedLogStorageWorker {
   size_t max_batch_bytes_;
   std::chrono::microseconds max_batch_latency_;
   size_t batch_bits_;
+
+  struct Stats {
+    Histogram* batch_entries;
+    Histogram* batch_bytes;
+    Histogram* batch_latency_us;
+    Statistics all;
+
+    Stats(size_t max_entries, size_t max_bytes) {
+      std::string pilot_prefix = "pilot.buffered_storage.";
+      batch_entries = all.AddHistogram(pilot_prefix + "batch_entries",
+                                       0.0,
+                                       static_cast<double>(max_entries),
+                                       1.0);
+      batch_bytes = all.AddHistogram(pilot_prefix + "batch_bytes",
+                                     0.0,
+                                     static_cast<double>(max_bytes),
+                                     1.0);
+      batch_latency_us = all.AddLatency(pilot_prefix + "batch_latency_us");
+    }
+  } stats_;
 };
 
 Status BufferedLogStorage::Create(Env* env,
@@ -182,6 +211,11 @@ Status BufferedLogStorage::Create(Env* env,
 
 BufferedLogStorage::~BufferedLogStorage() {
 
+}
+
+Statistics BufferedLogStorage::GetStatistics() {
+  return msg_loop_->AggregateStatsSync(
+      [this](int i) { return workers_[i]->GetStatistics(); });
 }
 
 Status BufferedLogStorage::AppendAsync(LogID id,
