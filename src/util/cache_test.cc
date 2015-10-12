@@ -374,7 +374,7 @@ class Value {
  public:
   explicit Value(size_t v) : v_(v) { }
 
-  ~Value() { std::cout << v_ << " is destructed\n"; }
+  ~Value() {}
 };
 
 namespace {
@@ -444,7 +444,6 @@ TEST(CacheTest, OverCapacity) {
   for (size_t i = 0; i < n + 1; i++) {
     std::string key = std::to_string(i+1);
     auto h = cache->Lookup(key);
-    std::cout << key << (h?" found\n":" not found\n");
     ASSERT_TRUE(h != nullptr);
     if (h) cache->Release(h);
   }

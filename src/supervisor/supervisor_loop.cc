@@ -4,6 +4,9 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 #define __STDC_FORMAT_MACROS
 #include "src/supervisor/supervisor_loop.h"
+
+#include <sys/socket.h>
+
 #include "include/Status.h"
 #include "include/Logger.h"
 
@@ -90,6 +93,23 @@ Status SupervisorLoop::Initialize() {
               options_.port);
     return Status::InternalError("Listener could not be created");
   }
+
+  // Find the bound address.
+  if (options_.port == 0) {
+    // Grab the actual port number, if auto allocated.
+    auto sin_len = static_cast<socklen_t>(sizeof(sin));
+    if (getsockname(evconnlistener_get_fd(listener_),
+                    reinterpret_cast<sockaddr*>(&sin),
+                    &sin_len)) {
+      return Status::InternalError("Failed to obtain listener port");
+    }
+
+    options_.port = ntohs(sin.sin6_port);
+    LOG_INFO(options_.info_log, "Supervisor assigned port %d", options_.port);
+  }
+
+  // Setup host ID of the supervisor.
+  host_id_ = HostId::CreateLocal(static_cast<uint16_t>(options_.port));
 
   // Create events
 

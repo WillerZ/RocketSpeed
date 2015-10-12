@@ -43,7 +43,7 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
   LOG_DEBUG(info_log_,
             "Received message %s at %s",
             MessageTypeName(type),
-            hostid_.ToString().c_str());
+            GetHostId().ToString().c_str());
 
   // Search for a callback method corresponding to this msg type
   // Give up ownership of this message to the callback function
@@ -81,12 +81,6 @@ MsgLoop::MsgLoop(BaseEnv* env,
   assert(info_log);
   assert(num_workers >= 1);
 
-  // Setup host id
-  char myname[1024];
-  gethostname(&myname[0], sizeof(myname));
-  hostid_ = HostId::CreateLocal(static_cast<uint16_t>(port),
-                                std::string(myname) + std::to_string(port));
-
   auto event_callback = [this] (std::unique_ptr<Message> msg,
                                 StreamID origin) {
     EventCallback(std::move(msg), origin);
@@ -115,7 +109,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   // log an informational message
   LOG_INFO(info_log,
            "Created a new Message Loop listening at %s with %zu callbacks",
-           hostid_.ToString().c_str(),
+           GetHostId().ToString().c_str(),
            msg_callbacks_.size());
 }
 
@@ -180,7 +174,7 @@ Status MsgLoop::Initialize() {
 
 void MsgLoop::Run() {
   LOG_INFO(
-      info_log_, "Starting Message Loop at %s", hostid_.ToString().c_str());
+      info_log_, "Starting Message Loop at %s", GetHostId().ToString().c_str());
   env_->SetCurrentThreadName(name_ + "-0");
 
   // Add ping callback if it hasn't already been added.
@@ -239,8 +233,9 @@ void MsgLoop::Stop() {
   }
   worker_threads_.clear();
 
-  LOG_INFO(
-      info_log_, "Stopped a Message Loop at %s", hostid_.ToString().c_str());
+  LOG_INFO(info_log_,
+           "Stopped a Message Loop at %s",
+           GetHostId().ToString().c_str());
   info_log_->Flush();
 }
 

@@ -826,29 +826,45 @@ EventLoop::Initialize() {
       "Failed to create an event base for an EventLoop thread");
   }
 
-  // Port number <= 0 indicates that there is no accept loop.
-  if (port_number_ > 0) {
+  // Port == 0 indicates that the actual port should be auto-allocated,
+  // while port < 0 -- that there is no accept loop.
+  if (port_number_ >= 0) {
     sockaddr_in6 sin;
     memset(&sin, 0, sizeof(sin));
     sin.sin6_family = AF_INET6;
     sin.sin6_addr = in6addr_any;
     sin.sin6_port = htons(static_cast<uint16_t>(port_number_));
+    auto sin_len = static_cast<socklen_t>(sizeof(sin));
 
     // Create libevent connection listener.
-    listener_ = evconnlistener_new_bind(
-      base_,
-      &EventLoop::do_accept,
-      reinterpret_cast<void*>(this),
-      LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE,
-      -1,  // backlog
-      reinterpret_cast<sockaddr*>(&sin),
-      static_cast<int>(sizeof(sin)));
+    listener_ =
+        evconnlistener_new_bind(base_,
+                                &EventLoop::do_accept,
+                                reinterpret_cast<void*>(this),
+                                LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE,
+                                -1,  // backlog
+                                reinterpret_cast<sockaddr*>(&sin),
+                                static_cast<int>(sin_len));
 
     if (listener_ == nullptr) {
       return Status::InternalError(
         "Failed to create connection listener on port " +
           std::to_string(port_number_));
     }
+
+    if (port_number_ == 0) {
+      // Grab the actual port number, if auto allocated.
+      if (getsockname(evconnlistener_get_fd(listener_),
+                      reinterpret_cast<sockaddr*>(&sin),
+                      &sin_len)) {
+        return Status::InternalError("Failed to obtain listener port");
+      }
+      port_number_ = ntohs(sin.sin6_port);
+      LOG_INFO(info_log_, "EventLoop bound to port %d", port_number_);
+    }
+
+    // Setup host ID.
+    host_id_ = HostId::CreateLocal(static_cast<uint16_t>(port_number_));
 
     evconnlistener_set_error_cb(listener_, &EventLoop::accept_error_cb);
   }

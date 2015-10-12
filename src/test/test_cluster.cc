@@ -242,8 +242,6 @@ void LocalTestCluster::Initialize(Options opts) {
     // pilot too. Any subscribe/unsubscribe requests to the copilot needs
     // to write to the rollcall topic (via the pilot).
     opts.start_pilot = true;
-    HostId pilot_host(
-        HostId::CreateLocal(static_cast<uint16_t>(opts.cockpit_port)));
     if (opts.start_copilot) {
       // Create Copilot
       std::unordered_map<ControlTowerId, HostId> tower_hosts = {
@@ -256,7 +254,7 @@ void LocalTestCluster::Initialize(Options opts) {
       opts.copilot.control_tower_connections =
           cockpit_loop_->GetNumWorkers();
       if (opts.copilot.rollcall_enabled) {
-        opts.copilot.pilots.push_back(pilot_host);
+        opts.copilot.pilots.push_back(cockpit_loop_->GetHostId());
       }
       status_ = Copilot::CreateNewInstance(opts.copilot, &copilot_);
       if (!status_.ok()) {

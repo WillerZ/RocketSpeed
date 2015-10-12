@@ -3,6 +3,9 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 #define __STDC_FORMAT_MACROS
+
+#include <memory>
+
 #include "src/port/Env.h"
 #include "src/supervisor/supervisor_loop.h"
 #include "src/test/test_cluster.h"
@@ -23,35 +26,45 @@ class SupervisorTest {
     ASSERT_OK(test::CreateLogger(env_, "SupervisorTest", &info_log_));
   }
 
-  std::unique_ptr<SupervisorLoop> MakeSupervisor(LocalTestCluster* cluster);
+  std::shared_ptr<SupervisorLoop> MakeSupervisor(LocalTestCluster* cluster);
   std::string DoRequest(std::string request);
 
  protected:
   Env* env_;
-  std::shared_ptr<rocketspeed::Logger> info_log_;
+  std::shared_ptr<Logger> info_log_;
+  std::weak_ptr<SupervisorLoop> last_supervisor_;
 };
 
-std::unique_ptr<SupervisorLoop>
-SupervisorTest::MakeSupervisor(LocalTestCluster* cluster) {
-  SupervisorOptions options {
-    SupervisorLoop::DEFAULT_PORT,
-    info_log_,
-    cluster->GetControlTower(),
-    cluster->GetPilot(),
-    cluster->GetCopilot()
-  };
+std::shared_ptr<SupervisorLoop> SupervisorTest::MakeSupervisor(
+    LocalTestCluster* cluster) {
+  // We allow to create a single supervisor per test, but do not own it.
+  ASSERT_TRUE(last_supervisor_.expired());
+
+  SupervisorOptions options{0,  // Automatically allocate the port.
+                            info_log_,
+                            cluster->GetControlTower(),
+                            cluster->GetPilot(),
+                            cluster->GetCopilot()};
 
   std::unique_ptr<SupervisorLoop> supervisor;
-  auto st = SupervisorLoop::CreateNewInstance(options, &supervisor);
-  ASSERT_OK(st);
-
+  ASSERT_OK(SupervisorLoop::CreateNewInstance(options, &supervisor));
   ASSERT_OK(supervisor->Initialize());
-  return supervisor;
+
+  std::shared_ptr<SupervisorLoop> supervisor_shared = std::move(supervisor);
+  last_supervisor_ = supervisor_shared;
+  return supervisor_shared;
 }
 
 std::string SupervisorTest::DoRequest(std::string request) {
+  auto supervisor = last_supervisor_.lock();
+  ASSERT_TRUE(supervisor);
+
   std::unique_ptr<Connection> connection;
-  env_->NewConnection("localhost", 58800, true, &connection, EnvOptions());
+  env_->NewConnection("localhost",
+                      supervisor->GetHostId().GetPort(),
+                      true,
+                      &connection,
+                      EnvOptions());
   ASSERT_TRUE(connection);
   ASSERT_OK(connection->Send(request.c_str()));
   char buffer[4096] = { 0 };

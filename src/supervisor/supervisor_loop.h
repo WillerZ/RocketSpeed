@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 
 #include "src/port/port.h"
+#include "src/util/common/host_id.h"
 #include "src/util/common/thread_check.h"
 #include "src/supervisor/options.h"
 #include <map>
@@ -53,6 +54,8 @@ class SupervisorLoop {
   bool IsRunning() const;
   // Stops supervisor event loop
   void Stop();
+  // Retrieves bound address.
+  const HostId& GetHostId() const { return host_id_; }
 
   Status WaitUntilRunning(std::chrono::seconds timeout =
                             std::chrono::seconds(10));
@@ -75,6 +78,9 @@ class SupervisorLoop {
 
   // Passed options
   SupervisorOptions options_;
+
+  // The supervisor's listener address.
+  HostId host_id_;
 
   // used for timed wait until supervisor starts
   port::Semaphore start_signal_;

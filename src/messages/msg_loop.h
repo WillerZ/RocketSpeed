@@ -78,7 +78,7 @@ class MsgLoop : public MsgLoopBase {
   void Stop() override;
 
   // Get the host ID of this message loop.
-  const HostId& GetHostId() const { return hostid_; }
+  const HostId& GetHostId() const { return event_loops_[0]->GetHostId(); }
 
   // Get the name of this message loop.
   const std::string& GetName() const {
@@ -201,9 +201,6 @@ class MsgLoop : public MsgLoopBase {
 
   // The Environment Options
   const EnvOptions env_options_;
-
-  // the host/port number of this Msg Loop
-  HostId hostid_;
 
   // debug message go here
   const std::shared_ptr<Logger> info_log_;

@@ -54,7 +54,7 @@ TEST(ControlTowerTest, Subscribe) {
   ASSERT_OK(cluster.GetStatus());
 
   // create a client to communicate with the ControlTower
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "client");
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "client");
   StreamSocket socket(
       loop.CreateOutboundStream(cluster.GetControlTower()->GetHostId(), 0));
   // Define a callback to process the subscribe response at the client
@@ -96,7 +96,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   auto ct = cluster.GetControlTower();
 
   // create a client to communicate with the ControlTower
-  MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
+  MsgLoop loop1(env_, env_options_, 0, 1, info_log_, "loop1");
   StreamSocket socket1(loop1.CreateOutboundStream(ct->GetHostId(), 0));
   loop1.RegisterCallbacks({
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
@@ -122,7 +122,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   ASSERT_EQ(numopenlogs1, 1);
 
   // create second client to communicate with the ControlTower
-  MsgLoop loop2(env_, env_options_, 58489, 1, info_log_, "loop2");
+  MsgLoop loop2(env_, env_options_, 0, 1, info_log_, "loop2");
   StreamSocket socket2(loop2.CreateOutboundStream(ct->GetHostId(), 0));
   loop2.RegisterCallbacks({
       {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
@@ -178,12 +178,8 @@ TEST(ControlTowerTest, NoLogger) {
   LocalTestCluster cluster(info_log_, true, false, false);
   ASSERT_OK(cluster.GetStatus());
 
-  MsgLoop loop(env_,
-               env_options_,
-               58499,
-               1,
-               std::make_shared<NullLogger>(),
-               "test");
+  MsgLoop loop(
+      env_, env_options_, 0, 1, std::make_shared<NullLogger>(), "test");
   ASSERT_OK(loop.Initialize());
   ControlTower* tower = nullptr;
   ControlTowerOptions options;

@@ -56,9 +56,8 @@ TEST(CopilotTest, WorkerMapping) {
 
   const int num_towers = 100;
   const int num_workers = 10;
-  const int port = Copilot::DEFAULT_PORT - 99;
 
-  MsgLoop loop(env_, EnvOptions(), port, num_workers, info_log_, "test");
+  MsgLoop loop(env_, EnvOptions(), 0, num_workers, info_log_, "test");
   ASSERT_OK(loop.Initialize());
 
   std::unordered_map<ControlTowerId, HostId> control_towers;

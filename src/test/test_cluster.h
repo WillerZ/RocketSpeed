@@ -59,8 +59,9 @@ class LocalTestCluster {
     PilotOptions pilot;
     CopilotOptions copilot;
     ControlTowerOptions tower;
-    int controltower_port = ControlTower::DEFAULT_PORT;
-    int cockpit_port = Copilot::DEFAULT_PORT;
+    // Allocate ports automatically.
+    int controltower_port = 0;
+    int cockpit_port = 0;
     std::shared_ptr<LogDeviceStorage> log_storage;
     std::shared_ptr<LogDeviceLogRouter> log_router;
   };

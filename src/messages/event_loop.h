@@ -169,7 +169,8 @@ class EventLoop {
   /**
    * Create an EventLoop at the specified port.
    * @param port The port on which the EventLoop is running.
-   *             Set to <= 0 to have no accept loop.
+   *             Set to 0 to have auto-allocated port.
+   *             Set to < 0 to have no accept loop.
    * @param info_log Write informational messages to this log
    * @param event_callback Callback invoked when Dispatch is called
    * @param accept_callback Callback invoked when a new client connects
@@ -194,6 +195,8 @@ class EventLoop {
    * loop starts running.
    */
   Status Initialize();
+
+  const HostId& GetHostId() const { return host_id_; }
 
   // Start this instance of the Event Loop
   void Run(void);
@@ -427,6 +430,7 @@ class EventLoop {
 
   // Port nuber of accept loop (in network byte order)
   int port_number_ = -1;
+  HostId host_id_;
 
   // Is the EventLoop all setup and running?
   std::atomic<bool> running_;

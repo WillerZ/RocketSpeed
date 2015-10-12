@@ -10,6 +10,8 @@
 #include <cstring>
 #include <string>
 
+#include <unistd.h>
+
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "src/util/common/hash.h"
@@ -60,7 +62,11 @@ HostId HostId::CreateLocal(uint16_t port, std::string description) {
   loopback.sin_port = htons(port);
 
   if (description.empty()) {
-    description = "localhost:" + std::to_string(port);
+    char myname[1024];
+    gethostname(&myname[0], sizeof(myname));
+    description.append(myname);
+    description.push_back(':');
+    description.append(std::to_string(port));
   }
 
   const sockaddr* addr = reinterpret_cast<sockaddr*>(&loopback);
@@ -83,6 +89,17 @@ bool HostId::operator==(const HostId& rhs) const {
 size_t HostId::Hash() const {
   return MurmurHash2<Slice>()(
       Slice(reinterpret_cast<const char*>(&storage_), sizeof(storage_)));
+}
+
+const uint16_t HostId::GetPort() const {
+  auto saddr = GetSockaddr();
+  uint16_t port_netw = 0;
+  if (saddr->sa_family == AF_INET) {
+    port_netw = reinterpret_cast<const struct sockaddr_in*>(saddr)->sin_port;
+  } else if (saddr->sa_family == AF_INET6) {
+    port_netw = reinterpret_cast<const struct sockaddr_in6*>(saddr)->sin6_port;
+  }
+  return ntohs(port_netw);
 }
 
 Status HostId::ResolveInternal(const std::string& hostname,

@@ -26,9 +26,8 @@ class RocketeerTest {
     RocketeerOptions options;
     options.info_log = info_log_;
     options.env = env_;
-    options.port = 5880;
+    options.port = 0;
     server_.reset(new RocketeerServer(std::move(options)));
-    server_addr_ = HostId::CreateLocal(5880);
   }
 
   virtual ~RocketeerTest() {
@@ -45,7 +44,6 @@ class RocketeerTest {
   std::shared_ptr<rocketspeed::Logger> info_log_;
 
   std::unique_ptr<RocketeerServer> server_;
-  HostId server_addr_;
 
   class ClientMock {
    public:
@@ -106,9 +104,10 @@ TEST(RocketeerTest, SubscribeUnsubscribe) {
   SubscribeUnsubscribe rocketeer;
   server_->Register(&rocketeer);
   ASSERT_OK(server_->Start());
+  auto server_addr = server_->GetMsgLoop()->GetHostId();
 
   auto client = MockClient(std::map<MessageType, MsgCallbackType>());
-  auto socket = client.msg_loop->CreateOutboundStream(server_addr_, 0);
+  auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
 
   // Subscribe.
   MessageSubscribe subscribe(
@@ -154,6 +153,7 @@ TEST(RocketeerTest, SubscribeTerminate) {
   SubscribeTerminate rocketeer;
   server_->Register(&rocketeer);
   ASSERT_OK(server_->Start());
+  auto server_addr = server_->GetMsgLoop()->GetHostId();
 
   port::Semaphore unsubscribe_sem;
   auto client = MockClient({
@@ -165,7 +165,7 @@ TEST(RocketeerTest, SubscribeTerminate) {
          unsubscribe_sem.Post();
        }},
   });
-  auto socket = client.msg_loop->CreateOutboundStream(server_addr_, 0);
+  auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
 
   // Subscribe.
   MessageSubscribe subscribe(

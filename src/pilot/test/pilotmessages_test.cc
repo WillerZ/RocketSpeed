@@ -60,7 +60,7 @@ TEST(PilotTest, Publish) {
   static const size_t kNumMessages = 100;
 
   // create a client to communicate with the Pilot
-  MsgLoop loop(env_, env_options_, 58499, 1, info_log_, "test");
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "test");
   StreamSocket socket(loop.CreateOutboundStream(
       cluster.GetPilot()->GetHostId(), 0));
   loop.RegisterCallbacks({
@@ -110,12 +110,8 @@ TEST(PilotTest, NoLogger) {
   LocalTestCluster cluster(info_log_, false, false, true);
   ASSERT_OK(cluster.GetStatus());
 
-  MsgLoop loop(env_,
-               env_options_,
-               58499,
-               1,
-               std::make_shared<NullLogger>(),
-               "test");
+  MsgLoop loop(
+      env_, env_options_, 0, 1, std::make_shared<NullLogger>(), "test");
   Pilot* pilot = nullptr;
   PilotOptions options;
   options.msg_loop = &loop;

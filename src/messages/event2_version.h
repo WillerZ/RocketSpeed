@@ -18,6 +18,7 @@
 #define event_base_free ld_event_base_free
 #define evutil_make_socket_nonblocking ld_evutil_make_socket_nonblocking
 #define evconnlistener_get_base ld_evconnlistener_get_base
+#define evconnlistener_get_fd ld_evconnlistener_get_fd
 #define evconnlistener_new_bind ld_evconnlistener_new_bind
 #define evconnlistener_set_error_cb ld_evconnlistener_set_error_cb
 #define evconnlistener_free ld_evconnlistener_free

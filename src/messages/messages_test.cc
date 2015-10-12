@@ -297,7 +297,7 @@ TEST(Messaging, ErrorHandling) {
 
 TEST(Messaging, PingPong) {
   // Create server loop.
-  MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  MsgLoop server(env_, env_options_, 0, 1, info_log_, "server");
   ASSERT_OK(server.Initialize());
   MsgLoopThread t1(env_, &server, "server");
 
@@ -365,7 +365,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   MultiProducerQueue<std::pair<std::unique_ptr<MessagePing>, StreamID>>
     server_pings(3);
 
-  MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  MsgLoop server(env_, env_options_, 0, 1, info_log_, "server");
   server.RegisterCallbacks({
       {MessageType::mPing, [&](std::unique_ptr<Message> msg,
                                StreamID origin) {
@@ -461,7 +461,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
   static const int kNumStreams = 10;
 
   // Server loop.
-  MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  MsgLoop server(env_, env_options_, 0, 1, info_log_, "server");
   ASSERT_OK(server.Initialize());
   MsgLoopThread t1(env_, &server, "server");
 
@@ -521,7 +521,7 @@ TEST(Messaging, GracefulGoodbye) {
   std::mutex inbound_stream_mutex;
 
   // Server loop.
-  MsgLoop server(env_, env_options_, 58499, 1, info_log_, "server");
+  MsgLoop server(env_, env_options_, 0, 1, info_log_, "server");
   server.RegisterCallbacks({
       {MessageType::mGoodbye,
        [&](std::unique_ptr<Message> msg,
@@ -634,21 +634,22 @@ TEST(Messaging, Timer) {
 
 TEST(Messaging, InitializeFailure) {
   // Check that Initialize returns failure.
-  MsgLoop loop1(env_, env_options_, 58499, 1, info_log_, "loop1");
+  MsgLoop loop1(env_, env_options_, 0, 1, info_log_, "loop1");
   ASSERT_OK(loop1.Initialize());
   MsgLoopThread t1(env_, &loop1, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
 
+  auto port1 = loop1.GetHostId().GetPort();
+  ASSERT_NE(0, port1);
   // now start another on same port, should fail.
-  MsgLoop loop2(env_, env_options_, 58499, 1, info_log_, "loop2");
+  MsgLoop loop2(env_, env_options_, port1, 1, info_log_, "loop2");
   ASSERT_TRUE(!loop2.Initialize().ok());
 }
 
 TEST(Messaging, SocketDeath) {
   // Tests that a client cannot unwillingly send messages on the same logical
   // stream, if the stream has broken during transmission.
-  MsgLoop receiver_loop(
-      env_, env_options_, 58499, 1, info_log_, "receiver_loop");
+  MsgLoop receiver_loop(env_, env_options_, 0, 1, info_log_, "receiver_loop");
   ASSERT_OK(receiver_loop.Initialize());
   std::unique_ptr<MsgLoopThread> t1(
     new MsgLoopThread(env_, &receiver_loop, "receiver_loop"));
@@ -672,10 +673,10 @@ TEST(Messaging, SocketDeath) {
   ASSERT_OK(receiver_loop.WaitUntilRunning());
 
   // Receiver client ID.
-  auto receiver_client_id = receiver_loop.GetHostId();
+  auto receiver_host_id = receiver_loop.GetHostId();
 
   // Create logical stream and corresponding socket1.
-  StreamSocket socket1(sender_loop.CreateOutboundStream(receiver_client_id, 0));
+  StreamSocket socket1(sender_loop.CreateOutboundStream(receiver_host_id, 0));
 
   // Send a ping from sender_loop on socket1.
   MessagePing ping0(
@@ -687,22 +688,26 @@ TEST(Messaging, SocketDeath) {
   t1.reset();
 
   // Restart receiver_loop with the same parameters.
-  MsgLoop receiver_loop1(
-      env_, env_options_, 58499, 1, info_log_, "receiver_loop1");
+  MsgLoop receiver_loop1(env_,
+                         env_options_,
+                         receiver_host_id.GetPort(),
+                         1,
+                         info_log_,
+                         "receiver_loop1");
   ASSERT_OK(receiver_loop1.Initialize());
   MsgLoopThread t3(env_, &receiver_loop1, "receiver_loop1");
   receiver_loop1.RegisterCallbacks(callbacks);
   ASSERT_OK(receiver_loop1.WaitUntilRunning());
 
   // It has to listen on the same address.
-  ASSERT_TRUE(receiver_loop1.GetHostId() == receiver_client_id);
+  ASSERT_TRUE(receiver_loop1.GetHostId() == receiver_host_id);
 
   // Send a ping from sender_loop on socket1.
   MessagePing ping1(Tenant::GuestTenant, MessagePing::PingType::Request, "bad");
   ASSERT_OK(sender_loop.SendRequest(ping1, &socket1, 0));
 
   // Create logical stream and corresponding socket2 with.
-  StreamSocket socket2(sender_loop.CreateOutboundStream(receiver_client_id, 0));
+  StreamSocket socket2(sender_loop.CreateOutboundStream(receiver_host_id, 0));
 
   // Send a ping from sender_loop on socket2.
   MessagePing ping2(

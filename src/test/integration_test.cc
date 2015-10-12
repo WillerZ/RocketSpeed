@@ -672,7 +672,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   port::Semaphore received_data;
 
   // Start client loop.
-  MsgLoop client(env_, EnvOptions(), 58499, 1, info_log, "client");
+  MsgLoop client(env_, EnvOptions(), 0, 1, info_log, "client");
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDeliver] =
     [&] (std::unique_ptr<Message> msg, StreamID origin) {
@@ -723,6 +723,7 @@ TEST(IntegrationTest, LostConnection) {
   opts.info_log = info_log;
   std::unique_ptr<LocalTestCluster> cluster(new LocalTestCluster(opts));
   ASSERT_OK(cluster->GetStatus());
+  auto port = cluster->GetCockpitLoop()->GetHostId().GetPort();
 
   // Message read semaphore.
   port::Semaphore msg_received;
@@ -759,6 +760,10 @@ TEST(IntegrationTest, LostConnection) {
   ASSERT_OK(Client::Create(std::move(options), &client));
   client->SetDefaultCallbacks(nullptr, receive_callback);
 
+  // Listen on a topic.
+  ASSERT_TRUE(client->Subscribe(GuestTenant, namespace_id, topic, 0));
+  env_->SleepForMicroseconds(200000);
+
   // Send a message.
   ASSERT_OK(client->Publish(GuestTenant,
                             topic,
@@ -766,9 +771,6 @@ TEST(IntegrationTest, LostConnection) {
                             topic_options,
                             Slice(data),
                             ok_callback).status);
-
-  // Listen on a topic.
-  ASSERT_TRUE(client->Subscribe(GuestTenant, namespace_id, topic, 1));
 
   // Wait for the message.
   ASSERT_TRUE(msg_received.TimedWait(timeout));
@@ -786,6 +788,8 @@ TEST(IntegrationTest, LostConnection) {
                             disconnected_callback).status);
   ASSERT_TRUE(error_sem.TimedWait(timeout));
 
+  // Start a cluster on the same port.
+  opts.cockpit_port = port;
   cluster.reset(new LocalTestCluster(opts));
   ASSERT_OK(cluster->GetStatus());
 
@@ -951,7 +955,6 @@ TEST(IntegrationTest, NewControlTower) {
   new_opts.start_controltower = true;
   new_opts.start_copilot = false;
   new_opts.start_pilot = false;
-  new_opts.controltower_port = ControlTower::DEFAULT_PORT + 1;
   LocalTestCluster new_cluster(new_opts);
   ASSERT_OK(new_cluster.GetStatus());
 
@@ -1327,7 +1330,6 @@ TEST(IntegrationTest, LogAvailability) {
     ct_opts[i].start_controltower = true;
     ct_opts[i].start_copilot = false;
     ct_opts[i].start_pilot = false;
-    ct_opts[i].controltower_port = ControlTower::DEFAULT_PORT + i + 1;
     ct_cluster[i].reset(new LocalTestCluster(ct_opts[i]));
     ASSERT_OK(ct_cluster[i]->GetStatus());
   }
@@ -1453,6 +1455,7 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   opts.copilot.resubscriptions_per_second = kNumTopics;
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
+  auto original_port = cluster.GetControlTowerLoop()->GetHostId().GetPort();
 
   // RocketSpeed callbacks
   port::Semaphore msg_received;
@@ -1510,6 +1513,7 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   new_opts.start_controltower = true;
   new_opts.start_copilot = false;
   new_opts.start_pilot = false;
+  new_opts.controltower_port = original_port;
 
   uint64_t start = env_->NowMicros();
   LocalTestCluster new_cluster(new_opts);
@@ -1551,7 +1555,6 @@ TEST(IntegrationTest, CopilotDeath) {
   opts.start_copilot = true;
   opts.copilot.timer_interval_micros = 100000;
   opts.copilot.resubscriptions_per_second = kNumTopics;
-  opts.cockpit_port = Copilot::DEFAULT_PORT + 1;
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
@@ -2029,7 +2032,6 @@ TEST(IntegrationTest, TowerRebalance) {
     ct_opts[i].start_controltower = true;
     ct_opts[i].start_copilot = false;
     ct_opts[i].start_pilot = false;
-    ct_opts[i].controltower_port = ControlTower::DEFAULT_PORT + i + 1;
     ct_cluster[i].reset(new LocalTestCluster(ct_opts[i]));
     ASSERT_OK(ct_cluster[i]->GetStatus());
   }

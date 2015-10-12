@@ -57,6 +57,8 @@ class HostId {
     description_ = std::move(description);
   }
 
+  const uint16_t GetPort() const;
+
   const sockaddr* GetSockaddr() const {
     return reinterpret_cast<const sockaddr*>(&storage_);
   }

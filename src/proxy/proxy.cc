@@ -117,9 +117,12 @@ Proxy::Proxy(ProxyOptions options)
   using std::placeholders::_1;
   using std::placeholders::_2;
 
-  msg_loop_.reset(new MsgLoop(env_, options.env_options,
-                              0,  // port
-                              options.num_workers, info_log_, "proxy"));
+  msg_loop_.reset(new MsgLoop(env_,
+                              options.env_options,
+                              -1,  // port
+                              options.num_workers,
+                              info_log_,
+                              "proxy"));
 
   auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1, _2);
   auto goodbye_callback = std::bind(&Proxy::HandleGoodbyeMessage, this, _1, _2);

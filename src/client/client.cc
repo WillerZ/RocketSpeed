@@ -67,13 +67,12 @@ Status ClientImpl::Create(ClientOptions options,
     options.info_log = std::make_shared<NullLogger>();
   }
 
-  std::unique_ptr<MsgLoop> msg_loop_(
-    new MsgLoop(options.env,
-                EnvOptions(),
-                0,
-                options.num_workers,
-                options.info_log,
-                "client"));
+  std::unique_ptr<MsgLoop> msg_loop_(new MsgLoop(options.env,
+                                                 EnvOptions(),
+                                                 -1,  // port
+                                                 options.num_workers,
+                                                 options.info_log,
+                                                 "client"));
 
   Status st = msg_loop_->Initialize();
   if (!st.ok()) {
