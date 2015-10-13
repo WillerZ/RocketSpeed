@@ -32,6 +32,8 @@ class Copilot;
 class ControlTowerRouter;
 class RollcallImpl;
 
+template <typename> class ThreadLocalQueues;
+
 /**
  * Copilot worker. The copilot will allocate several of these, ideally one
  * per hardware thread. The workers take load off of the main thread.
@@ -370,7 +372,8 @@ class CopilotWorker {
   std::vector<std::shared_ptr<CommandQueue>> tower_queues_;
 
   // Queues for reporting back to worker from RollCall error callback.
-  std::unique_ptr<ThreadLocalCommandQueues> rollcall_error_queues_;
+  std::unique_ptr<ThreadLocalQueues<std::unique_ptr<Command>>>
+    rollcall_error_queues_;
 
   // A client to write rollcall topic
   std::unique_ptr<RollcallImpl> rollcall_;

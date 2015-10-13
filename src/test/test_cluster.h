@@ -152,6 +152,8 @@ class LocalTestCluster {
   Status CreateClient(std::unique_ptr<ClientImpl>* client,
                       bool is_internal);
 
+  Status CreateClient(std::unique_ptr<Client>* client);
+
  private:
   void Initialize(Options opts);
 

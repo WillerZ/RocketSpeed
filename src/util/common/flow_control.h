@@ -40,7 +40,7 @@ class Flow {
     return write_failed_;
   }
 
- private:
+ protected:
   friend class FlowControl;
 
   Flow(FlowControl* flow_control, AbstractSource* source)
@@ -53,15 +53,27 @@ class Flow {
   bool write_failed_;
 };
 
+/**
+ * Constructs a sourceless flow of messages. This can be used when the flow
+ * interface is needed but backpressure will be handled by other means.
+ */
+class SourcelessFlow : public Flow {
+ public:
+  SourcelessFlow()
+  : Flow(nullptr, nullptr) {}
+};
+
 class FlowControl {
  public:
   /**
    * Constructs FlowControl over an EventLoop.
    *
+   * @param stats_prefix Prefix for flow control statistics.
    * @param event_loop The EventLoop to register processors with.
    */
-  explicit FlowControl(EventLoop* event_loop)
-  : event_loop_(event_loop) {
+  explicit FlowControl(const std::string& stats_prefix, EventLoop* event_loop)
+  : event_loop_(event_loop)
+  , stats_(stats_prefix) {
   }
 
   /**
@@ -75,16 +87,27 @@ class FlowControl {
   template <typename T>
   void Register(Source<T>* source,
                 std::function<void(Flow*, T)> on_read) {
-    source->RegisterReadCallback(
-      event_loop_,
-      [this, on_read, source] (T item) {
-        // When source is read available, drain it into on_read until
-        // backpressure is applied.
-        Flow flow { this, source };
-        on_read(&flow, std::move(item));
-        return !flow.WriteHasFailed();
-      });
-    source->SetReadEnabled(event_loop_, true);
+    // Cannot assume we are registering from the EventLoop thread, so we
+    // need to send a control command to install the read event.
+    std::unique_ptr<Command> cmd(MakeExecuteCommand(
+      [this, source, on_read] () {
+        // Register the read callback for this source, and enable it.
+        source->RegisterReadCallback(
+          event_loop_,
+          [this, on_read, source] (T item) {
+            // When source is read available, drain it into on_read until
+            // backpressure is applied.
+            Flow flow { this, source };
+            on_read(&flow, std::move(item));
+            return !flow.WriteHasFailed();
+          });
+        source->SetReadEnabled(event_loop_, true);
+      }));
+    event_loop_->SendControlCommand(std::move(cmd));
+  }
+
+  const Statistics& GetStatistics() const {
+    return stats_.all;
   }
 
  private:
@@ -117,6 +140,8 @@ class FlowControl {
    */
   template <typename T>
   std::unique_ptr<EventCallback>& GetSinkWriteEvent(Sink<T>* sink) {
+    event_loop_->ThreadCheck();
+
     SinkState& sink_state = sinks_[sink];
     if (!sink_state.write_event) {
       // Install write event.
@@ -145,6 +170,8 @@ class FlowControl {
    */
   template <typename T>
   void ApplyBackpressure(Sink<T>* sink, AbstractSource* source) {
+    event_loop_->ThreadCheck();
+
     // Backpressure is achieved by first disabling read events from the source.
     // This relieves pressure on the down stream sinks.
     // Next, we add an event to detect when the sink has room to accept more
@@ -158,9 +185,14 @@ class FlowControl {
 
     // Add this source as one that will be re-enabled on the sink write event.
     auto result = sink_state.backpressure.emplace(source);
-    assert(result.second);  // should not be able to apply backpressure twice.
-    (void)result;
-    source_state.blockers++;
+
+    // If this is a new source for this sink, increase the blocker count.
+    // The same sink may be blocked by the same source in fan-out cases where
+    // a single read from a source causes multiple writes to a single sink.
+    if (result.second) {
+      stats_.backpressure_applied->Add(1);
+      source_state.blockers++;
+    }
 
     // Enable an event to notify us when the sink is available again for writes.
     GetSinkWriteEvent(sink)->Enable();
@@ -190,11 +222,31 @@ class FlowControl {
   EventLoop* event_loop_;
   std::unordered_map<AbstractSink*, SinkState> sinks_;
   std::unordered_map<AbstractSource*, SourceState> sources_;
+
+  struct Stats {
+    explicit Stats(std::string prefix) {
+      prefix += ".flow_control.";
+      backpressure_applied =
+        all.AddCounter(prefix + "backpressure_applied");
+      backpressure_lifted =
+        all.AddCounter(prefix + "backpressure_lifted");
+    }
+
+    Statistics all;
+    Counter* backpressure_applied;
+    Counter* backpressure_lifted;
+  } stats_;
 };
 
 template <typename T>
 bool Flow::Write(Sink<T>* sink, T& value) {
-  write_failed_ |= !flow_control_->Write(source_, sink, value);
+  if (flow_control_) {
+    write_failed_ |= !flow_control_->Write(source_, sink, value);
+  } else {
+    // For SourcelessFlow, there is no flow control, we just want to know
+    // if the write failed or not.
+    write_failed_ |= !sink->Write(value);
+  }
   return !write_failed_;
 }
 

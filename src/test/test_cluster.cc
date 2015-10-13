@@ -302,6 +302,14 @@ LocalTestCluster::CreateClient(std::unique_ptr<ClientImpl>* client,
   return status;
 }
 
+Status
+LocalTestCluster::CreateClient(std::unique_ptr<Client>* client) {
+  ClientOptions client_options;
+  client_options.info_log = info_log_;
+  client_options.config = GetConfiguration();
+  return Client::Create(std::move(client_options), client);
+}
+
 LocalTestCluster::~LocalTestCluster() {
   // Stop message loops.
   if (cockpit_loop_) {

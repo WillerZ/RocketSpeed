@@ -61,7 +61,7 @@ typedef std::function<void()> TimerCallbackType;
 class CommandQueue;
 class EventCallback;
 class EventLoop;
-struct QueueStats;
+class QueueStats;
 class SocketEvent;
 
 /**
@@ -262,6 +262,16 @@ class EventLoop {
 
   Status SendResponse(const Message& msg, StreamID stream_id);
 
+  /**
+   * Sends a command through the control queue. The control queue is used
+   * for one-off initialization, so should be be used at all in steady state.
+   * For this reason, it is shared and unbounded to ensure that control
+   * commands never fail.
+   *
+   * @param command The command to send.
+   */
+  void SendControlCommand(std::unique_ptr<Command> command);
+
   // Start communicating on a fd.
   // This call is thread-safe.
   void Accept(int fd);
@@ -314,14 +324,12 @@ class EventLoop {
    */
   std::shared_ptr<CommandQueue> CreateCommandQueue(size_t size = 0);
 
-
   /**
    * Attaches the command queue to the EventLoop for processing.
    *
    * @param command_queue The CommandQueue to begin reading and processing.
-   * @return ok() if successful, otherwise error.
    */
-  Status AttachQueue(std::shared_ptr<CommandQueue> command_queue);
+  void AttachQueue(std::shared_ptr<CommandQueue> command_queue);
 
   /**
    * Waits until the event loop is running.
@@ -391,6 +399,13 @@ class EventLoop {
    * @param enabled True enabled, false disabled.
    */
   void SetFdReadEnabled(int fd, bool enabled);
+
+  /**
+   * Get the queue stats object for this event loop.
+   */
+  std::shared_ptr<QueueStats> GetQueueStats() {
+    return queue_stats_;
+  }
 
   /**
     * Option is a helper class used for passing the additional arguments to the

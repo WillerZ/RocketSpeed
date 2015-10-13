@@ -195,9 +195,10 @@ Status ControlTower::Initialize() {
 
   for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
-      [this, i] (const Message& msg,
+      [this, i] (Flow* flow,
+                 const Message& msg,
                  std::vector<CopilotSub> recipients) {
-        rooms_[i]->OnTailerMessage(msg, std::move(recipients));
+        rooms_[i]->OnTailerMessage(flow, msg, std::move(recipients));
       };
     TopicTailer* topic_tailer;
     st = TopicTailer::CreateNewInstance(opt.env,

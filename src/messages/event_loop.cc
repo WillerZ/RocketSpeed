@@ -1048,14 +1048,11 @@ std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(size_t size) {
   }
   auto command_queue =
       std::make_shared<CommandQueue>(info_log_, queue_stats_, size);
-  Status st = AttachQueue(command_queue);
-  if (!st.ok()) {
-    LOG_ERROR(info_log_, "Failed to attach command queue to EventLoop");
-  }
+  AttachQueue(command_queue);
   return command_queue;
 }
 
-Status EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
+void EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
   // Attach the new command queue to the event loop.
   std::unique_ptr<Command> attach_command(
     MakeExecuteCommand([this, command_queue] () mutable {
@@ -1067,20 +1064,7 @@ Status EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
         event_base_loopexit(base_, nullptr);
       }
     }));
-
-  bool ok;
-  {
-    // Need to lock when writing to control_command_queue_ since it is shared.
-    MutexLock lock(&control_command_mutex_);
-    const bool check_thread = false;
-    ok = control_command_queue_->Write(attach_command, check_thread);
-  }
-
-  if (!ok) {
-    LOG_FATAL(info_log_, "Failed to add command queue to EventLoop");
-    return Status::InternalError("Failed to add command queue to EventLoop");
-  }
-  return Status::OK();
+  SendControlCommand(std::move(attach_command));
 }
 
 Status EventLoop::AddIncomingQueue(
@@ -1143,6 +1127,15 @@ Status EventLoop::SendResponse(const Message& msg, StreamID stream_id) {
   std::unique_ptr<Command> command(
       SerializedSendCommand::Response(std::move(serial), {stream_id}));
   return SendCommand(command);
+}
+
+void EventLoop::SendControlCommand(std::unique_ptr<Command> command) {
+  // Need to lock when writing to control_command_queue_ since it is shared.
+  MutexLock lock(&control_command_mutex_);
+  const bool check_thread = false;
+  bool ok = control_command_queue_->Write(command, check_thread);
+  assert(ok);
+  (void)ok;
 }
 
 void EventLoop::Accept(int fd) {

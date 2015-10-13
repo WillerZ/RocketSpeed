@@ -9,6 +9,7 @@
 namespace rocketspeed {
 
 void FlowControl::RemoveBackpressure(AbstractSink* sink) {
+  event_loop_->ThreadCheck();
   SinkState& sink_state = sinks_[sink];
   for (auto disabled_source : sink_state.backpressure) {
     SourceState& source_state = sources_[disabled_source];
@@ -17,6 +18,7 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
       // No more sinks blocking source, so re-enable.
       disabled_source->SetReadEnabled(event_loop_, true);
     }
+    stats_.backpressure_lifted->Add(1);
   }
   sink_state.backpressure.clear();
   sink_state.write_event->Disable();

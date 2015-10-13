@@ -18,6 +18,7 @@ namespace rocketspeed {
 
 class CommandQueue;
 class ControlTower;
+class Flow;
 class TopicTailer;
 
 //
@@ -42,8 +43,14 @@ class ControlRoom {
                                       int worker_id,
                                       StreamID origin);
 
-  // Processes a message from the tailer.
-  void OnTailerMessage(const Message& msg,
+  /**
+   * Processes a message from the tailer.
+   * @param flow Flow context from the source of the message.
+   * @param msg The message from the tailer.
+   * @param recipients Down-stream recipients of the message.
+   */
+  void OnTailerMessage(Flow* flow,
+                       const Message& msg,
                        std::vector<CopilotSub> recipients);
 
  private:
@@ -68,9 +75,11 @@ class ControlRoom {
   void ProcessUnsubscribe(std::unique_ptr<Message> msg,
                           int worker_id,
                           StreamID origin);
-  void ProcessDeliver(const Message& msg,
+  void ProcessDeliver(Flow* flow,
+                      const Message& msg,
                       const std::vector<CopilotSub>& recipients);
-  void ProcessGap(const Message& msg,
+  void ProcessGap(Flow* flow,
+                  const Message& msg,
                   const std::vector<CopilotSub>& recipients);
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
 

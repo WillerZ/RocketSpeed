@@ -32,15 +32,4 @@ CreateEventFdReadCallback(EventLoop* event_loop,
                                              std::move(callback));
 }
 
-ThreadLocalCommandQueues::ThreadLocalCommandQueues(
-  std::function<std::shared_ptr<CommandQueue>()> create_queue)
-: thread_local_([this, create_queue] () {
-    return new std::shared_ptr<CommandQueue>(create_queue());
-  }) {
-}
-
-CommandQueue* ThreadLocalCommandQueues::GetThreadLocal() {
-  return thread_local_.GetThreadLocal().get();
-}
-
 }  // namespace rocketspeed

@@ -42,7 +42,8 @@ struct Timestamped {
 /**
  * Statistics for a queue.
  */
-struct QueueStats {
+class QueueStats {
+ public:
   explicit QueueStats(const std::string& prefix);
 
   Statistics all;
@@ -181,32 +182,48 @@ class BatchedRead {
 };
 
 /**
- * Lazily constructed CommandQueue per thread.
+ * Lazily constructed queue per thread.
  */
-class ThreadLocalCommandQueues {
+template <typename T>
+class ThreadLocalQueues {
  public:
   /**
    * Creates a ThreadLocalCommandQueues with specific lazy creation funciton.
    *
    * @param create_queue Callback for creating thread-local queues.
    */
-  explicit ThreadLocalCommandQueues(
-      std::function<std::shared_ptr<CommandQueue>()> create_queue);
+  explicit ThreadLocalQueues(
+      std::function<std::shared_ptr<Queue<T>>()> create_queue);
 
   // non-copyable, non-moveable
-  ThreadLocalCommandQueues(const ThreadLocalCommandQueues&) = delete;
-  ThreadLocalCommandQueues(ThreadLocalCommandQueues&&) = delete;
-  ThreadLocalCommandQueues& operator=(const ThreadLocalCommandQueues&) = delete;
-  ThreadLocalCommandQueues& operator=(ThreadLocalCommandQueues&&) = delete;
+  ThreadLocalQueues(const ThreadLocalQueues&) = delete;
+  ThreadLocalQueues(ThreadLocalQueues&&) = delete;
+  ThreadLocalQueues& operator=(const ThreadLocalQueues&) = delete;
+  ThreadLocalQueues& operator=(ThreadLocalQueues&&) = delete;
 
   /**
-   * The thread-local CommandQueue.
+   * The thread-local queue.
    */
-  CommandQueue* GetThreadLocal();
+  Queue<T>* GetThreadLocal();
 
  private:
-  ThreadLocalObject<std::shared_ptr<CommandQueue>> thread_local_;
+  ThreadLocalObject<std::shared_ptr<Queue<T>>> thread_local_;
 };
+
+using ThreadLocalCommandQueues = ThreadLocalQueues<std::unique_ptr<Command>>;
+
+template <typename T>
+ThreadLocalQueues<T>::ThreadLocalQueues(
+  std::function<std::shared_ptr<Queue<T>>()> create_queue)
+: thread_local_([this, create_queue] () {
+    return new std::shared_ptr<Queue<T>>(create_queue());
+  }) {
+}
+
+template <typename T>
+Queue<T>* ThreadLocalQueues<T>::GetThreadLocal() {
+  return thread_local_.GetThreadLocal().get();
+}
 
 template <typename Item>
 BatchedRead<Item>::BatchedRead(Queue<Item>* queue)
@@ -331,7 +348,7 @@ bool Queue<Item>::TryWrite(Item& item, bool check_thread) {
   Timestamped<Item> entry { std::move(item), std::chrono::steady_clock::now() };
   if (!queue_.write(std::move(entry))) {
     // The queue was full and the write failed.
-    LOG_WARN(info_log_, "The command queue is full");
+    LOG_WARN(info_log_, "Queue is overflowing -- this is OK with flow control");
 
     // Put the item back.
     item = std::move(entry.item);

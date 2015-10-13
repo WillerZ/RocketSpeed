@@ -26,10 +26,14 @@
 
 namespace rocketspeed {
 
+class Flow;
+class FlowControl;
 class LogTailer;
 class LogRouter;
 class LogReader;
 class MsgLoop;
+
+template <typename> class ThreadLocalQueues;
 
 class TopicTailer {
  friend class ControlTowerTest;
@@ -58,7 +62,8 @@ class TopicTailer {
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
-    std::function<void(const Message&,
+    std::function<void(Flow*,
+                       const Message&,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options,
     TopicTailer** tailer);
@@ -127,9 +132,8 @@ class TopicTailer {
    */
   void Tick();
 
-  const Statistics& GetStatistics() const {
-    return stats_.all;
-  }
+  Statistics GetStatistics() const;
+
   /**
    * Clear the cache
    */
@@ -223,7 +227,13 @@ class TopicTailer {
   };
 
  private:
-  typedef std::function<void()> TopicTailerCommand;
+  struct FindLatestSeqnoResponse {
+    Status status;
+    LogID log_id;
+    TopicUUID topic;
+    CopilotSub id;
+    SequenceNumber seqno;
+  };
 
   // private constructor
   TopicTailer(BaseEnv* env,
@@ -234,31 +244,20 @@ class TopicTailer {
               std::shared_ptr<Logger> info_log,
               size_t cache_size_per_room,
               bool cache_data_from_system_namespaces,
-              std::function<void(const Message&,
+              std::function<void(Flow*,
+                                 const Message&,
                                  std::vector<CopilotSub>)> on_message,
               ControlTowerOptions::TopicTailer options);
-
-  /**
-   * Forwards a command from a storage thread to a TopicTailer thread.
-   * The command will always be sent, but will return false if back-off should
-   * be applied.
-   */
-  template <typename Function>
-  bool Forward(Function command);
-
-  bool Forward(std::unique_ptr<Command> command);
 
   /**
    * Forwards a command from a storage thread to a TopicTailer thread.
    * The command will only be sent when returning true. On a return of false,
    * the caller should attempt to resend the command later.
    */
-  template <typename Function>
-  bool TryForward(Function command);
+  bool TryForward(std::function<void(Flow*)> command);
 
-  bool TryForward(std::unique_ptr<Command> command);
-
-  void AddTailSubscriber(const TopicUUID& topic,
+  void AddTailSubscriber(Flow* flow,
+                         const TopicUUID& topic,
                          CopilotSub id,
                          LogID logid,
                          SequenceNumber seqno);
@@ -301,6 +300,16 @@ class TopicTailer {
   SequenceNumber DeliverFromCache(const TopicUUID& topic,
           CopilotSub copilot_sub, LogID logid, SequenceNumber seqno);
 
+  /**
+   * Processes asynchronous response to a FindLatestSeqno request in the
+   * storage.
+   *
+   * @param flow Source flow of incoming response.
+   * @param resp Reponse information from the request.
+   */
+  void ProcessFindLatestSeqnoResponse(Flow* flow,
+                                      FindLatestSeqnoResponse resp);
+
   ThreadCheck thread_check_;
 
   BaseEnv* env_;
@@ -331,7 +340,8 @@ class TopicTailer {
   std::unique_ptr<LogReader> pending_reader_;
 
   // Callback for outgoing messages.
-  std::function<void(const Message& msg,
+  std::function<void(Flow*,
+                     const Message&,
                      std::vector<CopilotSub>)> on_message_;
 
   // Subscription information per topic
@@ -347,8 +357,13 @@ class TopicTailer {
 
   ControlTowerOptions::TopicTailer options_;
 
-  // Queues used to communicate from storage threads back to the room.
-  std::unique_ptr<ThreadLocalCommandQueues> storage_to_room_queues_;
+  // Queues for storage threads delivering records or gaps back to rooms.
+  std::unique_ptr<ThreadLocalQueues<std::function<void(Flow*)>>>
+    storage_to_room_queues_;
+
+  // Queues for storage threads responding with latest seqnos to rooms.
+  std::unique_ptr<ThreadLocalQueues<FindLatestSeqnoResponse>>
+    latest_seqno_queues_;
 
   // Map of subscriptions per stream.
   SubscriptionMap<TopicUUID> stream_subscriptions_;
@@ -359,6 +374,9 @@ class TopicTailer {
   // against unexpected log reader failures.
   // The set is ordered by time.
   RestartEvents restart_events_;
+
+  EventLoop* event_loop_;
+  std::unique_ptr<FlowControl> flow_control_;
 
   struct Stats {
     Stats() {
@@ -438,17 +456,5 @@ class TopicTailer {
     Counter* reader_restarts;
   } stats_;
 };
-
-template <typename Function>
-bool TopicTailer::Forward(Function command) {
-  std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
-  return Forward(std::move(cmd));
-}
-
-template <typename Function>
-bool TopicTailer::TryForward(Function command) {
-  std::unique_ptr<Command> cmd(MakeExecuteCommand(std::move(command)));
-  return TryForward(std::move(cmd));
-}
 
 }  // namespace rocketspeed

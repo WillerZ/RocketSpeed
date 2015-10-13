@@ -59,10 +59,10 @@ TEST(FlowTest, PartitionedFlow) {
   }
 
   // Setup flow control state for each processor.
-  FlowControl flow0(event_loop[0]);
-  FlowControl flow1(event_loop[1]);
-  FlowControl flow2(event_loop[2]);
-  FlowControl flow3(event_loop[3]);
+  FlowControl flow0("", event_loop[0]);
+  FlowControl flow1("", event_loop[1]);
+  FlowControl flow2("", event_loop[2]);
+  FlowControl flow3("", event_loop[3]);
 
   // Create all our queues.
   auto queue0 = MakeIntQueue(kNumMessages);
@@ -150,9 +150,9 @@ TEST(FlowTest, Fanout) {
   }
 
   // Setup flow control state for each processor.
-  FlowControl flow0(event_loop[0]);
-  FlowControl flow1(event_loop[1]);
-  FlowControl flow2(event_loop[2]);
+  FlowControl flow0("", event_loop[0]);
+  FlowControl flow1("", event_loop[1]);
+  FlowControl flow2("", event_loop[2]);
 
   // Create all our queues.
   auto queue0 = MakeIntQueue(kNumMessages);
@@ -222,7 +222,8 @@ TEST(FlowTest, MultiLayerRandomized) {
   std::unique_ptr<FlowControl> flows[kLayers][kPerLayer];
   for (int i = 0; i < kLayers; ++i) {
     for (int j = 0; j < kPerLayer; ++j) {
-      flows[i][j].reset(new FlowControl(loop.GetEventLoop(i * kPerLayer + j)));
+      flows[i][j].reset(
+        new FlowControl("", loop.GetEventLoop(i * kPerLayer + j)));
     }
   }
 

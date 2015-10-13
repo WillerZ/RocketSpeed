@@ -12,6 +12,7 @@
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop_base.h"
+#include "src/messages/queues.h"
 #include "src/port/Env.h"
 #include "src/util/common/base_env.h"
 #include "src/util/common/host_id.h"
@@ -24,7 +25,6 @@ typedef std::function<void()> TimerCallbackType;
 class EventLoop;
 class Logger;
 class StreamAllocator;
-class ThreadLocalCommandQueues;
 
 class MsgLoop : public MsgLoopBase {
  public:

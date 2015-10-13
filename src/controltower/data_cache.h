@@ -47,9 +47,10 @@ class DataCache {
 
   // Deliver data from cache starting from 'start' as much as possible.
   // Returns the first sequence number that was not found in the cache.
+  // Will stop visiting the cache when on_message returns false.
   SequenceNumber VisitCache(LogID logid,
                             SequenceNumber start,
-                            std::function<void(MessageData* data_raw)>
+                            std::function<bool(MessageData* data_raw)>
                               on_message);
 
  private:

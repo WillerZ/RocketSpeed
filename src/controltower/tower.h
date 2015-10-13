@@ -19,7 +19,14 @@ class LogTailer;
 class TopicTailer;
 class Statistics;
 
+template <typename> class ThreadLocalQueues;
+
 struct CopilotSub {
+  CopilotSub()
+  : stream_id(0)
+  , sub_id(0) {
+  }
+
   CopilotSub(StreamID _stream_id, SubscriptionID _sub_id)
   : stream_id(_stream_id)
   , sub_id(_sub_id) {
@@ -98,7 +105,7 @@ class ControlTower {
 
   // Queues used to communicate from FindLatestSeqno response thread back to
   // client that issued the request.
-  std::vector<std::unique_ptr<ThreadLocalCommandQueues>>
+  std::vector<std::unique_ptr<ThreadLocalQueues<std::unique_ptr<Command>>>>
     find_latest_seqno_response_queues_;
 
   std::vector<SubscriptionMap<int>> sub_to_room_;

@@ -16,6 +16,7 @@
 #include "src/controltower/tower.h"
 #include "src/messages/queues.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/flow_control.h"
 #include "src/util/topic_uuid.h"
 
 #include "external/folly/move_wrapper.h"
@@ -29,7 +30,8 @@ ControlRoom::ControlRoom(const ControlTowerOptions& options,
   room_number_(room_number),
   topic_tailer_(control_tower->GetTopicTailer(room_number)) {
 
-  room_to_client_queues_ = options.msg_loop->CreateWorkerQueues();
+  room_to_client_queues_ = options.msg_loop->CreateWorkerQueues(
+    options.room_to_client_queue_size);
 }
 
 ControlRoom::~ControlRoom() {
@@ -121,13 +123,14 @@ ControlRoom::ProcessGoodbye(std::unique_ptr<Message> msg,
 }
 
 void
-ControlRoom::OnTailerMessage(const Message& msg,
+ControlRoom::OnTailerMessage(Flow* flow,
+                             const Message& msg,
                              std::vector<CopilotSub> recipients) {
   MessageType type = msg.GetMessageType();
   if (type == MessageType::mDeliver) {
-    ProcessDeliver(msg, std::move(recipients));
+    ProcessDeliver(flow, msg, std::move(recipients));
   } else if (type == MessageType::mGap) {
-    ProcessGap(msg, std::move(recipients));
+    ProcessGap(flow, msg, std::move(recipients));
   } else {
     assert(false);
   }
@@ -136,7 +139,8 @@ ControlRoom::OnTailerMessage(const Message& msg,
 
 // Process Data messages that are coming in from Tailer.
 void
-ControlRoom::ProcessDeliver(const Message& msg,
+ControlRoom::ProcessDeliver(Flow* flow,
+                            const Message& msg,
                             const std::vector<CopilotSub>& recipients) {
   ControlTower* ct = control_tower_;
   ControlTowerOptions& options = ct->GetOptions();
@@ -177,18 +181,13 @@ ControlRoom::ProcessDeliver(const Message& msg,
     auto command =
       options.msg_loop->ResponseCommand(deliver, recipient.stream_id);
 
-    if (room_to_client_queues_[worker_id]->Write(command)) {
-      LOG_DEBUG(options.info_log,
-               "Sent data (%.16s)@%" PRIu64 " for %s to %s",
-               request->GetPayload().ToString().c_str(),
-               request->GetSequenceNumber(),
-               uuid.ToString().c_str(),
-               recipient.ToString().c_str());
-    } else {
-      LOG_WARN(options.info_log,
-               "Unable to forward data message to %s",
-               recipient.ToString().c_str());
-    }
+    flow->Write(room_to_client_queues_[worker_id].get(), command);
+    LOG_DEBUG(options.info_log,
+             "Sent data (%.16s)@%" PRIu64 " for %s to %s",
+             request->GetPayload().ToString().c_str(),
+             request->GetSequenceNumber(),
+             uuid.ToString().c_str(),
+             recipient.ToString().c_str());
   }
 
   if (recipients.empty()) {
@@ -201,7 +200,8 @@ ControlRoom::ProcessDeliver(const Message& msg,
 
 // Process Gap messages that are coming in from Tailer.
 void
-ControlRoom::ProcessGap(const Message& msg,
+ControlRoom::ProcessGap(Flow* flow,
+                        const Message& msg,
                         const std::vector<CopilotSub>& recipients) {
   const MessageGap* gap = static_cast<const MessageGap*>(&msg);
 
@@ -233,19 +233,14 @@ ControlRoom::ProcessGap(const Message& msg,
     auto command =
       options.msg_loop->ResponseCommand(deliver, recipient.stream_id);
 
-    if (room_to_client_queues_[worker_id]->Write(command)) {
-      LOG_DEBUG(options.info_log,
-               "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
-               prev_seqno,
-               next_seqno,
-               gap->GetNamespaceId().c_str(),
-               gap->GetTopicName().c_str(),
-               recipient.stream_id);
-    } else {
-      LOG_WARN(options.info_log,
-               "Unable to forward Gap message to subscriber %llu",
-               recipient.stream_id);
-    }
+    flow->Write(room_to_client_queues_[worker_id].get(), command);
+    LOG_DEBUG(options.info_log,
+      "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
+      prev_seqno,
+      next_seqno,
+      gap->GetNamespaceId().c_str(),
+      gap->GetTopicName().c_str(),
+      recipient.stream_id);
   }
 
   if (recipients.empty()) {

@@ -2249,6 +2249,53 @@ TEST(IntegrationTest, VirtualReaderMerge) {
   env_->SleepForMicroseconds(100000);
 }
 
+TEST(IntegrationTest, SmallRoomQueues) {
+  // Tests control tower with room queue size 1.
+  const size_t kNumMessages = 100;
+
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster::Options opts;
+  opts.info_log = info_log;
+  opts.tower.room_to_client_queue_size = 1;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Create RocketSpeed sender client.
+  std::unique_ptr<Client> client;
+  cluster.CreateClient(&client);
+
+  // Publish a message to find the current seqno for the topic.
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    ASSERT_OK(client->Publish(GuestTenant,
+                              "SmallRoomQueues",
+                              GuestNamespace,
+                              TopicOptions(),
+                              "#" + std::to_string(i),
+                              [] (std::unique_ptr<ResultStatus> rs) {
+                                ASSERT_OK(rs->GetStatus());
+                              }).status);
+  }
+  port::Semaphore sem;
+  client->Subscribe(GuestTenant,
+                    GuestNamespace,
+                    "SmallRoomQueues",
+                    1,
+                    [&] (std::unique_ptr<MessageReceived>& mr) {
+                      sem.Post();
+                    });
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    ASSERT_TRUE(sem.TimedWait(timeout));
+  }
+
+  auto stats = cluster.GetControlTower()->GetStatisticsSync();
+  auto applied = stats.GetCounterValue(
+    "tower.topic_tailer.flow_control.backpressure_applied");
+  auto lifted = stats.GetCounterValue(
+    "tower.topic_tailer.flow_control.backpressure_lifted");
+  ASSERT_GT(applied, 0);  // ensure that backpressure was applied
+  ASSERT_EQ(applied, lifted);  // ensure that it was lifted as often as applied
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

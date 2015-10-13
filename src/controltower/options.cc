@@ -21,12 +21,14 @@ ControlTowerOptions::ControlTowerOptions()
     readers_per_room(2),
     cache_size(0),
     cache_data_from_system_namespaces(true),
-    timer_interval(std::chrono::milliseconds(100)) {
+    timer_interval(std::chrono::milliseconds(100)),
+    room_to_client_queue_size(1000) {
 }
 
 ControlTowerOptions::TopicTailer::TopicTailer()
 : min_reader_restart_duration(std::chrono::seconds(30))
 , max_reader_restart_duration(std::chrono::seconds(60))
+, storage_to_room_queue_size(1000)
 , FAULT_send_log_record_failure_rate(0) {
 }
 

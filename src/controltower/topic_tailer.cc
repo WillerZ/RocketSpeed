@@ -14,7 +14,9 @@
 #include "src/controltower/log_tailer.h"
 #include "src/util/storage.h"
 #include "src/util/topic_uuid.h"
+#include "src/util/common/flow_control.h"
 #include "src/util/common/linked_map.h"
+#include "src/util/common/processor.h"
 #include "src/util/common/random.h"
 #include "src/util/common/thread_check.h"
 #include "src/messages/msg_loop.h"
@@ -787,7 +789,8 @@ TopicTailer::TopicTailer(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
-    std::function<void(const Message&,
+    std::function<void(Flow*,
+                       const Message&,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options) :
   env_(env),
@@ -801,12 +804,88 @@ TopicTailer::TopicTailer(
   prng_(ThreadLocalPRNG()),
   options_(options),
   restart_events_(options_.min_reader_restart_duration,
-                  options_.max_reader_restart_duration) {
+                  options_.max_reader_restart_duration),
+  event_loop_(msg_loop_->GetEventLoop(worker_id_)),
+  flow_control_(new FlowControl("tower.topic_tailer", event_loop_)) {
 
-  storage_to_room_queues_ = msg_loop->CreateThreadLocalQueues(worker_id);
+  storage_to_room_queues_.reset(
+    new ThreadLocalQueues<std::function<void(Flow*)>>(
+      [this] () {
+        return InstallQueue<std::function<void(Flow*)>>(
+          info_log_,
+          event_loop_->GetQueueStats(),
+          options_.storage_to_room_queue_size,
+          flow_control_.get(),
+          [] (Flow* flow, std::function<void(Flow*)> fn) {
+            fn(flow);
+          });
+      }));
+
+  latest_seqno_queues_.reset(
+    new ThreadLocalQueues<FindLatestSeqnoResponse>(
+      [this] () {
+        return InstallQueue<FindLatestSeqnoResponse>(
+          info_log_,
+          event_loop_->GetQueueStats(),
+          1000,
+          flow_control_.get(),
+          [this] (Flow* flow, FindLatestSeqnoResponse response) {
+            ProcessFindLatestSeqnoResponse(flow, std::move(response));
+          });
+      }));
 }
 
 TopicTailer::~TopicTailer() {
+}
+
+void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
+                                                 FindLatestSeqnoResponse resp) {
+  thread_check_.Check();
+
+  auto status = resp.status;
+  auto logid = resp.log_id;
+  auto topic = resp.topic;
+  auto id = resp.id;
+  auto seqno = resp.seqno;
+
+  if (!status.ok()) {
+    LOG_WARN(info_log_,
+      "Failed to find latest sequence number in %s (%s) for %s",
+      topic.ToString().c_str(),
+      status.ToString().c_str(),
+      id.ToString().c_str());
+    if (stream_subscriptions_.Find(id.stream_id, id.sub_id)) {
+      // If the copilot hasn't already unsubscribed then retry.
+      AddSubscriber(topic, 0, id);
+    }
+    return;
+  }
+
+  // IMPORTANT: Since this callback is asynchronous, the subscriber
+  // may have unsubscribed since they issued the subscribe(0) request.
+  // We need to check this otherwise we may open a reader for a
+  // non-existent subscription, which will never be closed.
+  if (stream_subscriptions_.Find(id.stream_id, id.sub_id)) {
+    // Subscription exists: add subscriber.
+    AddTailSubscriber(flow, topic, id, logid, seqno);
+  } else {
+    LOG_DEBUG(info_log_,
+      "%s on %s unsubscribed before FindLatestSeqno response arrived.",
+      id.ToString().c_str(),
+      topic.ToString().c_str());
+  }
+
+  LOG_INFO(info_log_,
+    "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
+    logid,
+    seqno);
+
+  auto ts_it = tail_seqno_cached_.find(logid);
+  if (ts_it == tail_seqno_cached_.end()) {
+    tail_seqno_cached_.emplace(logid, seqno);
+  } else {
+    ts_it->second = std::max(ts_it->second, seqno);
+  }
 }
 
 Status TopicTailer::SendLogRecord(
@@ -827,7 +906,7 @@ Status TopicTailer::SendLogRecord(
   }
 
   bool sent = !force_failure &&
-              TryForward([this, data_raw, log_id, reader_id] () {
+              TryForward([this, data_raw, log_id, reader_id] (Flow* flow) {
     // This portion of code is invoked in the room-thread.
     thread_check_.Check();
     std::unique_ptr<MessageData> data(data_raw);
@@ -900,7 +979,7 @@ Status TopicTailer::SendLogRecord(
         // Modify message and send it out.
         data->SetPreviousSequenceNumber(prev_seqno);
         stats_.log_records_with_subscriptions->Add(1);
-        on_message_(*data_raw, std::move(recipients));
+        on_message_(flow, *data_raw, std::move(recipients));
       } else {
         stats_.log_records_without_subscriptions->Add(1);
         LOG_DEBUG(info_log_,
@@ -958,7 +1037,7 @@ Status TopicTailer::SendLogRecord(
                              bump_seqno,
                              next_seqno);
             stats_.bumped_subscriptions->Add(bumped_subscriptions.size());
-            on_message_(trim_msg, std::move(bumped_subscriptions));
+            on_message_(flow, trim_msg, std::move(bumped_subscriptions));
           }
         });
     } else {
@@ -999,7 +1078,8 @@ Status TopicTailer::SendGapRecord(
     SequenceNumber to,
     size_t reader_id) {
   // Send to worker loop.
-  bool sent = TryForward([this, log_id, type, from, to, reader_id] () {
+  bool sent = TryForward(
+    [this, log_id, type, from, to, reader_id] (Flow* flow) {
     // Validate.
     LogReader* reader = FindLogReader(reader_id);
     assert(reader != nullptr);
@@ -1056,7 +1136,7 @@ Status TopicTailer::SendGapRecord(
                            prev_seqno,
                            to);
           stats_.gap_records_with_subscriptions->Add(1);
-          on_message_(mgap, std::move(recipients));
+          on_message_(flow, mgap, std::move(recipients));
         } else {
           stats_.gap_records_without_subscriptions->Add(1);
         }
@@ -1135,7 +1215,8 @@ TopicTailer::CreateNewInstance(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
-    std::function<void(const Message&,
+    std::function<void(Flow*,
+                       const Message&,
                        std::vector<CopilotSub>)> on_message,
     ControlTowerOptions::TopicTailer options,
     TopicTailer** tailer) {
@@ -1177,7 +1258,12 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
     if (tail_seqno != 0) {
       // Can add subscriber immediately.
       stats_.add_subscriber_requests_at_0_fast->Add(1);
-      AddTailSubscriber(topic, id, logid, tail_seqno);
+
+      // Using SourcelessFlow here until we have flow from the socket, which
+      // would be passed into AddSubscriber.
+      // TODO(pja) T8668773.
+      SourcelessFlow no_flow;
+      AddTailSubscriber(&no_flow, topic, id, logid, tail_seqno);
     } else {
       // Otherwise do full FindLatestSeqno request.
       stats_.add_subscriber_requests_at_0_slow->Add(1);
@@ -1187,50 +1273,9 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
       // when converted to an std::function - could use an alloc pool for this.
       auto callback = [this, topic, id, logid] (Status status,
                                                 SequenceNumber seqno) {
-        if (!status.ok()) {
-          LOG_WARN(info_log_,
-            "Failed to find latest sequence number in %s (%s)",
-            topic.ToString().c_str(),
-            status.ToString().c_str());
-          return;
-        }
-
-        // This callback is invoked on the storage worker threads, so the
-        // response needs to be forwarded back to the TopicTailer/Room thread.
-        bool sent = Forward([this, topic, id, logid, seqno] () {
-          // IMPORTANT: Since this callback is asynchronous, the subscriber
-          // may have unsubscribed since they issued the subscribe(0) request.
-          // We need to check this otherwise we may open a reader for a
-          // non-existent subscription, which will never be closed.
-          if (stream_subscriptions_.Find(id.stream_id, id.sub_id)) {
-            // Subscription exists: add subscriber.
-            AddTailSubscriber(topic, id, logid, seqno);
-          } else {
-            LOG_DEBUG(info_log_,
-              "%s on %s unsubscribed before FindLatestSeqno response arrived.",
-              id.ToString().c_str(),
-              topic.ToString().c_str());
-          }
-
-          LOG_INFO(info_log_,
-            "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
-            logid,
-            seqno);
-
-          auto ts_it = tail_seqno_cached_.find(logid);
-          if (ts_it == tail_seqno_cached_.end()) {
-            tail_seqno_cached_.emplace(logid, seqno);
-          } else {
-            ts_it->second = std::max(ts_it->second, seqno);
-          }
-        });
-
-        // TODO: We use Forward for the response because we have no way to
-        // signal to LogDevice to backoff-and-retry the FindLatestSeqno
-        // response. However, this means that a large number of responses
-        // could massively overflow the queues. In practice, we shouldn't have
-        // too many requests/responses in flight for FindLatestSeqno so it is
-        // unlikely to be an issue (compared to incoming data records).
+        // Send response back to room.
+        FindLatestSeqnoResponse response { status, logid, topic, id, seqno };
+        bool sent = latest_seqno_queues_->GetThreadLocal()->Write(response);
         if (!sent) {
           LOG_WARN(info_log_,
             "Failed to send %s@0 sub for %s to TopicTailer worker",
@@ -1352,7 +1397,8 @@ std::string TopicTailer::GetAllLogsInfo() const {
   return result;
 }
 
-void TopicTailer::AddTailSubscriber(const TopicUUID& topic,
+void TopicTailer::AddTailSubscriber(Flow* flow,
+                                    const TopicUUID& topic,
                                     CopilotSub id,
                                     LogID logid,
                                     SequenceNumber seqno) {
@@ -1371,7 +1417,7 @@ void TopicTailer::AddTailSubscriber(const TopicUUID& topic,
                    GapType::kBenign,
                    0,
                    seqno - 1);
-  on_message_(mgap, { id });
+  on_message_(flow, mgap, { id });
 
   AddSubscriberInternal(topic, id, logid, seqno);
 }
@@ -1423,8 +1469,18 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
       // Deliver message
       data_raw->SetPreviousSequenceNumber(delivered);
       delivered = largest_cached + 1;
-      on_message_(*data_raw, recipient);
+
+      // When reading from cache, flow control is implemented by sending as
+      // much as we can until the sink rejects the writes. At that point,
+      // we ignore the cache and just open a reader wherever we've reached.
+      // Ideally, we would implement a more sophisticated Source for the cache
+      // and retry later. Leaving this as a task for later.
+      // TODO(pja) T8668814
+      SourcelessFlow noflow;
+      on_message_(&noflow, *data_raw, recipient);
+      return !noflow.WriteHasFailed();  // if false, stop reading from cache.
     }
+    return true;
   };
 
   // Deliver as much data as possible from the cache.
@@ -1453,7 +1509,9 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
                     GapType::kBenign,
                     delivered,
                     seqno-1);
-    on_message_(mgap, recipient);
+    // See above comment and T8668814.
+    SourcelessFlow noflow;
+    on_message_(&noflow, mgap, recipient);
   }
   if (old != seqno) {
     LOG_DEBUG(info_log_,
@@ -1602,11 +1660,7 @@ void TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
   }
 }
 
-bool TopicTailer::Forward(std::unique_ptr<Command> command) {
-  return storage_to_room_queues_->GetThreadLocal()->Write(command);
-}
-
-bool TopicTailer::TryForward(std::unique_ptr<Command> command) {
+bool TopicTailer::TryForward(std::function<void(Flow*)> command) {
   return storage_to_room_queues_->GetThreadLocal()->TryWrite(command);
 }
 
@@ -1628,6 +1682,12 @@ TopicTailer::RestartEvents::AddEvent(LogReader* reader, LogID log_id) {
 
 void TopicTailer::RestartEvents::RemoveEvent(Handle handle) {
   erase(handle);
+}
+
+Statistics TopicTailer::GetStatistics() const {
+  Statistics stats = stats_.all;
+  stats.Aggregate(flow_control_->GetStatistics());
+  return stats;
 }
 
 }  // namespace rocketspeed

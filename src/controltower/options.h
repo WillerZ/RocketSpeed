@@ -90,6 +90,10 @@ struct ControlTowerOptions {
     std::chrono::milliseconds min_reader_restart_duration;
     std::chrono::milliseconds max_reader_restart_duration;
 
+    // Queue size from storage threads to room threads.
+    // Default: 1000
+    size_t storage_to_room_queue_size;
+
     // Probability of failing to enqueue a log record to the TopicTailer queue.
     // For testing the log storage backoff/flow control.
     double FAULT_send_log_record_failure_rate;
@@ -106,6 +110,10 @@ struct ControlTowerOptions {
   // Interval for tower timer tick for running time-based logic.
   // Default: 100ms
   std::chrono::microseconds timer_interval;
+
+  // Queue size from rooms to client IO threads.
+  // Default: 1000
+  size_t room_to_client_queue_size;
 
   // Create ControlTowerOptions with default values for all fields
   ControlTowerOptions();

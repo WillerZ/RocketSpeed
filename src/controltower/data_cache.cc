@@ -116,7 +116,7 @@ class CacheEntry {
   // Visit the records starting from the specified seqno
   SequenceNumber VisitEntry(LogID logid,
                             SequenceNumber seqno,
-                            std::function<void(MessageData* data_raw)> visit) {
+                            std::function<bool(MessageData* data_raw)> visit) {
     SequenceNumber seqno_block = AlignToBlockStart(seqno);
     int offset = (int)(seqno - seqno_block);
 
@@ -126,7 +126,10 @@ class CacheEntry {
     // scan all messages upto either the first null or the entire block
     int index = offset;
     for (; index < BLOCK_SIZE && mcache_[index]; index++) {
-      visit(mcache_[index].get());
+      if (!visit(mcache_[index].get())) {
+        ++index;
+        break;
+      }
     }
     return seqno_block + index; // return the next seqno
   }
@@ -285,7 +288,7 @@ void DataCache::Erase(LogID log_id, GapType type, SequenceNumber seqno) {
 
 SequenceNumber DataCache::VisitCache(LogID logid,
                                      SequenceNumber start,
-                         std::function<void(MessageData* data_raw)> on_message){
+                         std::function<bool(MessageData* data_raw)> on_message){
   if (rs_cache_ == nullptr) { // No caching specified
     return start;
   }
@@ -309,7 +312,8 @@ SequenceNumber DataCache::VisitCache(LogID logid,
 
     // visit the relevant records in this entry
     CacheEntry* entry = static_cast<CacheEntry *>(rs_cache_->Value(handle));
-    SequenceNumber next = entry->VisitEntry(logid, start, on_message);
+    SequenceNumber next =
+      entry->VisitEntry(logid, start, std::move(on_message));
     rs_cache_->Release(handle);
 
     // If the new seqnumber is in the same block, then we are done
