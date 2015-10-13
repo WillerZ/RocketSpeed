@@ -328,6 +328,10 @@ Queue<Item>::Queue(std::shared_ptr<Logger> info_log,
     , read_ready_fd_(true, true)               // n+1 to store n items.
     , write_ready_fd_(true, true)
     , synced_size_(0) {
+  if (read_ready_fd_.status() != 0 || write_ready_fd_.status() != 0) {
+    LOG_FATAL(info_log_, "Queue cannot be created: unable to create Eventfd");
+    info_log_->Flush();
+  }
   assert(read_ready_fd_.status() == 0);
   assert(write_ready_fd_.status() == 0);
 }
