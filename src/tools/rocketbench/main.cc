@@ -23,6 +23,7 @@
 #include "src/test/test_cluster.h"
 #endif
 #include "src/util/auto_roll_logger.h"
+#include "src/util/build_version.h"
 #include "src/util/common/fixed_configuration.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/host_id.h"
@@ -73,6 +74,7 @@ DEFINE_uint64(client_workers, 32, "number of client workers");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 100, "number of topics");
 DEFINE_int64(num_messages, 1000, "number of messages to send");
+DEFINE_int64(num_messages_per_topic, 100, "number of messages per topic");
 DEFINE_string(namespaceid, rocketspeed::GuestNamespace, "namespace id");
 DEFINE_string(topics_distribution, "uniform",
 "uniform, normal, poisson, fixed");
@@ -237,7 +239,7 @@ static void ProducerWorker(void* param) {
     char topic_name[64];
     uint64_t topic_num = distr.get() != nullptr ?
                          distr->generateRandomInt() :
-                         index % 100;  // "fixed", 100 messages per topic
+                         index % FLAGS_num_messages_per_topic;
     snprintf(topic_name, sizeof(topic_name),
              "benchmark.%llu",
              static_cast<long long unsigned int>(topic_num));
@@ -584,6 +586,9 @@ int main(int argc, char** argv) {
   rocketspeed::Env::InstallSignalHandlers();
   env = rocketspeed::Env::Default();
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
+
+  // Include build version info in the library
+  snprintf(nullptr, 0, "%s", rocketspeed_build_git_sha);
 
   // This loop is needed so that we can attach to this process via
   // the remote gdb debugger on Android systems.
@@ -1004,10 +1009,10 @@ int main(int argc, char** argv) {
     if (!FLAGS_start_producer) {
       int val = ReadFile(FLAGS_save_path, first_seqno);
       if (val == 0) {
-        printf("Restored topic metadata from file %s\n",
-               FLAGS_save_path.c_str());
+        printf("Restored %ld topics from metadata file %s\n",
+               first_seqno.size(), FLAGS_save_path.c_str());
       } else {
-        printf("Error (%d) in reading topic metadat from file %s\n",
+        printf("Error (%d) in reading topic metadata from file %s\n",
                val, FLAGS_save_path.c_str());
       }
     }

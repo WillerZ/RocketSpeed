@@ -14,8 +14,8 @@ fi
 
 # Produce a data set with 1 billion messages spread across 10K topics
 cmd="$BENCHMARK --messages 250000000 --rate 150000 --max-inflight 7000 --topics 10000 --size 100 --remote --deploy --start-servers --stop-servers --cockpits=4 --towers=1 --remote-bench 4 produce"
-#echo $cmd
-#eval $cmd
+echo $cmd
+eval $cmd
 
 # Subscribe with a backlog, do not produce any new data
 cmd="$BENCHMARK --messages 250000000 --subscribe-rate 100000 --rate 150000 --max-inflight 7000 --topics 10000 --size 100 --remote --deploy --start-servers --stop-servers --cache-size 1000000000 --socket-buffer-size=157286400 --cockpits=4 --towers=1 --subscription-backlog-distribution=uniform --remote-bench 4 --producer=false consume"

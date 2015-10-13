@@ -26,6 +26,7 @@
 #include "src/controltower/tower.h"
 #include "src/supervisor/supervisor_loop.h"
 #include "src/util/buffered_storage.h"
+#include "src/util/build_version.h"
 #include "src/util/common/parsing.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/storage.h"
@@ -126,6 +127,9 @@ RocketSpeed::RocketSpeed(Env* env, EnvOptions env_options)
 , env_options_(env_options) {
   // Ignore SIGPIPE, we'll just handle the EPIPE returned by write.
   signal(SIGPIPE, SIG_IGN);
+
+  // Include build version info in the library
+  snprintf(nullptr, 0, "%s", rocketspeed_build_git_sha);
 
   auto log_level = StringToLogLevel(FLAGS_loglevel.c_str());
   fprintf(stderr, "RocketSpeed log level set to %s\n",
