@@ -797,7 +797,6 @@ int main(int argc, char** argv) {
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived>& rs) {
     uint64_t now = env->NowMicros();
-    ++messages_received;
     last_data_message = std::chrono::steady_clock::now();
 
     // Parse message data to get received index.
@@ -827,7 +826,7 @@ int main(int argc, char** argv) {
     }
 
     // If we've received all messages, let the main thread know to finish up.
-    if (messages_received.load() == FLAGS_num_messages) {
+    if (++messages_received == FLAGS_num_messages) {
       all_messages_received.Post();
     }
   };
