@@ -112,6 +112,7 @@ TEST(PilotTest, NoLogger) {
 
   MsgLoop loop(
       env_, env_options_, 0, 1, std::make_shared<NullLogger>(), "test");
+  ASSERT_OK(loop.Initialize());
   Pilot* pilot = nullptr;
   PilotOptions options;
   options.msg_loop = &loop;
@@ -119,6 +120,9 @@ TEST(PilotTest, NoLogger) {
   options.storage = cluster.GetLogStorage();
   options.log_router = cluster.GetLogRouter();
   ASSERT_OK(Pilot::CreateNewInstance(options, &pilot));
+  loop.Stop();
+  loop.Run();
+  pilot->Stop();
   delete pilot;
 }
 

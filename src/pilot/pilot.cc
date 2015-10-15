@@ -9,41 +9,92 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "src/messages/msg_loop.h"
+#include "src/messages/queues.h"
+#include "src/util/common/flow_control.h"
+#include "src/util/common/object_pool.h"
+#include "src/util/common/processor.h"
+#include "src/util/common/random.h"
+#include "src/util/auto_roll_logger.h"
 #include "src/util/storage.h"
 #include "src/util/memory.h"
 
 namespace rocketspeed {
 
+// Storage for captured objects in the append callback.
+struct AppendClosure : public PooledObject<AppendClosure> {
+ public:
+  AppendClosure(Pilot* pilot,
+                std::unique_ptr<MessageData> msg,
+                LogID logid,
+                uint64_t now,
+                int worker_id,
+                StreamID origin)
+  : pilot_(pilot)
+  , msg_(std::move(msg))
+  , logid_(logid)
+  , append_time_(now)
+  , worker_id_(worker_id)
+  , origin_(origin) {
+  }
+
+  void operator()(Status append_status, SequenceNumber seqno);
+
+  void Invoke(Status append_status, SequenceNumber seqno);
+
+ private:
+  Pilot* pilot_;
+  std::unique_ptr<MessageData> msg_;
+  LogID logid_;
+  uint64_t append_time_;
+  int worker_id_;
+  StreamID origin_;
+};
+
+struct AppendResponse {
+  Status status;
+  SequenceNumber seqno;
+  std::unique_ptr<MessageData> msg;
+  LogID log_id;
+  uint64_t latency;
+  StreamID origin;
+  AppendClosure* closure;
+};
+
 void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
   // IMPORTANT: This may be called after Stop(). Must not use the log storage
   // or log router after this point.
+  LOG_INFO(pilot_->options_.info_log,
+      "Append response %d",
+      worker_id_);
 
-  // Record latency
-  uint64_t latency = pilot_->options_.env->NowMicros() - append_time_;
-  Status st = pilot_->options_.msg_loop->SendCommand(
-    std::unique_ptr<Command>(MakeExecuteCommand(
-      [this, latency, append_status, seqno] () {
-        pilot_->worker_data_[worker_id_].stats_.append_latency->Record(latency);
-        pilot_->worker_data_[worker_id_].stats_.append_requests->Add(1);
-        pilot_->AppendCallback(append_status,
-                               seqno,
-                               std::move(msg_),
-                               logid_,
-                               append_time_,
-                               worker_id_,
-                               origin_);
-        pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
-      })), worker_id_);
+  AppendResponse response;
+  response.status = append_status;
+  response.seqno = seqno;
+  response.msg = std::move(msg_);
+  response.log_id = logid_;
+  response.latency = pilot_->options_.env->NowMicros() - append_time_;
+  response.origin = origin_;
+  response.closure = this;
 
-  if (!st.ok()) {
-    LOG_WARN(pilot_->options_.info_log,
-      "Failed to send command for append callback on Log(%" PRIu64 ")"
-      " Topic(%s,%s): %s",
-      logid_,
-      msg_->GetNamespaceId().ToString().c_str(),
-      msg_->GetTopicName().ToString().c_str(),
-      st.ToString().c_str());
-    pilot_->worker_data_[worker_id_].append_closure_pool_->Deallocate(this);
+  // Send response back to relevant worker.
+  Pilot* pilot = pilot_;
+  int worker_id = worker_id_;
+  auto queue =
+    pilot->worker_data_[worker_id]->append_response_queues_->GetThreadLocal();
+  if (!queue->Write(response)) {
+    // Note: the command has still been sent in this case, but memory usage
+    // is unbounded if the flow control is not working.
+    LOG_ERROR(pilot->options_.info_log,
+      "Append response queue for worker %d is overflowing",
+      worker_id);
+
+    // Flow control mechanism should ensure that this queue never overflows.
+    assert(false);
+  } else {
+    LOG_INFO(pilot->options_.info_log,
+      "Wrote response to queue %d",
+      worker_id);
   }
 }
 
@@ -75,10 +126,16 @@ Pilot::Pilot(PilotOptions options):
   options_(SanitizeOptions(std::move(options))) {
 
   for (int i = 0; i < options_.msg_loop->GetNumWorkers(); ++i) {
-    worker_data_.emplace_back(WorkerData());
+    worker_data_.emplace_back(new WorkerData(options_.msg_loop, i, this));
   }
   log_storage_ = options_.storage;
-  options_.msg_loop->RegisterCallbacks(InitializeCallbacks());
+
+  std::map<MessageType, MsgCallbackType> cb {
+    { MessageType::mPublish, [this] (std::unique_ptr<Message> msg,
+                                     StreamID origin) {
+        ProcessPublish(std::move(msg), origin);
+    }}};
+  options_.msg_loop->RegisterCallbacks(std::move(cb));
 
   LOG_INFO(options_.info_log, "Created a new Pilot");
   options_.info_log->Flush();
@@ -134,7 +191,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   assert(msg->GetMessageType() == MessageType::mPublish);
 
   int worker_id = options_.msg_loop->GetThreadWorkerIndex();
-  WorkerData& worker_data = worker_data_[worker_id];
+  WorkerData& worker_data = *worker_data_[worker_id];
 
   // Route topic to log ID.
   MessageData* msg_data = static_cast<MessageData*>(msg.release());
@@ -195,7 +252,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
       status.ToString().c_str());
     options_.info_log->Flush();
 
-    SendAck(msg_data, 0, MessageDataAck::AckStatus::Failure, worker_id, origin);
+    SendAck(msg_data, 0, MessageDataAck::AckStatus::Failure, origin);
 
     // If AppendAsync, the closure will never be invoked, so delete now.
     worker_data.append_closure_pool_->Deallocate(closure);
@@ -206,15 +263,12 @@ void Pilot::AppendCallback(Status append_status,
                            SequenceNumber seqno,
                            std::unique_ptr<MessageData> msg,
                            LogID logid,
-                           uint64_t append_time,
-                           int worker_id,
                            StreamID origin) {
   if (append_status.ok()) {
     // Append successful, send success ack.
     SendAck(msg.get(),
             seqno,
             MessageDataAck::AckStatus::Success,
-            worker_id,
             origin);
     LOG_INFO(options_.info_log,
         "Appended (%.16s) successfully to Topic(%s,%s) in Log(%" PRIu64
@@ -226,18 +280,17 @@ void Pilot::AppendCallback(Status append_status,
         seqno);
   } else {
     // Append failed, send failure ack.
-    worker_data_[worker_id].stats_.failed_appends->Add(1);
     LOG_ERROR(options_.info_log,
         "AppendAsync failed for Topic(%s,%s) in Log(%" PRIu64 ") (%s)",
         msg->GetNamespaceId().ToString().c_str(),
         msg->GetTopicName().ToString().c_str(),
         logid,
         append_status.ToString().c_str());
-    options_.info_log->Flush();
+
+    // TODO: retry depending on error type.
     SendAck(msg.get(),
             0,
             MessageDataAck::AckStatus::Failure,
-            worker_id,
             origin);
   }
 }
@@ -245,7 +298,6 @@ void Pilot::AppendCallback(Status append_status,
 void Pilot::SendAck(MessageData* msg,
                     SequenceNumber seqno,
                     MessageDataAck::AckStatus status,
-                    int worker_id,
                     StreamID origin) {
   MessageDataAck::Ack ack;
   ack.status = status;
@@ -254,43 +306,55 @@ void Pilot::SendAck(MessageData* msg,
 
   // create new message
   MessageDataAck newmsg(msg->GetTenantID(), {ack});
-
-  // send message
-  Status st = options_.msg_loop->SendResponse(newmsg, origin, worker_id);
-  if (!st.ok()) {
-    // This is entirely possible, other end may have disconnected by the time
-    // we get round to sending an ack. This shouldn't be a rare occurrence.
-    LOG_WARN(options_.info_log,
-      "SendAck failed. Stream(%llu) Topic(%s,%s): %s",
-      origin,
-      msg->GetNamespaceId().ToString().c_str(),
-      msg->GetTopicName().ToString().c_str(),
-      st.ToString().c_str());
-  }
-}
-
-// A static method to initialize the callback map
-std::map<MessageType, MsgCallbackType> Pilot::InitializeCallbacks() {
-  // create a temporary map and initialize it
-  std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mPublish] = [this] (std::unique_ptr<Message> msg,
-                                      StreamID origin) {
-    ProcessPublish(std::move(msg), origin);
-  };
-
-  // return the updated map
-  return cb;
+  auto cmd = options_.msg_loop->ResponseCommand(newmsg, origin);
+  options_.msg_loop->SendCommandToSelf(std::move(cmd));
 }
 
 Statistics Pilot::GetStatisticsSync() const {
   auto stats = options_.msg_loop->AggregateStatsSync(
-      [this](int i) { return worker_data_[i].stats_.all; });
+      [this](int i) { return worker_data_[i]->stats_.all; });
   stats.Aggregate(options_.storage->GetStatistics());
   return stats;
 }
 
+const HostId& Pilot::GetHostId() const {
+  return options_.msg_loop->GetHostId();
+}
+
 std::string Pilot::GetInfoSync(std::vector<std::string> args) {
   return "Unknown info for pilot";
+}
+
+Pilot::WorkerData::WorkerData(MsgLoop* msg_loop, int worker_id, Pilot* pilot)
+: append_closure_pool_(new SharedPooledObjectList<AppendClosure>())
+, prng_(ThreadLocalPRNG())
+, flow_control_(new FlowControl("pilot", msg_loop->GetEventLoop(worker_id))) {
+  // Register processors.
+  EventLoop* event_loop = msg_loop->GetEventLoop(worker_id);
+  append_response_queues_.reset(
+    new ThreadLocalQueues<AppendResponse>(
+      [this, pilot, event_loop] () {
+        return InstallQueue<AppendResponse>(
+          pilot->options_.info_log,
+          event_loop->GetQueueStats(),
+          1000,
+          flow_control_.get(),
+          [this, pilot] (Flow* flow, AppendResponse response) {
+            // Update statistics.
+            stats_.append_latency->Record(response.latency);
+            stats_.append_requests->Add(1);
+            if (!response.status.ok()) {
+              stats_.failed_appends->Add(1);
+            }
+
+            pilot->AppendCallback(response.status,
+                                  response.seqno,
+                                  std::move(response.msg),
+                                  response.log_id,
+                                  response.origin);
+            append_closure_pool_->Deallocate(response.closure);
+          });
+      }));
 }
 
 }  // namespace rocketspeed

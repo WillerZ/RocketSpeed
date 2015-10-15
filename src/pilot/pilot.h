@@ -5,55 +5,25 @@
 #pragma once
 
 #include <memory>
-#include <map>
 #include <random>
-#include <thread>
 #include <vector>
-#include "src/messages/serializer.h"
-#include "src/messages/commands.h"
-#include "src/messages/messages.h"
-#include "src/messages/msg_loop.h"
-#include "src/util/auto_roll_logger.h"
-#include "src/util/logging.h"
-#include "src/util/log_buffer.h"
-#include "src/util/storage.h"
-#include "src/util/common/object_pool.h"
-#include "src/util/common/random.h"
+#include "src/messages/stream_socket.h"
+#include "src/util/common/statistics.h"
+#include "src/port/port.h"
 #include "src/pilot/options.h"
 
 namespace rocketspeed {
 
+class AppendClosure;
+struct AppendResponse;
+class FlowControl;
+class Logger;
+class LogStorage;
+class Message;
+class MsgLoop;
 class Pilot;
-
-// Storage for captured objects in the append callback.
-struct AppendClosure : public PooledObject<AppendClosure> {
- public:
-  AppendClosure(Pilot* pilot,
-                std::unique_ptr<MessageData> msg,
-                LogID logid,
-                uint64_t now,
-                int worker_id,
-                StreamID origin)
-  : pilot_(pilot)
-  , msg_(std::move(msg))
-  , logid_(logid)
-  , append_time_(now)
-  , worker_id_(worker_id)
-  , origin_(origin) {
-  }
-
-  void operator()(Status append_status, SequenceNumber seqno);
-
-  void Invoke(Status append_status, SequenceNumber seqno);
-
- private:
-  Pilot* pilot_;
-  std::unique_ptr<MessageData> msg_;
-  LogID logid_;
-  uint64_t append_time_;
-  int worker_id_;
-  StreamID origin_;
-};
+template <typename> class SharedPooledObjectList;
+template <typename> class ThreadLocalQueues;
 
 class Pilot {
  public:
@@ -70,9 +40,7 @@ class Pilot {
   PilotOptions& GetOptions() { return options_; }
 
   // Get HostID
-  const HostId& GetHostId() const {
-    return options_.msg_loop->GetHostId();
-  }
+  const HostId& GetHostId() const;
 
   Statistics GetStatisticsSync() const;
 
@@ -83,8 +51,6 @@ class Pilot {
                       SequenceNumber seqno,
                       std::unique_ptr<MessageData> msg,
                       LogID logid,
-                      uint64_t append_time,
-                      int worker_id,
                       StreamID origin);
 
   MsgLoop* GetMsgLoop() {
@@ -122,7 +88,6 @@ class Pilot {
   void SendAck(MessageData* msg,
                SequenceNumber seqno,
                MessageDataAck::AckStatus status,
-               int worker_id,
                StreamID origin);
 
   // The options used by the Pilot
@@ -132,19 +97,18 @@ class Pilot {
   std::shared_ptr<LogStorage> log_storage_;
 
   struct alignas(CACHE_LINE_SIZE) WorkerData {
-    WorkerData()
-    : append_closure_pool_(new SharedPooledObjectList<AppendClosure>())
-    , prng_(ThreadLocalPRNG()) {
-    }
+    WorkerData(MsgLoop* msg_loop, int worker_id, Pilot* pilot);
 
     // AppendClosure object pool and lock.
     std::unique_ptr<SharedPooledObjectList<AppendClosure>> append_closure_pool_;
     Stats stats_;
     std::mt19937_64& prng_;
+    std::shared_ptr<ThreadLocalQueues<AppendResponse>> append_response_queues_;
+    std::unique_ptr<FlowControl> flow_control_;
   };
 
   // Per-thread data.
-  std::vector<WorkerData> worker_data_;
+  std::vector<std::unique_ptr<WorkerData>> worker_data_;
 
   // private Constructor
   explicit Pilot(PilotOptions options);
@@ -154,8 +118,6 @@ class Pilot {
 
   // callbacks to process incoming messages
   void ProcessPublish(std::unique_ptr<Message> msg, StreamID origin);
-
-  std::map<MessageType, MsgCallbackType> InitializeCallbacks();
 };
 
 }  // namespace rocketspeed
