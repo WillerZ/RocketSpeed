@@ -46,7 +46,7 @@ class LocalTestCluster {
       // Flush aggressively for tests.
       copilot.rollcall_max_batch_size_bytes = 100;
       copilot.rollcall_flush_latency = std::chrono::milliseconds(20);
-      copilot.timer_interval_micros = 10000;
+      copilot.timer_interval_micros = 100000;
     }
 
     std::shared_ptr<Logger> info_log;
