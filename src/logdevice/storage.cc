@@ -6,14 +6,38 @@
 #include "src/logdevice/storage.h"
 #include <algorithm>
 
-#ifdef USE_LOGDEVICE
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
+#include "logdevice/include/AsyncReader.h"
+#include "logdevice/include/Client.h"
+#ifdef USE_LOGDEVICE
 #include "logdevice/common/DataRecordOwnsPayload.h"
-#pragma GCC diagnostic pop
 #endif  // USE_LOGDEVICE
+#pragma GCC diagnostic pop
 
 namespace rocketspeed {
+
+/**
+ * Async Log Reader interface backed by LogDevice.
+ */
+class AsyncLogDeviceReader : public AsyncLogReader {
+ public:
+  AsyncLogDeviceReader(LogDeviceStorage* storage,
+                    std::function<bool(LogRecord&)> record_cb,
+                    std::function<bool(const GapRecord&)> gap_cb,
+                    std::unique_ptr<facebook::logdevice::AsyncReader>&& reader);
+
+  ~AsyncLogDeviceReader() final;
+
+  Status Open(LogID id,
+              SequenceNumber startPoint,
+              SequenceNumber endPoint) final;
+
+  Status Close(LogID id) final;
+
+ private:
+  std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
+};
 
 /**
  * Converts a LogDevice Status to a RocketSpeed::Status.

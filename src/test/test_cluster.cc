@@ -15,12 +15,15 @@
 #include "src/util/common/fixed_configuration.h"
 #include "src/util/control_tower_router.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
 #ifdef USE_LOGDEVICE
 #include "logdevice/include/debug.h"
 #include "logdevice/test/utils/IntegrationTestUtils.h"
 #else
 #include "src/logdevice/Common.h"
 #endif  // USE_LOGDEVICE
+#pragma GCC diagnostic pop
 
 namespace rocketspeed {
 

@@ -6,19 +6,17 @@
 #pragma once
 
 #include <chrono>
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 #include "src/util/storage.h"
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-#include "logdevice/include/AsyncReader.h"
-#include "logdevice/include/Client.h"
-#pragma GCC diagnostic pop
+namespace facebook {
+  namespace logdevice {
+    class Client;
+  }
+}
 
 namespace rocketspeed {
 
@@ -119,28 +117,6 @@ class LogDeviceStorage : public LogStorage {
 
   std::shared_ptr<facebook::logdevice::Client> client_;
   std::shared_ptr<Logger> info_log_;
-};
-
-/**
- * Async Log Reader interface backed by LogDevice.
- */
-class AsyncLogDeviceReader : public AsyncLogReader {
- public:
-  AsyncLogDeviceReader(LogDeviceStorage* storage,
-                    std::function<bool(LogRecord&)> record_cb,
-                    std::function<bool(const GapRecord&)> gap_cb,
-                    std::unique_ptr<facebook::logdevice::AsyncReader>&& reader);
-
-  ~AsyncLogDeviceReader() final;
-
-  Status Open(LogID id,
-              SequenceNumber startPoint,
-              SequenceNumber endPoint) final;
-
-  Status Close(LogID id) final;
-
- private:
-  std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
 };
 
 }  // namespace rocketspeed
