@@ -33,7 +33,7 @@
 // Common settings
 DEFINE_bool(log_to_stderr, false, "log to stderr (otherwise LOG file)");
 DEFINE_uint64(buffered_storage_max_messages,
-              255,
+              0,
               "how many messages to batch in a storage record, <= 1 disables");
 DEFINE_uint64(buffered_storage_max_bytes,
               std::numeric_limits<size_t>::max(),
