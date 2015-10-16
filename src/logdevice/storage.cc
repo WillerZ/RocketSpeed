@@ -4,13 +4,16 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/logdevice/storage.h"
+#include "include/Logger.h"
 #include <algorithm>
+#include <thread>
 #include <unordered_set>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 #include "logdevice/include/AsyncReader.h"
 #include "logdevice/include/Client.h"
+#include "logdevice/include/ClientSettings.h"
 #ifdef USE_LOGDEVICE
 #include "logdevice/common/DataRecordOwnsPayload.h"
 #endif  // USE_LOGDEVICE
@@ -179,7 +182,35 @@ LogDeviceStorage::LogDeviceStorage(
 LogDeviceStorage::~LogDeviceStorage() {
   // Ensure that we hold the only reference.
   // Graceful shutdown relies on this.
-  assert(client_.unique());
+  // The LogDevice AsyncReaderImpl holds a reference to the LogDevice client,
+  // keeping it alive, and keeping its loops running. We need to wait until
+  // all of those references are released.
+  //
+  // To make things more difficult, the AsyncReader cannot be deleted until
+  // all logs have asynchonously closed, so in AsyncLogDeviceReader::Close we
+  // keep a reference to the AsyncReader to keep it alive, but this also keeps
+  // the Client alive. We cannot let this reference free the Client because the
+  // Client must be freed from a single thread, so we have no choice but to
+  // wait here until all references are released.
+  //
+  // We wait for a maximum of 10 seconds before giving up.
+
+  const std::chrono::milliseconds wait(10);
+  const std::chrono::milliseconds timeout(10000);
+  std::chrono::milliseconds tick(0);
+  while (!client_.unique()) {
+    /* sleep override */
+    std::this_thread::sleep_for(wait);
+    tick += wait;
+    if (tick > timeout) {
+      LOG_ERROR(info_log_, "Failed to release LogDevice client after %dms. "
+        "Pushing forward with shutdown to avoid blocking the thread, although "
+        "bad things may happen after this point.",
+        static_cast<int>(timeout.count()));
+      assert(false);
+      break;
+    }
+  }
 }
 
 Status LogDeviceStorage::AppendAsync(LogID id,
