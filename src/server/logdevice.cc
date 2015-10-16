@@ -20,7 +20,7 @@
 
 #include <gflags/gflags.h>
 
-DEFINE_string(logs, "1..100000", "range of logs");
+DEFINE_string(logs, "1..1000", "range of logs");
 DEFINE_string(storage_url, "", "Storage config url");
 DEFINE_string(logdevice_cluster, "", "LogDevice cluster tier name");
 DEFINE_int32(storage_workers, 16, "number of logdevice storage workers");
