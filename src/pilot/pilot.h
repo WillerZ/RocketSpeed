@@ -14,8 +14,8 @@
 
 namespace rocketspeed {
 
-struct AppendClosure;
-struct AppendResponse;
+class AppendClosure;
+class AppendResponse;
 class FlowControl;
 class Logger;
 class LogStorage;
@@ -58,7 +58,7 @@ class Pilot {
   }
 
  private:
-  friend struct AppendClosure;
+  friend class AppendClosure;
 
   struct Stats {
     Stats() {

@@ -33,9 +33,9 @@ namespace rocketspeed {
 //
 // This is registered with the event loop. The event loop invokes
 // this call on every message received.
-void
-MsgLoop::EventCallback(std::unique_ptr<Message> msg,
-                       StreamID origin) {
+void MsgLoop::EventCallback(Flow* flow,
+                            std::unique_ptr<Message> msg,
+                            StreamID origin) {
   assert(msg);
 
   // what message have we received?
@@ -50,7 +50,7 @@ MsgLoop::EventCallback(std::unique_ptr<Message> msg,
   std::map<MessageType, MsgCallbackType>::const_iterator iter =
     msg_callbacks_.find(type);
   if (iter != msg_callbacks_.end()) {
-    iter->second(std::move(msg), origin);
+    iter->second(flow, std::move(msg), origin);
   } else {
     // If the user has not registered a message of this type,
     // then this msg will be dropped silently.
@@ -81,12 +81,12 @@ MsgLoop::MsgLoop(BaseEnv* env,
   assert(info_log);
   assert(num_workers >= 1);
 
-  auto event_callback = [this] (std::unique_ptr<Message> msg,
-                                StreamID origin) {
-    EventCallback(std::move(msg), origin);
+  const auto event_callback = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    EventCallback(flow, std::move(msg), origin);
   };
 
-  auto accept_callback = [this] (int fd) {
+  const auto accept_callback = [this](int fd) {
     // Assign the new connection to the least loaded event loop.
     event_loops_[LoadBalancedWorkerId()]->Accept(fd);
   };
@@ -179,23 +179,23 @@ void MsgLoop::Run() {
 
   // Add ping callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mPing) == msg_callbacks_.end()) {
-    msg_callbacks_[MessageType::mPing] = [this] (std::unique_ptr<Message> msg,
-                                                 StreamID origin) {
+    msg_callbacks_[MessageType::mPing] = [this](
+        Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
       ProcessPing(std::move(msg), origin);
     };
   }
 
   // Add goodbye callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mGoodbye) == msg_callbacks_.end()) {
-    msg_callbacks_[MessageType::mGoodbye] =
-      [this] (std::unique_ptr<Message> msg, StreamID origin) {
-        // Ignore, just log it.
-        MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
-        LOG_INFO(info_log_,
-                 "Goodbye %d received for client %llu",
-                 static_cast<int>(goodbye->GetCode()),
-                 origin);
-      };
+    msg_callbacks_[MessageType::mGoodbye] = [this](
+        Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+      // Ignore, just log it.
+      MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
+      LOG_INFO(info_log_,
+               "Goodbye %d received for client %llu",
+               static_cast<int>(goodbye->GetCode()),
+               origin);
+    };
   }
 
   // Starting from 1, run worker loops on new threads.

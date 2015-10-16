@@ -223,7 +223,7 @@ class MsgLoop : public MsgLoopBase {
   mutable std::atomic<int> next_worker_id_;
 
   // The EventLoop callback.
-  void EventCallback(std::unique_ptr<Message> msg, StreamID origin);
+  void EventCallback(Flow* flow, std::unique_ptr<Message> msg, StreamID origin);
 
   // method to provide default handling of ping message
   void ProcessPing(std::unique_ptr<Message> msg, StreamID origin);

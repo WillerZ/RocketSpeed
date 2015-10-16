@@ -83,8 +83,6 @@ class Queue : public Source<Item>, public Sink<Item> {
 
   bool TryWrite(Item& command, bool check_thread = true) final override;
 
-  void Drain() final override;
-
   /** Upper-bound estimate of queue size. */
   size_t GetSize() const { return queue_.sizeGuess(); }
 
@@ -123,6 +121,9 @@ class Queue : public Source<Item>, public Sink<Item> {
   std::atomic<size_t> synced_size_;
   ThreadCheck read_check_;
   ThreadCheck write_check_;
+
+  void Drain();
+
 };
 
 /**

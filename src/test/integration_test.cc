@@ -674,12 +674,14 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   // Start client loop.
   MsgLoop client(env_, EnvOptions(), 0, 1, info_log, "client");
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mDeliver] =
-    [&] (std::unique_ptr<Message> msg, StreamID origin) {
-      received_data.Post();
-    };
-  callbacks[MessageType::mGap] = [](std::unique_ptr<Message>, StreamID) {};
-  callbacks[MessageType::mDataAck] = [] (std::unique_ptr<Message>, StreamID) {};
+  callbacks[MessageType::mDeliver] = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    received_data.Post();
+  };
+  callbacks[MessageType::mGap] = [](
+      Flow* flow, std::unique_ptr<Message>, StreamID) {};
+  callbacks[MessageType::mDataAck] = [](
+      Flow* flow, std::unique_ptr<Message>, StreamID) {};
   client.RegisterCallbacks(callbacks);
   StreamSocket socket(client.CreateOutboundStream(
       cluster.GetCopilot()->GetHostId(), 0));

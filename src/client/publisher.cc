@@ -320,7 +320,7 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
   // Register our callbacks.
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mDataAck] =
-      std::bind(&PublisherImpl::ProcessDataAck, this, _1, _2);
+      std::bind(&PublisherImpl::ProcessDataAck, this, _1, _2, _3);
   msg_loop_->RegisterCallbacks(std::move(callbacks));
 }
 
@@ -372,7 +372,8 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
 }
 
 // TODO(stupaq) remove these once we get thread-unsafe outgoing loops
-void PublisherImpl::ProcessDataAck(std::unique_ptr<Message> msg,
+void PublisherImpl::ProcessDataAck(Flow*,
+                                   std::unique_ptr<Message> msg,
                                    StreamID origin) {
   const auto worker_id = msg_loop_->GetThreadWorkerIndex();
   worker_data_[worker_id].ProcessDataAck(std::move(msg), origin);

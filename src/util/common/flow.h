@@ -58,11 +58,6 @@ class Source : public AbstractSource {
     RegisterReadEvent(event_loop);
   }
 
-  /**
-   * Reads from the source, and invokes read callback until it returns false.
-   */
-  virtual void Drain() = 0;
-
  protected:
   virtual void RegisterReadEvent(EventLoop* event_loop) = 0;
 

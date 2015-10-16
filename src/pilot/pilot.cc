@@ -22,7 +22,7 @@
 namespace rocketspeed {
 
 // Storage for captured objects in the append callback.
-struct AppendClosure : public PooledObject<AppendClosure> {
+class AppendClosure : public PooledObject<AppendClosure> {
  public:
   AppendClosure(Pilot* pilot,
                 std::unique_ptr<MessageData> msg,
@@ -51,7 +51,8 @@ struct AppendClosure : public PooledObject<AppendClosure> {
   StreamID origin_;
 };
 
-struct AppendResponse {
+class AppendResponse {
+ public:
   Status status;
   SequenceNumber seqno;
   std::unique_ptr<MessageData> msg;
@@ -130,11 +131,11 @@ Pilot::Pilot(PilotOptions options):
   }
   log_storage_ = options_.storage;
 
-  std::map<MessageType, MsgCallbackType> cb {
-    { MessageType::mPublish, [this] (std::unique_ptr<Message> msg,
-                                     StreamID origin) {
-        ProcessPublish(std::move(msg), origin);
-    }}};
+  std::map<MessageType, MsgCallbackType> cb{
+      {MessageType::mPublish,
+       [this](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         ProcessPublish(std::move(msg), origin);
+       }}};
   options_.msg_loop->RegisterCallbacks(std::move(cb));
 
   LOG_INFO(options_.info_log, "Created a new Pilot");
@@ -335,6 +336,7 @@ Pilot::WorkerData::WorkerData(MsgLoop* msg_loop, int worker_id, Pilot* pilot)
     new ThreadLocalQueues<AppendResponse>(
       [this, pilot, event_loop] () {
         return InstallQueue<AppendResponse>(
+          event_loop,
           pilot->options_.info_log,
           event_loop->GetQueueStats(),
           1000,

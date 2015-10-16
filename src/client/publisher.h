@@ -17,6 +17,7 @@
 namespace rocketspeed {
 
 class BaseEnv;
+class Flow;
 class Message;
 class MessageData;
 class MsgLoopBase;
@@ -82,7 +83,9 @@ class PublisherImpl {
   std::vector<PublisherWorkerData> worker_data_;
 
   /** Handles acknowledgements for published messages. */
-  void ProcessDataAck(std::unique_ptr<Message> msg, StreamID origin);
+  void ProcessDataAck(Flow* flow,
+                      std::unique_ptr<Message> msg,
+                      StreamID origin);
 
   /** Decides how to shard requests into workers. */
   int GetWorkerForTopic(const Topic& name) const;

@@ -12,8 +12,9 @@
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
 #include "src/util/testharness.h"
-#include "src/util/common/multi_producer_queue.h"
+#include "src/util/common/flow_control.h"
 #include "src/util/common/guid_generator.h"
+#include "src/util/common/multi_producer_queue.h"
 
 namespace rocketspeed {
 
@@ -308,15 +309,15 @@ TEST(Messaging, PingPong) {
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "client");
   StreamSocket socket(loop.CreateOutboundStream(server.GetHostId(), 0));
   loop.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
-                               StreamID origin) {
-        ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
-        ASSERT_EQ(socket.GetStreamID(), origin);
-        MessagePing* ping = static_cast<MessagePing*>(msg.get());
-        ASSERT_EQ(ping->GetPingType(), MessagePing::PingType::Response);
-        ASSERT_EQ(ping->GetCookie(), "cookie");
-        ping_sem.Post();
-      }},
+      {MessageType::mPing,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         ASSERT_EQ(msg->GetMessageType(), MessageType::mPing);
+         ASSERT_EQ(socket.GetStreamID(), origin);
+         MessagePing* ping = static_cast<MessagePing*>(msg.get());
+         ASSERT_EQ(ping->GetPingType(), MessagePing::PingType::Response);
+         ASSERT_EQ(ping->GetCookie(), "cookie");
+         ping_sem.Post();
+       }},
   });
   ASSERT_OK(loop.Initialize());
   MsgLoopThread t2(env_, &loop, "client");
@@ -367,13 +368,13 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
 
   MsgLoop server(env_, env_options_, 0, 1, info_log_, "server");
   server.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
-                               StreamID origin) {
-        std::unique_ptr<MessagePing> ping(
-          static_cast<MessagePing*>(msg.release()));
-        ASSERT_TRUE(server_pings.write(std::move(ping), origin));
-        server_ping.Post();
-      }},
+      {MessageType::mPing,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         std::unique_ptr<MessagePing> ping(
+             static_cast<MessagePing*>(msg.release()));
+         ASSERT_TRUE(server_pings.write(std::move(ping), origin));
+         server_ping.Post();
+       }},
   });
   ASSERT_OK(server.Initialize());
   MsgLoopThread t1(env_, &server, "server");
@@ -384,12 +385,12 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   // First client loop.
   MsgLoop client1(env_, env_options_, 0, 1, info_log_, "client1");
   client1.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
-                               StreamID origin) {
-        auto ping = static_cast<MessagePing*>(msg.get());
-        ASSERT_EQ("stream1", ping->GetCookie());
-        client_ping.Post();
-      }},
+      {MessageType::mPing,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         auto ping = static_cast<MessagePing*>(msg.get());
+         ASSERT_EQ("stream1", ping->GetCookie());
+         client_ping.Post();
+       }},
   });
   ASSERT_OK(client1.Initialize());
   MsgLoopThread t2(env_, &client1, "client1");
@@ -397,12 +398,12 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   // Second client loop.
   MsgLoop client2(env_, env_options_, 0, 1, info_log_, "client2");
   client2.RegisterCallbacks({
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
-                               StreamID origin) {
-        auto ping = static_cast<MessagePing*>(msg.get());
-        ASSERT_EQ("stream2", ping->GetCookie());
-        client_ping.Post();
-      }},
+      {MessageType::mPing,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         auto ping = static_cast<MessagePing*>(msg.get());
+         ASSERT_EQ("stream2", ping->GetCookie());
+         client_ping.Post();
+       }},
   });
   ASSERT_OK(client2.Initialize());
   MsgLoopThread t3(env_, &client2, "client2");
@@ -481,15 +482,16 @@ TEST(Messaging, MultipleStreamsOneSocket) {
     int message_num = 0;
     client.RegisterCallbacks({
         {MessageType::mPing,
-         [&checkpoint, &sockets, message_num](
-             std::unique_ptr<Message> msg, StreamID origin) mutable {
-          int i = message_num++ % kNumStreams;
-          ASSERT_LT(i, kNumStreams);
-          auto ping = static_cast<MessagePing*>(msg.get());
-          ASSERT_EQ(std::to_string(i), ping->GetCookie());
-          ASSERT_EQ(sockets[i].GetStreamID(), origin);
-          checkpoint.Post();
-        }},
+         [&checkpoint, &sockets, message_num](Flow* flow,
+                                              std::unique_ptr<Message> msg,
+                                              StreamID origin) mutable {
+           int i = message_num++ % kNumStreams;
+           ASSERT_LT(i, kNumStreams);
+           auto ping = static_cast<MessagePing*>(msg.get());
+           ASSERT_EQ(std::to_string(i), ping->GetCookie());
+           ASSERT_EQ(sockets[i].GetStreamID(), origin);
+           checkpoint.Post();
+         }},
     });
   }
   ASSERT_OK(client.Initialize());
@@ -524,19 +526,20 @@ TEST(Messaging, GracefulGoodbye) {
   MsgLoop server(env_, env_options_, 0, 1, info_log_, "server");
   server.RegisterCallbacks({
       {MessageType::mGoodbye,
-       [&](std::unique_ptr<Message> msg,
-           StreamID origin) { goodbye_checkpoint.Post(); }},
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
-                               StreamID origin) {
-        {
-          std::lock_guard<std::mutex> lock(inbound_stream_mutex);
-          inbound_stream.push_back(origin);
-        }
-        auto ping = static_cast<MessagePing*>(msg.get());
-        ping->SetPingType(MessagePing::PingType::Response);
-        ASSERT_OK(
-            server.SendResponse(*ping, origin, server.GetThreadWorkerIndex()));
-      }},
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         goodbye_checkpoint.Post();
+       }},
+      {MessageType::mPing,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         {
+           std::lock_guard<std::mutex> lock(inbound_stream_mutex);
+           inbound_stream.push_back(origin);
+         }
+         auto ping = static_cast<MessagePing*>(msg.get());
+         ping->SetPingType(MessagePing::PingType::Response);
+         ASSERT_OK(
+             server.SendResponse(*ping, origin, server.GetThreadWorkerIndex()));
+       }},
   });
   ASSERT_OK(server.Initialize());
   MsgLoopThread t1(env_, &server, "loop-server");
@@ -546,14 +549,14 @@ TEST(Messaging, GracefulGoodbye) {
   std::atomic<int> message_num{0};
   std::string expected_cookies[] = {"c1", "c2", "c2"};
   std::map<MessageType, MsgCallbackType> callbacks = {
-      {MessageType::mPing, [&](std::unique_ptr<Message> msg,
-                               StreamID origin) {
-        int n = message_num++;
-        ASSERT_LT(n, 3);
-        auto ping = static_cast<MessagePing*>(msg.get());
-        ASSERT_EQ(expected_cookies[n], ping->GetCookie());
-        checkpoint.Post();
-      }},
+      {MessageType::mPing,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         int n = message_num++;
+         ASSERT_LT(n, 3);
+         auto ping = static_cast<MessagePing*>(msg.get());
+         ASSERT_EQ(expected_cookies[n], ping->GetCookie());
+         checkpoint.Post();
+       }},
   };
 
   // Clients loop.
@@ -657,8 +660,8 @@ TEST(Messaging, SocketDeath) {
   // Post to the checkpoint when receiving a ping.
   port::Semaphore checkpoint;
   std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mPing] = [&](std::unique_ptr<Message> msg,
-                                      StreamID origin) {
+  callbacks[MessageType::mPing] = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     auto ping = static_cast<MessagePing*>(msg.get());
     ASSERT_EQ("expected", ping->GetCookie());
     checkpoint.Post();
@@ -767,10 +770,10 @@ TEST(Messaging, ConnectTimeout) {
   // Register callback for a goodbye message.
   port::Semaphore goodbye;
   std::map<MessageType, MsgCallbackType> callbacks = {
-    {MessageType::mGoodbye, [&](std::unique_ptr<Message> msg,
-                                StreamID origin) {
-      goodbye.Post();
-    }},
+      {MessageType::mGoodbye,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         goodbye.Post();
+       }},
   };
   loop.RegisterCallbacks(callbacks);
 
@@ -788,6 +791,63 @@ TEST(Messaging, ConnectTimeout) {
   // Check that we receive a goodbye, but not immediately.
   ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.connect_timeout / 2));
   ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.connect_timeout * 2));
+}
+
+TEST(Messaging, FlowControlOnDelivery) {
+  MsgLoop::Options opts;
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "loop", opts);
+  ASSERT_OK(loop.Initialize());
+
+  // Create a test sink of capacity 1.
+  auto queue = std::make_shared<Queue<int>>(
+      info_log_, loop.GetEventLoop(0)->GetQueueStats(), 1);
+
+  // Register callback for a goodbye message.
+  port::Semaphore delivered;
+  std::map<MessageType, MsgCallbackType> callbacks = {
+      {MessageType::mPing,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         int value = 0;
+         flow->Write(queue.get(), value);
+         delivered.Post();
+       }},
+  };
+  loop.RegisterCallbacks(callbacks);
+
+  // Start loop.
+  MsgLoopThread t1(env_, &loop, "loop");
+  ASSERT_OK(loop.WaitUntilRunning());
+
+  // We'll be sending messages to self.
+  StreamSocket socket(loop.CreateOutboundStream(loop.GetHostId(), 0));
+  MessagePing msg(Tenant::GuestTenant, MessagePing::PingType::Request, "ping");
+
+  // Send a message twice, flow control will kick after the second one.
+  ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+  ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+  ASSERT_TRUE(delivered.TimedWait(timeout_));
+  ASSERT_TRUE(delivered.TimedWait(timeout_));
+
+  // Send a message again, since the backpressure was applied, it won't be
+  // delivered.
+  ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+  ASSERT_TRUE(!delivered.TimedWait(std::chrono::milliseconds(100)));
+
+  // Finally register the queue, so that messages will be read from it.
+  auto queue_cb = [](Flow* flow, int value) {
+    // Ignore, we only want to free up the queue.
+  };
+  FlowControl flow_control("queue", loop.GetEventLoop(0));
+  std::unique_ptr<Command> cmd(MakeExecuteCommand(std::bind(
+      &FlowControl::Register<int>, &flow_control, queue.get(), queue_cb)));
+  loop.SendCommand(std::move(cmd), 0);
+  // The backpressure will eventually be removed and all messages should be
+  // delivered.
+  ASSERT_TRUE(delivered.TimedWait(timeout_));
+
+  // Send a message again it will be delivered, as there is no backpressure.
+  ASSERT_OK(loop.SendRequest(msg, &socket, 0));
+  ASSERT_TRUE(delivered.TimedWait(timeout_));
 }
 
 }  // namespace rocketspeed

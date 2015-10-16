@@ -375,26 +375,30 @@ std::map<MessageType, MsgCallbackType> Copilot::InitializeCallbacks() {
   using namespace std::placeholders;
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mDeliverData] = [this] (std::unique_ptr<Message> msg,
-                                          StreamID origin) {
+  cb[MessageType::mDeliverData] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessDeliver(std::move(msg), origin);
   };
-  cb[MessageType::mDeliverGap] = [this] (std::unique_ptr<Message> msg,
-                                         StreamID origin) {
+  cb[MessageType::mDeliverGap] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessGap(std::move(msg), origin);
   };
-  cb[MessageType::mTailSeqno] = [this] (std::unique_ptr<Message> msg,
-                                        StreamID origin) {
+  cb[MessageType::mTailSeqno] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessTailSeqno(std::move(msg), origin);
   };
-  cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg,
-                                      StreamID origin) {
+  cb[MessageType::mGoodbye] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessGoodbye(std::move(msg), origin);
   };
-  cb[MessageType::mSubscribe] =
-      std::bind(&Copilot::ProcessSubscribe, this, _1, _2);
-  cb[MessageType::mUnsubscribe] =
-      std::bind(&Copilot::ProcessUnsubscribe, this, _1, _2);
+  cb[MessageType::mSubscribe] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    ProcessSubscribe(std::move(msg), origin);
+  };
+  cb[MessageType::mUnsubscribe] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    ProcessUnsubscribe(std::move(msg), origin);
+  };
   return cb;
 }
 

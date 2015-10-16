@@ -328,9 +328,8 @@ Statistics RocketeerServer::GetStatisticsSync() {
 }
 
 template <typename Msg>
-std::function<void(std::unique_ptr<Message>, StreamID)>
-RocketeerServer::CreateCallback() {
-  return [this](std::unique_ptr<Message> message, StreamID origin) {
+MsgCallbackType RocketeerServer::CreateCallback() {
+  return [this](Flow* flow, std::unique_ptr<Message> message, StreamID origin) {
     std::unique_ptr<Msg> casted(static_cast<Msg*>(message.release()));
     auto worker_id = msg_loop_->GetThreadWorkerIndex();
     rocketeers_[worker_id]->Receive(std::move(casted), origin);

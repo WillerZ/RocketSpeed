@@ -21,6 +21,7 @@
 
 namespace rocketspeed {
 
+class Flow;
 class MsgLoop;
 class MsgLoopThread;
 class Logger;
@@ -258,7 +259,8 @@ class RocketeerServer {
   std::vector<Rocketeer*> rocketeers_;
 
   template <typename M>
-  std::function<void(std::unique_ptr<Message>, StreamID)> CreateCallback();
+  std::function<void(Flow*, std::unique_ptr<Message>, StreamID)>
+  CreateCallback();
 };
 
 }  // namespace rocketspeed

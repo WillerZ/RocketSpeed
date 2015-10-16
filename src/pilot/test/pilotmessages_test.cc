@@ -64,14 +64,14 @@ TEST(PilotTest, Publish) {
   StreamSocket socket(loop.CreateOutboundStream(
       cluster.GetPilot()->GetHostId(), 0));
   loop.RegisterCallbacks({
-      {MessageType::mDataAck, [&](std::unique_ptr<Message> msg,
-                                  StreamID origin) {
-        ASSERT_EQ(socket.GetStreamID(), origin);
-        ProcessDataAck(std::move(msg), origin);
-        if (acked_msgs_.size() == kNumMessages) {
-          checkpoint.Post();
-        }
-      }},
+      {MessageType::mDataAck,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         ASSERT_EQ(socket.GetStreamID(), origin);
+         ProcessDataAck(std::move(msg), origin);
+         if (acked_msgs_.size() == kNumMessages) {
+           checkpoint.Post();
+         }
+       }},
   });
   ASSERT_OK(loop.Initialize());
   MsgLoopThread t1(env_, &loop, "client");

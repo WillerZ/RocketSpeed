@@ -114,8 +114,7 @@ Proxy::Proxy(ProxyOptions options)
     , config_(std::move(options.conf))
     , ordering_buffer_size_(options.ordering_buffer_size)
     , msg_thread_(0) {
-  using std::placeholders::_1;
-  using std::placeholders::_2;
+  using namespace std::placeholders;
 
   msg_loop_.reset(new MsgLoop(env_,
                               options.env_options,
@@ -124,8 +123,9 @@ Proxy::Proxy(ProxyOptions options)
                               info_log_,
                               "proxy"));
 
-  auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1, _2);
-  auto goodbye_callback = std::bind(&Proxy::HandleGoodbyeMessage, this, _1, _2);
+  auto callback = std::bind(&Proxy::HandleMessageReceived, this, _1, _2, _3);
+  auto goodbye_callback =
+      std::bind(&Proxy::HandleGoodbyeMessage, this, _1, _2, _3);
 
   std::map<MessageType, MsgCallbackType> callbacks;
   callbacks[MessageType::mPing] = callback;
@@ -225,7 +225,8 @@ ProxyWorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
   return *worker_data_[worker_id];
 }
 
-void Proxy::HandleGoodbyeMessage(std::unique_ptr<Message> msg,
+void Proxy::HandleGoodbyeMessage(Flow* flow,
+                                 std::unique_ptr<Message> msg,
                                  StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   if (goodbye->GetOriginType() == MessageGoodbye::OriginType::Server) {
@@ -295,7 +296,8 @@ void Proxy::HandleDestroySession(int64_t session) {
       std::move(serialized), std::move(recipients)));
 }
 
-void Proxy::HandleMessageReceived(std::unique_ptr<Message> msg,
+void Proxy::HandleMessageReceived(Flow* flow,
+                                  std::unique_ptr<Message> msg,
                                   StreamID global) {
   if (!on_message_) {
     return;

@@ -140,10 +140,14 @@ TEST(CopilotTest, Rollcall) {
   StreamSocket socket(
       client.CreateOutboundStream(cluster.GetCopilot()->GetHostId(), 0));
   client.RegisterCallbacks({
-      {MessageType::mSubscribe, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mUnsubscribe, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mDeliverData, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mSubscribe,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mUnsubscribe,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverGap,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverData,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(client.Initialize());
   MsgLoopThread client_thread(env_, &client, "client_mock");

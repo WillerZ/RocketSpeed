@@ -12,7 +12,13 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
   event_loop_->ThreadCheck();
   SinkState& sink_state = sinks_[sink];
   for (auto disabled_source : sink_state.backpressure) {
-    SourceState& source_state = sources_[disabled_source];
+    auto source_it = sources_.find(disabled_source);
+    // If the source was unregistered, while a backpressure was applied to it,
+    // the list of sources might contain dangling pointer to it.
+    if (source_it == sources_.end()) {
+      continue;
+    }
+    SourceState& source_state = source_it->second;
     assert(source_state.blockers > 0);
     if (--source_state.blockers == 0) {
       // No more sinks blocking source, so re-enable.

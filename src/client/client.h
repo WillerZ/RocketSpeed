@@ -27,10 +27,11 @@
 namespace rocketspeed {
 
 class ClientEnv;
-class Subscriber;
+class Flow;
 class MessageReceived;
 class MsgLoop;
 class Logger;
+class Subscriber;
 class WakeLock;
 
 /** Implementation of the client interface. */
@@ -149,7 +150,8 @@ class ClientImpl : public Client {
   int GetWorkerID(SubscriptionHandle sub_handle) const;
 
   template <typename M>
-  std::function<void(std::unique_ptr<Message>, StreamID)> CreateCallback();
+  std::function<void(Flow*, std::unique_ptr<Message>, StreamID)>
+  CreateCallback();
 };
 
 }  // namespace rocketspeed

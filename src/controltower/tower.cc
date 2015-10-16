@@ -433,20 +433,20 @@ std::map<MessageType, MsgCallbackType>
 ControlTower::InitializeCallbacks() {
   // create a temporary map and initialize it
   std::map<MessageType, MsgCallbackType> cb;
-  cb[MessageType::mSubscribe] = [this] (std::unique_ptr<Message> msg,
-                                        StreamID origin) {
+  cb[MessageType::mSubscribe] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessSubscribe(std::move(msg), origin);
   };
-  cb[MessageType::mUnsubscribe] = [this] (std::unique_ptr<Message> msg,
-                                          StreamID origin) {
+  cb[MessageType::mUnsubscribe] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessUnsubscribe(std::move(msg), origin);
   };
-  cb[MessageType::mFindTailSeqno] = [this] (std::unique_ptr<Message> msg,
-                                            StreamID origin) {
+  cb[MessageType::mFindTailSeqno] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessFindTailSeqno(std::move(msg), origin);
   };
-  cb[MessageType::mGoodbye] = [this] (std::unique_ptr<Message> msg,
-                                      StreamID origin) {
+  cb[MessageType::mGoodbye] = [this](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ProcessGoodbye(std::move(msg), origin);
   };
 

@@ -31,6 +31,7 @@
 #include "src/messages/serializer.h"
 #include "src/messages/stream_socket.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/flow_control.h"
 
 static_assert(std::is_same<evutil_socket_t, int>::value,
   "EventLoop assumes evutil_socket_t is int.");
@@ -91,36 +92,25 @@ struct TimestampedString {
   uint64_t issued_time;
 };
 
-class SocketEvent {
+struct MessageOnStream {
+  StreamID stream_id;
+  std::unique_ptr<Message> message;
+};
+
+class SocketEvent : public Source<MessageOnStream> {
  public:
-  static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop, int fd) {
-    std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, false));
-
-    // register only the read callback
-    if (!sev->read_ev_ || !sev->write_ev_) {
-      LOG_ERROR(event_loop->GetLog(),
-          "Failed to create socket event for fd(%d)", fd);
-      return nullptr;
-    }
-    sev->read_ev_->Enable();
-    return sev;
-  }
-
-  // this constructor is used by server-side connection initiation
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
                                              int fd,
-                                             const HostId& destination) {
-    std::unique_ptr<SocketEvent> sev(new SocketEvent(event_loop, fd, true));
+                                             HostId destination = HostId()) {
+    std::unique_ptr<SocketEvent> sev(
+        new SocketEvent(event_loop, fd, !!destination));
 
-    // register only the read callback
     if (!sev->read_ev_ || !sev->write_ev_) {
       LOG_ERROR(event_loop->GetLog(),
           "Failed to create socket event for fd(%d)", fd);
       return nullptr;
     }
-    sev->read_ev_->Enable();
 
-    // Set destination of the socket, so that it can be reused.
     sev->destination_ = std::move(destination);
     return sev;
   }
@@ -134,6 +124,21 @@ class SocketEvent {
     read_ev_.reset();
     write_ev_.reset();
     close(fd_);
+  }
+
+  void SetReadEnabled(EventLoop* event_loop, bool enabled) final override {
+    assert(event_loop_ == event_loop);
+    if (enabled) {
+      read_ev_->Enable();
+    } else {
+      read_ev_->Disable();
+    }
+  }
+
+  void RegisterReadEvent(EventLoop* event_loop) final override {
+    assert(event_loop_ == event_loop);
+    // We create the event while constructing the socket, as we cannot propagate
+    // or handle errors in this method.
   }
 
   // One message to be sent out.
@@ -185,10 +190,11 @@ class SocketEvent {
       // We send goodbye using the global stream IDs, as these are only
       // known by the entity using the loop.
       std::unique_ptr<Message> msg(
-        new MessageGoodbye(Tenant::InvalidTenant,
-                           MessageGoodbye::Code::SocketError,
-                           origin_type));
-      event_loop->Dispatch(std::move(msg), global);
+          new MessageGoodbye(Tenant::InvalidTenant,
+                             MessageGoodbye::Code::SocketError,
+                             origin_type));
+      SourcelessFlow no_flow;
+      event_loop->Dispatch(&no_flow, std::move(msg), global);
     }
   }
 
@@ -489,8 +495,9 @@ class SocketEvent {
       assert(ValidateEnum(msg_type));
       event_loop_->stats_.messages_received[size_t(msg_type)]->Add(1);
 
-      // Invoke the callback for this message.
-      event_loop_->Dispatch(std::move(msg), global);
+      if (!DrainOne({global, std::move(msg)})) {
+        return Status::OK();
+      }
     }
     return Status::OK();
   }
@@ -727,6 +734,13 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
   std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
                                                          accept_cmd->GetFD());
   if (sev) {
+    // Register with flow control.
+    flow_control_->Register<MessageOnStream>(
+        sev.get(),
+        [this](Flow* flow, MessageOnStream message) {
+          Dispatch(flow, std::move(message.message), message.stream_id);
+        });
+
     all_sockets_.emplace_front(std::move(sev));
     all_sockets_.front()->SetListHandle(all_sockets_.begin());
     active_connections_.fetch_add(1, std::memory_order_acq_rel);
@@ -1144,8 +1158,10 @@ void EventLoop::Accept(int fd) {
   SendCommand(command);
 }
 
-void EventLoop::Dispatch(std::unique_ptr<Message> message, StreamID origin) {
-  event_callback_(std::move(message), origin);
+void EventLoop::Dispatch(Flow* flow,
+                         std::unique_ptr<Message> message,
+                         StreamID origin) {
+  event_callback_(flow, std::move(message), origin);
 }
 
 void EventLoop::Dispatch(std::unique_ptr<Command> command) {
@@ -1178,6 +1194,10 @@ Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
 // Removes an socket event created by setup_connection.
 void EventLoop::teardown_connection(SocketEvent* sev, bool timed_out) {
   thread_check_.Check();
+
+  // Unregister from the flow control.
+  flow_control_->Unregister(sev);
+
   if (!timed_out) {
     connect_timeout_.Erase(sev);
   }
@@ -1214,6 +1234,14 @@ EventLoop::setup_connection(const HostId& destination) {
   if (!sev) {
     return nullptr;
   }
+
+  // Register with flow control.
+  flow_control_->Register<MessageOnStream>(
+      sev.get(),
+      [this](Flow* flow, MessageOnStream message) {
+        Dispatch(flow, std::move(message.message), message.stream_id);
+      });
+
   connect_timeout_.Add(sev.get());
   all_sockets_.emplace_front(std::move(sev));
   all_sockets_.front()->SetListHandle(all_sockets_.begin());
@@ -1301,25 +1329,25 @@ EventLoop::EventLoop(BaseEnv* env,
                      AcceptCallbackType accept_callback,
                      StreamAllocator allocator,
                      EventLoop::Options options)
-    : options_(std::move(options))
-    , env_(env)
-    , env_options_(env_options)
-    , port_number_(port_number)
-    , running_(false)
-    , base_(nullptr)
-    , info_log_(info_log)
-    , event_callback_(std::move(event_callback))
-    , accept_callback_(std::move(accept_callback))
-    , listener_(nullptr)
-    , shutdown_eventfd_(rocketspeed::port::Eventfd(true, true))
-    , command_queues_(CommandQueueUnrefHandler)
-    , stream_router_(allocator.Split())
-    , outbound_allocator_(std::move(allocator))
-    , active_connections_(0)
-    , stats_(options_.stats_prefix)
-    , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix +
-                                                ".queues"))
-    , default_command_queue_size_(options_.command_queue_size) {
+: options_(std::move(options))
+, env_(env)
+, env_options_(env_options)
+, port_number_(port_number)
+, running_(false)
+, base_(nullptr)
+, info_log_(info_log)
+, flow_control_(new FlowControl(options_.stats_prefix + ".flow_control", this))
+, event_callback_(std::move(event_callback))
+, accept_callback_(std::move(accept_callback))
+, listener_(nullptr)
+, shutdown_eventfd_(rocketspeed::port::Eventfd(true, true))
+, command_queues_(CommandQueueUnrefHandler)
+, stream_router_(allocator.Split())
+, outbound_allocator_(std::move(allocator))
+, active_connections_(0)
+, stats_(options_.stats_prefix)
+, queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix + ".queues"))
+, default_command_queue_size_(options_.command_queue_size) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
       std::unique_ptr<Command> command) {
@@ -1344,7 +1372,8 @@ EventLoop::EventLoop(BaseEnv* env,
                              MessageGoodbye::Code::HeartbeatTimeout,
                              MessageGoodbye::OriginType::Client));
       // handle the goodbye message by the server
-      Dispatch(std::move(msg), global);
+      SourcelessFlow no_flow;
+      Dispatch(&no_flow, std::move(msg), global);
       // send the goodbye to the client, it should close the stream after the
       // t6778565 is completed
       // TODO(rpetrovic): update the comment after t6778565
@@ -1385,6 +1414,7 @@ Statistics EventLoop::GetStatistics() const {
   stats_.queue_count->Set(incoming_queues_.size());
   Statistics stats = stats_.all;
   stats.Aggregate(queue_stats_->all);
+  stats.Aggregate(flow_control_->GetStatistics());
   return stats;
 }
 

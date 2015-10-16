@@ -48,8 +48,8 @@ class Flow {
   , source_(source)
   , write_failed_(false) {}
 
-  FlowControl* flow_control_;
-  AbstractSource* source_;
+  FlowControl* const flow_control_;
+  AbstractSource* const source_;
   bool write_failed_;
 };
 
@@ -85,25 +85,26 @@ class FlowControl {
    * @param on_read Callback to be invoked when source has data to read.
    */
   template <typename T>
-  void Register(Source<T>* source,
-                std::function<void(Flow*, T)> on_read) {
-    // Cannot assume we are registering from the EventLoop thread, so we
-    // need to send a control command to install the read event.
-    std::unique_ptr<Command> cmd(MakeExecuteCommand(
-      [this, source, on_read] () {
-        // Register the read callback for this source, and enable it.
-        source->RegisterReadCallback(
-          event_loop_,
-          [this, on_read, source] (T item) {
-            // When source is read available, drain it into on_read until
-            // backpressure is applied.
-            Flow flow { this, source };
-            on_read(&flow, std::move(item));
-            return !flow.WriteHasFailed();
-          });
-        source->SetReadEnabled(event_loop_, true);
-      }));
-    event_loop_->SendControlCommand(std::move(cmd));
+  void Register(Source<T>* source, std::function<void(Flow*, T)> on_read) {
+    thread_check_.Check();
+    auto read_cb = [this, on_read, source](T item) {
+      // When source is read available, drain it into on_read until backpressure
+      // is applied.
+      Flow flow{this, source};
+      on_read(&flow, std::move(item));
+      return !flow.WriteHasFailed();
+    };
+    // Register the read callback for this source, and enable it.
+    source->RegisterReadCallback(event_loop_, std::move(read_cb));
+    source->SetReadEnabled(event_loop_, true);
+  }
+
+  template <typename T>
+  void Unregister(Source<T>* source) {
+    thread_check_.Check();
+    sources_.erase(source);
+    // Pointers to the source stored in SinkState will be removed lazily, when
+    // the backpressure from respective sink is removed.
   }
 
   const Statistics& GetStatistics() const {
@@ -220,6 +221,7 @@ class FlowControl {
   };
 
   EventLoop* event_loop_;
+  ThreadCheck thread_check_;
   std::unordered_map<AbstractSink*, SinkState> sinks_;
   std::unordered_map<AbstractSource*, SourceState> sources_;
 

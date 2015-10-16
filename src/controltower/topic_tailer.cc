@@ -812,6 +812,7 @@ TopicTailer::TopicTailer(
     new ThreadLocalQueues<std::function<void(Flow*)>>(
       [this] () {
         return InstallQueue<std::function<void(Flow*)>>(
+          event_loop_,
           info_log_,
           event_loop_->GetQueueStats(),
           options_.storage_to_room_queue_size,
@@ -825,6 +826,7 @@ TopicTailer::TopicTailer(
     new ThreadLocalQueues<FindLatestSeqnoResponse>(
       [this] () {
         return InstallQueue<FindLatestSeqnoResponse>(
+          event_loop_,
           info_log_,
           event_loop_->GetQueueStats(),
           1000,

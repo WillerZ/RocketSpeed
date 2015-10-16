@@ -59,8 +59,10 @@ TEST(ControlTowerTest, Subscribe) {
       loop.CreateOutboundStream(cluster.GetControlTower()->GetHostId(), 0));
   // Define a callback to process the subscribe response at the client
   loop.RegisterCallbacks({
-      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mGap,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverGap,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop.Initialize());
   MsgLoopThread t1(env_, &loop, "client");
@@ -99,9 +101,12 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   MsgLoop loop1(env_, env_options_, 0, 1, info_log_, "loop1");
   StreamSocket socket1(loop1.CreateOutboundStream(ct->GetHostId(), 0));
   loop1.RegisterCallbacks({
-      {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
-      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID){}},
+      {MessageType::mDeliver,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mGap,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverGap,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop1.Initialize());
   MsgLoopThread t1(env_, &loop1, "loop1");
@@ -125,9 +130,12 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   MsgLoop loop2(env_, env_options_, 0, 1, info_log_, "loop2");
   StreamSocket socket2(loop2.CreateOutboundStream(ct->GetHostId(), 0));
   loop2.RegisterCallbacks({
-      {MessageType::mDeliver, [](std::unique_ptr<Message>, StreamID) {}},
-      {MessageType::mGap, [](std::unique_ptr<Message>, StreamID){}},
-      {MessageType::mDeliverGap, [](std::unique_ptr<Message>, StreamID){}},
+      {MessageType::mDeliver,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mGap,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
+      {MessageType::mDeliverGap,
+       [](Flow* flow, std::unique_ptr<Message>, StreamID) {}},
   });
   ASSERT_OK(loop2.Initialize());
   MsgLoopThread t2(env_, &loop2, "loop2");

@@ -158,7 +158,7 @@ TEST(RocketeerTest, SubscribeTerminate) {
   port::Semaphore unsubscribe_sem;
   auto client = MockClient({
       {MessageType::mUnsubscribe,
-       [&](std::unique_ptr<Message> msg, StreamID stream_id) {
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
          auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
          ASSERT_TRUE(unsubscribe->GetReason() ==
                      MessageUnsubscribe::Reason::kBackOff);

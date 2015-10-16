@@ -115,7 +115,7 @@ ClientImpl::ClientImpl(ClientOptions options,
 
   // TODO(stupaq) kill it with fire
   auto goodbye_callback =
-      [this](std::unique_ptr<Message> msg, StreamID origin) {
+      [this](Flow*, std::unique_ptr<Message> msg, StreamID origin) {
         const auto worker_id = msg_loop_->GetThreadWorkerIndex();
         auto& worker_data = worker_data_[worker_id];
         if (worker_data->copilot_socket_valid_ &&
@@ -388,9 +388,8 @@ int ClientImpl::GetWorkerID(SubscriptionHandle sub_handle) const {
 }
 
 template <typename Msg>
-std::function<void(std::unique_ptr<Message>, StreamID)>
-ClientImpl::CreateCallback() {
-  return [this](std::unique_ptr<Message> message, StreamID origin) {
+MsgCallbackType ClientImpl::CreateCallback() {
+  return [this](Flow*, std::unique_ptr<Message> message, StreamID origin) {
     std::unique_ptr<Msg> casted(static_cast<Msg*>(message.release()));
     auto worker_id = msg_loop_->GetThreadWorkerIndex();
     worker_data_[worker_id]->Receive(std::move(casted), origin);

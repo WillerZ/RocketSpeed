@@ -24,6 +24,7 @@
 
 namespace rocketspeed {
 
+class Flow;
 class MsgLoop;
 class Message;
 struct ProxyWorkerData;
@@ -132,11 +133,15 @@ class Proxy {
 
   ProxyWorkerData& GetWorkerDataForSession(int64_t session);
 
-  void HandleGoodbyeMessage(std::unique_ptr<Message> msg, StreamID origin);
+  void HandleGoodbyeMessage(Flow* flow,
+                            std::unique_ptr<Message> msg,
+                            StreamID origin);
 
   void HandleDestroySession(int64_t session);
 
-  void HandleMessageReceived(std::unique_ptr<Message> msg, StreamID origin);
+  void HandleMessageReceived(Flow* flow,
+                             std::unique_ptr<Message> msg,
+                             StreamID origin);
 
   void HandleMessageForwarded(std::string msg,
                               int64_t session,

@@ -136,14 +136,14 @@ TEST(ClientTest, UnsubscribeDedup) {
   port::Semaphore subscribe_sem, unsubscribe_sem;
   auto copilot = MockServer({
       {MessageType::mSubscribe,
-       [&](std::unique_ptr<Message> msg, StreamID origin) {
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
          auto subscribe = static_cast<MessageDeliver*>(msg.get());
          last_origin = origin;
          last_sub_id = subscribe->GetSubID();
          subscribe_sem.Post();
        }},
       {MessageType::mUnsubscribe,
-       [&](std::unique_ptr<Message> msg, StreamID origin) {
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
          auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
          ASSERT_EQ(last_sub_id.load() + 1, unsubscribe->GetSubID());
          unsubscribe_sem.Post();
@@ -189,7 +189,7 @@ TEST(ClientTest, BackOff) {
   CopilotAtomicPtr copilot_ptr;
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
-        [&](std::unique_ptr<Message> msg, StreamID origin) {
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
           if (subscribe_attempts.size() >= num_attempts) {
             subscribe_sem.Post();
             return;
@@ -238,11 +238,11 @@ TEST(ClientTest, BackOff) {
 
 TEST(ClientTest, GetCopilotFailure) {
   port::Semaphore subscribe_sem;
-  auto copilot =
-      MockServer({{MessageType::mSubscribe,
-                    [&](std::unique_ptr<Message> msg, StreamID origin) {
-                      subscribe_sem.Post();
-                    }}});
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          subscribe_sem.Post();
+        }}});
 
   ClientOptions options;
   // Speed up client retries.
@@ -278,7 +278,8 @@ TEST(ClientTest, OfflineOperations) {
       subscriptions;
   port::Semaphore unsubscribe_sem, all_ok_sem;
   std::atomic<bool> expects_request(false);
-  auto subscribe_cb = [&](std::unique_ptr<Message> msg, StreamID origin) {
+  auto subscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ASSERT_TRUE(expects_request.load());
     auto subscribe = static_cast<MessageSubscribe*>(msg.get());
     auto it = subscriptions.find(subscribe->GetTopicName());
@@ -342,11 +343,11 @@ TEST(ClientTest, OfflineOperations) {
 
 TEST(ClientTest, CopilotSwap) {
   port::Semaphore subscribe_sem1, subscribe_sem2;
-  auto copilot1 =
-      MockServer({{MessageType::mSubscribe,
-                    [&](std::unique_ptr<Message> msg, StreamID origin) {
-                      subscribe_sem1.Post();
-                    }}});
+  auto copilot1 = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          subscribe_sem1.Post();
+        }}});
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
@@ -362,11 +363,11 @@ TEST(ClientTest, CopilotSwap) {
   ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
 
   // Launch another copilot, this will automatically update configuration.
-  auto copilot2 =
-      MockServer({{MessageType::mSubscribe,
-                    [&](std::unique_ptr<Message> msg, StreamID origin) {
-                      subscribe_sem2.Post();
-                    }}});
+  auto copilot2 = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          subscribe_sem2.Post();
+        }}});
   ASSERT_TRUE(subscribe_sem2.TimedWait(positive_timeout));
 }
 
@@ -390,11 +391,11 @@ TEST(ClientTest, NoPilot) {
 
 TEST(ClientTest, PublishTimeout) {
   port::Semaphore publish_sem;
-  auto pilot =
-      MockServer({{MessageType::mPublish,
-                    [&](std::unique_ptr<Message> msg, StreamID origin) {
-                      // Do nothing.
-                    }}});
+  auto pilot = MockServer(
+      {{MessageType::mPublish,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          // Do nothing.
+        }}});
 
   ClientOptions opts;
   opts.timer_period = std::chrono::milliseconds(1);

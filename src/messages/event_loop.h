@@ -46,8 +46,17 @@ struct sockaddr;
 
 namespace rocketspeed {
 
-typedef std::function<void(std::unique_ptr<Message> msg, StreamID origin)>
-  EventCallbackType;
+class CommandQueue;
+class EventCallback;
+class EventLoop;
+class Flow;
+class FlowControl;
+class SocketEvent;
+class QueueStats;
+
+typedef std::function<void(
+    Flow* flow, std::unique_ptr<Message> message, StreamID origin)>
+    EventCallbackType;
 
 typedef std::function<void(int fd)> AcceptCallbackType;
 
@@ -57,12 +66,6 @@ typedef std::function<void(std::unique_ptr<Command> command)>
   CommandCallbackType;
 
 typedef std::function<void()> TimerCallbackType;
-
-class CommandQueue;
-class EventCallback;
-class EventLoop;
-class QueueStats;
-class SocketEvent;
 
 /**
  * Maintains open streams and connections and mapping between them.
@@ -277,7 +280,7 @@ class EventLoop {
   void Accept(int fd);
 
   // Dispatches a message to the event callback.
-  void Dispatch(std::unique_ptr<Message> message, StreamID origin);
+  void Dispatch(Flow* flow, std::unique_ptr<Message> message, StreamID origin);
 
   /**
    * Invokes callback for provided command in the calling thread.
@@ -456,6 +459,9 @@ class EventLoop {
 
   // debug message go here
   const std::shared_ptr<Logger> info_log_;
+
+  // Flow control for connections.
+  std::unique_ptr<FlowControl> flow_control_;
 
   // The callbacks
   EventCallbackType event_callback_;
