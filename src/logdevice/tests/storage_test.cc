@@ -9,6 +9,7 @@
 
 #include "src/logdevice/storage.h"
 #include "src/test/test_cluster.h"
+#include "src/util/common/random.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 #include "src/port/port.h"
@@ -123,6 +124,44 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
 
   // Wait on publish callbuck to finish.
   ASSERT_TRUE(publish_sem.TimedWait(client_redelivery_timeout_));
+}
+
+TEST(LogDeviceStorageTest, AsyncReaderCleanup) {
+  // Checks that deleting an AsyncReader with all logs closed does not
+  // cause segfaults.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+  auto storage = cluster.GetLogStorage();
+
+  const size_t kNumMessages = 100;
+  const size_t kIterations = 10000;
+
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    storage->AppendAsync(1, "data",
+      [] (Status st, SequenceNumber) { ASSERT_OK(st); });
+  }
+  for (size_t i = 0; i < kIterations; ++i) {
+    std::vector<AsyncLogReader*> readers;
+    Status st = storage->CreateAsyncReaders(
+      1,
+      [] (LogRecord&) {
+        return true;
+      },
+      [] (const GapRecord&) {
+        return true;
+      },
+      &readers);
+    ASSERT_OK(st);
+    readers[0]->Open(1);
+    /* sleep override */
+    std::this_thread::sleep_for(
+      std::chrono::microseconds(ThreadLocalPRNG()() % 1000));
+    if (ThreadLocalPRNG()() & 1) {
+      // Sometimes close the log, sometimes don't.
+      readers[0]->Close(1);
+    }
+    delete readers[0];
+  }
 }
 
 int main(int argc, char** argv) {

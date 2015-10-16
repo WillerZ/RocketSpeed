@@ -5,6 +5,7 @@
 //
 #include "src/logdevice/storage.h"
 #include <algorithm>
+#include <unordered_set>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -36,7 +37,8 @@ class AsyncLogDeviceReader : public AsyncLogReader {
   Status Close(LogID id) final;
 
  private:
-  std::unique_ptr<facebook::logdevice::AsyncReader> reader_;
+  std::shared_ptr<facebook::logdevice::AsyncReader> reader_;
+  std::unordered_set<LogID> open_logs_;
 };
 
 /**
@@ -370,6 +372,14 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
 }
 
 AsyncLogDeviceReader::~AsyncLogDeviceReader() {
+  // Create copy of open_logs_, since it is mutated inside Close.
+  std::vector<LogID> open(open_logs_.begin(), open_logs_.end());
+  for (LogID log_id : open) {
+    // This close may fail, but that's ok since LogDevice will clean up
+    // any open logs on destruction. The only issue is that this is done in
+    // a blocking way, so we hope it closes successfully for performance.
+    Close(log_id);
+  }
 }
 
 Status AsyncLogDeviceReader::Open(LogID id,
@@ -389,14 +399,19 @@ Status AsyncLogDeviceReader::Open(LogID id,
                             endPoint)) {
     return LogDeviceErrorToStatus(facebook::logdevice::err);
   }
+  open_logs_.emplace(id);
   return Status::OK();
 }
 
 Status AsyncLogDeviceReader::Close(LogID id) {
   // Simple forward to LogDevice
-  if (reader_->stopReading(facebook::logdevice::logid_t(id), nullptr)) {
+  // Close lambda captures the copy of AsyncReader to ensure that the reader
+  // is still around until the log is fully closed.
+  std::shared_ptr<facebook::logdevice::AsyncReader> copy = reader_;
+  if (reader_->stopReading(facebook::logdevice::logid_t(id), [copy] () {})) {
     return LogDeviceErrorToStatus(facebook::logdevice::err);
   }
+  open_logs_.erase(id);
   return Status::OK();
 }
 

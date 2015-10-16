@@ -199,9 +199,11 @@ int AsyncReader::startReading(logid_t log_id, lsn_t from, lsn_t until) {
 }
 
 int AsyncReader::stopReading(logid_t log_id, std::function<void()> cb) {
-  assert(!cb);  // callback not supported
   std::lock_guard<std::mutex> lock(impl()->mutex_);
   impl()->logs_.erase(log_id);
+  if (cb) {
+    cb();
+  }
   return 0;
 }
 
