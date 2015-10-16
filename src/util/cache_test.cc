@@ -372,7 +372,7 @@ class Value {
  private:
   size_t v_;
  public:
-  explicit Value(size_t v) : v_(v) { }
+  explicit Value(size_t v) : v_(v) { (void)v_; }
 
   ~Value() {}
 };

@@ -14,7 +14,7 @@
 
 namespace rocketspeed {
 
-class AppendClosure;
+struct AppendClosure;
 struct AppendResponse;
 class FlowControl;
 class Logger;

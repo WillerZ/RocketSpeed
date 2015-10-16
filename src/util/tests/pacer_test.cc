@@ -110,7 +110,7 @@ TEST(PacerTest, MinLatencyLimited) {
     },
     10);
   ASSERT_GT(latency, 900);
-  ASSERT_LT(latency, 1200);
+  ASSERT_LT(latency, 1500);
 }
 
 TEST(PacerTest, ThroughputLimited) {

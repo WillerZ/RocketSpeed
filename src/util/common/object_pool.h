@@ -101,7 +101,7 @@ class PooledObjectList {
  * of this if necessary.
  */
 template <typename T>
-struct SharedPooledObjectList {
+class SharedPooledObjectList {
  public:
   template <typename... Args>
   T* Allocate(Args&&... args) {
