@@ -15,6 +15,8 @@ flags = [
 '-isystem./external/libevent/include',
 '-isystem./external/djinni/support-lib/jni',
 '-isystem/mnt/gvfs/third-party/53dc1fe83f84e9145b9ffb81b81aa7f6a49c87cc/gcc-4.8.1-glibc-2.17/gflags/gflags-1.6/c3f970a/include',
+'-isystem/mnt/gvfs/third-party/53dc1fe83f84e9145b9ffb81b81aa7f6a49c87cc/gcc-4.8.1-glibc-2.17/libgcc/libgcc-4.8.1/8aac7fc/include',
+'-isystem/mnt/gvfs/third-party/53dc1fe83f84e9145b9ffb81b81aa7f6a49c87cc/gcc-4.8.1-glibc-2.17/glibc/glibc-2.17/99df8fc/include',
 '-DGFLAGS=google',
 '-DOS_LINUX',
 '-DROCKETSPEED_PLATFORM_POSIX',
