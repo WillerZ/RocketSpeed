@@ -313,7 +313,7 @@ SequenceNumber DataCache::VisitCache(LogID logid,
     // visit the relevant records in this entry
     CacheEntry* entry = static_cast<CacheEntry *>(rs_cache_->Value(handle));
     SequenceNumber next =
-      entry->VisitEntry(logid, start, std::move(on_message));
+      entry->VisitEntry(logid, start, on_message);
     rs_cache_->Release(handle);
 
     // If the new seqnumber is in the same block, then we are done
