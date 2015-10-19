@@ -17,12 +17,16 @@ if [ ! -f $BENCHMARK ]; then
   exit 1
 fi
 
+#
 # Produce a data set with 1 message each on a 10 M topics
+#
 cmd="$BENCHMARK --messages 10000000 --progress_period=10000 --rate 150000 --max-inflight 7000 --topics 10000000 --size 100 --num_messages_per_topic=10000000  --topics_distribution=fixed --remote --deploy --start-servers --stop-servers --cockpits=4 --cache-size 100000000000 --towers=1  --remote-bench 1 produce"
 echo $cmd
 eval $cmd
 
-# Subscribe to each of those topics and read one message from each of those topics
-cmd="$BENCHMARK --messages 10000000 --progress_period=10000 --subscribe-rate 10000 --max-inflight 7000 --topics 10000000 --remote --deploy --start-servers --stop-servers --cockpits=4 --cache-size 100000000000 --towers=1 --subscription-backlog-distribution=fixed --remote-bench 1 --producer=false consume"
+# Subscribe to each of those topics and read one message from each of those
+# topics. 
+#
+cmd="$BENCHMARK --messages 10000000 --progress_period=10000 --subscribe-rate 60000 --max-inflight 7000 --topics 10000000 --remote --deploy --start-servers --stop-servers --cockpits=4 --cache-size 100000000000 --towers=1 --subscription-backlog-distribution=fixed --remote-bench 1 --producer=false --collect-stats consume"
 echo $cmd
 eval $cmd
