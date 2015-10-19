@@ -1043,17 +1043,22 @@ Status TopicTailer::SendLogRecord(
           }
         });
     } else {
-      // Log not open or at wrong seqno, so drop.
-      stats_.log_records_out_of_order->Add(1);
-      LOG_DEBUG(info_log_,
-        "Reader(%zu) failed to process message (%.16s)"
-        " on Log(%" PRIu64 ")@%" PRIu64
-        " (%s)",
-        reader_id,
-        data->GetPayload().ToString().c_str(),
-        log_id,
-        next_seqno,
-        st.ToString().c_str());
+      // If prev_seqno == 0 then it just means we don't have subscribers
+      // for that topic. Doesn't necessarily mean that the record was out
+      // of order.
+      if (!st.ok()) {
+        // Log not open or at wrong seqno, so drop.
+        stats_.log_records_out_of_order->Add(1);
+        LOG_DEBUG(info_log_,
+          "Reader(%zu) failed to process message (%.16s)"
+          " on Log(%" PRIu64 ")@%" PRIu64
+          " (%s)",
+          reader_id,
+          data->GetPayload().ToString().c_str(),
+          log_id,
+          next_seqno,
+          st.ToString().c_str());
+      }
     }
 
     AttemptReaderMerges(reader, log_id);
