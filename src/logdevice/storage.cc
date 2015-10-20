@@ -144,6 +144,11 @@ Status LogDeviceStorage::Create(
   settings->set("ssl-boundary", ssl_boundary.c_str());
   settings->set("my-location", my_location.c_str());
 
+  // These parameters control the exponential back-off times used for retries
+  // when we initiate backpressure on the LogDevice client.
+  settings->set("client-initial-redelivery-delay", "10ms");
+  settings->set("client-max-redelivery-delay", "1000ms");
+
   // Attempt to create internal LogDevice Client.
   // Returns null on error.
   auto client = facebook::logdevice::Client::create(
