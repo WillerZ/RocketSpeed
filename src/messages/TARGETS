@@ -23,6 +23,7 @@ cpp_library(
 cpp_library(
     name = 'event_loop',
     srcs = [
+        'event_callback.cc',
         'event_loop.cc',
         'socket_event.cc',
         'stream_socket.cc',

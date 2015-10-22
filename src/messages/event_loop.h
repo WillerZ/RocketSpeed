@@ -28,6 +28,7 @@
 
 #include "include/Logger.h"
 #include "src/messages/commands.h"
+#include "src/messages/event_callback.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
 #include "src/messages/unique_stream_map.h"
@@ -587,67 +588,6 @@ class EventLoop {
   static void accept_error_cb(evconnlistener *listener, void *arg);
   static void do_startevent(int listener, short event, void *arg);
   static void do_timerevent(int listener, short event, void *arg);
-};
-
-class EventCallback {
- public:
-  ~EventCallback();
-
-  /**
-   * Creates an EventCallback that will be invoked when fd becomes readable.
-   * cb will be invoked on the event_loop thread.
-   *
-   * @param event_loop The EventLoop to add the event to.
-   * @param fd File descriptor to listen for reads.
-   * @param cb Callback to invoke when fd is readable.
-   * @return EventCallback object.
-   */
-  static std::unique_ptr<EventCallback> CreateFdReadCallback(
-    EventLoop* event_loop,
-    int fd,
-    std::function<void()> cb);
-
-  /**
-   * Creates an EventCallback that will be invoked when fd becomes writable.
-   * cb will be invoked on the event_loop thread.
-   *
-   * @param event_loop The EventLoop to add the event to.
-   * @param fd File descriptor to listen for writes.
-   * @param cb Callback to invoke when fd is writable.
-   * @return EventCallback object.
-   */
-  static std::unique_ptr<EventCallback> CreateFdWriteCallback(
-    EventLoop* event_loop,
-    int fd,
-    std::function<void()> cb);
-
-  // non-copyable, non-moveable
-  EventCallback(const EventCallback&) = delete;
-  EventCallback(EventCallback&&) = delete;
-  EventCallback& operator=(const EventCallback&) = delete;
-  EventCallback& operator=(EventCallback&&) = delete;
-
-  /** Invokes the callback */
-  void Invoke();
-
-  /** Enables the event */
-  void Enable();
-
-  /** Disables the event */
-  void Disable();
-
-  /** @return true iff currently enabled. */
-  bool IsEnabled() const {
-    return enabled_;
-  }
-
- private:
-  explicit EventCallback(EventLoop* event_loop, std::function<void()> cb);
-
-  EventLoop* event_loop_;
-  event* event_;
-  std::function<void()> cb_;
-  bool enabled_;
 };
 
 }  // namespace rocketspeed

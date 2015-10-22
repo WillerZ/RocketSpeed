@@ -593,13 +593,6 @@ Status EventLoop::AddIncomingQueue(
   return Status::OK();
 }
 
-static void EventShim(int fd, short what, void* event) {
-  assert(event);
-  if (what & (EV_READ|EV_WRITE)) {
-    static_cast<EventCallback*>(event)->Invoke();
-  }
-}
-
 event* EventLoop::CreateFdReadEvent(int fd,
                                     void (*cb)(int, short, void*),
                                     void* arg) {
@@ -946,34 +939,6 @@ size_t EventLoop::GetQueueSize() const {
   return const_cast<EventLoop*>(this)->GetThreadLocalQueue()->GetSize();
 }
 
-EventCallback::EventCallback(EventLoop* event_loop, std::function<void()> cb)
-: event_loop_(event_loop)
-, cb_(std::move(cb))
-, enabled_(false) {
-}
-
-std::unique_ptr<EventCallback> EventCallback::CreateFdReadCallback(
-    EventLoop* event_loop,
-    int fd,
-    std::function<void()> cb) {
-  std::unique_ptr<EventCallback> callback(
-    new EventCallback(event_loop, std::move(cb)));
-  callback->event_ =
-    event_loop->CreateFdReadEvent(fd, &EventShim, callback.get());
-  return callback;
-}
-
-std::unique_ptr<EventCallback> EventCallback::CreateFdWriteCallback(
-    EventLoop* event_loop,
-    int fd,
-    std::function<void()> cb) {
-  std::unique_ptr<EventCallback> callback(
-    new EventCallback(event_loop, std::move(cb)));
-  callback->event_ =
-    event_loop->CreateFdWriteEvent(fd, &EventShim, callback.get());
-  return callback;
-}
-
 void EventLoop::RegisterFdReadEvent(int fd, std::function<void()> callback) {
   auto event_callback =
     EventCallback::CreateFdReadCallback(this, fd, std::move(callback));
@@ -987,37 +952,6 @@ void EventLoop::SetFdReadEnabled(int fd, bool enabled) {
     it->second->Enable();
   } else {
     it->second->Disable();
-  }
-}
-
-EventCallback::~EventCallback() {
-  if (event_) {
-    event_free(event_);
-  }
-}
-
-void EventCallback::Invoke() {
-  event_loop_->ThreadCheck();
-  cb_();
-}
-
-void EventCallback::Enable() {
-  event_loop_->ThreadCheck();
-  if (!enabled_) {
-    if (event_add(event_, nullptr)) {
-      exit(137);
-    }
-    enabled_ = true;
-  }
-}
-
-void EventCallback::Disable() {
-  event_loop_->ThreadCheck();
-  if (enabled_) {
-    if (event_del(event_)) {
-      exit(137);
-    }
-    enabled_ = false;
   }
 }
 
