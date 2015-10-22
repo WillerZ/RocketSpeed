@@ -66,7 +66,7 @@ CreateEventFdReadCallback(EventLoop* event_loop,
  * Fixed-size, single-producer, single-consumer queue.
  */
 template <typename Item>
-class Queue : public Source<Item>, public Sink<Item> {
+class Queue : public Source<Item>, public SinkWithOverflow<Item> {
  public:
   /**
    * Construct a queue with a given size (number of commands).

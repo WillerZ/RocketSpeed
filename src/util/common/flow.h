@@ -69,7 +69,7 @@ class Source : public AbstractSource {
   std::function<bool(T)> read_callback_;
 };
 
-// A sink for messages of type T
+/** A sink for messages of type T. */
 template <typename T>
 class Sink : public AbstractSink {
  public:
@@ -84,40 +84,14 @@ class Sink : public AbstractSink {
    * @param check_thread Whether to do thead safety checks.
    * @return true iff more data can be written.
    */
-  bool Write(T&& value, bool check_thread = true) {
-    if (FlushPending(check_thread) && TryWrite(value, check_thread)) {
-      return true;
-    }
-    overflow_.emplace_back(std::move(value));
-    return false;
-  }
-
-  bool Write(T& value, bool check_thread = true) {
-    return Write(std::move(value), check_thread);
-  }
-
-  /**
-   * Attempt to write to the sink.
-   *
-   * @param value The value to write (will be moved iff written).
-   * @param check_thread Whether to do thead safety checks.
-   * @return true iff written.
-   */
-  virtual bool TryWrite(T& value, bool check_thread) = 0;
+  virtual bool Write(T& value, bool check_thread = true) = 0;
 
   /**
    * Attempts to flush pending writes.
    *
    * @return true iff all pending writes were flushed.
    */
-  bool FlushPending(bool check_thread) {
-    for (; !overflow_.empty(); overflow_.pop_front()) {
-      if (!TryWrite(overflow_.front(), check_thread)) {
-        return false;
-      }
-    }
-    return true;
-  }
+  virtual bool FlushPending(bool check_thread) = 0;
 
   /**
    * Creates an EventCallback on event_loop that will invoke callback when
@@ -131,9 +105,48 @@ class Sink : public AbstractSink {
   virtual std::unique_ptr<EventCallback> CreateWriteCallback(
     EventLoop* event_loop,
     std::function<void()> callback) = 0;
+};
+
+/**
+ * A sink which automatically handles overflow.
+ *
+ * Writes that are not accepted by TryWrite method are queued in a std::deque
+ * and flushed opportunistically.
+ */
+template <typename T>
+class SinkWithOverflow : public Sink<T> {
+ public:
+  virtual ~SinkWithOverflow() = default;
+
+  bool Write(T& value, bool check_thread = true) final override {
+    if (FlushPending(check_thread) && TryWrite(value, check_thread)) {
+      return true;
+    }
+    overflow_.emplace_back(std::move(value));
+    return false;
+  }
+
+  bool FlushPending(bool check_thread) final override {
+    for (; !overflow_.empty(); overflow_.pop_front()) {
+      if (!TryWrite(overflow_.front(), check_thread)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+ protected:
+  /**
+   * Attempt to write to the sink.
+   *
+   * @param value The value to write (will be moved iff written).
+   * @param check_thread Whether to do thead safety checks.
+   * @return true iff written.
+   */
+  virtual bool TryWrite(T& value, bool check_thread) = 0;
 
  private:
   std::deque<T> overflow_;
 };
 
-}
+}  // namespace rocketeed
