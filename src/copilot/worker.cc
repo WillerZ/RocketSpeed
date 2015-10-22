@@ -442,7 +442,7 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
 void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
                                      const NamespaceID& namespace_id,
                                      const Topic& topic_name,
-                                     const SequenceNumber start_seqno,
+                                     SequenceNumber start_seqno,
                                      const SubscriptionID sub_id,
                                      const LogID logid,
                                      const int worker_id,
@@ -467,6 +467,43 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
   }
   TopicState& topic = topic_iter->second;
 
+  bool skip_update = false;
+
+  if (start_seqno == 0) {
+    // Check if we know where the tail seqno is already.
+    // TODO(pja) : if the copilot knows that data lives in a log, we could have
+    // a per-log tail seqno cache, rather than per topic.
+    for (auto& tower : topic.towers) {
+      if ((tower.flags & TopicState::Tower::Flags::kIsAtTail) &&
+          tower.next_seqno != 0) {
+        // Tower is at the tail for this topic, so re-use its sequence number.
+        LOG_DEBUG(options_.info_log,
+          "Using existing tail subscription for %s@%" PRIu64
+          " for ID(%" PRIu64 ") on stream %llu",
+          uuid.ToString().c_str(),
+          tower.next_seqno,
+          sub_id,
+          subscriber);
+
+        start_seqno = tower.next_seqno;
+
+        // Also need to send a gap to update client.
+        MessageDeliverGap gap(tenant_id, sub_id, GapType::kBenign);
+        gap.SetSequenceNumbers(0, start_seqno - 1);
+        auto command = options_.msg_loop->ResponseCommand(gap, subscriber);
+        client_queues_[worker_id]->Write(command);
+        topic.gaps_sent++;
+
+        // Don't need to update control towers since we are using an existing
+        // subscription.
+        skip_update = true;
+
+        stats_.tail_subscribe_fast_path->Add(1);
+        break;
+      }
+    }
+  }
+
   // First check if we already have a subscription for this subscriber.
   bool found = false;
   for (auto& sub : topic.subscriptions) {
@@ -490,9 +527,11 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
     stats_.incoming_subscriptions->Add(1);
   }
 
-  // Update the copilot's subscriptions on the control tower(s) to reflect this
-  // new topic subscription.
-  UpdateTowerSubscriptions(uuid, topic);
+  if (!skip_update) {
+    // Update the copilot's subscriptions on the control tower(s) to reflect
+    // this new topic subscription.
+    UpdateTowerSubscriptions(uuid, topic);
+  }
 
   // Update rollcall topic.
   RollcallWrite(sub_id,
@@ -986,10 +1025,16 @@ void CopilotWorker::UpdateTowerSubscriptions(
       if (success) {
         // Update the towers for the subscription.
         assert(!topic.FindTower(socket));  // we just cleared all towers.
+
+        uint32_t flags = TopicState::Tower::Flags::kDefault;
+        if (new_seqno == 0) {
+          flags |= TopicState::Tower::Flags::kIsAtTail;
+        }
         topic.towers.emplace_back(socket,
                                   sub_id,
                                   new_seqno,
-                                  outgoing_worker_id);
+                                  outgoing_worker_id,
+                                  flags);
       }
     }
   }

@@ -2298,6 +2298,61 @@ TEST(IntegrationTest, SmallRoomQueues) {
   ASSERT_EQ(applied, lifted);  // ensure that it was lifted as often as applied
 }
 
+TEST(IntegrationTest, CopilotTailSubscribeFast) {
+  // Setup local RocketSpeed cluster.
+  LocalTestCluster cluster(info_log);
+  ASSERT_OK(cluster.GetStatus());
+
+  // Create RocketSpeed sender client.
+  std::unique_ptr<Client> client;
+  cluster.CreateClient(&client);
+
+  // First subscribe should not be a fast subscription.
+  client->Subscribe(GuestTenant, GuestNamespace,
+    "CopilotTailSubscribeFast1", 0, nullptr);
+  env_->SleepForMicroseconds(100000);
+  auto stats = cluster.GetCopilot()->GetStatisticsSync();
+  auto fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
+  ASSERT_EQ(fast_subs, 0);
+
+  // Second subscribe should be a fast subscription.
+  client->Subscribe(GuestTenant, GuestNamespace,
+    "CopilotTailSubscribeFast1", 0, nullptr);
+  env_->SleepForMicroseconds(100000);
+  stats = cluster.GetCopilot()->GetStatisticsSync();
+  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
+  ASSERT_EQ(fast_subs, 1);
+
+
+  // Different topic now.
+  // First subscribe should not be a fast subscription.
+  client->Subscribe(GuestTenant, GuestNamespace,
+    "CopilotTailSubscribeFast2", 1, nullptr);
+  env_->SleepForMicroseconds(100000);
+  stats = cluster.GetCopilot()->GetStatisticsSync();
+  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
+  ASSERT_EQ(fast_subs, 1);
+
+  // Second subscribe should not be a fast subscription since we don't have
+  // tail subscription.
+  // Note: this could change with better tail subscription logic.
+  client->Subscribe(GuestTenant, GuestNamespace,
+    "CopilotTailSubscribeFast2", 0, nullptr);
+  env_->SleepForMicroseconds(100000);
+  stats = cluster.GetCopilot()->GetStatisticsSync();
+  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
+  ASSERT_EQ(fast_subs, 1);
+
+  // Third subscribe should be a fast subscription.
+  // Note: this could change with better tail subscription logic.
+  client->Subscribe(GuestTenant, GuestNamespace,
+    "CopilotTailSubscribeFast2", 0, nullptr);
+  env_->SleepForMicroseconds(100000);
+  stats = cluster.GetCopilot()->GetStatisticsSync();
+  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
+  ASSERT_EQ(fast_subs, 2);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

@@ -145,6 +145,8 @@ class CopilotWorker {
         all.AddCounter("copilot.tower_rebalances_checked");
       tower_rebalances_performed =
         all.AddCounter("copilot.tower_rebalances_performed");
+      tail_subscribe_fast_path =
+        all.AddCounter("copilot.tail_subscribe_fast_path");
     }
 
     Statistics all;
@@ -165,17 +167,18 @@ class CopilotWorker {
     Counter* orphaned_resubscribes;
     Counter* tower_rebalances_checked;
     Counter* tower_rebalances_performed;
+    Counter* tail_subscribe_fast_path;
   } stats_;
 
   // Add a subscriber to a topic.
-  void ProcessSubscribe(TenantID tenant_id,
+  void ProcessSubscribe(const TenantID tenant_id,
                         const NamespaceID& namespace_id,
                         const Topic& topic_name,
                         SequenceNumber start_seqno,
-                        SubscriptionID sub_id,
-                        LogID logid,
-                        int worker_id,
-                        StreamID subscriber);
+                        const SubscriptionID sub_id,
+                        const LogID logid,
+                        const int worker_id,
+                        const StreamID subscriber);
 
   // Remove a subscriber from a topic.
   void ProcessUnsubscribe(TenantID tenant_id,
@@ -296,19 +299,27 @@ class CopilotWorker {
     explicit TopicState(LogID _log_id) : log_id(_log_id) {}
 
     struct Tower {
+      enum Flags : uint32_t {
+        kDefault = 0,
+        kIsAtTail = 1 << 0  // Set if at tail.
+      };
+
       explicit Tower(StreamSocket* _stream,
                      SubscriptionID _sub_id,
                      SequenceNumber _next_seqno,
-                     int _worker_id)
+                     int _worker_id,
+                     uint32_t _flags)
       : stream(_stream)
       , sub_id(_sub_id)
       , next_seqno(_next_seqno)
-      , worker_id(_worker_id) {}
+      , worker_id(_worker_id)
+      , flags(_flags) {}
 
       StreamSocket* stream;       // Tower connection stream socket.
       SubscriptionID sub_id;      // Subscription ID.
       SequenceNumber next_seqno;  // Next expected seqno (i.e. where subscribed)
       int worker_id;              // Worker ID for Tower.
+      uint32_t flags;
     };
 
     Tower* FindTower(StreamSocket* tower_stream) {
