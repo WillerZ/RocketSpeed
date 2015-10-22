@@ -9,6 +9,9 @@
 #include <memory>
 #include <vector>
 
+#include "src/util/common/noncopyable.h"
+#include "src/util/common/nonmovable.h"
+
 namespace rocketspeed {
 
 class EventCallback;
@@ -17,7 +20,7 @@ class EventLoop;
 /**
  * Represents a source of any data.
  */
-class AbstractSource {
+class AbstractSource : public NonMovable, public NonCopyable {
  public:
   virtual ~AbstractSource() {}
 
@@ -33,7 +36,7 @@ class AbstractSource {
 /**
  * Represents a sink for data.
  */
-class AbstractSink {
+class AbstractSink : public NonMovable, public NonCopyable {
  public:
   virtual ~AbstractSink() {}
 };
