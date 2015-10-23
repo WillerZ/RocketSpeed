@@ -379,8 +379,8 @@ Status RocketSpeed::Initialize(
       ++node_id;
     }
     copilot_opts.control_tower_router =
-        std::make_shared<ConsistentHashTowerRouter>(
-            std::move(nodes), 20, FLAGS_copilot_towers_per_log);
+        std::make_shared<RendezvousHashTowerRouter>(
+            std::move(nodes), FLAGS_copilot_towers_per_log);
     if (FLAGS_pilot) {
       copilot_opts.pilots.push_back(pilot_host);
     }

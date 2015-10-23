@@ -251,7 +251,7 @@ void LocalTestCluster::Initialize(Options opts) {
           {0, control_tower_->GetHostId()},
       };
       opts.copilot.control_tower_router =
-          std::make_shared<ConsistentHashTowerRouter>(tower_hosts, 20, 1);
+          std::make_shared<RendezvousHashTowerRouter>(tower_hosts, 1);
       opts.copilot.info_log = info_log_;
       opts.copilot.msg_loop = cockpit_loop_.get();
       opts.copilot.control_tower_connections =

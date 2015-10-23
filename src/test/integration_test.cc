@@ -965,7 +965,7 @@ TEST(IntegrationTest, NewControlTower) {
     { 0, new_cluster.GetControlTower()->GetHostId() }
   };
   auto new_router =
-      std::make_shared<ConsistentHashTowerRouter>(new_towers, 20, 1);
+      std::make_shared<RendezvousHashTowerRouter>(new_towers, 1);
   ASSERT_OK(cluster.GetCopilot()->UpdateTowerRouter(std::move(new_router)));
 
   // Listen for the message.
@@ -1343,7 +1343,7 @@ TEST(IntegrationTest, LogAvailability) {
       { 1, ct_cluster[0]->GetControlTower()->GetHostId() }
   };
   auto new_router =
-      std::make_shared<ConsistentHashTowerRouter>(new_towers, 20, 2);
+      std::make_shared<RendezvousHashTowerRouter>(new_towers, 2);
   ASSERT_OK(cluster.GetCopilot()->UpdateTowerRouter(std::move(new_router)));
 
   // Create RocketSpeed client.
@@ -1395,7 +1395,7 @@ TEST(IntegrationTest, LogAvailability) {
   new_towers = {
     { 2, ct_cluster[1]->GetControlTower()->GetHostId() },
   };
-  new_router = std::make_shared<ConsistentHashTowerRouter>(new_towers, 20, 1);
+  new_router = std::make_shared<RendezvousHashTowerRouter>(new_towers, 1);
   ASSERT_OK(cluster.GetCopilot()->UpdateTowerRouter(std::move(new_router)));
   env_->SleepForMicroseconds(200000);
 
@@ -2071,7 +2071,7 @@ TEST(IntegrationTest, TowerRebalance) {
     { 2, ct_cluster[1]->GetControlTower()->GetHostId() },
   };
   auto new_router =
-      std::make_shared<ConsistentHashTowerRouter>(new_towers, 20, 1);
+      std::make_shared<RendezvousHashTowerRouter>(new_towers, 1);
   ASSERT_OK(cluster.GetCopilot()->UpdateTowerRouter(std::move(new_router)));
   env_->SleepForMicroseconds(2000000);
 

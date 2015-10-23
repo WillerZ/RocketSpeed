@@ -62,4 +62,37 @@ class ConsistentHashTowerRouter : public ControlTowerRouter {
   size_t control_towers_per_log_;
 };
 
+/**
+ * The log to control tower mapping which uses rendezvous hashing, that
+ * distributes logs to control towers evenly, and in a way that changes the
+ * mapping minimally when control towers are added or lost.
+ */
+class RendezvousHashTowerRouter : public ControlTowerRouter {
+ public:
+  /**
+   * Constructs a new RendezvousHashTowerRouter.
+   *
+   * @param control_towers Map of control tower IDs to hosts.
+   * @param control_towers_per_log Each log is mapped to this many
+   *        control towers.
+   */
+  explicit RendezvousHashTowerRouter(
+    std::unordered_map<ControlTowerId, HostId> control_towers,
+    size_t control_towers_per_log);
+
+  /** Copyable and movable */
+  RendezvousHashTowerRouter(const RendezvousHashTowerRouter&) = default;
+  RendezvousHashTowerRouter& operator=(const RendezvousHashTowerRouter&) =
+      default;
+  RendezvousHashTowerRouter(RendezvousHashTowerRouter&&) = default;
+  RendezvousHashTowerRouter& operator=(RendezvousHashTowerRouter&&) = default;
+
+  Status GetControlTowers(LogID logID,
+                          std::vector<HostId const*>* out) const override;
+
+ private:
+  std::unordered_map<ControlTowerId, HostId> host_ids_;
+  size_t control_towers_per_log_;
+};
+
 }  // namespace rocketspeed

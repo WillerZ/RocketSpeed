@@ -72,8 +72,8 @@ TEST(CopilotTest, WorkerMapping) {
   options.msg_loop = &loop;
   options.control_tower_connections = 4;
   options.log_router = cluster.GetLogRouter();
-  options.control_tower_router = std::make_shared<ConsistentHashTowerRouter>(
-      std::move(control_towers), 20, 1);
+  options.control_tower_router = std::make_shared<RendezvousHashTowerRouter>(
+      std::move(control_towers), 1);
   Copilot* copilot;
   Status st = Copilot::CreateNewInstance(options, &copilot);
   ASSERT_TRUE(st.ok());

@@ -17,6 +17,7 @@
 namespace rocketspeed {
 
 class ConsistentHashTowerRouterTest { };
+class RendezvousHashTowerRouterTest { };
 
 std::unordered_map<ControlTowerId, HostId> MakeControlTowers(int num) {
   std::unordered_map<ControlTowerId, HostId> control_towers;
@@ -26,14 +27,29 @@ std::unordered_map<ControlTowerId, HostId> MakeControlTowers(int num) {
   return control_towers;
 }
 
-TEST(ConsistentHashTowerRouterTest, ConsistencyTest) {
+struct MakeCHRouter {
+  ConsistentHashTowerRouter
+  operator()(std::unordered_map<ControlTowerId, HostId> hosts, size_t n) {
+    return ConsistentHashTowerRouter(std::move(hosts), 100, n);
+  }
+};
+
+struct MakeRHRouter {
+  RendezvousHashTowerRouter
+  operator()(std::unordered_map<ControlTowerId, HostId> hosts, size_t n) {
+    return RendezvousHashTowerRouter(std::move(hosts), n);
+  }
+};
+
+template <typename Func>
+void ConsistencyTest(Func make_router) {
   // Test that log mapping changes minimally when increasing number of CTs.
   const int num_towers = 1000;
   const size_t num_copies = 3;
-  ConsistentHashTowerRouter router1(
-      MakeControlTowers(num_towers), 100, num_copies);
-  ConsistentHashTowerRouter router2(
-    MakeControlTowers(num_towers * 105 / 100), 100, num_copies);
+  auto router1 =
+    make_router(MakeControlTowers(num_towers), num_copies);
+  auto router2 =
+    make_router(MakeControlTowers(num_towers * 105 / 100), num_copies);
 
   // Count number of changes for 100k logs.
   int num_relocations = 0;
@@ -65,7 +81,16 @@ TEST(ConsistentHashTowerRouterTest, ConsistencyTest) {
   ASSERT_GT(num_relocations, (num_logs * num_copies) * 2 / 100);
 }
 
-TEST(ConsistentHashTowerRouterTest, LogDistribution) {
+TEST(ConsistentHashTowerRouterTest, ConsistencyTestCH) {
+  ConsistencyTest(MakeCHRouter());
+}
+
+TEST(RendezvousHashTowerRouterTest, ConsistencyTestRH) {
+  ConsistencyTest(MakeRHRouter());
+}
+
+template <typename Func>
+void LogDistribution(Func make_router) {
   // Test that logs are well distributed among control towers
   int num_control_towers = 1000;
   auto control_towers = MakeControlTowers(num_control_towers);
@@ -73,7 +98,7 @@ TEST(ConsistentHashTowerRouterTest, LogDistribution) {
   for (const auto& entry : control_towers) {
     log_count[entry.second] = 0;
   }
-  ConsistentHashTowerRouter router(std::move(control_towers), 100, 1);
+  auto router = make_router(std::move(control_towers), 1);
 
   // Count number of changed for 100k logs.
   int num_logs = 100000;
@@ -90,7 +115,16 @@ TEST(ConsistentHashTowerRouterTest, LogDistribution) {
   ASSERT_LT(minmax.second->second, expected * 1.6);
 }
 
-TEST(ConsistentHashTowerRouterTest, ChangeHost) {
+TEST(ConsistentHashTowerRouterTest, LogDistributionCH) {
+  LogDistribution(MakeCHRouter());
+}
+
+TEST(RendezvousHashTowerRouterTest, LogDistributionRH) {
+  LogDistribution(MakeRHRouter());
+}
+
+template <typename Func>
+void ChangeHost(Func make_router) {
   // Test that we can swap an existing host with a new one, without changing
   // the mapping.
   std::unordered_map<ControlTowerId, HostId> control_towers {
@@ -102,7 +136,7 @@ TEST(ConsistentHashTowerRouterTest, ChangeHost) {
 
   std::unordered_map<HostId, std::set<LogID>> host_logs_before;
   {  // Determine logs serviced by each host.
-    ConsistentHashTowerRouter router(control_towers, 20, 1);
+    auto router = make_router(control_towers, 1);
     for (int i = 0; i < num_logs; ++i) {
       std::vector<HostId const*> host_ids;
       ASSERT_OK(router.GetControlTowers(i, &host_ids));
@@ -116,7 +150,7 @@ TEST(ConsistentHashTowerRouterTest, ChangeHost) {
 
   std::unordered_map<HostId, std::set<LogID>> host_logs_after;
   {  // Determine logs serviced by each host after the swap.
-    ConsistentHashTowerRouter router(control_towers, 20, 1);
+    auto router = make_router(control_towers, 1);
     for (int i = 0; i < num_logs; ++i) {
       std::vector<HostId const*> host_ids;
       ASSERT_OK(router.GetControlTowers(i, &host_ids));
@@ -128,6 +162,14 @@ TEST(ConsistentHashTowerRouterTest, ChangeHost) {
   // All logs for Host(1) should now be serviced by HostId(3).
   ASSERT_TRUE(host_logs_before[HostId::CreateLocal(1)] ==
               host_logs_after[HostId::CreateLocal(3)]);
+}
+
+TEST(ConsistentHashTowerRouterTest, ChangeHostCH) {
+  ChangeHost(MakeCHRouter());
+}
+
+TEST(RendezvousHashTowerRouterTest, ChangeHostRH) {
+  ChangeHost(MakeRHRouter());
 }
 
 }  // namespace rocketspeed
