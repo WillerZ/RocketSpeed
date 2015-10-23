@@ -343,11 +343,13 @@ static void DoProduce(void* params) {
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
                  std::unordered_map<std::string, TopicInfo>& first_seqno) {
-  size_t c = 0;
+  size_t c = 0;                           // current client index
+  size_t t = 0;                           // current topic index
   Pacer pacer(FLAGS_subscribe_rate, 1);
+  uint64_t num_clients = consumers.size();
 
-  for (uint64_t i = 0; i < FLAGS_num_topics; i++) {
-    std::string topic_name("benchmark." + std::to_string(i));
+  for (uint64_t i = 0; i < std::max(FLAGS_num_topics, num_clients); i++) {
+    std::string topic_name("benchmark." + std::to_string(t));
     SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
     if (FLAGS_delay_subscribe) {
       // Find the first seqno published to this topic (or 0 if none published).
@@ -375,12 +377,16 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
       }
     }
     pacer.Wait();
-    LOG_DEBUG(info_log, "Subscribing to %s at %llu",
+    LOG_DEBUG(info_log, "Client %zu Subscribing to %s at %llu",
+              c,
               topic_name.c_str(),
               static_cast<long long unsigned int>(seqno));
-    consumers[c++ % consumers.size()]->Subscribe(
-        GuestTenant, nsid, topic_name, seqno);
+    consumers[c]->Subscribe(GuestTenant, nsid, topic_name, seqno);
     pacer.EndRequest();
+
+    // advance to next iteration
+    c = (c + 1) % consumers.size();
+    t = (t + 1) % FLAGS_num_topics;
   }
 }
 
@@ -1047,7 +1053,7 @@ int main(int argc, char** argv) {
     env->WaitForJoin(consumer_threadid);
     ret = cargs.result;
     if (messages_received.load() != FLAGS_num_messages) {
-      printf("Time out awaiting messages.\n");
+      printf("Time out awaiting messages. (%d)\n", ret);
       fflush(stdout);
     } else {
       printf("All messages received.\n");
@@ -1114,7 +1120,8 @@ int main(int argc, char** argv) {
       // Print out dropped messages if there are any. This helps when
       // debugging problems.
       printf("\n");
-      printf("Messages failed to receive\n");
+      printf("Messages failed to receive, expected %zu found %zu\n",
+             FLAGS_num_messages, messages_received.load());
 
       for (uint64_t i = 0; i < is_received.size(); ++i) {
         if (!is_received[i]) {
