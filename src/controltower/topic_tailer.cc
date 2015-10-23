@@ -233,6 +233,18 @@ class LogReader {
   }
 
   /**
+   * Returns next expected sequence number for a log, or 0 if log not open.
+   */
+  SequenceNumber GetNextSequenceNumber(LogID log_id) const {
+    auto it = log_state_.find(log_id);
+    if (it != log_state_.end()) {
+      return it->second.last_read + 1;
+    } else {
+      return 0;
+    }
+  }
+
+  /**
    * Get human-readable information about a log.
    */
   std::string GetLogInfo(LogID log_id) const;
@@ -890,6 +902,234 @@ void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
   }
 }
 
+void TopicTailer::ReceiveLogRecord(std::unique_ptr<MessageData> data,
+                                   LogID log_id,
+                                   LogReader* reader,
+                                   Flow* flow) {
+  // This portion of code is invoked in the room-thread.
+  thread_check_.Check();
+
+  // Process message from the log tailer.
+  stats_.log_records_received->Add(1);
+  stats_.log_records_received_payload_size->Add(data->GetPayload().
+                                                size());
+  TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
+  SequenceNumber next_seqno = data->GetSequenceNumber();
+  SequenceNumber prev_seqno = 0;
+  Status st = reader->ProcessRecord(log_id,
+                                    next_seqno,
+                                    uuid,
+                                    &prev_seqno);
+  if (0) {
+    LOG_DEBUG(info_log_,
+              "Inserted seqno %" PRIu64 " on Log(%" PRIu64 ")"
+              " Topic(%s, %s)",
+              next_seqno,
+              log_id,
+              data->GetNamespaceId().ToString().c_str(),
+              data->GetTopicName().ToString().c_str());
+  }
+
+  auto ts_it = tail_seqno_cached_.find(log_id);
+  bool is_tail = false;
+  if (ts_it != tail_seqno_cached_.end() && ts_it->second <= next_seqno) {
+    // If we had an estimate on the tail sequence number and it was lower
+    // than this record, then update the estimate.
+    is_tail = true;
+    ts_it->second = next_seqno + 1;
+  }
+
+  if (is_tail) {
+    stats_.tail_records_received->Add(1);
+  } else {
+    stats_.backlog_records_received->Add(1);
+  }
+
+  if (prev_seqno != 0 && st.ok()) {
+    // Find subscribed hosts.
+    TopicManager& topic_manager = topic_map_[log_id];
+
+    std::vector<CopilotSub> recipients;
+    topic_manager.VisitSubscribers(
+      uuid, prev_seqno, next_seqno,
+      [&] (TopicSubscription* sub) {
+        const CopilotSub id = sub->GetID();
+        recipients.emplace_back(id);
+        sub->SetSequenceNumber(next_seqno + 1);
+        LOG_DEBUG(info_log_,
+          "%s advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
+          " Reader(%zu)",
+          id.ToString().c_str(),
+          uuid.ToString().c_str(),
+          next_seqno + 1,
+          log_id,
+          reader->GetReaderId());
+      });
+
+    if (!recipients.empty()) {
+      // Modify message and send it out.
+      data->SetPreviousSequenceNumber(prev_seqno);
+      stats_.log_records_with_subscriptions->Add(1);
+      on_message_(flow, *data, std::move(recipients));
+    } else {
+      stats_.log_records_without_subscriptions->Add(1);
+      LOG_DEBUG(info_log_,
+        "Reader(%zu) found no hosts for %smessage on %s@%" PRIu64 "-%" PRIu64,
+        reader->GetReaderId(),
+        is_tail ? "tail " : "",
+        uuid.ToString().c_str(),
+        prev_seqno,
+        next_seqno);
+    }
+
+    // Bump subscriptions that are many subscriptions behind.
+    // If there is a topic that hasn't been seen for a while in this log then
+    // we send a gap from its expected sequence number to the current seqno.
+    // For example, if we are at sequence number 200 and topic T was last seen
+    // at sequence number 100, then we send a gap from 100-200 to subscribers
+    // on T.
+    reader->BumpLaggingSubscriptions(
+      log_id,            // Log to bump
+      next_seqno,        // Current seqno
+      [&] (const TopicUUID& topic, SequenceNumber bump_seqno) {
+        // This will be called for each bumped topic.
+        // bump_seqno is the last known seqno for the topic.
+
+        // Find subscribed hosts between bump_seqno and next_seqno.
+        std::vector<CopilotSub> bumped_subscriptions;
+        topic_manager.VisitSubscribers(
+          topic, bump_seqno, next_seqno,
+          [&] (TopicSubscription* sub) {
+            const CopilotSub id = sub->GetID();
+            // Add host to list.
+            bumped_subscriptions.emplace_back(id);
+
+            // Advance subscription.
+            sub->SetSequenceNumber(next_seqno + 1);
+            LOG_DEBUG(info_log_,
+              "%s bumped to %s@%" PRIu64 " on Log(%" PRIu64 ")"
+              " Reader(%zu)",
+              id.ToString().c_str(),
+              topic.ToString().c_str(),
+              next_seqno + 1,
+              log_id,
+              reader->GetReaderId());
+          });
+
+        if (!bumped_subscriptions.empty()) {
+          // Send gap message.
+          Slice namespace_id;
+          Slice topic_name;
+          topic.GetTopicID(&namespace_id, &topic_name);
+          MessageGap trim_msg(Tenant::GuestTenant,
+                           namespace_id.ToString(),
+                           topic_name.ToString(),
+                           GapType::kBenign,
+                           bump_seqno,
+                           next_seqno);
+          stats_.bumped_subscriptions->Add(bumped_subscriptions.size());
+          on_message_(flow, trim_msg, std::move(bumped_subscriptions));
+        }
+      });
+  } else {
+    // If prev_seqno == 0 then it just means we don't have subscribers
+    // for that topic. Doesn't necessarily mean that the record was out
+    // of order.
+    if (!st.ok()) {
+      // Log not open or at wrong seqno, so drop.
+      stats_.log_records_out_of_order->Add(1);
+      LOG_DEBUG(info_log_,
+        "Reader(%zu) failed to process message (%.16s)"
+        " on Log(%" PRIu64 ")@%" PRIu64
+        " (%s)",
+        reader->GetReaderId(),
+        data->GetPayload().ToString().c_str(),
+        log_id,
+        next_seqno,
+        st.ToString().c_str());
+    }
+  }
+
+  // Transfer ownership of this message to the cache.
+  Slice namespace_id = data->GetNamespaceId();
+  Slice topic_name = data->GetTopicName();
+  data_cache_.StoreData(namespace_id, topic_name, log_id, std::move(data));
+}
+
+bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
+                                         LogID log_id,
+                                         LogReader* reader) {
+  thread_check_.Check();
+
+  // if cache is not enabled, then short-circuit
+  if (data_cache_.GetCapacity() == 0) {
+    return false;
+  }
+
+  SequenceNumber seqno = reader->GetNextSequenceNumber(log_id);
+  if (seqno == 0) {
+    // Log not open.
+    return false;
+  }
+
+  // callback to process a data message from cache
+  auto on_message_cache = [&] (MessageData* data) {
+    TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
+    SequenceNumber next_seqno = data->GetSequenceNumber();
+    SequenceNumber prev_seqno = 0;
+    Status st = reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
+
+    // Should never fail to process since the log is definitely open, and the
+    // cache should not deliver out of order.
+    assert(st.ok());
+
+    // However, may still be no subscribers for this topic.
+    if (prev_seqno != 0) {
+      // Find subscribed hosts.
+      std::vector<CopilotSub> recipients;
+      topic_map_[log_id].VisitSubscribers(
+        uuid, prev_seqno, next_seqno,
+        [&] (TopicSubscription* sub) {
+          const CopilotSub id = sub->GetID();
+          recipients.emplace_back(id);
+          sub->SetSequenceNumber(next_seqno + 1);
+          LOG_DEBUG(info_log_,
+            "%s advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
+            " Reader(%zu) by cache",
+            id.ToString().c_str(),
+            uuid.ToString().c_str(),
+            next_seqno + 1,
+            log_id,
+            reader->GetReaderId());
+        });
+
+      if (!recipients.empty()) {
+        // Modify message and send it out.
+        data->SetPreviousSequenceNumber(prev_seqno);
+        on_message_(flow, *data, std::move(recipients));
+        stats_.records_served_from_cache->Add(1);
+      }
+    }
+    // For flow control, we stop reading from the cache if any write failed.
+    // This may cause us to exit the cache prematurely, and re-open reader.
+    // This is inefficient, but not incorrect.
+    // TODO(pja) : on flow fail, do not re-open, but schedule an event to
+    // start reading from cache again.
+    return !flow->WriteHasFailed();
+  };
+
+  // Deliver as much data as possible from the cache.
+  SequenceNumber old = seqno;
+  seqno = data_cache_.VisitCache(log_id, seqno, std::move(on_message_cache));
+
+  if (old != seqno) {
+    stats_.cache_reentries->Add(1);
+    return true;
+  } else {
+    return false;
+  }
+}
+
 Status TopicTailer::SendLogRecord(
     std::unique_ptr<MessageData>& msg,
     LogID log_id,
@@ -907,167 +1147,32 @@ Status TopicTailer::SendLogRecord(
     }
   }
 
-  bool sent = !force_failure &&
-              TryForward([this, data_raw, log_id, reader_id] (Flow* flow) {
-    // This portion of code is invoked in the room-thread.
-    thread_check_.Check();
-    std::unique_ptr<MessageData> data(data_raw);
+  bool sent = !force_failure && TryForward(
+    [this, data_raw, log_id, reader_id] (Flow* flow) {
+      // Find reader.
+      LogReader* reader = FindLogReader(reader_id);
+      assert(reader != nullptr);
 
-    // Validate.
-    LogReader* reader = FindLogReader(reader_id);
-    assert(reader != nullptr);
+      // Update state for this log and distribute message.
+      std::unique_ptr<MessageData> data(data_raw);
+      ReceiveLogRecord(std::move(data), log_id, reader, flow);
 
-    // Process message from the log tailer.
-    stats_.log_records_received->Add(1);
-    stats_.log_records_received_payload_size->Add(data->GetPayload().
-                                                  size());
-    TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
-    SequenceNumber next_seqno = data->GetSequenceNumber();
-    SequenceNumber prev_seqno = 0;
-    Status st = reader->ProcessRecord(log_id,
-                                      next_seqno,
-                                      uuid,
-                                      &prev_seqno);
-    if (0) {
-      LOG_DEBUG(info_log_,
-                "Inserted seqno %" PRIu64 " on Log(%" PRIu64 ")"
-                " Topic(%s, %s)",
-                next_seqno,
-                log_id,
-                data->GetNamespaceId().ToString().c_str(),
-                data->GetTopicName().ToString().c_str());
-    }
-
-    auto ts_it = tail_seqno_cached_.find(log_id);
-    bool is_tail = false;
-    if (ts_it != tail_seqno_cached_.end() && ts_it->second <= next_seqno) {
-      // If we had an estimate on the tail sequence number and it was lower
-      // than this record, then update the estimate.
-      is_tail = true;
-      ts_it->second = next_seqno + 1;
-    }
-
-    if (is_tail) {
-      stats_.tail_records_received->Add(1);
-    } else {
-      stats_.backlog_records_received->Add(1);
-    }
-
-    if (prev_seqno != 0 && st.ok()) {
-      // Find subscribed hosts.
-      TopicManager& topic_manager = topic_map_[log_id];
-
-      std::vector<CopilotSub> recipients;
-      topic_manager.VisitSubscribers(
-        uuid, prev_seqno, next_seqno,
-        [&] (TopicSubscription* sub) {
-          const CopilotSub id = sub->GetID();
-          recipients.emplace_back(id);
-          sub->SetSequenceNumber(next_seqno + 1);
-          LOG_DEBUG(info_log_,
-            "%s advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
-            " Reader(%zu)",
-            id.ToString().c_str(),
-            uuid.ToString().c_str(),
-            next_seqno + 1,
-            log_id,
-            reader_id);
-        });
-
-      if (!recipients.empty()) {
-        // Send message downstream.
-        assert(data_raw);
-
-        // Modify message and send it out.
-        data->SetPreviousSequenceNumber(prev_seqno);
-        stats_.log_records_with_subscriptions->Add(1);
-        on_message_(flow, *data_raw, std::move(recipients));
+      // Check if we are now in the cache, and deliver messages from cache
+      // if available.
+      if (AdvanceReaderFromCache(flow, log_id, reader)) {
+        // Messages were delivered from cache, so our state is advanced.
+        // Attempt to merge with another reader:
+        if (!AttemptReaderMerges(reader, log_id)) {
+          // Did not merge with another reader, so RestartReading at the
+          // new sequence number for this log (stop + start).
+          reader->RestartReading(log_id);
+          stats_.reader_restarts->Add(1);
+        }
       } else {
-        stats_.log_records_without_subscriptions->Add(1);
-        LOG_DEBUG(info_log_,
-          "Reader(%zu) found no hosts for %smessage on %s@%" PRIu64 "-%" PRIu64,
-          reader_id,
-          is_tail ? "tail " : "",
-          uuid.ToString().c_str(),
-          prev_seqno,
-          next_seqno);
+        // Attempt to merge with another reader:
+        AttemptReaderMerges(reader, log_id);
       }
-
-      // Bump subscriptions that are many subscriptions behind.
-      // If there is a topic that hasn't been seen for a while in this log then
-      // we send a gap from its expected sequence number to the current seqno.
-      // For example, if we are at sequence number 200 and topic T was last seen
-      // at sequence number 100, then we send a gap from 100-200 to subscribers
-      // on T.
-      reader->BumpLaggingSubscriptions(
-        log_id,            // Log to bump
-        next_seqno,        // Current seqno
-        [&] (const TopicUUID& topic, SequenceNumber bump_seqno) {
-          // This will be called for each bumped topic.
-          // bump_seqno is the last known seqno for the topic.
-
-          // Find subscribed hosts between bump_seqno and next_seqno.
-          std::vector<CopilotSub> bumped_subscriptions;
-          topic_manager.VisitSubscribers(
-            topic, bump_seqno, next_seqno,
-            [&] (TopicSubscription* sub) {
-              const CopilotSub id = sub->GetID();
-              // Add host to list.
-              bumped_subscriptions.emplace_back(id);
-
-              // Advance subscription.
-              sub->SetSequenceNumber(next_seqno + 1);
-              LOG_DEBUG(info_log_,
-                "%s bumped to %s@%" PRIu64 " on Log(%" PRIu64 ")"
-                " Reader(%zu)",
-                id.ToString().c_str(),
-                topic.ToString().c_str(),
-                next_seqno + 1,
-                log_id,
-                reader_id);
-            });
-
-          if (!bumped_subscriptions.empty()) {
-            // Send gap message.
-            Slice namespace_id;
-            Slice topic_name;
-            topic.GetTopicID(&namespace_id, &topic_name);
-            MessageGap trim_msg(Tenant::GuestTenant,
-                             namespace_id.ToString(),
-                             topic_name.ToString(),
-                             GapType::kBenign,
-                             bump_seqno,
-                             next_seqno);
-            stats_.bumped_subscriptions->Add(bumped_subscriptions.size());
-            on_message_(flow, trim_msg, std::move(bumped_subscriptions));
-          }
-        });
-    } else {
-      // If prev_seqno == 0 then it just means we don't have subscribers
-      // for that topic. Doesn't necessarily mean that the record was out
-      // of order.
-      if (!st.ok()) {
-        // Log not open or at wrong seqno, so drop.
-        stats_.log_records_out_of_order->Add(1);
-        LOG_DEBUG(info_log_,
-          "Reader(%zu) failed to process message (%.16s)"
-          " on Log(%" PRIu64 ")@%" PRIu64
-          " (%s)",
-          reader_id,
-          data->GetPayload().ToString().c_str(),
-          log_id,
-          next_seqno,
-          st.ToString().c_str());
-      }
-    }
-
-    AttemptReaderMerges(reader, log_id);
-
-    // Transfer ownership of this message to the cache.
-    data_cache_.StoreData(data_raw->GetNamespaceId(),
-                            data_raw->GetTopicName(),
-                            log_id, std::move(data));
-  });
+    });
 
   Status st;
   if (!sent) {
@@ -1650,21 +1755,23 @@ LogReader* TopicTailer::ReaderForNewSubscription(CopilotSub id,
   return best_reader;
 }
 
-void TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
+bool TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
   // Attempt to merge src reader into all other readers on log_id.
   for (auto& dest : log_readers_) {
     if (src != dest.get() && src->CanMergeInto(dest.get(), log_id)) {
       // Perform merge.
       src->MergeInto(dest.get(), log_id);
+      stats_.reader_merges->Add(1);
 
       // Now check if there are pending subscriptions on the virtual reader.
       if (pending_reader_->IsLogOpen(log_id)) {
         // We'll subsume the subscriptions from the virtual reader.
         src->StealLogSubscriptions(pending_reader_.get(), log_id);
       }
-      break;
+      return true;
     }
   }
+  return false;
 }
 
 bool TopicTailer::TryForward(std::function<void(Flow*)> command) {

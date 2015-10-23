@@ -290,12 +290,14 @@ class TopicTailer {
    * Attempt to merge src into all other readers.
    * Merging into another reader means that the other reader will subsume all
    * subscriptions that src was serving, and src will stop reading on log_id.
+   *
+   * @return true if the reader was merged.
    */
-  void AttemptReaderMerges(LogReader* src, LogID log_id);
+  bool AttemptReaderMerges(LogReader* src, LogID log_id);
 
   /**
    * Deliver as much data from cache as possible.
-   * @Returns the new fast-forwarded sequence number from which to subscribe.
+   * @return the new fast-forwarded sequence number from which to subscribe.
    */
   SequenceNumber DeliverFromCache(const TopicUUID& topic,
           CopilotSub copilot_sub, LogID logid, SequenceNumber seqno);
@@ -309,6 +311,29 @@ class TopicTailer {
    */
   void ProcessFindLatestSeqnoResponse(Flow* flow,
                                       FindLatestSeqnoResponse resp);
+
+  /**
+   * Process a record from a log. Not thread safe.
+   *
+   * @param data Message that has been received from the log storage.
+   * @param log_id Log that it was received on.
+   * @param reader Reader that it was received for.
+   * @param flow Source flow of incoming message.
+   */
+  void ReceiveLogRecord(std::unique_ptr<MessageData> data,
+                        LogID log_id,
+                        LogReader* reader,
+                        Flow* flow);
+
+  /**
+   * Checks the cache for records relevant to the reader and delivers them.
+   *
+   * @param flow Source flow.
+   * @param log_id Log to read from.
+   * @param reader_id ID of reader to advance.
+   * @return true if records were read from the cache.
+   */
+  bool AdvanceReaderFromCache(Flow* flow, LogID log_id, LogReader* reader);
 
   ThreadCheck thread_check_;
 
@@ -428,6 +453,10 @@ class TopicTailer {
         all.AddCounter(prefix + "records_served_from_cache");
       reader_restarts =
         all.AddCounter(prefix + "reader_restarts");
+      reader_merges =
+        all.AddCounter(prefix + "reader_merges");
+      cache_reentries =
+        all.AddCounter(prefix + "cache_reentries");
     }
 
     Statistics all;
@@ -454,6 +483,8 @@ class TopicTailer {
     Counter* remove_subscriber_requests;
     Counter* records_served_from_cache;
     Counter* reader_restarts;
+    Counter* reader_merges;
+    Counter* cache_reentries;
   } stats_;
 };
 

@@ -141,10 +141,10 @@ Status ControlTower::Initialize() {
       log_id,
       reader_id);
     if (!status.ok()) {
-      LOG_ERROR(options_.info_log,
-                "Failed to SendLogRecord to topic tailer %d (%s)",
-                room_number,
-                status.ToString().c_str());
+      LOG_WARN(options_.info_log,
+               "SendLogRecord to topic tailer %d (%s) requested back-off",
+               room_number,
+               status.ToString().c_str());
       assert(msg);
       return false;
     }

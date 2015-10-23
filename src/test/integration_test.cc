@@ -2295,7 +2295,125 @@ TEST(IntegrationTest, SmallRoomQueues) {
   auto lifted = stats.GetCounterValue(
     "tower.topic_tailer.flow_control.backpressure_lifted");
   ASSERT_GT(applied, 0);  // ensure that backpressure was applied
-  ASSERT_EQ(applied, lifted);  // ensure that it was lifted as often as applied
+  ASSERT_GE(applied, lifted);  // ensure that it was lifted as often as applied
+  ASSERT_LE(applied, lifted + 1);  // could be 1 less if not lifted yet.
+}
+
+TEST(IntegrationTest, CacheReentrance) {
+  // This tests that a reader subscribed outside of the cached data, can
+  // read into the cache.
+  LocalTestCluster::Options opts;
+  opts.copilot.rollcall_enabled = false;
+  opts.tower.cache_size = 1024 * 1024;
+  opts.tower.readers_per_room = 2;
+  opts.info_log = info_log;
+  opts.single_log = true;
+  LocalTestCluster cluster(opts);
+  ASSERT_OK(cluster.GetStatus());
+
+  auto get_topic_tailer_stats = [&] () {
+    std::string names[] = {
+      "log_records_with_subscriptions",
+      "records_served_from_cache",
+      "reader_restarts",
+      "reader_merges",
+      "cache_reentries"
+    };
+    auto stats = cluster.GetControlTower()->GetStatisticsSync();
+    std::unordered_map<std::string, int64_t> counters;
+    for (auto& name : names) {
+      counters[name] = stats.GetCounterValue("tower.topic_tailer." + name);
+    }
+    return counters;
+  };
+
+  // Create RocketSpeed client.
+  std::unique_ptr<Client> client;
+  cluster.CreateClient(&client);
+
+  // Send a few messages.
+  const size_t kNumMessages = 10;
+  port::Semaphore pub_sem;
+  SequenceNumber msg_seqnos[kNumMessages];
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    auto ps = client->Publish(GuestTenant,
+                              "CacheReentrance1",
+                              GuestNamespace,
+                              TopicOptions(),
+                              std::to_string(i),
+                              [&, i] (std::unique_ptr<ResultStatus> rs) {
+                                msg_seqnos[i] = rs->GetSequenceNumber();
+                                pub_sem.Post();
+                              });
+    ASSERT_TRUE(pub_sem.TimedWait(timeout));
+  }
+
+  // Read half the messages (into the cache).
+  const size_t kNumInCache = 4;
+  port::Semaphore sub_sem;
+  auto handle1 = client->Subscribe(GuestTenant,
+                                   GuestNamespace,
+                                   "CacheReentrance1",
+                                   msg_seqnos[kNumMessages - kNumInCache],
+                                   [&] (std::unique_ptr<MessageReceived>& mr) {
+                                     sub_sem.Post();
+                                   });
+  for (size_t i = 0; i < kNumInCache; ++i) {
+    ASSERT_TRUE(sub_sem.TimedWait(timeout));
+  }
+  client->Unsubscribe(handle1);
+
+  // Should have received backlog records, none from cache, and no readers
+  // should have merged or restarted.
+  auto stats1 = get_topic_tailer_stats();
+  ASSERT_EQ(stats1["log_records_with_subscriptions"], kNumInCache);
+  ASSERT_EQ(stats1["records_served_from_cache"], 0);
+  ASSERT_EQ(stats1["reader_restarts"], 0);
+  ASSERT_EQ(stats1["reader_merges"], 0);
+  ASSERT_EQ(stats1["cache_reentries"], 0);
+
+  // Now subscribe to the second message.
+  // Some records should come from backlog, but some should come from cache.
+  // The new reader should have merged with the old one and neither should
+  // have restarted.
+  client->Subscribe(GuestTenant,
+                    GuestNamespace,
+                    "CacheReentrance1",
+                    msg_seqnos[1],
+                    [&] (std::unique_ptr<MessageReceived>& mr) {
+                      sub_sem.Post();
+                    });
+  for (size_t i = 0; i < kNumMessages - 1; ++i) {
+    ASSERT_TRUE(sub_sem.TimedWait(timeout));
+  }
+
+  auto stats2 = get_topic_tailer_stats();
+  ASSERT_EQ(stats2["log_records_with_subscriptions"], kNumMessages - 1);
+  ASSERT_EQ(stats2["records_served_from_cache"], kNumInCache);
+  ASSERT_EQ(stats2["reader_restarts"], 1);
+  ASSERT_EQ(stats2["reader_merges"], 0);
+  ASSERT_EQ(stats2["cache_reentries"], 1);
+
+  // Finally, without closing existing subscription, start a new subscription
+  // on a different topic (but same log, due to single_log flag) at the first
+  // message. This should open a new reader, which will read one message
+  // from backlog, re-enter the cache, then merge with existing reader without
+  // restarting.
+  client->Subscribe(GuestTenant,
+                    GuestNamespace,
+                    "CacheReentrance2",
+                    msg_seqnos[0],
+                    [&] (std::unique_ptr<MessageReceived>& mr) {
+                      sub_sem.Post();
+                    });
+  env_->SleepForMicroseconds(100000);
+
+  auto stats3 = get_topic_tailer_stats();
+  ASSERT_EQ(stats3["log_records_with_subscriptions"], kNumMessages - 1);
+  ASSERT_EQ(stats3["records_served_from_cache"], kNumInCache);
+  ASSERT_EQ(stats3["reader_restarts"], 1);
+  ASSERT_EQ(stats3["reader_merges"], 1);
+  ASSERT_EQ(stats3["cache_reentries"], 2);
 }
 
 TEST(IntegrationTest, CopilotTailSubscribeFast) {
