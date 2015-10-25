@@ -801,6 +801,7 @@ TopicTailer::TopicTailer(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
+    int bloom_bits_per_msg,
     std::function<void(Flow*,
                        const Message&,
                        std::vector<CopilotSub>)> on_message,
@@ -812,7 +813,8 @@ TopicTailer::TopicTailer(
   log_router_(std::move(log_router)),
   info_log_(std::move(info_log)),
   on_message_(std::move(on_message)),
-  data_cache_(cache_size_per_room, cache_data_from_system_namespaces),
+  data_cache_(cache_size_per_room, cache_data_from_system_namespaces,
+              bloom_bits_per_msg),
   prng_(ThreadLocalPRNG()),
   options_(options),
   restart_events_(options_.min_reader_restart_duration,
@@ -1124,7 +1126,7 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
   }
 
   // callback to process a data message from cache
-  auto on_message_cache = [&] (MessageData* data) {
+  auto on_message_cache = [&] (MessageData* data, bool* delivered) {
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno = 0;
@@ -1159,6 +1161,7 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
         data->SetPreviousSequenceNumber(prev_seqno);
         on_message_(flow, *data, std::move(recipients));
         stats_.records_served_from_cache->Add(1);
+        *delivered = true;          // delivered this message
       }
     }
     // For flow control, we stop reading from the cache if any write failed.
@@ -1169,9 +1172,30 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
     return !flow->WriteHasFailed();
   };
 
+  // Scan the list of subscribers for this log. If and only if there is
+  // precisely one subscribed topic, remember it.
+  Slice lookup_topic;
+  int topic_count = 0;
+  topic_map_[log_id].VisitTopics(
+    [&] (const TopicUUID& topic) {
+        Slice namespace_id;
+        Slice topic_name;
+        topic.GetTopicID(&namespace_id, &topic_name);
+        topic_count++;
+        if (topic_count > 1) {
+          lookup_topic.clear();
+          return false;    // no need to look at more topics
+        }
+        lookup_topic = topic_name; // store first topic name
+        return true;
+    });
+  // If there is only one subscribed topic in this log,
+  // then we use that topic name to match bloom filters.
+
   // Deliver as much data as possible from the cache.
   SequenceNumber old = seqno;
-  seqno = data_cache_.VisitCache(log_id, seqno, std::move(on_message_cache));
+  seqno = data_cache_.VisitCache(log_id, seqno, lookup_topic,
+                                 std::move(on_message_cache));
 
   if (old != seqno) {
     stats_.cache_reentries->Add(1);
@@ -1303,6 +1327,7 @@ Status TopicTailer::SendGapRecord(
         } else {
           stats_.gap_records_without_subscriptions->Add(1);
         }
+        return true;  // continue to iterate to the next topic
       });
 
     if (type == GapType::kBenign) {
@@ -1378,6 +1403,7 @@ TopicTailer::CreateNewInstance(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
+    int bloom_bits_per_msg,
     std::function<void(Flow*,
                        const Message&,
                        std::vector<CopilotSub>)> on_message,
@@ -1391,6 +1417,7 @@ TopicTailer::CreateNewInstance(
                             std::move(info_log),
                             cache_size_per_room,
                             cache_data_from_system_namespaces,
+                            bloom_bits_per_msg,
                             std::move(on_message),
                             options);
   return Status::OK();
@@ -1599,7 +1626,7 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
 
   // callback to process a data message from cache
   auto on_message_cache =
-    [&] (MessageData* data_raw) {
+    [&] (MessageData* data_raw, bool* sent) {
 
     auto uuid_pair = std::make_pair(data_raw->GetNamespaceId(),
                                     data_raw->GetTopicName());
@@ -1638,34 +1665,36 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
       // TODO(pja) T8668814
       SourcelessFlow noflow;
       on_message_(&noflow, *data_raw, recipient);
+      *sent = true;                     // message delivered
       return !noflow.WriteHasFailed();  // if false, stop reading from cache.
     }
     return true;
   };
 
+  Slice ns, topic_name;
+  topic.GetTopicID(&ns, &topic_name);
+
   // Deliver as much data as possible from the cache.
   SequenceNumber old = seqno;
-  seqno = data_cache_.VisitCache(logid, seqno,
+  seqno = data_cache_.VisitCache(logid, seqno, topic_name,
                                  std::move(on_message_cache));
   assert(largest_cached == 0 || seqno == largest_cached + 1);
 
   // If there a gap between the last message delivered from the cache
   // and the largest seqno number in cache, then deliver a gap.
   if (seqno > delivered) {
-    Slice ns, name;
-    topic.GetTopicID(&ns, &name);
     if (0) {
       LOG_DEBUG(info_log_,
                 "Delivering gap to %s(@%" PRIu64 "-%" PRIu64
                 ") on Log(%" PRIu64 ") from cache",
-                topic.ToString().c_str(),
+                topic_name.ToString().c_str(),
                 delivered,
                 seqno - 1,
                 logid);
     }
     MessageGap mgap(Tenant::GuestTenant,
                     ns.ToString(),
-                    name.ToString(),
+                    topic_name.ToString(),
                     GapType::kBenign,
                     delivered,
                     seqno-1);
@@ -1678,7 +1707,7 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
       "Subscription(%s) subscription fastforward %s from %" PRIu64
       " to %" PRIu64,
       copilot.ToString().c_str(),
-      topic.ToString().c_str(),
+      topic_name.ToString().c_str(),
       old,
       seqno);
   }
@@ -1848,6 +1877,7 @@ void TopicTailer::RestartEvents::RemoveEvent(Handle handle) {
 
 Statistics TopicTailer::GetStatistics() const {
   Statistics stats = stats_.all;
+  stats.Aggregate(data_cache_.GetStatistics());
   stats.Aggregate(flow_control_->GetStatistics());
   return stats;
 }

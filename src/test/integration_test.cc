@@ -1625,7 +1625,7 @@ TEST(IntegrationTest, CopilotDeath) {
 TEST(IntegrationTest, ControlTowerCache) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster::Options opts;
-  opts.tower.cache_size = 1024 * 1024;
+  opts.tower.topic_tailer.cache_size = 1024 * 1024;
   opts.info_log = info_log;
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
@@ -1733,6 +1733,9 @@ TEST(IntegrationTest, ControlTowerCache) {
   auto cached_hits =
     stats1.GetCounterValue("tower.topic_tailer.records_served_from_cache");
   ASSERT_EQ(cached_hits, 0);
+  auto cache_misses =
+    stats1.GetCounterValue("tower.data_cache.cache_misses");
+  ASSERT_EQ(cache_misses, 1);
 
   // Resubscribe to the same topic
   ASSERT_TRUE(client->Subscribe(GuestTenant,
@@ -1877,9 +1880,9 @@ TEST(IntegrationTest, ReadingFromCache) {
     LocalTestCluster::Options opts;
     opts.copilot.rollcall_enabled = false;
     if (cache_enabled) {
-      opts.tower.cache_size = 1024 * 1024;
+      opts.tower.topic_tailer.cache_size = 1024 * 1024;
     } else {
-      opts.tower.cache_size = 0;    // cache disabled
+      opts.tower.topic_tailer.cache_size = 0;    // cache disabled
     }
     opts.info_log = info_log;
     LocalTestCluster cluster(opts);
@@ -2305,7 +2308,7 @@ TEST(IntegrationTest, CacheReentrance) {
   // read into the cache.
   LocalTestCluster::Options opts;
   opts.copilot.rollcall_enabled = false;
-  opts.tower.cache_size = 1024 * 1024;
+  opts.tower.topic_tailer.cache_size = 1024 * 1024;
   opts.tower.readers_per_room = 2;
   opts.info_log = info_log;
   opts.single_log = true;

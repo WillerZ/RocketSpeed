@@ -189,8 +189,9 @@ Status ControlTower::Initialize() {
 
   // equally distribute the cache among the workers
   size_t cache_size_per_room = 0;
-  if (opt.cache_size > 0) {
-    cache_size_per_room = std::max(opt.cache_size / num_rooms, 1024UL);
+  if (opt.topic_tailer.cache_size > 0) {
+    cache_size_per_room = std::max(opt.topic_tailer.cache_size / num_rooms,
+                                   1024UL);
   }
 
   // Now create the TopicTailer.
@@ -210,7 +211,9 @@ Status ControlTower::Initialize() {
                                         opt.log_router,
                                         opt.info_log,
                                         cache_size_per_room,
-                                        opt.cache_data_from_system_namespaces,
+                                        opt.topic_tailer.
+                                          cache_data_from_system_namespaces,
+                                        opt.topic_tailer.bloom_bits_per_msg,
                                         std::move(on_message),
                                         opt.topic_tailer,
                                         &topic_tailer);

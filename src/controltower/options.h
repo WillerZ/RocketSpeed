@@ -103,15 +103,20 @@ struct ControlTowerOptions {
     // Probability of failing to enqueue a log record to the TopicTailer queue.
     // For testing the log storage backoff/flow control.
     double FAULT_send_log_record_failure_rate;
+
+    // Cache size in bytes. A size of 0 indicates no cache.
+    // Default: 0
+    size_t cache_size;
+
+    // Should the cache store data in system namespaces?
+    // Default: false
+    bool cache_data_from_system_namespaces;
+
+    // Number of bloom bits per message in the cache. This option is effective
+    // only if cache_size is non-zero.
+    // Default: 10 bits per message
+    int bloom_bits_per_msg;
   } topic_tailer;
-
-  // Cache size in bytes. A size of 0 indicates no cache.
-  // Default: 0
-  size_t cache_size;
-
-  // Should the cache store data in system namespaces?
-  // Default: false
-  bool cache_data_from_system_namespaces;
 
   // Interval for tower timer tick for running time-based logic.
   // Default: 100ms

@@ -110,6 +110,8 @@ TESTS = \
 	rocketeer_test \
   cache_test \
   pacer_test \
+  bloom_test \
+  data_cache_test \
   buffered_storage_test
 
 TOOLS = \
@@ -365,6 +367,12 @@ rocketeer_test: src/engine/tests/rocketeer_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 pacer_test: src/util/tests/pacer_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+bloom_test: src/util/tests/bloom_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+data_cache_test: src/controltower/test/data_cache_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 buffered_storage_test: src/util/tests/buffered_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)

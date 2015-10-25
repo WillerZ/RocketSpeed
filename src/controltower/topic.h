@@ -130,7 +130,9 @@ void TopicManager::VisitTopics(const Visitor& visitor) {
   for (auto it = topic_map_.begin(); it != topic_map_.end(); ) {
     // We save next here to allow visitor to RemoveSubscribers on this topic.
     auto next = std::next(it);
-    visitor(it->first);
+    if (!visitor(it->first)) {
+      break;
+    }
     it = next;
   }
 }

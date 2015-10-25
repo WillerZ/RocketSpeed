@@ -19,8 +19,6 @@ ControlTowerOptions::ControlTowerOptions()
     log_file_time_to_roll(0),
     max_subscription_lag(10000),
     readers_per_room(2),
-    cache_size(0),
-    cache_data_from_system_namespaces(true),
     timer_interval(std::chrono::milliseconds(100)),
     room_to_client_queue_size(1000) {
 }
@@ -30,7 +28,10 @@ ControlTowerOptions::TopicTailer::TopicTailer()
 , max_reader_restart_duration(std::chrono::seconds(60))
 , storage_to_room_queue_size(1000)
 , max_find_time_requests(100)
-, FAULT_send_log_record_failure_rate(0) {
+, FAULT_send_log_record_failure_rate(0)
+, cache_size(0)
+, cache_data_from_system_namespaces(true)
+, bloom_bits_per_msg(10) {
 }
 
 

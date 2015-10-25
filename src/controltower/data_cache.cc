@@ -56,11 +56,12 @@ static void GenerateKey(LogID logid, SequenceNumber seqno, CacheKey* buf) {
 class CacheEntry {
  private:
   std::unique_ptr<MessageData> mcache_[BLOCK_SIZE];
-
 #ifndef NDEBUG
   LogID logid_;                // useful for debugging
   SequenceNumber seqno_block_; // useful for debugging
 #endif /* NDEBUG */
+  std::string bloom_bits_;      // bloom filters are stored here
+  unsigned short num_messages_; // number of msg in this entry
 
  public:
   explicit CacheEntry(LogID logid, SequenceNumber seqno_block) {
@@ -68,12 +69,16 @@ class CacheEntry {
     logid_ = logid;
     seqno_block_ = seqno_block;
 #endif /* NDEBUG */
+    num_messages_ = 0;
+    assert((1U << 8 * sizeof(num_messages_)) > (BLOCK_SIZE + 1U));
   }
 
   // Stores the specified record in this entry.
   // Returns the increase in charge, if any
-  size_t StoreData(const Slice& namespace_id, const Slice& topic,
+  size_t StoreData(DataCache* data_cache,
+                   const Slice& namespace_id, const Slice& topic,
                    LogID log_id,
+                   const FilterPolicy* bloom_filter,
                    std::unique_ptr<MessageData> msg) {
     SequenceNumber seqno = msg->GetSequenceNumber();
     SequenceNumber seqno_block = AlignToBlockStart(seqno);
@@ -92,6 +97,23 @@ class CacheEntry {
     }
     size_t size = msg->GetTotalSize();
     mcache_[offset] = std::move(msg); // store message
+    num_messages_++;                  // one more message
+    data_cache->stats_.cache_inserts->Add(1);
+
+    // Update bloom filter when the block is full.
+    // We use only the topic name and not the namespaceid to generate
+    // blooms because it is likely that there are fewer number of
+    // unique namespaceids in the system and the probabilty of a block
+    // not having a single message from that namespace is probably small.
+    if (num_messages_ == BLOCK_SIZE && bloom_filter) {
+      assert(bloom_bits_.size() == 0);
+      std::vector<Slice> topics;
+      for (unsigned int i = 0; i <num_messages_; i++) {
+        topics.push_back(mcache_[i]->GetTopicName());
+      }
+      bloom_filter->CreateFilter(topics, &bloom_bits_); // update blooms
+      data_cache->stats_.bloom_inserts->Add(1);  // create one more bloom
+    }
     return size;
   }
 
@@ -101,6 +123,7 @@ class CacheEntry {
     SequenceNumber seqno_block = AlignToBlockStart(seqno);
     int offset = (int)(seqno - seqno_block);
 
+    // TODO: Bloom filters are not updated on Erase
     assert(logid_ == log_id);
     assert(seqno_block_ = seqno_block);
 
@@ -113,30 +136,60 @@ class CacheEntry {
     return size;
   }
 
-  // Visit the records starting from the specified seqno
+  // Visit the records starting from the specified seqno.
+  // The caller is interested in looking at messages that belong to the
+  // specified topic.
   SequenceNumber VisitEntry(
+      DataCache* data_cache,
       LogID logid,
       SequenceNumber seqno,
-      const std::function<bool(MessageData* data_raw)>& visit) {
+      const FilterPolicy* bloom_filter,
+      const Slice& lookup_topicname,
+      const std::function<bool(MessageData* data_raw, bool* deliver)>& visit) {
     SequenceNumber seqno_block = AlignToBlockStart(seqno);
     int offset = (int)(seqno - seqno_block);
+    bool did_bloom_check = false;
 
     assert(logid_ == logid);
     assert(seqno_block_ == seqno_block);
 
+    // If bloom filter enabled, then check bloom filter
+    if (bloom_filter) {
+      // If caller has specified a topic that it is interested in, then
+      // use for bloom filter matching.
+      if (lookup_topicname.size() > 0 && bloom_bits_.size() > 0) {
+        if (!bloom_filter->KeyMayMatch(lookup_topicname, Slice(bloom_bits_))) {
+          data_cache->stats_.bloom_hits->Add(1);  // successful use of blooms
+          return seqno;                           // record not found
+        }
+        did_bloom_check = true;
+        data_cache->stats_.bloom_misses->Add(1);  // unsuccessful use of blooms
+      }
+    }
+
     // scan all messages upto either the first null or the entire block
     int index = offset;
+    bool delivered = false;
     for (; index < BLOCK_SIZE && mcache_[index]; index++) {
-      if (!visit(mcache_[index].get())) {
+      if (!visit(mcache_[index].get(), &delivered)) {
         ++index;
         break;
       }
+      // found one more record in cache
+      data_cache->stats_.cache_hits->Add(1);
+    }
+    // The bloom check said that the topic may exist in the Entry
+    // but an exhaustive check proved that the topic does not really
+    // exist in this Entry. This is a measure of bloom effectiveness.
+    if (did_bloom_check && !delivered) {
+      data_cache->stats_.bloom_falsepositives->Add(1);  // false positives
     }
     return seqno_block + index; // return the next seqno
   }
 
-  size_t GetInitialCharge() {
-    return sizeof(CacheEntry);
+  size_t GetInitialCharge(int bloom_bits_per_msg) {
+    return sizeof(CacheEntry)
+           + (BLOCK_SIZE * bloom_bits_per_msg)/8; // bloom bytes
   }
 };
 
@@ -148,7 +201,9 @@ static void DeleteEntry(const Slice& key, void* value) {
 }
 
 DataCache::DataCache(size_t size_in_bytes,
-                     bool cache_data_from_system_namespaces) :
+                     bool cache_data_from_system_namespaces,
+                     int bloom_bits_per_msg) :
+  bloom_bits_per_msg_(bloom_bits_per_msg),
   rs_cache_(size_in_bytes ? NewLRUCache(size_in_bytes) : nullptr) {
   characteristics_ = Characteristics::StoreUserTopics |
                      Characteristics::StoreSystemTopics |
@@ -157,6 +212,12 @@ DataCache::DataCache(size_t size_in_bytes,
   if (!cache_data_from_system_namespaces) {
     characteristics_ &= ~Characteristics::StoreSystemTopics;
   }
+  if (bloom_bits_per_msg > 0) {
+    bloom_filter_.reset(FilterPolicy::NewBloomFilterPolicy(bloom_bits_per_msg));
+  }
+}
+
+DataCache::~DataCache() {
 }
 
 // create a new cache with the existing capacity
@@ -194,6 +255,12 @@ size_t DataCache::GetUsage() {
     return 0;
   }
   return rs_cache_->GetUsage();
+}
+
+// The only reason for the existence of this method is that it is needed
+// in unit tests
+size_t DataCache::GetBlockSize() {
+  return BLOCK_SIZE;
 }
 
 void DataCache::StoreGap(LogID log_id, GapType type, SequenceNumber from,
@@ -249,12 +316,14 @@ void DataCache::StoreData(const Slice& namespace_id, const Slice& topic,
     // Entry does not exist in the cache.
     // Create a new entry and insert into cache.
     entry = new CacheEntry(log_id, seqno_block);
-    handle = rs_cache_->Insert(cache_key, entry, entry->GetInitialCharge(),
+    handle = rs_cache_->Insert(cache_key, entry,
+                               entry->GetInitialCharge(bloom_bits_per_msg_),
                                &DeleteEntry<CacheEntry>);
   }
 
   // Insert this record into the Entry
-  size_t delta = entry->StoreData(namespace_id, topic, log_id,
+  size_t delta = entry->StoreData(this, namespace_id, topic, log_id,
+                                  bloom_filter_.get(),
                                   std::move(msg));
   rs_cache_->ChargeDelta(handle, delta);
   rs_cache_->Release(handle);
@@ -289,7 +358,8 @@ void DataCache::Erase(LogID log_id, GapType type, SequenceNumber seqno) {
 
 SequenceNumber DataCache::VisitCache(LogID logid,
                                      SequenceNumber start,
-                         std::function<bool(MessageData* data_raw)> on_message){
+                                     const Slice& lookup_topicname,
+    std::function<bool(MessageData* data_raw, bool* processed)> on_message){
   if (rs_cache_ == nullptr) { // No caching specified
     return start;
   }
@@ -314,8 +384,13 @@ SequenceNumber DataCache::VisitCache(LogID logid,
     // visit the relevant records in this entry
     CacheEntry* entry = static_cast<CacheEntry *>(rs_cache_->Value(handle));
     SequenceNumber next =
-      entry->VisitEntry(logid, start, on_message);
+      entry->VisitEntry(this, logid, start, bloom_filter_.get(),
+                        lookup_topicname, on_message);
     rs_cache_->Release(handle);
+
+    if (next == start) {
+      stats_.cache_misses->Add(1);  // no relevant records in cache
+    }
 
     // If the new seqnumber is in the same block, then we are done
     if (next < start + BLOCK_SIZE) {
@@ -326,5 +401,9 @@ SequenceNumber DataCache::VisitCache(LogID logid,
     start = seqno_block = next;
   }
   return start;         // return next message that is not yet processed
+}
+
+Statistics DataCache::GetStatistics() const {
+  return stats_.all;
 }
 }  // namespace rocketspeed

@@ -55,6 +55,7 @@ DEFINE_int64(tower_max_subscription_lag, 10000,
              "max seqno lag on subscriptions");
 DEFINE_int32(tower_readers_per_room, 2, "log readers per room");
 DEFINE_int64(tower_cache_size, -1, "cache size in bytes");
+DEFINE_int64(bloom_bits_per_msg, -1, "number of bits for bloom per message");
 DEFINE_uint64(tower_min_reader_restart_ms, 30000,
   "minimum time to wait before restarting a log reader");
 DEFINE_uint64(tower_max_reader_restart_ms, 60000,
@@ -308,6 +309,9 @@ Status RocketSpeed::Initialize(
     tower_opts.readers_per_room = FLAGS_tower_readers_per_room;
     if (FLAGS_tower_cache_size != -1) {
       tower_opts.cache_size = FLAGS_tower_cache_size;
+    }
+    if (FLAGS_bloom_bits_per_msg != -1) {
+      tower_opts.bloom_bits_per_msg = FLAGS_bloom_bits_per_msg;
     }
     tower_opts.topic_tailer.FAULT_send_log_record_failure_rate =
       FLAGS_FAULT_tower_send_log_record_failure_rate;

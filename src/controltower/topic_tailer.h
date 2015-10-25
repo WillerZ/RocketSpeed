@@ -50,6 +50,7 @@ class TopicTailer {
    * @param info_log For logging.
    * @param cache_size_per_room cache size in bytes
    * @param bool cache_data_from_system_namespaces
+   * @param int bloom_bits_per_msg (used in cache)
    * @param on_message Callback for Deliver and Gap messages.
    * @param tailer Output parameter for created TopicTailer.
    * @return ok() if TopicTailer created, otherwise error.
@@ -63,6 +64,7 @@ class TopicTailer {
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
+    int bloom_bits_per_msg,
     std::function<void(Flow*,
                        const Message&,
                        std::vector<CopilotSub>)> on_message,
@@ -243,6 +245,7 @@ class TopicTailer {
               std::shared_ptr<Logger> info_log,
               size_t cache_size_per_room,
               bool cache_data_from_system_namespaces,
+              int bloom_bits_per_msg,
               std::function<void(Flow*,
                                  const Message&,
                                  std::vector<CopilotSub>)> on_message,

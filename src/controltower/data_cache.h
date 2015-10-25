@@ -8,7 +8,9 @@
 #include "include/RocketSpeed.h"
 #include "src/messages/messages.h"
 #include "src/util/cache.h"
+#include "src/util/filter_policy.h"
 #include "src/util/storage.h"
+#include "src/util/common/statistics.h"
 
 namespace rocketspeed {
 
@@ -17,8 +19,14 @@ namespace rocketspeed {
 extern std::shared_ptr<Cache> NewDataCache(size_t capacity);
 
 class DataCache {
+ friend class CacheEntry;
+ friend class _Test_Check;
+ friend class _Test_CheckBloom;
  public:
-  DataCache(size_t size_in_bytes, bool cache_data_from_system_namespaces);
+  DataCache(size_t size_in_bytes,
+            bool cache_data_from_system_namespaces, // true: cache system ns
+            int bloom_bits_per_msg);                // bits per message
+  ~DataCache();
 
   // Sets a new capacity for the cache. Evict data from cache if the
   // current usage exceeds the specified capacity.
@@ -45,15 +53,28 @@ class DataCache {
   // Gets the current configured capacity of the cache
   size_t GetCapacity();
 
+  // Gets the statistics for this cache
+  Statistics GetStatistics() const;
+
   // Deliver data from cache starting from 'start' as much as possible.
   // Returns the first sequence number that was not found in the cache.
+  // The caller is interested in only those topics specified by topic_name.
+  // If the message was successfully processed by the caller, then the
+  // caller should set processed to true.
   // Will stop visiting the cache when on_message returns false.
   SequenceNumber VisitCache(LogID logid,
                             SequenceNumber start,
-                            std::function<bool(MessageData* data_raw)>
-                              on_message);
-
+                            const Slice& topic_name,
+                            std::function<bool(MessageData* data_raw,
+                                          bool* processed)> on_message);
  private:
+
+  // The number of records that are stored internally in a cache block
+  size_t GetBlockSize();
+
+  // number of bloom bits per message
+  int bloom_bits_per_msg_;
+
 
   // What is the cache used for?
   enum Characteristics : unsigned int {
@@ -67,6 +88,41 @@ class DataCache {
   int characteristics_;
 
   std::shared_ptr<Cache> rs_cache_;
+
+  // The bloom filter used for this cache
+  std::unique_ptr<FilterPolicy> bloom_filter_;
+
+  // Collect statistics about cache lookups
+  struct Stats {
+    Stats() {
+      const std::string prefix = "tower.data_cache.";
+
+      cache_hits =
+        all.AddCounter(prefix + "cache_hits");
+      cache_misses =
+        all.AddCounter(prefix + "cache_misses");
+      cache_inserts =
+        all.AddCounter(prefix + "cache_inserts");
+      bloom_hits =
+        all.AddCounter(prefix + "bloom_hits");
+      bloom_misses =
+        all.AddCounter(prefix + "bloom_misses");
+      bloom_inserts =
+        all.AddCounter(prefix + "bloom_inserts");
+      bloom_falsepositives =
+        all.AddCounter(prefix + "bloom_falsepositives");
+    }
+
+    Statistics all;
+    Counter* cache_hits;    // number of records read from cache
+    Counter* cache_misses;  // number of instances cache returned no records
+    Counter* cache_inserts; // number of records inserted into cache
+    Counter* bloom_hits;    // number of times blooms are useful
+    Counter* bloom_misses;  // number of times blooms are not useful
+    Counter* bloom_inserts; // number of blooms computed
+    Counter* bloom_falsepositives;// number of times blooms said that topic
+                            // exist but the topic did-not exist in the cache
+  } stats_;
 };
 
 }  // namespace rocketspeed
