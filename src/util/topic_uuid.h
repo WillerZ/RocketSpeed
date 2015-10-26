@@ -53,6 +53,18 @@ struct TopicUUID {
   std::string ToString() const;
 
   /**
+   * Non-allocating way of performing
+   * `*this == TopicUUID(namespace_id, topic_name)`
+   */
+  bool operator==(const std::pair<Slice, Slice>& namespace_topic) const {
+    Slice namespace_id;
+    Slice topic_name;
+    GetTopicID(&namespace_id, &topic_name);
+    return topic_name == namespace_topic.second &&
+           namespace_id == namespace_topic.first;
+  }
+
+  /**
    * Equivalent to TopicUUID(namespace_id, topic).RoutingHash(), but
    * potentially faster.
    *

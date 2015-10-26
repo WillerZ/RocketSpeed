@@ -1554,7 +1554,8 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
   auto on_message_cache =
     [&] (MessageData* data_raw) {
 
-    TopicUUID uuid(data_raw->GetNamespaceId(), data_raw->GetTopicName());
+    auto uuid_pair = std::make_pair(data_raw->GetNamespaceId(),
+                                    data_raw->GetTopicName());
     largest_cached = data_raw->GetSequenceNumber();
     assert(largest_cached >= seqno);
 
@@ -1568,13 +1569,13 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
         logid);
 
     // If this message is for our topic, then deliver
-    if (uuid == topic) {
+    if (topic == uuid_pair) {
       this->stats_.records_served_from_cache->Add(1);
       if (0) {
         LOG_DEBUG(info_log_,
                   "Delivering data to %s@%" PRIu64 " on Log(%" PRIu64
                   ") from cache",
-                  uuid.ToString().c_str(),
+                  topic.ToString().c_str(),
                   largest_cached,
                   logid);
       }

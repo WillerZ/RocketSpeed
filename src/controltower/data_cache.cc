@@ -114,9 +114,10 @@ class CacheEntry {
   }
 
   // Visit the records starting from the specified seqno
-  SequenceNumber VisitEntry(LogID logid,
-                            SequenceNumber seqno,
-                            std::function<bool(MessageData* data_raw)> visit) {
+  SequenceNumber VisitEntry(
+      LogID logid,
+      SequenceNumber seqno,
+      const std::function<bool(MessageData* data_raw)>& visit) {
     SequenceNumber seqno_block = AlignToBlockStart(seqno);
     int offset = (int)(seqno - seqno_block);
 
