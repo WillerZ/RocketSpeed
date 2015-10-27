@@ -5,9 +5,11 @@
 //
 #include <memory>
 #include <random>
+#include <string>
 #include "src/util/testharness.h"
 #include "src/util/common/flow_control.h"
 #include "src/messages/msg_loop.h"
+#include "src/messages/observable_map.h"
 #include "src/messages/queues.h"
 
 namespace rocketspeed {
@@ -19,11 +21,16 @@ class FlowTest {
     ASSERT_OK(test::CreateLogger(env_, "FlowTest", &info_log_));
   }
 
-  std::shared_ptr<Queue<int>> MakeIntQueue(size_t size) {
-    return std::make_shared<Queue<int>>(
+  template <typename T>
+  std::shared_ptr<Queue<T>> MakeQueue(size_t size) {
+    return std::make_shared<Queue<T>>(
       info_log_,
       std::make_shared<QueueStats>("queue"),
       size);
+  }
+
+  std::shared_ptr<Queue<int>> MakeIntQueue(size_t size) {
+    return MakeQueue<int>(size);
   }
 
   Env* env_;
@@ -294,6 +301,61 @@ TEST(FlowTest, MultiLayerRandomized) {
   }
   // No more.
   ASSERT_TRUE(!sem.TimedWait(std::chrono::milliseconds(1000)));
+}
+
+TEST(FlowTest, ObservableMap) {
+  // Setup:
+  //
+  //   +----------+    +---------+    +--------+
+  //   | 10k msgs |===>| obs map |=1=>| reader |
+  //   +----------+    +---------+    +--------+
+
+
+  enum : int { kNumMessages = 10000 };
+  int sleep_micros = 100;
+  MsgLoop loop(env_, env_options_, 0, 2, info_log_, "flow");
+  ASSERT_OK(loop.Initialize());
+
+  FlowControl flow_control0("", loop.GetEventLoop(0));
+  FlowControl flow_control1("", loop.GetEventLoop(1));
+  auto obs_map = std::make_shared<ObservableMap<std::string, int>>();
+  auto queue = MakeQueue<std::pair<std::string, int>>(1);
+
+  port::Semaphore done;
+  int reads = 0;
+  int last_a = -1;
+  int last_b = -1;
+  flow_control0.Register<std::pair<std::string, int>>(obs_map.get(),
+    [&] (Flow* flow, std::pair<std::string, int> kv) {
+      flow->Write(queue.get(), kv);
+    });
+
+  flow_control1.Register<std::pair<std::string, int>>(queue.get(),
+    [&] (Flow* flow, std::pair<std::string, int> kv) {
+      auto key = kv.first;
+      auto value = kv.second;
+      int* last = key == "a" ? &last_a : &last_b;
+      ASSERT_GT(value, *last);  // always increasing
+      *last = value;
+      ++reads;
+      if (last_a == kNumMessages - 1 && last_b == kNumMessages - 1) {
+        done.Post();
+      }
+      env_->SleepForMicroseconds(sleep_micros);
+    });
+
+  MsgLoopThread flow_threads(env_, &loop, "flow");
+  for (int i = 0; i < kNumMessages; ++i) {
+    std::pair<std::string, int> a("a", i);
+    std::pair<std::string, int> b("b", i);
+    ASSERT_TRUE(obs_map->Write(a));
+    ASSERT_TRUE(obs_map->Write(b));
+  }
+
+  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(1)));
+  ASSERT_LT(reads, kNumMessages * 2);  // ensure some were merged
+  ASSERT_EQ(last_a, kNumMessages - 1);  // ensure all written
+  ASSERT_EQ(last_b, kNumMessages - 1);  // ensure all written
 }
 
 }  // namespace rocketspeed
