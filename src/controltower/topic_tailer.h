@@ -230,8 +230,6 @@ class TopicTailer {
   struct FindLatestSeqnoResponse {
     Status status;
     LogID log_id;
-    TopicUUID topic;
-    CopilotSub id;
     SequenceNumber seqno;
   };
 
@@ -399,6 +397,10 @@ class TopicTailer {
   // against unexpected log reader failures.
   // The set is ordered by time.
   RestartEvents restart_events_;
+
+  // The set of copilots awaiting find time response for each log.
+  std::unordered_map<LogID, std::vector<CopilotSub>>
+    pending_find_time_response_;
 
   EventLoop* event_loop_;
   std::unique_ptr<FlowControl> flow_control_;

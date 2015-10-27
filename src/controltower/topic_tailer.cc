@@ -858,36 +858,35 @@ void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
 
   auto status = resp.status;
   auto logid = resp.log_id;
-  auto topic = resp.topic;
-  auto id = resp.id;
   auto seqno = resp.seqno;
 
   if (!status.ok()) {
     LOG_WARN(info_log_,
-      "Failed to find latest sequence number in %s (%s) for %s",
-      topic.ToString().c_str(),
-      status.ToString().c_str(),
-      id.ToString().c_str());
-    if (stream_subscriptions_.Find(id.stream_id, id.sub_id)) {
-      // If the copilot hasn't already unsubscribed then retry.
-      AddSubscriber(topic, 0, id);
-    }
+      "Failed to find latest sequence number in Log(%" PRIu64 "): %s",
+      logid,
+      status.ToString().c_str());
+    // TODO: retries
     return;
   }
 
-  // IMPORTANT: Since this callback is asynchronous, the subscriber
-  // may have unsubscribed since they issued the subscribe(0) request.
-  // We need to check this otherwise we may open a reader for a
-  // non-existent subscription, which will never be closed.
-  if (stream_subscriptions_.Find(id.stream_id, id.sub_id)) {
-    // Subscription exists: add subscriber.
-    AddTailSubscriber(flow, topic, id, logid, seqno);
-  } else {
-    LOG_DEBUG(info_log_,
-      "%s on %s unsubscribed before FindLatestSeqno response arrived.",
-      id.ToString().c_str(),
-      topic.ToString().c_str());
+  // Find all copilots pending this response.
+  auto& pending = pending_find_time_response_[logid];
+  for (auto id : pending) {
+    // IMPORTANT: Since this callback is asynchronous, the subscriber
+    // may have unsubscribed since they issued the subscribe(0) request.
+    // We need to check this otherwise we may open a reader for a
+    // non-existent subscription, which will never be closed.
+    TopicUUID* topic = stream_subscriptions_.Find(id.stream_id, id.sub_id);
+    if (topic) {
+      // Subscription exists: add subscriber.
+      AddTailSubscriber(flow, *topic, id, logid, seqno);
+    } else {
+      LOG_DEBUG(info_log_,
+        "%s unsubscribed before FindLatestSeqno response arrived.",
+        id.ToString().c_str());
+    }
   }
+  pending.clear();
 
   LOG_INFO(info_log_,
     "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
@@ -1380,37 +1379,49 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
       // Otherwise do full FindLatestSeqno request.
       stats_.add_subscriber_requests_at_0_slow->Add(1);
 
-      // Create a callback to enqueue a subscribe command.
-      // TODO(pja) 1: When this is passed to FindLatestSeqno, it will allocate
-      // when converted to an std::function - could use an alloc pool for this.
-      auto callback = [this, topic, id, logid] (Status status,
-                                                SequenceNumber seqno) {
-        // Send response back to room.
-        FindLatestSeqnoResponse response { status, logid, topic, id, seqno };
-        bool sent = latest_seqno_queues_->GetThreadLocal()->Write(response);
-        if (!sent) {
-          LOG_WARN(info_log_,
-            "Failed to send %s@0 sub for %s to TopicTailer worker",
-            topic.ToString().c_str(),
-            id.ToString().c_str());
-        }
-      };
-
       // First insert into the stream subscriptions map to indicate that the
       // subscription exists (and allow unsubscriptions to work).
       stream_subscriptions_.Insert(id.stream_id, id.sub_id, topic);
 
-      Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
-      if (!seqno_status.ok()) {
-        LOG_WARN(info_log_,
-          "Failed to find latest seqno (%s) for %s",
-          seqno_status.ToString().c_str(),
-          topic.ToString().c_str());
+      // Add to the list of copilots waiting on a FindLatestSeqno request.
+      auto& pending = pending_find_time_response_[logid];
+      pending.emplace_back(id);
+
+      if (pending.size() > 1) {
+        // Already a FindLatestSeqno request in flight, so we'll just wait for
+        // that to finish and use the same result.
+        LOG_DEBUG(info_log_,
+          "Piggy-backing in flight FindLatestSeqno request on Log(%" PRIu64 ")"
+          " for %s",
+          logid,
+          id.ToString().c_str());
       } else {
-        LOG_INFO(info_log_,
-          "Sent FindLatestSeqno request for %s for %s",
-          id.ToString().c_str(),
-          topic.ToString().c_str());
+        // Create a callback to enqueue a subscribe command.
+        auto callback = [this, logid] (Status status, SequenceNumber seqno) {
+          // Send response back to room.
+          FindLatestSeqnoResponse response { status, logid, seqno };
+          bool sent = latest_seqno_queues_->GetThreadLocal()->Write(response);
+          assert(sent);  // gating logic should prevent queue overflow
+          if (!sent) {
+            LOG_ERROR(info_log_,
+              "Failed to send FindLatestSeqnoResponse for Log(%" PRIu64 ")",
+              logid);
+          }
+        };
+
+        Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
+        if (!seqno_status.ok()) {
+          LOG_ERROR(info_log_,
+            "Failed to find latest seqno (%s) for %s",
+            seqno_status.ToString().c_str(),
+            topic.ToString().c_str());
+          // TODO: gating + retries
+        } else {
+          LOG_INFO(info_log_,
+            "Sent FindLatestSeqno request for %s for %s",
+            id.ToString().c_str(),
+            topic.ToString().c_str());
+        }
       }
     }
   } else {
