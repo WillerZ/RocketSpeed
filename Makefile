@@ -90,6 +90,7 @@ TESTS = \
   control_tower_router_test \
   mock_logdevice_test \
   integration_test \
+  unbounded_mpsc_queue_test \
   statistics_test \
   thread_check_test \
   file_storage_test \
@@ -307,6 +308,9 @@ integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+unbounded_mpsc_queue_test: src/util/tests/unbounded_mpsc_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 thread_check_test: src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNESS)
