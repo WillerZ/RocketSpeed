@@ -86,7 +86,7 @@ struct RocketeerOptions {
 
 class Rocketeer {
  public:
-  Rocketeer();
+  Rocketeer() : below_rocketeer_(nullptr) {}
   virtual ~Rocketeer() = default;
 
   /**
@@ -122,24 +122,24 @@ class Rocketeer {
    * @param payload Payload of the message.
    * @param msg_id The ID of the message.
    */
-  void Deliver(InboundID inbound_id,
-               SequenceNumber seqno,
-               std::string payload,
-               MsgId msg_id = MsgId());
+  virtual void Deliver(InboundID inbound_id,
+                       SequenceNumber seqno,
+                       std::string payload,
+                       MsgId msg_id = MsgId());
 
   /**
    * Advances next expected sequence number on a subscription without sending
    * data on it. Client might be notified, so that the next time it
    * resubscribes, it will send advanced sequence number as a part of
    * subscription parameters.
-   * This method needs to be called on the thread this instance runs on.
+    * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to advance.
-   * @param seqno The subscription will be advanced, so that it expects the next
-   *              sequence number.
+   * @param seqno The subscription will be advanced, so that it expects the
+   *              next sequence number.
    * @return true iff operation was successfully sheduled.
    */
-  void Advance(InboundID inbound_id, SequenceNumber seqno);
+  virtual void Advance(InboundID inbound_id, SequenceNumber seqno);
 
   /**
    * Terminates given subscription.
@@ -149,8 +149,40 @@ class Rocketeer {
    * @param reason A reason why this subscription was terminated.
    * @return true iff operation was successfully sheduled.
    */
-  void Terminate(InboundID inbound_id, MessageUnsubscribe::Reason reason);
+  virtual void Terminate(InboundID inbound_id,
+                         MessageUnsubscribe::Reason reason);
 
+  void SetBelowRocketeer(Rocketeer* rocketeer) { below_rocketeer_ = rocketeer; }
+
+  // When rocketeers are stacked, gives a pointer to the rocketeer
+  // that is below this rocketeer in the stack
+  Rocketeer* GetBelowRocketeer() {
+    assert(below_rocketeer_);
+    return below_rocketeer_;
+  }
+
+ private:
+  Rocketeer* below_rocketeer_;
+};
+
+class CommunicationRocketeer : public Rocketeer {
+ public:
+  explicit CommunicationRocketeer(Rocketeer* rocketeer);
+  void HandleNewSubscription(InboundID inbound_id,
+                             SubscriptionParameters params) final override;
+
+  void HandleTermination(InboundID inbound_id,
+                         Rocketeer::TerminationSource source) final override;
+
+  void Deliver(InboundID inbound_id,
+               SequenceNumber seqno,
+               std::string payload,
+               MsgId msg_id = MsgId()) final override;
+
+  void Advance(InboundID inbound_id, SequenceNumber seqno) final override;
+
+  void Terminate(InboundID inbound_id,
+                 MessageUnsubscribe::Reason reason) final override;
   /** Returns the server that this Rocketeer is registered with. */
   RocketeerServer* GetServer() { return server_; }
 
@@ -174,6 +206,10 @@ class Rocketeer {
   ThreadCheck thread_check_;
   // RocketeerServer, which owns both the implementation and this object.
   RocketeerServer* server_;
+
+  // The rocketeer that is being wrapped
+  Rocketeer* above_rocketeer_;
+
   // An ID assigned by the server.
   size_t id_;
   std::unique_ptr<Stats> stats_;
@@ -251,12 +287,12 @@ class RocketeerServer {
   MsgLoop* GetMsgLoop() { return msg_loop_.get(); }
 
  private:
-  friend class Rocketeer;
+  friend class CommunicationRocketeer;
 
   RocketeerOptions options_;
   std::unique_ptr<MsgLoop> msg_loop_;
   std::unique_ptr<MsgLoopThread> msg_loop_thread_;
-  std::vector<Rocketeer*> rocketeers_;
+  std::vector<std::unique_ptr<CommunicationRocketeer>> rocketeers_;
 
   template <typename M>
   std::function<void(Flow*, std::unique_ptr<Message>, StreamID)>

@@ -181,6 +181,99 @@ TEST(RocketeerTest, SubscribeTerminate) {
   server_->Stop();
 }
 
+struct Noop : public Rocketeer {
+  Rocketeer* rocketeer_;
+  explicit Noop(Rocketeer* rocketeer) {
+    rocketeer->SetBelowRocketeer(this);
+    rocketeer_ = rocketeer;
+  }
+
+  void HandleNewSubscription(InboundID inbound_id,
+                             SubscriptionParameters params) {
+    rocketeer_->HandleNewSubscription(inbound_id, params);
+  }
+
+  void HandleTermination(InboundID inbound_id, TerminationSource source) {
+    rocketeer_->HandleTermination(inbound_id, source);
+  }
+};
+
+struct TopOfStack : public Rocketeer {
+  const std::string deliver_msg_ = "RandomMessage";
+  const SequenceNumber deliver_msg_seqno_ = 102;
+  const SequenceNumber advance_seqno_ = 112;
+  port::Semaphore terminate_sem_;
+  InboundID inbound_id_;
+
+  void HandleNewSubscription(InboundID inbound_id,
+                             SubscriptionParameters params) {
+    inbound_id_ = inbound_id;
+    Deliver(inbound_id, deliver_msg_seqno_, deliver_msg_);
+    Advance(inbound_id, advance_seqno_);
+    Terminate(inbound_id, MessageUnsubscribe::Reason::kBackOff);
+  }
+
+  void HandleTermination(InboundID inbound_id, TerminationSource source) {
+    ASSERT_TRUE(TerminationSource::Rocketeer == source);
+    ASSERT_TRUE(inbound_id_ == inbound_id);
+    terminate_sem_.Post();
+  }
+};
+
+TEST(RocketeerTest, StackRocketeerTest) {
+  TopOfStack topRocketeer;
+  Noop* rocketeer = new Noop(new Noop(new Noop(&topRocketeer)));
+  server_->Register(rocketeer);
+  ASSERT_OK(server_->Start());
+  auto server_addr = server_->GetMsgLoop()->GetHostId();
+
+  port::Semaphore unsubscribe_sem;
+  port::Semaphore deliver_sem;
+  port::Semaphore advance_sem;
+
+  // Ensure that HandleSubscription and HandleTermination calls go up the stack
+  // and Deliver/Advance/Terminate go down the stack.
+
+  auto client = MockClient({
+      {MessageType::mUnsubscribe,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
+         unsubscribe_sem.Post();
+       }},
+      {MessageType::mDeliverData,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
+         auto data = static_cast<MessageDeliverData*>(msg.get());
+         ASSERT_TRUE(topRocketeer.deliver_msg_ ==
+                     data->GetPayload().ToString());
+         ASSERT_TRUE(topRocketeer.deliver_msg_seqno_ ==
+                     data->GetSequenceNumber());
+         deliver_sem.Post();
+       }},
+      {MessageType::mDeliverGap,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
+         auto data = static_cast<MessageDeliverGap*>(msg.get());
+         ASSERT_TRUE(data->GetFirstSequenceNumber() ==
+                     topRocketeer.deliver_msg_seqno_);
+         ASSERT_TRUE(data->GetLastSequenceNumber() ==
+                     topRocketeer.advance_seqno_);
+         advance_sem.Post();
+       }},
+
+  });
+  auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
+
+  // Subscribe.
+  MessageSubscribe subscribe(GuestTenant, GuestNamespace, "stackable", 101, 2);
+  ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
+
+  ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(advance_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(topRocketeer.terminate_sem_.TimedWait(positive_timeout));
+
+  // Stop explicitly, as the Rocketeer is destroyed before the Server.
+  server_->Stop();
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
