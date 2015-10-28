@@ -17,6 +17,7 @@
 #include "src/util/storage.h"
 #include "src/util/subscription_map.h"
 #include "src/util/topic_uuid.h"
+#include "src/util/common/linked_map.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 #include "src/controltower/options.h"
@@ -301,6 +302,13 @@ class TopicTailer {
           CopilotSub copilot_sub, LogID logid, SequenceNumber seqno);
 
   /**
+   * Sends a FindLatestSeqno request for a log.
+   *
+   * @param log_id Log to send for.
+   */
+  void SendFindLatestSeqnoRequest(LogID log_id);
+
+  /**
    * Processes asynchronous response to a FindLatestSeqno request in the
    * storage.
    *
@@ -309,6 +317,9 @@ class TopicTailer {
    */
   void ProcessFindLatestSeqnoResponse(Flow* flow,
                                       FindLatestSeqnoResponse resp);
+
+  /** Returns the number of FindLatestSeqno requests currently in flight. */
+  size_t InFlightFindLatestSeqnoRequests() const;
 
   /**
    * Process a record from a log. Not thread safe.
@@ -401,6 +412,9 @@ class TopicTailer {
   // The set of copilots awaiting find time response for each log.
   std::unordered_map<LogID, std::vector<CopilotSub>>
     pending_find_time_response_;
+
+  // Set of FindLatestSeqno requests that haven't been sent yet.
+  LinkedSet<LogID> pending_find_time_requests_;
 
   EventLoop* event_loop_;
   std::unique_ptr<FlowControl> flow_control_;

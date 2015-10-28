@@ -94,6 +94,12 @@ struct ControlTowerOptions {
     // Default: 1000
     size_t storage_to_room_queue_size;
 
+    // Maximum number of find time requests in flight.
+    // Once limit is reached, requests are buffered until previous requests
+    // are completed.
+    // Default: 100
+    size_t max_find_time_requests;
+
     // Probability of failing to enqueue a log record to the TopicTailer queue.
     // For testing the log storage backoff/flow control.
     double FAULT_send_log_record_failure_rate;

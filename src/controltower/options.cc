@@ -29,6 +29,7 @@ ControlTowerOptions::TopicTailer::TopicTailer()
 : min_reader_restart_duration(std::chrono::seconds(30))
 , max_reader_restart_duration(std::chrono::seconds(60))
 , storage_to_room_queue_size(1000)
+, max_find_time_requests(100)
 , FAULT_send_log_record_failure_rate(0) {
 }
 

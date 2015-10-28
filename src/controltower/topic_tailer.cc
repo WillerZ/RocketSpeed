@@ -841,7 +841,7 @@ TopicTailer::TopicTailer(
           event_loop_,
           info_log_,
           event_loop_->GetQueueStats(),
-          1000,
+          options_.max_find_time_requests, // queue size = max inflight requests
           flow_control_.get(),
           [this] (Flow* flow, FindLatestSeqnoResponse response) {
             ProcessFindLatestSeqnoResponse(flow, std::move(response));
@@ -850,6 +850,37 @@ TopicTailer::TopicTailer(
 }
 
 TopicTailer::~TopicTailer() {
+}
+
+void TopicTailer::SendFindLatestSeqnoRequest(LogID logid) {
+  // Sanity check that we aren't sending more than required.
+  assert(InFlightFindLatestSeqnoRequests() <= options_.max_find_time_requests);
+
+  // Create a callback to enqueue a subscribe command.
+  auto callback = [this, logid] (Status status, SequenceNumber seqno) {
+    // Send response back to room.
+    FindLatestSeqnoResponse response { status, logid, seqno };
+    bool sent = latest_seqno_queues_->GetThreadLocal()->Write(response);
+    assert(sent);  // gating logic should prevent queue overflow
+    if (!sent) {
+      LOG_ERROR(info_log_,
+        "Failed to send FindLatestSeqnoResponse for Log(%" PRIu64 ")",
+        logid);
+    }
+  };
+
+  Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
+  if (!seqno_status.ok()) {
+    LOG_ERROR(info_log_,
+      "Failed to find latest seqno (%s) for Log(%" PRIu64 ")",
+      seqno_status.ToString().c_str(),
+      logid);
+    // TODO: gating + retries
+  } else {
+    LOG_INFO(info_log_,
+      "Sent FindLatestSeqno request on Log(%" PRIu64 ")",
+      logid);
+  }
 }
 
 void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
@@ -865,13 +896,14 @@ void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
       "Failed to find latest sequence number in Log(%" PRIu64 "): %s",
       logid,
       status.ToString().c_str());
-    // TODO: retries
+
+    // Retry.
+    SendFindLatestSeqnoRequest(logid);
     return;
   }
 
   // Find all copilots pending this response.
-  auto& pending = pending_find_time_response_[logid];
-  for (auto id : pending) {
+  for (auto id : pending_find_time_response_[logid]) {
     // IMPORTANT: Since this callback is asynchronous, the subscriber
     // may have unsubscribed since they issued the subscribe(0) request.
     // We need to check this otherwise we may open a reader for a
@@ -886,7 +918,7 @@ void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
         id.ToString().c_str());
     }
   }
-  pending.clear();
+  pending_find_time_response_.erase(logid);
 
   LOG_INFO(info_log_,
     "Suggesting tail for Log(%" PRIu64 ")@%" PRIu64,
@@ -899,7 +931,27 @@ void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
   } else {
     ts_it->second = std::max(ts_it->second, seqno);
   }
+
+  // One less request in flight now, so send any pending requests that were
+  // blocked due to having too many in flight.
+  if (!pending_find_time_requests_.empty()) {
+    LogID next_request_log_id = pending_find_time_requests_.front();
+    pending_find_time_requests_.pop_front();
+    SendFindLatestSeqnoRequest(next_request_log_id);
+
+    // There should not have been any pending requests unless the number in
+    // flight was too high. It should now be at the limit again after sending
+    // another.
+    assert(InFlightFindLatestSeqnoRequests() ==
+           options_.max_find_time_requests);
+  }
 }
+
+size_t TopicTailer::InFlightFindLatestSeqnoRequests() const {
+  return pending_find_time_response_.size() -
+         pending_find_time_requests_.size();
+}
+
 
 void TopicTailer::ReceiveLogRecord(std::unique_ptr<MessageData> data,
                                    LogID log_id,
@@ -1384,6 +1436,7 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
       stream_subscriptions_.Insert(id.stream_id, id.sub_id, topic);
 
       // Add to the list of copilots waiting on a FindLatestSeqno request.
+      const size_t in_flight = InFlightFindLatestSeqnoRequests();
       auto& pending = pending_find_time_response_[logid];
       pending.emplace_back(id);
 
@@ -1395,32 +1448,15 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
           " for %s",
           logid,
           id.ToString().c_str());
+      } else if (in_flight < options_.max_find_time_requests) {
+        // Not too many in flight, so send the request now.
+        SendFindLatestSeqnoRequest(logid);
       } else {
-        // Create a callback to enqueue a subscribe command.
-        auto callback = [this, logid] (Status status, SequenceNumber seqno) {
-          // Send response back to room.
-          FindLatestSeqnoResponse response { status, logid, seqno };
-          bool sent = latest_seqno_queues_->GetThreadLocal()->Write(response);
-          assert(sent);  // gating logic should prevent queue overflow
-          if (!sent) {
-            LOG_ERROR(info_log_,
-              "Failed to send FindLatestSeqnoResponse for Log(%" PRIu64 ")",
-              logid);
-          }
-        };
-
-        Status seqno_status = log_tailer_->FindLatestSeqno(logid, callback);
-        if (!seqno_status.ok()) {
-          LOG_ERROR(info_log_,
-            "Failed to find latest seqno (%s) for %s",
-            seqno_status.ToString().c_str(),
-            topic.ToString().c_str());
-          // TODO: gating + retries
-        } else {
-          LOG_INFO(info_log_,
-            "Sent FindLatestSeqno request for %s for %s",
-            id.ToString().c_str(),
-            topic.ToString().c_str());
+        // Too many FindLatestSeqno requests in flight.
+        // Mark it pending for later. These will be picked up when the
+        // next response comes back.
+        if (!pending_find_time_requests_.contains(logid)) {
+          pending_find_time_requests_.emplace_back(logid);
         }
       }
     }
