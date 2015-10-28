@@ -2313,17 +2313,25 @@ TEST(IntegrationTest, CacheReentrance) {
   ASSERT_OK(cluster.GetStatus());
 
   auto get_topic_tailer_stats = [&] () {
-    std::string names[] = {
+    std::string tt_names[] = {
       "log_records_with_subscriptions",
       "records_served_from_cache",
       "reader_restarts",
       "reader_merges",
       "cache_reentries"
     };
+    std::string lt_names[] = {
+      "readers_started",
+      "readers_restarted",
+      "readers_stopped",
+    };
     auto stats = cluster.GetControlTower()->GetStatisticsSync();
     std::unordered_map<std::string, int64_t> counters;
-    for (auto& name : names) {
+    for (auto& name : tt_names) {
       counters[name] = stats.GetCounterValue("tower.topic_tailer." + name);
+    }
+    for (auto& name : lt_names) {
+      counters[name] = stats.GetCounterValue("tower.log_tailer." + name);
     }
     return counters;
   };
@@ -2363,6 +2371,7 @@ TEST(IntegrationTest, CacheReentrance) {
     ASSERT_TRUE(sub_sem.TimedWait(timeout));
   }
   client->Unsubscribe(handle1);
+  env_->SleepForMicroseconds(100000);
 
   // Should have received backlog records, none from cache, and no readers
   // should have merged or restarted.
@@ -2372,11 +2381,13 @@ TEST(IntegrationTest, CacheReentrance) {
   ASSERT_EQ(stats1["reader_restarts"], 0);
   ASSERT_EQ(stats1["reader_merges"], 0);
   ASSERT_EQ(stats1["cache_reentries"], 0);
+  ASSERT_EQ(stats1["readers_started"], 1);
+  ASSERT_EQ(stats1["readers_restarted"], 0);
+  ASSERT_EQ(stats1["readers_stopped"], 1);
 
   // Now subscribe to the second message.
   // Some records should come from backlog, but some should come from cache.
-  // The new reader should have merged with the old one and neither should
-  // have restarted.
+  // The new reader should have restarted at the tail.
   client->Subscribe(GuestTenant,
                     GuestNamespace,
                     "CacheReentrance1",
@@ -2394,6 +2405,9 @@ TEST(IntegrationTest, CacheReentrance) {
   ASSERT_EQ(stats2["reader_restarts"], 1);
   ASSERT_EQ(stats2["reader_merges"], 0);
   ASSERT_EQ(stats2["cache_reentries"], 1);
+  ASSERT_EQ(stats2["readers_started"], 2);
+  ASSERT_EQ(stats2["readers_restarted"], 1);
+  ASSERT_EQ(stats2["readers_stopped"], 1);
 
   // Finally, without closing existing subscription, start a new subscription
   // on a different topic (but same log, due to single_log flag) at the first
@@ -2415,6 +2429,9 @@ TEST(IntegrationTest, CacheReentrance) {
   ASSERT_EQ(stats3["reader_restarts"], 1);
   ASSERT_EQ(stats3["reader_merges"], 1);
   ASSERT_EQ(stats3["cache_reentries"], 2);
+  ASSERT_EQ(stats3["readers_started"], 3);
+  ASSERT_EQ(stats3["readers_restarted"], 1);
+  ASSERT_EQ(stats3["readers_stopped"], 2);
 }
 
 TEST(IntegrationTest, CopilotTailSubscribeFast) {

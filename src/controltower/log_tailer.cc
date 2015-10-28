@@ -190,6 +190,9 @@ Status LogTailer::StartReading(LogID logid,
              start);
     if (first_open) {
       num_open_logs_per_reader_[reader_id]++;
+      stats_.readers_started->Add(1);
+    } else {
+      stats_.readers_restarted->Add(1);
     }
   } else {
     LOG_ERROR(info_log_,
@@ -216,6 +219,7 @@ LogTailer::StopReading(LogID logid, size_t reader_id) {
         "AsyncReader %zu stopped reading Log(%" PRIu64 ").",
         reader_id, logid);
     num_open_logs_per_reader_[reader_id]--;
+    stats_.readers_stopped->Add(1);
   } else {
     LOG_ERROR(info_log_,
         "AsyncReader %zu failed to stop reading Log(%" PRIu64 ") (%s).",

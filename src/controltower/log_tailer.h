@@ -131,10 +131,19 @@ class LogTailer {
 
       open_logs =
         all.AddCounter(prefix + "open_logs");
+      readers_started =
+        all.AddCounter(prefix + "readers_started");
+      readers_restarted =
+        all.AddCounter(prefix + "readers_restarted");
+      readers_stopped =
+        all.AddCounter(prefix + "readers_stopped");
     }
 
     Statistics all;
     Counter* open_logs;
+    Counter* readers_started;
+    Counter* readers_restarted;
+    Counter* readers_stopped;
   } stats_;
 };
 
