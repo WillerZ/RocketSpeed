@@ -18,6 +18,7 @@
 #include "src/djinni/jvm_env.h"
 #include "src/djinni/type_conversions.h"
 #include "src/engine/rocketeer.h"
+#include "src/engine/rocketeer_server.h"
 #include "src/messages/stream_socket.h"
 #include "src/util/common/coding.h"
 
