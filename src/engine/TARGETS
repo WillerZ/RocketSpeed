@@ -2,6 +2,7 @@ cpp_library(
     name = 'rocketeer',
     srcs = [
         'rocketeer.cc',
+        'rocketeer_server.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github',

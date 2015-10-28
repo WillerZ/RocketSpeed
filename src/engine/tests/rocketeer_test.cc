@@ -10,6 +10,7 @@
 
 #include "include/RocketSpeed.h"
 #include "src/engine/rocketeer.h"
+#include "src/engine/rocketeer_server.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/messages.h"
 #include "src/port/Env.h"
