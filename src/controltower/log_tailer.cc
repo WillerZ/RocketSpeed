@@ -237,9 +237,6 @@ LogTailer::FindLatestSeqno(
                                  std::move(callback));
 }
 
-// This traverses the reader array without any locks but that is
-// ok because it is used only by unit tests when there is no
-// tailer activity.
 int
 LogTailer::NumberOpenLogs() const {
   int count = 0;
@@ -248,5 +245,11 @@ LogTailer::NumberOpenLogs() const {
   }
   return count;
 }
+
+Statistics LogTailer::GetStatistics() const {
+  stats_.open_logs->Set(NumberOpenLogs());
+  return stats_.all;
+}
+
 
 }  // namespace rocketspeed

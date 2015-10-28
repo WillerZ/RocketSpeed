@@ -59,11 +59,6 @@ class ControlTower {
   // Returns the sanitized options used by the control tower
   ControlTowerOptions& GetOptions() {return options_;}
 
-  // The Storage Reader
-  LogTailer* GetLogTailer() {
-    return log_tailer_.get();
-  }
-
   TopicTailer* GetTopicTailer(int room_number) {
     assert(room_number < static_cast<int>(topic_tailer_.size()));
     return topic_tailer_[room_number].get();
@@ -96,7 +91,7 @@ class ControlTower {
   std::vector<std::unique_ptr<ControlRoom>> rooms_;
 
   // The Tailer to feed in data from LogStorage to Rooms
-  std::unique_ptr<LogTailer> log_tailer_;
+  std::vector<std::unique_ptr<LogTailer>> log_tailer_;
   std::vector<std::unique_ptr<TopicTailer>> topic_tailer_;
 
   // Queues for communicating from Tower processor to Rooms.

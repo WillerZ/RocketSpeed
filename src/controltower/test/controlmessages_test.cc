@@ -43,8 +43,9 @@ class ControlTowerTest {
   }
 
   // gets the number of open logs
-  int GetNumOpenLogs(ControlTower* ct) const {
-    return ct->GetLogTailer()->NumberOpenLogs();
+  int64_t GetNumOpenLogs(ControlTower* ct) const {
+    return
+      ct->GetStatisticsSync().GetCounterValue("tower.log_tailer.open_logs");
   }
 };
 
@@ -123,7 +124,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   // Wait a little, since log opening is async.
   /* sleep override */
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  int numopenlogs1 = GetNumOpenLogs(ct);
+  int64_t numopenlogs1 = GetNumOpenLogs(ct);
   ASSERT_EQ(numopenlogs1, 1);
 
   // create second client to communicate with the ControlTower

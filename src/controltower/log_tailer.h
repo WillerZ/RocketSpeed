@@ -9,6 +9,7 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/port/Env.h"
+#include "src/util/common/statistics.h"
 #include "src/util/storage.h"
 
 namespace rocketspeed {
@@ -19,9 +20,6 @@ namespace rocketspeed {
 // for each reader will only be called on one thread.
 //
 class LogTailer {
-  friend class ControlTowerTest;
-  friend class IntegrationTest;
-
  public:
   /**
    * Callback for incoming messages. If the message was processed successfully,
@@ -97,6 +95,8 @@ class LogTailer {
     return storage_->CanSubscribePastEnd();
   }
 
+  Statistics GetStatistics() const;
+
   ~LogTailer();
 
  private:
@@ -110,6 +110,9 @@ class LogTailer {
                       OnGapCallback on_gap,
                       AsyncLogReader** out);
 
+  // The total number of open logs.
+  int NumberOpenLogs() const;
+
   // The Storage device
   std::shared_ptr<LogStorage> storage_;
 
@@ -122,8 +125,17 @@ class LogTailer {
   // Count of number of open logs per reader (unit tests only)
   mutable std::vector<int> num_open_logs_per_reader_;
 
-  // The total number of open logs (no locks) (unit test only)
-  int NumberOpenLogs() const;
+  struct Stats {
+    Stats() {
+      const std::string prefix = "tower.log_tailer.";
+
+      open_logs =
+        all.AddCounter(prefix + "open_logs");
+    }
+
+    Statistics all;
+    Counter* open_logs;
+  } stats_;
 };
 
 }  // namespace rocketspeed

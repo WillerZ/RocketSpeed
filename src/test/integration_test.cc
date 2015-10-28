@@ -32,8 +32,9 @@ class IntegrationTest {
                                  &info_log));
   }
 
-  int GetNumOpenLogs(ControlTower* ct) const {
-    return ct->GetLogTailer()->NumberOpenLogs();
+  int64_t GetNumOpenLogs(ControlTower* ct) const {
+    return
+      ct->GetStatisticsSync().GetCounterValue("tower.log_tailer.open_logs");
   }
 
  protected:

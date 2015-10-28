@@ -85,7 +85,9 @@ void ControlTower::Stop() {
   assert(!options_.msg_loop->IsRunning());
 
   // Stop log tailer from communicating with log storage.
-  log_tailer_->Stop();
+  for (auto& log_tailer : log_tailer_) {
+    log_tailer->Stop();
+  }
 
   // Release reference to log storage.
   options_.storage.reset();
@@ -118,69 +120,71 @@ ControlTower::CreateNewInstance(const ControlTowerOptions& options,
 
 Status ControlTower::Initialize() {
   const ControlTowerOptions opt = GetOptions();
-
-  // Create the LogTailer first.
-  LogTailer* log_tailer;
-  Status st = LogTailer::CreateNewInstance(opt.env,
-                                           opt.storage,
-                                           opt.info_log,
-                                           &log_tailer);
-  if (!st.ok()) {
-    return st;
-  }
-  log_tailer_.reset(log_tailer);
-
-  // Initialize the LogTailer.
-  auto on_record = [this] (std::unique_ptr<MessageData>& msg,
-                           LogID log_id,
-                           size_t reader_id) {
-    // Process message from the log tailer.
-    const int room_number = LogIDToRoom(log_id);
-    Status status = topic_tailer_[room_number]->SendLogRecord(
-      msg,
-      log_id,
-      reader_id);
-    if (!status.ok()) {
-      LOG_WARN(options_.info_log,
-               "SendLogRecord to topic tailer %d (%s) requested back-off",
-               room_number,
-               status.ToString().c_str());
-      assert(msg);
-      return false;
-    }
-    return true;
-  };
-
-  auto on_gap = [this] (LogID log_id,
-                        GapType type,
-                        SequenceNumber from,
-                        SequenceNumber to,
-                        size_t reader_id) {
-    // Process message from the log tailer.
-    const int room_number = LogIDToRoom(log_id);
-    Status status = topic_tailer_[room_number]->SendGapRecord(
-      log_id,
-      type,
-      from,
-      to,
-      reader_id);
-    if (!status.ok()) {
-      LOG_ERROR(options_.info_log,
-                "Failed to SendGapRecord to topic tailer %d (%s)",
-                room_number,
-                status.ToString().c_str());
-      return false;
-    }
-    return true;
-  };
-
   const size_t num_rooms = opt.msg_loop->GetNumWorkers();
-  const size_t num_readers = num_rooms * opt.readers_per_room;
-  st = log_tailer_->Initialize(std::move(on_record),
-                               std::move(on_gap),
-                               num_readers);
-  if (!st.ok()) {
-    return st;
+
+  // Create the LogTailers first.
+  Status st;
+  for (size_t i = 0; i < num_rooms; ++i) {
+    LogTailer* log_tailer;
+    st = LogTailer::CreateNewInstance(opt.env,
+                                      opt.storage,
+                                      opt.info_log,
+                                      &log_tailer);
+    if (!st.ok()) {
+      return st;
+    }
+    log_tailer_.emplace_back(log_tailer);
+  }
+
+  for (size_t room = 0; room < num_rooms; ++room) {
+    // Initialize the LogTailer.
+    auto on_record = [this, room] (std::unique_ptr<MessageData>& msg,
+                                   LogID log_id,
+                                   size_t reader_id) {
+      // Process message from the log tailer.
+      Status status = topic_tailer_[room]->SendLogRecord(
+        msg,
+        log_id,
+        reader_id);
+      if (!status.ok()) {
+        LOG_WARN(options_.info_log,
+                 "SendLogRecord to topic tailer %zu (%s) requested back-off",
+                 room,
+                 status.ToString().c_str());
+        assert(msg);
+        return false;
+      }
+      return true;
+    };
+
+    auto on_gap = [this, room] (LogID log_id,
+                                GapType type,
+                                SequenceNumber from,
+                                SequenceNumber to,
+                                size_t reader_id) {
+      // Process message from the log tailer.
+      Status status = topic_tailer_[room]->SendGapRecord(
+        log_id,
+        type,
+        from,
+        to,
+        reader_id);
+      if (!status.ok()) {
+        LOG_ERROR(options_.info_log,
+                  "Failed to SendGapRecord to topic tailer %zu (%s)",
+                  room,
+                  status.ToString().c_str());
+        return false;
+      }
+      return true;
+    };
+
+    st = log_tailer_[room]->Initialize(std::move(on_record),
+                                       std::move(on_gap),
+                                       opt.readers_per_room);
+    if (!st.ok()) {
+      return st;
+    }
   }
 
   // equally distribute the cache among the workers
@@ -191,8 +195,6 @@ Status ControlTower::Initialize() {
 
   // Now create the TopicTailer.
   // One per room with one reader each.
-  size_t reader_id = 0;
-
   for (size_t i = 0; i < num_rooms; ++i) {
     auto on_message =
       [this, i] (Flow* flow,
@@ -204,7 +206,7 @@ Status ControlTower::Initialize() {
     st = TopicTailer::CreateNewInstance(opt.env,
                                         options_.msg_loop,
                                         int(i),
-                                        log_tailer_.get(),
+                                        log_tailer_[i].get(),
                                         opt.log_router,
                                         opt.info_log,
                                         cache_size_per_room,
@@ -213,11 +215,9 @@ Status ControlTower::Initialize() {
                                         opt.topic_tailer,
                                         &topic_tailer);
     if (st.ok()) {
-      // Topic tailer i uses reader i in log tailer.
-      std::vector<size_t> reader_ids;
-      for (size_t j = 0; j < opt.readers_per_room; ++j) {
-        reader_ids.push_back(reader_id++);
-      }
+      // Topic tailer has its own set of reader IDs for the log tailer.
+      std::vector<size_t> reader_ids(opt.readers_per_room);
+      std::iota(reader_ids.begin(), reader_ids.end(), 0);
       st = topic_tailer->Initialize(reader_ids, opt.max_subscription_lag);
     }
     if (!st.ok()) {
@@ -377,7 +377,7 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
       if (seqno) {
         callback(Status::OK(), seqno);
       } else {
-        Status status = log_tailer_->FindLatestSeqno(log_id, callback);
+        Status status = log_tailer_[room]->FindLatestSeqno(log_id, callback);
         if (status.ok()) {
           LOG_DEBUG(options_.info_log,
             "Sent FindLatestSeqno for Log(%" PRIu64 ")",
@@ -456,7 +456,11 @@ ControlTower::InitializeCallbacks() {
 
 Statistics ControlTower::GetStatisticsSync() {
   return options_.msg_loop->AggregateStatsSync(
-    [this] (int i) { return topic_tailer_[i]->GetStatistics(); });
+    [this] (int i) {
+      Statistics stats = log_tailer_[i]->GetStatistics();
+      stats.Aggregate(topic_tailer_[i]->GetStatistics());
+      return stats;
+    });
 }
 
 std::string ControlTower::GetInfoSync(std::vector<std::string> args) {
@@ -498,7 +502,8 @@ std::string ControlTower::GetInfoSync(std::vector<std::string> args) {
         *result = seqno;
         done->Post();
       };
-      Status st = log_tailer_->FindLatestSeqno(log_id, callback);
+      const int room = LogIDToRoom(log_id);
+      Status st = log_tailer_[room]->FindLatestSeqno(log_id, callback);
       if (st.ok()) {
         if (done->TimedWait(std::chrono::seconds(5))) {
           return std::to_string(*result);
