@@ -4,7 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
-#include "socket_event.h"
+#include "src/messages/socket_event.h"
 
 #include <sys/uio.h>
 #include <memory>
@@ -19,6 +19,8 @@
 #include "src/util/common/host_id.h"
 
 namespace rocketspeed {
+
+static constexpr uint8_t kCurrentMsgVersion = 1;
 
 namespace {
 
@@ -122,8 +124,7 @@ Status SocketEvent::Enqueue(StreamID local,
 
   // Serialise message header.
   size_t frame_size = stream_ser->string.size() + message_ser->string.size();
-  MessageHeader header{ROCKETSPEED_CURRENT_MSG_VERSION,
-                       static_cast<uint32_t>(frame_size)};
+  MessageHeader header{kCurrentMsgVersion, static_cast<uint32_t>(frame_size)};
   auto header_ser = std::make_shared<TimestampedString>();
   header_ser->string = header.ToString();
   header_ser->issued_time = now;

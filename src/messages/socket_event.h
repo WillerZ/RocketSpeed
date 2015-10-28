@@ -18,8 +18,6 @@ namespace rocketspeed {
 class EventLoop;
 typedef long long unsigned int StreamID;
 
-#define ROCKETSPEED_CURRENT_MSG_VERSION 1
-
 /**
  * Maximum number of iovecs to write at once. Note that an array of iovec will
  * be allocated on the stack with this length, so it should not be too high.
@@ -29,16 +27,6 @@ static constexpr size_t kMaxIovecs = 256;
 /** Size (in octets) of an encoded message header. */
 static constexpr size_t kMessageHeaderEncodedSize =
     sizeof(uint8_t) + sizeof(uint32_t);
-
-struct TimestampedString {
-  std::string string;
-  uint64_t issued_time;
-};
-
-struct MessageOnStream {
-  StreamID stream_id;
-  std::unique_ptr<Message> message;
-};
 
 class SocketEvent : public Source<MessageOnStream> {
  public:

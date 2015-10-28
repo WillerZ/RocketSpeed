@@ -26,7 +26,6 @@ cpp_library(
         'event_callback.cc',
         'event_loop.cc',
         'socket_event.cc',
-        'stream_socket.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github/include',
