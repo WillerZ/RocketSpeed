@@ -1104,13 +1104,20 @@ int main(int argc, char** argv) {
       }
     }
 
-    uint64_t msg_per_sec = 1000 *
-                           FLAGS_num_messages /
-                           total_ms;
-    uint64_t bytes_per_sec = 1000 *
-                             FLAGS_num_messages *
-                             FLAGS_message_size /
-                             total_ms;
+    uint64_t write_msg_per_sec = 1000 *
+                                 FLAGS_num_messages /
+                                 total_ms;
+    uint64_t write_bytes_per_sec = 1000 *
+                                   FLAGS_num_messages *
+                                   FLAGS_message_size /
+                                   total_ms;
+    uint64_t read_msg_per_sec = 1000 *
+                                messages_received.load() /
+                                total_ms;
+    uint64_t read_bytes_per_sec = 1000 *
+                                  messages_received.load() *
+                                  FLAGS_message_size /
+                                  total_ms;
 
     printf("\n");
     printf("Results\n");
@@ -1162,10 +1169,18 @@ int main(int argc, char** argv) {
     // Only report results if everything succeeded.
     // Otherwise, they don't make sense.
     if (ret == 0) {
-      printf("\n");
-      printf("Throughput\n");
-      printf("%" PRIu64 " messages/s\n", msg_per_sec);
-      printf("%.2lf MB/s\n", static_cast<double>(bytes_per_sec) * 1e-6);
+      if (FLAGS_start_producer) {
+        printf("\n");
+        printf("Write Throughput\n");
+        printf("%" PRIu64 " messages/s\n", write_msg_per_sec);
+        printf("%.2lf MB/s\n", static_cast<double>(write_bytes_per_sec) * 1e-6);
+      }
+      if (FLAGS_start_consumer) {
+        printf("\n");
+        printf("Read Throughput\n");
+        printf("%" PRIu64 " messages/s\n", read_msg_per_sec);
+        printf("%.2lf MB/s\n", static_cast<double>(read_bytes_per_sec) * 1e-6);
+      }
 
       rocketspeed::Statistics stats;
 
