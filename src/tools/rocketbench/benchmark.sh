@@ -304,11 +304,11 @@ function collect_stats {
     echo
     echo "===== Collecting server stats ====="
     for host in ${cockpits[@]}; do
-      echo stats pilot | nc $host 58800 > "pilot.$host.stats"
-      echo stats copilot | nc $host 58800 > "copilot.$host.stats"
+      echo stats pilot | nc $host 58800 > "pilot.$host.$(date +%s).stats"
+      echo stats copilot | nc $host 58800 > "copilot.$host.$(date +%s).stats"
     done
     for host in ${control_towers[@]}; do
-      echo stats tower | nc $host 58800 > "tower.$host.stats"
+      echo stats tower | nc $host 58800 > "tower.$host.$(date +%s).stats"
     done
   fi
 }
