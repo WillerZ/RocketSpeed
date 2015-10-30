@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Makes cmd1 | cmd2 return non-zero if either command returns non-zero.
+# Useful for when we are piping through sed.
+set -o pipefail
+
 # size constants
 K=1024
 M=$((1024 * K))
@@ -39,6 +43,7 @@ start_producer="true"
 socket_buffer_size=''
 buffered_storage_max_latency_us='' #max batching time on client in micro seconds
 progress_period='' # time in ms between updates to progress bar
+progress_per_line=''
 max_file_descriptors=''
 
 if [ -z ${ROCKETSPEED_ARGS+x} ]; then
@@ -67,7 +72,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,progress_per_line,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -148,6 +153,8 @@ while true; do
       buffered_storage_max_latency_us="$2"; shift 2 ;;
     --progress_period )
       progress_period="$2"; shift 2 ;;
+    --progress_per_line )
+      progress_per_line='true'; shift ;;
     --max_file_descriptors )
       max_file_descriptors="$2"; shift 2 ;;
     --namespaceid )
@@ -523,6 +530,7 @@ if [ $# -ne 1 ]; then
   echo "--remote-path        The directory where the rocketspeed binary is installed."
   echo "--log-dir            The directory for server logs."
   echo "--progress_period    The time in milliseconds between updates to progress bar."
+  echo "--progress_per_line  Print progress on separate line, rather that on one line."
   echo "--strip              Strip rocketspeed (and rocketbench) binaries for deploying."
   echo "--rollcall           Enable/disable RollCall."
   echo "--remote_bench       Use specified number of remote machines to run rocketbench."
@@ -575,6 +583,9 @@ fi
 bench_param=" --idle_timeout=$idle_timeout"
 if [ $progress_period ]; then
   bench_param+=" --progress_period=$progress_period"
+fi
+if [ $progress_per_line ]; then
+  bench_param+=" --progress_per_line"
 fi
 if [ $topics_distribution ]; then
   bench_param+=" --topics_distribution=$topics_distribution"
@@ -663,7 +674,7 @@ function run_produce {
         nsid="--namespaceid=$namespaceid.$hostnum"
       else
         nsid="--namespaceid=$namespaceid"
-      fi  
+      fi
       cmdn="$cmd $nsid 2>&1 | tee $output_dir/benchmark_produce.log"
       cmdnew="ssh root@$host -- $cmdn"
       echo $cmdnew | tee -a $output_dir/benchmark_produce.log
@@ -677,6 +688,7 @@ function run_produce {
     done
     if [ "$fail" != "0" ]; then
       echo "Remote rocketbench failed to complete successfully."
+      return 1
     fi
   else
     echo $cmd | tee -a $output_dir/benchmark_produce.log
@@ -718,6 +730,7 @@ function run_readwrite {
     done
     if [ "$fail" != "0" ]; then
       echo "Remote rocketbench failed to complete successfully."
+      return 1
     fi
   else
     echo $cmd | tee $output_dir/benchmark_readwrite.log
@@ -758,6 +771,7 @@ function run_subscriptionchurn {
     done
     if [ "$fail" != "0" ]; then
       echo "Remote rocketbench failed to complete successfully."
+      return 1
     fi
   else
     echo $cmd | tee $output_dir/benchmark_subscriptionchurn.log
@@ -800,6 +814,7 @@ function run_consume {
     done
     if [ "$fail" != "0" ]; then
       echo "Remote rocketbench failed to complete successfully."
+      return 1
     fi
   else
     echo $cmd | tee $output_dir/benchmark_consume.log
@@ -824,23 +839,24 @@ if [ "$numjobs" -ne "0" ]; then
   echo "===== Benchmark ====="
 fi
 
+result=0
 for job in ${jobs[@]}; do
   echo "Start $job at `date`" | tee -a $report
   echo
   start=$(now)
   if [ $job = tunelatency ]; then
-    run_tunelatency
+    run_tunelatency || let "result=1"
   elif [ $job = produce ]; then
-    run_produce
+    run_produce || let "result=1"
   elif [ $job = readwrite ]; then
-    run_readwrite
+    run_readwrite || let "result=1"
   elif [ $job = subscriptionchurn ]; then
-    run_subscriptionchurn
+    run_subscriptionchurn || let "result=1"
   elif [ $job = consume ]; then
-    run_consume
+    run_consume || let "result=1"
   else
     echo "unknown job $job"
-    exit 1
+    let "result=1"
   fi
   end=$(now)
 
@@ -861,3 +877,5 @@ fi
 if [ $collect_logs ]; then
   collect_logs
 fi
+
+exit "$result"

@@ -119,6 +119,9 @@ DEFINE_string(save_path, "./RocketBenchProducer.dat",
               "Name of file where producer stores per-topic information");
 DEFINE_int64(progress_period, 10,
               "Number of milliseconds between updates to progress bar");
+DEFINE_bool(progress_per_line, false, "true to print progress on one line, "
+  "false to print on separate line");
+DEFINE_bool(show_client_stats, false, "show stats from RocketSpeed client");
 
 using namespace rocketspeed;
 
@@ -523,7 +526,15 @@ static void DoConsume(void* param) {
   } while (messages_received->load() != FLAGS_num_messages &&
            std::chrono::steady_clock::now() - *last_data_message < timeout);
 
-  args->result = messages_received->load() == FLAGS_num_messages ? 0 : 1;
+  if (FLAGS_subscription_backlog_distribution == "fixed") {
+    // Success if we receive all messages.
+    args->result = messages_received->load() == FLAGS_num_messages ? 0 : 1;
+  } else {
+    // For non-fixed backlog distributions, we don't expect to receive all
+    // messages, so just assume success.
+    // TODO: better success detection.
+    args->result = 0;
+  }
 }
 
 /*
@@ -924,8 +935,7 @@ int main(int argc, char** argv) {
         const uint64_t failed = failed_publishes.load();
         printf("publish-ack'd: %" PRIu64 "/%" PRIu64 " (%.1lf%%)"
              "  received: %" PRIu64 "/%" PRIu64 " (%.1lf%%)"
-             "  failed: %" PRIu64
-             "\r",
+             "  failed: %" PRIu64,
           pubacks,
           FLAGS_num_messages,
           100.0 * static_cast<double>(pubacks) /
@@ -935,6 +945,7 @@ int main(int argc, char** argv) {
           100.0 * static_cast<double>(received) /
             static_cast<double>(FLAGS_num_messages),
           failed);
+        printf(FLAGS_progress_per_line ? "\n" : "\r");
         fflush(stdout);
       }
     },
@@ -991,6 +1002,9 @@ int main(int argc, char** argv) {
     if (ack_messages_received.load() != FLAGS_num_messages) {
       printf("Time out awaiting publish acks.\n");
       fflush(stdout);
+      ret = 1;
+    } else if (failed_publishes.load() != 0) {
+      printf("%" PRIu64 " publishes failed.\n", failed_publishes.load());
       ret = 1;
     } else {
       printf("All messages published.\n");
@@ -1166,8 +1180,10 @@ int main(int argc, char** argv) {
         stats.Aggregate(test_cluster->GetStatisticsSync());
       }
 #endif
-      for (auto& client : clients) {
-        stats.Aggregate(client->GetStatisticsSync());
+      if (FLAGS_show_client_stats) {
+        for (auto& client : clients) {
+          stats.Aggregate(client->GetStatisticsSync());
+        }
       }
 
       printf("\n");
