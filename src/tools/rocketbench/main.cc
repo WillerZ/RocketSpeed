@@ -677,7 +677,7 @@ int main(int argc, char** argv) {
     test_options.start_pilot = true;
     test_options.storage_url = FLAGS_storage_url;
     if (FLAGS_cache_size) {
-      test_options.tower.cache_size = FLAGS_cache_size;
+      test_options.tower.topic_tailer.cache_size = FLAGS_cache_size;
     }
     test_cluster.reset(new rocketspeed::LocalTestCluster(test_options));
   }
