@@ -162,6 +162,7 @@ struct SubscriptionChurnArgs {
   rocketspeed::NamespaceID nsid;
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* subscribers;
   rocketspeed::port::Semaphore* producer_thread_over;
+  std::function<void(std::unique_ptr<MessageReceived>&)> receive_callback;
 };
 
 struct TopicInfo {
@@ -343,9 +344,12 @@ static void DoProduce(void* params) {
  * the start. Otherwise, start to subscribe from a random point
  * on messages in that topic.
  */
-void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
-                 NamespaceID nsid,
-                 std::unordered_map<std::string, TopicInfo>& topic_info) {
+void DoSubscribe(
+    std::vector<std::unique_ptr<ClientImpl>>& consumers,
+    NamespaceID nsid,
+    std::function<void(std::unique_ptr<MessageReceived>&)> receive_callback,
+    std::function<Histogram*()> get_catch_up_latency,
+    std::unordered_map<std::string, TopicInfo>& topic_info) {
   size_t c = 0;                           // current client index
   size_t t = 0;                           // current topic index
   Pacer pacer(FLAGS_subscribe_rate, 1);
@@ -354,15 +358,18 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
   for (uint64_t i = 0; i < std::max(FLAGS_num_topics, num_clients); i++) {
     std::string topic_name("benchmark." + std::to_string(t));
     SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
+    SequenceNumber last_seqno = 0;
     if (FLAGS_delay_subscribe) {
       // Find the first seqno published to this topic (or 0 if none published).
       auto it = topic_info.find(topic_name);
       if (it == topic_info.end()) {
         seqno = 0;
+        last_seqno = 0;
       } else if (it->second.first == 0 ||
                  it->second.first == it->second.last ||
                  FLAGS_subscription_backlog_distribution == "fixed") {
         seqno = it->second.first;
+        last_seqno = it->second.last;
       } else {
         uint64_t seed = i << 32;  // should be consistent between runs.
 
@@ -375,6 +382,7 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                 static_cast<double>(FLAGS_subscription_backlog_stddev),
                 seed));
         seqno = distr->generateRandomInt();
+        last_seqno = it->second.last;
         assert(seqno >= it->second.first);
         assert(seqno <= it->second.last);
       }
@@ -384,7 +392,21 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
               c,
               topic_name.c_str(),
               static_cast<long long unsigned int>(seqno));
-    consumers[c]->Subscribe(GuestTenant, nsid, topic_name, seqno);
+
+    uint64_t subscribe_time = env->NowMicros();
+    auto callback =
+      [receive_callback, last_seqno, subscribe_time, get_catch_up_latency]
+      (std::unique_ptr<MessageReceived>& mr) {
+        // Check if this is the last message for this topic.
+        if (mr->GetSequenceNumber() == last_seqno) {
+          // Record time to catch up.
+          uint64_t catch_up_time = env->NowMicros() - subscribe_time;
+          get_catch_up_latency()->Record(catch_up_time);
+        }
+        receive_callback(mr);
+      };
+
+    consumers[c]->Subscribe(GuestTenant, nsid, topic_name, seqno, callback);
     pacer.EndRequest();
 
     // advance to next iteration
@@ -432,6 +454,7 @@ void DoSubscriptionChurn(void* params) {
   rocketspeed::NamespaceID nsid = args->nsid;
   rocketspeed::port::Semaphore* producer_thread_over =
     args->producer_thread_over;
+  auto receive_callback = args->receive_callback;
 
   // the priority queue is to store all sub and unsub events
   // earliest event is at the top
@@ -467,7 +490,7 @@ void DoSubscriptionChurn(void* params) {
    * and pushes the initial sub and unsub time to pq
    */
   sub_handle = (*subscribers)[0]->Subscribe(GuestTenant, nsid, "benchmark.0",
-    seq);
+    seq, receive_callback);
   PushSubUnsubTimeToQueue(distr, pq, 0,sub_handle);
   do {
     curtime = std::chrono::steady_clock::now();
@@ -726,6 +749,7 @@ int main(int argc, char** argv) {
   rocketspeed::ThreadLocalPtr per_thread_stats;
   rocketspeed::ThreadLocalPtr ack_latency;
   rocketspeed::ThreadLocalPtr recv_latency;
+  rocketspeed::ThreadLocalPtr catch_up_latency;
 
   // Do not show receive latency if we delayed subscription.
   const bool show_recv_latency = !FLAGS_delay_subscribe;
@@ -740,6 +764,7 @@ int main(int argc, char** argv) {
       if (show_recv_latency) {
         recv_latency.Reset(stats->AddLatency("recv-latency"));
       }
+      catch_up_latency.Reset(stats->AddLatency("catch-up-latency"));
       std::lock_guard<std::mutex> lock(all_stats_mutex);
       all_stats.emplace_back(std::move(stats));
     }
@@ -756,6 +781,12 @@ int main(int argc, char** argv) {
     assert(show_recv_latency);
     InitThreadLocalStats();
     return static_cast<rocketspeed::Histogram*>(recv_latency.Get());
+  };
+
+  // Get thread local catch up latency histogram.
+  auto GetCatchUpLatency = [&] () {
+    InitThreadLocalStats();
+    return static_cast<rocketspeed::Histogram*>(catch_up_latency.Get());
   };
 
   // Create callback for publish acks.
@@ -896,7 +927,7 @@ int main(int argc, char** argv) {
       return 1;
     }
     client->SetDefaultCallbacks(subscribe_callback,
-                                receive_callback,
+                                nullptr,
                                 data_loss_callback);
     clients.emplace_back(client.release());
   }
@@ -909,7 +940,8 @@ int main(int argc, char** argv) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
-      DoSubscribe(clients, nsid, topic_info);
+      DoSubscribe(clients,  nsid, receive_callback, GetCatchUpLatency,
+        topic_info);
       env->SleepForMicroseconds(1000000);  // allow 1 seconds for subscribe
       printf("done\n");
     }
@@ -978,6 +1010,7 @@ int main(int argc, char** argv) {
       scargs.producer_thread_over = &producer_thread_over;
       scargs.subscribers = &clients;
       scargs.nsid = nsid;
+      scargs.receive_callback = receive_callback;
       subscriptionchurn_threadid = env->StartThread(
                                      rocketspeed::DoSubscriptionChurn,
                                      &scargs,
@@ -1045,7 +1078,7 @@ int main(int argc, char** argv) {
 
     // Subscribe to topics
     subscribe_time = env->NowMicros();
-    DoSubscribe(clients, nsid, topic_info);
+    DoSubscribe(clients, nsid, receive_callback, GetCatchUpLatency, topic_info);
     subscribe_time = env->NowMicros() - subscribe_time;
     printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics\n",
       subscribe_time / 1000,
