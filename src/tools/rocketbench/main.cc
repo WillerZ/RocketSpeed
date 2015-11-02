@@ -345,7 +345,7 @@ static void DoProduce(void* params) {
  */
 void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
                  NamespaceID nsid,
-                 std::unordered_map<std::string, TopicInfo>& first_seqno) {
+                 std::unordered_map<std::string, TopicInfo>& topic_info) {
   size_t c = 0;                           // current client index
   size_t t = 0;                           // current topic index
   Pacer pacer(FLAGS_subscribe_rate, 1);
@@ -356,8 +356,8 @@ void DoSubscribe(std::vector<std::unique_ptr<ClientImpl>>& consumers,
     SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
     if (FLAGS_delay_subscribe) {
       // Find the first seqno published to this topic (or 0 if none published).
-      auto it = first_seqno.find(topic_name);
-      if (it == first_seqno.end()) {
+      auto it = topic_info.find(topic_name);
+      if (it == topic_info.end()) {
         seqno = 0;
       } else if (it->second.first == 0 ||
                  it->second.first == it->second.last ||
@@ -763,8 +763,8 @@ int main(int argc, char** argv) {
   std::atomic<int64_t> failed_publishes{0};
 
   // Map of topics to the (first, last, total#msg) in that topic.
-  std::unordered_map<std::string, TopicInfo> first_seqno;
-  std::mutex first_seqno_mutex;
+  std::unordered_map<std::string, TopicInfo> topic_info;
+  std::mutex topic_info_mutex;
 
   auto publish_callback =
     [&] (std::unique_ptr<rocketspeed::ResultStatus> rs) {
@@ -782,10 +782,10 @@ int main(int argc, char** argv) {
           // Get the min sequence number for this topic to subscribe to later.
           std::string topic = rs->GetTopicName().ToString();
           SequenceNumber seq = rs->GetSequenceNumber();
-          std::lock_guard<std::mutex> lock(first_seqno_mutex);
-          auto it = first_seqno.find(topic);
-          if (it == first_seqno.end()) {
-            first_seqno[topic] = TopicInfo(seq, seq, 1);
+          std::lock_guard<std::mutex> lock(topic_info_mutex);
+          auto it = topic_info.find(topic);
+          if (it == topic_info.end()) {
+            topic_info[topic] = TopicInfo(seq, seq, 1);
           } else {
             it->second.first = std::min(it->second.first, seq);
             it->second.last = std::max(it->second.last, seq);
@@ -909,7 +909,7 @@ int main(int argc, char** argv) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
-      DoSubscribe(clients, nsid, first_seqno);
+      DoSubscribe(clients, nsid, topic_info);
       env->SleepForMicroseconds(1000000);  // allow 1 seconds for subscribe
       printf("done\n");
     }
@@ -1027,10 +1027,10 @@ int main(int argc, char** argv) {
     // saved topic-metadata in a file in some previous run, then
     // use that topic-metadata to start subscriptions.
     if (!FLAGS_start_producer) {
-      int val = ReadFile(FLAGS_save_path, first_seqno);
+      int val = ReadFile(FLAGS_save_path, topic_info);
       if (val == 0) {
         printf("Restored %ld topics from metadata file %s\n",
-               first_seqno.size(), FLAGS_save_path.c_str());
+               topic_info.size(), FLAGS_save_path.c_str());
       } else {
         printf("Error (%d) in reading topic metadata from file %s\n",
                val, FLAGS_save_path.c_str());
@@ -1045,7 +1045,7 @@ int main(int argc, char** argv) {
 
     // Subscribe to topics
     subscribe_time = env->NowMicros();
-    DoSubscribe(clients, nsid, first_seqno);
+    DoSubscribe(clients, nsid, topic_info);
     subscribe_time = env->NowMicros() - subscribe_time;
     printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics\n",
       subscribe_time / 1000,
@@ -1208,7 +1208,7 @@ int main(int argc, char** argv) {
 
     // Save metadata about the published topics into a file
     if (FLAGS_start_producer && !FLAGS_save_path.empty()) {
-      int val = SaveFile(FLAGS_save_path, first_seqno);
+      int val = SaveFile(FLAGS_save_path, topic_info);
       if (val == 0) {
         printf("Saved topic metadata into file %s\n", FLAGS_save_path.c_str());
       } else {
