@@ -28,7 +28,7 @@ DEFINE_int32(bits_per_key, 10, "");
 
 namespace rocketspeed {
 
-static const int kVerbose = 1;
+static const int kVerbose = 0;
 
 static Slice Key(int i, char* buffer) {
   memcpy(buffer, &i, sizeof(i));
