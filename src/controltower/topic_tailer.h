@@ -49,8 +49,9 @@ class TopicTailer {
    * @param log_router For routing topics to logs.
    * @param info_log For logging.
    * @param cache_size_per_room cache size in bytes
-   * @param bool cache_data_from_system_namespaces
-   * @param int bloom_bits_per_msg (used in cache)
+   * @param cache_data_from_system_namespaces
+   * @param cache_block_size  Number of messages in a cache block
+   * @param bloom_bits_per_msg (used in cache)
    * @param on_message Callback for Deliver and Gap messages.
    * @param tailer Output parameter for created TopicTailer.
    * @return ok() if TopicTailer created, otherwise error.
@@ -64,6 +65,7 @@ class TopicTailer {
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
+    size_t cache_block_size,
     int bloom_bits_per_msg,
     std::function<void(Flow*,
                        const Message&,
@@ -245,6 +247,7 @@ class TopicTailer {
               std::shared_ptr<Logger> info_log,
               size_t cache_size_per_room,
               bool cache_data_from_system_namespaces,
+              size_t cache_block_size,
               int bloom_bits_per_msg,
               std::function<void(Flow*,
                                  const Message&,
@@ -476,6 +479,8 @@ class TopicTailer {
         all.AddCounter(prefix + "reader_merges");
       cache_reentries =
         all.AddCounter(prefix + "cache_reentries");
+      cache_usage =
+        all.AddCounter(prefix + "cache_usage");
     }
 
     Statistics all;
@@ -504,6 +509,7 @@ class TopicTailer {
     Counter* reader_restarts;
     Counter* reader_merges;
     Counter* cache_reentries;
+    Counter* cache_usage;
   } stats_;
 };
 

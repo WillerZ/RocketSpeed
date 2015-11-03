@@ -17,11 +17,6 @@ namespace rocketspeed {
  * rather than having an Entry for each individual message.
  */
 
-// The number of records for a log that is stored inside a
-// CacheEntry. It is a compile time constant so that the
-// overhead of the CacheEntry size can be reduced.
-#define  BLOCK_SIZE 1024
-
 // The key for the LRU cache is 16 bytes, it is made up of a
 // 8 byte logid folowed by a 8 byte seqno.
 struct alignas(16) CacheKey {
@@ -29,13 +24,15 @@ struct alignas(16) CacheKey {
 };
 
 // Find the first seqno of the block
-static SequenceNumber AlignToBlockStart(SequenceNumber seqno) {
-  return (seqno / BLOCK_SIZE) * BLOCK_SIZE;
+static SequenceNumber AlignToBlockStart(
+    size_t block_size, SequenceNumber seqno) {
+  return (seqno / block_size) * block_size;
 }
 
 // Generate a key for cache lookup
-static void GenerateKey(LogID logid, SequenceNumber seqno, CacheKey* buf) {
-  assert(seqno == AlignToBlockStart(seqno));
+static void GenerateKey(size_t block_size, LogID logid,
+                        SequenceNumber seqno, CacheKey* buf) {
+  assert(seqno == AlignToBlockStart(block_size, seqno));
   static_assert(sizeof(CacheKey) == sizeof(buf->buf),
                 "Artificial padding found in CacheKey");
   static_assert(sizeof(logid) == 8,
@@ -55,22 +52,28 @@ static void GenerateKey(LogID logid, SequenceNumber seqno, CacheKey* buf) {
 //
 class CacheEntry {
  private:
-  std::unique_ptr<MessageData> mcache_[BLOCK_SIZE];
 #ifndef NDEBUG
   LogID logid_;                // useful for debugging
   SequenceNumber seqno_block_; // useful for debugging
 #endif /* NDEBUG */
   std::string bloom_bits_;      // bloom filters are stored here
   unsigned short num_messages_; // number of msg in this entry
+  std::unique_ptr<MessageData>* mcache_;
 
  public:
-  explicit CacheEntry(LogID logid, SequenceNumber seqno_block) {
+  explicit CacheEntry(DataCache* data_cache,
+                      LogID logid, SequenceNumber seqno_block) {
 #ifndef NDEBUG
     logid_ = logid;
     seqno_block_ = seqno_block;
 #endif /* NDEBUG */
     num_messages_ = 0;
-    assert((1U << 8 * sizeof(num_messages_)) > (BLOCK_SIZE + 1U));
+    assert((1U << 8 * sizeof(num_messages_)) > (data_cache->block_size_ + 1U));
+    mcache_ = new std::unique_ptr<MessageData> [data_cache->block_size_];
+  }
+
+  ~CacheEntry() {
+    delete [] mcache_;
   }
 
   // Stores the specified record in this entry.
@@ -81,7 +84,8 @@ class CacheEntry {
                    const FilterPolicy* bloom_filter,
                    std::unique_ptr<MessageData> msg) {
     SequenceNumber seqno = msg->GetSequenceNumber();
-    SequenceNumber seqno_block = AlignToBlockStart(seqno);
+    SequenceNumber seqno_block = AlignToBlockStart(
+                     data_cache->block_size_, seqno);
     int offset = (int)(seqno - seqno_block);
 
     assert(logid_ == log_id);
@@ -105,7 +109,7 @@ class CacheEntry {
     // blooms because it is likely that there are fewer number of
     // unique namespaceids in the system and the probabilty of a block
     // not having a single message from that namespace is probably small.
-    if (num_messages_ == BLOCK_SIZE && bloom_filter) {
+    if (num_messages_ == data_cache->block_size_ && bloom_filter) {
       assert(bloom_bits_.size() == 0);
       std::vector<Slice> topics;
       for (unsigned int i = 0; i <num_messages_; i++) {
@@ -119,8 +123,10 @@ class CacheEntry {
 
   // Remove specified record from the cache
   // Returns the decrease in charge, if any
-  size_t Erase(LogID log_id, SequenceNumber seqno) {
-    SequenceNumber seqno_block = AlignToBlockStart(seqno);
+  size_t Erase(DataCache* data_cache,
+               LogID log_id, SequenceNumber seqno) {
+    SequenceNumber seqno_block = AlignToBlockStart(
+                   data_cache->block_size_, seqno);
     int offset = (int)(seqno - seqno_block);
 
     // TODO: Bloom filters are not updated on Erase
@@ -146,8 +152,9 @@ class CacheEntry {
       const FilterPolicy* bloom_filter,
       const Slice& lookup_topicname,
       const std::function<bool(MessageData* data_raw, bool* deliver)>& visit) {
-    SequenceNumber seqno_block = AlignToBlockStart(seqno);
-    int offset = (int)(seqno - seqno_block);
+    SequenceNumber seqno_block = AlignToBlockStart(
+            data_cache->block_size_, seqno);
+    size_t offset = seqno - seqno_block;
     bool did_bloom_check = false;
 
     assert(logid_ == logid);
@@ -168,9 +175,9 @@ class CacheEntry {
     }
 
     // scan all messages upto either the first null or the entire block
-    int index = offset;
+    size_t index = offset;
     bool delivered = false;
-    for (; index < BLOCK_SIZE && mcache_[index]; index++) {
+    for (; index < data_cache->block_size_ && mcache_[index]; index++) {
       if (!visit(mcache_[index].get(), &delivered)) {
         ++index;
         break;
@@ -187,9 +194,10 @@ class CacheEntry {
     return seqno_block + index; // return the next seqno
   }
 
-  size_t GetInitialCharge(int bloom_bits_per_msg) {
+  size_t GetInitialCharge(DataCache* data_cache) {
     return sizeof(CacheEntry)
-           + (BLOCK_SIZE * bloom_bits_per_msg)/8; // bloom bytes
+           + (data_cache->block_size_ * sizeof(mcache_[0]))
+           + (data_cache->block_size_ * data_cache->bloom_bits_per_msg_)/8;
   }
 };
 
@@ -202,8 +210,10 @@ static void DeleteEntry(const Slice& key, void* value) {
 
 DataCache::DataCache(size_t size_in_bytes,
                      bool cache_data_from_system_namespaces,
-                     int bloom_bits_per_msg) :
+                     int bloom_bits_per_msg,
+                     size_t block_size) :
   bloom_bits_per_msg_(bloom_bits_per_msg),
+  block_size_(block_size),
   rs_cache_(size_in_bytes ? NewLRUCache(size_in_bytes) : nullptr) {
   characteristics_ = Characteristics::StoreUserTopics |
                      Characteristics::StoreSystemTopics |
@@ -243,24 +253,18 @@ void DataCache::SetCapacity(size_t capacity) {
   }
 }
 
-size_t DataCache::GetCapacity() {
+size_t DataCache::GetCapacity() const {
   if (rs_cache_ == nullptr) { // No caching specified
     return 0;
   }
   return rs_cache_->GetCapacity();
 }
 
-size_t DataCache::GetUsage() {
+size_t DataCache::GetUsage() const {
   if (rs_cache_ == nullptr) { // No caching specified
     return 0;
   }
   return rs_cache_->GetUsage();
-}
-
-// The only reason for the existence of this method is that it is needed
-// in unit tests
-size_t DataCache::GetBlockSize() {
-  return BLOCK_SIZE;
 }
 
 void DataCache::StoreGap(LogID log_id, GapType type, SequenceNumber from,
@@ -299,11 +303,11 @@ void DataCache::StoreData(const Slice& namespace_id, const Slice& topic,
   }
   // compute sequence number of block start
   SequenceNumber seqno = msg->GetSequenceNumber();
-  SequenceNumber seqno_block = AlignToBlockStart(seqno);
+  SequenceNumber seqno_block = AlignToBlockStart(block_size_, seqno);
 
   // generate cache key
   CacheKey buffer;
-  GenerateKey(log_id, seqno_block, &buffer);
+  GenerateKey(block_size_, log_id, seqno_block, &buffer);
   Slice cache_key(buffer.buf, sizeof(buffer.buf));
 
   CacheEntry* entry = nullptr;
@@ -315,9 +319,9 @@ void DataCache::StoreData(const Slice& namespace_id, const Slice& topic,
   } else {
     // Entry does not exist in the cache.
     // Create a new entry and insert into cache.
-    entry = new CacheEntry(log_id, seqno_block);
+    entry = new CacheEntry(this, log_id, seqno_block);
     handle = rs_cache_->Insert(cache_key, entry,
-                               entry->GetInitialCharge(bloom_bits_per_msg_),
+                               entry->GetInitialCharge(this),
                                &DeleteEntry<CacheEntry>);
   }
 
@@ -336,11 +340,11 @@ void DataCache::Erase(LogID log_id, GapType type, SequenceNumber seqno) {
   }
 
   // compute sequence number of block start
-  SequenceNumber seqno_block = AlignToBlockStart(seqno);
+  SequenceNumber seqno_block = AlignToBlockStart(block_size_, seqno);
 
   // generate cache key
   CacheKey buffer;
-  GenerateKey(log_id, seqno_block, &buffer);
+  GenerateKey(block_size_, log_id, seqno_block, &buffer);
   Slice cache_key(buffer.buf, sizeof(buffer.buf));
 
   CacheEntry* entry = nullptr;
@@ -350,7 +354,7 @@ void DataCache::Erase(LogID log_id, GapType type, SequenceNumber seqno) {
   if (handle) {
     // Search the entry
     entry = static_cast<CacheEntry *>(rs_cache_->Value(handle));
-    size_t delta = entry->Erase(log_id, seqno);
+    size_t delta = entry->Erase(this, log_id, seqno);
     rs_cache_->ChargeDelta(handle, -delta);
     rs_cache_->Release(handle);
   }
@@ -367,12 +371,13 @@ SequenceNumber DataCache::VisitCache(LogID logid,
   assert(rs_cache_->GetPinnedUsage() == 0);
 
   // compute sequence number of block start
-  SequenceNumber seqno_block = AlignToBlockStart(start);
+  SequenceNumber seqno_block = AlignToBlockStart(block_size_, start);
+  SequenceNumber orig_start = start;
 
   while (true) {
     // generate cache key
     CacheKey buffer;
-    GenerateKey(logid, seqno_block, &buffer);
+    GenerateKey(block_size_, logid, seqno_block, &buffer);
     Slice cache_key(buffer.buf, sizeof(buffer.buf));
 
     // Fetch the appropriate entry from the cache
@@ -388,17 +393,17 @@ SequenceNumber DataCache::VisitCache(LogID logid,
                         lookup_topicname, on_message);
     rs_cache_->Release(handle);
 
-    if (next == start) {
-      stats_.cache_misses->Add(1);  // no relevant records in cache
-    }
-
     // If the new seqnumber is in the same block, then we are done
-    if (next < start + BLOCK_SIZE) {
+    if (next < start + block_size_) {
       start = next;
       break;
     }
-    assert(next == AlignToBlockStart(next));
+    assert(next == AlignToBlockStart(block_size_, next));
     start = seqno_block = next;
+  }
+
+  if (orig_start == start) {
+    stats_.cache_misses->Add(1);  // no relevant records in cache
   }
   return start;         // return next message that is not yet processed
 }

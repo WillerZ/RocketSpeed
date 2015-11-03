@@ -1154,6 +1154,7 @@ int main(int argc, char** argv) {
 
     printf("\n");
     printf("Results\n");
+    printf("Elapsed time: %d sec\n", total_ms/1000U);
     printf("%lld messages sent\n",
            static_cast<long long unsigned int>(FLAGS_num_messages));
     printf("%lld messages sends acked\n",

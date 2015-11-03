@@ -19,10 +19,11 @@ TEST(DataCacheTest, Check) {
   size_t cache_size = 10 * 1024 * 1024; // 10 MB
   bool cache_data_from_system_namespaces = false;
   int bloom_bits_per_msg = 10;
+  size_t block_size = 1024; // 1K messages per block
 
   // create a cache
   DataCache cache(cache_size, cache_data_from_system_namespaces,
-                  bloom_bits_per_msg);
+                  bloom_bits_per_msg, block_size);
   ASSERT_EQ(cache.GetCapacity(), cache_size);
   ASSERT_EQ(cache.GetUsage(), 0);
 
@@ -115,15 +116,14 @@ TEST(DataCacheTest, CheckBloom) {
   size_t cache_size = 50 * 1024 * 1024; // 50 MB
   bool cache_data_from_system_namespaces = false;
   int bloom_bits_per_msg = 10;
+  size_t block_size = 1024; // 1K messages per block
 
   // create a cache
   DataCache cache(cache_size, cache_data_from_system_namespaces,
-                  bloom_bits_per_msg);
+                  bloom_bits_per_msg, block_size);
   ASSERT_EQ(cache.GetCapacity(), cache_size);
   ASSERT_EQ(cache.GetUsage(), 0);
-
-  size_t block_size = cache.GetBlockSize();
-  ASSERT_GT(block_size, 0);
+  ASSERT_GE(cache.GetBlockSize(), block_size);
 
   std::string namespaceid("dhruba");
   Slice ns(namespaceid);

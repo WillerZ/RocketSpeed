@@ -25,7 +25,8 @@ class DataCache {
  public:
   DataCache(size_t size_in_bytes,
             bool cache_data_from_system_namespaces, // true: cache system ns
-            int bloom_bits_per_msg);                // bits per message
+            int bloom_bits_per_msg,                 // bits per message
+            size_t block_size);                     // # of messages in a block
   ~DataCache();
 
   // Sets a new capacity for the cache. Evict data from cache if the
@@ -48,10 +49,10 @@ class DataCache {
   void ClearCache();
 
   // Gets the current usage of the cache
-  size_t GetUsage();
+  size_t GetUsage() const;
 
   // Gets the current configured capacity of the cache
-  size_t GetCapacity();
+  size_t GetCapacity() const;
 
   // Gets the statistics for this cache
   Statistics GetStatistics() const;
@@ -68,13 +69,11 @@ class DataCache {
                             std::function<bool(MessageData* data_raw,
                                           bool* processed)> on_message);
  private:
-
-  // The number of records that are stored internally in a cache block
-  size_t GetBlockSize();
-
   // number of bloom bits per message
   int bloom_bits_per_msg_;
 
+  // The number of messages in a single block in the cache
+  size_t block_size_;
 
   // What is the cache used for?
   enum Characteristics : unsigned int {
@@ -91,6 +90,8 @@ class DataCache {
 
   // The bloom filter used for this cache
   std::unique_ptr<FilterPolicy> bloom_filter_;
+
+  size_t GetBlockSize() const { return block_size_; }
 
   // Collect statistics about cache lookups
   struct Stats {

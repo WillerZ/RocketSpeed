@@ -11,6 +11,14 @@
 base=`dirname $0`
 BENCHMARK=$base/benchmark.sh
 
+# Define the number of cockpits and control towers for this test
+COCKPITS=2
+TOWERS=1
+CACHESIZE=50000000000   # 50 GB
+TOPICS=10000000         # 10 million
+BENCH=1                 # 1 instance of rocketbench
+RATE=500000             # max of 500K subscribe requests/sec
+
 if [ ! -f $BENCHMARK ]; then
   echo "Unable to find benchmark script at $BENCHMARK
   echo "cd to fbcode and then run benchmark
@@ -20,13 +28,13 @@ fi
 #
 # Produce a data set with 1 message each on a 10 M topics
 #
-cmd="$BENCHMARK --messages 10000000 --progress_period=10000 --rate 150000 --max-inflight 7000 --topics 10000000 --size 100 --num_messages_per_topic=10000000  --topics_distribution=fixed --remote --deploy --start-servers --stop-servers --cockpits=4 --cache-size 100000000000 --towers=1  --remote-bench 1 produce"
+cmd="$BENCHMARK --messages $TOPICS --progress_period=10000 --rate 150000 --max-inflight 7000 --topics $TOPICS --size 100 --num_messages_per_topic=$TOPICS  --topics_distribution=fixed --namespaceid_dynamic --remote --deploy --start-servers --stop-servers --cockpits=$COCKPITS --towers=$TOWERS --remote-bench $BENCH produce"
 echo $cmd
 eval $cmd
 
 # Subscribe to each of those topics and read one message from each of those
 # topics. 
 #
-cmd="$BENCHMARK --messages 10000000 --progress_period=10000 --subscribe-rate 60000 --max-inflight 7000 --topics 10000000 --remote --deploy --start-servers --stop-servers --cockpits=4 --cache-size 100000000000 --towers=1 --subscription-backlog-distribution=fixed --remote-bench 1 --producer=false --collect-stats consume"
+cmd="$BENCHMARK --messages $TOPICS --progress_period=10000 --subscribe-rate $RATE --max-inflight 20000 --namespaceid_dynamic --topics $TOPICS --remote --deploy --start-servers --stop-servers --cockpits=$COCKPITS --cache-size $CACHESIZE --towers=$TOWERS --subscription-backlog-distribution=fixed --remote-bench $BENCH --client-threads=80 --producer=false --collect-stats consume"
 echo $cmd
 eval $cmd

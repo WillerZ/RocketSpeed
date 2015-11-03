@@ -35,6 +35,7 @@ collect_stats=''
 strip=''
 rollcall='false'  # disable rollcall for benchmarks by default
 cache_size=''     # use the default set by the control tower
+cache_block_size='' # number of messages in a cache block
 num_bench=''
 remote_bench=''
 idle_timeout="5"  # if no new messages within this time, then declare done
@@ -72,7 +73,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,progress_per_line,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,cache-block-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,progress_per_line,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -109,6 +110,8 @@ while true; do
       num_towers="$2"; shift 2 ;;
     --cache-size )
       cache_size="$2"; shift 2 ;;
+    --cache-block-size )
+      cache_block_size="$2"; shift 2 ;;
     --idle-timeout )
       idle_timeout="$2"; shift 2 ;;
     --pilot-port )
@@ -377,6 +380,9 @@ function start_servers {
       if [ $cache_size ]; then
         cmd="${cmd} --tower_cache_size=$cache_size"
       fi
+      if [ $cache_block_size ]; then
+        cmd="${cmd} --tower_cache_block_size=$cache_block_size"
+      fi
       if [ $buffered_storage_max_latency_us ]; then
         cmd="${cmd} --buffered_storage_max_latency_us=$buffered_storage_max_latency_us"
         cmd="${cmd} --buffered_storage_max_messages=255"
@@ -546,6 +552,8 @@ if [ $# -ne 1 ]; then
   echo "--namespaceid_dynamic Dynamically generate different namespaceids for each simultaneous workload."
   echo "--topics_distribution Distribution for generating topic names."
   echo "--num_messages_per_topic Number of messages per topic."
+  echo "--cache-size          Size in bytes to be cached in control tower."
+  echo "--cache-block-size    Number of messages in a cache block."
   exit 1
  fi
 fi

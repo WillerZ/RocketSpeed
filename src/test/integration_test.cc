@@ -1735,7 +1735,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   ASSERT_EQ(cached_hits, 0);
   auto cache_misses =
     stats1.GetCounterValue("tower.data_cache.cache_misses");
-  ASSERT_EQ(cache_misses, 1);
+  ASSERT_EQ(cache_misses, 2);
 
   // Resubscribe to the same topic
   ASSERT_TRUE(client->Subscribe(GuestTenant,

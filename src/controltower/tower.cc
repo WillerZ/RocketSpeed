@@ -213,6 +213,7 @@ Status ControlTower::Initialize() {
                                         cache_size_per_room,
                                         opt.topic_tailer.
                                           cache_data_from_system_namespaces,
+                                        opt.topic_tailer.cache_block_size,
                                         opt.topic_tailer.bloom_bits_per_msg,
                                         std::move(on_message),
                                         opt.topic_tailer,

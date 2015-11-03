@@ -801,6 +801,7 @@ TopicTailer::TopicTailer(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
+    size_t cache_block_size,
     int bloom_bits_per_msg,
     std::function<void(Flow*,
                        const Message&,
@@ -814,7 +815,7 @@ TopicTailer::TopicTailer(
   info_log_(std::move(info_log)),
   on_message_(std::move(on_message)),
   data_cache_(cache_size_per_room, cache_data_from_system_namespaces,
-              bloom_bits_per_msg),
+              bloom_bits_per_msg, cache_block_size),
   prng_(ThreadLocalPRNG()),
   options_(options),
   restart_events_(options_.min_reader_restart_duration,
@@ -1403,6 +1404,7 @@ TopicTailer::CreateNewInstance(
     std::shared_ptr<Logger> info_log,
     size_t cache_size_per_room,
     bool cache_data_from_system_namespaces,
+    size_t cache_block_size,
     int bloom_bits_per_msg,
     std::function<void(Flow*,
                        const Message&,
@@ -1417,6 +1419,7 @@ TopicTailer::CreateNewInstance(
                             std::move(info_log),
                             cache_size_per_room,
                             cache_data_from_system_namespaces,
+                            cache_block_size,
                             bloom_bits_per_msg,
                             std::move(on_message),
                             options);
@@ -1876,6 +1879,7 @@ void TopicTailer::RestartEvents::RemoveEvent(Handle handle) {
 }
 
 Statistics TopicTailer::GetStatistics() const {
+  stats_.cache_usage->Set(data_cache_.GetUsage()); // update cache statistics
   Statistics stats = stats_.all;
   stats.Aggregate(data_cache_.GetStatistics());
   stats.Aggregate(flow_control_->GetStatistics());

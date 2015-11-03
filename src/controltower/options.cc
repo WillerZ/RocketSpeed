@@ -31,6 +31,7 @@ ControlTowerOptions::TopicTailer::TopicTailer()
 , FAULT_send_log_record_failure_rate(0)
 , cache_size(0)
 , cache_data_from_system_namespaces(true)
+, cache_block_size(1024)
 , bloom_bits_per_msg(10) {
 }
 

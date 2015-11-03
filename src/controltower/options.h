@@ -112,6 +112,10 @@ struct ControlTowerOptions {
     // Default: false
     bool cache_data_from_system_namespaces;
 
+    // The number of messages in a single cahce entry block
+    // Default: 1024
+    size_t cache_block_size;
+
     // Number of bloom bits per message in the cache. This option is effective
     // only if cache_size is non-zero.
     // Default: 10 bits per message
