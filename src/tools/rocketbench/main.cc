@@ -1174,7 +1174,8 @@ int main(int argc, char** argv) {
       // Print out dropped messages if there are any. This helps when
       // debugging problems.
       printf("\n");
-      printf("Messages failed to receive, expected %zu found %zu\n",
+      printf("Messages failed to receive, expected %" PRIi64
+             " found %" PRIi64 "\n",
              FLAGS_num_messages, messages_received.load());
 
       for (uint64_t i = 0; i < is_received.size(); ++i) {
