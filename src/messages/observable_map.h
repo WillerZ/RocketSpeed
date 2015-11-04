@@ -5,8 +5,9 @@
 //
 #pragma once
 
-#include <mutex>
 #include <utility>
+#include "src/port/port.h"
+#include "src/messages/event_loop.h"
 #include "src/util/common/linked_map.h"
 #include "src/util/common/thread_check.h"
 
@@ -25,8 +26,7 @@ namespace rocketspeed {
  * to ensure fairness when only few elements can be read at once.
  */
 template <typename Key, typename Value>
-class ObservableMap : public Source<std::pair<Key, Value>>,
-                      public Sink<std::pair<Key, Value>> {
+class ObservableMap : public Source<std::pair<Key, Value>> {
  public:
   using KeyValue = std::pair<Key, Value>;
 
@@ -34,12 +34,8 @@ class ObservableMap : public Source<std::pair<Key, Value>>,
   : read_ready_fd_(true, true) {
   }
 
-  bool Write(KeyValue& kv, bool check_thread = true) final override {
-    if (check_thread) {
-      write_check_.Check();
-    }
-
-    std::lock_guard<std::mutex> lock(map_mutex_);
+  void Write(KeyValue kv) {
+    thread_check_.Check();
     auto it = map_.find(kv.first);
     if (it == map_.end()) {
       if (map_.empty()) {
@@ -52,14 +48,8 @@ class ObservableMap : public Source<std::pair<Key, Value>>,
       map_.emplace_back(std::move(kv));
     } else {
       // Existing entry for this key, update value.
-      it->second = kv.second;
+      it->second = std::move(kv.second);
     }
-    return true;
-  }
-
-  bool FlushPending(bool check_thread) final override {
-    (void)check_thread;
-    return true;
   }
 
   void RegisterReadEvent(EventLoop* event_loop) final override {
@@ -72,20 +62,11 @@ class ObservableMap : public Source<std::pair<Key, Value>>,
     event_loop->SetFdReadEnabled(read_ready_fd_.readfd(), enabled);
   }
 
-  std::unique_ptr<EventCallback>
-  CreateWriteCallback(EventLoop* event_loop,
-                      std::function<void()> callback) final override {
-    // ObservableMap is always writable.
-    // There should never be a need to create a write event.
-    assert(false);
-    return nullptr;
-  }
-
  private:
   void Drain() {
     // Drainining the Observable map simply means drain each key-value entry
     // in the map.
-    std::lock_guard<std::mutex> lock(map_mutex_);
+    thread_check_.Check();
     for (auto it = map_.begin(); it != map_.end(); ) {
       bool ok = this->DrainOne(KeyValue(it->first, std::move(it->second)));
       it = map_.erase(it);
@@ -101,9 +82,8 @@ class ObservableMap : public Source<std::pair<Key, Value>>,
     }
   }
 
-  ThreadCheck write_check_;
+  ThreadCheck thread_check_;
   rocketspeed::port::Eventfd read_ready_fd_;
-  std::mutex map_mutex_;
   LinkedMap<Key, Value> map_;
 };
 

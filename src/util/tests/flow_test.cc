@@ -313,11 +313,10 @@ TEST(FlowTest, ObservableMap) {
 
   enum : int { kNumMessages = 10000 };
   int sleep_micros = 100;
-  MsgLoop loop(env_, env_options_, 0, 2, info_log_, "flow");
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
   ASSERT_OK(loop.Initialize());
 
-  FlowControl flow_control0("", loop.GetEventLoop(0));
-  FlowControl flow_control1("", loop.GetEventLoop(1));
+  FlowControl flow_control("", loop.GetEventLoop(0));
   auto obs_map = std::make_shared<ObservableMap<std::string, int>>();
   auto queue = MakeQueue<std::pair<std::string, int>>(1);
 
@@ -325,12 +324,12 @@ TEST(FlowTest, ObservableMap) {
   int reads = 0;
   int last_a = -1;
   int last_b = -1;
-  flow_control0.Register<std::pair<std::string, int>>(obs_map.get(),
+  flow_control.Register<std::pair<std::string, int>>(obs_map.get(),
     [&] (Flow* flow, std::pair<std::string, int> kv) {
       flow->Write(queue.get(), kv);
     });
 
-  flow_control1.Register<std::pair<std::string, int>>(queue.get(),
+  flow_control.Register<std::pair<std::string, int>>(queue.get(),
     [&] (Flow* flow, std::pair<std::string, int> kv) {
       auto key = kv.first;
       auto value = kv.second;
@@ -346,13 +345,17 @@ TEST(FlowTest, ObservableMap) {
 
   MsgLoopThread flow_threads(env_, &loop, "flow");
   for (int i = 0; i < kNumMessages; ++i) {
-    std::pair<std::string, int> a("a", i);
-    std::pair<std::string, int> b("b", i);
-    ASSERT_TRUE(obs_map->Write(a));
-    ASSERT_TRUE(obs_map->Write(b));
+    std::unique_ptr<Command> cmd(
+      MakeExecuteCommand([&, i] () {
+        std::pair<std::string, int> a("a", i);
+        std::pair<std::string, int> b("b", i);
+        obs_map->Write(a);
+        obs_map->Write(b);
+      }));
+    loop.SendCommand(std::move(cmd), 0);
   }
 
-  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(5)));
   ASSERT_LT(reads, kNumMessages * 2);  // ensure some were merged
   ASSERT_EQ(last_a, kNumMessages - 1);  // ensure all written
   ASSERT_EQ(last_b, kNumMessages - 1);  // ensure all written
