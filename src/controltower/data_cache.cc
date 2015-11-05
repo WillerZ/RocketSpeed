@@ -167,7 +167,7 @@ class CacheEntry {
       if (lookup_topicname.size() > 0 && bloom_bits_.size() > 0) {
         if (!bloom_filter->KeyMayMatch(lookup_topicname, Slice(bloom_bits_))) {
           data_cache->stats_.bloom_hits->Add(1);  // successful use of blooms
-          return seqno;                           // record not found
+          return seqno_block + data_cache->block_size_;  // record not found
         }
         did_bloom_check = true;
         data_cache->stats_.bloom_misses->Add(1);  // unsuccessful use of blooms
@@ -394,7 +394,7 @@ SequenceNumber DataCache::VisitCache(LogID logid,
     rs_cache_->Release(handle);
 
     // If the new seqnumber is in the same block, then we are done
-    if (next < start + block_size_) {
+    if (next < seqno_block + block_size_) {
       start = next;
       break;
     }

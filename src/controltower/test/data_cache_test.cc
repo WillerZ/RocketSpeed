@@ -129,7 +129,7 @@ TEST(DataCacheTest, CheckBloom) {
   Slice ns(namespaceid);
   int num_logs = 1;
   int num_topics = 2;
-  size_t num_blocks = 100;
+  size_t num_blocks = 50;
   size_t num_messages = num_blocks * block_size;
 
   // we want to produce more messages that a single block size
