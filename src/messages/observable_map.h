@@ -34,9 +34,9 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
   : read_ready_fd_(true, true) {
   }
 
-  void Write(KeyValue kv) {
+  void Write(Key key, Value value) {
     thread_check_.Check();
-    auto it = map_.find(kv.first);
+    auto it = map_.find(key);
     if (it == map_.end()) {
       if (map_.empty()) {
         // First insertion, so trigger read readiness.
@@ -45,10 +45,19 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
         }
       }
       // Didn't find the entry, insert the new key value.
-      map_.emplace_back(std::move(kv));
+      map_.emplace_back(std::move(key), std::move(value));
     } else {
       // Existing entry for this key, update value.
-      it->second = std::move(kv.second);
+      it->second = std::move(value);
+    }
+  }
+
+  void Remove(Key key) {
+    if (map_.erase(key) && map_.empty()) {
+      // Read the eventfd to clear read-readiness.
+      eventfd_t value;
+      read_ready_fd_.read_event(&value);
+      assert(value > 0);
     }
   }
 
@@ -68,9 +77,9 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
     // in the map.
     thread_check_.Check();
     for (auto it = map_.begin(); it != map_.end(); ) {
-      bool ok = this->DrainOne(KeyValue(it->first, std::move(it->second)));
+      KeyValue item(it->first, std::move(it->second));
       it = map_.erase(it);
-      if (!ok) {
+      if (!this->DrainOne(std::move(item))) {
         break;
       }
     }

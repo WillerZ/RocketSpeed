@@ -35,6 +35,7 @@ class LogReader;
 class MsgLoop;
 
 template <typename> class ThreadLocalQueues;
+template <typename, typename> class ObservableMap;
 
 class TopicTailer {
  friend class ControlTowerTest;
@@ -53,6 +54,7 @@ class TopicTailer {
    * @param cache_block_size  Number of messages in a cache block
    * @param bloom_bits_per_msg (used in cache)
    * @param on_message Callback for Deliver and Gap messages.
+   * @param copilot_worker Function that maps copilot sub to worker.
    * @param tailer Output parameter for created TopicTailer.
    * @return ok() if TopicTailer created, otherwise error.
    */
@@ -70,6 +72,7 @@ class TopicTailer {
     std::function<void(Flow*,
                        const Message&,
                        std::vector<CopilotSub>)> on_message,
+    std::function<int(const CopilotSub&)> copilot_worker,
     ControlTowerOptions::TopicTailer options,
     TopicTailer** tailer);
 
@@ -238,6 +241,14 @@ class TopicTailer {
     SequenceNumber seqno;
   };
 
+  struct PendingSubscription {
+    PendingSubscription(LogID _logid, SequenceNumber _seqno)
+    : logid(_logid), seqno(_seqno) {}
+
+    LogID logid;
+    SequenceNumber seqno;
+  };
+
   // private constructor
   TopicTailer(BaseEnv* env,
               MsgLoop* msg_loop,
@@ -252,6 +263,7 @@ class TopicTailer {
               std::function<void(Flow*,
                                  const Message&,
                                  std::vector<CopilotSub>)> on_message,
+              std::function<int(const CopilotSub&)> copilot_worker,
               ControlTowerOptions::TopicTailer options);
 
   /**
@@ -302,10 +314,11 @@ class TopicTailer {
 
   /**
    * Deliver as much data from cache as possible.
-   * @return the new fast-forwarded sequence number from which to subscribe.
+   * seqno is set to the new fast-forwarded sequence number to subscribe to.
+   * @return true if all was delivered, or false if caller must retry later.
    */
-  SequenceNumber DeliverFromCache(const TopicUUID& topic,
-          CopilotSub copilot_sub, LogID logid, SequenceNumber seqno);
+  bool DeliverFromCache(Flow* flow, const TopicUUID& topic,
+          CopilotSub copilot_sub, LogID logid, SequenceNumber* seqno);
 
   /**
    * Sends a FindLatestSeqno request for a log.
@@ -349,6 +362,21 @@ class TopicTailer {
    * @return true if records were read from the cache.
    */
   bool AdvanceReaderFromCache(Flow* flow, LogID log_id, LogReader* reader);
+
+  /**
+   * Attempts to read from the cache for a new subscription, and opens reader
+   * if backpressure wasn't applied. If backpressure was applied, the
+   * subscription will be added to a pending queue to be re-processed later.
+   */
+  void ProcessPendingSubscription(Flow* flow,
+                                  const TopicUUID& topic,
+                                  CopilotSub id,
+                                  LogID logid,
+                                  SequenceNumber seqno);
+
+  /** Pending reader queue for a subscription */
+  ObservableMap<CopilotSub, PendingSubscription>*
+  GetPendingReaderQueue(const CopilotSub& sub);
 
   ThreadCheck thread_check_;
 
@@ -425,6 +453,14 @@ class TopicTailer {
   EventLoop* event_loop_;
   std::unique_ptr<FlowControl> flow_control_;
 
+  // Queue of subscriptions that are still reading from the cache and haven't
+  // been added to a log reader yet.
+  std::vector<std::shared_ptr<ObservableMap<CopilotSub, PendingSubscription>>>
+    cache_readers_;
+
+  // Maps copilots to worker thread index.
+  std::function<int(const CopilotSub&)> copilot_worker_;
+
   struct Stats {
     Stats() {
       const std::string prefix = "tower.topic_tailer.";
@@ -481,6 +517,8 @@ class TopicTailer {
         all.AddCounter(prefix + "cache_reentries");
       cache_usage =
         all.AddCounter(prefix + "cache_usage");
+      cache_reader_backoff =
+        all.AddCounter(prefix + "cache_reader_backoff");
     }
 
     Statistics all;
@@ -510,6 +548,7 @@ class TopicTailer {
     Counter* reader_merges;
     Counter* cache_reentries;
     Counter* cache_usage;
+    Counter* cache_reader_backoff;
   } stats_;
 };
 

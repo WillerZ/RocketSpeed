@@ -2262,7 +2262,9 @@ TEST(IntegrationTest, SmallRoomQueues) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster::Options opts;
   opts.info_log = info_log;
+  opts.copilot.rollcall_enabled = false;
   opts.tower.room_to_client_queue_size = 1;
+  opts.tower.topic_tailer.cache_size = 1 << 20; // 1MB
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
@@ -2271,36 +2273,77 @@ TEST(IntegrationTest, SmallRoomQueues) {
   cluster.CreateClient(&client);
 
   // Publish a message to find the current seqno for the topic.
+  port::Semaphore pub_sem;
+  SequenceNumber first_seqno = 0;
   for (size_t i = 0; i < kNumMessages; ++i) {
     ASSERT_OK(client->Publish(GuestTenant,
                               "SmallRoomQueues",
                               GuestNamespace,
                               TopicOptions(),
                               "#" + std::to_string(i),
-                              [] (std::unique_ptr<ResultStatus> rs) {
+                              [&] (std::unique_ptr<ResultStatus> rs) {
                                 ASSERT_OK(rs->GetStatus());
+                                pub_sem.Post();
+                                if (first_seqno == 0) {
+                                  first_seqno = rs->GetSequenceNumber();
+                                }
                               }).status);
+    pub_sem.TimedWait(timeout);
   }
-  port::Semaphore sem;
+  port::Semaphore sem1;
   client->Subscribe(GuestTenant,
                     GuestNamespace,
                     "SmallRoomQueues",
-                    1,
+                    first_seqno,
                     [&] (std::unique_ptr<MessageReceived>& mr) {
-                      sem.Post();
+                      sem1.Post();
                     });
   for (size_t i = 0; i < kNumMessages; ++i) {
-    ASSERT_TRUE(sem.TimedWait(timeout));
+    ASSERT_TRUE(sem1.TimedWait(timeout));
   }
 
-  auto stats = cluster.GetControlTower()->GetStatisticsSync();
-  auto applied = stats.GetCounterValue(
+  auto stats1 = cluster.GetControlTower()->GetStatisticsSync();
+  auto applied1 = stats1.GetCounterValue(
     "tower.topic_tailer.flow_control.backpressure_applied");
-  auto lifted = stats.GetCounterValue(
+  auto lifted1 = stats1.GetCounterValue(
     "tower.topic_tailer.flow_control.backpressure_lifted");
-  ASSERT_GT(applied, 0);  // ensure that backpressure was applied
-  ASSERT_GE(applied, lifted);  // ensure that it was lifted as often as applied
-  ASSERT_LE(applied, lifted + 1);  // could be 1 less if not lifted yet.
+  auto received1 = stats1.GetCounterValue(
+    "tower.topic_tailer.log_records_received");
+  ASSERT_GT(applied1, 0);  // ensure that backpressure was applied
+  ASSERT_GE(applied1, lifted1); // ensure that it was lifted as often as applied
+  ASSERT_LE(applied1, lifted1 + 1);  // could be 1 less if not lifted yet.
+  ASSERT_EQ(received1, kNumMessages);
+
+  // Now cache is filled, so try again to test cache flow.
+  port::Semaphore sem2;
+  client->Subscribe(GuestTenant,
+                    GuestNamespace,
+                    "SmallRoomQueues",
+                    first_seqno,
+                    [&] (std::unique_ptr<MessageReceived>& mr) {
+                      sem2.Post();
+                    });
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    ASSERT_TRUE(sem2.TimedWait(timeout));
+  }
+
+  auto stats2 = cluster.GetControlTower()->GetStatisticsSync();
+  auto applied2 = stats2.GetCounterValue(
+    "tower.topic_tailer.flow_control.backpressure_applied");
+  auto lifted2 = stats2.GetCounterValue(
+    "tower.topic_tailer.flow_control.backpressure_lifted");
+  auto received2 = stats2.GetCounterValue(
+    "tower.topic_tailer.log_records_received");
+  auto cache2 = stats2.GetCounterValue(
+    "tower.topic_tailer.records_served_from_cache");
+  auto cache_backoff = stats2.GetCounterValue(
+    "tower.topic_tailer.cache_reader_backoff");
+  ASSERT_GT(applied2, 0);  // ensure that backpressure was applied
+  ASSERT_GE(applied2, lifted2); // ensure that it was lifted as often as applied
+  ASSERT_LE(applied2, lifted2 + 1);  // could be 1 less if not lifted yet.
+  ASSERT_EQ(received2, kNumMessages);  // no more messages received
+  ASSERT_EQ(cache2, kNumMessages);
+  ASSERT_GE(cache_backoff, 0);
 }
 
 TEST(IntegrationTest, CacheReentrance) {

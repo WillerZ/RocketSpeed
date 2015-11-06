@@ -164,14 +164,13 @@ ControlRoom::ProcessDeliver(Flow* flow,
   TopicUUID uuid(request->GetNamespaceId(), request->GetTopicName());
   for (CopilotSub recipient : recipients) {
     // Send to correct worker loop.
-    int* ptr = sub_worker_.Find(recipient.stream_id, recipient.sub_id);
-    if (!ptr) {
+    const int worker_id = CopilotWorker(recipient);
+    if (worker_id == -1) {
       LOG_WARN(options.info_log,
         "Unknown worker for subscription %s",
         recipient.ToString().c_str());
       continue;
     }
-    const int worker_id = *ptr;
 
     MessageDeliverData deliver(request->GetTenantID(),
                                recipient.sub_id,
@@ -218,14 +217,13 @@ ControlRoom::ProcessGap(Flow* flow,
       gap->GetTopicName().c_str());
 
   for (CopilotSub recipient : recipients) {
-    int* ptr = sub_worker_.Find(recipient.stream_id, recipient.sub_id);
-    if (!ptr) {
+    const int worker_id = CopilotWorker(recipient);
+    if (worker_id == -1) {
       LOG_WARN(options.info_log,
         "Unknown worker for subscription %s",
         recipient.ToString().c_str());
       continue;
     }
-    const int worker_id = *ptr;
     MessageDeliverGap deliver(gap->GetTenantID(),
                               recipient.sub_id,
                               gap->GetType());
@@ -247,5 +245,11 @@ ControlRoom::ProcessGap(Flow* flow,
     LOG_WARN(options.info_log, "No recipients for gap: no message sent.");
   }
 }
+
+int ControlRoom::CopilotWorker(const CopilotSub& id) {
+  int* ptr = sub_worker_.Find(id.stream_id, id.sub_id);
+  return ptr ? *ptr : -1;
+}
+
 
 }  // namespace rocketspeed

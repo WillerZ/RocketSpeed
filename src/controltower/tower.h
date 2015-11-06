@@ -11,6 +11,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/controltower/options.h"
 #include "src/util/subscription_map.h"
+#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
@@ -37,6 +38,10 @@ struct CopilotSub {
   }
 
   std::string ToString() const;
+
+  size_t Hash() const {
+    return MurmurHash2<StreamID, SubscriptionID>()(stream_id, sub_id);
+  }
 
   StreamID stream_id;
   SubscriptionID sub_id;
@@ -124,3 +129,10 @@ class ControlTower {
 };
 
 }  // namespace rocketspeed
+
+namespace std {
+template <>
+struct hash<rocketspeed::CopilotSub> {
+  size_t operator()(const rocketspeed::CopilotSub& x) const { return x.Hash(); }
+};
+}  // namespace std

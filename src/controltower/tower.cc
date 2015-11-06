@@ -203,6 +203,12 @@ Status ControlTower::Initialize() {
                  std::vector<CopilotSub> recipients) {
         rooms_[i]->OnTailerMessage(flow, msg, std::move(recipients));
       };
+
+    auto copilot_worker =
+      [this, i] (const CopilotSub& id) {
+        return rooms_[i]->CopilotWorker(id);
+      };
+
     TopicTailer* topic_tailer;
     st = TopicTailer::CreateNewInstance(opt.env,
                                         options_.msg_loop,
@@ -212,10 +218,11 @@ Status ControlTower::Initialize() {
                                         opt.info_log,
                                         cache_size_per_room,
                                         opt.topic_tailer.
-                                          cache_data_from_system_namespaces,
+                                        cache_data_from_system_namespaces,
                                         opt.topic_tailer.cache_block_size,
                                         opt.topic_tailer.bloom_bits_per_msg,
                                         std::move(on_message),
+                                        std::move(copilot_worker),
                                         opt.topic_tailer,
                                         &topic_tailer);
     if (st.ok()) {

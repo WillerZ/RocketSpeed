@@ -347,10 +347,8 @@ TEST(FlowTest, ObservableMap) {
   for (int i = 0; i < kNumMessages; ++i) {
     std::unique_ptr<Command> cmd(
       MakeExecuteCommand([&, i] () {
-        std::pair<std::string, int> a("a", i);
-        std::pair<std::string, int> b("b", i);
-        obs_map->Write(a);
-        obs_map->Write(b);
+        obs_map->Write("a", i);
+        obs_map->Write("b", i);
       }));
     loop.SendCommand(std::move(cmd), 0);
   }

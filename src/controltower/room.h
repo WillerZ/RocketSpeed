@@ -53,6 +53,9 @@ class ControlRoom {
                        const Message& msg,
                        std::vector<CopilotSub> recipients);
 
+  /** Find worker for CopilotSub (from sub_worker_) or -1 if not found. */
+  int CopilotWorker(const CopilotSub& id);
+
  private:
   // I am part of this control tower
   ControlTower* control_tower_;
@@ -82,9 +85,6 @@ class ControlRoom {
                   const Message& msg,
                   const std::vector<CopilotSub>& recipients);
   void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
-
-  /** Find worker for CopilotSub (from sub_worker_) or -1 if not found. */
-  int CopilotWorker(const CopilotSub& id) const;
 
 };
 

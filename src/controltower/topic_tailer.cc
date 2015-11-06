@@ -20,6 +20,7 @@
 #include "src/util/common/random.h"
 #include "src/util/common/thread_check.h"
 #include "src/messages/msg_loop.h"
+#include "src/messages/observable_map.h"
 #include "src/messages/queues.h"
 
 namespace rocketspeed {
@@ -691,7 +692,7 @@ void LogReader::MergeInto(LogReader* reader, LogID log_id) {
     reader_id_,
     reader->reader_id_,
     log_id,
-    src.last_read);
+    src.last_read + 1);
 
   // Now just merge the topic state by taking the min of next_seqno for each.
   for (auto& src_topic_entry : src.topics) {
@@ -806,6 +807,7 @@ TopicTailer::TopicTailer(
     std::function<void(Flow*,
                        const Message&,
                        std::vector<CopilotSub>)> on_message,
+    std::function<int(const CopilotSub&)> copilot_worker,
     ControlTowerOptions::TopicTailer options) :
   env_(env),
   msg_loop_(msg_loop),
@@ -821,7 +823,8 @@ TopicTailer::TopicTailer(
   restart_events_(options_.min_reader_restart_duration,
                   options_.max_reader_restart_duration),
   event_loop_(msg_loop_->GetEventLoop(worker_id_)),
-  flow_control_(new FlowControl("tower.topic_tailer", event_loop_)) {
+  flow_control_(new FlowControl("tower.topic_tailer", event_loop_)),
+  copilot_worker_(std::move(copilot_worker)) {
 
   storage_to_room_queues_.reset(
     new ThreadLocalQueues<std::function<void(Flow*)>>(
@@ -1409,6 +1412,7 @@ TopicTailer::CreateNewInstance(
     std::function<void(Flow*,
                        const Message&,
                        std::vector<CopilotSub>)> on_message,
+    std::function<int(const CopilotSub&)> copilot_worker,
     ControlTowerOptions::TopicTailer options,
     TopicTailer** tailer) {
   *tailer = new TopicTailer(env,
@@ -1422,6 +1426,7 @@ TopicTailer::CreateNewInstance(
                             cache_block_size,
                             bloom_bits_per_msg,
                             std::move(on_message),
+                            std::move(copilot_worker),
                             options);
   return Status::OK();
 }
@@ -1611,21 +1616,24 @@ void TopicTailer::AddTailSubscriber(Flow* flow,
   AddSubscriberInternal(topic, id, logid, seqno);
 }
 
-SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
-                                             CopilotSub copilot,
-                                             LogID logid,
-                                             SequenceNumber seqno) {
+bool TopicTailer::DeliverFromCache(Flow* flow,
+                                   const TopicUUID& topic,
+                                   CopilotSub copilot,
+                                   LogID logid,
+                                   SequenceNumber* seqno) {
   // if cache is not enabled, then short-circuit
   if (data_cache_.GetCapacity() == 0) {
-    return seqno;
+    return true;
   }
 
-  assert(seqno != 0);
+  assert(seqno);
+  assert(*seqno != 0);
   thread_check_.Check();
-  SequenceNumber delivered = seqno;
+  SequenceNumber delivered = *seqno;
   SequenceNumber largest_cached = 0;
   std::vector<CopilotSub> recipient;
   recipient.emplace_back(copilot);
+  bool backoff = false;
 
   // callback to process a data message from cache
   auto on_message_cache =
@@ -1634,7 +1642,7 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
     auto uuid_pair = std::make_pair(data_raw->GetNamespaceId(),
                                     data_raw->GetTopicName());
     largest_cached = data_raw->GetSequenceNumber();
-    assert(largest_cached >= seqno);
+    assert(largest_cached >= *seqno);
 
     LOG_DEBUG(info_log_,
         "CacheTailer received data (%.16s)@%" PRIu64
@@ -1662,14 +1670,12 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
 
       // When reading from cache, flow control is implemented by sending as
       // much as we can until the sink rejects the writes. At that point,
-      // we ignore the cache and just open a reader wherever we've reached.
-      // Ideally, we would implement a more sophisticated Source for the cache
-      // and retry later. Leaving this as a task for later.
-      // TODO(pja) T8668814
-      SourcelessFlow noflow;
-      on_message_(&noflow, *data_raw, recipient);
+      // we stop reading and will retry later.
+      on_message_(flow, *data_raw, recipient);
       *sent = true;                     // message delivered
-      return !noflow.WriteHasFailed();  // if false, stop reading from cache.
+      assert(!backoff);
+      backoff = flow->WriteHasFailed();
+      return !backoff;  // if false, stop reading from cache.
     }
     return true;
   };
@@ -1678,21 +1684,28 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
   topic.GetTopicID(&ns, &topic_name);
 
   // Deliver as much data as possible from the cache.
-  SequenceNumber old = seqno;
-  seqno = data_cache_.VisitCache(logid, seqno, topic_name,
-                                 std::move(on_message_cache));
-  assert(largest_cached == 0 || seqno == largest_cached + 1);
+  SequenceNumber old = *seqno;
+  *seqno = data_cache_.VisitCache(logid, *seqno, topic_name,
+                                  std::move(on_message_cache));
+  assert(largest_cached == 0 || *seqno == largest_cached + 1);
+
+  if (backoff) {
+    // Backpressure was requested while iterating the cache, causing us to
+    // exit early. Instead of delivering the gap and opening the reader, we
+    // should retry delivering from the cache later.
+    return false;
+  }
 
   // If there a gap between the last message delivered from the cache
   // and the largest seqno number in cache, then deliver a gap.
-  if (seqno > delivered) {
+  if (*seqno > delivered) {
     if (0) {
       LOG_DEBUG(info_log_,
                 "Delivering gap to %s(@%" PRIu64 "-%" PRIu64
                 ") on Log(%" PRIu64 ") from cache",
                 topic_name.ToString().c_str(),
                 delivered,
-                seqno - 1,
+                *seqno - 1,
                 logid);
     }
     MessageGap mgap(Tenant::GuestTenant,
@@ -1700,21 +1713,64 @@ SequenceNumber TopicTailer::DeliverFromCache(const TopicUUID& topic,
                     topic_name.ToString(),
                     GapType::kBenign,
                     delivered,
-                    seqno-1);
-    // See above comment and T8668814.
+                    *seqno-1);
+    // Since there is a single gap message sent per subscription, we can
+    // ignore backpressure: the size is bounded by number of subscriptions.
     SourcelessFlow noflow;
     on_message_(&noflow, mgap, recipient);
   }
-  if (old != seqno) {
+  if (old != *seqno) {
     LOG_DEBUG(info_log_,
       "Subscription(%s) subscription fastforward %s from %" PRIu64
       " to %" PRIu64,
       copilot.ToString().c_str(),
       topic_name.ToString().c_str(),
       old,
-      seqno);
+      *seqno);
   }
-  return seqno;
+  return true;
+}
+
+void TopicTailer::ProcessPendingSubscription(Flow* flow,
+                                             const TopicUUID& topic,
+                                             CopilotSub id,
+                                             LogID logid,
+                                             SequenceNumber seqno) {
+  assert(seqno != 0);
+  thread_check_.Check();
+
+  // Deliver the earliest part of this topic from cache if available.
+  if (DeliverFromCache(flow, topic, id, logid, &seqno)) {
+    // Done delivering what we can from cache, open reader for the rest.
+    LogReader* reader = ReaderForNewSubscription(id, topic, logid, seqno);
+    assert(reader);
+    reader->StartReading(topic, logid, seqno);
+
+    // Add the new subscription.
+    bool was_added = topic_map_[logid].AddSubscriber(topic, seqno, id);
+    if (was_added) {
+      stats_.updated_subscriptions->Add(1);
+    }
+
+    LOG_DEBUG(info_log_,
+      "%s subscribed for %s@%" PRIu64 " (%s) on %sReader(%zu)",
+      id.ToString().c_str(),
+      topic.ToString().c_str(),
+      seqno,
+      was_added ? "new" : "update",
+      reader->IsVirtual() ? "Virtual" : "",
+      reader->GetReaderId());
+  } else {
+    // Didn't deliver everything we could from the cache, so add to the cache
+    // readers list. This will be checked later to see if we can deliver more.
+    GetPendingReaderQueue(id)->Write(id, PendingSubscription(logid, seqno));
+
+    LOG_INFO(info_log_,
+      "Failed to deliver all from cache for %s on %s (will retry later)",
+      id.ToString().c_str(),
+      topic.ToString().c_str());
+    stats_.cache_reader_backoff->Add(1);
+  }
 }
 
 void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
@@ -1724,33 +1780,7 @@ void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
   assert(seqno != 0);
   thread_check_.Check();
 
-  // Deliver the earliest part of this topic from cache
-  seqno = DeliverFromCache(topic, id, logid, seqno);
-
-  // Add the new subscription.
-  bool was_added = topic_map_[logid].AddSubscriber(topic, seqno, id);
-  if (was_added) {
-    stats_.updated_subscriptions->Add(1);
-  }
-
-  // Using 'seqno - 1' to ensure that we start reading at a sequence
-  // number that exists. FindLatestSeqno returns the *next* seqno to be
-  // written to the log.
-  SequenceNumber from =
-    log_tailer_->CanSubscribePastEnd() ? seqno : seqno - 1;
-  LogReader* reader = ReaderForNewSubscription(id, topic, logid, from);
-  assert(reader);
-  reader->StartReading(topic, logid, from);
-
-  LOG_DEBUG(info_log_,
-    "%s subscribed for %s@%" PRIu64 " (%s) on %sReader(%zu)",
-    id.ToString().c_str(),
-    topic.ToString().c_str(),
-    seqno,
-    was_added ? "new" : "update",
-    reader->IsVirtual() ? "Virtual" : "",
-    reader->GetReaderId());
-
+  GetPendingReaderQueue(id)->Write(id, PendingSubscription(logid, seqno));
   stream_subscriptions_.Insert(id.stream_id, id.sub_id, topic);
 }
 
@@ -1775,6 +1805,8 @@ void TopicTailer::RemoveSubscriberInternal(const TopicUUID& topic,
       tail_seqno_cached_.erase(logid);
     }
   }
+
+  GetPendingReaderQueue(id)->Remove(id);
 }
 
 void TopicTailer::RemoveSubscriberInternal(StreamID stream_id) {
@@ -1884,6 +1916,47 @@ Statistics TopicTailer::GetStatistics() const {
   stats.Aggregate(data_cache_.GetStatistics());
   stats.Aggregate(flow_control_->GetStatistics());
   return stats;
+}
+
+ObservableMap<CopilotSub, TopicTailer::PendingSubscription>*
+TopicTailer::GetPendingReaderQueue(const CopilotSub& sub) {
+  int worker_id = copilot_worker_(sub);
+  if (worker_id == -1) {
+    // This should never happen, all subscriptions should have a worker.
+    assert(false);
+    return 0;
+  }
+  if (static_cast<size_t>(worker_id) >= cache_readers_.size()) {
+    cache_readers_.resize(worker_id + 1);
+  }
+  if (!cache_readers_[worker_id]) {
+    // Construct new queue.
+    cache_readers_[worker_id] =
+      std::make_shared<ObservableMap<CopilotSub, PendingSubscription>>();
+
+    // Setup processor for the source.
+    InstallSource<std::pair<CopilotSub, PendingSubscription>>(
+      event_loop_,
+      cache_readers_[worker_id].get(),
+      flow_control_.get(),
+      [this] (Flow* flow, std::pair<CopilotSub, PendingSubscription> item) {
+        const auto& id = item.first;
+        TopicUUID* uuid = stream_subscriptions_.Find(id.stream_id, id.sub_id);
+        if (uuid) {
+          const LogID logid = item.second.logid;
+          const SequenceNumber seqno = item.second.seqno;
+
+          LOG_DEBUG(info_log_,
+            "Retrying delivery for %s on %s@%" PRIu64,
+            id.ToString().c_str(),
+            uuid->ToString().c_str(),
+            seqno);
+
+          ProcessPendingSubscription(flow, *uuid, id, logid, seqno);
+        }
+      });
+  }
+  return cache_readers_[worker_id].get();
 }
 
 }  // namespace rocketspeed

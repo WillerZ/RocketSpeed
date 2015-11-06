@@ -151,6 +151,7 @@ class CacheEntry {
       SequenceNumber seqno,
       const FilterPolicy* bloom_filter,
       const Slice& lookup_topicname,
+      bool* stop,
       const std::function<bool(MessageData* data_raw, bool* deliver)>& visit) {
     SequenceNumber seqno_block = AlignToBlockStart(
             data_cache->block_size_, seqno);
@@ -180,6 +181,7 @@ class CacheEntry {
     for (; index < data_cache->block_size_ && mcache_[index]; index++) {
       if (!visit(mcache_[index].get(), &delivered)) {
         ++index;
+        *stop = true;
         break;
       }
       // found one more record in cache
@@ -388,13 +390,14 @@ SequenceNumber DataCache::VisitCache(LogID logid,
 
     // visit the relevant records in this entry
     CacheEntry* entry = static_cast<CacheEntry *>(rs_cache_->Value(handle));
+    bool stop = false;
     SequenceNumber next =
       entry->VisitEntry(this, logid, start, bloom_filter_.get(),
-                        lookup_topicname, on_message);
+                        lookup_topicname, &stop, on_message);
     rs_cache_->Release(handle);
 
     // If the new seqnumber is in the same block, then we are done
-    if (next < seqno_block + block_size_) {
+    if (next < seqno_block + block_size_ || stop) {
       start = next;
       break;
     }

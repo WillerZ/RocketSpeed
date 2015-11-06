@@ -39,14 +39,32 @@ InstallQueue(EventLoop* event_loop,
   auto queue = std::make_shared<Queue<T>>(std::move(info_log),
                                           std::move(queue_stats),
                                           size);
-  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
-  auto queue_ptr = queue.get();
-  std::unique_ptr<Command> cmd(
-      MakeExecuteCommand([moved_callback, queue_ptr, flow_control]() mutable {
-        flow_control->Register(queue_ptr, moved_callback.move());
-      }));
-  event_loop->SendControlCommand(std::move(cmd));
+  InstallSource(event_loop, queue.get(), flow_control, std::move(callback));
   return queue;
 }
+
+/**
+ * Installs a Source on the event loop. When items are available on the source
+ * the callback will be invoked with the available items, and flow control
+ * context from the source.
+ *
+ * @param event_loop EventLoop the flow control was bound to.
+ * @param source The source to begin processing.
+ * @param flow_control Flow control to use for processing the elements.
+ * @param callback Callback to invoke on source reads.
+ */
+template <typename T>
+void InstallSource(EventLoop* event_loop,
+                   Source<T>* source,
+                   FlowControl* flow_control,
+                   std::function<void(Flow*, T)> callback) {
+  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
+  std::unique_ptr<Command> cmd(
+    MakeExecuteCommand([moved_callback, source, flow_control]() mutable {
+      flow_control->Register(source, moved_callback.move());
+    }));
+  event_loop->SendControlCommand(std::move(cmd));
+}
+
 
 }  // namespace rocketspeed
