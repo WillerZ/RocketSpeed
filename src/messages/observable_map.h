@@ -76,6 +76,14 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
     // Drainining the Observable map simply means drain each key-value entry
     // in the map.
     thread_check_.Check();
+
+    if (map_.empty()) {
+      // If map is already empty then do nothing.
+      // This is to avoid the read_event assertion below, which would fail
+      // since there never was anything in the map.
+      return;
+    }
+
     for (auto it = map_.begin(); it != map_.end(); ) {
       KeyValue item(it->first, std::move(it->second));
       it = map_.erase(it);
