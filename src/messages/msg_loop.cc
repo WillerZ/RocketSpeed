@@ -97,7 +97,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   for (int i = 0; i < num_workers; ++i) {
     EventLoop* event_loop = new EventLoop(env,
                                           env_options,
-                                          i == 0 ? port : 0,
+                                          i == 0 ? port : -1,
                                           info_log,
                                           event_callback,
                                           accept_callback,
