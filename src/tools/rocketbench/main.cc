@@ -74,6 +74,7 @@ DEFINE_uint64(client_workers, 32, "number of client workers");
 DEFINE_int32(message_size, 100, "message size (bytes)");
 DEFINE_uint64(num_topics, 100, "number of topics");
 DEFINE_int64(num_messages, 1000, "number of messages to send");
+DEFINE_int64(num_messages_to_receive, -1, "number of messages to receive");
 DEFINE_int64(num_messages_per_topic, 100, "number of messages per topic");
 DEFINE_string(namespaceid, rocketspeed::GuestNamespace, "namespace id");
 DEFINE_string(topics_distribution, "uniform",
@@ -122,6 +123,8 @@ DEFINE_int64(progress_period, 10,
 DEFINE_bool(progress_per_line, false, "true to print progress on one line, "
   "false to print on separate line");
 DEFINE_bool(show_client_stats, false, "show stats from RocketSpeed client");
+DEFINE_int32(delay_after_subscribe_seconds, 1, "delay after all subscriptions"
+             " are issued before the timer starts");
 
 using namespace rocketspeed;
 
@@ -546,12 +549,13 @@ static void DoConsume(void* param) {
   auto timeout = std::chrono::seconds(FLAGS_idle_timeout);
   do {
     all_messages_received->TimedWait(timeout);
-  } while (messages_received->load() != FLAGS_num_messages &&
+  } while (messages_received->load() != FLAGS_num_messages_to_receive &&
            std::chrono::steady_clock::now() - *last_data_message < timeout);
 
   if (FLAGS_subscription_backlog_distribution == "fixed") {
     // Success if we receive all messages.
-    args->result = messages_received->load() == FLAGS_num_messages ? 0 : 1;
+    args->result = messages_received->load() == FLAGS_num_messages_to_receive ?
+                   0 : 1;
   } else {
     // For non-fixed backlog distributions, we don't expect to receive all
     // messages, so just assume success.
@@ -663,6 +667,12 @@ int main(int argc, char** argv) {
     fprintf(stderr, "You must specify at least one --start_producer "
             "or --start_consumer\n");
     return 1;
+  }
+
+  // How many messages are we waiting for? This can very depending on the
+  // number of different subscriptions for the same topic.
+  if (FLAGS_num_messages_to_receive == -1) {
+    FLAGS_num_messages_to_receive = FLAGS_num_messages;
   }
 
   // Create logger
@@ -858,7 +868,7 @@ int main(int argc, char** argv) {
     std::sscanf(data.data(), "%llu %llu", &message_index, &send_time);
     if (message_index < static_cast<uint64_t>(FLAGS_num_messages)) {
       LOG_INFO(info_log,
-          "Received message %llu with timestamp %llu",
+          "Received message index %llu with timestamp %llu",
           static_cast<long long unsigned int>(message_index),
           static_cast<long long unsigned int>(send_time));
       if (show_recv_latency) {
@@ -867,7 +877,7 @@ int main(int argc, char** argv) {
       std::lock_guard<std::mutex> lock(is_received_mutex);
       if (is_received[message_index]) {
         LOG_WARN(info_log,
-          "Received message %llu twice.",
+          "Received message index %llu more than once.",
           static_cast<long long unsigned int>(message_index));
       }
       is_received[message_index] = true;
@@ -879,7 +889,7 @@ int main(int argc, char** argv) {
     }
 
     // If we've received all messages, let the main thread know to finish up.
-    if (++messages_received == FLAGS_num_messages) {
+    if (++messages_received == FLAGS_num_messages_to_receive) {
       all_messages_received.Post();
     }
   };
@@ -935,14 +945,16 @@ int main(int argc, char** argv) {
     static_cast<rocketspeed::NamespaceID>(FLAGS_namespaceid);
 
   // Subscribe to topics (don't count this as part of the time)
-  // Also waits for the subscription responses.
+  // There are no subscription responses, so just sleep for some
+  // arbitrary period of time before starting the timer.
   if (!FLAGS_delay_subscribe && !FLAGS_subscriptionchurn) {
     if (FLAGS_start_consumer) {
       printf("Subscribing to topics... ");
       fflush(stdout);
       DoSubscribe(clients,  nsid, receive_callback, GetCatchUpLatency,
         topic_info);
-      env->SleepForMicroseconds(1000000);  // allow 1 seconds for subscribe
+      int32_t delay = FLAGS_delay_after_subscribe_seconds * 1000000;
+      env->SleepForMicroseconds(delay);  // allow some delay for subscribe
       printf("done\n");
     }
 
@@ -973,9 +985,9 @@ int main(int argc, char** argv) {
           100.0 * static_cast<double>(pubacks) /
             static_cast<double>(FLAGS_num_messages),
           received,
-          FLAGS_num_messages,
+          FLAGS_num_messages_to_receive,
           100.0 * static_cast<double>(received) /
-            static_cast<double>(FLAGS_num_messages),
+            static_cast<double>(FLAGS_num_messages_to_receive),
           failed);
         printf(FLAGS_progress_per_line ? "\n" : "\r");
         fflush(stdout);
@@ -985,7 +997,7 @@ int main(int argc, char** argv) {
 
   // Start producing messages
   if (FLAGS_start_producer) {
-    printf("Publishing messages.\n");
+    printf("Publishing : %" PRIu64 " messages.\n", FLAGS_num_messages);
     fflush(stdout);
     pargs.producers = &clients;
     pargs.nsid = nsid;
@@ -1040,7 +1052,7 @@ int main(int argc, char** argv) {
       printf("%" PRIu64 " publishes failed.\n", failed_publishes.load());
       ret = 1;
     } else {
-      printf("All messages published.\n");
+      printf("All %" PRIu64 " messages published.\n", FLAGS_num_messages);
       fflush(stdout);
     }
   }
@@ -1099,7 +1111,7 @@ int main(int argc, char** argv) {
     // Wait for Consumer thread to exit
     env->WaitForJoin(consumer_threadid);
     ret = cargs.result;
-    if (messages_received.load() != FLAGS_num_messages) {
+    if (messages_received.load() != FLAGS_num_messages_to_receive) {
       printf("Time out awaiting messages. (%d)\n", ret);
       fflush(stdout);
     } else {
@@ -1154,7 +1166,11 @@ int main(int argc, char** argv) {
 
     printf("\n");
     printf("Results\n");
-    printf("Elapsed time: %d sec\n", total_ms/1000U);
+    if (total_ms/1000U > 0) {
+      printf("Elapsed time: %d sec\n", total_ms/1000U);
+    } else {
+      printf("Elapsed time: %d ms\n", total_ms);
+    }
     printf("%lld messages sent\n",
            static_cast<long long unsigned int>(FLAGS_num_messages));
     printf("%lld messages sends acked\n",
@@ -1169,7 +1185,7 @@ int main(int argc, char** argv) {
     }
 
     if (FLAGS_start_consumer &&
-        messages_received.load() != FLAGS_num_messages &&
+        messages_received.load() != FLAGS_num_messages_to_receive &&
         !FLAGS_subscriptionchurn &&
         FLAGS_subscription_backlog_distribution == "fixed") {
       // Print out dropped messages if there are any. This helps when
@@ -1177,7 +1193,7 @@ int main(int argc, char** argv) {
       printf("\n");
       printf("Messages failed to receive, expected %" PRIi64
              " found %" PRIi64 "\n",
-             FLAGS_num_messages, messages_received.load());
+             FLAGS_num_messages_to_receive, messages_received.load());
 
       for (uint64_t i = 0; i < is_received.size(); ++i) {
         if (!is_received[i]) {

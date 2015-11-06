@@ -46,6 +46,8 @@ buffered_storage_max_latency_us='' #max batching time on client in micro seconds
 progress_period='' # time in ms between updates to progress bar
 progress_per_line=''
 max_file_descriptors=''
+num_messages_to_receive=''        # expected #msg to arrive via subscriptions
+delay_after_subscribe_seconds=''  # wait after issuing subscriptions
 
 if [ -z ${ROCKETSPEED_ARGS+x} ]; then
   logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
@@ -73,7 +75,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,cache-block-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,progress_per_line,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,cache-block-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,progress_per_line,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic:,num_messages_to_receive:,delay_after_subscribe_seconds: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -168,6 +170,10 @@ while true; do
       topics_distribution="$2"; shift 2 ;;
     --num_messages_per_topic )
       num_messages_per_topic="$2"; shift 2 ;;
+    --num_messages_to_receive )
+      num_messages_to_receive="$2"; shift 2 ;;
+    --delay_after_subscribe_seconds )
+      delay_after_subscribe_seconds="$2"; shift 2 ;;
     -- )
       shift; break ;;
     * )
@@ -552,6 +558,9 @@ if [ $# -ne 1 ]; then
   echo "--namespaceid_dynamic Dynamically generate different namespaceids for each simultaneous workload."
   echo "--topics_distribution Distribution for generating topic names."
   echo "--num_messages_per_topic Number of messages per topic."
+  echo "--num_messages_to_receive Expected number of messages to be received."
+  echo -n "--delay_after_subscribe_seconds Wait period between issuing "
+  echo "all subscriptions and starting measurement timer."
   echo "--cache-size          Size in bytes to be cached in control tower."
   echo "--cache-block-size    Number of messages in a cache block."
   exit 1
@@ -600,6 +609,12 @@ if [ $topics_distribution ]; then
 fi
 if [ $num_messages_per_topic ]; then
   bench_param+=" --num_messages_per_topic=$num_messages_per_topic"
+fi
+if [ $num_messages_to_receive ]; then
+  bench_param+=" --num_messages_to_receive=$num_messages_to_receive"
+fi
+if [ $delay_after_subscribe_seconds ]; then
+  bench_param+=" --delay_after_subscribe_seconds=$delay_after_subscribe_seconds"
 fi
 
 
