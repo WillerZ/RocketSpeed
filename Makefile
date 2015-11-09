@@ -112,7 +112,8 @@ TESTS = \
   pacer_test \
   bloom_test \
   data_cache_test \
-  buffered_storage_test
+  buffered_storage_test \
+  event_loop_test
 
 TOOLS = \
 	rocketbench
@@ -376,6 +377,9 @@ data_cache_test: src/controltower/test/data_cache_test.o $(LIBOBJECTS) $(TESTHAR
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 buffered_storage_test: src/util/tests/buffered_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+event_loop_test: src/messages/tests/event_loop_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------

@@ -27,17 +27,9 @@ class CommandQueueTest {
 };
 
 TEST(CommandQueueTest, Liveness) {
-  EventLoop::Options options;
-  EventLoop loop(Env::Default(),
-                 EnvOptions(),
-                 0,
-                 std::make_shared<NullLogger>(),
-                 nullptr,
-                 nullptr,
-                 std::move(stream_allocator_),
-                 std::move(options));
-  ASSERT_OK(loop.Initialize());
-  std::thread loop_thread([&]() { loop.Run(); });
+  EventLoop loop(EventLoop::Options(), std::move(stream_allocator_));
+  EventLoop::Runner runner(&loop);
+  ASSERT_OK(runner.GetStatus());
 
   const auto no_op = []() {};
 
@@ -82,21 +74,10 @@ TEST(CommandQueueTest, Liveness) {
   }
   send_command(notify_sem2);
   ASSERT_TRUE(sem2.TimedWait(timeout_));
-
-  loop.Stop();
-  loop_thread.join();
 }
 
 TEST(CommandQueueTest, TwoItemsTwoBatches) {
-  EventLoop::Options options;
-  EventLoop loop(Env::Default(),
-                 EnvOptions(),
-                 0,
-                 std::make_shared<NullLogger>(),
-                 nullptr,
-                 nullptr,
-                 std::move(stream_allocator_),
-                 std::move(options));
+  EventLoop loop(EventLoop::Options(), std::move(stream_allocator_));
   ASSERT_OK(loop.Initialize());
 
   // Simple unattached queue.
@@ -128,7 +109,6 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
   loop.Stop();
   loop_thread.join();
 }
-
 
 }  // namespace rocketspeed
 

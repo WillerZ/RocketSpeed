@@ -5,7 +5,10 @@
 //
 #pragma once
 
+#include <functional>
 #include <memory>
+
+#include "external/folly/move_wrapper.h"
 
 namespace rocketspeed {
 
@@ -32,6 +35,32 @@ template <typename T>
 std::unique_ptr<void, void(*)(void*)> EraseType(std::unique_ptr<T> p) {
   return std::unique_ptr<void, void(*)(void*)>(
     static_cast<void*>(p.release()), &Deleter<T>);
+}
+
+/**
+ * A functor that destroys provided object when invoked.
+ */
+template <typename T>
+class DeferredDeleter {
+ public:
+  explicit DeferredDeleter(std::unique_ptr<T> object)
+  : object_(folly::makeMoveWrapper(std::move(object))) {}
+
+  void operator()() const { object_->reset(); }
+
+ private:
+  mutable folly::MoveWrapper<std::unique_ptr<T>> object_;
+};
+
+/**
+ * Creates a functor, which destroys provided object when executed.
+ *
+ * @param object An object wrapped in a unique_ptr.
+ * @return A functor which destroys provided object on first execution.
+ */
+template <typename T>
+DeferredDeleter<T> MakeDeferredDeleter(std::unique_ptr<T>& object) {
+  return DeferredDeleter<T>(std::move(object));
 }
 
 }  // namespace rocketspeed

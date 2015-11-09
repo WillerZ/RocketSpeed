@@ -91,18 +91,21 @@ MsgLoop::MsgLoop(BaseEnv* env,
     event_loops_[LoadBalancedWorkerId()]->Accept(fd);
   };
 
-  // Create a stream allocator for the entire stream ID space.
-  auto allocs = StreamAllocator().Divide(num_workers, nullptr);
+  // Setup EventLoop options.
+  options.event_loop.env = env;
+  options.event_loop.env_options = env_options;
+  options.event_loop.info_log = info_log;
   options.event_loop.stats_prefix = name;
+  options.event_loop.event_callback = event_callback;
+  options.event_loop.accept_callback = accept_callback;
+  // Create a stream allocator for the entire stream ID space and split it
+  // between each loop.
+  auto allocs = StreamAllocator().Divide(num_workers, nullptr);
   for (int i = 0; i < num_workers; ++i) {
-    EventLoop* event_loop = new EventLoop(env,
-                                          env_options,
-                                          i == 0 ? port : -1,
-                                          info_log,
-                                          event_callback,
-                                          accept_callback,
-                                          std::move(allocs[i]),
-                                          options.event_loop);
+    // Only the first loop will be listening for incoming connections.
+    options.event_loop.listener_port = i == 0 ? port : -1;
+    // Create the loop.
+    auto event_loop = new EventLoop(options.event_loop, std::move(allocs[i]));
     event_loops_.emplace_back(event_loop);
   }
 

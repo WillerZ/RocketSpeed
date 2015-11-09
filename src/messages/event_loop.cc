@@ -32,6 +32,7 @@
 #include "src/messages/serializer.h"
 #include "src/messages/socket_event.h"
 #include "src/messages/stream_socket.h"
+#include "src/util/common/client_env.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/flow_control.h"
 
@@ -319,7 +320,8 @@ EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
     "Got an error %d (%s) on the listener. "
     "Shutting down.\n", err, evutil_socket_error_to_string(err));
   obj->internal_status_ = Status::InternalError("Accept error -- check logs");
-  event_base_loopexit(base, nullptr);
+  obj->shutting_down_ = true;
+  event_base_loopbreak(base);
 }
 
 Status
@@ -408,12 +410,12 @@ EventLoop::Initialize() {
   // This allows us to communicate to the event loop from another thread
   // safely without locks.
   shutdown_event_ =
-    EventCallback::CreateFdReadCallback(
-      this,
-      shutdown_eventfd_.readfd(),
-      [this] () {
-        event_base_loopexit(base_, nullptr);
-      });
+      EventCallback::CreateFdReadCallback(this,
+                                          shutdown_eventfd_.readfd(),
+                                          [this]() {
+                                            shutting_down_ = true;
+                                            event_base_loopbreak(base_);
+                                          });
   if (shutdown_event_ == nullptr) {
     return Status::InternalError("Failed to create shutdown event");
   }
@@ -431,6 +433,8 @@ EventLoop::Initialize() {
 }
 
 void EventLoop::Run() {
+  thread_check_.Reset();
+
   if (!base_) {
     LOG_FATAL(info_log_, "EventLoop not initialized before use.");
     assert(false);
@@ -452,8 +456,9 @@ void EventLoop::Run() {
   // Start the event loop.
   // This will not exit until Stop is called, or some error
   // happens within libevent.
-  thread_check_.Reset();
-  event_base_dispatch(base_);
+  while (!RunOnce()) {
+    // Once more.
+  }
 
   // Shutdown everything
   if (listener_) {
@@ -485,6 +490,15 @@ void EventLoop::Run() {
   running_ = false;
 }
 
+bool EventLoop::RunOnce() {
+  // Handle libevent events.
+  bool stopped = event_base_loop(base_, EVLOOP_ONCE);
+  stopped |= shutting_down_;
+  // Execute some scheduled tasks.
+  ExecuteTasks();
+  return stopped;
+}
+
 void EventLoop::Stop() {
   // Write to the shutdown event FD to signal the event loop thread
   // to shutdown and stop looping.
@@ -493,6 +507,21 @@ void EventLoop::Stop() {
   do {
     result = shutdown_eventfd_.write_event(1);
   } while (result < 0 && errno == EAGAIN);
+}
+
+void EventLoop::AddTask(std::function<void()> task) {
+  thread_check_.Check();
+  assert(task);
+  scheduled_tasks_.emplace_back(std::move(task));
+}
+
+bool EventLoop::ExecuteTasks() {
+  while (!scheduled_tasks_.empty()) {
+    auto task = std::move(scheduled_tasks_.front());
+    scheduled_tasks_.pop_front();
+    task();
+  }
+  return true;
 }
 
 Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
@@ -570,7 +599,8 @@ void EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
         LOG_FATAL(info_log_, "Failed to attach command queue to EventLoop: %s",
           st.ToString().c_str());
         internal_status_ = st;
-        event_base_loopexit(base_, nullptr);
+        shutting_down_ = true;
+        event_base_loopbreak(base_);
       }
     }));
   SendControlCommand(std::move(attach_command));
@@ -809,26 +839,46 @@ static void CommandQueueUnrefHandler(void* ptr) {
   delete command_queue;
 }
 
-EventLoop::EventLoop(BaseEnv* env,
-                     EnvOptions env_options,
-                     int port_number,
-                     const std::shared_ptr<Logger>& info_log,
-                     EventCallbackType event_callback,
-                     AcceptCallbackType accept_callback,
-                     StreamAllocator allocator,
-                     EventLoop::Options options)
+////////////////////////////////////////////////////////////////////////////////
+EventLoop::Options::Options()
+: env(ClientEnv::Default()), info_log(std::make_shared<NullLogger>()) {
+}
+
+////////////////////////////////////////////////////////////////////////////////
+EventLoop::Runner::Runner(EventLoop* event_loop)
+: event_loop_(event_loop), thread_id_(0) {
+  status_ = event_loop_->Initialize();
+  if (!status_.ok()) {
+    return;
+  }
+  thread_id_ =
+      event_loop_->GetEnv()->StartThread([this]() { event_loop_->Run(); });
+  if (!thread_id_) {
+    status_ = Status::InternalError("Failed to start EventLoop::Runner thread");
+  }
+}
+
+EventLoop::Runner::~Runner() {
+  event_loop_->Stop();
+  if (thread_id_) {
+    event_loop_->GetEnv()->WaitForJoin(thread_id_);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 : options_(std::move(options))
-, env_(env)
-, env_options_(env_options)
-, port_number_(port_number)
+, env_(options_.env)
+, env_options_(options_.env_options)
+, port_number_(options_.listener_port)
 , running_(false)
 , base_(nullptr)
-, info_log_(info_log)
+, info_log_(options_.info_log)
 , flow_control_(new FlowControl(options_.stats_prefix + ".flow_control", this))
-, event_callback_(std::move(event_callback))
-, accept_callback_(std::move(accept_callback))
+, event_callback_(std::move(options_.event_callback))
+, accept_callback_(std::move(options_.accept_callback))
 , listener_(nullptr)
-, shutdown_eventfd_(rocketspeed::port::Eventfd(true, true))
+, shutdown_eventfd_(port::Eventfd(true, true))
 , command_queues_(CommandQueueUnrefHandler)
 , stream_router_(allocator.Split())
 , outbound_allocator_(std::move(allocator))
@@ -873,7 +923,7 @@ EventLoop::EventLoop(BaseEnv* env,
         SerializedSendCommand::Response(std::move(serial), {global}));
     };
 
-  LOG_INFO(info_log, "Created a new Event Loop at port %d", port_number);
+  LOG_INFO(info_log_, "Created a new Event Loop at port %d", port_number_);
 }
 
 EventLoop::Stats::Stats(const std::string& prefix) {

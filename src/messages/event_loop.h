@@ -15,11 +15,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <functional>
 #include <list>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
@@ -166,32 +168,73 @@ class StreamRouter {
 
 class EventLoop {
  public:
-  class Options;
-
   static void EnableDebug();
 
-  /**
-   * Create an EventLoop at the specified port.
-   * @param port The port on which the EventLoop is running.
-   *             Set to 0 to have auto-allocated port.
-   *             Set to < 0 to have no accept loop.
-   * @param info_log Write informational messages to this log
-   * @param event_callback Callback invoked when Dispatch is called
-   * @param accept_callback Callback invoked when a new client connects
-   * @param command_queue_size The size of the internal command queue
-   * @param allocator Represents a set of stream IDs available to this loop.
-   * @param options All the arbitrary options
-   */
-  EventLoop(BaseEnv* env,
-            EnvOptions env_options,
-            int port,
-            const std::shared_ptr<Logger>& info_log,
-            EventCallbackType event_callback,
-            AcceptCallbackType accept_callback,
-            StreamAllocator allocator,
-            Options options);
+  class Options {
+   public:
+    Options();
 
-  virtual ~EventLoop();
+    /** An environment to use. */
+    BaseEnv* env;
+    /** Environment options. */
+    EnvOptions env_options;
+    /** Default logger. */
+    std::shared_ptr<Logger> info_log;
+    /** Statistics prefix. */
+    std::string stats_prefix;
+    /** Default size of the command queue. */
+    uint32_t command_queue_size = 50000;
+    /** Timeout for asynchronous ::connect calls. */
+    std::chrono::milliseconds connect_timeout{10000};
+    /**
+     * The port on which the loop is listening.
+     * Set to 0 to have auto-allocated port.
+     * Set to < 0 to have no accept loop.
+     */
+    int32_t listener_port = -1;
+    /** A callback for receiving messages. */
+    EventCallbackType event_callback;
+    /** A callback for handling new incoming connections. */
+    AcceptCallbackType accept_callback;
+
+    // timeout after which all inactive streams should be considered expired
+    std::chrono::seconds heartbeat_timeout{900};
+    // since we expire the streams in the blocking call, limit the number of
+    // streams expired at once. the rest will be processed in the next call.
+    int heartbeat_expire_batch = -1;
+    // whether the stream heartbeat check is enabled
+    bool heartbeat_enabled = false;
+  };
+
+  /**
+   * A helper class which initiates provided EventLoop and drives it from a
+   * specifically created thread.
+   */
+  class Runner {
+   public:
+    /** Initializes the EventLoop and drives it from a dedicated thread. */
+    explicit Runner(EventLoop* event_loop);
+
+    ~Runner();
+
+    const Status& GetStatus() const { return status_; }
+
+   private:
+    EventLoop* const event_loop_;
+    Status status_;
+    BaseEnv::ThreadId thread_id_;
+  };
+
+  /**
+   * Create an EventLoop with provided options.
+   *
+   * @param options General configuration of the EventLoop.
+   * @param allocator An allocator which limits the space of StreamIDs the loop
+   *                  can use.
+   */
+  EventLoop(Options options, StreamAllocator allocator);
+
+  ~EventLoop();
 
   /**
    * Initialize the event loop.
@@ -200,19 +243,39 @@ class EventLoop {
    */
   Status Initialize();
 
-  const HostId& GetHostId() const { return host_id_; }
+  /** Drives the event loop until it is stopped. */
+  void Run();
 
-  // Start this instance of the Event Loop
-  void Run(void);
+  /**
+   * Runs one iteration of this EventLoop.
+   *
+   * @return True if the loop has been stopped.
+   */
+  bool RunOnce();
 
-  // Is the EventLoop up and running?
+  /** Is the EventLoop running. */
   bool IsRunning() const { return running_; }
 
-  // Stop the event loop.
+  /** Stops the event loop. */
   void Stop();
+
+  /**
+   * Executes provided closure on EventLoop thread but after this method
+   * returns. Tasks are executed in the order they were added.
+   * Can only be called from EventLoop thread.
+   *
+   * This should not be overused on critical path, but it is encouraged in all
+   * places where invoking callbacks inline might lead to bugs or complicated
+   * corner cases.
+   *
+   * @param task A task to queue and execute later on.
+   */
+  void AddTask(std::function<void()> task);
 
   Status RegisterTimerCallback(TimerCallbackType callback,
                              std::chrono::microseconds period);
+
+  const HostId& GetHostId() const { return host_id_; }
 
   /**
    * Returns stream ID allocator used by this event loop to create outbound
@@ -411,32 +474,13 @@ class EventLoop {
     return queue_stats_;
   }
 
-  /**
-    * Option is a helper class used for passing the additional arguments to the
-    * EventLoop constructor.
-    */
-  class Options {
-   public:
-    // prefix used for statistics
-    std::string stats_prefix;
-    // initial size of the command queue
-    uint32_t command_queue_size = 50000;
-    // timeout after which all inactive streams should be considered expired
-    std::chrono::seconds heartbeat_timeout{900};
-    // since we expire the streams in the blocking call, limit the number of
-    // streams expired at once. the rest will be processed in the next call.
-    int heartbeat_expire_batch = -1;
-    // whether the stream heartbeat check is enabled
-    bool heartbeat_enabled = false;
-    // timeout for asynchronous ::connect calls
-    std::chrono::milliseconds connect_timeout{10000};
-  };
+  BaseEnv* GetEnv() { return env_; }
 
  private:
   friend class SocketEvent;
   friend class StreamRouter;
 
-  const Options options_;
+  Options options_;
 
   // Internal status of the EventLoop.
   // If something fatally fails internally then the event loop will stop
@@ -461,6 +505,22 @@ class EventLoop {
   // debug message go here
   const std::shared_ptr<Logger> info_log_;
 
+  /**
+   * A queue of commands to execute.
+   * These commands were sent from EventLoop thread and will be executed on the
+   * same thread. This enables to trigger certain events to be executed in the
+   * loop but not "inline".
+   */
+  std::deque<std::function<void()>> scheduled_tasks_;
+
+  /**
+   * Executes scheduled tasks in order.
+   * Might exit before executes all pending tasks.
+   *
+   * @return True iff all tasks have been executed.
+   */
+  bool ExecuteTasks();
+
   // Flow control for connections.
   std::unique_ptr<FlowControl> flow_control_;
 
@@ -472,7 +532,8 @@ class EventLoop {
   // The connection listener
   evconnlistener* listener_ = nullptr;
 
-  // Shutdown event
+  // Shutdown event and flag.
+  bool shutting_down_ = false;
   std::unique_ptr<EventCallback> shutdown_event_;
   rocketspeed::port::Eventfd shutdown_eventfd_;
 

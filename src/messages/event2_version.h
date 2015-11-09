@@ -12,6 +12,8 @@
 #define event_free ld_event_free
 #define event_del ld_event_del
 #define event_get_fd ld_event_get_fd
+#define event_base_loop ld_event_base_loop
+#define event_base_loopbreak ld_event_base_loopbreak
 #define event_base_loopexit ld_event_base_loopexit
 #define event_base_new ld_event_base_new
 #define event_base_dispatch ld_event_base_dispatch
