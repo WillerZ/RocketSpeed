@@ -196,6 +196,7 @@ if [ $ROCKETSPEED_HOSTS ]; then
 else
   if [ $USER == "pja" ]; then
     available_hosts=( \
+                    # these are shared between dhruba and pja
                     rocketspeed001.11.lla1.facebook.com \
                     rocketspeed002.11.lla1.facebook.com \
                     rocketspeed003.11.lla1.facebook.com \
@@ -217,7 +218,20 @@ else
                     rocketspeed022.11.lla1.facebook.com \
                     rocketspeed023.11.lla1.facebook.com \
                     rocketspeed024.11.lla1.facebook.com \
-                    rocketspeed030.11.lla1.facebook.com )
+                    rocketspeed030.11.lla1.facebook.com \
+                    # The following are shared between dhruba and pja.
+                    # These will be used only for those tests that need
+                    # more than 10 machines.
+                    rocketspeed001.11.lla1.facebook.com \
+                    rocketspeed002.11.lla1.facebook.com \
+                    rocketspeed003.11.lla1.facebook.com \
+                    rocketspeed004.11.lla1.facebook.com \
+                    rocketspeed005.11.lla1.facebook.com \
+                    rocketspeed006.11.lla1.facebook.com \
+                    rocketspeed007.11.lla1.facebook.com \
+                    rocketspeed009.11.lla1.facebook.com \
+                    rocketspeed010.11.lla1.facebook.com \
+                    rocketspeed011.11.lla1.facebook.com )
   elif [ $USER == "stupaq" ]; then
     available_hosts=( \
                     rocketspeed031.11.lla1.facebook.com \

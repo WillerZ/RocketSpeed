@@ -18,15 +18,22 @@ if [ ! -f $BENCHMARK ]; then
   exit 1
 fi
 
+COCKPITS=5
+TOWERS=1
+
+BENCH=15
+NUM_MESSAGES=66666666
+NUM_TOPICS=10000000
+
 echo Starting Servers...
-cmd="$BENCHMARK --remote --deploy --start-servers --buffered_storage_max_latency_us=10000 --cockpits=5"
+cmd="$BENCHMARK --remote --deploy --start-servers --buffered_storage_max_latency_us=10000 --cockpits=$COCKPITS"
 eval $cmd
 
-cmd="$BENCHMARK --messages 250000000 --rate 500000 --max-inflight 7000 --topics 1000000 --size 100 --progress_period=10000 --cockpits=5 --remote-bench 4 produce"
+cmd="$BENCHMARK --messages $NUM_MESSAGES --rate 500000 --max-inflight 7000 --topics $NUM_TOPICS --size 100 --progress_period=10000 --cockpits=$COCKPITS --remote-bench $BENCH produce"
 
 echo $cmd
 eval $cmd
 
 echo Stopping Servers...
-cmd="$BENCHMARK --remote --stop-servers --cockpits=5"
+cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS"
 eval $cmd
