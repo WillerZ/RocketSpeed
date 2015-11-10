@@ -117,7 +117,7 @@ PilotOptions Pilot::SanitizeOptions(PilotOptions options) {
     }
   }
 
-  return std::move(options);
+  return options;
 }
 
 /**

@@ -126,7 +126,7 @@ class ClientTest {
     options.config = config_;
     std::unique_ptr<Client> client;
     ASSERT_OK(Client::Create(std::move(options), &client));
-    return std::move(client);
+    return client;
   }
 };
 

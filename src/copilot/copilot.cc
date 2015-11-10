@@ -52,7 +52,7 @@ CopilotOptions Copilot::SanitizeOptions(CopilotOptions options) {
     options.control_tower_router = std::make_shared<EmptyTowerRouter>();
   }
 
-  return std::move(options);
+  return options;
 }
 
 /**

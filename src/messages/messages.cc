@@ -175,7 +175,7 @@ std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
   if (msg) {
     msg->buffer_ = std::move(in);
   }
-  return std::move(msg);
+  return msg;
 }
 
 std::unique_ptr<Message> Message::Copy(const Message& msg) {

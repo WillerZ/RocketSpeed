@@ -81,7 +81,7 @@ jni::Status FromStatus(rs::Status status) {
   } else {
     assert(false);
   }
-  return Status(code, std::move(status.ToString()));
+  return Status(code, status.ToString());
 }
 
 rs::MsgId ToMsgId(const jni::MsgId& message_id) {
