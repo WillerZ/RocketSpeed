@@ -81,27 +81,15 @@ class LogReader {
    *                   for the topic. If this is the first record processed on
    *                   this topic then prev_seqno is set to the starting
    *                   seqno for the log.
-   * @return ok() if successful, otherwise error.
    */
-  Status ProcessRecord(LogID log_id,
-                       SequenceNumber seqno,
-                       const TopicUUID& topic,
-                       SequenceNumber* prev_seqno);
-
-  /**
-   * Checks that a gap is valid for processing.
-   *
-   * @param log_id Log ID of gap.
-   * @param from Starting sequence number of gap.
-   * @return ok() if valid.
-   */
-  Status ValidateGap(LogID log_id, SequenceNumber from);
+  void ProcessRecord(LogID log_id,
+                     SequenceNumber seqno,
+                     const TopicUUID& topic,
+                     SequenceNumber* prev_seqno);
 
   /**
    * Updates internal state on a gap, and provides gap messages for each
    * affected topic.
-   *
-   * Pre-condition: ValidateGap(log_id, from).ok()
    *
    * @param log_id Log ID of gap.
    * @param topic Topic of gap.
@@ -271,15 +259,6 @@ class LogReader {
     // Last read sequence number on this log.
     SequenceNumber last_read;
 
-    // This is a lower-bound estimate on the last sequence number for this log.
-    // A tail_seqno 0 should be interpreted as no estimate.
-    // tail_seqno will be initially set after a call to FindLatestSeqno,
-    // and will increase on receipt of later records.
-    // Stopping reading will reset the tail_seqno to 0.
-    // This value can become inaccurate if a reader is receiving records
-    // slower than they are produced.
-    SequenceNumber tail_seqno = 0;
-
     // Handle for the restart event for this log reader.
     TopicTailer::RestartEvents::Handle restart_event_handle;
   };
@@ -293,72 +272,31 @@ class LogReader {
   TopicTailer::RestartEvents* restart_events_;
 };
 
-Status LogReader::ProcessRecord(LogID log_id,
-                                SequenceNumber seqno,
-                                const TopicUUID& topic,
-                                SequenceNumber* prev_seqno) {
+void LogReader::ProcessRecord(LogID log_id,
+                              SequenceNumber seqno,
+                              const TopicUUID& topic,
+                              SequenceNumber* prev_seqno) {
   thread_check_.Check();
 
   // Get state for this log.
   auto log_it = log_state_.find(log_id);
-  if (log_it != log_state_.end()) {
-    LogState& log_state = log_it->second;
+  assert(log_it != log_state_.end());
 
-    if (seqno != log_state.last_read + 1) {
-      LOG_DEBUG(info_log_,
-        "Reader(%zu) received record out of order on %s Log(%" PRIu64 ")."
-        " Expected:%" PRIu64 " Received:%" PRIu64,
-        reader_id_,
-        topic.ToString().c_str(),
-        log_id,
-        log_state.last_read + 1,
-        seqno);
-      return Status::NotFound();
-    }
-    log_state.last_read = seqno;
+  LogState& log_state = log_it->second;
 
-    // Check if we've process records on this topic before.
-    auto it = log_state.topics.find(topic);
-    if (it != log_state.topics.end()) {
-      // Advance reader for this topic.
-      *prev_seqno = it->second.next_seqno;
-      it->second.next_seqno = seqno + 1;
-      log_state.topics.move_to_back(it);
-    } else {
-      *prev_seqno = 0;  // no topic
-    }
-    return Status::OK();
+  assert(seqno == log_state.last_read + 1);
+  log_state.last_read = seqno;
+
+  // Check if we've process records on this topic before.
+  auto it = log_state.topics.find(topic);
+  if (it != log_state.topics.end()) {
+    // Advance reader for this topic.
+    *prev_seqno = it->second.next_seqno;
+    it->second.next_seqno = seqno + 1;
+    log_state.topics.move_to_back(it);
   } else {
-    // This log isn't open.
-    LOG_DEBUG(info_log_,
-      "Reader(%zu) received record for %s on unopened Log(%" PRIu64 ")",
-      reader_id_,
-      topic.ToString().c_str(), log_id);
-    return Status::NotFound();
+    *prev_seqno = 0;  // no topic
   }
-}
-
-Status LogReader::ValidateGap(LogID log_id, SequenceNumber from) {
-  auto log_it = log_state_.find(log_id);
-  if (log_it != log_state_.end()) {
-    LogState& log_state = log_it->second;
-    if (from != log_state.last_read + 1) {
-      LOG_DEBUG(info_log_,
-        "Reader(%zu) received gap out of order. Expected:%" PRIu64
-        " Received:%" PRIu64,
-        reader_id_,
-        log_state.last_read + 1,
-        from);
-      return Status::NotFound();
-    }
-  } else {
-    LOG_DEBUG(info_log_,
-      "Reader(%zu) received gap on unopened Log(%" PRIu64 ")",
-      reader_id_,
-      log_id);
-    return Status::NotFound();
-  }
-  return Status::OK();
 }
 
 void LogReader::ProcessGap(
@@ -374,9 +312,7 @@ void LogReader::ProcessGap(
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
 
-    if (from != log_state.last_read + 1) {
-      assert(false);  // should have been validated before calling this.
-    }
+    assert(from == log_state.last_read + 1);
 
     // Find previous seqno for topic.
     auto it = log_state.topics.find(topic);
@@ -504,7 +440,7 @@ Status LogReader::StartReading(const TopicUUID& topic,
 
     if (!IsVirtual()) {
       // Start the LogTailer.
-      st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
+      st = tailer_->StartReading(log_id, seqno, reader_id_);
       if (!st.ok()) {
         LOG_ERROR(info_log_,
           "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64": %s",
@@ -594,8 +530,7 @@ Status LogReader::RestartReading(LogID log_id) {
   log_state.restart_event_handle = restart_events_->AddEvent(this, log_id);
 
   auto seqno = log_state.last_read + 1;
-  bool first_open = false;  // it's already open
-  st = tailer_->StartReading(log_id, seqno, reader_id_, first_open);
+  st = tailer_->StartReading(log_id, seqno, reader_id_);
   if (!st.ok()) {
     LOG_ERROR(info_log_,
       "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64": %s",
@@ -743,11 +678,9 @@ void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
 
   assert(restart_events_);
   log_state.restart_event_handle = restart_events_->AddEvent(this, log_id);
-  const bool first_open = true;
   Status st = tailer_->StartReading(log_id,
                                     log_state.start_seqno,
-                                    reader_id_,
-                                    first_open);
+                                    reader_id_);
   if (st.ok()) {
     assert(!log_state.topics.empty());
     log_state_.emplace(log_id, std::move(log_state));
@@ -825,20 +758,6 @@ TopicTailer::TopicTailer(
   event_loop_(msg_loop_->GetEventLoop(worker_id_)),
   flow_control_(new FlowControl("tower.topic_tailer", event_loop_)),
   copilot_worker_(std::move(copilot_worker)) {
-
-  storage_to_room_queues_.reset(
-    new ThreadLocalQueues<std::function<void(Flow*)>>(
-      [this] () {
-        return InstallQueue<std::function<void(Flow*)>>(
-          event_loop_,
-          info_log_,
-          event_loop_->GetQueueStats(),
-          options_.storage_to_room_queue_size,
-          flow_control_.get(),
-          [] (Flow* flow, std::function<void(Flow*)> fn) {
-            fn(flow);
-          });
-      }));
 
   latest_seqno_queues_.reset(
     new ThreadLocalQueues<FindLatestSeqnoResponse>(
@@ -973,10 +892,7 @@ void TopicTailer::ReceiveLogRecord(std::unique_ptr<MessageData> data,
   TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
   SequenceNumber next_seqno = data->GetSequenceNumber();
   SequenceNumber prev_seqno = 0;
-  Status st = reader->ProcessRecord(log_id,
-                                    next_seqno,
-                                    uuid,
-                                    &prev_seqno);
+  reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
   if (0) {
     LOG_DEBUG(info_log_,
               "Inserted seqno %" PRIu64 " on Log(%" PRIu64 ")"
@@ -1002,7 +918,7 @@ void TopicTailer::ReceiveLogRecord(std::unique_ptr<MessageData> data,
     stats_.backlog_records_received->Add(1);
   }
 
-  if (prev_seqno != 0 && st.ok()) {
+  if (prev_seqno != 0) {
     // Find subscribed hosts.
     TopicManager& topic_manager = topic_map_[log_id];
 
@@ -1088,23 +1004,6 @@ void TopicTailer::ReceiveLogRecord(std::unique_ptr<MessageData> data,
           on_message_(flow, trim_msg, std::move(bumped_subscriptions));
         }
       });
-  } else {
-    // If prev_seqno == 0 then it just means we don't have subscribers
-    // for that topic. Doesn't necessarily mean that the record was out
-    // of order.
-    if (!st.ok()) {
-      // Log not open or at wrong seqno, so drop.
-      stats_.log_records_out_of_order->Add(1);
-      LOG_DEBUG(info_log_,
-        "Reader(%zu) failed to process message (%.16s)"
-        " on Log(%" PRIu64 ")@%" PRIu64
-        " (%s)",
-        reader->GetReaderId(),
-        data->GetPayload().ToString().c_str(),
-        log_id,
-        next_seqno,
-        st.ToString().c_str());
-    }
   }
 
   // Transfer ownership of this message to the cache.
@@ -1134,11 +1033,7 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno = 0;
-    Status st = reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
-
-    // Should never fail to process since the log is definitely open, and the
-    // cache should not deliver out of order.
-    assert(st.ok());
+    reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
 
     // However, may still be no subscribers for this topic.
     if (prev_seqno != 0) {
@@ -1209,150 +1104,117 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
   }
 }
 
-Status TopicTailer::SendLogRecord(
+void TopicTailer::SendLogRecord(
+    Flow* flow,
     std::unique_ptr<MessageData>& msg,
     LogID log_id,
     size_t reader_id) {
-  // This method in invoked in the Logdevice client thread.
-  // Send to worker loop.
-  MessageData* data_raw = msg.release();
+  thread_check_.Check();
 
-  bool force_failure = false;
-  if (options_.FAULT_send_log_record_failure_rate != 0.0) {
-    std::uniform_real_distribution<double> dist(0.0, 1.0);
-    if (dist(prng_) < options_.FAULT_send_log_record_failure_rate) {
-      force_failure = true;
-      LOG_DEBUG(info_log_, "Forcing Forward to fail in SendLogRecord");
+  // Find reader.
+  LogReader* reader = FindLogReader(reader_id);
+  assert(reader != nullptr);
+
+  // Update state for this log and distribute message.
+  ReceiveLogRecord(std::move(msg), log_id, reader, flow);
+
+  // Check if we are now in the cache, and deliver messages from cache
+  // if available.
+  if (AdvanceReaderFromCache(flow, log_id, reader)) {
+    // Messages were delivered from cache, so our state is advanced.
+    // Attempt to merge with another reader:
+    if (!AttemptReaderMerges(reader, log_id)) {
+      // Did not merge with another reader, so RestartReading at the
+      // new sequence number for this log (stop + start).
+      reader->RestartReading(log_id);
+      stats_.reader_restarts->Add(1);
     }
+  } else {
+    // Attempt to merge with another reader:
+    AttemptReaderMerges(reader, log_id);
   }
-
-  bool sent = !force_failure && TryForward(
-    [this, data_raw, log_id, reader_id] (Flow* flow) {
-      // Find reader.
-      LogReader* reader = FindLogReader(reader_id);
-      assert(reader != nullptr);
-
-      // Update state for this log and distribute message.
-      std::unique_ptr<MessageData> data(data_raw);
-      ReceiveLogRecord(std::move(data), log_id, reader, flow);
-
-      // Check if we are now in the cache, and deliver messages from cache
-      // if available.
-      if (AdvanceReaderFromCache(flow, log_id, reader)) {
-        // Messages were delivered from cache, so our state is advanced.
-        // Attempt to merge with another reader:
-        if (!AttemptReaderMerges(reader, log_id)) {
-          // Did not merge with another reader, so RestartReading at the
-          // new sequence number for this log (stop + start).
-          reader->RestartReading(log_id);
-          stats_.reader_restarts->Add(1);
-        }
-      } else {
-        // Attempt to merge with another reader:
-        AttemptReaderMerges(reader, log_id);
-      }
-    });
-
-  Status st;
-  if (!sent) {
-    // Put the message back so that the storage can retry later.
-    msg.reset(data_raw);
-    st = Status::NoBuffer();
-  }
-  return st;
 }
 
-Status TopicTailer::SendGapRecord(
+void TopicTailer::SendGapRecord(
+    Flow* flow,
     LogID log_id,
     GapType type,
     SequenceNumber from,
     SequenceNumber to,
     size_t reader_id) {
-  // Send to worker loop.
-  bool sent = TryForward(
-    [this, log_id, type, from, to, reader_id] (Flow* flow) {
-    // Validate.
-    LogReader* reader = FindLogReader(reader_id);
-    assert(reader != nullptr);
+  thread_check_.Check();
 
-    // Check for out-of-order gap messages, or gaps received on log that
-    // we're not reading on.
-    stats_.gap_records_received->Add(1);
-    Status st = reader->ValidateGap(log_id, from);
-    if (!st.ok()) {
-      stats_.gap_records_out_of_order->Add(1);
-      return;
-    }
+  LogReader* reader = FindLogReader(reader_id);
+  assert(reader != nullptr);
 
-    // Send per-topic gap messages for subscribed topics.
-    topic_map_[log_id].VisitTopics(
-      [&] (const TopicUUID& topic) {
-        // Get the last known seqno for topic.
-        SequenceNumber prev_seqno;
-        reader->ProcessGap(log_id, topic, type, from, to, &prev_seqno);
+  stats_.gap_records_received->Add(1);
 
-        auto ts_it = tail_seqno_cached_.find(log_id);
-        if (ts_it != tail_seqno_cached_.end() && ts_it->second <= to) {
-          // If we had an estimate on the tail sequence number and it was lower
-          // than this record, then update the estimate.
-          ts_it->second = to + 1;
-        }
+  // Send per-topic gap messages for subscribed topics.
+  topic_map_[log_id].VisitTopics(
+    [&] (const TopicUUID& topic) {
+      // Get the last known seqno for topic.
+      SequenceNumber prev_seqno;
+      reader->ProcessGap(log_id, topic, type, from, to, &prev_seqno);
 
-        // Find subscribed hosts.
-        std::vector<CopilotSub> recipients;
-        topic_map_[log_id].VisitSubscribers(
-          topic, prev_seqno, to,
-          [&] (TopicSubscription* sub) {
-            recipients.emplace_back(sub->GetID());
-            sub->SetSequenceNumber(to + 1);
-            LOG_DEBUG(info_log_,
-              "%s advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
-              " Reader(%zu)",
-              sub->GetID().ToString().c_str(),
-              topic.ToString().c_str(),
-              to,
-              log_id,
-              reader_id);
-          });
+      auto ts_it = tail_seqno_cached_.find(log_id);
+      if (ts_it != tail_seqno_cached_.end() && ts_it->second <= to) {
+        // If we had an estimate on the tail sequence number and it was lower
+        // than this record, then update the estimate.
+        ts_it->second = to + 1;
+      }
 
-        // Send message.
-        if (!recipients.empty()){
-          Slice namespace_id;
-          Slice topic_name;
-          topic.GetTopicID(&namespace_id, &topic_name);
-          MessageGap mgap(Tenant::GuestTenant,
-                           namespace_id.ToString(),
-                           topic_name.ToString(),
-                           type,
-                           prev_seqno,
-                           to);
-          stats_.gap_records_with_subscriptions->Add(1);
-          on_message_(flow, mgap, std::move(recipients));
-        } else {
-          stats_.gap_records_without_subscriptions->Add(1);
-        }
-        return true;  // continue to iterate to the next topic
-      });
+      // Find subscribed hosts.
+      std::vector<CopilotSub> recipients;
+      topic_map_[log_id].VisitSubscribers(
+        topic, prev_seqno, to,
+        [&] (TopicSubscription* sub) {
+          recipients.emplace_back(sub->GetID());
+          sub->SetSequenceNumber(to + 1);
+          LOG_DEBUG(info_log_,
+            "%s advanced to %s@%" PRIu64 " on Log(%" PRIu64 ")"
+            " Reader(%zu)",
+            sub->GetID().ToString().c_str(),
+            topic.ToString().c_str(),
+            to,
+            log_id,
+            reader_id);
+        });
 
-    if (type == GapType::kBenign) {
-      // For benign gaps, we haven't lost any information, but we need to
-      // advance the state of the log reader so that it expects the next
-      // records.
-      stats_.benign_gaps_received->Add(1);
-      reader->ProcessBenignGap(log_id, from, to);
-    } else {
-      // For malignant gaps (retention or data loss), we've lost information
-      // about the history of topics in the log, so we need to flush the
-      // log reader history to avoid it claiming to know something about topics
-      // that it doesn't.
-      stats_.malignant_gaps_received->Add(1);
-      reader->FlushHistory(log_id, to + 1);
-    }
+      // Send message.
+      if (!recipients.empty()){
+        Slice namespace_id;
+        Slice topic_name;
+        topic.GetTopicID(&namespace_id, &topic_name);
+        MessageGap mgap(Tenant::GuestTenant,
+                         namespace_id.ToString(),
+                         topic_name.ToString(),
+                         type,
+                         prev_seqno,
+                         to);
+        stats_.gap_records_with_subscriptions->Add(1);
+        on_message_(flow, mgap, std::move(recipients));
+      } else {
+        stats_.gap_records_without_subscriptions->Add(1);
+      }
+      return true;  // continue to iterate to the next topic
+    });
 
-    AttemptReaderMerges(reader, log_id);
-  });
+  if (type == GapType::kBenign) {
+    // For benign gaps, we haven't lost any information, but we need to
+    // advance the state of the log reader so that it expects the next
+    // records.
+    stats_.benign_gaps_received->Add(1);
+    reader->ProcessBenignGap(log_id, from, to);
+  } else {
+    // For malignant gaps (retention or data loss), we've lost information
+    // about the history of topics in the log, so we need to flush the
+    // log reader history to avoid it claiming to know something about topics
+    // that it doesn't.
+    stats_.malignant_gaps_received->Add(1);
+    reader->FlushHistory(log_id, to + 1);
+  }
 
-  return sent ? Status::OK() : Status::NoBuffer();
+  AttemptReaderMerges(reader, log_id);
 }
 
 void TopicTailer::Tick() {
@@ -1884,10 +1746,6 @@ bool TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
     }
   }
   return false;
-}
-
-bool TopicTailer::TryForward(std::function<void(Flow*)> command) {
-  return storage_to_room_queues_->GetThreadLocal()->TryWrite(command);
 }
 
 TopicTailer::RestartEvents::Handle

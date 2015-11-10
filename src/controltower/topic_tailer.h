@@ -108,12 +108,13 @@ class TopicTailer {
   /**
    * Process a data record from a log tailer, and forward to on_message.
    *
+   * @param flow Flow from source.
    * @param msg Log record message.
    * @param log_id ID of log record resides in.
    * @param reader_id ID of reader delivering the record.
-   * @return OK() if record was sent for processing.
    */
-  Status SendLogRecord(
+  void SendLogRecord(
+    Flow* flow,
     std::unique_ptr<MessageData>& msg,
     LogID log_id,
     size_t reader_id);
@@ -121,14 +122,15 @@ class TopicTailer {
   /**
    * Process a gap record from a log tailer, and forward to on_message.
    *
+   * @param flow Flow from source.
    * @param log_id ID of log containing the gap.
    * @param type The type of gap encountered.
    * @param from The first gap sequence number (inclusive).
    * @param to The last gap sequence number (inclusive).
    * @param reader_id ID of reader that encountered the gap.
-   * @return OK() if record was sent for processing.
    */
-  Status SendGapRecord(
+  void SendGapRecord(
+    Flow* flow,
     LogID log_id,
     GapType type,
     SequenceNumber from,
@@ -265,13 +267,6 @@ class TopicTailer {
                                  std::vector<CopilotSub>)> on_message,
               std::function<int(const CopilotSub&)> copilot_worker,
               ControlTowerOptions::TopicTailer options);
-
-  /**
-   * Forwards a command from a storage thread to a TopicTailer thread.
-   * The command will only be sent when returning true. On a return of false,
-   * the caller should attempt to resend the command later.
-   */
-  bool TryForward(std::function<void(Flow*)> command);
 
   void AddTailSubscriber(Flow* flow,
                          const TopicUUID& topic,
@@ -425,10 +420,6 @@ class TopicTailer {
 
   ControlTowerOptions::TopicTailer options_;
 
-  // Queues for storage threads delivering records or gaps back to rooms.
-  std::unique_ptr<ThreadLocalQueues<std::function<void(Flow*)>>>
-    storage_to_room_queues_;
-
   // Queues for storage threads responding with latest seqnos to rooms.
   std::unique_ptr<ThreadLocalQueues<FindLatestSeqnoResponse>>
     latest_seqno_queues_;
@@ -479,14 +470,10 @@ class TopicTailer {
         all.AddCounter(prefix + "log_records_with_subscriptions");
       log_records_without_subscriptions =
         all.AddCounter(prefix + "log_records_without_subscriptions");
-      log_records_out_of_order =
-        all.AddCounter(prefix + "log_records_out_of_order");
       bumped_subscriptions =
         all.AddCounter(prefix + "bumped_subscriptions");
       gap_records_received =
         all.AddCounter(prefix + "gap_records_received");
-      gap_records_out_of_order =
-        all.AddCounter(prefix + "gap_records_out_of_order");
       gap_records_with_subscriptions =
         all.AddCounter(prefix + "gap_records_with_subscriptions");
       gap_records_without_subscriptions =

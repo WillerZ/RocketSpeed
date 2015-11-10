@@ -129,6 +129,8 @@ Status ControlTower::Initialize() {
     st = LogTailer::CreateNewInstance(opt.env,
                                       opt.storage,
                                       opt.info_log,
+                                      opt.msg_loop->GetEventLoop(int(i)),
+                                      opt.log_tailer,
                                       &log_tailer);
     if (!st.ok()) {
       return st;
@@ -138,45 +140,24 @@ Status ControlTower::Initialize() {
 
   for (size_t room = 0; room < num_rooms; ++room) {
     // Initialize the LogTailer.
-    auto on_record = [this, room] (std::unique_ptr<MessageData>& msg,
+    auto on_record = [this, room] (Flow* flow,
+                                   std::unique_ptr<MessageData>& msg,
                                    LogID log_id,
                                    size_t reader_id) {
       // Process message from the log tailer.
-      Status status = topic_tailer_[room]->SendLogRecord(
-        msg,
-        log_id,
-        reader_id);
-      if (!status.ok()) {
-        LOG_WARN(options_.info_log,
-                 "SendLogRecord to topic tailer %zu (%s) requested back-off",
-                 room,
-                 status.ToString().c_str());
-        assert(msg);
-        return false;
-      }
-      return true;
+      topic_tailer_[room]->SendLogRecord(
+        flow, msg, log_id, reader_id);
     };
 
-    auto on_gap = [this, room] (LogID log_id,
+    auto on_gap = [this, room] (Flow* flow,
+                                LogID log_id,
                                 GapType type,
                                 SequenceNumber from,
                                 SequenceNumber to,
                                 size_t reader_id) {
       // Process message from the log tailer.
-      Status status = topic_tailer_[room]->SendGapRecord(
-        log_id,
-        type,
-        from,
-        to,
-        reader_id);
-      if (!status.ok()) {
-        LOG_ERROR(options_.info_log,
-                  "Failed to SendGapRecord to topic tailer %zu (%s)",
-                  room,
-                  status.ToString().c_str());
-        return false;
-      }
-      return true;
+      topic_tailer_[room]->SendGapRecord(
+        flow, log_id, type, from, to, reader_id);
     };
 
     st = log_tailer_[room]->Initialize(std::move(on_record),

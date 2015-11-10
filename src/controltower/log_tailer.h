@@ -11,8 +11,14 @@
 #include "src/port/Env.h"
 #include "src/util/common/statistics.h"
 #include "src/util/storage.h"
+#include "src/controltower/options.h"
 
 namespace rocketspeed {
+
+class EventLoop;
+class Flow;
+class FlowControl;
+template <typename> class ThreadLocalQueues;
 
 //
 // A LogTailer reads specified logs from Storage and delivers data to the user.
@@ -22,20 +28,19 @@ namespace rocketspeed {
 class LogTailer {
  public:
   /**
-   * Callback for incoming messages. If the message was processed successfully,
-   * the callback should return true. If unsuccessful, false should be returned,
-   * and the MessageData should be unmoved.
+   * Callback for incoming messages.
    */
-  typedef std::function<bool(std::unique_ptr<MessageData>&,  // publish msg
+  typedef std::function<void(Flow*,
+                             std::unique_ptr<MessageData>&,  // publish msg
                              LogID,                          // log ID
                              size_t)>                        // reader ID
     OnRecordCallback;
 
   /**
-   * Callback for incoming gaps. If the gap was processed successfully,
-   * the callback should return true. If unsuccessful, false should be returned.
+   * Callback for incoming gaps.
    */
-  typedef std::function<bool(LogID,           // log ID
+  typedef std::function<void(Flow*,
+                             LogID,           // log ID
                              GapType,         // type of gap
                              SequenceNumber,  // start sequence number
                              SequenceNumber,  // end sequence number
@@ -49,6 +54,8 @@ class LogTailer {
                            Env* env,
                            std::shared_ptr<LogStorage> storage,
                            std::shared_ptr<Logger> info_log,
+                           EventLoop* event_loop,
+                           ControlTowerOptions::LogTailer options,
                            LogTailer** tailer);
 
   /**
@@ -77,8 +84,7 @@ class LogTailer {
    */
   Status StartReading(LogID logid,
                       SequenceNumber start,
-                      size_t reader_id,
-                      bool first_open);
+                      size_t reader_id);
 
   // No more records from this log anymore
   // This call is not thread-safe.
@@ -102,28 +108,65 @@ class LogTailer {
  private:
   // private constructor
   LogTailer(std::shared_ptr<LogStorage> storage,
-            std::shared_ptr<Logger> info_log);
+            std::shared_ptr<Logger> info_log,
+            EventLoop* event_loop,
+            ControlTowerOptions::LogTailer options);
 
   // Creates a log reader.
-  Status CreateReader(size_t reader_id,
-                      OnRecordCallback on_record,
-                      OnGapCallback on_gap,
-                      AsyncLogReader** out);
+  Status CreateReader(size_t reader_id, AsyncLogReader** out);
 
   // The total number of open logs.
   int NumberOpenLogs() const;
+
+  void RecordCallback(Flow* flow,
+                      std::unique_ptr<MessageData>& msg,
+                      LogID log_id,
+                      size_t reader_id);
+
+  void GapCallback(Flow* flow,
+                   LogID log_id,
+                   GapType gap_type,
+                   SequenceNumber from,
+                   SequenceNumber to,
+                   size_t reader_id);
+
+  /**
+   * Forwards a command from a storage thread to a LogTailer thread.
+   * The command will only be sent when returning true. On a return of false,
+   * the caller should attempt to resend the command later.
+   */
+  bool TryForward(std::function<void(Flow*)> command);
 
   // The Storage device
   std::shared_ptr<LogStorage> storage_;
 
   // One reader per ControlRoom
-  std::vector<std::unique_ptr<AsyncLogReader>> reader_;
+  struct Reader {
+    explicit Reader(std::unique_ptr<AsyncLogReader> _log_reader,
+                    OnRecordCallback _on_record,
+                    OnGapCallback _on_gap)
+    : log_reader(std::move(_log_reader))
+    , on_record(std::move(_on_record))
+    , on_gap(std::move(_on_gap)) {}
+
+    std::unique_ptr<AsyncLogReader> log_reader;
+    std::unordered_map<LogID, SequenceNumber> log_state;
+    OnRecordCallback on_record;
+    OnGapCallback on_gap;
+  };
+  std::vector<Reader> readers_;
 
   // Information log
   std::shared_ptr<Logger> info_log_;
 
-  // Count of number of open logs per reader (unit tests only)
-  mutable std::vector<int> num_open_logs_per_reader_;
+  ControlTowerOptions::LogTailer options_;
+
+  EventLoop* event_loop_;
+  std::unique_ptr<FlowControl> flow_control_;
+
+  // Queues for storage threads delivering records or gaps back to rooms.
+  std::unique_ptr<ThreadLocalQueues<std::function<void(Flow*)>>>
+    storage_to_room_queues_;
 
   struct Stats {
     Stats() {
@@ -137,6 +180,10 @@ class LogTailer {
         all.AddCounter(prefix + "readers_restarted");
       readers_stopped =
         all.AddCounter(prefix + "readers_stopped");
+      log_records_out_of_order =
+        all.AddCounter(prefix + "log_records_out_of_order");
+      gap_records_out_of_order =
+        all.AddCounter(prefix + "gap_records_out_of_order");
     }
 
     Statistics all;
@@ -144,6 +191,8 @@ class LogTailer {
     Counter* readers_started;
     Counter* readers_restarted;
     Counter* readers_stopped;
+    Counter* log_records_out_of_order;
+    Counter* gap_records_out_of_order;
   } stats_;
 };
 
