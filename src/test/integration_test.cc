@@ -2125,9 +2125,9 @@ TEST(IntegrationTest, ReaderRestarts) {
   LocalTestCluster::Options opts;
   opts.info_log = info_log;
   opts.tower.timer_interval = std::chrono::microseconds(10000); // 10ms
-  opts.tower.topic_tailer.min_reader_restart_duration =
+  opts.tower.log_tailer.min_reader_restart_duration =
     std::chrono::milliseconds(20);
-  opts.tower.topic_tailer.max_reader_restart_duration =
+  opts.tower.log_tailer.max_reader_restart_duration =
     std::chrono::milliseconds(40);
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
@@ -2172,11 +2172,11 @@ TEST(IntegrationTest, ReaderRestarts) {
   ASSERT_TRUE(!msg_received.TimedWait(std::chrono::milliseconds(10)));
 
   auto stats = cluster.GetControlTower()->GetStatisticsSync();
-  auto restarts = stats.GetCounterValue("tower.topic_tailer.reader_restarts");
+  auto restarts = stats.GetCounterValue("tower.log_tailer.forced_restarts");
   size_t min_expected = kNumTopics * kNumMessages * kMessageDelay /
-    opts.tower.topic_tailer.max_reader_restart_duration;
+    opts.tower.log_tailer.max_reader_restart_duration;
   size_t max_expected = kNumTopics * kNumMessages * kMessageDelay /
-    opts.tower.topic_tailer.min_reader_restart_duration;
+    opts.tower.log_tailer.min_reader_restart_duration;
   ASSERT_GE(restarts, min_expected - 1);  // - 1 for timer tolerance
   ASSERT_LE(restarts, max_expected + 1);  // + 1 for timer tolerance
 }
@@ -2362,14 +2362,13 @@ TEST(IntegrationTest, CacheReentrance) {
     std::string tt_names[] = {
       "log_records_with_subscriptions",
       "records_served_from_cache",
-      "reader_restarts",
       "reader_merges",
       "cache_reentries"
     };
     std::string lt_names[] = {
       "readers_started",
       "readers_restarted",
-      "readers_stopped",
+      "readers_stopped"
     };
     auto stats = cluster.GetControlTower()->GetStatisticsSync();
     std::unordered_map<std::string, int64_t> counters;
@@ -2424,7 +2423,6 @@ TEST(IntegrationTest, CacheReentrance) {
   auto stats1 = get_topic_tailer_stats();
   ASSERT_EQ(stats1["log_records_with_subscriptions"], kNumInCache);
   ASSERT_EQ(stats1["records_served_from_cache"], 0);
-  ASSERT_EQ(stats1["reader_restarts"], 0);
   ASSERT_EQ(stats1["reader_merges"], 0);
   ASSERT_EQ(stats1["cache_reentries"], 0);
   ASSERT_EQ(stats1["readers_started"], 1);
@@ -2448,7 +2446,6 @@ TEST(IntegrationTest, CacheReentrance) {
   auto stats2 = get_topic_tailer_stats();
   ASSERT_EQ(stats2["log_records_with_subscriptions"], kNumMessages - 1);
   ASSERT_EQ(stats2["records_served_from_cache"], kNumInCache);
-  ASSERT_EQ(stats2["reader_restarts"], 1);
   ASSERT_EQ(stats2["reader_merges"], 0);
   ASSERT_EQ(stats2["cache_reentries"], 1);
   ASSERT_EQ(stats2["readers_started"], 2);
@@ -2472,7 +2469,6 @@ TEST(IntegrationTest, CacheReentrance) {
   auto stats3 = get_topic_tailer_stats();
   ASSERT_EQ(stats3["log_records_with_subscriptions"], kNumMessages - 1);
   ASSERT_EQ(stats3["records_served_from_cache"], kNumInCache);
-  ASSERT_EQ(stats3["reader_restarts"], 1);
   ASSERT_EQ(stats3["reader_merges"], 1);
   ASSERT_EQ(stats3["cache_reentries"], 2);
   ASSERT_EQ(stats3["readers_started"], 3);

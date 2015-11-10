@@ -46,7 +46,9 @@ LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
   info_log_(info_log),
   options_(std::move(options)),
   event_loop_(event_loop),
-  flow_control_(new FlowControl("tower.log_tailer", event_loop_)) {
+  flow_control_(new FlowControl("tower.log_tailer", event_loop_)),
+  restart_events_(options_.min_reader_restart_duration,
+                  options_.max_reader_restart_duration) {
 
   storage_to_room_queues_.reset(
     new ThreadLocalQueues<std::function<void(Flow*)>>(
@@ -119,7 +121,7 @@ void LogTailer::RecordCallback(Flow* flow,
     stats_.log_records_out_of_order->Add(1);
     return;
   }
-  if (it->second != seqno) {
+  if (it->second.next_seqno != seqno) {
     // Log not at this sequence number, ignore.
     // This can happen due to asynchrony after closing log.
     LOG_DEBUG(info_log_,
@@ -127,13 +129,13 @@ void LogTailer::RecordCallback(Flow* flow,
       " Expected:%" PRIu64 " Received:%" PRIu64,
       reader_id,
       log_id,
-      it->second,
+      it->second.next_seqno,
       seqno);
     stats_.log_records_out_of_order->Add(1);
     return;
   }
   // Now expecting next seqno.
-  it->second = seqno + 1;
+  it->second.next_seqno = seqno + 1;
 
   reader.on_record(flow, msg, log_id, reader_id);
 }
@@ -177,7 +179,7 @@ void LogTailer::GapCallback(Flow* flow,
     stats_.gap_records_out_of_order->Add(1);
     return;
   }
-  if (it->second != from) {
+  if (it->second.next_seqno != from) {
     // Log not at this sequence number, ignore.
     // This can happen due to asynchrony after closing log.
     LOG_DEBUG(info_log_,
@@ -185,13 +187,13 @@ void LogTailer::GapCallback(Flow* flow,
       " Expected:%" PRIu64 " Received:%" PRIu64,
       reader_id,
       log_id,
-      it->second,
+      it->second.next_seqno,
       from);
     stats_.gap_records_out_of_order->Add(1);
     return;
   }
   // Now expecting next seqno.
-  it->second = to + 1;
+  it->second.next_seqno = to + 1;
 
   reader.on_gap(flow, log_id, gap_type, from, to, reader_id);
 }
@@ -307,12 +309,15 @@ Status LogTailer::StartReading(LogID logid,
              start);
     auto it = reader.log_state.find(logid);
     if (it == reader.log_state.end()) {
-      reader.log_state.emplace(logid, start);
+      it = reader.log_state.emplace(logid, Reader::LogState(start)).first;
       stats_.readers_started->Add(1);
     } else {
-      it->second = start;
+      it->second.next_seqno = start;
       stats_.readers_restarted->Add(1);
+      restart_events_.RemoveEvent(it->second.restart_event_handle);
     }
+    it->second.restart_event_handle =
+      restart_events_.AddEvent(reader_id, logid);
   } else {
     LOG_ERROR(info_log_,
               "AsyncReader %zu failed to start reading Log(%" PRIu64
@@ -333,9 +338,11 @@ LogTailer::StopReading(LogID logid, size_t reader_id) {
   }
   Reader& reader = readers_[reader_id];
   Status st;
-  if (reader.log_state.erase(logid)) {
+  auto it = reader.log_state.find(logid);
+  if (it != reader.log_state.end()) {
+    restart_events_.RemoveEvent(it->second.restart_event_handle);
+    reader.log_state.erase(it);
     stats_.readers_stopped->Add(1);
-
     st = reader.log_reader->Close(logid);
     if (st.ok()) {
       LOG_INFO(info_log_,
@@ -392,5 +399,47 @@ bool LogTailer::TryForward(std::function<void(Flow*)> command) {
     storage_to_room_queues_->GetThreadLocal()->TryWrite(command);
 }
 
+void LogTailer::Tick() {
+  // Process due events on LogReaders.
+  auto now = std::chrono::steady_clock::now();
+  while (!restart_events_.empty() &&
+         restart_events_.begin()->restart_time < now) {
+    auto& ev = *restart_events_.begin();
+    auto reader_id = ev.reader_id;
+    auto log_id = ev.log_id;
+
+    // Find the sequence number currently reading at.
+    assert(reader_id < readers_.size());
+    Reader& reader = readers_[reader_id];
+    auto it = reader.log_state.find(log_id);
+    assert(it != reader.log_state.end());
+    auto seqno = it->second.next_seqno;
+
+    // Restart reading at this sequence number.
+    // Note: this will remove and re-add the event to restart_events_.
+    StartReading(log_id, seqno, reader_id);
+    stats_.forced_restarts->Add(1);
+  }
+}
+
+LogTailer::RestartEvents::Handle
+LogTailer::RestartEvents::AddEvent(size_t reader_id, LogID log_id) {
+  // Generate random restart time.
+  auto& prng = ThreadLocalPRNG();
+  std::uniform_int_distribution<std::chrono::milliseconds::rep>
+    distribution(min_restart_duration_.count(),
+                 max_restart_duration_.count());
+  auto restart_time = std::chrono::steady_clock::now() +
+    std::chrono::milliseconds(distribution(prng));
+
+  // Add to ordered set of events.
+  auto result = emplace(restart_time, reader_id, log_id);
+  assert(result.second);
+  return result.first;
+}
+
+void LogTailer::RestartEvents::RemoveEvent(Handle handle) {
+  erase(handle);
+}
 
 }  // namespace rocketspeed

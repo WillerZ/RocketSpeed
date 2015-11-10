@@ -5,6 +5,7 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include <vector>
 #include "include/Status.h"
 #include "include/Types.h"
@@ -103,9 +104,67 @@ class LogTailer {
 
   Statistics GetStatistics() const;
 
+  void Tick();
+
   ~LogTailer();
 
  private:
+  /**
+   * LogReaders are restarted periodically. This structure represents a
+   * the restart event for a particular reader and log. It is ordered by
+   * time.
+   */
+  struct RestartEvent {
+    RestartEvent(std::chrono::steady_clock::time_point _restart_time,
+                 size_t _reader_id,
+                 LogID _log_id)
+    : restart_time(_restart_time)
+    , reader_id(_reader_id)
+    , log_id(_log_id) {
+    }
+
+    std::chrono::steady_clock::time_point restart_time;
+    size_t reader_id;
+    LogID log_id;
+
+    bool operator<(const RestartEvent& rhs) const {
+      return std::tie(restart_time, reader_id, log_id) <
+        std::tie(rhs.restart_time, rhs.reader_id, rhs.log_id);
+    }
+  };
+
+  /**
+   * An ordered set of RestartEvents.
+   * Is a thin wrapper around std::set<RestartEvent>, providing convenient
+   * interface for adding new events with random expiry time.
+   */
+  class RestartEvents : public std::set<RestartEvent> {
+   public:
+    /** Opaque handle used for removing events. */
+    using Handle = iterator;
+
+    RestartEvents(std::chrono::milliseconds min_restart_duration,
+                  std::chrono::milliseconds max_restart_duration)
+    : min_restart_duration_(min_restart_duration)
+    , max_restart_duration_(max_restart_duration) {
+    }
+
+    /**
+     * Adds a new event with a random restart time in the future and returns
+     * the new handle.
+     */
+    Handle AddEvent(size_t reader_id, LogID log_id);
+
+    /**
+     * Removes an existing event by its handle.
+     */
+    void RemoveEvent(Handle handle);
+
+   private:
+    const std::chrono::milliseconds min_restart_duration_;
+    const std::chrono::milliseconds max_restart_duration_;
+  };
+
   // private constructor
   LogTailer(std::shared_ptr<LogStorage> storage,
             std::shared_ptr<Logger> info_log,
@@ -149,8 +208,16 @@ class LogTailer {
     , on_record(std::move(_on_record))
     , on_gap(std::move(_on_gap)) {}
 
+    struct LogState {
+      explicit LogState(SequenceNumber _next_seqno)
+      : next_seqno(_next_seqno) {}
+
+      SequenceNumber next_seqno;
+      RestartEvents::Handle restart_event_handle;
+    };
+
     std::unique_ptr<AsyncLogReader> log_reader;
-    std::unordered_map<LogID, SequenceNumber> log_state;
+    std::unordered_map<LogID, LogState> log_state;
     OnRecordCallback on_record;
     OnGapCallback on_gap;
   };
@@ -168,6 +235,13 @@ class LogTailer {
   std::unique_ptr<ThreadLocalQueues<std::function<void(Flow*)>>>
     storage_to_room_queues_;
 
+  // Contains a set of (LogID, reader_id) pairs that will be restarted at
+  // a certain point in time. Readers are restarted occasionally to allow
+  // the storage layer to rebalance threads, and provides some extra resilience
+  // against unexpected log reader failures.
+  // The set is ordered by time.
+  RestartEvents restart_events_;
+
   struct Stats {
     Stats() {
       const std::string prefix = "tower.log_tailer.";
@@ -184,6 +258,8 @@ class LogTailer {
         all.AddCounter(prefix + "log_records_out_of_order");
       gap_records_out_of_order =
         all.AddCounter(prefix + "gap_records_out_of_order");
+      forced_restarts =
+        all.AddCounter(prefix + "forced_restarts");
     }
 
     Statistics all;
@@ -193,6 +269,7 @@ class LogTailer {
     Counter* readers_stopped;
     Counter* log_records_out_of_order;
     Counter* gap_records_out_of_order;
+    Counter* forced_restarts;
   } stats_;
 };
 

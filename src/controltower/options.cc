@@ -24,14 +24,14 @@ ControlTowerOptions::ControlTowerOptions()
 }
 
 ControlTowerOptions::LogTailer::LogTailer()
-: storage_to_room_queue_size(1000)
+: min_reader_restart_duration(std::chrono::seconds(30))
+, max_reader_restart_duration(std::chrono::seconds(60))
+, storage_to_room_queue_size(1000)
 , FAULT_send_log_record_failure_rate(0) {
 }
 
 ControlTowerOptions::TopicTailer::TopicTailer()
-: min_reader_restart_duration(std::chrono::seconds(30))
-, max_reader_restart_duration(std::chrono::seconds(60))
-, max_find_time_requests(100)
+: max_find_time_requests(100)
 , cache_size(0)
 , cache_data_from_system_namespaces(true)
 , cache_block_size(1024)

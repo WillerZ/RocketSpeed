@@ -63,6 +63,7 @@ ControlTower::ControlTower(const ControlTowerOptions& options):
   options_.msg_loop->RegisterTimerCallback(
     [this] () {
       int worker_id = options_.msg_loop->GetThreadWorkerIndex();
+      log_tailer_[worker_id]->Tick();
       topic_tailer_[worker_id]->Tick();
     },
     options_.timer_interval);

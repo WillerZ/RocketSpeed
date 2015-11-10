@@ -84,6 +84,12 @@ struct ControlTowerOptions {
   struct LogTailer {
     LogTailer();
 
+    // Log readers are restarted periodically to improve load balancing.
+    // These control the allowable range of durations between restarts.
+    // Default: 30 - 60 seconds
+    std::chrono::milliseconds min_reader_restart_duration;
+    std::chrono::milliseconds max_reader_restart_duration;
+
     // Queue size from storage threads to room threads.
     // Default: 1000
     size_t storage_to_room_queue_size;
@@ -96,12 +102,6 @@ struct ControlTowerOptions {
   // Options for TopicTailer
   struct TopicTailer {
     TopicTailer();
-
-    // Log readers are restarted periodically to improve load balancing.
-    // These control the allowable range of durations between restarts.
-    // Default: 30 - 60 seconds
-    std::chrono::milliseconds min_reader_restart_duration;
-    std::chrono::milliseconds max_reader_restart_duration;
 
     // Maximum number of find time requests in flight.
     // Once limit is reached, requests are buffered until previous requests

@@ -62,13 +62,11 @@ class LogReader {
   explicit LogReader(std::shared_ptr<Logger> info_log,
                      LogTailer* tailer,
                      size_t reader_id,
-                     int64_t max_subscription_lag,
-                     TopicTailer::RestartEvents* restart_events)
+                     int64_t max_subscription_lag)
   : info_log_(info_log)
   , tailer_(tailer)
   , reader_id_(reader_id)
-  , max_subscription_lag_(max_subscription_lag)
-  , restart_events_(restart_events) {
+  , max_subscription_lag_(max_subscription_lag) {
   }
 
   /**
@@ -258,9 +256,6 @@ class LogReader {
 
     // Last read sequence number on this log.
     SequenceNumber last_read;
-
-    // Handle for the restart event for this log reader.
-    TopicTailer::RestartEvents::Handle restart_event_handle;
   };
 
   ThreadCheck thread_check_;
@@ -269,7 +264,6 @@ class LogReader {
   size_t reader_id_;
   std::unordered_map<LogID, LogState> log_state_;
   int64_t max_subscription_lag_;
-  TopicTailer::RestartEvents* restart_events_;
 };
 
 void LogReader::ProcessRecord(LogID log_id,
@@ -447,14 +441,6 @@ Status LogReader::StartReading(const TopicUUID& topic,
           seqno,
           st.ToString().c_str());
       }
-
-      // Remove old restart event (if there was one), and add the new event.
-      assert(restart_events_);
-      if (!first_open) {
-        restart_events_->RemoveEvent(log_state.restart_event_handle);
-      }
-      log_state.restart_event_handle =
-        restart_events_->AddEvent(this, log_id);
     }
     log_state.last_read = seqno - 1;
   }
@@ -481,8 +467,6 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
       if (log_state.topics.empty()) {
         // Last subscriber for this log, so stop reading.
         if (!IsVirtual()) {
-          assert(restart_events_);
-          restart_events_->RemoveEvent(log_state.restart_event_handle);
           st = tailer_->StopReading(log_id, reader_id_);
         }
         if (st.ok()) {
@@ -520,11 +504,6 @@ Status LogReader::RestartReading(LogID log_id) {
   // StartReading again.
   // Don't need to stop first because LogTailer handles this.
   LogState& log_state = log_it->second;
-
-  // Add a new event for the next restart.
-  assert(restart_events_);
-  restart_events_->RemoveEvent(log_state.restart_event_handle);
-  log_state.restart_event_handle = restart_events_->AddEvent(this, log_id);
 
   auto seqno = log_state.last_read + 1;
   st = tailer_->StartReading(log_id, seqno, reader_id_);
@@ -646,8 +625,6 @@ void LogReader::MergeInto(LogReader* reader, LogID log_id) {
   }
 
   // Now clear our state and stop reading the log.
-  assert(restart_events_);
-  restart_events_->RemoveEvent(log_it1->second.restart_event_handle);
   log_state_.erase(log_it1);
   Status st = tailer_->StopReading(log_id, reader_id_);
   if (st.ok()) {
@@ -673,8 +650,6 @@ void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
   assert(log_it != reader->log_state_.end());
   LogState& log_state = log_it->second;
 
-  assert(restart_events_);
-  log_state.restart_event_handle = restart_events_->AddEvent(this, log_id);
   auto start_seqno = log_state.ComputeStartSeqno();
   Status st = tailer_->StartReading(log_id, start_seqno, reader_id_);
   if (st.ok()) {
@@ -756,8 +731,6 @@ TopicTailer::TopicTailer(
               bloom_bits_per_msg, cache_block_size),
   prng_(ThreadLocalPRNG()),
   options_(options),
-  restart_events_(options_.min_reader_restart_duration,
-                  options_.max_reader_restart_duration),
   event_loop_(msg_loop_->GetEventLoop(worker_id_)),
   flow_control_(new FlowControl("tower.topic_tailer", event_loop_)),
   copilot_worker_(std::move(copilot_worker)) {
@@ -1130,7 +1103,6 @@ void TopicTailer::SendLogRecord(
       // Did not merge with another reader, so RestartReading at the
       // new sequence number for this log (stop + start).
       reader->RestartReading(log_id);
-      stats_.reader_restarts->Add(1);
     }
   } else {
     // Attempt to merge with another reader:
@@ -1221,18 +1193,6 @@ void TopicTailer::SendGapRecord(
 }
 
 void TopicTailer::Tick() {
-  // Process due events on LogReaders.
-  auto now = std::chrono::steady_clock::now();
-  while (!restart_events_.empty() &&
-         restart_events_.begin()->restart_time < now) {
-    auto& ev = *restart_events_.begin();
-    auto reader = ev.reader;
-    auto log_id = ev.log_id;
-
-    // Note: this will remove and re-add the event to restart_events_.
-    reader->RestartReading(log_id);
-    stats_.reader_restarts->Add(1);
-  }
 }
 
 SequenceNumber TopicTailer::GetTailSeqnoEstimate(LogID log_id) const {
@@ -1249,15 +1209,13 @@ Status TopicTailer::Initialize(const std::vector<size_t>& reader_ids,
       new LogReader(info_log_,
                     log_tailer_,
                     reader_id,
-                    max_subscription_lag,
-                    &restart_events_));
+                    max_subscription_lag));
   }
   pending_reader_.reset(
     new LogReader(info_log_,
                   nullptr,  // null LogTailer <=> virtual reader
                   0,
-                  max_subscription_lag,
-                  nullptr));
+                  max_subscription_lag));
   return Status::OK();
 }
 
@@ -1749,26 +1707,6 @@ bool TopicTailer::AttemptReaderMerges(LogReader* src, LogID log_id) {
     }
   }
   return false;
-}
-
-TopicTailer::RestartEvents::Handle
-TopicTailer::RestartEvents::AddEvent(LogReader* reader, LogID log_id) {
-  // Generate random restart time.
-  auto& prng = ThreadLocalPRNG();
-  std::uniform_int_distribution<std::chrono::milliseconds::rep>
-    distribution(min_restart_duration_.count(),
-                 max_restart_duration_.count());
-  auto restart_time = std::chrono::steady_clock::now() +
-    std::chrono::milliseconds(distribution(prng));
-
-  // Add to ordered set of events.
-  auto result = emplace(restart_time, reader, log_id);
-  assert(result.second);
-  return result.first;
-}
-
-void TopicTailer::RestartEvents::RemoveEvent(Handle handle) {
-  erase(handle);
 }
 
 Statistics TopicTailer::GetStatistics() const {

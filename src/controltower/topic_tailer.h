@@ -7,7 +7,6 @@
 
 #include <memory>
 #include <random>
-#include <set>
 #include <vector>
 #include "include/Status.h"
 #include "include/Types.h"
@@ -180,61 +179,6 @@ class TopicTailer {
   std::string GetAllLogsInfo() const;
 
   ~TopicTailer();
-
-  /**
-   * LogReaders are restarted periodically. This structure represents a
-   * the restart event for a particular reader and log. It is ordered by
-   * time.
-   */
-  struct RestartEvent {
-    RestartEvent(std::chrono::steady_clock::time_point _restart_time,
-                 LogReader* _reader,
-                 LogID _log_id)
-    : restart_time(_restart_time)
-    , reader(_reader)
-    , log_id(_log_id) {
-    }
-
-    std::chrono::steady_clock::time_point restart_time;
-    LogReader* reader;
-    LogID log_id;
-
-    bool operator<(const RestartEvent& rhs) const {
-      return restart_time < rhs.restart_time;
-    }
-  };
-
-  /**
-   * An ordered set of RestartEvents.
-   * Is a thin wrapper around std::set<RestartEvent>, providing convenient
-   * interface for adding new events with random expiry time.
-   */
-  class RestartEvents : public std::set<RestartEvent> {
-   public:
-    /** Opaque handle used for removing events. */
-    using Handle = iterator;
-
-    RestartEvents(std::chrono::milliseconds min_restart_duration,
-                  std::chrono::milliseconds max_restart_duration)
-    : min_restart_duration_(min_restart_duration)
-    , max_restart_duration_(max_restart_duration) {
-    }
-
-    /**
-     * Adds a new event with a random restart time in the future and returns
-     * the new handle.
-     */
-    Handle AddEvent(LogReader* reader, LogID log_id);
-
-    /**
-     * Removes an existing event by its handle.
-     */
-    void RemoveEvent(Handle handle);
-
-   private:
-    const std::chrono::milliseconds min_restart_duration_;
-    const std::chrono::milliseconds max_restart_duration_;
-  };
 
  private:
   struct FindLatestSeqnoResponse {
@@ -427,13 +371,6 @@ class TopicTailer {
   // Map of subscriptions per stream.
   SubscriptionMap<TopicUUID> stream_subscriptions_;
 
-  // Contains a set of (LogReader*, LogID) pairs that will be restarted at
-  // a certain point in time. Readers are restarted occasionally to allow
-  // the storage layer to rebalance threads, and provides some extra resilience
-  // against unexpected log reader failures.
-  // The set is ordered by time.
-  RestartEvents restart_events_;
-
   // The set of copilots awaiting find time response for each log.
   std::unordered_map<LogID, std::vector<CopilotSub>>
     pending_find_time_response_;
@@ -496,8 +433,6 @@ class TopicTailer {
         all.AddCounter(prefix + "remove_subscriber_requests");
       records_served_from_cache =
         all.AddCounter(prefix + "records_served_from_cache");
-      reader_restarts =
-        all.AddCounter(prefix + "reader_restarts");
       reader_merges =
         all.AddCounter(prefix + "reader_merges");
       cache_reentries =
@@ -531,7 +466,6 @@ class TopicTailer {
     Counter* updated_subscriptions;
     Counter* remove_subscriber_requests;
     Counter* records_served_from_cache;
-    Counter* reader_restarts;
     Counter* reader_merges;
     Counter* cache_reentries;
     Counter* cache_usage;
