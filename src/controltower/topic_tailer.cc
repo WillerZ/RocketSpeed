@@ -207,7 +207,7 @@ class LogReader {
   }
 
   /**
-   * A virtual reader maintains a start_seqno and topic state, without having
+   * A virtual reader maintains topic subscription state, without having
    * an actual log reader active.
    */
   bool IsVirtual() const {
@@ -250,8 +250,8 @@ class LogReader {
   };
 
   struct LogState {
-    // Sequence number we started from for log.
-    SequenceNumber start_seqno;
+    // Finds minimum of next_seqno in topics.
+    SequenceNumber ComputeStartSeqno() const;
 
     // State of subscriptions on each topic.
     LinkedMap<TopicUUID, TopicState> topics;
@@ -334,7 +334,6 @@ void LogReader::FlushHistory(LogID log_id, SequenceNumber seqno) {
   auto log_it = log_state_.find(log_id);
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
-    log_state.start_seqno = seqno;
     log_state.last_read = seqno - 1;
   }
 }
@@ -395,7 +394,6 @@ Status LogReader::StartReading(const TopicUUID& topic,
   if (first_open) {
     // First time opening this log.
     LogState log_state;
-    log_state.start_seqno = seqno;
     log_state.last_read = seqno - 1;
     log_it = log_state_.emplace(log_id, std::move(log_state)).first;
   }
@@ -458,7 +456,6 @@ Status LogReader::StartReading(const TopicUUID& topic,
       log_state.restart_event_handle =
         restart_events_->AddEvent(this, log_id);
     }
-    log_state.start_seqno = std::min(log_state.start_seqno, seqno);
     log_state.last_read = seqno - 1;
   }
   return st;
@@ -678,9 +675,8 @@ void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
 
   assert(restart_events_);
   log_state.restart_event_handle = restart_events_->AddEvent(this, log_id);
-  Status st = tailer_->StartReading(log_id,
-                                    log_state.start_seqno,
-                                    reader_id_);
+  auto start_seqno = log_state.ComputeStartSeqno();
+  Status st = tailer_->StartReading(log_id, start_seqno, reader_id_);
   if (st.ok()) {
     assert(!log_state.topics.empty());
     log_state_.emplace(log_id, std::move(log_state));
@@ -690,7 +686,7 @@ void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
       "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64 ": %s",
       reader_id_,
       log_id,
-      log_state.start_seqno,
+      start_seqno,
       st.ToString().c_str());
   }
 }
@@ -703,10 +699,8 @@ std::string LogReader::GetLogInfo(LogID log_id) const {
     const LogState& log_state = log_it->second;
     snprintf(
       buffer, sizeof(buffer),
-      "Log(%" PRIu64 ").reader[%zu].start_seqno: %" PRIu64 "\n"
       "Log(%" PRIu64 ").reader[%zu].last_read: %" PRIu64 "\n"
       "Log(%" PRIu64 ").reader[%zu].num_topics_subscribed: %zu\n",
-      log_id, reader_id_, log_state.start_seqno,
       log_id, reader_id_, log_state.last_read,
       log_id, reader_id_, log_state.topics.size());
   } else {
@@ -724,6 +718,15 @@ std::string LogReader::GetAllLogsInfo() const {
     result += GetLogInfo(log_entry.first);
   }
   return result;
+}
+
+SequenceNumber LogReader::LogState::ComputeStartSeqno() const {
+  SequenceNumber min_seqno = std::numeric_limits<SequenceNumber>::max();
+  assert(!topics.empty());
+  for (const auto& entry : topics) {
+    min_seqno = std::min(min_seqno, entry.second.next_seqno);
+  }
+  return min_seqno;
 }
 
 TopicTailer::TopicTailer(

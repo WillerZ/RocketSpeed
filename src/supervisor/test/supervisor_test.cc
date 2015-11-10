@@ -146,18 +146,14 @@ TEST(SupervisorTest, TowerLog) {
 
   snprintf(expected, sizeof(expected),
     "Log(1).tail_seqno_cached: 0\n"
-    "Log(1).reader[0].start_seqno: %" PRIu64 "\n"
     "Log(1).reader[0].last_read: %" PRIu64 "\n"
     "Log(1).reader[0].num_topics_subscribed: 1\n\n",
-    seqno,
     seqno);
   ASSERT_EQ(std::string(expected), DoRequest("info tower log 1\n"));
 
   snprintf(expected, sizeof(expected),
-    "Log(1).reader[0].start_seqno: %" PRIu64 "\n"
     "Log(1).reader[0].last_read: %" PRIu64 "\n"
     "Log(1).reader[0].num_topics_subscribed: 1\n\n",
-    seqno,
     seqno);
   ASSERT_EQ(std::string(expected), DoRequest("info tower logs\n"));
 
