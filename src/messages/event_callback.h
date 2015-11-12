@@ -5,19 +5,36 @@
 //
 #pragma once
 
+#include <cassert>
+#include <cstdint>
 #include <functional>
 #include <memory>
 
-struct event;
+#include "src/util/common/noncopyable.h"
+#include "src/util/common/nonmovable.h"
+#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
 class EventLoop;
 
-class EventCallback {
- public:
-  ~EventCallback();
+/** An ID of a trigger, unique within an EventLoop. */
+using TriggerID = uint64_t;
 
+/**
+ * A utility to notify arbitrary number of EventCallbacks on the same EventLoop
+ * as the notifying thread. It is safe for registered EventCallback or Trigger,
+ * that has any number of registered events to be destroyed at any time.
+ */
+class EventTrigger {
+ public:
+  explicit EventTrigger(TriggerID id) : id_(id) {}
+
+  TriggerID id_;
+};
+
+class EventCallback : public NonMovable, public NonCopyable {
+ public:
   /**
    * Creates an EventCallback that will be invoked when fd becomes readable.
    * cb will be invoked on the event_loop thread.
@@ -46,33 +63,19 @@ class EventCallback {
     int fd,
     std::function<void()> cb);
 
-  // non-copyable, non-moveable
-  EventCallback(const EventCallback&) = delete;
-  EventCallback(EventCallback&&) = delete;
-  EventCallback& operator=(const EventCallback&) = delete;
-  EventCallback& operator=(EventCallback&&) = delete;
+  virtual ~EventCallback() {};
 
-  /** Invokes the callback */
-  void Invoke();
+  /**
+   * Enables the event.
+   * Can be called from the thread that would execute the callback only.
+   */
+  virtual void Enable() = 0;
 
-  /** Enables the event */
-  void Enable();
-
-  /** Disables the event */
-  void Disable();
-
-  /** @return true iff currently enabled. */
-  bool IsEnabled() const {
-    return enabled_;
-  }
-
- private:
-  explicit EventCallback(EventLoop* event_loop, std::function<void()> cb);
-
-  EventLoop* event_loop_;
-  event* event_;
-  std::function<void()> cb_;
-  bool enabled_;
+  /**
+   * Disables the event.
+   * Can be called from the thread that would execute the callback only.
+   */
+  virtual void Disable() = 0;
 };
 
 }  // namespace rocketspeed

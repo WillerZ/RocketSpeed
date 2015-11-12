@@ -10,8 +10,11 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
+
+#include <algorithm>
 #include <deque>
 #include <functional>
+#include <iterator>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -32,9 +35,12 @@
 #include "src/messages/serializer.h"
 #include "src/messages/socket_event.h"
 #include "src/messages/stream_socket.h"
+#include "src/messages/triggerable_callback.h"
+#include "src/util/common/autovector.h"
 #include "src/util/common/client_env.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/flow_control.h"
+#include "src/util/common/random.h"
 
 static_assert(std::is_same<evutil_socket_t, int>::value,
   "EventLoop assumes evutil_socket_t is int.");
@@ -398,6 +404,22 @@ EventLoop::Initialize() {
     return Status::InternalError("Failed to add startup event to event base");
   }
 
+  // An event that signals there is a pending notification from some trigger.
+  if (notified_triggers_fd_.status() < 0) {
+    return Status::InternalError(
+        "Failed to create eventfd for pending notifications");
+  }
+
+  notified_triggers_event_ = EventCallback::CreateFdReadCallback(
+      this,
+      notified_triggers_fd_.readfd(),
+      std::bind(&EventLoop::HandlePendingTriggers, this));
+  if (notified_triggers_event_ == nullptr) {
+    return Status::InternalError(
+        "Failed to create pending notifications event");
+  }
+  notified_triggers_event_->Enable();
+
   // An event that signals the shutdown of the event loop.
   if (shutdown_eventfd_.status() < 0) {
     return Status::InternalError(
@@ -524,6 +546,52 @@ bool EventLoop::ExecuteTasks() {
   return true;
 }
 
+void EventLoop::HandlePendingTriggers() {
+  thread_check_.Check();
+
+  // Fail quickly if there is no notified trigger.
+  if (notified_triggers_.empty()) {
+    // Clear the notification, we will add it back if we do not process all
+    // triggers.
+    eventfd_t value;
+    notified_triggers_fd_.read_event(&value);
+    return;
+  }
+
+  // Find the number of notified and enabled callbacks.
+  size_t total_active_callbacks = 0;
+  for (const auto& trigger : registered_callbacks_) {
+    if (notified_triggers_.count(trigger.first) > 0) {
+      for (auto* callback : trigger.second) {
+        if (callback->IsEnabled()) {
+          ++total_active_callbacks;
+        }
+      }
+    }
+  }
+
+  // Draw the random index of the callback to be notified.
+  std::uniform_int_distribution<size_t> dist(0, total_active_callbacks - 1);
+  size_t index = dist(ThreadLocalPRNG());
+
+  // Find the corresponding callback, no polymorphic lambda, so C&P.
+  TriggerableCallback* cb = nullptr;
+  for (const auto& trigger : registered_callbacks_) {
+    if (notified_triggers_.count(trigger.first) > 0) {
+      for (auto* callback : trigger.second) {
+        if (callback->IsEnabled() && index-- == 0) {
+          cb = callback;
+          break;
+        }
+      }
+    }
+  }
+
+  // This might do arbitrary things, like destroy callbacks. Better to invoke it
+  // out of line.
+  cb->Invoke();
+}
+
 Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
                                         std::chrono::microseconds period) {
   assert(base_);
@@ -556,6 +624,52 @@ Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
     return Status::InternalError("event_add returned error while adding timer");
   }
   return Status::OK();
+}
+
+EventTrigger EventLoop::CreateEventTrigger() {
+  return EventTrigger(next_trigger_id_.fetch_add(1));
+}
+
+void EventLoop::Notify(const EventTrigger& trigger) {
+  thread_check_.Check();
+
+  notified_triggers_.emplace(trigger.id_);
+  // Notify the event that handles pending triggers.
+  notified_triggers_fd_.write_event(1);
+}
+
+void EventLoop::Unnotify(const EventTrigger& trigger) {
+  thread_check_.Check();
+
+  // Remove the trigger from the set of notified ones.
+  notified_triggers_.erase(trigger.id_);
+}
+
+std::unique_ptr<EventCallback> EventLoop::CreateEventCallback(
+    std::function<void()> cb, const EventTrigger& trigger) {
+  thread_check_.Check();
+
+  auto event = new TriggerableCallback(this, trigger.id_, std::move(cb));
+  // Record the trigger to callback mapping.
+  auto result = registered_callbacks_[trigger.id_].emplace(event);
+  (void)result;
+  assert(result.second);
+  return std::unique_ptr<EventCallback>(event);
+}
+
+void EventLoop::TriggerableCallbackClose(access::EventLoop,
+                                         TriggerableCallback* event) {
+  thread_check_.Check();
+
+  auto it = registered_callbacks_.find(event->GetTriggerID());
+  assert(it != registered_callbacks_.end());
+  auto& events = it->second;
+  size_t result = events.erase(event);
+  (void)result;
+  assert(result == 1);
+  if (events.empty()) {
+    registered_callbacks_.erase(it);
+  }
 }
 
 StreamSocket EventLoop::CreateOutboundStream(HostId destination) {
@@ -874,6 +988,7 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , running_(false)
 , base_(nullptr)
 , info_log_(options_.info_log)
+, notified_triggers_fd_(port::Eventfd(true, true))
 , flow_control_(new FlowControl(options_.stats_prefix + ".flow_control", this))
 , event_callback_(std::move(options_.event_callback))
 , accept_callback_(std::move(options_.accept_callback))
@@ -961,6 +1076,7 @@ EventLoop::~EventLoop() {
   // thread should be joined.
   assert(!running_);
   shutdown_eventfd_.closefd();
+  notified_triggers_fd_.closefd();
 }
 
 const char* EventLoop::SeverityToString(int severity) {

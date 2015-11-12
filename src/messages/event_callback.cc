@@ -13,70 +13,73 @@
 
 namespace rocketspeed {
 
-static void EventShim(int fd, short what, void* event) {
-  assert(event);
-  if (what & (EV_READ|EV_WRITE)) {
-    static_cast<EventCallback*>(event)->Invoke();
-  }
-}
+namespace {
 
-EventCallback::EventCallback(EventLoop* event_loop, std::function<void()> cb)
-: event_loop_(event_loop)
-, cb_(std::move(cb))
-, enabled_(false) {
-}
+class FdCallback : public EventCallback {
+ public:
+  FdCallback(EventLoop* event_loop, std::function<void()> cb)
+  : event_loop_(event_loop), cb_(std::move(cb)), enabled_(false) {}
+
+  ~FdCallback() {
+    if (event_) {
+      event_free(event_);
+    }
+  }
+
+  void Enable() final override {
+    event_loop_->ThreadCheck();
+    if (!enabled_) {
+      if (event_add(event_, nullptr)) {
+        exit(137);
+      }
+      enabled_ = true;
+    }
+  }
+
+  void Disable() final override {
+    event_loop_->ThreadCheck();
+    if (enabled_) {
+      if (event_del(event_)) {
+        exit(137);
+      }
+      enabled_ = false;
+    }
+  }
+
+ private:
+  friend class EventCallback;
+
+  static void Invoke(int fd, short what, void* event) {
+    assert(event);
+    if (what & (EV_READ | EV_WRITE)) {
+      auto fd_event = static_cast<FdCallback*>(event);
+      fd_event->event_loop_->ThreadCheck();
+      fd_event->cb_();
+    }
+  }
+
+  EventLoop* event_loop_;
+  event* event_;
+  std::function<void()> cb_;
+  bool enabled_;
+};
+
+}  // namespace
 
 std::unique_ptr<EventCallback> EventCallback::CreateFdReadCallback(
-    EventLoop* event_loop,
-    int fd,
-    std::function<void()> cb) {
-  std::unique_ptr<EventCallback> callback(
-    new EventCallback(event_loop, std::move(cb)));
+    EventLoop* event_loop, int fd, std::function<void()> cb) {
+  auto callback = new FdCallback(event_loop, std::move(cb));
   callback->event_ =
-    event_loop->CreateFdReadEvent(fd, &EventShim, callback.get());
-  return callback;
+      event_loop->CreateFdReadEvent(fd, &FdCallback::Invoke, callback);
+  return std::unique_ptr<FdCallback>(callback);
 }
 
 std::unique_ptr<EventCallback> EventCallback::CreateFdWriteCallback(
-    EventLoop* event_loop,
-    int fd,
-    std::function<void()> cb) {
-  std::unique_ptr<EventCallback> callback(
-    new EventCallback(event_loop, std::move(cb)));
+    EventLoop* event_loop, int fd, std::function<void()> cb) {
+  auto callback = new FdCallback(event_loop, std::move(cb));
   callback->event_ =
-    event_loop->CreateFdWriteEvent(fd, &EventShim, callback.get());
-  return callback;
+      event_loop->CreateFdWriteEvent(fd, &FdCallback::Invoke, callback);
+  return std::unique_ptr<FdCallback>(callback);
 }
 
-EventCallback::~EventCallback() {
-  if (event_) {
-    event_free(event_);
-  }
-}
-
-void EventCallback::Invoke() {
-  event_loop_->ThreadCheck();
-  cb_();
-}
-
-void EventCallback::Enable() {
-  event_loop_->ThreadCheck();
-  if (!enabled_) {
-    if (event_add(event_, nullptr)) {
-      exit(137);
-    }
-    enabled_ = true;
-  }
-}
-
-void EventCallback::Disable() {
-  event_loop_->ThreadCheck();
-  if (enabled_) {
-    if (event_del(event_)) {
-      exit(137);
-    }
-    enabled_ = false;
-  }
-}
-
-}  // namespace
+}  // namespace rocketspeed

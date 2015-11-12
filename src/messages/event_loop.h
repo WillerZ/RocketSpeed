@@ -24,6 +24,7 @@
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "external/folly/producer_consumer_queue.h"
@@ -52,9 +53,12 @@ namespace rocketspeed {
 class CommandQueue;
 class EventCallback;
 class EventLoop;
+class EventTrigger;
 class Flow;
 class FlowControl;
 class SocketEvent;
+using TriggerID = uint64_t;
+class TriggerableCallback;
 class QueueStats;
 
 typedef std::function<void(
@@ -166,6 +170,19 @@ class StreamRouter {
   UniqueStreamMap<SocketEvent*> open_streams_;
 };
 
+namespace access {
+/**
+ * This grants access to a certain subset of methods of EventLoop.
+ * We don't want to do it for every class, but only for those that constitute
+ * the public API. Friends stink, we have a tradition of abusing them.
+ */
+class EventLoop {
+ private:
+  friend class rocketspeed::TriggerableCallback;
+  EventLoop() = default;
+};
+}  // namespace access
+
 class EventLoop {
  public:
   static void EnableDebug();
@@ -273,7 +290,45 @@ class EventLoop {
   void AddTask(std::function<void()> task);
 
   Status RegisterTimerCallback(TimerCallbackType callback,
-                             std::chrono::microseconds period);
+                               std::chrono::microseconds period);
+
+  /**
+   * Creates a new trigger, which can be used to notify EventCallbacks.
+   * This method is thread safe.
+   */
+  EventTrigger CreateEventTrigger();
+
+  /**
+   * Marks provided trigger as notified.
+   * EventLoop will execute enabled callbacks registered with provided trigger
+   * until the notification is cleared.
+   * Must be called from the thread that drives the loop.
+   *
+   * @param trigger An EventTrigger to notify.
+   */
+  void Notify(const EventTrigger& trigger);
+
+  /**
+   * Clears any notifications from provided trigger.
+   * Must be called from the thread that drives the loop.
+   *
+   * @param trigger An EventTrigger to clear notification from.
+   */
+  void Unnotify(const EventTrigger& trigger);
+
+  /**
+   * Creates an EventCallback that will be invoked inline when provided trigger
+   * is notified.
+   *
+   * @param cb Callback to invoke when the trigger is notified.
+   * @param trigger A trigger to bind to.
+   * @return EventCallback object.
+   */
+  std::unique_ptr<EventCallback> CreateEventCallback(
+      std::function<void()> cb, const EventTrigger& trigger);
+
+  /** Cleans up all the state associated with the callback. */
+  void TriggerableCallbackClose(access::EventLoop, TriggerableCallback* event);
 
   const HostId& GetHostId() const { return host_id_; }
 
@@ -520,6 +575,23 @@ class EventLoop {
    * @return True iff all tasks have been executed.
    */
   bool ExecuteTasks();
+
+  /** Next free ID of an EventTrigger. */
+  std::atomic<TriggerID> next_trigger_id_{0};
+  /** Maps a trigger ID to all callbacks registered with the trigger. */
+  std::unordered_map<TriggerID, std::unordered_set<TriggerableCallback*>>
+      registered_callbacks_;
+  /** A set of notified triggers. */
+  std::unordered_set<TriggerID> notified_triggers_;
+  /** An EventCallback invoked when there is any notified trigger. */
+  std::unique_ptr<EventCallback> notified_triggers_event_;
+  /** An eventfd that is readable whenever there is a pending trigger. */
+  port::Eventfd notified_triggers_fd_;
+
+  /**
+   * Handles an event that there are some pending triggers.
+   */
+  void HandlePendingTriggers();
 
   // Flow control for connections.
   std::unique_ptr<FlowControl> flow_control_;
