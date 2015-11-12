@@ -319,9 +319,9 @@ Status RocketSpeed::Initialize(
     }
     tower_opts.log_tailer.FAULT_send_log_record_failure_rate =
       FLAGS_FAULT_tower_send_log_record_failure_rate;
-    tower_opts.topic_tailer.min_reader_restart_duration =
+    tower_opts.log_tailer.min_reader_restart_duration =
       std::chrono::milliseconds(FLAGS_tower_min_reader_restart_ms);
-    tower_opts.topic_tailer.max_reader_restart_duration =
+    tower_opts.log_tailer.max_reader_restart_duration =
       std::chrono::milliseconds(FLAGS_tower_max_reader_restart_ms);
 
     Status st = ControlTower::CreateNewInstance(std::move(tower_opts),
