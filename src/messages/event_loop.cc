@@ -1015,29 +1015,6 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
     static_cast<ExecuteCommand*>(command.get())->Execute();
   };
 
-  heartbeat_enabled_ = options_.heartbeat_enabled;
-  heartbeat_timeout_ = options_.heartbeat_timeout;
-  heartbeat_expire_batch_ = options_.heartbeat_expire_batch;
-  heartbeat_expired_callback_ =
-    [this](StreamID global) {
-      std::unique_ptr<Message> msg(
-          new MessageGoodbye(Tenant::InvalidTenant,
-                             MessageGoodbye::Code::HeartbeatTimeout,
-                             MessageGoodbye::OriginType::Client));
-      // handle the goodbye message by the server
-      SourcelessFlow no_flow;
-      Dispatch(&no_flow, std::move(msg), global);
-      // send the goodbye to the client, it should close the stream after the
-      // t6778565 is completed
-      // TODO(rpetrovic): update the comment after t6778565
-      std::string serial;
-      msg->SerializeToString(&serial);
-      // note that we do not check the command queue size in HandleSendCommand
-      // right now, as we would do in SendCommand
-      HandleSendCommand(
-        SerializedSendCommand::Response(std::move(serial), {global}));
-    };
-
   LOG_INFO(info_log_, "Created a new Event Loop at port %d", port_number_);
 }
 

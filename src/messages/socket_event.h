@@ -128,15 +128,6 @@ class SocketEvent : public Source<MessageOnStream> {
   std::list<std::unique_ptr<SocketEvent>>::iterator list_handle_;
 
   SocketEvent(EventLoop* event_loop, int fd, bool initiated);
-
-  void ProcessHeartbeats() {
-    if (event_loop_->heartbeat_enabled_) {
-      event_loop_->heartbeat_.ProcessExpired(
-          event_loop_->heartbeat_timeout_,
-          event_loop_->heartbeat_expired_callback_,
-          event_loop_->heartbeat_expire_batch_);
-    }
-  }
 };
 
 }  // namespace rocketspeed

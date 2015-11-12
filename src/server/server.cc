@@ -104,13 +104,6 @@ DEFINE_int32(supervisor_port,
              rocketspeed::SupervisorLoop::DEFAULT_PORT,
              "supervisor port number");
 
-DEFINE_bool(heartbeat_enabled, false, "enabled the stream heartbeat check");
-DEFINE_int32(heartbeat_timeout,
-             900,
-             "heartbeat timeout for the idle streams, in seconds");
-DEFINE_int32(heartbeat_expire_batch, -1 /* unbounded */,
-             "number of streams to expire in one blocking call");
-
 DEFINE_string(rs_log_dir, "", "directory for server logs");
 
 DEFINE_int32(socket_buffer_size, 0,
@@ -191,11 +184,6 @@ Status RocketSpeed::Initialize(
       "Constructing MsgLoop port=%d workers=%d name=%s socketbuf=%d",
       port, workers, name.c_str(), env_options_.tcp_send_buffer_size);
     MsgLoop::Options options;
-    options.event_loop.heartbeat_timeout =
-      std::chrono::seconds(FLAGS_heartbeat_timeout);
-    options.event_loop.heartbeat_expire_batch =
-      FLAGS_heartbeat_expire_batch;
-    options.event_loop.heartbeat_enabled = FLAGS_heartbeat_enabled;
     return new MsgLoop(env_,
                        env_options_,
                        port,

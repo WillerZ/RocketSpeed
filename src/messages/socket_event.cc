@@ -161,8 +161,6 @@ SocketEvent::SocketEvent(EventLoop* event_loop, int fd, bool initiated)
                                                  [this]() {
                                                    if (!ReadCallback().ok()) {
                                                      Disconnect(this, false);
-                                                   } else {
-                                                     ProcessHeartbeats();
                                                    }
                                                  });
 
@@ -172,8 +170,6 @@ SocketEvent::SocketEvent(EventLoop* event_loop, int fd, bool initiated)
                                            [this]() {
                                              if (!WriteCallback().ok()) {
                                                Disconnect(this, false);
-                                             } else {
-                                               ProcessHeartbeats();
                                              }
                                            });
 }
@@ -397,10 +393,6 @@ Status SocketEvent::ReadCallback() {
                "New stream (%llu) was associated with socket fd(%d)",
                global,
                fd_);
-    }
-
-    if (do_insert && event_loop_->heartbeat_enabled_) {
-      event_loop_->heartbeat_.Add(global);
     }
 
     const MessageType msg_type = msg->GetMessageType();

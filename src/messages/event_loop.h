@@ -213,14 +213,6 @@ class EventLoop {
     EventCallbackType event_callback;
     /** A callback for handling new incoming connections. */
     AcceptCallbackType accept_callback;
-
-    // timeout after which all inactive streams should be considered expired
-    std::chrono::seconds heartbeat_timeout{900};
-    // since we expire the streams in the blocking call, limit the number of
-    // streams expired at once. the rest will be processed in the next call.
-    int heartbeat_expire_batch = -1;
-    // whether the stream heartbeat check is enabled
-    bool heartbeat_enabled = false;
   };
 
   /**
@@ -630,19 +622,6 @@ class EventLoop {
   // Number of open connections, including accepted connections, that we haven't
   // received any data on.
   std::atomic<uint64_t> active_connections_;
-
-  // weather the stream heartbeat check is enabled
-  bool heartbeat_enabled_;
-  // the timed list used for tracking the stream activity & expire unused ones
-  TimeoutList<StreamID> heartbeat_;
-  // timeout after which all inactive streams should be considered expired
-  std::chrono::seconds heartbeat_timeout_;
-  // since we expire the streams in the blocking call, limit the number of
-  // streams expired at once. the rest will be processed in the next call.
-  int heartbeat_expire_batch_;
-  // the callback invoked on the expired streams in the heartbeat_. it should
-  // be responsible for closing the stream properly
-  std::function<void(StreamID)> heartbeat_expired_callback_;
 
   // Timeouts for connect calls.
   // Non-blocking connects do eventually timeout after ~2 minutes, but this
