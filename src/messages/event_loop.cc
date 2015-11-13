@@ -569,6 +569,10 @@ void EventLoop::HandlePendingTriggers() {
       }
     }
   }
+  // All callbacks might be disabled.
+  if (total_active_callbacks == 0) {
+    return;
+  }
 
   // Draw the random index of the callback to be notified.
   std::uniform_int_distribution<size_t> dist(0, total_active_callbacks - 1);
