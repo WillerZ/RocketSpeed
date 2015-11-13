@@ -180,6 +180,18 @@ class TopicTailer {
 
   ~TopicTailer();
 
+  struct LogReaderId {
+    explicit LogReaderId(LogID _log_id, LogReader* _reader)
+    : log_id(_log_id), reader(_reader) {}
+
+    bool operator==(const LogReaderId& rhs) const {
+      return reader == rhs.reader && log_id == rhs.log_id;
+    }
+
+    LogID log_id;
+    LogReader* reader;
+  };
+
  private:
   struct FindLatestSeqnoResponse {
     Status status;
@@ -292,6 +304,12 @@ class TopicTailer {
                         LogReader* reader,
                         Flow* flow);
 
+  enum class CacheRead {
+    kNoneRead,
+    kReadContinue,
+    kReadBackoff
+  };
+
   /**
    * Checks the cache for records relevant to the reader and delivers them.
    *
@@ -300,7 +318,14 @@ class TopicTailer {
    * @param reader_id ID of reader to advance.
    * @return true if records were read from the cache.
    */
-  bool AdvanceReaderFromCache(Flow* flow, LogID log_id, LogReader* reader);
+  CacheRead AdvanceReaderFromCache(Flow* flow, LogID log_id, LogReader* reader);
+
+  /**
+   * Invokes AdvanceReaderFromCache and starts/stops of the LogReader depending
+   * on whether backpressure was applied, and whether the reader is currently
+   * paused or not.
+   */
+  void SendCacheRecord(Flow* flow, LogID log_id, LogReader* reader);
 
   /**
    * Attempts to read from the cache for a new subscription, and opens reader
@@ -385,6 +410,12 @@ class TopicTailer {
   // been added to a log reader yet.
   std::vector<std::shared_ptr<ObservableMap<CopilotSub, PendingSubscription>>>
     cache_readers_;
+
+  // Really, this should be an ObservableSet, but nullptr_t will do for now.
+  // We should also have a single source per LogReaderId, but that would
+  // likely create a prohibitive number of eventfds, so it is avoided for now.
+  std::shared_ptr<ObservableMap<LogReaderId, std::nullptr_t>>
+    reentry_cache_readers_;
 
   // Maps copilots to worker thread index.
   std::function<int(const CopilotSub&)> copilot_worker_;
@@ -474,3 +505,13 @@ class TopicTailer {
 };
 
 }  // namespace rocketspeed
+
+namespace std {
+template <>
+struct hash<rocketspeed::TopicTailer::LogReaderId> {
+  size_t operator()(const rocketspeed::TopicTailer::LogReaderId& value) const {
+    return std::hash<decltype(value.reader)>()(value.reader) ^
+           std::hash<decltype(value.log_id)>()(value.log_id);
+  }
+};
+}

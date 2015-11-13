@@ -2274,31 +2274,31 @@ TEST(IntegrationTest, SmallRoomQueues) {
 
   // Publish a message to find the current seqno for the topic.
   port::Semaphore pub_sem;
-  SequenceNumber first_seqno = 0;
+  SequenceNumber seqnos[kNumMessages];
   for (size_t i = 0; i < kNumMessages; ++i) {
     ASSERT_OK(client->Publish(GuestTenant,
                               "SmallRoomQueues",
                               GuestNamespace,
                               TopicOptions(),
                               "#" + std::to_string(i),
-                              [&] (std::unique_ptr<ResultStatus> rs) {
+                              [&, i] (std::unique_ptr<ResultStatus> rs) {
                                 ASSERT_OK(rs->GetStatus());
                                 pub_sem.Post();
-                                if (first_seqno == 0) {
-                                  first_seqno = rs->GetSequenceNumber();
-                                }
+                                seqnos[i] = rs->GetSequenceNumber();
                               }).status);
     pub_sem.TimedWait(timeout);
   }
+  const size_t kPhase1Messages = kNumMessages - 1;
+  const SequenceNumber seqno_phase1 = seqnos[kNumMessages - kPhase1Messages];
   port::Semaphore sem1;
   client->Subscribe(GuestTenant,
                     GuestNamespace,
                     "SmallRoomQueues",
-                    first_seqno,
+                    seqno_phase1,
                     [&] (std::unique_ptr<MessageReceived>& mr) {
                       sem1.Post();
                     });
-  for (size_t i = 0; i < kNumMessages; ++i) {
+  for (size_t i = 0; i < kPhase1Messages; ++i) {
     ASSERT_TRUE(sem1.TimedWait(timeout));
   }
 
@@ -2312,18 +2312,18 @@ TEST(IntegrationTest, SmallRoomQueues) {
   ASSERT_GT(applied1, 0);  // ensure that backpressure was applied
   ASSERT_GE(applied1, lifted1); // ensure that it was lifted as often as applied
   ASSERT_LE(applied1, lifted1 + 1);  // could be 1 less if not lifted yet.
-  ASSERT_EQ(received1, kNumMessages);
+  ASSERT_EQ(received1, kPhase1Messages);
 
   // Now cache is filled, so try again to test cache flow.
   port::Semaphore sem2;
   client->Subscribe(GuestTenant,
                     GuestNamespace,
                     "SmallRoomQueues",
-                    first_seqno,
+                    seqno_phase1,
                     [&] (std::unique_ptr<MessageReceived>& mr) {
                       sem2.Post();
                     });
-  for (size_t i = 0; i < kNumMessages; ++i) {
+  for (size_t i = 0; i < kPhase1Messages; ++i) {
     ASSERT_TRUE(sem2.TimedWait(timeout));
   }
 
@@ -2336,14 +2336,45 @@ TEST(IntegrationTest, SmallRoomQueues) {
     "tower.topic_tailer.log_records_received");
   auto cache2 = stats2.GetCounterValue(
     "tower.topic_tailer.records_served_from_cache");
-  auto cache_backoff = stats2.GetCounterValue(
+  auto cache_backoff2 = stats2.GetCounterValue(
     "tower.topic_tailer.cache_reader_backoff");
   ASSERT_GT(applied2, 0);  // ensure that backpressure was applied
   ASSERT_GE(applied2, lifted2); // ensure that it was lifted as often as applied
   ASSERT_LE(applied2, lifted2 + 1);  // could be 1 less if not lifted yet.
-  ASSERT_EQ(received2, kNumMessages);  // no more messages received
-  ASSERT_EQ(cache2, kNumMessages);
-  ASSERT_GE(cache_backoff, 0);
+  ASSERT_EQ(received2, kPhase1Messages);  // no more messages received
+  ASSERT_EQ(cache2, kPhase1Messages);
+  ASSERT_GE(cache_backoff2, 0);
+
+  // This time, read from before the cache, to test cache re-entry flow control.
+  port::Semaphore sem3;
+  client->Subscribe(GuestTenant,
+                    GuestNamespace,
+                    "SmallRoomQueues",
+                    seqnos[0],
+                    [&] (std::unique_ptr<MessageReceived>& mr) {
+                      sem3.Post();
+                    });
+  for (size_t i = 0; i < kNumMessages; ++i) {
+    ASSERT_TRUE(sem3.TimedWait(timeout));
+  }
+
+  auto stats3 = cluster.GetControlTower()->GetStatisticsSync();
+  auto applied3 = stats3.GetCounterValue(
+    "tower.topic_tailer.flow_control.backpressure_applied");
+  auto lifted3 = stats3.GetCounterValue(
+    "tower.topic_tailer.flow_control.backpressure_lifted");
+  auto received3 = stats3.GetCounterValue(
+    "tower.topic_tailer.log_records_received");
+  auto cache3 = stats3.GetCounterValue(
+    "tower.topic_tailer.records_served_from_cache");
+  auto cache_backoff3 = stats3.GetCounterValue(
+    "tower.topic_tailer.cache_reader_backoff");
+  ASSERT_GT(applied3, applied2);  // ensure that backpressure was applied
+  ASSERT_GE(applied3, lifted3); // ensure that it was lifted as often as applied
+  ASSERT_LE(applied3, lifted3 + 1);  // could be 1 less if not lifted yet.
+  ASSERT_GE(received3, kNumMessages);
+  ASSERT_EQ(cache3, kPhase1Messages + kPhase1Messages);
+  ASSERT_EQ(cache_backoff3, cache_backoff2);
 }
 
 TEST(IntegrationTest, CacheReentrance) {
@@ -2448,9 +2479,9 @@ TEST(IntegrationTest, CacheReentrance) {
   ASSERT_EQ(stats2["records_served_from_cache"], kNumInCache);
   ASSERT_EQ(stats2["reader_merges"], 0);
   ASSERT_EQ(stats2["cache_reentries"], 1);
-  ASSERT_EQ(stats2["readers_started"], 2);
-  ASSERT_EQ(stats2["readers_restarted"], 1);
-  ASSERT_EQ(stats2["readers_stopped"], 1);
+  ASSERT_EQ(stats2["readers_started"], 3);
+  ASSERT_EQ(stats2["readers_restarted"], 0);
+  ASSERT_EQ(stats2["readers_stopped"], 2);
 
   // Finally, without closing existing subscription, start a new subscription
   // on a different topic (but same log, due to single_log flag) at the first
@@ -2471,9 +2502,9 @@ TEST(IntegrationTest, CacheReentrance) {
   ASSERT_EQ(stats3["records_served_from_cache"], kNumInCache);
   ASSERT_EQ(stats3["reader_merges"], 1);
   ASSERT_EQ(stats3["cache_reentries"], 2);
-  ASSERT_EQ(stats3["readers_started"], 3);
-  ASSERT_EQ(stats3["readers_restarted"], 1);
-  ASSERT_EQ(stats3["readers_stopped"], 2);
+  ASSERT_EQ(stats3["readers_started"], 4);
+  ASSERT_EQ(stats3["readers_restarted"], 0);
+  ASSERT_EQ(stats3["readers_stopped"], 3);
 }
 
 TEST(IntegrationTest, CopilotTailSubscribeFast) {

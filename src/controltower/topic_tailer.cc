@@ -128,6 +128,14 @@ class LogReader {
   Status StopReading(const TopicUUID& topic, LogID log_id);
 
   /**
+   * Stops reading a log without throwing away any state.
+   * This operation is idempotent.
+   *
+   * @param log_id ID of the log to pause reading.
+   */
+  void PauseReading(LogID log_id);
+
+  /**
    * Restarts a reader at its current position.
    * The purpose of this call is to try and save a reader from a bad state by
    * re-issuing the StartReading command. It also gives the storage client a
@@ -135,9 +143,8 @@ class LogReader {
    * our usage pattern.
    *
    * @param log_id ID of the log to restart reading on.
-   * @return ok() if successful, otherwise error.
    */
-  Status RestartReading(LogID log_id);
+  void RestartReading(LogID log_id);
 
   /**
    * Flushes the log state for a log.
@@ -256,7 +263,19 @@ class LogReader {
 
     // Last read sequence number on this log.
     SequenceNumber last_read;
+
+    // If the reader is currently paused or not.
+    bool is_reading = false;
   };
+
+  // Starts a log reader at seqno (if not already started).
+  void StartLogReader(LogID log_id, LogState& log_state, SequenceNumber seqno);
+
+  // Stops a log reader.
+  void StopLogReader(LogID log_id, LogState& log_state);
+
+  // Restarts a log reader, even if already reading.
+  void RestartLogReader(LogID log_id, LogState& log_state);
 
   ThreadCheck thread_check_;
   std::shared_ptr<Logger> info_log_;
@@ -265,6 +284,35 @@ class LogReader {
   std::unordered_map<LogID, LogState> log_state_;
   int64_t max_subscription_lag_;
 };
+
+void LogReader::StartLogReader(LogID log_id,
+                               LogState& log_state,
+                               SequenceNumber seqno) {
+  if (log_state.last_read != seqno - 1 || !log_state.is_reading) {
+    log_state.last_read = seqno - 1;
+    log_state.is_reading = true;
+    if (!IsVirtual()) {
+      tailer_->StartReading(log_id, seqno, reader_id_);
+    }
+  }
+}
+
+void LogReader::StopLogReader(LogID log_id, LogState& log_state) {
+  if (log_state.is_reading) {
+    log_state.is_reading = false;
+    if (!IsVirtual()) {
+      tailer_->StopReading(log_id, reader_id_);
+    }
+  }
+}
+
+void LogReader::RestartLogReader(LogID log_id,
+                                 LogState& log_state) {
+  log_state.is_reading = true;
+  if (!IsVirtual()) {
+    tailer_->StartReading(log_id, log_state.last_read + 1, reader_id_);
+  }
+}
 
 void LogReader::ProcessRecord(LogID log_id,
                               SequenceNumber seqno,
@@ -430,19 +478,8 @@ Status LogReader::StartReading(const TopicUUID& topic,
         topic.ToString().c_str());
     }
 
-    if (!IsVirtual()) {
-      // Start the LogTailer.
-      st = tailer_->StartReading(log_id, seqno, reader_id_);
-      if (!st.ok()) {
-        LOG_ERROR(info_log_,
-          "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64": %s",
-          reader_id_,
-          log_id,
-          seqno,
-          st.ToString().c_str());
-      }
-    }
-    log_state.last_read = seqno - 1;
+    // Start the LogTailer.
+    StartLogReader(log_id, log_state, seqno);
   }
   return st;
 }
@@ -466,56 +503,31 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
 
       if (log_state.topics.empty()) {
         // Last subscriber for this log, so stop reading.
-        if (!IsVirtual()) {
-          st = tailer_->StopReading(log_id, reader_id_);
-        }
-        if (st.ok()) {
-          LOG_INFO(info_log_,
-            "No more subscribers on Log(%" PRIu64 ") %sReader(%zu)",
-            log_id,
-            IsVirtual() ? "Virtual" : "",
-            reader_id_);
-          assert(log_state.topics.empty());
-          log_state_.erase(log_it);
-        } else {
-          LOG_ERROR(info_log_,
-            "Reader(%zu) failed to stop reading Log(%" PRIu64 "): %s",
-            reader_id_,
-            log_id,
-            st.ToString().c_str());
-        }
+        StopLogReader(log_id, log_state);
+        assert(log_state.topics.empty());
+        log_state_.erase(log_it);
       }
     }
   }
   return st;
 }
 
-Status LogReader::RestartReading(LogID log_id) {
+void LogReader::PauseReading(LogID log_id) {
   thread_check_.Check();
   assert(!IsVirtual());
 
-  Status st;
   auto log_it = log_state_.find(log_id);
-  if (log_it == log_state_.end()) {
-    assert(false);
-    return Status::NotFound();
-  }
+  assert(log_it != log_state_.end());
+  StopLogReader(log_id, log_it->second);
+}
 
-  // StartReading again.
-  // Don't need to stop first because LogTailer handles this.
-  LogState& log_state = log_it->second;
+void LogReader::RestartReading(LogID log_id) {
+  thread_check_.Check();
+  assert(!IsVirtual());
 
-  auto seqno = log_state.last_read + 1;
-  st = tailer_->StartReading(log_id, seqno, reader_id_);
-  if (!st.ok()) {
-    LOG_ERROR(info_log_,
-      "Reader(%zu) failed to start reading Log(%" PRIu64 ")@%" PRIu64": %s",
-      reader_id_,
-      log_id,
-      seqno,
-      st.ToString().c_str());
-  }
-  return st;
+  auto log_it = log_state_.find(log_id);
+  assert(log_it != log_state_.end());
+  RestartLogReader(log_id, log_it->second);
 }
 
 uint64_t LogReader::SubscriptionCost(const TopicUUID& topic,
@@ -748,6 +760,21 @@ TopicTailer::TopicTailer(
             ProcessFindLatestSeqnoResponse(flow, std::move(response));
           });
       }));
+
+  reentry_cache_readers_ =
+    std::make_shared<ObservableMap<LogReaderId, std::nullptr_t>>();
+
+  // Setup processor for re-entry cache readers.
+  // These are readers that started reading a log, read some from log storage,
+  // found data in the cache, but hit backpressure while in the cache.
+  // This processor will retry reading from the cache later.
+  InstallSource<std::pair<LogReaderId, std::nullptr_t>>(
+    event_loop_,
+    reentry_cache_readers_.get(),
+    flow_control_.get(),
+    [this] (Flow* flow, std::pair<LogReaderId, std::nullptr_t> item) {
+      SendCacheRecord(flow, item.first.log_id, item.first.reader);
+    });
 }
 
 TopicTailer::~TopicTailer() {
@@ -988,27 +1015,31 @@ void TopicTailer::ReceiveLogRecord(std::unique_ptr<MessageData> data,
   data_cache_.StoreData(namespace_id, topic_name, log_id, std::move(data));
 }
 
-bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
-                                         LogID log_id,
-                                         LogReader* reader) {
+TopicTailer::CacheRead
+TopicTailer::AdvanceReaderFromCache(Flow* flow,
+                                    LogID log_id,
+                                    LogReader* reader) {
   thread_check_.Check();
 
   // if cache is not enabled, then short-circuit
   if (data_cache_.GetCapacity() == 0) {
-    return false;
+    return CacheRead::kNoneRead;
   }
 
   SequenceNumber seqno = reader->GetNextSequenceNumber(log_id);
   if (seqno == 0) {
     // Log not open.
-    return false;
+    return CacheRead::kNoneRead;
   }
+
+  bool backoff = false;
 
   // callback to process a data message from cache
   auto on_message_cache = [&] (MessageData* data, bool* delivered) {
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno = 0;
+    assert(next_seqno == reader->GetNextSequenceNumber(log_id));
     reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
 
     // However, may still be no subscribers for this topic.
@@ -1040,11 +1071,10 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
       }
     }
     // For flow control, we stop reading from the cache if any write failed.
-    // This may cause us to exit the cache prematurely, and re-open reader.
-    // This is inefficient, but not incorrect.
-    // TODO(pja) : on flow fail, do not re-open, but schedule an event to
-    // start reading from cache again.
-    return !flow->WriteHasFailed();
+    // The cache will be rechecked once the backpressure is lifted.
+    assert(!backoff);
+    backoff = flow->WriteHasFailed();
+    return !backoff;
   };
 
   // Scan the list of subscribers for this log. If and only if there is
@@ -1053,16 +1083,16 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
   int topic_count = 0;
   topic_map_[log_id].VisitTopics(
     [&] (const TopicUUID& topic) {
-        Slice namespace_id;
-        Slice topic_name;
-        topic.GetTopicID(&namespace_id, &topic_name);
-        topic_count++;
-        if (topic_count > 1) {
-          lookup_topic.clear();
-          return false;    // no need to look at more topics
-        }
-        lookup_topic = topic_name; // store first topic name
-        return true;
+      Slice namespace_id;
+      Slice topic_name;
+      topic.GetTopicID(&namespace_id, &topic_name);
+      topic_count++;
+      if (topic_count > 1) {
+        lookup_topic.clear();
+        return false;    // no need to look at more topics
+      }
+      lookup_topic = topic_name; // store first topic name
+      return true;
     });
   // If there is only one subscribed topic in this log,
   // then we use that topic name to match bloom filters.
@@ -1074,9 +1104,49 @@ bool TopicTailer::AdvanceReaderFromCache(Flow* flow,
 
   if (old != seqno) {
     stats_.cache_reentries->Add(1);
-    return true;
+    return backoff ? CacheRead::kReadBackoff : CacheRead::kReadContinue;
   } else {
-    return false;
+    assert(!backoff);  // how can we hit backoff without reading anything?
+    return CacheRead::kNoneRead;
+  }
+}
+
+void TopicTailer::SendCacheRecord(Flow* flow,
+                                  LogID log_id,
+                                  LogReader* reader) {
+  if (!reader->IsLogOpen(log_id)) {
+    // Reader no longer open.
+    return;
+  }
+
+  // Check if we are now in the cache, and deliver messages from cache
+  // if available.
+  switch (AdvanceReaderFromCache(flow, log_id, reader)) {
+    case CacheRead::kReadContinue:
+    case CacheRead::kNoneRead:
+      // No backoff, so attempt merge, otherwise resume reading.
+      if (!AttemptReaderMerges(reader, log_id)) {
+        // Did not merge with another reader, so RestartReading at the
+        // new sequence number for this log (stop + start).
+        LOG_INFO(info_log_,
+          "Restarting @%" PRIu64 " after reading from Log(%" PRIu64 ") cache.",
+          reader->GetNextSequenceNumber(log_id),
+          log_id);
+        reader->RestartReading(log_id);
+      }
+      break;
+
+    case CacheRead::kReadBackoff:
+      // Messages were delivered from the cache, but backpressure was
+      // applied before reaching the end of the cache.
+      // Stop the log reader for now, and try reading cache later.
+      LOG_INFO(info_log_,
+        "Backing off @%" PRIu64 " after reading from Log(%" PRIu64 ") cache.",
+        reader->GetNextSequenceNumber(log_id),
+        log_id);
+      reader->PauseReading(log_id);
+      reentry_cache_readers_->Write(LogReaderId(log_id, reader), nullptr);
+      break;
   }
 }
 
@@ -1094,18 +1164,15 @@ void TopicTailer::SendLogRecord(
   // Update state for this log and distribute message.
   ReceiveLogRecord(std::move(msg), log_id, reader, flow);
 
-  // Check if we are now in the cache, and deliver messages from cache
-  // if available.
-  if (AdvanceReaderFromCache(flow, log_id, reader)) {
-    // Messages were delivered from cache, so our state is advanced.
-    // Attempt to merge with another reader:
-    if (!AttemptReaderMerges(reader, log_id)) {
-      // Did not merge with another reader, so RestartReading at the
-      // new sequence number for this log (stop + start).
-      reader->RestartReading(log_id);
-    }
+  // Check if we can advance from cache.
+  SequenceNumber seqno = reader->GetNextSequenceNumber(log_id);
+  assert(seqno != 0);
+  if (data_cache_.HasEntry(log_id, seqno)) {
+    // Pause reading log, and start reading from cache.
+    reader->PauseReading(log_id);
+    reentry_cache_readers_->Write(LogReaderId(log_id, reader), nullptr);
   } else {
-    // Attempt to merge with another reader:
+    // See if we can merge with another reader.
     AttemptReaderMerges(reader, log_id);
   }
 }
@@ -1453,7 +1520,6 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
   assert(*seqno != 0);
   thread_check_.Check();
   SequenceNumber delivered = *seqno;
-  SequenceNumber largest_cached = 0;
   std::vector<CopilotSub> recipient;
   recipient.emplace_back(copilot);
   bool backoff = false;
@@ -1464,14 +1530,14 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
 
     auto uuid_pair = std::make_pair(data_raw->GetNamespaceId(),
                                     data_raw->GetTopicName());
-    largest_cached = data_raw->GetSequenceNumber();
-    assert(largest_cached >= *seqno);
+    auto msg_seqno = data_raw->GetSequenceNumber();
+    assert(msg_seqno >= *seqno);
 
     LOG_DEBUG(info_log_,
         "CacheTailer received data (%.16s)@%" PRIu64
         " for Topic(%s,%s) in Log(%" PRIu64 ").",
         data_raw->GetPayload().ToString().c_str(),
-        largest_cached,
+        msg_seqno,
         data_raw->GetNamespaceId().ToString().c_str(),
         data_raw->GetTopicName().ToString().c_str(),
         logid);
@@ -1484,12 +1550,12 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
                   "Delivering data to %s@%" PRIu64 " on Log(%" PRIu64
                   ") from cache",
                   topic.ToString().c_str(),
-                  largest_cached,
+                  msg_seqno,
                   logid);
       }
       // Deliver message
       data_raw->SetPreviousSequenceNumber(delivered);
-      delivered = largest_cached + 1;
+      delivered = msg_seqno + 1;
 
       // When reading from cache, flow control is implemented by sending as
       // much as we can until the sink rejects the writes. At that point,
@@ -1510,7 +1576,6 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
   SequenceNumber old = *seqno;
   *seqno = data_cache_.VisitCache(logid, *seqno, topic_name,
                                   std::move(on_message_cache));
-  assert(largest_cached == 0 || *seqno == largest_cached + 1);
 
   if (backoff) {
     // Backpressure was requested while iterating the cache, causing us to

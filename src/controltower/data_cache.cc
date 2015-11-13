@@ -196,6 +196,10 @@ class CacheEntry {
     return seqno_block + index; // return the next seqno
   }
 
+  bool HasEntry(size_t offset) {
+    return mcache_[offset] != nullptr;
+  }
+
   size_t GetInitialCharge(DataCache* data_cache) {
     return sizeof(CacheEntry)
            + (data_cache->block_size_ * sizeof(mcache_[0]))
@@ -410,6 +414,31 @@ SequenceNumber DataCache::VisitCache(LogID logid,
   }
   return start;         // return next message that is not yet processed
 }
+
+bool DataCache::HasEntry(LogID logid, SequenceNumber seqno) const {
+  if (rs_cache_ == nullptr) { // No caching specified
+    return false;
+  }
+  SequenceNumber seqno_block = AlignToBlockStart(block_size_, seqno);
+  CacheKey buffer;
+  GenerateKey(block_size_, logid, seqno_block, &buffer);
+  Slice cache_key(buffer.buf, sizeof(buffer.buf));
+
+  // Fetch the appropriate entry from the cache
+  bool result = false;
+  Cache::Handle* handle = rs_cache_->Lookup(cache_key);
+  if (handle) {
+    // Check the records in this entry
+    CacheEntry* entry = static_cast<CacheEntry*>(rs_cache_->Value(handle));
+    result = entry->HasEntry(seqno - seqno_block);
+    rs_cache_->Release(handle);
+  }
+  if (!result) {
+    stats_.cache_misses->Add(1);  // no relevant records in cache
+  }
+  return result;
+}
+
 
 Statistics DataCache::GetStatistics() const {
   return stats_.all;

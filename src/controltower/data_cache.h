@@ -68,6 +68,10 @@ class DataCache {
                             const Slice& topic_name,
                             std::function<bool(MessageData* data_raw,
                                           bool* processed)> on_message);
+
+  // Checks if there is an entry at a specific position.
+  bool HasEntry(LogID logid, SequenceNumber seqno) const;
+
  private:
   // number of bloom bits per message
   int bloom_bits_per_msg_;
