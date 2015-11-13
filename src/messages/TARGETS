@@ -26,6 +26,7 @@ cpp_library(
         'event_callback.cc',
         'event_loop.cc',
         'socket_event.cc',
+        'triggerable_callback.cc',
         'types.cc',
     ],
     preprocessor_flags = [

@@ -391,6 +391,7 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
           record.type = GapType::kRetention;
           break;
 
+        case facebook::logdevice::GapType::ACCESS:
         case facebook::logdevice::GapType::MAX:
           assert(false);
           std::abort();
