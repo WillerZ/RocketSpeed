@@ -14,6 +14,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/thread_check.h"
+#include "src/util/memory.h"
 #include "src/util/timeout_list.h"
 #include "src/util/unsafe_shared_ptr.h"
 

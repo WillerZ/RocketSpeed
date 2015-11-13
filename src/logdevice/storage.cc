@@ -5,6 +5,7 @@
 //
 #include "src/logdevice/storage.h"
 #include "include/Logger.h"
+#include "src/util/memory.h"
 #include <algorithm>
 #include <thread>
 #include <unordered_set>

@@ -14,7 +14,6 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/messages/messages.h"
-#include "src/util/memory.h"
 
 namespace rocketspeed {
 
