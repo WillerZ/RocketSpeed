@@ -19,6 +19,8 @@ enum class GapType {
                 // to a sequencer crash. No acknowledged records were lost.
   DATALOSS = 3, // all records in the gap were permanently lost
   TRIM = 4,     // a gap caused by trimming the log
+  ACCESS = 5,   // a get sent when the client does not have the required
+                // permissions
 
   MAX
 };
