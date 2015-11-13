@@ -83,6 +83,8 @@ DEFINE_string(subscription_length_distribution, "weibull",
 "distribution used for generating unsubscribe time in subscription churn");
 DEFINE_string(subscription_backlog_distribution, "fixed",
 "distribution used for generating subscription request with a backlog");
+DEFINE_uint64(subscription_topic_ratio, 1,
+"ratio of number of total topics to number of topics that are subscribed");
 DEFINE_int64(topics_mean, 0,
 "Mean for Normal and Poisson topic distributions (rounded to nearest int64)");
 DEFINE_int64(topics_stddev, 0,
@@ -157,6 +159,7 @@ struct ProducerWorkerArgs {
 struct ConsumerArgs {
   rocketspeed::port::Semaphore* all_messages_received;
   std::atomic<int64_t>* messages_received;
+  std::atomic<int64_t>* messages_expected;
   std::chrono::time_point<std::chrono::steady_clock>* last_data_message;
   bool result;
 };
@@ -352,16 +355,23 @@ void DoSubscribe(
     NamespaceID nsid,
     std::function<void(std::unique_ptr<MessageReceived>&)> receive_callback,
     std::function<Histogram*()> get_catch_up_latency,
-    std::unordered_map<std::string, TopicInfo>& topic_info) {
+    std::unordered_map<std::string, TopicInfo>& topic_info,
+    std::atomic<int64_t>* messages_expected,
+    uint64_t* subscription_count) {
   size_t c = 0;                           // current client index
   size_t t = 0;                           // current topic index
+  *subscription_count = 0;
+
   Pacer pacer(FLAGS_subscribe_rate, 1);
   uint64_t num_clients = consumers.size();
+  uint64_t num_topics = FLAGS_num_topics / FLAGS_subscription_topic_ratio;
+  uint64_t expected = 0;
 
-  for (uint64_t i = 0; i < std::max(FLAGS_num_topics, num_clients); i++) {
+  for (uint64_t i = 0; i < std::max(num_topics, num_clients); i++) {
     std::string topic_name("benchmark." + std::to_string(t));
     SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
     SequenceNumber last_seqno = 0;
+    uint64_t count = 0;
     if (FLAGS_delay_subscribe) {
       // Find the first seqno published to this topic (or 0 if none published).
       auto it = topic_info.find(topic_name);
@@ -373,6 +383,8 @@ void DoSubscribe(
                  FLAGS_subscription_backlog_distribution == "fixed") {
         seqno = it->second.first;
         last_seqno = it->second.last;
+        expected += it->second.total_num;
+        count = it->second.total_num;
       } else {
         uint64_t seed = i << 32;  // should be consistent between runs.
 
@@ -391,11 +403,12 @@ void DoSubscribe(
       }
     }
     pacer.Wait();
-    LOG_DEBUG(info_log, "Client %zu Subscribing to %s at %llu",
+    LOG_DEBUG(info_log, "Client %zu Subscribing to %s from %zu "
+              " total expected messages %zu\n",
               c,
               topic_name.c_str(),
-              static_cast<long long unsigned int>(seqno));
-
+              seqno,
+              count);
     uint64_t subscribe_time = env->NowMicros();
     auto callback =
       [receive_callback, last_seqno, subscribe_time, get_catch_up_latency]
@@ -414,8 +427,27 @@ void DoSubscribe(
 
     // advance to next iteration
     c = (c + 1) % consumers.size();
-    t = (t + 1) % FLAGS_num_topics;
+    t = (t + 1) % num_topics;
+    (*subscription_count)++;
   }
+
+  // If we have accurately calculated how many messages to receive
+  // then use that. Otherwise the caller might have  done this calculation
+  // itself and specified to us the precise number of messages to receive
+  // by setting FLAGS_num_messages_to_receive.
+  // It is ok to set this after all subscriptions have been issued because
+  // this value is initilailized to zero and the exit condition in
+  // DoConsume won't be met till we initilize this variable.
+  if (expected) {
+    messages_expected->store(expected);
+  } else if (FLAGS_num_messages_to_receive != -1) {
+    messages_expected->store(FLAGS_num_messages_to_receive);
+  } else {
+    messages_expected->store(FLAGS_num_messages);
+  }
+  LOG_INFO(info_log, "Total expected messages %zu for %zu subscriptions",
+            messages_expected->load(),
+            *subscription_count);
 }
 
 /*
@@ -542,19 +574,21 @@ static void DoConsume(void* param) {
   rocketspeed::port::Semaphore* all_messages_received =
     args->all_messages_received;
   std::atomic<int64_t>* messages_received = args->messages_received;
+  std::atomic<int64_t>* messages_expected = args->messages_expected;
   std::chrono::time_point<std::chrono::steady_clock>* last_data_message =
     args->last_data_message;
+
   // Wait for the all_messages_received semaphore to be posted.
   // Keep waiting as long as a message was received in the last 5 seconds.
   auto timeout = std::chrono::seconds(FLAGS_idle_timeout);
   do {
     all_messages_received->TimedWait(timeout);
-  } while (messages_received->load() != FLAGS_num_messages_to_receive &&
+  } while (messages_received->load() != messages_expected->load() &&
            std::chrono::steady_clock::now() - *last_data_message < timeout);
 
   if (FLAGS_subscription_backlog_distribution == "fixed") {
     // Success if we receive all messages.
-    args->result = messages_received->load() == FLAGS_num_messages_to_receive ?
+    args->result = messages_received->load() == messages_expected->load() ?
                    0 : 1;
   } else {
     // For non-fixed backlog distributions, we don't expect to receive all
@@ -572,6 +606,7 @@ static void DoConsume(void* param) {
 static int SaveFile(std::string filename,
                     std::unordered_map<std::string, TopicInfo>& tinfo) {
   FILE* fh = fopen((const char*)filename.c_str(), "w");
+  uint64_t num_messages = 0;
   if (fh == nullptr) {
     return errno;
   }
@@ -582,9 +617,17 @@ static int SaveFile(std::string filename,
             it->second.first,
             it->second.last,
             it->second.total_num);
+    num_messages += (it->second.total_num);
   }
   if (fclose(fh)) {
     return errno;
+  }
+  if (FLAGS_num_messages != num_messages) {
+    LOG_ERROR(info_log, "Number of messages produced %zu does not match "
+              " number of messages saved in file %zu\n",
+              FLAGS_num_messages,
+              num_messages);
+    return -1;   // arbitrary error
   }
   return 0; // success
 }
@@ -830,6 +873,7 @@ int main(int argc, char** argv) {
           } else {
             it->second.first = std::min(it->second.first, seq);
             it->second.last = std::max(it->second.last, seq);
+            it->second.total_num++;
           }
         }
       }
@@ -857,6 +901,9 @@ int main(int argc, char** argv) {
   std::atomic<int64_t> messages_received{0};
   std::vector<bool> is_received(FLAGS_num_messages, false);
   std::mutex is_received_mutex;
+
+  // expected number of messages to be received.
+  std::atomic<int64_t> messages_expected{0};
 
   auto receive_callback = [&]
     (std::unique_ptr<rocketspeed::MessageReceived>& rs) {
@@ -890,7 +937,7 @@ int main(int argc, char** argv) {
     }
 
     // If we've received all messages, let the main thread know to finish up.
-    if (++messages_received == FLAGS_num_messages_to_receive) {
+    if (++messages_received == messages_expected.load()) {
       all_messages_received.Post();
     }
   };
@@ -950,10 +997,11 @@ int main(int argc, char** argv) {
   // arbitrary period of time before starting the timer.
   if (!FLAGS_delay_subscribe && !FLAGS_subscriptionchurn) {
     if (FLAGS_start_consumer) {
+      uint64_t subscription_count;
       printf("Subscribing to topics... ");
       fflush(stdout);
       DoSubscribe(clients,  nsid, receive_callback, GetCatchUpLatency,
-        topic_info);
+        topic_info, &messages_expected, &subscription_count);
       int32_t delay = FLAGS_delay_after_subscribe_seconds * 1000000;
       env->SleepForMicroseconds(delay);  // allow some delay for subscribe
       printf("done\n");
@@ -978,6 +1026,7 @@ int main(int argc, char** argv) {
         const uint64_t pubacks = ack_messages_received.load();
         const uint64_t received = messages_received.load();
         const uint64_t failed = failed_publishes.load();
+        const uint64_t expected = messages_expected.load();
         printf("publish-ack'd: %" PRIu64 "/%" PRIu64 " (%.1lf%%)"
              "  received: %" PRIu64 "/%" PRIu64 " (%.1lf%%)"
              "  failed: %" PRIu64,
@@ -986,9 +1035,10 @@ int main(int argc, char** argv) {
           100.0 * static_cast<double>(pubacks) /
             static_cast<double>(FLAGS_num_messages),
           received,
-          FLAGS_num_messages_to_receive,
-          100.0 * static_cast<double>(received) /
-            static_cast<double>(FLAGS_num_messages_to_receive),
+          expected,
+          (expected > 0) ?
+            100.0 * static_cast<double>(received) /
+              static_cast<double>(expected) : 0,
           failed);
         printf(FLAGS_progress_per_line ? "\n" : "\r");
         fflush(stdout);
@@ -1033,6 +1083,7 @@ int main(int argc, char** argv) {
       fflush(stdout);
       cargs.all_messages_received = &all_messages_received;
       cargs.messages_received = &messages_received;
+      cargs.messages_expected = &messages_expected;
       cargs.last_data_message = &last_data_message;
       consumer_threadid = env->StartThread(rocketspeed::DoConsume,
         &cargs,
@@ -1091,17 +1142,20 @@ int main(int argc, char** argv) {
 
     // Subscribe to topics
     subscribe_time = env->NowMicros();
-    DoSubscribe(clients, nsid, receive_callback, GetCatchUpLatency, topic_info);
+    uint64_t topic_count;
+    DoSubscribe(clients, nsid, receive_callback, GetCatchUpLatency,
+                topic_info, &messages_expected, &topic_count);
     subscribe_time = env->NowMicros() - subscribe_time;
     printf("Took %" PRIu64 "ms to subscribe to %" PRIu64 " topics\n",
       subscribe_time / 1000,
-      FLAGS_num_topics);
+      topic_count);
 
     // Wait for all messages to be received
     printf("Waiting (delayed) for messages.\n");
     fflush(stdout);
     cargs.all_messages_received = &all_messages_received;
     cargs.messages_received = &messages_received;
+    cargs.messages_expected = &messages_expected;
     cargs.last_data_message = &last_data_message;
     consumer_threadid = env->StartThread(rocketspeed::DoConsume,
                                          &cargs,
@@ -1112,7 +1166,7 @@ int main(int argc, char** argv) {
     // Wait for Consumer thread to exit
     env->WaitForJoin(consumer_threadid);
     ret = cargs.result;
-    if (messages_received.load() != FLAGS_num_messages_to_receive) {
+    if (messages_received.load() != messages_expected.load()) {
       printf("Time out awaiting messages. (%d)\n", ret);
       fflush(stdout);
     } else {
@@ -1186,7 +1240,7 @@ int main(int argc, char** argv) {
     }
 
     if (FLAGS_start_consumer &&
-        messages_received.load() != FLAGS_num_messages_to_receive &&
+        messages_received.load() != messages_expected.load() &&
         !FLAGS_subscriptionchurn &&
         FLAGS_subscription_backlog_distribution == "fixed") {
       // Print out dropped messages if there are any. This helps when
@@ -1194,7 +1248,7 @@ int main(int argc, char** argv) {
       printf("\n");
       printf("Messages failed to receive, expected %" PRIi64
              " found %" PRIi64 "\n",
-             FLAGS_num_messages_to_receive, messages_received.load());
+             messages_expected.load(), messages_received.load());
 
       for (uint64_t i = 0; i < is_received.size(); ++i) {
         if (!is_received[i]) {

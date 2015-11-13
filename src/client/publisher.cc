@@ -212,7 +212,7 @@ void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
           st = Status::OK();
           seqno = ack.seqno;
         } else {
-          st = Status::IOError("Publish failed");
+          st = Status::IOError("Server informed that publish failed");
         }
 
         if (it->second.callback) {

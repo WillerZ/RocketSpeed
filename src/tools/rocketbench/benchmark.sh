@@ -14,6 +14,7 @@ num_messages=1000
 message_rate=100
 subscribe_rate=10
 subscription_backlog_distribution='fixed' # subscribe from start of topic
+subscription_topic_ratio='' # subscribe to a subset of all topics
 topics_distribution=''
 num_messages_per_topic=''
 max_inflight=1000
@@ -75,7 +76,7 @@ bench=_build/$part/rocketspeed/github/src/tools/rocketbench/rocketbench
 
 # Argument parsing
 OPTS=`getopt -o b:c:dn:r:st:x:y:z: \
-             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscribe-rate:,cache-size:,cache-block-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,progress_per_line,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic:,num_messages_to_receive:,delay_after_subscribe_seconds: \
+             -l size:,client-threads:,deploy,start-servers,stop-servers,collect-logs,collect-stats,messages:,rate:,remote,topics:,cockpits:,towers:,pilot-port:,copilot-port:,controltower-port:,cockpit-host:,controltower-host:,remote-path:,log-dir:,strip,rollcall:,remote-bench:,subscription-backlog-distribution:,subscription-topic-ratio:,subscribe-rate:,cache-size:,cache-block-size:,idle-timeout:,max-inflight:,max_latency_micros:weibull_scale:,weibull_shape:,weibull_max_time:,producer:,socket-buffer-size:,buffered_storage_max_latency_us:,progress_period:,progress_per_line,max_file_descriptors:,namespaceid:,namespaceid_dynamic,topics_distribution:,num_messages_per_topic:,num_messages_to_receive:,delay_after_subscribe_seconds: \
              -n 'rocketbench' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -146,6 +147,8 @@ while true; do
       subscribe_rate="$2"; shift 2 ;;
     --subscription-backlog-distribution )
       subscription_backlog_distribution="$2"; shift 2 ;;
+    --subscription-topic-ratio )
+      subscription_topic_ratio="$2"; shift 2 ;;
     --max-inflight )
       max_inflight="$2"; shift 2 ;;
     --max_latency_micros )
@@ -550,6 +553,8 @@ if [ $# -ne 1 ]; then
   echo "-r --rate            Messages to send per second."
   echo "--subscribe-rate     Number of subscriptions to send per second."
   echo "--subscribe-backlog  Subsciption requests read backlog data."
+  echo "--subscription-backlog-distribution "Backlog reads use this among data for a topic."
+  echo "--subscription-topic-ratio "Ratio of number of total topics to number of subscribed topics."
   echo "-s --remote          Use remote server(s) for pilot, copilot, control towers."
   echo "-t --topics          Number of topics."
   echo "-x --cockpits        Number of cockpits to use."
@@ -833,6 +838,9 @@ function run_consume {
        --subscriptionchurn=false \
        --subscription_backlog_distribution=$subscription_backlog_distribution \
        --max_inflight=$max_inflight "
+  if [ $subscription_topic_ratio ]; then
+    cmd+=" --subscription_topic_ratio=$subscription_topic_ratio "
+  fi
   if [ $remote_bench ]; then
     cmd="\" $limitcmd && $cmd\""
     hostnum=0;
