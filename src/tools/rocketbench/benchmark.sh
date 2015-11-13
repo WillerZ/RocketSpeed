@@ -231,7 +231,14 @@ else
                     rocketspeed007.11.lla1.facebook.com \
                     rocketspeed009.11.lla1.facebook.com \
                     rocketspeed010.11.lla1.facebook.com \
-                    rocketspeed011.11.lla1.facebook.com )
+                    rocketspeed011.11.lla1.facebook.com \
+                    # following shared between dhruba and 'stupaq'
+                    rocketspeed031.11.lla1.facebook.com \
+                    rocketspeed032.11.lla1.facebook.com \
+                    rocketspeed033.11.lla1.facebook.com \
+                    # the folowing are shared betwen dhruba and 'open pool'
+                    rocketspeed034.11.lla1.facebook.com \
+                    rocketspeed036.11.lla1.facebook.com )
   elif [ $USER == "stupaq" ]; then
     available_hosts=( \
                     rocketspeed031.11.lla1.facebook.com \

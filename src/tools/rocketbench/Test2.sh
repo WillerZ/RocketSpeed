@@ -21,9 +21,9 @@ fi
 COCKPITS=5
 TOWERS=1
 
-BENCH=15
-NUM_MESSAGES=66666666
-NUM_TOPICS=10000000
+BENCH=16
+NUM_MESSAGES=62500000
+NUM_TOPICS=30000000
 
 echo Starting Servers...
 cmd="$BENCHMARK --remote --deploy --start-servers --buffered_storage_max_latency_us=10000 --cockpits=$COCKPITS"
