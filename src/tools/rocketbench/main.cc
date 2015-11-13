@@ -835,7 +835,8 @@ int main(int argc, char** argv) {
       }
     } else {
       ++failed_publishes;
-      LOG_WARN(info_log, "Received publish failure response");
+      LOG_WARN(info_log, "Received publish failure response %s",
+               rs->GetStatus().ToString().c_str());
     }
 
     if (FLAGS_await_ack) {
