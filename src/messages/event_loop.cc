@@ -494,8 +494,10 @@ void EventLoop::Run() {
   }
   fd_read_events_.clear();
   incoming_queues_.clear();
+  notified_triggers_event_.reset();
   shutdown_event_.reset();
   teardown_all_connections();
+  flow_control_.reset();
   event_base_free(base_);
 
   if (!internal_status_.ok()) {
