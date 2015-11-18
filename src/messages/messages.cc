@@ -40,6 +40,15 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "tail_seqno",
 };
 
+MessageType Message::ReadMessageType(Slice slice) {
+  MessageType mtype;
+  if (slice.size() < sizeof(mtype)) {
+    return MessageType::NotInitialized;
+  }
+  memcpy(&mtype, slice.data(), sizeof(mtype));
+  return mtype;
+}
+
  /**
   * Creates a Message of the appropriate subtype by looking at the
   * MessageType. Returns nullptr on error. It is the responsibility
@@ -47,13 +56,10 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   **/
 std::unique_ptr<Message>
 Message::CreateNewInstance(Slice* in) {
-  MessageType mtype;
-
-  // extract msg type
-  if (in->size() < sizeof(mtype)) {
+  MessageType mtype = ReadMessageType(*in);
+  if (mtype == MessageType::NotInitialized) {
     return nullptr;
   }
-  memcpy(&mtype, in->data(), sizeof(mtype));
 
   Status st;
   switch (mtype) {

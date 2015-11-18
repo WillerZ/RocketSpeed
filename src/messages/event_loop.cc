@@ -34,12 +34,12 @@
 #include "src/messages/queues.h"
 #include "src/messages/serializer.h"
 #include "src/messages/socket_event.h"
+#include "src/messages/stream.h"
 #include "src/messages/stream_socket.h"
 #include "src/messages/triggerable_callback.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/client_env.h"
 #include "src/util/common/coding.h"
-#include "src/util/common/flow_control.h"
 #include "src/util/common/random.h"
 
 static_assert(std::is_same<evutil_socket_t, int>::value,
@@ -65,119 +65,7 @@ class AcceptCommand : public Command {
   int fd_;
 };
 
-Status StreamRouter::GetOutboundStream(const SendCommand::StreamSpec& spec,
-                                       EventLoop* event_loop,
-                                       SocketEvent** out_sev,
-                                       StreamID* out_local) {
-  thread_check_.Check();
-
-  assert(out_sev);
-  assert(out_local);
-  StreamID global = spec.stream;
-  const HostId& destination = spec.destination;
-
-  // Find global -> (connection, local).
-  if (open_streams_.FindLocalAndContext(global, out_sev, out_local)) {
-    return Status::OK();
-  }
-  // We don't know about the stream, so if the destination was not provided, we
-  // have to drop the message.
-  if (!destination) {
-    return Status::InternalError(
-        "Stream is not opened and destination was not provided.");
-  }
-  {  // Look for connection based on destination.
-    const auto it_c = open_connections_.find(destination);
-    if (it_c != open_connections_.end()) {
-      SocketEvent* found_sev = it_c->second;
-      // Open the stream, reusing the socket.
-      open_streams_.InsertGlobal(global, found_sev);
-      *out_sev = found_sev;
-      *out_local = global;
-      return Status::OK();
-    }
-  }
-  // We know the destination, but cannot reuse connection. Create a new one.
-  SocketEvent* new_sev = event_loop->setup_connection(destination);
-  if (!new_sev) {
-    return Status::InternalError("Failed to create a new connection.");
-  }
-  // Open the stream, using the new socket.
-  open_streams_.InsertGlobal(global, new_sev);
-  *out_sev = new_sev;
-  *out_local = global;
-  return Status::OK();
-}
-
-StreamRouter::RemapStatus StreamRouter::RemapInboundStream(
-    SocketEvent* sev,
-    StreamID local,
-    bool insert,
-    StreamID* out_global) {
-  assert(out_global);
-  thread_check_.Check();
-
-  // Insert into global <-> (connection, local) map and allocate global if
-  // requested.
-  auto result = open_streams_.GetGlobal(sev, local, insert, out_global);
-  if (result == RemapStatus::kNotInserted) {
-    // Do not insert into connection cache if we cannot open the input stream.
-    return result;
-  }
-  // Insert into destination -> connection cache.
-  const HostId& destination = sev->GetDestination();
-  if (!!destination) {
-    // This connection has a known remote endpoint, we can reuse it later on.
-    // In case of any conflicts, just remove the old connection mapping, it
-    // will not disturb existing streams, but can only affect future choice
-    // of connection for that destination.
-    open_connections_[destination] = sev;
-  }
-  return result;
-}
-
-std::tuple<StreamRouter::RemovalStatus, SocketEvent*, StreamID>
-StreamRouter::RemoveStream(StreamID global) {
-  thread_check_.Check();
-
-  RemovalStatus status;
-  SocketEvent* sev;
-  StreamID local;
-  status = open_streams_.RemoveGlobal(global, &sev, &local);
-  if (status == RemovalStatus::kRemovedLast) {
-    // We don't have streams on this connection.
-    // Remove destination -> connection mapping and return the pointer, so
-    // the connection can be closed.
-    const auto it_c = open_connections_.find(sev->GetDestination());
-    // Note that we skip removal from destination cache if the connections do
-    // not match, as we could potentially replace connection with another one to
-    // the same destination.
-    if (it_c != open_connections_.end() && it_c->second == sev) {
-      open_connections_.erase(it_c);
-    }
-  }
-  return std::make_tuple(status, sev, local);
-}
-
-std::vector<StreamID> StreamRouter::RemoveConnection(SocketEvent* sev) {
-  thread_check_.Check();
-
-  std::vector<StreamID> result;
-  {  // Remove all open streams for this connection.
-    auto removed = open_streams_.RemoveContext(sev);
-    for (const auto& entry : removed) {
-      StreamID global = entry.second;
-      result.push_back(global);
-    }
-  }
-  // Remove mapping from destination to the connection.
-  const auto it_c = open_connections_.find(sev->GetDestination());
-  if (it_c != open_connections_.end() && it_c->second == sev) {
-    open_connections_.erase(it_c);
-  }
-  return result;
-}
-
+// TODO(t8971722)
 void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
   // Need using otherwise SendCommand is confused with the member function.
   using rocketspeed::SendCommand;
@@ -189,65 +77,57 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
   msg->issued_time = now;
   assert (!msg->string.empty());
 
-  // Have to handle the case when the message-send failed to write
-  // to output socket and have to invoke *some* callback to the app.
   for (const SendCommand::StreamSpec& spec : send_cmd->GetDestinations()) {
-    // Find or create a connection and original stream ID.
-    SocketEvent* sev = nullptr;
-    StreamID local;
-    Status st = stream_router_.GetOutboundStream(spec, this, &sev, &local);
-
-    if (st.ok()) {
-      assert(sev);
-
-      if (spec.stream != local) {
-        LOG_DEBUG(info_log_,
-                  "Stream ID (%llu) converted to local (%llu)",
-                  spec.stream,
-                  local);
+    // Find or create a stream.
+    auto it = stream_id_to_stream_.find(spec.stream);
+    if (it == stream_id_to_stream_.end()) {
+      if (!spec.destination) {
+        LOG_WARN(info_log_,
+                 "Failed to send on closed stream (%llu), no destination",
+                 spec.stream);
+        continue;
       }
-
-      st = sev->Enqueue(local, msg);
+      // Create a new stream.
+      auto new_stream = OpenStream(spec.destination, spec.stream);
+      if (!new_stream) {
+        LOG_WARN(info_log_,
+                 "Failed to create stream for sending to: %s",
+                 spec.destination.ToString().c_str());
+        continue;
+      }
+      auto result = stream_id_to_stream_.emplace(new_stream->GetLocalID(),
+                                                 new_stream.get());
+      assert(result.second);
+      it = result.first;
+      auto result1 =
+          owned_streams_.emplace(new_stream.get(), std::move(new_stream));
+      (void)result1;
+      assert(result1.second);
     }
-    // No else, so we catch error on adding to queue as well.
 
-    if (!st.ok()) {
-      LOG_WARN(info_log_,
-               "Failed to send message on stream (%llu) to host '%s': %s",
-               spec.stream,
-               spec.destination.ToString().c_str(),
-               st.ToString().c_str());
-      info_log_->Flush();
-    } else {
-      LOG_DEBUG(info_log_,
-                "Enqueued message on stream (%llu) to host '%s': %s",
-                spec.stream,
-                spec.destination.ToString().c_str(),
-                st.ToString().c_str());
-    }
+    // Send out the message even if there is no room in the send queue.
+    auto message = msg;
+    it->second->Write(message, true);
   }
 }
 
 void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
-  // This object is managed by the event that it creates, and will destroy
-  // itself during an EOF callback.
   thread_check_.Check();
-  AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
-  std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
-                                                         accept_cmd->GetFD());
-  if (sev) {
-    // Register with flow control.
-    flow_control_->Register<MessageOnStream>(
-        sev.get(),
-        [this](Flow* flow, MessageOnStream message) {
-          Dispatch(flow, std::move(message.message), message.stream_id);
-        });
 
-    all_sockets_.emplace_front(std::move(sev));
-    all_sockets_.front()->SetListHandle(all_sockets_.begin());
-    active_connections_.fetch_add(1, std::memory_order_acq_rel);
-    stats_.accepts->Add(1);
+  AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
+  // Create SocketEvent and pass ownership to the loop.
+  auto owned_socket = SocketEvent::Create(this, accept_cmd->GetFD());
+  const auto socket = owned_socket.get();
+  if (!socket) {
+    LOG_ERROR(info_log_,
+              "Failed to create SocketEvent for accepted connection fd(%d)",
+              accept_cmd->GetFD());
+    // Close the socket.
+    close(accept_cmd->GetFD());
   }
+  owned_connections_.emplace(socket, std::move(owned_socket));
+
+  stats_.accepts->Add(1);
 }
 
 //
@@ -276,7 +156,11 @@ EventLoop::do_accept(evconnlistener *listener,
   EventLoop* event_loop = static_cast<EventLoop *>(arg);
   event_loop->thread_check_.Check();
   setup_fd(fd, event_loop);
-  event_loop->accept_callback_(fd);
+  if (event_loop->accept_callback_) {
+    event_loop->accept_callback_(fd);
+  } else {
+    event_loop->Accept(fd);
+  }
 }
 
 //
@@ -466,14 +350,16 @@ void EventLoop::Run() {
   info_log_->Flush();
 
   // Register a timer for checking expired connections.
-  RegisterTimerCallback(
-    [this] () {
-      connect_timeout_.ProcessExpired(
-        options_.connect_timeout,
-        [](SocketEvent* sev) { SocketEvent::Disconnect(sev, true); },
-        -1);
-    },
-    options_.connect_timeout);
+  RegisterTimerCallback([this]() {
+    // The timeout list might be modified during the procedure that closes the
+    // socket.
+    std::vector<SocketEvent*> expired;
+    connect_timeout_.GetExpired(options_.connect_timeout,
+                                std::back_inserter(expired));
+    for (auto socket : expired) {
+      socket->Close(SocketEvent::ClosureReason::Error);
+    }
+  }, options_.connect_timeout);
 
   // Start the event loop.
   // This will not exit until Stop is called, or some error
@@ -496,8 +382,7 @@ void EventLoop::Run() {
   incoming_queues_.clear();
   notified_triggers_event_.reset();
   shutdown_event_.reset();
-  teardown_all_connections();
-  flow_control_.reset();
+  CloseAllSocketEvents();
   event_base_free(base_);
 
   if (!internal_status_.ok()) {
@@ -506,7 +391,6 @@ void EventLoop::Run() {
       internal_status_.ToString().c_str());
   }
 
-  stream_router_.CloseAll();
   LOG_VITAL(info_log_, "Stopped EventLoop at port %d", port_number_);
   info_log_->Flush();
   base_ = nullptr;
@@ -678,6 +562,156 @@ void EventLoop::TriggerableCallbackClose(access::EventLoop,
   }
 }
 
+// TODO(t8971722)
+std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination) {
+  return OpenStream(destination, outbound_allocator_.Next());
+}
+
+std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
+                                              StreamID stream_id) {
+  thread_check_.Check();
+  if (!destination) {
+    assert(false);
+    return nullptr;
+  }
+
+  // Attempt to reuse a connection.
+  SocketEvent* socket;
+  auto it = outbound_connections_.find(destination);
+  if (it == outbound_connections_.end()) {
+    // Open a new one if we don't have one already.
+    socket = OpenSocketEvent(destination);
+    if (!socket) {
+      LOG_ERROR(info_log_,
+                "Failed to open Stream to: %s, failed to open connection",
+                destination.ToString().c_str());
+      return nullptr;
+    }
+  } else {
+    socket = it->second;
+  }
+
+  // Create a new stream.
+  auto stream = socket->OpenStream(stream_id);
+  // It will not be owned by this EventLoop.
+  return stream;
+}
+
+SocketEvent* EventLoop::OpenSocketEvent(const HostId& destination) {
+  assert(!!destination);
+  thread_check_.Check();
+
+  int fd;
+  Status st = create_connection(destination, &fd);
+  if (!st.ok()) {
+    LOG_ERROR(info_log_,
+              "Failed to connect socket to: %s failed, %s",
+              destination.ToString().c_str(),
+              st.ToString().c_str());
+    return nullptr;
+  }
+
+  // Create SocketEvent and pass ownership to the loop.
+  auto owned_socket = SocketEvent::Create(this, fd, destination);
+  const auto socket = owned_socket.get();
+  if (!socket) {
+    LOG_ERROR(info_log_,
+              "Failed to create SocketEvent for fd(%d) to: %s",
+              fd,
+              destination.ToString().c_str());
+    // Close the socket.
+    close(fd);
+    return nullptr;
+  }
+  owned_connections_.emplace(socket, std::move(owned_socket));
+
+  // Record the connection in the cache.
+  outbound_connections_.emplace(destination, socket);
+  // Setup a connect timeout.
+  connect_timeout_.Add(socket);
+
+  // Update the number of active connections.
+  active_connections_.store(owned_connections_.size(),
+                            std::memory_order_release);
+
+  LOG_INFO(info_log_,
+           "Connect to: %s scheduled on socket fd(%d)",
+           destination.ToString().c_str(),
+           fd);
+  return socket;
+}
+
+void EventLoop::CloseFromSocketEvent(access::EventLoop, SocketEvent* socket) {
+  assert(socket);
+  thread_check_.Check();
+
+  // Cancel connect timeout.
+  connect_timeout_.Erase(socket);
+
+  // Remove the socket from internal routing structures.
+  size_t removed = outbound_connections_.erase(socket->GetDestination());
+  assert(removed == 1 || !socket->GetDestination());
+  (void)removed;
+
+  // Defer destruction of the socket.
+  auto it = owned_connections_.find(socket);
+  if (it != owned_connections_.end()) {
+    auto owned_socket = std::move(it->second);
+    owned_connections_.erase(it);
+    assert(owned_socket.get() == socket);
+    AddTask(MakeDeferredDeleter(owned_socket));
+  }
+
+  // Update the number of active connections.
+  active_connections_.store(owned_connections_.size(),
+                            std::memory_order_release);
+}
+
+void EventLoop::CloseAllSocketEvents() {
+  thread_check_.Check();
+
+  // We just close all sockets owned by the loop one by one.
+  while (!owned_connections_.empty()) {
+    SocketEvent* socket = owned_connections_.begin()->second.get();
+    socket->Close(SocketEvent::ClosureReason::Graceful);
+  }
+
+  // Destructions of stream and socket control structured will be deferred. Make
+  // sure that they are performed before we exit this method.
+  // Execute all remaining tasks.
+  while (!ExecuteTasks()) {
+    // Once more.
+  }
+}
+
+// TODO(t8971722)
+void EventLoop::AddInboundStream(access::EventLoop, Stream* stream) {
+  assert(stream);
+  thread_check_.Check();
+  auto result = stream_id_to_stream_.emplace(stream->GetLocalID(), stream);
+  assert(result.second);
+  (void)result;
+}
+
+// TODO(t8971722)
+void EventLoop::CloseFromSocketEvent(access::EventLoop, Stream* stream) {
+  assert(stream);
+  thread_check_.Check();
+
+  // Remove stream from internal routing structures.
+  stream_id_to_stream_.erase(stream->GetLocalID());
+  // The stream might not have been managed by the old API.
+
+  // Defer destruction of the stream.
+  auto it = owned_streams_.find(stream);
+  if (it != owned_streams_.end()) {
+    auto owned_stream = std::move(it->second);
+    owned_streams_.erase(it);
+    assert(owned_stream.get() == stream);
+    AddTask(MakeDeferredDeleter(owned_stream));
+  }
+}
+
 StreamSocket EventLoop::CreateOutboundStream(HostId destination) {
   return StreamSocket(std::move(destination), outbound_allocator_.Next());
 }
@@ -796,12 +830,6 @@ void EventLoop::Accept(int fd) {
   SendCommand(command);
 }
 
-void EventLoop::Dispatch(Flow* flow,
-                         std::unique_ptr<Message> message,
-                         StreamID origin) {
-  event_callback_(flow, std::move(message), origin);
-}
-
 void EventLoop::Dispatch(std::unique_ptr<Command> command) {
   stats_.commands_processed->Add(1);
 
@@ -827,69 +855,6 @@ Status EventLoop::WaitUntilRunning(std::chrono::seconds timeout) {
     }
   }
   return Status::OK();
-}
-
-// Removes an socket event created by setup_connection.
-void EventLoop::teardown_connection(SocketEvent* sev, bool timed_out) {
-  thread_check_.Check();
-
-  // Unregister from the flow control.
-  flow_control_->Unregister(sev);
-
-  if (!timed_out) {
-    connect_timeout_.Erase(sev);
-  }
-  all_sockets_.erase(sev->GetListHandle());
-  active_connections_.fetch_sub(1, std::memory_order_acq_rel);
-}
-
-// Clears out the connection cache
-void EventLoop::teardown_all_connections() {
-  while (!all_sockets_.empty()) {
-    teardown_connection(all_sockets_.front().get(), false);
-  }
-}
-
-// Creates a socket connection to specified host, returns null on error.
-SocketEvent*
-EventLoop::setup_connection(const HostId& destination) {
-  thread_check_.Check();
-  int fd;
-  Status status = create_connection(destination, &fd);
-  if (!status.ok()) {
-    LOG_WARN(info_log_,
-             "create_connection to %s failed: %s",
-             destination.ToString().c_str(),
-             status.ToString().c_str());
-    return nullptr;
-  }
-
-  // This object is managed by the event that it creates, and will destroy
-  // itself during an EOF callback.
-  std::unique_ptr<SocketEvent> sev = SocketEvent::Create(this,
-                                                         fd,
-                                                         destination);
-  if (!sev) {
-    return nullptr;
-  }
-
-  // Register with flow control.
-  flow_control_->Register<MessageOnStream>(
-      sev.get(),
-      [this](Flow* flow, MessageOnStream message) {
-        Dispatch(flow, std::move(message.message), message.stream_id);
-      });
-
-  connect_timeout_.Add(sev.get());
-  all_sockets_.emplace_front(std::move(sev));
-  all_sockets_.front()->SetListHandle(all_sockets_.begin());
-  active_connections_.fetch_add(1, std::memory_order_acq_rel);
-
-  LOG_INFO(info_log_,
-           "Connect to %s scheduled on socket fd(%d)",
-           destination.ToString().c_str(),
-           fd);
-  return all_sockets_.front().get();
 }
 
 Status EventLoop::create_connection(const HostId& host, int* fd) {
@@ -995,17 +960,17 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , base_(nullptr)
 , info_log_(options_.info_log)
 , notified_triggers_fd_(port::Eventfd(true, true))
-, flow_control_(new FlowControl(options_.stats_prefix + ".flow_control", this))
-, event_callback_(std::move(options_.event_callback))
 , accept_callback_(std::move(options_.accept_callback))
 , listener_(nullptr)
 , shutdown_eventfd_(port::Eventfd(true, true))
 , command_queues_(CommandQueueUnrefHandler)
-, stream_router_(allocator.Split())
+, event_callback_receiver_(std::move(options_.event_callback))
+, inbound_allocator_(allocator.Split())
 , outbound_allocator_(std::move(allocator))
 , active_connections_(0)
 , stats_(options_.stats_prefix)
 , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix + ".queues"))
+, socket_stats_(std::make_shared<SocketEventStats>(options_.stats_prefix))
 , default_command_queue_size_(options_.command_queue_size) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
@@ -1025,32 +990,25 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 }
 
 EventLoop::Stats::Stats(const std::string& prefix) {
-  write_latency = all.AddLatency(prefix + ".write_latency");
-  write_size_bytes =
-    all.AddHistogram(prefix + ".write_size_bytes", 0, kMaxIovecs, 1, 1.1);
-  write_size_iovec =
-    all.AddHistogram(prefix + ".write_size_iovec", 0, kMaxIovecs, 1, 1.1);
-  write_succeed_bytes =
-    all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1);
-  write_succeed_iovec =
-    all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1);
   commands_processed = all.AddCounter(prefix + ".commands_processed");
   accepts = all.AddCounter(prefix + ".accepts");
   queue_count = all.AddCounter(prefix + ".queue_count");
   full_queue_errors = all.AddCounter(prefix + ".full_queue_errors");
-  socket_writes = all.AddCounter(prefix + ".socket_writes");
-  partial_socket_writes = all.AddCounter(prefix + ".partial_socket_writes");
-  for (int i = 0; i < int(MessageType::max) + 1; ++i) {
-    messages_received[i] = all.AddCounter(
-      prefix + ".messages_received." + MessageTypeName(MessageType(i)));
-  }
+  known_streams = all.AddCounter(prefix + ".known_streams");
+  owned_streams = all.AddCounter(prefix + ".owned_streams");
+  outbound_connections = all.AddCounter(prefix + ".outbound_connections");
+  all_connections = all.AddCounter(prefix + ".all_connections");
 }
 
 Statistics EventLoop::GetStatistics() const {
   stats_.queue_count->Set(incoming_queues_.size());
+  stats_.known_streams->Set(stream_id_to_stream_.size());
+  stats_.owned_streams->Set(owned_streams_.size());
+  stats_.outbound_connections->Set(outbound_connections_.size());
+  stats_.all_connections->Set(owned_connections_.size());
   Statistics stats = stats_.all;
   stats.Aggregate(queue_stats_->all);
-  stats.Aggregate(flow_control_->GetStatistics());
+  stats.Aggregate(socket_stats_->all);
   return stats;
 }
 
@@ -1081,7 +1039,7 @@ void EventLoop::GlobalShutdown() {
 }
 
 int EventLoop::GetNumClients() const {
-  return static_cast<int>(stream_router_.GetNumStreams());
+  return static_cast<int>(stream_id_to_stream_.size());
 }
 
 size_t EventLoop::GetQueueSize() const {

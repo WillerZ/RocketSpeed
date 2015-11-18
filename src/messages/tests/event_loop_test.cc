@@ -5,11 +5,15 @@
 //
 #define __STDC_FORMAT_MACROS
 
+#include <atomic>
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+#include "include/Logger.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/stream.h"
 #include "src/port/Env.h"
 #include "src/port/port.h"
 #include "src/util/testharness.h"
@@ -31,6 +35,20 @@ class EventLoopTest {
   std::shared_ptr<Logger> info_log;
   EventLoop::Options options;
   StreamAllocator stream_allocator;
+
+  void Run(std::function<void()> callback, EventLoop* loop) {
+    std::unique_ptr<Command> command(MakeExecuteCommand(std::move(callback)));
+    ASSERT_OK(loop->SendCommand(command));
+  }
+
+  void Wait(std::function<void()> callback, EventLoop* loop) {
+    port::Semaphore done;
+    Run([&]() {
+      callback();
+      done.Post();
+    }, loop);
+    ASSERT_TRUE(done.TimedWait(positive_timeout));
+  }
 };
 
 TEST(EventLoopTest, AddTask) {
@@ -42,7 +60,7 @@ TEST(EventLoopTest, AddTask) {
   // All reads from other threads are properly guarded with a semaphore.
   bool done = false;
   ThreadCheck thread_check;
-  std::unique_ptr<Command> command(MakeExecuteCommand([&]() {
+  Run([&]() {
     thread_check.Check();
     loop.AddTask([&]() {
       thread_check.Check();
@@ -51,8 +69,7 @@ TEST(EventLoopTest, AddTask) {
     });
     // The task cannot be invoked inline.
     ASSERT_TRUE(!done);
-  }));
-  ASSERT_OK(loop.SendCommand(command));
+  }, &loop);
   ASSERT_TRUE(task_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(done);
 }
@@ -72,7 +89,7 @@ TEST(EventLoopTest, TriggerableEvent) {
   int done = 0;
   std::vector<std::unique_ptr<EventCallback>> events;
   ThreadCheck thread_check;
-  std::unique_ptr<Command> command(MakeExecuteCommand([&]() {
+  Wait([&]() {
     thread_check.Check();
 
     // The code to be executed in the callback.
@@ -101,8 +118,7 @@ TEST(EventLoopTest, TriggerableEvent) {
     loop.Notify(trigger);
     // The callbacks cannot be invoked inline.
     ASSERT_EQ(0, done);
-  }));
-  ASSERT_OK(loop.SendCommand(command));
+  }, &loop);
   ASSERT_TRUE(task_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(task_sem.TimedWait(positive_timeout));
   ASSERT_EQ(kExpected, done);
@@ -115,6 +131,138 @@ TEST(EventLoopTest, TriggerableEvent) {
   }));
   ASSERT_OK(loop.SendCommand(command1));
   ASSERT_TRUE(destroyed.TimedWait(positive_timeout));
+}
+
+template <typename T>
+class TestSink : public Sink<T> {
+ public:
+  explicit TestSink(int initial_capacity)
+  : write_ready_fd_(true, true), capacity_(initial_capacity) {
+    ASSERT_EQ(0, write_ready_fd_.status());
+  }
+
+  ~TestSink() { write_ready_fd_.closefd(); }
+
+  bool Write(T& value, bool check_thread) override {
+    --capacity_;
+    return FlushPending(check_thread);
+  };
+
+  bool FlushPending(bool check_thread) override {
+    if (check_thread) {
+      write_thread_check_.Check();
+    }
+    if (capacity_.load() > 0) {
+      write_ready_fd_.write_event(1);
+      return true;
+    } else {
+      eventfd_t value;
+      write_ready_fd_.read_event(&value);
+      return false;
+    }
+  };
+
+  std::unique_ptr<EventCallback> CreateWriteCallback(
+      EventLoop* event_loop, std::function<void()> callback) override {
+    return EventCallback::CreateFdReadCallback(
+        event_loop, write_ready_fd_.readfd(), std::move(callback));
+  };
+
+  void DrainOne() {
+    ++capacity_;
+    FlushPending(false);
+  }
+
+ private:
+  ThreadCheck write_thread_check_;
+  port::Eventfd write_ready_fd_;
+  std::atomic<int> capacity_;
+};
+
+TEST(EventLoopTest, StreamsFlowControl) {
+  MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Response);
+  // Create the sink that will allow us to block the stream.
+  TestSink<int> test_sink(0);
+
+  // We pipe all messages received on a stream to the test sink.
+  port::Semaphore delivered;
+  options.event_callback =
+      [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream) {
+        int value;
+        flow->Write(&test_sink, value);
+        delivered.Post();
+      };
+  options.listener_port = 0;     // listen on auto-allocated port
+  options.send_queue_limit = 4;  // small limit on send queue size
+  // Set very small TCP buffer sizes.
+  options.env_options.tcp_send_buffer_size = 2048;
+  options.env_options.tcp_recv_buffer_size = 256;
+  EventLoop loop(options, std::move(stream_allocator));
+  EventLoop::Runner runner(&loop);
+
+  // An event that signals writeability of the stream.
+  port::Semaphore writable;
+  std::unique_ptr<EventCallback> write_ev;
+  // Create a stream to itself.
+  std::unique_ptr<Stream> stream;
+  Wait([&] {
+    stream = loop.OpenStream(loop.GetHostId());
+    write_ev = stream->CreateWriteCallback(&loop,
+                                           [&]() {
+                                             write_ev->Disable();
+                                             writable.Post();
+                                           });
+    write_ev->Enable();
+  }, &loop);
+
+  // Write a few messages.
+  Wait([&] {
+    // Initially, the stream is writable.
+    ASSERT_TRUE(writable.TimedWait(positive_timeout));
+    // The send queue can fit a single message only.
+    ASSERT_TRUE(stream->Write(ping, true));
+    ASSERT_TRUE(!stream->Write(ping, true));
+    ASSERT_TRUE(!stream->Write(ping, true));
+  }, &loop);
+
+  // Test that flow control on delivery path works.
+  ASSERT_TRUE(delivered.TimedWait(positive_timeout));
+  ASSERT_TRUE(!delivered.TimedWait(negative_timeout));
+  test_sink.DrainOne();
+  test_sink.DrainOne();
+  ASSERT_TRUE(delivered.TimedWait(positive_timeout));
+  ASSERT_TRUE(!delivered.TimedWait(negative_timeout));
+  test_sink.DrainOne();
+  ASSERT_TRUE(delivered.TimedWait(positive_timeout));
+  ASSERT_TRUE(!delivered.TimedWait(negative_timeout));
+
+  const int kManyMessages = 5000;
+  // Now fill up the socket buffers and send queue.
+  Wait([&]() {
+    for (int i = 0; i < kManyMessages; ++i) {
+      stream->Write(ping, true);
+    }
+    // Enable the write-enabled event so we get notification when the stream is
+    // writable.
+    write_ev->Enable();
+  }, &loop);
+
+  // We've enabled the write-enabled event, but no notification should happen,
+  // as the stream is not writable until all messages are sent out, which should
+  // take some time.
+  ASSERT_TRUE(!writable.TimedWait(negative_timeout));
+  // Now we take all the messages.
+  for (int i = 0; i < kManyMessages; ++i) {
+    test_sink.DrainOne();
+  }
+  // We should receive a notification that the stream is writable again.
+  ASSERT_TRUE(writable.TimedWait(10 * positive_timeout));
+
+  // Streams must be closed on the EventLoop thread.
+  Wait([&]() {
+    write_ev.reset();
+    stream.reset();
+  }, &loop);
 }
 
 }  // namespace rocketspeed

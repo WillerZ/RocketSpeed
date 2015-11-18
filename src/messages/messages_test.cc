@@ -329,9 +329,9 @@ TEST(Messaging, PingPong) {
   MessagePing msg(
       Tenant::GuestTenant, MessagePing::PingType::Request, "cookie");
 
-  auto pings_recv = [] (MsgLoop& msg_loop) {
-    return msg_loop.GetStatisticsSync()
-      .GetCounterValue(msg_loop.GetName() + ".messages_received.ping");
+  auto pings_recv = [](MsgLoop& msg_loop) {
+    return msg_loop.GetStatisticsSync().GetCounterValue(
+        msg_loop.GetName() + ".messages_received.ping");
   };
 
   // Send a single ping first.

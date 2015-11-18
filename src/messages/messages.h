@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
@@ -132,6 +133,15 @@ class Message : private Serializer {
    * @return The tenant ID.
    */
   TenantID GetTenantID() const { return tenantid_; }
+
+  /**
+   * Reads the type of a serialised message.
+   * Does not validate message itself.
+   *
+   * @param slice A serialised message to inspect.
+   * @return The type of provided message.
+   */
+  static MessageType ReadMessageType(Slice slice);
 
   /**
    * Creates a Message of the appropriate subtype by looking at the

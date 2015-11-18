@@ -8,9 +8,24 @@
 #include <memory>
 #include <string>
 
+#include "src/util/common/noncopyable.h"
+#include "src/util/common/nonmovable.h"
+
 namespace rocketspeed {
 
+class Flow;
 class Message;
+class MessagePing;
+class MessageData;
+class MessageDataAck;
+class MessageGoodbye;
+class MessageSubscribe;
+class MessageUnsubscribe;
+class MessageDeliver;
+class MessageDeliverGap;
+class MessageDeliverData;
+class MessageFindTailSeqno;
+class MessageTailSeqno;
 class Slice;
 
 /**
@@ -50,14 +65,42 @@ struct TimestampedString {
 
 typedef std::shared_ptr<TimestampedString> SharedTimestampedString;
 
-struct MessageOnStream {
-  StreamID stream_id;
-  std::unique_ptr<Message> message;
-};
-
-struct SerialisedOnStream {
+struct SerializedOnStream {
   StreamID stream_id;
   SharedTimestampedString serialised;
+};
+
+/** An object which receives messages from a Stream. */
+template <typename T>
+struct StreamReceiveArg {
+  Flow* flow;
+  StreamID stream_id;
+  std::unique_ptr<T> message;
+};
+class StreamReceiver : public NonMovable, public NonCopyable {
+ public:
+  virtual ~StreamReceiver() = default;
+
+  virtual void operator()(StreamReceiveArg<Message> arg);
+
+ protected:
+  virtual void ReceivePing(StreamReceiveArg<MessagePing>) {}
+  virtual void ReceiveData(StreamReceiveArg<MessageData>) {}
+  virtual void ReceiveDataAck(StreamReceiveArg<MessageDataAck>) {}
+  virtual void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye>) {}
+  virtual void ReceiveSubscribe(StreamReceiveArg<MessageSubscribe>) {}
+  virtual void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) {}
+  virtual void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) {}
+  virtual void ReceiveDeliverData(StreamReceiveArg<MessageDeliverData>);
+  virtual void ReceiveDeliverGap(StreamReceiveArg<MessageDeliverGap>);
+  virtual void ReceiveFindTailSeqno(StreamReceiveArg<MessageFindTailSeqno>) {}
+  virtual void ReceiveTailSeqno(StreamReceiveArg<MessageTailSeqno>) {}
+
+ private:
+  template <typename T, typename M>
+  static StreamReceiveArg<T> PrepareArguments(Flow* flow,
+                                              StreamID stream_id,
+                                              std::unique_ptr<M>& message);
 };
 
 }  // namespace rocketspeed

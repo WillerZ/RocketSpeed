@@ -7,16 +7,27 @@
 
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <string>
 
+#include "src/messages/event_callback.h"
+#include "src/messages/types.h"
+#include "src/port/port.h"
 #include "src/util/common/flow_control.h"
 #include "src/util/common/host_id.h"
+#include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
+class EventCallback;
 class EventLoop;
-typedef long long unsigned int StreamID;
+class Stream;
+
+struct MessageOnStream {
+  Stream* stream;
+  std::unique_ptr<Message> message;
+};
 
 /**
  * Maximum number of iovecs to write at once. Note that an array of iovec will
@@ -28,7 +39,23 @@ static constexpr size_t kMaxIovecs = 256;
 static constexpr size_t kMessageHeaderEncodedSize =
     sizeof(uint8_t) + sizeof(uint32_t);
 
-class SocketEvent : public Source<MessageOnStream> {
+class SocketEventStats {
+ public:
+  explicit SocketEventStats(const std::string& prefix);
+
+  Statistics all;
+  Histogram* write_latency;     // time between message was serialised and sent
+  Histogram* write_size_bytes;  // total bytes in write calls
+  Histogram* write_size_iovec;  // total iovecs in write calls.
+  Histogram* write_succeed_bytes;  // successful bytes written in write calls
+  Histogram* write_succeed_iovec;  // successful iovecs written in write calls
+  Counter* socket_writes;          // number of calls to write(v)
+  Counter* partial_socket_writes;  // number of writes that partially succeeded
+  Counter* messages_received[size_t(MessageType::max) + 1];
+};
+
+class SocketEvent : public Source<MessageOnStream>,
+                    public Sink<SerializedOnStream> {
  public:
   /**
    * Creates a new SocketEvent for provided physical socket.
@@ -43,58 +70,61 @@ class SocketEvent : public Source<MessageOnStream> {
                                              HostId destination = HostId());
 
   /**
-   * Does everything necessary to close a socket connection:
-   * - removes streams,
-   * - cleans up connection cache,
-   * - dispatches goodbyes,
-   * - frees the SocketEvent.
+   * Closes all streams on the connection and connection itself.
+   * Since the socket will be closed as a result of this call, no goodby message
+   * will be sent to the remote host, but every local stream will receive a
+   * goodbye message.
    *
-   * @param sev The SocketEvent to disconnect.
-   * @param timed_out True is the socket is descroyed due to connect timeout.
+   * @param reason A reason why this connection is closing.
    */
-  static void Disconnect(SocketEvent* sev, bool timed_out);
+  enum class ClosureReason : uint8_t {
+    Error = 0x00,
+    Graceful = 0x01,
+  };
+  void Close(ClosureReason reason);
 
   ~SocketEvent();
 
-  /** Inherited from Source<MessageOnStream>. */
-  void RegisterReadEvent(EventLoop* event_loop) final override {
-    assert(event_loop_ == event_loop);
-    // We create the event while constructing the socket, as we cannot propagate
-    // or handle errors in this method.
-  }
+  /**
+   * Creates a new outbound stream.
+   * Provided stream ID must be not be used for any other stream on the
+   * connection.
+   *
+   * @param stream_id A stream ID of the stream to be created.
+   */
+  std::unique_ptr<Stream> OpenStream(StreamID stream_id);
 
   /** Inherited from Source<MessageOnStream>. */
-  void SetReadEnabled(EventLoop* event_loop, bool enabled) final override {
-    assert(event_loop_ == event_loop);
-    if (enabled) {
-      read_ev_->Enable();
-    } else {
-      read_ev_->Disable();
-    }
-  }
+  void RegisterReadEvent(EventLoop* event_loop) final override;
 
-  /** Enqueues the message to be sent out when the socket becomes writable. */
-  Status Enqueue(StreamID local,
-                 std::shared_ptr<TimestampedString> message_ser);
+  /** Inherited from Source<MessageOnStream>. */
+  void SetReadEnabled(EventLoop* event_loop, bool enabled) final override;
+
+  /** Inherited from Sink<SerializedOnStream>. */
+  bool Write(SerializedOnStream& value, bool check_thread) final override;
+
+  /** Inherited from Sink<SerializedOnStream>. */
+  bool FlushPending(bool thread_check) final override;
+
+  /** Inherited from Sink<SerializedOnStream>. */
+  std::unique_ptr<EventCallback> CreateWriteCallback(
+      EventLoop* event_loop, std::function<void()> callback) final override;
+
+  bool IsInbound() const { return !destination_; }
 
   const HostId& GetDestination() const { return destination_; }
 
-  std::list<std::unique_ptr<SocketEvent>>::iterator GetListHandle() const {
-    return list_handle_;
-  }
+  EventLoop* GetEventLoop() const { return event_loop_; }
 
-  void SetListHandle(std::list<std::unique_ptr<SocketEvent>>::iterator it) {
-    list_handle_ = it;
-  }
+  const std::shared_ptr<Logger>& GetLogger() const;
 
  private:
   ThreadCheck thread_check_;
 
-  /** Handles write availability events from EventLoop. */
-  Status WriteCallback();
+  const std::shared_ptr<SocketEventStats> stats_;
 
-  /** Handles read availability events from EventLoop. */
-  Status ReadCallback();
+  /** Whether the socket is closing or has been closed. */
+  bool closing_ = false;
 
   /** Reader and deserializer state. */
   size_t hdr_idx_;
@@ -109,25 +139,56 @@ class SocketEvent : public Source<MessageOnStream> {
   /** The next valid offset in the earliest chunk of data to be written. */
   Slice partial_;
 
-  /** The physical socket. */
+  /** The physical socket and read/write event associated with it. */
   int fd_;
-
   std::unique_ptr<EventCallback> read_ev_;
   std::unique_ptr<EventCallback> write_ev_;
 
+  /** An EventTrigger to notify that the sink has some spare capacity. */
+  EventTrigger write_ready_;
+  /** A flow control object for this socket. */
+  FlowControl flow_control_;
+
   EventLoop* event_loop_;
 
-  bool write_ev_added_;     // is the write event added?
-  bool was_initiated_;      // was this connection initiated by us?
   bool timeout_cancelled_;  // have we removed from EventLoop connect_timeout_?
 
   /** A remote destination, non-empty for outbound connections only. */
   HostId destination_;
+  /**
+   * A map from remote (the one on the wire) StreamID to corresponding Stream
+   * object for all (both inbound and outbound) streams.
+   */
+  std::unordered_map<StreamID, Stream*> remote_id_to_stream_;
+  /** A map of all streams owned by this socket. */
+  std::unordered_map<Stream*, std::unique_ptr<Stream>> owned_streams_;
 
-  // Handle into the EventLoop's socket event list (for fast removal).
-  std::list<std::unique_ptr<SocketEvent>>::iterator list_handle_;
+  SocketEvent(EventLoop* event_loop, int fd, HostId destination);
 
-  SocketEvent(EventLoop* event_loop, int fd, bool initiated);
+  /**
+   * Unregisters a stream with provided remote StreamID from the SocketEvent and
+   * triggers closure of the socket if that was the last stream.
+   * If the corresponding stream object is owned by the socket, it's destruction
+   * will be deferred.
+   *
+   * @param remote_id A remote StreamID of the stream to unregister.
+   */
+  void UnregisterStream(StreamID remote_id);
+
+  /** Handles write availability events from EventLoop. */
+  Status WriteCallback();
+
+  /** Handles read availability events from EventLoop. */
+  Status ReadCallback();
+
+  /**
+   * Handles received messagea
+   *
+   * @param remote_id An ID of the stream that the message arrived on.
+   * @param message The message.
+   * @return True if another message can be received in the same read callback.
+   */
+  bool Receive(StreamID remote_id, std::unique_ptr<Message> message);
 };
 
 }  // namespace rocketspeed

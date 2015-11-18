@@ -59,6 +59,8 @@ class FlowControl;
 class SocketEvent;
 using TriggerID = uint64_t;
 class TriggerableCallback;
+class SocketEventStats;
+class Stream;
 class QueueStats;
 
 typedef std::function<void(
@@ -74,102 +76,6 @@ typedef std::function<void(std::unique_ptr<Command> command)>
 
 typedef std::function<void()> TimerCallbackType;
 
-/**
- * Maintains open streams and connections and mapping between them.
- * Performs remapping of stream IDs bewteen IDs which are unique per connection
- * (local) and unique per instance of this class (global). All stream IDs used
- * by this class are the global ones unless otherwise noted.
- */
-class StreamRouter {
- public:
-  /**
-  * Creates an empty router.
-  * @param inbound_alloc An allocator to be used when building a mapping
-  *                      between connection-local and global stream IDs.
-  */
-  explicit StreamRouter(StreamAllocator inbound_alloc)
-      : open_streams_(std::move(inbound_alloc)) {}
-
-  /**
-   * Finds a local stream ID and connection for given stream (identified by
-   * global stream ID from the spec), if none is assigned, assigns or creates
-   * one based on destination provided in the spec.
-   * If a new connection needs to be created, delegates this responsibility back
-   * to event loop via provided non-owning pointer.
-   */
-  Status GetOutboundStream(const SendCommand::StreamSpec& spec,
-                           EventLoop* event_loop,
-                           SocketEvent** out_sev,
-                           StreamID* out_local);
-
-  typedef UniqueStreamMap<SocketEvent*>::GetGlobalStatus RemapStatus;
-
-  /**
-   * Remaps provided local stream ID into global stream ID and associates it
-   * with provided connection, if requested.
-   * If association exists, returns kFound and sets out parameter found
-   * global stream ID.
-   * If no association exists and caller requested insertion, returns
-   * kInserted and sets out parameter to newly assigned global stream ID.
-   * If no association exists and caller did not request insertion, returns
-   * kNotInserted.
-   */
-  RemapStatus RemapInboundStream(SocketEvent* sev,
-                                 StreamID local,
-                                 bool insert,
-                                 StreamID* out_global);
-
-  typedef UniqueStreamMap<SocketEvent*>::RemovalStatus RemovalStatus;
-
-  /**
-   * Called when stream (identified by global stream ID) shall be closed for
-   * whatever reason. Returns a tuple:
-   * - RemovalStatus, which indicates whether removal was performed and whether
-   * it was the last stream on the connection,
-   * - connection that this stream was using,
-   * - local stream ID for this global stream ID.
-   */
-  std::tuple<RemovalStatus, SocketEvent*, StreamID> RemoveStream(
-      StreamID global);
-
-  /**
-   * Called when connection fails, returns a set of all streams (identified by
-   * global stream IDs) assigned to the connection and marks them as
-   * closed-broken.
-   */
-  std::vector<StreamID> RemoveConnection(SocketEvent* sev);
-
-  /**
-   * Returns true if the global stream ID is for an inbound stream.
-   *
-   * This call is thread safe.
-   */
-  bool IsInboundStream(StreamID stream_id) const {
-    return open_streams_.GetAllocator().IsSourceOf(stream_id);
-  }
-
-  /** Returns mappings for all connections. */
-  void CloseAll() {
-    // This will typically be called after the event loop thread terminates.
-    thread_check_.Reset();
-    open_connections_.clear();
-    open_streams_.Clear();
-  }
-
-  /** Returns number of open streams. */
-  size_t GetNumStreams() const {
-    thread_check_.Check();
-    return open_streams_.GetNumStreams();
-  }
-
- private:
-  ThreadCheck thread_check_;
-  /** A mapping from destination to corresponding connection. */
-  std::unordered_map<HostId, SocketEvent*> open_connections_;
-  /** Maps global <-> (connection, local) for all open streams. */
-  UniqueStreamMap<SocketEvent*> open_streams_;
-};
-
 namespace access {
 /**
  * This grants access to a certain subset of methods of EventLoop.
@@ -178,6 +84,7 @@ namespace access {
  */
 class EventLoop {
  private:
+  friend class rocketspeed::SocketEvent;
   friend class rocketspeed::TriggerableCallback;
   EventLoop() = default;
 };
@@ -213,6 +120,8 @@ class EventLoop {
     EventCallbackType event_callback;
     /** A callback for handling new incoming connections. */
     AcceptCallbackType accept_callback;
+    /** A bound on the size of socket's send queue. */
+    size_t send_queue_limit = 30000;
   };
 
   /**
@@ -325,6 +234,38 @@ class EventLoop {
   const HostId& GetHostId() const { return host_id_; }
 
   /**
+   * Opens a new stream to provided destination.
+   *
+   * @param destination A destination to connect to.
+   * @return A stream, null if failed.
+   */
+  std::unique_ptr<Stream> OpenStream(const HostId& destination);
+
+  /**
+   * Detaches provided socket from the loop and schedules its destruction if
+   * it's an inbound one. Provided socket must be closed beforehand.
+   * This method should be called exclusively by the SocketEvent.
+   *
+   * @param An access parameter to control who can call this method.
+   * @param socket A socket to detach.
+   */
+  void CloseFromSocketEvent(access::EventLoop, SocketEvent* socket);
+
+  StreamAllocator* GetInboundAllocator(access::EventLoop) {
+    return &inbound_allocator_;
+  }
+
+  void MarkConnected(access::EventLoop, SocketEvent* socket) {
+    connect_timeout_.Erase(socket);
+  }
+
+  // TODO(t8971722)
+  void AddInboundStream(access::EventLoop, Stream* stream);
+
+  // TODO(t8971722)
+  void CloseFromSocketEvent(access::EventLoop, Stream* stream);
+
+  /**
    * Returns stream ID allocator used by this event loop to create outbound
    * streams.
    *
@@ -349,7 +290,7 @@ class EventLoop {
    * This call is thread safe.
    */
   bool IsInboundStream(StreamID global) const {
-    return stream_router_.IsInboundStream(global);
+    return inbound_allocator_.IsSourceOf(global);
   }
 
   /**
@@ -389,9 +330,6 @@ class EventLoop {
   // Start communicating on a fd.
   // This call is thread-safe.
   void Accept(int fd);
-
-  // Dispatches a message to the event callback.
-  void Dispatch(Flow* flow, std::unique_ptr<Message> message, StreamID origin);
 
   /**
    * Invokes callback for provided command in the calling thread.
@@ -517,16 +455,22 @@ class EventLoop {
   /**
    * Get the queue stats object for this event loop.
    */
-  std::shared_ptr<QueueStats> GetQueueStats() {
-    return queue_stats_;
+  const std::shared_ptr<QueueStats>& GetQueueStats() { return queue_stats_; }
+
+  /**
+   * Get the socket stats object for this event loop.
+   */
+  const std::shared_ptr<SocketEventStats>& GetSocketStats() {
+    return socket_stats_;
   }
+
+  StreamReceiver* GetDefaultReceiver() { return &event_callback_receiver_; }
 
   BaseEnv* GetEnv() { return env_; }
 
- private:
-  friend class SocketEvent;
-  friend class StreamRouter;
+  const Options& GetOptions() const { return options_; }
 
+ private:
   Options options_;
 
   // Internal status of the EventLoop.
@@ -585,11 +529,7 @@ class EventLoop {
    */
   void HandlePendingTriggers();
 
-  // Flow control for connections.
-  std::unique_ptr<FlowControl> flow_control_;
-
   // The callbacks
-  EventCallbackType event_callback_;
   AcceptCallbackType accept_callback_;
   std::map<CommandType, CommandCallbackType> command_callbacks_;
 
@@ -612,12 +552,67 @@ class EventLoop {
   port::Mutex control_command_mutex_;
   std::shared_ptr<CommandQueue> control_command_queue_;
 
-  StreamRouter stream_router_;
+  /**
+   * A receiver that receives messages and forward them to the callback, which
+   * is a part of the old API.
+   * This should disappear once we get rid of the old API.
+   */
+  // TODO(t8971722)
+  class EventCallbackReceiver : public StreamReceiver {
+   public:
+    explicit EventCallbackReceiver(EventCallbackType event_callback)
+    : event_callback_(std::move(event_callback)) {}
+
+    void operator()(StreamReceiveArg<Message> arg) override {
+      event_callback_(arg.flow, std::move(arg.message), arg.stream_id);
+    }
+
+   private:
+    EventCallbackType event_callback_;
+  } event_callback_receiver_;
+  /**
+   * A map of all active outbound streams that were created using the old,
+   * deprecated stream API.
+   * This should disappear once we get rid of the old API.
+   */
+  // TODO(t8971722)
+  std::unordered_map<StreamID, Stream*> stream_id_to_stream_;
+  /**
+   * A map of all streams owned by the loop.
+   * This should disappear once we get rid of the old API.
+   */
+  // TODO(t8971722)
+  std::unordered_map<Stream*, std::unique_ptr<Stream>> owned_streams_;
+
+  /** A map of all established outbound connections. */
+  std::unordered_map<HostId, SocketEvent*> outbound_connections_;
+  /** A list of all inbound connections. */
+  std::unordered_map<SocketEvent*, std::unique_ptr<SocketEvent>>
+      owned_connections_;
+
+  /** Internal method to open stream with provided StreamID. */
+  std::unique_ptr<Stream> OpenStream(const HostId& destination,
+                                     StreamID stream_id);
+
+  /**
+   * Creates a new SocketEvent to provided remote host.
+   * The returned SocketEvent is added to the cache of outbound connections and
+   * owned by the EventLoop.
+   *
+   * @param destination An address of the remote destination.
+   * @return A socket, null if failed.
+   */
+  SocketEvent* OpenSocketEvent(const HostId& destination);
+
+  /**
+   * Detaches and schedules destruction of all SocketEvents owned by the loop.
+   */
+  void CloseAllSocketEvents();
+
+  /** Allocator for inbound streams. */
+  StreamAllocator inbound_allocator_;
   /** Allocator for outboung streams. */
   StreamAllocator outbound_allocator_;
-
-  // List of all sockets.
-  std::list<std::unique_ptr<SocketEvent>> all_sockets_;
 
   // Number of open connections, including accepted connections, that we haven't
   // received any data on.
@@ -652,21 +647,18 @@ class EventLoop {
     explicit Stats(const std::string& prefix);
 
     Statistics all;
-    Histogram* write_latency;     // time from SendCommand to socket write
-    Histogram* write_size_bytes;  // total bytes in write calls
-    Histogram* write_size_iovec;  // total iovecs in write calls.
-    Histogram* write_succeed_bytes; // successful bytes written in write calls.
-    Histogram* write_succeed_iovec; // successful iovecs written in write calls.
     Counter* commands_processed;
     Counter* accepts;             // number of connection accepted
     Counter* queue_count;         // number of queues attached this loop
     Counter* full_queue_errors;   // number of times SendCommand into full queue
-    Counter* messages_received[size_t(MessageType::max) + 1];
-    Counter* socket_writes;       // number of calls to write(v)
-    Counter* partial_socket_writes; // number of writes that partially succeeded
+    Counter* known_streams;  // number of active stream the loop knows about
+    Counter* owned_streams;  // number of stream the loop owns
+    Counter* outbound_connections;  // number of outbound connections
+    Counter* all_connections;       // number of all connections
   } stats_;
 
   const std::shared_ptr<QueueStats> queue_stats_;
+  const std::shared_ptr<SocketEventStats> socket_stats_;
 
   const uint32_t default_command_queue_size_;
 
@@ -685,12 +677,7 @@ class EventLoop {
   void HandleSendCommand(std::unique_ptr<Command> command);
   void HandleAcceptCommand(std::unique_ptr<Command> command);
 
-  // connection cache updates
-  void remove_host(const HostId& host);
-  SocketEvent* setup_connection(const HostId& destination);
   Status create_connection(const HostId& host, int* fd);
-  void teardown_connection(SocketEvent* ev, bool timed_out);
-  void teardown_all_connections();
 
   // callbacks needed by libevent
   static void do_accept(evconnlistener *listener,

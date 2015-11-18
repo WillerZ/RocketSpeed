@@ -13,10 +13,12 @@
 #include "src/port/port.h"
 #include "src/messages/queues.h"
 #include "src/messages/serializer.h"
-#include "src/messages/stream_socket.h"
+#include "src/messages/stream.h"
+#include "src/messages/types.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/flow_control.h"
 #include "src/util/common/host_id.h"
+#include "src/util/memory.h"
 
 namespace rocketspeed {
 
@@ -65,65 +67,161 @@ struct MessageHeader {
 
 }  // namespace
 
+SocketEventStats::SocketEventStats(const std::string& prefix) {
+  write_latency = all.AddLatency(prefix + ".write_latency");
+  write_size_bytes =
+      all.AddHistogram(prefix + ".write_size_bytes", 0, kMaxIovecs, 1, 1.1);
+  write_size_iovec =
+      all.AddHistogram(prefix + ".write_size_iovec", 0, kMaxIovecs, 1, 1.1);
+  write_succeed_bytes =
+      all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1);
+  write_succeed_iovec =
+      all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1);
+  socket_writes = all.AddCounter(prefix + ".socket_writes");
+  partial_socket_writes = all.AddCounter(prefix + ".partial_socket_writes");
+  for (int i = 0; i < int(MessageType::max) + 1; ++i) {
+    messages_received[i] = all.AddCounter(prefix + ".messages_received." +
+                                          MessageTypeName(MessageType(i)));
+  }
+}
+
 std::unique_ptr<SocketEvent> SocketEvent::Create(EventLoop* event_loop,
-                                                 int fd,
+                                                 const int fd,
                                                  HostId destination) {
   std::unique_ptr<SocketEvent> sev(
-      new SocketEvent(event_loop, fd, !!destination));
+      new SocketEvent(event_loop, fd, std::move(destination)));
 
   if (!sev->read_ev_ || !sev->write_ev_) {
     LOG_ERROR(
-        event_loop->GetLog(), "Failed to create socket event for fd(%d)", fd);
+        event_loop->GetLog(), "Failed to create SocketEvent for fd(%d)", fd);
+    // File descriptior is owned by the SocketEvent at this point, noe need to
+    // destroy.
     return nullptr;
   }
-
-  sev->destination_ = std::move(destination);
+  LOG_INFO(event_loop->GetLog(),
+           "Created SocketEvent(%d, %s)",
+           fd,
+           sev->GetDestination().ToString().c_str());
   return sev;
 }
 
-void SocketEvent::Disconnect(SocketEvent* sev, bool timed_out) {
-  // Inform MsgLoop that clients have disconnected.
-  auto origin_type = sev->was_initiated_ ? MessageGoodbye::OriginType::Server
-                                         : MessageGoodbye::OriginType::Client;
+void SocketEvent::Close(ClosureReason reason) {
+  thread_check_.Check();
 
-  // Remove and close streams that were assigned to this connection.
-  EventLoop* event_loop = sev->event_loop_;  // make a copy, sev is destroyed.
-  auto globals = event_loop->stream_router_.RemoveConnection(sev);
-  // Delete the socket event.
-  event_loop->teardown_connection(sev, timed_out);
-  for (StreamID global : globals) {
-    // We send goodbye using the global stream IDs, as these are only
-    // known by the entity using the loop.
-    std::unique_ptr<Message> msg(new MessageGoodbye(
-        Tenant::InvalidTenant, MessageGoodbye::Code::SocketError, origin_type));
-    SourcelessFlow no_flow;
-    event_loop->Dispatch(&no_flow, std::move(msg), global);
+  // Abort if closing or already closed.
+  if (closing_) {
+    return;
   }
+  closing_ = true;
+
+  LOG_INFO(GetLogger(),
+           "Closing SocketEvent(%d, %s), reason: %d",
+           fd_,
+           destination_.ToString().c_str(),
+           static_cast<int>(reason));
+
+  // Unregister this socket from flow control.
+  flow_control_.Unregister(this);
+
+  // Disable read and write events.
+  read_ev_->Disable();
+  write_ev_->Disable();
+
+  // Close all streams one by one.
+  // Once the last stream gets unregistered, an attempt to recurse into this
+  // method will be made. Since we've marked the socket as closing, that won't
+  // do any harm.
+  while (!remote_id_to_stream_.empty()) {
+    Stream* stream = remote_id_to_stream_.begin()->second;
+    // Unregister the stream.
+    UnregisterStream(stream->GetRemoteID());
+    // Prepare and deliver a goodbye message as if it originated from the
+    // remote host.
+    std::unique_ptr<Message> goodbye(new MessageGoodbye(
+        Tenant::GuestTenant,
+        reason == ClosureReason::Graceful ? MessageGoodbye::Code::Graceful
+                                          : MessageGoodbye::Code::SocketError,
+        IsInbound() ? MessageGoodbye::OriginType::Client
+                    : MessageGoodbye::OriginType::Server));
+    // We can afford not to throttle goodbye messages, as for every message
+    // received we remove one entry on socket's internal structures, so overrall
+    // memory utilisation does not grow significantly (if at all).
+    SourcelessFlow no_flow;
+    stream->Receive(access::Stream(), &no_flow, std::move(goodbye));
+  }
+
+  // Unregister from the EventLoop.
+  // This will perform a deferred destruction of the socket.
+  event_loop_->CloseFromSocketEvent(access::EventLoop(), this);
 }
 
 SocketEvent::~SocketEvent() {
   thread_check_.Check();
+  assert(remote_id_to_stream_.empty());
+  assert(owned_streams_.empty());
 
-  LOG_INFO(event_loop_->GetLog(), "Closing fd(%d)", fd_);
-  event_loop_->GetLog()->Flush();
+  LOG_INFO(GetLogger(),
+           "Destroying SocketEvent(%d, %s)",
+           fd_,
+           destination_.ToString().c_str());
+
   read_ev_.reset();
   write_ev_.reset();
   close(fd_);
 }
 
-Status SocketEvent::Enqueue(StreamID local,
-                            std::shared_ptr<TimestampedString> message_ser) {
+std::unique_ptr<Stream> SocketEvent::OpenStream(StreamID stream_id) {
+  std::unique_ptr<Stream> stream(new Stream(this, stream_id, stream_id));
+  auto result = remote_id_to_stream_.emplace(stream_id, stream.get());
+  assert(result.second);
+  (void)result;
+  // TODO(t8971722)
+  stream->SetReceiver(event_loop_->GetDefaultReceiver());
+  return stream;
+}
+
+void SocketEvent::RegisterReadEvent(EventLoop* event_loop) {
+  assert(event_loop_ == event_loop);
   thread_check_.Check();
 
-  auto now = event_loop_->env_->NowMicros();
+  // We create the event while constructing the socket, as we cannot propagate
+  // or handle errors in this method.
+}
 
+void SocketEvent::SetReadEnabled(EventLoop* event_loop, bool enabled) {
+  assert(event_loop_ == event_loop);
+  thread_check_.Check();
+
+  if (enabled) {
+    read_ev_->Enable();
+  } else {
+    read_ev_->Disable();
+  }
+}
+
+bool SocketEvent::Write(SerializedOnStream& value, bool check_thread) {
+  assert(check_thread);
+  thread_check_.Check();
+
+  LOG_DEBUG(GetLogger(),
+            "Writing %zd bytes to SocketEvent(%d, %s)",
+            value.serialised->string.size(),
+            fd_,
+            destination_.ToString().c_str());
+
+  // Sneak-peak message type, we will handle MessageGoodbye differently.
+  auto type = Message::ReadMessageType(value.serialised->string);
+  assert(type != MessageType::NotInitialized);
+
+  auto now = event_loop_->GetEnv()->NowMicros();
   // Serialise stream metadata.
   auto stream_ser = std::make_shared<TimestampedString>();
-  EncodeOrigin(&stream_ser->string, local);
+  const auto remote_id = value.stream_id;
+  EncodeOrigin(&stream_ser->string, remote_id);
   stream_ser->issued_time = now;
-
   // Serialise message header.
-  size_t frame_size = stream_ser->string.size() + message_ser->string.size();
+  size_t frame_size =
+      stream_ser->string.size() + value.serialised->string.size();
   MessageHeader header{kCurrentMsgVersion, static_cast<uint32_t>(frame_size)};
   auto header_ser = std::make_shared<TimestampedString>();
   header_ser->string = header.ToString();
@@ -133,45 +231,119 @@ Status SocketEvent::Enqueue(StreamID local,
   // message to the send queue.
   send_queue_.emplace_back(std::move(header_ser));
   send_queue_.emplace_back(std::move(stream_ser));
-  send_queue_.emplace_back(std::move(message_ser));
-
-  // Enable write event, as we have stuff to write.
-  if (!write_ev_added_) {
-    write_ev_->Enable();
-    write_ev_added_ = true;
+  send_queue_.emplace_back(std::move(value.serialised));
+  // Signal overflow if size limit was matched or exceeded.
+  const bool has_room =
+      send_queue_.size() < event_loop_->GetOptions().send_queue_limit;
+  if (!has_room) {
+    event_loop_->Unnotify(write_ready_);
   }
 
-  return Status::OK();
+  // Enable write event, as we have stuff to write.
+  write_ev_->Enable();
+
+  if (type == MessageType::mGoodbye) {
+    // If it was a goodbye the stream will be closed once this call returns.
+    // We need to unregister it from the loop.
+    UnregisterStream(remote_id);
+  }
+  return has_room;
 }
 
-SocketEvent::SocketEvent(EventLoop* event_loop, int fd, bool initiated)
-: hdr_idx_(0)
+bool SocketEvent::FlushPending(bool thread_check) {
+  assert(thread_check);
+  thread_check_.Check();
+  return true;
+}
+
+std::unique_ptr<EventCallback> SocketEvent::CreateWriteCallback(
+    EventLoop* event_loop, std::function<void()> callback) {
+  assert(event_loop_ == event_loop);
+  thread_check_.Check();
+  return event_loop_->CreateEventCallback(std::move(callback), write_ready_);
+}
+
+const std::shared_ptr<Logger>& SocketEvent::GetLogger() const {
+  return event_loop_->GetLog();
+}
+
+SocketEvent::SocketEvent(EventLoop* event_loop, int fd, HostId destination)
+: stats_(event_loop->GetSocketStats())
+, hdr_idx_(0)
 , msg_idx_(0)
 , msg_size_(0)
 , fd_(fd)
+, write_ready_(event_loop->CreateEventTrigger())
+, flow_control_("socket_event.flow_control", event_loop)
 , event_loop_(event_loop)
-, write_ev_added_(false)
-, was_initiated_(initiated)
-, timeout_cancelled_(false) {
+, timeout_cancelled_(false)
+, destination_(std::move(destination)) {
   thread_check_.Check();
 
   // Create read and write events
-  read_ev_ = EventCallback::CreateFdReadCallback(event_loop,
-                                                 fd,
-                                                 [this]() {
-                                                   if (!ReadCallback().ok()) {
-                                                     Disconnect(this, false);
-                                                   }
-                                                 });
+  read_ev_ =
+      EventCallback::CreateFdReadCallback(event_loop,
+                                          fd,
+                                          [this]() {
+                                            if (!ReadCallback().ok()) {
+                                              Close(ClosureReason::Error);
+                                            }
+                                          });
 
   write_ev_ =
       EventCallback::CreateFdWriteCallback(event_loop,
                                            fd,
                                            [this]() {
                                              if (!WriteCallback().ok()) {
-                                               Disconnect(this, false);
+                                               Close(ClosureReason::Error);
                                              }
                                            });
+
+  // Register the socket with flow control.
+  flow_control_.Register<MessageOnStream>(
+      this,
+      [this](Flow* flow, MessageOnStream message) {
+        message.stream->Receive(
+            access::Stream(), flow, std::move(message.message));
+      });
+
+  // Socket's send_queue is empty, so the sink is writable.
+  event_loop_->Notify(write_ready_);
+}
+
+void SocketEvent::UnregisterStream(StreamID remote_id) {
+  Stream* stream;
+  {  // Remove the stream from the routing data structures, so that all incoming
+    // messages on it will be dropped.
+    auto it = remote_id_to_stream_.find(remote_id);
+    if (it == remote_id_to_stream_.end()) {
+      return;
+    }
+    stream = it->second;
+    remote_id_to_stream_.erase(it);
+  }
+
+  LOG_INFO(GetLogger(),
+           "Unregistering Stream(%llu, %llu)",
+           stream->GetLocalID(),
+           stream->GetRemoteID());
+
+  // TODO(t8971722)
+  event_loop_->CloseFromSocketEvent(access::EventLoop(), stream);
+
+  // Defer destruction of the stream object.
+  auto it = owned_streams_.find(stream);
+  if (it != owned_streams_.end()) {
+    auto owned_stream = std::move(it->second);
+    owned_streams_.erase(it);
+    assert(owned_stream.get() == stream);
+    event_loop_->AddTask(MakeDeferredDeleter(owned_stream));
+  }
+
+  // If we've closed the last stream on this connection, close the connection.
+  if (remote_id_to_stream_.empty()) {
+    Close(ClosureReason::Graceful);
+  }
 }
 
 Status SocketEvent::WriteCallback() {
@@ -179,7 +351,7 @@ Status SocketEvent::WriteCallback() {
 
   if (!timeout_cancelled_) {
     // This socket is now writable, so we can cancel the connect timeout.
-    event_loop_->connect_timeout_.Erase(this);
+    event_loop_->MarkConnected(access::EventLoop(), this);
     timeout_cancelled_ = true;
   }
 
@@ -187,10 +359,10 @@ Status SocketEvent::WriteCallback() {
 
   // Sanity check stats.
   // write_succeed_* should have a record for all write_size_*
-  assert(event_loop_->stats_.write_size_bytes->GetNumSamples() ==
-         event_loop_->stats_.write_succeed_bytes->GetNumSamples());
-  assert(event_loop_->stats_.write_size_iovec->GetNumSamples() ==
-         event_loop_->stats_.write_succeed_iovec->GetNumSamples());
+  assert(stats_->write_size_bytes->GetNumSamples() ==
+         stats_->write_succeed_bytes->GetNumSamples());
+  assert(stats_->write_size_iovec->GetNumSamples() ==
+         stats_->write_succeed_iovec->GetNumSamples());
 
   while (send_queue_.size() > 0) {
     // if there is any pending data from the previously sent
@@ -210,33 +382,32 @@ Status SocketEvent::WriteCallback() {
         total += v.size();
       }
 
-      event_loop_->stats_.write_size_bytes->Record(total);
-      event_loop_->stats_.write_size_iovec->Record(iovcnt);
-      event_loop_->stats_.socket_writes->Add(1);
+      stats_->write_size_bytes->Record(total);
+      stats_->write_size_iovec->Record(iovcnt);
+      stats_->socket_writes->Add(1);
       ssize_t count = writev(fd_, iov, iovcnt);
       if (count == -1) {
         auto e = errno;
         LOG_WARN(
-            event_loop_->info_log_,
+            GetLogger(),
             "Wanted to write %zu bytes to remote host fd(%d) but encountered "
             "errno(%d) \"%s\".",
             total,
             fd_,
             e,
             strerror(e));
-        event_loop_->stats_.write_succeed_bytes->Record(0);
-        event_loop_->stats_.write_succeed_iovec->Record(0);
-        event_loop_->info_log_->Flush();
+        stats_->write_succeed_bytes->Record(0);
+        stats_->write_succeed_iovec->Record(0);
         if (e != EAGAIN && e != EWOULDBLOCK) {
           // write error, close connection.
           return Status::IOError("write call failed: " + std::to_string(e));
         }
         return Status::OK();
       }
-      event_loop_->stats_.write_succeed_bytes->Record(count);
+      stats_->write_succeed_bytes->Record(count);
       if (static_cast<size_t>(count) != total) {
-        event_loop_->stats_.partial_socket_writes->Add(1);
-        LOG_WARN(event_loop_->info_log_,
+        stats_->partial_socket_writes->Add(1);
+        LOG_WARN(GetLogger(),
                  "Wanted to write %zu bytes to remote host fd(%d) but only "
                  "%zd bytes written successfully.",
                  total,
@@ -257,18 +428,25 @@ Status SocketEvent::WriteCallback() {
         } else {
           // Only partially written, update partial and return.
           partial_.remove_prefix(written);
-          event_loop_->stats_.write_succeed_iovec->Record(i);
+          stats_->write_succeed_iovec->Record(i);
           return Status::OK();
         }
-        event_loop_->stats_.write_latency->Record(
-            event_loop_->env_->NowMicros() - item->issued_time);
+        stats_->write_latency->Record(event_loop_->GetEnv()->NowMicros() -
+                                      item->issued_time);
         send_queue_.pop_front();
+
+        // We've taken one element from the send queue, now check whether we can
+        // enable the sink.
+        if (send_queue_.size() ==
+            event_loop_->GetOptions().send_queue_limit / 2) {
+          event_loop_->Notify(write_ready_);
+        }
       }
-      event_loop_->stats_.write_succeed_iovec->Record(iovcnt);
+      stats_->write_succeed_iovec->Record(iovcnt);
       assert(written == 0);
       partial_.clear();
 
-      LOG_DEBUG(event_loop_->info_log_,
+      LOG_DEBUG(GetLogger(),
                 "Successfully wrote %zd bytes to remote host fd(%d)",
                 count,
                 fd_);
@@ -279,10 +457,9 @@ Status SocketEvent::WriteCallback() {
       // If there are any new pending messages, start processing it.
       partial_ = send_queue_.front()->string;
       assert(partial_.size() > 0);
-    } else if (write_ev_added_) {
+    } else {
       // No more queued messages. Switch off ready-to-write event on socket.
       write_ev_->Disable();
-      write_ev_added_ = false;
     }
   }
   return Status::OK();
@@ -356,8 +533,8 @@ Status SocketEvent::ReadCallback() {
     Slice in(msg_buf_.get(), msg_size_);
 
     // Decode the recipients.
-    StreamID local = 0;
-    if (!DecodeOrigin(&in, &local)) {
+    StreamID remote_id = 0;
+    if (!DecodeOrigin(&in, &remote_id)) {
       continue;
     }
 
@@ -365,65 +542,68 @@ Status SocketEvent::ReadCallback() {
     std::unique_ptr<Message> msg =
         Message::CreateNewInstance(std::move(msg_buf_), in);
     if (!msg) {
-      LOG_WARN(event_loop_->GetLog(), "Failed to decode message");
+      LOG_WARN(GetLogger(), "Failed to decode message");
       continue;
     }
 
-    // We need to remap stream ID local to the connection into globally
-    // (within MsgLoop) unique stream ID.
-    StreamID global;
-    // We do not allow incoming streams on outgoing connections.
-    const bool do_insert = !was_initiated_;
-    // If this is a response on a stream initiated by this message loop, we
-    // will have the proper stream ID in a map, otherwise this is a request
-    // from the remote host and we have to remap stream ID.
-    auto remap = event_loop_->stream_router_.RemapInboundStream(
-        this, local, do_insert, &global);
-
-    // Proceed with a message only if remapping succeeded.
-    if (remap == StreamRouter::RemapStatus::kNotInserted) {
-      LOG_WARN(
-          event_loop_->GetLog(), "Failed to remap stream ID (%llu)", local);
-      continue;
-    }
-
-    // Log a new inbound stream.
-    if (remap == StreamRouter::RemapStatus::kInserted) {
-      LOG_INFO(event_loop_->GetLog(),
-               "New stream (%llu) was associated with socket fd(%d)",
-               global,
-               fd_);
-    }
-
-    const MessageType msg_type = msg->GetMessageType();
-    if (msg_type == MessageType::mGoodbye) {
-      MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
-      LOG_INFO(event_loop_->GetLog(),
-               "Received goodbye message (code %d) for stream (%llu)",
-               static_cast<int>(goodbye->GetCode()),
-               global);
-      // Update stream router.
-      StreamRouter::RemovalStatus removed;
-      SocketEvent* sev;
-      std::tie(removed, sev, std::ignore) =
-          event_loop_->stream_router_.RemoveStream(global);
-      assert(StreamRouter::RemovalStatus::kNotRemoved != removed);
-      if (sev) {
-        assert(sev == this);
-        LOG_INFO(event_loop_->GetLog(),
-                 "Socket fd(%d) has no more streams on it.",
-                 sev->fd_);
-      }
-    }
-
-    assert(ValidateEnum(msg_type));
-    event_loop_->stats_.messages_received[size_t(msg_type)]->Add(1);
-
-    if (!DrainOne({global, std::move(msg)})) {
-      return Status::OK();
+    if (!Receive(remote_id, std::move(msg))) {
+      // We should not read more in the same batch.
+      break;
     }
   }
   return Status::OK();
+}
+
+bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
+  const auto msg_type = msg->GetMessageType();
+  assert(ValidateEnum(msg_type));
+
+  // Find a stream for this message or create one if missing.
+  auto it = remote_id_to_stream_.find(remote_id);
+  if (it == remote_id_to_stream_.end()) {
+    // Allow accepting new streams on inbound connections only.
+    // The special case is MessageGoodbye, for which we do not create a stream
+    // if it doesn't exist.
+    if (IsInbound() && msg_type != MessageType::mGoodbye) {
+      std::unique_ptr<Stream> owned_stream(new Stream(
+          this,
+          remote_id,
+          event_loop_->GetInboundAllocator(access::EventLoop())->Next()));
+      // Set the default receiver provided by EventLoop for inbound streams.
+      owned_stream->SetReceiver(event_loop_->GetDefaultReceiver());
+      // TODO(t8971722)
+      event_loop_->AddInboundStream(access::EventLoop(), owned_stream.get());
+      // Register a new inbound stream.
+      auto result = remote_id_to_stream_.emplace(remote_id, owned_stream.get());
+      assert(result.second);
+      it = result.first;
+      // Make the SocketEvent own it.
+      auto result1 =
+          owned_streams_.emplace(owned_stream.get(), std::move(owned_stream));
+      assert(result1.second);
+      (void)result1;
+    } else {
+      // Drop the message.
+      LOG_WARN(GetLogger(),
+               "Failed to remap StreamID(%llu), dropping message: %s",
+               remote_id,
+               MessageTypeName(msg_type));
+      return true;
+    }
+  }
+  assert(it != remote_id_to_stream_.end());
+  Stream* stream = it->second;
+
+  // Update stats.
+  stats_->messages_received[size_t(msg_type)]->Add(1);
+
+  // Unregister the stream if we've received a goodbye message.
+  if (msg_type == MessageType::mGoodbye) {
+    UnregisterStream(remote_id);
+  }
+
+  // We shouldn't process any more in this batch if we hit overflow.
+  return DrainOne({stream, std::move(msg)});
 }
 
 }  // namespace rocketspeed
