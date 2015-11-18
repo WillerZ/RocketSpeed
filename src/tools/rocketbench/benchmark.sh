@@ -50,14 +50,6 @@ max_file_descriptors=''
 num_messages_to_receive=''        # expected #msg to arrive via subscriptions
 delay_after_subscribe_seconds=''  # wait after issuing subscriptions
 
-if [ -z ${ROCKETSPEED_ARGS+x} ]; then
-  logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
-  storage_url="configerator:logdevice/${logdevice_cluster}.conf"
-  rocketspeed_args="--storage_url=$storage_url --logdevice_cluster=$logdevice_cluster"
-else
-  rocketspeed_args=$ROCKETSPEED_ARGS
-fi
-
 # Use the 2 lower order bytes from the UID to generate a namespace id.
 # The hope is that this will be sufficiently unique so that concurrent
 # runs of this benchmark do not pollute one another.
@@ -254,6 +246,18 @@ else
   fi
 fi
 
+if [ -z ${ROCKETSPEED_ARGS+x} ]; then
+  logdevice_cluster=${LOGDEVICE_CLUSTER:-rocketspeed.logdevice.primary}
+  storage_url="configerator:logdevice/${logdevice_cluster}.conf"
+  rocketspeed_args="--storage_url=$storage_url --logdevice_cluster=$logdevice_cluster --storage_workers=40"
+  if [ $buffered_storage_max_latency_us ]; then
+    rocketspeed_args="${rocketspeed_args} --buffered_storage_max_latency_us=$buffered_storage_max_latency_us"
+    rocketspeed_args="${rocketspeed_args} --buffered_storage_max_messages=255"
+  fi
+else
+  rocketspeed_args=$ROCKETSPEED_ARGS
+fi
+
 if [ $strip ]; then
   echo
   echo "===== Stripping binary ====="
@@ -288,6 +292,14 @@ else
   bench_cmd="$bench"
 fi
 bench_cmd="${bench_cmd} ${ROCKETBENCH_ARGS}"
+
+required_hosts=$((num_cockpits+num_towers+num_bench))
+if [ $required_hosts -gt ${#available_hosts[@]} ]; then
+  echo
+  echo "FATAL: not enough available hosts to continue (required: $required_hosts, available: ${#available_hosts[@]})"
+  echo
+  exit 1
+fi
 
 cockpits=("${available_hosts[@]::num_cockpits}")
 available_hosts=("${available_hosts[@]:num_cockpits}")  # pop num_cockpits off
@@ -368,8 +380,7 @@ function start_servers {
         --copilot \
         --control_towers=$towers_csv \
         --copilot_towers_per_log=1 \
-        --rollcall=$rollcall \
-        --storage_workers=40"
+        --rollcall=$rollcall"
       if [ $pilot_port ]; then
         cmd="${cmd} --pilot_port=$pilot_port"
       fi
@@ -384,10 +395,6 @@ function start_servers {
       fi
       if [ $socket_buffer_size ]; then
         cmd="${cmd} --socket_buffer_size=$socket_buffer_size"
-      fi
-      if [ $buffered_storage_max_latency_us ]; then
-        cmd="${cmd} --buffered_storage_max_latency_us=$buffered_storage_max_latency_us"
-        cmd="${cmd} --buffered_storage_max_messages=255"
       fi
       cmd="$limitcmd && $cmd"
       cmd="${cmd} 2>&1 | sed 's/^/${host}: /'"
@@ -412,10 +419,6 @@ function start_servers {
       fi
       if [ $cache_block_size ]; then
         cmd="${cmd} --tower_cache_block_size=$cache_block_size"
-      fi
-      if [ $buffered_storage_max_latency_us ]; then
-        cmd="${cmd} --buffered_storage_max_latency_us=$buffered_storage_max_latency_us"
-        cmd="${cmd} --buffered_storage_max_messages=255"
       fi
       cmd="$limitcmd && $cmd"
       cmd="${cmd} 2>&1 | sed 's/^/${host}: /'"

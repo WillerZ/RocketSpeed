@@ -11,30 +11,39 @@
 base=`dirname $0`
 BENCHMARK=$base/benchmark.sh
 
-# Define the number of cockpits and control towers for this test
-COCKPITS=2
-TOWERS=1
-CACHESIZE=50000000000   # 50 GB
-TOPICS=10000000         # 10 million
-BENCH=1                 # 1 instance of rocketbench
-RATE=500000             # max of 500K subscribe requests/sec
+COCKPITS=${COCKPITS:-2}               # Number of pilot/copilot servers
+TOWERS=${TOWERS:-1}                   # Number of control tower servers
+CACHESIZE=${CACHESIZE:-50000000000}   # Control tower cache size (50 GB)
+NUMTOPICS=${NUMTOPICS:-10000000}      # Number of topics to publish to
+BENCH=${BENCH:-1}                     # Number of rocketbench instances
+RATE=${RATE:-500000}                  # max of 500K subscribe requests/sec
 
 if [ ! -f $BENCHMARK ]; then
-  echo "Unable to find benchmark script at $BENCHMARK
-  echo "cd to fbcode and then run benchmark
+  echo "Unable to find benchmark script at $BENCHMARK"
+  echo "cd to fbcode and then run benchmark"
   exit 1
 fi
+
+cleanup() {
+  # Stop servers
+  echo "Stopping servers......"
+  cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --towers=$TOWERS"
+  echo $cmd
+  eval $cmd
+}
+
+trap cleanup 0
 
 #
 # Produce a data set with 1 message each on a 10 M topics
 #
-cmd="$BENCHMARK --messages $TOPICS --progress_period=10000 --rate 150000 --max-inflight 7000 --topics $TOPICS --size 100 --num_messages_per_topic=$TOPICS  --topics_distribution=fixed --namespaceid_dynamic --remote --deploy --start-servers --stop-servers --cockpits=$COCKPITS --towers=$TOWERS --remote-bench $BENCH produce"
+cmd="$BENCHMARK --messages $NUMTOPICS --progress_period=10000 --rate 150000 --max-inflight 7000 --topics $NUMTOPICS --size 100 --num_messages_per_topic=$NUMTOPICS  --topics_distribution=fixed --namespaceid_dynamic --remote --deploy --start-servers --stop-servers --cockpits=$COCKPITS --towers=$TOWERS --remote-bench $BENCH produce"
 echo $cmd
-eval $cmd
+eval $cmd || { echo "Failed to write all messages"; exit 1; }
 
 # Subscribe to each of those topics and read one message from each of those
-# topics. 
+# topics.
 #
-cmd="$BENCHMARK --messages $TOPICS --progress_period=10000 --subscribe-rate $RATE --max-inflight 20000 --namespaceid_dynamic --topics $TOPICS --remote --deploy --start-servers --stop-servers --cockpits=$COCKPITS --cache-size $CACHESIZE --towers=$TOWERS --subscription-backlog-distribution=fixed --remote-bench $BENCH --client-threads=80 --producer=false --collect-stats consume"
+cmd="$BENCHMARK --messages $NUMTOPICS --progress_period=10000 --subscribe-rate $RATE --max-inflight 20000 --namespaceid_dynamic --topics $NUMTOPICS --remote --deploy --start-servers --stop-servers --cockpits=$COCKPITS --cache-size $CACHESIZE --towers=$TOWERS --subscription-backlog-distribution=fixed --remote-bench $BENCH --client-threads=80 --producer=false --collect-stats consume"
 echo $cmd
-eval $cmd
+eval $cmd || { echo "Failed to receive all messages"; exit 1; }

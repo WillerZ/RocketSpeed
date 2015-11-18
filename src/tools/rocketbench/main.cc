@@ -1226,17 +1226,15 @@ int main(int argc, char** argv) {
     } else {
       printf("Elapsed time: %d ms\n", total_ms);
     }
-    printf("%lld messages sent\n",
-           static_cast<long long unsigned int>(FLAGS_num_messages));
-    printf("%lld messages sends acked\n",
-           static_cast<long long unsigned int>(ack_messages_received.load()));
-    if (failed_publishes != 0) {
-      printf("%lld published failed\n",
-             static_cast<long long unsigned int>(failed_publishes.load()));
+    if (FLAGS_start_producer) {
+      printf("%" PRIi64 " publishes\n", FLAGS_num_messages);
+      printf("%" PRIi64 " publishes acked\n", ack_messages_received.load());
+      if (failed_publishes != 0) {
+        printf("%" PRIi64 " publishes failed\n", failed_publishes.load());
+      }
     }
     if (FLAGS_start_consumer) {
-      printf("%lld messages received\n",
-             static_cast<long long unsigned int>(messages_received.load()));
+      printf("%" PRIi64 " messages received\n", messages_received.load());
     }
 
     if (FLAGS_start_consumer &&
