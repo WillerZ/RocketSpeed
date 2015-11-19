@@ -624,9 +624,8 @@ static int SaveFile(std::string filename,
     return errno;
   }
   if (static_cast<uint64_t>(FLAGS_num_messages) != num_messages) {
-    LOG_ERROR(info_log,
-              "Number of messages produced %" PRIu64
-              " does not match number of messages saved in file %" PRIu64 "\n",
+    LOG_ERROR(info_log, "Number of messages produced %" PRIi64 " does not match"
+              " number of messages saved in file %" PRIu64 "\n",
               FLAGS_num_messages,
               num_messages);
     return -1;  // arbitrary error
