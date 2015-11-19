@@ -403,8 +403,8 @@ void DoSubscribe(
       }
     }
     pacer.Wait();
-    LOG_DEBUG(info_log, "Client %zu Subscribing to %s from %zu "
-              " total expected messages %zu\n",
+    LOG_DEBUG(info_log, "Client %zu Subscribing to %s from %" PRIu64
+              " total expected messages %" PRIu64 "\n",
               c,
               topic_name.c_str(),
               seqno,
@@ -445,9 +445,10 @@ void DoSubscribe(
   } else {
     messages_expected->store(FLAGS_num_messages);
   }
-  LOG_INFO(info_log, "Total expected messages %zu for %zu subscriptions",
-            messages_expected->load(),
-            *subscription_count);
+  LOG_INFO(info_log,
+           "Total expected messages %" PRIi64 " for %" PRIu64 " subscriptions",
+           messages_expected->load(),
+           *subscription_count);
 }
 
 /*
@@ -623,13 +624,14 @@ static int SaveFile(std::string filename,
     return errno;
   }
   if (static_cast<uint64_t>(FLAGS_num_messages) != num_messages) {
-    LOG_ERROR(info_log, "Number of messages produced %zu does not match "
-              " number of messages saved in file %zu\n",
+    LOG_ERROR(info_log,
+              "Number of messages produced %" PRIu64
+              " does not match number of messages saved in file %" PRIu64 "\n",
               FLAGS_num_messages,
               num_messages);
-    return -1;   // arbitrary error
+    return -1;  // arbitrary error
   }
-  return 0; // success
+  return 0;  // success
 }
 /*
  * Read topicmap to a file on disk. Returns 0 on success, errno on error.
