@@ -435,12 +435,12 @@ bool EventLoop::ExecuteTasks() {
 void EventLoop::HandlePendingTriggers() {
   thread_check_.Check();
 
+  // Clear the notification, we will add it back if there is work to be done.
+  eventfd_t value;
+  notified_triggers_fd_.read_event(&value);
+
   // Fail quickly if there is no notified trigger.
   if (notified_triggers_.empty()) {
-    // Clear the notification, we will add it back if we do not process all
-    // triggers.
-    eventfd_t value;
-    notified_triggers_fd_.read_event(&value);
     return;
   }
 
@@ -455,7 +455,8 @@ void EventLoop::HandlePendingTriggers() {
       }
     }
   }
-  // All callbacks might be disabled.
+
+  // All callbacks registered with notified triggers might be disabled.
   if (total_active_callbacks == 0) {
     return;
   }
@@ -477,9 +478,12 @@ void EventLoop::HandlePendingTriggers() {
     }
   }
 
-  // This might do arbitrary things, like destroy callbacks. Better to invoke it
-  // out of line.
+  // This might do arbitrary things, like destroy callbacks. Better to break out
+  // of any loops before calling into this function.
   cb->Invoke();
+
+  // There might be more work to be done.
+  notified_triggers_fd_.write_event(1);
 }
 
 Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
