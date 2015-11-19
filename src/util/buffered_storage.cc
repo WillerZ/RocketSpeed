@@ -181,11 +181,11 @@ class BufferedLogStorageWorker {
       std::string pilot_prefix = "pilot.buffered_storage.";
       batch_entries = all.AddHistogram(pilot_prefix + "batch_entries",
                                        0.0,
-                                       static_cast<double>(max_entries),
+                                       static_cast<float>(max_entries),
                                        1.0);
       batch_bytes = all.AddHistogram(pilot_prefix + "batch_bytes",
                                      0.0,
-                                     static_cast<double>(max_bytes),
+                                     static_cast<float>(max_bytes),
                                      1.0);
       batch_latency_us = all.AddLatency(pilot_prefix + "batch_latency_us");
     }

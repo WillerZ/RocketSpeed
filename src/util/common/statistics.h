@@ -89,10 +89,10 @@ class Histogram {
    * @param ratio The ratio of successive bucket sizes. The number of
    *              buckets will be proportional to 1 / log(ratio).
    */
-  explicit Histogram(double min,
-                     double max,
-                     double smallest_bucket,
-                     double ratio = 1.2);
+  explicit Histogram(float min,
+                     float max,
+                     float smallest_bucket,
+                     float ratio = 1.2f);
 
   /**
    * Make a copy of a histogram.
@@ -105,10 +105,10 @@ class Histogram {
    * Adds a sample to the histogram. If sample is outside the range of
    * [min, max] then it will be clamped.
    */
-  void Record(double sample);
+  void Record(float sample);
 
   template <typename T>
-  void Record(T sample) { Record(static_cast<double>(sample)); }
+  void Record(T sample) { Record(static_cast<float>(sample)); }
 
   /**
    * Computes an approximate percentile from the sampled data.
@@ -150,12 +150,12 @@ class Histogram {
   }
 
 private:
-  size_t BucketIndex(double sample) const;
+  size_t BucketIndex(float sample) const;
 
-  double min_;
-  double max_;
-  double smallest_bucket_;
-  double ratio_;
+  float min_;
+  float max_;
+  float smallest_bucket_;
+  float ratio_;
   double sample_total_;
   uint64_t num_samples_;
   std::unique_ptr<uint64_t[]> bucket_counts_;
@@ -192,10 +192,10 @@ class Statistics {
    * Adds a new, named Histogram object to the tracked statistics.
    */
   Histogram* AddHistogram(const std::string& name,
-                          double min,
-                          double max,
-                          double smallest_bucket,
-                          double ratio = 1.2);
+                          float min,
+                          float max,
+                          float smallest_bucket,
+                          float ratio = 1.2f);
 
   /**
    * Adds a new, named Histogram object with default settings for measuring

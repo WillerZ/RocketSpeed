@@ -63,7 +63,7 @@ TEST(StatisticsTest, Basic) {
   count_a2->Add(100);
   count_b2->Add(200);
   histo_a2->Record(1.0);
-  histo_a2->Record(101.0);
+  histo_a2->Record(99.0);
   histo_b2->Record(10.0);
   histo_b2->Record(20.0);
   histo_c2->Record(50.0);
@@ -92,20 +92,20 @@ TEST(StatisticsTest, Basic) {
     "count1:                                   110\n"
     "count2:                                   220\n"
     "count3:                                   30\n"
-    "histo1:                                   mean: 52.4      p50: 55.0      p90: 100.0     p99: 100.0     p99.9: 100.0     (5 samples)\n"
+    "histo1:                                   mean: 52.0      p50: 46.0      p90: 82.0      p99: 82.0      p99.9: 82.0      (5 samples)\n"
     "histo2:                                   mean: 15.0      p50: 16.0      p90: 18.0      p99: 18.0      p99.9: 18.0      (5 samples)\n"
     "histo3:                                   mean: 53.3      p50: 55.0      p90: 77.5      p99: 77.5      p99.9: 77.5      (3 samples)\n");
 }
 
 TEST(StatisticsTest, HistogramPercentiles) {
-  std::vector<double> ratios = { 1.1, 1.2, 1.3, 2.0, 10.0 };
-  std::vector<double> thresholds = { 0.1, 1.0, 10.0, 100.0 };
+  std::vector<float> ratios = { 1.1, 1.2, 1.3, 2.0, 10.0 };
+  std::vector<float> thresholds = { 0.1, 1.0, 10.0, 100.0 };
 
   std::random_device rd;
   std::mt19937 engine(rd());
 
-  for (double ratio : ratios) {
-    for (double threshold : thresholds) {
+  for (float ratio : ratios) {
+    for (float threshold : thresholds) {
       // Create the histogram object.
       Histogram histogram(0.0, 1234567.0, threshold, ratio);
 

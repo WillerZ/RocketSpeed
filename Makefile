@@ -92,6 +92,7 @@ TESTS = \
   integration_test \
   unbounded_mpsc_queue_test \
   statistics_test \
+  fastlog_test \
   thread_check_test \
   file_storage_test \
   thread_local_test \
@@ -314,6 +315,9 @@ statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 unbounded_mpsc_queue_test: src/util/tests/unbounded_mpsc_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+
+fastlog_test: src/util/tests/fastlog_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 thread_check_test: src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNESS)

@@ -70,13 +70,13 @@ struct MessageHeader {
 SocketEventStats::SocketEventStats(const std::string& prefix) {
   write_latency = all.AddLatency(prefix + ".write_latency");
   write_size_bytes =
-      all.AddHistogram(prefix + ".write_size_bytes", 0, kMaxIovecs, 1, 1.1);
+      all.AddHistogram(prefix + ".write_size_bytes", 0, kMaxIovecs, 1, 1.1f);
   write_size_iovec =
-      all.AddHistogram(prefix + ".write_size_iovec", 0, kMaxIovecs, 1, 1.1);
+      all.AddHistogram(prefix + ".write_size_iovec", 0, kMaxIovecs, 1, 1.1f);
   write_succeed_bytes =
-      all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1);
+      all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1f);
   write_succeed_iovec =
-      all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1);
+      all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1f);
   socket_writes = all.AddCounter(prefix + ".socket_writes");
   partial_socket_writes = all.AddCounter(prefix + ".partial_socket_writes");
   for (int i = 0; i < int(MessageType::max) + 1; ++i) {

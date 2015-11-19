@@ -14,16 +14,18 @@
 #include "src/port/port.h"
 #include "src/util/common/thread_check.h"
 
+#include "external/fastlog/fastlog.h"
+
 namespace rocketspeed {
 
 std::string Counter::Report() const {
   return std::to_string(count_);
 }
 
-Histogram::Histogram(double min,
-                     double max,
-                     double smallest_bucket,
-                     double ratio)
+Histogram::Histogram(float min,
+                     float max,
+                     float smallest_bucket,
+                     float ratio)
 : min_(min)
 , max_(max)
 , smallest_bucket_(smallest_bucket)
@@ -78,7 +80,7 @@ Histogram::Histogram(Histogram&& src)
   src.num_samples_ = 0;
 }
 
-void Histogram::Record(double sample) {
+void Histogram::Record(float sample) {
   thread_check_.Check();
   size_t index = std::min(BucketIndex(sample), num_buckets_ - 1);
   bucket_counts_[index] += 1;
@@ -86,15 +88,16 @@ void Histogram::Record(double sample) {
   sample_total_ += sample;
 }
 
-size_t Histogram::BucketIndex(double sample) const {
+size_t Histogram::BucketIndex(float sample) const {
   // Compute the log of sample_real in base ratio_.
   // This formula puts samples below min_ + smallest_bucket_ into bucket 0
   // Samples up to min_ + smallest_bucket_ * ratio_ go to bucket 1
   // Samples up to min_ + smallest_bucket_ * ratio_ ^ N go to bucket N
   // and so on.
-  sample = std::max(0.0, std::min(sample, max_) - min_);
+  sample = std::max(0.0f, std::min(sample, max_) - min_);
   int32_t bucket = sample < smallest_bucket_ ? 0 : static_cast<int32_t>(
-    (log_ratio_ + log(sample) - log_smallest_bucket_) / log_ratio_);
+    (log_ratio_ + fastlog(sample) - log_smallest_bucket_)
+    / log_ratio_);
   if (bucket < 0) {
     return 0;
   }
@@ -216,10 +219,10 @@ Counter* Statistics::AddCounter(const std::string& name) {
 }
 
 Histogram* Statistics::AddHistogram(const std::string& name,
-                                    double min,
-                                    double max,
-                                    double smallest_bucket,
-                                    double bucket_ratio) {
+                                    float min,
+                                    float max,
+                                    float smallest_bucket,
+                                    float bucket_ratio) {
   thread_check_.Check();
   histograms_[name] = std::unique_ptr<Histogram>(
     new Histogram(min, max, smallest_bucket, bucket_ratio));
@@ -229,7 +232,7 @@ Histogram* Statistics::AddHistogram(const std::string& name,
 Histogram* Statistics::AddLatency(const std::string& name) {
   thread_check_.Check();
   histograms_[name] = std::unique_ptr<Histogram>(
-    new Histogram(0, 1e12, 1.0, 1.1));
+    new Histogram(0, 1e12f, 1.0f, 1.1f));
   return histograms_[name].get();
 }
 
