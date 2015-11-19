@@ -50,8 +50,8 @@ else
 endif
 
 WARNING_FLAGS = -Wall -Werror -Wshadow -Wconversion -Wno-sign-conversion
-CFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
-CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -DOUTPUT_TEST_TIMES
+CFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CCFLAGS) $(OPT)
+CXXFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -DOUTPUT_TEST_TIMES
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 
