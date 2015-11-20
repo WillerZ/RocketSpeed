@@ -51,7 +51,7 @@ class Rocketeer {
 
   /**
    * Notifies about new inbound subscription.
-   * This method is guarenteed to always be called on the same thread.
+   * This method is guaranteed to always be called on the same thread.
    *
    * @param inbound_id Globally unique ID of this subscription.
    * @param params Parameters of the subscription provided by the subscriber.
@@ -61,7 +61,7 @@ class Rocketeer {
 
   /**
    * Notifies that given subscription was terminated by the user.
-   * This method is guarenteed to always be called on the same thread.
+   * This method is guaranteed to always be called on the same thread.
    *
    * @param inbound_id ID of the subscription to be terminated.
    * @param source Who terminated the subscription.

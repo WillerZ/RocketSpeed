@@ -655,7 +655,7 @@ class MessageTailSeqno final : public Message {
  */
 
 /**
- * ID of the subscription the message belongs to. IDs are uniquely identify
+ * ID of the subscription the message belongs to. IDs uniquely identify
  * subscription within a stream.
  */
 typedef uint64_t SubscriptionID;
