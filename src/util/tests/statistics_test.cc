@@ -98,8 +98,8 @@ TEST(StatisticsTest, Basic) {
 }
 
 TEST(StatisticsTest, HistogramPercentiles) {
-  std::vector<float> ratios = { 1.1, 1.2, 1.3, 2.0, 10.0 };
-  std::vector<float> thresholds = { 0.1, 1.0, 10.0, 100.0 };
+  std::vector<float> ratios = { 1.1f, 1.2f, 1.3f, 2.0f, 10.0f };
+  std::vector<float> thresholds = { 0.1f, 1.0f, 10.0f, 100.0f };
 
   std::random_device rd;
   std::mt19937 engine(rd());
