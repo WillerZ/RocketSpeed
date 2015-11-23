@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <assert.h>
 #include <inttypes.h>
 #include <functional>
 #include <limits>
@@ -97,7 +96,7 @@ struct OrderedProcessor {
   , processor_(std::move(processor))
   , mode_(mode)
   , info_log_(std::move(info_log)) {
-    assert(processor_);
+    RS_ASSERT(processor_);
   }
 
   Status Process(T object, uint64_t seqno) {
@@ -117,7 +116,7 @@ struct OrderedProcessor {
       // Skip head records until this record fits in the buffer.
       if (queue_.size() >= max_size_) {
         SkipToNext();
-        assert(queue_.size() < max_size_);
+        RS_ASSERT(queue_.size() < max_size_);
         st = Status::NoBuffer();
       }
     } else if (mode_ == OrderedProcessorMode::kLossless) {
@@ -155,7 +154,7 @@ struct OrderedProcessor {
    * for processing, so we have to skip some sequence numbers.
    */
   void SkipToNext() {
-    assert(!queue_.empty());
+    RS_ASSERT(!queue_.empty());
     uint64_t next_available = queue_.top().seqno;
     LOG_WARN(info_log_, "Dropped %" PRIu64 " sequence numbers (queue full)",
       next_available - next_seqno_);

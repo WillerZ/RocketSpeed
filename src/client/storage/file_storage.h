@@ -39,9 +39,9 @@ class FileStorage : public SubscriptionStorage {
     Status Commit() override;
 
    private:
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     std::vector<ThreadCheck> thread_checks_;
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
 
     // A path to the file which should be overwritten with snapshot.
     const std::string final_path_;

@@ -50,7 +50,7 @@ class FdCallback : public EventCallback {
   friend class EventCallback;
 
   static void Invoke(int fd, short what, void* event) {
-    assert(event);
+    RS_ASSERT(event);
     if (what & (EV_READ | EV_WRITE)) {
       auto fd_event = static_cast<FdCallback*>(event);
       fd_event->event_loop_->ThreadCheck();

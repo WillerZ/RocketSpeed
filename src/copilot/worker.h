@@ -89,7 +89,7 @@ class CopilotWorker {
                                                int worker_id,
                                                size_t num_workers) {
     // Generates a unique ID for this copilot.
-    assert(state);
+    RS_ASSERT(state);
     uint64_t local_id = (*state)++;
     uint64_t global_id = static_cast<uint64_t>(worker_id);
     uint64_t base = static_cast<uint64_t>(num_workers);

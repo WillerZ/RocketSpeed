@@ -6,12 +6,12 @@
 #include "src/port/port_posix.h"
 
 #include <stdio.h>
-#include <assert.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <string.h>
 #include <cstdlib>
+#include "include/Assert.h"
 #include "src/util/logging.h"
 
 namespace rocketspeed {
@@ -48,21 +48,21 @@ Mutex::~Mutex() { PthreadCall("destroy mutex", pthread_mutex_destroy(&mu_)); }
 
 void Mutex::Lock() {
   PthreadCall("lock", pthread_mutex_lock(&mu_));
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   locked_ = true;
 #endif
 }
 
 void Mutex::Unlock() {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   locked_ = false;
 #endif
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 }
 
 void Mutex::AssertHeld() {
-#ifndef NDEBUG
-  assert(locked_);
+#ifndef NO_RS_ASSERT
+  RS_ASSERT(locked_);
 #endif
 }
 
@@ -74,11 +74,11 @@ CondVar::CondVar(Mutex* mu)
 CondVar::~CondVar() { PthreadCall("destroy cv", pthread_cond_destroy(&cv_)); }
 
 void CondVar::Wait() {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   mu_->locked_ = false;
 #endif
   PthreadCall("wait", pthread_cond_wait(&cv_, &mu_->mu_));
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   mu_->locked_ = true;
 #endif
 }
@@ -88,11 +88,11 @@ bool CondVar::TimedWait(uint64_t abs_time_us) {
   ts.tv_sec = abs_time_us / 1000000;
   ts.tv_nsec = (abs_time_us % 1000000) * 1000;
 
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   mu_->locked_ = false;
 #endif
   int err = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   mu_->locked_ = true;
 #endif
   if (err == ETIMEDOUT) {
@@ -197,14 +197,14 @@ int Eventfd::write_event(eventfd_t value) { return eventfd_write(fd_[0],value);}
 static std::atomic<int> sem_generator_(1);
 
 detail::RawSemaphore::RawSemaphore(unsigned initial_value) {
-  assert(initial_value <= SEM_VALUE_MAX);
+  RS_ASSERT(initial_value <= SEM_VALUE_MAX);
   name_ = std::to_string(sem_generator_++);
 
   sem_unlink(name_.c_str());
 
   sem_ = sem_open(name_.c_str(), O_CREAT|O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO,
                   initial_value);
-  assert(sem_ != SEM_FAILED);
+  RS_ASSERT(sem_ != SEM_FAILED);
 }
 detail::RawSemaphore::~RawSemaphore() {
   sem_close(sem_);
@@ -230,7 +230,7 @@ void Semaphore::Wait() {
 
   do {
     rv = sem_wait(rawsem());
-    assert(rv == 0 || errno == EINTR);
+    RS_ASSERT(rv == 0 || errno == EINTR);
   } while (rv != 0);
 }
 
@@ -283,7 +283,7 @@ bool Semaphore::TimedWait(std::chrono::system_clock::time_point deadline) {
       }
 #endif
     default:
-      assert(false);
+      RS_ASSERT(false);
     }
     return false;
   }
@@ -294,7 +294,7 @@ void Semaphore::Post() {
   // the sem_t to ensure it continues to exist until the post completes.
   std::shared_ptr<detail::RawSemaphore> pin(sem_);
   int ret __attribute__((__unused__)) = sem_post(rawsem());
-  assert(ret == 0);
+  RS_ASSERT(ret == 0);
   // NOTE: `this' is no longer safe to use here because waiter may have
   // destroyed it
 }

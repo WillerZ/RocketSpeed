@@ -66,7 +66,7 @@ LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
 }
 
 LogTailer::~LogTailer() {
-  assert(!storage_);  // Must call Stop() before deleting.
+  RS_ASSERT(!storage_);  // Must call Stop() before deleting.
 }
 
 Status LogTailer::Initialize(OnRecordCallback on_record,
@@ -94,7 +94,7 @@ Status LogTailer::Initialize(OnRecordCallback on_record,
                           on_record,
                           on_gap);
   }
-  assert(readers_.size() == num_readers);
+  RS_ASSERT(readers_.size() == num_readers);
 
   return Status::OK();
 }
@@ -109,7 +109,7 @@ void LogTailer::RecordCallback(Flow* flow,
                                LogID log_id,
                                size_t reader_id) {
   SequenceNumber seqno = msg->GetSequenceNumber();
-  assert(reader_id < readers_.size());
+  RS_ASSERT(reader_id < readers_.size());
   Reader& reader = readers_[reader_id];
   auto it = reader.log_state.find(log_id);
   if (it == reader.log_state.end()) {
@@ -167,7 +167,7 @@ void LogTailer::GapCallback(Flow* flow,
       break;
   }
 
-  assert(reader_id < readers_.size());
+  RS_ASSERT(reader_id < readers_.size());
   Reader& reader = readers_[reader_id];
   auto it = reader.log_state.find(log_id);
   if (it == reader.log_state.end()) {
@@ -248,7 +248,7 @@ Status LogTailer::CreateReader(size_t reader_id, AsyncLogReader** out) {
 
     if (!success) {
       // Need to put the record back so that the storage layer can retry.
-      assert(msg);
+      RS_ASSERT(msg);
       record = static_cast<LogRecordMessageData*>(msg.get())->MoveRecord();
     }
     return success;
@@ -271,10 +271,10 @@ Status LogTailer::CreateReader(size_t reader_id, AsyncLogReader** out) {
 
   // Create log reader.
   std::vector<AsyncLogReader*> readers;
-  assert(storage_);
+  RS_ASSERT(storage_);
   Status st = storage_->CreateAsyncReaders(1, record_cb, gap_cb, &readers);
   if (st.ok()) {
-    assert(readers.size() == 1);
+    RS_ASSERT(readers.size() == 1);
     *out = readers[0];
   }
   return st;
@@ -298,7 +298,7 @@ Status LogTailer::StartReading(LogID logid,
   if (readers_.size() == 0) {
     return Status::NotInitialized();
   }
-  assert(reader_id < readers_.size());
+  RS_ASSERT(reader_id < readers_.size());
   Reader& reader = readers_[reader_id];
   Status st = reader.log_reader->Open(logid, start);
   if (st.ok()) {
@@ -364,7 +364,7 @@ LogTailer::FindLatestSeqno(
   std::function<void(Status, SequenceNumber)> callback) {
   // LogDevice treats std::chrono::milliseconds::max() specially, avoiding
   // a binary search and just returning the next LSN.
-  assert(storage_);
+  RS_ASSERT(storage_);
   return storage_->FindTimeAsync(logid,
                                  std::chrono::milliseconds::max(),
                                  std::move(callback));
@@ -409,10 +409,10 @@ void LogTailer::Tick() {
     auto log_id = ev.log_id;
 
     // Find the sequence number currently reading at.
-    assert(reader_id < readers_.size());
+    RS_ASSERT(reader_id < readers_.size());
     Reader& reader = readers_[reader_id];
     auto it = reader.log_state.find(log_id);
-    assert(it != reader.log_state.end());
+    RS_ASSERT(it != reader.log_state.end());
     auto seqno = it->second.next_seqno;
 
     // Restart reading at this sequence number.
@@ -434,7 +434,7 @@ LogTailer::RestartEvents::AddEvent(size_t reader_id, LogID log_id) {
 
   // Add to ordered set of events.
   auto result = emplace(restart_time, reader_id, log_id);
-  assert(result.second);
+  RS_ASSERT(result.second);
   return result.first;
 }
 

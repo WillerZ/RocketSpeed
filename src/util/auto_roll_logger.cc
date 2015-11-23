@@ -37,7 +37,7 @@ void AutoRollLogger::RollLogFile() {
 }
 
 void AutoRollLogger::Append(const char* format, va_list ap) {
-  assert(GetStatus().ok());
+  RS_ASSERT(GetStatus().ok());
 
   std::shared_ptr<Logger> logger;
   {

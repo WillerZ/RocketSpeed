@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "rocketeer_server.h"
 
-#include <cassert>
 #include <functional>
 #include <memory>
 #include <sstream>
@@ -206,20 +205,20 @@ void CommunicationRocketeer::Terminate(InboundID inbound_id,
 
 size_t CommunicationRocketeer::GetID() const {
   auto worker_id = server_->msg_loop_->GetThreadWorkerIndex();
-  assert(static_cast<size_t>(worker_id) == id_);
+  RS_ASSERT(static_cast<size_t>(worker_id) == id_);
   ((void)worker_id);
   return id_;
 }
 
 void CommunicationRocketeer::Initialize(RocketeerServer* server, size_t id) {
-  assert(!server_);
+  RS_ASSERT(!server_);
   server_ = server;
   id_ = id;
   stats_.reset(new Stats(server->options_.stats_prefix));
 }
 
 const Statistics& CommunicationRocketeer::GetStatisticsInternal() {
-  assert(stats_);
+  RS_ASSERT(stats_);
   return stats_->all;
 }
 
@@ -327,8 +326,8 @@ RocketeerServer::~RocketeerServer() {
 }
 
 size_t RocketeerServer::Register(Rocketeer* rocketeer) {
-  assert(!msg_loop_);
-  assert(rocketeer);
+  RS_ASSERT(!msg_loop_);
+  RS_ASSERT(rocketeer);
   auto id = rocketeers_.size();
   std::unique_ptr<CommunicationRocketeer> com_rocketeer;
   com_rocketeer.reset(new CommunicationRocketeer(rocketeer));

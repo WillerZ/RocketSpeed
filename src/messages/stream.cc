@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "stream.h"
 
-#include <cassert>
 #include <memory>
 
 #include "src/messages/event_loop.h"
@@ -21,7 +20,7 @@ Stream::Stream(SocketEvent* socket_event, StreamID remote_id, StreamID local_id)
 , remote_id_(remote_id)
 , local_id_(local_id)
 , receiver_(nullptr) {
-  assert(socket_event_);
+  RS_ASSERT(socket_event_);
   thread_check_.Check();
 
   LOG_INFO(socket_event_->GetLogger(),
@@ -46,11 +45,11 @@ Stream::~Stream() {
                                : MessageGoodbye::OriginType::Client);
     Write(goodbye, true);
   }
-  assert(!socket_event_);
+  RS_ASSERT(!socket_event_);
 }
 
 bool Stream::Write(Message& message, bool check_thread) {
-  assert(check_thread);
+  RS_ASSERT(check_thread);
   thread_check_.Check();
 
   // Serialise the message.
@@ -60,7 +59,7 @@ bool Stream::Write(Message& message, bool check_thread) {
 }
 
 bool Stream::Write(std::string& value, bool check_thread) {
-  assert(check_thread);
+  RS_ASSERT(check_thread);
   thread_check_.Check();
 
   auto serialised = std::make_shared<TimestampedString>();
@@ -71,7 +70,7 @@ bool Stream::Write(std::string& value, bool check_thread) {
 }
 
 bool Stream::Write(SharedTimestampedString& value, bool check_thread) {
-  assert(check_thread);
+  RS_ASSERT(check_thread);
   thread_check_.Check();
 
   if (!socket_event_) {
@@ -86,7 +85,7 @@ bool Stream::Write(SharedTimestampedString& value, bool check_thread) {
 
   // Sneak-peak message type, we will handle MessageGoodbye differently.
   auto type = Message::ReadMessageType(value->string);
-  assert(type != MessageType::NotInitialized);
+  RS_ASSERT(type != MessageType::NotInitialized);
 
   LOG_DEBUG(socket_event_->GetLogger(),
             "Writing %zd bytes to Stream(%llu, %llu)",
@@ -116,9 +115,9 @@ bool Stream::Write(SharedTimestampedString& value, bool check_thread) {
 }
 
 bool Stream::FlushPending(bool thread_check) {
-  assert(thread_check);
+  RS_ASSERT(thread_check);
   thread_check_.Check();
-  assert(false);
+  RS_ASSERT(false);
   return true;
 }
 
@@ -127,7 +126,7 @@ std::unique_ptr<EventCallback> Stream::CreateWriteCallback(
   thread_check_.Check();
   if (!socket_event_) {
     // The stream is closed, this shouldn't happen
-    assert(false);
+    RS_ASSERT(false);
     return std::unique_ptr<EventCallback>();
   }
   // The stream is readable whenever the underlying socket is.

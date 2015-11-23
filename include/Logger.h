@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <cassert>
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
@@ -13,6 +12,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include "include/Assert.h"
 #include "include/RateLimiter.h"
 
 #define RS_LOG(log_level_expr, info_log_expr, ...) \
@@ -122,7 +122,7 @@ inline const char* LogLevelToString(InfoLogLevel level) {
     "VITAL",
     "NONE"
   };
-  assert(level >= 0 && level < NUM_INFO_LOG_LEVELS);
+  RS_ASSERT(level >= 0 && level < NUM_INFO_LOG_LEVELS);
   return kInfoLogLevelNames[level];
 }
 

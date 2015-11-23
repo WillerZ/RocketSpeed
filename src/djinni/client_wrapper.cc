@@ -5,7 +5,6 @@
 //
 #include "client_wrapper.h"
 
-#include <cassert>
 #include <memory>
 #include <limits>
 #include <stdexcept>
@@ -210,7 +209,7 @@ class MessageReceivedImpl : public rocketspeed::MessageReceived {
   SequenceNumber GetSequenceNumber() const override { return seqno_; };
 
   Slice GetContents() const override {
-    assert(false);
+    RS_ASSERT(false);
     return Slice();
   }
 

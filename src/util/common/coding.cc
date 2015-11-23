@@ -76,8 +76,8 @@ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
 
 void BitStreamPutInt(char* dst, size_t dstlen, size_t offset,
                      uint32_t bits, uint64_t value) {
-  assert((offset + bits + 7)/8 <= dstlen);
-  assert(bits <= 64);
+  RS_ASSERT((offset + bits + 7)/8 <= dstlen);
+  RS_ASSERT(bits <= 64);
 
   unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
 
@@ -85,7 +85,7 @@ void BitStreamPutInt(char* dst, size_t dstlen, size_t offset,
   size_t bitOffset = offset % 8;
 
   // This prevents unused variable warnings when compiling.
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   // Store truncated value.
   uint64_t origValue = (bits < 64)?(value & (((uint64_t)1 << bits) - 1)):value;
   uint32_t origBits = bits;
@@ -105,13 +105,15 @@ void BitStreamPutInt(char* dst, size_t dstlen, size_t offset,
     bits -= static_cast<uint32_t>(bitsToGet);
   }
 
-  assert(origValue == BitStreamGetInt(dst, dstlen, offset, origBits));
+#ifndef NO_RS_ASSERT
+  RS_ASSERT(origValue == BitStreamGetInt(dst, dstlen, offset, origBits));
+#endif
 }
 
 uint64_t BitStreamGetInt(const char* src, size_t srclen, size_t offset,
                          uint32_t bits) {
-  assert((offset + bits + 7)/8 <= srclen);
-  assert(bits <= 64);
+  RS_ASSERT((offset + bits + 7)/8 <= srclen);
+  RS_ASSERT(bits <= 64);
 
   const unsigned char* ptr = reinterpret_cast<const unsigned char*>(src);
 
@@ -138,7 +140,7 @@ uint64_t BitStreamGetInt(const char* src, size_t srclen, size_t offset,
 
 void BitStreamPutInt(std::string* dst, size_t offset, uint32_t bits,
                      uint64_t value) {
-  assert((offset + bits + 7)/8 <= dst->size());
+  RS_ASSERT((offset + bits + 7)/8 <= dst->size());
 
   const size_t kTmpBufLen = sizeof(value) + 1;
   char tmpBuf[kTmpBufLen];
@@ -159,7 +161,7 @@ void BitStreamPutInt(std::string* dst, size_t offset, uint32_t bits,
   }
 
   // Do the check here too as we are working with a buffer.
-  assert(((bits < 64)?(value & (((uint64_t)1 << bits) - 1)):value) ==
+  RS_ASSERT(((bits < 64)?(value & (((uint64_t)1 << bits) - 1)):value) ==
          BitStreamGetInt(dst, offset, bits));
 }
 

@@ -69,7 +69,7 @@ void StreamReceiver::operator()(StreamReceiveArg<Message> arg) {
           PrepareArguments<MessageTailSeqno>(flow, stream_id, message));
       return;
     default:
-      assert(false);
+      RS_ASSERT(false);
   }
 }
 

@@ -5,11 +5,11 @@
 //
 #pragma once
 
-#include <assert.h>
 #include <stddef.h>
 #include <string.h>
 #include <memory>
 #include <string>
+#include "include/Assert.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
@@ -55,7 +55,7 @@ class Slice {
   // Return the ith byte in the referenced data.
   // REQUIRES: n < size()
   char operator[](size_t n) const {
-    assert(n < size());
+    RS_ASSERT(n < size());
     return data_[n];
   }
 
@@ -64,7 +64,7 @@ class Slice {
 
   // Drop the first "n" bytes from this slice.
   void remove_prefix(size_t n) {
-    assert(n <= size());
+    RS_ASSERT(n <= size());
     data_ += n;
     size_ -= n;
   }

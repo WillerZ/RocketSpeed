@@ -57,7 +57,7 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
       // Read the eventfd to clear read-readiness.
       eventfd_t value;
       read_ready_fd_.read_event(&value);
-      assert(value > 0);
+      RS_ASSERT(value > 0);
     }
   }
 
@@ -95,7 +95,7 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
       // Read the eventfd to clear read-readiness.
       eventfd_t value;
       read_ready_fd_.read_event(&value);
-      assert(value > 0);
+      RS_ASSERT(value > 0);
     }
   }
 

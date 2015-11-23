@@ -6,7 +6,6 @@
 #pragma GCC diagnostic ignored "-Wshadow"
 
 #include "src/logdevice/Common.h"
-#include <assert.h>
 #include <algorithm>
 #include <mutex>
 #include <string>

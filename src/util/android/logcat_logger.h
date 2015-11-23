@@ -60,7 +60,7 @@ class LogcatLogger final : public Logger {
   }
 
   void Append(const char* format, va_list ap) {
-    assert(false);
+    RS_ASSERT(false);
   }
 };
 

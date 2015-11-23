@@ -264,7 +264,7 @@ Status MsgLoopBase::MapReduceSync(MapFunc map,
                                   ReduceFunc reduce,
                                   Result* out,
                                   std::chrono::seconds timeout) {
-  assert(out);
+  RS_ASSERT(out);
   using T = decltype(map(0));
 
   // Request context.
@@ -299,7 +299,7 @@ Status MsgLoopBase::WorkerRequestSync(RequestFunc request,
                                       int worker_id,
                                       Result* out,
                                       std::chrono::seconds timeout) {
-  assert(out);
+  RS_ASSERT(out);
 
   // Request context.
   // Needs to be shared in case of timeout.
@@ -327,8 +327,8 @@ class MsgLoopThread {
   MsgLoopThread(BaseEnv* env, MsgLoopBase* msg_loop, std::string name)
   : env_(env)
   , msg_loop_(msg_loop) {
-    assert(env_);
-    assert(msg_loop_);
+    RS_ASSERT(env_);
+    RS_ASSERT(msg_loop_);
     tid_ = env_->StartThread([msg_loop] () { msg_loop->Run(); }, name);
   }
 

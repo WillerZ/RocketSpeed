@@ -124,7 +124,7 @@ static void TestKillRandom(int odds, const std::string& srcfile,
   time_t curtime = time(nullptr);
   Random r((uint32_t)curtime);
 
-  assert(odds > 0);
+  RS_ASSERT(odds > 0);
   bool crash = r.OneIn(odds);
   if (crash) {
     fprintf(stdout, "Crashing at %s:%d\n", srcfile.c_str(), srcline);
@@ -170,7 +170,7 @@ namespace {
     rid = EncodeVarint64(rid, buf.st_dev);
     rid = EncodeVarint64(rid, buf.st_ino);
     rid = EncodeVarint64(rid, uversion);
-    assert(rid >= id);
+    RS_ASSERT(rid >= id);
     return static_cast<size_t>(rid-id);
   }
 }
@@ -249,7 +249,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
   PosixRandomAccessFile(const std::string& fname, int fd,
                         const EnvOptions& options)
       : filename_(fname), fd_(fd), use_os_buffer_(options.use_os_buffer) {
-    assert(!options.use_mmap_reads);
+    RS_ASSERT(!options.use_mmap_reads);
   }
   virtual ~PosixRandomAccessFile() { close(fd_); }
 
@@ -297,7 +297,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
         Fadvise(fd_, 0, 0, POSIX_FADV_DONTNEED);
         break;
       default:
-        assert(false);
+        RS_ASSERT(false);
         break;
     }
   }
@@ -331,8 +331,8 @@ class PosixMmapReadableFile: public RandomAccessFile {
                         const EnvOptions& options)
       : fd_(fd), filename_(fname), mmapped_region_(base), length_(length) {
     fd_ = fd_ + 0;  // suppress the warning for used variables
-    assert(options.use_mmap_reads);
-    assert(options.use_os_buffer);
+    RS_ASSERT(options.use_mmap_reads);
+    RS_ASSERT(options.use_os_buffer);
   }
   virtual ~PosixMmapReadableFile() {
     int ret = munmap(mmapped_region_, length_);
@@ -395,7 +395,7 @@ class PosixMmapFile : public WritableFile {
 
   size_t TruncateToPageBoundary(size_t s) {
     s -= (s & (page_size_ - 1));
-    assert((s % page_size_) == 0);
+    RS_ASSERT((s % page_size_) == 0);
     return s;
   }
 
@@ -426,7 +426,7 @@ class PosixMmapFile : public WritableFile {
 
   Status MapNewRegion() {
 #ifdef ROCKETSPEED_FALLOCATE_PRESENT
-    assert(base_ == nullptr);
+    RS_ASSERT(base_ == nullptr);
 
     TEST_KILL_RANDOM(rs_kill_odds);
     // we can't fallocate with FALLOC_FL_KEEP_SIZE here
@@ -475,8 +475,8 @@ class PosixMmapFile : public WritableFile {
 #ifdef ROCKETSPEED_FALLOCATE_PRESENT
     fallocate_with_keep_size_ = options.fallocate_with_keep_size;
 #endif
-    assert((page_size & (page_size - 1)) == 0);
-    assert(options.use_mmap_writes);
+    RS_ASSERT((page_size & (page_size - 1)) == 0);
+    RS_ASSERT(options.use_mmap_writes);
   }
 
 
@@ -492,8 +492,8 @@ class PosixMmapFile : public WritableFile {
     TEST_KILL_RANDOM(rs_kill_odds * REDUCE_ODDS);
     PrepareWrite(GetFileSize(), left);
     while (left > 0) {
-      assert(base_ <= dst_);
-      assert(dst_ <= limit_);
+      RS_ASSERT(base_ <= dst_);
+      RS_ASSERT(dst_ <= limit_);
       size_t avail = limit_ - dst_;
       if (avail == 0) {
         if (UnmapCurrentRegion()) {
@@ -666,7 +666,7 @@ class PosixWritableFile : public WritableFile {
 #ifdef ROCKETSPEED_FALLOCATE_PRESENT
     fallocate_with_keep_size_ = options.fallocate_with_keep_size;
 #endif
-    assert(!options.use_mmap_writes);
+    RS_ASSERT(!options.use_mmap_writes);
   }
 
   ~PosixWritableFile() {
@@ -696,7 +696,7 @@ class PosixWritableFile : public WritableFile {
         capacity_ *= 2;
         buf_.reset(new char[capacity_]);
       }
-      assert(cursize_ == 0);
+      RS_ASSERT(cursize_ == 0);
     }
 
     // if the write fits into the cache, then write to cache
@@ -877,7 +877,7 @@ class PosixRandomRWFile : public RandomRWFile {
 #ifdef ROCKETSPEED_FALLOCATE_PRESENT
     fallocate_with_keep_size_ = options.fallocate_with_keep_size;
 #endif
-    assert(!options.use_mmap_writes && !options.use_mmap_reads);
+    RS_ASSERT(!options.use_mmap_writes && !options.use_mmap_reads);
   }
 
   ~PosixRandomRWFile() {
@@ -1045,7 +1045,7 @@ class PosixConnection: public Connection {
   }
 
   virtual Status Receive(char* buffer, ssize_t* sz) {
-    assert(sz);
+    RS_ASSERT(sz);
     ssize_t count = read(sockfd_, buffer, *sz);
     *sz = count;
     if (count == -1) {
@@ -1457,7 +1457,7 @@ class PosixEnv : public Env {
 
   // Allow increasing the number of worker threads.
   virtual void SetBackgroundThreads(int num, Priority pri) override {
-    assert(pri >= Priority::LOW && pri <= Priority::HIGH);
+    RS_ASSERT(pri >= Priority::LOW && pri <= Priority::HIGH);
     thread_pools_[pri].SetBackgroundThreads(num);
   }
 
@@ -1612,7 +1612,7 @@ class PosixEnv : public Env {
 
     ~ThreadPool() {
       PthreadCall("lock", pthread_mutex_lock(&mu_));
-      assert(!exit_all_threads_);
+      RS_ASSERT(!exit_all_threads_);
       exit_all_threads_ = true;
       PthreadCall("signalall", pthread_cond_broadcast(&bgsignal_));
       PthreadCall("unlock", pthread_mutex_unlock(&mu_));
@@ -1708,7 +1708,7 @@ class PosixEnv : public Env {
         WakeUpAllThreads();
         StartBGThreads();
       }
-      assert(total_threads_limit_ > 0);
+      RS_ASSERT(total_threads_limit_ > 0);
       PthreadCall("unlock", pthread_mutex_unlock(&mu_));
     }
 
@@ -1797,12 +1797,12 @@ PosixEnv::PosixEnv() : checkedDiskForMmap_(false),
 }
 
 void PosixEnv::Schedule(void (*function)(void*), void* arg, Priority pri) {
-  assert(pri >= Priority::LOW && pri <= Priority::HIGH);
+  RS_ASSERT(pri >= Priority::LOW && pri <= Priority::HIGH);
   thread_pools_[pri].Schedule(function, arg);
 }
 
 unsigned int PosixEnv::GetThreadPoolQueueLen(Priority pri) const {
-  assert(pri >= Priority::LOW && pri <= Priority::HIGH);
+  RS_ASSERT(pri >= Priority::LOW && pri <= Priority::HIGH);
   return thread_pools_[pri].GetQueueLen();
 }
 
@@ -1834,7 +1834,7 @@ Env::ThreadId PosixEnv::StartThread(std::function<void()> f,
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 
   // TODO: validate the return code from pthread_create
-  assert(sizeof(t) <= sizeof(Env::ThreadId));
+  RS_ASSERT(sizeof(t) <= sizeof(Env::ThreadId));
   return reinterpret_cast<Env::ThreadId>(t);
 }
 
@@ -1859,7 +1859,7 @@ void PosixEnv::WaitForJoin(Env::ThreadId tid) {
   PthreadCall("lock", pthread_mutex_lock(&mu_));
   auto it = std::remove(threads_to_join_.begin(), threads_to_join_.end(),
                         reinterpret_cast<pthread_t>(tid));
-  assert(it != threads_to_join_.end());
+  RS_ASSERT(it != threads_to_join_.end());
   threads_to_join_.erase(it);
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
   PthreadCall("join", pthread_join((pthread_t)tid, nullptr));

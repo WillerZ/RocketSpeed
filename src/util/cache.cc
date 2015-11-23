@@ -8,7 +8,6 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "src/util/cache.h"
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -71,7 +70,7 @@ struct LRUHandle {
   }
 
   void Free() {
-    assert((refs == 1 && in_cache) || (refs == 0 && !in_cache));
+    RS_ASSERT((refs == 1 && in_cache) || (refs == 0 && !in_cache));
     (*deleter)(key(), value);
     free(this);
   }
@@ -92,7 +91,7 @@ class HandleTable {
       LRUHandle* h = list_[i];
       while (h != nullptr) {
         auto n = h->next_hash;
-        assert(h->in_cache);
+        RS_ASSERT(h->in_cache);
         func(h);
         h = n;
       }
@@ -177,7 +176,7 @@ class HandleTable {
         count++;
       }
     }
-    assert(elems_ == count);
+    RS_ASSERT(elems_ == count);
     delete[] list_;
     list_ = new_list;
     length_ = new_length;
@@ -211,7 +210,7 @@ class LRUCache : public Cache {
   size_t GetUsage() const override { return usage_; }
 
   size_t GetPinnedUsage() const override {
-    assert(usage_ >= lru_usage_);
+    RS_ASSERT(usage_ >= lru_usage_);
     return usage_ - lru_usage_;
   }
 
@@ -262,7 +261,7 @@ LRUCache::LRUCache(size_t capacity) :
 LRUCache::~LRUCache() {}
 
 bool LRUCache::Unref(LRUHandle* e) {
-  assert(e->refs > 0);
+  RS_ASSERT(e->refs > 0);
   e->refs--;
   return e->refs == 0;
 }
@@ -276,8 +275,8 @@ void LRUCache::ApplyToAllCacheEntries(void (*callback)(void*, size_t)) {
 }
 
 void LRUCache::LRU_Remove(LRUHandle* e) {
-  assert(e->next != nullptr);
-  assert(e->prev != nullptr);
+  RS_ASSERT(e->next != nullptr);
+  RS_ASSERT(e->prev != nullptr);
   e->next->prev = e->prev;
   e->prev->next = e->next;
   e->prev = e->next = nullptr;
@@ -286,8 +285,8 @@ void LRUCache::LRU_Remove(LRUHandle* e) {
 
 void LRUCache::LRU_Append(LRUHandle* e) {
   // Make "e" newest entry by inserting just before lru_
-  assert(e->next == nullptr);
-  assert(e->prev == nullptr);
+  RS_ASSERT(e->next == nullptr);
+  RS_ASSERT(e->prev == nullptr);
   e->next = &lru_;
   e->prev = lru_.prev;
   e->prev->next = e;
@@ -299,8 +298,8 @@ void LRUCache::EvictFromLRU(size_t charge,
                             autovector<LRUHandle*>* deleted) {
   while (usage_ + charge > capacity_ && lru_.next != &lru_) {
     LRUHandle* old = lru_.next;
-    assert(old->in_cache);
-    assert(old->refs == 1);  // LRU list contains elements which may be evicted
+    RS_ASSERT(old->in_cache);
+    RS_ASSERT(old->refs == 1);  // LRU contains elements which may be evicted
     LRU_Remove(old);
     table_.Remove(old->key(), old->hash);
     old->in_cache = false;
@@ -325,7 +324,7 @@ Cache::Handle* LRUCache::Lookup(const Slice& key) {
   const uint32_t hash = HashSlice(key);
   LRUHandle* e = table_.Lookup(key, hash);
   if (e != nullptr) {
-    assert(e->in_cache);
+    RS_ASSERT(e->in_cache);
     if (e->refs == 1) {
       LRU_Remove(e);
     }
@@ -347,7 +346,7 @@ void LRUCache::Release(Cache::Handle* handle) {
       if (usage_ > capacity_) {
         // the cache is full
         // The LRU list must be empty since the cache is full
-        assert(lru_.next == &lru_);
+        RS_ASSERT(lru_.next == &lru_);
         // take this opportunity and remove the item
         table_.Remove(e->key(), e->hash);
         e->in_cache = false;
@@ -464,7 +463,7 @@ void LRUCache::ChargeDelta(Cache::Handle* handle, size_t delta) {
 
   // Assert that the entry is not in the lru so no need to
   // modify lru_usage_.
-  assert(e->refs > 1);
+  RS_ASSERT(e->refs > 1);
 }
 }  // end anonymous namespace
 

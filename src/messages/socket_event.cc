@@ -157,8 +157,8 @@ void SocketEvent::Close(ClosureReason reason) {
 
 SocketEvent::~SocketEvent() {
   thread_check_.Check();
-  assert(remote_id_to_stream_.empty());
-  assert(owned_streams_.empty());
+  RS_ASSERT(remote_id_to_stream_.empty());
+  RS_ASSERT(owned_streams_.empty());
 
   LOG_INFO(GetLogger(),
            "Destroying SocketEvent(%d, %s)",
@@ -173,7 +173,7 @@ SocketEvent::~SocketEvent() {
 std::unique_ptr<Stream> SocketEvent::OpenStream(StreamID stream_id) {
   std::unique_ptr<Stream> stream(new Stream(this, stream_id, stream_id));
   auto result = remote_id_to_stream_.emplace(stream_id, stream.get());
-  assert(result.second);
+  RS_ASSERT(result.second);
   (void)result;
   // TODO(t8971722)
   stream->SetReceiver(event_loop_->GetDefaultReceiver());
@@ -181,7 +181,7 @@ std::unique_ptr<Stream> SocketEvent::OpenStream(StreamID stream_id) {
 }
 
 void SocketEvent::RegisterReadEvent(EventLoop* event_loop) {
-  assert(event_loop_ == event_loop);
+  RS_ASSERT(event_loop_ == event_loop);
   thread_check_.Check();
 
   // We create the event while constructing the socket, as we cannot propagate
@@ -189,7 +189,7 @@ void SocketEvent::RegisterReadEvent(EventLoop* event_loop) {
 }
 
 void SocketEvent::SetReadEnabled(EventLoop* event_loop, bool enabled) {
-  assert(event_loop_ == event_loop);
+  RS_ASSERT(event_loop_ == event_loop);
   thread_check_.Check();
 
   if (enabled) {
@@ -200,7 +200,7 @@ void SocketEvent::SetReadEnabled(EventLoop* event_loop, bool enabled) {
 }
 
 bool SocketEvent::Write(SerializedOnStream& value, bool check_thread) {
-  assert(check_thread);
+  RS_ASSERT(check_thread);
   thread_check_.Check();
 
   LOG_DEBUG(GetLogger(),
@@ -211,7 +211,7 @@ bool SocketEvent::Write(SerializedOnStream& value, bool check_thread) {
 
   // Sneak-peak message type, we will handle MessageGoodbye differently.
   auto type = Message::ReadMessageType(value.serialised->string);
-  assert(type != MessageType::NotInitialized);
+  RS_ASSERT(type != MessageType::NotInitialized);
 
   auto now = event_loop_->GetEnv()->NowMicros();
   // Serialise stream metadata.
@@ -251,14 +251,14 @@ bool SocketEvent::Write(SerializedOnStream& value, bool check_thread) {
 }
 
 bool SocketEvent::FlushPending(bool thread_check) {
-  assert(thread_check);
+  RS_ASSERT(thread_check);
   thread_check_.Check();
   return true;
 }
 
 std::unique_ptr<EventCallback> SocketEvent::CreateWriteCallback(
     EventLoop* event_loop, std::function<void()> callback) {
-  assert(event_loop_ == event_loop);
+  RS_ASSERT(event_loop_ == event_loop);
   thread_check_.Check();
   return event_loop_->CreateEventCallback(std::move(callback), write_ready_);
 }
@@ -336,7 +336,7 @@ void SocketEvent::UnregisterStream(StreamID remote_id) {
   if (it != owned_streams_.end()) {
     auto owned_stream = std::move(it->second);
     owned_streams_.erase(it);
-    assert(owned_stream.get() == stream);
+    RS_ASSERT(owned_stream.get() == stream);
     event_loop_->AddTask(MakeDeferredDeleter(owned_stream));
   }
 
@@ -355,20 +355,20 @@ Status SocketEvent::WriteCallback() {
     timeout_cancelled_ = true;
   }
 
-  assert(send_queue_.size() > 0);
+  RS_ASSERT(send_queue_.size() > 0);
 
   // Sanity check stats.
   // write_succeed_* should have a record for all write_size_*
-  assert(stats_->write_size_bytes->GetNumSamples() ==
+  RS_ASSERT(stats_->write_size_bytes->GetNumSamples() ==
          stats_->write_succeed_bytes->GetNumSamples());
-  assert(stats_->write_size_iovec->GetNumSamples() ==
+  RS_ASSERT(stats_->write_size_iovec->GetNumSamples() ==
          stats_->write_succeed_iovec->GetNumSamples());
 
   while (send_queue_.size() > 0) {
     // if there is any pending data from the previously sent
     // partial-message, then send it.
     if (partial_.size() > 0) {
-      assert(send_queue_.size() > 0);
+      RS_ASSERT(send_queue_.size() > 0);
 
       // Prepare iovecs.
       iovec iov[kMaxIovecs];
@@ -417,7 +417,7 @@ Status SocketEvent::WriteCallback() {
 
       size_t written = static_cast<size_t>(count);
       for (int i = 0; i < iovcnt; ++i) {
-        assert(!send_queue_.empty());
+        RS_ASSERT(!send_queue_.empty());
         auto& item = send_queue_.front();
         if (i != 0) {
           partial_ = Slice(item->string);
@@ -443,7 +443,7 @@ Status SocketEvent::WriteCallback() {
         }
       }
       stats_->write_succeed_iovec->Record(iovcnt);
-      assert(written == 0);
+      RS_ASSERT(written == 0);
       partial_.clear();
 
       LOG_DEBUG(GetLogger(),
@@ -456,7 +456,7 @@ Status SocketEvent::WriteCallback() {
     if (send_queue_.size() > 0) {
       // If there are any new pending messages, start processing it.
       partial_ = send_queue_.front()->string;
-      assert(partial_.size() > 0);
+      RS_ASSERT(partial_.size() > 0);
     } else {
       // No more queued messages. Switch off ready-to-write event on socket.
       write_ev_->Disable();
@@ -504,7 +504,7 @@ Status SocketEvent::ReadCallback() {
       msg_buf_.reset(new char[msg_size_]);
       msg_idx_ = 0;
     }
-    assert(msg_idx_ < msg_size_);
+    RS_ASSERT(msg_idx_ < msg_size_);
 
     ssize_t count = msg_size_ - msg_idx_;
     ssize_t n = read(fd_, msg_buf_.get() + msg_idx_, count);
@@ -556,7 +556,7 @@ Status SocketEvent::ReadCallback() {
 
 bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
   const auto msg_type = msg->GetMessageType();
-  assert(ValidateEnum(msg_type));
+  RS_ASSERT(ValidateEnum(msg_type));
 
   // Find a stream for this message or create one if missing.
   auto it = remote_id_to_stream_.find(remote_id);
@@ -575,12 +575,12 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
       event_loop_->AddInboundStream(access::EventLoop(), owned_stream.get());
       // Register a new inbound stream.
       auto result = remote_id_to_stream_.emplace(remote_id, owned_stream.get());
-      assert(result.second);
+      RS_ASSERT(result.second);
       it = result.first;
       // Make the SocketEvent own it.
       auto result1 =
           owned_streams_.emplace(owned_stream.get(), std::move(owned_stream));
-      assert(result1.second);
+      RS_ASSERT(result1.second);
       (void)result1;
     } else {
       // Drop the message.
@@ -591,7 +591,7 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
       return true;
     }
   }
-  assert(it != remote_id_to_stream_.end());
+  RS_ASSERT(it != remote_id_to_stream_.end());
   Stream* stream = it->second;
 
   // Update stats.

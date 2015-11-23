@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "src/client/client.h"
 
-#include <cassert>
 #include <cmath>
 #include <chrono>
 #include <functional>
@@ -39,7 +38,7 @@ namespace rocketspeed {
 ////////////////////////////////////////////////////////////////////////////////
 Status Client::Create(ClientOptions options,
                       std::unique_ptr<Client>* out_client) {
-  assert(out_client);
+  RS_ASSERT(out_client);
   std::unique_ptr<ClientImpl> client_impl;
   auto st = ClientImpl::Create(std::move(options), &client_impl);
   if (st.ok()) {
@@ -51,7 +50,7 @@ Status Client::Create(ClientOptions options,
 Status ClientImpl::Create(ClientOptions options,
                           std::unique_ptr<ClientImpl>* out_client,
                           bool is_internal) {
-  assert(out_client);
+  RS_ASSERT(out_client);
 
   // Validate arguments.
   if (!options.config) {
@@ -211,7 +210,7 @@ SubscriptionHandle ClientImpl::Subscribe(
   const SubscriptionHandle sub_handle = CreateNewHandle(worker_id);
   if (!sub_handle) {
     LOG_ERROR(options_.info_log, "Client run out of subscription handles");
-    assert(false);
+    RS_ASSERT(false);
     return SubscriptionHandle(0);
   }
   const SubscriptionID sub_id = sub_handle;
@@ -347,7 +346,7 @@ Statistics ClientImpl::GetStatisticsSync() {
 
 Status ClientImpl::Start() {
   for (const auto& worker : worker_data_) {
-    assert(worker);
+    RS_ASSERT(worker);
     auto st = worker->Start();
     if (!st.ok()) {
       return st;

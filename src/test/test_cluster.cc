@@ -33,7 +33,7 @@ struct TestStorageImpl : public TestStorage {
 #ifdef USE_LOGDEVICE
     client_.reset();
 #endif
-    assert(storage_.unique());  // should be last reference
+    RS_ASSERT(storage_.unique());  // should be last reference
   }
 
   std::shared_ptr<LogStorage> GetLogStorage() override {

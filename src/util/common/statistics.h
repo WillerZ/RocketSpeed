@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <cassert>
 #include <list>
 #include <memory>
 #include <string>
@@ -285,7 +284,7 @@ void Statistics::DisaggregateOne(
   for (const auto& stat : src) {
     const std::string& name = stat.first;
     auto it = dst->find(name);
-    assert(it != dst->end());
+    RS_ASSERT(it != dst->end());
     it->second->Disaggregate(*stat.second);
   }
 }

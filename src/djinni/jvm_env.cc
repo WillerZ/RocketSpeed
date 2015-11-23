@@ -6,7 +6,6 @@
 #include "jvm_env.h"
 
 #include <pthread.h>
-#include <cassert>
 
 #include "djinni_support.hpp"
 
@@ -38,7 +37,7 @@ jint AttachCurrentThread() {
 
 void DetachCurrentThread(void* arg) {
   // arg is guaranteed to be non-null
-  assert(arg);
+  RS_ASSERT(arg);
   JavaVM* java_vm = reinterpret_cast<JavaVM*>(arg);
   if (JNI_OK != java_vm->DetachCurrentThread()) {
     // There is hardly anything we can do about error code from above call, so
@@ -75,7 +74,7 @@ BaseEnv::ThreadId JvmEnv::StartThread(void (*function)(void* arg),
   auto call = [function, arg]() {
     jint err = AttachCurrentThread();
     // TODO(stupaq) this should not crash JVM, but rather pop up as an exception
-    assert(err == JNI_OK);
+    RS_ASSERT(err == JNI_OK);
     (void)err;
     (*function)(arg);
   };
@@ -87,7 +86,7 @@ BaseEnv::ThreadId JvmEnv::StartThread(std::function<void()> function,
   auto call = [function]() {
     jint err = AttachCurrentThread();
     // TODO(stupaq) this should not crash JVM, but rather pop up as an exception
-    assert(err == JNI_OK);
+    RS_ASSERT(err == JNI_OK);
     (void)err;
     function();
   };

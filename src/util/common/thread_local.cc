@@ -9,6 +9,7 @@
 
 #include "src/util/common/thread_local.h"
 #include "src/port/likely.h"
+#include "include/Assert.h"
 #include <stdlib.h>
 
 namespace rocketspeed {
@@ -34,7 +35,7 @@ ThreadLocalPtr::StaticMeta* ThreadLocalPtr::Instance() {
 
 void ThreadLocalPtr::StaticMeta::OnThreadExit(void* ptr) {
   auto* tls = static_cast<ThreadData*>(ptr);
-  assert(tls != nullptr);
+  RS_ASSERT(tls != nullptr);
 
   auto* inst = Instance();
   pthread_setspecific(inst->pthread_key_, nullptr);

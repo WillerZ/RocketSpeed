@@ -56,7 +56,7 @@ class Source : public AbstractSource {
    */
   void RegisterReadCallback(EventLoop* event_loop,
                             std::function<bool(T)> read_callback) {
-    assert(!read_callback_);  // cannot register more than one.
+    RS_ASSERT(!read_callback_);  // cannot register more than one.
     read_callback_ = std::move(read_callback);
     RegisterReadEvent(event_loop);
   }

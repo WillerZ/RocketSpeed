@@ -6,7 +6,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -33,12 +32,12 @@ namespace rocketspeed {
  * HeterogeneousQueue::Transaction tx(&queue);
  * tx.Write('s');  // 's' => string
  * tx.Write(std::string("foo"));
- * assert(tx.Commit());
+ * RS_ASSERT(tx.Commit());
  *
  * HeterogeneousQueue::Transaction tx(&queue);
  * tx.Write('i');  // 'i' => int
  * tx.Write(1234);
- * assert(tx.Commit());
+ * RS_ASSERT(tx.Commit());
  *
  * The reader can then read the tag before deciding what type to read.
  *
@@ -88,7 +87,7 @@ class HeterogeneousQueue {
 
   ~HeterogeneousQueue() {
     // It's up to the user to consume all entries before destruction.
-    assert(read_index_.load(std::memory_order_acquire) ==
+    RS_ASSERT(read_index_.load(std::memory_order_acquire) ==
            committed_index_.load(std::memory_order_acquire));
   }
 
@@ -114,7 +113,7 @@ class HeterogeneousQueue {
   template <typename Value>
   bool Read(Value* value) {
     read_check_.Check();
-    assert(value);
+    RS_ASSERT(value);
 
     // Current read offset.
     auto const current = read_index_.load(std::memory_order_relaxed);
@@ -167,7 +166,7 @@ class HeterogeneousQueue {
 
     /** End the transaction, previous writes must be committed */
     ~Transaction() {
-      assert(!uncommitted_writes_);
+      RS_ASSERT(!uncommitted_writes_);
     }
 
     /** Commit writes. Returns true iff successful. */
@@ -233,7 +232,7 @@ private:
    *         index & (align - 1) == 0.
    */
   inline uint64_t Align(uint64_t index, uint64_t align) {
-    assert((align & (align - 1)) == 0);  // align must be power-of-two.
+    RS_ASSERT((align & (align - 1)) == 0);  // align must be power-of-two.
     return (index + align - 1) & ~(align - 1);
   }
 

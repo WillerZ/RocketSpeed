@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "include/Assert.h"
 #include "include/Status.h"
 #include "include/Slice.h"
 

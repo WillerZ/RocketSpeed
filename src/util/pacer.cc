@@ -21,9 +21,9 @@ Pacer::Pacer(uint64_t max_throughput,
 , current_inflight_((max_inflight_ + 1) / 2)
 , requests_(static_cast<unsigned int>(current_inflight_)) {
   // Validate.
-  assert(max_throughput_ > 0);
-  assert(max_inflight_ > 0);
-  assert(convergence_samples_ > 0);
+  RS_ASSERT(max_throughput_ > 0);
+  RS_ASSERT(max_inflight_ > 0);
+  RS_ASSERT(convergence_samples_ > 0);
 
   if (max_latency == std::chrono::microseconds::max()) {
     // This is a special setting for max_latency, which essentially means to
@@ -44,8 +44,8 @@ Pacer::Pacer(uint64_t max_throughput,
 , current_inflight_(max_inflight)
 , requests_(static_cast<unsigned int>(current_inflight_)) {
   // Validate.
-  assert(max_throughput_ > 0);
-  assert(max_inflight_ > 0);
+  RS_ASSERT(max_throughput_ > 0);
+  RS_ASSERT(max_inflight_ > 0);
 }
 
 void Pacer::Wait() {
@@ -122,7 +122,7 @@ void Pacer::EndRequest() {
   // and we only care about the sum, so we can just take the earliest.
   if (convergence_samples_ != 0) {
     std::lock_guard<std::mutex> lock(end_request_mutex_);
-    assert(!start_times_.empty());
+    RS_ASSERT(!start_times_.empty());
     latency_sum_ += ToMicros(clock::now() - start_times_.front());
     start_times_.pop_front();
   }

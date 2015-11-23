@@ -56,7 +56,7 @@ TopicManager::RemoveSubscriber(const TopicUUID& topic, CopilotSub subscriber) {
   if (iter != topic_map_.end()) {
     bool all_removed = RemoveSubscription(iter->second, subscriber);
     if (all_removed) {
-      assert(iter->second.empty());
+      RS_ASSERT(iter->second.empty());
       topic_map_.erase(iter);
     }
     return all_removed;

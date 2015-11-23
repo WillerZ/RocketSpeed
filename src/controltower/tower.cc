@@ -83,7 +83,7 @@ ControlTower::~ControlTower() {
 
 void ControlTower::Stop() {
   // MsgLoop must be stopped first.
-  assert(!options_.msg_loop->IsRunning());
+  RS_ASSERT(!options_.msg_loop->IsRunning());
 
   // Stop log tailer from communicating with log storage.
   for (auto& log_tailer : log_tailer_) {
@@ -101,12 +101,12 @@ Status
 ControlTower::CreateNewInstance(const ControlTowerOptions& options,
                                 ControlTower** ct) {
   if (!options.storage) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("Log storage must be provided");
   }
 
   if (!options.log_router) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("Log router must be provided");
   }
 

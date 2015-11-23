@@ -95,12 +95,12 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
 
 Copilot::~Copilot() {
   // Must be stopped first.
-  assert(workers_.empty());
+  RS_ASSERT(workers_.empty());
   options_.info_log->Flush();
 }
 
 void Copilot::Stop() {
-  assert(!options_.msg_loop->IsRunning());
+  RS_ASSERT(!options_.msg_loop->IsRunning());
 
   if (client_) {
     client_->Stop();
@@ -115,14 +115,14 @@ void Copilot::Stop() {
 Status Copilot::CreateNewInstance(CopilotOptions options,
                                   Copilot** copilot) {
   if (!options.log_router) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("Log router must be provided");
   }
   std::unique_ptr<ClientImpl> client;
   if (options.rollcall_enabled) {
     // Publishing to the rollcall topic needs a pilot.
     if (options.pilots.size() <= 0) {
-      assert(options.pilots.size());
+      RS_ASSERT(options.pilots.size());
       return Status::InvalidArgument("At least one pilot much be provided.");
     }
     // Create a configuration to determine the identity of a pilot.
@@ -319,7 +319,7 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
       break;
   }
 
-  assert(worker_id != -1);
+  RS_ASSERT(worker_id != -1);
   auto command = workers_[worker_id]->WorkerCommand(LogID(0),
                                                     std::move(msg),
                                                     this_worker,

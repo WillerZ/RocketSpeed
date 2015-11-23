@@ -30,7 +30,7 @@ CopilotWorker::CopilotWorker(
 , copilot_(copilot)
 , myid_(myid) {
   // copilot is required.
-  assert(copilot_);
+  RS_ASSERT(copilot_);
 
   // Cached calculation.
   resubscriptions_per_tick_ = std::max<uint64_t>(1,
@@ -53,7 +53,7 @@ CopilotWorker::CopilotWorker(
 
   // Create Rollcall topic writer
   if (options_.rollcall_enabled) {
-    assert(client);
+    RS_ASSERT(client);
     rollcall_.reset(new RollcallImpl(std::move(client),
                                      InvalidTenant,
                                      "copilot.rollcall"));
@@ -510,7 +510,7 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
     if (sub->stream_id == subscriber && sub->sub_id == sub_id) {
       // Existing subscription: update sequence number.
       sub->seqno = start_seqno;
-      assert(sub->worker_id == worker_id);
+      RS_ASSERT(sub->worker_id == worker_id);
       found = true;
       break;
     }
@@ -752,7 +752,7 @@ void CopilotWorker::ProcessTimerTick() {
     SafeResubscribeRequest resubscribe_request = PopNextResubscribeRequest();
     auto topic_it = topics_.find(resubscribe_request->topic_uuid);
     bool topic_valid = topic_it != topics_.end();
-    assert(topic_valid);
+    RS_ASSERT(topic_valid);
     if (topic_valid) {
       UpdateTowerSubscriptions(
         resubscribe_request->topic_uuid,
@@ -1024,7 +1024,7 @@ void CopilotWorker::UpdateTowerSubscriptions(
                                    outgoing_worker_id);
       if (success) {
         // Update the towers for the subscription.
-        assert(!topic.FindTower(socket));  // we just cleared all towers.
+        RS_ASSERT(!topic.FindTower(socket));  // we just cleared all towers.
 
         uint32_t flags = TopicState::Tower::Flags::kDefault;
         if (new_seqno == 0) {
@@ -1190,7 +1190,7 @@ void CopilotWorker::AdvanceTowers(TopicState* topic,
                                   SequenceNumber next,
                                   StreamID origin,
                                   SubscriptionID sub_id) {
-  assert(topic);
+  RS_ASSERT(topic);
   for (auto& tower : topic->towers) {
     if (tower.stream->GetStreamID() == origin && tower.sub_id == sub_id) {
       if (prev <= tower.next_seqno &&

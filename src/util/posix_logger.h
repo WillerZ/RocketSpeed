@@ -17,7 +17,6 @@
 #endif
 #include <algorithm>
 #include <atomic>
-#include <cassert>
 #include <string>
 
 #include "include/Logger.h"
@@ -120,7 +119,7 @@ class PosixLogger : public Logger {
         *p++ = '\n';
       }
 
-      assert(p <= limit);
+      RS_ASSERT(p <= limit);
       const size_t write_size = p - base;
 
 #ifdef ROCKETSPEED_FALLOCATE_PRESENT
@@ -141,7 +140,7 @@ class PosixLogger : public Logger {
 
       size_t sz = fwrite(base, 1, write_size, file_);
       flush_pending_ = true;
-      assert(sz == write_size);
+      RS_ASSERT(sz == write_size);
       if (sz > 0) {
         log_size_ += write_size;
       }

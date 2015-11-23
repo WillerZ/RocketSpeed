@@ -135,8 +135,8 @@ Status HostId::ResolveInternal(const std::string& hostname,
 
 HostId::HostId(const sockaddr* addr, socklen_t addrlen, std::string description)
 : addrlen_(addrlen), description_(std::move(description)) {
-  assert(addrlen_ > 0);
-  assert(sizeof(storage_) >= addrlen_);
+  RS_ASSERT(addrlen_ > 0);
+  RS_ASSERT(sizeof(storage_) >= addrlen_);
   memset(&storage_, 0, sizeof(storage_));
   memcpy(&storage_, addr, addrlen_);
 }

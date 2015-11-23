@@ -9,10 +9,10 @@
 
 #pragma once
 #include "src/util/arena.h"
+#include "include/Assert.h"
 #include <cstddef>
 #include <cerrno>
 #include <vector>
-#include <assert.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -108,7 +108,7 @@ inline char* Arena::Allocate(size_t bytes) {
   // The semantics of what to return are a bit messy if we allow
   // 0-byte allocations, so we disallow them here (we don't need
   // them for our internal use).
-  assert(bytes > 0);
+  RS_ASSERT(bytes > 0);
   if (bytes <= alloc_bytes_remaining_) {
     unaligned_alloc_ptr_ -= bytes;
     alloc_bytes_remaining_ -= bytes;

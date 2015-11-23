@@ -51,7 +51,7 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
 
     // No gap expected.
     auto gap_cb = [](const GapRecord& r) {
-      assert(false);
+      RS_ASSERT(false);
       ASSERT_TRUE(false);
       return true;
     };
@@ -82,7 +82,7 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
         // Do not apply flow control.
         return true;
       } else {
-        assert(false);
+        RS_ASSERT(false);
         ASSERT_TRUE(false);
         return true;
       }

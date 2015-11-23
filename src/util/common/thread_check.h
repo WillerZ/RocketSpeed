@@ -5,9 +5,9 @@
 //
 #pragma once
 
-#include <assert.h>
 #include <atomic>
 #include <pthread.h>
+#include "include/Assert.h"
 
 namespace rocketspeed {
 
@@ -26,7 +26,7 @@ namespace rocketspeed {
 struct ThreadCheck {
  public:
   ThreadCheck()
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
       : thread_id_(0)
 #endif
   {
@@ -35,7 +35,7 @@ struct ThreadCheck {
   ThreadCheck(const ThreadCheck& other) { *this = other; }
 
   ThreadCheck& operator=(const ThreadCheck& other) {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     auto thread_id = other.thread_id_.load(std::memory_order_consume);
     thread_id_.store(thread_id, std::memory_order_release);
 #endif
@@ -56,7 +56,7 @@ struct ThreadCheck {
    * @return False if called on different threads, true otherwise.
    */
   inline bool Ok() const {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     uint64_t desired = GetCurrentThreadId(), expected = 0;
 
     return thread_id_.compare_exchange_strong(expected, desired) ||
@@ -69,8 +69,8 @@ struct ThreadCheck {
    * Asserts that this is always called on the same thread.
    */
   inline void Check() const {
-#ifndef NDEBUG
-    assert(Ok());
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(Ok());
 #endif
   }
 
@@ -78,13 +78,13 @@ struct ThreadCheck {
    * Transfers the thread check thread to the current thread.
    */
   inline void Reset() const {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     thread_id_ = GetCurrentThreadId();
 #endif
   }
 
  private:
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     mutable std::atomic<uint64_t> thread_id_;
 #endif
 };

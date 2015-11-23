@@ -42,9 +42,9 @@ FileStorage::Snapshot::Snapshot(std::string final_path,
     : final_path_(std::move(final_path))
     , temp_path_(std::move(temp_path))
     , descriptor_(std::move(descriptor)) {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   thread_checks_.resize(num_threads);
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
   chunks_.resize(num_threads);
 }
 
@@ -53,10 +53,10 @@ Status FileStorage::Snapshot::Append(size_t thread_id,
                                      const NamespaceID& namespace_id,
                                      const Topic& topic_name,
                                      SequenceNumber start_seqno) {
-#ifndef NDEBUG
-  assert(thread_id < thread_checks_.size());
+#ifndef NO_RS_ASSERT
+  RS_ASSERT(thread_id < thread_checks_.size());
   thread_checks_[thread_id].Check();
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
 
   auto buffer = &chunks_[thread_id];
 

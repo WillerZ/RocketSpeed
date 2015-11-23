@@ -5,7 +5,6 @@
 //
 #include "type_conversions.h"
 
-#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <limits>
@@ -39,7 +38,7 @@ int64_t FromUint(uint64_t uval) {
     return static_cast<int64_t>(uval);
   if (uval >= static_cast<uint64_t>(Limits::min()))
     return static_cast<int64_t>(uval - Limits::min()) + Limits::min();
-  assert(false);
+  RS_ASSERT(false);
   return 0;
 }
 
@@ -79,7 +78,7 @@ jni::Status FromStatus(rs::Status status) {
   } else if (status.IsInternal()) {
     code = StatusCode::INTERNAL;
   } else {
-    assert(false);
+    RS_ASSERT(false);
   }
   return Status(code, status.ToString());
 }

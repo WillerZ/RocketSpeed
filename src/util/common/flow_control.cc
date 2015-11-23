@@ -19,7 +19,7 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
       continue;
     }
     SourceState& source_state = source_it->second;
-    assert(source_state.blockers > 0);
+    RS_ASSERT(source_state.blockers > 0);
     if (--source_state.blockers == 0) {
       // No more sinks blocking source, so re-enable.
       disabled_source->SetReadEnabled(event_loop_, true);

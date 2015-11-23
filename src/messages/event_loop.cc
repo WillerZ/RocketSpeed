@@ -75,7 +75,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
   const auto msg = std::make_shared<TimestampedString>();
   send_cmd->GetMessage(&msg->string);
   msg->issued_time = now;
-  assert (!msg->string.empty());
+  RS_ASSERT(!msg->string.empty());
 
   for (const SendCommand::StreamSpec& spec : send_cmd->GetDestinations()) {
     // Find or create a stream.
@@ -97,12 +97,12 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
       }
       auto result = stream_id_to_stream_.emplace(new_stream->GetLocalID(),
                                                  new_stream.get());
-      assert(result.second);
+      RS_ASSERT(result.second);
       it = result.first;
       auto result1 =
           owned_streams_.emplace(new_stream.get(), std::move(new_stream));
       (void)result1;
-      assert(result1.second);
+      RS_ASSERT(result1.second);
     }
 
     // Send out the message even if there is no room in the send queue.
@@ -217,7 +217,7 @@ EventLoop::accept_error_cb(evconnlistener *listener, void *arg) {
 Status
 EventLoop::Initialize() {
   if (base_) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("EventLoop already initialized.");
   }
 
@@ -343,7 +343,7 @@ void EventLoop::Run() {
 
   if (!base_) {
     LOG_FATAL(info_log_, "EventLoop not initialized before use.");
-    assert(false);
+    RS_ASSERT(false);
     return;
   }
   LOG_VITAL(info_log_, "Starting EventLoop at port %d", port_number_);
@@ -419,7 +419,7 @@ void EventLoop::Stop() {
 
 void EventLoop::AddTask(std::function<void()> task) {
   thread_check_.Check();
-  assert(task);
+  RS_ASSERT(task);
   scheduled_tasks_.emplace_back(std::move(task));
 }
 
@@ -488,8 +488,8 @@ void EventLoop::HandlePendingTriggers() {
 
 Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
                                         std::chrono::microseconds period) {
-  assert(base_);
-  assert(!IsRunning());
+  RS_ASSERT(base_);
+  RS_ASSERT(!IsRunning());
 
   std::unique_ptr<Timer> timer(new Timer(std::move(callback)));
   timer->loop_event = event_new(
@@ -547,7 +547,7 @@ std::unique_ptr<EventCallback> EventLoop::CreateEventCallback(
   // Record the trigger to callback mapping.
   auto result = registered_callbacks_[trigger.id_].emplace(event);
   (void)result;
-  assert(result.second);
+  RS_ASSERT(result.second);
   return std::unique_ptr<EventCallback>(event);
 }
 
@@ -556,11 +556,11 @@ void EventLoop::TriggerableCallbackClose(access::EventLoop,
   thread_check_.Check();
 
   auto it = registered_callbacks_.find(event->GetTriggerID());
-  assert(it != registered_callbacks_.end());
+  RS_ASSERT(it != registered_callbacks_.end());
   auto& events = it->second;
   size_t result = events.erase(event);
   (void)result;
-  assert(result == 1);
+  RS_ASSERT(result == 1);
   if (events.empty()) {
     registered_callbacks_.erase(it);
   }
@@ -575,7 +575,7 @@ std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
                                               StreamID stream_id) {
   thread_check_.Check();
   if (!destination) {
-    assert(false);
+    RS_ASSERT(false);
     return nullptr;
   }
 
@@ -602,7 +602,7 @@ std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
 }
 
 SocketEvent* EventLoop::OpenSocketEvent(const HostId& destination) {
-  assert(!!destination);
+  RS_ASSERT(!!destination);
   thread_check_.Check();
 
   int fd;
@@ -646,7 +646,7 @@ SocketEvent* EventLoop::OpenSocketEvent(const HostId& destination) {
 }
 
 void EventLoop::CloseFromSocketEvent(access::EventLoop, SocketEvent* socket) {
-  assert(socket);
+  RS_ASSERT(socket);
   thread_check_.Check();
 
   // Cancel connect timeout.
@@ -654,7 +654,7 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, SocketEvent* socket) {
 
   // Remove the socket from internal routing structures.
   size_t removed = outbound_connections_.erase(socket->GetDestination());
-  assert(removed == 1 || !socket->GetDestination());
+  RS_ASSERT(removed == 1 || !socket->GetDestination());
   (void)removed;
 
   // Defer destruction of the socket.
@@ -662,7 +662,7 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, SocketEvent* socket) {
   if (it != owned_connections_.end()) {
     auto owned_socket = std::move(it->second);
     owned_connections_.erase(it);
-    assert(owned_socket.get() == socket);
+    RS_ASSERT(owned_socket.get() == socket);
     AddTask(MakeDeferredDeleter(owned_socket));
   }
 
@@ -690,16 +690,16 @@ void EventLoop::CloseAllSocketEvents() {
 
 // TODO(t8971722)
 void EventLoop::AddInboundStream(access::EventLoop, Stream* stream) {
-  assert(stream);
+  RS_ASSERT(stream);
   thread_check_.Check();
   auto result = stream_id_to_stream_.emplace(stream->GetLocalID(), stream);
-  assert(result.second);
+  RS_ASSERT(result.second);
   (void)result;
 }
 
 // TODO(t8971722)
 void EventLoop::CloseFromSocketEvent(access::EventLoop, Stream* stream) {
-  assert(stream);
+  RS_ASSERT(stream);
   thread_check_.Check();
 
   // Remove stream from internal routing structures.
@@ -711,7 +711,7 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, Stream* stream) {
   if (it != owned_streams_.end()) {
     auto owned_stream = std::move(it->second);
     owned_streams_.erase(it);
-    assert(owned_stream.get() == stream);
+    RS_ASSERT(owned_stream.get() == stream);
     AddTask(MakeDeferredDeleter(owned_stream));
   }
 }
@@ -824,7 +824,7 @@ void EventLoop::SendControlCommand(std::unique_ptr<Command> command) {
   MutexLock lock(&control_command_mutex_);
   const bool check_thread = false;
   bool ok = control_command_queue_->Write(command, check_thread);
-  assert(ok);
+  RS_ASSERT(ok);
   (void)ok;
 }
 
@@ -1019,7 +1019,7 @@ Statistics EventLoop::GetStatistics() const {
 EventLoop::~EventLoop() {
   // Event loop should already be stopped by this point, and the running
   // thread should be joined.
-  assert(!running_);
+  RS_ASSERT(!running_);
   shutdown_eventfd_.closefd();
   notified_triggers_fd_.closefd();
 }
@@ -1058,7 +1058,7 @@ void EventLoop::RegisterFdReadEvent(int fd, std::function<void()> callback) {
 
 void EventLoop::SetFdReadEnabled(int fd, bool enabled) {
   auto it = fd_read_events_.find(fd);
-  assert(it != fd_read_events_.end());
+  RS_ASSERT(it != fd_read_events_.end());
   if (enabled) {
     it->second->Enable();
   } else {

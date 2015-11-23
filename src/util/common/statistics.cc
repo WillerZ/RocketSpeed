@@ -34,8 +34,8 @@ Histogram::Histogram(float min,
 , num_samples_(0)
 , log_ratio_(log(ratio))
 , log_smallest_bucket_(log(smallest_bucket)) {
-  assert(max >= min);
-  assert(ratio > 1.0);
+  RS_ASSERT(max >= min);
+  RS_ASSERT(ratio > 1.0);
   num_buckets_ = BucketIndex(max) + 1;
   bucket_counts_.reset(new uint64_t[num_buckets_]);
   for (size_t i = 0; i < num_buckets_; ++i) {
@@ -106,8 +106,8 @@ size_t Histogram::BucketIndex(float sample) const {
 
 double Histogram::Percentile(double p) const {
   thread_check_.Check();
-  assert(p >= 0.0);
-  assert(p <= 1.0);
+  RS_ASSERT(p >= 0.0);
+  RS_ASSERT(p <= 1.0);
 
   if (num_samples_ == 0) {
     return min_;
@@ -133,7 +133,7 @@ double Histogram::Percentile(double p) const {
     }
   }
   // This shouldn't be possible.
-  assert(false);
+  RS_ASSERT(false);
   return 0.0;
 }
 
@@ -146,11 +146,11 @@ void Histogram::Aggregate(const Histogram& histogram) {
   histogram.thread_check_.Check();
 
   // Parameters must match exactly for histograms to aggregate.
-  assert(histogram.min_ == min_);
-  assert(histogram.max_ == max_);
-  assert(histogram.smallest_bucket_ == smallest_bucket_);
-  assert(histogram.ratio_ == ratio_);
-  assert(histogram.num_buckets_ == num_buckets_);
+  RS_ASSERT(histogram.min_ == min_);
+  RS_ASSERT(histogram.max_ == max_);
+  RS_ASSERT(histogram.smallest_bucket_ == smallest_bucket_);
+  RS_ASSERT(histogram.ratio_ == ratio_);
+  RS_ASSERT(histogram.num_buckets_ == num_buckets_);
 
   // Just sum up the bucket counts and number of samples.
   for (size_t i = 0; i < num_buckets_; ++i) {
@@ -166,11 +166,11 @@ void Histogram::Disaggregate(const Histogram& histogram) {
   histogram.thread_check_.Check();
 
   // Parameters must match exactly for histograms to aggregate.
-  assert(histogram.min_ == min_);
-  assert(histogram.max_ == max_);
-  assert(histogram.smallest_bucket_ == smallest_bucket_);
-  assert(histogram.ratio_ == ratio_);
-  assert(histogram.num_buckets_ == num_buckets_);
+  RS_ASSERT(histogram.min_ == min_);
+  RS_ASSERT(histogram.max_ == max_);
+  RS_ASSERT(histogram.smallest_bucket_ == smallest_bucket_);
+  RS_ASSERT(histogram.ratio_ == ratio_);
+  RS_ASSERT(histogram.num_buckets_ == num_buckets_);
 
   // Just subtract the bucket counts and number of samples.
   for (size_t i = 0; i < num_buckets_; ++i) {
@@ -310,7 +310,7 @@ Statistics Statistics::MoveThread() {
 
 StatisticsWindowAggregator::StatisticsWindowAggregator(size_t window_size)
 : window_size_(window_size) {
-  assert(window_size != 0);
+  RS_ASSERT(window_size != 0);
 }
 
 void StatisticsWindowAggregator::AddSample(Statistics sample) {

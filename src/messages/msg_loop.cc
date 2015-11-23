@@ -36,7 +36,7 @@ namespace rocketspeed {
 void MsgLoop::EventCallback(Flow* flow,
                             std::unique_ptr<Message> msg,
                             StreamID origin) {
-  assert(msg);
+  RS_ASSERT(msg);
 
   // what message have we received?
   MessageType type = msg->GetMessageType();
@@ -58,7 +58,7 @@ void MsgLoop::EventCallback(Flow* flow,
         "No registered msg callback for msg type %d",
         static_cast<int>(type));
     info_log_->Flush();
-    assert(0);
+    RS_ASSERT(0);
   }
 }
 
@@ -78,8 +78,8 @@ MsgLoop::MsgLoop(BaseEnv* env,
     , info_log_(info_log)
     , name_(name)
     , next_worker_id_(0){
-  assert(info_log);
-  assert(num_workers >= 1);
+  RS_ASSERT(info_log);
+  RS_ASSERT(num_workers >= 1);
 
   const auto event_callback = [this](
       Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -119,12 +119,12 @@ MsgLoop::MsgLoop(BaseEnv* env,
 void MsgLoop::RegisterCallbacks(
     const std::map<MessageType, MsgCallbackType>& callbacks) {
   // Cannot call this when it is already running.
-  assert(!IsRunning());
+  RS_ASSERT(!IsRunning());
 
   // Add each callback to the registered callbacks.
   for (auto& elem : callbacks) {
     // Not allowed to add duplicates.
-    assert(msg_callbacks_.find(elem.first) == msg_callbacks_.end());
+    RS_ASSERT(msg_callbacks_.find(elem.first) == msg_callbacks_.end());
     msg_callbacks_[elem.first] = elem.second;
   }
 }
@@ -132,7 +132,7 @@ void MsgLoop::RegisterCallbacks(
 Status MsgLoop::RegisterTimerCallback(TimerCallbackType callback,
                                     std::chrono::microseconds period) {
   // Cannot call this when it is already running.
-  assert(!IsRunning());
+  RS_ASSERT(!IsRunning());
 
   for (const std::unique_ptr<EventLoop>& loop: event_loops_) {
     Status ret = loop->RegisterTimerCallback(callback, period);
@@ -148,7 +148,7 @@ int MsgLoop::GetThreadWorkerIndex() const {
   if (ptr && *ptr != -1) {
     return *ptr;
   }
-  assert (false);
+  RS_ASSERT(false);
   return -1;
 }
 
@@ -218,7 +218,7 @@ void MsgLoop::Run() {
   }
 
   // Main loop run on this thread.
-  assert(event_loops_.size() >= 1);
+  RS_ASSERT(event_loops_.size() >= 1);
 
   SetThreadWorkerIndex(0);  // This thread is worker 0.
   event_loops_[0]->Run();
@@ -244,17 +244,19 @@ void MsgLoop::Stop() {
 
 MsgLoop::~MsgLoop() {
   LOG_VITAL(info_log_, "Destroying MsgLoop");
-  assert(!IsRunning());
+  RS_ASSERT(!IsRunning());
 }
 
 StreamAllocator* MsgLoop::GetOutboundStreamAllocator(int worker_id) {
-  assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
+  RS_ASSERT(worker_id >= 0 &&
+            worker_id < static_cast<int>(event_loops_.size()));
   return event_loops_[worker_id]->GetOutboundStreamAllocator();
 }
 
 StreamSocket MsgLoop::CreateOutboundStream(HostId destination,
                                            int worker_id) {
-  assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
+  RS_ASSERT(worker_id >= 0 &&
+            worker_id < static_cast<int>(event_loops_.size()));
   // Corresponding call in event loop is not thread safe, so we need to provide
   // external synchronisation.
   std::lock_guard<std::mutex> lock(stream_allocation_mutex_);
@@ -267,7 +269,8 @@ void MsgLoop::SendCommandToSelf(std::unique_ptr<Command> command) {
 
 Status MsgLoop::SendCommand(std::unique_ptr<Command> command,
                             int worker_id) {
-  assert(worker_id >= 0 && worker_id < static_cast<int>(event_loops_.size()));
+  RS_ASSERT(worker_id >= 0 &&
+            worker_id < static_cast<int>(event_loops_.size()));
   return event_loops_[worker_id]->SendCommand(command);
 }
 
@@ -275,7 +278,7 @@ Status MsgLoop::SendRequest(const Message& msg,
                             StreamSocket* socket,
                             int worker_id) {
   // Create command and append it to the proper event loop.
-  assert(event_loops_[worker_id]->IsOutboundStream(socket->GetStreamID()));
+  RS_ASSERT(event_loops_[worker_id]->IsOutboundStream(socket->GetStreamID()));
   Status st = SendCommand(RequestCommand(msg, socket), worker_id);
   if (st.ok()) {
     socket->Open();
@@ -287,7 +290,7 @@ Status MsgLoop::SendResponse(const Message& msg,
                              StreamID stream,
                              int worker_id) {
   // Create command and append it to the proper event loop.
-  assert(event_loops_[worker_id]->IsInboundStream(stream));
+  RS_ASSERT(event_loops_[worker_id]->IsInboundStream(stream));
   return SendCommand(ResponseCommand(msg, stream), worker_id);
 }
 
@@ -381,7 +384,7 @@ int MsgLoop::GetNumClientsSync() {
 
 std::shared_ptr<CommandQueue> MsgLoop::CreateCommandQueue(int worker_id,
                                                           size_t size) {
-  assert(worker_id < GetNumWorkers());
+  RS_ASSERT(worker_id < GetNumWorkers());
   return event_loops_[worker_id]->CreateCommandQueue(size);
 }
 

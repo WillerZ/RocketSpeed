@@ -213,7 +213,7 @@ LogDeviceStorage::~LogDeviceStorage() {
         "Pushing forward with shutdown to avoid blocking the thread, although "
         "bad things may happen after this point.",
         static_cast<int>(timeout.count()));
-      assert(false);
+      RS_ASSERT(false);
       break;
     }
   }
@@ -394,7 +394,7 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
 
         case facebook::logdevice::GapType::ACCESS:
         case facebook::logdevice::GapType::MAX:
-          assert(false);
+          RS_ASSERT(false);
           std::abort();
           break;
       }

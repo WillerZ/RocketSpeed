@@ -220,7 +220,7 @@ int Proxy::WorkerForSession(int64_t session) const {
 ProxyWorkerData& Proxy::GetWorkerDataForSession(int64_t session) {
   const auto worker_id = WorkerForSession(session);
   // This way we do not reach into the thread local in production code.
-  assert(worker_id == msg_loop_->GetThreadWorkerIndex());
+  RS_ASSERT(worker_id == msg_loop_->GetThreadWorkerIndex());
   worker_data_[worker_id]->thread_check_.Check();
   return *worker_data_[worker_id];
 }
@@ -333,7 +333,7 @@ void Proxy::HandleMessageReceived(Flow* flow,
                 global);
       data.stats_.bad_origins->Add(1);
       // This shall never happen.
-      assert(false);
+      RS_ASSERT(false);
       return;
     }
     seqno = it->second.next_seqno_++;
@@ -421,7 +421,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
 
     auto result =
         data.open_sessions_.emplace(session, SessionInfo(std::move(processor)));
-    assert(result.second);
+    RS_ASSERT(result.second);
     it = result.first;
   }
 
@@ -456,13 +456,13 @@ void Proxy::HandleMessageForwardedInorder(MessageType message_type,
   // Get unique stream ID for session and local stream ID pair.
   StreamID global;
   auto status = data.open_streams_.GetGlobal(session, local, true, &global);
-  assert(status != decltype(status)::kNotInserted);
+  RS_ASSERT(status != decltype(status)::kNotInserted);
 
   // We're cheating a bit here by creating a socket on-the-fly, but the
   // information whether the stream shall be opened is stored in the unique
   // stream map.
   StreamSocket socket(global);
-  assert(socket.IsOpen());
+  RS_ASSERT(socket.IsOpen());
 
   if (status == decltype(status)::kInserted) {
     HostId host;
@@ -488,13 +488,13 @@ void Proxy::HandleMessageForwardedInorder(MessageType message_type,
       }
       default:
         LOG_ERROR(info_log_, "Invalid message type cannot be forwarded.");
-        assert(false);
+        RS_ASSERT(false);
         // Note that we cannot kill session here, as it would remove ordered
         // processor and corrupt memory.
         return;
     }
     socket = StreamSocket(host, global);
-    assert(!socket.IsOpen());
+    RS_ASSERT(!socket.IsOpen());
   }
 
   // Send directly to loop.

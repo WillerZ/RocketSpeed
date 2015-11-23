@@ -9,7 +9,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <assert.h>
 #include <gflags/gflags.h>
 #include <signal.h>
 #include <unistd.h>
@@ -309,7 +308,7 @@ static void DoProduce(void* params) {
   std::vector<Env::ThreadId> thread_ids;
   size_t p = 0;
   ProducerWorkerArgs pargs[1024]; // no more than 1K threads
-  assert(FLAGS_num_threads <= 1024);
+  RS_ASSERT(FLAGS_num_threads <= 1024);
   uint64_t max_inflight = FLAGS_max_inflight;
 
   for (int32_t remaining = FLAGS_num_threads; remaining; --remaining) {
@@ -398,8 +397,8 @@ void DoSubscribe(
                 seed));
         seqno = distr->generateRandomInt();
         last_seqno = it->second.last;
-        assert(seqno >= it->second.first);
-        assert(seqno <= it->second.last);
+        RS_ASSERT(seqno >= it->second.first);
+        RS_ASSERT(seqno <= it->second.last);
       }
     }
     pacer.Wait();
@@ -561,7 +560,7 @@ void DoSubscriptionChurn(void* params) {
       (*subscribers)[w.client_number]->Unsubscribe((w.sh));
     }
     pq.pop();
-    assert(!pq.empty());
+    RS_ASSERT(!pq.empty());
   } while (!producer_thread_over->TimedWait(
       std::chrono::duration_cast<std::chrono::microseconds>(
           pq.top().event_time - curtime)));
@@ -832,7 +831,7 @@ int main(int argc, char** argv) {
 
   // Get thread local recv latency histogram.
   auto GetRecvLatency = [&] () {
-    assert(show_recv_latency);
+    RS_ASSERT(show_recv_latency);
     InitThreadLocalStats();
     return static_cast<rocketspeed::Histogram*>(recv_latency.Get());
   };
@@ -1134,7 +1133,7 @@ int main(int argc, char** argv) {
                val, FLAGS_save_path.c_str());
       }
     }
-    assert(FLAGS_start_consumer);
+    RS_ASSERT(FLAGS_start_consumer);
     printf("Subscribing (delayed) to topics.\n");
     fflush(stdout);
 

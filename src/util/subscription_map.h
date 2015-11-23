@@ -36,7 +36,7 @@ class SubscriptionMap {
   }
 
   bool MoveOut(StreamID stream_id, SubscriptionID sub_id, T* out) {
-    assert(out);
+    RS_ASSERT(out);
     thread_check_.Check();
     auto it = map_.find(stream_id);
     if (it == map_.end()) {

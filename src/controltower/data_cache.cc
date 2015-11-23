@@ -32,7 +32,7 @@ static SequenceNumber AlignToBlockStart(
 // Generate a key for cache lookup
 static void GenerateKey(size_t block_size, LogID logid,
                         SequenceNumber seqno, CacheKey* buf) {
-  assert(seqno == AlignToBlockStart(block_size, seqno));
+  RS_ASSERT(seqno == AlignToBlockStart(block_size, seqno));
   static_assert(sizeof(CacheKey) == sizeof(buf->buf),
                 "Artificial padding found in CacheKey");
   static_assert(sizeof(logid) == 8,
@@ -52,10 +52,10 @@ static void GenerateKey(size_t block_size, LogID logid,
 //
 class CacheEntry {
  private:
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   LogID logid_;                // useful for debugging
   SequenceNumber seqno_block_; // useful for debugging
-#endif /* NDEBUG */
+#endif /* NO_RS_ASSERT */
   std::string bloom_bits_;      // bloom filters are stored here
   unsigned short num_messages_; // number of msg in this entry
   std::unique_ptr<MessageData>* mcache_;
@@ -63,12 +63,13 @@ class CacheEntry {
  public:
   explicit CacheEntry(DataCache* data_cache,
                       LogID logid, SequenceNumber seqno_block) {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     logid_ = logid;
     seqno_block_ = seqno_block;
-#endif /* NDEBUG */
+#endif /* NO_RS_ASSERT */
     num_messages_ = 0;
-    assert((1U << 8 * sizeof(num_messages_)) > (data_cache->block_size_ + 1U));
+    RS_ASSERT((1U << 8 * sizeof(num_messages_)) >
+      (data_cache->block_size_ + 1U));
     mcache_ = new std::unique_ptr<MessageData> [data_cache->block_size_];
   }
 
@@ -88,14 +89,16 @@ class CacheEntry {
                      data_cache->block_size_, seqno);
     int offset = (int)(seqno - seqno_block);
 
-    assert(logid_ == log_id);
-    assert(seqno_block_ == seqno_block);
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(logid_ == log_id);
+    RS_ASSERT(seqno_block_ == seqno_block);
+#endif /* NO_RS_ASSERT */
 
     // if there already is an entry, then there is nothing more to do
     if (mcache_[offset] != nullptr) {
-      assert(mcache_[offset].get()->GetSequenceNumber() ==
+      RS_ASSERT(mcache_[offset].get()->GetSequenceNumber() ==
              msg->GetSequenceNumber());
-      assert(mcache_[offset].get()->GetTotalSize() ==
+      RS_ASSERT(mcache_[offset].get()->GetTotalSize() ==
              msg->GetTotalSize());
       return 0;
     }
@@ -110,7 +113,7 @@ class CacheEntry {
     // unique namespaceids in the system and the probabilty of a block
     // not having a single message from that namespace is probably small.
     if (num_messages_ == data_cache->block_size_ && bloom_filter) {
-      assert(bloom_bits_.size() == 0);
+      RS_ASSERT(bloom_bits_.size() == 0);
       std::vector<Slice> topics;
       for (unsigned int i = 0; i <num_messages_; i++) {
         topics.push_back(mcache_[i]->GetTopicName());
@@ -130,8 +133,10 @@ class CacheEntry {
     int offset = (int)(seqno - seqno_block);
 
     // TODO: Bloom filters are not updated on Erase
-    assert(logid_ == log_id);
-    assert(seqno_block_ = seqno_block);
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(logid_ == log_id);
+    RS_ASSERT(seqno_block_ = seqno_block);
+#endif /* NO_RS_ASSERT */
 
     // if there isn't an entry, then there is nothing more to do
     if (mcache_[offset] == nullptr) {
@@ -158,8 +163,10 @@ class CacheEntry {
     size_t offset = seqno - seqno_block;
     bool did_bloom_check = false;
 
-    assert(logid_ == logid);
-    assert(seqno_block_ == seqno_block);
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(logid_ == logid);
+    RS_ASSERT(seqno_block_ == seqno_block);
+#endif /* NO_RS_ASSERT */
 
     // If bloom filter enabled, then check bloom filter
     if (bloom_filter) {
@@ -293,7 +300,7 @@ void DataCache::StoreData(const Slice& namespace_id, const Slice& topic,
     return;
   }
   // Assert that no blocks are pinned
-  assert(rs_cache_->GetPinnedUsage() == 0);
+  RS_ASSERT(rs_cache_->GetPinnedUsage() == 0);
 
   // Check to see if we do not need to store data
   if (!(characteristics_ & Characteristics::StoreDataRecords)) {
@@ -374,7 +381,7 @@ SequenceNumber DataCache::VisitCache(LogID logid,
     return start;
   }
   // Assert that no blocks are pinned
-  assert(rs_cache_->GetPinnedUsage() == 0);
+  RS_ASSERT(rs_cache_->GetPinnedUsage() == 0);
 
   // compute sequence number of block start
   SequenceNumber seqno_block = AlignToBlockStart(block_size_, start);
@@ -405,7 +412,7 @@ SequenceNumber DataCache::VisitCache(LogID logid,
       start = next;
       break;
     }
-    assert(next == AlignToBlockStart(block_size_, next));
+    RS_ASSERT(next == AlignToBlockStart(block_size_, next));
     start = seqno_block = next;
   }
 

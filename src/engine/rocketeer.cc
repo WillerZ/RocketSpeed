@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "rocketeer.h"
 
-#include <cassert>
 #include <functional>
 #include <memory>
 #include <sstream>

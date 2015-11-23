@@ -256,7 +256,7 @@ MessageData::MessageData(MessageType type,
   topic_name_(topic_name),
   payload_(payload),
   namespaceid_(namespace_id) {
-  assert(type == MessageType::mPublish || type == MessageType::mDeliver);
+  RS_ASSERT(type == MessageType::mPublish || type == MessageType::mDeliver);
   seqno_ = 0;
   seqno_prev_ = 0;
 }
@@ -308,7 +308,7 @@ Status MessageData::DeSerialize(Slice* in) {
 Slice MessageData::GetStorageSlice() const {
   // Returns a Slice starting from tenant_id of the message.
   // storage_slice_ is constructed during deserialization.
-  assert(storage_slice_.size() != 0);
+  RS_ASSERT(storage_slice_.size() != 0);
   return storage_slice_;
 }
 
@@ -619,7 +619,7 @@ Status MessageDeliver::Serialize(std::string* out) const {
   Message::Serialize(out);
   PutVarint64(out, sub_id_);
   PutVarint64(out, seqno_prev_);
-  assert(seqno_ >= seqno_prev_);
+  RS_ASSERT(seqno_ >= seqno_prev_);
   uint64_t seqno_diff = seqno_ - seqno_prev_;
   PutVarint64(out, seqno_diff);
   return Status::OK();
@@ -641,7 +641,7 @@ Status MessageDeliver::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad difference between SequenceNumbers");
   }
   seqno_ = seqno_prev_ + seqno_diff;
-  assert(seqno_ >= seqno_prev_);
+  RS_ASSERT(seqno_ >= seqno_prev_);
   return Status::OK();
 }
 

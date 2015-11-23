@@ -23,11 +23,11 @@ size_t TopicUUID::RoutingHash() const {
 }
 
 void TopicUUID::GetTopicID(Slice* namespace_id, Slice* topic_name) const {
-  assert(namespace_id);
-  assert(topic_name);
+  RS_ASSERT(namespace_id);
+  RS_ASSERT(topic_name);
   Slice in(uuid_);
   if (!rocketspeed::GetTopicID(&in, namespace_id, topic_name)) {
-    assert(false);
+    RS_ASSERT(false);
   }
 }
 

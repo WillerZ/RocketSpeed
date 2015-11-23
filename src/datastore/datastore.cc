@@ -284,7 +284,7 @@ IteratorImpl::Next() {
   if (!is_valid_) {
     return Status::NotFound("");
   }
-  assert(iter_version_ <= db_->rawdata_version_);
+  RS_ASSERT(iter_version_ <= db_->rawdata_version_);
 
   // If the database version has changed, then reseek
   if (iter_version_ != db_->rawdata_version_) {

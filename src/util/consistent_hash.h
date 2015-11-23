@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <assert.h>
 #include <math.h>
 #include <algorithm>
 #include <functional>
@@ -247,7 +246,7 @@ void ConsistentHash<Key, Slot, KeyHash, SlotHash>::Remove(
 template <class Key, class Slot, class KeyHash, class SlotHash>
 const Slot& ConsistentHash<Key, Slot, KeyHash, SlotHash>::Get(
     const Key& key) const {
-  assert(!ring_.empty());
+  RS_ASSERT(!ring_.empty());
   size_t hash = keyHash_(key);
 #ifdef CONSISTENT_HASH_USE_VECTOR
   auto it = std::lower_bound(ring_.begin(), ring_.end(), hash, Compare1st);
@@ -264,7 +263,7 @@ template <class Key, class Slot, class KeyHash, class SlotHash>
 template <class IT>
 void ConsistentHash<Key, Slot, KeyHash, SlotHash>::MultiGet(
     const Key& key, size_t count, IT out_begin) const {
-  assert(slotCount_ >= count);
+  RS_ASSERT(slotCount_ >= count);
   size_t hash = keyHash_(key);
 #ifdef CONSISTENT_HASH_USE_VECTOR
   auto it = std::lower_bound(ring_.begin(), ring_.end(), hash, Compare1st);
@@ -289,7 +288,7 @@ void ConsistentHash<Key, Slot, KeyHash, SlotHash>::MultiGet(
     ++it;
   } while (it != initial_it && out_size < count);
 
-  assert(out_size == count);
+  RS_ASSERT(out_size == count);
 }
 
 template <class Key, class Slot, class KeyHash, class SlotHash>

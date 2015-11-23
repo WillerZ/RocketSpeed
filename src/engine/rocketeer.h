@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <cassert>
 #include <limits>
 #include <string>
 
@@ -118,7 +117,7 @@ class Rocketeer {
    * Rocketeer should use.
    */
   Rocketeer* GetBelowRocketeer() {
-    assert(below_rocketeer_);
+    RS_ASSERT(below_rocketeer_);
     return below_rocketeer_;
   }
 

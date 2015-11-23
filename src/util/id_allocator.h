@@ -5,11 +5,11 @@
 //
 #pragma once
 
-#include <cassert>
 #include <cstdio>
 #include <memory>
 #include <limits>
 #include <vector>
+#include "include/Assert.h"
 
 namespace rocketspeed {
 
@@ -73,7 +73,7 @@ class IDAllocator {
   AllocatorType Split() {
     CheckValid();
     auto allocs = Divide(2);
-    assert(allocs.size() == 2);
+    RS_ASSERT(allocs.size() == 2);
     *this = std::move(allocs.front());
     return std::move(allocs.back());
   }
@@ -92,7 +92,7 @@ class IDAllocator {
     DivisionMapping() : shift_(-1), mask_(0) {}
 
     size_t operator()(IDType id) const {
-      assert(shift_ >= 0);
+      RS_ASSERT(shift_ >= 0);
       return (id >> shift_) & mask_;
     }
 
@@ -125,7 +125,7 @@ class IDAllocator {
     IDType num_pieces = 1;
     IDType new_step = step_;
     while (num_pieces < min_pieces) {
-      assert(new_step <= (kMax << 1));
+      RS_ASSERT(new_step <= (kMax << 1));
       num_pieces = static_cast<IDType>(num_pieces << 1);
       new_step = static_cast<IDType>(new_step << 1);
     }
@@ -169,8 +169,8 @@ class IDAllocator {
   IDType next_;
 
   void CheckValid() const {
-    assert(step_ > 0);
-    assert((step_ & (step_ - 1)) == 0);
+    RS_ASSERT(step_ > 0);
+    RS_ASSERT((step_ & (step_ - 1)) == 0);
   }
 };
 

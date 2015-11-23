@@ -322,11 +322,11 @@ void LogReader::ProcessRecord(LogID log_id,
 
   // Get state for this log.
   auto log_it = log_state_.find(log_id);
-  assert(log_it != log_state_.end());
+  RS_ASSERT(log_it != log_state_.end());
 
   LogState& log_state = log_it->second;
 
-  assert(seqno == log_state.last_read + 1);
+  RS_ASSERT(seqno == log_state.last_read + 1);
   log_state.last_read = seqno;
 
   // Check if we've process records on this topic before.
@@ -354,20 +354,20 @@ void LogReader::ProcessGap(
   if (log_it != log_state_.end()) {
     LogState& log_state = log_it->second;
 
-    assert(from == log_state.last_read + 1);
+    RS_ASSERT(from == log_state.last_read + 1);
 
     // Find previous seqno for topic.
     auto it = log_state.topics.find(topic);
     if (it != log_state.topics.end()) {
       *prev_seqno = it->second.next_seqno;
-      assert(*prev_seqno != 0);
+      RS_ASSERT(*prev_seqno != 0);
       it->second.next_seqno = to + 1;
       log_state.topics.move_to_back(it);
     } else {
       *prev_seqno = 0;
     }
   } else {
-    assert(false);  // should have been validated before calling this.
+    RS_ASSERT(false);  // should have been validated before calling this.
   }
 }
 
@@ -504,7 +504,7 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
       if (log_state.topics.empty()) {
         // Last subscriber for this log, so stop reading.
         StopLogReader(log_id, log_state);
-        assert(log_state.topics.empty());
+        RS_ASSERT(log_state.topics.empty());
         log_state_.erase(log_it);
       }
     }
@@ -514,19 +514,19 @@ Status LogReader::StopReading(const TopicUUID& topic, LogID log_id) {
 
 void LogReader::PauseReading(LogID log_id) {
   thread_check_.Check();
-  assert(!IsVirtual());
+  RS_ASSERT(!IsVirtual());
 
   auto log_it = log_state_.find(log_id);
-  assert(log_it != log_state_.end());
+  RS_ASSERT(log_it != log_state_.end());
   StopLogReader(log_id, log_it->second);
 }
 
 void LogReader::RestartReading(LogID log_id) {
   thread_check_.Check();
-  assert(!IsVirtual());
+  RS_ASSERT(!IsVirtual());
 
   auto log_it = log_state_.find(log_id);
-  assert(log_it != log_state_.end());
+  RS_ASSERT(log_it != log_state_.end());
   RestartLogReader(log_id, log_it->second);
 }
 
@@ -568,11 +568,11 @@ uint64_t LogReader::SubscriptionCost(const TopicUUID& topic,
 
 bool LogReader::CanMergeInto(LogReader* reader, LogID log_id) const {
   thread_check_.Check();
-  assert(reader);
+  RS_ASSERT(reader);
 
   // Cannot merge to/from a virtual reader
-  assert(!IsVirtual());
-  assert(!reader->IsVirtual());
+  RS_ASSERT(!IsVirtual());
+  RS_ASSERT(!reader->IsVirtual());
 
   // Find LogState in this reader.
   auto log_it1 = log_state_.find(log_id);
@@ -596,19 +596,19 @@ bool LogReader::CanMergeInto(LogReader* reader, LogID log_id) const {
 
 void LogReader::MergeInto(LogReader* reader, LogID log_id) {
   thread_check_.Check();
-  assert(reader);
-  assert(CanMergeInto(reader, log_id));
+  RS_ASSERT(reader);
+  RS_ASSERT(CanMergeInto(reader, log_id));
 
   // Extract LogStates for this log.
   auto log_it1 = log_state_.find(log_id);
   auto log_it2 = reader->log_state_.find(log_id);
-  assert(log_it1 != log_state_.end());
-  assert(log_it2 != log_state_.end());
+  RS_ASSERT(log_it1 != log_state_.end());
+  RS_ASSERT(log_it2 != log_state_.end());
 
   // Verify last_read.
   LogState& src = log_it1->second;
   LogState& dest = log_it2->second;
-  assert(dest.last_read == src.last_read);
+  RS_ASSERT(dest.last_read == src.last_read);
 
   LOG_INFO(info_log_,
     "Merging Reader(%zu) into Reader(%zu) on Log(%" PRIu64 ")@%" PRIu64,
@@ -653,19 +653,19 @@ void LogReader::MergeInto(LogReader* reader, LogID log_id) {
 
 void LogReader::StealLogSubscriptions(LogReader* reader, LogID log_id) {
   // Must be stealing from a virtual log.
-  assert(reader->IsVirtual());
-  assert(reader->IsLogOpen(log_id));
-  assert(!IsVirtual());
-  assert(!IsLogOpen(log_id));
+  RS_ASSERT(reader->IsVirtual());
+  RS_ASSERT(reader->IsLogOpen(log_id));
+  RS_ASSERT(!IsVirtual());
+  RS_ASSERT(!IsLogOpen(log_id));
 
   auto log_it = reader->log_state_.find(log_id);
-  assert(log_it != reader->log_state_.end());
+  RS_ASSERT(log_it != reader->log_state_.end());
   LogState& log_state = log_it->second;
 
   auto start_seqno = log_state.ComputeStartSeqno();
   Status st = tailer_->StartReading(log_id, start_seqno, reader_id_);
   if (st.ok()) {
-    assert(!log_state.topics.empty());
+    RS_ASSERT(!log_state.topics.empty());
     log_state_.emplace(log_id, std::move(log_state));
     reader->log_state_.erase(log_it);
   } else {
@@ -709,7 +709,7 @@ std::string LogReader::GetAllLogsInfo() const {
 
 SequenceNumber LogReader::LogState::ComputeStartSeqno() const {
   SequenceNumber min_seqno = std::numeric_limits<SequenceNumber>::max();
-  assert(!topics.empty());
+  RS_ASSERT(!topics.empty());
   for (const auto& entry : topics) {
     min_seqno = std::min(min_seqno, entry.second.next_seqno);
   }
@@ -782,14 +782,15 @@ TopicTailer::~TopicTailer() {
 
 void TopicTailer::SendFindLatestSeqnoRequest(LogID logid) {
   // Sanity check that we aren't sending more than required.
-  assert(InFlightFindLatestSeqnoRequests() <= options_.max_find_time_requests);
+  RS_ASSERT(InFlightFindLatestSeqnoRequests() <=
+    options_.max_find_time_requests);
 
   // Create a callback to enqueue a subscribe command.
   auto callback = [this, logid] (Status status, SequenceNumber seqno) {
     // Send response back to room.
     FindLatestSeqnoResponse response { status, logid, seqno };
     bool sent = latest_seqno_queues_->GetThreadLocal()->Write(response);
-    assert(sent);  // gating logic should prevent queue overflow
+    RS_ASSERT(sent);  // gating logic should prevent queue overflow
     if (!sent) {
       LOG_ERROR(info_log_,
         "Failed to send FindLatestSeqnoResponse for Log(%" PRIu64 ")",
@@ -870,7 +871,7 @@ void TopicTailer::ProcessFindLatestSeqnoResponse(Flow* flow,
     // There should not have been any pending requests unless the number in
     // flight was too high. It should now be at the limit again after sending
     // another.
-    assert(InFlightFindLatestSeqnoRequests() ==
+    RS_ASSERT(InFlightFindLatestSeqnoRequests() ==
            options_.max_find_time_requests);
   }
 }
@@ -1039,7 +1040,7 @@ TopicTailer::AdvanceReaderFromCache(Flow* flow,
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno = 0;
-    assert(next_seqno == reader->GetNextSequenceNumber(log_id));
+    RS_ASSERT(next_seqno == reader->GetNextSequenceNumber(log_id));
     reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
 
     // However, may still be no subscribers for this topic.
@@ -1072,7 +1073,7 @@ TopicTailer::AdvanceReaderFromCache(Flow* flow,
     }
     // For flow control, we stop reading from the cache if any write failed.
     // The cache will be rechecked once the backpressure is lifted.
-    assert(!backoff);
+    RS_ASSERT(!backoff);
     backoff = flow->WriteHasFailed();
     return !backoff;
   };
@@ -1106,7 +1107,7 @@ TopicTailer::AdvanceReaderFromCache(Flow* flow,
     stats_.cache_reentries->Add(1);
     return backoff ? CacheRead::kReadBackoff : CacheRead::kReadContinue;
   } else {
-    assert(!backoff);  // how can we hit backoff without reading anything?
+    RS_ASSERT(!backoff);  // how can we hit backoff without reading anything?
     return CacheRead::kNoneRead;
   }
 }
@@ -1159,14 +1160,14 @@ void TopicTailer::SendLogRecord(
 
   // Find reader.
   LogReader* reader = FindLogReader(reader_id);
-  assert(reader != nullptr);
+  RS_ASSERT(reader != nullptr);
 
   // Update state for this log and distribute message.
   ReceiveLogRecord(std::move(msg), log_id, reader, flow);
 
   // Check if we can advance from cache.
   SequenceNumber seqno = reader->GetNextSequenceNumber(log_id);
-  assert(seqno != 0);
+  RS_ASSERT(seqno != 0);
   if (data_cache_.HasEntry(log_id, seqno)) {
     // Pause reading log, and start reading from cache.
     reader->PauseReading(log_id);
@@ -1187,7 +1188,7 @@ void TopicTailer::SendGapRecord(
   thread_check_.Check();
 
   LogReader* reader = FindLogReader(reader_id);
-  assert(reader != nullptr);
+  RS_ASSERT(reader != nullptr);
 
   stats_.gap_records_received->Add(1);
 
@@ -1516,8 +1517,8 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
     return true;
   }
 
-  assert(seqno);
-  assert(*seqno != 0);
+  RS_ASSERT(seqno);
+  RS_ASSERT(*seqno != 0);
   thread_check_.Check();
   SequenceNumber delivered = *seqno;
   std::vector<CopilotSub> recipient;
@@ -1531,7 +1532,7 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
     auto uuid_pair = std::make_pair(data_raw->GetNamespaceId(),
                                     data_raw->GetTopicName());
     auto msg_seqno = data_raw->GetSequenceNumber();
-    assert(msg_seqno >= *seqno);
+    RS_ASSERT(msg_seqno >= *seqno);
 
     LOG_DEBUG(info_log_,
         "CacheTailer received data (%.16s)@%" PRIu64
@@ -1562,7 +1563,7 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
       // we stop reading and will retry later.
       on_message_(flow, *data_raw, recipient);
       *sent = true;                     // message delivered
-      assert(!backoff);
+      RS_ASSERT(!backoff);
       backoff = flow->WriteHasFailed();
       return !backoff;  // if false, stop reading from cache.
     }
@@ -1624,14 +1625,14 @@ void TopicTailer::ProcessPendingSubscription(Flow* flow,
                                              CopilotSub id,
                                              LogID logid,
                                              SequenceNumber seqno) {
-  assert(seqno != 0);
+  RS_ASSERT(seqno != 0);
   thread_check_.Check();
 
   // Deliver the earliest part of this topic from cache if available.
   if (DeliverFromCache(flow, topic, id, logid, &seqno)) {
     // Done delivering what we can from cache, open reader for the rest.
     LogReader* reader = ReaderForNewSubscription(id, topic, logid, seqno);
-    assert(reader);
+    RS_ASSERT(reader);
     reader->StartReading(topic, logid, seqno);
 
     // Add the new subscription.
@@ -1665,7 +1666,7 @@ void TopicTailer::AddSubscriberInternal(const TopicUUID& topic,
                                         CopilotSub id,
                                         LogID logid,
                                         SequenceNumber seqno) {
-  assert(seqno != 0);
+  RS_ASSERT(seqno != 0);
   thread_check_.Check();
 
   GetPendingReaderQueue(id)->Write(id, PendingSubscription(logid, seqno));
@@ -1787,7 +1788,7 @@ TopicTailer::GetPendingReaderQueue(const CopilotSub& sub) {
   int worker_id = copilot_worker_(sub);
   if (worker_id == -1) {
     // This should never happen, all subscriptions should have a worker.
-    assert(false);
+    RS_ASSERT(false);
     return 0;
   }
   if (static_cast<size_t>(worker_id) >= cache_readers_.size()) {

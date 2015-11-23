@@ -21,9 +21,9 @@ class StreamSocket {
  public:
   /** Creates socket which doesn't point to any stream. */
   StreamSocket() : is_open_(false) {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     is_valid_ = false;
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
   }
 
   // Noncopyable
@@ -38,31 +38,39 @@ class StreamSocket {
     destination_ = std::move(other.destination_);
     stream_id_ = other.stream_id_;
     is_open_ = other.is_open_;
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     is_valid_ = other.is_valid_;
     other.is_valid_ = false;
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
     return *this;
   }
 
   const HostId& GetDestination() const {
-    assert(is_valid_);
-    assert(!!destination_);
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(is_valid_);
+#endif  // NO_RS_ASSERT
+    RS_ASSERT(!!destination_);
     return destination_;
   }
 
   void Open() {
-    assert(is_valid_);
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(is_valid_);
+#endif  // NO_RS_ASSERT
     is_open_ = true;
   }
 
   bool IsOpen() const {
-    assert(is_valid_);
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(is_valid_);
+#endif  // NO_RS_ASSERT
     return is_open_;
   }
 
   StreamID GetStreamID() const {
-    assert(is_valid_);
+#ifndef NO_RS_ASSERT
+    RS_ASSERT(is_valid_);
+#endif  // NO_RS_ASSERT
     return stream_id_;
   }
 
@@ -80,9 +88,9 @@ class StreamSocket {
       : destination_(std::move(destination))
       , stream_id_(stream_id)
       , is_open_(false) {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     is_valid_ = true;
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
   }
 
   /**
@@ -91,17 +99,17 @@ class StreamSocket {
    */
   explicit StreamSocket(StreamID stream_id)
       : stream_id_(stream_id), is_open_(true) {
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
     is_valid_ = true;
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
   }
 
   HostId destination_;
   StreamID stream_id_;
   bool is_open_;
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   bool is_valid_;
-#endif  // NDEBUG
+#endif  // NO_RS_ASSERT
 };
 
 }  // namespace rocketspeed

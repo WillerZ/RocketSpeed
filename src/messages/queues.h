@@ -262,7 +262,7 @@ BatchedRead<Item>::~BatchedRead() {
       // EAGAIN only happens if we have written 2^64 events without reading,
       // and EINVAL should never happen since we are writing the correct number
       // of bytes.
-      assert(errno != EINVAL);
+      RS_ASSERT(errno != EINVAL);
 
       // Wtih errno == EAGAIN, we can just let this fall through.
     }
@@ -289,7 +289,7 @@ bool BatchedRead<Item>::Read(Item& item) {
     } else {
       // We are the sole reader, therefore synced_size_ can only be > 1 now.
       pending_reads_ = queue_->synced_size_.exchange(1);
-      assert(pending_reads_ > 1);
+      RS_ASSERT(pending_reads_ > 1);
       --pending_reads_;
       delayed_reads_ = 1;
     }
@@ -297,7 +297,7 @@ bool BatchedRead<Item>::Read(Item& item) {
   if (pending_reads_ > 0) {
     Timestamped<Item> entry;
     bool success = queue_->queue_.read(entry);
-    assert(success);
+    RS_ASSERT(success);
     if (!success) {
       return false;
     }
@@ -333,8 +333,8 @@ Queue<Item>::Queue(std::shared_ptr<Logger> info_log,
     LOG_FATAL(info_log_, "Queue cannot be created: unable to create Eventfd");
     info_log_->Flush();
   }
-  assert(read_ready_fd_.status() == 0);
-  assert(write_ready_fd_.status() == 0);
+  RS_ASSERT(read_ready_fd_.status() == 0);
+  RS_ASSERT(write_ready_fd_.status() == 0);
 }
 
 template <typename Item>
@@ -372,7 +372,7 @@ bool Queue<Item>::TryWrite(Item& item, bool check_thread) {
       // EAGAIN only happens if we have written 2^64 events without reading,
       // and EINVAL should never happen since we are writing the correct number
       // of bytes.
-      assert(errno != EINVAL);
+      RS_ASSERT(errno != EINVAL);
 
       // With errno == EAGAIN, we can just let this fall through.
     }

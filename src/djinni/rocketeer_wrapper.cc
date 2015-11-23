@@ -5,7 +5,6 @@
 //
 #include "rocketeer_wrapper.h"
 
-#include <cassert>
 #include <memory>
 #include <limits>
 #include <stdexcept>
@@ -57,7 +56,7 @@ jni::InboundID FromInboundID(const rs::InboundID& in) {
   std::string serial;
   EncodeOrigin(&serial, in.stream_id);
   PutFixed64(&serial, in.sub_id);
-  assert(in.worker_id >= 0);
+  RS_ASSERT(in.worker_id >= 0);
   uint32_t worker_id = static_cast<uint32_t>(in.worker_id);
   PutFixed32(&serial, worker_id);
   auto data = reinterpret_cast<const uint8_t*>(serial.data());
@@ -151,8 +150,8 @@ bool RocketeerServerWrapper::Deliver(jni::InboundID inbound_id,
         info_log_, "Failed to parse InboundID: %s", st.ToString().c_str());
     return false;
   }
-  assert(inbound_id1.worker_id >= 0);
-  assert(inbound_id1.worker_id < rocketeers_.size());
+  RS_ASSERT(inbound_id1.worker_id >= 0);
+  RS_ASSERT(inbound_id1.worker_id < rocketeers_.size());
   return server_->Deliver(
       inbound_id1, ToSequenceNumber(seqno), ToSlice(payload).ToString());
 }
@@ -165,8 +164,8 @@ bool RocketeerServerWrapper::Terminate(jni::InboundID inbound_id) {
         info_log_, "Failed to parse InboundID: %s", st.ToString().c_str());
     return false;
   }
-  assert(inbound_id1.worker_id >= 0);
-  assert(inbound_id1.worker_id < rocketeers_.size());
+  RS_ASSERT(inbound_id1.worker_id >= 0);
+  RS_ASSERT(inbound_id1.worker_id < rocketeers_.size());
   return server_->Terminate(inbound_id1, MessageUnsubscribe::Reason::kInvalid);
 }
 

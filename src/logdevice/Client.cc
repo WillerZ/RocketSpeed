@@ -6,7 +6,6 @@
 #pragma GCC diagnostic ignored "-Wshadow"
 
 #include "logdevice/include/Client.h"
-#include <assert.h>
 #include <algorithm>
 #include <chrono>
 #include <future>
@@ -14,6 +13,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include "include/Assert.h"
 #include "include/Slice.h"
 #include "src/port/Env.h"
 #include "logdevice/include/Record.h"
@@ -163,7 +163,7 @@ int Client::append(logid_t logid,
 std::unique_ptr<Reader> Client::createReader(
   size_t max_logs,
   ssize_t buffer_size) noexcept {
-  assert(false);  // not implemented
+  RS_ASSERT(false);  // not implemented
   return std::unique_ptr<Reader>(nullptr);
 }
 
@@ -185,7 +185,7 @@ int Client::trimSync(logid_t logid, lsn_t lsn) noexcept {
     while (file.Next()) {
       if (file.GetLSN() > lsn) {
         // File offset will be at end of header here, so rewind a little.
-        assert(file.GetOffset() >= sizeof(RecordHeader));
+        RS_ASSERT(file.GetOffset() >= sizeof(RecordHeader));
         offset = file.GetOffset() - sizeof(RecordHeader);
         found = true;
         break;
@@ -279,13 +279,13 @@ int Client::findTime(logid_t logid,
 
 std::pair<logid_t, logid_t> Client::getLogRangeByName(
   const std::string& name) noexcept {
-  assert(false);  // not implemented
+  RS_ASSERT(false);  // not implemented
   return std::make_pair(LOGID_INVALID, LOGID_INVALID);
 }
 
 logid_t Client::getLogIdFromRange(const std::string& range_name,
                                   off_t offset) noexcept {
-  assert(false);  // not implemented
+  RS_ASSERT(false);  // not implemented
   return LOGID_INVALID;
 }
 

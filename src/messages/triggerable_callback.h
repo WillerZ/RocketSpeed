@@ -30,7 +30,7 @@ class TriggerableCallback : public EventCallback {
   void Disable() final override;
 
   void Invoke() const {
-    assert(enabled_);
+    RS_ASSERT(enabled_);
     cb_();
   }
 

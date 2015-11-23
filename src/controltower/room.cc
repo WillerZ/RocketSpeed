@@ -49,19 +49,19 @@ ControlRoom::MsgCommand(std::unique_ptr<Message> msg,
     MakeExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
       std::unique_ptr<Message> message(moved_msg.move());
       if (message->GetMessageType() == MessageType::mSubscribe) {
-        assert(worker_id != -1);
+        RS_ASSERT(worker_id != -1);
         ProcessSubscribe(std::move(message), worker_id, origin);
       } else if (message->GetMessageType() == MessageType::mUnsubscribe) {
-        assert(worker_id != -1);
+        RS_ASSERT(worker_id != -1);
         ProcessUnsubscribe(std::move(message), worker_id, origin);
       } else if (message->GetMessageType() == MessageType::mGoodbye) {
-        assert(worker_id == -1);
+        RS_ASSERT(worker_id == -1);
         ProcessGoodbye(std::move(message), origin);
       } else {
         LOG_ERROR(control_tower_->GetOptions().info_log,
           "Unexpected message type in room: %d",
           static_cast<int>(message->GetMessageType()));
-        assert(false);
+        RS_ASSERT(false);
       }
     }));
   return cmd;
@@ -132,7 +132,7 @@ ControlRoom::OnTailerMessage(Flow* flow,
   } else if (type == MessageType::mGap) {
     ProcessGap(flow, msg, std::move(recipients));
   } else {
-    assert(false);
+    RS_ASSERT(false);
   }
 }
 

@@ -124,7 +124,7 @@ class SerializedSendCommand : public SendCommand {
   // std::make_unique.
   SerializedSendCommand(std::string message, Recipients recipients)
       : SendCommand(std::move(recipients)), message_(std::move(message)) {
-    assert(message_.size() > 0);
+    RS_ASSERT(message_.size() > 0);
   }
   // Buffer with the message. It's content is moved away on first attempt to get
   // serialized message.

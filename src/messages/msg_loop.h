@@ -133,7 +133,7 @@ class MsgLoop : public MsgLoopBase {
   }
 
   EventLoop* GetEventLoop(int worker_id) {
-    assert(worker_id < GetNumWorkers());
+    RS_ASSERT(worker_id < GetNumWorkers());
     return event_loops_[worker_id].get();
   }
 

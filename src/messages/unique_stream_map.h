@@ -33,8 +33,8 @@ class UniqueStreamMap {
   bool FindLocalAndContext(StreamID global,
                            Context* out_context,
                            StreamID* out_local) const {
-    assert(out_context);
-    assert(out_local);
+    RS_ASSERT(out_context);
+    RS_ASSERT(out_local);
     thread_check_.Check();
 
     // Try to find global -> (ctx, local).
@@ -66,7 +66,7 @@ class UniqueStreamMap {
                             StreamID local,
                             bool allocate,
                             StreamID* out_global) {
-    assert(out_global);
+    RS_ASSERT(out_global);
     thread_check_.Check();
 
     {  // Try to find (ctx, local) -> global.
@@ -90,7 +90,7 @@ class UniqueStreamMap {
     // Insert ctx -> (local -> global).
     context_to_map_[context][local] = global;
     // Insert global -> (ctx, local).
-    assert(global_to_local_.find(global) == global_to_local_.end());
+    RS_ASSERT(global_to_local_.find(global) == global_to_local_.end());
     global_to_local_.emplace(global, std::make_pair(std::move(context), local));
     // Return global stream ID.
     *out_global = global;
@@ -106,8 +106,8 @@ class UniqueStreamMap {
   RemovalStatus RemoveGlobal(StreamID global,
                              Context* out_context,
                              StreamID* out_local) {
-    assert(out_context);
-    assert(out_local);
+    RS_ASSERT(out_context);
+    RS_ASSERT(out_local);
     thread_check_.Check();
 
     Context context;
@@ -128,7 +128,7 @@ class UniqueStreamMap {
     if (it_c == context_to_map_.end()) {
       // This should never happen, as this is the inverse relation of stream
       // -> context mapping and we've found element of he latter.
-      assert(false);
+      RS_ASSERT(false);
       return RemovalStatus::kRemoved;
     }
     // This is the mapping local -> global in the context that we've found.
@@ -138,7 +138,7 @@ class UniqueStreamMap {
       if (it_l != local_map.end()) {
         // Thie mapping has to be consistent with whatever happened to be in
         // global -> (ctx, local) map.
-        assert(it_l->second == global);
+        RS_ASSERT(it_l->second == global);
         local_map.erase(it_l);
       }
     }

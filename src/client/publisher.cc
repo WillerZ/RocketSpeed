@@ -34,7 +34,7 @@ class ClientResultStatus : public ResultStatus {
     Slice in(serialized_);
     if (!message_.DeSerialize(&in).ok()) {
       // Failed to deserialize a message after it has been serialized?
-      assert(false);
+      RS_ASSERT(false);
       status_ = Status::InternalError("Message corrupt.");
     }
   }
@@ -183,7 +183,7 @@ void PublisherWorkerData::Publish(MsgId message_id,
   auto result = messages_sent_.emplace(
     message_id, PendingAck(std::move(callback), std::move(serialized)));
   (void)result;
-  assert(result.second);
+  RS_ASSERT(result.second);
 }
 
 void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
@@ -266,7 +266,7 @@ void PublisherWorkerData::CheckTimeouts() {
     publish_timeout_,
     [&] (MsgId msg_id) {
       auto it = messages_sent_.find(msg_id);
-      assert(it != messages_sent_.end());
+      RS_ASSERT(it != messages_sent_.end());
       if (it != messages_sent_.end() && it->second.callback) {
         std::unique_ptr<ClientResultStatus> result_status(
             new ClientResultStatus(Status::TimedOut(),

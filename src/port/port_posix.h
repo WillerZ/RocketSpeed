@@ -46,7 +46,6 @@
 #include <lz4hc.h>
 #endif
 
-#include <assert.h>
 #include <semaphore.h>
 #include <stdint.h>
 #include <string.h>

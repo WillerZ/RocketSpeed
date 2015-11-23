@@ -17,7 +17,7 @@ namespace rocketspeed {
 Status FixedConfiguration::CreateConfiguration(
     const std::string& config_str,
     std::unique_ptr<Configuration>* out) {
-  assert(out);
+  RS_ASSERT(out);
 
   auto config = ParseMap(config_str);
   if (config.find("one-host") == config.end()) {
@@ -37,7 +37,7 @@ Status FixedConfiguration::CreateConfiguration(
     hosts.emplace_back(std::move(host));
   }
 
-  assert(hosts.size() == 2);
+  RS_ASSERT(hosts.size() == 2);
   out->reset(new FixedConfiguration(std::move(hosts[0]), std::move(hosts[1])));
   return Status::OK();
 }

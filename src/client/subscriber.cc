@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "subscriber.h"
 
-#include <cassert>
 #include <cmath>
 #include <chrono>
 #include <functional>
@@ -60,7 +59,7 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
       AnnounceStatus(false, Status::InvalidArgument("Invalid subscription"));
       break;
     case MessageUnsubscribe::Reason::kBackOff:
-      assert(false);
+      RS_ASSERT(false);
       break;
       // No default, we will be warned about unhandled code.
   }
@@ -101,11 +100,11 @@ class DataLossInfoImpl : public DataLossInfo {
       case GapType::kRetention:
         return DataLossType::kRetention;
       case GapType::kBenign:
-        assert(false);
+        RS_ASSERT(false);
         return DataLossType::kRetention;
         // No default, we will be warned about unhandled code.
     }
-    assert(false);
+    RS_ASSERT(false);
     return DataLossType::kRetention;
   }
 
@@ -154,7 +153,7 @@ void SubscriptionState::ReceiveMessage(
       }
       break;
     default:
-      assert(false);
+      RS_ASSERT(false);
   }
 }
 
@@ -164,7 +163,7 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
 
   const auto current = deliver.GetSequenceNumber(),
              previous = deliver.GetPrevSequenceNumber();
-  assert(current >= previous);
+  RS_ASSERT(current >= previous);
 
   if (expected_seqno_ > current || expected_seqno_ < previous ||
       (expected_seqno_ == 0 && previous != 0) ||
@@ -283,7 +282,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
     if (!emplace_result.second) {
       LOG_ERROR(
           options_.info_log, "Duplicate subscription ID(%" PRIu64 ")", sub_id);
-      assert(false);
+      RS_ASSERT(false);
       return;
     }
     sub_state = &emplace_result.first->second;
@@ -472,7 +471,7 @@ void Subscriber::SendPendingRequests() {
   // connection. This way we unsubscribe all of them.
   if (options_.close_connection_with_no_subscription &&
       subscriptions_.empty()) {
-    assert(pending_subscribes_.empty());
+    RS_ASSERT(pending_subscribes_.empty());
 
     // We do not use any specific tenant, there might be many unsubscribe
     // requests from arbitrary tenants.
@@ -670,7 +669,7 @@ void Subscriber::Receive(std::unique_ptr<MessageGoodbye> msg, StreamID origin) {
   // Failed to reconnect, apply back off logic.
   ++consecutive_goodbyes_count_;
   EnvClockDuration backoff_initial = options_.backoff_initial;
-  assert(consecutive_goodbyes_count_ > 0);
+  RS_ASSERT(consecutive_goodbyes_count_ > 0);
   double backoff_value = static_cast<double>(backoff_initial.count()) *
                          std::pow(static_cast<double>(options_.backoff_base),
                                   consecutive_goodbyes_count_ - 1);

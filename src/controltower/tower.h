@@ -65,7 +65,7 @@ class ControlTower {
   ControlTowerOptions& GetOptions() {return options_;}
 
   TopicTailer* GetTopicTailer(int room_number) {
-    assert(room_number < static_cast<int>(topic_tailer_.size()));
+    RS_ASSERT(room_number < static_cast<int>(topic_tailer_.size()));
     return topic_tailer_[room_number].get();
   }
 

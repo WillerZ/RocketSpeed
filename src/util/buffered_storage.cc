@@ -68,7 +68,7 @@ class BufferedLogStorageWorker {
     if (it == queues_.end()) {
       // No queue for this log yet, so create one and start timeout.
       auto result = queues_.emplace(log_id, RequestQueue(clock::now()));
-      assert(result.second);
+      RS_ASSERT(result.second);
       it = result.first;
       timeouts_.Add(log_id);
     }
@@ -287,7 +287,7 @@ BufferedLogStorage::BufferedLogStorage(
   while ((1u << batch_bits_) < max_batch_entries_) {
     ++batch_bits_;
   }
-  assert(batch_bits_ <= 8);  // up to 8 bits supported
+  RS_ASSERT(batch_bits_ <= 8);  // up to 8 bits supported
 
   int num_workers = msg_loop_->GetNumWorkers();
   for (int i = 0; i < num_workers; ++i) {
@@ -333,7 +333,7 @@ class ReaderCallbacks {
     if (!FlushOverflow()) {
       return false;
     }
-    assert(overflow_records_.empty());
+    RS_ASSERT(overflow_records_.empty());
 
     // If we've returned false to apply backpressure in the middle of processing
     // a payload, then the LogRecord will be empty. In this case we skip it
@@ -390,7 +390,7 @@ class ReaderCallbacks {
                               EraseType(std::move(context))));
       ++current_seqno;
     }
-    assert(remaining.empty());
+    RS_ASSERT(remaining.empty());
 
     // Add a gap to cover missing sequence numbers.
     if (current_seqno <= last_seqno) {
@@ -413,7 +413,7 @@ class ReaderCallbacks {
     if (!FlushOverflow()) {
       return false;
     }
-    assert(overflow_records_.empty());
+    RS_ASSERT(overflow_records_.empty());
 
     // Since a batched gap always maps to a single call of the callback, we can
     // use backoff straight away.
@@ -434,7 +434,7 @@ class ReaderCallbacks {
   GapRecord overflow_gap_;
 
   bool EnqueueGap(GapRecord gap) {
-    assert(!overflow_gap_present_);
+    RS_ASSERT(!overflow_gap_present_);
     if (!IsOverflowEmpty() || !buffered_reader_->gap_cb_(gap)) {
       overflow_gap_ = std::move(gap);
       overflow_gap_present_ = true;
@@ -444,7 +444,7 @@ class ReaderCallbacks {
   }
 
   bool EnqueueRecord(LogRecord record) {
-    assert(!overflow_gap_present_);
+    RS_ASSERT(!overflow_gap_present_);
     if (!IsOverflowEmpty() || !buffered_reader_->record_cb_(record)) {
       overflow_records_.emplace_back(std::move(record));
       return false;
@@ -462,7 +462,7 @@ class ReaderCallbacks {
       if (!buffered_reader_->record_cb_(overflow_records_.front())) {
         return false;
       }
-      assert(!overflow_records_.front().context.get() ||
+      RS_ASSERT(!overflow_records_.front().context.get() ||
              overflow_records_.front().context.get_deleter());
       overflow_records_.pop_front();
     }
@@ -507,7 +507,7 @@ Status BufferedAsyncLogReader::Open(LogID log_id,
     if (!st.ok()) {
       return st;
     }
-    assert(raw_reader.size() == 1);
+    RS_ASSERT(raw_reader.size() == 1);
     underlying_reader.reset(raw_reader.front());
   }
 

@@ -760,7 +760,7 @@ class MessageDeliver : public Message {
   SequenceNumber GetSequenceNumber() const { return seqno_; }
 
   void SetSequenceNumbers(SequenceNumber seqno_prev, SequenceNumber seqno) {
-    assert(seqno_prev <= seqno);
+    RS_ASSERT(seqno_prev <= seqno);
     seqno_prev_ = seqno_prev;
     seqno_ = seqno;
   }

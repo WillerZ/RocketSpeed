@@ -44,7 +44,7 @@ SupervisorLoop::SupervisorLoop(SupervisorOptions opts) :
 void SupervisorLoop::Run() {
    if (!base_) {
     LOG_FATAL(options_.info_log, "SupervisorLoop not initialized before use.");
-    assert(false);
+    RS_ASSERT(false);
     return;
   }
   LOG_VITAL(options_.info_log,
@@ -61,7 +61,7 @@ void SupervisorLoop::Run() {
 
 Status SupervisorLoop::Initialize() {
   if (base_) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("SupervisorLoop already initialized.");
   }
 
@@ -226,8 +226,8 @@ class SupervisorCommand {
 
   std::string operator()(const std::vector<std::string>& args,
                          SupervisorLoop* supervisor) const {
-    assert(supervisor != nullptr);
-    assert(args.size() > 0 && args[0] == key_);
+    RS_ASSERT(supervisor != nullptr);
+    RS_ASSERT(args.size() > 0 && args[0] == key_);
     return f_(args, supervisor);
   }
   std::string GetDesc() const { return key_ + " : " + desc_; }

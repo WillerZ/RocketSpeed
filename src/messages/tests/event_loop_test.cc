@@ -95,7 +95,7 @@ TEST(EventLoopTest, TriggerableEvent) {
     // The code to be executed in the callback.
     const auto cb = [&] {
       thread_check.Check();
-      assert(done < kExpected);
+      RS_ASSERT(done < kExpected);
       ++done;
       if (done == kExpected) {
         loop.Unnotify(trigger);

@@ -1,10 +1,10 @@
 #pragma once
-#include <cassert>
 #include <functional>
 #include <iterator>
 #include <list>
 #include <unordered_map>
 #include <utility>
+#include "include/Assert.h"
 
 namespace rocketspeed {
 
@@ -179,12 +179,12 @@ class LinkedBase {
   }
 
   void pop_front() {
-    assert (!empty());
+    RS_ASSERT(!empty());
     erase(begin());
   }
 
   void pop_back() {
-    assert (!empty());
+    RS_ASSERT(!empty());
     erase(std::prev(end()));
   }
 

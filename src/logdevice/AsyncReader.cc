@@ -6,7 +6,7 @@
 #pragma GCC diagnostic ignored "-Wshadow"
 #include "src/logdevice/AsyncReader.h"
 #include "src/logdevice/Common.h"
-#include <assert.h>
+#include "include/Assert.h"
 #include <algorithm>
 #include <mutex>
 #include <string>
@@ -68,7 +68,7 @@ AsyncReaderImpl::AsyncReaderImpl()
               if (gap_cb_) {
                 bool success = gap_cb_(record);
                 (void)success;  // ignore in mock impl.
-                assert(success);
+                RS_ASSERT(success);
               }
             }
           }
@@ -137,7 +137,7 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
   while (file.Next()) {
     opened = true;
     lsn_t current_lsn = file.GetLSN();
-    assert(current_lsn > last_lsn);
+    RS_ASSERT(current_lsn > last_lsn);
     last_lsn = current_lsn;
     if (current_lsn > expected_lsn) {
       // There is a gap from expected lsn to the minimum
@@ -151,7 +151,7 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
       if (gap_cb_) {
         bool success = gap_cb_(record);
         (void)success;  // ignore in mock impl.
-        assert(success);
+        RS_ASSERT(success);
       }
 
       // We are now proccessing from current_lsn.
@@ -172,7 +172,7 @@ lsn_t AsyncReaderImpl::ReadFile(logid_t logid, lsn_t from, lsn_t until) {
           file.GetTimestamp()));
       bool success = data_cb_(dataRecord);
       (void)success;  // ignore in mock impl.
-      assert(success);
+      RS_ASSERT(success);
     }
   }
   return opened ? expected_lsn : LSN_INVALID;
@@ -188,11 +188,11 @@ void AsyncReader::setGapCallback(std::function<bool(const GapRecord&)> cb) {
 }
 
 void AsyncReader::setDoneCallback(std::function<void(logid_t)>) {
-  assert(false);  // not implemented
+  RS_ASSERT(false);  // not implemented
 }
 
 int AsyncReader::startReading(logid_t log_id, lsn_t from, lsn_t until) {
-  assert(impl()->data_cb_);  // must set CB before starting to read
+  RS_ASSERT(impl()->data_cb_);  // must set CB before starting to read
   std::lock_guard<std::mutex> lock(impl()->mutex_);
   impl()->logs_[log_id] = AsyncReaderImpl::Log{from, until, 0};
   return 0;
@@ -208,11 +208,11 @@ int AsyncReader::stopReading(logid_t log_id, std::function<void()> cb) {
 }
 
 void AsyncReader::withoutPayload() {
-  assert(false);  // not implemented
+  RS_ASSERT(false);  // not implemented
 }
 
 void AsyncReader::forceNoSingleCopyDelivery() {
-  assert(false);  // not implemented
+  RS_ASSERT(false);  // not implemented
 }
 
 int AsyncReader::isConnectionHealthy(logid_t) const {
@@ -221,7 +221,7 @@ int AsyncReader::isConnectionHealthy(logid_t) const {
 }
 
 void AsyncReader::doNotDecodeBufferedWrites() {
-  assert(false);  // not implemented
+  RS_ASSERT(false);  // not implemented
 }
 
 void AsyncReader::skipPartiallyTrimmedSections() {

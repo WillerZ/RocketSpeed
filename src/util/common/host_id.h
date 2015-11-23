@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <string>

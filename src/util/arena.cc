@@ -29,7 +29,7 @@ size_t OptimizeBlockSize(size_t block_size) {
 }
 
 Arena::Arena(size_t block_size) : kBlockSize(OptimizeBlockSize(block_size)) {
-  assert(kBlockSize >= kMinBlockSize && kBlockSize <= kMaxBlockSize &&
+  RS_ASSERT(kBlockSize >= kMinBlockSize && kBlockSize <= kMaxBlockSize &&
          kBlockSize % kAlignUnit == 0);
   alloc_bytes_remaining_ = sizeof(inline_block_);
   blocks_memory_ += alloc_bytes_remaining_;
@@ -74,16 +74,16 @@ char* Arena::AllocateFallback(size_t bytes, bool aligned) {
 
 char* Arena::AllocateAligned(size_t bytes, size_t huage_page_size,
                              Logger* logger) {
-  assert((kAlignUnit & (kAlignUnit - 1)) ==
+  RS_ASSERT((kAlignUnit & (kAlignUnit - 1)) ==
          0);  // Pointer size should be a power of 2
 
 #ifdef MAP_HUGETLB
   if (huage_page_size > 0 && bytes > 0) {
     // Allocate from a huge page TBL table.
-    assert(logger != nullptr);  // logger need to be passed in.
+    RS_ASSERT(logger != nullptr);  // logger need to be passed in.
     size_t reserved_size =
         ((bytes - 1U) / huage_page_size + 1U) * huage_page_size;
-    assert(reserved_size >= bytes);
+    RS_ASSERT(reserved_size >= bytes);
     void* addr = mmap(nullptr, reserved_size, (PROT_READ | PROT_WRITE),
                       (MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB), 0, 0);
 
@@ -112,7 +112,7 @@ char* Arena::AllocateAligned(size_t bytes, size_t huage_page_size,
     // AllocateFallback always returned aligned memory
     result = AllocateFallback(bytes, true /* aligned */);
   }
-  assert((reinterpret_cast<uintptr_t>(result) & (kAlignUnit - 1)) == 0);
+  RS_ASSERT((reinterpret_cast<uintptr_t>(result) & (kAlignUnit - 1)) == 0);
   return result;
 }
 

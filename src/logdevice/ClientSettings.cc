@@ -4,7 +4,6 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #include <stdint.h>
-#include <assert.h>
 #include "logdevice/include/ClientSettings.h"
 
 namespace facebook { namespace logdevice {

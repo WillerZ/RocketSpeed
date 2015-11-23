@@ -11,7 +11,7 @@ namespace rocketspeed {
 LogDeviceLogRouter::LogDeviceLogRouter(LogID first, LogID last)
 : first_(first)
 , count_(last - first + 1) {
-  assert(last >= first);
+  RS_ASSERT(last >= first);
 }
 
 Status LogDeviceLogRouter::RouteToLog(size_t routing_hash,

@@ -419,8 +419,8 @@ Status RocketSpeed::Initialize(
 RocketSpeed::~RocketSpeed() {
   // All threads must be stopped first, otherwise we may still have running
   // services.
-  assert(threads_.empty());
-  assert(msg_loops_.empty());
+  RS_ASSERT(threads_.empty());
+  RS_ASSERT(msg_loops_.empty());
 
   // Shutdown libevent for good hygiene.
   EventLoop::GlobalShutdown();
@@ -440,7 +440,7 @@ void RocketSpeed::Run() {
 
   // Start all the messages loops, with the first loop started in this thread.
   LOG_VITAL(info_log_, "Starting all message loop threads");
-  assert(msg_loops_.size() != 0);
+  RS_ASSERT(msg_loops_.size() != 0);
   for (size_t i = 1; i < msg_loops_.size(); ++i) {
     threads_.emplace_back(
       [this, i] (MsgLoop* msg_loop) {

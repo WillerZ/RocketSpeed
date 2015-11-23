@@ -37,7 +37,7 @@ namespace rocketspeed {
 GUIDGenerator::GUIDGenerator() {
   static_assert(std::is_same<decltype(rng_()), uint64_t>::value,
     "std::mt19937_64 must return uint64_t");
-  assert(rng_.min() == 0 &&
+  RS_ASSERT(rng_.min() == 0 &&
          rng_.max() == static_cast<uint64_t>(0) - static_cast<uint64_t>(1));
 
   // 2 = 64 bits / 32 bits; state_size is in 64-bit words

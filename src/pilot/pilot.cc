@@ -91,7 +91,7 @@ void AppendClosure::operator()(Status append_status, SequenceNumber seqno) {
       worker_id);
 
     // Flow control mechanism should ensure that this queue never overflows.
-    assert(false);
+    RS_ASSERT(false);
   } else {
     LOG_INFO(pilot->options_.info_log,
       "Wrote response to queue %d",
@@ -147,7 +147,7 @@ Pilot::~Pilot() {
 }
 
 void Pilot::Stop() {
-  assert(!options_.msg_loop->IsRunning());  // must stop message loop first
+  RS_ASSERT(!options_.msg_loop->IsRunning());  // must stop message loop first
   log_storage_.reset();
   options_.storage.reset();
   options_.log_router.reset();
@@ -159,17 +159,17 @@ void Pilot::Stop() {
 Status Pilot::CreateNewInstance(PilotOptions options,
                                 Pilot** pilot) {
   if (!options.msg_loop) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("Message loop must be provided");
   }
 
   if (!options.storage) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("Log storage must be provided");
   }
 
   if (!options.log_router) {
-    assert(false);
+    RS_ASSERT(false);
     return Status::InvalidArgument("Log router must be provided");
   }
 
@@ -188,8 +188,8 @@ Status Pilot::CreateNewInstance(PilotOptions options,
 // A callback method to process MessageData
 void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   // Sanity checks.
-  assert(msg);
-  assert(msg->GetMessageType() == MessageType::mPublish);
+  RS_ASSERT(msg);
+  RS_ASSERT(msg->GetMessageType() == MessageType::mPublish);
 
   int worker_id = options_.msg_loop->GetThreadWorkerIndex();
   WorkerData& worker_data = *worker_data_[worker_id];
@@ -200,7 +200,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   if (!options_.log_router->GetLogID(msg_data->GetNamespaceId(),
                                      msg_data->GetTopicName(),
                                      &logid).ok()) {
-    assert(false);  // GetLogID should never fail.
+    RS_ASSERT(false);  // GetLogID should never fail.
     return;
   }
 

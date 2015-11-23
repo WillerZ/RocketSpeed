@@ -33,7 +33,7 @@ void LogBuffer::AddLogToBuffer(const char* format, va_list ap) {
     va_list backup_ap;
     va_copy(backup_ap, ap);
     auto n = vsnprintf(p, limit - p, format, backup_ap);
-    assert(n >= 0);
+    RS_ASSERT(n >= 0);
     p += n;
     va_end(backup_ap);
   }
