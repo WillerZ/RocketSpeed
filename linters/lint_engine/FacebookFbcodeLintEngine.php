@@ -52,6 +52,7 @@ class FacebookFbcodeLintEngine extends ArcanistLintEngine {
       $cpp_linters = array();
       $cpp_linters[] = $linters[] = new FbcodeCppLinter();
       $cpp_linters[] = $linters[] = new PfffCppLinter();
+      $cpp_linters[] = $linters[] = new RocketSpeedLinter();
     }
 
     $spelling_linter = new ArcanistSpellingLinter();

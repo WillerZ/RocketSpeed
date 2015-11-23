@@ -10,18 +10,21 @@ phutil_register_library_map(array(
   '__library_version__' => 2,
   'class' =>
   array(
+    'ArcanistCpplintLinter' => 'cpp_linter/ArcanistCpplintLinter.php',
     'FacebookFbcodeLintEngine' => 'lint_engine/FacebookFbcodeLintEngine.php',
     'FbcodeCppLinter' => 'cpp_linter/FbcodeCppLinter.php',
     'PfffCppLinter' => 'cpp_linter/PfffCppLinter.php',
-    'ArcanistCpplintLinter' => 'cpp_linter/ArcanistCpplintLinter.php',
+    'RocketSpeedLinter' => 'cpp_linter/RocketSpeedLinter.php',
   ),
   'function' =>
   array(
   ),
   'xmap' =>
   array(
+    'ArcanistCpplintLinter' => 'ArcanistLinter',
     'FacebookFbcodeLintEngine' => 'ArcanistLintEngine',
     'FbcodeCppLinter' => 'ArcanistLinter',
     'PfffCppLinter' => 'ArcanistLinter',
+    'RocketSpeedLinter' => 'ArcanistLinter',
   ),
 ));
