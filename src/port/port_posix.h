@@ -138,7 +138,7 @@ class Mutex {
  private:
   friend class CondVar;
   pthread_mutex_t mu_;
-#ifndef NDEBUG
+#ifndef NO_RS_ASSERT
   bool locked_;
 #endif
 
