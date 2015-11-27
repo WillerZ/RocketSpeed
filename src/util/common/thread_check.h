@@ -9,6 +9,14 @@
 #include <pthread.h>
 #include "include/Assert.h"
 
+#ifndef NO_RS_ASSERT
+#ifndef NDEBUG
+// Only use thread check if RS_ASSERT is enabled and debugging.
+#define RS_USE_THREAD_CHECK
+#endif
+#endif
+
+
 namespace rocketspeed {
 
 /**
@@ -26,7 +34,7 @@ namespace rocketspeed {
 struct ThreadCheck {
  public:
   ThreadCheck()
-#ifndef NO_RS_ASSERT
+#ifdef RS_USE_THREAD_CHECK
       : thread_id_(0)
 #endif
   {
@@ -35,7 +43,7 @@ struct ThreadCheck {
   ThreadCheck(const ThreadCheck& other) { *this = other; }
 
   ThreadCheck& operator=(const ThreadCheck& other) {
-#ifndef NO_RS_ASSERT
+#ifdef RS_USE_THREAD_CHECK
     auto thread_id = other.thread_id_.load(std::memory_order_consume);
     thread_id_.store(thread_id, std::memory_order_release);
 #endif
@@ -56,7 +64,7 @@ struct ThreadCheck {
    * @return False if called on different threads, true otherwise.
    */
   inline bool Ok() const {
-#ifndef NO_RS_ASSERT
+#ifdef RS_USE_THREAD_CHECK
     uint64_t desired = GetCurrentThreadId(), expected = 0;
 
     return thread_id_.compare_exchange_strong(expected, desired) ||
@@ -69,7 +77,7 @@ struct ThreadCheck {
    * Asserts that this is always called on the same thread.
    */
   inline void Check() const {
-#ifndef NO_RS_ASSERT
+#ifdef RS_USE_THREAD_CHECK
     RS_ASSERT(Ok());
 #endif
   }
@@ -78,15 +86,17 @@ struct ThreadCheck {
    * Transfers the thread check thread to the current thread.
    */
   inline void Reset() const {
-#ifndef NO_RS_ASSERT
+#ifdef RS_USE_THREAD_CHECK
     thread_id_ = GetCurrentThreadId();
 #endif
   }
 
  private:
-#ifndef NO_RS_ASSERT
+#ifdef RS_USE_THREAD_CHECK
     mutable std::atomic<uint64_t> thread_id_;
 #endif
 };
 
 }  // namespace rocketspeed
+
+#undef RS_USE_THREAD_CHECK
