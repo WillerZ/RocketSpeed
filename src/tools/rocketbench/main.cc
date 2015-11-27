@@ -65,7 +65,7 @@ DEFINE_int32(pilot_port, 58600, "port number of pilot");
 DEFINE_int32(copilot_port, 58600, "port number of copilot");
 
 DEFINE_int32(num_threads, 40, "number of threads");
-DEFINE_uint64(client_workers, 32, "number of client workers");
+DEFINE_uint64(client_workers, 40, "number of client workers");
 
 /**
  * These parameters control the load generated.
@@ -357,77 +357,103 @@ void DoSubscribe(
     std::unordered_map<std::string, TopicInfo>& topic_info,
     std::atomic<int64_t>* messages_expected,
     uint64_t* subscription_count) {
-  size_t c = 0;                           // current client index
-  size_t t = 0;                           // current topic index
   *subscription_count = 0;
 
-  Pacer pacer(FLAGS_subscribe_rate, 1);
-  uint64_t num_clients = consumers.size();
-  uint64_t num_topics = FLAGS_num_topics / FLAGS_subscription_topic_ratio;
-  uint64_t expected = 0;
+  const uint64_t num_clients = consumers.size();
+  const uint64_t num_topics = FLAGS_num_topics / FLAGS_subscription_topic_ratio;
+  const uint64_t num_subs = std::max(num_topics, num_clients);
 
-  for (uint64_t i = 0; i < std::max(num_topics, num_clients); i++) {
-    std::string topic_name("benchmark." + std::to_string(t));
-    SequenceNumber seqno = 0;   // start sequence number (0 = only new records)
-    SequenceNumber last_seqno = 0;
-    uint64_t count = 0;
-    if (FLAGS_delay_subscribe) {
-      // Find the first seqno published to this topic (or 0 if none published).
-      auto it = topic_info.find(topic_name);
-      if (it == topic_info.end()) {
-        seqno = 0;
-        last_seqno = 0;
-      } else if (it->second.first == 0 ||
-                 it->second.first == it->second.last ||
-                 FLAGS_subscription_backlog_distribution == "fixed") {
-        seqno = it->second.first;
-        last_seqno = it->second.last;
-        expected += it->second.total_num;
-        count = it->second.total_num;
-      } else {
-        uint64_t seed = i << 32;  // should be consistent between runs.
+  // Per thread worker for subscriptions.
+  auto subscribe_worker = [&] (uint64_t from, uint64_t to, uint64_t rate) {
+    Pacer pacer(rate, 1);
+    uint64_t expected = 0;
+    for (uint64_t i = from; i < to; i++) {
+      size_t c = i % num_clients;
+      size_t t = i % num_topics;
+      std::string topic_name("benchmark." + std::to_string(t));
+      SequenceNumber seqno = 0;  // start sequence number (0 = only new records)
+      SequenceNumber last_seqno = 0;
+      uint64_t count = 0;
+      if (FLAGS_delay_subscribe) {
+        // Find the first seqno published to this topic (0 if none published).
+        auto it = topic_info.find(topic_name);
+        if (it == topic_info.end()) {
+          seqno = 0;
+          last_seqno = 0;
+        } else if (it->second.first == 0 ||
+                   it->second.first == it->second.last ||
+                   FLAGS_subscription_backlog_distribution == "fixed") {
+          seqno = it->second.first;
+          last_seqno = it->second.last;
+          expected += it->second.total_num;
+          count = it->second.total_num;
+        } else {
+          uint64_t seed = i << 32;  // should be consistent between runs.
 
-        // backlog subscription point
-        std::unique_ptr<RandomDistributionBase>
-          distr(GetDistributionByName(FLAGS_subscription_backlog_distribution,
-                it->second.first,
-                it->second.last,
-                static_cast<double>(FLAGS_subscription_backlog_mean),
-                static_cast<double>(FLAGS_subscription_backlog_stddev),
-                seed));
-        seqno = distr->generateRandomInt();
-        last_seqno = it->second.last;
-        RS_ASSERT(seqno >= it->second.first);
-        RS_ASSERT(seqno <= it->second.last);
-      }
-    }
-    pacer.Wait();
-    LOG_DEBUG(info_log, "Client %zu Subscribing to %s from %" PRIu64
-              " total expected messages %" PRIu64 "\n",
-              c,
-              topic_name.c_str(),
-              seqno,
-              count);
-    uint64_t subscribe_time = env->NowMicros();
-    auto callback =
-      [receive_callback, last_seqno, subscribe_time, get_catch_up_latency]
-      (std::unique_ptr<MessageReceived>& mr) {
-        // Check if this is the last message for this topic.
-        if (mr->GetSequenceNumber() == last_seqno) {
-          // Record time to catch up.
-          uint64_t catch_up_time = env->NowMicros() - subscribe_time;
-          get_catch_up_latency()->Record(catch_up_time);
+          // backlog subscription point
+          std::unique_ptr<RandomDistributionBase>
+            distr(GetDistributionByName(FLAGS_subscription_backlog_distribution,
+                  it->second.first,
+                  it->second.last,
+                  static_cast<double>(FLAGS_subscription_backlog_mean),
+                  static_cast<double>(FLAGS_subscription_backlog_stddev),
+                  seed));
+          seqno = distr->generateRandomInt();
+          last_seqno = it->second.last;
+          RS_ASSERT(seqno >= it->second.first);
+          RS_ASSERT(seqno <= it->second.last);
         }
-        receive_callback(mr);
-      };
+      }
+      pacer.Wait();
+      LOG_DEBUG(info_log, "Client %zu Subscribing to %s from %" PRIu64
+                " total expected messages %" PRIu64 "\n",
+                c,
+                topic_name.c_str(),
+                seqno,
+                count);
+      uint64_t subscribe_time = env->NowMicros();
+      auto callback =
+        [receive_callback, last_seqno, subscribe_time, get_catch_up_latency]
+        (std::unique_ptr<MessageReceived>& mr) {
+          // Check if this is the last message for this topic.
+          if (mr->GetSequenceNumber() == last_seqno) {
+            // Record time to catch up.
+            uint64_t catch_up_time = env->NowMicros() - subscribe_time;
+            get_catch_up_latency()->Record(catch_up_time);
+          }
+          receive_callback(mr);
+        };
 
-    consumers[c]->Subscribe(GuestTenant, nsid, topic_name, seqno, callback);
-    pacer.EndRequest();
+      consumers[c]->Subscribe(GuestTenant, nsid, topic_name, seqno, callback);
+      pacer.EndRequest();
+    }
+    return expected;
+  };
 
-    // advance to next iteration
-    c = (c + 1) % consumers.size();
-    t = (t + 1) % num_topics;
-    (*subscription_count)++;
+  *subscription_count = num_subs;
+
+  // Start workers.
+  uint64_t from = 0;
+  port::Semaphore sem;
+  const size_t num_workers = FLAGS_num_threads;
+  const uint64_t rate =
+    std::max<uint64_t>(1, FLAGS_subscribe_rate / num_workers);
+  size_t remaining = num_workers;
+  std::atomic<uint64_t> expected(0);
+  while (remaining) {
+    uint64_t to = from + (num_subs - from) / remaining;
+    env->StartThread([&, from, to] () {
+      expected += subscribe_worker(from, to, rate);
+      sem.Post();
+    });
+    --remaining;
+    from = to;
+  }
+  RS_ASSERT(from == num_subs);
+
+  // Wait for all workers to complete.
+  for (size_t i = 0; i < num_workers; ++i) {
+    sem.Wait();
   }
 
   // If we have accurately calculated how many messages to receive
