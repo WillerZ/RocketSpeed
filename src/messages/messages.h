@@ -664,21 +664,21 @@ typedef uint64_t SubscriptionID;
 class MessageSubscribe final : public Message {
  public:
   MessageSubscribe(TenantID tenant_id,
-                   NamespaceID namespace_id,
-                   Topic topic_name,
+                   Slice namespace_id,
+                   Slice topic_name,
                    SequenceNumber start_seqno,
                    SubscriptionID sub_id)
       : Message(MessageType::mSubscribe, tenant_id),
-        namespace_id_(std::move(namespace_id)),
-        topic_name_(std::move(topic_name)),
+        namespace_id_(namespace_id),
+        topic_name_(topic_name),
         start_seqno_(start_seqno),
         sub_id_(sub_id) {}
 
   MessageSubscribe() : Message(MessageType::mSubscribe) {}
 
-  const NamespaceID& GetNamespace() const { return namespace_id_; }
+  const Slice& GetNamespace() const { return namespace_id_; }
 
-  const Topic& GetTopicName() const { return topic_name_; }
+  const Slice& GetTopicName() const { return topic_name_; }
 
   SequenceNumber GetStartSequenceNumber() const { return start_seqno_; }
 
@@ -689,8 +689,8 @@ class MessageSubscribe final : public Message {
 
  private:
   /** Parameters of the subscription. */
-  NamespaceID namespace_id_;
-  Topic topic_name_;
+  Slice namespace_id_;
+  Slice topic_name_;
   SequenceNumber start_seqno_;
   /** ID of the requested subscription assigned by the subscriber. */
   SubscriptionID sub_id_;

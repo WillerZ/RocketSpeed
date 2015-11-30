@@ -172,8 +172,8 @@ class CopilotWorker {
 
   // Add a subscriber to a topic.
   void ProcessSubscribe(const TenantID tenant_id,
-                        const NamespaceID& namespace_id,
-                        const Topic& topic_name,
+                        const Slice namespace_id,
+                        const Slice topic_name,
                         SequenceNumber start_seqno,
                         const SubscriptionID sub_id,
                         const LogID logid,

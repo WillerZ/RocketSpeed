@@ -440,8 +440,8 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
 }
 
 void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
-                                     const NamespaceID& namespace_id,
-                                     const Topic& topic_name,
+                                     const Slice namespace_id,
+                                     const Slice topic_name,
                                      SequenceNumber start_seqno,
                                      const SubscriptionID sub_id,
                                      const LogID logid,
@@ -458,7 +458,9 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
 
   // Insert into client-topic map.
   client_subscriptions_[subscriber]
-      .emplace(sub_id, TopicInfo{topic_name, namespace_id, logid});
+      .emplace(sub_id, TopicInfo{topic_name.ToString(),
+                                 namespace_id.ToString(),
+                                 logid});
 
   // Find/insert topic state.
   auto topic_iter = topics_.find(uuid);
@@ -831,11 +833,7 @@ bool CopilotWorker::SendSubscribe(TenantID tenant_id,
   Slice topic_name;
   uuid.GetTopicID(&namespace_id, &topic_name);
 
-  MessageSubscribe message(tenant_id,
-                           namespace_id.ToString(),
-                           topic_name.ToString(),
-                           seqno,
-                           sub_id);
+  MessageSubscribe message(tenant_id, namespace_id, topic_name, seqno, sub_id);
 
   auto command = options_.msg_loop->RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {

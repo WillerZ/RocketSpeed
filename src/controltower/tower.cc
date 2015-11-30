@@ -242,14 +242,14 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
   }
 
   LogID log_id;
-  Status st = options_.log_router->GetLogID(subscribe->GetNamespace().c_str(),
-                                            subscribe->GetTopicName().c_str(),
+  Status st = options_.log_router->GetLogID(subscribe->GetNamespace(),
+                                            subscribe->GetTopicName(),
                                             &log_id);
   if (!st.ok()) {
     LOG_WARN(options_.info_log,
         "Unable to map Topic(%s,%s) to logid %s",
-        subscribe->GetNamespace().c_str(),
-        subscribe->GetTopicName().c_str(),
+        subscribe->GetNamespace().ToString().c_str(),
+        subscribe->GetTopicName().ToString().c_str(),
         st.ToString().c_str());
     return;
   }
@@ -263,15 +263,15 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
     LOG_WARN(options_.info_log,
         "Unable to forward subscription for Topic(%s,%s)@%" PRIu64
         " to rooms-%u",
-        subscribe->GetNamespace().c_str(),
-        subscribe->GetTopicName().c_str(),
+        subscribe->GetNamespace().ToString().c_str(),
+        subscribe->GetTopicName().ToString().c_str(),
         subscribe->GetStartSequenceNumber(),
         room_number);
   } else {
     LOG_DEBUG(options_.info_log,
         "Forwarded subscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
-        subscribe->GetNamespace().c_str(),
-        subscribe->GetTopicName().c_str(),
+        subscribe->GetNamespace().ToString().c_str(),
+        subscribe->GetTopicName().ToString().c_str(),
         subscribe->GetStartSequenceNumber(),
         room_number);
   }

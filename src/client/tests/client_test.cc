@@ -282,7 +282,7 @@ TEST(ClientTest, OfflineOperations) {
       Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
     ASSERT_TRUE(expects_request.load());
     auto subscribe = static_cast<MessageSubscribe*>(msg.get());
-    auto it = subscriptions.find(subscribe->GetTopicName());
+    auto it = subscriptions.find(subscribe->GetTopicName().ToString());
     ASSERT_TRUE(it != subscriptions.end());
     ASSERT_EQ(it->second.first, subscribe->GetStartSequenceNumber());
     subscriptions.erase(it);

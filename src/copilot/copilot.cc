@@ -246,8 +246,8 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   auto subscribe = static_cast<MessageSubscribe*>(msg.get());
   LOG_DEBUG(options_.info_log,
             "Received subscribe request for Topic(%s, %s)@%" PRIu64,
-            subscribe->GetNamespace().c_str(),
-            subscribe->GetTopicName().c_str(),
+            subscribe->GetNamespace().ToString().c_str(),
+            subscribe->GetTopicName().ToString().c_str(),
             subscribe->GetStartSequenceNumber());
 
   // Calculate log ID for this topic.
@@ -258,8 +258,8 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   if (!st.ok()) {
     LOG_WARN(options_.info_log,
              "Unable to map Topic(%s, %s) to LogID: %s",
-             subscribe->GetNamespace().c_str(),
-             subscribe->GetTopicName().c_str(),
+             subscribe->GetNamespace().ToString().c_str(),
+             subscribe->GetTopicName().ToString().c_str(),
              st.ToString().c_str());
     return;
   }

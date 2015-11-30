@@ -72,9 +72,11 @@ TEST(ControlTowerTest, Subscribe) {
   // create a few topics
   const int num_topics = 5;
   for (int i = 0; i < num_topics; i++) {
+    NamespaceID namespace_id = "test" + std::to_string(i);
+    Topic topic_name = std::to_string(i);
     MessageSubscribe subscribe(Tenant::GuestTenant,
-                               "test" + std::to_string(i),
-                               std::to_string(i),
+                               namespace_id,
+                               topic_name,
                                SequenceNumber(4 + i),
                                SubscriptionID(i));
     ASSERT_OK(loop.SendRequest(subscribe, &socket, 0));

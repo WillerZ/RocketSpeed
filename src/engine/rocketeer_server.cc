@@ -256,8 +256,8 @@ void CommunicationRocketeer::Receive(
   }
   // TODO(stupaq) store subscription parameters in a message and move them out
   SubscriptionParameters params(subscribe->GetTenantID(),
-                                subscribe->GetNamespace(),
-                                subscribe->GetTopicName(),
+                                subscribe->GetNamespace().ToString(),
+                                subscribe->GetTopicName().ToString(),
                                 subscribe->GetStartSequenceNumber());
   HandleNewSubscription(InboundID(origin, sub_id, GetID()), std::move(params));
   stats_->subscribes->Add(1);

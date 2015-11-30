@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <memory>
+#include <ostream>
 #include <string>
 #include "include/Assert.h"
 
@@ -118,6 +119,10 @@ class Slice {
 
   // Intentionally copyable
 };
+
+inline std::ostream& operator<<(std::ostream& os, const Slice& sl) {
+  return os.write(sl.data(), sl.size());
+}
 
 // A set of Slices that are virtually concatenated together.  'parts' points
 // to an array of Slices.  The number of elements in the array is 'num_parts'.
