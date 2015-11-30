@@ -27,7 +27,7 @@ fi
 cleanup() {
   # Stop servers
   echo "Stopping servers......"
-  cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --towers=$TOWERS"
+  cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --towers=$TOWERS --remote-bench $BENCH"
   echo $cmd
   eval $cmd
 }
@@ -63,5 +63,5 @@ eval $cmd || { echo "Failed to receive all messages"; exit 1; }
 
 # Stop servers explicitly (even though the bash-trap stops them too).
 echo Stopping Servers...
-cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --towers=$TOWERS "
+cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --towers=$TOWERS --remote-bench $BENCH"
 eval $cmd

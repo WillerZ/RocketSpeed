@@ -25,7 +25,7 @@ fi
 cleanup() {
   # Stop servers
   echo "Stopping servers......"
-  cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --towers=$TOWERS"
+  cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --towers=$TOWERS --remote-bench $BENCH"
   echo $cmd
   eval $cmd
 }

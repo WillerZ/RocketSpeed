@@ -366,6 +366,10 @@ function stop_servers {
       echo "Stopping server:" $host
       ssh root@$host 'pkill -f ${remote_path}/rocketspeed'
     done
+    for host in ${rocketbench_hosts[@]}; do
+      echo "Stopping server:" $host
+      ssh root@$host 'pkill -f ${remote_path}/rocketbench'
+    done
   fi
 }
 

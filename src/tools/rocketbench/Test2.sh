@@ -27,7 +27,7 @@ fi
 cleanup() {
   # Stop servers
   echo "Stopping servers......"
-  cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS"
+  cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --remote-bench $BENCH"
   echo $cmd
   eval $cmd
 }
@@ -43,5 +43,5 @@ echo $cmd
 eval $cmd || { echo "Failed to write all messages"; exit 1; }
 
 echo Stopping Servers...
-cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS"
+cmd="$BENCHMARK --remote --stop-servers --cockpits=$COCKPITS --remote-bench $BENCH"
 eval $cmd
