@@ -5,6 +5,7 @@
 //
 #define __STDC_FORMAT_MACROS
 #include "src/controltower/data_cache.h"
+#include "src/util/xxhash.h"
 
 #include <unordered_map>
 
@@ -26,7 +27,7 @@ struct alignas(16) CacheKey {
 // Find the first seqno of the block
 static SequenceNumber AlignToBlockStart(
     size_t block_size, SequenceNumber seqno) {
-  return (seqno / block_size) * block_size;
+  return seqno & ~(block_size - 1);
 }
 
 // Generate a key for cache lookup
@@ -60,6 +61,12 @@ class CacheEntry {
   unsigned short num_messages_; // number of msg in this entry
   std::unique_ptr<MessageData>* mcache_;
 
+  // hcache_[i] stores the lower 16-bits of the hash of mcache_[i]'s topic name.
+  // This allows quick strides across the cache without accessing the message.
+  // Only 16-bits are stores to save memory.
+  // If the entry is 0 then there is no message.
+  std::unique_ptr<uint16_t[]> hcache_;
+
  public:
   explicit CacheEntry(DataCache* data_cache,
                       LogID logid, SequenceNumber seqno_block) {
@@ -71,10 +78,18 @@ class CacheEntry {
     RS_ASSERT((1U << 8 * sizeof(num_messages_)) >
       (data_cache->block_size_ + 1U));
     mcache_ = new std::unique_ptr<MessageData> [data_cache->block_size_];
+    hcache_.reset(new uint16_t[data_cache->block_size_]);
+    std::fill(hcache_.get(), hcache_.get() + data_cache->block_size_, 0);
   }
 
   ~CacheEntry() {
     delete [] mcache_;
+  }
+
+  uint16_t HashTopic(const Slice topic) {
+    auto hash = XXH64(topic.data(), topic.size(), 0x3bd14b007c8b7733ULL);
+    // 0 is special so we modulo to a smaller range.
+    return static_cast<uint16_t>(hash % 0xFFFF + 1);
   }
 
   // Stores the specified record in this entry.
@@ -100,10 +115,13 @@ class CacheEntry {
              msg->GetSequenceNumber());
       RS_ASSERT(mcache_[offset].get()->GetTotalSize() ==
              msg->GetTotalSize());
+      RS_ASSERT(hcache_[offset] != 0);
       return 0;
     }
+    RS_ASSERT(hcache_[offset] == 0);
     size_t size = msg->GetTotalSize();
     mcache_[offset] = std::move(msg); // store message
+    hcache_[offset] = HashTopic(topic); // store hash
     num_messages_++;                  // one more message
     data_cache->stats_.cache_inserts->Add(1);
 
@@ -140,10 +158,12 @@ class CacheEntry {
 
     // if there isn't an entry, then there is nothing more to do
     if (mcache_[offset] == nullptr) {
+      RS_ASSERT(hcache_[offset] == 0);
       return 0;
     }
     size_t size = mcache_[offset]->GetTotalSize();
     mcache_[offset] = nullptr;        // erase
+    hcache_[offset] = 0;
     return size;
   }
 
@@ -185,15 +205,37 @@ class CacheEntry {
     // scan all messages upto either the first null or the entire block
     size_t index = offset;
     bool delivered = false;
-    for (; index < data_cache->block_size_ && mcache_[index]; index++) {
-      if (!visit(mcache_[index].get(), &delivered)) {
-        ++index;
-        *stop = true;
-        break;
+    const auto block_size = data_cache->block_size_;
+    const auto mcache = mcache_;
+    const auto hcache = hcache_.get();
+    if (lookup_topicname.size() == 0) {
+      // Unknown lookup topic.
+      // In this case, we visit every message in the cache.
+      for (; index < block_size && mcache[index]; index++) {
+        if (!visit(mcache[index].get(), &delivered)) {
+          ++index;
+          *stop = true;
+          break;
+        }
       }
-      // found one more record in cache
-      data_cache->stats_.cache_hits->Add(1);
+    } else {
+      // Lookup topic is known.
+      // We can test the topic hash against hcache_ as a fail fast filter.
+      // This avoids cache misses and CPU reading the message and visiting.
+      const uint16_t hash = HashTopic(lookup_topicname);
+      for (; index < block_size && hcache[index]; ++index) {
+        if (hcache[index] == hash) {
+          if (!visit(mcache[index].get(), &delivered)) {
+            ++index;
+            *stop = true;
+            break;
+          }
+        }
+      }
     }
+    // found records in cache
+    data_cache->stats_.cache_hits->Add(index - offset);
+
     // The bloom check said that the topic may exist in the Entry
     // but an exhaustive check proved that the topic does not really
     // exist in this Entry. This is a measure of bloom effectiveness.
@@ -204,12 +246,14 @@ class CacheEntry {
   }
 
   bool HasEntry(size_t offset) {
+    RS_ASSERT((mcache_[offset] == nullptr) == (hcache_[offset] == 0));
     return mcache_[offset] != nullptr;
   }
 
   size_t GetInitialCharge(DataCache* data_cache) {
     return sizeof(CacheEntry)
            + (data_cache->block_size_ * sizeof(mcache_[0]))
+           + (data_cache->block_size_ * sizeof(hcache_[0]))
            + (data_cache->block_size_ * data_cache->bloom_bits_per_msg_)/8;
   }
 };
@@ -232,6 +276,8 @@ DataCache::DataCache(size_t size_in_bytes,
                      Characteristics::StoreSystemTopics |
                      Characteristics::StoreDataRecords |
                      Characteristics::StoreGapRecords;
+  // block size must be power of 2.
+  RS_ASSERT((block_size & (block_size - 1)) == 0);
   if (!cache_data_from_system_namespaces) {
     characteristics_ &= ~Characteristics::StoreSystemTopics;
   }
