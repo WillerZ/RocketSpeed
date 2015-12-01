@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Detects OS we're compiling on and outputs a file specified by the first
 # argument, which in turn gets read while processing Makefile.

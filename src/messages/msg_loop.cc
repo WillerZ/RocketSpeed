@@ -176,9 +176,9 @@ Status MsgLoop::Initialize() {
 }
 
 void MsgLoop::Run() {
+  env_->SetCurrentThreadName(name_ + "-0");
   LOG_INFO(
       info_log_, "Starting Message Loop at %s", GetHostId().ToString().c_str());
-  env_->SetCurrentThreadName(name_ + "-0");
 
   // Add ping callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mPing) == msg_callbacks_.end()) {
