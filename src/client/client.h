@@ -148,10 +148,6 @@ class ClientImpl : public Client {
    * In case of error, returned worker ID is negative.
    */
   int GetWorkerID(SubscriptionHandle sub_handle) const;
-
-  template <typename M>
-  std::function<void(Flow*, std::unique_ptr<Message>, StreamID)>
-  CreateCallback();
 };
 
 }  // namespace rocketspeed

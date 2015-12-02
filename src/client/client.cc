@@ -93,46 +93,19 @@ Status ClientImpl::Create(ClientOptions options,
 ClientImpl::ClientImpl(ClientOptions options,
                        std::unique_ptr<MsgLoop> msg_loop,
                        bool is_internal)
-    : options_(std::move(options))
-    , wake_lock_(std::move(options_.wake_lock))
-    , msg_loop_(std::move(msg_loop))
-    , msg_loop_thread_spawned_(false)
-    , is_internal_(is_internal)
-    , publisher_(options_.env,
-                 options_.config,
-                 options_.info_log,
-                 msg_loop_.get(),
-                 &wake_lock_,
-                 options_.publish_timeout)
-    , next_sub_id_(0) {
+: options_(std::move(options))
+, wake_lock_(std::move(options_.wake_lock))
+, msg_loop_(std::move(msg_loop))
+, msg_loop_thread_spawned_(false)
+, is_internal_(is_internal)
+, publisher_(options_, msg_loop_.get(), &wake_lock_)
+, next_sub_id_(0) {
   LOG_VITAL(options_.info_log, "Creating Client");
 
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     worker_data_.emplace_back(
         new Subscriber(options_, msg_loop_->GetEventLoop(i)));
   }
-
-  // TODO(stupaq) kill it with fire
-  auto goodbye_callback =
-      [this](Flow*, std::unique_ptr<Message> msg, StreamID origin) {
-        const auto worker_id = msg_loop_->GetThreadWorkerIndex();
-        auto& worker_data = worker_data_[worker_id];
-        if (worker_data->copilot_socket_valid_ &&
-            origin == worker_data->copilot_socket.GetStreamID()) {
-          std::unique_ptr<MessageGoodbye> goodbye(
-              static_cast<MessageGoodbye*>(msg.release()));
-          worker_data->Receive(std::move(goodbye), origin);
-        } else {
-          publisher_.ProcessGoodbye(std::move(msg), origin);
-        }
-      };
-
-  msg_loop_->RegisterCallbacks({
-      {MessageType::mDeliverGap, CreateCallback<MessageDeliver>()},
-      {MessageType::mDeliverData, CreateCallback<MessageDeliver>()},
-      {MessageType::mUnsubscribe, CreateCallback<MessageUnsubscribe>()},
-      {MessageType::mGoodbye, goodbye_callback},
-  });
 }
 
 void ClientImpl::SetDefaultCallbacks(SubscribeCallback subscription_callback,
@@ -353,15 +326,6 @@ Status ClientImpl::Start() {
     }
   }
 
-  auto st = msg_loop_->RegisterTimerCallback([this]() {
-    const auto worker_id = msg_loop_->GetThreadWorkerIndex();
-    worker_data_[worker_id]->SendPendingRequests();
-    publisher_.CheckTimeouts();
-  }, options_.timer_period);
-  if (!st.ok()) {
-    return st;
-  }
-
   msg_loop_thread_ =
       options_.env->StartThread([this]() { msg_loop_->Run(); }, "client");
   msg_loop_thread_spawned_ = true;
@@ -384,15 +348,6 @@ int ClientImpl::GetWorkerID(SubscriptionHandle sub_handle) const {
     return -1;
   }
   return worker_id;
-}
-
-template <typename Msg>
-MsgCallbackType ClientImpl::CreateCallback() {
-  return [this](Flow*, std::unique_ptr<Message> message, StreamID origin) {
-    std::unique_ptr<Msg> casted(static_cast<Msg*>(message.release()));
-    auto worker_id = msg_loop_->GetThreadWorkerIndex();
-    worker_data_[worker_id]->Receive(std::move(casted), origin);
-  };
 }
 
 }  // namespace rocketspeed

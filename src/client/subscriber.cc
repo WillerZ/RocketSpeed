@@ -24,9 +24,8 @@
 #include "include/Status.h"
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
-#include "include/WakeLock.h"
-#include "src/client/smart_wake_lock.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/stream.h"
 #include "src/port/port.h"
 #include "src/util/common/random.h"
 #include "src/util/timeout_list.h"
@@ -252,13 +251,13 @@ Subscriber::Subscriber(const ClientOptions& options, EventLoop* event_loop)
 , last_send_time_(0)
 , consecutive_goodbyes_count_(0)
 , rng_(ThreadLocalPRNG())
-, copilot_socket_valid_(false)
 , last_config_version_(0) {}
 
 Subscriber::~Subscriber() {}
 
 Status Subscriber::Start() {
-  return Status::OK();
+  return event_loop_->RegisterTimerCallback([this]() { SendPendingRequests(); },
+                                            options_.timer_period);
 }
 
 const Statistics& Subscriber::GetStatistics() {
@@ -363,24 +362,6 @@ Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
   return Status::OK();
 }
 
-bool Subscriber::ExpectsMessage(const std::shared_ptr<Logger>& info_log,
-                                StreamID origin) {
-  if (!copilot_socket_valid_) {
-    LOG_WARN(info_log,
-             "Unexpected message on stream: (%llu), no valid stream",
-             origin);
-    return false;
-  }
-  if (copilot_socket.GetStreamID() != origin) {
-    LOG_WARN(info_log,
-             "Unexpected message on stream: (%llu), expected: (%llu)",
-             origin,
-             copilot_socket.GetStreamID());
-    return false;
-  }
-  return true;
-}
-
 void Subscriber::SendPendingRequests() {
   thread_check_.Check();
 
@@ -391,31 +372,24 @@ void Subscriber::SendPendingRequests() {
   // Close the connection if the configuration has changed.
   const auto current_config_version = options_.config->GetCopilotVersion();
   if (last_config_version_ != current_config_version) {
-    if (copilot_socket_valid_) {
+    if (server_stream_) {
       LOG_INFO(options_.info_log,
                "Configuration version has changed %" PRIu64 " -> %" PRIu64,
                last_config_version_,
                current_config_version);
 
-      // Send goodbye message.
-      std::unique_ptr<MessageGoodbye> goodbye(
-          new MessageGoodbye(GuestTenant,
-                             MessageGoodbye::Code::Graceful,
-                             MessageGoodbye::OriginType::Client));
-      StreamID stream = copilot_socket.GetStreamID();
-      Status st = event_loop_->SendResponse(*goodbye, stream);
-      if (st.ok()) {
-        // Update internal state as if we received goodbye message.
-        Receive(std::move(goodbye), stream);
-      } else {
-        LOG_WARN(options_.info_log,
-                 "Failed to close stream (%llu) on configuration change",
-                 copilot_socket.GetStreamID());
-        // No harm done, we will have a chance to try again, but need to exit
-        // now, because we shouldn't be sending more subscriptions according to
-        // the old configuration.
-        // Note that we haven't updated last configuration version.
-        return;
+      // Mark socket as broken.
+      server_stream_.reset();
+
+      // Clear a list of recently sent unsubscribes, these subscriptions IDs
+      // were generated for different socket, so are no longer valid.
+      recent_terminations_.Clear();
+
+      // Reissue all subscriptions.
+      for (auto& entry : subscriptions_) {
+        SubscriptionID sub_id = entry.first;
+        // Mark subscription as pending.
+        pending_subscribes_.emplace(sub_id);
       }
     }
   }
@@ -427,7 +401,7 @@ void Subscriber::SendPendingRequests() {
 
   const uint64_t now = options_.env->NowMicros();
   // Check if we have a valid socket to the Copilot, recreate it if not.
-  if (!copilot_socket_valid_) {
+  if (!server_stream_) {
     // Since we're not connected to the Copilot, all subscriptions were
     // terminated, so we don't need to send corresponding unsubscribes.
     // We might be disconnected and still have some pending unsubscribes, as the
@@ -458,13 +432,13 @@ void Subscriber::SendPendingRequests() {
     }
 
     // And create socket to it.
-    copilot_socket = event_loop_->CreateOutboundStream(copilot);
-    copilot_socket_valid_ = true;
+    server_stream_ = event_loop_->OpenStream(copilot);
+    server_stream_->SetReceiver(this);
 
     LOG_INFO(options_.info_log,
              "Reconnected to %s on stream %llu",
              copilot.ToString().c_str(),
-             copilot_socket.GetStreamID());
+             server_stream_->GetLocalID());
   }
 
   // If we have no subscriptions and some pending requests, close the
@@ -473,30 +447,15 @@ void Subscriber::SendPendingRequests() {
       subscriptions_.empty()) {
     RS_ASSERT(pending_subscribes_.empty());
 
-    // We do not use any specific tenant, there might be many unsubscribe
-    // requests from arbitrary tenants.
-    MessageGoodbye goodbye(GuestTenant,
-                           MessageGoodbye::Code::Graceful,
-                           MessageGoodbye::OriginType::Client);
+    LOG_INFO(options_.info_log,
+             "Closing stream (%llu) with no active subscriptions",
+             server_stream_->GetLocalID());
+    server_stream_.reset();
 
-    Status st = event_loop_->SendRequest(goodbye, &copilot_socket);
-    if (st.ok()) {
-      LOG_INFO(options_.info_log,
-               "Closed stream (%llu) with no active subscriptions",
-               copilot_socket.GetStreamID());
-      last_send_time_ = now;
-      // All unsubscribe requests were synced.
-      pending_terminations_.clear();
-      // Since we've sent goodbye message, we need to recreate socket when
-      // sending the next message.
-      copilot_socket_valid_ = false;
-    } else {
-      LOG_WARN(options_.info_log,
-               "Failed to close stream (%llu) with no active subscrions",
-               copilot_socket.GetStreamID());
-    }
-
-    // Nothing to do or we should try next time.
+    // We've just sent a message.
+    last_send_time_ = now;
+    // All unsubscribe requests were synced.
+    pending_terminations_.clear();
     return;
   }
 
@@ -512,21 +471,21 @@ void Subscriber::SendPendingRequests() {
       continue;
     }
 
+    // Message will be sent, we may clear pending request.
+    pending_terminations_.erase(it);
+    // Record the fact, so we don't send duplicates of the message.
+    recent_terminations_.Add(sub_id);
+    // Record last send time for back-off logic.
+    last_send_time_ = now;
+
     MessageUnsubscribe unsubscribe(
         tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested);
+    const bool can_write_more = server_stream_->Write(unsubscribe, true);
 
-    Status st = event_loop_->SendRequest(unsubscribe, &copilot_socket);
-    if (st.ok()) {
-      LOG_INFO(options_.info_log, "Unsubscribed ID (%" PRIu64 ")", sub_id);
-      last_send_time_ = now;
-      // Message was sent, we may clear pending request.
-      pending_terminations_.erase(it);
-      // Record the fact, so we don't send duplicates of the message.
-      recent_terminations_.Add(sub_id);
-    } else {
-      LOG_WARN(options_.info_log,
-               "Failed to send unsubscribe response for ID(%" PRIu64 ")",
-               sub_id);
+    LOG_INFO(options_.info_log, "Unsubscribed ID (%" PRIu64 ")", sub_id);
+
+    if (!can_write_more) {
+      LOG_WARN(options_.info_log, "Overflow while syncing subscriptions");
       // Try next time.
       return;
     }
@@ -553,32 +512,27 @@ void Subscriber::SendPendingRequests() {
                                sub_state->GetTopicName(),
                                sub_state->GetExpected(),
                                sub_id);
+    const bool can_write_more = server_stream_->Write(subscribe, true);
 
-    Status st = event_loop_->SendRequest(subscribe, &copilot_socket);
-    if (st.ok()) {
-      LOG_INFO(options_.info_log, "Subscribed ID (%" PRIu64 ")", sub_id);
-      last_send_time_ = now;
-      // Message was sent, we may clear pending request.
-      pending_subscribes_.erase(it);
-    } else {
-      LOG_WARN(options_.info_log,
-               "Failed to send subscribe request for ID(%" PRIu64 ")",
-               sub_id);
+    // Message was sent, we may clear pending request.
+    pending_subscribes_.erase(it);
+    // Remember last sent time for backoff.
+    last_send_time_ = now;
+
+    LOG_INFO(options_.info_log, "Subscribed ID (%" PRIu64 ")", sub_id);
+
+    if (!can_write_more) {
+      LOG_WARN(options_.info_log, "Backoff when syncing subscriptions.");
       // Try next time.
       return;
     }
   }
 }
 
-void Subscriber::Receive(std::unique_ptr<MessageDeliver> deliver,
-                         StreamID origin) {
-  // Check that message arrived on correct stream.
-  if (!ExpectsMessage(options_.info_log, origin)) {
-    return;
-  }
-
+void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   consecutive_goodbyes_count_ = 0;
 
+  auto deliver = std::move(arg.message);
   // Find the right subscription and deliver the message to it.
   SubscriptionID sub_id = deliver->GetSubID();
   auto it = subscriptions_.find(sub_id);
@@ -603,15 +557,10 @@ void Subscriber::Receive(std::unique_ptr<MessageDeliver> deliver,
   }
 }
 
-void Subscriber::Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
-                         StreamID origin) {
-  // Check that message arrived on correct stream.
-  if (!ExpectsMessage(options_.info_log, origin)) {
-    return;
-  }
-
+void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
   consecutive_goodbyes_count_ = 0;
 
+  auto unsubscribe = std::move(arg.message);
   const SubscriptionID sub_id = unsubscribe->GetSubID();
   // Find the right subscription and deliver the message to it.
   auto it = subscriptions_.find(sub_id);
@@ -643,17 +592,16 @@ void Subscriber::Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
   subscriptions_.erase(it);
 }
 
-void Subscriber::Receive(std::unique_ptr<MessageGoodbye> msg, StreamID origin) {
+void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
+  thread_check_.Check();
+
+  const auto origin = arg.stream_id;
+
   // A duration type unit-compatible with BaseEnv::NowMicros().
   typedef std::chrono::microseconds EnvClockDuration;
 
-  // Check that message arrived on correct stream.
-  if (!ExpectsMessage(options_.info_log, origin)) {
-    return;
-  }
-
   // Mark socket as broken.
-  copilot_socket_valid_ = false;
+  server_stream_.reset();
 
   // Clear a list of recently sent unsubscribes, these subscriptions IDs were
   // generated for different socket, so are no longer valid.

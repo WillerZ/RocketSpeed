@@ -15,8 +15,10 @@
 #include "include/RocketSpeed.h"
 #include "include/SubscriptionStorage.h"
 #include "src/messages/messages.h"
-#include "src/messages/stream_socket.h"
+#include "src/messages/types.h"
 #include "src/port/port.h"
+#include "src/util/common/noncopyable.h"
+#include "src/util/common/nonmovable.h"
 #include "src/util/common/random.h"
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
@@ -28,6 +30,7 @@ class MessageDeliver;
 class MessageUnsubscribe;
 class MessageGoodbye;
 class EventLoop;
+class Stream;
 class SubscriptionState;
 
 typedef uint64_t SubscriptionID;
@@ -113,15 +116,8 @@ class SubscriptionState {
 };
 
 /** State of a single subscriber worker, aligned to avoid false sharing. */
-class alignas(CACHE_LINE_SIZE) Subscriber {
+class alignas(CACHE_LINE_SIZE) Subscriber : public StreamReceiver {
  public:
-  // Noncopyable
-  Subscriber(const Subscriber&) = delete;
-  Subscriber& operator=(const Subscriber&) = delete;
-  // Nonmovable
-  Subscriber(Subscriber&&) = delete;
-  Subscriber& operator=(Subscriber&&) = delete;
-
   Subscriber(const ClientOptions& options, EventLoop* event_loop);
 
   ~Subscriber();
@@ -147,8 +143,6 @@ class alignas(CACHE_LINE_SIZE) Subscriber {
   Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
 
  private:
-  friend class ClientImpl;
-
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;
   /** An event loop object this subscriber runs on. */
@@ -163,10 +157,8 @@ class alignas(CACHE_LINE_SIZE) Subscriber {
   size_t consecutive_goodbyes_count_;
   /** Random engine used by this client. */
   std::mt19937_64& rng_;
-  /** Stream socket used by this worker to talk to the copilot. */
-  StreamSocket copilot_socket;
-  /** Determines whether copilot socket is valid. */
-  bool copilot_socket_valid_;
+  /** Stream socket used by this worker to talk to the Rocketeer. */
+  std::unique_ptr<Stream> server_stream_;
   /** Version of configuration when we last fetched hosts. */
   uint64_t last_config_version_;
   /** All subscriptions served by this worker. */
@@ -195,22 +187,18 @@ class alignas(CACHE_LINE_SIZE) Subscriber {
     Statistics all;
   } stats_;
 
-  bool ExpectsMessage(const std::shared_ptr<Logger>& info_log, StreamID origin);
-
   /**
    * Synchronises a portion of pending subscribe and unsubscribe requests with
    * the Copilot. Takes into an account rate limits.
    */
   void SendPendingRequests();
 
-  /** Handler for data and gap messages */
-  void Receive(std::unique_ptr<MessageDeliver> msg, StreamID origin);
+  void ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) final override;
 
-  /** Handler for unsubscribe messages. */
-  void Receive(std::unique_ptr<MessageUnsubscribe> msg, StreamID origin);
+  void ReceiveUnsubscribe(
+      StreamReceiveArg<MessageUnsubscribe> arg) final override;
 
-  /** Handler for goodbye messages. */
-  void Receive(std::unique_ptr<MessageGoodbye> msg, StreamID origin);
+  void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) final override;
 };
 
 }  // namespace rocketspeed

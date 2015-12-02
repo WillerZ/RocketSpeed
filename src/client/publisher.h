@@ -12,15 +12,17 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/messages/stream_socket.h"
+#include "src/util/common/noncopyable.h"
+#include "src/util/common/nonmovable.h"
 
 namespace rocketspeed {
 
 class BaseEnv;
+class ClientOptions;
 class Flow;
 class Message;
 class MessageData;
-class MsgLoopBase;
+class MsgLoop;
 class SmartWakeLock;
 class Logger;
 class PublisherWorkerData;
@@ -28,24 +30,18 @@ class PublisherWorkerData;
 /**
  * A part of RocketSpeed Client responsible for publishing messages only.
  */
-class PublisherImpl {
+class PublisherImpl : public NonMovable, public NonCopyable {
  public:
   /**
    * Creates publisher object from provided parameters.
    *
-   * @param env the environment used by the client
-   * @param config configuration of RocketSpeed service
-   * @param info_log a logger object
+   * @param options A client options.
    * @param msg_loop a non-owning pointer to the message loop
    * @param wake_lock a non-owning pointer to the wake lock
-   * @param publish_timeout timeout for publish invokations
    */
-  PublisherImpl(BaseEnv* env,
-                std::shared_ptr<Configuration> config,
-                std::shared_ptr<Logger> info_log,
-                MsgLoopBase* msg_loop,
-                SmartWakeLock* wake_lock,
-                std::chrono::milliseconds publish_timeout);
+  PublisherImpl(const ClientOptions& options,
+                MsgLoop* msg_loop,
+                SmartWakeLock* wake_lock);
 
   ~PublisherImpl();
 
@@ -60,32 +56,16 @@ class PublisherImpl {
                         PublishCallback callback,
                         const MsgId messageId);
 
-  /** Handles goodbye messages for publisher streams. */
-  // TODO(stupaq) hide and register callback once we get multi guest MsgLoop
-  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
-
-  /**
-   * Checks for timeouts on a particular worker, invoking publish callbacks
-   * with error status where necessary.
-   * Must be called on a worker thread.
-   */
-  void CheckTimeouts();
-
  private:
   friend class PublisherWorkerData;
 
   const std::shared_ptr<Configuration> config_;
   const std::shared_ptr<Logger> info_log_;
-  MsgLoopBase* const msg_loop_;
+  MsgLoop* const msg_loop_;
   SmartWakeLock* const wake_lock_;
 
   /** State of the publisher sharded by worker threads. */
-  std::vector<PublisherWorkerData> worker_data_;
-
-  /** Handles acknowledgements for published messages. */
-  void ProcessDataAck(Flow* flow,
-                      std::unique_ptr<Message> msg,
-                      StreamID origin);
+  std::vector<std::unique_ptr<PublisherWorkerData>> worker_data_;
 
   /** Decides how to shard requests into workers. */
   int GetWorkerForTopic(const Topic& name) const;

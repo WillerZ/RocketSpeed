@@ -5,18 +5,23 @@
 //
 #include "publisher.h"
 
+#include <functional>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include "external/folly/move_wrapper.h"
 
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/messages.h"
-#include "src/messages/msg_loop_base.h"
+#include "src/messages/msg_loop.h"
 #include "src/messages/commands.h"
+#include "src/messages/stream.h"
 #include "src/port/port.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/hash.h"
+#include "src/util/common/noncopyable.h"
+#include "src/util/common/nonmovable.h"
 #include "src/util/common/thread_check.h"
 #include "src/util/timeout_list.h"
 
@@ -83,54 +88,43 @@ class PendingAck {
 };
 
 /** State of a single publisher, aligned to avoid false sharing. */
-class alignas(CACHE_LINE_SIZE) PublisherWorkerData {
+class alignas(CACHE_LINE_SIZE) PublisherWorkerData : public StreamReceiver {
  public:
-  // Noncopyable
-  PublisherWorkerData(const PublisherWorkerData&) = delete;
-  PublisherWorkerData& operator=(const PublisherWorkerData&) = delete;
-  // Movable
-  PublisherWorkerData(PublisherWorkerData&&) = default;
-  PublisherWorkerData& operator=(PublisherWorkerData&&) = default;
-
-  PublisherWorkerData(PublisherImpl* publisher,
-                      int worker_id,
-                      std::chrono::milliseconds timeout)
-      : publisher_(publisher)
-      , worker_id_(worker_id)
-      , publish_timeout_(timeout)
-      , pilot_socket_valid_(false) {}
+  PublisherWorkerData(const ClientOptions& options,
+                      PublisherImpl* publisher,
+                      EventLoop* event_loop)
+  : publisher_(publisher)
+  , event_loop_(event_loop)
+  , publish_timeout_(options.publish_timeout) {
+    event_loop_->RegisterTimerCallback([this] { CheckTimeouts(); },
+                                       options.timer_period);
+  }
 
   /** Publishes message to the Pilot. */
   void Publish(MsgId message_id,
                std::string serialized,
                PublishCallback callback);
 
-  /** Handles acknowledgements for published messages. */
-  void ProcessDataAck(std::unique_ptr<Message> msg, StreamID origin);
-
-  /** Handles goodbye messages for publisher streams. */
-  void ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin);
-
-  /** Checks for publish timeouts. */
-  void CheckTimeouts();
-
  private:
   ThreadCheck thread_check_;
   PublisherImpl* const publisher_;
-  /** Index of this worker. */
-  const int worker_id_;
+  /** An EventLoop this publisher operates on. */
+  EventLoop* const event_loop_;
   /** Timeout for publishes. */
   const std::chrono::milliseconds publish_timeout_;
-  /** Stream socket used by this worker to talk to the pilot. */
-  StreamSocket pilot_socket_;
-  /** Determines whether pilot socket is valid. */
-  bool pilot_socket_valid_;
+  /** Stream used by this worker to talk to the pilot. */
+  std::unique_ptr<Stream> pilot_stream_;
   /** Messages sent, awaiting ack. */
   std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent_;
   /** List of messages to timeout. */
   TimeoutList<MsgId, MsgId::Hash> timeouts_;
 
-  bool ExpectsMessage(StreamID origin);
+  /** Checks for publish timeouts. */
+  void CheckTimeouts();
+
+  void ReceiveDataAck(StreamReceiveArg<MessageDataAck>) final override;
+
+  void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye>) final override;
 };
 
 void PublisherWorkerData::Publish(MsgId message_id,
@@ -139,7 +133,7 @@ void PublisherWorkerData::Publish(MsgId message_id,
   thread_check_.Check();
 
   // Check if we have a valid socket to the Pilot, recreate it if not.
-  if (!pilot_socket_valid_) {
+  if (!pilot_stream_) {
     // Get the pilot's address.
     HostId pilot;
     Status st = publisher_->config_->GetPilot(&pilot);
@@ -158,25 +152,18 @@ void PublisherWorkerData::Publish(MsgId message_id,
     }
 
     // And create socket to it.
-    pilot_socket_ =
-        publisher_->msg_loop_->CreateOutboundStream(pilot, worker_id_);
-    pilot_socket_valid_ = true;
+    pilot_stream_ = event_loop_->OpenStream(pilot);
+    pilot_stream_->SetReceiver(this);
 
     LOG_INFO(publisher_->info_log_,
              "Reconnected to %s on stream %llu",
              pilot.ToString().c_str(),
-             pilot_socket_.GetStreamID());
+             pilot_stream_->GetLocalID());
   }
 
-  // Send to event loop for processing (the loop will free it).
-  Status st = publisher_->msg_loop_->SendCommand(
-      SerializedSendCommand::Request(serialized, {&pilot_socket_}), worker_id_);
-  if (!st.ok()) {
-    std::unique_ptr<ClientResultStatus> result_status(
-        new ClientResultStatus(Status::NoBuffer(), std::move(serialized), 0));
-    callback(std::move(result_status));
-    return;
-  }
+  // Send out the request.
+  auto serialized_copy = serialized;
+  pilot_stream_->Write(serialized_copy, true);
 
   // Add message to the sent list.
   timeouts_.Add(message_id);
@@ -186,19 +173,13 @@ void PublisherWorkerData::Publish(MsgId message_id,
   RS_ASSERT(result.second);
 }
 
-void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
-                                         StreamID origin) {
+
+void PublisherWorkerData::ReceiveDataAck(StreamReceiveArg<MessageDataAck> arg) {
   thread_check_.Check();
-
-  if (!ExpectsMessage(origin)) {
-    return;
-  }
-
-  const MessageDataAck* ack_msg = static_cast<const MessageDataAck*>(msg.get());
 
   // For each ack'd message, if it was waiting for an ack then remove it
   // from the waiting list and let the application know about the ack.
-  for (const auto& ack : ack_msg->GetAcks()) {
+  for (const auto& ack : arg.message->GetAcks()) {
     LOG_DEBUG(publisher_->info_log_,
               "Received DataAck for message ID %s",
               ack.msgid.ToHexString().c_str());
@@ -233,19 +214,14 @@ void PublisherWorkerData::ProcessDataAck(std::unique_ptr<Message> msg,
   }
 }
 
-void PublisherWorkerData::ProcessGoodbye(std::unique_ptr<Message> msg,
-                                         StreamID origin) {
+void PublisherWorkerData::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
   thread_check_.Check();
-
-  if (!ExpectsMessage(origin)) {
-    return;
-  }
 
   LOG_WARN(publisher_->info_log_,
            "Received goodbye message on stream (%llu)",
-           origin);
+           arg.stream_id);
 
-  pilot_socket_valid_ = false;
+  pilot_stream_.reset();
 
   // Notify about failed publishes.
   for (auto& entry : messages_sent_) {
@@ -279,34 +255,14 @@ void PublisherWorkerData::CheckTimeouts() {
     -1 /* no batch limit */);
 }
 
-bool PublisherWorkerData::ExpectsMessage(StreamID origin) {
-  if (!pilot_socket_valid_) {
-    LOG_WARN(publisher_->info_log_,
-             "Unexpected message on stream: (%llu), no valid stream",
-             origin);
-    return false;
-  }
-  if (pilot_socket_.GetStreamID() != origin) {
-    LOG_WARN(publisher_->info_log_,
-             "Unexpected message on stream: (%llu), expected: (%llu)",
-             origin,
-             pilot_socket_.GetStreamID());
-    return false;
-  }
-  return true;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
-PublisherImpl::PublisherImpl(BaseEnv* env,
-                             std::shared_ptr<Configuration> config,
-                             std::shared_ptr<Logger> info_log,
-                             MsgLoopBase* msg_loop,
-                             SmartWakeLock* wake_lock,
-                             std::chrono::milliseconds publish_timeout)
-    : config_(std::move(config))
-    , info_log_(std::move(info_log))
-    , msg_loop_(msg_loop)
-    , wake_lock_(wake_lock) {
+PublisherImpl::PublisherImpl(const ClientOptions& options_,
+                             MsgLoop* msg_loop,
+                             SmartWakeLock* wake_lock)
+: config_(options_.config)
+, info_log_(options_.info_log)
+, msg_loop_(msg_loop)
+, wake_lock_(wake_lock) {
   using namespace std::placeholders;
 
   // clang complains the private member wake_lock_ is unused, but we will
@@ -314,14 +270,9 @@ PublisherImpl::PublisherImpl(BaseEnv* env,
   (void)wake_lock_;
 
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    worker_data_.emplace_back(this, i, publish_timeout);
+    worker_data_.emplace_back(std::unique_ptr<PublisherWorkerData>(
+        new PublisherWorkerData(options_, this, msg_loop_->GetEventLoop(i))));
   }
-
-  // Register our callbacks.
-  std::map<MessageType, MsgCallbackType> callbacks;
-  callbacks[MessageType::mDataAck] =
-      std::bind(&PublisherImpl::ProcessDataAck, this, _1, _2, _3);
-  msg_loop_->RegisterCallbacks(std::move(callbacks));
 }
 
 PublisherImpl::~PublisherImpl() {
@@ -362,32 +313,13 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   Status st = msg_loop_->SendCommand(
       std::unique_ptr<ExecuteCommand>(MakeExecuteCommand(
           [this, worker_id, msgid, moved_serialized, moved_callback]() mutable {
-            worker_data_[worker_id].Publish(
+            worker_data_[worker_id]->Publish(
                 msgid, moved_serialized.move(), moved_callback.move());
           })),
       worker_id);
 
   // Return status with the generated message ID.
   return PublishStatus(st, msgid);
-}
-
-// TODO(stupaq) remove these once we get thread-unsafe outgoing loops
-void PublisherImpl::ProcessDataAck(Flow*,
-                                   std::unique_ptr<Message> msg,
-                                   StreamID origin) {
-  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
-  worker_data_[worker_id].ProcessDataAck(std::move(msg), origin);
-}
-
-void PublisherImpl::ProcessGoodbye(std::unique_ptr<Message> msg,
-                                   StreamID origin) {
-  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
-  worker_data_[worker_id].ProcessGoodbye(std::move(msg), origin);
-}
-
-void PublisherImpl::CheckTimeouts() {
-  const auto worker_id = msg_loop_->GetThreadWorkerIndex();
-  worker_data_[worker_id].CheckTimeouts();
 }
 
 int PublisherImpl::GetWorkerForTopic(const Topic& name) const {
