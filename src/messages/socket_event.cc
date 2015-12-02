@@ -127,6 +127,10 @@ void SocketEvent::Close(ClosureReason reason) {
   read_ev_->Disable();
   write_ev_->Disable();
 
+  // Unregister from the EventLoop.
+  // This will perform a deferred destruction of the socket.
+  event_loop_->CloseFromSocketEvent(access::EventLoop(), this);
+
   // Close all streams one by one.
   // Once the last stream gets unregistered, an attempt to recurse into this
   // method will be made. Since we've marked the socket as closing, that won't
@@ -135,24 +139,26 @@ void SocketEvent::Close(ClosureReason reason) {
     Stream* stream = remote_id_to_stream_.begin()->second;
     // Unregister the stream.
     UnregisterStream(stream->GetRemoteID());
-    // Prepare and deliver a goodbye message as if it originated from the
-    // remote host.
-    std::unique_ptr<Message> goodbye(new MessageGoodbye(
-        Tenant::GuestTenant,
-        reason == ClosureReason::Graceful ? MessageGoodbye::Code::Graceful
-                                          : MessageGoodbye::Code::SocketError,
-        IsInbound() ? MessageGoodbye::OriginType::Client
-                    : MessageGoodbye::OriginType::Server));
-    // We can afford not to throttle goodbye messages, as for every message
-    // received we remove one entry on socket's internal structures, so overrall
-    // memory utilisation does not grow significantly (if at all).
-    SourcelessFlow no_flow;
-    stream->Receive(access::Stream(), &no_flow, std::move(goodbye));
-  }
 
-  // Unregister from the EventLoop.
-  // This will perform a deferred destruction of the socket.
-  event_loop_->CloseFromSocketEvent(access::EventLoop(), this);
+    if (reason == ClosureReason::Graceful) {
+      // Close the socket silently if shutting down connection gracefully.
+      stream->CloseFromSocketEvent(access::Stream());
+    } else {
+      // Otherwise prepare and deliver a goodbye message as if it originated
+      // from the remote host.
+      std::unique_ptr<Message> goodbye(
+          new MessageGoodbye(Tenant::GuestTenant,
+                             MessageGoodbye::Code::SocketError,
+                             IsInbound() ? MessageGoodbye::OriginType::Client
+                                         : MessageGoodbye::OriginType::Server));
+      // We can afford not to throttle goodbye messages, as for every message
+      // received we remove one entry on socket's internal structures, so
+      // overrall
+      // memory utilisation does not grow significantly (if at all).
+      SourcelessFlow no_flow;
+      stream->Receive(access::Stream(), &no_flow, std::move(goodbye));
+    }
+  }
 }
 
 SocketEvent::~SocketEvent() {
@@ -171,6 +177,9 @@ SocketEvent::~SocketEvent() {
 }
 
 std::unique_ptr<Stream> SocketEvent::OpenStream(StreamID stream_id) {
+  RS_ASSERT(!closing_);
+  thread_check_.Check();
+
   std::unique_ptr<Stream> stream(new Stream(this, stream_id, stream_id));
   auto result = remote_id_to_stream_.emplace(stream_id, stream.get());
   RS_ASSERT(result.second);

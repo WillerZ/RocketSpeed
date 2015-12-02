@@ -32,9 +32,11 @@ Stream::Stream(SocketEvent* socket_event, StreamID remote_id, StreamID local_id)
 }
 
 Stream::~Stream() {
-  thread_check_.Check();
-
   if (socket_event_) {
+    // We allow destructor to run on any thread provided that the stream was
+    // already closed.
+    thread_check_.Check();
+
     // Send a goodbye message to self to trigger stream closure.
     MessageGoodbye goodbye(Tenant::GuestTenant,
                            MessageGoodbye::Code::Graceful,
@@ -46,6 +48,15 @@ Stream::~Stream() {
     Write(goodbye, true);
   }
   RS_ASSERT(!socket_event_);
+}
+
+void Stream::CloseFromSocketEvent(access::Stream) {
+  LOG_INFO(socket_event_->GetLogger(),
+           "Closing Stream(%llu, %llu)",
+           local_id_,
+           remote_id_);
+  // Mark stream as closed.
+  socket_event_ = nullptr;
 }
 
 bool Stream::Write(Message& message, bool check_thread) {
@@ -144,15 +155,7 @@ void Stream::Receive(access::Stream,
   }
 
   if (message->GetMessageType() == MessageType::mGoodbye) {
-    // Close the stream if this is a goodbye.
-    auto goodbye = static_cast<const MessageGoodbye*>(message.get());
-    LOG_INFO(socket_event_->GetLogger(),
-             "Closing Stream(%llu, %llu), reason: %d",
-             local_id_,
-             remote_id_,
-             static_cast<int>(goodbye->GetCode()));
-    // Mark stream as closed.
-    socket_event_ = nullptr;
+    CloseFromSocketEvent(access::Stream());
   }
 
   if (receiver_) {

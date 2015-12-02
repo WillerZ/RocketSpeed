@@ -31,6 +31,7 @@ namespace access {
 class Stream {
  private:
   friend class rocketspeed::SocketEvent;
+  friend class rocketspeed::Stream;
   Stream() = default;
 };
 }  // namespace access
@@ -69,8 +70,12 @@ class Stream : public Sink<Message>,
   std::unique_ptr<EventCallback> CreateWriteCallback(
       EventLoop* event_loop, std::function<void()> callback) final override;
 
+  /** Closes a stream without sending or delivering a MessageGoodbye. */
+  void CloseFromSocketEvent(access::Stream);
+
   /**
    * Receives a message from the socket and invokes appropriate callback.
+   * Closes the stream if MessageGoodbye was received.
    *
    * @param flow The flow this message belongs to.
    * @param message The message.

@@ -315,13 +315,14 @@ EventLoop::Initialize() {
   // is available, that indicates that the loop should stop.
   // This allows us to communicate to the event loop from another thread
   // safely without locks.
-  shutdown_event_ =
-      EventCallback::CreateFdReadCallback(this,
-                                          shutdown_eventfd_.readfd(),
-                                          [this]() {
-                                            shutting_down_ = true;
-                                            event_base_loopbreak(base_);
-                                          });
+  shutdown_event_ = EventCallback::CreateFdReadCallback(
+      this,
+      shutdown_eventfd_.readfd(),
+      [this]() {
+        LOG_VITAL(info_log_, "Stopping EventLoop at port %d", port_number_);
+        shutting_down_ = true;
+        event_base_loopbreak(base_);
+      });
   if (shutdown_event_ == nullptr) {
     return Status::InternalError("Failed to create shutdown event");
   }
@@ -597,6 +598,7 @@ std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
 
   // Create a new stream.
   auto stream = socket->OpenStream(stream_id);
+  RS_ASSERT(stream);
   // It will not be owned by this EventLoop.
   return stream;
 }
