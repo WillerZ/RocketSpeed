@@ -326,7 +326,6 @@ void LogReader::ProcessRecord(LogID log_id,
 
   LogState& log_state = log_it->second;
 
-  RS_ASSERT(seqno == log_state.last_read + 1);
   log_state.last_read = seqno;
 
   // Check if we've process records on this topic before.
@@ -896,6 +895,7 @@ void TopicTailer::ReceiveLogRecord(std::unique_ptr<MessageData> data,
   TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
   SequenceNumber next_seqno = data->GetSequenceNumber();
   SequenceNumber prev_seqno = 0;
+  RS_ASSERT(next_seqno == reader->GetNextSequenceNumber(log_id));
   reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
   if (0) {
     LOG_DEBUG(info_log_,
@@ -1040,7 +1040,7 @@ TopicTailer::AdvanceReaderFromCache(Flow* flow,
     TopicUUID uuid(data->GetNamespaceId(), data->GetTopicName());
     SequenceNumber next_seqno = data->GetSequenceNumber();
     SequenceNumber prev_seqno = 0;
-    RS_ASSERT(next_seqno == reader->GetNextSequenceNumber(log_id));
+    RS_ASSERT(next_seqno >= reader->GetNextSequenceNumber(log_id));
     reader->ProcessRecord(log_id, next_seqno, uuid, &prev_seqno);
 
     // However, may still be no subscribers for this topic.
