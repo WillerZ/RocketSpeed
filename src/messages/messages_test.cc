@@ -331,7 +331,7 @@ TEST(Messaging, PingPong) {
 
   auto pings_recv = [](MsgLoop& msg_loop) {
     return msg_loop.GetStatisticsSync().GetCounterValue(
-        msg_loop.GetName() + ".messages_received.ping");
+        msg_loop.GetStatsPrefix() + ".messages_received.ping");
   };
 
   // Send a single ping first.

@@ -46,7 +46,7 @@ class MsgLoop : public MsgLoopBase {
           int port,
           int num_workers,
           const std::shared_ptr<Logger>& info_log,
-          std::string name,
+          std::string stats_prefix,
           Options options = Options());
 
   virtual ~MsgLoop();
@@ -80,9 +80,9 @@ class MsgLoop : public MsgLoopBase {
   // Get the host ID of this message loop.
   const HostId& GetHostId() const { return event_loops_[0]->GetHostId(); }
 
-  // Get the name of this message loop.
-  const std::string& GetName() const {
-    return name_;
+  // Get the stats prefix of this message loop.
+  const std::string& GetStatsPrefix() const {
+    return stats_prefix_;
   }
 
   /**
@@ -214,7 +214,7 @@ class MsgLoop : public MsgLoopBase {
 
   // Name of the message loop.
   // Used for stats and thread naming.
-  std::string name_;
+  std::string stats_prefix_;
 
   /** External synchronisation for getting sockets. */
   std::mutex stream_allocation_mutex_;

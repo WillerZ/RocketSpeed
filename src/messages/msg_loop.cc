@@ -70,13 +70,13 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  int port,
                  int num_workers,
                  const std::shared_ptr<Logger>& info_log,
-                 std::string name,
+                 std::string stats_prefix,
                  MsgLoop::Options options)
     : MsgLoopBase(env)
     , worker_index_(&free_thread_local)
     , env_options_(env_options)
     , info_log_(info_log)
-    , name_(name)
+    , stats_prefix_(stats_prefix)
     , next_worker_id_(0){
   RS_ASSERT(info_log);
   RS_ASSERT(num_workers >= 1);
@@ -95,7 +95,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   options.event_loop.env = env;
   options.event_loop.env_options = env_options;
   options.event_loop.info_log = info_log;
-  options.event_loop.stats_prefix = name;
+  options.event_loop.stats_prefix = stats_prefix;
   options.event_loop.event_callback = event_callback;
   options.event_loop.accept_callback = accept_callback;
   // Create a stream allocator for the entire stream ID space and split it
@@ -176,7 +176,8 @@ Status MsgLoop::Initialize() {
 }
 
 void MsgLoop::Run() {
-  env_->SetCurrentThreadName(name_ + "-0");
+  const std::string base_name = env_->GetCurrentThreadName();
+  env_->SetCurrentThreadName(base_name + "-0");
   LOG_INFO(
       info_log_, "Starting Message Loop at %s", GetHostId().ToString().c_str());
 
@@ -213,7 +214,7 @@ void MsgLoop::Run() {
         // No longer running event loop.
         SetThreadWorkerIndex(-1);
       },
-      name_ + "-" + std::to_string(i));
+      base_name + "-" + std::to_string(i));
     worker_threads_.push_back(tid);
   }
 
