@@ -278,7 +278,7 @@ bool BatchedRead<Item>::Read(Item& item) {
   }
   if (pending_reads_ == 0) {
     // We try to leave one message to mark the fact that there is an ongoing
-    // BatchedRead, this way concurrent writers will not notify the queue.
+    // BatchedRead, this way concurrent writer will not notify the queue.
     pending_reads_ = queue_->synced_size_.load();
     if (pending_reads_ == 0) {
       delayed_reads_ = 0;
@@ -309,8 +309,19 @@ bool BatchedRead<Item>::Read(Item& item) {
     --pending_reads_;
     ++commands_read_;
 
-    if (pending_reads_ == queue_->queue_.maxSize() / 2) {
-      // Queue is now half-full, so signal write event.
+    const size_t kMaxSize = queue_->queue_.maxSize();
+    // Consider the following scenario:
+    // - writer fills up the queue to kMaxSize / 2,
+    // - reader fetches current value of the queue_->synced_size_,
+    // - writer fills up the queue and turns off write_ready notification,
+    // - reader reads all elements from the queue (in two batches).
+    // When reader starts either batch it fetches into pending_reads_ the
+    // current value of queue_->synced_size_, which in this case never exceeds
+    // kMaxSize / 2. After being decremented above, it would always fail the
+    // comparison below, if we didn't adjust if back by +1.
+    // We need the special case for queues of size 1.
+    if (kMaxSize == 1 || pending_reads_ + 1 == kMaxSize / 2) {
+      // Queue not full anymore, so signal write event.
       queue_->stats_->eventfd_num_writes->Add(1);
       queue_->write_ready_fd_.write_event(1);
     }
@@ -355,9 +366,43 @@ bool Queue<Item>::TryWrite(Item& item, bool check_thread) {
     // The queue was full and the write failed.
     LOG_WARN(info_log_, "Queue is overflowing -- this is OK with flow control");
 
-    // Put the item back.
-    item = std::move(entry.item);
-    return false;
+    // Clear the notification that the queue is writable, we will set it back on
+    // after successful write retry. We do this retry business to optimise the
+    // critical path. Without the optimisation we would observe significant
+    // performance hit, as any write would require reading and writing the
+    // write_ready_fd_.
+    eventfd_t value;
+    write_ready_fd_.read_event(&value);
+    // TODO(stupaq) update stats
+
+    // Retry write.
+    if (!queue_.write(std::move(entry))) {
+      // Write retry failed, it's safe to give up as the write_ready
+      // notification is cleared.
+      LOG_WARN(info_log_,
+               "Queue is overflowing -- this is OK with flow control");
+
+      // Put the item back.
+      item = std::move(entry.item);
+      return false;
+    }
+
+    // Write back the notification if the queue turned out to be writable.
+    // TODO(stupaq) update stats
+    if (write_ready_fd_.write_event(1)) {
+      // Some internal error happened.
+      LOG_ERROR(info_log_,
+                "Error writing a notification to command eventfd, errno=%d",
+                errno);
+
+      // Can only fail with EAGAIN or EINVAL.
+      // EAGAIN only happens if we have written 2^64 events without reading,
+      // and EINVAL should never happen since we are writing the correct number
+      // of bytes.
+      RS_ASSERT(errno != EINVAL);
+
+      // Wtih errno == EAGAIN, we can just let this fall through.
+    }
   }
 
   // Write notification if the queue went from empty to non-empty.
