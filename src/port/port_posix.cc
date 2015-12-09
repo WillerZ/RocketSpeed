@@ -166,6 +166,9 @@ int Eventfd::read_event(eventfd_t *value) {
   return -1;    // error
 }
 int Eventfd::write_event(eventfd_t value) {
+  if (value == 0) {
+    return 0;  // success
+  }
   ssize_t num = write(fd_[1], static_cast<void *>(&value), sizeof(eventfd_t));
   if (num == -1) {
     return -1;   // error
