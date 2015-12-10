@@ -42,6 +42,21 @@ class EnvOptions {
   // Set to 0 to use OS defaults.
   int tcp_send_buffer_size = 1 << 20;
   int tcp_recv_buffer_size = 1 << 20;
+
+  // Keep-alive options:
+  // Turn keepalive on/off
+  bool use_tcp_keep_alive = false;
+
+  // interval between last data packet and
+  // first keepalive probe
+  int keepalive_time = 300;
+
+  // interval between keepalive probes
+  int keepalive_intvl = 75;
+
+  // number of unsuccessful probes before
+  // marking connection as dead
+  int keepalive_probes = 5;
 };
 
 }  // namespace rocketspeed

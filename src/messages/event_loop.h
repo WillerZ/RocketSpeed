@@ -684,6 +684,7 @@ class EventLoop {
     int fd, sockaddr *address, int socklen,
     void *arg);
   static Status setup_fd(int fd, EventLoop* event_loop);
+  static void setup_keepalive(int sockfd, const EnvOptions& env_options);
   static void accept_error_cb(evconnlistener *listener, void *arg);
   static void do_startevent(int listener, short event, void *arg);
   static void do_timerevent(int listener, short event, void *arg);

@@ -42,6 +42,10 @@
 #include "src/util/common/coding.h"
 #include "src/util/common/random.h"
 
+#ifdef OS_LINUX
+#include <netinet/tcp.h>
+#endif
+
 static_assert(std::is_same<evutil_socket_t, int>::value,
   "EventLoop assumes evutil_socket_t is int.");
 
@@ -197,7 +201,28 @@ EventLoop::setup_fd(evutil_socket_t fd, EventLoop* event_loop) {
       status = Status::InternalError("Failed to set receive buffer size");
     }
   }
+
+  setup_keepalive(fd, event_loop->env_options_);
   return status;
+}
+
+void EventLoop::setup_keepalive(int sockfd, const EnvOptions& env_options) {
+  if (env_options.use_tcp_keep_alive) {
+    int keepalive = 1;
+    socklen_t sizeof_int = static_cast<socklen_t>(sizeof(int));
+    setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof_int);
+
+#ifdef OS_LINUX
+    setsockopt(sockfd, SOL_TCP, TCP_KEEPIDLE,
+        &env_options.keepalive_time, sizeof_int);
+
+    setsockopt(sockfd, SOL_TCP, TCP_KEEPINTVL,
+        &env_options.keepalive_intvl, sizeof_int);
+
+    setsockopt(sockfd, SOL_TCP, TCP_KEEPCNT,
+        &env_options.keepalive_probes, sizeof_int);
+#endif
+  }
 }
 
 void
@@ -896,6 +921,8 @@ Status EventLoop::create_connection(const HostId& host, int* fd) {
     socklen_t sizeof_sz = static_cast<socklen_t>(sizeof(sz));
     setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof_sz);
   }
+
+  setup_keepalive(sockfd, env_options_);
 
   if (connect(sockfd, addr, host.GetSocklen()) == -1) {
     if (errno != EINPROGRESS) {
