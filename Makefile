@@ -314,7 +314,7 @@ integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS)
 statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
-unbounded_mpsc_queue_test: src/util/tests/unbounded_mpsc_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
+unbounded_mpsc_queue_test: src/messages/tests/unbounded_mpsc_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 fastlog_test: src/util/tests/fastlog_test.o $(LIBOBJECTS) $(TESTHARNESS)
