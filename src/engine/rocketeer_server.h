@@ -15,19 +15,17 @@
 #include "src/engine/rocketeer.h"
 #include "src/messages/messages.h"
 #include "src/messages/stream_socket.h"
-#include "src/util/common/base_env.h"
-#include "src/util/common/hash.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
+class BaseEnv;
 class CommunicationRocketeer;
 class Flow;
 class MsgLoop;
 class MsgLoopThread;
 class Logger;
-class Rocketeer;
 class RocketeerServer;
 
 /** Options for creating RocketeerServer. */
@@ -97,7 +95,7 @@ class RocketeerServer {
    *
    * @return true iff operation was successfully sheduled.
    */
-  bool Terminate(InboundID inbound_id, MessageUnsubscribe::Reason reason);
+  bool Terminate(InboundID inbound_id, Rocketeer::UnsubscribeReason reason);
 
   /** Returns server-wide statistics. */
   Statistics GetStatisticsSync();

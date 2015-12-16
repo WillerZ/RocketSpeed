@@ -9,11 +9,13 @@
 #include <string>
 
 #include "include/Types.h"
-#include "src/messages/messages.h"
-#include "src/messages/stream_socket.h"
-#include "src/util/common/hash.h"
 
 namespace rocketspeed {
+
+typedef unsigned long long int StreamID;
+static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
+
+typedef uint64_t SubscriptionID;
 
 /** Uniquely identifies subscription within a service. */
 class InboundID {
@@ -35,9 +37,7 @@ class InboundID {
     return stream_id == other.stream_id && sub_id == other.sub_id;
   }
 
-  size_t Hash() const {
-    return MurmurHash2<StreamID, SubscriptionID>()(stream_id, sub_id);
-  }
+  size_t Hash() const;
 
   std::string ToString() const;
 };
@@ -108,8 +108,14 @@ class Rocketeer {
    * @param reason A reason why this subscription was terminated.
    * @return true iff operation was successfully sheduled.
    */
-  virtual void Terminate(InboundID inbound_id,
-                         MessageUnsubscribe::Reason reason);
+  enum class UnsubscribeReason {
+    /** The unsubscribe was requested by the subscriber. */
+    Requested,
+
+    /** The subscriber should resubscribe later. */
+    BackOff,
+  };
+  virtual void Terminate(InboundID inbound_id, UnsubscribeReason reason);
 
   /**
    * Returns a pointer to the Rocketeer below this one in the stack, which

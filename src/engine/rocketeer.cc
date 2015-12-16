@@ -19,10 +19,15 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/port/Env.h"
+#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
 ////////////////////////////////////////////////////////////////////////////////
+size_t InboundID::Hash() const {
+  return MurmurHash2<StreamID, SubscriptionID>()(stream_id, sub_id);
+}
+
 std::string InboundID::ToString() const {
   std::ostringstream ss;
   ss << "InboundID(" << stream_id << ", " << sub_id << ")";
@@ -41,8 +46,7 @@ void Rocketeer::Advance(InboundID inbound_id, SequenceNumber seqno) {
   GetBelowRocketeer()->Advance(inbound_id, seqno);
 }
 
-void Rocketeer::Terminate(InboundID inbound_id,
-                          MessageUnsubscribe::Reason reason) {
+void Rocketeer::Terminate(InboundID inbound_id, UnsubscribeReason reason) {
   GetBelowRocketeer()->Terminate(inbound_id, reason);
 }
 

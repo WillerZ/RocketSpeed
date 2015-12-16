@@ -60,8 +60,7 @@ class CommunicationRocketeer : public Rocketeer {
 
   void Advance(InboundID inbound_id, SequenceNumber seqno) final override;
 
-  void Terminate(InboundID inbound_id,
-                 MessageUnsubscribe::Reason reason) final override;
+  void Terminate(InboundID inbound_id, UnsubscribeReason reason) final override;
 
   size_t GetID() const;
 
@@ -175,7 +174,7 @@ void CommunicationRocketeer::Advance(InboundID inbound_id,
 }
 
 void CommunicationRocketeer::Terminate(InboundID inbound_id,
-                                       MessageUnsubscribe::Reason reason) {
+                                       UnsubscribeReason reason) {
   thread_check_.Check();
 
   StreamID origin = inbound_id.stream_id;
@@ -191,7 +190,17 @@ void CommunicationRocketeer::Terminate(InboundID inbound_id,
       HandleTermination(InboundID(origin, sub_id, GetID()),
                         TerminationSource::Rocketeer);
 
-      MessageUnsubscribe unsubscribe(tenant_id, inbound_id.sub_id, reason);
+      MessageUnsubscribe::Reason msg_reason =
+        MessageUnsubscribe::Reason::kInvalid;
+      switch (reason) {
+        case UnsubscribeReason::Requested:
+          msg_reason = MessageUnsubscribe::Reason::kRequested;
+          break;
+        case UnsubscribeReason::BackOff:
+          msg_reason = MessageUnsubscribe::Reason::kBackOff;
+          break;
+      }
+      MessageUnsubscribe unsubscribe(tenant_id, inbound_id.sub_id, msg_reason);
       server_->msg_loop_->SendResponse(
           unsubscribe, inbound_id.stream_id, inbound_id.worker_id);
       return;
@@ -390,7 +399,7 @@ bool RocketeerServer::Advance(InboundID inbound_id, SequenceNumber seqno) {
 }
 
 bool RocketeerServer::Terminate(InboundID inbound_id,
-                                MessageUnsubscribe::Reason reason) {
+                                Rocketeer::UnsubscribeReason reason) {
   auto command = [this, inbound_id, reason]() mutable {
     rocketeers_[inbound_id.worker_id]->Terminate(inbound_id, reason);
   };

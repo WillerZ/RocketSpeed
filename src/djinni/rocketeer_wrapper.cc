@@ -166,7 +166,8 @@ bool RocketeerServerWrapper::Terminate(jni::InboundID inbound_id) {
   }
   RS_ASSERT(inbound_id1.worker_id >= 0);
   RS_ASSERT(inbound_id1.worker_id < rocketeers_.size());
-  return server_->Terminate(inbound_id1, MessageUnsubscribe::Reason::kInvalid);
+  return server_->Terminate(inbound_id1,
+                            rs::Rocketeer::UnsubscribeReason::Requested);
 }
 
 void RocketeerServerWrapper::Close() {

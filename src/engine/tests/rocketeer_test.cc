@@ -140,7 +140,7 @@ struct SubscribeTerminate : public Rocketeer {
   void HandleNewSubscription(InboundID inbound_id,
                              SubscriptionParameters params) {
     inbound_id_ = inbound_id;
-    Terminate(inbound_id, MessageUnsubscribe::Reason::kBackOff);
+    Terminate(inbound_id, Rocketeer::UnsubscribeReason::BackOff);
   }
 
   void HandleTermination(InboundID inbound_id, TerminationSource source) {
@@ -211,7 +211,7 @@ struct TopOfStack : public Rocketeer {
     inbound_id_ = inbound_id;
     Deliver(inbound_id, deliver_msg_seqno_, deliver_msg_);
     Advance(inbound_id, advance_seqno_);
-    Terminate(inbound_id, MessageUnsubscribe::Reason::kBackOff);
+    Terminate(inbound_id, Rocketeer::UnsubscribeReason::BackOff);
   }
 
   void HandleTermination(InboundID inbound_id, TerminationSource source) {
