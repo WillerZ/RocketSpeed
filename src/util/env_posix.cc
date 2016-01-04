@@ -1560,6 +1560,30 @@ class PosixEnv : public Env {
     return std::thread::hardware_concurrency();
   }
 
+  virtual Status GetVirtualMemoryUsed(size_t* memory_used) override {
+#ifdef OS_LINUX
+    FILE* file = fopen("/proc/self/status", "r");
+    if (file == nullptr) {
+      return Status::NotFound();
+    }
+    char line[128];
+
+    const std::string proc_prefix = "VmSize:";
+    while (fgets(line, 128, file) != nullptr) {
+      if (strncmp(line, proc_prefix.c_str(), proc_prefix.size()) == 0) {
+          *memory_used =
+            std::stoul(std::string(line + proc_prefix.size())) * 1024;
+          return Status::OK();
+      }
+    }
+
+    fclose(file);
+    return Status::NotFound();
+#else
+    return Env::GetVirtualMemoryUsed(memory_used);
+#endif
+  }
+
  private:
   bool checkedDiskForMmap_;
   bool forceMmapOff; // do we override Env options?

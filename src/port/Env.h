@@ -263,6 +263,12 @@ class Env : public BaseEnv {
     return 1;
   }
 
+  // Amount of virtual memory used in bytes
+  virtual Status GetVirtualMemoryUsed(size_t* memoryUsed) {
+    return Status::NotSupported(
+        "Getting size of used virtual memory is not supported");
+  }
+
  private:
   // No copying allowed
   Env(const Env&);
