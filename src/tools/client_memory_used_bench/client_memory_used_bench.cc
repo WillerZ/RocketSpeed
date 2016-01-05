@@ -5,6 +5,7 @@
 #include "src/engine/rocketeer_server.h"
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
+#include "src/util/logging.h"
 #include "src/util/testutil.h"
 
 #include "stdlib.h"
@@ -22,9 +23,9 @@
 
 DEFINE_uint64(seed, 0, "random seed");
 DEFINE_uint64(subscribe_calls_amount,
-              100000,
+              10000000,
               "Amount of issued Subscribe calls");
-DEFINE_bool(logging, true, "enable/disable logging");
+DEFINE_bool(logging, false, "enable/disable logging");
 DEFINE_uint64(topic_size, 20, "topic name size in bytes");
 
 class BadConfiguration : public rocketspeed::Configuration {
@@ -99,7 +100,7 @@ int main(int argc, char** argv) {
                           slice.ToString(),
                           0);
     if (subscription_handle == 0) {
-      printf("Ran out of subscriptions."
+      fprintf(stderr, "Ran out of subscriptions. "
           "This is because of flow control. Sleep a bit\n");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       --i;
@@ -111,7 +112,9 @@ int main(int argc, char** argv) {
     printf("Cannot get used virtual memory amount\n");
     return -1;
   }
-  printf("Memory consumption:  %lu bytes\n", after - before);
-  printf("Memory consumption per subscription:  %f bytes\n",
-         static_cast<float>(after - before) / static_cast<float>(i));
+  printf("Subscriptions: %zu\n", i);
+  printf("Memory consumption: %s\n",
+    rocketspeed::BytesToString(after - before).c_str());
+  printf("Memory consumption per subscription: %s\n",
+    rocketspeed::BytesToString((after - before) / i).c_str());
 }

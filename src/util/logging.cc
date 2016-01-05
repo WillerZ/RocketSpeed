@@ -63,6 +63,12 @@ std::string NumberToString(uint64_t num) {
   return r;
 }
 
+std::string BytesToString(uint64_t bytes) {
+  char buff[32];
+  AppendHumanBytes(bytes, buff, 32);
+  return std::string(buff);
+}
+
 std::string EscapeString(const Slice& value) {
   std::string r;
   AppendEscapedStringTo(&r, value);
