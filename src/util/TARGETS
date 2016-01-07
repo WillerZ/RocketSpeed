@@ -28,6 +28,7 @@ cpp_library(
     ],
     deps = [
         '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/messages:messages',
         '@/rocketspeed/github/src/port:port',
     ],
 )
