@@ -10,5 +10,4 @@ cpp_library(
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
     ],
-    warp = False,
 )

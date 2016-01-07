@@ -28,7 +28,7 @@ TEST(WrappedMessage, Serialization) {
   // Wrap the message.
   std::string wrapped = WrapMessage(message, stream, seqno);
 
-  // Unwarp it back.
+  // Unwrap it back.
   std::unique_ptr<Message> ping1;
   StreamID stream1;
   MessageSequenceNumber seqno1;

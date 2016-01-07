@@ -30,7 +30,6 @@ cpp_library(
         '@/rocketspeed/github/src/util/common:common',
         '@/rocketspeed/github/src/port:port',
     ],
-    warp = False,
 )
 
 cpp_benchmark(

@@ -16,5 +16,4 @@ cpp_library(
         '@/rocketspeed/github/src/util/common:common',
         '@/rocketspeed/github/src/util/common:fixed_configuration',
     ],
-    warp = False,
 )
