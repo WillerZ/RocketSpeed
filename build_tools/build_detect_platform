@@ -23,6 +23,7 @@
 #       -DLZ4                       if the LZ4 library is present
 #       -DNUMA                      if the NUMA library is present
 #       -DUUID                      if the UUID library is present
+#       -DJEMALLOC                  if the JEMALLOC library is present
 #
 # Using gflags in rocketspeed:
 # Our project depends on gflags, which requires users to take some extra steps
@@ -299,6 +300,16 @@ EOF
     if [ "$?" = 0 ]; then
         COMMON_FLAGS="$COMMON_FLAGS -DLZ4"
         PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -llz4"
+    fi
+
+    # Test whether jemalloc library is installed
+    $CXX $CFLAGS $COMMON_FLAGS -x c++ - -o /dev/null 2>/dev/null  <<EOF
+      #include <jemalloc/jemalloc.h>
+      int main() {}
+EOF
+    if [ "$?" = 0 ]; then
+        COMMON_FLAGS="$COMMON_FLAGS -DJEMALLOC"
+        PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -ljemalloc"
     fi
 
     # Test whether numa is available

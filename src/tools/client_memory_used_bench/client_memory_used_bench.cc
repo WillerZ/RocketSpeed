@@ -13,6 +13,9 @@
 #include "string.h"
 
 #include <gflags/gflags.h>
+#ifdef JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
 
 #include <unistd.h>
 #include <memory>
@@ -20,6 +23,8 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <fstream>
+#include <random>
 
 DEFINE_uint64(seed, 0, "random seed");
 DEFINE_uint64(subscribe_calls_amount,
@@ -27,6 +32,9 @@ DEFINE_uint64(subscribe_calls_amount,
               "Amount of issued Subscribe calls");
 DEFINE_bool(logging, false, "enable/disable logging");
 DEFINE_uint64(topic_size, 20, "topic name size in bytes");
+DEFINE_string(jemalloc_output,
+              "/tmp/client_memory_usage_bench",
+              "jemalloc stats output file.");
 
 class BadConfiguration : public rocketspeed::Configuration {
 public:
@@ -70,6 +78,23 @@ rocketspeed::Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   }
 
   return rocketspeed::Client::Create(std::move(client_options), &client);
+}
+
+void PrintJEMallocStats() {
+#ifdef JEMALLOC
+  auto file_writer = [](void* cbopaque, const char* str) {
+    std::ofstream* outfile = (std::ofstream*) cbopaque;
+    *outfile << str;
+  };
+
+  std::ofstream outfile(FLAGS_jemalloc_output, std::ofstream::out);
+  malloc_stats_print(file_writer, &outfile, nullptr);
+  outfile.close();
+
+  printf("jemalloc stats at '%s' !\n", FLAGS_jemalloc_output.c_str());
+#else
+  printf("jemalloc stats not available.\n");
+#endif
 }
 
 int main(int argc, char** argv) {
@@ -117,4 +142,6 @@ int main(int argc, char** argv) {
     rocketspeed::BytesToString(after - before).c_str());
   printf("Memory consumption per subscription: %s\n",
     rocketspeed::BytesToString((after - before) / i).c_str());
+
+  PrintJEMallocStats();
 }

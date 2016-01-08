@@ -1,0 +1,22 @@
+# client_memory_used_bench binary
+cpp_binary(
+    name = 'client_memory_used_bench',
+    srcs = [
+        'client_memory_used_bench.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DGFLAGS=google',
+        '-DJEMALLOC',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/engine:rocketeer',
+        '@/rocketspeed/github/src/test:test_cluster',
+        '@/rocketspeed/github/src/util:util',
+    ],
+    external_deps = [
+        ('gflags', None)
+    ],
+)
