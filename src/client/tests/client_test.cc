@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "include/RocketSpeed.h"
+#include "src/client/subscriber.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/messages.h"
 #include "src/port/Env.h"
@@ -414,6 +415,101 @@ TEST(ClientTest, PublishTimeout) {
                             });
   ASSERT_TRUE(ps.status.ok());
   ASSERT_TRUE(publish_sem.TimedWait(negative_timeout));
+}
+
+namespace {
+
+class ConstRouter : public SubscriptionRouter {
+ public:
+  explicit ConstRouter(HostId host_id) : host_id_(host_id) {}
+
+  size_t GetVersion() override { return 0; }
+
+  HostId GetHost() override { return host_id_; }
+
+  void MarkHostDown(const HostId& host_id) override {}
+
+ private:
+  HostId host_id_;
+};
+
+class TestSharding2 : public ShardingStrategy {
+ public:
+  explicit TestSharding2(HostId host0, HostId host1)
+  : host0_(host0), host1_(host1) {}
+
+  size_t GetShard(const NamespaceID& namespace_id,
+                  const Topic& topic_name) const override {
+    if (topic_name == "topic0") {
+      return 0;
+    } else if (topic_name == "topic1") {
+      return 1;
+    } else {
+      ASSERT_TRUE(false);
+    }
+    return 0;
+  }
+
+  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
+    ASSERT_LT(shard, 2);
+    return std::unique_ptr<SubscriptionRouter>(
+        new ConstRouter(shard == 0 ? host0_ : host1_));
+  }
+
+ private:
+  HostId host0_, host1_;
+};
+
+}  // namespace
+
+TEST(ClientTest, Sharding) {
+  port::Semaphore subscribe_sem0, subscribe_sem1;
+  // Launch two subscribees for different shards.
+  auto copilot0 = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+          ASSERT_EQ("topic0", subscribe->GetTopicName());
+          subscribe_sem0.Post();
+        }}});
+  auto copilot1 = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+          ASSERT_EQ("topic1", subscribe->GetTopicName());
+          subscribe_sem1.Post();
+        }}});
+
+  MsgLoop::Options opts;
+  auto loop = std::make_shared<MsgLoop>(
+      env_, EnvOptions(), -1, 1, info_log_, "loop", opts);
+  ASSERT_OK(loop->Initialize());
+
+  ClientOptions options;
+  options.timer_period = std::chrono::milliseconds(1);
+  std::unique_ptr<ShardingStrategy> sharding(new TestSharding2(
+      copilot0.msg_loop->GetHostId(), copilot1.msg_loop->GetHostId()));
+  MultiThreadedSubscriber subscriber(
+      options,
+      loop,
+      [](MsgLoop*, const NamespaceID&, const Topic&) -> size_t { return 0; },
+      std::move(sharding));
+
+  MsgLoopThread loop_thread(env_, loop.get(), "loop");
+  ASSERT_OK(loop->WaitUntilRunning(std::chrono::seconds(1)));
+
+  SubscriptionParameters params(GuestTenant, GuestNamespace, "", 0);
+  // Subscribe on topic0 should get to the owner of the shard 0.
+  params.topic_name = "topic0";
+  subscriber.Subscribe(nullptr, params, nullptr, nullptr, nullptr);
+  ASSERT_TRUE(subscribe_sem0.TimedWait(positive_timeout));
+  ASSERT_TRUE(!subscribe_sem1.TimedWait(negative_timeout));
+
+  // Subscribe on topic1 should get to the owner of the shard 1.
+  params.topic_name = "topic1";
+  subscriber.Subscribe(nullptr, params, nullptr, nullptr, nullptr);
+  ASSERT_TRUE(!subscribe_sem0.TimedWait(negative_timeout));
+  ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
 }
 
 }  // namespace rocketspeed
