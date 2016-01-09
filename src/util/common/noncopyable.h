@@ -12,6 +12,9 @@ class NonCopyable {
   NonCopyable() = default;
   ~NonCopyable() = default;
 
+  NonCopyable(NonCopyable&&) = default;
+  NonCopyable& operator=(NonCopyable&&) = default;
+
   NonCopyable(const NonCopyable&) = delete;
   const NonCopyable& operator=(const NonCopyable&) = delete;
 };

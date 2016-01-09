@@ -17,6 +17,7 @@
 #include "src/messages/messages.h"
 #include "src/messages/types.h"
 #include "src/port/port.h"
+#include "src/util/common/host_id.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/common/random.h"
@@ -29,18 +30,18 @@ class ClientOptions;
 class MessageDeliver;
 class MessageUnsubscribe;
 class MessageGoodbye;
+class MultiShardSubscriber;
 class EventLoop;
 class Stream;
 class SubscriptionState;
-
+class SubscriberStats;
 typedef uint64_t SubscriptionID;
 
-/** Represents a state of a single subscription. */
-class SubscriptionState {
+/**
+ * Represents a state of a single subscription.
+ */
+class SubscriptionState : public NonCopyable {
  public:
-  // Noncopyable
-  SubscriptionState(const SubscriptionState&) = delete;
-  SubscriptionState& operator=(const SubscriptionState&) = delete;
   // Movable
   SubscriptionState(SubscriptionState&&) = default;
   SubscriptionState& operator=(SubscriptionState&&) = default;
@@ -115,12 +116,159 @@ class SubscriptionState {
   void AnnounceStatus(bool subscribed, Status status);
 };
 
-/** State of a single subscriber worker, aligned to avoid false sharing. */
-class alignas(CACHE_LINE_SIZE) Subscriber : public StreamReceiver {
+/**
+ * And interface that encapsulates the routing logic for a single shard.
+ * Objects of this class will be called into from a single thread only.
+ */
+class SubscriptionRouter {
  public:
-  Subscriber(const ClientOptions& options, EventLoop* event_loop);
+  virtual ~SubscriptionRouter() = default;
+
+  /**
+   * Returns a version of the router, which can spontaneously increase.
+   * A version change could mean that the host selected by the router has
+   * changed.
+   * Calling this method should be cheap, uncontended atomic is the heaviest
+   * acceptable implementation.
+   */
+  virtual size_t GetVersion() = 0;
+
+  /**
+   * Returns the currently selected host.
+   * This method can acquire a mutex or perform other heavy synchronisation, but
+   * no IO.
+   */
+  virtual HostId GetHost() = 0;
+
+  /**
+   * Tell the router that we could not connect to provided host.
+   * This method can acquire a mutex or perform other heavy synchronisation, but
+   * no IO.
+   */
+  virtual void MarkHostDown(const HostId& host_id) = 0;
+};
+
+/**
+ * State of a subscriber per one shard.
+ */
+class Subscriber : public StreamReceiver {
+ public:
+  Subscriber(const ClientOptions& options,
+             EventLoop* event_loop,
+             std::shared_ptr<SubscriberStats> stats,
+             std::unique_ptr<SubscriptionRouter> router);
 
   ~Subscriber();
+
+  Status Start();
+
+  /** Handles creation of a subscription on provided worker thread. */
+  void StartSubscription(SubscriptionID sub_id,
+                         SubscriptionParameters parameters,
+                         MessageReceivedCallback deliver_callback,
+                         SubscribeCallback subscription_callback,
+                         DataLossCallback data_loss_callback);
+
+  /** Marks message of given seqno on given subscription as acknowledged. */
+  void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
+
+  /** Handles termination of a subscription on provided worker thread. */
+  void TerminateSubscription(SubscriptionID sub_id);
+
+  /** Saves state of the subscriber using provided storage strategy. */
+  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
+
+ private:
+  friend class MultiShardSubscriber;
+
+  /** Options, whose lifetime must be managed by the owning client. */
+  const ClientOptions& options_;
+  /** An event loop object this subscriber runs on. */
+  EventLoop* const event_loop_;
+  /** A shared statistics. */
+  std::shared_ptr<SubscriberStats> stats_;
+  ThreadCheck thread_check_;
+
+  /** Time point (in us) until which client should not attempt to reconnect. */
+  uint64_t backoff_until_time_;
+  /** Time point (in us) of last message sending event. */
+  uint64_t last_send_time_;
+  /** Number of consecutive goodbye messages. */
+  size_t consecutive_goodbyes_count_;
+  /** Random engine used by this client. */
+  std::mt19937_64& rng_;
+
+  /** Stream socket used by this worker to talk to the Rocketeer. */
+  std::unique_ptr<Stream> server_stream_;
+  /** The current server host. */
+  HostId server_host_;
+
+  /** Version of the router when we last fetched hosts. */
+  size_t last_router_version_;
+  /** The router for this subscriber. */
+  std::unique_ptr<SubscriptionRouter> router_;
+
+  /** All subscriptions served by this worker. */
+  std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
+
+  /**
+   * A timeout list with recently sent unsubscribe requests, used to dedup
+   * unsubscribes if we receive a burst of messages on terminated subscription.
+   */
+  TimeoutList<SubscriptionID> recent_terminations_;
+  /** A set of subscriptions pending subscribe message being sent out. */
+  std::unordered_set<SubscriptionID> pending_subscribes_;
+  /** A set of subscriptions pending unsubscribe message being sent out. */
+  std::unordered_map<SubscriptionID, TenantID> pending_terminations_;
+
+  /**
+   * Synchronises a portion of pending subscribe and unsubscribe requests with
+   * the Copilot. Takes into an account rate limits.
+   */
+  void SendPendingRequests();
+
+  void ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) final override;
+
+  void ReceiveUnsubscribe(
+      StreamReceiveArg<MessageUnsubscribe> arg) final override;
+
+  void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) final override;
+};
+
+/**
+ * And interface that encapsulates sharding logic.
+ */
+class ShardingStrategy {
+ public:
+  virtual ~ShardingStrategy();
+
+  /**
+   * Returns a shard ID for given namespace and topic.
+   * The total number of shards can grow over time, and the Client should make
+   * no assumptions about it.
+   */
+  virtual size_t GetShard(const NamespaceID& namespace_id,
+                          const Topic& topic_name) const = 0;
+
+  /**
+   * Creates a routing strategy for given shard ID.
+   * The configuration object is not to be accessed concurrently from multiple
+   * threads.
+   */
+  virtual std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) = 0;
+};
+
+/**
+ * A single threaded thread-unsafe subscriber, that lazily brings up subscribers
+ * per shard.
+ */
+class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
+ public:
+  MultiShardSubscriber(const ClientOptions& options,
+                       EventLoop* event_loop,
+                       std::shared_ptr<ShardingStrategy> sharding);
+
+  ~MultiShardSubscriber();
 
   Status Start();
 
@@ -147,58 +295,33 @@ class alignas(CACHE_LINE_SIZE) Subscriber : public StreamReceiver {
   const ClientOptions& options_;
   /** An event loop object this subscriber runs on. */
   EventLoop* const event_loop_;
-  ThreadCheck thread_check_;
+  /** A sharding strategy. */
+  const std::shared_ptr<ShardingStrategy> sharding_;
 
-  /** Time point (in us) until which client should not attemt to reconnect. */
-  uint64_t backoff_until_time_;
-  /** Time point (in us) of last message sending event. */
-  uint64_t last_send_time_;
-  /** Number of consecutive goodbye messages. */
-  size_t consecutive_goodbyes_count_;
-  /** Random engine used by this client. */
-  std::mt19937_64& rng_;
-  /** Stream socket used by this worker to talk to the Rocketeer. */
-  std::unique_ptr<Stream> server_stream_;
-  /** Version of configuration when we last fetched hosts. */
-  uint64_t last_config_version_;
-  /** All subscriptions served by this worker. */
-  std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
   /**
-   * A timeout list with recently sent unsubscribe requests, used to dedup
-   * unsubscribes if we receive a burst of messages on terminated subscription.
+   * A map of subscribers one per each shard.
+   * The map can be modified while some subscribers are running, therefore we
+   * need them to be allocated separately.
    */
-  TimeoutList<SubscriptionID> recent_terminations_;
-  /** A set of subscriptions pending subscribe message being sent out. */
-  std::unordered_set<SubscriptionID> pending_subscribes_;
-  /** A set of subscriptions pending unsubscribe message being sent out. */
-  std::unordered_map<SubscriptionID, TenantID> pending_terminations_;
+  std::unordered_map<size_t, std::unique_ptr<Subscriber>> subscribers_;
 
-  struct Stats {
-    Stats() {
-      const std::string prefix = "client.";
+  /** A statistics object shared between subscribers. */
+  std::shared_ptr<SubscriberStats> stats_;
 
-      active_subscriptions = all.AddCounter(prefix + "active_subscriptions");
-      unsubscribes_invalid_handle =
-          all.AddCounter(prefix + "unsubscribes_invalid_handle");
-    }
+  // TODO(t9432312)
+  std::unordered_map<SubscriptionID, size_t> subscription_to_shard_;
 
-    Counter* active_subscriptions;
-    Counter* unsubscribes_invalid_handle;
-    Statistics all;
-  } stats_;
+  /**
+   * Returns a subscriber for provided subscription ID or null if cannot
+   * recognise the ID.
+   */
+  Subscriber* GetSubscriberForSubscription(SubscriptionID sub_id);
 
   /**
    * Synchronises a portion of pending subscribe and unsubscribe requests with
    * the Copilot. Takes into an account rate limits.
    */
   void SendPendingRequests();
-
-  void ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) final override;
-
-  void ReceiveUnsubscribe(
-      StreamReceiveArg<MessageUnsubscribe> arg) final override;
-
-  void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) final override;
 };
 
 }  // namespace rocketspeed

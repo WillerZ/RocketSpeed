@@ -244,25 +244,41 @@ void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Subscriber::Subscriber(const ClientOptions& options, EventLoop* event_loop)
+class SubscriberStats {
+ public:
+  explicit SubscriberStats(const std::string& prefix) {
+    active_subscriptions = all.AddCounter(prefix + "active_subscriptions");
+    unsubscribes_invalid_handle =
+        all.AddCounter(prefix + "unsubscribes_invalid_handle");
+  }
+
+  Counter* active_subscriptions;
+  Counter* unsubscribes_invalid_handle;
+  Statistics all;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+Subscriber::Subscriber(const ClientOptions& options,
+                       EventLoop* event_loop,
+                       std::shared_ptr<SubscriberStats> stats,
+                       std::unique_ptr<SubscriptionRouter> router)
 : options_(options)
 , event_loop_(event_loop)
+, stats_(std::move(stats))
 , backoff_until_time_(0)
 , last_send_time_(0)
 , consecutive_goodbyes_count_(0)
 , rng_(ThreadLocalPRNG())
-, last_config_version_(0) {}
+, last_router_version_(0)
+, router_(std::move(router)) {
+}
 
-Subscriber::~Subscriber() {}
+Subscriber::~Subscriber() {
+}
 
 Status Subscriber::Start() {
   return event_loop_->RegisterTimerCallback([this]() { SendPendingRequests(); },
                                             options_.timer_period);
-}
-
-const Statistics& Subscriber::GetStatistics() {
-  stats_.active_subscriptions->Set(subscriptions_.size());
-  return stats_.all;
 }
 
 void Subscriber::StartSubscription(SubscriptionID sub_id,
@@ -322,7 +338,7 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
     LOG_WARN(options_.info_log,
              "Cannot remove missing subscription ID(%" PRIu64 ")",
              sub_id);
-    stats_.unsubscribes_invalid_handle->Add(1);
+    stats_->unsubscribes_invalid_handle->Add(1);
     return;
   }
   SubscriptionState sub_state(std::move(it->second));
@@ -369,14 +385,14 @@ void Subscriber::SendPendingRequests() {
   recent_terminations_.ProcessExpired(
       options_.unsubscribe_deduplication_timeout, [](SubscriptionID) {}, -1);
 
-  // Close the connection if the configuration has changed.
-  const auto current_config_version = options_.config->GetCopilotVersion();
-  if (last_config_version_ != current_config_version) {
+  // Close the connection if the router has changed.
+  const auto current_router_version = router_->GetVersion();
+  if (last_router_version_ != current_router_version) {
     if (server_stream_) {
       LOG_INFO(options_.info_log,
-               "Configuration version has changed %" PRIu64 " -> %" PRIu64,
-               last_config_version_,
-               current_config_version);
+               "Configuration version has changed %zu -> %zu",
+               last_router_version_,
+               current_router_version);
 
       // Mark socket as broken.
       server_stream_.reset();
@@ -418,26 +434,24 @@ void Subscriber::SendPendingRequests() {
       return;
     }
 
-    // Get configuration version of the host that we will fetch later on.
-    last_config_version_ = current_config_version;
-    // Get the copilot's address.
-    HostId copilot;
-    Status st = options_.config->GetCopilot(&copilot);
-    if (!st.ok()) {
+    // Get router version of the host that we will fetch later on.
+    last_router_version_ = current_router_version;
+    // Get the server's address.
+    server_host_ = router_->GetHost();
+    if (!server_host_) {
       LOG_WARN(options_.info_log,
-               "Failed to obtain Copilot address: %s",
-               st.ToString().c_str());
+               "Failed to obtain Copilot address");
       // We'll try to obtain the address and reconnect on next occasion.
       return;
     }
 
     // And create socket to it.
-    server_stream_ = event_loop_->OpenStream(copilot);
+    server_stream_ = event_loop_->OpenStream(server_host_);
     server_stream_->SetReceiver(this);
 
     LOG_INFO(options_.info_log,
              "Reconnected to %s on stream %llu",
-             copilot.ToString().c_str(),
+             server_host_.ToString().c_str(),
              server_stream_->GetLocalID());
   }
 
@@ -603,6 +617,9 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
   // Mark socket as broken.
   server_stream_.reset();
 
+  // Notify the router.
+  router_->MarkHostDown(server_host_);
+
   // Clear a list of recently sent unsubscribes, these subscriptions IDs were
   // generated for different socket, so are no longer valid.
   recent_terminations_.Clear();
@@ -639,6 +656,115 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
            backoff_period / 1000);
 
   SendPendingRequests();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+ShardingStrategy::~ShardingStrategy() {
+}
+
+///////////////////////////////////////////////////////////////////////////////
+MultiShardSubscriber::MultiShardSubscriber(
+    const ClientOptions& options,
+    EventLoop* event_loop,
+    std::shared_ptr<ShardingStrategy> sharding)
+: options_(options), event_loop_(event_loop), sharding_(std::move(sharding)) {
+}
+
+MultiShardSubscriber::~MultiShardSubscriber() {
+}
+
+Status MultiShardSubscriber::Start() {
+  return event_loop_->RegisterTimerCallback([this]() { SendPendingRequests(); },
+                                            options_.timer_period);
+}
+
+const Statistics& MultiShardSubscriber::GetStatistics() {
+  return stats_->all;
+}
+
+void MultiShardSubscriber::StartSubscription(
+    SubscriptionID sub_id,
+    SubscriptionParameters parameters,
+    MessageReceivedCallback deliver_callback,
+    SubscribeCallback subscription_callback,
+    DataLossCallback data_loss_callback) {
+  // Determine the shard ID.
+  size_t shard_id =
+      sharding_->GetShard(parameters.namespace_id, parameters.topic_name);
+  subscription_to_shard_.emplace(sub_id, shard_id);
+
+  // Find or create a subscriber for this shard.
+  auto it = subscribers_.find(shard_id);
+  if (it == subscribers_.end()) {
+    // Subscriber is missing, create and start one.
+    std::unique_ptr<Subscriber> subscriber(new Subscriber(
+        options_, event_loop_, stats_, sharding_->GetRouter(shard_id)));
+    // We do not start the subscriber as it's not operating on it's own, but as
+    // a part of the multi-shard one and will reuse timer events of the latter.
+
+    // Put it back in the map so it can be resued.
+    auto result = subscribers_.emplace(shard_id, std::move(subscriber));
+    RS_ASSERT(result.second);
+    it = result.first;
+  }
+
+  it->second->StartSubscription(sub_id,
+                                std::move(parameters),
+                                std::move(deliver_callback),
+                                std::move(subscription_callback),
+                                std::move(data_loss_callback));
+}
+
+void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
+                                       SequenceNumber seqno) {
+  if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
+    subscriber->Acknowledge(sub_id, seqno);
+  }
+}
+
+void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
+  if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
+    subscriber->TerminateSubscription(sub_id);
+  }
+  // Remove the mapping from subscription ID to a shard.
+  subscription_to_shard_.erase(sub_id);
+}
+
+Status MultiShardSubscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
+                                       size_t worker_id) {
+  for (const auto& subscriber : subscribers_) {
+    auto st = subscriber.second->SaveState(snapshot, worker_id);
+    if (!st.ok()) {
+      return st;
+    }
+  }
+  return Status::OK();
+}
+
+Subscriber* MultiShardSubscriber::GetSubscriberForSubscription(
+    SubscriptionID sub_id) {
+  auto it = subscription_to_shard_.find(sub_id);
+  if (it == subscription_to_shard_.end()) {
+    LOG_WARN(options_.info_log,
+             "Cannot find subscriber for SubscriptionID(%" PRIu64 ")",
+             sub_id);
+    return nullptr;
+  }
+
+  auto it1 = subscribers_.find(it->second);
+  if (it1 == subscribers_.end()) {
+    LOG_WARN(options_.info_log,
+             "Cannot find subscriber for ShardID(%zu)",
+             it->second);
+    return nullptr;
+  }
+  return it1->second.get();
+}
+
+void MultiShardSubscriber::SendPendingRequests() {
+  for (const auto& subscriber : subscribers_) {
+    subscriber.second->SendPendingRequests();
+  }
 }
 
 }  // namespace rocketspeed

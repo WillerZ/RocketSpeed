@@ -30,8 +30,8 @@ class ClientEnv;
 class Flow;
 class MessageReceived;
 class MsgLoop;
+class MultiShardSubscriber;
 class Logger;
-class Subscriber;
 class WakeLock;
 
 /** Implementation of the client interface. */
@@ -113,7 +113,7 @@ class ClientImpl : public Client {
   bool msg_loop_thread_spawned_;
 
   /** State of the Client, sharded by workers. */
-  std::vector<std::unique_ptr<Subscriber>> worker_data_;
+  std::vector<std::unique_ptr<MultiShardSubscriber>> worker_data_;
 
   // If this is an internal client, then we will skip TenantId
   // checks and namespaceid checks.

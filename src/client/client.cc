@@ -90,6 +90,50 @@ Status ClientImpl::Create(ClientOptions options,
   return Status::OK();
 }
 
+namespace {
+
+class RouterFromConfiguration : public SubscriptionRouter {
+ public:
+  explicit RouterFromConfiguration(const std::shared_ptr<Configuration>& config)
+  : config_(config) {}
+
+  size_t GetVersion() override { return config_->GetCopilotVersion(); }
+
+  HostId GetHost() override {
+    HostId host_id;
+    auto st = config_->GetCopilot(&host_id);
+    return st.ok() ? host_id : HostId();
+  }
+
+  void MarkHostDown(const HostId& host_id) override {}
+
+ private:
+  std::shared_ptr<Configuration> config_;
+};
+
+class ShardingFromConfiguration : public ShardingStrategy {
+ public:
+  explicit ShardingFromConfiguration(
+      const std::shared_ptr<Configuration>& config)
+  : config_(config) {}
+
+  size_t GetShard(const NamespaceID& namespace_id,
+                  const Topic& topic_name) const override {
+    return 0;
+  }
+
+  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
+    RS_ASSERT(shard == 0);
+    return std::unique_ptr<SubscriptionRouter>(
+        new RouterFromConfiguration(config_));
+  }
+
+ private:
+  std::shared_ptr<Configuration> config_;
+};
+
+}  // namespace
+
 ClientImpl::ClientImpl(ClientOptions options,
                        std::unique_ptr<MsgLoop> msg_loop,
                        bool is_internal)
@@ -102,9 +146,14 @@ ClientImpl::ClientImpl(ClientOptions options,
 , next_sub_id_(0) {
   LOG_VITAL(options_.info_log, "Creating Client");
 
+  // Create sharding that'll forward respective calls to the configuration.
+  const auto sharding =
+      std::make_shared<ShardingFromConfiguration>(options_.config);
+
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    worker_data_.emplace_back(
-        new Subscriber(options_, msg_loop_->GetEventLoop(i)));
+    // Create subscriber per thread.
+    worker_data_.emplace_back(new MultiShardSubscriber(
+        options_, msg_loop_->GetEventLoop(i), sharding));
   }
 }
 
@@ -141,14 +190,14 @@ PublishStatus ClientImpl::Publish(const TenantID tenant_id,
   if (!is_internal_) {
     if (tenant_id <= 100 && tenant_id != GuestTenant) {
       return PublishStatus(
-        Status::InvalidArgument("TenantID must be greater than 100."),
-        message_id);
+          Status::InvalidArgument("TenantID must be greater than 100."),
+          message_id);
     }
 
     if (IsReserved(namespace_id)) {
-      return PublishStatus(
-        Status::InvalidArgument("NamespaceID is reserved for internal usage."),
-        message_id);
+      return PublishStatus(Status::InvalidArgument(
+                               "NamespaceID is reserved for internal usage."),
+                           message_id);
     }
   }
   return publisher_.Publish(tenant_id,
@@ -224,10 +273,10 @@ Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
 
   // Send command to responsible worker.
   return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(
-          MakeExecuteCommand(std::bind(&Subscriber::TerminateSubscription,
-                                       worker_data_[worker_id].get(),
-                                       sub_id))),
+      std::unique_ptr<Command>(MakeExecuteCommand(
+          std::bind(&MultiShardSubscriber::TerminateSubscription,
+                    worker_data_[worker_id].get(),
+                    sub_id))),
       worker_id);
 }
 
@@ -244,12 +293,13 @@ Status ClientImpl::Acknowledge(const MessageReceived& message) {
   }
 
   // Send command to responsible worker.
-  return msg_loop_->SendCommand(std::unique_ptr<Command>(MakeExecuteCommand(
-                                    std::bind(&Subscriber::Acknowledge,
-                                              worker_data_[worker_id].get(),
-                                              sub_handle,
-                                              message.GetSequenceNumber()))),
-                                worker_id);
+  return msg_loop_->SendCommand(
+      std::unique_ptr<Command>(
+          MakeExecuteCommand(std::bind(&MultiShardSubscriber::Acknowledge,
+                                       worker_data_[worker_id].get(),
+                                       sub_handle,
+                                       message.GetSequenceNumber()))),
+      worker_id);
 }
 
 void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
