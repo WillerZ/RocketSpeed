@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <random>
 #include <unordered_map>
@@ -24,18 +25,41 @@
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
 
+/**
+ * This header defines a few Subscriber implementations. At the very high level,
+ * each Subscriber serves the same purpose, it allows to receive data on
+ * subscriptions.
+ *
+ * Each Subscriber exposes two important methods:
+ * - Subscribe, which establishes a subscription with provided
+ *   SubscriptionParameters; once the subscription is established, the
+ *   application will be notified about new data messages, gaps and termination
+ *   of the subscription via provided callbacks,
+ * - Acknowledge, which marks provided message as acknowledged; if
+ *   SubscriptionStorage is used, the Subscriber will resume subscripions from
+ *   storage starting from next unacknowledged message,
+ * - Unsubscribe, which termnates previously established subscription.
+ *
+ * Different subscribers are stacked one on another according to shared
+ * functionality.
+ */
 namespace rocketspeed {
 
 class ClientOptions;
+class Command;
+class Flow;
 class MessageDeliver;
 class MessageUnsubscribe;
 class MessageGoodbye;
+class MsgLoop;
 class MultiShardSubscriber;
 class EventLoop;
 class Stream;
 class SubscriptionState;
 class SubscriberStats;
 typedef uint64_t SubscriptionID;
+typedef uint64_t SubscriptionHandle;
+template <typename> class ThreadLocalQueues;
 
 /**
  * Represents a state of a single subscription.
@@ -162,17 +186,14 @@ class Subscriber : public StreamReceiver {
 
   Status Start();
 
-  /** Handles creation of a subscription on provided worker thread. */
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
                          MessageReceivedCallback deliver_callback,
                          SubscribeCallback subscription_callback,
                          DataLossCallback data_loss_callback);
 
-  /** Marks message of given seqno on given subscription as acknowledged. */
   void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
 
-  /** Handles termination of a subscription on provided worker thread. */
   void TerminateSubscription(SubscriptionID sub_id);
 
   /** Saves state of the subscriber using provided storage strategy. */
@@ -274,17 +295,14 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
 
   const Statistics& GetStatistics();
 
-  /** Handles creation of a subscription on provided worker thread. */
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
                          MessageReceivedCallback deliver_callback,
                          SubscribeCallback subscription_callback,
                          DataLossCallback data_loss_callback);
 
-  /** Marks message of given seqno on given subscription as acknowledged. */
   void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
 
-  /** Handles termination of a subscription on provided worker thread. */
   void TerminateSubscription(SubscriptionID sub_id);
 
   /** Saves state of the subscriber using provided storage strategy. */
@@ -322,6 +340,86 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
    * the Copilot. Takes into an account rate limits.
    */
   void SendPendingRequests();
+};
+
+/**
+ * And interface that encapsulates thread selection logic.
+ */
+using ThreadSelectionStrategy =
+    std::function<size_t(MsgLoop*, const NamespaceID&, const Topic&)>;
+
+/** A multi-threaded subscriber. */
+class MultiThreadedSubscriber {
+ public:
+  MultiThreadedSubscriber(const ClientOptions& options,
+                          std::shared_ptr<MsgLoop> msg_loop,
+                          ThreadSelectionStrategy thread_selector,
+                          std::unique_ptr<ShardingStrategy> sharding);
+
+  Status Start();
+
+  /**
+   * If flow is non-null, the overflow is communicated via flow object.
+   * Returns invalid SubscriptionHandle if and only if call attempt should be
+   * retried due to queue overflow.
+   */
+  SubscriptionHandle Subscribe(Flow* flow,
+                               SubscriptionParameters parameters,
+                               MessageReceivedCallback deliver_callback,
+                               SubscribeCallback subscription_callback,
+                               DataLossCallback data_loss_callback);
+
+  /**
+   * If flow is non-null, the overflow is communicated via flow object.
+   * Returns false if and only if call attempt should be retried due to queue
+   * overflow.
+   */
+  bool Unsubscribe(Flow* flow, SubscriptionHandle sub_handle);
+
+  /**
+   * If flow is non-null, the overflow is communicated via flow object.
+   * Returns false if and only if call attempt should be retried due to queue
+   * overflow.
+   */
+  bool Acknowledge(Flow* flow, const MessageReceived& message);
+
+  // TODO(t9457879)
+  void SaveSubscriptions(SaveSubscriptionsCallback save_callback);
+
+  Statistics GetStatisticsSync();
+
+ private:
+  /** Options provided when creating the Client. */
+  const ClientOptions& options_;
+  /** A set of loops to use. */
+  const std::shared_ptr<MsgLoop> msg_loop_;
+  /** Routes subscription to appropriate thread. */
+  const ThreadSelectionStrategy thread_selector_;
+  /** A strategy for routing subscriptions. */
+  const std::shared_ptr<ShardingStrategy> sharding_;
+
+  /** One multi-threaded subscriber per thread. */
+  std::vector<std::unique_ptr<MultiShardSubscriber>> subscribers_;
+  /** Queues to communicate with each subscriber. */
+  std::vector<std::unique_ptr<ThreadLocalQueues<std::unique_ptr<Command>>>>
+      subscriber_queues_;
+
+  /** Next subscription ID seed to be used for new subscription ID. */
+  std::atomic<uint64_t> next_sub_id_;
+
+  /**
+   * Returns a new subscription handle. This method is thread-safe.
+   *
+   * @param worker_id A worker this subscription will be bound to.
+   * @return A handle, if fails to allocate returns a null-handle.
+   */
+  SubscriptionHandle CreateNewHandle(size_t worker_id);
+
+  /**
+   * Extracts worker ID from provided subscription handle.
+   * In case of error, returned worker ID is negative.
+   */
+  ssize_t GetWorkerID(SubscriptionHandle sub_handle) const;
 };
 
 }  // namespace rocketspeed

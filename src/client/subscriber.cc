@@ -25,6 +25,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/msg_loop.h"
 #include "src/messages/stream.h"
 #include "src/port/port.h"
 #include "src/util/common/random.h"
@@ -439,8 +440,7 @@ void Subscriber::SendPendingRequests() {
     // Get the server's address.
     server_host_ = router_->GetHost();
     if (!server_host_) {
-      LOG_WARN(options_.info_log,
-               "Failed to obtain Copilot address");
+      LOG_WARN(options_.info_log, "Failed to obtain Copilot address");
       // We'll try to obtain the address and reconnect on next occasion.
       return;
     }
@@ -765,6 +765,221 @@ void MultiShardSubscriber::SendPendingRequests() {
   for (const auto& subscriber : subscribers_) {
     subscriber.second->SendPendingRequests();
   }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+MultiThreadedSubscriber::MultiThreadedSubscriber(
+    const ClientOptions& options,
+    std::shared_ptr<MsgLoop> msg_loop,
+    ThreadSelectionStrategy thread_selector,
+    std::unique_ptr<ShardingStrategy> sharding)
+: options_(options)
+, msg_loop_(std::move(msg_loop))
+, thread_selector_(std::move(thread_selector))
+, sharding_(std::move(sharding))
+, next_sub_id_(0) {
+  for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
+    subscribers_.emplace_back(new MultiShardSubscriber(
+        options_, msg_loop_->GetEventLoop(i), sharding_));
+    subscriber_queues_.emplace_back(msg_loop_->CreateThreadLocalQueues(i));
+  }
+}
+
+Status MultiThreadedSubscriber::Start() {
+  for (const auto& subscriber : subscribers_) {
+    RS_ASSERT(subscriber);
+    auto st = subscriber->Start();
+    if (!st.ok()) {
+      return st;
+    }
+  }
+  return Status::OK();
+}
+
+SubscriptionHandle MultiThreadedSubscriber::Subscribe(
+    Flow* flow,
+    SubscriptionParameters parameters,
+    MessageReceivedCallback deliver_callback,
+    SubscribeCallback subscription_callback,
+    DataLossCallback data_loss_callback) {
+  // Choose worker for this subscription and find appropriate queue.
+  const auto worker_id = thread_selector_(
+      msg_loop_.get(), parameters.namespace_id, parameters.topic_name);
+  RS_ASSERT(worker_id < subscriber_queues_.size());
+  auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
+
+  // Create new subscription handle that encodes destination worker.
+  const auto sub_handle = CreateNewHandle(worker_id);
+  if (!sub_handle) {
+    LOG_ERROR(options_.info_log, "Client run out of subscription handles");
+    RS_ASSERT(false);
+    return SubscriptionHandle(0);
+  }
+  const SubscriptionID sub_id = sub_handle;
+
+  // Send command to responsible worker.
+  auto moved_args =
+      folly::makeMoveWrapper(std::make_tuple(std::move(parameters),
+                                             std::move(deliver_callback),
+                                             std::move(subscription_callback),
+                                             std::move(data_loss_callback)));
+  std::unique_ptr<Command> command(
+      MakeExecuteCommand([this, sub_id, moved_args, worker_id]() mutable {
+        subscribers_[worker_id]->StartSubscription(
+            sub_id,
+            std::move(std::get<0>(*moved_args)),
+            std::move(std::get<1>(*moved_args)),
+            std::move(std::get<2>(*moved_args)),
+            std::move(std::get<3>(*moved_args)));
+      }));
+  if (flow) {
+    flow->Write(worker_queue, command);
+  } else {
+    if (!worker_queue->TryWrite(command, true)) {
+      return SubscriptionHandle(0);
+    }
+  }
+  return sub_handle;
+}
+
+bool MultiThreadedSubscriber::Unsubscribe(Flow* flow,
+                                          SubscriptionHandle sub_handle) {
+  if (!sub_handle) {
+    LOG_ERROR(options_.info_log,
+              "Cannot unsubscribe unengaged subscription handle.");
+    return true;
+  }
+
+  // Determine corresponding worker, its queue, and subscription ID.
+  const auto worker_id = GetWorkerID(sub_handle);
+  if (worker_id < 0) {
+    LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
+    return true;
+  }
+  auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
+  const SubscriptionID sub_id = sub_handle;
+
+  // Send command to responsible worker.
+  std::unique_ptr<Command> command(
+      MakeExecuteCommand([this, sub_id, worker_id]() mutable {
+        subscribers_[worker_id]->TerminateSubscription(sub_id);
+      }));
+
+  if (flow) {
+    flow->Write(worker_queue, command);
+  } else {
+    if (!worker_queue->TryWrite(command, true)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool MultiThreadedSubscriber::Acknowledge(Flow* flow,
+                                          const MessageReceived& message) {
+  const SubscriptionHandle sub_handle = message.GetSubscriptionHandle();
+  if (!sub_handle) {
+    LOG_ERROR(options_.info_log,
+              "Cannot unsubscribe unengaged subscription handle.");
+    return true;
+  }
+
+  // Determine corresponding worker, its queue, and subscription ID.
+  const auto worker_id = GetWorkerID(sub_handle);
+  if (worker_id < 0) {
+    LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
+    return true;
+  }
+  auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
+  const SubscriptionID sub_id = sub_handle;
+
+  // Send command to responsible worker.
+  const auto seqno = message.GetSequenceNumber();
+  std::unique_ptr<Command> command(
+      MakeExecuteCommand([this, sub_id, worker_id, seqno]() mutable {
+        subscribers_[worker_id]->Acknowledge(sub_id, seqno);
+      }));
+
+  if (flow) {
+    flow->Write(worker_queue, command);
+  } else {
+    if (!worker_queue->TryWrite(command, true)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void MultiThreadedSubscriber::SaveSubscriptions(
+    SaveSubscriptionsCallback save_callback) {
+  if (!options_.storage) {
+    save_callback(Status::NotInitialized());
+    return;
+  }
+
+  std::shared_ptr<SubscriptionStorage::Snapshot> snapshot;
+  Status st =
+      options_.storage->CreateSnapshot(msg_loop_->GetNumWorkers(), &snapshot);
+  if (!st.ok()) {
+    LOG_WARN(options_.info_log,
+             "Failed to create snapshot to save subscriptions: %s",
+             st.ToString().c_str());
+    save_callback(std::move(st));
+    return;
+  }
+
+  // For each worker we attempt to append entries for all subscriptions.
+  auto map = [this, snapshot](int worker_id) {
+    const auto& subscriber = subscribers_[worker_id];
+    return subscriber->SaveState(snapshot.get(), worker_id);
+  };
+
+  // Once all workers are done, we commit the snapshot and call the callback if
+  // necessary.
+  auto reduce = [save_callback, snapshot](std::vector<Status> statuses) {
+    for (auto& status : statuses) {
+      if (!status.ok()) {
+        save_callback(std::move(status));
+        return;
+      }
+    }
+    Status status = snapshot->Commit();
+    save_callback(std::move(status));
+  };
+
+  // Fan out commands to all workers.
+  st = msg_loop_->Gather(std::move(map), std::move(reduce));
+  if (!st.ok()) {
+    LOG_WARN(options_.info_log,
+             "Failed to send snapshot command to all workers: %s",
+             st.ToString().c_str());
+    save_callback(std::move(st));
+    return;
+  }
+}
+
+Statistics MultiThreadedSubscriber::GetStatisticsSync() {
+  return msg_loop_->AggregateStatsSync(
+      [this](int i) -> Statistics { return subscribers_[i]->GetStatistics(); });
+}
+
+SubscriptionHandle MultiThreadedSubscriber::CreateNewHandle(size_t worker_id) {
+  const auto num_workers = msg_loop_->GetNumWorkers();
+  const auto handle = 1 + worker_id + num_workers * next_sub_id_++;
+  if (static_cast<size_t>(GetWorkerID(handle)) != worker_id) {
+    return SubscriptionHandle(0);
+  }
+  return handle;
+}
+
+ssize_t MultiThreadedSubscriber::GetWorkerID(
+    SubscriptionHandle sub_handle) const {
+  const auto num_workers = msg_loop_->GetNumWorkers();
+  const auto worker_id = static_cast<int>((sub_handle - 1) % num_workers);
+  if (worker_id < 0 || worker_id >= num_workers) {
+    return -1;
+  }
+  return worker_id;
 }
 
 }  // namespace rocketspeed
