@@ -19,6 +19,7 @@
 #include "include/RocketSpeed.h"
 #include "src/client/publisher.h"
 #include "src/client/smart_wake_lock.h"
+#include "src/client/subscriber.h"
 #include "src/messages/messages.h"
 #include "src/messages/stream_socket.h"
 #include "src/util/common/base_env.h"
@@ -108,12 +109,9 @@ class ClientImpl : public Client {
   /** A wake lock used on mobile devices. */
   SmartWakeLock wake_lock_;
 
-  std::unique_ptr<MsgLoop> msg_loop_;
+  const std::shared_ptr<MsgLoop> msg_loop_;
   BaseEnv::ThreadId msg_loop_thread_;
   bool msg_loop_thread_spawned_;
-
-  /** State of the Client, sharded by workers. */
-  std::vector<std::unique_ptr<MultiShardSubscriber>> worker_data_;
 
   // If this is an internal client, then we will skip TenantId
   // checks and namespaceid checks.
@@ -122,6 +120,9 @@ class ClientImpl : public Client {
   /** The publisher object, which handles write path in the client. */
   PublisherImpl publisher_;
 
+  /** The underlying subscriber, which handles read path in the client. */
+  MultiThreadedSubscriber subscriber_;
+
   /** Default callback for announcing subscription status. */
   SubscribeCallback subscription_cb_fallback_;
   /** Default callbacks for delivering messages. */
@@ -129,25 +130,8 @@ class ClientImpl : public Client {
   /** Default callback for data loss */
   DataLossCallback data_loss_callback_;
 
-  /** Next subscription ID seed to be used for new subscription ID. */
-  std::atomic<uint64_t> next_sub_id_;
-
   /** Starts the client. */
   Status Start();
-
-  /**
-   * Returns a new subscription handle. This method is thread-safe.
-   *
-   * @param worker_id A worker this subscription will be bound to.
-   * @return A handle, if fails to allocate returns a null-handle.
-   */
-  SubscriptionHandle CreateNewHandle(int worker_id);
-
-  /**
-   * Extracts worker ID from provided subscription handle.
-   * In case of error, returned worker ID is negative.
-   */
-  int GetWorkerID(SubscriptionHandle sub_handle) const;
 };
 
 }  // namespace rocketspeed

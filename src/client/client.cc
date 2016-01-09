@@ -30,6 +30,7 @@
 #include "src/client/subscriber.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
+#include "src/util/common/flow_control.h"
 #include "src/util/common/random.h"
 #include "src/util/timeout_list.h"
 
@@ -143,18 +144,14 @@ ClientImpl::ClientImpl(ClientOptions options,
 , msg_loop_thread_spawned_(false)
 , is_internal_(is_internal)
 , publisher_(options_, msg_loop_.get(), &wake_lock_)
-, next_sub_id_(0) {
+, subscriber_(options_,
+              msg_loop_,
+              [](MsgLoop* loop, const NamespaceID&, const Topic&) {
+                return loop->LoadBalancedWorkerId();
+              },
+              std::unique_ptr<ShardingStrategy>(
+                  new ShardingFromConfiguration(options_.config))) {
   LOG_VITAL(options_.info_log, "Creating Client");
-
-  // Create sharding that'll forward respective calls to the configuration.
-  const auto sharding =
-      std::make_shared<ShardingFromConfiguration>(options_.config);
-
-  for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    // Create subscriber per thread.
-    worker_data_.emplace_back(new MultiShardSubscriber(
-        options_, msg_loop_->GetEventLoop(i), sharding));
-  }
 }
 
 void ClientImpl::SetDefaultCallbacks(SubscribeCallback subscription_callback,
@@ -225,128 +222,25 @@ SubscriptionHandle ClientImpl::Subscribe(
     data_loss_callback = data_loss_callback_;
   }
 
-  // Choose client worker for this subscription.
-  const auto worker_id = msg_loop_->LoadBalancedWorkerId();
-
-  // Allocate unique handle and ID for new subscription.
-  const SubscriptionHandle sub_handle = CreateNewHandle(worker_id);
-  if (!sub_handle) {
-    LOG_ERROR(options_.info_log, "Client run out of subscription handles");
-    RS_ASSERT(false);
-    return SubscriptionHandle(0);
-  }
-  const SubscriptionID sub_id = sub_handle;
-
-  // Create an object that manages state of the subscription.
-  auto moved_args =
-      folly::makeMoveWrapper(std::make_tuple(std::move(parameters),
-                                             std::move(deliver_callback),
-                                             std::move(subscription_callback),
-                                             std::move(data_loss_callback)));
-
-  // Send command to responsible worker.
-  Status st = msg_loop_->SendCommand(
-      std::unique_ptr<Command>(
-          MakeExecuteCommand([this, sub_id, moved_args, worker_id]() mutable {
-            worker_data_[worker_id]->StartSubscription(
-                sub_id,
-                std::move(std::get<0>(*moved_args)),
-                std::move(std::get<1>(*moved_args)),
-                std::move(std::get<2>(*moved_args)),
-                std::move(std::get<3>(*moved_args)));
-          })),
-      worker_id);
-  return st.ok() ? sub_handle : SubscriptionHandle(0);
+  return subscriber_.Subscribe(nullptr,
+                               std::move(parameters),
+                               std::move(deliver_callback),
+                               std::move(subscription_callback),
+                               std::move(data_loss_callback));
 }
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
-  if (!sub_handle) {
-    return Status::InvalidArgument("Unengaged handle.");
-  }
-
-  // Determine corresponding worker and subscription ID.
-  const auto worker_id = GetWorkerID(sub_handle);
-  if (worker_id < 0) {
-    return Status::InvalidArgument("Invalid handle.");
-  }
-  const SubscriptionID sub_id = sub_handle;
-
-  // Send command to responsible worker.
-  return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(MakeExecuteCommand(
-          std::bind(&MultiShardSubscriber::TerminateSubscription,
-                    worker_data_[worker_id].get(),
-                    sub_id))),
-      worker_id);
+  return subscriber_.Unsubscribe(nullptr, sub_handle) ? Status::OK()
+                                                      : Status::NoBuffer();
 }
 
 Status ClientImpl::Acknowledge(const MessageReceived& message) {
-  const SubscriptionHandle sub_handle = message.GetSubscriptionHandle();
-  if (!sub_handle) {
-    return Status::InvalidArgument("Unengaged handle.");
-  }
-
-  // Determine corresponding worker and subscription ID.
-  const auto worker_id = GetWorkerID(sub_handle);
-  if (worker_id < 0) {
-    return Status::InvalidArgument("Invalid handle.");
-  }
-
-  // Send command to responsible worker.
-  return msg_loop_->SendCommand(
-      std::unique_ptr<Command>(
-          MakeExecuteCommand(std::bind(&MultiShardSubscriber::Acknowledge,
-                                       worker_data_[worker_id].get(),
-                                       sub_handle,
-                                       message.GetSequenceNumber()))),
-      worker_id);
+  return subscriber_.Acknowledge(nullptr, message) ? Status::OK()
+                                                   : Status::NoBuffer();
 }
 
 void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
-  if (!options_.storage) {
-    save_callback(Status::NotInitialized());
-    return;
-  }
-
-  std::shared_ptr<SubscriptionStorage::Snapshot> snapshot;
-  Status st =
-      options_.storage->CreateSnapshot(msg_loop_->GetNumWorkers(), &snapshot);
-  if (!st.ok()) {
-    LOG_WARN(options_.info_log,
-             "Failed to create snapshot to save subscriptions: %s",
-             st.ToString().c_str());
-    save_callback(std::move(st));
-    return;
-  }
-
-  // For each worker we attemp to append entries for all subscriptions.
-  auto map = [this, snapshot](int worker_id) {
-    const auto& worker_data = worker_data_[worker_id];
-    return worker_data->SaveState(snapshot.get(), worker_id);
-  };
-
-  // Once all workers are done, we commit the snapshot and call the callback if
-  // necessary.
-  auto reduce = [save_callback, snapshot](std::vector<Status> statuses) {
-    for (auto& status : statuses) {
-      if (!status.ok()) {
-        save_callback(std::move(status));
-        return;
-      }
-    }
-    Status status = snapshot->Commit();
-    save_callback(std::move(status));
-  };
-
-  // Fan out commands to all workers.
-  st = msg_loop_->Gather(std::move(map), std::move(reduce));
-  if (!st.ok()) {
-    LOG_WARN(options_.info_log,
-             "Failed to send snapshot command to all workers: %s",
-             st.ToString().c_str());
-    save_callback(std::move(st));
-    return;
-  }
+  subscriber_.SaveSubscriptions(std::move(save_callback));
 }
 
 Status ClientImpl::RestoreSubscriptions(
@@ -360,44 +254,20 @@ Status ClientImpl::RestoreSubscriptions(
 
 Statistics ClientImpl::GetStatisticsSync() {
   Statistics aggregated = msg_loop_->GetStatisticsSync();
-  aggregated.Aggregate(
-      msg_loop_->AggregateStatsSync([this](int i) -> Statistics {
-        return worker_data_[i]->GetStatistics();
-      }));
+  aggregated.Aggregate(subscriber_.GetStatisticsSync());
   return aggregated;
 }
 
 Status ClientImpl::Start() {
-  for (const auto& worker : worker_data_) {
-    RS_ASSERT(worker);
-    auto st = worker->Start();
-    if (!st.ok()) {
-      return st;
-    }
+  auto st = subscriber_.Start();
+  if (!st.ok()) {
+    return st;
   }
 
   msg_loop_thread_ =
       options_.env->StartThread([this]() { msg_loop_->Run(); }, "client");
   msg_loop_thread_spawned_ = true;
   return Status::OK();
-}
-
-SubscriptionHandle ClientImpl::CreateNewHandle(int worker_id) {
-  const auto num_workers = msg_loop_->GetNumWorkers();
-  const auto handle = 1 + worker_id + num_workers * next_sub_id_++;
-  if (GetWorkerID(handle) != worker_id) {
-    return SubscriptionHandle(0);
-  }
-  return handle;
-}
-
-int ClientImpl::GetWorkerID(SubscriptionHandle sub_handle) const {
-  const auto num_workers = msg_loop_->GetNumWorkers();
-  const auto worker_id = static_cast<int>((sub_handle - 1) % num_workers);
-  if (worker_id < 0 || worker_id >= num_workers) {
-    return -1;
-  }
-  return worker_id;
 }
 
 }  // namespace rocketspeed
