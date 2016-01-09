@@ -99,7 +99,8 @@ class SubscriptionState : public NonCopyable {
                  MessageUnsubscribe::Reason reason);
 
   /** Processes gap or data message. */
-  void ReceiveMessage(const std::shared_ptr<Logger>& info_log,
+  void ReceiveMessage(Flow* flow,
+                      const std::shared_ptr<Logger>& info_log,
                       std::unique_ptr<MessageDeliver> deliver);
 
   /** Returns a lower bound on the seqno of the next expected message. */

@@ -23,6 +23,7 @@ namespace rocketspeed {
 
 class BaseEnv;
 class DataLossInfo;
+class Flow;
 class Logger;
 class WakeLock;
 
@@ -44,10 +45,10 @@ typedef std::function<void(const SubscriptionStatus&)> SubscribeCallback;
  * If the application does not need message payload buffer outside of the
  * callback, it is advised not to steal the message object.
  */
-typedef std::function<void(std::unique_ptr<MessageReceived>&)>
+typedef std::function<void(Flow*, std::unique_ptr<MessageReceived>&)>
     MessageReceivedCallback;
 
-typedef std::function<void(std::unique_ptr<DataLossInfo>&)>
+typedef std::function<void(Flow*, std::unique_ptr<DataLossInfo>&)>
     DataLossCallback;
 
 /** Notifies about status of a finished subscription snapshot. */
@@ -156,8 +157,10 @@ class Client {
    */
   virtual void SetDefaultCallbacks(
       SubscribeCallback subscription_callback = nullptr,
-      MessageReceivedCallback deliver_callback = nullptr,
-      DataLossCallback data_loss_callback = nullptr) = 0;
+      std::function<void(std::unique_ptr<MessageReceived>&)>
+          deliver_callback = nullptr,
+      std::function<void(std::unique_ptr<DataLossInfo>&)>
+          data_loss_callback = nullptr) = 0;
 
   /**
    * Asynchronously publishes a new message to the Topic. The return parameter
@@ -201,9 +204,11 @@ class Client {
    */
   virtual SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
-      MessageReceivedCallback deliver_callback = nullptr,
+      std::function<void(std::unique_ptr<MessageReceived>&)>
+          deliver_callback = nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      DataLossCallback data_loss_callback = nullptr) = 0;
+      std::function<void(std::unique_ptr<DataLossInfo>&)>
+          data_loss_callback = nullptr) = 0;
 
   /** Convenience method, see the other overload for details. */
   virtual SubscriptionHandle Subscribe(
@@ -211,9 +216,11 @@ class Client {
       NamespaceID namespace_id,
       Topic topic_name,
       SequenceNumber start_seqno,
-      MessageReceivedCallback deliver_callback = nullptr,
+      std::function<void(std::unique_ptr<MessageReceived>&)>
+          deliver_callback = nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      DataLossCallback data_loss_callback = nullptr) = 0;
+      std::function<void(std::unique_ptr<DataLossInfo>&)>
+          data_loss_callback = nullptr) = 0;
 
   /**
    * Unsubscribes from a topic identified by provided handle.

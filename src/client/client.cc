@@ -154,9 +154,10 @@ ClientImpl::ClientImpl(ClientOptions options,
   LOG_VITAL(options_.info_log, "Creating Client");
 }
 
-void ClientImpl::SetDefaultCallbacks(SubscribeCallback subscription_callback,
-                                     MessageReceivedCallback deliver_callback,
-                                     DataLossCallback data_loss_callback) {
+void ClientImpl::SetDefaultCallbacks(
+    SubscribeCallback subscription_callback,
+    std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+    std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback) {
   subscription_cb_fallback_ = std::move(subscription_callback);
   deliver_cb_fallback_ = std::move(deliver_callback);
   data_loss_callback_ = std::move(data_loss_callback);
@@ -206,11 +207,22 @@ PublishStatus ClientImpl::Publish(const TenantID tenant_id,
                             message_id);
 }
 
+namespace {
+template <typename T>
+std::function<void(Flow*, T)> IgnoreFlow(std::function<void(T)> f) {
+  if (!f) {
+    return nullptr;
+  }
+  auto moved_f = folly::makeMoveWrapper(std::move(f));
+  return [moved_f](Flow*, T t) { return (*moved_f)(std::forward<T>(t)); };
+}
+}
+
 SubscriptionHandle ClientImpl::Subscribe(
     SubscriptionParameters parameters,
-    MessageReceivedCallback deliver_callback,
+    std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
     SubscribeCallback subscription_callback,
-    DataLossCallback data_loss_callback) {
+    std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback) {
   // Select callbacks taking fallbacks into an account.
   if (!subscription_callback) {
     subscription_callback = subscription_cb_fallback_;
@@ -224,9 +236,9 @@ SubscriptionHandle ClientImpl::Subscribe(
 
   return subscriber_.Subscribe(nullptr,
                                std::move(parameters),
-                               std::move(deliver_callback),
+                               IgnoreFlow(std::move(deliver_callback)),
                                std::move(subscription_callback),
-                               std::move(data_loss_callback));
+                               IgnoreFlow(std::move(data_loss_callback)));
 }
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {

@@ -48,9 +48,10 @@ class ClientImpl : public Client {
 
   virtual ~ClientImpl();
 
-  void SetDefaultCallbacks(SubscribeCallback subscription_callback,
-                           MessageReceivedCallback deliver_callback,
-                           DataLossCallback data_loss_callback)
+  void SetDefaultCallbacks(
+      SubscribeCallback subscription_callback,
+      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback)
       override;
 
   virtual PublishStatus Publish(const TenantID tenant_id,
@@ -61,10 +62,11 @@ class ClientImpl : public Client {
                                 PublishCallback callback,
                                 const MsgId messageId) override;
 
-  SubscriptionHandle Subscribe(SubscriptionParameters parameters,
-                               MessageReceivedCallback deliver_callback,
-                               SubscribeCallback subscription_callback,
-                               DataLossCallback data_loss_callback)
+  SubscriptionHandle Subscribe(
+      SubscriptionParameters parameters,
+      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      SubscribeCallback subscription_callback,
+      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback)
       override;
 
   SubscriptionHandle Subscribe(
@@ -72,9 +74,11 @@ class ClientImpl : public Client {
       NamespaceID namespace_id,
       Topic topic_name,
       SequenceNumber start_seqno,
-      MessageReceivedCallback deliver_callback = nullptr,
+      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback =
+          nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      DataLossCallback data_loss_callback = nullptr) override {
+      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback =
+          nullptr) override {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
                       std::move(topic_name),
@@ -126,9 +130,9 @@ class ClientImpl : public Client {
   /** Default callback for announcing subscription status. */
   SubscribeCallback subscription_cb_fallback_;
   /** Default callbacks for delivering messages. */
-  MessageReceivedCallback deliver_cb_fallback_;
+  std::function<void(std::unique_ptr<MessageReceived>&)> deliver_cb_fallback_;
   /** Default callback for data loss */
-  DataLossCallback data_loss_callback_;
+  std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback_;
 
   /** Starts the client. */
   Status Start();

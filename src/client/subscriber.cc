@@ -121,6 +121,7 @@ class DataLossInfoImpl : public DataLossInfo {
 };
 
 void SubscriptionState::ReceiveMessage(
+    Flow* flow,
     const std::shared_ptr<Logger>& info_log,
     std::unique_ptr<MessageDeliver> deliver) {
   thread_check_.Check();
@@ -137,7 +138,7 @@ void SubscriptionState::ReceiveMessage(
             static_cast<MessageDeliverData*>(deliver.release()));
         std::unique_ptr<MessageReceived> received(
             new MessageReceivedImpl(std::move(data)));
-        deliver_callback_(received);
+        deliver_callback_(flow, received);
       }
       break;
     case MessageType::mDeliverGap:
@@ -148,7 +149,7 @@ void SubscriptionState::ReceiveMessage(
         if (gap->GetGapType() != GapType::kBenign) {
           std::unique_ptr<DataLossInfo> data_loss_info(
               new DataLossInfoImpl(std::move(gap)));
-          data_loss_callback_(data_loss_info);
+          data_loss_callback_(flow, data_loss_info);
         }
       }
       break;
@@ -551,7 +552,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   SubscriptionID sub_id = deliver->GetSubID();
   auto it = subscriptions_.find(sub_id);
   if (it != subscriptions_.end()) {
-    it->second.ReceiveMessage(options_.info_log, std::move(deliver));
+    it->second.ReceiveMessage(arg.flow, options_.info_log, std::move(deliver));
   } else {
     if (recent_terminations_.Contains(sub_id)) {
       LOG_DEBUG(options_.info_log,
