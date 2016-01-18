@@ -98,38 +98,56 @@ TEST(OrderedProcessorTest, Randomized) {
 }
 
 TEST(OrderedProcessorTest, LossyRandomized) {
-  const int n = 100000;
-  const int buffer = 1000;
-  std::vector<int> processed;
-  OrderedProcessor<int> p(
-    info_log_, buffer, [&] (int x) { processed.push_back(x); },
-    OrderedProcessorMode::kLossy);
+  const int n = 1000;
+  const int buffer = 50;
 
-  // Generate numbers 0..n in random order.
-  std::vector<int> numbers(n);
-  std::iota(numbers.begin(), numbers.end(), 0);
-  std::random_device rd;
-  std::mt19937 rng(rd());
-  std::shuffle(numbers.begin(), numbers.end(), rng);
+  for (int iters = 0; iters < 100; ++iters) {
+    std::vector<int> processed;
+    OrderedProcessor<int> p(
+      info_log_, buffer, [&] (int x) { processed.push_back(x); },
+      OrderedProcessorMode::kLossy);
 
-  // Process first 1000.
-  std::vector<int> expected;
-  std::priority_queue<int, std::vector<int>, std::greater<int>> queue;
-  for (int x : numbers) {
-    p.Process(x, x);
-    if (queue.size() == buffer) {
-      expected.push_back(queue.top());
-      queue.pop();
+    // Generate numbers 0..n in random order.
+    std::vector<int> numbers(n);
+    std::iota(numbers.begin(), numbers.end(), 0);
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::shuffle(numbers.begin(), numbers.end(), rng);
+
+    for (int x : numbers) {
+      p.Process(x, x);
     }
-    if (expected.empty() || expected.back() < x) {
-      queue.push(x);
+
+    // Ensure that things were processed in order.
+    ASSERT_TRUE(std::is_sorted(processed.begin(), processed.end()));
+
+    // Ensure that nothing was processed twice.
+    ASSERT_TRUE(
+      std::unique(processed.begin(), processed.end()) == processed.end());
+
+    // For those that were lost, ensure that they did not come before any that
+    // were processed afterwards.
+    for (size_t i = 0; i < numbers.size(); ++i) {
+      if (numbers[i] >= n - buffer) {
+        // Ignore the last messages as they may still be buffered.
+        continue;
+      }
+      // Count number of later messages that came before numbers[i]
+      size_t m = 0;
+      for (size_t j = 0; j < i; ++j) {
+        if (numbers[j] > numbers[i]) {
+          ++m;
+        }
+      }
+      if (!std::binary_search(processed.begin(), processed.end(), numbers[i])) {
+        // Wasn't processed, out of order must be >= buffer.
+        ASSERT_GE(m, buffer);
+      } else {
+        // Was processed, out of order must be <= buffer.
+        ASSERT_LE(m, buffer);
+      }
     }
   }
-  for (; !queue.empty(); queue.pop()) {
-    expected.push_back(queue.top());
-  }
-
-  ASSERT_EQ(processed, expected);
 }
 
 TEST(OrderedProcessorTest, LossyBasic) {
