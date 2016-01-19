@@ -60,10 +60,19 @@ class AcceptCommand : public Command {
  public:
   explicit AcceptCommand(int fd)
       : fd_(fd) {}
+  virtual ~AcceptCommand() {
+    if (fd_ >= 0) {
+      close(fd_);
+    }
+  }
 
   CommandType GetCommandType() const { return kAcceptCommand; }
 
-  int GetFD() const { return fd_; }
+  int DetachFD() {
+    int fd = fd_;
+    fd_ = -1;
+    return fd;
+  }
 
  private:
   int fd_;
@@ -120,14 +129,15 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
 
   AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
   // Create SocketEvent and pass ownership to the loop.
-  auto owned_socket = SocketEvent::Create(this, accept_cmd->GetFD());
+  int fd = accept_cmd->DetachFD();
+  auto owned_socket = SocketEvent::Create(this, fd);
   const auto socket = owned_socket.get();
   if (!socket) {
     LOG_ERROR(info_log_,
               "Failed to create SocketEvent for accepted connection fd(%d)",
-              accept_cmd->GetFD());
+              fd);
     // Close the socket.
-    close(accept_cmd->GetFD());
+    close(fd);
   }
   owned_connections_.emplace(socket, std::move(owned_socket));
 
