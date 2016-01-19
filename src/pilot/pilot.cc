@@ -307,7 +307,7 @@ void Pilot::SendAck(MessageData* msg,
 
   // create new message
   MessageDataAck newmsg(msg->GetTenantID(), {ack});
-  auto cmd = options_.msg_loop->ResponseCommand(newmsg, origin);
+  auto cmd = MsgLoop::ResponseCommand(newmsg, origin);
   options_.msg_loop->SendCommandToSelf(std::move(cmd));
 }
 

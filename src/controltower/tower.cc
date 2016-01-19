@@ -236,7 +236,7 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
     MessageUnsubscribe message(subscribe->GetTenantID(),
                                sub_id,
                                MessageUnsubscribe::Reason::kInvalid);
-    auto command = options_.msg_loop->ResponseCommand(message, origin);
+    auto command = MsgLoop::ResponseCommand(message, origin);
     options_.msg_loop->SendCommandToSelf(std::move(command));
     return;
   }
@@ -339,7 +339,7 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
                                   req->GetNamespace(),
                                   req->GetTopicName(),
                                   seqno);
-        auto command = options_.msg_loop->ResponseCommand(response, origin);
+        auto command = MsgLoop::ResponseCommand(response, origin);
         auto& queues = find_latest_seqno_response_queues_[worker_id];
         if (queues->GetThreadLocal()->Write(command)) {
           LOG_DEBUG(options_.info_log,

@@ -227,7 +227,7 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
                               msg->GetMessageID(),
                               msg->GetPayload());
       data.SetSequenceNumbers(prev_seqno, seqno);
-      auto command = options_.msg_loop->ResponseCommand(data, recipient);
+      auto command = MsgLoop::ResponseCommand(data, recipient);
       if (client_queues_[sub->worker_id]->Write(command)) {
         sub->seqno = seqno + 1;
         ++topic.records_sent;
@@ -332,7 +332,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
         sub->sub_id,
         msg->GetGapType());
       gap.SetSequenceNumbers(prev_seqno, next_seqno);
-      auto command = options_.msg_loop->ResponseCommand(gap, recipient);
+      auto command = MsgLoop::ResponseCommand(gap, recipient);
       if (client_queues_[sub->worker_id]->Write(command)) {
         sub->seqno = next_seqno + 1;
         ++topic.gaps_sent;
@@ -413,7 +413,7 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
                             sub->sub_id,
                             GapType::kBenign);
       gap.SetSequenceNumbers(0, next_seqno - 1);
-      auto command = options_.msg_loop->ResponseCommand(gap, recipient);
+      auto command = MsgLoop::ResponseCommand(gap, recipient);
       if (client_queues_[sub->worker_id]->Write(command)) {
         sub->seqno = next_seqno;
         ++topic.gaps_sent;
@@ -492,7 +492,7 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
         // Also need to send a gap to update client.
         MessageDeliverGap gap(tenant_id, sub_id, GapType::kBenign);
         gap.SetSequenceNumbers(0, start_seqno - 1);
-        auto command = options_.msg_loop->ResponseCommand(gap, subscriber);
+        auto command = MsgLoop::ResponseCommand(gap, subscriber);
         client_queues_[worker_id]->Write(command);
         topic.gaps_sent++;
 
@@ -661,7 +661,7 @@ void CopilotWorker::HandleInvalidSubscription(StreamID origin,
       MessageUnsubscribe message(sub->tenant_id,
                                  sub->sub_id,
                                  MessageUnsubscribe::Reason::kInvalid);
-      auto cmd = options_.msg_loop->ResponseCommand(message, sub->stream_id);
+      auto cmd = MsgLoop::ResponseCommand(message, sub->stream_id);
       if (client_queues_[sub->worker_id]->Write(cmd)) {
         LOG_DEBUG(options_.info_log,
           "Sent unsubscribe (invalid) for StreamID(%llu) SubID(%" PRIu64 ")",
@@ -835,7 +835,7 @@ bool CopilotWorker::SendSubscribe(TenantID tenant_id,
 
   MessageSubscribe message(tenant_id, namespace_id, topic_name, seqno, sub_id);
 
-  auto command = options_.msg_loop->RequestCommand(message, stream);
+  auto command = MsgLoop::RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {
     LOG_DEBUG(options_.info_log,
       "Sent %s@%" PRIu64 " subscription to tower stream %llu ID(%" PRIu64 ")",
@@ -863,7 +863,7 @@ bool CopilotWorker::SendUnsubscribe(TenantID tenant_id,
                              sub_id,
                              MessageUnsubscribe::Reason::kRequested);
 
-  auto command = options_.msg_loop->RequestCommand(message, stream);
+  auto command = MsgLoop::RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {
     LOG_DEBUG(options_.info_log,
       "Sent unsubscription to tower stream %llu",
@@ -1051,7 +1051,7 @@ void CopilotWorker::UpdateTowerSubscriptions(
     for (TowerConnection& tower_conn : tower_conns) {
       StreamSocket* const stream = tower_conn.first;
       const int worker_id = tower_conn.second;
-      auto command = options_.msg_loop->RequestCommand(msg, stream);
+      auto command = MsgLoop::RequestCommand(msg, stream);
       if (!tower_queues_[worker_id]->Write(command)) {
         LOG_WARN(options_.info_log,
                  "Failed to send %s FindTailSeqno to tower stream %llu",
@@ -1117,7 +1117,7 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
 
           // Send back message to the client, saying that it should resubscribe.
           MessageUnsubscribe msg(tenant_id, sub_id, reason);
-          auto unsub_command = options_.msg_loop->ResponseCommand(msg, origin);
+          auto unsub_command = MsgLoop::ResponseCommand(msg, origin);
           client_queues_[worker_id]->Write(unsub_command);
 
           stats_.rollcall_writes_failed->Add(1);

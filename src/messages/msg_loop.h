@@ -119,11 +119,11 @@ class MsgLoop : public MsgLoopBase {
                       StreamID stream,
                       int worker_id) override;
 
-  std::unique_ptr<Command> RequestCommand(const Message& msg,
-                                          StreamSocket* socket);
+  static std::unique_ptr<Command> RequestCommand(const Message& msg,
+                                                 StreamSocket* socket);
 
-  std::unique_ptr<Command> ResponseCommand(const Message& msg,
-                                           StreamID stream);
+  static std::unique_ptr<Command> ResponseCommand(const Message& msg,
+                                                  StreamID stream);
 
   Statistics GetStatisticsSync() override;
 

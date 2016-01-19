@@ -177,8 +177,7 @@ ControlRoom::ProcessDeliver(Flow* flow,
                                request->GetMessageId(),
                                request->GetPayload());
     deliver.SetSequenceNumbers(prev_seqno, next_seqno);
-    auto command =
-      options.msg_loop->ResponseCommand(deliver, recipient.stream_id);
+    auto command = MsgLoop::ResponseCommand(deliver, recipient.stream_id);
 
     flow->Write(room_to_client_queues_[worker_id].get(), command);
     LOG_DEBUG(options.info_log,
@@ -228,8 +227,7 @@ ControlRoom::ProcessGap(Flow* flow,
                               recipient.sub_id,
                               gap->GetType());
     deliver.SetSequenceNumbers(prev_seqno, next_seqno);
-    auto command =
-      options.msg_loop->ResponseCommand(deliver, recipient.stream_id);
+    auto command = MsgLoop::ResponseCommand(deliver, recipient.stream_id);
 
     flow->Write(room_to_client_queues_[worker_id].get(), command);
     LOG_DEBUG(options.info_log,
