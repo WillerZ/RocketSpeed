@@ -180,6 +180,13 @@ class TestSink : public Sink<T> {
 };
 
 TEST(EventLoopTest, StreamsFlowControl) {
+// This test is disabled on OSX.
+// On OSX we cannot control size of TCP send and receive buffers and they are
+// rather large. Consequently, we would have to write plenty of data to the
+// socket in order for TCP flow control to kick in and block the writer. Writing
+// large amount of data to the socket is undesirable, as it would make the test
+// flaky.
+#ifndef OS_MACOSX
   MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Response);
   // Create the sink that will allow us to block the stream.
   TestSink<int> test_sink(0);
@@ -263,6 +270,7 @@ TEST(EventLoopTest, StreamsFlowControl) {
     write_ev.reset();
     stream.reset();
   }, &loop);
+#endif  // OS_MACOSX
 }
 
 }  // namespace rocketspeed
