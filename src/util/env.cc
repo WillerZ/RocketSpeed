@@ -8,7 +8,7 @@
 #include <signal.h>
 
 #include "include/Slice.h"
-#include "src/port/Env.h"
+#include "include/Env.h"
 #include "src/port/stack_trace.h"
 #include "src/util/arena.h"
 

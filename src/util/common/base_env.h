@@ -12,7 +12,7 @@
 
 #include "include/Status.h"
 #include "include/Slice.h"
-#include "src/util/common/env_options.h"
+#include "include/EnvOptions.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)

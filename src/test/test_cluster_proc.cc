@@ -10,7 +10,7 @@
 
 #include "include/Status.h"
 #include "include/Logger.h"
-#include "src/port/Env.h"
+#include "include/Env.h"
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/testharness.h"
