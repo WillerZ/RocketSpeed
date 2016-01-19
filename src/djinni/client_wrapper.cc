@@ -133,7 +133,7 @@ int64_t ClientWrapper::Subscribe(
     throw std::runtime_error("TenantID out of range.");
   }
 
-  rocketspeed::MessageReceivedCallback deliver_cb1 = nullptr;
+  std::function<void(std::unique_ptr<MessageReceived>&)> deliver_cb1;
   if (deliver_cb) {
     deliver_cb1 =
         [this, deliver_cb](std::unique_ptr<MessageReceived>& message) {
@@ -149,7 +149,7 @@ int64_t ClientWrapper::Subscribe(
         };
   }
 
-  rocketspeed::SubscribeCallback subscribe_cb1 = nullptr;
+  std::function<void(const SubscriptionStatus&)> subscribe_cb1;
   if (subscribe_cb) {
     subscribe_cb1 = [this, subscribe_cb](const SubscriptionStatus& status) {
       try {
