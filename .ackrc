@@ -1,0 +1,4 @@
+--ignore-dir=build_tools
+--ignore-dir=external
+--ignore-dir=linters
+--ignore-file=match:LOG.integrationtest
