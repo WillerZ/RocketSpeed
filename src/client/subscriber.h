@@ -59,7 +59,8 @@ class SubscriptionState;
 class SubscriberStats;
 typedef uint64_t SubscriptionID;
 typedef uint64_t SubscriptionHandle;
-template <typename> class ThreadLocalQueues;
+template <typename>
+class ThreadLocalQueues;
 
 /**
  * Represents a state of a single subscription.
@@ -139,38 +140,6 @@ class SubscriptionState : public NonCopyable {
 
   /** Announces status of a subscription via user defined callback. */
   void AnnounceStatus(bool subscribed, Status status);
-};
-
-/**
- * And interface that encapsulates the routing logic for a single shard.
- * Objects of this class will be called into from a single thread only.
- */
-class SubscriptionRouter {
- public:
-  virtual ~SubscriptionRouter() = default;
-
-  /**
-   * Returns a version of the router, which can spontaneously increase.
-   * A version change could mean that the host selected by the router has
-   * changed.
-   * Calling this method should be cheap, uncontended atomic is the heaviest
-   * acceptable implementation.
-   */
-  virtual size_t GetVersion() = 0;
-
-  /**
-   * Returns the currently selected host.
-   * This method can acquire a mutex or perform other heavy synchronisation, but
-   * no IO.
-   */
-  virtual HostId GetHost() = 0;
-
-  /**
-   * Tell the router that we could not connect to provided host.
-   * This method can acquire a mutex or perform other heavy synchronisation, but
-   * no IO.
-   */
-  virtual void MarkHostDown(const HostId& host_id) = 0;
 };
 
 /**
@@ -258,37 +227,12 @@ class Subscriber : public StreamReceiver {
 };
 
 /**
- * And interface that encapsulates sharding logic.
- */
-class ShardingStrategy {
- public:
-  virtual ~ShardingStrategy();
-
-  /**
-   * Returns a shard ID for given namespace and topic.
-   * The total number of shards can grow over time, and the Client should make
-   * no assumptions about it.
-   */
-  virtual size_t GetShard(const NamespaceID& namespace_id,
-                          const Topic& topic_name) const = 0;
-
-  /**
-   * Creates a routing strategy for given shard ID.
-   * The configuration object is not to be accessed concurrently from multiple
-   * threads.
-   */
-  virtual std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) = 0;
-};
-
-/**
  * A single threaded thread-unsafe subscriber, that lazily brings up subscribers
  * per shard.
  */
 class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
  public:
-  MultiShardSubscriber(const ClientOptions& options,
-                       EventLoop* event_loop,
-                       std::shared_ptr<ShardingStrategy> sharding);
+  MultiShardSubscriber(const ClientOptions& options, EventLoop* event_loop);
 
   ~MultiShardSubscriber();
 
@@ -314,8 +258,6 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
   const ClientOptions& options_;
   /** An event loop object this subscriber runs on. */
   EventLoop* const event_loop_;
-  /** A sharding strategy. */
-  const std::shared_ptr<ShardingStrategy> sharding_;
 
   /**
    * A map of subscribers one per each shard.
@@ -343,19 +285,11 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
   void SendPendingRequests();
 };
 
-/**
- * And interface that encapsulates thread selection logic.
- */
-using ThreadSelectionStrategy =
-    std::function<size_t(MsgLoop*, const NamespaceID&, const Topic&)>;
-
 /** A multi-threaded subscriber. */
 class MultiThreadedSubscriber {
  public:
   MultiThreadedSubscriber(const ClientOptions& options,
-                          std::shared_ptr<MsgLoop> msg_loop,
-                          ThreadSelectionStrategy thread_selector,
-                          std::unique_ptr<ShardingStrategy> sharding);
+                          std::shared_ptr<MsgLoop> msg_loop);
 
   Status Start();
 
@@ -394,10 +328,6 @@ class MultiThreadedSubscriber {
   const ClientOptions& options_;
   /** A set of loops to use. */
   const std::shared_ptr<MsgLoop> msg_loop_;
-  /** Routes subscription to appropriate thread. */
-  const ThreadSelectionStrategy thread_selector_;
-  /** A strategy for routing subscriptions. */
-  const std::shared_ptr<ShardingStrategy> sharding_;
 
   /** One multi-threaded subscriber per thread. */
   std::vector<std::unique_ptr<MultiShardSubscriber>> subscribers_;

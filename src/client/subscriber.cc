@@ -660,15 +660,9 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-ShardingStrategy::~ShardingStrategy() {
-}
-
-///////////////////////////////////////////////////////////////////////////////
-MultiShardSubscriber::MultiShardSubscriber(
-    const ClientOptions& options,
-    EventLoop* event_loop,
-    std::shared_ptr<ShardingStrategy> sharding)
-: options_(options), event_loop_(event_loop), sharding_(std::move(sharding)) {
+MultiShardSubscriber::MultiShardSubscriber(const ClientOptions& options,
+                                           EventLoop* event_loop)
+: options_(options), event_loop_(event_loop) {
 }
 
 MultiShardSubscriber::~MultiShardSubscriber() {
@@ -690,8 +684,8 @@ void MultiShardSubscriber::StartSubscription(
     SubscribeCallback subscription_callback,
     DataLossCallback data_loss_callback) {
   // Determine the shard ID.
-  size_t shard_id =
-      sharding_->GetShard(parameters.namespace_id, parameters.topic_name);
+  size_t shard_id = options_.sharding->GetShard(parameters.namespace_id,
+                                                parameters.topic_name);
   subscription_to_shard_.emplace(sub_id, shard_id);
 
   // Find or create a subscriber for this shard.
@@ -699,7 +693,7 @@ void MultiShardSubscriber::StartSubscription(
   if (it == subscribers_.end()) {
     // Subscriber is missing, create and start one.
     std::unique_ptr<Subscriber> subscriber(new Subscriber(
-        options_, event_loop_, stats_, sharding_->GetRouter(shard_id)));
+        options_, event_loop_, stats_, options_.sharding->GetRouter(shard_id)));
     // We do not start the subscriber as it's not operating on it's own, but as
     // a part of the multi-shard one and will reuse timer events of the latter.
 
@@ -770,18 +764,11 @@ void MultiShardSubscriber::SendPendingRequests() {
 
 ///////////////////////////////////////////////////////////////////////////////
 MultiThreadedSubscriber::MultiThreadedSubscriber(
-    const ClientOptions& options,
-    std::shared_ptr<MsgLoop> msg_loop,
-    ThreadSelectionStrategy thread_selector,
-    std::unique_ptr<ShardingStrategy> sharding)
-: options_(options)
-, msg_loop_(std::move(msg_loop))
-, thread_selector_(std::move(thread_selector))
-, sharding_(std::move(sharding))
-, next_sub_id_(0) {
+    const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
+: options_(options), msg_loop_(std::move(msg_loop)), next_sub_id_(0) {
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    subscribers_.emplace_back(new MultiShardSubscriber(
-        options_, msg_loop_->GetEventLoop(i), sharding_));
+    subscribers_.emplace_back(
+        new MultiShardSubscriber(options_, msg_loop_->GetEventLoop(i)));
     subscriber_queues_.emplace_back(msg_loop_->CreateThreadLocalQueues(i));
   }
 }
@@ -804,8 +791,9 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     SubscribeCallback subscription_callback,
     DataLossCallback data_loss_callback) {
   // Choose worker for this subscription and find appropriate queue.
-  const auto worker_id = thread_selector_(
-      msg_loop_.get(), parameters.namespace_id, parameters.topic_name);
+  const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
+                                                  parameters.namespace_id,
+                                                  parameters.topic_name);
   RS_ASSERT(worker_id < subscriber_queues_.size());
   auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
 

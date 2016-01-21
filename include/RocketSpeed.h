@@ -63,6 +63,11 @@ class ClientOptions {
   // Configuration of this service provider.
   std::shared_ptr<Configuration> config;
 
+  // Sharding and routing configuration for subscriptions.
+  // If specified, takes precedence over the Configuration above for routing
+  // subscriptions.
+  std::unique_ptr<ShardingStrategy> sharding;
+
   // Logger that is used for info messages.
   // Default: nullptr.
   std::shared_ptr<Logger> info_log;
@@ -78,6 +83,10 @@ class ClientOptions {
   // Number of threads used by the client.
   // Default: 1
   int num_workers;
+
+  // Maps subscriptions to workers based on subscription parameters.
+  // Default: selects the least loaded worker.
+  ThreadSelectionStrategy thread_selector;
 
   // Strategy for storing subscriptions.
   // Default: null-strategy.

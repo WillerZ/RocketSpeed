@@ -246,6 +246,67 @@ enum Tenant : TenantID {
 };
 
 /**
+ * And interface that encapsulates the routing logic for a single shard.
+ * Objects of this class will be called into from a single thread only.
+ */
+class SubscriptionRouter {
+ public:
+  virtual ~SubscriptionRouter() = default;
+
+  /**
+   * Returns a version of the router, which can spontaneously increase.
+   * A version change could mean that the host selected by the router has
+   * changed.
+   * Calling this method should be cheap, uncontended atomic is the heaviest
+   * acceptable implementation.
+   */
+  virtual size_t GetVersion() = 0;
+
+  /**
+   * Returns the currently selected host.
+   * This method can acquire a mutex or perform other heavy synchronisation, but
+   * no IO.
+   */
+  virtual HostId GetHost() = 0;
+
+  /**
+   * Tell the router that we could not connect to provided host.
+   * This method can acquire a mutex or perform other heavy synchronisation, but
+   * no IO.
+   */
+  virtual void MarkHostDown(const HostId& host_id) = 0;
+};
+
+/**
+ * And interface that encapsulates sharding logic.
+ */
+class ShardingStrategy {
+ public:
+  virtual ~ShardingStrategy() = default;
+
+  /**
+   * Returns a shard ID for given namespace and topic.
+   * The total number of shards can grow over time, and the Client should make
+   * no assumptions about it.
+   */
+  virtual size_t GetShard(const NamespaceID& namespace_id,
+                          const Topic& topic_name) const = 0;
+
+  /**
+   * Creates a routing strategy for given shard ID.
+   * The configuration object is not to be accessed concurrently from multiple
+   * threads.
+   */
+  virtual std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) = 0;
+};
+
+/**
+ * Encapsulates thread selection logic.
+ */
+using ThreadSelectionStrategy =
+    std::function<size_t(size_t, const NamespaceID&, const Topic&)>;
+
+/**
  * A Configuration that specifies how a Client can connect to RocketSpeed.
  */
 class Configuration {

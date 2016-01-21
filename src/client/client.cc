@@ -63,24 +63,82 @@ Status ClientImpl::Create(ClientOptions options,
   if (!options.backoff_distribution) {
     return Status::InvalidArgument("Missing backoff distribution.");
   }
+
+  // Default to null logger.
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();
   }
 
-  std::unique_ptr<MsgLoop> msg_loop_(new MsgLoop(options.env,
+  // Create sharding and routing strategies for subscriptions out of
+  // configuration.
+  if (!options.sharding) {
+    class RouterFromConfiguration : public SubscriptionRouter {
+     public:
+      explicit RouterFromConfiguration(
+          const std::shared_ptr<Configuration>& config)
+      : config_(config) {}
+
+      size_t GetVersion() override { return config_->GetCopilotVersion(); }
+
+      HostId GetHost() override {
+        HostId host_id;
+        auto st = config_->GetCopilot(&host_id);
+        return st.ok() ? host_id : HostId();
+      }
+
+      void MarkHostDown(const HostId& host_id) override {}
+
+     private:
+      std::shared_ptr<Configuration> config_;
+    };
+
+    class ShardingFromConfiguration : public ShardingStrategy {
+     public:
+      explicit ShardingFromConfiguration(
+          const std::shared_ptr<Configuration>& config)
+      : config_(config) {}
+
+      size_t GetShard(const NamespaceID& namespace_id,
+                      const Topic& topic_name) const override {
+        return 0;
+      }
+
+      std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
+        RS_ASSERT(shard == 0);
+        return std::unique_ptr<SubscriptionRouter>(
+            new RouterFromConfiguration(config_));
+      }
+
+     private:
+      std::shared_ptr<Configuration> config_;
+    };
+
+    options.sharding.reset(new ShardingFromConfiguration(options.config));
+  }
+
+  std::unique_ptr<MsgLoop> msg_loop(new MsgLoop(options.env,
                                                  EnvOptions(),
                                                  -1,  // port
                                                  options.num_workers,
                                                  options.info_log,
                                                  "client"));
 
-  Status st = msg_loop_->Initialize();
+  Status st = msg_loop->Initialize();
   if (!st.ok()) {
     return st;
   }
 
+  // Assign default thread selector if not specified.
+  if (!options.thread_selector) {
+    auto raw_loop = msg_loop.get();
+    options.thread_selector =
+        [raw_loop](size_t num_threads, const NamespaceID&, const Topic&) {
+          return raw_loop->LoadBalancedWorkerId();
+        };
+  }
+
   std::unique_ptr<ClientImpl> client(
-      new ClientImpl(std::move(options), std::move(msg_loop_), is_internal));
+      new ClientImpl(std::move(options), std::move(msg_loop), is_internal));
 
   st = client->Start();
   if (!st.ok()) {
@@ -91,50 +149,6 @@ Status ClientImpl::Create(ClientOptions options,
   return Status::OK();
 }
 
-namespace {
-
-class RouterFromConfiguration : public SubscriptionRouter {
- public:
-  explicit RouterFromConfiguration(const std::shared_ptr<Configuration>& config)
-  : config_(config) {}
-
-  size_t GetVersion() override { return config_->GetCopilotVersion(); }
-
-  HostId GetHost() override {
-    HostId host_id;
-    auto st = config_->GetCopilot(&host_id);
-    return st.ok() ? host_id : HostId();
-  }
-
-  void MarkHostDown(const HostId& host_id) override {}
-
- private:
-  std::shared_ptr<Configuration> config_;
-};
-
-class ShardingFromConfiguration : public ShardingStrategy {
- public:
-  explicit ShardingFromConfiguration(
-      const std::shared_ptr<Configuration>& config)
-  : config_(config) {}
-
-  size_t GetShard(const NamespaceID& namespace_id,
-                  const Topic& topic_name) const override {
-    return 0;
-  }
-
-  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-    RS_ASSERT(shard == 0);
-    return std::unique_ptr<SubscriptionRouter>(
-        new RouterFromConfiguration(config_));
-  }
-
- private:
-  std::shared_ptr<Configuration> config_;
-};
-
-}  // namespace
-
 ClientImpl::ClientImpl(ClientOptions options,
                        std::unique_ptr<MsgLoop> msg_loop,
                        bool is_internal)
@@ -144,13 +158,7 @@ ClientImpl::ClientImpl(ClientOptions options,
 , msg_loop_thread_spawned_(false)
 , is_internal_(is_internal)
 , publisher_(options_, msg_loop_.get(), &wake_lock_)
-, subscriber_(options_,
-              msg_loop_,
-              [](MsgLoop* loop, const NamespaceID&, const Topic&) {
-                return loop->LoadBalancedWorkerId();
-              },
-              std::unique_ptr<ShardingStrategy>(
-                  new ShardingFromConfiguration(options_.config))) {
+, subscriber_(options_, msg_loop_) {
   LOG_VITAL(options_.info_log, "Creating Client");
 }
 

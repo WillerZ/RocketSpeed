@@ -487,13 +487,15 @@ TEST(ClientTest, Sharding) {
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
-  std::unique_ptr<ShardingStrategy> sharding(new TestSharding2(
-      copilot0.msg_loop->GetHostId(), copilot1.msg_loop->GetHostId()));
-  MultiThreadedSubscriber subscriber(
-      options,
-      loop,
-      [](MsgLoop*, const NamespaceID&, const Topic&) -> size_t { return 0; },
-      std::move(sharding));
+  options.thread_selector =
+      [](size_t num_threads, const NamespaceID&, const Topic&) -> size_t {
+        ASSERT_EQ(num_threads, 1);
+        return 0;
+      };
+  options.sharding.reset(new TestSharding2(copilot0.msg_loop->GetHostId(),
+                                           copilot1.msg_loop->GetHostId()));
+
+  MultiThreadedSubscriber subscriber(options, loop);
 
   MsgLoopThread loop_thread(env_, loop.get(), "loop");
   ASSERT_OK(loop->WaitUntilRunning(std::chrono::seconds(1)));
