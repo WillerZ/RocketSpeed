@@ -16,7 +16,6 @@ cpp_library(
         'thread_check.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
@@ -36,7 +35,6 @@ cpp_library(
         'fixed_configuration.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
@@ -63,7 +61,6 @@ cpp_library(
         'flow_control.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',

@@ -4,7 +4,6 @@ cpp_library(
         'test_cluster.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
@@ -27,7 +26,6 @@ cpp_binary(
         'test_cluster_proc.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
@@ -44,7 +42,6 @@ cpp_unittest(
         'integration_test.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',

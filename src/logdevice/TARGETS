@@ -7,7 +7,6 @@ cpp_binary(
         'test.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DUSE_LOGDEVICE',
         '-DROCKETSPEED_PLATFORM_POSIX',
@@ -27,7 +26,6 @@ cpp_library(
         'log_router.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',

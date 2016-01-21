@@ -5,7 +5,6 @@ cpp_unittest(
         'pilotmessages_test.cc',
     ],
     preprocessor_flags = [
-        '-Irocketspeed/github/include',
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
