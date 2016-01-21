@@ -11,7 +11,6 @@
 #include <vector>
 #include "src/messages/msg_loop.h"
 #include "src/messages/queues.h"
-#include "src/util/common/flow_control.h"
 #include "src/util/common/object_pool.h"
 #include "src/util/common/processor.h"
 #include "src/util/common/random.h"
@@ -328,8 +327,7 @@ std::string Pilot::GetInfoSync(std::vector<std::string> args) {
 
 Pilot::WorkerData::WorkerData(MsgLoop* msg_loop, int worker_id, Pilot* pilot)
 : append_closure_pool_(new SharedPooledObjectList<AppendClosure>())
-, prng_(ThreadLocalPRNG())
-, flow_control_(new FlowControl("pilot", msg_loop->GetEventLoop(worker_id))) {
+, prng_(ThreadLocalPRNG()) {
   // Register processors.
   EventLoop* event_loop = msg_loop->GetEventLoop(worker_id);
   append_response_queues_.reset(
@@ -340,7 +338,6 @@ Pilot::WorkerData::WorkerData(MsgLoop* msg_loop, int worker_id, Pilot* pilot)
           pilot->options_.info_log,
           event_loop->GetQueueStats(),
           1000,
-          flow_control_.get(),
           [this, pilot] (Flow* flow, AppendResponse response) {
             // Update statistics.
             stats_.append_latency->Record(response.latency);

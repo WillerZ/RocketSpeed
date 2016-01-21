@@ -18,7 +18,6 @@ namespace rocketspeed {
 
 class EventLoop;
 class Flow;
-class FlowControl;
 template <typename> class ThreadLocalQueues;
 
 //
@@ -229,7 +228,6 @@ class LogTailer {
   ControlTowerOptions::LogTailer options_;
 
   EventLoop* event_loop_;
-  std::unique_ptr<FlowControl> flow_control_;
 
   // Queues for storage threads delivering records or gaps back to rooms.
   std::unique_ptr<ThreadLocalQueues<std::function<void(Flow*)>>>

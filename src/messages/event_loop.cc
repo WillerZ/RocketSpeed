@@ -419,6 +419,7 @@ void EventLoop::Run() {
   notified_triggers_event_.reset();
   shutdown_event_.reset();
   CloseAllSocketEvents();
+  flow_control_.reset();
   event_base_free(base_);
 
   if (!internal_status_.ok()) {
@@ -1014,7 +1015,8 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , stats_(options_.stats_prefix)
 , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix + ".queues"))
 , socket_stats_(std::make_shared<SocketEventStats>(options_.stats_prefix))
-, default_command_queue_size_(options_.command_queue_size) {
+, default_command_queue_size_(options_.command_queue_size)
+, flow_control_(new FlowControl(options_.stats_prefix, this)) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
       std::unique_ptr<Command> command) {
@@ -1052,6 +1054,7 @@ Statistics EventLoop::GetStatistics() const {
   Statistics stats = stats_.all;
   stats.Aggregate(queue_stats_->all);
   stats.Aggregate(socket_stats_->all);
+  stats.Aggregate(flow_control_->GetStatistics());
   return stats;
 }
 

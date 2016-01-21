@@ -21,6 +21,7 @@ class FdCallback : public EventCallback {
   : event_loop_(event_loop), cb_(std::move(cb)), enabled_(false) {}
 
   ~FdCallback() {
+    event_loop_->ThreadCheck();
     if (event_) {
       event_free(event_);
     }

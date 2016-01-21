@@ -7,7 +7,6 @@
 #include "src/controltower/log_tailer.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/queues.h"
-#include "src/util/common/flow_control.h"
 #include "src/util/common/processor.h"
 #include "src/util/common/random.h"
 #include "src/util/storage.h"
@@ -46,7 +45,6 @@ LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
   info_log_(info_log),
   options_(std::move(options)),
   event_loop_(event_loop),
-  flow_control_(new FlowControl("tower.log_tailer", event_loop_)),
   restart_events_(options_.min_reader_restart_duration,
                   options_.max_reader_restart_duration) {
 
@@ -58,7 +56,6 @@ LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
           info_log_,
           event_loop_->GetQueueStats(),
           options_.storage_to_room_queue_size,
-          flow_control_.get(),
           [] (Flow* flow, std::function<void(Flow*)> fn) {
             fn(flow);
           });
@@ -382,7 +379,6 @@ LogTailer::NumberOpenLogs() const {
 Statistics LogTailer::GetStatistics() const {
   stats_.open_logs->Set(NumberOpenLogs());
   Statistics stats = stats_.all;
-  stats.Aggregate(flow_control_->GetStatistics());
   return stats;
 }
 

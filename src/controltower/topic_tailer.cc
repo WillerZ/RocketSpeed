@@ -14,7 +14,6 @@
 #include "src/controltower/log_tailer.h"
 #include "src/util/storage.h"
 #include "src/util/topic_uuid.h"
-#include "src/util/common/flow_control.h"
 #include "src/util/common/linked_map.h"
 #include "src/util/common/processor.h"
 #include "src/util/common/random.h"
@@ -743,7 +742,6 @@ TopicTailer::TopicTailer(
   prng_(ThreadLocalPRNG()),
   options_(options),
   event_loop_(msg_loop_->GetEventLoop(worker_id_)),
-  flow_control_(new FlowControl("tower.topic_tailer", event_loop_)),
   copilot_worker_(std::move(copilot_worker)) {
 
   latest_seqno_queues_.reset(
@@ -754,7 +752,6 @@ TopicTailer::TopicTailer(
           info_log_,
           event_loop_->GetQueueStats(),
           options_.max_find_time_requests, // queue size = max inflight requests
-          flow_control_.get(),
           [this] (Flow* flow, FindLatestSeqnoResponse response) {
             ProcessFindLatestSeqnoResponse(flow, std::move(response));
           });
@@ -770,7 +767,6 @@ TopicTailer::TopicTailer(
   InstallSource<std::pair<LogReaderId, std::nullptr_t>>(
     event_loop_,
     reentry_cache_readers_.get(),
-    flow_control_.get(),
     [this] (Flow* flow, std::pair<LogReaderId, std::nullptr_t> item) {
       SendCacheRecord(flow, item.first.log_id, item.first.reader);
     });
@@ -1779,7 +1775,6 @@ Statistics TopicTailer::GetStatistics() const {
   stats_.cache_usage->Set(data_cache_.GetUsage()); // update cache statistics
   Statistics stats = stats_.all;
   stats.Aggregate(data_cache_.GetStatistics());
-  stats.Aggregate(flow_control_->GetStatistics());
   return stats;
 }
 
@@ -1803,7 +1798,6 @@ TopicTailer::GetPendingReaderQueue(const CopilotSub& sub) {
     InstallSource<std::pair<CopilotSub, PendingSubscription>>(
       event_loop_,
       cache_readers_[worker_id].get(),
-      flow_control_.get(),
       [this] (Flow* flow, std::pair<CopilotSub, PendingSubscription> item) {
         const auto& id = item.first;
         TopicUUID* uuid = stream_subscriptions_.Find(id.stream_id, id.sub_id);

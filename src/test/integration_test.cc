@@ -2303,10 +2303,11 @@ TEST(IntegrationTest, SmallRoomQueues) {
   }
 
   auto stats1 = cluster.GetControlTower()->GetStatisticsSync();
+  stats1.Aggregate(cluster.GetControlTowerLoop()->GetStatisticsSync());
   auto applied1 = stats1.GetCounterValue(
-    "tower.log_tailer.flow_control.backpressure_applied");
+    "tower.flow_control.backpressure_applied");
   auto lifted1 = stats1.GetCounterValue(
-    "tower.log_tailer.flow_control.backpressure_lifted");
+    "tower.flow_control.backpressure_lifted");
   auto received1 = stats1.GetCounterValue(
     "tower.topic_tailer.log_records_received");
   ASSERT_GT(applied1, 0);  // ensure that backpressure was applied
@@ -2328,10 +2329,11 @@ TEST(IntegrationTest, SmallRoomQueues) {
   }
 
   auto stats2 = cluster.GetControlTower()->GetStatisticsSync();
+  stats2.Aggregate(cluster.GetControlTowerLoop()->GetStatisticsSync());
   auto applied2 = stats2.GetCounterValue(
-    "tower.log_tailer.flow_control.backpressure_applied");
+    "tower.flow_control.backpressure_applied");
   auto lifted2 = stats2.GetCounterValue(
-    "tower.log_tailer.flow_control.backpressure_lifted");
+    "tower.flow_control.backpressure_lifted");
   auto received2 = stats2.GetCounterValue(
     "tower.topic_tailer.log_records_received");
   auto cache2 = stats2.GetCounterValue(
@@ -2359,10 +2361,11 @@ TEST(IntegrationTest, SmallRoomQueues) {
   }
 
   auto stats3 = cluster.GetControlTower()->GetStatisticsSync();
+  stats3.Aggregate(cluster.GetControlTowerLoop()->GetStatisticsSync());
   auto applied3 = stats3.GetCounterValue(
-    "tower.topic_tailer.flow_control.backpressure_applied");
+    "tower.flow_control.backpressure_applied");
   auto lifted3 = stats3.GetCounterValue(
-    "tower.topic_tailer.flow_control.backpressure_lifted");
+    "tower.flow_control.backpressure_lifted");
   auto received3 = stats3.GetCounterValue(
     "tower.topic_tailer.log_records_received");
   auto cache3 = stats3.GetCounterValue(

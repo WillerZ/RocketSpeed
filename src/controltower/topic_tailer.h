@@ -27,7 +27,6 @@
 namespace rocketspeed {
 
 class Flow;
-class FlowControl;
 class LogTailer;
 class LogRouter;
 class LogReader;
@@ -404,7 +403,6 @@ class TopicTailer {
   LinkedSet<LogID> pending_find_time_requests_;
 
   EventLoop* event_loop_;
-  std::unique_ptr<FlowControl> flow_control_;
 
   // Queue of subscriptions that are still reading from the cache and haven't
   // been added to a log reader yet.

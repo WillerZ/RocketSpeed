@@ -16,7 +16,6 @@ namespace rocketspeed {
 
 class AppendClosure;
 class AppendResponse;
-class FlowControl;
 class Logger;
 class LogStorage;
 class Message;
@@ -104,7 +103,6 @@ class Pilot {
     Stats stats_;
     std::mt19937_64& prng_;
     std::shared_ptr<ThreadLocalQueues<AppendResponse>> append_response_queues_;
-    std::unique_ptr<FlowControl> flow_control_;
   };
 
   // Per-thread data.

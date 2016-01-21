@@ -66,10 +66,10 @@ TEST(FlowTest, PartitionedFlow) {
   }
 
   // Setup flow control state for each processor.
-  FlowControl flow0("", event_loop[0]);
-  FlowControl flow1("", event_loop[1]);
-  FlowControl flow2("", event_loop[2]);
-  FlowControl flow3("", event_loop[3]);
+  FlowControl& flow0 = *event_loop[0]->GetFlowControl();
+  FlowControl& flow1 = *event_loop[1]->GetFlowControl();
+  FlowControl& flow2 = *event_loop[2]->GetFlowControl();
+  FlowControl& flow3 = *event_loop[3]->GetFlowControl();
 
   // Create all our queues.
   auto queue0 = MakeIntQueue(kNumMessages);
@@ -157,9 +157,9 @@ TEST(FlowTest, Fanout) {
   }
 
   // Setup flow control state for each processor.
-  FlowControl flow0("", event_loop[0]);
-  FlowControl flow1("", event_loop[1]);
-  FlowControl flow2("", event_loop[2]);
+  FlowControl& flow0 = *event_loop[0]->GetFlowControl();
+  FlowControl& flow1 = *event_loop[1]->GetFlowControl();
+  FlowControl& flow2 = *event_loop[2]->GetFlowControl();
 
   // Create all our queues.
   auto queue0 = MakeIntQueue(kNumMessages);
@@ -226,11 +226,10 @@ TEST(FlowTest, MultiLayerRandomized) {
   ASSERT_OK(loop.Initialize());
 
   // Setup flow control state for each processor.
-  std::unique_ptr<FlowControl> flows[kLayers][kPerLayer];
+  FlowControl* flows[kLayers][kPerLayer];
   for (int i = 0; i < kLayers; ++i) {
     for (int j = 0; j < kPerLayer; ++j) {
-      flows[i][j].reset(
-        new FlowControl("", loop.GetEventLoop(i * kPerLayer + j)));
+      flows[i][j] = loop.GetEventLoop(i * kPerLayer + j)->GetFlowControl();
     }
   }
 
@@ -316,7 +315,7 @@ TEST(FlowTest, ObservableMap) {
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
   ASSERT_OK(loop.Initialize());
 
-  FlowControl flow_control("", loop.GetEventLoop(0));
+  FlowControl& flow_control = *loop.GetEventLoop(0)->GetFlowControl();
   auto obs_map = std::make_shared<ObservableMap<std::string, int>>();
   auto queue = MakeQueue<std::pair<std::string, int>>(1);
 

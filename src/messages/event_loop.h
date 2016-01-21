@@ -470,6 +470,8 @@ class EventLoop {
 
   const Options& GetOptions() const { return options_; }
 
+  FlowControl* GetFlowControl() { return flow_control_.get(); }
+
  private:
   Options options_;
 
@@ -665,6 +667,8 @@ class EventLoop {
   std::vector<std::shared_ptr<CommandQueue>> incoming_queues_;
 
   std::unordered_map<int, std::unique_ptr<EventCallback>> fd_read_events_;
+
+  std::unique_ptr<FlowControl> flow_control_;
 
   // Send a command using a particular command queue.
   Status SendCommand(std::unique_ptr<Command>& command,

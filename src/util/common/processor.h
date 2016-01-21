@@ -25,7 +25,6 @@ class QueueStats;
  * @param info_log Logging for queue.
  * @param queue_stats Statistics for queue.
  * @param size Size of the queue (in elements).
- * @param flow_control Flow control to use for processing the queue elements.
  * @param callback Callback to invoke on queue reads.
  */
 template <typename T>
@@ -34,12 +33,11 @@ InstallQueue(EventLoop* event_loop,
              std::shared_ptr<Logger> info_log,
              std::shared_ptr<QueueStats> queue_stats,
              size_t size,
-             FlowControl* flow_control,
              std::function<void(Flow*, T)> callback) {
   auto queue = std::make_shared<Queue<T>>(std::move(info_log),
                                           std::move(queue_stats),
                                           size);
-  InstallSource(event_loop, queue.get(), flow_control, std::move(callback));
+  InstallSource(event_loop, queue.get(), std::move(callback));
   return queue;
 }
 
@@ -50,18 +48,16 @@ InstallQueue(EventLoop* event_loop,
  *
  * @param event_loop EventLoop the flow control was bound to.
  * @param source The source to begin processing.
- * @param flow_control Flow control to use for processing the elements.
  * @param callback Callback to invoke on source reads.
  */
 template <typename T>
 void InstallSource(EventLoop* event_loop,
                    Source<T>* source,
-                   FlowControl* flow_control,
                    std::function<void(Flow*, T)> callback) {
   auto moved_callback = folly::makeMoveWrapper(std::move(callback));
   std::unique_ptr<Command> cmd(
-    MakeExecuteCommand([moved_callback, source, flow_control]() mutable {
-      flow_control->Register(source, moved_callback.move());
+    MakeExecuteCommand([moved_callback, source, event_loop]() mutable {
+      event_loop->GetFlowControl()->Register(source, moved_callback.move());
     }));
   event_loop->SendControlCommand(std::move(cmd));
 }
