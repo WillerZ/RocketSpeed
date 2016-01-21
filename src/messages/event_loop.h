@@ -51,6 +51,7 @@ struct sockaddr;
 namespace rocketspeed {
 
 class CommandQueue;
+class UnboundedMPSCCommandQueue;
 class EventCallback;
 class EventLoop;
 class EventTrigger;
@@ -552,7 +553,7 @@ class EventLoop {
   // Shared command queue for sending control commands.
   // This should only be used for creating new queues.
   port::Mutex control_command_mutex_;
-  std::shared_ptr<CommandQueue> control_command_queue_;
+  std::shared_ptr<UnboundedMPSCCommandQueue> control_command_queue_;
 
   /**
    * A receiver that receives messages and forward them to the callback, which
@@ -677,6 +678,9 @@ class EventLoop {
   const std::shared_ptr<CommandQueue>& GetThreadLocalQueue();
 
   Status AddIncomingQueue(std::shared_ptr<CommandQueue> command_queue);
+
+  Status AddControlCommandQueue(
+    std::shared_ptr<UnboundedMPSCCommandQueue> control_command_queue);
 
   void HandleSendCommand(std::unique_ptr<Command> command);
   void HandleAcceptCommand(std::unique_ptr<Command> command);

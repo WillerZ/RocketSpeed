@@ -31,7 +31,7 @@
 #include "external/folly/move_wrapper.h"
 
 #include "src/port/port.h"
-#include "src/messages/queues.h"
+#include "src/messages/unbounded_mpsc_queue.h"
 #include "src/messages/serializer.h"
 #include "src/messages/socket_event.h"
 #include "src/messages/stream.h"
@@ -364,10 +364,8 @@ EventLoop::Initialize() {
   shutdown_event_->Enable();
 
   control_command_queue_ =
-    std::make_shared<CommandQueue>(info_log_,
-                                   queue_stats_,
-                                   default_command_queue_size_);
-  Status st = AddIncomingQueue(control_command_queue_);
+    std::make_shared<UnboundedMPSCCommandQueue>(info_log_, queue_stats_);
+  Status st = AddControlCommandQueue(control_command_queue_);
   if (!st.ok()) {
     LOG_FATAL(info_log_, "Failed to add control command queue");
   }
@@ -819,6 +817,22 @@ Status EventLoop::AddIncomingQueue(
   return Status::OK();
 }
 
+Status EventLoop::AddControlCommandQueue(
+    std::shared_ptr<UnboundedMPSCCommandQueue> control_command_queue) {
+  // An event that signals new commands in the command queue.
+  control_command_queue->RegisterReadCallback(
+    this,
+    [this] (std::unique_ptr<Command> cmd) {
+      // Call registered callback.
+      Dispatch(std::move(cmd));
+      return true;
+    });
+  control_command_queue->SetReadEnabled(this, true);
+
+  LOG_INFO(info_log_, "Added control command queue to EventLoop");
+  return Status::OK();
+}
+
 event* EventLoop::CreateFdReadEvent(int fd,
                                     void (*cb)(int, short, void*),
                                     void* arg) {
@@ -860,8 +874,7 @@ Status EventLoop::SendResponse(const Message& msg, StreamID stream_id) {
 void EventLoop::SendControlCommand(std::unique_ptr<Command> command) {
   // Need to lock when writing to control_command_queue_ since it is shared.
   MutexLock lock(&control_command_mutex_);
-  const bool check_thread = false;
-  bool ok = control_command_queue_->Write(command, check_thread);
+  bool ok = control_command_queue_->Write(command);
   RS_ASSERT(ok);
   (void)ok;
 }
