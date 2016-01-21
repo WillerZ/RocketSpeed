@@ -12,8 +12,8 @@
 #include <chrono>
 #include <memory>
 #include <string>
-#include "include/Assert.h"
-#include "include/RateLimiter.h"
+#include "Assert.h"
+#include "RateLimiter.h"
 
 #define RS_LOG(log_level_expr, info_log_expr, ...) \
   do { \

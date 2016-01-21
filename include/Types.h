@@ -12,9 +12,9 @@
 #include <string>
 #include <vector>
 
-#include "include/Assert.h"
-#include "include/Status.h"
-#include "include/Slice.h"
+#include "Assert.h"
+#include "Status.h"
+#include "Slice.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)

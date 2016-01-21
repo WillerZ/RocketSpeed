@@ -10,7 +10,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include "include/Assert.h"
+#include "Assert.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)

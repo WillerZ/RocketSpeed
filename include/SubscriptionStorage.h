@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 
-#include "include/Types.h"
+#include "Types.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
