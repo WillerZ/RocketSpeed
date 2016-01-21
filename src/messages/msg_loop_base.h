@@ -102,6 +102,18 @@ class MsgLoopBase {
                              int worker_id) = 0;
 
   /**
+   * Sends a command to a specific event loop's control_command_queue_
+   * for processing.
+   *
+   * This call is thread-safe, and never fails.
+   *
+   * @param command The command to send for processing.
+   * @param worker_id The index of the worker thread.
+   */
+  virtual void SendControlCommand(std::unique_ptr<Command> command,
+                                  int worker_id) = 0;
+
+  /**
    * Sends a request message to a recipient.
    * If this request is the first on on a stream represented by the socket,
    * communication on a stream will be initiated. Requests to the same stream
@@ -186,6 +198,25 @@ class MsgLoopBase {
   Status Gather(PerWorkerFunc per_worker, GatherFunc callback);
 
   /**
+   * Asynchronously computes per_worker(worker_index) on each worker thread
+   * then calls gather with the results from an unspecified worker thread.
+   *
+   * Note:
+   * This function is made more reliable by using unbounded queues, where
+   * writes will always succeed, but are prone to flow control issues.
+   * It is intended for infrequent use such as initialization and statistics
+   * gathering, and should _not_ be used for any large volume of messages.
+   *
+   * @param per_worker Will be called with each worker index and may return
+   *                   a value of any type.
+   * @param gather Function to call with a vector of the results of calling
+   *               per_worker with each worker index.
+   * This function never fails.
+   */
+  template <typename PerWorkerFunc, typename GatherFunc>
+  void ReliableGather(PerWorkerFunc per_worker, GatherFunc callback);
+
+  /**
    * Synchronous map reduce across workers. Calls map(w) on each worker thread
    * where w is the worker thread index, collects the results into a map then
    * assigns *out = reduce({map(0), map(1), ...}).
@@ -257,6 +288,37 @@ Status MsgLoopBase::Gather(PerWorkerFunc per_worker, GatherFunc gather) {
     }
   }
   return Status::OK();
+}
+
+template <typename PerWorkerFunc, typename GatherFunc>
+void MsgLoopBase::ReliableGather(PerWorkerFunc per_worker, GatherFunc gather) {
+  using T = decltype(per_worker(0));
+
+  // Accumulated results and mutex for access.
+  using Context = std::pair<port::Mutex, std::vector<T>>;
+  auto context = std::make_shared<Context>();
+
+  const int n = GetNumWorkers();
+  context->second.reserve(n);
+  for (int i = 0; i < n; ++i) {
+    // Schedule the per_worker function to be called on each worker.
+    // Results will be accumulated in context->second.
+    std::unique_ptr<Command> command(
+      MakeExecuteCommand([this, i, n, context, per_worker, gather] () {
+        bool done;
+        T result = per_worker(i);
+        {
+          MutexLock lock(&context->first);
+          context->second.emplace_back(std::move(result));
+          done = context->second.size() == n;
+        }
+        if (done) {
+          // Don't need lock here since all workers are done.
+          gather(std::move(context->second));
+        }
+      }));
+    SendControlCommand(std::move(command), i);
+  }
 }
 
 template <typename MapFunc, typename ReduceFunc, typename Result>

@@ -275,6 +275,13 @@ Status MsgLoop::SendCommand(std::unique_ptr<Command> command,
   return event_loops_[worker_id]->SendCommand(command);
 }
 
+void MsgLoop::SendControlCommand(std::unique_ptr<Command> command,
+                                 int worker_id) {
+  RS_ASSERT(worker_id >= 0 &&
+            worker_id < static_cast<int>(event_loops_.size()));
+  event_loops_[worker_id]->SendControlCommand(std::move(command));
+}
+
 Status MsgLoop::SendRequest(const Message& msg,
                             StreamSocket* socket,
                             int worker_id) {

@@ -111,6 +111,9 @@ class MsgLoop : public MsgLoopBase {
   Status SendCommand(std::unique_ptr<Command> command,
                      int worker_id) override;
 
+  void SendControlCommand(std::unique_ptr<Command> command,
+                          int worker_id) override;
+
   Status SendRequest(const Message& msg,
                      StreamSocket* socket,
                      int worker_id) override;

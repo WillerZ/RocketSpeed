@@ -18,23 +18,17 @@ namespace rocketspeed {
 Statistics MsgLoopBase::AggregateStatsSync(WorkerStatsProvider stats_provider) {
   Statistics aggregated_stats;
   port::Semaphore done;
-  Status st;
-  do {
-    // Attempt to gather num clients from each event loop.
-    st = Gather(stats_provider,
-      [&done, &aggregated_stats] (std::vector<Statistics> clients) {
-        for (Statistics& stat: clients) {
-          aggregated_stats.Aggregate(stat.MoveThread());
-        }
-        done.Post();
-      });
-    if (!st.ok()) {
-      // Failed, delay for a while.
-      /* sleep override */
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-  } while (!st.ok());
+
+  // Attempt to gather num clients from each event loop.
+  ReliableGather(stats_provider,
+    [&done, &aggregated_stats] (std::vector<Statistics> clients) {
+      for (Statistics& stat: clients) {
+        aggregated_stats.Aggregate(stat.MoveThread());
+      }
+      done.Post();
+    });
   done.Wait();
+
   return aggregated_stats.MoveThread();
 }
 
