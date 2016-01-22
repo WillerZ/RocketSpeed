@@ -21,7 +21,7 @@
 #include "src/util/log_buffer.h"
 #include "src/util/storage.h"
 #include "src/util/subscription_map.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 
 namespace rocketspeed {
 

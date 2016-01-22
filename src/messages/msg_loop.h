@@ -15,7 +15,7 @@
 #include "src/messages/msg_loop_base.h"
 #include "src/messages/queues.h"
 #include "src/util/common/base_env.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 #include "src/util/common/thread_local.h"
 
 namespace rocketspeed {

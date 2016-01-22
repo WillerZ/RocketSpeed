@@ -8,7 +8,7 @@
 #include "include/Status.h"
 #include "include/Types.h"
 #include "src/messages/types.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 
 namespace rocketspeed {
 

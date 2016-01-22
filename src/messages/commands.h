@@ -13,7 +13,7 @@
 #include "src/messages/messages.h"
 #include "src/messages/stream_socket.h"
 #include "src/util/common/autovector.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 
 namespace rocketspeed {
 

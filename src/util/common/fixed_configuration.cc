@@ -9,7 +9,7 @@
 
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 #include "src/util/common/parsing.h"
 
 namespace rocketspeed {

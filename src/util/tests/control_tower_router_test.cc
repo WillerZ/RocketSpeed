@@ -9,7 +9,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 #include "src/util/control_tower_router.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"

@@ -12,7 +12,7 @@
 #include "src/copilot/control_tower_router.h"
 #include "src/util/consistent_hash.h"
 #include "src/util/common/hash.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 
 namespace rocketspeed {
 

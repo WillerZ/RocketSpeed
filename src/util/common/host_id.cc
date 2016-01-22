@@ -3,7 +3,7 @@
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
 //
-#include "host_id.h"
+#include "include/HostId.h"
 
 #include <climits>
 #include <cstdint>

@@ -18,7 +18,7 @@
 #include "src/messages/messages.h"
 #include "src/messages/types.h"
 #include "src/port/port.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/common/random.h"

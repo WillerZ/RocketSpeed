@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 
 #include "src/port/port.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 #include "src/util/common/thread_check.h"
 #include "src/supervisor/options.h"
 #include <map>

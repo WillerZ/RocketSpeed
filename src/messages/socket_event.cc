@@ -17,7 +17,7 @@
 #include "src/messages/types.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/flow_control.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 #include "src/util/memory.h"
 
 namespace rocketspeed {

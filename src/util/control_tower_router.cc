@@ -6,7 +6,7 @@
 #include "src/util/control_tower_router.h"
 
 #include "src/util/common/autovector.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 #include "src/util/xxhash.h"
 
 namespace rocketspeed {

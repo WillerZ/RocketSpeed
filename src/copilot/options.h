@@ -11,7 +11,7 @@
 #include <utility>
 #include "include/Types.h"
 #include "include/Env.h"
-#include "src/util/common/host_id.h"
+#include "include/HostId.h"
 
 namespace rocketspeed {
 
