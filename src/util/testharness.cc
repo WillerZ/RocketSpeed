@@ -91,7 +91,7 @@ int RunAllTests() {
       }
       auto end = clock::now();
       if (times_file) {
-        fprintf(times_file, "%7" PRIu64 "ms %s.%s\n",
+        fprintf(times_file, "%-7" PRIu64 " %s.%s\n",
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                   end - start).count(),
                 t.base, t.name);

@@ -73,48 +73,7 @@ JC = javac
 JARFLAGS = -cf
 JAR = jar
 
-TESTS = \
-	arena_test \
-	coding_test \
-	autovector_test \
-	linked_map_test \
-	env_test \
-	consistent_hash_test \
-	guid_generator_test \
-	messages_test \
-	auto_roll_logger_test \
-  controlmessages_test \
-  copilotmessages_test \
-  pilotmessages_test \
-  log_router_test \
-  control_tower_router_test \
-  mock_logdevice_test \
-  integration_test \
-  unbounded_mpsc_queue_test \
-  statistics_test \
-  fastlog_test \
-  thread_check_test \
-  file_storage_test \
-  thread_local_test \
-  port_android_to_string_test \
-  proxy_test \
-  ordered_processor_test \
-  datastore_test \
-  timeout_list_test \
-  supervisor_test \
-  client_test \
-  command_queues_test \
-  heterogeneous_queue_test \
-	id_allocator_test \
-	unsafe_shared_ptr_test \
-  flow_test \
-	rocketeer_test \
-  cache_test \
-  pacer_test \
-  bloom_test \
-  data_cache_test \
-  buffered_storage_test \
-  event_loop_test
+TESTS = $(TESTS_CPP:.cc=.test)
 
 TOOLS = \
 	rocketbench
@@ -212,7 +171,10 @@ check: $(TESTS)
 		./$$t || exit 1; \
 	done; \
 	echo ""; \
-	echo "**** Slowest tests"; \
+	echo "**** Total time (ms)"; \
+	cat test_times | awk '{s+=$$1} END {print s}'; \
+	echo ""; \
+	echo "**** Slowest tests (ms)"; \
 	cat test_times | sort -n -r | head -n10  # show 10 slowest tests
 
 # test unexpected crashing of pilots, copilots and controltowers
@@ -263,127 +225,7 @@ tags:
 format:
 	build_tools/format-diff.sh
 
-coding_test: src/util/coding_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-arena_test: src/util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-autovector_test: src/util/autovector_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-linked_map_test: src/util/linked_map_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-env_test: src/util/env_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-consistent_hash_test: src/util/tests/consistent_hash_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-guid_generator_test: src/util/tests/guid_generator_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-messages_test: src/messages/messages_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-auto_roll_logger_test: src/util/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-controlmessages_test: src/controltower/test/controlmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-copilotmessages_test: src/copilot/test/copilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-pilotmessages_test: src/pilot/test/pilotmessages_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-log_router_test: src/logdevice/log_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-control_tower_router_test: src/util/tests/control_tower_router_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-mock_logdevice_test: src/logdevice/test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-integration_test: src/test/integration_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-statistics_test: src/util/tests/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-unbounded_mpsc_queue_test: src/messages/tests/unbounded_mpsc_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-fastlog_test: src/util/tests/fastlog_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-thread_check_test: src/util/tests/thread_check_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-thread_local_test: src/util/tests/thread_local_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-file_storage_test: src/client/storage/tests/file_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-port_android_to_string_test: src/port/tests/port_android_to_string_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-proxy_test: src/proxy/test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-ordered_processor_test: src/util/tests/ordered_processor_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-datastore_test: src/datastore/test/datastore_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-timeout_list_test: src/util/tests/timeout_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-supervisor_test: src/supervisor/test/supervisor_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-client_test: src/client/tests/client_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-command_queues_test: src/messages/tests/command_queues_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-heterogeneous_queue_test: src/util/tests/heterogeneous_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-id_allocator_test: src/util/tests/id_allocator_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-unsafe_shared_ptr_test: src/util/tests/unsafe_shared_ptr_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-cache_test: src/util/cache_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-flow_test: src/util/tests/flow_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-rocketeer_test: src/engine/tests/rocketeer_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-pacer_test: src/util/tests/pacer_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-bloom_test: src/util/tests/bloom_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-data_cache_test: src/controltower/test/data_cache_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-buffered_storage_test: src/util/tests/buffered_storage_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-
-event_loop_test: src/messages/tests/event_loop_test.o $(LIBOBJECTS) $(TESTHARNESS)
+%.test: %.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------

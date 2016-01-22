@@ -197,6 +197,7 @@ DJINNI_FILES=`cd "$ROCKETSPEED_ROOT"; find src/djinni $PRUNE_TEST -o $PRUNE_BENC
 DJINNI_CPP=`cd "$ROCKETSPEED_ROOT"; find src/djinni $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_MAIN -o -name '*.cpp' -print | sort | tr "\n" " "`
 ALL_FILES=`cd "$ROCKETSPEED_ROOT"; find $DIRS src/test $PRUNE_BENCH -o -name '*.cc' -print | sort | tr "\n" " "`
 ALL_CPP=`cd "$ROCKETSPEED_ROOT"; find $DIRS src/test $PRUNE_BENCH -o -name '*.cpp' -print | sort | tr "\n" " "`
+TESTS_CPP=`cd "$ROCKETSPEED_ROOT"; find src -name '*_test.cc' | sort | tr "\n" " "`
 set +f # re-enable globbing
 
 # The sources consist of the portable files, plus the platform-specific port
@@ -208,6 +209,7 @@ echo "SOURCES_DJINNI_CPP=$DJINNI_CPP" >> "$OUTPUT"
 echo "SOURCESC=$LIBEVENT_FILES" >> "$OUTPUT"
 echo "ALL_SOURCES=$ALL_FILES" >> "$OUTPUT"
 echo "ALL_SOURCES_CPP=$ALL_CPP" >> "$OUTPUT"
+echo "TESTS_CPP=$TESTS_CPP" >> "$OUTPUT"
 
 if [ "$CROSS_COMPILE" = "true" -o "$FBCODE_BUILD" = "true" ]; then
     # Cross-compiling; do not try any compilation tests.
