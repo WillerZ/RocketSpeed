@@ -8,6 +8,7 @@
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
+#include "include/Assert.h"
 #include "src/messages/event_loop.h"
 #include "src/util/common/flow.h"
 #include "src/util/memory.h"
@@ -58,8 +59,8 @@ class Flow {
  */
 class SourcelessFlow : public Flow {
  public:
-  SourcelessFlow()
-  : Flow(nullptr, nullptr) {}
+  explicit SourcelessFlow(FlowControl* flow_control)
+  : Flow(flow_control, nullptr) {}
 };
 
 class FlowControl {
@@ -117,6 +118,8 @@ class FlowControl {
    * Writes value to sink. If the sink requests back-off then backpressure
    * will be applied from sink to source. The write never fails, but may be
    * delayed until the sink has space.
+   * If provided source is null, the Sink is automatically flushed after it
+   * becomes writable.
    *
    * @param source The source of the value.
    * @param sink The sink to write the value to.
@@ -127,9 +130,14 @@ class FlowControl {
   bool Write(AbstractSource* source, Sink<T>* sink, T& value) {
     event_loop_->ThreadCheck();
     if (!sink->Write(value)) {
-      // Apply backpressure to the source to prevent additional writes along
-      // this path.
-      ApplyBackpressure(sink, source);
+      // If the sink was blocked by some source, then apply backpressure to the
+      // source to prevent additional writes along this path.
+      if (source) {
+        ApplyBackpressure(sink, source);
+      }
+      // Enable an event to notify us when the sink is available again for
+      // writes.
+      GetSinkWriteEvent(sink)->Enable();
       return false;
     }
     return true;
@@ -170,6 +178,7 @@ class FlowControl {
    */
   template <typename T>
   void ApplyBackpressure(Sink<T>* sink, AbstractSource* source) {
+    RS_ASSERT(source);
     event_loop_->ThreadCheck();
 
     // Backpressure is achieved by first disabling read events from the source.
@@ -193,9 +202,6 @@ class FlowControl {
       stats_.backpressure_applied->Add(1);
       source_state.blockers++;
     }
-
-    // Enable an event to notify us when the sink is available again for writes.
-    GetSinkWriteEvent(sink)->Enable();
   }
 
   /**
@@ -241,13 +247,8 @@ class FlowControl {
 
 template <typename T>
 bool Flow::Write(Sink<T>* sink, T& value) {
-  if (flow_control_) {
-    write_failed_ |= !flow_control_->Write(source_, sink, value);
-  } else {
-    // For SourcelessFlow, there is no flow control, we just want to know
-    // if the write failed or not.
-    write_failed_ |= !sink->Write(value);
-  }
+  RS_ASSERT(flow_control_);
+  write_failed_ |= !flow_control_->Write(source_, sink, value);
   return !write_failed_;
 }
 

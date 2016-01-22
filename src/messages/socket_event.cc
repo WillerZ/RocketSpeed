@@ -155,7 +155,7 @@ void SocketEvent::Close(ClosureReason reason) {
       // received we remove one entry on socket's internal structures, so
       // overrall
       // memory utilisation does not grow significantly (if at all).
-      SourcelessFlow no_flow;
+      SourcelessFlow no_flow(event_loop_->GetFlowControl());
       stream->Receive(access::Stream(), &no_flow, std::move(goodbye));
     }
   }

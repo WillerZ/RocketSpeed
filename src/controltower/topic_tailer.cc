@@ -1347,7 +1347,8 @@ Status TopicTailer::AddSubscriber(const TopicUUID& topic,
       // Using SourcelessFlow here until we have flow from the socket, which
       // would be passed into AddSubscriber.
       // TODO(pja) T8668773.
-      SourcelessFlow no_flow;
+      SourcelessFlow no_flow(
+          msg_loop_->GetEventLoop(worker_id_)->GetFlowControl());
       AddTailSubscriber(&no_flow, topic, id, logid, tail_seqno);
     } else {
       // Otherwise do full FindLatestSeqno request.
@@ -1601,7 +1602,8 @@ bool TopicTailer::DeliverFromCache(Flow* flow,
                     *seqno-1);
     // Since there is a single gap message sent per subscription, we can
     // ignore backpressure: the size is bounded by number of subscriptions.
-    SourcelessFlow noflow;
+    SourcelessFlow noflow(
+        msg_loop_->GetEventLoop(worker_id_)->GetFlowControl());
     on_message_(&noflow, mgap, recipient);
   }
   if (old != *seqno) {

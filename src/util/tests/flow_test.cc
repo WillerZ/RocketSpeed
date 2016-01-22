@@ -358,6 +358,38 @@ TEST(FlowTest, ObservableMap) {
   ASSERT_EQ(last_b, kNumMessages - 1);  // ensure all written
 }
 
+TEST(FlowTest, SourcelessFlow) {
+  // This tests that when one uses SourcelessFlow to write to a Sink and the
+  // Sink overflows, the messages still get flushed once the Sink becomes
+  // writable again.
+
+  enum : int { kNumMessages = 10000 };
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
+  ASSERT_OK(loop.Initialize());
+  MsgLoopThread flow_threads(env_, &loop, "flow");
+
+  FlowControl* flow_control = loop.GetEventLoop(0)->GetFlowControl();
+  auto queue = MakeQueue<int>(kNumMessages / 2);
+  port::Semaphore done;
+  int read = 0;
+  flow_control->Register<int>(queue.get(),
+                              [&](Flow* flow, int v) {
+                                if (++read == kNumMessages) {
+                                  done.Post();
+                                }
+                              });
+
+  std::unique_ptr<Command> cmd(MakeExecuteCommand([&]() {
+    SourcelessFlow no_flow(flow_control);
+    for (int i = 0; i < kNumMessages; ++i) {
+      no_flow.Write(queue.get(), i);
+    }
+  }));
+  loop.SendCommand(std::move(cmd), 0);
+
+  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(5)));
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
