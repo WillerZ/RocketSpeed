@@ -777,6 +777,8 @@ int main(int argc, char** argv) {
     test_options.start_controltower = true;
     test_options.start_copilot = true;
     test_options.start_pilot = true;
+    RS_ASSERT(FLAGS_pilot_port == FLAGS_copilot_port);
+    test_options.cockpit_port = FLAGS_pilot_port;
     test_options.storage_url = FLAGS_storage_url;
     if (FLAGS_cache_size) {
       test_options.tower.topic_tailer.cache_size = FLAGS_cache_size;
