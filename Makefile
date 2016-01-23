@@ -73,7 +73,11 @@ JC = javac
 JARFLAGS = -cf
 JAR = jar
 
-TESTS = $(TESTS_CPP:.cc=.test)
+# Exclude certain tests from the execution.
+EXCLUDED_TESTS = \
+	src/logdevice/tests/storage_test.test  # Doesn't work with mock LogDevice
+
+TESTS = $(filter-out $(EXCLUDED_TESTS), $(TESTS_CPP:.cc=.test))
 
 TOOLS = \
 	rocketbench
