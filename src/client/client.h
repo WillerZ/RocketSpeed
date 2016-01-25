@@ -22,7 +22,7 @@
 #include "src/client/subscriber.h"
 #include "src/messages/messages.h"
 #include "src/messages/stream_socket.h"
-#include "src/util/common/base_env.h"
+#include "include/BaseEnv.h"
 #include "src/util/common/statistics.h"
 
 namespace rocketspeed {

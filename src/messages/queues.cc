@@ -10,7 +10,7 @@
 #include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/event_loop.h"
-#include "src/util/common/base_env.h"
+#include "include/BaseEnv.h"
 
 namespace rocketspeed {
 

@@ -18,7 +18,7 @@
 #include "src/messages/messages.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_socket.h"
-#include "src/util/common/base_env.h"
+#include "include/BaseEnv.h"
 #include "src/util/common/statistics.h"
 #include "src/util/mutexlock.h"
 #include "include/Env.h"

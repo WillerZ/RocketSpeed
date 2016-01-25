@@ -14,7 +14,7 @@
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/messages/queues.h"
-#include "src/util/common/base_env.h"
+#include "include/BaseEnv.h"
 #include "include/HostId.h"
 #include "src/util/common/thread_local.h"
 

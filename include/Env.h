@@ -20,7 +20,7 @@
 #include "Status.h"
 #include "Logger.h"
 #include "EnvOptions.h"
-#include "src/util/common/base_env.h"
+#include "BaseEnv.h"
 
 namespace rocketspeed {
 

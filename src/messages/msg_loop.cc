@@ -18,7 +18,7 @@
 #include "src/messages/queues.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
-#include "src/util/common/base_env.h"
+#include "include/BaseEnv.h"
 
 namespace {
 // free up any thread local storage for worker_ids.
