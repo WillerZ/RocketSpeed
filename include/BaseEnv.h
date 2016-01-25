@@ -10,9 +10,9 @@
 #include <functional>
 #include <string>
 
-#include "include/Status.h"
-#include "include/Slice.h"
-#include "include/EnvOptions.h"
+#include "Status.h"
+#include "Slice.h"
+#include "EnvOptions.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
