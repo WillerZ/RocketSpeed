@@ -208,8 +208,7 @@ void SocketEvent::SetReadEnabled(EventLoop* event_loop, bool enabled) {
   }
 }
 
-bool SocketEvent::Write(SerializedOnStream& value, bool check_thread) {
-  RS_ASSERT(check_thread);
+bool SocketEvent::Write(SerializedOnStream& value) {
   thread_check_.Check();
 
   LOG_DEBUG(GetLogger(),
@@ -259,8 +258,7 @@ bool SocketEvent::Write(SerializedOnStream& value, bool check_thread) {
   return has_room;
 }
 
-bool SocketEvent::FlushPending(bool thread_check) {
-  RS_ASSERT(thread_check);
+bool SocketEvent::FlushPending() {
   thread_check_.Check();
   return true;
 }

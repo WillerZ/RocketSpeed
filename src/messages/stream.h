@@ -55,16 +55,16 @@ class Stream : public Sink<Message>,
   ~Stream();
 
   /** Inherited from Sink<Message>. */
-  bool Write(Message& value, bool check_thread) final override;
+  bool Write(Message& value) final override;
 
   /** Inherited from Sink<std::string>. */
-  bool Write(std::string& value, bool check_thread) final override;
+  bool Write(std::string& value) final override;
 
   /** Inherited from Sink<SharedTimestampedString>. */
-  bool Write(SharedTimestampedString& value, bool check_thread) final override;
+  bool Write(SharedTimestampedString& value) final override;
 
   /** Inherited from Sink<Message>. */
-  bool FlushPending(bool thread_check) final override;
+  bool FlushPending() final override;
 
   /** Inherited from Sink<Message>. */
   std::unique_ptr<EventCallback> CreateWriteCallback(

@@ -143,12 +143,16 @@ class TestSink : public Sink<T> {
 
   ~TestSink() { write_ready_fd_.closefd(); }
 
-  bool Write(T& value, bool check_thread) override {
+  bool Write(T& value) override {
     --capacity_;
-    return FlushPending(check_thread);
+    return FlushPending();
   };
 
-  bool FlushPending(bool check_thread) override {
+  bool FlushPending() override {
+    return FlushPendingImpl(true);
+  }
+
+  bool FlushPendingImpl(bool check_thread) {
     if (check_thread) {
       write_thread_check_.Check();
     }
@@ -170,7 +174,7 @@ class TestSink : public Sink<T> {
 
   void DrainOne() {
     ++capacity_;
-    FlushPending(false);
+    FlushPendingImpl(false);
   }
 
  private:
@@ -227,9 +231,9 @@ TEST(EventLoopTest, StreamsFlowControl) {
     // Initially, the stream is writable.
     ASSERT_TRUE(writable.TimedWait(positive_timeout));
     // The send queue can fit a single message only.
-    ASSERT_TRUE(stream->Write(ping, true));
-    ASSERT_TRUE(!stream->Write(ping, true));
-    ASSERT_TRUE(!stream->Write(ping, true));
+    ASSERT_TRUE(stream->Write(ping));
+    ASSERT_TRUE(!stream->Write(ping));
+    ASSERT_TRUE(!stream->Write(ping));
   }, &loop);
 
   // Test that flow control on delivery path works.
@@ -247,7 +251,7 @@ TEST(EventLoopTest, StreamsFlowControl) {
   // Now fill up the socket buffers and send queue.
   Wait([&]() {
     for (int i = 0; i < kManyMessages; ++i) {
-      stream->Write(ping, true);
+      stream->Write(ping);
     }
     // Enable the write-enabled event so we get notification when the stream is
     // writable.

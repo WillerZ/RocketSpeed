@@ -45,7 +45,7 @@ Stream::~Stream() {
                            socket_event_->IsInbound()
                                ? MessageGoodbye::OriginType::Server
                                : MessageGoodbye::OriginType::Client);
-    Write(goodbye, true);
+    Write(goodbye);
   }
   RS_ASSERT(!socket_event_);
 }
@@ -59,29 +59,26 @@ void Stream::CloseFromSocketEvent(access::Stream) {
   socket_event_ = nullptr;
 }
 
-bool Stream::Write(Message& message, bool check_thread) {
-  RS_ASSERT(check_thread);
+bool Stream::Write(Message& message) {
   thread_check_.Check();
 
   // Serialise the message.
   std::string str;
   message.SerializeToString(&str);
-  return Write(str, check_thread);
+  return Write(str);
 }
 
-bool Stream::Write(std::string& value, bool check_thread) {
-  RS_ASSERT(check_thread);
+bool Stream::Write(std::string& value) {
   thread_check_.Check();
 
   auto serialised = std::make_shared<TimestampedString>();
   serialised->issued_time =
       socket_event_->GetEventLoop()->GetEnv()->NowMicros();
   serialised->string = std::move(value);
-  return Write(serialised, check_thread);
+  return Write(serialised);
 }
 
-bool Stream::Write(SharedTimestampedString& value, bool check_thread) {
-  RS_ASSERT(check_thread);
+bool Stream::Write(SharedTimestampedString& value) {
   thread_check_.Check();
 
   if (!socket_event_) {
@@ -111,7 +108,7 @@ bool Stream::Write(SharedTimestampedString& value, bool check_thread) {
   serialised.serialised = std::move(value);
   // Write a Goodbye message to the Socket, after SocketEvent::Write completes
   // the message is owned by the SocketEvent.
-  const bool has_room = socket_event_->Write(serialised, check_thread);
+  const bool has_room = socket_event_->Write(serialised);
 
   if (type == MessageType::mGoodbye) {
     // After sending a goodbye we must close the stream.
@@ -125,8 +122,7 @@ bool Stream::Write(SharedTimestampedString& value, bool check_thread) {
   return has_room;
 }
 
-bool Stream::FlushPending(bool thread_check) {
-  RS_ASSERT(thread_check);
+bool Stream::FlushPending() {
   thread_check_.Check();
   RS_ASSERT(false);
   return true;

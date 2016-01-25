@@ -495,7 +495,7 @@ void Subscriber::SendPendingRequests() {
 
     MessageUnsubscribe unsubscribe(
         tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested);
-    const bool can_write_more = server_stream_->Write(unsubscribe, true);
+    const bool can_write_more = server_stream_->Write(unsubscribe);
 
     LOG_INFO(options_.info_log, "Unsubscribed ID (%" PRIu64 ")", sub_id);
 
@@ -527,7 +527,7 @@ void Subscriber::SendPendingRequests() {
                                sub_state->GetTopicName(),
                                sub_state->GetExpected(),
                                sub_id);
-    const bool can_write_more = server_stream_->Write(subscribe, true);
+    const bool can_write_more = server_stream_->Write(subscribe);
 
     // Message was sent, we may clear pending request.
     pending_subscribes_.erase(it);
@@ -824,7 +824,7 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
   if (flow) {
     flow->Write(worker_queue, command);
   } else {
-    if (!worker_queue->TryWrite(command, true)) {
+    if (!worker_queue->TryWrite(command)) {
       return SubscriptionHandle(0);
     }
   }
@@ -857,7 +857,7 @@ bool MultiThreadedSubscriber::Unsubscribe(Flow* flow,
   if (flow) {
     flow->Write(worker_queue, command);
   } else {
-    if (!worker_queue->TryWrite(command, true)) {
+    if (!worker_queue->TryWrite(command)) {
       return false;
     }
   }
@@ -892,7 +892,7 @@ bool MultiThreadedSubscriber::Acknowledge(Flow* flow,
   if (flow) {
     flow->Write(worker_queue, command);
   } else {
-    if (!worker_queue->TryWrite(command, true)) {
+    if (!worker_queue->TryWrite(command)) {
       return false;
     }
   }

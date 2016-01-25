@@ -159,7 +159,7 @@ class FlowControl {
           [this, sink] () mutable {
             // Invoked when sink is ready to write again.
             // First, write any pending writes.
-            if (sink->FlushPending(false)) {
+            if (sink->FlushPending()) {
               // Pending writes all written, so we can open up all the sources
               // that caused the backpressure.
               RemoveBackpressure(sink);

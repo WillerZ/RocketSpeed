@@ -81,7 +81,7 @@ class Queue : public Source<Item>, public SinkWithOverflow<Item> {
 
   ~Queue();
 
-  bool TryWrite(Item& command, bool check_thread = true) final override;
+  bool TryWrite(Item& command) final override;
 
   /** Upper-bound estimate of queue size. */
   size_t GetSize() const { return queue_.sizeGuess(); }
@@ -355,10 +355,8 @@ Queue<Item>::~Queue() {
 }
 
 template <typename Item>
-bool Queue<Item>::TryWrite(Item& item, bool check_thread) {
-  if (check_thread) {
-    write_check_.Check();
-  }
+bool Queue<Item>::TryWrite(Item& item) {
+  write_check_.Check();
 
   // Attempt to write to queue.
   Timestamped<Item> entry { std::move(item), std::chrono::steady_clock::now() };

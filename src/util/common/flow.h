@@ -84,17 +84,16 @@ class Sink : public AbstractSink {
    * pending data will grow without bound. Using FlowControl will avoid this.
    *
    * @param value The value to write (will be moved).
-   * @param check_thread Whether to do thead safety checks.
    * @return true iff more data can be written.
    */
-  virtual bool Write(T& value, bool check_thread = true) = 0;
+  virtual bool Write(T& value) = 0;
 
   /**
    * Attempts to flush pending writes.
    *
    * @return true iff all pending writes were flushed.
    */
-  virtual bool FlushPending(bool check_thread) = 0;
+  virtual bool FlushPending() = 0;
 
   /**
    * Creates an EventCallback on event_loop that will invoke callback when
@@ -121,17 +120,17 @@ class SinkWithOverflow : public Sink<T> {
  public:
   virtual ~SinkWithOverflow() = default;
 
-  bool Write(T& value, bool check_thread = true) final override {
-    if (FlushPending(check_thread) && TryWrite(value, check_thread)) {
+  bool Write(T& value) final override {
+    if (FlushPending() && TryWrite(value)) {
       return true;
     }
     overflow_.emplace_back(std::move(value));
     return false;
   }
 
-  bool FlushPending(bool check_thread) final override {
+  bool FlushPending() final override {
     for (; !overflow_.empty(); overflow_.pop_front()) {
-      if (!TryWrite(overflow_.front(), check_thread)) {
+      if (!TryWrite(overflow_.front())) {
         return false;
       }
     }
@@ -143,10 +142,9 @@ class SinkWithOverflow : public Sink<T> {
    * Attempt to write to the sink.
    *
    * @param value The value to write (will be moved iff written).
-   * @param check_thread Whether to do thead safety checks.
    * @return true iff written.
    */
-  virtual bool TryWrite(T& value, bool check_thread) = 0;
+  virtual bool TryWrite(T& value) = 0;
 
  private:
   std::deque<T> overflow_;

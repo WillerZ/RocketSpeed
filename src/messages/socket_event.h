@@ -101,10 +101,10 @@ class SocketEvent : public Source<MessageOnStream>,
   void SetReadEnabled(EventLoop* event_loop, bool enabled) final override;
 
   /** Inherited from Sink<SerializedOnStream>. */
-  bool Write(SerializedOnStream& value, bool check_thread) final override;
+  bool Write(SerializedOnStream& value) final override;
 
   /** Inherited from Sink<SerializedOnStream>. */
-  bool FlushPending(bool thread_check) final override;
+  bool FlushPending() final override;
 
   /** Inherited from Sink<SerializedOnStream>. */
   std::unique_ptr<EventCallback> CreateWriteCallback(

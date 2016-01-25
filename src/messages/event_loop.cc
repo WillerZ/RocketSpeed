@@ -120,7 +120,7 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
 
     // Send out the message even if there is no room in the send queue.
     auto message = msg;
-    it->second->Write(message, true);
+    it->second->Write(message);
   }
 }
 
