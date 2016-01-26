@@ -707,6 +707,12 @@ void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
 void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
   if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
     subscriber->TerminateSubscription(sub_id);
+    if (subscriber->subscriptions_.empty()) {
+      // Subscriber no longer serves any subscriptions, destroy it
+      auto it = subscription_to_shard_.find(sub_id);
+      RS_ASSERT(it != subscription_to_shard_.end());
+      subscribers_.erase(it->second);
+    }
   }
   // Remove the mapping from subscription ID to a shard.
   subscription_to_shard_.erase(sub_id);
