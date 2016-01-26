@@ -130,6 +130,9 @@ class ClientImpl : public Client {
   /** The underlying subscriber, which handles read path in the client. */
   MultiThreadedSubscriber subscriber_;
 
+  /** The number of open subscriptions in the client. */
+  std::atomic<size_t> num_subscriptions_;
+
   /** Default callback for announcing subscription status. */
   SubscribeCallback subscription_cb_fallback_;
   /** Default callbacks for delivering messages. */

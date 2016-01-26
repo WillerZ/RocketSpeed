@@ -160,7 +160,8 @@ ClientImpl::ClientImpl(ClientOptions options,
 , msg_loop_thread_spawned_(false)
 , is_internal_(is_internal)
 , publisher_(options_, msg_loop_.get(), &wake_lock_)
-, subscriber_(options_, msg_loop_) {
+, subscriber_(options_, msg_loop_)
+, num_subscriptions_(0) {
   LOG_VITAL(options_.info_log, "Creating Client");
 }
 
@@ -271,8 +272,19 @@ class StdFunctionObserver : public Observer,
 SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
                                          std::unique_ptr<Observer> observer) {
   RS_ASSERT(!!observer);
-  return subscriber_.Subscribe(
+
+  if (num_subscriptions_.load() >= options_.max_subscriptions) {
+    return SubscriptionHandle(0);
+  }
+
+  SubscriptionHandle subscription = subscriber_.Subscribe(
       nullptr, std::move(parameters), std::move(observer));
+
+  if (subscription != SubscriptionHandle(0)) {
+    auto next = ++num_subscriptions_;
+    RS_ASSERT(next != 0);
+  }
+  return subscription;
 }
 
 SubscriptionHandle ClientImpl::Subscribe(
@@ -298,8 +310,13 @@ SubscriptionHandle ClientImpl::Subscribe(
 }
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
-  return subscriber_.Unsubscribe(nullptr, sub_handle) ? Status::OK()
-                                                      : Status::NoBuffer();
+  bool result = subscriber_.Unsubscribe(nullptr, sub_handle);
+  if (result) {
+    auto prev = num_subscriptions_--;
+    RS_ASSERT(prev != 0);
+    return Status::OK();
+  }
+  return Status::NoBuffer();
 }
 
 Status ClientImpl::Acknowledge(const MessageReceived& message) {

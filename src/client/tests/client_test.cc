@@ -10,6 +10,7 @@
 #include <numeric>
 #include <mutex>
 #include <thread>
+#include <unordered_set>
 
 #include "external/folly/Memory.h"
 
@@ -18,6 +19,7 @@
 #include "src/client/subscriber.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/messages.h"
+#include "src/util/random.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
@@ -514,6 +516,52 @@ TEST(ClientTest, Sharding) {
   subscriber.Subscribe(nullptr, params, folly::make_unique<Observer>());
   ASSERT_TRUE(!subscribe_sem0.TimedWait(negative_timeout));
   ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
+}
+
+TEST(ClientTest, ClientSubscriptionLimit) {
+  size_t kMaxSubscriptions = 1000;
+  size_t kSubscriptions = 100000;
+
+  Random rng((uint32_t)std::time(0));
+
+  ClientOptions options;
+  options.max_subscriptions = kMaxSubscriptions;
+  auto client = CreateClient(std::move(options));
+
+  std::unordered_set<SubscriptionHandle> handles;
+  port::Semaphore unsubscribe_sem;
+
+  for (size_t i = 0; i < kSubscriptions; i++) {
+    Topic topic_name = std::to_string(i);
+    SequenceNumber seq = i;
+
+    if (!rng.OneIn(5)) { // 80% Probability to subscribe
+      auto sub_handle = client->Subscribe(
+          GuestTenant, GuestNamespace,
+          topic_name, seq, nullptr,
+          [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
+      if (handles.size() < kMaxSubscriptions) {
+        ASSERT_TRUE(sub_handle);
+        handles.insert(sub_handle);
+      } else {
+        ASSERT_TRUE(!sub_handle);
+      }
+    } else {
+      if (handles.size() > 0) {
+        SubscriptionHandle handle = *handles.begin();
+        handles.erase(handle);
+        ASSERT_OK(client->Unsubscribe(handle));
+        ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+      }
+    }
+  }
+
+  ASSERT_LE(handles.size(), kMaxSubscriptions);
+
+  for (auto handle : handles) {
+    ASSERT_OK(client->Unsubscribe(handle));
+    ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+  }
 }
 
 }  // namespace rocketspeed

@@ -115,6 +115,11 @@ class ClientOptions {
   // Default: 5s
   std::chrono::milliseconds publish_timeout;
 
+  // Max number of open subscriptions a client can have.
+  // The client returns SubscriptionHandle(0) if the limit is exceeded.
+  // Default: std::numeric_limits<size_t>::max()
+  size_t max_subscriptions;
+
   /** Creates options with default values. */
   ClientOptions();
 };
@@ -199,7 +204,7 @@ class Client {
    * @param data Payload of message
    * @param callback Callback to call with response from RocketSpeed. This will
    *                 only be called when Publish was successful. The result will
-   *                 be ok if the message was succesfully commited into
+   *                 be ok if the message was successfully committed into
    *                 RocketSpeed, otherwise an error will be provided.
    * @params message_id The provided message_id, optional
    * @return the status and message ID of the published message.
@@ -219,7 +224,8 @@ class Client {
    * @param observer Observer interface with one or more methods implemented
    *                 by the application. Must be not-nullptr.
    * @return A handle that identifies this subscription. The handle is unengaged
-   *         iff the Client failed to create the subscription.
+   *         iff the Client failed to create the subscription
+   *         or the subscription limit is reached.
    */
   virtual SubscriptionHandle Subscribe(SubscriptionParameters parameters,
                                        std::unique_ptr<Observer> observer) = 0;

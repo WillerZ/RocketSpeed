@@ -6,6 +6,7 @@
 #include "include/RocketSpeed.h"
 
 #include <random>
+#include <limits>
 
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
@@ -31,7 +32,8 @@ ClientOptions::ClientOptions()
     , backoff_limit(30 * 1000)
     , backoff_distribution(DefaultBackOffDistribution())
     , unsubscribe_deduplication_timeout(10 * 1000)
-    , publish_timeout(5 * 1000) {
+    , publish_timeout(5 * 1000)
+    , max_subscriptions(std::numeric_limits<size_t>::max()) {
 }
 
 }  // namespace rocketspeed
