@@ -2,6 +2,8 @@
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 
+#include "external/folly/Memory.h"
+
 #include "src/engine/rocketeer_server.h"
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
@@ -37,8 +39,7 @@ DEFINE_string(jemalloc_output,
               "jemalloc stats output file.");
 
 class BadConfiguration : public rocketspeed::Configuration {
-public:
-
+ public:
   BadConfiguration() {}
 
   virtual ~BadConfiguration() {}
@@ -52,9 +53,7 @@ public:
     return rocketspeed::Status::TimedOut();
   }
 
-  virtual uint64_t GetCopilotVersion() const {
-    return 0;
-  }
+  virtual uint64_t GetCopilotVersion() const { return 0; }
 };
 
 rocketspeed::Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
@@ -62,13 +61,14 @@ rocketspeed::Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   client_options.config.reset(new BadConfiguration());
   if (FLAGS_logging) {
     std::shared_ptr<rocketspeed::Logger> info_log;
-    auto st = rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
-                                              "logs",
-                                              "LOG.client_memory_used_bench",
-                                              0,
-                                              0,
-                                              rocketspeed::INFO_LEVEL,
-                                              &info_log);
+    auto st =
+        rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
+                                             "logs",
+                                             "LOG.client_memory_used_bench",
+                                             0,
+                                             0,
+                                             rocketspeed::INFO_LEVEL,
+                                             &info_log);
 
     if (!st.ok()) {
       fprintf(stderr, "Cannot create logger");
@@ -83,7 +83,7 @@ rocketspeed::Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
 void PrintJEMallocStats() {
 #ifdef JEMALLOC
   auto file_writer = [](void* cbopaque, const char* str) {
-    std::ofstream* outfile = (std::ofstream*) cbopaque;
+    std::ofstream* outfile = (std::ofstream*)cbopaque;
     *outfile << str;
   };
 
@@ -120,13 +120,15 @@ int main(int argc, char** argv) {
     auto slice = rocketspeed::test::RandomString(
         &rnd, static_cast<int>(FLAGS_topic_size), &holder);
     auto subscription_handle =
-        client->Subscribe(rocketspeed::Tenant::GuestTenant,
-                          rocketspeed::GuestNamespace,
-                          slice.ToString(),
-                          0);
+        client->Subscribe({rocketspeed::Tenant::GuestTenant,
+                           rocketspeed::GuestNamespace,
+                           slice.ToString(),
+                           0},
+                          folly::make_unique<rocketspeed::Observer>());
     if (subscription_handle == 0) {
-      fprintf(stderr, "Ran out of subscriptions. "
-          "This is because of flow control. Sleep a bit\n");
+      fprintf(stderr,
+              "Ran out of subscriptions. "
+              "This is because of flow control. Sleep a bit\n");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       --i;
     }
@@ -139,9 +141,9 @@ int main(int argc, char** argv) {
   }
   printf("Subscriptions: %zu\n", i);
   printf("Memory consumption: %s\n",
-    rocketspeed::BytesToString(after - before).c_str());
+         rocketspeed::BytesToString(after - before).c_str());
   printf("Memory consumption per subscription: %s\n",
-    rocketspeed::BytesToString((after - before) / i).c_str());
+         rocketspeed::BytesToString((after - before) / i).c_str());
 
   PrintJEMallocStats();
 }

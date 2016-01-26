@@ -124,6 +124,7 @@ void SubscriptionState::ReceiveMessage(
     Flow* flow,
     const std::shared_ptr<Logger>& info_log,
     std::unique_ptr<MessageDeliver> deliver) {
+  RS_ASSERT(!!observer_);
   thread_check_.Check();
 
   if (!ProcessMessage(info_log, *deliver)) {
@@ -131,28 +132,26 @@ void SubscriptionState::ReceiveMessage(
   }
 
   switch (deliver->GetMessageType()) {
-    case MessageType::mDeliverData:
+    case MessageType::mDeliverData: {
       // Deliver data message to the application.
-      if (deliver_callback_) {
-        std::unique_ptr<MessageDeliverData> data(
-            static_cast<MessageDeliverData*>(deliver.release()));
-        std::unique_ptr<MessageReceived> received(
-            new MessageReceivedImpl(std::move(data)));
-        deliver_callback_(flow, received);
-      }
+      std::unique_ptr<MessageDeliverData> data(
+          static_cast<MessageDeliverData*>(deliver.release()));
+      std::unique_ptr<MessageReceived> received(
+          new MessageReceivedImpl(std::move(data)));
+      observer_->OnMessageReceived(flow, received);
       break;
-    case MessageType::mDeliverGap:
-      if (data_loss_callback_) {
-        std::unique_ptr<MessageDeliverGap> gap(
-            static_cast<MessageDeliverGap*>(deliver.release()));
+    }
+    case MessageType::mDeliverGap: {
+      std::unique_ptr<MessageDeliverGap> gap(
+          static_cast<MessageDeliverGap*>(deliver.release()));
 
-        if (gap->GetGapType() != GapType::kBenign) {
-          std::unique_ptr<DataLossInfo> data_loss_info(
-              new DataLossInfoImpl(std::move(gap)));
-          data_loss_callback_(flow, data_loss_info);
-        }
+      if (gap->GetGapType() != GapType::kBenign) {
+        std::unique_ptr<DataLossInfo> data_loss_info(
+            new DataLossInfoImpl(std::move(gap)));
+        observer_->OnDataLoss(flow, data_loss_info);
       }
       break;
+    }
     default:
       RS_ASSERT(false);
   }
@@ -237,12 +236,11 @@ class SubscriptionStatusImpl : public SubscriptionStatus {
 };
 
 void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
+  RS_ASSERT(!!observer_);
   thread_check_.Check();
 
-  if (subscription_callback_) {
-    SubscriptionStatusImpl sub_status(*this, subscribed, std::move(status));
-    subscription_callback_(sub_status);
-  }
+  SubscriptionStatusImpl sub_status(*this, subscribed, std::move(status));
+  observer_->OnSubscriptionStatusChange(sub_status);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -285,17 +283,11 @@ Status Subscriber::Start() {
 
 void Subscriber::StartSubscription(SubscriptionID sub_id,
                                    SubscriptionParameters parameters,
-                                   MessageReceivedCallback deliver_callback,
-                                   SubscribeCallback subscription_callback,
-                                   DataLossCallback data_loss_callback) {
+                                   std::unique_ptr<Observer> observer) {
   SubscriptionState* sub_state;
   {  // Store the subscription state.
     auto emplace_result = subscriptions_.emplace(
-        sub_id,
-        SubscriptionState(std::move(parameters),
-                          std::move(subscription_callback),
-                          std::move(deliver_callback),
-                          std::move(data_loss_callback)));
+        sub_id, SubscriptionState(std::move(parameters), std::move(observer)));
     if (!emplace_result.second) {
       LOG_ERROR(
           options_.info_log, "Duplicate subscription ID(%" PRIu64 ")", sub_id);
@@ -680,9 +672,7 @@ const Statistics& MultiShardSubscriber::GetStatistics() {
 void MultiShardSubscriber::StartSubscription(
     SubscriptionID sub_id,
     SubscriptionParameters parameters,
-    MessageReceivedCallback deliver_callback,
-    SubscribeCallback subscription_callback,
-    DataLossCallback data_loss_callback) {
+    std::unique_ptr<Observer> observer) {
   // Determine the shard ID.
   size_t shard_id = options_.sharding->GetShard(parameters.namespace_id,
                                                 parameters.topic_name);
@@ -703,11 +693,8 @@ void MultiShardSubscriber::StartSubscription(
     it = result.first;
   }
 
-  it->second->StartSubscription(sub_id,
-                                std::move(parameters),
-                                std::move(deliver_callback),
-                                std::move(subscription_callback),
-                                std::move(data_loss_callback));
+  it->second->StartSubscription(
+      sub_id, std::move(parameters), std::move(observer));
 }
 
 void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
@@ -787,9 +774,7 @@ Status MultiThreadedSubscriber::Start() {
 SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     Flow* flow,
     SubscriptionParameters parameters,
-    MessageReceivedCallback deliver_callback,
-    SubscribeCallback subscription_callback,
-    DataLossCallback data_loss_callback) {
+    std::unique_ptr<Observer> observer) {
   // Choose worker for this subscription and find appropriate queue.
   const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
                                                   parameters.namespace_id,
@@ -807,19 +792,14 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
   const SubscriptionID sub_id = sub_handle;
 
   // Send command to responsible worker.
-  auto moved_args =
-      folly::makeMoveWrapper(std::make_tuple(std::move(parameters),
-                                             std::move(deliver_callback),
-                                             std::move(subscription_callback),
-                                             std::move(data_loss_callback)));
+  auto moved_args = folly::makeMoveWrapper(
+      std::make_tuple(std::move(parameters), std::move(observer)));
   std::unique_ptr<Command> command(
       MakeExecuteCommand([this, sub_id, moved_args, worker_id]() mutable {
         subscribers_[worker_id]->StartSubscription(
             sub_id,
             std::move(std::get<0>(*moved_args)),
-            std::move(std::get<1>(*moved_args)),
-            std::move(std::get<2>(*moved_args)),
-            std::move(std::get<3>(*moved_args)));
+            std::move(std::get<1>(*moved_args)));
       }));
   if (flow) {
     flow->Write(worker_queue, command);

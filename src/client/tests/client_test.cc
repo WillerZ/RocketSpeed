@@ -11,6 +11,8 @@
 #include <mutex>
 #include <thread>
 
+#include "external/folly/Memory.h"
+
 #include "include/RocketSpeed.h"
 #include "include/Env.h"
 #include "src/client/subscriber.h"
@@ -279,18 +281,18 @@ TEST(ClientTest, OfflineOperations) {
       subscriptions;
   port::Semaphore unsubscribe_sem, all_ok_sem;
   std::atomic<bool> expects_request(false);
-  auto subscribe_cb = [&](
-      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-    ASSERT_TRUE(expects_request.load());
-    auto subscribe = static_cast<MessageSubscribe*>(msg.get());
-    auto it = subscriptions.find(subscribe->GetTopicName().ToString());
-    ASSERT_TRUE(it != subscriptions.end());
-    ASSERT_EQ(it->second.first, subscribe->GetStartSequenceNumber());
-    subscriptions.erase(it);
-    if (subscriptions.empty()) {
-      all_ok_sem.Post();
-    }
-  };
+  auto subscribe_cb =
+      [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+        ASSERT_TRUE(expects_request.load());
+        auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+        auto it = subscriptions.find(subscribe->GetTopicName().ToString());
+        ASSERT_TRUE(it != subscriptions.end());
+        ASSERT_EQ(it->second.first, subscribe->GetStartSequenceNumber());
+        subscriptions.erase(it);
+        if (subscriptions.empty()) {
+          all_ok_sem.Post();
+        }
+      };
   auto copilot = MockServer({{MessageType::mSubscribe, subscribe_cb}});
 
   ClientOptions options;
@@ -382,7 +384,7 @@ TEST(ClientTest, NoPilot) {
                             GuestNamespace,
                             TopicOptions(),
                             "data",
-                            [&] (std::unique_ptr<ResultStatus> rs) {
+                            [&](std::unique_ptr<ResultStatus> rs) {
                               ASSERT_TRUE(!rs->GetStatus().ok());
                               publish_sem.Post();
                             });
@@ -408,7 +410,7 @@ TEST(ClientTest, PublishTimeout) {
                             GuestNamespace,
                             TopicOptions(),
                             "data",
-                            [&] (std::unique_ptr<ResultStatus> rs) {
+                            [&](std::unique_ptr<ResultStatus> rs) {
                               ASSERT_TRUE(!rs->GetStatus().ok());
                               ASSERT_TRUE(rs->GetStatus().IsTimedOut());
                               publish_sem.Post();
@@ -503,13 +505,13 @@ TEST(ClientTest, Sharding) {
   SubscriptionParameters params(GuestTenant, GuestNamespace, "", 0);
   // Subscribe on topic0 should get to the owner of the shard 0.
   params.topic_name = "topic0";
-  subscriber.Subscribe(nullptr, params, nullptr, nullptr, nullptr);
+  subscriber.Subscribe(nullptr, params, folly::make_unique<Observer>());
   ASSERT_TRUE(subscribe_sem0.TimedWait(positive_timeout));
   ASSERT_TRUE(!subscribe_sem1.TimedWait(negative_timeout));
 
   // Subscribe on topic1 should get to the owner of the shard 1.
   params.topic_name = "topic1";
-  subscriber.Subscribe(nullptr, params, nullptr, nullptr, nullptr);
+  subscriber.Subscribe(nullptr, params, folly::make_unique<Observer>());
   ASSERT_TRUE(!subscribe_sem0.TimedWait(negative_timeout));
   ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
 }

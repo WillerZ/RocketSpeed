@@ -72,21 +72,19 @@ class SubscriptionState : public NonCopyable {
   SubscriptionState& operator=(SubscriptionState&&) = default;
 
   SubscriptionState(SubscriptionParameters parameters,
-                    SubscribeCallback subscription_callback,
-                    MessageReceivedCallback deliver_callback,
-                    DataLossCallback data_loss_callback)
+                    std::unique_ptr<Observer> observer)
   : tenant_id_(parameters.tenant_id)
   , namespace_id_(std::move(parameters.namespace_id))
   , topic_name_(std::move(parameters.topic_name))
-  , subscription_callback_(std::move(subscription_callback))
-  , deliver_callback_(std::move(deliver_callback))
-  , data_loss_callback_(std::move(data_loss_callback))
+  , observer_(std::move(observer))
   , expected_seqno_(parameters.start_seqno)
   // If we were to restore state from subscription storage before the
   // subscription advances, we would restore from the next sequence number,
   // that is why we persist the previous one.
   , last_acked_seqno_(parameters.start_seqno == 0 ? 0 : parameters.start_seqno -
-                                                            1) {}
+                                                            1) {
+    RS_ASSERT(!!observer_);
+  }
 
   TenantID GetTenant() const { return tenant_id_; }
 
@@ -122,12 +120,15 @@ class SubscriptionState : public NonCopyable {
  private:
   ThreadCheck thread_check_;
 
-  const TenantID tenant_id_;
-  const NamespaceID namespace_id_;
-  const Topic topic_name_;
-  const SubscribeCallback subscription_callback_;
-  const MessageReceivedCallback deliver_callback_;
-  const DataLossCallback data_loss_callback_;
+  // Note: the following members are virtually const.
+  // That is, they should have been constant but they are not marked that
+  // because move-semantics wouldn't work for them in that case.
+  // Unfortunately, move semantics is currently not compatible with
+  // the concept of an immutable object in C++.
+  /* const */ TenantID tenant_id_;
+  /* const */ NamespaceID namespace_id_;
+  /* const */ Topic topic_name_;
+  /* const */ std::unique_ptr<Observer> observer_;
 
   /** Next expected sequence number on this subscription. */
   SequenceNumber expected_seqno_;
@@ -158,9 +159,7 @@ class Subscriber : public StreamReceiver {
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
-                         MessageReceivedCallback deliver_callback,
-                         SubscribeCallback subscription_callback,
-                         DataLossCallback data_loss_callback);
+                         std::unique_ptr<Observer> observer);
 
   void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
 
@@ -242,9 +241,7 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
-                         MessageReceivedCallback deliver_callback,
-                         SubscribeCallback subscription_callback,
-                         DataLossCallback data_loss_callback);
+                         std::unique_ptr<Observer> observer);
 
   void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
 
@@ -300,9 +297,7 @@ class MultiThreadedSubscriber {
    */
   SubscriptionHandle Subscribe(Flow* flow,
                                SubscriptionParameters parameters,
-                               MessageReceivedCallback deliver_callback,
-                               SubscribeCallback subscription_callback,
-                               DataLossCallback data_loss_callback);
+                               std::unique_ptr<Observer> observer);
 
   /**
    * If flow is non-null, the overflow is communicated via flow object.

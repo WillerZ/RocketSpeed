@@ -62,6 +62,9 @@ class ClientImpl : public Client {
                                 PublishCallback callback,
                                 const MsgId messageId) override;
 
+  SubscriptionHandle Subscribe(SubscriptionParameters parameters,
+                               std::unique_ptr<Observer> observer) override;
+
   SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,

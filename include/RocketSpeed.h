@@ -27,7 +27,7 @@ class Flow;
 class Logger;
 class WakeLock;
 
-/** Notifies about the staus of a message published to the RocketSpeed. */
+/** Notifies about the status of a message published to the RocketSpeed. */
 typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
 
 /**
@@ -35,21 +35,6 @@ typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
  * for details.
  */
 typedef std::function<void(const SubscriptionStatus&)> SubscribeCallback;
-
-/**
- * Notifies about message received on a subscription.
- *
- * The application can steal message from the reference argument, but if it
- * doesn't, using the message object after the callback yields undefined
- * behaviour.
- * If the application does not need message payload buffer outside of the
- * callback, it is advised not to steal the message object.
- */
-typedef std::function<void(Flow*, std::unique_ptr<MessageReceived>&)>
-    MessageReceivedCallback;
-
-typedef std::function<void(Flow*, std::unique_ptr<DataLossInfo>&)>
-    DataLossCallback;
 
 /** Notifies about status of a finished subscription snapshot. */
 typedef std::function<void(Status)> SaveSubscriptionsCallback;
@@ -134,6 +119,33 @@ class ClientOptions {
   ClientOptions();
 };
 
+/** Callback interface to be implemented by the subscribers. */
+class Observer {
+ public:
+  /**
+   * Notifies about message received on a subscription.
+   *
+   * The application can steal message from the reference argument, but if it
+   * doesn't, using the message object after the callback yields undefined
+   * behaviour.
+   * If the application does not need message payload buffer outside of the
+   * callback, it is advised not to steal the message object.
+   */
+  virtual void OnMessageReceived(Flow*, std::unique_ptr<MessageReceived>&) {}
+
+  /**
+   * Notifies about change of the status of the subscription.
+   */
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) {}
+
+  /**
+   * Notifies about data loss.
+   */
+  virtual void OnDataLoss(Flow*, std::unique_ptr<DataLossInfo>&) {}
+
+  virtual ~Observer() = default;
+};
+
 /** The Client is used to produce and consume messages on arbitrary topics. */
 class Client {
  public:
@@ -156,6 +168,11 @@ class Client {
    * This method is NOT thread-safe, if ever called, it must be right after
    * creating the client from the same thread. Caller must ensure that this call
    * "happened-before" any call which creates a new subscription.
+   *
+   * Note: the default callbacks have effect only if Subscribe's overload
+   *       with separately specified callbacks is used. The default callbacks
+   *       are applied instead of not specified (nullptr) ones. The default
+   *       callbacks have no effect if Subscribe with an Observer is used.
    *
    * @param subscription_callback See docs for corresponding callback in
    *                              subscribe method.
@@ -198,18 +215,36 @@ class Client {
   /**
    * Subscribes to a topic with provided parameters.
    *
-   * Subscribe callback is invoked when the client is successfully subscribed.
-   * Messages arriving on this subscription are delivered to the application via
-   * message received callback.
-   *
    * @param parameters Parameters of the subscription.
-   * @param deliver_callback Invoked with every message received on the
-   *                         subscription.
-   * @param subscription_callback Invoked to notify termination of the
-   *                              subscription.
-   * @param data_loss_callback Invoked to notify there's been data loss.
+   * @param observer Observer interface with one or more methods implemented
+   *                 by the application. Must be not-nullptr.
    * @return A handle that identifies this subscription. The handle is unengaged
    *         iff the Client failed to create the subscription.
+   */
+  virtual SubscriptionHandle Subscribe(SubscriptionParameters parameters,
+                                       std::unique_ptr<Observer> observer) = 0;
+
+  /**
+   * Convenience method, see the other overload for details.
+   *
+   * Note: usage of std::function-for-callback overloads of Subscribe may
+   *       result in increased memory usage when compared to
+   *       Observer-for-callback overloads.
+   *
+   * @param deliver_callback Invoked with every message received on the
+   *                         subscription. See Observer::OnMessageReceived
+   *                         for extra information. If not specified (nullptr)
+   *                         the default one is used (see SetDefaultCallbacks).
+   * @param subscription_callback Invoked to notify status change of the
+   *                              subscription.
+   *                              See Observer::OnSubscriptionStatusChange
+   *                              for extra information. If not specified
+   *                              (nullptr) the default one is used
+   *                              (see SetDefaultCallbacks).
+   * @param data_loss_callback Invoked to notify there's been data loss.
+   *                           See Observer::OnDataLoss for extra information.
+   *                           If not specified (nullptr) the default one
+   *                           is used (see SetDefaultCallbacks).
    */
   virtual SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,

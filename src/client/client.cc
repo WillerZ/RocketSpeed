@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "external/folly/move_wrapper.h"
+#include "external/folly/Memory.h"
 
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
@@ -33,6 +33,8 @@
 #include "src/util/common/flow_control.h"
 #include "src/util/common/random.h"
 #include "src/util/timeout_list.h"
+#include "src/util/common/noncopyable.h"
+#include "src/util/common/nonmovable.h"
 
 namespace rocketspeed {
 
@@ -216,14 +218,58 @@ PublishStatus ClientImpl::Publish(const TenantID tenant_id,
 }
 
 namespace {
-template <typename T>
-std::function<void(Flow*, T)> IgnoreFlow(std::function<void(T)> f) {
-  if (!f) {
-    return nullptr;
+
+class StdFunctionObserver : public Observer,
+                            public NonCopyable,
+                            public NonMovable {
+  const std::function<void(std::unique_ptr<MessageReceived>&)>
+      deliver_callback_;
+  const SubscribeCallback subscription_callback_;
+  const std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback_;
+
+ public:
+  static std::unique_ptr<StdFunctionObserver> Create(
+      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      SubscribeCallback subscription_callback,
+      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback) {
+    return folly::make_unique<StdFunctionObserver>(
+        deliver_callback, subscription_callback, data_loss_callback);
   }
-  auto moved_f = folly::makeMoveWrapper(std::move(f));
-  return [moved_f](Flow*, T t) { return (*moved_f)(std::forward<T>(t)); };
-}
+
+  StdFunctionObserver(
+      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      SubscribeCallback subscription_callback,
+      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback)
+  : deliver_callback_(std::move(deliver_callback))
+  , subscription_callback_(std::move(subscription_callback))
+  , data_loss_callback_(std::move(data_loss_callback)) {}
+
+  void OnMessageReceived(Flow*, std::unique_ptr<MessageReceived>& a) override {
+    if (deliver_callback_) {
+      deliver_callback_(a);
+    }
+  }
+
+  void OnSubscriptionStatusChange(const SubscriptionStatus& a) override {
+    if (subscription_callback_) {
+      subscription_callback_(a);
+    }
+  }
+
+  void OnDataLoss(Flow*, std::unique_ptr<DataLossInfo>& a) override {
+    if (data_loss_callback_) {
+      data_loss_callback_(a);
+    }
+  }
+};
+
+}  // namespace
+
+SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
+                                         std::unique_ptr<Observer> observer) {
+  RS_ASSERT(!!observer);
+  return subscriber_.Subscribe(
+      nullptr, std::move(parameters), std::move(observer));
 }
 
 SubscriptionHandle ClientImpl::Subscribe(
@@ -242,11 +288,10 @@ SubscriptionHandle ClientImpl::Subscribe(
     data_loss_callback = data_loss_callback_;
   }
 
-  return subscriber_.Subscribe(nullptr,
-                               std::move(parameters),
-                               IgnoreFlow(std::move(deliver_callback)),
-                               std::move(subscription_callback),
-                               IgnoreFlow(std::move(data_loss_callback)));
+  return Subscribe(std::move(parameters),
+                   StdFunctionObserver::Create(std::move(deliver_callback),
+                                               std::move(subscription_callback),
+                                               std::move(data_loss_callback)));
 }
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
