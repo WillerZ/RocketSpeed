@@ -8,6 +8,7 @@
 #include <string>
 #include "src/util/testharness.h"
 #include "src/util/common/flow_control.h"
+#include "src/util/common/observable_set.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/observable_map.h"
 #include "src/messages/queues.h"
@@ -357,6 +358,71 @@ TEST(FlowTest, ObservableMap) {
   ASSERT_LT(reads, kNumMessages * 2);  // ensure some were merged
   ASSERT_EQ(last_a, kNumMessages - 1);  // ensure all written
   ASSERT_EQ(last_b, kNumMessages - 1);  // ensure all written
+}
+
+TEST(FlowTest, ObservableSet) {
+  // This test checks that ObservableSet correctly executes subscriptions,
+  // and tolerant to modifications from within the callback
+
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
+  ASSERT_OK(loop.Initialize());
+
+  FlowControl& flow_control = *loop.GetEventLoop(0)->GetFlowControl();
+  auto obs_set = std::make_shared<ObservableSet<std::string>>();
+
+  std::map<std::string, int> processed;
+  port::Semaphore done;
+
+  int done_after = 0;
+  flow_control.Register<std::string>(
+    obs_set.get(),
+    [&] (Flow* flow, std::string key) {
+      ++processed[key];
+      ASSERT_GT(processed[key], 0);
+      ASSERT_GT(done_after, 0);
+      --done_after;
+      if (!done_after) {
+        done.Post();
+        obs_set->Clear();
+        return;
+      }
+
+      if (key[0] == 'e') {
+        // Those two will be merged, with zero effect
+        obs_set->Add("bad explosion");
+        obs_set->Remove("bad explosion");
+
+        obs_set->Add("explode again");
+      }
+    });
+
+  MsgLoopThread flow_threads(env_, &loop, "flow");
+
+  auto send_exec_command = [&loop](std::function<void()> func) {
+    std::unique_ptr<Command> cmd(MakeExecuteCommand(func));
+    loop.SendCommand(std::move(cmd), 0);
+  };
+
+  done_after = 3;
+  send_exec_command([&](){ obs_set->Add("a"); });
+  send_exec_command([&](){ obs_set->Add("b"); });
+  send_exec_command([&](){ obs_set->Add("c"); });
+  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(5)));
+  ASSERT_EQ(done_after, 0);
+  ASSERT_EQ(processed.size(), 3);
+  ASSERT_EQ(processed["a"], 1);
+  ASSERT_EQ(processed["b"], 1);
+  ASSERT_EQ(processed["c"], 1);
+  processed.clear();
+
+  enum : int { kNumKeys = 1079 };
+  done_after = kNumKeys;
+  send_exec_command([&](){ obs_set->Add("explode"); });
+  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(5)));
+  ASSERT_EQ(done_after, 0);
+  ASSERT_EQ(processed.size(), 2);
+  ASSERT_EQ(processed["explode"], 1);
+  ASSERT_EQ(processed["explode again"], kNumKeys - 1);
 }
 
 TEST(FlowTest, SourcelessFlow) {

@@ -68,6 +68,12 @@ class Stream : public Sink<SharedTimestampedString> {
     return Write(ts);
   }
 
+  template <typename T>
+  bool WriteToFlow(Flow* flow, T& value) {
+    auto ts = ToTimestampedString(value);
+    return flow->Write(this, ts);
+  }
+
   /** Inherited from Sink<Message>. */
   bool FlushPending() final override;
 

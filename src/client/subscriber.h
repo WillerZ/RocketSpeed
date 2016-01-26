@@ -22,6 +22,7 @@
 #include "include/HostId.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
+#include "src/util/common/observable_set.h"
 #include "src/util/common/random.h"
 #include "src/util/common/ref_count_flyweight.h"
 #include "src/util/common/statistics.h"
@@ -212,6 +213,7 @@ class Subscriber : public StreamReceiver {
 
   /** Stream socket used by this worker to talk to the Rocketeer. */
   std::unique_ptr<Stream> server_stream_;
+
   /** The current server host. */
   HostId server_host_;
 
@@ -234,19 +236,30 @@ class Subscriber : public StreamReceiver {
    * unsubscribes if we receive a burst of messages on terminated subscription.
    */
   TimeoutList<SubscriptionID> recent_terminations_;
-  /** A set of subscriptions pending subscribe message being sent out. */
-  std::unordered_set<SubscriptionID> pending_subscribes_;
-  /** A set of subscriptions pending unsubscribe message being sent out. */
-  std::unordered_map<SubscriptionID, TenantID> pending_terminations_;
 
   /**
-   * Synchronises a portion of pending subscribe and unsubscribe requests with
-   * the Copilot. Takes into an account rate limits.
+   * A set of updated subscriptions (either new or terminated),
+   * that has not been processed yet
    */
-  void SendPendingRequests();
+  ObservableSet<SubscriptionID> pending_subscriptions_;
 
+  /**
+   * Run periodic events.
+   * It will reopen connection and initiate resubscription, if necessary.
+   */
+  void Tick();
+
+  /** Try to reopen connection to copilot and reinitiate resubscriptions */
+  void RestoreServerStream();
   /** Close connection to copilot and flush log of pending subscriptions */
   void CloseServerStream();
+  /** Update and flush list of recently terminated subscripitons */
+  void UpdateRecentTerminations();
+  /** Check router config and reconnect if it was changed */
+  void CheckRouterVersion();
+
+  void ProcessPendingSubscription(
+    Flow *flow, SubscriptionID sub_id, SubscriptionState* sub_state);
 
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) final override;
 
@@ -254,6 +267,9 @@ class Subscriber : public StreamReceiver {
       StreamReceiveArg<MessageUnsubscribe> arg) final override;
 
   void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) final override;
+
+  /** Assert invariants, this is noop for release build */
+  void CheckInvariants();
 };
 
 /**
@@ -309,11 +325,8 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
    */
   Subscriber* GetSubscriberForSubscription(SubscriptionID sub_id);
 
-  /**
-   * Synchronises a portion of pending subscribe and unsubscribe requests with
-   * the Copilot. Takes into an account rate limits.
-   */
-  void SendPendingRequests();
+  /** Run periodic tick on sharded subscribers */
+  void Tick();
 };
 
 /** A multi-threaded subscriber. */

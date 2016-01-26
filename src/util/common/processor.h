@@ -62,5 +62,4 @@ void InstallSource(EventLoop* event_loop,
   event_loop->SendControlCommand(std::move(cmd));
 }
 
-
 }  // namespace rocketspeed

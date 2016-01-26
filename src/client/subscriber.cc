@@ -29,6 +29,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream.h"
 #include "src/port/port.h"
+#include "src/util/common/processor.h"
 #include "src/util/common/random.h"
 #include "src/util/timeout_list.h"
 
@@ -272,16 +273,37 @@ Subscriber::Subscriber(const ClientOptions& options,
 , rng_(ThreadLocalPRNG())
 , last_router_version_(0)
 , router_(std::move(router)) {
+  thread_check_.Check();
+
+  // Cannot use InstallSource here because it is asynchronous.
+  // It must register synchronously, otherwise MultiThreadedSubscriber
+  // can destroy object before the registration actually could be completed.
+  std::function<void(Flow*, SubscriptionID)> cb =
+    [this](Flow* flow, SubscriptionID sub_id) {
+      auto it = subscriptions_.find(sub_id);
+      SubscriptionState* sub_state =
+        it == subscriptions_.end() ? nullptr : &it->second;
+      ProcessPendingSubscription(flow, sub_id, sub_state);
+    };
+  event_loop_->GetFlowControl()->Register(&pending_subscriptions_, cb);
 }
 
 Subscriber::~Subscriber() {
   thread_check_.Check();
   CloseServerStream();
+  event_loop_->GetFlowControl()->UnregisterSource(&pending_subscriptions_);
+}
+
+void Subscriber::CheckInvariants() {
+  RS_ASSERT(server_stream_ ||
+      (!server_stream_ && pending_subscriptions_.Empty()));
 }
 
 Status Subscriber::Start() {
+  thread_check_.Check();
+
   start_timer_callback_ = event_loop_->RegisterTimerCallback(
-    [this]() { SendPendingRequests(); }, options_.timer_period);
+    [this]() { Tick(); }, options_.timer_period);
   if (start_timer_callback_ == nullptr) {
     return Status::InternalError("Error creating timed event.");
   }
@@ -320,8 +342,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
            sub_id);
 
   // Issue subscription.
-  pending_subscribes_.emplace(sub_id);
-  SendPendingRequests();
+  pending_subscriptions_.Add(sub_id);
 }
 
 void Subscriber::Acknowledge(SubscriptionID sub_id,
@@ -340,6 +361,8 @@ void Subscriber::Acknowledge(SubscriptionID sub_id,
 }
 
 void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
+  thread_check_.Check();
+
   // Remove subscription state entry.
   auto it = subscriptions_.find(sub_id);
   if (it == subscriptions_.end()) {
@@ -358,10 +381,7 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
       options_.info_log, sub_id, MessageUnsubscribe::Reason::kRequested);
 
   // Issue unsubscribe request.
-  pending_terminations_.emplace(sub_id, sub_state.GetTenant());
-  // Remove pending subscribe request, if any.
-  pending_subscribes_.erase(sub_id);
-  SendPendingRequests();
+  pending_subscriptions_.Add(sub_id);
 }
 
 Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
@@ -394,18 +414,13 @@ void Subscriber::CloseServerStream() {
 
   // If server stream is closed there is no point to keep old events.
   // It will reissue all subscriptions anyway on new connection.
-  pending_subscribes_.clear();
-  pending_terminations_.clear();
+  pending_subscriptions_.Clear();
   recent_terminations_.Clear();
+
+  CheckInvariants();
 }
 
-void Subscriber::SendPendingRequests() {
-  thread_check_.Check();
-
-  // Evict entries from a list of recently sent unsubscribe messages.
-  recent_terminations_.ProcessExpired(
-      options_.unsubscribe_deduplication_timeout, [](SubscriptionID) {}, -1);
-
+void Subscriber::CheckRouterVersion() {
   // Close the connection if the router has changed.
   const auto current_router_version = router_->GetVersion();
   if (last_router_version_ != current_router_version) {
@@ -416,143 +431,135 @@ void Subscriber::SendPendingRequests() {
                current_router_version);
 
       CloseServerStream();
-
-      // Reissue all subscriptions.
-      for (auto& entry : subscriptions_) {
-        SubscriptionID sub_id = entry.first;
-        // Mark subscription as pending.
-        pending_subscribes_.emplace(sub_id);
-      }
     }
   }
+}
 
-  // Return immediately if there is nothing to do.
-  if (pending_subscribes_.empty() && pending_terminations_.empty()) {
+void Subscriber::UpdateRecentTerminations() {
+  // Evict entries from a list of recently sent unsubscribe messages.
+  recent_terminations_.ProcessExpired(
+      options_.unsubscribe_deduplication_timeout, [](SubscriptionID) {}, -1);
+}
+
+void Subscriber::RestoreServerStream() {
+  RS_ASSERT(!server_stream_);
+
+  CloseServerStream(); // it must be closed already
+
+  // Check if we're still in backoff mode
+  const uint64_t now = options_.env->NowMicros();
+  if (now <= backoff_until_time_) {
     return;
   }
 
-  const uint64_t now = options_.env->NowMicros();
-  // Check if we have a valid socket to the Copilot, recreate it if not.
-  if (!server_stream_) {
-    // Since we're not connected to the Copilot, all subscriptions were
-    // terminated, so we don't need to send corresponding unsubscribes.
-    // We might be disconnected and still have some pending unsubscribes, as the
-    // application can terminate subscription while the client is reconnecting.
-    pending_terminations_.clear();
-
-    // If we only had pending unsubscribes, there is no point reconnecting.
-    if (pending_subscribes_.empty()) {
-      return;
-    }
-
-    // We do have requests to sync, check if we're still in backoff mode.
-    if (now <= backoff_until_time_) {
-      return;
-    }
-
-    // Get router version of the host that we will fetch later on.
-    last_router_version_ = current_router_version;
-    // Get the server's address.
-    server_host_ = router_->GetHost();
-    if (!server_host_) {
-      LOG_WARN(options_.info_log, "Failed to obtain Copilot address");
-      // We'll try to obtain the address and reconnect on next occasion.
-      return;
-    }
-
-    // And create socket to it.
-    server_stream_ = event_loop_->OpenStream(server_host_);
-    server_stream_->SetReceiver(this);
-
-    LOG_INFO(options_.info_log,
-             "Reconnected to %s on stream %llu",
-             server_host_.ToString().c_str(),
-             server_stream_->GetLocalID());
+  // Get router version of the host that we will fetch later on.
+  last_router_version_ = router_->GetVersion();
+  // Get the server's address.
+  server_host_ = router_->GetHost();
+  if (!server_host_) {
+    LOG_WARN(options_.info_log, "Failed to obtain Copilot address");
+    // We'll try to obtain the address and reconnect on next occasion.
+    return;
   }
+
+  // And create socket to it.
+  server_stream_ = event_loop_->OpenStream(server_host_);
+  server_stream_->SetReceiver(this);
+
+  LOG_INFO(options_.info_log,
+           "Reconnected to %s on stream %llu",
+           server_host_.ToString().c_str(),
+           server_stream_->GetLocalID());
+
+  // Reissue all active subscriptions for new connection
+  for (auto& entry : subscriptions_) {
+    SubscriptionID sub_id = entry.first;
+    pending_subscriptions_.Add(sub_id);
+  }
+
+  CheckInvariants();
+}
+
+void Subscriber::ProcessPendingSubscription(Flow *flow,
+                                            SubscriptionID sub_id,
+                                            SubscriptionState* sub_state) {
+  thread_check_.Check();
+  RS_ASSERT(flow);
+
+  UpdateRecentTerminations();
+  CheckRouterVersion();
 
   // If we have no subscriptions and some pending requests, close the
   // connection. This way we unsubscribe all of them.
-  if (options_.close_connection_with_no_subscription &&
+  if (server_stream_ &&
+      options_.close_connection_with_no_subscription &&
       subscriptions_.empty()) {
-    RS_ASSERT(pending_subscribes_.empty());
-
     LOG_INFO(options_.info_log,
              "Closing stream (%llu) with no active subscriptions",
              server_stream_->GetLocalID());
     CloseServerStream();
 
     // We've just sent a message.
-    last_send_time_ = now;
+    last_send_time_ = options_.env->NowMicros();
     return;
   }
 
-  // Sync unsubscribe requests.
-  while (!pending_terminations_.empty()) {
-    auto it = pending_terminations_.begin();
-    TenantID tenant_id = it->second;
-    SubscriptionID sub_id = it->first;
+  if (!server_stream_) {
+    RestoreServerStream();
+    // Once connection is restored all pending subscriptions will be
+    // invalidated and repopulated again into the set,
+    // we can abort processing for now and wait for the next tick
+    return;
+  }
 
+  CheckInvariants();
+
+  bool can_write_more = true;
+  if (!sub_state) {
+    // Process unsubscribe request
     if (recent_terminations_.Contains(sub_id)) {
       // Skip the unsubscribe message if we sent it recently.
-      pending_terminations_.erase(it);
-      continue;
+      return;
     }
 
-    // Message will be sent, we may clear pending request.
-    pending_terminations_.erase(it);
     // Record the fact, so we don't send duplicates of the message.
     recent_terminations_.Add(sub_id);
     // Record last send time for back-off logic.
-    last_send_time_ = now;
+    last_send_time_ = options_.env->NowMicros();
 
     MessageUnsubscribe unsubscribe(
-        tenant_id, sub_id, MessageUnsubscribe::Reason::kRequested);
-    const bool can_write_more = server_stream_->Write(unsubscribe);
+        GuestTenant, sub_id, MessageUnsubscribe::Reason::kRequested);
+    can_write_more = server_stream_->WriteToFlow(flow, unsubscribe);
 
     LOG_INFO(options_.info_log, "Unsubscribed ID (%" PRIu64 ")", sub_id);
-
-    if (!can_write_more) {
-      LOG_WARN(options_.info_log, "Overflow while syncing subscriptions");
-      // Try next time.
-      return;
-    }
-  }
-
-  // Sync subscribe requests.
-  while (!pending_subscribes_.empty()) {
-    auto it = pending_subscribes_.begin();
-    SubscriptionID sub_id = *it;
-
-    SubscriptionState* sub_state;
-    {
-      auto it_state = subscriptions_.find(sub_id);
-      if (it_state == subscriptions_.end()) {
-        // Subscription doesn't exist, no need to send request.
-        pending_subscribes_.erase(it);
-        continue;
-      }
-      sub_state = &it_state->second;
-    }
-
+  } else {
+    // Process subscribe request
     MessageSubscribe subscribe(sub_state->GetTenant(),
                                sub_state->GetNamespace(),
                                sub_state->GetTopicName(),
                                sub_state->GetExpected(),
                                sub_id);
-    const bool can_write_more = server_stream_->Write(subscribe);
+    can_write_more = server_stream_->WriteToFlow(flow, subscribe);
 
-    // Message was sent, we may clear pending request.
-    pending_subscribes_.erase(it);
     // Remember last sent time for backoff.
-    last_send_time_ = now;
+    last_send_time_ = options_.env->NowMicros();
 
     LOG_INFO(options_.info_log, "Subscribed ID (%" PRIu64 ")", sub_id);
+  }
 
-    if (!can_write_more) {
-      LOG_WARN(options_.info_log, "Backoff when syncing subscriptions.");
-      // Try next time.
-      return;
-    }
+  if (!can_write_more) {
+    LOG_INFO(options_.info_log, "Backoff when syncing subscriptions");
+  }
+}
+
+void Subscriber::Tick() {
+  thread_check_.Check();
+
+  UpdateRecentTerminations();
+  CheckRouterVersion();
+
+  if (!server_stream_ && !subscriptions_.empty()) {
+    RestoreServerStream();
   }
 }
 
@@ -566,6 +573,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   if (it != subscriptions_.end()) {
     it->second.ReceiveMessage(arg.flow, options_.info_log, std::move(deliver));
   } else {
+    UpdateRecentTerminations();
     if (recent_terminations_.Contains(sub_id)) {
       LOG_DEBUG(options_.info_log,
                 "Subscription ID(%" PRIu64
@@ -576,11 +584,8 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
                "Subscription ID(%" PRIu64 ") for delivery not found",
                sub_id);
       // Issue unsubscribe request.
-      pending_terminations_.emplace(sub_id, deliver->GetTenantID());
+      pending_subscriptions_.Add(sub_id);
     }
-    // This also evicts entries from recent terminations list, should be called
-    // in either branch.
-    SendPendingRequests();
   }
 }
 
@@ -606,8 +611,7 @@ void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
              unsubscribe->GetSubID());
 
     // Reissue subscription.
-    pending_subscribes_.emplace(sub_id);
-    SendPendingRequests();
+    pending_subscriptions_.Add(sub_id);
 
     // Do not terminate subscription in this case.
     return;
@@ -632,13 +636,6 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
   // Notify the router.
   router_->MarkHostDown(server_host_);
 
-  // Reissue all subscriptions.
-  for (auto& entry : subscriptions_) {
-    SubscriptionID sub_id = entry.first;
-    // Mark subscription as pending.
-    pending_subscribes_.emplace(sub_id);
-  }
-
   // Failed to reconnect, apply back off logic.
   ++consecutive_goodbyes_count_;
   EnvClockDuration backoff_initial = options_.backoff_initial;
@@ -662,8 +659,6 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
            consecutive_goodbyes_count_,
            origin,
            backoff_period / 1000);
-
-  SendPendingRequests();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -673,11 +668,12 @@ MultiShardSubscriber::MultiShardSubscriber(const ClientOptions& options,
 }
 
 MultiShardSubscriber::~MultiShardSubscriber() {
+  subscribers_.clear();
 }
 
 Status MultiShardSubscriber::Start() {
   start_timer_callback_ = event_loop_->RegisterTimerCallback(
-    [this]() { SendPendingRequests(); }, options_.timer_period);
+    [this]() { Tick(); }, options_.timer_period);
   if (start_timer_callback_ == nullptr) {
     return Status::InternalError("Error creating timed event.");
   }
@@ -768,9 +764,9 @@ Subscriber* MultiShardSubscriber::GetSubscriberForSubscription(
   return it1->second.get();
 }
 
-void MultiShardSubscriber::SendPendingRequests() {
+void MultiShardSubscriber::Tick() {
   for (const auto& subscriber : subscribers_) {
-    subscriber.second->SendPendingRequests();
+    subscriber.second->Tick();
   }
 }
 
