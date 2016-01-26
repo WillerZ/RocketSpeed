@@ -119,11 +119,11 @@ Status ClientImpl::Create(ClientOptions options,
   }
 
   std::unique_ptr<MsgLoop> msg_loop(new MsgLoop(options.env,
-                                                 EnvOptions(),
-                                                 -1,  // port
-                                                 options.num_workers,
-                                                 options.info_log,
-                                                 "client"));
+                                                EnvOptions(),
+                                                -1,  // port
+                                                options.num_workers,
+                                                options.info_log,
+                                                "client"));
 
   Status st = msg_loop->Initialize();
   if (!st.ok()) {
@@ -222,18 +222,15 @@ namespace {
 class StdFunctionObserver : public Observer,
                             public NonCopyable,
                             public NonMovable {
-  const std::function<void(std::unique_ptr<MessageReceived>&)>
-      deliver_callback_;
-  const SubscribeCallback subscription_callback_;
-  const std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback_;
-
  public:
   static std::unique_ptr<StdFunctionObserver> Create(
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
       SubscribeCallback subscription_callback,
       std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback) {
     return folly::make_unique<StdFunctionObserver>(
-        deliver_callback, subscription_callback, data_loss_callback);
+        std::move(deliver_callback),
+        std::move(subscription_callback),
+        std::move(data_loss_callback));
   }
 
   StdFunctionObserver(
@@ -261,6 +258,12 @@ class StdFunctionObserver : public Observer,
       data_loss_callback_(a);
     }
   }
+
+ private:
+  const std::function<void(std::unique_ptr<MessageReceived>&)>
+      deliver_callback_;
+  const SubscribeCallback subscription_callback_;
+  const std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback_;
 };
 
 }  // namespace
