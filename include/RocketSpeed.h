@@ -279,6 +279,12 @@ class Client {
    * Messages arriving on this subscription after client unsubscribed, are
    * silently dropped.
    *
+   * The method should not be called more than once for a given handle.
+   * Doing so will result in inconsistent state of number of open subscriptions.
+   * The number of subscriptions allowed by the client might be greater
+   * than the max_subscription limit specified in ClientOptions.
+   * Risk of std::abort() if the number of subscriptions go below 0.
+   *
    * @param A handle that identifies the subscription.
    * @return Status::OK() iff unsubscription request was successfully enqueued.
    */
