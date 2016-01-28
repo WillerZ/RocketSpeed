@@ -274,6 +274,8 @@ SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
   RS_ASSERT(!!observer);
 
   if (num_subscriptions_.load() >= options_.max_subscriptions) {
+    LOG_ERROR(options_.info_log,
+      "Subscription limit of %zu reached.", options_.max_subscriptions);
     return SubscriptionHandle(0);
   }
 
