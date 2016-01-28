@@ -1,4 +1,6 @@
+#ifndef NDEBUG
 #define NDEBUG
+#endif
 #include "src/util/common/ref_count_flyweight.h"
 #include "src/util/testharness.h"
 #include <functional>

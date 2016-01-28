@@ -80,7 +80,8 @@ EXCLUDED_TESTS = \
 TESTS = $(filter-out $(EXCLUDED_TESTS), $(TESTS_CPP:.cc=.test))
 
 TOOLS = \
-	rocketbench
+	rocketbench \
+	client_memory_used_bench
 
 PROGRAMS = rocketspeed $(TOOLS)
 
