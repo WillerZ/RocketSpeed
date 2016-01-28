@@ -44,7 +44,7 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
       LOG_INFO(info_log,
                "Unsubscribed ID(%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
                sub_id,
-               namespace_id_.c_str(),
+               GetNamespace().c_str(),
                topic_name_.c_str(),
                expected_seqno_);
       AnnounceStatus(false, Status::OK());
@@ -53,7 +53,7 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
       LOG_INFO(info_log,
                "Kicked subscription ID (%" PRIu64 ") on Topic(%s, %s)@%" PRIu64,
                sub_id,
-               namespace_id_.c_str(),
+               GetNamespace().c_str(),
                topic_name_.c_str(),
                expected_seqno_);
       AnnounceStatus(false, Status::InvalidArgument("Invalid subscription"));
@@ -173,7 +173,7 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
              " on Topic(%s, %s) expected %" PRIu64,
              previous,
              current,
-             namespace_id_.c_str(),
+             GetNamespace().c_str(),
              topic_name_.c_str(),
              expected_seqno_);
     return false;
@@ -186,7 +186,7 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
             type_description,
             previous,
             current,
-            namespace_id_.c_str(),
+            GetNamespace().c_str(),
             topic_name_.c_str(),
             expected_seqno_);
 
@@ -286,8 +286,13 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                    std::unique_ptr<Observer> observer) {
   SubscriptionState* sub_state;
   {  // Store the subscription state.
+    auto tn = TenantAndNamespace{std::move(parameters.tenant_id),
+                                 std::move(parameters.namespace_id)};
     auto emplace_result = subscriptions_.emplace(
-        sub_id, SubscriptionState(std::move(parameters), std::move(observer)));
+        sub_id,
+        SubscriptionState(std::move(parameters),
+                          std::move(observer),
+                          tenant_and_namespace_factory_.GetFlyweight(tn)));
     if (!emplace_result.second) {
       LOG_ERROR(
           options_.info_log, "Duplicate subscription ID(%" PRIu64 ")", sub_id);

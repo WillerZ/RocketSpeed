@@ -22,6 +22,7 @@
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/common/random.h"
+#include "src/util/common/ref_count_flyweight.h"
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
 
@@ -62,6 +63,20 @@ typedef uint64_t SubscriptionHandle;
 template <typename>
 class ThreadLocalQueues;
 
+struct TenantAndNamespace {
+  TenantID tenant_id;
+  NamespaceID namespace_id;
+  friend bool operator<(const TenantAndNamespace& lhs,
+                        const TenantAndNamespace& rhs) {
+    if (lhs.tenant_id == rhs.tenant_id) {
+      return lhs.namespace_id < rhs.namespace_id;
+    }
+    return lhs.tenant_id < rhs.tenant_id;
+  }
+};
+typedef RefCountFlyweightFactory<TenantAndNamespace> TenantAndNamespaceFactory;
+typedef RefCountFlyweight<TenantAndNamespace> TenantAndNamespaceFlyweight;
+
 /**
  * Represents a state of a single subscription.
  */
@@ -72,9 +87,9 @@ class SubscriptionState : public NonCopyable {
   SubscriptionState& operator=(SubscriptionState&&) = default;
 
   SubscriptionState(SubscriptionParameters parameters,
-                    std::unique_ptr<Observer> observer)
-  : tenant_id_(parameters.tenant_id)
-  , namespace_id_(std::move(parameters.namespace_id))
+                    std::unique_ptr<Observer> observer,
+                    TenantAndNamespaceFlyweight tenant_and_namespace)
+  : tenant_and_namespace_(std::move(tenant_and_namespace))
   , topic_name_(std::move(parameters.topic_name))
   , observer_(std::move(observer))
   , expected_seqno_(parameters.start_seqno)
@@ -86,9 +101,11 @@ class SubscriptionState : public NonCopyable {
     RS_ASSERT(!!observer_);
   }
 
-  TenantID GetTenant() const { return tenant_id_; }
+  TenantID GetTenant() const { return tenant_and_namespace_.Get().tenant_id; }
 
-  const NamespaceID& GetNamespace() const { return namespace_id_; }
+  const NamespaceID& GetNamespace() const {
+    return tenant_and_namespace_.Get().namespace_id;
+  }
 
   const Topic& GetTopicName() const { return topic_name_; }
 
@@ -125,8 +142,7 @@ class SubscriptionState : public NonCopyable {
   // because move-semantics wouldn't work for them in that case.
   // Unfortunately, move semantics is currently not compatible with
   // the concept of an immutable object in C++.
-  /* const */ TenantID tenant_id_;
-  /* const */ NamespaceID namespace_id_;
+  /* const */ TenantAndNamespaceFlyweight tenant_and_namespace_;
   /* const */ Topic topic_name_;
   /* const */ std::unique_ptr<Observer> observer_;
 
@@ -200,6 +216,9 @@ class Subscriber : public StreamReceiver {
 
   /** All subscriptions served by this worker. */
   std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
+
+  /** Flyweight factory for tenant+namespace id pairs. */
+  TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
   /**
    * A timeout list with recently sent unsubscribe requests, used to dedup
