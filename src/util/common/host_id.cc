@@ -91,7 +91,7 @@ size_t HostId::Hash() const {
       Slice(reinterpret_cast<const char*>(&storage_), sizeof(storage_)));
 }
 
-const uint16_t HostId::GetPort() const {
+uint16_t HostId::GetPort() const {
   auto saddr = GetSockaddr();
   uint16_t port_netw = 0;
   if (saddr->sa_family == AF_INET) {
@@ -100,6 +100,24 @@ const uint16_t HostId::GetPort() const {
     port_netw = reinterpret_cast<const struct sockaddr_in6*>(saddr)->sin6_port;
   }
   return ntohs(port_netw);
+}
+
+Status HostId::GetHost(std::string* host) const {
+  RS_ASSERT(host);
+  // This buffer will be sufficient to hold both IPv4 and IPv6 address.
+  char buffer[INET6_ADDRSTRLEN] = {0};
+  if (int rv = getnameinfo(GetSockaddr(),
+                           GetSocklen(),
+                           buffer,
+                           INET6_ADDRSTRLEN,
+                           nullptr,
+                           0,
+                           NI_NUMERICHOST | NI_NUMERICSERV)) {
+    return Status::IOError("Failed to stringify host, reason: " +
+                           std::string(gai_strerror(rv)));
+  }
+  *host = std::string(buffer);
+  return Status::OK();
 }
 
 Status HostId::ResolveInternal(const std::string& hostname,

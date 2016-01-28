@@ -35,6 +35,11 @@ TEST(Messaging, Data) {
   Slice name1("Topic1");
   Slice payload1("Payload1");
   HostId host1(HostId::CreateLocal(1234));
+  {  // A swift check that things are fine
+    std::string hostname;
+    ASSERT_OK(host1.GetHost(&hostname));
+    ASSERT_EQ("127.0.0.1", hostname);
+  }
   NamespaceID nsid1 = GuestNamespace;
 
   // create a message
