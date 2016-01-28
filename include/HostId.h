@@ -25,14 +25,24 @@ class HostId {
    */
   static Status Resolve(const std::string& host_and_port, HostId* out);
 
+  /**
+   * Same as ::Resolve(const string&, ...), but takes port as a separate
+   * argument.
+   */
   static Status Resolve(const std::string& hostname,
                         uint16_t port,
                         HostId* out);
 
+  /**
+   * Creates HostId from IP address and port, fails if provided with hostname.
+   */
   static Status CreateFromIP(const std::string& ip_address,
                              uint16_t port,
                              HostId* out);
 
+  /**
+   * Creates HostId out of port, the host address is localhost.
+   */
   static HostId CreateLocal(uint16_t port, std::string description = "");
 
   HostId();
@@ -56,8 +66,15 @@ class HostId {
     description_ = std::move(description);
   }
 
+  /**
+   * Returns port this HostId points to in machine byte-order.
+   */
   uint16_t GetPort() const;
 
+  /**
+   * Provides IP address of the host this HostId points to.
+   * Performs no reverse name resolution.
+   */
   Status GetHost(std::string* host) const;
 
   const sockaddr* GetSockaddr() const {
