@@ -109,6 +109,7 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
   // Create RocketSpeed client.
   ClientOptions options;
   options.config = cluster.GetConfiguration();
+  options.sharding = cluster.GetShardingPolicy();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));

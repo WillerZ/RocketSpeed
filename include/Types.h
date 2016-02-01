@@ -282,6 +282,21 @@ class SubscriptionRouter {
  */
 class ShardingStrategy {
  public:
+  static Status Create(const std::shared_ptr<Logger>& info_log,
+                       const std::string& config_str,
+                       std::unique_ptr<ShardingStrategy>* out);
+
+  static Status Create(const std::shared_ptr<Logger>& info_log,
+                       const std::string& config_str,
+                       std::shared_ptr<ShardingStrategy>* out) {
+    std::unique_ptr<ShardingStrategy> sharding;
+    Status st = Create(info_log, config_str, &sharding);
+    if (st.ok()) {
+      *out = std::move(sharding);
+    }
+    return st;
+  }
+
   virtual ~ShardingStrategy() = default;
 
   /**
@@ -307,29 +322,29 @@ using ThreadSelectionStrategy =
     std::function<size_t(size_t, const NamespaceID&, const Topic&)>;
 
 /**
- * A Configuration that specifies how a Client can connect to RocketSpeed.
+ * A PublisherRouter that specifies how a Client can connect to RocketSpeed.
  */
-class Configuration {
+class PublisherRouter {
  public:
   /**
-   * Factory method for creating Configuration from human-readable string.
+   * Factory method for creating PublisherRouter from human-readable string.
    */
-  static Status CreateConfiguration(const std::shared_ptr<Logger>& info_log,
-                                    const std::string& config_str,
-                                    std::unique_ptr<Configuration>* out);
+  static Status Create(const std::shared_ptr<Logger>& info_log,
+                       const std::string& config_str,
+                       std::unique_ptr<PublisherRouter>* out);
 
-  static Status CreateConfiguration(const std::shared_ptr<Logger>& info_log,
-                                    const std::string& config_str,
-                                    std::shared_ptr<Configuration>* out) {
-    std::unique_ptr<Configuration> config;
-    Status st = CreateConfiguration(info_log, config_str, &config);
+  static Status Create(const std::shared_ptr<Logger>& info_log,
+                       const std::string& config_str,
+                       std::shared_ptr<PublisherRouter>* out) {
+    std::unique_ptr<PublisherRouter> publisher;
+    Status st = Create(info_log, config_str, &publisher);
     if (st.ok()) {
-      *out = std::move(config);
+      *out = std::move(publisher);
     }
     return st;
   }
 
-  virtual ~Configuration() {}
+  virtual ~PublisherRouter() {}
 
   /**
    * Get a pilot host ID to use for publishes.
@@ -338,21 +353,6 @@ class Configuration {
    * @return ok() if successful, otherwise error.
    */
   virtual Status GetPilot(HostId* pilot_out) const = 0;
-
-  /**
-   * Get a copilot host ID to use for subscriptions.
-   *
-   * @param copilot_out If ok(), will be set to copilot host ID to use.
-   * @return ok() if successful, otherwise error.
-   */
-  virtual Status GetCopilot(HostId* copilot_out) const = 0;
-
-  /**
-   * Returns a version of the configuration, which increases whenever Copilot
-   * host returned by GetCopilot changes. This call should be cheap (i.e. no
-   * blocking or mutexes), Client might poll for version changes often.
-   */
-  virtual uint64_t GetCopilotVersion() const = 0;
 };
 
 enum Retention : char {

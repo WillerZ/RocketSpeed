@@ -12,6 +12,7 @@
 #include <gflags/gflags.h>
 #include <signal.h>
 #include <unistd.h>
+#include "external/folly/Memory.h"
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 #include "include/WakeLock.h"
@@ -991,8 +992,8 @@ int main(int argc, char** argv) {
 
     if (!FLAGS_config.empty()) {
       // Use provided configuration string.
-      auto st = rocketspeed::Configuration::CreateConfiguration(
-          info_log, FLAGS_config, &options.config);
+      auto st = rocketspeed::PublisherRouter::Create(
+          info_log, FLAGS_config, &options.publisher);
       if (!st.ok()) {
         LOG_FATAL(info_log,
                   "Failed to parse configuration: %s",
@@ -1001,8 +1002,10 @@ int main(int argc, char** argv) {
       }
     } else {
       // Fall back to picking pilot and copilot in a round robin fashion.
-      options.config = std::make_shared<rocketspeed::FixedConfiguration>(
-          pilots[i % pilots.size()], copilots[i % copilots.size()]);
+      options.publisher = std::make_shared<rocketspeed::FixedPubilsherRouter>(
+          pilots[i % pilots.size()]);
+      options.sharding = folly::make_unique<rocketspeed::FixedShardingStrategy>(
+          copilots[i % copilots.size()]);
     }
 
     std::unique_ptr<rocketspeed::ClientImpl> client;

@@ -58,7 +58,8 @@ class ProxyTest {
     // Create proxy.
     ProxyOptions opts;
     opts.info_log = info_log;
-    opts.conf = cluster->GetConfiguration();
+    opts.config = cluster->GetConfiguration();
+    opts.sharding = cluster->GetShardingPolicy();
     opts.ordering_buffer_size = kOrderingBufferSize;
     ASSERT_OK(Proxy::CreateNewInstance(std::move(opts), &proxy));
   }

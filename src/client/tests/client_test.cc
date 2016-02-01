@@ -25,21 +25,16 @@
 
 namespace rocketspeed {
 
-class MockConfiguration : public Configuration {
+class MockSubscriptionRouter;
+class MockShardingStrategy;
+
+class MockPublisherRouter : public PublisherRouter {
  public:
   Status GetPilot(HostId* host_out) const override {
     std::lock_guard<std::mutex> lock(mutex_);
     *host_out = pilot_;
     return !pilot_ ? Status::NotFound("") : Status::OK();
   }
-
-  Status GetCopilot(HostId* host_out) const override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    *host_out = copilot_;
-    return !copilot_ ? Status::NotFound("") : Status::OK();
-  }
-
-  uint64_t GetCopilotVersion() const override { return version_.load(); }
 
   void SetPilot(HostId host) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -58,7 +53,60 @@ class MockConfiguration : public Configuration {
   mutable std::atomic<uint64_t> version_;
   HostId pilot_;
   HostId copilot_;
+
+  HostId GetCopilot() const {
+    HostId out;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      out = copilot_;
+    }
+    return out;
+  }
+
+  friend class MockSubscriptionRouter;
 };
+
+class MockSubscriptionRouter : public SubscriptionRouter {
+ public:
+  explicit MockSubscriptionRouter(std::shared_ptr<MockPublisherRouter> config)
+  : config_(config) {
+  }
+
+  size_t GetVersion() override { return config_->version_.load(); }
+
+  HostId GetHost() override { return config_->GetCopilot(); }
+
+  void MarkHostDown(const HostId& host_id) override {}
+
+ private:
+  const std::shared_ptr<MockPublisherRouter> config_;
+};
+
+class MockShardingStrategy : public ShardingStrategy {
+ public:
+  explicit MockShardingStrategy(std::shared_ptr<MockPublisherRouter> config)
+  : config_(config) {
+  }
+
+  size_t GetShard(const NamespaceID& namespace_id,
+                  const Topic& topic_name) const override {
+    return 0;
+  }
+
+  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
+    ASSERT_EQ(shard, 0);
+    return std::unique_ptr<SubscriptionRouter>(
+        new MockSubscriptionRouter(config_));
+  }
+
+ private:
+  const std::shared_ptr<MockPublisherRouter> config_;
+};
+
+static std::unique_ptr<ShardingStrategy> MakeShardingStrategyFromConfig(
+    std::shared_ptr<MockPublisherRouter> config) {
+  return folly::make_unique<MockShardingStrategy>(config);
+}
 
 class ClientTest {
  public:
@@ -66,7 +114,7 @@ class ClientTest {
   : positive_timeout(1000)
   , negative_timeout(100)
   , env_(Env::Default())
-  , config_(std::make_shared<MockConfiguration>())
+  , config_(std::make_shared<MockPublisherRouter>())
   , next_server_port_(5450) {
     ASSERT_OK(test::CreateLogger(env_, "ClientTest", &info_log_));
   }
@@ -81,7 +129,7 @@ class ClientTest {
   const std::chrono::milliseconds positive_timeout;
   const std::chrono::milliseconds negative_timeout;
   Env* const env_;
-  const std::shared_ptr<MockConfiguration> config_;
+  const std::shared_ptr<MockPublisherRouter> config_;
   std::shared_ptr<rocketspeed::Logger> info_log_;
   std::atomic<int> next_server_port_;
 
@@ -127,8 +175,10 @@ class ClientTest {
     options.timer_period = std::chrono::milliseconds(1);
     // Override logger and configuration.
     options.info_log = info_log_;
-    ASSERT_TRUE(options.config == nullptr);
-    options.config = config_;
+    ASSERT_TRUE(options.publisher == nullptr);
+    options.publisher = config_;
+    ASSERT_TRUE(options.sharding == nullptr);
+    options.sharding = MakeShardingStrategyFromConfig(config_);
     std::unique_ptr<Client> client;
     ASSERT_OK(Client::Create(std::move(options), &client));
     return client;

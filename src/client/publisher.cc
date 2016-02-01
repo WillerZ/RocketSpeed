@@ -139,7 +139,7 @@ void PublisherWorkerData::Publish(MsgId message_id,
   if (!pilot_stream_) {
     // Get the pilot's address.
     HostId pilot;
-    Status st = publisher_->config_->GetPilot(&pilot);
+    Status st = publisher_->publisher_->GetPilot(&pilot);
     if (!st.ok()) {
       LOG_WARN(publisher_->info_log_,
                "Failed to obtain Pilot address: %s",
@@ -262,7 +262,7 @@ void PublisherWorkerData::CheckTimeouts() {
 PublisherImpl::PublisherImpl(const ClientOptions& options_,
                              MsgLoop* msg_loop,
                              SmartWakeLock* wake_lock)
-: config_(options_.config)
+: publisher_(options_.publisher)
 , info_log_(options_.info_log)
 , msg_loop_(msg_loop)
 , wake_lock_(wake_lock) {
