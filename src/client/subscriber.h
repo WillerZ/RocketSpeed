@@ -54,6 +54,7 @@ class MessageUnsubscribe;
 class MessageGoodbye;
 class MsgLoop;
 class MultiShardSubscriber;
+class EventCallback;
 class EventLoop;
 class Stream;
 class SubscriptionState;
@@ -224,6 +225,9 @@ class Subscriber : public StreamReceiver {
   /** Flyweight factory for tenant+namespace id pairs. */
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
+  /** Start timer callback **/
+  std::unique_ptr<EventCallback> start_timer_callback_;
+
   /**
    * A timeout list with recently sent unsubscribe requests, used to dedup
    * unsubscribes if we receive a burst of messages on terminated subscription.
@@ -288,6 +292,9 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
 
   /** A statistics object shared between subscribers. */
   std::shared_ptr<SubscriberStats> stats_;
+
+  /** Start timer callback **/
+  std::unique_ptr<EventCallback> start_timer_callback_;
 
   // TODO(t9432312)
   std::unordered_map<SubscriptionID, size_t> subscription_to_shard_;

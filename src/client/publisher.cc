@@ -13,6 +13,7 @@
 #include "external/folly/move_wrapper.h"
 
 #include "src/client/smart_wake_lock.h"
+#include "src/messages/event_callback.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/commands.h"
@@ -96,8 +97,8 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData : public StreamReceiver {
   : publisher_(publisher)
   , event_loop_(event_loop)
   , publish_timeout_(options.publish_timeout) {
-    event_loop_->RegisterTimerCallback([this] { CheckTimeouts(); },
-                                       options.timer_period);
+    timer_callback_ = event_loop_->RegisterTimerCallback(
+      [this] { CheckTimeouts(); }, options.timer_period);
   }
 
   /** Publishes message to the Pilot. */
@@ -118,6 +119,8 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData : public StreamReceiver {
   std::unordered_map<MsgId, PendingAck, MsgId::Hash> messages_sent_;
   /** List of messages to timeout. */
   TimeoutList<MsgId, MsgId::Hash> timeouts_;
+  /** Timer Callback */
+  std::unique_ptr<EventCallback> timer_callback_;
 
   /** Checks for publish timeouts. */
   void CheckTimeouts();

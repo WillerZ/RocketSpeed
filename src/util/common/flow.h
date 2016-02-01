@@ -150,4 +150,4 @@ class SinkWithOverflow : public Sink<T> {
   std::deque<T> overflow_;
 };
 
-}  // namespace rocketeed
+} // namespace rocketspeed

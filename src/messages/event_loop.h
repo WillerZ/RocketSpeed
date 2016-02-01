@@ -58,6 +58,7 @@ class EventTrigger;
 class Flow;
 class FlowControl;
 class SocketEvent;
+class TimedCallback;
 using TriggerID = uint64_t;
 class TriggerableCallback;
 class SocketEventStats;
@@ -191,8 +192,9 @@ class EventLoop {
    */
   void AddTask(std::function<void()> task);
 
-  Status RegisterTimerCallback(TimerCallbackType callback,
-                               std::chrono::microseconds period);
+  std::unique_ptr<EventCallback> RegisterTimerCallback(
+    TimerCallbackType callback, std::chrono::microseconds period,
+    bool enabled = true);
 
   /**
    * Creates a new trigger, which can be used to notify EventCallbacks.
@@ -228,6 +230,17 @@ class EventLoop {
    */
   std::unique_ptr<EventCallback> CreateEventCallback(
       std::function<void()> cb, const EventTrigger& trigger);
+
+  /**
+   * Creates an EventCallback that will be invoked after every time the
+   * duration passes.
+   *
+   * @param cb Callback to invoke when the trigger is notified.
+   * @param duration the time after which callback should run.
+   * @return EventCallback object.
+   */
+  std::unique_ptr<EventCallback> CreateTimedEventCallback(
+      std::function<void()> cb, std::chrono::microseconds duration);
 
   /** Cleans up all the state associated with the callback. */
   void TriggerableCallbackClose(access::EventLoop, TriggerableCallback* event);
@@ -626,22 +639,6 @@ class EventLoop {
   // is too long, and generally non-configurable, so we actively close the
   // socket if it doesn't become writable after some time.
   TimeoutList<SocketEvent*> connect_timeout_;
-
-  // Timer callbacks.
-  struct Timer {
-    explicit Timer(TimerCallbackType _callback)
-    : callback(std::move(_callback)) {
-    }
-
-    Timer(const Timer&) = delete;
-    Timer(Timer&&) = delete;
-    Timer& operator=(const Timer&) = delete;
-    Timer& operator=(Timer&&) = delete;
-
-    TimerCallbackType callback;
-    event* loop_event = nullptr;
-  };
-  std::vector<std::unique_ptr<Timer>> timers_;
 
   // Thread check
   rocketspeed::ThreadCheck thread_check_;

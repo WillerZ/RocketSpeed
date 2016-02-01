@@ -36,6 +36,7 @@
 #include "src/messages/socket_event.h"
 #include "src/messages/stream.h"
 #include "src/messages/stream_socket.h"
+#include "src/messages/timed_callback.h"
 #include "src/messages/triggerable_callback.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/client_env.h"
@@ -157,8 +158,8 @@ EventLoop::do_startevent(evutil_socket_t listener, short event, void *arg) {
 
 void
 EventLoop::do_timerevent(evutil_socket_t listener, short event, void *arg) {
-  Timer* obj = static_cast<Timer*>(arg);
-  obj->callback();
+  TimedCallback* obj = static_cast<TimedCallback*>(arg);
+  obj->Invoke();
 }
 
 void
@@ -384,16 +385,17 @@ void EventLoop::Run() {
   info_log_->Flush();
 
   // Register a timer for checking expired connections.
-  RegisterTimerCallback([this]() {
-    // The timeout list might be modified during the procedure that closes the
-    // socket.
-    std::vector<SocketEvent*> expired;
-    connect_timeout_.GetExpired(options_.connect_timeout,
-                                std::back_inserter(expired));
-    for (auto socket : expired) {
-      socket->Close(SocketEvent::ClosureReason::Error);
-    }
-  }, options_.connect_timeout);
+  std::unique_ptr<EventCallback> expired_connections_timer =
+    RegisterTimerCallback([this]() {
+      // The timeout list might be modified during the procedure
+      // that closes the socket.
+      std::vector<SocketEvent*> expired;
+      connect_timeout_.GetExpired(options_.connect_timeout,
+                                  std::back_inserter(expired));
+      for (auto socket : expired) {
+        socket->Close(SocketEvent::ClosureReason::Error);
+      }
+    }, options_.connect_timeout);
 
   // Start the event loop.
   // This will not exit until Stop is called, or some error
@@ -409,15 +411,14 @@ void EventLoop::Run() {
   if (startup_event_) {
     event_free(startup_event_);
   }
-  for (auto& timer : timers_) {
-    event_free(timer->loop_event);
-  }
+
   fd_read_events_.clear();
   incoming_queues_.clear();
   notified_triggers_event_.reset();
   shutdown_event_.reset();
   CloseAllSocketEvents();
   flow_control_.reset();
+  expired_connections_timer.reset();
   event_base_free(base_);
 
   if (!internal_status_.ok()) {
@@ -521,38 +522,36 @@ void EventLoop::HandlePendingTriggers() {
   notified_triggers_fd_.write_event(1);
 }
 
-Status EventLoop::RegisterTimerCallback(TimerCallbackType callback,
-                                        std::chrono::microseconds period) {
+std::unique_ptr<EventCallback> EventLoop::RegisterTimerCallback(
+  TimerCallbackType callback, std::chrono::microseconds period, bool enabled) {
   RS_ASSERT(base_);
-  RS_ASSERT(!IsRunning());
 
-  std::unique_ptr<Timer> timer(new Timer(std::move(callback)));
-  timer->loop_event = event_new(
+  auto timed_event = std::unique_ptr<TimedCallback>(
+    new TimedCallback(this, std::move(callback), period));
+
+  auto loop_event = event_new(
     base_,
     -1,
     EV_PERSIST,
     static_cast<EventLoop*>(nullptr)->do_timerevent,
-    reinterpret_cast<void*>(timer.get()));
+    reinterpret_cast<void*>(timed_event.get()));
 
-  if (timer->loop_event == nullptr) {
+  if (loop_event == nullptr) {
     LOG_ERROR(info_log_, "Failed to create timer event");
     info_log_->Flush();
-    return Status::InternalError("event_new returned error creating timer");
+    return nullptr;
   }
 
-  timeval timer_seconds;
-  timer_seconds.tv_sec = period.count() / 1000000ULL;
-  timer_seconds.tv_usec = period.count() % 1000000ULL;
+  timed_event->AddEvent(loop_event, enabled);
 
-  int rv = event_add(timer->loop_event, &timer_seconds);
-  timers_.emplace_back(std::move(timer));
+  return std::move(timed_event);
+}
 
-  if (rv != 0) {
-    LOG_ERROR(info_log_, "Failed to add timer event to event base");
-    info_log_->Flush();
-    return Status::InternalError("event_add returned error while adding timer");
-  }
-  return Status::OK();
+std::unique_ptr<EventCallback> EventLoop::CreateTimedEventCallback(
+    std::function<void()> cb, std::chrono::microseconds duration) {
+  thread_check_.Check();
+
+  return RegisterTimerCallback(std::move(cb), duration, false);
 }
 
 EventTrigger EventLoop::CreateEventTrigger() {

@@ -8,6 +8,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "include/Env.h"
 #include "src/messages/commands.h"
@@ -22,6 +23,7 @@ namespace rocketspeed {
 
 typedef std::function<void()> TimerCallbackType;
 
+class EventCallback;
 class EventLoop;
 class Logger;
 class StreamAllocator;
@@ -224,6 +226,9 @@ class MsgLoop : public MsgLoopBase {
 
   // Looping counter to distribute load on the message loop.
   mutable std::atomic<int> next_worker_id_;
+
+  /** Start timer callback objects **/
+  std::vector<std::unique_ptr<rocketspeed::EventCallback>> timer_callbacks_;
 
   // The EventLoop callback.
   void EventCallback(Flow* flow, std::unique_ptr<Message> msg, StreamID origin);

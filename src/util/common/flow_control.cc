@@ -27,7 +27,6 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
     stats_.backpressure_lifted->Add(1);
   }
   sink_state.backpressure.clear();
-  sink_state.write_event->Disable();
 }
 
 }

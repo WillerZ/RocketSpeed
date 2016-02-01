@@ -13,6 +13,7 @@
 
 #include "include/Logger.h"
 #include "src/port/port.h"
+#include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/messages.h"
 #include "src/messages/queues.h"
@@ -135,10 +136,11 @@ Status MsgLoop::RegisterTimerCallback(TimerCallbackType callback,
   RS_ASSERT(!IsRunning());
 
   for (const std::unique_ptr<EventLoop>& loop: event_loops_) {
-    Status ret = loop->RegisterTimerCallback(callback, period);
-    if (!ret.ok()) {
-      return ret;
+    auto timed_event = loop->RegisterTimerCallback(callback, period);
+    if (timed_event == nullptr) {
+      return Status::InternalError("Error creating timed event.");
     }
+    timer_callbacks_.emplace_back(std::move(timed_event));
   }
   return Status::OK();
 }

@@ -157,12 +157,17 @@ class FlowControl {
         sink->CreateWriteCallback(
           event_loop_,
           [this, sink] () mutable {
+            // Disable the current Event
+            sinks_[sink].write_event->Disable();
             // Invoked when sink is ready to write again.
             // First, write any pending writes.
             if (sink->FlushPending()) {
               // Pending writes all written, so we can open up all the sources
               // that caused the backpressure.
               RemoveBackpressure(sink);
+            } else {
+              // Re-enable the event if unable to flush
+              sinks_[sink].write_event->Enable();
             }
           });
     }

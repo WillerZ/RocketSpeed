@@ -24,6 +24,7 @@
 #include "include/Status.h"
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
+#include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream.h"
@@ -277,8 +278,12 @@ Subscriber::~Subscriber() {
 }
 
 Status Subscriber::Start() {
-  return event_loop_->RegisterTimerCallback([this]() { SendPendingRequests(); },
-                                            options_.timer_period);
+  start_timer_callback_ = event_loop_->RegisterTimerCallback(
+    [this]() { SendPendingRequests(); }, options_.timer_period);
+  if (start_timer_callback_ == nullptr) {
+    return Status::InternalError("Error creating timed event.");
+  }
+  return Status::OK();
 }
 
 void Subscriber::StartSubscription(SubscriptionID sub_id,
@@ -668,8 +673,12 @@ MultiShardSubscriber::~MultiShardSubscriber() {
 }
 
 Status MultiShardSubscriber::Start() {
-  return event_loop_->RegisterTimerCallback([this]() { SendPendingRequests(); },
-                                            options_.timer_period);
+  start_timer_callback_ = event_loop_->RegisterTimerCallback(
+    [this]() { SendPendingRequests(); }, options_.timer_period);
+  if (start_timer_callback_ == nullptr) {
+    return Status::InternalError("Error creating timed event.");
+  }
+  return Status::OK();
 }
 
 const Statistics& MultiShardSubscriber::GetStatistics() {

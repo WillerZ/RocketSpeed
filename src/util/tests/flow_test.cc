@@ -11,6 +11,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/messages/observable_map.h"
 #include "src/messages/queues.h"
+#include "src/util/common/rate_limiter_sink.h"
 
 namespace rocketspeed {
 
@@ -388,6 +389,123 @@ TEST(FlowTest, SourcelessFlow) {
   loop.SendCommand(std::move(cmd), 0);
 
   ASSERT_TRUE(done.TimedWait(std::chrono::seconds(5)));
+}
+
+class RateLimiterSinkFlowTest : public FlowTest {
+ public:
+  RateLimiterSinkFlowTest() {}
+  void TestImpl(
+    int num_messages, int rate_limit, int reader_size,
+    int rate_duration, int reader_sleep_time);
+};
+
+void RateLimiterSinkFlowTest::TestImpl(
+  int num_messages, int rate_limit, int reader_size,
+  int rate_duration, int reader_sleep_time) {
+  // Setup:
+  //               ____________________________________
+  //              |                                    |
+  //   +--------+ |  +--------------+    +-----------+ |
+  //   | N msgs |=|=>| RateLim(M/S) |=P=>| reader(ST)| |
+  //   +--------+ |  +--------------+    +-----------+ |
+  //              |____________________________________|
+  //
+  //  N: num_messages
+  //  M / S: rate_limit / rate_duration
+  //  P: reader_size
+  //  ST: reader_sleep_time
+  //
+  // The RateLimiter tries to write to the queue at M writes per S microseconds
+  // If the limit exceeds or the queue gets full, it backsoff for both of
+  // rate limiter and underlying queue to be ready for write.
+
+  int kNumMessages = num_messages;
+  int kRateLimit = rate_limit;
+  int kReaderSize = reader_size;
+  std::chrono::microseconds kRateDuration(rate_duration);
+  int sleep_micros = reader_sleep_time;
+
+  std::vector<bool> values(kNumMessages, false);
+
+  MsgLoop loop(env_, env_options_, 0, 2, info_log_, "flow");
+  ASSERT_OK(loop.Initialize());
+
+  auto queue0 = MakeIntQueue(kNumMessages);
+  auto queue1 = MakeIntQueue(kReaderSize);
+  auto rateLimiterSink = std::make_shared<RateLimiterSink<int>>(
+    kRateLimit, kRateDuration, queue1.get());
+
+  FlowControl& flow0 = *loop.GetEventLoop(0)->GetFlowControl();
+  FlowControl& flow1 = *loop.GetEventLoop(1)->GetFlowControl();
+
+  flow0.Register<int>(queue0.get(),
+    [&] (Flow* flow, int x) {
+      flow->Write(rateLimiterSink.get(), x);
+    });
+
+  port::Semaphore sem1;
+  flow1.Register<int>(queue1.get(),
+    [&] (Flow*, int x) {
+      if (sleep_micros) {
+        env_->SleepForMicroseconds(sleep_micros);
+      }
+      values[x] = true;
+      sem1.Post();
+    });
+
+  MsgLoopThread flow_threads(env_, &loop, "flow");
+
+  uint64_t start = env_->NowMicros();
+  for (int i = 0; i < kNumMessages; ++i) {
+    int x = i;
+    ASSERT_TRUE(queue0->Write(x));
+  }
+
+  for (int i = 0; i < kNumMessages; ++i) {
+    sem1.Wait();
+  }
+
+  for (int i = 0; i < kNumMessages; ++i) {
+    ASSERT_TRUE(values[i]);
+  }
+
+  uint64_t taken = env_->NowMicros() - start;
+
+  int expected = sleep_micros * kNumMessages;
+  expected = std::max(expected, (kNumMessages / kReaderSize) * sleep_micros);
+  expected = std::max(expected, (kNumMessages / kRateLimit) * sleep_micros);
+  expected = std::max(expected,
+    (kNumMessages / kRateLimit) * (int)kRateDuration.count());
+  expected = std::max(expected,
+    (kNumMessages / kReaderSize) * (int)kRateDuration.count()
+  );
+
+  ASSERT_GT(taken, expected * 0.8);
+  ASSERT_LT(taken, expected * 1.2);
+}
+
+TEST(RateLimiterSinkFlowTest, Test_1) {
+  TestImpl(500, 2, 1, 1000, 2000);
+}
+
+TEST(RateLimiterSinkFlowTest, Test_2) {
+  TestImpl(500, 1, 2, 1000, 2000);
+}
+
+TEST(RateLimiterSinkFlowTest, Test_3) {
+  TestImpl(500, 1, 1, 1000, 2000);
+}
+
+TEST(RateLimiterSinkFlowTest, Test_4) {
+  TestImpl(5000, 100, 100, 1000, 1000);
+}
+
+TEST(RateLimiterSinkFlowTest, Test_5) {
+  TestImpl(5000, 1000, 5000, 10000, 0);
+}
+
+TEST(RateLimiterSinkFlowTest, Test_6) {
+  TestImpl(5000, 1000, 1000, 10000, 0);
 }
 
 }  // namespace rocketspeed
