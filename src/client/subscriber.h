@@ -80,18 +80,20 @@ typedef RefCountFlyweight<TenantAndNamespace> TenantAndNamespaceFlyweight;
 /**
  * Represents a state of a single subscription.
  */
-class SubscriptionState : public NonCopyable {
+class SubscriptionState : ThreadCheck, NonCopyable {
  public:
   // Movable
   SubscriptionState(SubscriptionState&&) = default;
   SubscriptionState& operator=(SubscriptionState&&) = default;
 
-  SubscriptionState(SubscriptionParameters parameters,
+  SubscriptionState(const ThreadCheck& thread_check,
+                    SubscriptionParameters parameters,
                     std::unique_ptr<Observer> observer,
                     TenantAndNamespaceFlyweight tenant_and_namespace)
-  : tenant_and_namespace_(std::move(tenant_and_namespace))
-  , topic_name_(std::move(parameters.topic_name))
+  : ThreadCheck(thread_check)
   , observer_(std::move(observer))
+  , tenant_and_namespace_(std::move(tenant_and_namespace))
+  , topic_name_(std::move(parameters.topic_name))
   , expected_seqno_(parameters.start_seqno)
   // If we were to restore state from subscription storage before the
   // subscription advances, we would restore from the next sequence number,
@@ -121,7 +123,7 @@ class SubscriptionState : public NonCopyable {
 
   /** Returns a lower bound on the seqno of the next expected message. */
   SequenceNumber GetExpected() const {
-    thread_check_.Check();
+    ThreadCheck::Check();
     return expected_seqno_;
   }
 
@@ -130,21 +132,23 @@ class SubscriptionState : public NonCopyable {
 
   /** Returns sequnce number of last acknowledged message. */
   SequenceNumber GetLastAcknowledged() const {
-    thread_check_.Check();
+    ThreadCheck::Check();
     return last_acked_seqno_;
   }
 
  private:
-  ThreadCheck thread_check_;
-
+  // Note: make sure the first data member has no common empty base classes
+  //       with SubscriptionState. Otherwise compiler won't be able to perform
+  //       Empty Base Optimization. For a more detailed explanation see:
+  //       http://stackoverflow.com/a/547439
   // Note: the following members are virtually const.
-  // That is, they should have been constant but they are not marked that
-  // because move-semantics wouldn't work for them in that case.
-  // Unfortunately, move semantics is currently not compatible with
-  // the concept of an immutable object in C++.
+  //       That is, they should have been constant but they are not marked that
+  //       because move-semantics wouldn't work for them in that case.
+  //       Unfortunately, move semantics is currently not compatible with
+  //       the concept of an immutable object in C++.
+  /* const */ std::unique_ptr<Observer> observer_;
   /* const */ TenantAndNamespaceFlyweight tenant_and_namespace_;
   /* const */ Topic topic_name_;
-  /* const */ std::unique_ptr<Observer> observer_;
 
   /** Next expected sequence number on this subscription. */
   SequenceNumber expected_seqno_;

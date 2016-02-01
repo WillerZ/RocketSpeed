@@ -134,6 +134,9 @@ int main(int argc, char** argv) {
     }
   }
 
+  printf("Waiting some time to let subscription requests be processed...\n");
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
   size_t after = -1;
   if (!rocketspeed::Env::Default()->GetVirtualMemoryUsed(&after).ok()) {
     printf("Cannot get used virtual memory amount\n");
@@ -146,4 +149,23 @@ int main(int argc, char** argv) {
          rocketspeed::BytesToString((after - before) / i).c_str());
 
   PrintJEMallocStats();
+
+  // You may also try the following for a deeper analysis of memory allocation.
+  // 1. Uncomment the following lines
+  //      const char *fileName = "jeprof.out";
+  //      mallctl("prof.dump",
+  //              nullptr,
+  //              nullptr,
+  //              &fileName,
+  //              sizeof(const char *));
+  // 2. Recompile the benchmark and run as following:
+  //      $ export MALLOC_CONF=prof:true
+  //      $ ./client_memory_used_bench
+  //      $ unset MALLOC_CONF
+  //    You can explore other possible options for MALLOC_CONF here:
+  //      www.canonware.com/download/jemalloc/jemalloc-latest/doc/jemalloc.html
+  // 3. Generate PDF based on the collected data
+  //      $ jeprof --pdf --lines ./client_memory_used_bench jeprof.out > je.pdf
+  //    You can explore other jeprof options by running
+  //      $ jeprof --help
 }

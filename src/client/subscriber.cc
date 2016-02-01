@@ -37,7 +37,7 @@ namespace rocketspeed {
 void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
                                   SubscriptionID sub_id,
                                   MessageUnsubscribe::Reason reason) {
-  thread_check_.Check();
+  ThreadCheck::Check();
 
   switch (reason) {
     case MessageUnsubscribe::Reason::kRequested:
@@ -125,7 +125,7 @@ void SubscriptionState::ReceiveMessage(
     const std::shared_ptr<Logger>& info_log,
     std::unique_ptr<MessageDeliver> deliver) {
   RS_ASSERT(!!observer_);
-  thread_check_.Check();
+  ThreadCheck::Check();
 
   if (!ProcessMessage(info_log, *deliver)) {
     return;
@@ -159,7 +159,7 @@ void SubscriptionState::ReceiveMessage(
 
 bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
                                        const MessageDeliver& deliver) {
-  thread_check_.Check();
+  ThreadCheck::Check();
 
   const auto current = deliver.GetSequenceNumber(),
              previous = deliver.GetPrevSequenceNumber();
@@ -195,7 +195,7 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
 }
 
 void SubscriptionState::Acknowledge(SequenceNumber seqno) {
-  thread_check_.Check();
+  ThreadCheck::Check();
 
   if (last_acked_seqno_ < seqno) {
     last_acked_seqno_ = seqno;
@@ -237,7 +237,7 @@ class SubscriptionStatusImpl : public SubscriptionStatus {
 
 void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
   RS_ASSERT(!!observer_);
-  thread_check_.Check();
+  ThreadCheck::Check();
 
   SubscriptionStatusImpl sub_status(*this, subscribed, std::move(status));
   observer_->OnSubscriptionStatusChange(sub_status);
@@ -284,13 +284,15 @@ Status Subscriber::Start() {
 void Subscriber::StartSubscription(SubscriptionID sub_id,
                                    SubscriptionParameters parameters,
                                    std::unique_ptr<Observer> observer) {
+  thread_check_.Check();
   SubscriptionState* sub_state;
   {  // Store the subscription state.
     auto tn = TenantAndNamespace{std::move(parameters.tenant_id),
                                  std::move(parameters.namespace_id)};
     auto emplace_result = subscriptions_.emplace(
         sub_id,
-        SubscriptionState(std::move(parameters),
+        SubscriptionState(thread_check_,
+                          std::move(parameters),
                           std::move(observer),
                           tenant_and_namespace_factory_.GetFlyweight(tn)));
     if (!emplace_result.second) {
