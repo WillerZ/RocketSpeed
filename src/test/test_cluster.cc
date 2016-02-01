@@ -10,6 +10,8 @@
 #include <vector>
 #include <stdio.h>
 
+#include "external/folly/Memory.h"
+
 #include "src/logdevice/storage.h"
 #include "src/logdevice/log_router.h"
 #include "src/util/common/fixed_configuration.h"
@@ -299,7 +301,7 @@ LocalTestCluster::CreateClient(std::unique_ptr<ClientImpl>* client,
   std::unique_ptr<ClientImpl> cl;
   ClientOptions client_options;
   client_options.info_log = info_log_;
-  client_options.config = GetConfiguration();
+  MakePublisherSubscriberConfig(&client_options);
   Status status = ClientImpl::Create(std::move(client_options),
                                      client, is_internal);
   return status;
@@ -309,7 +311,7 @@ Status
 LocalTestCluster::CreateClient(std::unique_ptr<Client>* client) {
   ClientOptions client_options;
   client_options.info_log = info_log_;
-  client_options.config = GetConfiguration();
+  MakePublisherSubscriberConfig(&client_options);
   return Client::Create(std::move(client_options), client);
 }
 
@@ -379,10 +381,13 @@ std::shared_ptr<LogRouter> LocalTestCluster::GetLogRouter() {
   return storage_->GetLogRouter();
 }
 
-std::shared_ptr<Configuration> LocalTestCluster::GetConfiguration() const {
+void LocalTestCluster::MakePublisherSubscriberConfig(
+    ClientOptions* options) const {
   HostId pilot = pilot_ ? pilot_->GetHostId() : HostId();
+  options->publisher = std::make_shared<FixedPubilsherRouter>(pilot);
+
   HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
-  return std::make_shared<FixedConfiguration>(pilot, copilot);
+  options->sharding = folly::make_unique<FixedShardingStrategy>(copilot);
 }
 
 }  // namespace rocketspeed

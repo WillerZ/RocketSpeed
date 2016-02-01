@@ -35,6 +35,7 @@
 #include "src/util/timeout_list.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
+#include "src/util/common/fixed_configuration.h"
 
 namespace rocketspeed {
 
@@ -56,8 +57,11 @@ Status ClientImpl::Create(ClientOptions options,
   RS_ASSERT(out_client);
 
   // Validate arguments.
-  if (!options.config) {
-    return Status::InvalidArgument("Missing configuration.");
+  if (!options.publisher) {
+    return Status::InvalidArgument("Missing publisher configuration.");
+  }
+  if (!options.sharding) {
+    return Status::InvalidArgument("Missing sharding strategy.");
   }
   if (options.backoff_base < 1.0) {
     return Status::InvalidArgument("Backoff base must be >= 1.0");
@@ -69,53 +73,6 @@ Status ClientImpl::Create(ClientOptions options,
   // Default to null logger.
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();
-  }
-
-  // Create sharding and routing strategies for subscriptions out of
-  // configuration.
-  if (!options.sharding) {
-    class RouterFromConfiguration : public SubscriptionRouter {
-     public:
-      explicit RouterFromConfiguration(
-          const std::shared_ptr<Configuration>& config)
-      : config_(config) {}
-
-      size_t GetVersion() override { return config_->GetCopilotVersion(); }
-
-      HostId GetHost() override {
-        HostId host_id;
-        auto st = config_->GetCopilot(&host_id);
-        return st.ok() ? host_id : HostId();
-      }
-
-      void MarkHostDown(const HostId& host_id) override {}
-
-     private:
-      std::shared_ptr<Configuration> config_;
-    };
-
-    class ShardingFromConfiguration : public ShardingStrategy {
-     public:
-      explicit ShardingFromConfiguration(
-          const std::shared_ptr<Configuration>& config)
-      : config_(config) {}
-
-      size_t GetShard(const NamespaceID& namespace_id,
-                      const Topic& topic_name) const override {
-        return 0;
-      }
-
-      std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-        RS_ASSERT(shard == 0);
-        return std::unique_ptr<SubscriptionRouter>(
-            new RouterFromConfiguration(config_));
-      }
-
-     private:
-      std::shared_ptr<Configuration> config_;
-    };
-
-    options.sharding.reset(new ShardingFromConfiguration(options.config));
   }
 
   std::unique_ptr<MsgLoop> msg_loop(new MsgLoop(options.env,

@@ -27,7 +27,7 @@ struct ControlTowerOptions {
 
   // The configuration of this rocketspeed instance
   // Default: TODO(dhruba) 1234
-  Configuration* conf;
+  PublisherRouter* conf;
 
   // Message loop for this control tower.
   // This is not owned by the control tower and should not be deleted.

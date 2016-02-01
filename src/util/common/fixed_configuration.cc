@@ -7,6 +7,8 @@
 
 #include <memory>
 
+#include "external/folly/Memory.h"
+
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/HostId.h"
@@ -14,14 +16,36 @@
 
 namespace rocketspeed {
 
-Status FixedConfiguration::CreateConfiguration(
+////////////////////////////////////////////////////////////////////////////////
+class FixedSubscriptionRouter : public SubscriptionRouter {
+ public:
+  explicit FixedSubscriptionRouter(HostId copilot): copilot_(copilot) {}
+
+  size_t GetVersion() override { return 0; }
+  HostId GetHost() override { return copilot_; }
+  void MarkHostDown(const HostId& host_id) override {}
+
+ private:
+  HostId copilot_;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+std::unique_ptr<SubscriptionRouter> FixedShardingStrategy::GetRouter(
+    size_t shard) {
+  RS_ASSERT(shard == 0);
+  return folly::make_unique<FixedSubscriptionRouter>(copilot_);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+Status CreateFixedConfiguration(
     const std::string& config_str,
-    std::unique_ptr<Configuration>* out) {
-  RS_ASSERT(out);
+    std::unique_ptr<PublisherRouter>* out_publisher,
+    std::unique_ptr<ShardingStrategy>* out_sharding) {
+  RS_ASSERT(out_publisher || out_sharding);
 
   auto config = ParseMap(config_str);
   if (config.find("one-host") == config.end()) {
-    return Status::InvalidArgument("Not a FixedConfiguration");
+    return Status::InvalidArgument("Not a FixedPubilsherRouter");
   }
 
   std::vector<HostId> hosts;
@@ -38,26 +62,21 @@ Status FixedConfiguration::CreateConfiguration(
   }
 
   RS_ASSERT(hosts.size() == 2);
-  out->reset(new FixedConfiguration(std::move(hosts[0]), std::move(hosts[1])));
+  if (out_publisher) {
+    out_publisher->reset(new FixedPubilsherRouter(std::move(hosts[0])));
+  }
+  if (out_sharding) {
+    out_sharding->reset(new FixedShardingStrategy(std::move(hosts[1])));
+  }
   return Status::OK();
 }
 
-FixedConfiguration::FixedConfiguration(HostId pilot, HostId copilot)
-: pilot_(std::move(pilot)), copilot_(std::move(copilot)) {}
-
-Status FixedConfiguration::GetPilot(HostId* host_out) const {
+////////////////////////////////////////////////////////////////////////////////
+Status FixedPubilsherRouter::GetPilot(HostId* host_out) const {
   if (!pilot_) {
     return Status::NotFound();
   }
   *host_out = pilot_;
-  return Status::OK();
-}
-
-Status FixedConfiguration::GetCopilot(HostId* host_out) const {
-  if (!copilot_) {
-    return Status::NotFound();
-  }
-  *host_out = copilot_;
   return Status::OK();
 }
 

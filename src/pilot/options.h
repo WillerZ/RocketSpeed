@@ -27,7 +27,7 @@ struct PilotOptions {
   EnvOptions env_options;
 
   // The configuration of this rocketspeed instance
-  Configuration* conf;
+  PublisherRouter* conf;
 
   // Message loop for this pilot.
   // This is not owned by the pilot and should not be deleted.

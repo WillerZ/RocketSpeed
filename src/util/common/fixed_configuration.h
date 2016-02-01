@@ -12,27 +12,49 @@
 namespace rocketspeed {
 
 /**
- * Simple implementation of Configuration where there is a single pilot and
- * copilot host to connect to. This is useful for controlled situations like
+ * Simple implementation of PublisherRouter where there is a single pilot
+ * to connect to. This is useful for controlled situations like
  * testing and benchmarking where the hosts are known beforehand, and are
  * unlikely to change.
  */
-class FixedConfiguration : public Configuration {
+class FixedPubilsherRouter : public PublisherRouter {
  public:
-  static Status CreateConfiguration(const std::string& config_str,
-                                    std::unique_ptr<Configuration>* out);
-
-  FixedConfiguration(HostId pilot, HostId copilot);
+  explicit FixedPubilsherRouter(HostId pilot): pilot_(pilot) {}
 
   Status GetPilot(HostId* host_out) const override;
 
-  Status GetCopilot(HostId* host_out) const override;
-
-  uint64_t GetCopilotVersion() const override { return 0; }
-
  private:
   HostId pilot_;
+};
+
+/**
+ * Implementation of simple ShardingStrategy where there is only one copilot
+ * host, representing a single shard.
+ */
+class FixedShardingStrategy : public ShardingStrategy {
+ public:
+   explicit FixedShardingStrategy(HostId copilot): copilot_(copilot) {}
+
+   size_t GetShard(const NamespaceID& namespace_id,
+       const Topic& topic_name) const override {
+     return 0;
+   }
+
+   std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override;
+
+ private:
   HostId copilot_;
 };
+
+/**
+ * Parse config_str and generate fixed configuration strategies.
+ * Recognized keys: pilot, copilot
+ *
+ * Example: "pilot=192.168.1.4;copilot=192.168.1.5"
+ */
+Status CreateFixedConfiguration(
+    const std::string& config_str,
+    std::unique_ptr<PublisherRouter>* out_publisher,
+    std::unique_ptr<ShardingStrategy>* out_sharding);
 
 }  // namespace rocketspeed

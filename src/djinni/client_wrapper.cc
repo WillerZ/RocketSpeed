@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "external/folly/Memory.h"
+
 #include "include/RocketSpeed.h"
 #include "include/Status.h"
 #include "include/Types.h"
@@ -50,10 +52,10 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
   if (!st.ok()) {
     throw std::runtime_error("Could not resolve cockpit host");
   }
-  auto config = std::make_shared<FixedConfiguration>(cockpit1, cockpit1);
 
   rocketspeed::ClientOptions options;
-  options.config = std::move(config);
+  options.publisher = std::make_shared<FixedPubilsherRouter>(cockpit1);
+  options.sharding = folly::make_unique<FixedShardingStrategy>(cockpit1);
   options.env = jvm_env;
   options.info_log = info_log;
 
