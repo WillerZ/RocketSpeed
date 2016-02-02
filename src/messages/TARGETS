@@ -26,6 +26,7 @@ cpp_library(
         'event_loop.cc',
         'socket_event.cc',
         'stream.cc',
+        'timed_callback.cc',
         'triggerable_callback.cc',
         'types.cc',
     ],
