@@ -160,7 +160,7 @@ ClientImpl::ClientImpl(ClientOptions options,
 , msg_loop_thread_spawned_(false)
 , is_internal_(is_internal)
 , publisher_(options_, msg_loop_.get(), &wake_lock_)
-, subscriber_(options_, msg_loop_)
+, subscriber_(new MultiThreadedSubscriber(options_, msg_loop_))
 , num_subscriptions_(0) {
   LOG_VITAL(options_.info_log, "Creating Client");
 }
@@ -179,6 +179,9 @@ ClientImpl::~ClientImpl() {
 }
 
 void ClientImpl::Stop() {
+  // Clean up subscribers while msg loop is still running
+  subscriber_.reset();
+
   // Stop the event loop. May block.
   msg_loop_->Stop();
 
@@ -279,7 +282,7 @@ SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
     return SubscriptionHandle(0);
   }
 
-  SubscriptionHandle subscription = subscriber_.Subscribe(
+  SubscriptionHandle subscription = subscriber_->Subscribe(
       nullptr, std::move(parameters), std::move(observer));
 
   if (subscription != SubscriptionHandle(0)) {
@@ -312,7 +315,7 @@ SubscriptionHandle ClientImpl::Subscribe(
 }
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
-  bool result = subscriber_.Unsubscribe(nullptr, sub_handle);
+  bool result = subscriber_->Unsubscribe(nullptr, sub_handle);
   if (result) {
     auto prev = num_subscriptions_--;
     RS_ASSERT(prev != 0);
@@ -322,12 +325,12 @@ Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
 }
 
 Status ClientImpl::Acknowledge(const MessageReceived& message) {
-  return subscriber_.Acknowledge(nullptr, message) ? Status::OK()
+  return subscriber_->Acknowledge(nullptr, message) ? Status::OK()
                                                    : Status::NoBuffer();
 }
 
 void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
-  subscriber_.SaveSubscriptions(std::move(save_callback));
+  subscriber_->SaveSubscriptions(std::move(save_callback));
 }
 
 Status ClientImpl::RestoreSubscriptions(
@@ -341,12 +344,12 @@ Status ClientImpl::RestoreSubscriptions(
 
 Statistics ClientImpl::GetStatisticsSync() {
   Statistics aggregated = msg_loop_->GetStatisticsSync();
-  aggregated.Aggregate(subscriber_.GetStatisticsSync());
+  aggregated.Aggregate(subscriber_->GetStatisticsSync());
   return aggregated;
 }
 
 Status ClientImpl::Start() {
-  auto st = subscriber_.Start();
+  auto st = subscriber_->Start();
   if (!st.ok()) {
     return st;
   }

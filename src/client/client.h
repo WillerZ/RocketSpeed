@@ -19,7 +19,6 @@
 #include "include/RocketSpeed.h"
 #include "src/client/publisher.h"
 #include "src/client/smart_wake_lock.h"
-#include "src/client/subscriber.h"
 #include "src/messages/messages.h"
 #include "src/messages/stream_socket.h"
 #include "include/BaseEnv.h"
@@ -31,7 +30,7 @@ class ClientEnv;
 class Flow;
 class MessageReceived;
 class MsgLoop;
-class MultiShardSubscriber;
+class MultiThreadedSubscriber;
 class Logger;
 class WakeLock;
 
@@ -128,7 +127,7 @@ class ClientImpl : public Client {
   PublisherImpl publisher_;
 
   /** The underlying subscriber, which handles read path in the client. */
-  MultiThreadedSubscriber subscriber_;
+  std::unique_ptr<MultiThreadedSubscriber> subscriber_;
 
   /** The number of open subscriptions in the client. */
   std::atomic<size_t> num_subscriptions_;

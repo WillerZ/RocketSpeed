@@ -15,6 +15,7 @@
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
 #include "include/SubscriptionStorage.h"
+#include "include/BaseEnv.h"
 #include "src/messages/messages.h"
 #include "src/messages/types.h"
 #include "src/port/port.h"
@@ -317,6 +318,8 @@ class MultiThreadedSubscriber {
  public:
   MultiThreadedSubscriber(const ClientOptions& options,
                           std::shared_ptr<MsgLoop> msg_loop);
+
+  ~MultiThreadedSubscriber();
 
   Status Start();
 

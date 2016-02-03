@@ -275,6 +275,7 @@ Subscriber::Subscriber(const ClientOptions& options,
 }
 
 Subscriber::~Subscriber() {
+  thread_check_.Check();
 }
 
 Status Subscriber::Start() {
@@ -779,6 +780,30 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
     subscribers_.emplace_back(
         new MultiShardSubscriber(options_, msg_loop_->GetEventLoop(i)));
     subscriber_queues_.emplace_back(msg_loop_->CreateThreadLocalQueues(i));
+  }
+}
+
+MultiThreadedSubscriber::~MultiThreadedSubscriber() {
+  RS_ASSERT(msg_loop_->IsRunning());
+  if (msg_loop_->IsRunning()) {
+    // Ensure subscribers are destroyed in the event_loop thread
+    int nworkers = msg_loop_->GetNumWorkers();
+    RS_ASSERT(nworkers == static_cast<int>(subscribers_.size()));
+
+    port::Semaphore destroy_sem;
+    std::atomic<int> count(nworkers);
+    for (int i = 0; i < nworkers; ++i) {
+      std::unique_ptr<Command> cmd(
+          MakeExecuteCommand([this, &destroy_sem, &count, i](){
+            subscriber_queues_[i].reset();
+            subscribers_[i].reset();
+            if (--count == 0) {
+              destroy_sem.Post();
+            }
+          }));
+      msg_loop_->SendControlCommand(std::move(cmd), i);
+    }
+    destroy_sem.Wait(); // Wait until subscribers are destroyed
   }
 }
 

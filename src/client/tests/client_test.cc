@@ -499,10 +499,11 @@ TEST(ClientTest, Sharding) {
   options.sharding.reset(new TestSharding2(copilot0.msg_loop->GetHostId(),
                                            copilot1.msg_loop->GetHostId()));
 
-  MultiThreadedSubscriber subscriber(options, loop);
-
   MsgLoopThread loop_thread(env_, loop.get(), "loop");
   ASSERT_OK(loop->WaitUntilRunning(std::chrono::seconds(1)));
+
+  // Order of c-tors is important here: loop_thread must survive subscriber
+  MultiThreadedSubscriber subscriber(options, loop);
 
   SubscriptionParameters params(GuestTenant, GuestNamespace, "", 0);
   // Subscribe on topic0 should get to the owner of the shard 0.
