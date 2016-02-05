@@ -59,7 +59,7 @@ class PublisherImpl : public NonMovable, public NonCopyable {
  private:
   friend class PublisherWorkerData;
 
-  const std::shared_ptr<PublisherRouter> publisher_;
+  const std::shared_ptr<Configuration> config_;
   const std::shared_ptr<Logger> info_log_;
   MsgLoop* const msg_loop_;
   SmartWakeLock* const wake_lock_;

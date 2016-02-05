@@ -76,7 +76,7 @@ TEST(IntegrationTest, OneMessage) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -182,7 +182,7 @@ TEST(IntegrationTest, TrimAll) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -483,7 +483,7 @@ TEST(IntegrationTest, TrimFirst) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -539,7 +539,7 @@ TEST(IntegrationTest, TrimGapHandling) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -630,7 +630,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -831,7 +831,7 @@ TEST(IntegrationTest, LostConnection) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster->MakePublisherSubscriberConfig(&options);
+  options.config = cluster->GetConfiguration();
   options.info_log = info_log;
   // We do this to save some time waiting for client to reconnect.
   options.timer_period = std::chrono::milliseconds(1);
@@ -910,7 +910,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -1005,7 +1005,7 @@ TEST(IntegrationTest, NewControlTower) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -1098,7 +1098,7 @@ TEST(IntegrationTest, SubscriptionStorage) {
       test::TmpDir() + "/SubscriptionStorage-file_storage_data";
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   ASSERT_OK(SubscriptionStorage::File(
       options.env, options.info_log, file_path, &options.storage));
@@ -1166,7 +1166,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
   std::unique_ptr<Client> client[kNumClients];
 
   for (int i = 0; i < kNumClients; ++i) {
-    cluster.MakePublisherSubscriberConfig(&options[i]);
+    options[i].config = cluster.GetConfiguration();
     options[i].info_log = info_log;
     ASSERT_OK(Client::Create(std::move(options[i]), &client[i]));
     client[i]->SetDefaultCallbacks(
@@ -1434,7 +1434,7 @@ TEST(IntegrationTest, LogAvailability) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -1547,7 +1547,7 @@ TEST(IntegrationTest, TowerDeathReconnect) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -1646,13 +1646,13 @@ TEST(IntegrationTest, CopilotDeath) {
 
   // Create RocketSpeed clients.
   ClientOptions sub_options;
-  cluster.MakePublisherSubscriberConfig(&sub_options);
+  sub_options.config = cluster.GetConfiguration();
   sub_options.info_log = info_log;
   std::unique_ptr<Client> sub_client;
   ASSERT_OK(Client::Create(std::move(sub_options), &sub_client));
 
   ClientOptions pub_options;
-  cluster.MakePublisherSubscriberConfig(&pub_options);
+  pub_options.config = pilot_cluster.GetConfiguration();
   pub_options.info_log = info_log;
   std::unique_ptr<Client> pub_client;
   ASSERT_OK(Client::Create(std::move(pub_options), &pub_client));
@@ -1774,7 +1774,7 @@ TEST(IntegrationTest, ControlTowerCache) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -1965,7 +1965,7 @@ TEST(IntegrationTest, ReadingFromCache) {
 
     // Create RocketSpeed client.
     ClientOptions options;
-    cluster.MakePublisherSubscriberConfig(&options);
+    options.config = cluster.GetConfiguration();
     options.info_log = info_log;
     std::unique_ptr<Client> client;
     ASSERT_OK(Client::Create(std::move(options), &client));
@@ -2120,7 +2120,7 @@ TEST(IntegrationTest, TowerRebalance) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -2207,7 +2207,7 @@ TEST(IntegrationTest, ReaderRestarts) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));
@@ -2265,7 +2265,7 @@ TEST(IntegrationTest, VirtualReaderMerge) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));

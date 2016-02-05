@@ -38,46 +38,27 @@ DEFINE_string(jemalloc_output,
               "/tmp/client_memory_usage_bench",
               "jemalloc stats output file.");
 
-using rocketspeed::HostId;
-using rocketspeed::NamespaceID;
-using rocketspeed::ShardingStrategy;
-using rocketspeed::Status;
-using rocketspeed::SubscriptionRouter;
-using rocketspeed::Topic;
-
-class BadPublisherRouter : public rocketspeed::PublisherRouter {
+class BadConfiguration : public rocketspeed::Configuration {
  public:
-  BadPublisherRouter() {}
+  BadConfiguration() {}
 
-  virtual ~BadPublisherRouter() {}
+  virtual ~BadConfiguration() {}
 
-  Status GetPilot(HostId* pilot_out) const override {
-    return Status::TimedOut();
+  virtual rocketspeed::Status GetPilot(rocketspeed::HostId* pilot_out) const {
+    return rocketspeed::Status::TimedOut();
   }
+
+  virtual rocketspeed::Status GetCopilot(
+      rocketspeed::HostId* copilot_out) const {
+    return rocketspeed::Status::TimedOut();
+  }
+
+  virtual uint64_t GetCopilotVersion() const { return 0; }
 };
 
-class BadShardingStrategy : public ShardingStrategy {
- public:
-  size_t GetShard(const NamespaceID& namespace_id,
-                  const Topic& topic_name) const override {
-    return 0;
-  }
-
-  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-    RS_ASSERT(shard == 0);
-    struct DummyRouter : public SubscriptionRouter {
-      size_t GetVersion() override { return 0; }
-      HostId GetHost() override { return HostId(); }
-      void MarkHostDown(const HostId& host_id) override { }
-    };
-    return folly::make_unique<DummyRouter>();
-  }
-};
-
-Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
+rocketspeed::Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   rocketspeed::ClientOptions client_options;
-  client_options.publisher.reset(new BadPublisherRouter());
-  client_options.sharding.reset(new BadShardingStrategy());
+  client_options.config.reset(new BadConfiguration());
   if (FLAGS_logging) {
     std::shared_ptr<rocketspeed::Logger> info_log;
     auto st =

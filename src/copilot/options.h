@@ -30,7 +30,7 @@ struct CopilotOptions {
   EnvOptions env_options;
 
   // The configuration of this rocketspeed instance
-  PublisherRouter* conf;
+  Configuration* conf;
 
   // Message loop for this copilot.
   // This is not owned by the copilot and should not be deleted.

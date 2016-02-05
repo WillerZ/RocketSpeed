@@ -104,7 +104,7 @@ TEST(SupervisorTest, TowerLog) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
+  options.config = cluster.GetConfiguration();
   options.info_log = info_log_;
   std::unique_ptr<Client> client;
   ASSERT_OK(Client::Create(std::move(options), &client));

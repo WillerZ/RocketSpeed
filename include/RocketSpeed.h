@@ -46,9 +46,11 @@ typedef std::mt19937_64 ClientRNG;
 class ClientOptions {
  public:
   // Configuration of this service provider.
-  std::shared_ptr<PublisherRouter> publisher;
+  std::shared_ptr<Configuration> config;
 
   // Sharding and routing configuration for subscriptions.
+  // If specified, takes precedence over the Configuration above for routing
+  // subscriptions.
   std::unique_ptr<ShardingStrategy> sharding;
 
   // Logger that is used for info messages.

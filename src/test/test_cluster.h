@@ -114,10 +114,10 @@ class LocalTestCluster {
                 std::string storage_url = "");
 
   /**
-   * Creates a PublisherRouter and ShardingStrategy,
-   * which can be used by a client to talk to the test cluster.
+   * Creates a Configuration, which can be used by a client to talk to the
+   * test cluster.
    */
-  void MakePublisherSubscriberConfig(ClientOptions* options) const;
+  std::shared_ptr<Configuration> GetConfiguration() const;
 
   Pilot* GetPilot() {
     return pilot_;
@@ -169,6 +169,9 @@ class LocalTestCluster {
   Pilot* pilot_;
   Copilot* copilot_;
   ControlTower* control_tower_;
+
+  // Configuration generated here
+  std::unique_ptr<Configuration> configuration_;
 
   // Message loops and threads
   std::unique_ptr<MsgLoop> cockpit_loop_;

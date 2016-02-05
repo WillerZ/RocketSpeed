@@ -5,14 +5,11 @@
 //
 #include "src/proxy/options.h"
 
-#include "include/Types.h"
-
 namespace rocketspeed {
 
 ProxyOptions::ProxyOptions()
 : env(Env::Default())
-, publisher(nullptr)
-, sharding(nullptr)
+, conf(nullptr)
 , info_log(nullptr)
 , num_workers(1)
 , ordering_buffer_size(16) {

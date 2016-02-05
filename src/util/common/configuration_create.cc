@@ -8,18 +8,11 @@
 
 namespace rocketspeed {
 
-Status ShardingStrategy::Create(
+Status Configuration::CreateConfiguration(
     const std::shared_ptr<Logger>& info_log,
     const std::string& config_str,
-    std::unique_ptr<ShardingStrategy>* out) {
-  return CreateFixedConfiguration(config_str, nullptr /* config */, out);
-}
-
-Status PublisherRouter::Create(
-    const std::shared_ptr<Logger>& info_log,
-    const std::string& config_str,
-    std::unique_ptr<PublisherRouter>* out) {
-  return CreateFixedConfiguration(config_str, out, nullptr /* sharding */);
+    std::unique_ptr<Configuration>* out) {
+  return FixedConfiguration::CreateConfiguration(config_str, out);
 }
 
 }  // namespace rocketspeed

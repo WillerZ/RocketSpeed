@@ -16,8 +16,7 @@
 namespace rocketspeed {
 
 class Logger;
-class PublisherRouter;
-class ShardingStrategy;
+class Configuration;
 
 struct ProxyOptions {
   // Use the specified object to interact with the environment,
@@ -29,10 +28,7 @@ struct ProxyOptions {
   EnvOptions env_options;
 
   // The configuration of the Rocketspeed instance.
-  std::shared_ptr<PublisherRouter> publisher;
-
-  // The sharding policy of the Rocketspeed instance.
-  std::unique_ptr<ShardingStrategy> sharding;
+  std::shared_ptr<Configuration> conf;
 
   // Info logs are written to this object.
   std::shared_ptr<Logger> info_log;

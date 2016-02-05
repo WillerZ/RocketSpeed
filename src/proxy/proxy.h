@@ -120,11 +120,7 @@ class Proxy {
   OnDisconnectCallback on_disconnect_;
   std::shared_ptr<Logger> info_log_;
   BaseEnv* env_;
-
-  /** Assume there is only one single router */
-  std::shared_ptr<PublisherRouter> publisher_;
-  std::unique_ptr<SubscriptionRouter> router_;
-
+  std::shared_ptr<Configuration> config_;
   const int ordering_buffer_size_;
 
   std::unique_ptr<MsgLoop> msg_loop_;

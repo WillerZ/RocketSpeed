@@ -95,12 +95,8 @@ Status Proxy::CreateNewInstance(ProxyOptions options,
     options.info_log = std::make_shared<NullLogger>();
   }
 
-  if (options.publisher == nullptr) {
-    return Status::InvalidArgument("Publisher configuration required");
-  }
-
-  if (options.sharding == nullptr) {
-    return Status::InvalidArgument("Missing sharding strategy");
+  if (options.conf == nullptr) {
+    return Status::InvalidArgument("Configuration required");
   }
 
   if (options.num_workers <= 0) {
@@ -115,15 +111,10 @@ Status Proxy::CreateNewInstance(ProxyOptions options,
 Proxy::Proxy(ProxyOptions options)
     : info_log_(std::move(options.info_log))
     , env_(options.env)
-    , publisher_(std::move(options.publisher))
+    , config_(std::move(options.conf))
     , ordering_buffer_size_(options.ordering_buffer_size)
     , msg_thread_(0) {
   using namespace std::placeholders;
-
-  RS_ASSERT(options.sharding);
-  router_ = std::move(options.sharding->GetRouter(0 /* shard */));
-  // FIXME: We should route subscriptions properly by recording the route
-  // established by subscribe message. But we won't until it's actually needed.
 
   msg_loop_.reset(new MsgLoop(env_,
                               options.env_options,
@@ -479,7 +470,7 @@ void Proxy::HandleMessageForwardedInorder(MessageType message_type,
     switch (message_type) {
       case MessageType::mPing:  // could go to either
       case MessageType::mPublish: {
-        Status st = publisher_->GetPilot(&host);
+        Status st = config_->GetPilot(&host);
         if (!st.ok()) {
           LOG_ERROR(info_log_, "Failed to find pilot");
           return;
@@ -488,8 +479,11 @@ void Proxy::HandleMessageForwardedInorder(MessageType message_type,
       }
       case MessageType::mSubscribe:
       case MessageType::mUnsubscribe: {
-        RS_ASSERT(router_);
-        host = router_->GetHost();
+        Status st = config_->GetCopilot(&host);
+        if (!st.ok()) {
+          LOG_ERROR(info_log_, "Failed to find copilot");
+          return;
+        }
         break;
       }
       default:
