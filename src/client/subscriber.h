@@ -220,11 +220,11 @@ class Subscriber : public StreamReceiver {
   /** The router for this subscriber. */
   std::unique_ptr<SubscriptionRouter> router_;
 
-  /** All subscriptions served by this worker. */
-  std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
-
   /** Flyweight factory for tenant+namespace id pairs. */
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
+
+  /** All subscriptions served by this worker. */
+  std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
 
   /** Start timer callback **/
   std::unique_ptr<EventCallback> start_timer_callback_;
