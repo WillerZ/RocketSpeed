@@ -113,7 +113,11 @@ struct RefCountFlyweightFactory<T>::ObjectInfo : NonCopyable, NonMovable {
     if (--ref_count_ == 0) {
       RS_ASSERT(!!map_);
       RS_ASSERT(iter_ != map_->end());
-      map_->erase(iter_);  // deletes self. Do not access `this` after that
+      auto iter = iter_;
+      auto map = std::move(map_);
+      // The following code deletes self. Do not access `this` during or after
+      // the call.
+      map->erase(iter);
     }
   }
 };
