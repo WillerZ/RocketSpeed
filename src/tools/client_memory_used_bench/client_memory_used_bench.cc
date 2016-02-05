@@ -15,7 +15,7 @@
 #include "string.h"
 
 #include <gflags/gflags.h>
-#ifdef JEMALLOC
+#if defined(JEMALLOC) && defined(HAVE_JEMALLOC)
 #include <jemalloc/jemalloc.h>
 #endif
 
@@ -81,7 +81,7 @@ rocketspeed::Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
 }
 
 void PrintJEMallocStats() {
-#ifdef JEMALLOC
+#if defined(JEMALLOC) && defined(HAVE_JEMALLOC)
   auto file_writer = [](void* cbopaque, const char* str) {
     std::ofstream* outfile = (std::ofstream*)cbopaque;
     *outfile << str;
