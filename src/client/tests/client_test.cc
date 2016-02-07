@@ -373,8 +373,8 @@ TEST(ClientTest, OfflineOperations) {
     auto it = subscriptions.find(topic_name);
     ASSERT_TRUE(it != subscriptions.end());
     ASSERT_OK(client->Unsubscribe(it->second.second));
-    subscriptions.erase(it);
     ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+    subscriptions.erase(it);
   };
 
   // Simulate some subscriptions and unsubscriptions.
