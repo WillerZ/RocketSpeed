@@ -784,7 +784,8 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
 }
 
 MultiThreadedSubscriber::~MultiThreadedSubscriber() {
-  RS_ASSERT(msg_loop_->IsRunning());
+  // If the subscriber's loop has not been started, we can perform cleanup the
+  // calling thread.
   if (msg_loop_->IsRunning()) {
     // Ensure subscribers are destroyed in the event_loop thread
     int nworkers = msg_loop_->GetNumWorkers();
@@ -794,7 +795,7 @@ MultiThreadedSubscriber::~MultiThreadedSubscriber() {
     std::atomic<int> count(nworkers);
     for (int i = 0; i < nworkers; ++i) {
       std::unique_ptr<Command> cmd(
-          MakeExecuteCommand([this, &destroy_sem, &count, i](){
+          MakeExecuteCommand([this, &destroy_sem, &count, i]() {
             subscriber_queues_[i].reset();
             subscribers_[i].reset();
             if (--count == 0) {
@@ -803,7 +804,7 @@ MultiThreadedSubscriber::~MultiThreadedSubscriber() {
           }));
       msg_loop_->SendControlCommand(std::move(cmd), i);
     }
-    destroy_sem.Wait(); // Wait until subscribers are destroyed
+    destroy_sem.Wait();  // Wait until subscribers are destroyed
   }
 }
 
