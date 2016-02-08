@@ -58,6 +58,9 @@ class CommunicationRocketeer : public Rocketeer {
                std::string payload,
                MsgId msg_id = MsgId()) final override;
 
+  void DeliverBatch(StreamID stream_id,
+                    std::vector<RocketeerMessage> messages) final override;
+
   void Advance(InboundID inbound_id, SequenceNumber seqno) final override;
 
   void Terminate(InboundID inbound_id, UnsubscribeReason reason) final override;
@@ -147,6 +150,50 @@ void CommunicationRocketeer::Deliver(InboundID inbound_id,
                seqno,
                sub->prev_seqno);
     }
+  }
+}
+
+void CommunicationRocketeer::DeliverBatch(
+    StreamID stream_id,
+    std::vector<RocketeerMessage> messages) {
+  thread_check_.Check();
+
+  MessageDeliverBatch::MessagesVector messages_vec;
+  messages_vec.reserve(messages.size());
+  TenantID tenant_id = Tenant::InvalidTenant;
+  for (auto& msg : messages) {
+    if (msg.msg_id.Empty()) {
+      msg.msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
+    }
+    if (auto* sub = Find(InboundID(stream_id, msg.sub_id, GetID()))) {
+      if (sub->prev_seqno < msg.seqno) {
+        if (tenant_id == Tenant::InvalidTenant) {
+          tenant_id = sub->tenant_id;
+        } else {
+          RS_ASSERT(tenant_id == sub->tenant_id)
+              << "All messages in a batch must use same tenant ID";
+          if (tenant_id != sub->tenant_id) {
+            LOG_WARN(server_->options_.info_log,
+                     "All messages in a batch must use same tenant ID");
+          }
+        }
+        messages_vec.emplace_back(new MessageDeliverData(
+            sub->tenant_id, msg.sub_id, msg.msg_id, std::move(msg.payload)));
+        messages_vec.back()->SetSequenceNumbers(sub->prev_seqno, msg.seqno);
+        sub->prev_seqno = msg.seqno;
+      } else {
+        stats_->dropped_reordered->Add(1);
+        LOG_WARN(server_->options_.info_log,
+                 "Attempted to deliver data at %" PRIu64
+                 ", but subscription has previous seqno %" PRIu64,
+                 msg.seqno,
+                 sub->prev_seqno);
+      }
+    }
+  }
+  if (!messages_vec.empty()) {
+    MessageDeliverBatch batch(tenant_id, std::move(messages_vec));
+    server_->msg_loop_->SendResponse(batch, stream_id, (int)GetID());
   }
 }
 
@@ -385,6 +432,18 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
   return msg_loop_->SendCommand(std::unique_ptr<Command>(
                                     MakeExecuteCommand(std::move(command))),
                                 inbound_id.worker_id)
+      .ok();
+}
+
+bool RocketeerServer::DeliverBatch(StreamID stream_id,
+                                   int worker_id,
+                                   std::vector<RocketeerMessage> messages) {
+  auto moved_messages = folly::makeMoveWrapper(std::move(messages));
+  auto command = [this, stream_id, worker_id, moved_messages]() mutable {
+    rocketeers_[worker_id]->DeliverBatch(stream_id, moved_messages.move());
+  };
+  return msg_loop_->SendCommand(std::unique_ptr<Command>(
+    MakeExecuteCommand(std::move(command))), worker_id)
       .ok();
 }
 

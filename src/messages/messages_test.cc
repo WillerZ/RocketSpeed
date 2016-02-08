@@ -264,6 +264,44 @@ TEST(Messaging, MessageDeliverData) {
   ASSERT_EQ(msg1.GetPayload().ToString(), msg2.GetPayload().ToString());
 }
 
+TEST(Messaging, MessageDeliverBatch) {
+  MessageDeliverBatch::MessagesVector messages;
+  messages.emplace_back(new MessageDeliverData(
+      Tenant::GuestTenant,
+      42,
+      GUIDGenerator().Generate(),
+      Slice("message 1")));
+  messages.back()->SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
+
+  messages.emplace_back(new MessageDeliverData(
+      Tenant::GuestTenant,
+      43,
+      GUIDGenerator().Generate(),
+      Slice("message 2")));
+  messages.back()->SetSequenceNumbers(1000100010001001ULL, 2000200020002002ULL);
+
+  MessageDeliverBatch msg1(Tenant::GuestTenant, std::move(messages));
+
+  std::string str;
+  msg1.Serialize(&str);
+  Slice original(str);
+  MessageDeliverBatch msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  const auto& m1 = msg1.GetMessages();
+  const auto& m2 = msg2.GetMessages();
+  ASSERT_EQ(m1.size(), m2.size());
+  for (size_t i = 0; i < m1.size(); ++i) {
+    ASSERT_EQ(m1[i]->GetMessageType(), m2[i]->GetMessageType());
+    ASSERT_EQ(m1[i]->GetTenantID(), m2[i]->GetTenantID());
+    ASSERT_EQ(m1[i]->GetSubID(), m2[i]->GetSubID());
+    ASSERT_EQ(m1[i]->GetPrevSequenceNumber(), m2[i]->GetPrevSequenceNumber());
+    ASSERT_EQ(m1[i]->GetSequenceNumber(), m2[i]->GetSequenceNumber());
+    ASSERT_TRUE(m1[i]->GetMessageID() == m2[i]->GetMessageID());
+    ASSERT_EQ(m1[i]->GetPayload().ToString(), m2[i]->GetPayload().ToString());
+  }
+}
+
 TEST(Messaging, InvalidEnum) {
   // create a message
   MessageGoodbye goodbye1(

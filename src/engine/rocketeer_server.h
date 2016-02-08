@@ -85,6 +85,15 @@ class RocketeerServer {
                MsgId msg_id = MsgId());
 
   /**
+   * A thread-safe version of Rocketeer::DeliverBatch.
+   *
+   * @return true iff operation was successfully sheduled.
+   */
+  bool DeliverBatch(StreamID stream_id,
+                    int worker_id,
+                    std::vector<RocketeerMessage> messages);
+
+  /**
    * A thread-safe version of Rocketeer::Advance.
    *
    * @return true iff operation was successfully sheduled.

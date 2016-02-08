@@ -42,6 +42,11 @@ void Rocketeer::Deliver(InboundID inbound_id,
   GetBelowRocketeer()->Deliver(inbound_id, seqno, std::move(payload), msg_id);
 }
 
+void Rocketeer::DeliverBatch(StreamID stream_id,
+                             std::vector<RocketeerMessage> messages) {
+  GetBelowRocketeer()->DeliverBatch(stream_id, std::move(messages));
+}
+
 void Rocketeer::Advance(InboundID inbound_id, SequenceNumber seqno) {
   GetBelowRocketeer()->Advance(inbound_id, seqno);
 }

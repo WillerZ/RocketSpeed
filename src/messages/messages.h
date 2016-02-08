@@ -45,9 +45,10 @@ enum class MessageType : uint8_t {
   mDeliverData = 0x0B,   // MessageDeliverData
   mFindTailSeqno = 0x0C, // MessageFindTailSeqno
   mTailSeqno = 0x0D,     // MessageTailSeqno
+  mDeliverBatch = 0x0E,  // MessageDeliverBatch
 
   min = mPing,
-  max = mTailSeqno,
+  max = mDeliverBatch,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -831,6 +832,33 @@ class MessageDeliverData final : public MessageDeliver {
   /** Payload delivered with the message. */
   Slice payload_;
 };
+
+/**
+ * A message which contains multiple MessageDeliver on different subscriptions.
+ */
+class MessageDeliverBatch : public Message {
+ public:
+  typedef std::vector<std::unique_ptr<MessageDeliverData>> MessagesVector;
+
+  MessageDeliverBatch(TenantID tenant_id, MessagesVector messages)
+      : Message(MessageType::mDeliverBatch, tenant_id)
+      , messages_(std::move(messages)) {}
+
+  explicit MessageDeliverBatch() : Message(MessageType::mDeliverBatch) {}
+
+  const MessagesVector& GetMessages() const {
+    return messages_;
+  }
+
+  /*
+  * Inherited from Serializer
+  */
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
+ private:
+  MessagesVector messages_;
+};
+
 /** @} */
 
 }  // namespace rocketspeed

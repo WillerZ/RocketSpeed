@@ -38,6 +38,7 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "deliver_data",
   "find_tail_seqno",
   "tail_seqno",
+  "deliver_batch",
 };
 
 MessageType Message::ReadMessageType(Slice slice) {
@@ -156,6 +157,15 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mTailSeqno: {
       std::unique_ptr<MessageTailSeqno> msg(new MessageTailSeqno());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mDeliverBatch: {
+      std::unique_ptr<MessageDeliverBatch> msg(new MessageDeliverBatch());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -683,6 +693,39 @@ Status MessageDeliverData::DeSerialize(Slice* in) {
   memcpy(&message_id_, id_slice.data(), sizeof(message_id_));
   if (!GetLengthPrefixedSlice(in, &payload_)) {
     return Status::InvalidArgument("Bad payload");
+  }
+  return Status::OK();
+}
+
+Status MessageDeliverBatch::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutVarint64(out, messages_.size());
+  for (const auto& msg : messages_) {
+    Status st = msg->Serialize(out);
+    if (!st.ok()) {
+      return Status::InvalidArgument("Bad MessageDeliverData");
+    }
+  }
+  return Status::OK();
+}
+
+Status MessageDeliverBatch::DeSerialize(Slice* in) {
+  Status st = Message::DeSerialize(in);
+  if (!st.ok()) {
+    return st;
+  }
+  uint64_t len;
+  if (!GetVarint64(in, &len)) {
+    return Status::InvalidArgument("Bad Messages count");
+  }
+  messages_.clear();
+  messages_.reserve(len);
+  for (size_t i = 0; i < len; ++i) {
+    messages_.emplace_back(new MessageDeliverData());
+    st = messages_.back()->DeSerialize(in);
+    if (!st.ok()) {
+      return st;
+    }
   }
   return Status::OK();
 }

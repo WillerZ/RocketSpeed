@@ -68,6 +68,10 @@ void StreamReceiver::operator()(StreamReceiveArg<Message> arg) {
       ReceiveTailSeqno(
           PrepareArguments<MessageTailSeqno>(flow, stream_id, message));
       return;
+    case MessageType::mDeliverBatch:
+      ReceiveDeliverBatch(
+          PrepareArguments<MessageDeliverBatch>(flow, stream_id, message));
+      return;
     default:
       RS_ASSERT(false);
   }

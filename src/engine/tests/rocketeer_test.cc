@@ -203,6 +203,11 @@ struct TopOfStack : public Rocketeer {
   const std::string deliver_msg_ = "RandomMessage";
   const SequenceNumber deliver_msg_seqno_ = 102;
   const SequenceNumber advance_seqno_ = 112;
+  const std::vector<RocketeerMessage> messages_ {
+    RocketeerMessage(2, 113, "Message 1"),
+    RocketeerMessage(2, 114, "Message 2"),
+    RocketeerMessage(2, 115, "Message 3"),
+  };
   port::Semaphore terminate_sem_;
   InboundID inbound_id_;
 
@@ -211,6 +216,7 @@ struct TopOfStack : public Rocketeer {
     inbound_id_ = inbound_id;
     Deliver(inbound_id, deliver_msg_seqno_, deliver_msg_);
     Advance(inbound_id, advance_seqno_);
+    DeliverBatch(inbound_id.stream_id, messages_);
     Terminate(inbound_id, Rocketeer::UnsubscribeReason::BackOff);
   }
 
@@ -231,6 +237,7 @@ TEST(RocketeerTest, StackRocketeerTest) {
   port::Semaphore unsubscribe_sem;
   port::Semaphore deliver_sem;
   port::Semaphore advance_sem;
+  port::Semaphore batch_sem;
 
   // Ensure that HandleSubscription and HandleTermination calls go up the stack
   // and Deliver/Advance/Terminate go down the stack.
@@ -258,6 +265,19 @@ TEST(RocketeerTest, StackRocketeerTest) {
                      topRocketeer.advance_seqno_);
          advance_sem.Post();
        }},
+      {MessageType::mDeliverBatch,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
+         auto data = static_cast<MessageDeliverBatch*>(msg.get());
+         const auto& messages = data->GetMessages();
+         ASSERT_EQ(messages.size(), topRocketeer.messages_.size());
+         for (size_t i = 0; i < messages.size(); ++i) {
+           ASSERT_TRUE(messages[i]->GetPayload() ==
+                       topRocketeer.messages_[i].payload);
+           ASSERT_TRUE(messages[i]->GetSequenceNumber() ==
+                       topRocketeer.messages_[i].seqno);
+         }
+         batch_sem.Post();
+       }},
 
   });
   auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
@@ -269,6 +289,7 @@ TEST(RocketeerTest, StackRocketeerTest) {
   ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(advance_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(batch_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(topRocketeer.terminate_sem_.TimedWait(positive_timeout));
 
   // Stop explicitly, as the Rocketeer is destroyed before the Server.

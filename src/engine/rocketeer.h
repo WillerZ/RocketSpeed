@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <string>
+#include <vector>
 
 #include "include/Types.h"
 
@@ -40,6 +41,21 @@ class InboundID {
   size_t Hash() const;
 
   std::string ToString() const;
+};
+
+struct RocketeerMessage {
+  RocketeerMessage(SubscriptionID _sub_id, SequenceNumber _seqno,
+                   std::string _payload, MsgId _msg_id = MsgId()) :
+    sub_id(std::move(_sub_id)),
+    seqno(_seqno),
+    payload(std::move(_payload)),
+    msg_id(_msg_id) {
+  }
+
+  SubscriptionID sub_id;
+  SequenceNumber seqno;
+  std::string payload;
+  MsgId msg_id;
 };
 
 class Rocketeer {
@@ -85,6 +101,16 @@ class Rocketeer {
                        SequenceNumber seqno,
                        std::string payload,
                        MsgId msg_id = MsgId());
+
+  /**
+   * Sends a batch of messages on multiple subscriptions.
+   * This method needs to be called on the thread this instance runs on.
+   *
+   * @param stream_id ID of the stream where to send messages.
+   * @param messages List of messages to send.
+   */
+  virtual void DeliverBatch(StreamID stream_id,
+                            std::vector<RocketeerMessage> messages);
 
   /**
    * Advances next expected sequence number on a subscription without sending
