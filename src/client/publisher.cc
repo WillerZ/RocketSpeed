@@ -165,8 +165,7 @@ void PublisherWorkerData::Publish(MsgId message_id,
   }
 
   // Send out the request.
-  auto serialized_copy = serialized;
-  pilot_stream_->Write(serialized_copy);
+  pilot_stream_->Write(serialized);
 
   // Add message to the sent list.
   timeouts_.Add(message_id);

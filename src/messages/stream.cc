@@ -59,23 +59,18 @@ void Stream::CloseFromSocketEvent(access::Stream) {
   socket_event_ = nullptr;
 }
 
-bool Stream::Write(Message& message) {
-  thread_check_.Check();
-
-  // Serialise the message.
+SharedTimestampedString Stream::ToTimestampedString(const Message& message) {
   std::string str;
   message.SerializeToString(&str);
-  return Write(str);
+  return ToTimestampedString(str);
 }
 
-bool Stream::Write(std::string& value) {
-  thread_check_.Check();
-
+SharedTimestampedString Stream::ToTimestampedString(const std::string& value) {
   auto serialised = std::make_shared<TimestampedString>();
   serialised->issued_time =
       socket_event_->GetEventLoop()->GetEnv()->NowMicros();
   serialised->string = std::move(value);
-  return Write(serialised);
+  return serialised;
 }
 
 bool Stream::Write(SharedTimestampedString& value) {

@@ -276,6 +276,7 @@ Subscriber::Subscriber(const ClientOptions& options,
 
 Subscriber::~Subscriber() {
   thread_check_.Check();
+  CloseServerStream();
 }
 
 Status Subscriber::Start() {
@@ -385,6 +386,19 @@ Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
   return Status::OK();
 }
 
+void Subscriber::CloseServerStream() {
+  if (server_stream_) {
+    event_loop_->GetFlowControl()->UnregisterSink(server_stream_.get());
+    server_stream_.reset();
+  }
+
+  // If server stream is closed there is no point to keep old events.
+  // It will reissue all subscriptions anyway on new connection.
+  pending_subscribes_.clear();
+  pending_terminations_.clear();
+  recent_terminations_.Clear();
+}
+
 void Subscriber::SendPendingRequests() {
   thread_check_.Check();
 
@@ -401,12 +415,7 @@ void Subscriber::SendPendingRequests() {
                last_router_version_,
                current_router_version);
 
-      // Mark socket as broken.
-      server_stream_.reset();
-
-      // Clear a list of recently sent unsubscribes, these subscriptions IDs
-      // were generated for different socket, so are no longer valid.
-      recent_terminations_.Clear();
+      CloseServerStream();
 
       // Reissue all subscriptions.
       for (auto& entry : subscriptions_) {
@@ -470,12 +479,10 @@ void Subscriber::SendPendingRequests() {
     LOG_INFO(options_.info_log,
              "Closing stream (%llu) with no active subscriptions",
              server_stream_->GetLocalID());
-    server_stream_.reset();
+    CloseServerStream();
 
     // We've just sent a message.
     last_send_time_ = now;
-    // All unsubscribe requests were synced.
-    pending_terminations_.clear();
     return;
   }
 
@@ -620,15 +627,10 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
   // A duration type unit-compatible with BaseEnv::NowMicros().
   typedef std::chrono::microseconds EnvClockDuration;
 
-  // Mark socket as broken.
-  server_stream_.reset();
+  CloseServerStream();
 
   // Notify the router.
   router_->MarkHostDown(server_host_);
-
-  // Clear a list of recently sent unsubscribes, these subscriptions IDs were
-  // generated for different socket, so are no longer valid.
-  recent_terminations_.Clear();
 
   // Reissue all subscriptions.
   for (auto& entry : subscriptions_) {

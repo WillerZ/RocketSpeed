@@ -245,6 +245,9 @@ class Subscriber : public StreamReceiver {
    */
   void SendPendingRequests();
 
+  /** Close connection to copilot and flush log of pending subscriptions */
+  void CloseServerStream();
+
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) final override;
 
   void ReceiveUnsubscribe(

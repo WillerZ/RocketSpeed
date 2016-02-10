@@ -36,9 +36,7 @@ class Stream {
 };
 }  // namespace access
 
-class Stream : public Sink<Message>,
-               public Sink<std::string>,
-               public Sink<SharedTimestampedString> {
+class Stream : public Sink<SharedTimestampedString> {
  public:
   Stream(SocketEvent* socket_event, StreamID remote_id, StreamID local_id_);
 
@@ -54,14 +52,21 @@ class Stream : public Sink<Message>,
   /** Closes the stream gracefully. */
   ~Stream();
 
-  /** Inherited from Sink<Message>. */
-  bool Write(Message& value) final override;
-
-  /** Inherited from Sink<std::string>. */
-  bool Write(std::string& value) final override;
-
   /** Inherited from Sink<SharedTimestampedString>. */
   bool Write(SharedTimestampedString& value) final override;
+
+  SharedTimestampedString ToTimestampedString(const Message& value);
+  SharedTimestampedString ToTimestampedString(const std::string& value);
+
+  bool Write(const Message& msg) {
+    auto ts = ToTimestampedString(msg);
+    return Write(ts);
+  }
+
+  bool Write(const std::string& s) {
+    auto ts = ToTimestampedString(s);
+    return Write(ts);
+  }
 
   /** Inherited from Sink<Message>. */
   bool FlushPending() final override;

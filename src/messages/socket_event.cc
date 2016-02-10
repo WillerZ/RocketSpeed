@@ -121,7 +121,8 @@ void SocketEvent::Close(ClosureReason reason) {
            static_cast<int>(reason));
 
   // Unregister this socket from flow control.
-  flow_control_.Unregister(this);
+  flow_control_.UnregisterSource(this);
+  flow_control_.UnregisterSink(this);
 
   // Disable read and write events.
   read_ev_->Disable();

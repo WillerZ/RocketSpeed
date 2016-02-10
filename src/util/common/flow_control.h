@@ -99,13 +99,14 @@ class FlowControl {
     source->SetReadEnabled(event_loop_, true);
   }
 
-  template <typename T>
-  void Unregister(Source<T>* source) {
-    thread_check_.Check();
-    sources_.erase(source);
-    // Pointers to the source stored in SinkState will be removed lazily, when
-    // the backpressure from respective sink is removed.
-  }
+  /** Unregister previously registered source.
+   * NB. There still might be pointers in the SinkState objects to this source.
+   * If the source is to be destroyed it must unregister sinks explicitly.
+   */
+  void UnregisterSource(AbstractSource* source);
+
+  /** Drop sink and remove backpressure if it is blocking anything */
+  void UnregisterSink(AbstractSink* sink);
 
   const Statistics& GetStatistics() const {
     return stats_.all;
@@ -257,4 +258,4 @@ bool Flow::Write(Sink<T>* sink, T& value) {
   return !write_failed_;
 }
 
-}
+}  // namespace rocketspeed

@@ -29,4 +29,20 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
   sink_state.backpressure.clear();
 }
 
+void FlowControl::UnregisterSource(AbstractSource* source) {
+  thread_check_.Check();
+  sources_.erase(source);
+  // Pointers to the source stored in SinkState will be removed lazily, when
+  // the backpressure from respective sink is removed.
 }
+
+void FlowControl::UnregisterSink(AbstractSink* sink) {
+  thread_check_.Check();
+  auto it = sinks_.find(sink);
+  if (it != sinks_.end()) {
+    RemoveBackpressure(sink);
+    sinks_.erase(it);
+  }
+}
+
+}  // namespace rocketspeed
