@@ -615,6 +615,78 @@ TEST(ClientTest, ClientSubscriptionLimit) {
   }
 }
 
+TEST(ClientTest, CachedConnectionsWithoutStreams) {
+  port::Semaphore subscribe_sem, unsubscribe_sem, global_sem;
+  const int kTopics = 100;
+  const int kIterations = 2;
+
+  auto copilot1 = MockServer({
+      {MessageType::mSubscribe,
+          [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          subscribe_sem.Post();
+        }},
+      {MessageType::mUnsubscribe,
+          [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {}}
+    });
+
+  // Check that connections without streams remain open when the
+  // connection_without_streams_keepalive flag is set to a high value (20s)
+  // while they close immediately when it is set to zero.
+  int64_t prev_accepts = 0;
+  for (int iy = 0; iy < kIterations; ++iy) {
+    ClientOptions options;
+    options.timer_period = std::chrono::milliseconds(1);
+    options.connection_without_streams_keepalive =
+      std::chrono::milliseconds((iy % 2) ? 0 : 20000);
+    auto client = CreateClient(std::move(options));
+    for (int ix = 0; ix < kTopics; ++ix) {
+      auto handle = client->Subscribe(
+        GuestTenant, GuestNamespace, "ConnCache", 0, nullptr,
+        [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
+      ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
+      ASSERT_OK(client->Unsubscribe(handle));
+      ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+    }
+    auto key = copilot1.msg_loop->GetStatsPrefix() + ".accepts";
+    auto accepts = copilot1.msg_loop->GetStatisticsSync().GetCounterValue(key);
+    if (iy % 2) {
+      ASSERT_EQ(accepts - prev_accepts, kTopics);
+    } else {
+      ASSERT_EQ(accepts - prev_accepts, 1);
+    }
+    prev_accepts = accepts;
+  }
+
+  // Check that connections without streams get garbage collected eventually
+  // when the connection_without_streams_keepalive is set.
+  ClientOptions options;
+  options.timer_period = std::chrono::milliseconds(1);
+  options.connection_without_streams_keepalive = std::chrono::milliseconds(1);
+  auto client = CreateClient(std::move(options));
+  auto handle = client->Subscribe(
+    GuestTenant, GuestNamespace, "ConnCache", 0, nullptr,
+    [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
+  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
+  ASSERT_OK(client->Unsubscribe(handle));
+  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+
+  auto server_connections_key =
+    copilot1.msg_loop->GetStatsPrefix() + ".all_connections";
+  auto server_connections =
+    copilot1.msg_loop->GetStatisticsSync().GetCounterValue(
+      server_connections_key);
+  ASSERT_EQ(server_connections, 1);
+  /* sleep override - Wait long enough for the GC to run.
+     The GC runs every 100ms, so 120ms is a safe window.
+  */
+  std::this_thread::sleep_for(std::chrono::milliseconds(120));
+  server_connections =
+    copilot1.msg_loop->GetStatisticsSync().GetCounterValue(
+      server_connections_key);
+  ASSERT_EQ(server_connections, 0);
+
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

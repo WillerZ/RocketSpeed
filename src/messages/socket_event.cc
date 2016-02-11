@@ -139,7 +139,7 @@ void SocketEvent::Close(ClosureReason reason) {
   while (!remote_id_to_stream_.empty()) {
     Stream* stream = remote_id_to_stream_.begin()->second;
     // Unregister the stream.
-    UnregisterStream(stream->GetRemoteID());
+    UnregisterStream(stream->GetRemoteID(), true);
 
     if (reason == ClosureReason::Graceful) {
       // Close the socket silently if shutting down connection gracefully.
@@ -319,7 +319,7 @@ SocketEvent::SocketEvent(EventLoop* event_loop, int fd, HostId destination)
   event_loop_->Notify(write_ready_);
 }
 
-void SocketEvent::UnregisterStream(StreamID remote_id) {
+void SocketEvent::UnregisterStream(StreamID remote_id, bool force) {
   Stream* stream;
   {  // Remove the stream from the routing data structures, so that all incoming
     // messages on it will be dropped.
@@ -348,10 +348,31 @@ void SocketEvent::UnregisterStream(StreamID remote_id) {
     event_loop_->AddTask(MakeDeferredDeleter(owned_stream));
   }
 
-  // If we've closed the last stream on this connection, close the connection.
   if (remote_id_to_stream_.empty()) {
-    Close(ClosureReason::Graceful);
+    // We've closed the last stream on this connection
+    if (force ||
+        (!IsInbound() &&
+         event_loop_->GetOptions().
+         connection_without_streams_keepalive.count() == 0)) {
+      Close(ClosureReason::Graceful);
+    } else {
+      // Keep track of how long it will remain without any associated streams
+      // so as to close it once the the keepalive timeout expires.
+      without_streams_since_ = std::chrono::steady_clock::now();
+    }
   }
+}
+
+bool SocketEvent::IsWithoutStreamsForLongerThan(
+  std::chrono::milliseconds mil) const {
+  thread_check_.Check();
+  if (!remote_id_to_stream_.empty() || closing_) {
+    return false;
+  }
+  auto now = std::chrono::steady_clock::now();
+  RS_ASSERT(now > without_streams_since_);
+  std::chrono::nanoseconds diff = now - without_streams_since_;
+  return diff > mil;
 }
 
 Status SocketEvent::WriteCallback() {

@@ -491,9 +491,7 @@ void Subscriber::ProcessPendingSubscription(Flow *flow,
 
   // If we have no subscriptions and some pending requests, close the
   // connection. This way we unsubscribe all of them.
-  if (server_stream_ &&
-      options_.close_connection_with_no_subscription &&
-      subscriptions_.empty()) {
+  if (server_stream_ && subscriptions_.empty()) {
     LOG_INFO(options_.info_log,
              "Closing stream (%llu) with no active subscriptions",
              server_stream_->GetLocalID());

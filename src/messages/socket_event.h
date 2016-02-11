@@ -118,6 +118,8 @@ class SocketEvent : public Source<MessageOnStream>,
 
   const std::shared_ptr<Logger>& GetLogger() const;
 
+  bool IsWithoutStreamsForLongerThan(std::chrono::milliseconds mil) const;
+
  private:
   ThreadCheck thread_check_;
 
@@ -163,6 +165,12 @@ class SocketEvent : public Source<MessageOnStream>,
   /** A map of all streams owned by this socket. */
   std::unordered_map<Stream*, std::unique_ptr<Stream>> owned_streams_;
 
+  /**
+   * The most recent time the connection was without any assosiated streams.
+   * This is only set or read when there are zero streams associated with it.
+   */
+  std::chrono::time_point<std::chrono::steady_clock> without_streams_since_;
+
   SocketEvent(EventLoop* event_loop, int fd, HostId destination);
 
   /**
@@ -173,7 +181,7 @@ class SocketEvent : public Source<MessageOnStream>,
    *
    * @param remote_id A remote StreamID of the stream to unregister.
    */
-  void UnregisterStream(StreamID remote_id);
+  void UnregisterStream(StreamID remote_id, bool force = false);
 
   /** Handles write availability events from EventLoop. */
   Status WriteCallback();

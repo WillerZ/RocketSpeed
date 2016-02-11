@@ -397,6 +397,34 @@ void EventLoop::Run() {
       }
     }, options_.connect_timeout);
 
+
+  std::unique_ptr<EventCallback> connection_gc_timer;
+  if (options_.connection_without_streams_keepalive.count() > 0) {
+    // Garbage collect periodically connections without associated streams
+    connection_gc_timer = RegisterTimerCallback([this]() {
+        // We can't loop through the original outbound_connections_ object
+        // because SocketEvent::Close() removes the given SocketEvent from
+        // outbound_connections_ and would invalidate our iterator.
+        std::vector<SocketEvent*> outbound_connections_copy;
+        outbound_connections_copy.reserve(outbound_connections_.size());
+        for (auto entry: outbound_connections_) {
+          outbound_connections_copy.push_back(entry.second);
+        }
+        for (auto s_ptr: outbound_connections_copy) {
+          if (s_ptr->IsWithoutStreamsForLongerThan(
+                options_.connection_without_streams_keepalive)) {
+            s_ptr->Close(SocketEvent::ClosureReason::Graceful);
+          }
+        }
+      },
+      std::max(options_.connection_without_streams_keepalive / 10,
+               std::chrono::milliseconds(100)));
+    if (connection_gc_timer == nullptr) {
+      LOG_FATAL(info_log_, "Error creating timed event.");
+      RS_ASSERT(false);
+    }
+  }
+
   // Start the event loop.
   // This will not exit until Stop is called, or some error
   // happens within libevent.

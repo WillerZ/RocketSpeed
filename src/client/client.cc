@@ -75,12 +75,16 @@ Status ClientImpl::Create(ClientOptions options,
     options.info_log = std::make_shared<NullLogger>();
   }
 
+  MsgLoop::Options m_opts;
+  m_opts.event_loop.connection_without_streams_keepalive =
+    options.connection_without_streams_keepalive;
   std::unique_ptr<MsgLoop> msg_loop(new MsgLoop(options.env,
                                                 EnvOptions(),
                                                 -1,  // port
                                                 options.num_workers,
                                                 options.info_log,
-                                                "client"));
+                                                "client",
+                                                m_opts));
 
   Status st = msg_loop->Initialize();
   if (!st.ok()) {

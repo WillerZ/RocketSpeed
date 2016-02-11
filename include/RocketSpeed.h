@@ -75,11 +75,6 @@ class ClientOptions {
   // Default: null-strategy.
   std::unique_ptr<SubscriptionStorage> storage;
 
-  // Determines whether terminating the last subscription on a connection should
-  // trigger disconnection.
-  // Default: true
-  bool close_connection_with_no_subscription;
-
   // Period of internal client clock. Determines resolution of backoff, rate
   // limiting time measurements, and publish timeouts.
   // Default: 200 ms
@@ -117,6 +112,11 @@ class ClientOptions {
   // The client returns SubscriptionHandle(0) if the limit is exceeded.
   // Default: std::numeric_limits<size_t>::max()
   size_t max_subscriptions;
+
+  // Time to wait after terminating the last subscription on a connection before
+  // disconnecting.
+  // Default: 0s
+  std::chrono::milliseconds connection_without_streams_keepalive;
 
   /** Creates options with default values. */
   ClientOptions();

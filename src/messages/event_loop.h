@@ -124,6 +124,10 @@ class EventLoop {
     AcceptCallbackType accept_callback;
     /** A bound on the size of socket's send queue. */
     size_t send_queue_limit = 30000;
+    /**
+     * For how long should we keep a connection without streams alive.
+     */
+    std::chrono::milliseconds connection_without_streams_keepalive{0};
   };
 
   /**
