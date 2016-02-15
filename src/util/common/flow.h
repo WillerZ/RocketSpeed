@@ -76,6 +76,8 @@ class Source : public AbstractSource {
 template <typename T>
 class Sink : public AbstractSink {
  public:
+  using message_type = T;
+
   virtual ~Sink() {}
 
   /**

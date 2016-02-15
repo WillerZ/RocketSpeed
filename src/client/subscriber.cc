@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "external/folly/Memory.h"
 #include "external/folly/move_wrapper.h"
 
 #include "include/Logger.h"
@@ -31,6 +32,7 @@
 #include "src/port/port.h"
 #include "src/util/common/processor.h"
 #include "src/util/common/random.h"
+#include "src/util/common/rate_limiter_sink.h"
 #include "src/util/timeout_list.h"
 
 namespace rocketspeed {
@@ -403,8 +405,13 @@ Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
 void Subscriber::CloseServerStream() {
   if (server_stream_) {
     event_loop_->GetFlowControl()->UnregisterSink(server_stream_.get());
-    server_stream_.reset();
   }
+  if (limited_server_stream_) {
+    event_loop_->GetFlowControl()->UnregisterSink(limited_server_stream_.get());
+  }
+
+  limited_server_stream_.reset();
+  server_stream_.reset();
 
   // If server stream is closed there is no point to keep old events.
   // It will reissue all subscriptions anyway on new connection.
@@ -459,6 +466,20 @@ void Subscriber::RestoreServerStream() {
   // And create socket to it.
   server_stream_ = event_loop_->OpenStream(server_host_);
   server_stream_->SetReceiver(this);
+  if (options_.subscription_rate_limit > 0) {
+    using namespace std::chrono;
+    const size_t actual_rate =
+      std::max(1UL,
+        options_.subscription_rate_limit *
+        duration_cast<milliseconds>(options_.timer_period).count() / 1000);
+    limited_server_stream_ =
+      folly::make_unique<RateLimiterSink<SharedTimestampedString>>(
+          actual_rate, options_.timer_period, server_stream_.get());
+    LOG_INFO(options_.info_log,
+             "Applied subscription rate limit %zu per second (%zu per %lld ms)",
+             options_.subscription_rate_limit, actual_rate,
+             static_cast<long long>(options_.timer_period.count()));
+  }
 
   LOG_INFO(options_.info_log,
            "Reconnected to %s on stream %llu",
@@ -506,7 +527,6 @@ void Subscriber::ProcessPendingSubscription(Flow *flow,
 
   CheckInvariants();
 
-  bool can_write_more = true;
   if (!sub_state) {
     // Process unsubscribe request
     if (recent_terminations_.Contains(sub_id)) {
@@ -521,7 +541,7 @@ void Subscriber::ProcessPendingSubscription(Flow *flow,
 
     MessageUnsubscribe unsubscribe(
         GuestTenant, sub_id, MessageUnsubscribe::Reason::kRequested);
-    can_write_more = server_stream_->WriteToFlow(flow, unsubscribe);
+    WriteToServerStream(flow, unsubscribe);
 
     LOG_INFO(options_.info_log, "Unsubscribed ID (%" PRIu64 ")", sub_id);
   } else {
@@ -531,12 +551,25 @@ void Subscriber::ProcessPendingSubscription(Flow *flow,
                                sub_state->GetTopicName(),
                                sub_state->GetExpected(),
                                sub_id);
-    can_write_more = server_stream_->WriteToFlow(flow, subscribe);
+    WriteToServerStream(flow, subscribe);
 
     // Remember last sent time for backoff.
     last_send_time_ = options_.env->NowMicros();
 
     LOG_INFO(options_.info_log, "Subscribed ID (%" PRIu64 ")", sub_id);
+  }
+}
+
+void Subscriber::WriteToServerStream(Flow* flow, const Message& msg) {
+  RS_ASSERT(flow);
+  RS_ASSERT(server_stream_);
+
+  auto ts = server_stream_->ToTimestampedString(msg);
+  bool can_write_more = true;
+  if (limited_server_stream_) {
+    can_write_more = flow->Write(limited_server_stream_.get(), ts);
+  } else {
+    can_write_more = flow->Write(server_stream_.get(), ts);
   }
 
   if (!can_write_more) {

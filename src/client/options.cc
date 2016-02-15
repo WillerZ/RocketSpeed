@@ -33,7 +33,8 @@ ClientOptions::ClientOptions()
     , unsubscribe_deduplication_timeout(10 * 1000)
     , publish_timeout(5 * 1000)
     , max_subscriptions(std::numeric_limits<size_t>::max())
-    , connection_without_streams_keepalive(std::chrono::milliseconds(0)) {
+    , connection_without_streams_keepalive(std::chrono::milliseconds(0))
+    , subscription_rate_limit(1000 * 1000 * 1000) {
 }
 
 }  // namespace rocketspeed

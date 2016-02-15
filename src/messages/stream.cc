@@ -119,7 +119,6 @@ bool Stream::Write(SharedTimestampedString& value) {
 
 bool Stream::FlushPending() {
   thread_check_.Check();
-  RS_ASSERT(false);
   return true;
 }
 

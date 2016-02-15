@@ -47,6 +47,8 @@ typedef uint64_t SubscriptionID;
 typedef uint64_t SubscriptionHandle;
 template <typename>
 class ThreadLocalQueues;
+template <typename>
+class RateLimiterSink;
 
 /**
  * An interface shared by all layers of subscribers.
@@ -231,6 +233,11 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
   /** Stream socket used by this worker to talk to the Rocketeer. */
   std::unique_ptr<Stream> server_stream_;
 
+  /** If subscription_rate_limit is set in ClientOptions,
+   * the object holds stream decorator which applies rate limiting policy */
+  std::unique_ptr<RateLimiterSink<SharedTimestampedString>>
+    limited_server_stream_;
+
   /** The current server host. */
   HostId server_host_;
 
@@ -284,6 +291,9 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
       StreamReceiveArg<MessageUnsubscribe> arg) final override;
 
   void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) final override;
+
+  /** Write message to server stream using the provided flow object */
+  void WriteToServerStream(Flow* flow, const Message& msg);
 
   /** Assert invariants, this is noop for release build */
   void CheckInvariants();

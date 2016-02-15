@@ -171,8 +171,6 @@ class ClientTest {
   }
 
   std::unique_ptr<Client> CreateClient(ClientOptions options) {
-    // Set very short tick.
-    options.timer_period = std::chrono::milliseconds(1);
     // Override logger and configuration.
     options.info_log = info_log_;
     ASSERT_TRUE(options.publisher == nullptr);
@@ -612,6 +610,78 @@ TEST(ClientTest, ClientSubscriptionLimit) {
   for (auto handle : handles) {
     ASSERT_OK(client->Unsubscribe(handle));
     ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+  }
+}
+
+TEST(ClientTest, ClientSubscriptionRateLimit) {
+  const int kSubscriptions = 10;
+
+  port::Semaphore sub_sem;
+  port::Semaphore unsub_sem;
+
+  std::vector<TestClock::duration> attempts;
+  auto copilot = MockServer({
+      {MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          attempts.push_back(TestClock::now().time_since_epoch());
+          if (attempts.size() == kSubscriptions) {
+            sub_sem.Post();
+          }
+      }},
+      {MessageType::mUnsubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          attempts.push_back(TestClock::now().time_since_epoch());
+          unsub_sem.Post();
+      }}
+    });
+
+  ClientOptions options;
+  options.timer_period = std::chrono::milliseconds(200);
+  options.subscription_rate_limit = 10; // 10/1s => 2/200ms
+  auto client = CreateClient(std::move(options));
+
+  std::vector<SubscriptionHandle> subscriptions;
+  for (size_t i = 0; i < kSubscriptions; ++i) {
+    auto h = client->Subscribe(
+        GuestTenant, GuestNamespace, "SubRateLimit", 0, nullptr,
+        [&](const SubscriptionStatus&) {
+          // Need to acknowledge the last unsubscription
+          // The connection is terminated before the message
+          // can be processed in the callback
+          if (attempts.size() == kSubscriptions * 2 - 1) {
+            unsub_sem.Post();
+          }
+        });
+    subscriptions.push_back(h);
+  }
+  ASSERT_TRUE(sub_sem.TimedWait(positive_timeout));
+
+  for (auto h: subscriptions) {
+    client->Unsubscribe(h);
+    ASSERT_TRUE(unsub_sem.TimedWait(positive_timeout));
+  }
+
+  // Verify timeouts between consecutive attempts.
+  ASSERT_EQ(attempts.size(), kSubscriptions * 2 - 1);
+  std::vector<TestClock::duration> diffs;
+  std::adjacent_difference(attempts.begin(),
+                           attempts.end(),
+                           std::back_inserter(diffs));
+  TestClock::duration elapsed{0};
+  const std::chrono::milliseconds threshold = options.timer_period;
+  for (size_t i = 1; i < diffs.size(); ++i) {
+    // backpressure is applied only on overflow, therefore
+    // N events per second will result in throttling of every (N+1) event
+    // (when the actual overflow happens)
+    elapsed += diffs[i];
+    if (i % 3 == 0) {
+      ASSERT_TRUE(elapsed > 0.8 * threshold);
+      ASSERT_TRUE(elapsed < 1.2 * threshold);
+      elapsed = TestClock::duration::zero();
+    } else {
+      ASSERT_TRUE(diffs[i] < 1.2 * threshold);
+      ASSERT_TRUE(elapsed < 1.2 * threshold);
+    }
   }
 }
 

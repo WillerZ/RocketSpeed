@@ -118,6 +118,13 @@ class ClientOptions {
   // Default: 0s
   std::chrono::milliseconds connection_without_streams_keepalive;
 
+  // Maximum number of subscribe/unsubscribe events per second.
+  // Note: Events are throttled on timer_period intervals.
+  // That is if the limit is set to 1000 per second and timer_period is 200ms
+  // the actually applied rate limit will be 200 per 200 ms.
+  // Default: 1,000,000,000 (effectively unlimited)
+  size_t subscription_rate_limit;
+
   /** Creates options with default values. */
   ClientOptions();
 };
