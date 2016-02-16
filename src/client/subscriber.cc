@@ -286,6 +286,11 @@ Subscriber::Subscriber(const ClientOptions& options,
       ProcessPendingSubscription(flow, sub_id, sub_state);
     };
   event_loop_->GetFlowControl()->Register(&pending_subscriptions_, cb);
+
+  // This could return nullptr only due to malloc failure.
+  start_timer_callback_ = event_loop_->CreateTimedEventCallback(
+      [this]() { Tick(); }, options_.timer_period);
+  start_timer_callback_->Enable();
 }
 
 Subscriber::~Subscriber() {
@@ -297,17 +302,6 @@ Subscriber::~Subscriber() {
 void Subscriber::CheckInvariants() {
   RS_ASSERT(server_stream_ ||
       (!server_stream_ && pending_subscriptions_.Empty()));
-}
-
-Status Subscriber::Start() {
-  thread_check_.Check();
-
-  start_timer_callback_ = event_loop_->RegisterTimerCallback(
-    [this]() { Tick(); }, options_.timer_period);
-  if (start_timer_callback_ == nullptr) {
-    return Status::InternalError("Error creating timed event.");
-  }
-  return Status::OK();
 }
 
 void Subscriber::StartSubscription(SubscriptionID sub_id,
@@ -669,15 +663,6 @@ MultiShardSubscriber::~MultiShardSubscriber() {
   subscribers_.clear();
 }
 
-Status MultiShardSubscriber::Start() {
-  start_timer_callback_ = event_loop_->RegisterTimerCallback(
-    [this]() { Tick(); }, options_.timer_period);
-  if (start_timer_callback_ == nullptr) {
-    return Status::InternalError("Error creating timed event.");
-  }
-  return Status::OK();
-}
-
 const Statistics& MultiShardSubscriber::GetStatistics() {
   return stats_->all;
 }
@@ -720,7 +705,7 @@ void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
 void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
   if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
     subscriber->TerminateSubscription(sub_id);
-    if (subscriber->subscriptions_.empty()) {
+    if (subscriber->Empty()) {
       // Subscriber no longer serves any subscriptions, destroy it
       auto it = subscription_to_shard_.find(sub_id);
       RS_ASSERT(it != subscription_to_shard_.end());
@@ -742,7 +727,7 @@ Status MultiShardSubscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
   return Status::OK();
 }
 
-Subscriber* MultiShardSubscriber::GetSubscriberForSubscription(
+SubscriberIf* MultiShardSubscriber::GetSubscriberForSubscription(
     SubscriptionID sub_id) {
   auto it = subscription_to_shard_.find(sub_id);
   if (it == subscription_to_shard_.end()) {
@@ -760,12 +745,6 @@ Subscriber* MultiShardSubscriber::GetSubscriberForSubscription(
     return nullptr;
   }
   return it1->second.get();
-}
-
-void MultiShardSubscriber::Tick() {
-  for (const auto& subscriber : subscribers_) {
-    subscriber.second->Tick();
-  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -805,13 +784,6 @@ MultiThreadedSubscriber::~MultiThreadedSubscriber() {
 }
 
 Status MultiThreadedSubscriber::Start() {
-  for (const auto& subscriber : subscribers_) {
-    RS_ASSERT(subscriber);
-    auto st = subscriber->Start();
-    if (!st.ok()) {
-      return st;
-    }
-  }
   return Status::OK();
 }
 

@@ -241,7 +241,7 @@ class EventLoop {
    *
    * @param cb Callback to invoke when the trigger is notified.
    * @param duration the time after which callback should run.
-   * @return EventCallback object.
+   * @return EventCallback object, nullptr only if allocation failed.
    */
   std::unique_ptr<EventCallback> CreateTimedEventCallback(
       std::function<void()> cb, std::chrono::microseconds duration);

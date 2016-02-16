@@ -28,24 +28,6 @@
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
 
-/**
- * This header defines a few Subscriber implementations. At the very high level,
- * each Subscriber serves the same purpose, it allows to receive data on
- * subscriptions.
- *
- * Each Subscriber exposes two important methods:
- * - Subscribe, which establishes a subscription with provided
- *   SubscriptionParameters; once the subscription is established, the
- *   application will be notified about new data messages, gaps and termination
- *   of the subscription via provided callbacks,
- * - Acknowledge, which marks provided message as acknowledged; if
- *   SubscriptionStorage is used, the Subscriber will resume subscripions from
- *   storage starting from next unacknowledged message,
- * - Unsubscribe, which termnates previously established subscription.
- *
- * Different subscribers are stacked one on another according to shared
- * functionality.
- */
 namespace rocketspeed {
 
 class ClientOptions;
@@ -65,6 +47,44 @@ typedef uint64_t SubscriptionID;
 typedef uint64_t SubscriptionHandle;
 template <typename>
 class ThreadLocalQueues;
+
+/**
+ * An interface shared by all layers of subscribers.
+ *
+ * Common interface helps in proper unit testing of higher-level subscribers,
+ * promotes separation of concerns and code reuse.
+ */
+class SubscriberIf {
+ public:
+  virtual ~SubscriberIf() = default;
+
+  /**
+   * Establishes a subscription with provided SubscriptionParameters.
+   * Once the subscription is established, the application will be notified
+   * about new data messages, gaps and termination of the subscription via
+   * provided observer object.
+   */
+  virtual void StartSubscription(SubscriptionID sub_id,
+                                 SubscriptionParameters parameters,
+                                 std::unique_ptr<Observer> observer) = 0;
+
+  /**
+   * Marks provided message as acknowledged.
+   * If SubscriptionStorage is being used, the Subscriber can resume
+   * subscripions from storage starting from next unacknowledged message.
+   */
+  virtual void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) = 0;
+
+  /** Terminates previously established subscription. */
+  virtual void TerminateSubscription(SubscriptionID sub_id) = 0;
+
+  /** True iff subscriber has no active subscriptions. */
+  virtual bool Empty() const = 0;
+
+  /** Saves state of the subscriber using provided storage strategy. */
+  virtual Status SaveState(SubscriptionStorage::Snapshot* snapshot,
+                           size_t worker_id) = 0;
+};
 
 struct TenantAndNamespace {
   TenantID tenant_id;
@@ -169,31 +189,28 @@ class SubscriptionState : ThreadCheck, NonCopyable {
 /**
  * State of a subscriber per one shard.
  */
-class Subscriber : public StreamReceiver {
+class Subscriber : public SubscriberIf, public StreamReceiver {
  public:
   Subscriber(const ClientOptions& options,
              EventLoop* event_loop,
              std::shared_ptr<SubscriberStats> stats,
              std::unique_ptr<SubscriptionRouter> router);
 
-  ~Subscriber();
-
-  Status Start();
+  ~Subscriber() override;
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
-                         std::unique_ptr<Observer> observer);
+                         std::unique_ptr<Observer> observer) override;
 
-  void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
+  void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) override;
 
-  void TerminateSubscription(SubscriptionID sub_id);
+  void TerminateSubscription(SubscriptionID sub_id) override;
 
-  /** Saves state of the subscriber using provided storage strategy. */
+  bool Empty() const override { return subscriptions_.empty(); }
+
   Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
 
  private:
-  friend class MultiShardSubscriber;
-
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;
   /** An event loop object this subscriber runs on. */
@@ -276,26 +293,26 @@ class Subscriber : public StreamReceiver {
  * A single threaded thread-unsafe subscriber, that lazily brings up subscribers
  * per shard.
  */
-class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
+class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
  public:
   MultiShardSubscriber(const ClientOptions& options, EventLoop* event_loop);
 
-  ~MultiShardSubscriber();
-
-  Status Start();
+  ~MultiShardSubscriber() override;
 
   const Statistics& GetStatistics();
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
-                         std::unique_ptr<Observer> observer);
+                         std::unique_ptr<Observer> observer) override;
 
-  void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno);
+  void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) override;
 
-  void TerminateSubscription(SubscriptionID sub_id);
+  void TerminateSubscription(SubscriptionID sub_id) override;
 
-  /** Saves state of the subscriber using provided storage strategy. */
-  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
+  bool Empty() const override { return subscribers_.empty(); }
+
+  Status SaveState(SubscriptionStorage::Snapshot* snapshot,
+                   size_t worker_id) override;
 
  private:
   /** Options, whose lifetime must be managed by the owning client. */
@@ -308,13 +325,10 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
    * The map can be modified while some subscribers are running, therefore we
    * need them to be allocated separately.
    */
-  std::unordered_map<size_t, std::unique_ptr<Subscriber>> subscribers_;
+  std::unordered_map<size_t, std::unique_ptr<SubscriberIf>> subscribers_;
 
   /** A statistics object shared between subscribers. */
   std::shared_ptr<SubscriberStats> stats_;
-
-  /** Start timer callback **/
-  std::unique_ptr<EventCallback> start_timer_callback_;
 
   // TODO(t9432312)
   std::unordered_map<SubscriptionID, size_t> subscription_to_shard_;
@@ -323,10 +337,7 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber {
    * Returns a subscriber for provided subscription ID or null if cannot
    * recognise the ID.
    */
-  Subscriber* GetSubscriberForSubscription(SubscriptionID sub_id);
-
-  /** Run periodic tick on sharded subscribers */
-  void Tick();
+  SubscriberIf* GetSubscriberForSubscription(SubscriptionID sub_id);
 };
 
 /** A multi-threaded subscriber. */
