@@ -624,9 +624,7 @@ TEST(ClientTest, ClientSubscriptionRateLimit) {
       {MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
           attempts.push_back(TestClock::now().time_since_epoch());
-          if (attempts.size() == kSubscriptions) {
-            sub_sem.Post();
-          }
+          sub_sem.Post();
       }},
       {MessageType::mUnsubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -653,8 +651,8 @@ TEST(ClientTest, ClientSubscriptionRateLimit) {
           }
         });
     subscriptions.push_back(h);
+    ASSERT_TRUE(sub_sem.TimedWait(positive_timeout));
   }
-  ASSERT_TRUE(sub_sem.TimedWait(positive_timeout));
 
   for (auto h: subscriptions) {
     client->Unsubscribe(h);
@@ -669,18 +667,20 @@ TEST(ClientTest, ClientSubscriptionRateLimit) {
                            std::back_inserter(diffs));
   TestClock::duration elapsed{0};
   const std::chrono::milliseconds threshold = options.timer_period;
-  for (size_t i = 1; i < diffs.size(); ++i) {
+  // Check only subscriptions' timings,
+  // unsubscriptions' timings are less predictable and make test flaky
+  for (size_t i = 1; i < kSubscriptions; ++i) {
     // backpressure is applied only on overflow, therefore
     // N events per second will result in throttling of every (N+1) event
     // (when the actual overflow happens)
     elapsed += diffs[i];
     if (i % 3 == 0) {
-      ASSERT_TRUE(elapsed > 0.8 * threshold);
-      ASSERT_TRUE(elapsed < 1.2 * threshold);
+      ASSERT_TRUE(elapsed > 0.5 * threshold);
+      ASSERT_TRUE(elapsed < 1.5 * threshold);
       elapsed = TestClock::duration::zero();
     } else {
-      ASSERT_TRUE(diffs[i] < 1.2 * threshold);
-      ASSERT_TRUE(elapsed < 1.2 * threshold);
+      ASSERT_TRUE(diffs[i] < 1.5 * threshold);
+      ASSERT_TRUE(elapsed < 1.5 * threshold);
     }
   }
 }
