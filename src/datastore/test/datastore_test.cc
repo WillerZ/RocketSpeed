@@ -31,10 +31,6 @@ class DataStoreTest {
     ASSERT_OK(test::CreateLogger(env_, "DataStoreTest", &info_log_));
   }
 
-  virtual ~DataStoreTest() {
-    env_->WaitForJoin();  // This is good hygine
-  }
-
  protected:
   Env* env_;
   EnvOptions env_options_;

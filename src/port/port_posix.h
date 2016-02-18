@@ -221,7 +221,8 @@ class Semaphore {
 
   template <typename Duration>
   bool TimedWait(Duration timeout) {
-    return TimedWait(std::chrono::system_clock::now() + timeout);
+    return TimedWait(std::chrono::system_clock::now() +
+      std::chrono::duration_cast<std::chrono::system_clock::duration>(timeout));
   }
   void Post();
 

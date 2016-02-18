@@ -14,8 +14,6 @@
 #include "logdevice/include/ClientSettings.h"
 #ifdef USE_LOGDEVICE
 # include "logdevice/test/utils/IntegrationTestUtils.h"
-#else
-# include "src/logdevice/Common.h"
 #endif
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
@@ -52,8 +50,6 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
 
 std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
   // Clean up any existing logs to isolate the tests.
-  Env::Default()->DeleteDirRecursive(facebook::logdevice::MOCK_LOG_DIR);
-
   std::unique_ptr<facebook::logdevice::ClientSettings> settings(
     facebook::logdevice::ClientSettings::create());
   return facebook::logdevice::Client::create(

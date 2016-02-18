@@ -27,20 +27,10 @@ class ControlTowerTest {
     ASSERT_OK(test::CreateLogger(env_, "ControlTowerTest", &info_log_));
   }
 
-  virtual ~ControlTowerTest() {
-    env_->WaitForJoin();  // This is good hygine
-  }
-
  protected:
   Env* env_;
   EnvOptions env_options_;
   std::shared_ptr<Logger> info_log_;
-
-  // A static method that is the entry point of a background MsgLoop
-  static void MsgLoopStart(void* arg) {
-    MsgLoop* loop = reinterpret_cast<MsgLoop*>(arg);
-    loop->Run();
-  }
 
   // gets the number of open logs
   int64_t GetNumOpenLogs(ControlTower* ct) const {

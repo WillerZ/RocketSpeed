@@ -22,8 +22,6 @@
 #ifdef USE_LOGDEVICE
 #include "logdevice/include/debug.h"
 #include "logdevice/test/utils/IntegrationTestUtils.h"
-#else
-#include "src/logdevice/Common.h"
 #endif  // USE_LOGDEVICE
 #pragma GCC diagnostic pop
 
@@ -118,11 +116,6 @@ LocalTestCluster::CreateStorage(Env* env,
                                   &storage);
   }
 #else
-  static bool first_cluster = true;
-  if (first_cluster) {
-    Env::Default()->DeleteDirRecursive(facebook::logdevice::MOCK_LOG_DIR);
-    first_cluster = false;
-  }
   st = LogDeviceStorage::Create("",
                                 "",
                                 "",

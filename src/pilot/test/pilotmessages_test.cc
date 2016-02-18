@@ -25,10 +25,6 @@ class PilotTest {
     ASSERT_OK(test::CreateLogger(env_, "PilotTest", &info_log_));
   }
 
-  virtual ~PilotTest() {
-    env_->WaitForJoin();  // This is good hygine
-  }
-
  protected:
   Env* env_;
   EnvOptions env_options_;
@@ -42,12 +38,6 @@ class PilotTest {
       ASSERT_EQ(ack.status, MessageDataAck::AckStatus::Success);
       acked_msgs_.insert(ack.msgid);  // mark msgid as ack'd
     }
-  }
-
-  // A static method that is the entry point of a background MsgLoop
-  static void MsgLoopStart(void* arg) {
-    MsgLoop* loop = reinterpret_cast<MsgLoop*>(arg);
-    loop->Run();
   }
 };
 

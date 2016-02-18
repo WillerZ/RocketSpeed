@@ -716,31 +716,36 @@ TEST(IntegrationTest, ThreadLeaks) {
   // Setup local RocketSpeed cluster with default environment.
   Env* env = Env::Default();
 
-  // Verify that there are no threads associated with this env
-  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+  // First create a cluster to initialize any cached static instances.
+  {
+    LocalTestCluster cluster(info_log, true, true, true, "", env);
+  }
+
+  // Get the initial steady state number of threads.
+  auto init = env->GetNumberOfThreads();
 
   // Create and destroy a cluster with this env and then
   // verify that we do not have threads associated with this env
   // Create control tower,  pilot and copilot
   {
     LocalTestCluster cluster(info_log, true, true, true, "", env);
-    ASSERT_GE(env->GetNumberOfThreads(), 0);
+    ASSERT_GE(env->GetNumberOfThreads(), init);
   }
-  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+  ASSERT_EQ(env->GetNumberOfThreads(), init);
 
   // Create control tower and pilot
   {
     LocalTestCluster cluster(info_log, true, true, false, "", env);
-    ASSERT_GE(env->GetNumberOfThreads(), 0);
+    ASSERT_GE(env->GetNumberOfThreads(), init);
   }
-  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+  ASSERT_EQ(env->GetNumberOfThreads(), init);
 
   // Create control tower and copilot
   {
     LocalTestCluster cluster(info_log, true, false, true, "", env);
-    ASSERT_GE(env->GetNumberOfThreads(), 0);
+    ASSERT_GE(env->GetNumberOfThreads(), init);
   }
-  ASSERT_EQ(env->GetNumberOfThreads(), 0);
+  ASSERT_EQ(env->GetNumberOfThreads(), init);
 }
 
 /**
