@@ -368,7 +368,8 @@ TEST(FlowTest, ObservableSet) {
   ASSERT_OK(loop.Initialize());
 
   FlowControl& flow_control = *loop.GetEventLoop(0)->GetFlowControl();
-  auto obs_set = std::make_shared<ObservableSet<std::string>>();
+  auto obs_set =
+      std::make_shared<ObservableSet<std::string>>(loop.GetEventLoop(0));
 
   std::map<std::string, int> processed;
   port::Semaphore done;
@@ -423,6 +424,8 @@ TEST(FlowTest, ObservableSet) {
   ASSERT_EQ(processed.size(), 2);
   ASSERT_EQ(processed["explode"], 1);
   ASSERT_EQ(processed["explode again"], kNumKeys - 1);
+
+  send_exec_command([&]() { obs_set.reset(); });
 }
 
 TEST(FlowTest, SourcelessFlow) {

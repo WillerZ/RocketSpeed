@@ -5,7 +5,8 @@
 //
 #pragma once
 
-#include "src/port/port.h"
+#include "include/Assert.h"
+#include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
 #include "src/util/common/flow.h"
 #include "src/util/common/thread_check.h"
@@ -26,8 +27,9 @@ class ObservableSet : public Source<T> {
  public:
   using KeyType = T;
 
-  ObservableSet()
-  : read_ready_fd_(true /* nonblock */, true /* close_on_exec */)
+  explicit ObservableSet(EventLoop* event_loop)
+  : event_loop_(event_loop)
+  , read_ready_(event_loop->CreateEventTrigger())
   , changed_(false)
   , ready_(false) {
     // empty
@@ -64,13 +66,18 @@ class ObservableSet : public Source<T> {
   }
 
   void RegisterReadEvent(EventLoop* event_loop) final override {
-    event_loop->RegisterFdReadEvent(
-      read_ready_fd_.readfd(),
-      [this] () { this->Drain(); });
+    RS_ASSERT(event_loop == event_loop_);
+    read_callback_ = event_loop->CreateEventCallback(
+        [this]() { this->Drain(); }, read_ready_);
   }
 
   void SetReadEnabled(EventLoop* event_loop, bool enabled) final override {
-    event_loop->SetFdReadEnabled(read_ready_fd_.readfd(), enabled);
+    RS_ASSERT(event_loop == event_loop_);
+    if (enabled) {
+      read_callback_->Enable();
+    } else {
+      read_callback_->Disable();
+    }
   }
 
  private:
@@ -99,16 +106,16 @@ class ObservableSet : public Source<T> {
 
     ready_ = value;
     if (value) {
-      read_ready_fd_.write_event(1);
+      event_loop_->Notify(read_ready_);
     } else {
-      eventfd_t v = 0;
-      read_ready_fd_.read_event(&v);
-      RS_ASSERT(v > 0);
+      event_loop_->Unnotify(read_ready_);
     }
   }
 
   ThreadCheck thread_check_;
-  rocketspeed::port::Eventfd read_ready_fd_;
+  EventLoop* event_loop_;
+  EventTrigger read_ready_;
+  std::unique_ptr<EventCallback> read_callback_;
   std::unordered_set<T> set_;
   bool changed_;
   bool ready_;

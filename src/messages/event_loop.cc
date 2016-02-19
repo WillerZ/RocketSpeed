@@ -613,6 +613,14 @@ std::unique_ptr<EventCallback> EventLoop::CreateEventCallback(
   return std::unique_ptr<EventCallback>(event);
 }
 
+void EventLoop::TriggerableCallbackEnable(access::EventLoop,
+                                          TriggerableCallback* event) {
+  thread_check_.Check();
+
+  // Notify the event that handles pending triggers.
+  notified_triggers_fd_.write_event(1);
+}
+
 void EventLoop::TriggerableCallbackClose(access::EventLoop,
                                          TriggerableCallback* event) {
   thread_check_.Check();

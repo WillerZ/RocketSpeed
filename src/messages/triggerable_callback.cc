@@ -15,6 +15,7 @@ TriggerableCallback::~TriggerableCallback() {
 
 void TriggerableCallback::Enable() {
   enabled_ = true;
+  event_loop_->TriggerableCallbackEnable(access::EventLoop(), this);
 }
 
 void TriggerableCallback::Disable() {

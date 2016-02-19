@@ -246,6 +246,9 @@ class EventLoop {
   std::unique_ptr<EventCallback> CreateTimedEventCallback(
       std::function<void()> cb, std::chrono::microseconds duration);
 
+  /** Notified the loop that the callback was enabled. */
+  void TriggerableCallbackEnable(access::EventLoop, TriggerableCallback* event);
+
   /** Cleans up all the state associated with the callback. */
   void TriggerableCallbackClose(access::EventLoop, TriggerableCallback* event);
 

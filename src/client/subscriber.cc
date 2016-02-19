@@ -274,7 +274,8 @@ Subscriber::Subscriber(const ClientOptions& options,
 , consecutive_goodbyes_count_(0)
 , rng_(ThreadLocalPRNG())
 , last_router_version_(0)
-, router_(std::move(router)) {
+, router_(std::move(router))
+, pending_subscriptions_(event_loop) {
   thread_check_.Check();
 
   // Cannot use InstallSource here because it is asynchronous.
