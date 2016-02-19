@@ -465,7 +465,14 @@ void Subscriber::RestoreServerStream() {
 
   // And create socket to it.
   server_stream_ = event_loop_->OpenStream(server_host_);
+  if (!server_stream_) {
+    LOG_ERROR(options_.info_log,
+              "Failed to open connection to %s",
+              server_host_.ToString().c_str());
+    return;
+  }
   server_stream_->SetReceiver(this);
+
   if (options_.subscription_rate_limit > 0) {
     using namespace std::chrono;
     const size_t actual_rate =
