@@ -28,6 +28,7 @@ cpp_library(
         'stream.cc',
         'timed_callback.cc',
         'triggerable_callback.cc',
+        'combined_callback.cc',
         'types.cc',
     ],
     preprocessor_flags = [
