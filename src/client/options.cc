@@ -23,18 +23,19 @@ struct DefaultBackOffDistribution {
 };
 
 ClientOptions::ClientOptions()
-    : env(ClientEnv::Default())
-    , num_workers(1)
-    , timer_period(200)
-    , backoff_base(2.0)
-    , backoff_initial(1000)
-    , backoff_limit(30 * 1000)
-    , backoff_distribution(DefaultBackOffDistribution())
-    , unsubscribe_deduplication_timeout(10 * 1000)
-    , publish_timeout(5 * 1000)
-    , max_subscriptions(std::numeric_limits<size_t>::max())
-    , connection_without_streams_keepalive(std::chrono::milliseconds(0))
-    , subscription_rate_limit(1000 * 1000 * 1000) {
+: env(ClientEnv::Default())
+, num_workers(1)
+, timer_period(200)
+, backoff_base(2.0)
+, backoff_initial(1000)
+, backoff_limit(30 * 1000)
+, backoff_distribution(DefaultBackOffDistribution())
+, unsubscribe_deduplication_timeout(10 * 1000)
+, publish_timeout(5 * 1000)
+, max_subscriptions(std::numeric_limits<size_t>::max())
+, connection_without_streams_keepalive(std::chrono::milliseconds(0))
+, subscription_rate_limit(1000 * 1000 * 1000)
+, collapse_subscriptions_to_tail(false) {
 }
 
 }  // namespace rocketspeed

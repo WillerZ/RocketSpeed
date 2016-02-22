@@ -10,12 +10,14 @@
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
+#include <tuple>
 
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/RocketSpeed.h"
 #include "include/SubscriptionStorage.h"
 #include "include/BaseEnv.h"
+#include "src/client/topic_subscription_map.h"
 #include "src/messages/messages.h"
 #include "src/messages/types.h"
 #include "src/port/port.h"
@@ -57,6 +59,7 @@ class RateLimiterSink;
  */
 class SubscriberIf {
  public:
+  /** Destructor must close all remaining active subscriptions. */
   virtual ~SubscriberIf() = default;
 
   /**
@@ -135,6 +138,12 @@ class SubscriptionState : ThreadCheck, NonCopyable {
 
   const Topic& GetTopicName() const { return topic_name_; }
 
+  void SwapObserver(std::unique_ptr<Observer>* observer) {
+    std::swap(observer_, *observer);
+  }
+
+  Observer* GetObserver() { return observer_.get(); }
+
   /** Terminates subscription and notifies the application. */
   void Terminate(const std::shared_ptr<Logger>& info_log,
                  SubscriptionID sub_id,
@@ -165,12 +174,12 @@ class SubscriptionState : ThreadCheck, NonCopyable {
   //       with SubscriptionState. Otherwise compiler won't be able to perform
   //       Empty Base Optimization. For a more detailed explanation see:
   //       http://stackoverflow.com/a/547439
+  std::unique_ptr<Observer> observer_;
   // Note: the following members are virtually const.
   //       That is, they should have been constant but they are not marked that
   //       because move-semantics wouldn't work for them in that case.
   //       Unfortunately, move semantics is currently not compatible with
   //       the concept of an immutable object in C++.
-  /* const */ std::unique_ptr<Observer> observer_;
   /* const */ TenantAndNamespaceFlyweight tenant_and_namespace_;
   /* const */ Topic topic_name_;
 
@@ -182,13 +191,10 @@ class SubscriptionState : ThreadCheck, NonCopyable {
   /** Returns true iff message arrived in order and not duplicated. */
   bool ProcessMessage(const std::shared_ptr<Logger>& info_log,
                       const MessageDeliver& deliver);
-
-  /** Announces status of a subscription via user defined callback. */
-  void AnnounceStatus(bool subscribed, Status status);
 };
 
 /**
- * State of a subscriber per one shard.
+ * A subscriber that manages subscription on a single shard.
  */
 class Subscriber : public SubscriberIf, public StreamReceiver {
  public:
@@ -210,6 +216,11 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
   bool Empty() const override { return subscriptions_.empty(); }
 
   Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
+
+  SubscriptionState* GetState(SubscriptionID sub_id) {
+    auto it = subscriptions_.find(sub_id);
+    return it == subscriptions_.end() ? nullptr : &it->second;
+  }
 
  private:
   ThreadCheck thread_check_;
@@ -297,6 +308,56 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
 
   /** Assert invariants, this is noop for release build */
   void CheckInvariants();
+};
+
+namespace detail {
+class TailCollapsingObserver;
+}  // namespace detail
+
+/**
+ * A subscriber adaptor that collapses subscriptions, so that all downstream
+ * subscriptions on a one particular topic are served from a single, tail
+ * upstream subscription.
+ */
+class TailCollapsingSubscriber : public SubscriberIf {
+ public:
+  explicit TailCollapsingSubscriber(std::unique_ptr<Subscriber> subscriber);
+
+  void StartSubscription(SubscriptionID sub_id,
+                         SubscriptionParameters parameters,
+                         std::unique_ptr<Observer> observer) override;
+
+  void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) override;
+
+  void TerminateSubscription(SubscriptionID sub_id) override;
+
+  bool Empty() const override { return subscriber_->Empty(); }
+
+  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
+
+ private:
+  friend class detail::TailCollapsingObserver;
+
+  ThreadCheck thread_check_;
+  /** The underlying subscriber. */
+  std::unique_ptr<Subscriber> subscriber_;
+
+  /**
+   * Maps ID of downstream subscription to the ID of the upstream one that
+   * serves the former, only for collapsed subscriptions.
+   */
+  std::unordered_map<SubscriptionID, SubscriptionID> downstream_to_upstream_;
+  /**
+   * Stores all existing instances of TailCollapsingObserver created by this
+   * subscriber. Useful when determining whether given upstream subscription
+   * serves multiple downstream ones.
+   */
+  std::unordered_set<Observer*> special_observers_;
+  /**
+   * The map that we use for finding an upstream subscription for given topic
+   * and namespace.
+   */
+  TopicToSubscriptionMap upstream_subscriptions_;
 };
 
 /**

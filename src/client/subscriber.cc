@@ -34,6 +34,7 @@
 #include "src/util/common/random.h"
 #include "src/util/common/rate_limiter_sink.h"
 #include "src/util/timeout_list.h"
+#include "src/util/xxhash.h"
 
 namespace rocketspeed {
 
@@ -43,6 +44,38 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
                                   MessageUnsubscribe::Reason reason) {
   ThreadCheck::Check();
 
+  class SubscriptionStatusImpl : public SubscriptionStatus {
+   public:
+    SubscriptionID sub_id_;
+    const SubscriptionState& sub_state_;
+    Status status_;
+
+    SubscriptionStatusImpl(SubscriptionID _sub_id,
+                           const SubscriptionState& sub_state)
+    : sub_id_(_sub_id), sub_state_(sub_state) {}
+
+    SubscriptionHandle GetSubscriptionHandle() const override {
+      return sub_id_;
+    }
+
+    TenantID GetTenant() const override { return sub_state_.GetTenant(); }
+
+    const NamespaceID& GetNamespace() const override {
+      return sub_state_.GetNamespace();
+    }
+
+    const Topic& GetTopicName() const override {
+      return sub_state_.GetTopicName();
+    }
+
+    SequenceNumber GetSequenceNumber() const override {
+      return sub_state_.GetExpected();
+    }
+
+    bool IsSubscribed() const override { return false; }
+
+    const Status& GetStatus() const override { return status_; }
+  } sub_status(sub_id, *this);
   switch (reason) {
     case MessageUnsubscribe::Reason::kRequested:
       LOG_INFO(info_log,
@@ -51,7 +84,6 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
                GetNamespace().c_str(),
                topic_name_.c_str(),
                expected_seqno_);
-      AnnounceStatus(false, Status::OK());
       break;
     case MessageUnsubscribe::Reason::kInvalid:
       LOG_INFO(info_log,
@@ -60,13 +92,18 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
                GetNamespace().c_str(),
                topic_name_.c_str(),
                expected_seqno_);
-      AnnounceStatus(false, Status::InvalidArgument("Invalid subscription"));
+      sub_status.status_ = Status::InvalidArgument("Invalid subscription");
       break;
     case MessageUnsubscribe::Reason::kBackOff:
       RS_ASSERT(false);
+      sub_status.status_ =
+          Status::InternalError("Received backoff termination");
       break;
       // No default, we will be warned about unhandled code.
   }
+
+  RS_ASSERT(!!observer_);
+  observer_->OnSubscriptionStatusChange(sub_status);
 }
 
 class MessageReceivedImpl : public MessageReceived {
@@ -204,47 +241,6 @@ void SubscriptionState::Acknowledge(SequenceNumber seqno) {
   if (last_acked_seqno_ < seqno) {
     last_acked_seqno_ = seqno;
   }
-}
-
-class SubscriptionStatusImpl : public SubscriptionStatus {
- public:
-  SubscriptionStatusImpl(const SubscriptionState& sub_state,
-                         bool subscribed,
-                         Status status)
-  : sub_state_(sub_state)
-  , subscribed_(subscribed)
-  , status_(std::move(status)) {}
-
-  TenantID GetTenant() const override { return sub_state_.GetTenant(); }
-
-  const NamespaceID& GetNamespace() const override {
-    return sub_state_.GetNamespace();
-  }
-
-  const Topic& GetTopicName() const override {
-    return sub_state_.GetTopicName();
-  }
-
-  SequenceNumber GetSequenceNumber() const override {
-    return sub_state_.GetExpected();
-  }
-
-  bool IsSubscribed() const override { return subscribed_; }
-
-  const Status& GetStatus() const override { return status_; }
-
- private:
-  const SubscriptionState& sub_state_;
-  bool subscribed_;
-  Status status_;
-};
-
-void SubscriptionState::AnnounceStatus(bool subscribed, Status status) {
-  RS_ASSERT(!!observer_);
-  ThreadCheck::Check();
-
-  SubscriptionStatusImpl sub_status(*this, subscribed, std::move(status));
-  observer_->OnSubscriptionStatusChange(sub_status);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -694,6 +690,278 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
            backoff_period / 1000);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+namespace detail {
+
+class TailCollapsingObserver : public Observer {
+ public:
+  TailCollapsingSubscriber* subscriber_;
+  /**
+   * Maps subscription ID to original observer for subscriptions served by this
+   * upstream subscription.
+   */
+  std::unordered_map<SubscriptionID, std::unique_ptr<Observer>>
+      downstream_observers_;
+
+  explicit TailCollapsingObserver(TailCollapsingSubscriber* subscriber)
+  : subscriber_(subscriber) {}
+
+  void OnMessageReceived(
+      Flow* flow, std::unique_ptr<MessageReceived>& up_message) override {
+    // Prepare proxy that maintains shared ownership of the message.
+    class SharedMessageReceived : public MessageReceived {
+     public:
+      SubscriptionID id_;
+      std::shared_ptr<MessageReceived> message_;
+
+      SubscriptionHandle GetSubscriptionHandle() const override { return id_; }
+
+      SequenceNumber GetSequenceNumber() const override {
+        return message_->GetSequenceNumber();
+      }
+
+      Slice GetContents() const override { return message_->GetContents(); }
+    };
+    std::shared_ptr<MessageReceived> shared_message(std::move(up_message));
+
+    // Deliver to every observer served by this upstream subscription.
+    for (const auto& entry : downstream_observers_) {
+      // TODO(t10075129)
+      auto down_message = folly::make_unique<SharedMessageReceived>();
+      down_message->id_ = entry.first;
+      down_message->message_ = shared_message;
+      std::unique_ptr<MessageReceived> tmp(std::move(down_message));
+      entry.second->OnMessageReceived(flow, tmp);
+    }
+  }
+
+  void OnSubscriptionStatusChange(
+      const SubscriptionStatus& up_status) override {
+    // We have to override the SubscriptionHandle for each downstream
+    // subscription.
+    class SubscriptionStatusImpl : public SubscriptionStatus {
+     public:
+      SubscriptionID sub_id_;
+      const SubscriptionStatus& status_;
+
+      explicit SubscriptionStatusImpl(const SubscriptionStatus& status)
+      : sub_id_(0), status_(status) {}
+
+      SubscriptionHandle GetSubscriptionHandle() const override {
+        return sub_id_;
+      }
+
+      TenantID GetTenant() const override { return status_.GetTenant(); }
+
+      const NamespaceID& GetNamespace() const override {
+        return status_.GetNamespace();
+      }
+
+      const Topic& GetTopicName() const override {
+        return status_.GetTopicName();
+      }
+
+      SequenceNumber GetSequenceNumber() const override {
+        return status_.GetSequenceNumber();
+      }
+
+      bool IsSubscribed() const override { return status_.IsSubscribed(); }
+
+      const Status& GetStatus() const override { return status_.GetStatus(); }
+    } down_status(up_status);
+
+    for (const auto& entry : downstream_observers_) {
+      down_status.sub_id_ = entry.first;
+      entry.second->OnSubscriptionStatusChange(down_status);
+    }
+    // State of downstream subscriptions might have been removed, if we got this
+    // notification as a confirmation that TerminateSubscription(...) finished.
+    if (!up_status.IsSubscribed()) {
+      // Remove all data associated with all subscriptions on this topic.
+      for (const auto& entry : downstream_observers_) {
+        SubscriptionID downstream_id = entry.first;
+        subscriber_->downstream_to_upstream_.erase(downstream_id);
+        subscriber_->special_observers_.erase(this);
+      }
+      // Remove metadata for this topic, as it was the only subscription on it.
+      subscriber_->upstream_subscriptions_.Remove(
+          up_status.GetNamespace(),
+          up_status.GetTopicName(),
+          up_status.GetSubscriptionHandle());
+    }
+  }
+
+  void OnDataLoss(Flow* flow, std::unique_ptr<DataLossInfo>& up_info) override {
+    // We have to override the SubscriptionHandle for each downstream
+    // subscription.
+    class DataLossInfoImpl : public DataLossInfo {
+     public:
+      SubscriptionID id_;
+      DataLossType type_;
+      SequenceNumber first_;
+      SequenceNumber last_;
+
+      SubscriptionHandle GetSubscriptionHandle() const override { return id_; }
+
+      DataLossType GetLossType() const override { return type_; }
+
+      SequenceNumber GetFirstSequenceNumber() const override { return first_; }
+
+      SequenceNumber GetLastSequenceNumber() const override { return last_; }
+    };
+
+    // Deliver to every observer served by this upstream subscription.
+    for (const auto& entry : downstream_observers_) {
+      // TODO(t10075129)
+      auto down_info = folly::make_unique<DataLossInfoImpl>();
+      down_info->id_ = entry.first;
+      down_info->type_ = up_info->GetLossType();
+      down_info->first_ = up_info->GetFirstSequenceNumber();
+      down_info->last_ = up_info->GetLastSequenceNumber();
+      std::unique_ptr<DataLossInfo> tmp(std::move(down_info));
+      entry.second->OnDataLoss(flow, tmp);
+    }
+  }
+};
+
+}  // namespace details
+
+TailCollapsingSubscriber::TailCollapsingSubscriber(
+    std::unique_ptr<Subscriber> subscriber)
+: subscriber_(std::move(subscriber))
+, upstream_subscriptions_(
+      [this](SubscriptionID sub_id) { return subscriber_->GetState(sub_id); }) {
+}
+
+void TailCollapsingSubscriber::StartSubscription(
+    SubscriptionID downstream_id,
+    SubscriptionParameters parameters,
+    std::unique_ptr<Observer> observer) {
+  SubscriptionID upstream_id;
+  SubscriptionState* upstream_state;
+  std::tie(upstream_id, upstream_state) = upstream_subscriptions_.Find(
+      parameters.namespace_id, parameters.topic_name);
+  if (upstream_state) {
+    RS_ASSERT(upstream_state->GetNamespace() == parameters.namespace_id);
+    RS_ASSERT(upstream_state->GetTopicName() == parameters.topic_name);
+    // There exists a subscription on the topic already.
+    detail::TailCollapsingObserver* collapsing_observer;
+    if (special_observers_.count(upstream_state->GetObserver()) == 0) {
+      {  // There exists only one subscription on the topic, set up
+         // multiplexing.
+        collapsing_observer = new detail::TailCollapsingObserver(this);
+        auto result = special_observers_.insert(collapsing_observer);
+        (void)result;
+        RS_ASSERT(result.second);
+      }
+      std::unique_ptr<Observer> old_observer(collapsing_observer);
+      upstream_state->SwapObserver(&old_observer);
+
+      // Add existing subscription to the multiplexer.
+      auto result = collapsing_observer->downstream_observers_.emplace(
+          upstream_id, std::move(old_observer));
+      (void)result;
+      RS_ASSERT(result.second);
+    } else {
+      // We can safely downcast.
+      collapsing_observer = static_cast<detail::TailCollapsingObserver*>(
+          upstream_state->GetObserver());
+    }
+    RS_ASSERT(collapsing_observer);
+
+    {  // We've already set up multiplexing for the upstream subscription, just
+       // add the new downstream subscription.
+      auto result = collapsing_observer->downstream_observers_.emplace(
+          downstream_id, std::move(observer));
+      (void)result;
+      RS_ASSERT(result.second);
+    }
+    {  // Redirect any inquiries for this subscription ID.
+      auto result = downstream_to_upstream_.emplace(downstream_id, upstream_id);
+      (void)result;
+      RS_ASSERT(result.second);
+    }
+  } else {
+    // There exists no subscription on the topic, just create one.
+    upstream_subscriptions_.Insert(
+        parameters.namespace_id, parameters.topic_name, downstream_id);
+    subscriber_->StartSubscription(
+        downstream_id, parameters, std::move(observer));
+  }
+}
+
+void TailCollapsingSubscriber::Acknowledge(SubscriptionID downstream_id,
+                                           SequenceNumber seqno) {
+  // TODO(t10075879)
+}
+
+void TailCollapsingSubscriber::TerminateSubscription(
+    SubscriptionID downstream_id) {
+  SubscriptionID upstream_id;
+  {  // Find the subscription ID of the upstream subscription.
+    auto it = downstream_to_upstream_.find(downstream_id);
+    if (it == downstream_to_upstream_.end()) {
+      // There is no remapping set up for this subscription. It either doesn't
+      // exist or is not multiplexed, or upstream subscription is using the same
+      // ID as the downstream one.
+      upstream_id = downstream_id;
+    } else {
+      // We've found the remapping, now remove it, as the downstream
+      // subscription will be gone shortly.
+      upstream_id = it->second;
+      downstream_to_upstream_.erase(it);
+    }
+  }
+  // Find the upstream subscription's state.
+  auto* upstream_state = subscriber_->GetState(upstream_id);
+  if (!upstream_state) {
+    RS_ASSERT(upstream_id == downstream_id);
+    // The subscription just doesn't exist, this is fine.
+    return;
+  }
+
+  if (special_observers_.count(upstream_state->GetObserver()) == 0) {
+    // This subscription is unique, just unsubscribe.
+    upstream_subscriptions_.Remove(upstream_state->GetNamespace(),
+                                   upstream_state->GetTopicName(),
+                                   upstream_id);
+    subscriber_->TerminateSubscription(upstream_id);
+    upstream_state = nullptr;
+  } else {
+    // This subscription is multiplexed, we can downcast the observer.
+    auto* collapsing_observer = static_cast<detail::TailCollapsingObserver*>(
+        upstream_state->GetObserver());
+
+    auto& downstream_observers = collapsing_observer->downstream_observers_;
+    if (downstream_observers.size() > 1) {
+      // Remove the downstream subscription only, we still have another
+      // downstream subscription being served by this upstream subscription.
+      auto result = downstream_observers.erase(downstream_id);
+      (void)result;
+      RS_ASSERT(result == 1);
+    } else {
+      RS_ASSERT(downstream_observers.size() == 1);
+      RS_ASSERT(downstream_observers.count(downstream_id) == 1);
+
+      // This is the last downstream subscription on this upstream subscription,
+      // we just unsubscribe.
+      // Remove the observer pointer from the set.
+      auto result = special_observers_.erase(upstream_state->GetObserver());
+      (void)result;
+      RS_ASSERT(result);
+
+      subscriber_->TerminateSubscription(upstream_id);
+      upstream_state = nullptr;
+    }
+  }
+}
+
+Status TailCollapsingSubscriber::SaveState(
+    SubscriptionStorage::Snapshot* snapshot, size_t worker_id) {
+  // TODO(t10075879)
+  return Status::NotSupported("");
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 MultiShardSubscriber::MultiShardSubscriber(
     const ClientOptions& options,
@@ -719,10 +987,15 @@ void MultiShardSubscriber::StartSubscription(
   auto it = subscribers_.find(shard_id);
   if (it == subscribers_.end()) {
     // Subscriber is missing, create and start one.
-    std::unique_ptr<Subscriber> subscriber(new Subscriber(
+    std::unique_ptr<SubscriberIf> subscriber(new Subscriber(
         options_, event_loop_, stats_, options_.sharding->GetRouter(shard_id)));
-    // We do not start the subscriber as it's not operating on it's own, but as
-    // a part of the multi-shard one and will reuse timer events of the latter.
+    if (options_.collapse_subscriptions_to_tail) {
+      // TODO(t10132320)
+      RS_ASSERT(parameters.start_seqno == 0);
+      auto sub = static_cast<Subscriber*>(subscriber.release());
+      subscriber.reset(
+          new TailCollapsingSubscriber(std::unique_ptr<Subscriber>(sub)));
+    }
 
     // Put it back in the map so it can be resued.
     auto result = subscribers_.emplace(shard_id, std::move(subscriber));

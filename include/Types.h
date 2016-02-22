@@ -417,6 +417,9 @@ class SubscriptionParameters {
 /** Status of a subscription requested by the application. */
 class SubscriptionStatus {
  public:
+  /** A handle that identifies the subscription in question. */
+  virtual SubscriptionHandle GetSubscriptionHandle() const = 0;
+
   /** The tenant this subscription was created for. */
   virtual TenantID GetTenant() const = 0;
 

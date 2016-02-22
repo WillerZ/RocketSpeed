@@ -6,6 +6,7 @@ cpp_library(
         'publisher.cc',
         'storage/file_storage.cc',
         'subscriber.cc',
+        'topic_subscription_map.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github',

@@ -4,6 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 #define __STDC_FORMAT_MACROS
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -747,7 +748,117 @@ TEST(ClientTest, CachedConnectionsWithoutStreams) {
     copilot1.msg_loop->GetStatisticsSync().GetCounterValue(
       server_connections_key);
   ASSERT_EQ(server_connections, 0);
+}
 
+TEST(ClientTest, TailCollapsingSubscriber) {
+  std::string topic0("TailCollapsingSubscriber0"),
+      topic1("TailCollapsingSubscriber1");
+  port::Semaphore subscribe_sem, unsubscribe_sem;
+  auto copilot = MockServer({
+      {MessageType::mSubscribe,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         subscribe_sem.Post();
+       }},
+      {MessageType::mUnsubscribe,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         unsubscribe_sem.Post();
+       }},
+      {MessageType::mGoodbye,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         unsubscribe_sem.Post();
+       }},
+  });
+
+  ClientOptions options;
+  options.collapse_subscriptions_to_tail = true;
+  auto client = CreateClient(std::move(options));
+
+  auto s0 = client->Subscribe(GuestTenant, GuestNamespace, topic0, 0);
+  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
+  auto s1 = client->Subscribe(GuestTenant, GuestNamespace, topic0, 0);
+  ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
+  auto s2 = client->Subscribe(GuestTenant, GuestNamespace, topic1, 0);
+  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
+  auto s3 = client->Subscribe(GuestTenant, GuestNamespace, topic1, 0);
+  ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
+
+  client->Unsubscribe(s0);
+  ASSERT_TRUE(!unsubscribe_sem.TimedWait(negative_timeout));
+  client->Unsubscribe(s3);
+  ASSERT_TRUE(!unsubscribe_sem.TimedWait(negative_timeout));
+  client->Unsubscribe(s2);
+  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+  client->Unsubscribe(s1);
+  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+
+  auto s4 = client->Subscribe(GuestTenant, GuestNamespace, topic0, 0);
+  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
+  client->Unsubscribe(s4);
+  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+}
+
+TEST(ClientTest, TopicToSubscriptionMap) {
+  std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionState>>
+      subscriptions;
+  TenantAndNamespaceFactory factory;
+  auto add = [&](SubscriptionID sub_id, const Topic& topic_name) {
+    subscriptions.emplace(
+        sub_id,
+        folly::make_unique<SubscriptionState>(
+            ThreadCheck(),
+            SubscriptionParameters(GuestTenant, GuestNamespace, topic_name, 0),
+            folly::make_unique<Observer>(),
+            factory.GetFlyweight({GuestTenant, GuestNamespace})));
+  };
+  auto remove = [&](SubscriptionID sub_id) { subscriptions.erase(sub_id); };
+  TopicToSubscriptionMap map([&](SubscriptionID sub_id) {
+    auto it = subscriptions.find(sub_id);
+    return it == subscriptions.end() ? nullptr : it->second.get();
+  });
+  auto assert_found = [&](const Topic& topic_name, SubscriptionID sub_id) {
+    SubscriptionID found_id;
+    SubscriptionState* found_state;
+    std::tie(found_id, found_state) = map.Find(GuestNamespace, topic_name);
+    ASSERT_TRUE(found_state);
+    ASSERT_EQ(found_id, sub_id);
+  };
+  auto assert_missing = [&](const Topic& topic_name) {
+    SubscriptionState* found_state;
+    std::tie(std::ignore, found_state) = map.Find(GuestNamespace, topic_name);
+    ASSERT_TRUE(!found_state);
+  };
+
+  // Test that upsizing and downsizing works.
+  std::vector<SubscriptionID> current_set;
+  SubscriptionID next_sub_id_ = 1;
+  // Fill up the map.
+  for (size_t i = 1; i < 70; ++i) {
+    auto sub_id = next_sub_id_++;
+    auto topic = "TopicToSubscriptionMap" + std::to_string(sub_id);
+    add(sub_id, topic);
+    map.Insert(GuestNamespace, topic, sub_id);
+    current_set.push_back(sub_id);
+  }
+  // Empty the map.
+  std::shuffle(current_set.begin(), current_set.end(), std::mt19937(0x2734169));
+  while (!current_set.empty()) {
+    {  // Remove the topic and check it's gone.
+      auto sub_id = current_set.back();
+      current_set.pop_back();
+      auto topic = "TopicToSubscriptionMap" + std::to_string(sub_id);
+      assert_found(topic, sub_id);
+      // Can remove the subscription state before removing an entry from the
+      // map.
+      remove(sub_id);
+      ASSERT_TRUE(map.Remove(GuestNamespace, topic, sub_id));
+      assert_missing(topic);
+    }
+    // All remaining topics should still be there.
+    for (auto sub_id : current_set) {
+      auto topic = "TopicToSubscriptionMap" + std::to_string(sub_id);
+      assert_found(topic, sub_id);
+    }
+  }
 }
 
 }  // namespace rocketspeed
