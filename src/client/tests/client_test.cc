@@ -171,12 +171,15 @@ class ClientTest {
   }
 
   std::unique_ptr<Client> CreateClient(ClientOptions options) {
-    // Override logger and configuration.
-    options.info_log = info_log_;
-    ASSERT_TRUE(options.publisher == nullptr);
-    options.publisher = config_;
-    ASSERT_TRUE(options.sharding == nullptr);
-    options.sharding = MakeShardingStrategyFromConfig(config_);
+    if (!options.info_log) {
+      options.info_log = info_log_;
+    }
+    if (!options.publisher) {
+      options.publisher = config_;
+    }
+    if (!options.sharding) {
+      options.sharding = MakeShardingStrategyFromConfig(config_);
+    }
     std::unique_ptr<Client> client;
     ASSERT_OK(Client::Create(std::move(options), &client));
     return client;
@@ -532,11 +535,6 @@ TEST(ClientTest, Sharding) {
           subscribe_sem1.Post();
         }}});
 
-  MsgLoop::Options opts;
-  auto loop = std::make_shared<MsgLoop>(
-      env_, EnvOptions(), -1, 1, info_log_, "loop", opts);
-  ASSERT_OK(loop->Initialize());
-
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
   options.thread_selector =
@@ -546,23 +544,18 @@ TEST(ClientTest, Sharding) {
       };
   options.sharding.reset(new TestSharding2(copilot0.msg_loop->GetHostId(),
                                            copilot1.msg_loop->GetHostId()));
-
-  MsgLoopThread loop_thread(env_, loop.get(), "loop");
-  ASSERT_OK(loop->WaitUntilRunning(std::chrono::seconds(1)));
-
-  // Order of c-tors is important here: loop_thread must survive subscriber
-  MultiThreadedSubscriber subscriber(options, loop);
+  auto client = CreateClient(std::move(options));
 
   SubscriptionParameters params(GuestTenant, GuestNamespace, "", 0);
   // Subscribe on topic0 should get to the owner of the shard 0.
   params.topic_name = "topic0";
-  subscriber.Subscribe(nullptr, params, folly::make_unique<Observer>());
+  client->Subscribe(params, folly::make_unique<Observer>());
   ASSERT_TRUE(subscribe_sem0.TimedWait(positive_timeout));
   ASSERT_TRUE(!subscribe_sem1.TimedWait(negative_timeout));
 
   // Subscribe on topic1 should get to the owner of the shard 1.
   params.topic_name = "topic1";
-  subscriber.Subscribe(nullptr, params, folly::make_unique<Observer>());
+  client->Subscribe(params, folly::make_unique<Observer>());
   ASSERT_TRUE(!subscribe_sem0.TimedWait(negative_timeout));
   ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
 }

@@ -140,8 +140,8 @@ ClientImpl::~ClientImpl() {
 }
 
 void ClientImpl::Stop() {
-  // Clean up subscribers while msg loop is still running
-  subscriber_.reset();
+  // Stop the subscriber. May block.
+  subscriber_->Stop();
 
   // Stop the event loop. May block.
   msg_loop_->Stop();
@@ -310,11 +310,6 @@ Statistics ClientImpl::GetStatisticsSync() {
 }
 
 Status ClientImpl::Start() {
-  auto st = subscriber_->Start();
-  if (!st.ok()) {
-    return st;
-  }
-
   msg_loop_thread_ =
       options_.env->StartThread([this]() { msg_loop_->Run(); }, "client");
   msg_loop_thread_spawned_ = true;

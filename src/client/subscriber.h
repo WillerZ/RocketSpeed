@@ -37,7 +37,6 @@ class MessageDeliver;
 class MessageUnsubscribe;
 class MessageGoodbye;
 class MsgLoop;
-class MultiShardSubscriber;
 class EventCallback;
 class EventLoop;
 class Stream;
@@ -213,13 +212,14 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
   Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
 
  private:
+  ThreadCheck thread_check_;
+
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;
   /** An event loop object this subscriber runs on. */
   EventLoop* const event_loop_;
   /** A shared statistics. */
   std::shared_ptr<SubscriberStats> stats_;
-  ThreadCheck thread_check_;
 
   /** Time point (in us) until which client should not attempt to reconnect. */
   uint64_t backoff_until_time_;
@@ -305,11 +305,11 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
  */
 class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
  public:
-  MultiShardSubscriber(const ClientOptions& options, EventLoop* event_loop);
+  MultiShardSubscriber(const ClientOptions& options,
+                       EventLoop* event_loop,
+                       std::shared_ptr<SubscriberStats> stats);
 
   ~MultiShardSubscriber() override;
-
-  const Statistics& GetStatistics();
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
@@ -356,9 +356,16 @@ class MultiThreadedSubscriber {
   MultiThreadedSubscriber(const ClientOptions& options,
                           std::shared_ptr<MsgLoop> msg_loop);
 
-  ~MultiThreadedSubscriber();
+  /**
+   * Unsubscribes all subscriptions and prepares the subscriber for destruction.
+   * Must be called while the MsgLoop this subscriber uses is still running.
+   */
+  void Stop();
 
-  Status Start();
+  /**
+   * Must be called after the MsgLoop this subscriber runs on is stopped.
+   */
+  ~MultiThreadedSubscriber();
 
   /**
    * If flow is non-null, the overflow is communicated via flow object.
@@ -395,7 +402,9 @@ class MultiThreadedSubscriber {
   const std::shared_ptr<MsgLoop> msg_loop_;
 
   /** One multi-threaded subscriber per thread. */
-  std::vector<std::unique_ptr<MultiShardSubscriber>> subscribers_;
+  std::vector<std::unique_ptr<SubscriberIf>> subscribers_;
+  /** Statistics per subscriber. */
+  std::vector<std::shared_ptr<SubscriberStats>> statistics_;
   /** Queues to communicate with each subscriber. */
   std::vector<std::unique_ptr<ThreadLocalQueues<std::unique_ptr<Command>>>>
       subscriber_queues_;

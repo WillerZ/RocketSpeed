@@ -695,17 +695,15 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-MultiShardSubscriber::MultiShardSubscriber(const ClientOptions& options,
-                                           EventLoop* event_loop)
-: options_(options), event_loop_(event_loop) {
+MultiShardSubscriber::MultiShardSubscriber(
+    const ClientOptions& options,
+    EventLoop* event_loop,
+    std::shared_ptr<SubscriberStats> stats)
+: options_(options), event_loop_(event_loop), stats_(std::move(stats)) {
 }
 
 MultiShardSubscriber::~MultiShardSubscriber() {
   subscribers_.clear();
-}
-
-const Statistics& MultiShardSubscriber::GetStatistics() {
-  return stats_->all;
 }
 
 void MultiShardSubscriber::StartSubscription(
@@ -793,13 +791,14 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
     const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
 : options_(options), msg_loop_(std::move(msg_loop)), next_sub_id_(0) {
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
-    subscribers_.emplace_back(
-        new MultiShardSubscriber(options_, msg_loop_->GetEventLoop(i)));
+    statistics_.emplace_back(std::make_shared<SubscriberStats>("subscriber."));
+    subscribers_.emplace_back(new MultiShardSubscriber(
+        options_, msg_loop_->GetEventLoop(i), statistics_.back()));
     subscriber_queues_.emplace_back(msg_loop_->CreateThreadLocalQueues(i));
   }
 }
 
-MultiThreadedSubscriber::~MultiThreadedSubscriber() {
+void MultiThreadedSubscriber::Stop() {
   // If the subscriber's loop has not been started, we can perform cleanup the
   // calling thread.
   if (msg_loop_->IsRunning()) {
@@ -812,8 +811,27 @@ MultiThreadedSubscriber::~MultiThreadedSubscriber() {
     for (int i = 0; i < nworkers; ++i) {
       std::unique_ptr<Command> cmd(
           MakeExecuteCommand([this, &destroy_sem, &count, i]() {
-            subscriber_queues_[i].reset();
-            subscribers_[i].reset();
+            // We replace the underlying subscriber with a one that'll ignore
+            // all calls.
+            class NullSubscriber : public SubscriberIf {
+              void StartSubscription(
+                  SubscriptionID sub_id,
+                  SubscriptionParameters parameters,
+                  std::unique_ptr<Observer> observer) override{};
+
+              void Acknowledge(SubscriptionID sub_id,
+                               SequenceNumber seqno) override{};
+
+              void TerminateSubscription(SubscriptionID sub_id) override{};
+
+              bool Empty() const override { return true; };
+
+              Status SaveState(SubscriptionStorage::Snapshot* snapshot,
+                               size_t worker_id) override {
+                return Status::InternalError("Stopped");
+              };
+            };
+            subscribers_[i].reset(new NullSubscriber());
             if (--count == 0) {
               destroy_sem.Post();
             }
@@ -824,8 +842,8 @@ MultiThreadedSubscriber::~MultiThreadedSubscriber() {
   }
 }
 
-Status MultiThreadedSubscriber::Start() {
-  return Status::OK();
+MultiThreadedSubscriber::~MultiThreadedSubscriber() {
+  RS_ASSERT(!msg_loop_->IsRunning());
 }
 
 SubscriptionHandle MultiThreadedSubscriber::Subscribe(
@@ -986,7 +1004,7 @@ void MultiThreadedSubscriber::SaveSubscriptions(
 
 Statistics MultiThreadedSubscriber::GetStatisticsSync() {
   return msg_loop_->AggregateStatsSync(
-      [this](int i) -> Statistics { return subscribers_[i]->GetStatistics(); });
+      [this](int i) -> Statistics { return statistics_[i]->all; });
 }
 
 SubscriptionHandle MultiThreadedSubscriber::CreateNewHandle(size_t worker_id) {
