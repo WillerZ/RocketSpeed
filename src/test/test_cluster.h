@@ -113,12 +113,6 @@ class LocalTestCluster {
                 std::pair<LogID, LogID> log_range,
                 std::string storage_url = "");
 
-  /**
-   * Creates a PublisherRouter and ShardingStrategy,
-   * which can be used by a client to talk to the test cluster.
-   */
-  void MakePublisherSubscriberConfig(ClientOptions* options) const;
-
   Pilot* GetPilot() {
     return pilot_;
   }
@@ -148,11 +142,22 @@ class LocalTestCluster {
   // Returns the environment used by the TestCluster
   Env* GetEnv() const { return env_; }
 
-  // Create a new client for the test cluster.
   Status CreateClient(std::unique_ptr<ClientImpl>* client,
                       bool is_internal);
 
+  /**
+   * Creates a new client for the test cluster.
+   * Sets default PublisherRouter and ShardingStrategy.
+   */
   Status CreateClient(std::unique_ptr<Client>* client);
+
+  /**
+   * Creates a new client for the test cluster with options.
+   * If PublisherRouter and ShardingStrategy are not set, it sets them to
+   * default.
+   */
+  Status CreateClient(std::unique_ptr<Client>* client,
+                      ClientOptions options);
 
  private:
   void Initialize(Options opts);

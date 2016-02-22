@@ -75,11 +75,8 @@ TEST(IntegrationTest, OneMessage) {
   };
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -181,11 +178,8 @@ TEST(IntegrationTest, TrimAll) {
   };
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -482,11 +476,8 @@ TEST(IntegrationTest, TrimFirst) {
   };
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Publish messages.
   for (int i = 1; i < num_publish; ++i) {
@@ -538,11 +529,8 @@ TEST(IntegrationTest, TrimGapHandling) {
   port::Semaphore recv_sem[2];
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Publish messages.
   SequenceNumber seqnos[num_messages];
@@ -629,11 +617,8 @@ TEST(IntegrationTest, SequenceNumberZero) {
   };
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
   client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Send some messages and wait for the acks.
@@ -836,13 +821,11 @@ TEST(IntegrationTest, LostConnection) {
 
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster->MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   // We do this to save some time waiting for client to reconnect.
   options.timer_period = std::chrono::milliseconds(1);
   options.backoff_distribution = [](ClientRNG*) { return 0.0; };
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster->CreateClient(&client, std::move(options)));
   client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Listen on a topic.
@@ -914,11 +897,8 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   MsgId message_id = msgid_generator.Generate();
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -1009,11 +989,8 @@ TEST(IntegrationTest, NewControlTower) {
       [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); };
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
   client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Send a message.
@@ -1103,12 +1080,10 @@ TEST(IntegrationTest, SubscriptionStorage) {
       test::TmpDir() + "/SubscriptionStorage-file_storage_data";
   // Create RocketSpeed client.
   ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   ASSERT_OK(SubscriptionStorage::File(
       options.env, options.info_log, file_path, &options.storage));
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client, std::move(options)));
 
   // Create some subscriptions.
   std::vector<SubscriptionParameters> expected = {
@@ -1162,18 +1137,15 @@ TEST(IntegrationTest, SubscriptionManagement) {
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
-  // Create RocketSpeed client.
+  // Create RocketSpeed clients.
   enum { kNumClients = 2 };
-  ClientOptions options[kNumClients];
   std::vector<std::string> inbox[kNumClients];
   std::mutex inbox_lock[kNumClients];
   port::Semaphore checkpoint[kNumClients];
   std::unique_ptr<Client> client[kNumClients];
 
   for (int i = 0; i < kNumClients; ++i) {
-    cluster.MakePublisherSubscriberConfig(&options[i]);
-    options[i].info_log = info_log;
-    ASSERT_OK(Client::Create(std::move(options[i]), &client[i]));
+    ASSERT_OK(cluster.CreateClient(&client[i]));
     client[i]->SetDefaultCallbacks(
         nullptr,
         [&, i](std::unique_ptr<MessageReceived>& mr) {
@@ -1438,11 +1410,8 @@ TEST(IntegrationTest, LogAvailability) {
   ASSERT_OK(cluster.GetCopilot()->UpdateTowerRouter(std::move(new_router)));
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Listen on many topics (to ensure at least one goes to each tower).
   port::Semaphore msg_received;
@@ -1551,11 +1520,8 @@ TEST(IntegrationTest, TowerDeathReconnect) {
       [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); };
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
   client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Listen for messages.
@@ -1650,17 +1616,11 @@ TEST(IntegrationTest, CopilotDeath) {
   ASSERT_OK(pilot_cluster.GetStatus());
 
   // Create RocketSpeed clients.
-  ClientOptions sub_options;
-  cluster.MakePublisherSubscriberConfig(&sub_options);
-  sub_options.info_log = info_log;
   std::unique_ptr<Client> sub_client;
-  ASSERT_OK(Client::Create(std::move(sub_options), &sub_client));
+  ASSERT_OK(cluster.CreateClient(&sub_client));
 
-  ClientOptions pub_options;
-  cluster.MakePublisherSubscriberConfig(&pub_options);
-  pub_options.info_log = info_log;
   std::unique_ptr<Client> pub_client;
-  ASSERT_OK(Client::Create(std::move(pub_options), &pub_client));
+  ASSERT_OK(cluster.CreateClient(&pub_client));
 
   // Listen for messages.
   port::Semaphore msg_received;
@@ -1778,11 +1738,8 @@ TEST(IntegrationTest, ControlTowerCache) {
   };
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
@@ -1969,11 +1926,8 @@ TEST(IntegrationTest, ReadingFromCache) {
     MsgId message_id = msgid_generator.Generate();
 
     // Create RocketSpeed client.
-    ClientOptions options;
-    cluster.MakePublisherSubscriberConfig(&options);
-    options.info_log = info_log;
     std::unique_ptr<Client> client;
-    ASSERT_OK(Client::Create(std::move(options), &client));
+    ASSERT_OK(cluster.CreateClient(&client));
 
     // Send a message.
     port::Semaphore msg_written;
@@ -2124,11 +2078,8 @@ TEST(IntegrationTest, TowerRebalance) {
   }
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Listen on many topics (to ensure at least one goes to each tower).
   enum { kNumTopics = 40 };
@@ -2211,11 +2162,8 @@ TEST(IntegrationTest, ReaderRestarts) {
   ASSERT_OK(cluster.GetStatus());
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Subscribe to all topics.
   port::Semaphore msg_received;
@@ -2269,11 +2217,8 @@ TEST(IntegrationTest, VirtualReaderMerge) {
   ASSERT_OK(cluster.GetStatus());
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Publish a message to find the current seqno for the topic.
   SequenceNumber seqno;

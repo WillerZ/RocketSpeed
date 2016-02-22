@@ -291,21 +291,42 @@ void LocalTestCluster::Initialize(Options opts) {
 Status
 LocalTestCluster::CreateClient(std::unique_ptr<ClientImpl>* client,
                                bool is_internal) {
-  std::unique_ptr<ClientImpl> cl;
-  ClientOptions client_options;
-  client_options.info_log = info_log_;
-  MakePublisherSubscriberConfig(&client_options);
-  Status status = ClientImpl::Create(std::move(client_options),
-                                     client, is_internal);
-  return status;
+  ClientOptions options;
+  options.info_log = info_log_;
+
+  HostId pilot = pilot_ ? pilot_->GetHostId() : HostId();
+  options.publisher = std::make_shared<FixedPubilsherRouter>(pilot);
+
+  HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
+  options.sharding = folly::make_unique<FixedShardingStrategy>(copilot);
+
+  return ClientImpl::Create(std::move(options), client, is_internal);
 }
 
 Status
 LocalTestCluster::CreateClient(std::unique_ptr<Client>* client) {
-  ClientOptions client_options;
-  client_options.info_log = info_log_;
-  MakePublisherSubscriberConfig(&client_options);
-  return Client::Create(std::move(client_options), client);
+  return LocalTestCluster::CreateClient(client, ClientOptions());
+}
+
+Status
+LocalTestCluster::CreateClient(std::unique_ptr<Client>* client,
+                               ClientOptions options) {
+
+  if (!options.info_log) {
+    options.info_log = info_log_;
+  }
+
+  if (!options.publisher) {
+    HostId pilot = pilot_ ? pilot_->GetHostId() : HostId();
+    options.publisher = std::make_shared<FixedPubilsherRouter>(pilot);
+  }
+
+  if (!options.sharding) {
+    HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
+    options.sharding = folly::make_unique<FixedShardingStrategy>(copilot);
+  }
+
+  return Client::Create(std::move(options), client);
 }
 
 LocalTestCluster::~LocalTestCluster() {
@@ -372,15 +393,6 @@ std::shared_ptr<LogStorage> LocalTestCluster::GetLogStorage() {
 
 std::shared_ptr<LogRouter> LocalTestCluster::GetLogRouter() {
   return storage_->GetLogRouter();
-}
-
-void LocalTestCluster::MakePublisherSubscriberConfig(
-    ClientOptions* options) const {
-  HostId pilot = pilot_ ? pilot_->GetHostId() : HostId();
-  options->publisher = std::make_shared<FixedPubilsherRouter>(pilot);
-
-  HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
-  options->sharding = folly::make_unique<FixedShardingStrategy>(copilot);
 }
 
 }  // namespace rocketspeed

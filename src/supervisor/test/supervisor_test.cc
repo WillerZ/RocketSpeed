@@ -103,11 +103,8 @@ TEST(SupervisorTest, TowerLog) {
   ASSERT_OK(cluster.GetStatus());
 
   // Create RocketSpeed client.
-  ClientOptions options;
-  cluster.MakePublisherSubscriberConfig(&options);
-  options.info_log = info_log_;
   std::unique_ptr<Client> client;
-  ASSERT_OK(Client::Create(std::move(options), &client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Publish and subscribe
   SequenceNumber seqno;
