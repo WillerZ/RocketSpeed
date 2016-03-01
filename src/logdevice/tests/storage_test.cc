@@ -108,7 +108,7 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
 
   // Create RocketSpeed client.
   std::unique_ptr<Client> client;
-  ASSERT_OK(cluster. CreateClient(client));
+  ASSERT_OK(cluster.CreateClient(&client));
 
   // Send a message.
   auto ps = client->Publish(GuestTenant,
