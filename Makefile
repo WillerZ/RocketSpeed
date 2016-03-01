@@ -220,7 +220,7 @@ clean:
 	-find src -name "*.[od]" -exec rm {} \;
 	-find external/libevent-2.0.21/ldevent -name "*.[od]" -exec rm {} \;
 	-find src -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
-	-find src/java -name "*.class" -exec rm {} \;
+	-find src/main/java src/test/java src-gen/djinni/java -name "*.class" -exec rm {} \;
 	-rm -f *.jar
 
 tags:
