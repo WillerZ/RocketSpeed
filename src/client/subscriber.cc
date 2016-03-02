@@ -235,14 +235,6 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
   return true;
 }
 
-void SubscriptionState::Acknowledge(SequenceNumber seqno) {
-  ThreadCheck::Check();
-
-  if (last_acked_seqno_ < seqno) {
-    last_acked_seqno_ = seqno;
-  }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 class SubscriberStats {
  public:
@@ -278,12 +270,12 @@ Subscriber::Subscriber(const ClientOptions& options,
   // It must register synchronously, otherwise MultiThreadedSubscriber
   // can destroy object before the registration actually could be completed.
   std::function<void(Flow*, SubscriptionID)> cb =
-    [this](Flow* flow, SubscriptionID sub_id) {
-      auto it = subscriptions_.find(sub_id);
-      SubscriptionState* sub_state =
-        it == subscriptions_.end() ? nullptr : &it->second;
-      ProcessPendingSubscription(flow, sub_id, sub_state);
-    };
+      [this](Flow* flow, SubscriptionID sub_id) {
+        auto it = subscriptions_.find(sub_id);
+        SubscriptionState* sub_state =
+            it == subscriptions_.end() ? nullptr : &it->second;
+        ProcessPendingSubscription(flow, sub_id, sub_state);
+      };
   event_loop_->GetFlowControl()->Register(&pending_subscriptions_, cb);
 
   // This could return nullptr only due to malloc failure.
@@ -300,7 +292,7 @@ Subscriber::~Subscriber() {
 
 void Subscriber::CheckInvariants() {
   RS_ASSERT(server_stream_ ||
-      (!server_stream_ && pending_subscriptions_.Empty()));
+            (!server_stream_ && pending_subscriptions_.Empty()));
 }
 
 void Subscriber::StartSubscription(SubscriptionID sub_id,
@@ -340,17 +332,14 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
 
 void Subscriber::Acknowledge(SubscriptionID sub_id,
                              SequenceNumber acked_seqno) {
-  // Find corresponding subscription state.
-  auto it = subscriptions_.find(sub_id);
-  if (it == subscriptions_.end()) {
+  if (subscriptions_.count(sub_id) == 0) {
     LOG_WARN(options_.info_log,
              "Cannot acknowledge missing subscription ID (%" PRIu64 ")",
              sub_id);
     return;
   }
 
-  // Record acknowledgement in the state.
-  it->second.Acknowledge(acked_seqno);
+  last_acks_map_[sub_id] = acked_seqno;
 }
 
 void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
@@ -368,6 +357,8 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
   SubscriptionState sub_state(std::move(it->second));
   subscriptions_.erase(it);
 
+  last_acks_map_.erase(sub_id);
+
   // Update subscription state, which announces subscription status to the
   // application.
   sub_state.Terminate(
@@ -377,11 +368,16 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
   pending_subscriptions_.Add(sub_id);
 }
 
+SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
+  auto it = last_acks_map_.find(sub_id);
+  return it == last_acks_map_.end() ? 0 : it->second;
+}
+
 Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
                              size_t worker_id) {
   for (const auto& entry : subscriptions_) {
     const SubscriptionState* sub_state = &entry.second;
-    SequenceNumber start_seqno = sub_state->GetLastAcknowledged();
+    SequenceNumber start_seqno = GetLastAcknowledged(entry.first);
     // Subscription storage stores parameters of subscribe requests that shall
     // be reissued, therefore we must persiste the next sequence number.
     if (start_seqno > 0) {
@@ -477,8 +473,8 @@ void Subscriber::RestoreServerStream() {
         options_.subscription_rate_limit *
         duration_cast<milliseconds>(options_.timer_period).count() / 1000);
     limited_server_stream_ =
-      folly::make_unique<RateLimiterSink<SharedTimestampedString>>(
-          actual_rate, options_.timer_period, server_stream_.get());
+        folly::make_unique<RateLimiterSink<SharedTimestampedString>>(
+            actual_rate, options_.timer_period, server_stream_.get());
     LOG_INFO(options_.info_log,
              "Applied subscription rate limit %zu per second (%zu per %lld ms)",
              options_.subscription_rate_limit, actual_rate,
@@ -650,6 +646,7 @@ void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
   it->second.Terminate(options_.info_log, sub_id, unsubscribe->GetReason());
   // Remove the corresponding state entry.
   subscriptions_.erase(it);
+  last_acks_map_.erase(sub_id);
 }
 
 void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {

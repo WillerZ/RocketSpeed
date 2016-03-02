@@ -121,12 +121,7 @@ class SubscriptionState : ThreadCheck, NonCopyable {
   , observer_(std::move(observer))
   , tenant_and_namespace_(std::move(tenant_and_namespace))
   , topic_name_(std::move(parameters.topic_name))
-  , expected_seqno_(parameters.start_seqno)
-  // If we were to restore state from subscription storage before the
-  // subscription advances, we would restore from the next sequence number,
-  // that is why we persist the previous one.
-  , last_acked_seqno_(parameters.start_seqno == 0 ? 0 : parameters.start_seqno -
-                                                            1) {
+  , expected_seqno_(parameters.start_seqno) {
     RS_ASSERT(!!observer_);
   }
 
@@ -160,15 +155,6 @@ class SubscriptionState : ThreadCheck, NonCopyable {
     return expected_seqno_;
   }
 
-  /** Marks provided sequence number as acknowledged. */
-  void Acknowledge(SequenceNumber seqno);
-
-  /** Returns sequnce number of last acknowledged message. */
-  SequenceNumber GetLastAcknowledged() const {
-    ThreadCheck::Check();
-    return last_acked_seqno_;
-  }
-
  private:
   // Note: make sure the first data member has no common empty base classes
   //       with SubscriptionState. Otherwise compiler won't be able to perform
@@ -185,8 +171,6 @@ class SubscriptionState : ThreadCheck, NonCopyable {
 
   /** Next expected sequence number on this subscription. */
   SequenceNumber expected_seqno_;
-  /** Seqence number of the last acknowledged message. */
-  SequenceNumber last_acked_seqno_;
 
   /** Returns true iff message arrived in order and not duplicated. */
   bool ProcessMessage(const std::shared_ptr<Logger>& info_log,
@@ -247,7 +231,7 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
   /** If subscription_rate_limit is set in ClientOptions,
    * the object holds stream decorator which applies rate limiting policy */
   std::unique_ptr<RateLimiterSink<SharedTimestampedString>>
-    limited_server_stream_;
+      limited_server_stream_;
 
   /** The current server host. */
   HostId server_host_;
@@ -262,6 +246,14 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
 
   /** All subscriptions served by this worker. */
   std::unordered_map<SubscriptionID, SubscriptionState> subscriptions_;
+
+  /** All subscriptions served by this worker.
+   *
+   * If we were to restore state from subscription storage before the
+   * subscription advances, we would restore from the next sequence number,
+   * that is why we persist the previous one.
+   */
+  std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
   /** Start timer callback **/
   std::unique_ptr<EventCallback> start_timer_callback_;
@@ -308,6 +300,10 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
 
   /** Assert invariants, this is noop for release build */
   void CheckInvariants();
+
+  /** Returns sequence number of last acknowledged message about
+   * the given subscription id. */
+  SequenceNumber GetLastAcknowledged(SubscriptionID sub_id) const;
 };
 
 namespace detail {
