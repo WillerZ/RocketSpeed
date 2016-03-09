@@ -199,7 +199,8 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
 
   bool Empty() const override { return subscriptions_.empty(); }
 
-  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
+  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id)
+    override;
 
   SubscriptionState* GetState(SubscriptionID sub_id) {
     auto it = subscriptions_.find(sub_id);
@@ -329,7 +330,8 @@ class TailCollapsingSubscriber : public SubscriberIf {
 
   bool Empty() const override { return subscriber_->Empty(); }
 
-  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id);
+  Status SaveState(SubscriptionStorage::Snapshot* snapshot, size_t worker_id)
+    override;
 
  private:
   friend class detail::TailCollapsingObserver;
