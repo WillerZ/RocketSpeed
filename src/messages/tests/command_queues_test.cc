@@ -110,6 +110,39 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
   loop_thread.join();
 }
 
+
+TEST(CommandQueueTest, WriteHistogram) {
+  EventLoop loop(EventLoop::Options(), std::move(stream_allocator_));
+  EventLoop::Runner runner(&loop);
+  ASSERT_OK(runner.GetStatus());
+
+  // Simple unattached queue.
+  Queue<int> queue(std::make_shared<NullLogger>(),
+                   std::make_shared<QueueStats>("test"),
+                   100);
+
+  const int kNumMessages = 5;
+  for(int i = 0; i < kNumMessages; i++){
+    queue.Write(i);
+  }
+
+  port::Semaphore sem;
+  queue.RegisterReadCallback(
+    &loop,
+    [&] (int x) {
+      if (x == kNumMessages - 1) {
+        // This is the last message, so check stats now.
+        auto histogram = queue.GetStats().size_on_read;
+        ASSERT_EQ(histogram->GetNumSamples(), kNumMessages);
+        ASSERT_LT(histogram->Percentile(0.1), 1);
+        ASSERT_GT(histogram->Percentile(0.9), kNumMessages - 2);
+        sem.Post();
+      }
+      return true;
+    });
+  queue.SetReadEnabled(&loop, true);
+  sem.Wait();
+}
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

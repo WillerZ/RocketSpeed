@@ -48,6 +48,7 @@ class QueueStats {
 
   Statistics all;
   Histogram* batched_read_size;
+  Histogram* size_on_read;
   Histogram* response_latency;
   Counter* num_reads;
   Counter* eventfd_num_writes;
@@ -103,6 +104,8 @@ class Queue : public Source<Item>, public SinkWithOverflow<Item> {
                                      std::move(callback));
   }
 
+  const QueueStats& GetStats() const { return *stats_; }
+
  private:
   friend class BatchedRead<Item>;
 
@@ -138,7 +141,7 @@ class CommandQueue : public Queue<std::unique_ptr<Command>> {
 
 /** Maximum number of elements to read from a queue in a batch. */
 constexpr size_t kMaxQueueBatchReadSize = 100;
-
+constexpr size_t kMaxQueueSize = 1000000;
 /**
  * Utility for efficiently reading from a queue in batches. Optimized for
  * minimizing eventfd reads and writes.
@@ -305,6 +308,8 @@ bool BatchedRead<Item>::Read(Item& item) {
     auto delta = now - entry.timestamp;
     auto micros = std::chrono::duration_cast<std::chrono::microseconds>(delta);
     queue_->stats_->response_latency->Record(micros.count());
+    queue_->stats_->size_on_read->Record(queue_->GetSize());
+
     item = std::move(entry.item);
     --pending_reads_;
     ++commands_read_;

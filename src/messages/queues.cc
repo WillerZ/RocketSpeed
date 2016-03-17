@@ -17,6 +17,8 @@ namespace rocketspeed {
 QueueStats::QueueStats(const std::string& prefix) {
   batched_read_size = all.AddHistogram(
       prefix + ".batched_read_size", 0, kMaxQueueBatchReadSize, 1, 1.1f);
+  size_on_read = all.AddHistogram(
+      prefix + ".size_on_read", 0, kMaxQueueSize, 1, 1.1f);
   response_latency = all.AddLatency(prefix + ".response_latency");
   num_reads = all.AddCounter(prefix + ".num_reads");
   eventfd_num_writes = all.AddCounter(prefix + ".eventfd_num_writes");
