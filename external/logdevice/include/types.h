@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <climits>
+#include <utility>
 
 #include "logdevice/include/strong_typedef.h"
 
@@ -12,9 +13,12 @@ namespace facebook { namespace logdevice {
 LOGDEVICE_STRONG_TYPEDEF(uint64_t, logid_t);
 
 constexpr logid_t LOGID_INVALID(0);
+constexpr logid_t LOGID_INVALID2(~0);
 
 constexpr size_t LOGID_BITS (62);         // maximum number of bits in a log id
 constexpr logid_t LOGID_MAX((1ull<<LOGID_BITS)-1);  //maximum valid logid value
+
+typedef std::pair<logid_t, logid_t> logid_range_t;
 
 // Log sequence numbers are 64-bit unsigned ints.
 typedef uint64_t lsn_t;

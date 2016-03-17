@@ -62,6 +62,12 @@ class Reader {
   bool isReading(logid_t log_id) const;
 
   /**
+   * Checks if any log is being read.  Can be used to find out if the end was
+   * reached for *all* logs that were being read.
+   */
+  bool isReadingAny() const;
+
+  /**
    * Sets the limit on how long read() calls may wait for records to become
    * available.  A timeout of -1 means no limit (infinite timeout).  A timeout
    * of 0 means no waiting (nonblocking reads).

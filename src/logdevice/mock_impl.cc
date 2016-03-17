@@ -5,10 +5,10 @@
 //
 #pragma GCC diagnostic ignored "-Wshadow"
 
-#include "logdevice/include/Client.h"
 #include <algorithm>
 #include <chrono>
 #include <future>
+#include <map>
 #include <memory>
 #include <random>
 #include <string>
@@ -16,6 +16,8 @@
 #include "include/Assert.h"
 #include "include/Slice.h"
 #include "include/Env.h"
+#include "logdevice/include/Client.h"
+#include "logdevice/include/Err.h"
 #include "logdevice/include/Record.h"
 
 #include "src/messages/msg_loop.h"
@@ -26,10 +28,19 @@ __thread E err = E::OK;
 
 // We don't use errorStrings, so don't care about the contents, but we
 // need to define these for LogDevice.
-EnumMap<E, ErrorCodeInfo> errorStrings;
+ErrorCodeStringMap errorStrings;
 
 template <>
-void EnumMap<E, ErrorCodeInfo>::setValues() {
+void ErrorCodeStringMap::setValues() {
+}
+
+template <>
+const ErrorCodeInfo& ErrorCodeStringMap::invalidValue() {
+  static const ErrorCodeInfo invalidErrorCodeInfo {
+    "UNKNOWN",
+    "invalid error code"
+  };
+  return invalidErrorCodeInfo;
 }
 
 struct LogIDHash {
@@ -355,7 +366,8 @@ int Client::trimSync(logid_t logid, lsn_t lsn) noexcept {
 
 lsn_t Client::findTimeSync(logid_t logid,
                            std::chrono::milliseconds timestamp,
-                           Status *status_out) noexcept {
+                           Status *status_out,
+                           FindTimeAccuracy) noexcept {
   lsn_t result;
   rocketspeed::port::Semaphore sem;
   int r = findTime(logid, timestamp,
@@ -374,7 +386,8 @@ lsn_t Client::findTimeSync(logid_t logid,
 
 int Client::findTime(logid_t logid,
                      std::chrono::milliseconds timestamp,
-                     find_time_callback_t cb) noexcept {
+                     find_time_callback_t cb,
+                     FindTimeAccuracy) noexcept {
   return TheDataStore().findTime(logid, timestamp, std::move(cb));
 }
 

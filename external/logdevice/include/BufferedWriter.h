@@ -83,13 +83,21 @@ class BufferedWriter {
                            ContextSet contexts,
                            Status status) { }
 
+    enum class RetryDecision { ALLOW, DENY };
+
     /**
      * Called when a batch of records for the same log failed to be appended,
-     * but BufferedWriter is going to retry.
+     * but BufferedWriter is planning to retry.
+     *
+     * If ALLOW is returned, BufferedWriter will proceed to schedule the retry
+     * for this batch.  If DENY is returned, BufferedWriter will not retry and
+     * will instead invoke onFailure() shortly after.
      */
-    virtual void onRetry(logid_t log_id,
-                         const ContextSet& contexts,
-                         Status status) { }
+    virtual RetryDecision onRetry(logid_t log_id,
+                                  const ContextSet& contexts,
+                                  Status status) {
+      return RetryDecision::ALLOW;
+    }
 
     virtual ~AppendCallback() { }
   };
@@ -117,7 +125,9 @@ class BufferedWriter {
       INDEPENDENT,
     };
     RetryMode retry_mode = RetryMode::NONE;
-    // Max number of times to retry (negative for no limit)
+    // Max number of times to retry (negative for no limit).  You may also
+    // manually track retries and have onRetry() return DENY to stop retrying
+    // a particular batch.
     int retry_count = -1;
     // Initial delay before retrying (negative for a default 2x the append
     // timeout).  Subsequent retries are made after successively larger delays
@@ -128,6 +138,7 @@ class BufferedWriter {
 
     enum class Compression {
       NONE = 0x00,
+      ZSTD = 0x01,
       LZ4 = 0x04,
       LZ4_HC = 0x05,
     };
@@ -143,6 +154,12 @@ class BufferedWriter {
     //
     // Negative for no limit.
     int32_t memory_limit_mb = -1;
+
+    // Should the number of records in the batch be included in the payload?
+    // TODO (#7720785): this should be always enabled, but may break readers
+    // built using an older version of the library that doesn't understand
+    // the new format.
+    bool include_batch_size = false;
   };
 
   /**

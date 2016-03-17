@@ -25,6 +25,10 @@ namespace facebook { namespace logdevice {
 
 class ClientImpl; // private implementation
 
+// Enum which is used to determine accuracy of findTime in order to get best
+// accuracy-speed trade off for each specific use case. See findTimeSync() for
+// documentation about each accuracy mode.
+enum class FindTimeAccuracy { STRICT, ALLOW_SMALLER_LSN };
 
 /**
  * Type of callback that is called when a non-blocking append completes.
@@ -48,6 +52,31 @@ typedef std::function<void(Status st, const DataRecord& r)> append_callback_t;
  * See findTime() and findTimeSync() for docs.
  */
 typedef std::function<void(Status, lsn_t result)> find_time_callback_t;
+
+
+/**
+ * Type of callback that is called when a non-blocking trim() request
+ * completes.
+ *
+ * See trim() and trimSync() for docs.
+ */
+typedef std::function<void(Status)> trim_callback_t;
+
+/**
+ * Type of callback that is called when a non-blocking isLogEmpty() request
+ * completes.
+ *
+ * See isLogEmpty() and isLogEmptySync() for docs.
+ */
+typedef std::function<void(Status status, bool empty)> is_empty_callback_t;
+
+/**
+ * Type of callback that is called when a non-blocking getTailLSN() request
+ * completes.
+ *
+ * See getTailLSN() and getTailLSNSync() for docs.
+ */
+typedef std::function<void(Status status, lsn_t)> get_tail_lsn_callback_t;
 
 
 class Client {
@@ -76,7 +105,8 @@ public:
    * @return on success, a fully constructed LogDevice client object for the
    *         specified LogDevice cluster. On failure nullptr is returned
    *         and logdevice::err is set to
-   *           INVALID_PARAM    invalid config URL or cluster name
+   *           INVALID_PARAM    invalid config URL, cluster name or credentials
+   *                            is too log.
    *           TIMEDOUT         timed out while trying to get config
    *           FILE_OPEN        config file could not be opened
    *           FILE_READ        error reading config file
@@ -113,6 +143,7 @@ public:
    *    TIMEDOUT       timeout expired before operation status was known. The
    *                   record may or may not be appended. The timeout
    *                   used is from this Client object.
+   *    NOTFOUND       The logid was not found in the config.
    *    NOSEQUENCER    The client has been unable to locate a sequencer for
    *                   this log. For example, the server that was previously
    *                   sequencing this log has crashed or is shutting down,
@@ -123,6 +154,8 @@ public:
    *                    - invalid address in cluster config
    *                    - logdeviced running the sequencer is down or
    *                      unreachable
+   *                    - mismatching cluster name between client and sequencer
+   *                    - mismatching destination and receiving node ids
    *    PEER_CLOSED    Sequencer closed connection after we sent the append
    *                   request but before we got a reply. Record may or
    *                   may not be appended.
@@ -142,12 +175,16 @@ public:
    *                   free disk space. Record was not appended.
    *    OVERLOADED     too many nodes on the storage cluster are
    *                   overloaded. Record was not appended.
+   *    DISABLED       too many nodes on the storage cluster are in error state
+   *                   or rebuidling. Record was not appended.
    *    ACCESS         the service denied access to this client based on
    *                   credentials presented
    *    SHUTDOWN       the logdevice::Client instance was destroyed. Request
    *                   was not sent.
    *    INTERNAL       an internal error has been detected, check logs
    *    INVALID_PARAM  logid is invalid
+   *    BADPAYLOAD     the checksum bits do not correspond with the Payload
+   *                   data. In this case the record is not appended.
    */
   lsn_t appendSync(logid_t logid, std::string payload) noexcept;
 
@@ -273,7 +310,8 @@ public:
    * 'lsn' are no longer accessible to LogDevice clients.
    *
    * This method is synchronous -- it blocks until all storage nodes
-   * acknowledge the trim command, or the timeout occurs.
+   * acknowledge the trim command, the timeout occurs, or the provided
+   * credentials are invalid.
    *
    * @param logid ID of log to trim
    * @param lsn   Trim the log up to this LSN (inclusive), should not be larger
@@ -288,8 +326,33 @@ public:
    *                          nodes might not have trimmed their part of the
    *                          log, so records with LSNs less than or equal to
    *                          'lsn' might still be delivered).
+   *    E::ACCESS             Client has invalid credentials or client does not
+   *                          have the correct permissions to perform the trim
+   *                          operation.
    */
   int trimSync(logid_t logid, lsn_t lsn) noexcept;
+
+
+  /**
+   * A non-blocking version of trimSync().
+   *
+   * @return If the request was successfully submitted for processing, returns
+   * 0.  In that case, the supplied callback is guaranteed to be called at a
+   * later time with the outcome of the request.  See trimSync() for
+   * documentation for the result.  Otherwise, returns -1.
+   */
+  int trim(logid_t logid, lsn_t lsn, trim_callback_t cb) noexcept;
+
+
+  /**
+   * Supply a write token.  Without this, writes to any logs configured to
+   * require a write token will fail.
+   *
+   * Write tokens are a safety feature intended to reduce the risk of
+   * accidentally writing into the wrong log, particularly in multitenant
+   * deployments.
+   */
+  void addWriteToken(std::string) noexcept;
 
 
   /**
@@ -327,6 +390,22 @@ public:
    * @param status_out  if this argument is nullptr, it is ignored. Otherwise,
    *                    *status_out will hold the outcome of the request as
    *                    described below.
+   * @param accuracy   Accuracy option specify how accurate the result of
+   *                   findTime() has to be. It allows to choose best
+   *                   accuracy-speed trade off for each specific use case.
+   *                   Accuracy can be:
+   *  STRICT               In this case findTime() will do binary search over
+   *                       partitions in memory + binary search inside partition
+   *                       on disk. Result will be accurate but execution is
+   *                       slower than in ALLOW_SMALLER_LSN mode.
+   *  ALLOW_SMALLER_LSN    findTime() will only perform binary search on the
+   *                       partition directory in order to find the newest
+   *                       partition whose timestamp in the directory is
+   *                       <= given timestamp. Then it will return first lsn of
+   *                       given log_id in this partition. The result lsn can be
+   *                       several minutes earlier than biggest lsn which
+   *                       timestamp is <= given timestamp but execution will be
+   *                       faster than in STRICT mode.
    *
    * @return
    * Returns LSN_INVALID on complete failure or an LSN as described above.  If
@@ -342,9 +421,11 @@ public:
    * - E::FAILED: No storage nodes responded, or another critical failure.
    * - E::SHUTDOWN: Client was destroyed while the request was processing.
    */
-  lsn_t findTimeSync(logid_t logid,
-                     std::chrono::milliseconds timestamp,
-                     Status *status_out = nullptr) noexcept;
+  lsn_t findTimeSync(
+    logid_t logid,
+    std::chrono::milliseconds timestamp,
+    Status *status_out = nullptr,
+    FindTimeAccuracy accuracy = FindTimeAccuracy::STRICT) noexcept;
 
 
   /**
@@ -355,10 +436,91 @@ public:
    * later time with the outcome of the request.  See findTimeSync() for
    * documentation for the result.  Otherwise, returns -1.
    */
-  int findTime(logid_t logid,
-               std::chrono::milliseconds timestamp,
-               find_time_callback_t cb) noexcept;
+  int findTime(
+    logid_t logid,
+    std::chrono::milliseconds timestamp,
+    find_time_callback_t cb,
+    FindTimeAccuracy accuracy = FindTimeAccuracy::STRICT) noexcept;
 
+
+  /**
+   * Checks wether a particular log is empty. This method is blocking until the
+   * state can be determined or an error occurred.
+   *
+   * @param logid is the ID of the log to check
+   * @param empty will be set by this method to either true or false depending
+   *        on the responses received by storage nodes.
+   * @return 0 if the request was successful, -1 otherwise and sets
+   *         logdevice::err to:
+   *     INVALID_PARAM  if the log ID is invalid,
+   *     PARTIAL        if some errors were encountered,
+   *     FAILED         if the state of the log could not be determined.
+   *     NOBUFS         if too many requests are pending to be delivered to
+   *                    Workers
+   *     SHUTDOWN       Processor is shutting down
+   *     INTERNAL       if attempt to write into the request pipe of a
+   *                    Worker failed
+   */
+  int isLogEmptySync(logid_t logid, bool *empty) noexcept;
+
+  /**
+   * A non-blocking version of isLogEmptySync().
+   *
+   * @param logid is the ID of the log to check
+   * @param cb will be called once the state of the log is determined or an
+   *        error occurred. The possible status values are the same as for
+   *        isLogEmptySync().
+   * @return 0 if the request was successfuly scheduled, -1 otherwise.
+   */
+  int isLogEmpty(logid_t logid, is_empty_callback_t cb) noexcept;
+
+  /**
+   * Return the sequence number that points to the tail of log `logid`. The
+   * returned LSN is guaranteed to be higher or equal than the LSN of any record
+   * that was successfully acknowledged as appended prior to this call.
+   *
+   * Note that there can be benign gaps in the numbering sequence of a log. As
+   * such, it is not guaranteed that a record was assigned the returned
+   * sequencer number.
+   *
+   * One can read the full content of a log by creating a reader to read from
+   * LSN_OLDEST until the LSN returned by this method. Note that it is not
+   * guaranteed that the full content of the log is immediately available for
+   * reading.
+   *
+   * This method is blocking until the tail LSN could be determined, the timeout
+   * occurs, or an error occurred. The timeout is specified in the `create()`
+   * method and can be overridden with `setTimeout()`.
+   *
+   * @param logid is the ID of the log for which to find the tail LSN;
+   * @return tail LSN issued by the sequencer of log `logid` or LSN_INVALID on
+   *              error and err is set to:
+   *     E::TIMEDOUT    We could not get a reply from a sequencer in
+   *                    time;
+   *     CONNFAILED     Unable to reach a sequencer node;
+   *     NOSEQUENCER    Failed to determine which node runs the sequencer;
+   *     E::FAILED      Sequencer activation failed for some other
+   *                    reason e.g. due to E::SYSLIMIT, E::NOBUFS,
+   *                    E::TOOMANY(too many activations), E::NOTFOUND(log-id not
+   *                    found);
+   *     NOBUFS         if too many requests are pending to be delivered to
+   *                    Workers;
+   *     SHUTDOWN       Processor is shutting down;
+   *     INTERNAL       if attempt to write into the request pipe of a
+   *                    Worker failed.
+   */
+  lsn_t getTailLSNSync(logid_t logid) noexcept;
+
+  /**
+   * A non-blocking version of getTailLSNSync().
+   *
+   * @param logid is the ID of the log for which to get the tail LSN
+   * @param cb will be called once the tail LSN of the log is determined or an
+   *           error occurred. The possible status values are the same as for
+   *           getTailLSNSync().
+   * @return 0 if the request was successfuly scheduled, -1 otherwise.
+   */
+  int getTailLSN(logid_t logid, get_tail_lsn_callback_t cb) noexcept;
 
   /**
    * Looks up the boundaries of a log range by its name as specified
@@ -367,17 +529,32 @@ public:
    * If configuration has a JSON object in the "logs" section with "name"
    * attribute @param name and without "layout" attribute, returns the lowest
    * and highest log ids in the range. If a JSON object in the "logs"
-   * section has "layout" attribute with value "AxB@C", it produces A ranges,
-   * each of length C, named "<name>", "<name>#1", "<name>#2", ...,
+   * section has "layout" attribute with value "AxB", it produces A ranges,
+   * each of length 1, named "<name>", "<name>#1", "<name>#2", ...,
    * "<name>#<A-1>", where <name> is the value of "name" attribute.
+   * Optionally, it is possible to extend the length of a particular range
+   * up to B by specifying pairs of the form <num>:<size> separated by commas,
+   * in the layout attribute, where <num> is the index of the range (starting
+   * at 0) and <size> is its length (within [0,B]). eg: "4x8 1:3,2:5" will
+   * produce 4 ranges of size, respectively, 1, 3, 5 and 1.
    *
    * @return  If there's a range with name @param name, returns a pair
    *          containing the lowest and  highest log ids in the range
    *          (this may be the same id for log ranges of size 1).
    *          Otherwise returns a pair where both ids are set to LOGID_INVALID.
    */
-  std::pair<logid_t, logid_t> getLogRangeByName(const std::string& name)
-                                                                     noexcept;
+  logid_range_t getLogRangeByName(const std::string& name) noexcept;
+
+  /**
+   * Looks up the boundaries of all log ranges that have a "name" attribute
+   * set and belong to the namespace @param ns.
+   *
+   * @return  A map from log range name to a pair of the lowest and highest log
+   *          ids in the range (this may be the same id for log ranges of size
+   *          1). Can return an empty map if nothing was found.
+   */
+  std::map<folly::fbstring, logid_range_t>
+    getLogRangesByNamespace(const folly::fbstring& ns) noexcept;
 
   /**
    * Looks up metadata of a log group by its name as specified in this Client's

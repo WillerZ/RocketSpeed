@@ -1,8 +1,14 @@
 /* -*- Mode: C++; tab-width: 2; c-basic-offset: 2; indent-tabs-mode: nil -*- */
 #pragma once
 
+#include <stdlib.h>
+
+#include <new>
 #include <chrono>
+#include <cassert>
 #include <cstdint>
+#include <cstring>
+
 #include "types.h"
 
 namespace facebook { namespace logdevice {
@@ -12,15 +18,17 @@ namespace facebook { namespace logdevice {
  * Types of gaps in the numbering sequence of a log. See GapRecord below.
  */
 enum class GapType {
-  UNKNOWN = 0,  // default gap type; used by storage nodes when they don't have
-                // enough information to determine gap type
-  BRIDGE = 1,   // a "bridge" that completes an epoch
-  HOLE = 2,     // a hole in the numbering sequence that appeared due
-                // to a sequencer crash. No acknowledged records were lost.
-  DATALOSS = 3, // all records in the gap were permanently lost
-  TRIM = 4,     // a gap caused by trimming the log
-  ACCESS = 5,   // a get sent when the client does not have the required
-                // permissions
+  UNKNOWN     = 0, // default gap type; used by storage nodes when they don't
+                   // have enough information to determine gap type
+  BRIDGE      = 1, // a "bridge" that completes an epoch
+  HOLE        = 2, // a hole in the numbering sequence that appeared due
+                   // to a sequencer crash. No acknowledged records were lost.
+  DATALOSS    = 3, // all records in the gap were permanently lost
+  TRIM        = 4, // a gap caused by trimming the log
+  ACCESS      = 5, // a gap sent when the client does not have the required
+                   // permissions
+  NOTINCONFIG = 6, // a gap issued up to until_lsn if the log was removed from
+                   // the config
 
   MAX
 };
@@ -33,6 +41,42 @@ enum class GapType {
 struct Payload {
   Payload() : data(nullptr), size(0) {}
   Payload(const void *data, size_t size) : data(data), size(size) {}
+  Payload(const Payload& rhs) : data(rhs.data), size(rhs.size) {}
+
+  Payload(Payload&& rhs) noexcept
+    : data(rhs.data), size(rhs.size) {
+    rhs.data = nullptr;
+    rhs.size = 0;
+  }
+
+  Payload& operator=(Payload&& rhs) noexcept {
+    if (this != &rhs) {
+      data = rhs.data;
+      size = rhs.size;
+      rhs.data = nullptr;
+      rhs.size = 0;
+    }
+    return *this;
+  }
+
+  Payload& operator=(const Payload& rhs) {
+    data = rhs.data;
+    size = rhs.size;
+    return *this;
+  }
+
+  Payload dup() const {
+    void* data_copy = nullptr;
+    if (data) {
+      assert(size != 0);
+      data_copy = malloc(size);
+      if (!data_copy) {
+        throw std::bad_alloc();
+      }
+      memcpy(data_copy, data, size);
+    }
+    return Payload(data_copy, size);
+  }
 
   const void * data;
   size_t size;
@@ -100,6 +144,14 @@ struct DataRecord : public LogRecord {
              int batch_offset = 0) :
     LogRecord(logid),
     payload(payload),
+    attrs(lsn, timestamp, batch_offset) {}
+
+  DataRecord(logid_t logid, Payload&& payload,
+             lsn_t lsn=LSN_INVALID,
+             std::chrono::milliseconds timestamp=std::chrono::milliseconds{0},
+             int batch_offset = 0) :
+    LogRecord(logid),
+    payload(std::move(payload)),
     attrs(lsn, timestamp, batch_offset) {}
 
   Payload payload;             // payload of this record

@@ -23,7 +23,7 @@ struct NewType {                                                            \
   explicit constexpr NewType(const RawType val) noexcept : val_(val) {}     \
   NewType() noexcept : val_() {}                                            \
   explicit operator RawType() const { return val_; }                        \
-  RawType val() const {return val_;}                                        \
+  constexpr RawType val() const {return val_;}                              \
   bool operator==(const NewType & rhs) const { return val_ == rhs.val_; }   \
   bool operator!=(const NewType & rhs) const { return val_ != rhs.val_; }   \
   bool operator<(const NewType & rhs) const { return val_ < rhs.val_; }     \

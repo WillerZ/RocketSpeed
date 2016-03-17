@@ -2,6 +2,8 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
+
 #include "logdevice/include/EnumMap.h"
 
 namespace facebook { namespace logdevice {
@@ -12,8 +14,8 @@ namespace facebook { namespace logdevice {
  * the readability of error handling code.
  */
 enum class E : std::uint16_t {
-#define ERROR_CODE(id, val, str) id val,
-#include "errors.inc"
+#define ERROR_CODE(id, val, str) id = val,
+#include "logdevice/include/errors.inc"
   UNKNOWN = 1024, // a special value that variables of type E (Status) may
                   // assume before any status is known. Never reported.
   MAX
@@ -28,9 +30,10 @@ struct ErrorCodeInfo {
   const char *name;
   const char *description;
 
-  bool valid() { return name != nullptr; }
-
-  static const ErrorCodeInfo invalid;
+  bool valid() const { return name != nullptr && strcmp(name, "UNKNOWN") != 0; }
+  bool operator==(const ErrorCodeInfo& rhs) const {
+    return name == rhs.name && description == rhs.description;
+  }
 };
 
 
@@ -46,6 +49,7 @@ extern __thread E err;
  * maps logdevice::E error codes into short names and longer full
  * descriptions (that also include name)
  */
-extern EnumMap<E, ErrorCodeInfo> errorStrings;
+using ErrorCodeStringMap = EnumMap<E, ErrorCodeInfo, E::UNKNOWN>;
+extern ErrorCodeStringMap errorStrings;
 
 }} // namespace

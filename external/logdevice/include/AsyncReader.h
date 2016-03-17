@@ -11,18 +11,14 @@ namespace facebook { namespace logdevice {
 
 /**
  * @file AsyncReader objects offer an alternative interface (to the
- * synchronous Reader) for reading logs.  Records are delivered via callbacks
- * called on an unspecified thread.
+ * synchronous Reader) for reading logs.  Records are delivered via callbacks.
  *
- * This interface is currently of limited utility.  Because "unspecified
- * thread" above is really a LogDevice internal thread that belongs to a
- * Client, callbacks cannot do too much work or they might block other
- * communication on the Client.  At the same time, callbacks cannot safely
- * transfer a lot of data to application threads because there is no mechanism
- * for pushback when the application threads cannot keep up (#4141220).  For
- * now, this class is appropriate for quick inspection of records which can
- * afford to run on a LogDevice internal thread, or for reading a bounded
- * number of records where there is no risk of a queue growing uncontrollably.
+ * Callbacks are invoked on internal LogDevice threads that belong to a
+ * Client.  Callbacks should not do too much work or they might block other
+ * communication on the Client.  Callbacks for one log will be called on the
+ * same thread, however callbacks for different logs typically use multiple
+ * threads.  The thread for one log may change if reading is stopped and
+ * restarted for the log.
  *
  * This class is *not* thread-safe - calls should be made from one thread at a
  * time.
@@ -33,14 +29,16 @@ class AsyncReaderImpl; // private implementation
 class AsyncReader {
  public:
   /**
-   * Sets a callback that the LogDevice client library will call on an
-   * unspecified thread when a record is read. The callback for a log will
-   * always be called on the same thread.
+   * Sets a callback that the LogDevice client library will call when a record
+   * is read.
    *
    * The callback should return true if the record was successfully consumed.
    * If the callback returns false, delivery of the same record will be
-   * retried after some time.  In that case, the callback must not drain the
-   * input unique_ptr& (this is asserted in debug builds).
+   * retried after some time. Redelivery can also be requested with a
+   * resumeReading() call.
+   *
+   * NOTE: The callback must not drain the input unique_ptr& if it return false
+   * (this is asserted in debug builds).
    *
    * Only affects subsequent startReading() calls; calling startReading()
    * first and setRecordCallback() after has no effect.
@@ -49,15 +47,16 @@ class AsyncReader {
 
 
   /**
-   * Sets a callback that the LogDevice client library will call on an
-   * unspecified thread when a gap record is delivered for this log. A gap
-   * record informs the reader about gaps in the sequence of record
-   * numbers. In most cases such gaps are benign and not an indication of data
-   * loss. See class GapRecord in Record.h for details.
+   * Sets a callback that the LogDevice client library will call when a gap
+   * record is delivered for this log. A gap record informs the reader about
+   * gaps in the sequence of record numbers. In most cases such gaps are
+   * benign and not an indication of data loss. See class GapRecord in
+   * Record.h for details.
    *
    * The callback should return true if the gap was successfully consumed.
    * If the callback returns false, delivery of the same gap will be
-   * retried after some time.
+   * retried after some time. Redelivery can also be requested with a
+   * resumeReading() call.
    */
   void setGapCallback(std::function<bool(const GapRecord&)>);
 
@@ -135,8 +134,29 @@ class AsyncReader {
    *          delivery. On failure -1 is returned and logdevice::err is set to
    *             NOBUFS  if request could not be enqueued because a buffer
    *                     space limit was reached
+   *             NOTFOUND if reading was not started for specified log
    */
   int stopReading(logid_t log_id, std::function<void()> callback);
+
+  /**
+   * Requests delivery for a log to resume after a previous delivery was
+   * declined (callback returned false). This can be used to avoid waiting on
+   * the redelivery timer when the callback becomes ready to accept new
+   * records.
+   *
+   * NOTE: involves interthread communication which can fail if the queues
+   * fill up.  However, no failure handling is generally needed because
+   * delivery is retried on a timer.
+   *
+   * @param log_id log ID to stop reading
+   *
+   * @return  0 is returned if resume request was successfully enqueued for
+   *          delivery. On failure -1 is returned and logdevice::err is set to
+   *              NOBUFS   if request could not be enqueued because a buffer
+   *                       space limit was reached
+   *              NOTFOUND if reading was not started for specified log
+   */
+  int resumeReading(logid_t log_id);
 
   /**
    * If called, data records read by this AsyncReader will not include payloads.

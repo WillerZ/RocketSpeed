@@ -7,6 +7,7 @@
 #include "include/Logger.h"
 #include "src/util/memory.h"
 #include <algorithm>
+#include <map>
 #include <thread>
 #include <unordered_set>
 
@@ -385,6 +386,9 @@ AsyncLogDeviceReader::AsyncLogDeviceReader(
           break;
 
         case facebook::logdevice::GapType::DATALOSS:
+        case facebook::logdevice::GapType::NOTINCONFIG:
+          // NOTINCONFIG occurs when a log is removed from config, so we treat
+          // this as data loss.
           record.type = GapType::kDataLoss;
           break;
 
