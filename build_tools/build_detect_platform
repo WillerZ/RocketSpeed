@@ -251,24 +251,24 @@ EOF
 
     # Test whether gflags library is installed
     # http://code.google.com/p/gflags/
-    # check if the namespace is gflags
+    # check if the namespace is google
     $CXX $CFLAGS -x c++ - -o /dev/null 2>/dev/null  <<EOF
       #include <gflags/gflags.h>
-      using namespace gflags;
+      using namespace google;
       int main() {}
 EOF
     if [ "$?" = 0 ]; then
-        COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=gflags"
+        COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=google"
         PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lgflags"
     else
-        # fall back to google namespace if possible
+        # fall back to gflags namespace if possible
         $CXX $CFLAGS -x c++ - -o /dev/null 2>/dev/null  <<EOF
           #include <gflags/gflags.h>
-          using namespace google;
+          using namespace gflags;
           int main() {}
 EOF
         if [ "$?" = 0 ]; then
-            COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=google"
+            COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=gflags"
             PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lgflags"
         fi
     fi

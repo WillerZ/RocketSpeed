@@ -17,8 +17,6 @@ using namespace rocketspeed;
 int main(int argc, char** argv) {
   Env::InstallSignalHandlers();
 
-  GFLAGS::SetUsageMessage(std::string("\nUSAGE:\n") + std::string(argv[0]) +
-                                      " [OPTIONS]...");
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
 
   // Run the server.

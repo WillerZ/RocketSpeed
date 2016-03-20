@@ -42,7 +42,8 @@ void TimedCallback::Enable() {
 
   timeval timer_seconds;
   timer_seconds.tv_sec = duration_.count() / 1000000ULL;
-  timer_seconds.tv_usec = duration_.count() % 1000000ULL;
+  timer_seconds.tv_usec = static_cast<decltype(timer_seconds.tv_usec)>(
+      duration_.count() % 1000000ULL);
 
   if (!enabled_) {
     if (event_add(event_, &timer_seconds)) {
