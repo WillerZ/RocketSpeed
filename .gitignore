@@ -19,6 +19,7 @@ build_config.mk
 *.swp
 *.pyc
 *.test
+/compile_commands.json
 /LOG*
 /_mock_logdevice_logs/*
 .unison.*
