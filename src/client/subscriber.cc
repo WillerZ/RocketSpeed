@@ -469,9 +469,9 @@ void Subscriber::RestoreServerStream() {
   if (options_.subscription_rate_limit > 0) {
     using namespace std::chrono;
     const size_t actual_rate =
-      std::max(1ULL,
+      std::max<size_t>(1,
         options_.subscription_rate_limit *
-        duration_cast<milliseconds>(options_.timer_period).count() / 1000ULL);
+        duration_cast<milliseconds>(options_.timer_period).count() / 1000);
     limited_server_stream_ =
         folly::make_unique<RateLimiterSink<SharedTimestampedString>>(
             actual_rate, options_.timer_period, server_stream_.get());

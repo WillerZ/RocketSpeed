@@ -76,8 +76,9 @@ RateLimiterSink<T>::RateLimiterSink(
 
 template <typename T>
 bool RateLimiterSink<T>::Write(T& value) {
-  if (FlushPending()) {
+  if (sink_->FlushPending()) {
     event_state_->first = sink_->Write(value);
+    rate_limiter_.TakeOne();
     event_state_->second = rate_limiter_.IsAllowed();
     return event_state_->first && event_state_->second;
   }
@@ -87,7 +88,8 @@ bool RateLimiterSink<T>::Write(T& value) {
 template <typename T>
 bool RateLimiterSink<T>::FlushPending() {
   event_state_->first = sink_->FlushPending();
-  return event_state_->first;
+  event_state_->second = rate_limiter_.IsAllowed();
+  return event_state_->first && event_state_->second;
 }
 
 template <typename T>
@@ -101,9 +103,12 @@ RateLimiterSink<T>::CreateWriteCallback(
     sink_, event_loop, std::placeholders::_1);
 
   // Create the second create_callback function which takes callback
-  // as a parameter.
+  // as a parameter. This is a timed callback to flush after the rate limit
+  // throttling has been relaxed. The factor of 10 is to make the retry checks
+  // more granular, which accounts for clock accounting skew between the
+  // rate_limiter_ clock, and the timer that controls the flush wake up.
   auto event_cb_2 = std::bind(&EventLoop::CreateTimedEventCallback,
-    event_loop, std::placeholders::_1, duration_);
+    event_loop, std::placeholders::_1, duration_ / 10);
 
   return std::unique_ptr<EventCallback>(new CombinedCallback(
     event_loop, callback, event_state_, event_cb_1, event_cb_2));

@@ -100,7 +100,7 @@ TEST(RefCountFlyweightTest, FlyweightsCanBeDestroyedBeforeOrAfterFactory) {
             factory.GetFlyweight(InstanceCounter(instanceCountShared));
       }
       ASSERT_EQ(instanceCountUniqueBefore, 0);
-      // All good when flyweight is destroyed before factory.
+      // All good when flyweight is destroyed before factory
     }
     ASSERT_GT(instanceCountUniqueAfter, 0);
     ASSERT_GT(instanceCountShared, 0);
@@ -108,11 +108,11 @@ TEST(RefCountFlyweightTest, FlyweightsCanBeDestroyedBeforeOrAfterFactory) {
               InstanceCounter::PAYLOAD);
     ASSERT_EQ(sharedDestroyedAfterFactory.Get().payload_,
               InstanceCounter::PAYLOAD);
-    // All good when non-empty flyweight factory is destroyed.
+    // All good when non-empty flyweight factory is destroyed
   }
   ASSERT_EQ(instanceCountUniqueAfter, 0);
   ASSERT_EQ(instanceCountShared, 0);
-  // All good when flyweight is destroyed after factory.
+  // All good when flyweight is destroyed after factory
 }
 
 }  // namespace rocketspeed

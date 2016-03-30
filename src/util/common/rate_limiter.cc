@@ -8,7 +8,10 @@
 namespace rocketspeed {
 
 RateLimiter::RateLimiter(size_t limit, std::chrono::milliseconds duration)
-    : limit_(limit), duration_(duration) {}
+: limit_(limit)
+, duration_(duration)
+, period_start_(std::chrono::steady_clock::now())
+, available_(limit) {}
 
 bool RateLimiter::IsAllowed() {
   auto now = std::chrono::steady_clock::now();
@@ -16,12 +19,13 @@ bool RateLimiter::IsAllowed() {
     period_start_ = now;
     available_ = limit_;
   }
+  return available_ > 0;
+}
 
-  if (available_ > 0) {
+void RateLimiter::TakeOne() {
+  if (available_) {
     --available_;
-    return true;
   }
-  return false;
 }
 
 } // namespace rocketspeed

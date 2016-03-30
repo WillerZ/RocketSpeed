@@ -345,14 +345,14 @@ TEST(IntegrationTest, ObserverInterfaceUsage) {
       dataloss_received_.Post();
     }
 
-    TestObserver(SubscriptionCallbacksTestContext& ctx,
-                 port::Semaphore& msg_received,
-                 port::Semaphore& substat_received,
-                 port::Semaphore& dataloss_received)
-    : ctx_(ctx)
-    , msg_received_(msg_received)
-    , substat_received_(substat_received)
-    , dataloss_received_(dataloss_received) {}
+    TestObserver(SubscriptionCallbacksTestContext& _ctx,
+                 port::Semaphore& _msg_received,
+                 port::Semaphore& _substat_received,
+                 port::Semaphore& _dataloss_received)
+    : ctx_(_ctx)
+    , msg_received_(_msg_received)
+    , substat_received_(_substat_received)
+    , dataloss_received_(_dataloss_received) {}
 
    private:
     SubscriptionCallbacksTestContext& ctx_;

@@ -96,12 +96,11 @@ template <typename T>
 struct RefCountFlyweightFactory<T>::ObjectInfo : NonCopyable, NonMovable {
   T data_;
   std::shared_ptr<Map> map_;
-  typename Map::iterator iter_;
   std::size_t ref_count_;
 
   // Do always assign valid `iter_` right after construction!
   ObjectInfo(const T& data, std::shared_ptr<Map> map)
-  : data_(data), map_(std::move(map)), iter_(), ref_count_(0) {}
+  : data_(data), map_(std::move(map)), ref_count_(0) {}
 
   void AddRef() {
     ++ref_count_;
@@ -112,12 +111,11 @@ struct RefCountFlyweightFactory<T>::ObjectInfo : NonCopyable, NonMovable {
     RS_ASSERT(ref_count_ > 0);
     if (--ref_count_ == 0) {
       RS_ASSERT(!!map_);
-      RS_ASSERT(iter_ != map_->end());
-      auto iter = iter_;
       auto map = std::move(map_);
       // The following code deletes self. Do not access `this` during or after
       // the call.
-      map->erase(iter);
+      auto data = std::move(data_);
+      map->erase(data);
     }
   }
 };
@@ -130,7 +128,6 @@ RefCountFlyweight<T> RefCountFlyweightFactory<T>::GetFlyweight(const T& data) {
     i = map_->emplace(std::piecewise_construct,
                       std::forward_as_tuple(data),
                       std::forward_as_tuple(data, map_)).first;
-    i->second.iter_ = i;
   }
   return RefCountFlyweight<T>(*this, &i->second);
 }

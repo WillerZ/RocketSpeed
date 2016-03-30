@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -33,6 +34,12 @@ inline std::string PrettyPrint(const T& value) {
   std::ostringstream ss;
   ss << value;
   return ss.str();
+}
+
+template <typename Rep, typename Period>
+inline std::string PrettyPrint(const std::chrono::duration<Rep, Period>& dur) {
+  using Seconds = std::chrono::duration<double, std::chrono::seconds::period>;
+  return PrettyPrint(std::chrono::duration_cast<Seconds>(dur).count()) + "s";
 }
 
 /**

@@ -9,6 +9,7 @@
 #include "src/util/testharness.h"
 #include "src/util/common/flow_control.h"
 #include "src/util/common/observable_set.h"
+#include "src/util/common/processor.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/observable_map.h"
 #include "src/messages/queues.h"
@@ -67,12 +68,6 @@ TEST(FlowTest, PartitionedFlow) {
     event_loop[i] = loop.GetEventLoop(i);
   }
 
-  // Setup flow control state for each processor.
-  FlowControl& flow0 = *event_loop[0]->GetFlowControl();
-  FlowControl& flow1 = *event_loop[1]->GetFlowControl();
-  FlowControl& flow2 = *event_loop[2]->GetFlowControl();
-  FlowControl& flow3 = *event_loop[3]->GetFlowControl();
-
   // Create all our queues.
   auto queue0 = MakeIntQueue(kNumMessages);
   auto queue2 = MakeIntQueue(kNumMessages);
@@ -80,25 +75,33 @@ TEST(FlowTest, PartitionedFlow) {
   auto queue23 = MakeIntQueue(kNumMessages);
 
   // Register queue read event handlers.
-  flow0.Register<int>(queue0.get(),
+  InstallSource<int>(
+    event_loop[0],
+    queue0.get(),
     [&] (Flow* flow, int x) {
       flow->Write(queue01.get(), x);
     });
 
   port::Semaphore sem1;
-  flow1.Register<int>(queue01.get(),
+  InstallSource<int>(
+    event_loop[1],
+    queue01.get(),
     [&] (Flow*, int) {
       env_->SleepForMicroseconds(sleep_micros);
       sem1.Post();
     });
 
-  flow2.Register<int>(queue2.get(),
+  InstallSource<int>(
+    event_loop[2],
+    queue2.get(),
     [&] (Flow* flow, int x) {
       ASSERT_TRUE(flow->Write(queue23.get(), x));
     });
 
   port::Semaphore sem3;
-  flow3.Register<int>(queue23.get(),
+  InstallSource<int>(
+    event_loop[3],
+    queue23.get(),
     [&] (Flow*, int) {
       sem3.Post();
     });
@@ -158,18 +161,15 @@ TEST(FlowTest, Fanout) {
     event_loop[i] = loop.GetEventLoop(i);
   }
 
-  // Setup flow control state for each processor.
-  FlowControl& flow0 = *event_loop[0]->GetFlowControl();
-  FlowControl& flow1 = *event_loop[1]->GetFlowControl();
-  FlowControl& flow2 = *event_loop[2]->GetFlowControl();
-
   // Create all our queues.
   auto queue0 = MakeIntQueue(kNumMessages);
   auto queue01 = MakeIntQueue(kSmallQueue);
   auto queue02 = MakeIntQueue(kSmallQueue);
 
   // Register queue read event handlers.
-  flow0.Register<int>(queue0.get(),
+  InstallSource<int>(
+    event_loop[0],
+    queue0.get(),
     [&] (Flow* flow, int x) {
       // Fanout to P1 and P2
       flow->Write(queue01.get(), x);
@@ -177,14 +177,18 @@ TEST(FlowTest, Fanout) {
     });
 
   port::Semaphore sem1;
-  flow1.Register<int>(queue01.get(),
+  InstallSource<int>(
+    event_loop[1],
+    queue01.get(),
     [&] (Flow*, int) {
       env_->SleepForMicroseconds(sleep_micros);
       sem1.Post();
     });
 
   port::Semaphore sem2;
-  flow2.Register<int>(queue02.get(),
+  InstallSource<int>(
+    event_loop[2],
+    queue02.get(),
     [&] (Flow* flow, int x) {
       env_->SleepForMicroseconds(sleep_micros);
       sem2.Post();
@@ -272,7 +276,9 @@ TEST(FlowTest, MultiLayerRandomized) {
     }
   }
   for (int i = 0; i < kPerLayer; ++i) {
-    flows[0][i]->Register<int>(input[i].get(),
+    InstallSource<int>(
+      loop.GetEventLoop(i),
+      input[i].get(),
       [&, i] (Flow* flow, int x) {
         // Route to a processor in next layer based on value.
         int p = x % kPerLayer;
@@ -317,7 +323,6 @@ TEST(FlowTest, ObservableMap) {
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
   ASSERT_OK(loop.Initialize());
 
-  FlowControl& flow_control = *loop.GetEventLoop(0)->GetFlowControl();
   auto obs_map = std::make_shared<ObservableMap<std::string, int>>();
   auto queue = MakeQueue<std::pair<std::string, int>>(1);
 
@@ -325,12 +330,16 @@ TEST(FlowTest, ObservableMap) {
   int reads = 0;
   int last_a = -1;
   int last_b = -1;
-  flow_control.Register<std::pair<std::string, int>>(obs_map.get(),
+  InstallSource<std::pair<std::string, int>>(
+    loop.GetEventLoop(0),
+    obs_map.get(),
     [&] (Flow* flow, std::pair<std::string, int> kv) {
       flow->Write(queue.get(), kv);
     });
 
-  flow_control.Register<std::pair<std::string, int>>(queue.get(),
+  InstallSource<std::pair<std::string, int>>(
+    loop.GetEventLoop(0),
+    queue.get(),
     [&] (Flow* flow, std::pair<std::string, int> kv) {
       auto key = kv.first;
       auto value = kv.second;
@@ -367,7 +376,6 @@ TEST(FlowTest, ObservableSet) {
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
   ASSERT_OK(loop.Initialize());
 
-  FlowControl& flow_control = *loop.GetEventLoop(0)->GetFlowControl();
   auto obs_set =
       std::make_shared<ObservableSet<std::string>>(loop.GetEventLoop(0));
 
@@ -375,7 +383,8 @@ TEST(FlowTest, ObservableSet) {
   port::Semaphore done;
 
   int done_after = 0;
-  flow_control.Register<std::string>(
+  InstallSource<std::string>(
+    loop.GetEventLoop(0),
     obs_set.get(),
     [&] (Flow* flow, std::string key) {
       ++processed[key];
@@ -442,12 +451,14 @@ TEST(FlowTest, SourcelessFlow) {
   auto queue = MakeQueue<int>(kNumMessages / 2);
   port::Semaphore done;
   int read = 0;
-  flow_control->Register<int>(queue.get(),
-                              [&](Flow* flow, int v) {
-                                if (++read == kNumMessages) {
-                                  done.Post();
-                                }
-                              });
+  InstallSource<int>(
+    loop.GetEventLoop(0),
+    queue.get(),
+    [&](Flow* flow, int v) {
+      if (++read == kNumMessages) {
+        done.Post();
+      }
+    });
 
   std::unique_ptr<Command> cmd(MakeExecuteCommand([&]() {
     SourcelessFlow no_flow(flow_control);
@@ -501,19 +512,20 @@ void RateLimiterSinkFlowTest::TestImpl(
 
   auto queue0 = MakeIntQueue(kNumMessages);
   auto queue1 = MakeIntQueue(kReaderSize);
-  auto rateLimiterSink = std::make_shared<RateLimiterSink<int>>(
+  auto rate_limiter_sink = std::make_shared<RateLimiterSink<int>>(
     kRateLimit, kRateDuration, queue1.get());
 
-  FlowControl& flow0 = *loop.GetEventLoop(0)->GetFlowControl();
-  FlowControl& flow1 = *loop.GetEventLoop(1)->GetFlowControl();
-
-  flow0.Register<int>(queue0.get(),
+  InstallSource<int>(
+    loop.GetEventLoop(0),
+    queue0.get(),
     [&] (Flow* flow, int x) {
-      flow->Write(rateLimiterSink.get(), x);
+      flow->Write(rate_limiter_sink.get(), x);
     });
 
   port::Semaphore sem1;
-  flow1.Register<int>(queue1.get(),
+  InstallSource<int>(
+    loop.GetEventLoop(1),
+    queue1.get(),
     [&] (Flow*, int x) {
       if (sleep_micros) {
         env_->SleepForMicroseconds(sleep_micros);
@@ -550,7 +562,7 @@ void RateLimiterSinkFlowTest::TestImpl(
   );
 
   ASSERT_GT(taken, expected * 0.8);
-  ASSERT_LT(taken, expected * 1.2);
+  ASSERT_LT(taken, expected * 1.3);
 }
 
 TEST(RateLimiterSinkFlowTest, Test_1) {

@@ -12,10 +12,17 @@ namespace rocketspeed {
 
 class RateLimiter {
  public:
+  /**
+   * @param limit The number of allowed operations in the duration.
+   * @param duration The duration as mentioned above.
+   */
   RateLimiter(size_t limit, std::chrono::milliseconds duration);
 
-  // not thread safe
+  /** Returns true if the rate limiting allows another event. */
   bool IsAllowed();
+
+  /** Performs a rate limited event. */
+  void TakeOne();
 
  private:
   const size_t limit_;

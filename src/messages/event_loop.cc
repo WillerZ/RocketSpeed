@@ -447,7 +447,6 @@ void EventLoop::Run() {
   CloseAllSocketEvents();
   flow_control_.reset();
   expired_connections_timer.reset();
-  event_base_free(base_);
 
   if (!internal_status_.ok()) {
     LOG_ERROR(info_log_,
@@ -457,7 +456,6 @@ void EventLoop::Run() {
 
   LOG_VITAL(info_log_, "Stopped EventLoop at port %d", port_number_);
   info_log_->Flush();
-  base_ = nullptr;
 
   running_ = false;
 }
@@ -1112,6 +1110,7 @@ EventLoop::~EventLoop() {
   RS_ASSERT(!running_);
   shutdown_eventfd_.closefd();
   notified_triggers_fd_.closefd();
+  event_base_free(base_);
 }
 
 const char* EventLoop::SeverityToString(int severity) {

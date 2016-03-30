@@ -608,28 +608,31 @@ TEST(ClientTest, ClientSubscriptionLimit) {
 }
 
 TEST(ClientTest, ClientSubscriptionRateLimit) {
-  const int kSubscriptions = 10;
+  using namespace std::chrono;
+  const int kSubscriptions = 1000;
 
   port::Semaphore sub_sem;
   port::Semaphore unsub_sem;
 
+  auto start = TestClock::now();
   std::vector<TestClock::duration> attempts;
   auto copilot = MockServer({
       {MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-          attempts.push_back(TestClock::now().time_since_epoch());
+          attempts.push_back(TestClock::now() - start);
           sub_sem.Post();
       }},
       {MessageType::mUnsubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-          attempts.push_back(TestClock::now().time_since_epoch());
+          attempts.push_back(TestClock::now() - start);
           unsub_sem.Post();
       }}
     });
 
   ClientOptions options;
-  options.timer_period = std::chrono::milliseconds(200);
-  options.subscription_rate_limit = 10; // 10/1s => 2/200ms
+  options.timer_period = std::chrono::milliseconds(100);
+  options.subscription_rate_limit = kSubscriptions; // 1000/s => 100/100ms
+  microseconds expected_diff = options.timer_period;
   auto client = CreateClient(std::move(options));
 
   std::vector<SubscriptionHandle> subscriptions;
@@ -653,30 +656,26 @@ TEST(ClientTest, ClientSubscriptionRateLimit) {
     ASSERT_TRUE(unsub_sem.TimedWait(positive_timeout));
   }
 
-  // Verify timeouts between consecutive attempts.
+  // Verify time between consecutive attempts.
   ASSERT_EQ(attempts.size(), kSubscriptions * 2 - 1);
   std::vector<TestClock::duration> diffs;
   std::adjacent_difference(attempts.begin(),
                            attempts.end(),
                            std::back_inserter(diffs));
-  TestClock::duration elapsed{0};
-  const std::chrono::milliseconds threshold = options.timer_period;
-  // Check only subscriptions' timings,
-  // unsubscriptions' timings are less predictable and make test flaky
-  for (size_t i = 1; i < kSubscriptions; ++i) {
-    // backpressure is applied only on overflow, therefore
-    // N events per second will result in throttling of every (N+1) event
-    // (when the actual overflow happens)
-    elapsed += diffs[i];
-    if (i % 3 == 0) {
-      ASSERT_TRUE(elapsed > 0.5 * threshold);
-      ASSERT_TRUE(elapsed < 1.5 * threshold);
-      elapsed = TestClock::duration::zero();
-    } else {
-      ASSERT_TRUE(diffs[i] < 1.5 * threshold);
-      ASSERT_TRUE(elapsed < 1.5 * threshold);
-    }
-  }
+  std::sort(diffs.begin(), diffs.end());
+
+  // Check max time difference between subscribes is not larger than the tick
+  // period, i.e. we are subscribing some every tick period.
+  ASSERT_LT(diffs.back(), expected_diff * 2);  // Factor of 2 for safety.
+
+  // At N subscriptions per second, it takes (N-1)/N seconds to subscribe N
+  // times since we don't wait after the last subscription (e.g. it takes 1
+  // second to subscribe twice at 1 sub/second). Our time unit is 100ms, so
+  // we'll take 900ms to subscribe instead of 1 second. The factor of 2 is for
+  // subscribes+unsubscribes.
+  auto total = 2 * milliseconds(900);
+  ASSERT_GT(attempts.back(), total);
+  ASSERT_LT(attempts.back(), total * 6 / 5);  // allow 20% error
 }
 
 TEST(ClientTest, CachedConnectionsWithoutStreams) {

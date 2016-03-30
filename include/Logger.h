@@ -42,6 +42,7 @@
     } \
     static size_t skipped; \
     if (rs_log_limiter.IsAllowed()) { \
+      rs_log_limiter.TakeOne(); \
       if (skipped > 0) { \
         RS_LOG(log_level_expr, info_log_expr, \
             "Skipped at least %zu log entries as below", skipped); \
