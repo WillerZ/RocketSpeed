@@ -121,7 +121,7 @@ Proxy::Proxy(ProxyOptions options)
   using namespace std::placeholders;
 
   RS_ASSERT(options.sharding);
-  router_ = std::move(options.sharding->GetRouter(0 /* shard */));
+  router_ = options.sharding->GetRouter(0 /* shard */);
   // FIXME: We should route subscriptions properly by recording the route
   // established by subscribe message. But we won't until it's actually needed.
 
