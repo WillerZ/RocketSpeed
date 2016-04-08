@@ -13,13 +13,14 @@
 
 #include "external/folly/move_wrapper.h"
 
+#include "include/Env.h"
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "include/Env.h"
 #include "src/messages/msg_loop.h"
+#include "src/messages/stream_allocator.h"
 #include "src/util/common/guid_generator.h"
 
 namespace rocketspeed {
@@ -140,8 +141,7 @@ void CommunicationRocketeer::Deliver(InboundID inbound_id,
           sub->tenant_id, inbound_id.sub_id, msg_id, payload);
       data.SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
-      server_->msg_loop_->SendResponse(
-          data, inbound_id.stream_id, inbound_id.worker_id);
+      server_->msg_loop_->SendResponse(data, inbound_id.stream_id);
     } else {
       stats_->dropped_reordered->Add(1);
       LOG_WARN(server_->options_.info_log,
@@ -165,7 +165,7 @@ void CommunicationRocketeer::DeliverBatch(
     if (msg.msg_id.Empty()) {
       msg.msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
     }
-    if (auto* sub = Find(InboundID(stream_id, msg.sub_id, GetID()))) {
+    if (auto* sub = Find(InboundID(stream_id, msg.sub_id))) {
       if (sub->prev_seqno < msg.seqno) {
         if (tenant_id == Tenant::InvalidTenant) {
           tenant_id = sub->tenant_id;
@@ -207,8 +207,7 @@ void CommunicationRocketeer::Advance(InboundID inbound_id,
           sub->tenant_id, inbound_id.sub_id, GapType::kBenign);
       gap.SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
-      server_->msg_loop_->SendResponse(
-          gap, inbound_id.stream_id, inbound_id.worker_id);
+      server_->msg_loop_->SendResponse(gap, inbound_id.stream_id);
     } else {
       stats_->dropped_reordered->Add(1);
       LOG_WARN(server_->options_.info_log,
@@ -234,7 +233,7 @@ void CommunicationRocketeer::Terminate(InboundID inbound_id,
       it->second.erase(it1);
       stats_->inbound_subscriptions->Add(-1);
       stats_->terminations->Add(1);
-      HandleTermination(InboundID(origin, sub_id, GetID()),
+      HandleTermination(InboundID(origin, sub_id),
                         TerminationSource::Rocketeer);
 
       MessageUnsubscribe::Reason msg_reason =
@@ -248,8 +247,7 @@ void CommunicationRocketeer::Terminate(InboundID inbound_id,
           break;
       }
       MessageUnsubscribe unsubscribe(tenant_id, inbound_id.sub_id, msg_reason);
-      server_->msg_loop_->SendResponse(
-          unsubscribe, inbound_id.stream_id, inbound_id.worker_id);
+      server_->msg_loop_->SendResponse(unsubscribe, inbound_id.stream_id);
       return;
     }
   }
@@ -315,7 +313,7 @@ void CommunicationRocketeer::Receive(
                                 subscribe->GetNamespace().ToString(),
                                 subscribe->GetTopicName().ToString(),
                                 subscribe->GetStartSequenceNumber());
-  HandleNewSubscription(InboundID(origin, sub_id, GetID()), std::move(params));
+  HandleNewSubscription(InboundID(origin, sub_id), std::move(params));
   stats_->subscribes->Add(1);
   stats_->inbound_subscriptions->Add(1);
 }
@@ -331,7 +329,7 @@ void CommunicationRocketeer::Receive(
     if (removed > 0) {
       stats_->inbound_subscriptions->Add(-1);
       stats_->unsubscribes->Add(1);
-      HandleTermination(InboundID(origin, sub_id, GetID()),
+      HandleTermination(InboundID(origin, sub_id),
                         TerminationSource::Subscriber);
       if (it->second.empty()) {
         inbound_subscriptions_.erase(it);
@@ -357,7 +355,7 @@ void CommunicationRocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
   for (const auto& entry : it->second) {
     stats_->inbound_subscriptions->Add(-1);
     stats_->unsubscribes->Add(1);
-    HandleTermination(InboundID(origin, entry.first, GetID()),
+    HandleTermination(InboundID(origin, entry.first),
                       TerminationSource::Subscriber);
   }
   inbound_subscriptions_.erase(it);
@@ -425,13 +423,16 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
                               std::string payload,
                               MsgId msg_id) {
   auto moved_payload = folly::makeMoveWrapper(std::move(payload));
-  auto command = [this, inbound_id, seqno, moved_payload, msg_id]() mutable {
-    rocketeers_[inbound_id.worker_id]->Deliver(
-        inbound_id, seqno, moved_payload.move(), msg_id);
-  };
-  return msg_loop_->SendCommand(std::unique_ptr<Command>(
-                                    MakeExecuteCommand(std::move(command))),
-                                inbound_id.worker_id)
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command =
+      [this, worker_id, inbound_id, seqno, moved_payload, msg_id]() mutable {
+        rocketeers_[worker_id]->Deliver(
+            inbound_id, seqno, moved_payload.move(), msg_id);
+      };
+  return msg_loop_
+      ->SendCommand(
+          std::unique_ptr<Command>(MakeExecuteCommand(std::move(command))),
+          worker_id)
       .ok();
 }
 
@@ -448,23 +449,27 @@ bool RocketeerServer::DeliverBatch(StreamID stream_id,
 }
 
 bool RocketeerServer::Advance(InboundID inbound_id, SequenceNumber seqno) {
-  auto command = [this, inbound_id, seqno]() mutable {
-    rocketeers_[inbound_id.worker_id]->Advance(inbound_id, seqno);
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command = [this, worker_id, inbound_id, seqno]() mutable {
+    rocketeers_[worker_id]->Advance(inbound_id, seqno);
   };
-  return msg_loop_->SendCommand(std::unique_ptr<Command>(
-                                    MakeExecuteCommand(std::move(command))),
-                                inbound_id.worker_id)
+  return msg_loop_
+      ->SendCommand(
+          std::unique_ptr<Command>(MakeExecuteCommand(std::move(command))),
+          worker_id)
       .ok();
 }
 
 bool RocketeerServer::Terminate(InboundID inbound_id,
                                 Rocketeer::UnsubscribeReason reason) {
-  auto command = [this, inbound_id, reason]() mutable {
-    rocketeers_[inbound_id.worker_id]->Terminate(inbound_id, reason);
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command = [this, worker_id, inbound_id, reason]() mutable {
+    rocketeers_[worker_id]->Terminate(inbound_id, reason);
   };
-  return msg_loop_->SendCommand(std::unique_ptr<Command>(
-                                    MakeExecuteCommand(std::move(command))),
-                                inbound_id.worker_id)
+  return msg_loop_
+      ->SendCommand(
+          std::unique_ptr<Command>(MakeExecuteCommand(std::move(command))),
+          worker_id)
       .ok();
 }
 
@@ -473,6 +478,11 @@ Statistics RocketeerServer::GetStatisticsSync() {
       [this](int i) { return rocketeers_[i]->GetStatisticsInternal(); });
   stats.Aggregate(msg_loop_->GetStatisticsSync());
   return stats;
+}
+
+int RocketeerServer::GetWorkerID(const InboundID& inbound_id) const {
+  auto worker_id = msg_loop_->GetStreamMapping()(inbound_id.stream_id);
+  return static_cast<int>(worker_id);
 }
 
 template <typename Msg>

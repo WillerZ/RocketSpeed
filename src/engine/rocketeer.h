@@ -21,18 +21,13 @@ typedef uint64_t SubscriptionID;
 /** Uniquely identifies subscription within a service. */
 class InboundID {
  public:
-  // TODO(stupaq) remove
-  InboundID() : worker_id(-1) {}
+  InboundID() : stream_id(std::numeric_limits<StreamID>::max()), sub_id(0) {}
 
-  InboundID(StreamID _stream_id, SubscriptionID _sub_id, size_t _worker_id)
-  : stream_id(_stream_id)
-  , sub_id(_sub_id)
-  , worker_id(static_cast<int>(_worker_id)) {}
+  InboundID(StreamID _stream_id, SubscriptionID _sub_id)
+  : stream_id(_stream_id), sub_id(_sub_id) {}
 
   StreamID stream_id;
   SubscriptionID sub_id;
-  // TODO(stupaq) reversible allocators
-  int worker_id;
 
   bool operator==(const InboundID& other) const {
     return stream_id == other.stream_id && sub_id == other.sub_id;

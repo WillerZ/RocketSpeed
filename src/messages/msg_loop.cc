@@ -101,7 +101,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   options.event_loop.accept_callback = accept_callback;
   // Create a stream allocator for the entire stream ID space and split it
   // between each loop.
-  auto allocs = StreamAllocator().Divide(num_workers, nullptr);
+  auto allocs = stream_allocator_.Divide(num_workers, &stream_mapping_);
   for (int i = 0; i < num_workers; ++i) {
     // Only the first loop will be listening for incoming connections.
     options.event_loop.listener_port = i == 0 ? port : -1;
@@ -304,6 +304,17 @@ Status MsgLoop::SendResponse(const Message& msg,
   return SendCommand(ResponseCommand(msg, stream), worker_id);
 }
 
+Status MsgLoop::SendRequest(const Message& msg,
+                            StreamSocket* socket) {
+  int worker_id = static_cast<int>(stream_mapping_(socket->GetStreamID()));
+  return SendRequest(msg, socket, worker_id);
+}
+
+Status MsgLoop::SendResponse(const Message& msg,
+                             StreamID stream) {
+  int worker_id = static_cast<int>(stream_mapping_(stream));
+  return SendResponse(msg, stream, worker_id);
+}
 
 std::unique_ptr<Command> MsgLoop::RequestCommand(const Message& msg,
                                                  StreamSocket* socket) {

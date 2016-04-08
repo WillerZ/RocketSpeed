@@ -109,6 +109,8 @@ class RocketeerServer {
   /** Returns server-wide statistics. */
   Statistics GetStatisticsSync();
 
+  int GetWorkerID(const InboundID& inbound_id) const;
+
   MsgLoop* GetMsgLoop() { return msg_loop_.get(); }
 
  private:

@@ -10,13 +10,14 @@
 #include <memory>
 #include <vector>
 
+#include "include/BaseEnv.h"
 #include "include/Env.h"
+#include "include/HostId.h"
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop_base.h"
 #include "src/messages/queues.h"
-#include "include/BaseEnv.h"
-#include "include/HostId.h"
+#include "src/messages/stream_allocator.h"
 #include "src/util/common/thread_local.h"
 
 namespace rocketspeed {
@@ -87,13 +88,17 @@ class MsgLoop : public MsgLoopBase {
     return stats_prefix_;
   }
 
-  /**
-   * Returns stream ID allocator used by given event loop to create outbound
-   * streams.
-   *
-   * @param worker_id Index of the event loop.
-   * @return Stream allocator which represents outbound stream ID space.
-   */
+  /// Returns a function that maps stream IDs, both inbound and outbound, used
+  /// by this loop, into worker IDs.
+  const StreamAllocator::DivisionMapping& GetStreamMapping() {
+    return stream_mapping_;
+  }
+
+  /// Returns stream ID allocator used by given event loop to create outbound
+  /// streams.
+  ///
+  /// @param worker_id Index of the event loop.
+  /// @return Stream allocator which represents outbound stream ID space.
   StreamAllocator* GetOutboundStreamAllocator(int worker_id);
 
   StreamSocket CreateOutboundStream(HostId destination,
@@ -123,6 +128,10 @@ class MsgLoop : public MsgLoopBase {
   Status SendResponse(const Message& msg,
                       StreamID stream,
                       int worker_id) override;
+
+  Status SendRequest(const Message& msg, StreamSocket* socket);
+
+  Status SendResponse(const Message& msg, StreamID stream);
 
   static std::unique_ptr<Command> RequestCommand(const Message& msg,
                                                  StreamSocket* socket);
@@ -220,6 +229,12 @@ class MsgLoop : public MsgLoopBase {
   // Name of the message loop.
   // Used for stats and thread naming.
   std::string stats_prefix_;
+
+  /// Represents the full space of stream IDs, both inbound and outbound, used
+  /// by this loop.
+  StreamAllocator stream_allocator_;
+  /// Tells the mapping from a stream to the worker responsible for it.
+  StreamAllocator::DivisionMapping stream_mapping_;
 
   /** External synchronisation for getting sockets. */
   std::mutex stream_allocation_mutex_;
