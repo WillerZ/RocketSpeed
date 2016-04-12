@@ -43,11 +43,6 @@ rs::Status ToInboundID(const jni::InboundID& inbound_id, rs::InboundID* out) {
   if (!GetFixed64(&in, &result.sub_id)) {
     return rs::Status::IOError("Bad subscription ID");
   }
-  uint32_t worker_id;
-  if (!GetFixed32(&in, &worker_id)) {
-    return rs::Status::IOError("Bad worker ID");
-  }
-  result.worker_id = static_cast<int>(worker_id);
   *out = result;
   return rs::Status::OK();
 }
@@ -56,9 +51,6 @@ jni::InboundID FromInboundID(const rs::InboundID& in) {
   std::string serial;
   EncodeOrigin(&serial, in.stream_id);
   PutFixed64(&serial, in.sub_id);
-  RS_ASSERT(in.worker_id >= 0);
-  uint32_t worker_id = static_cast<uint32_t>(in.worker_id);
-  PutFixed32(&serial, worker_id);
   auto data = reinterpret_cast<const uint8_t*>(serial.data());
   return jni::InboundID(std::vector<uint8_t>(data, data + serial.size()));
 }
@@ -150,8 +142,6 @@ bool RocketeerServerWrapper::Deliver(jni::InboundID inbound_id,
         info_log_, "Failed to parse InboundID: %s", st.ToString().c_str());
     return false;
   }
-  RS_ASSERT(inbound_id1.worker_id >= 0);
-  RS_ASSERT(inbound_id1.worker_id < rocketeers_.size());
   return server_->Deliver(
       inbound_id1, ToSequenceNumber(seqno), ToSlice(payload).ToString());
 }
@@ -164,8 +154,6 @@ bool RocketeerServerWrapper::Terminate(jni::InboundID inbound_id) {
         info_log_, "Failed to parse InboundID: %s", st.ToString().c_str());
     return false;
   }
-  RS_ASSERT(inbound_id1.worker_id >= 0);
-  RS_ASSERT(inbound_id1.worker_id < rocketeers_.size());
   return server_->Terminate(inbound_id1,
                             rs::Rocketeer::UnsubscribeReason::Requested);
 }
