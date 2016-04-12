@@ -48,6 +48,9 @@ Stream::~Stream() {
     Write(goodbye);
   }
   RS_ASSERT(!socket_event_);
+
+  // Notify the receiver that it won't receive any message on the stream.
+  receiver_->EndStream(local_id_);
 }
 
 void Stream::CloseFromSocketEvent(access::Stream) {

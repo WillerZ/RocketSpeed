@@ -29,6 +29,7 @@
 
 #include "external/folly/producer_consumer_queue.h"
 
+#include "include/BaseEnv.h"
 #include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/event_callback.h"
@@ -36,7 +37,7 @@
 #include "src/messages/stream_allocator.h"
 #include "src/messages/unique_stream_map.h"
 #include "src/port/port.h"
-#include "include/BaseEnv.h"
+#include "src/util/common/noncopyable.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"
 #include "src/util/common/thread_local.h"
@@ -134,7 +135,7 @@ class EventLoop {
    * A helper class which initiates provided EventLoop and drives it from a
    * specifically created thread.
    */
-  class Runner {
+  class Runner : public NonCopyable {
    public:
     /** Initializes the EventLoop and drives it from a dedicated thread. */
     explicit Runner(EventLoop* event_loop);
@@ -282,6 +283,9 @@ class EventLoop {
 
   // TODO(t8971722)
   void AddInboundStream(access::EventLoop, Stream* stream);
+
+  // TODO(t8971722)
+  Stream* GetInboundStream(StreamID stream_id);
 
   // TODO(t8971722)
   void CloseFromSocketEvent(access::EventLoop, Stream* stream);
@@ -594,8 +598,8 @@ class EventLoop {
     EventCallbackType event_callback_;
   } event_callback_receiver_;
   /**
-   * A map of all active outbound streams that were created using the old,
-   * deprecated stream API.
+   * A map of all open streams that were created using the old, deprecated
+   * stream API.
    * This should disappear once we get rid of the old API.
    */
   // TODO(t8971722)

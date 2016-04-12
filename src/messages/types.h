@@ -84,6 +84,12 @@ class StreamReceiver : public NonMovable, public NonCopyable {
 
   virtual void operator()(StreamReceiveArg<Message> arg);
 
+  /**
+   * Invoked after the stream is definitively closed and the receiver will not
+   * receive any more messages on it.
+   */
+  virtual void EndStream(StreamID stream_id) {}
+
  protected:
   virtual void ReceivePing(StreamReceiveArg<MessagePing>) {}
   virtual void ReceiveData(StreamReceiveArg<MessageData>) {}

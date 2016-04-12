@@ -49,7 +49,7 @@ class ClientOptions {
   std::shared_ptr<PublisherRouter> publisher;
 
   // Sharding and routing configuration for subscriptions.
-  std::unique_ptr<ShardingStrategy> sharding;
+  std::shared_ptr<ShardingStrategy> sharding;
 
   // Logger that is used for info messages.
   // Default: nullptr.

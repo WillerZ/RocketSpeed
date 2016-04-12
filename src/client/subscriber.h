@@ -43,13 +43,25 @@ class EventCallback;
 class EventLoop;
 class Stream;
 class SubscriptionState;
-class SubscriberStats;
 typedef uint64_t SubscriptionID;
 typedef uint64_t SubscriptionHandle;
 template <typename>
 class ThreadLocalQueues;
 template <typename>
 class RateLimiterSink;
+
+class SubscriberStats {
+ public:
+  explicit SubscriberStats(const std::string& prefix) {
+    active_subscriptions = all.AddCounter(prefix + "active_subscriptions");
+    unsubscribes_invalid_handle =
+        all.AddCounter(prefix + "unsubscribes_invalid_handle");
+  }
+
+  Counter* active_subscriptions;
+  Counter* unsubscribes_invalid_handle;
+  Statistics all;
+};
 
 /**
  * An interface shared by all layers of subscribers.

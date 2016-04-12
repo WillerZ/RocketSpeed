@@ -639,6 +639,14 @@ std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination) {
   return OpenStream(destination, outbound_allocator_.Next());
 }
 
+Stream* EventLoop::GetInboundStream(StreamID stream_id) {
+  auto it = stream_id_to_stream_.find(stream_id);
+  if (it == stream_id_to_stream_.end()) {
+    return nullptr;
+  }
+  return it->second;
+}
+
 std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
                                               StreamID stream_id) {
   thread_check_.Check();

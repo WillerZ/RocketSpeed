@@ -69,6 +69,8 @@ CreateEventFdReadCallback(EventLoop* event_loop,
 template <typename Item>
 class Queue : public Source<Item>, public SinkWithOverflow<Item> {
  public:
+  using ElementType = Item;
+
   /**
    * Construct a queue with a given size (number of commands).
    *

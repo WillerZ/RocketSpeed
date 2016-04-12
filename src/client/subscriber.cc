@@ -33,6 +33,7 @@
 #include "src/util/common/processor.h"
 #include "src/util/common/random.h"
 #include "src/util/common/rate_limiter_sink.h"
+#include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
 #include "src/util/xxhash.h"
 
@@ -234,20 +235,6 @@ bool SubscriptionState::ProcessMessage(const std::shared_ptr<Logger>& info_log,
   expected_seqno_ = current + 1;
   return true;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-class SubscriberStats {
- public:
-  explicit SubscriberStats(const std::string& prefix) {
-    active_subscriptions = all.AddCounter(prefix + "active_subscriptions");
-    unsubscribes_invalid_handle =
-        all.AddCounter(prefix + "unsubscribes_invalid_handle");
-  }
-
-  Counter* active_subscriptions;
-  Counter* unsubscribes_invalid_handle;
-  Statistics all;
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 Subscriber::Subscriber(const ClientOptions& options,
