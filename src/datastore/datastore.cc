@@ -62,7 +62,7 @@ DataStoreImpl::DataStoreImpl(
     sem_.Post();
   };
 
-  auto data_loss_callback = [this] (std::unique_ptr<DataLossInfo>& msg) {
+  auto data_loss_callback = [this] (const DataLossInfo& msg) {
     LOG_ERROR(info_log_, "Data loss has occurred.");
   };
 

@@ -980,7 +980,7 @@ int main(int argc, char** argv) {
   };
 
   // Data loss callback.
-  auto data_loss_callback = [&](std::unique_ptr<DataLossInfo>& msg) {
+  auto data_loss_callback = [&](const DataLossInfo& msg) {
     LOG_ERROR(info_log, "Data loss has been detected.");
   };
 

@@ -129,7 +129,7 @@ ClientImpl::ClientImpl(ClientOptions options,
 void ClientImpl::SetDefaultCallbacks(
     SubscribeCallback subscription_callback,
     std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
-    std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback) {
+    DataLossCallback data_loss_callback) {
   subscription_cb_fallback_ = std::move(subscription_callback);
   deliver_cb_fallback_ = std::move(deliver_callback);
   data_loss_callback_ = std::move(data_loss_callback);
@@ -191,7 +191,7 @@ class StdFunctionObserver : public Observer,
   static std::unique_ptr<StdFunctionObserver> Create(
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
       SubscribeCallback subscription_callback,
-      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback) {
+      DataLossCallback data_loss_callback) {
     return folly::make_unique<StdFunctionObserver>(
         std::move(deliver_callback),
         std::move(subscription_callback),
@@ -201,7 +201,7 @@ class StdFunctionObserver : public Observer,
   StdFunctionObserver(
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
       SubscribeCallback subscription_callback,
-      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback)
+      DataLossCallback data_loss_callback)
   : deliver_callback_(std::move(deliver_callback))
   , subscription_callback_(std::move(subscription_callback))
   , data_loss_callback_(std::move(data_loss_callback)) {}
@@ -218,7 +218,7 @@ class StdFunctionObserver : public Observer,
     }
   }
 
-  void OnDataLoss(Flow*, std::unique_ptr<DataLossInfo>& a) override {
+  void OnDataLoss(Flow*, const DataLossInfo& a) override {
     if (data_loss_callback_) {
       data_loss_callback_(a);
     }
@@ -228,7 +228,7 @@ class StdFunctionObserver : public Observer,
   const std::function<void(std::unique_ptr<MessageReceived>&)>
       deliver_callback_;
   const SubscribeCallback subscription_callback_;
-  const std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback_;
+  const DataLossCallback data_loss_callback_;
 };
 
 }  // namespace
@@ -257,7 +257,7 @@ SubscriptionHandle ClientImpl::Subscribe(
     SubscriptionParameters parameters,
     std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
     SubscribeCallback subscription_callback,
-    std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback) {
+    DataLossCallback data_loss_callback) {
   // Select callbacks taking fallbacks into an account.
   if (!subscription_callback) {
     subscription_callback = subscription_cb_fallback_;

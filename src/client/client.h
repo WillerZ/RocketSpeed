@@ -50,7 +50,7 @@ class ClientImpl : public Client {
   void SetDefaultCallbacks(
       SubscribeCallback subscription_callback,
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
-      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback)
+      DataLossCallback data_loss_callback)
       override;
 
   virtual PublishStatus Publish(const TenantID tenant_id,
@@ -68,7 +68,7 @@ class ClientImpl : public Client {
       SubscriptionParameters parameters,
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
       SubscribeCallback subscription_callback,
-      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback)
+      DataLossCallback data_loss_callback)
       override;
 
   SubscriptionHandle Subscribe(
@@ -79,7 +79,7 @@ class ClientImpl : public Client {
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback =
           nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback =
+      DataLossCallback data_loss_callback =
           nullptr) override {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
@@ -137,7 +137,7 @@ class ClientImpl : public Client {
   /** Default callbacks for delivering messages. */
   std::function<void(std::unique_ptr<MessageReceived>&)> deliver_cb_fallback_;
   /** Default callback for data loss */
-  std::function<void(std::unique_ptr<DataLossInfo>&)> data_loss_callback_;
+  DataLossCallback data_loss_callback_;
 
   /** Starts the client. */
   Status Start();

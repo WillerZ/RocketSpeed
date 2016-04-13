@@ -295,11 +295,11 @@ TEST(IntegrationTest, TestDataLossCallback) {
     }
   };
 
-  auto data_loss_callback = [&](std::unique_ptr<DataLossInfo>& msg) {
-    ASSERT_EQ(DataLossType::kRetention, msg->GetLossType());
-    ASSERT_EQ(ctx.first_seqno, msg->GetFirstSequenceNumber());
+  auto data_loss_callback = [&](const DataLossInfo& msg) {
+    ASSERT_EQ(DataLossType::kRetention, msg.GetLossType());
+    ASSERT_EQ(ctx.first_seqno, msg.GetFirstSequenceNumber());
     ASSERT_EQ(ctx.first_seqno + ctx.kTotalMessagesToTrim - 1,
-              msg->GetLastSequenceNumber());
+              msg.GetLastSequenceNumber());
     data_loss_sem.Post();
   };
 
@@ -337,11 +337,11 @@ TEST(IntegrationTest, ObserverInterfaceUsage) {
       substat_received_.Post();
     }
 
-    void OnDataLoss(Flow* flow, std::unique_ptr<DataLossInfo>& msg) override {
-      ASSERT_EQ(DataLossType::kRetention, msg->GetLossType());
-      ASSERT_EQ(ctx_.first_seqno, msg->GetFirstSequenceNumber());
+    void OnDataLoss(Flow* flow, const DataLossInfo& msg) override {
+      ASSERT_EQ(DataLossType::kRetention, msg.GetLossType());
+      ASSERT_EQ(ctx_.first_seqno, msg.GetFirstSequenceNumber());
       ASSERT_EQ(ctx_.first_seqno + ctx_.kTotalMessagesToTrim - 1,
-                msg->GetLastSequenceNumber());
+                msg.GetLastSequenceNumber());
       dataloss_received_.Post();
     }
 

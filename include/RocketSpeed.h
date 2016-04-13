@@ -36,6 +36,8 @@ typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
  */
 typedef std::function<void(const SubscriptionStatus&)> SubscribeCallback;
 
+typedef std::function<void(const DataLossInfo&)> DataLossCallback;
+
 /** Notifies about status of a finished subscription snapshot. */
 typedef std::function<void(Status)> SaveSubscriptionsCallback;
 
@@ -156,7 +158,7 @@ class Observer {
   /**
    * Notifies about data loss.
    */
-  virtual void OnDataLoss(Flow*, std::unique_ptr<DataLossInfo>&) {}
+  virtual void OnDataLoss(Flow*, const DataLossInfo&) {}
 
   virtual ~Observer() = default;
 };
@@ -200,7 +202,7 @@ class Client {
       SubscribeCallback subscription_callback = nullptr,
       std::function<void(std::unique_ptr<MessageReceived>&)>
           deliver_callback = nullptr,
-      std::function<void(std::unique_ptr<DataLossInfo>&)>
+      DataLossCallback
           data_loss_callback = nullptr) = 0;
 
   /**
@@ -267,7 +269,7 @@ class Client {
       std::function<void(std::unique_ptr<MessageReceived>&)>
           deliver_callback = nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      std::function<void(std::unique_ptr<DataLossInfo>&)>
+      DataLossCallback
           data_loss_callback = nullptr) = 0;
 
   /** Convenience method, see the other overload for details. */
@@ -279,7 +281,7 @@ class Client {
       std::function<void(std::unique_ptr<MessageReceived>&)>
           deliver_callback = nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      std::function<void(std::unique_ptr<DataLossInfo>&)>
+      DataLossCallback
           data_loss_callback = nullptr) = 0;
 
   /**

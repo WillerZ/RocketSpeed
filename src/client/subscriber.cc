@@ -188,8 +188,7 @@ void SubscriptionState::ReceiveMessage(
           static_cast<MessageDeliverGap*>(deliver.release()));
 
       if (gap->GetGapType() != GapType::kBenign) {
-        std::unique_ptr<DataLossInfo> data_loss_info(
-            new DataLossInfoImpl(std::move(gap)));
+        DataLossInfoImpl data_loss_info(std::move(gap));
         observer_->OnDataLoss(flow, data_loss_info);
       }
       break;
@@ -775,7 +774,7 @@ class TailCollapsingObserver : public Observer {
     }
   }
 
-  void OnDataLoss(Flow* flow, std::unique_ptr<DataLossInfo>& up_info) override {
+  void OnDataLoss(Flow* flow, const DataLossInfo& up_info) override {
     // We have to override the SubscriptionHandle for each downstream
     // subscription.
     class DataLossInfoImpl : public DataLossInfo {
@@ -797,13 +796,13 @@ class TailCollapsingObserver : public Observer {
     // Deliver to every observer served by this upstream subscription.
     for (const auto& entry : downstream_observers_) {
       // TODO(t10075129)
-      auto down_info = folly::make_unique<DataLossInfoImpl>();
-      down_info->id_ = entry.first;
-      down_info->type_ = up_info->GetLossType();
-      down_info->first_ = up_info->GetFirstSequenceNumber();
-      down_info->last_ = up_info->GetLastSequenceNumber();
-      std::unique_ptr<DataLossInfo> tmp(std::move(down_info));
-      entry.second->OnDataLoss(flow, tmp);
+
+      DataLossInfoImpl down_info ;
+      down_info.id_ = entry.first;
+      down_info.type_ = up_info.GetLossType();
+      down_info.first_ = up_info.GetFirstSequenceNumber();
+      down_info.last_ = up_info.GetLastSequenceNumber();
+      entry.second->OnDataLoss(flow, down_info);
     }
   }
 };
