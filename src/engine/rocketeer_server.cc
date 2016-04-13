@@ -495,7 +495,7 @@ MsgCallbackType RocketeerServer::CreateCallback() {
   };
 }
 
-HostId RocketeerServer::GetHostId() const {
+const HostId& RocketeerServer::GetHostId() const {
   return msg_loop_->GetHostId();
 }
 

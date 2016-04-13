@@ -113,7 +113,7 @@ class RocketeerServer {
   MsgLoop* GetMsgLoop() { return msg_loop_.get(); }
 
   /** Return host ID of this Rocketeer server */
-  HostId GetHostId() const;
+  const HostId& GetHostId() const;
 
  private:
   friend class CommunicationRocketeer;
