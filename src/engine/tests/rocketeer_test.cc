@@ -105,7 +105,7 @@ TEST(RocketeerTest, SubscribeUnsubscribe) {
   SubscribeUnsubscribe rocketeer;
   server_->Register(&rocketeer);
   ASSERT_OK(server_->Start());
-  auto server_addr = server_->GetMsgLoop()->GetHostId();
+  auto server_addr = server_->GetHostId();
 
   auto client = MockClient(std::map<MessageType, MsgCallbackType>());
   auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
@@ -154,7 +154,7 @@ TEST(RocketeerTest, SubscribeTerminate) {
   SubscribeTerminate rocketeer;
   server_->Register(&rocketeer);
   ASSERT_OK(server_->Start());
-  auto server_addr = server_->GetMsgLoop()->GetHostId();
+  auto server_addr = server_->GetHostId();
 
   port::Semaphore unsubscribe_sem;
   auto client = MockClient({
@@ -232,7 +232,7 @@ TEST(RocketeerTest, StackRocketeerTest) {
   Noop* rocketeer = new Noop(new Noop(new Noop(&topRocketeer)));
   server_->Register(rocketeer);
   ASSERT_OK(server_->Start());
-  auto server_addr = server_->GetMsgLoop()->GetHostId();
+  auto server_addr = server_->GetHostId();
 
   port::Semaphore unsubscribe_sem;
   port::Semaphore deliver_sem;

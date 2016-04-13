@@ -13,20 +13,19 @@
 
 #include "include/Types.h"
 #include "src/engine/rocketeer.h"
-#include "src/messages/messages.h"
-#include "src/messages/stream_socket.h"
-#include "src/util/common/statistics.h"
-#include "src/util/common/thread_check.h"
 
 namespace rocketspeed {
 
 class BaseEnv;
 class CommunicationRocketeer;
 class Flow;
+class HostId;
+class Message;
 class MsgLoop;
 class MsgLoopThread;
 class Logger;
 class RocketeerServer;
+class Statistics;
 
 /** Options for creating RocketeerServer. */
 struct RocketeerOptions {
@@ -112,6 +111,9 @@ class RocketeerServer {
   int GetWorkerID(const InboundID& inbound_id) const;
 
   MsgLoop* GetMsgLoop() { return msg_loop_.get(); }
+
+  /** Return host ID of this Rocketeer server */
+  HostId GetHostId() const;
 
  private:
   friend class CommunicationRocketeer;

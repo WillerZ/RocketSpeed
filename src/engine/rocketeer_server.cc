@@ -14,6 +14,7 @@
 #include "external/folly/move_wrapper.h"
 
 #include "include/Env.h"
+#include "include/HostId.h"
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
@@ -492,6 +493,10 @@ MsgCallbackType RocketeerServer::CreateCallback() {
     auto worker_id = msg_loop_->GetThreadWorkerIndex();
     rocketeers_[worker_id]->Receive(std::move(casted), origin);
   };
+}
+
+HostId RocketeerServer::GetHostId() const {
+  return msg_loop_->GetHostId();
 }
 
 }  // namespace rocketspeed
