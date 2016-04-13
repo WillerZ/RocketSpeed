@@ -30,6 +30,13 @@
 namespace rocketspeed {
 namespace djinni {
 
+ClientWrapper::ClientWrapper(std::unique_ptr<rocketspeed::Client> client,
+                             std::shared_ptr<Logger> info_log)
+: client_(std::move(client)), info_log_(std::move(info_log)) {}
+
+ClientWrapper::~ClientWrapper() {
+}
+
 std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
                                                HostId cockpit,
                                                SubscriptionStorage storage) {

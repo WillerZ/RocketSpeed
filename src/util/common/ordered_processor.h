@@ -5,7 +5,7 @@
 //
 #pragma once
 
-#include <inttypes.h>
+#include <cinttypes>
 #include <functional>
 #include <limits>
 #include <memory>

@@ -24,8 +24,9 @@ namespace djinni {
 class RocketeerServerWrapper : public RocketeerServerImpl {
  public:
   RocketeerServerWrapper(std::shared_ptr<Logger> info_log,
-                         std::unique_ptr<rocketspeed::RocketeerServer> server)
-  : info_log_(std::move(info_log)), server_(std::move(server)) {}
+                         std::unique_ptr<rocketspeed::RocketeerServer> server);
+
+  ~RocketeerServerWrapper();
 
   void Register(std::shared_ptr<Rocketeer> rocketeer) override;
 

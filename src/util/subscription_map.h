@@ -12,6 +12,8 @@
 
 namespace rocketspeed {
 
+using SubscriptionID = uint64_t;
+
 /**
  * Maps a stream ID and subscription ID to any type.
  * Optimized to allow fast removal of all subscription IDs for a stream.

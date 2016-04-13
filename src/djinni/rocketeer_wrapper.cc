@@ -97,6 +97,14 @@ class ForwardingRocketeer : public rs::Rocketeer {
 
 }  // namespace
 
+RocketeerServerWrapper::RocketeerServerWrapper(
+  std::shared_ptr<Logger> info_log,
+  std::unique_ptr<rocketspeed::RocketeerServer> server)
+: info_log_(std::move(info_log)), server_(std::move(server)) {}
+
+RocketeerServerWrapper::~RocketeerServerWrapper() {
+}
+
 std::shared_ptr<RocketeerServerImpl> RocketeerServerImpl::Create(
     LogLevel log_level,
     int32_t listener_port) {

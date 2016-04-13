@@ -19,8 +19,9 @@ namespace djinni {
 class ClientWrapper : public ClientImpl {
  public:
   ClientWrapper(std::unique_ptr<rocketspeed::Client> client,
-                std::shared_ptr<Logger> info_log)
-      : client_(std::move(client)), info_log_(std::move(info_log)) {}
+                std::shared_ptr<Logger> info_log);
+
+  ~ClientWrapper();
 
   MsgId Publish(int32_t tenant_id,
                 std::string namespace_id,

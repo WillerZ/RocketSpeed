@@ -79,6 +79,12 @@ EXCLUDED_TESTS = \
 
 TESTS = $(filter-out $(EXCLUDED_TESTS), $(TESTS_CPP:.cc=.test))
 
+ANDROID_HEADERS = \
+	src/util/android/logcat_logger.check_header
+
+# Exclude some headers from header self-sufficiency checks
+INCLUDE_CHECK_HEADERS = $(filter-out $(ANDROID_HEADERS), $(ALL_HEADERS:.h=.check_header))
+
 TOOLS = \
 	rocketbench \
 	client_memory_used_bench
@@ -212,6 +218,13 @@ valgrind_check: all $(PROGRAMS) $(TESTS)
 		etime=`date '+%s'`; \
 		echo $$t $$((etime - stime)) >> $(VALGRIND_DIR)/valgrind_tests_times; \
 	done
+
+# Check that all header files include everything they need.
+include_check: $(INCLUDE_CHECK_HEADERS)
+
+%.check_header: %.h
+	@echo Checking syntax $<...
+	@$(CXX) $(CXXFLAGS) -w -fsyntax-only $<
 
 clean:
 	-rm -f $(PROGRAMS) $(TESTS) $(LIBRARY) $(SHARED) $(JAVA_LIBRARY) $(CLIENT_LIBRARY_STATIC) build_config.mk
