@@ -4,7 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 //
 #define __STDC_FORMAT_MACROS
-#include "rocketeer.h"
+#include "include/Rocketeer.h"
 
 #include <functional>
 #include <memory>

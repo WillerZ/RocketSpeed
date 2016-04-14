@@ -1,10 +1,10 @@
 #include "include/Logger.h"
+#include "include/RocketeerServer.h"
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 
 #include "external/folly/Memory.h"
 
-#include "src/engine/rocketeer_server.h"
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"

@@ -10,6 +10,7 @@ cpp_library(
         '-DOS_LINUX=1',
     ],
     deps = [
+        '@/rocketspeed/github/include:rocketspeed',
         '@/rocketspeed/github/src/messages:messages',
         '@/rocketspeed/github/src/port:port',
         '@/rocketspeed/github/src/util:util',
