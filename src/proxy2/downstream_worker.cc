@@ -9,7 +9,7 @@
 #include "src/messages/event_loop.h"
 #include "src/messages/queues.h"
 #include "src/messages/stream.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "src/util/common/hash.h"
 
 namespace rocketspeed {

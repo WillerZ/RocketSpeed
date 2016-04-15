@@ -14,7 +14,7 @@
 #include "src/messages/stream_allocator.h"
 #include "src/messages/types.h"
 #include "src/proxy2/abstract_worker.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 
 namespace rocketspeed {
 

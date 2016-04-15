@@ -6,7 +6,7 @@ java_library(
         'src/main/java/org/rocketspeed/*.java',
         'src-gen/djinni/java/org/rocketspeed/*.java',
     ]),
-    deps = [
+    noexport_deps = [
         ':%s' % SO_NAME,
     ],
 )
@@ -26,16 +26,20 @@ java_unittest(
         ':java',
         '@/rocketspeed/github/src/test:test_cluster_proc',
     ],
-    aether_deps = [
-        'org.mockito:mockito-all:1.9.5',
+    external_deps = [
+        ('java', 'org/mockito/mockito-all', None, 'mockito-all'),
+        ('java', 'junit/junit', None, 'junit'),
+        ('java', 'log4j/log4j', None, 'log4j'),
+        ('java', 'org/slf4j/slf4j-api', None, 'slf4j-api'),
+        ('java', 'org/slf4j/slf4j-simple', None, 'slf4j-simple'),
     ],
     tags = [
         'serialize',
         'serialize_test_cases',
     ],
     env = {
-        'RS_CLUSTER_BIN_PATH' : '_bin/rocketspeed/github/src/test/test_cluster_proc',
-        'LD_LIBRARY_PATH' : '_bin/rocketspeed/github',
+        'RS_CLUSTER_BIN_PATH' : 'buck-out/gen/rocketspeed/github/src/test/test_cluster_proc',
+        'LD_LIBRARY_PATH' : 'buck-out/gen/rocketspeed/github',
     },
     openjdk = True,
 )

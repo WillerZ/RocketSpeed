@@ -7,7 +7,7 @@
 #include <random>
 #include <string>
 #include "src/util/testharness.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "src/util/common/observable_set.h"
 #include "src/util/common/processor.h"
 #include "src/messages/msg_loop.h"

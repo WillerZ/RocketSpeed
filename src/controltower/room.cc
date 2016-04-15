@@ -16,7 +16,7 @@
 #include "src/controltower/tower.h"
 #include "src/messages/queues.h"
 #include "src/util/common/coding.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "src/util/topic_uuid.h"
 
 #include "external/folly/move_wrapper.h"

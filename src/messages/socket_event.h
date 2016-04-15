@@ -12,8 +12,9 @@
 
 #include "src/messages/event_callback.h"
 #include "src/messages/types.h"
+#include "src/messages/messages.h"
 #include "src/port/port.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "include/HostId.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/thread_check.h"

@@ -30,7 +30,7 @@
 #include "src/client/subscriber.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "src/util/common/random.h"
 #include "src/util/timeout_list.h"
 #include "src/util/common/noncopyable.h"

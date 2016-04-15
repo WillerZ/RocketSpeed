@@ -15,8 +15,9 @@
 #include "src/messages/serializer.h"
 #include "src/messages/stream.h"
 #include "src/messages/types.h"
+#include "src/messages/event_loop.h"
 #include "src/util/common/coding.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "include/HostId.h"
 #include "src/util/memory.h"
 

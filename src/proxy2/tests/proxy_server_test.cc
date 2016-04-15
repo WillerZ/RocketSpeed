@@ -25,7 +25,7 @@
 #include "src/messages/stream.h"
 #include "src/messages/types.h"
 #include "src/port/port.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/testharness.h"

@@ -11,7 +11,7 @@
 
 #include "src/messages/commands.h"
 #include "src/messages/queues.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 
 namespace rocketspeed {
 

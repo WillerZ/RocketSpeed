@@ -12,7 +12,7 @@
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
 #include "src/util/testharness.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 #include "src/util/common/guid_generator.h"
 #include "src/util/common/multi_producer_queue.h"
 

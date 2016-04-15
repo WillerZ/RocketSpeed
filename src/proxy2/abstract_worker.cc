@@ -8,7 +8,7 @@
 #include "include/ProxyServer.h"
 #include "src/messages/queues.h"
 #include "src/messages/types.h"
-#include "src/util/common/flow_control.h"
+#include "src/messages/flow_control.h"
 
 namespace rocketspeed {
 
