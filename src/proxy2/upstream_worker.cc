@@ -39,8 +39,8 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
   switch (type) {
     case MessageType::mSubscribe: {
       auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
-      if (options_.collapsing->ShouldCollapse(subscribe->GetNamespace(),
-                                              subscribe->GetTopicName())) {
+      if (options_.hot_topics->IsHotTopic(subscribe->GetNamespace(),
+                                          subscribe->GetTopicName())) {
         auto handled = multiplexer_.TryHandle(flow, message);
         RS_ASSERT(handled);
         (void)handled;

@@ -15,7 +15,7 @@ class ShardingStrategy;
 class Slice;
 class Status;
 class SubscriptionResultState;
-class TopicCollapsingStrategy;
+class HotnessDetector;
 
 class ProxyServerOptions {
  public:
@@ -27,8 +27,8 @@ class ProxyServerOptions {
   /// Sharding and routing configuration for subscriptions.
   std::shared_ptr<ShardingStrategy> routing;
 
-  /// A strategy that tells which topics are worth collapsing.
-  std::shared_ptr<TopicCollapsingStrategy> collapsing;
+  /// A strategy that tells which topics are considered "hot".
+  std::shared_ptr<HotnessDetector> hot_topics;
 
   /// Number of downstream threads.
   size_t num_downstream_threads{1};
@@ -64,12 +64,12 @@ class ProxyServer {
 /// collapsed. At the same time, all subscriptions which are not collapsed by
 /// the proxy must be handled by the destination RocketeerServer. Therefore, it
 /// makes sense to collapse only popular topics.
-class TopicCollapsingStrategy {
+class HotnessDetector {
  public:
-  virtual bool ShouldCollapse(const Slice& namespace_id,
-                              const Slice& topic_name) = 0;
+  virtual bool IsHotTopic(const Slice& namespace_id,
+                          const Slice& topic_name) = 0;
 
-  virtual ~TopicCollapsingStrategy() = default;
+  virtual ~HotnessDetector() = default;
 };
 
 }  // namespace rocketspeed

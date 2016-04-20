@@ -109,10 +109,9 @@ class MockSharding : public ShardingStrategy {
   std::unordered_map<size_t, std::shared_ptr<MockRouter>> routers_;
 };
 
-class MockCollapsing : public TopicCollapsingStrategy {
+class MockDetector : public HotnessDetector {
  public:
-  bool ShouldCollapse(const Slice& namespace_id,
-                      const Slice& topic_name) override {
+  bool IsHotTopic(const Slice& namespace_id, const Slice& topic_name) override {
     std::lock_guard<std::mutex> lock(mutex_);
     return collapsed_topics_.size() > 0;
   }
@@ -265,9 +264,9 @@ class ProxyServerTest {
 };
 
 TEST(ProxyServerTest, TwoClientsTwoServers) {
-  // Create routing and collapsing strategies for the proxy.
+  // Create routing and hot topics detection strategies for the proxy.
   auto routing = std::make_shared<MockSharding>();
-  auto collapsing = std::make_shared<MockCollapsing>();
+  auto hot_topics = std::make_shared<MockDetector>();
 
   // Create two clients and two servers.
   std::vector<std::unique_ptr<MessageBus>> clients, servers;
@@ -284,7 +283,7 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
     ProxyServerOptions proxy_options;
     proxy_options.info_log = info_log;
     proxy_options.routing = routing;
-    proxy_options.collapsing = collapsing;
+    proxy_options.hot_topics = hot_topics;
     ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
   }
 
@@ -394,10 +393,10 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
 }
 
 TEST(ProxyServerTest, NoRoute) {
-  // Create routing and collapsing strategies for the proxy.
+  // Create routing and hot topics detection strategies for the proxy.
   // We do not provide route for any shard.
   auto routing = std::make_shared<MockSharding>();
-  auto collapsing = std::make_shared<MockCollapsing>();
+  auto hot_topics = std::make_shared<MockDetector>();
 
   // Create a client and no server.
   MessageBus client(loop_options);
@@ -407,7 +406,7 @@ TEST(ProxyServerTest, NoRoute) {
     ProxyServerOptions proxy_options;
     proxy_options.info_log = info_log;
     proxy_options.routing = routing;
-    proxy_options.collapsing = collapsing;
+    proxy_options.hot_topics = hot_topics;
     ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
   }
 
