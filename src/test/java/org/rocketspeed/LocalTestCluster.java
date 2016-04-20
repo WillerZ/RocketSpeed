@@ -6,7 +6,6 @@ import java.io.OutputStreamWriter;
 
 public class LocalTestCluster implements AutoCloseable {
 
-  private static final String ENV_RS_CLUSTER_BIN_PATH = "RS_CLUSTER_BIN_PATH";
   private static final int COMMAND_READY = 'R';
   private static final int COMMAND_QUIT = 'Q';
   private static final int PILOT_DEFAULT_PORT = 58600;
@@ -50,7 +49,7 @@ public class LocalTestCluster implements AutoCloseable {
   }
 
   private static String getBinaryPath() {
-    return System.getenv(ENV_RS_CLUSTER_BIN_PATH);
+    return "buck-out/gen/rocketspeed/github/src/test/test_cluster_proc";
   }
 
   public HostId getCockpit() {

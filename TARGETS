@@ -17,11 +17,6 @@ java_unittest(
         'src/test/java/org/rocketspeed/*.java',
         'src/test/java/org/rocketspeed/util/*.java',
     ]),
-    test_classes = [
-        'org.rocketspeed.IntegrationTest',
-        'org.rocketspeed.LocalTestClusterTest',
-        'org.rocketspeed.RocketeerTest',
-    ],
     deps = [
         ':java',
         '@/rocketspeed/github/src/test:test_cluster_proc',
@@ -33,15 +28,6 @@ java_unittest(
         ('java', 'org/slf4j/slf4j-api', None, 'slf4j-api'),
         ('java', 'org/slf4j/slf4j-simple', None, 'slf4j-simple'),
     ],
-    tags = [
-        'serialize',
-        'serialize_test_cases',
-    ],
-    env = {
-        'RS_CLUSTER_BIN_PATH' : 'buck-out/gen/rocketspeed/github/src/test/test_cluster_proc',
-        'LD_LIBRARY_PATH' : 'buck-out/gen/rocketspeed/github',
-    },
-    openjdk = True,
 )
 
 cpp_binary(
