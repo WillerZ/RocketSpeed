@@ -23,5 +23,6 @@ cpp_unittest(
         'serialize',
         'serialize_test_cases',
         'unmanaged_test_cases',
+        'multiple-results',
     ],
 )
