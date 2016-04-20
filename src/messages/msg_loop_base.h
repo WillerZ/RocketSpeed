@@ -20,7 +20,7 @@
 #include "src/messages/stream_socket.h"
 #include "include/BaseEnv.h"
 #include "src/util/common/statistics.h"
-#include "src/util/mutexlock.h"
+#include "src/util/common/mutexlock.h"
 #include "include/Env.h"
 
 namespace rocketspeed {

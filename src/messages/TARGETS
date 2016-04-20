@@ -15,6 +15,7 @@ cpp_library(
     deps = [
         '@/rocketspeed/github/src/port:port',
         '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/util:util',
         ':event_loop',
     ],
 )
@@ -41,6 +42,7 @@ cpp_library(
         ':queues',
         '@/rocketspeed/github/src/port:port',
         '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/util:util',
         '@/logdevice/external/libevent-2.1.3-alpha:event_core',
     ],
     compiler_flags = [
@@ -59,5 +61,7 @@ cpp_library(
     ],
     deps = [
         '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/util:util',
+        '@/rocketspeed/github/external/folly:headers',
     ],
 )

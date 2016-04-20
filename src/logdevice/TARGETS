@@ -32,6 +32,7 @@ cpp_library(
         '-DUSE_LOGDEVICE',
     ],
     deps = [
+        '@/rocketspeed/github/src/util:util',
         '@/rocketspeed/github/src/util/common:common',
         '@/rocketspeed/github/src/port:port',
         '@/common/network:address',

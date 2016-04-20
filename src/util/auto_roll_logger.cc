@@ -4,7 +4,7 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 #include "src/util/auto_roll_logger.h"
-#include "src/util/mutexlock.h"
+#include "src/util/common/mutexlock.h"
 
 namespace rocketspeed {
 

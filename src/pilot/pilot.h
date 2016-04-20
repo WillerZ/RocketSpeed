@@ -7,6 +7,7 @@
 #include <memory>
 #include <random>
 #include <vector>
+#include "src/messages/messages.h"
 #include "src/messages/stream_socket.h"
 #include "src/util/common/statistics.h"
 #include "src/port/port.h"

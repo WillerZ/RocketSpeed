@@ -21,7 +21,9 @@ cpp_library(
         '-DOS_LINUX=1',
     ],
     deps = [
+        '@/rocketspeed/github/include:rocketspeed',
         '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/external/fastlog:fastlog',
     ],
     external_deps = [
         ('e2fsprogs', None, 'uuid'),
@@ -39,6 +41,10 @@ cpp_library(
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
     ],
+    deps = [
+        '@/rocketspeed/github/include:rocketspeed',
+        '@/rocketspeed/github/external/folly:headers',
+    ],
     link_whole = True,
 )
 
@@ -51,6 +57,9 @@ cpp_library(
         '-Irocketspeed/github',
         '-DROCKETSPEED_PLATFORM_POSIX=1',
         '-DOS_LINUX=1',
+    ],
+    deps = [
+        '@/rocketspeed/github/include:rocketspeed',
     ],
     link_whole = True,
 )

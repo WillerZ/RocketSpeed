@@ -11,7 +11,7 @@
 #include "include/RocketSpeed.h"
 #include "src/datastore/DataStore.h"
 #include "src/client/client.h"
-#include "src/util/mutexlock.h"
+#include "src/util/common/mutexlock.h"
 
 /**
  * This is the DataStore interface. Applications can use this interface

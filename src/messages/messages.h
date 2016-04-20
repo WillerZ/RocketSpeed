@@ -16,6 +16,7 @@
 #include "include/Types.h"
 #include "src/messages/serializer.h"
 #include "src/util/common/autovector.h"
+#include "src/util/storage.h"
 
 /*
  * This file contains all the messages used by RocketSpeed. These messages are
@@ -73,15 +74,6 @@ enum MetadataType : uint8_t {
 inline bool ValidateEnum(MetadataType e) {
   return e >= mSubscribe && e <= mUnSubscribe;
 }
-
-/**
- * Type of gaps that may appear in the logs.
- */
-enum GapType : uint8_t {
-  kBenign = 0x00,     // Gap due to operational issue, no data lost.
-  kDataLoss = 0x01,   // Catastrophic failure, acknowledged data was lost.
-  kRetention = 0x02,  // Gap due to data falling out of retention period.
-};
 
 inline bool ValidateEnum(GapType e) {
   return e >= kBenign && e <= kRetention;

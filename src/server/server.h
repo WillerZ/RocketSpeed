@@ -12,7 +12,6 @@
 #include <vector>
 #include <gflags/gflags.h>
 #include "include/Env.h"
-#include "src/supervisor/supervisor_loop.h"
 
 // These ones are in server.cc
 DECLARE_bool(tower);
@@ -37,6 +36,7 @@ class LogStorage;
 class MsgLoop;
 class Pilot;
 class Statistics;
+class SupervisorLoop;
 
 class RocketSpeed {
  public:

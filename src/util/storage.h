@@ -13,7 +13,6 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/messages/messages.h"
 
 namespace rocketspeed {
 
@@ -62,6 +61,15 @@ struct LogRecord {
  private:
   // Do nothing deleter for default empty context.
   static void DefaultDeleter(void*) {}
+};
+
+/**
+ * Type of gaps that may appear in the logs.
+ */
+enum GapType : uint8_t {
+  kBenign = 0x00,     // Gap due to operational issue, no data lost.
+  kDataLoss = 0x01,   // Catastrophic failure, acknowledged data was lost.
+  kRetention = 0x02,  // Gap due to data falling out of retention period.
 };
 
 /**

@@ -21,3 +21,18 @@ cpp_library(
     ],
 )
 
+cpp_library(
+    name = 'control_tower_router',
+    headers = [
+        'control_tower_router.h',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+        '-DGFLAGS=google',
+    ],
+    deps = [
+        '@/rocketspeed/github/include:rocketspeed',
+    ],
+)

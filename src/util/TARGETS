@@ -4,7 +4,6 @@ cpp_library(
         'arena.cc',
         'auto_roll_logger.cc',
         'bloom.cc',
-        'buffered_storage.cc',
         'build_version.cc',
         'cache.cc',
         'control_tower_router.cc',
@@ -27,9 +26,29 @@ cpp_library(
     ],
     deps = [
         '@/rocketspeed/github/src/util/common:common',
-        '@/rocketspeed/github/src/messages:messages',
         '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/external/folly:headers',
+        # TODO: refactor ControlTowerRouter to remove dep
+        '@/rocketspeed/github/src/copilot:control_tower_router',
     ],
+)
+
+cpp_library(
+  name = 'buffered_storage',
+  srcs = [
+    'buffered_storage.cc',
+  ],
+  preprocessor_flags = [
+    '-Irocketspeed/github',
+    '-DROCKETSPEED_PLATFORM_POSIX=1',
+    '-DOS_LINUX=1',
+  ],
+  deps = [
+    ':util',
+    '@/rocketspeed/github/src/util/common:common',
+    '@/rocketspeed/github/src/messages:messages',
+    '@/rocketspeed/github/external/folly:headers',
+  ],
 )
 
 cpp_benchmark(
@@ -41,9 +60,11 @@ cpp_benchmark(
         '-DOS_LINUX=1',
         '-DUSE_LOGDEVICE',
     ],
-  deps = [ '@/folly:folly',
-           '@/folly:benchmark',
-           '@/common/init:init',
+  deps = [
+    '@/folly:folly',
+    '@/folly:benchmark',
+    '@/common/init:init',
+    '@/rocketspeed/github/include:rocketspeed',
   ],
   args = [ ],
 )

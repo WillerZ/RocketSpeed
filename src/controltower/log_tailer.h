@@ -18,6 +18,7 @@ namespace rocketspeed {
 
 class EventLoop;
 class Flow;
+class MessageData;
 template <typename> class ThreadLocalQueues;
 
 //

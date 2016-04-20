@@ -6,6 +6,7 @@
 #define __STDC_FORMAT_MACROS
 #include "src/controltower/log_tailer.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/messages.h"
 #include "src/messages/queues.h"
 #include "src/util/common/processor.h"
 #include "src/util/common/random.h"

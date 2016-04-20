@@ -12,7 +12,6 @@
 #include <string.h>
 #include <cstdlib>
 #include "include/Assert.h"
-#include "src/util/logging.h"
 
 namespace rocketspeed {
 namespace port {
