@@ -31,6 +31,9 @@ using WorkerQueues = std::vector<std::shared_ptr<MessageQueue>>;
 /// It probaby isn't, but it does work.
 class AbstractWorker {
  public:
+  const ProxyServerOptions options_;
+  EventLoop* const event_loop_;
+
   AbstractWorker(const ProxyServerOptions& options,
                  EventLoop* event_loop,
                  size_t num_inbound_queues,
@@ -48,9 +51,6 @@ class AbstractWorker {
   virtual ~AbstractWorker() = 0;
 
  protected:
-  ProxyServerOptions options_;
-  EventLoop* const event_loop_;
-
   MessageQueue* GetOutboundQueue(size_t outbound_id);
 
  private:

@@ -5,17 +5,26 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
+
+#include "Types.h"
 
 namespace rocketspeed {
 
 class HostId;
+class HotnessDetector;
 class Logger;
 class ShardingStrategy;
 class Slice;
 class Status;
 class SubscriptionResultState;
-class HotnessDetector;
+class UpdatesAccumulator;
+
+/// A factory for UpdatesAccumulators.
+using UpdatesAccumulatorFactory =
+    std::function<std::unique_ptr<UpdatesAccumulator>(const Slice& namespace_id,
+                                                      const Slice& topic_name)>;
 
 class ProxyServerOptions {
  public:
@@ -29,6 +38,10 @@ class ProxyServerOptions {
 
   /// A strategy that tells which topics are considered "hot".
   std::shared_ptr<HotnessDetector> hot_topics;
+
+  /// Provides a strategy that bootstraps new subscribers to the current state
+  /// of an upstream subscription.
+  std::shared_ptr<UpdatesAccumulatorFactory> accumulator;
 
   /// Number of downstream threads.
   size_t num_downstream_threads{1};
@@ -70,6 +83,45 @@ class HotnessDetector {
                           const Slice& topic_name) = 0;
 
   virtual ~HotnessDetector() = default;
+};
+
+/// Accumulates updates on a subscription and bootstraps new subscribers to the
+/// current state of the subscription by sending any missing deltas or
+/// snapshots.
+///
+/// Each upstream subscription on a hot topic has a unique UpdatesAccumulator
+/// associated with it.
+class UpdatesAccumulator {
+ public:
+  /// Creates a default accumulator.
+  static std::unique_ptr<UpdatesAccumulator> CreateDefault();
+
+  /// Invoked in-order for every update received from an upstream subscription.
+  /// The Proxy adjusts the associated upstream subscription according to the
+  /// Action.
+  enum class Action {
+    /// Do not adjust upstream subscription.
+    kNoOp,
+    /// Resubscribe the upstream subscription from SubscriptionNumber(0).
+    kResubscribeUpstream,
+  };
+  virtual Action ConsumeUpdate(const Slice& contents,
+                               SequenceNumber prev_seqno,
+                               SequenceNumber current_seqno) = 0;
+
+  /// Provides updates to be delivered on a subscription by calling provided
+  /// consumer callback arbitrary number of times.
+  ///
+  /// All calls to the callback must be synchronous and the callback may not be
+  /// invoked after this method returns. It is guaranteed that the Slice
+  /// provided to the consumer will not be accessed after the consumer returns.
+  virtual void BootstrapSubscription(
+      SequenceNumber current_seqno,
+      std::function<void(const Slice& contents,
+                         SequenceNumber prev_seqno,
+                         SequenceNumber current_seqno)> consumer) = 0;
+
+  virtual ~UpdatesAccumulator() = default;
 };
 
 }  // namespace rocketspeed
