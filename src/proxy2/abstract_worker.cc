@@ -6,9 +6,10 @@
 
 #include "include/Assert.h"
 #include "include/ProxyServer.h"
+#include "src/messages/flow_control.h"
 #include "src/messages/queues.h"
 #include "src/messages/types.h"
-#include "src/messages/flow_control.h"
+#include "src/util/common/processor.h"
 
 namespace rocketspeed {
 
@@ -28,7 +29,8 @@ std::shared_ptr<MessageQueue> AbstractWorker::CreateInboundQueue(
   RS_ASSERT(!inbound_queues_[inbound_id]);
   inbound_queues_[inbound_id] =
       std::make_shared<MessageQueue>(options_.info_log, queue_stats_, 10000);
-  event_loop_->GetFlowControl()->Register<MessageAndStream>(
+  InstallSource<MessageAndStream>(
+      event_loop_,
       inbound_queues_[inbound_id].get(),
       [this, inbound_id](Flow* flow, MessageAndStream message) {
         ReceiveFromQueue(flow, inbound_id, std::move(message));

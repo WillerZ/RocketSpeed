@@ -5,6 +5,7 @@
 #include "src/proxy2/upstream_worker.h"
 
 #include <chrono>
+#include <vector>
 
 #include "external/folly/Memory.h"
 #include "external/folly/move_wrapper.h"
@@ -28,60 +29,20 @@ PerShard::PerShard(UpstreamWorker* worker, size_t shard_id)
                                              std::chrono::milliseconds(100)))
 , router_(worker_->options_.routing->GetRouter(shard_id))
 , router_version_(router_->GetVersion())
-, multiplexer_(this)
-, forwarder_(this) {
+, host_(router_->GetHost())
+, multiplexer_(this) {
   timer_->Enable();
-  auto new_host = router_->GetHost();
-  forwarder_.ChangeRoute(new_host);
-  multiplexer_.ChangeRoute(new_host);
 }
 
-void PerShard::Handle(Flow* flow, MessageAndStream message) {
-  auto type = message.second->GetMessageType();
-  switch (type) {
-    case MessageType::mSubscribe: {
-      auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
-      if (worker_->options_.hot_topics->IsHotTopic(subscribe->GetNamespace(),
-                                                   subscribe->GetTopicName())) {
-        auto handled = multiplexer_.TryHandle(flow, message);
-        RS_ASSERT(handled);
-        (void)handled;
-      } else {
-        forwarder_.Handle(flow, std::move(message));
-      }
-    } break;
-    case MessageType::mUnsubscribe: {
-      if (!multiplexer_.TryHandle(flow, message)) {
-        forwarder_.Handle(flow, std::move(message));
-      }
-    } break;
-    case MessageType::mGoodbye: {
-      auto handled = multiplexer_.TryHandle(flow, message);
-      RS_ASSERT(handled);
-      (void)handled;
-      forwarder_.Handle(flow, std::move(message));
-    } break;
-    default: {
-      LOG_WARN(GetOptions().info_log,
-               "Weird message type from DownstreamWorker: %s",
-               MessageTypeName(type));
-    }
-  }
+void PerShard::AddPerStream(PerStream* per_stream) {
+  auto result = streams_on_shard_.emplace(per_stream);
+  (void)result;
+  RS_ASSERT(result.second);
 }
 
-void PerShard::ReceiveFromForwarder(Flow* flow, MessageAndStream message) {
-  auto type = message.second->GetMessageType();
-  if (type == MessageType::mGoodbye) {
-    // Upon receipt of a MessageGoodbye from the server we must perform the same
-    // actions as if we have received the message from the subscriber, except
-    // that we send the message in the opposite direction.
-    auto handled = multiplexer_.TryHandle(flow, message);
-    RS_ASSERT(handled);
-    (void)handled;
-  }
-
-  // Forward.
-  worker_->ReceiveFromShard(flow, this, std::move(message));
+void PerShard::RemovePerStream(PerStream* per_stream) {
+  auto result = streams_on_shard_.erase(per_stream);
+  RS_ASSERT(result > 0);
 }
 
 PerShard::~PerShard() = default;
@@ -93,17 +54,28 @@ void PerShard::CheckRoutes() {
     return;
   }
   router_version_ = new_version;
-  auto new_host = router_->GetHost();
+  {
+    auto new_host = router_->GetHost();
+    if (host_ == new_host) {
+      return;
+    }
+    host_ = new_host;
+  }
   LOG_INFO(GetOptions().info_log,
            "Router version changed to: %zu for shard: %zu, new host: %s",
            router_version_,
            shard_id_,
-           new_host.ToString().c_str());
+           host_.ToString().c_str());
 
-  // First notify the forwrder, so that any subscriptions can be terminated
+  // Firstly notify the forwarder, so that any subscriptions can be terminated
   // before the Multiplexer starts moving them to a new host.
-  forwarder_.ChangeRoute(new_host);
-  multiplexer_.ChangeRoute(new_host);
+  std::vector<PerStream*> streams(streams_on_shard_.begin(),
+                                  streams_on_shard_.end());
+  for (auto per_stream : streams) {
+    if (streams_on_shard_.count(per_stream)) {
+      per_stream->ChangeRoute();
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -118,16 +90,20 @@ UpstreamWorker::UpstreamWorker(
 , stream_to_id_(stream_to_id) {}
 
 void UpstreamWorker::ReceiveFromQueue(Flow* flow,
-                                      size_t,
+                                      size_t inbound_id,
                                       MessageAndStream message) {
   StreamID stream_id = message.first;
   auto type = message.second->GetMessageType();
+  LOG_DEBUG(GetOptions().info_log,
+            "Received from queue: %zu, stream: %llu, type: %s",
+            inbound_id,
+            stream_id,
+            MessageTypeName(type));
 
-  // Find the PerShard to handle this stream.
-  auto it = stream_to_shard_.find(stream_id);
-  if (it == stream_to_shard_.end()) {
-    // It's a new stream, hence we must deduce PerShard affinity based on the
-    // shard it belongs to.
+  // Find the PerStream to handle this stream.
+  auto it = streams_.find(stream_id);
+  if (it == streams_.end()) {
+    // Create new stream context.
     // We determine the shard based on the first MessageSubscribe found in a
     // stream, which is okay as the subscriber always starts a stream with
     // MessageSubscribe.
@@ -147,7 +123,9 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
         it1 = result.first;
       }
 
-      auto result = stream_to_shard_.emplace(stream_id, it1->second.get());
+      auto result = streams_.emplace(
+          stream_id,
+          folly::make_unique<PerStream>(this, it1->second.get(), stream_id));
       RS_ASSERT(result.second);
       it = result.first;
     } else {
@@ -163,21 +141,26 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
   }
 
   // Forward.
-  auto per_shard = it->second;
-  per_shard->Handle(flow, std::move(message));
+  auto per_stream = it->second.get();
+  per_stream->ReceiveFromWorker(flow, std::move(message));
 
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {
-    CleanupState(per_shard, stream_id);
-    per_shard = nullptr;
+    CleanupState(per_stream);
+    per_stream = nullptr;
   }
 }
 
-void UpstreamWorker::ReceiveFromShard(Flow* flow,
-                                      PerShard* per_shard,
-                                      MessageAndStream message) {
+void UpstreamWorker::ReceiveFromStream(Flow* flow,
+                                       PerStream* per_stream,
+                                       MessageAndStream message) {
   StreamID stream_id = message.first;
   auto type = message.second->GetMessageType();
+  LOG_DEBUG(GetOptions().info_log,
+            "Received from stream: %llu (%p), type: %s",
+            stream_id,
+            per_stream,
+            MessageTypeName(type));
 
   // Forward.
   size_t id = stream_to_id_(stream_id);
@@ -185,14 +168,21 @@ void UpstreamWorker::ReceiveFromShard(Flow* flow,
 
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {
-    CleanupState(per_shard, stream_id);
-    per_shard = nullptr;
+    CleanupState(per_stream);
+    per_stream = nullptr;
   }
 }
 
 UpstreamWorker::~UpstreamWorker() = default;
 
-void UpstreamWorker::CleanupState(PerShard* per_shard, StreamID stream_id) {
+void UpstreamWorker::CleanupState(PerStream* per_stream) {
+  auto per_shard = per_stream->GetShard();
+  auto stream_id = per_stream->GetStream();
+
+  auto erased = streams_.erase(stream_id);
+  RS_ASSERT(erased == 1);
+  (void)erased;
+
   if (per_shard->IsEmpty()) {
     auto it = shard_cache_.find(per_shard->GetShardID());
     RS_ASSERT(it != shard_cache_.end());
@@ -203,31 +193,29 @@ void UpstreamWorker::CleanupState(PerShard* per_shard, StreamID stream_id) {
       shard_cache_.erase(it);
     }
   }
-  auto erased = stream_to_shard_.erase(stream_id);
-  RS_ASSERT(erased == 1);
-  (void)erased;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Forwarder::Forwarder(PerShard* per_shard) : per_shard_(per_shard) {}
-
-EventLoop* Forwarder::GetLoop() const {
-  return per_shard_->GetLoop();
+PerStream::PerStream(UpstreamWorker* worker,
+                     PerShard* per_shard,
+                     StreamID downstream_id)
+: worker_(worker), per_shard_(per_shard), downstream_id_(downstream_id) {
+  per_shard_->AddPerStream(this);
 }
 
-const ProxyServerOptions& Forwarder::GetOptions() const {
-  return per_shard_->GetOptions();
-}
-
-void Forwarder::Handle(Flow* flow, MessageAndStream message) {
+void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
   StreamID downstream_id = message.first;
   auto type = message.second->GetMessageType();
 
-  // Find the upstream stream to send this message on.
-  auto it = downstream_to_upstream_.find(downstream_id);
-  if (it == downstream_to_upstream_.end()) {
+  // Determine whether the topic of the subscription is hot and perform
+  // subscription-level proxying if it is.
+  // FIXME
+
+  // The topic of the subscription is not hot. Perform stream-level proxying.
+  if (!upstream_) {
+    const auto& host = per_shard_->GetHost();
     // Create an upstream for the downstream.
-    if (!host_) {
+    if (!host) {
       LOG_ERROR(GetOptions().info_log,
                 "Failed to obtain host for shard %zu",
                 per_shard_->GetShardID());
@@ -235,18 +223,18 @@ void Forwarder::Handle(Flow* flow, MessageAndStream message) {
       // hence we must deliver a goodbye message back to the client. There is no
       // need to deliver a goodbye message to the server, as the stream have not
       // yet reached it.
-      ForceCloseStream(downstream_id);
+      ForceCloseStream();
       return;
     }
-    auto new_upstream = GetLoop()->OpenStream(host_);
-    if (!new_upstream) {
+    upstream_ = GetLoop()->OpenStream(host);
+    if (!upstream_) {
       LOG_ERROR(GetOptions().info_log,
                 "Failed to open connection to %s",
-                host_.ToString().c_str());
+                host.ToString().c_str());
       // This error, although synchronous, is equivalent to a receipt of
       // MessageGoodbye. There is no need to deliver a goodbye message to the
       // server, as the stream have not yet reached it.
-      ForceCloseStream(downstream_id);
+      ForceCloseStream();
       return;
     }
 
@@ -254,12 +242,13 @@ void Forwarder::Handle(Flow* flow, MessageAndStream message) {
     // lifetime.
     class TheReceiver : public StreamReceiver {
      public:
-      TheReceiver(Forwarder* forwarder, StreamID stream_id)
-      : forwarder_(forwarder), downstream_id_(stream_id) {}
+      TheReceiver(PerStream* per_stream, StreamID stream_id)
+      : per_stream_(per_stream), downstream_id_(stream_id) {}
 
       void operator()(StreamReceiveArg<Message> arg) override {
-        forwarder_->ReceiveFromStream(arg.flow,
-                                      {downstream_id_, std::move(arg.message)});
+        RS_ASSERT(per_stream_->upstream_->GetLocalID() == arg.stream_id);
+        per_stream_->ReceiveFromStream(
+            arg.flow, {downstream_id_, std::move(arg.message)});
         // TODO(stupaq) MarkHostDown
       }
 
@@ -271,57 +260,51 @@ void Forwarder::Handle(Flow* flow, MessageAndStream message) {
       }
 
      private:
-      Forwarder* const forwarder_;
+      PerStream* const per_stream_;
       const StreamID downstream_id_;
     };
-    new_upstream->SetReceiver(new TheReceiver(this, downstream_id));
-
-    auto result =
-        downstream_to_upstream_.emplace(downstream_id, std::move(new_upstream));
-    RS_ASSERT(result.second);
-    it = result.first;
+    upstream_->SetReceiver(new TheReceiver(this, downstream_id));
   }
 
   // Forward.
-  auto upstream = it->second.get();
-  auto ts = upstream->ToTimestampedString(*message.second);
-  flow->Write(upstream, ts);
+  auto ts = upstream_->ToTimestampedString(*message.second);
+  flow->Write(upstream_.get(), ts);
 
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {
-    CleanupState(downstream_id);
+    CleanupState();
   }
 }
 
-void Forwarder::ReceiveFromStream(Flow* flow, MessageAndStream message) {
-  StreamID downstream_id = message.first;
+void PerStream::ReceiveFromStream(Flow* flow, MessageAndStream message) {
+  RS_ASSERT(downstream_id_ == message.first);
   auto type = message.second->GetMessageType();
 
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {
-    CleanupState(downstream_id);
+    CleanupState();
   }
 
   // Forward (the StreamID is already remapped by the StreamReceiver).
-  per_shard_->ReceiveFromForwarder(flow, std::move(message));
+  worker_->ReceiveFromStream(flow, this, std::move(message));
 }
 
-void Forwarder::ChangeRoute(const HostId& new_host) {
-  host_ = new_host;
-  // We pretend that each downstream received a goodbye message. Since all
-  // upstreams are owned by this forwarder, servers will receive notifications
-  // as a result of cleaning up the state.
-  while (!downstream_to_upstream_.empty()) {
-    auto downstream_id = downstream_to_upstream_.begin()->first;
-    ForceCloseStream(downstream_id);
-  }
+void PerStream::ChangeRoute() {
+  // We pretend that each downstream received a goodbye message.
+  ForceCloseStream();
 }
 
-Forwarder::~Forwarder() = default;
+PerStream::~PerStream() {
+  per_shard_->RemovePerStream(this);
+}
 
-void Forwarder::ForceCloseStream(StreamID downstream_id) {
+void PerStream::CleanupState() {
+  upstream_.reset();
+}
+
+void PerStream::ForceCloseStream() {
   MessageAndStream message;
-  message.first = downstream_id;
+  message.first = downstream_id_;
   message.second.reset(new MessageGoodbye(Tenant::GuestTenant,
                                           MessageGoodbye::Code::SocketError,
                                           MessageGoodbye::OriginType::Server));
@@ -329,12 +312,6 @@ void Forwarder::ForceCloseStream(StreamID downstream_id) {
   ReceiveFromStream(&no_flow, std::move(message));
   // A MessageGoodbye will be send to the server as a result of state cleanup
   // performed in ::ReceiveFromStream.
-}
-
-void Forwarder::CleanupState(StreamID downstream_id) {
-  downstream_to_upstream_.erase(downstream_id);
-  // Could erase no element if the stream was closed as a result of a failure
-  // in initial routing, see invocations of ::ForceCloseStream.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -376,10 +353,57 @@ bool Multiplexer::TryHandle(Flow* flow, const MessageAndStream& message) {
   }
 }
 
-void Multiplexer::ChangeRoute(const HostId& new_host) {
-  // FIXME
+Multiplexer::~Multiplexer() = default;
+
+/*
+// FIXME
+void PerShard::Handle(Flow* flow, MessageAndStream message) {
+  auto type = message.second->GetMessageType();
+  switch (type) {
+    case MessageType::mSubscribe: {
+      auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
+      if (worker_->options_.hot_topics->IsHotTopic(subscribe->GetNamespace(),
+                                                   subscribe->GetTopicName())) {
+        auto handled = multiplexer_.TryHandle(flow, message);
+        RS_ASSERT(handled);
+        (void)handled;
+      } else {
+        per_shard_.Handle(flow, std::move(message));
+      }
+    } break;
+    case MessageType::mUnsubscribe: {
+      if (!multiplexer_.TryHandle(flow, message)) {
+        per_shard_.Handle(flow, std::move(message));
+      }
+    } break;
+    case MessageType::mGoodbye: {
+      auto handled = multiplexer_.TryHandle(flow, message);
+      RS_ASSERT(handled);
+      (void)handled;
+      per_shard_.Handle(flow, std::move(message));
+    } break;
+    default: {
+      LOG_WARN(GetOptions().info_log,
+               "Weird message type from DownstreamWorker: %s",
+               MessageTypeName(type));
+    }
+  }
 }
 
-Multiplexer::~Multiplexer() = default;
+void PerShard::ReceiveFromForwarder(Flow* flow, MessageAndStream message) {
+  auto type = message.second->GetMessageType();
+  if (type == MessageType::mGoodbye) {
+    // Upon receipt of a MessageGoodbye from the server we must perform the same
+    // actions as if we have received the message from the subscriber, except
+    // that we send the message in the opposite direction.
+    auto handled = multiplexer_->TryHandle(flow, message);
+    RS_ASSERT(handled);
+    (void)handled;
+  }
+
+  // Forward.
+  worker_->ReceiveFromShard(flow, this, std::move(message));
+}
+*/
 
 }  // namespace rocketspeed

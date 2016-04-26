@@ -20,9 +20,12 @@ namespace rocketspeed {
 class EventCallback;
 class EventLoop;
 class Message;
+class Multiplexer;
 class PerShard;
+class PerStream;
 class ProxyServerOptions;
 class Stream;
+class UpstreamWorker;
 
 /// The layer of UpstreamWorkers is sharded by the shard, to which the
 /// destination topic belongs. All important proxy-related logic happens here:
@@ -30,16 +33,31 @@ class Stream;
 /// * stream remapping,
 /// * subscription termination and deduplication.
 ///
-/// The worker's structure can be described by the following hierarchy:
-///   UpstreamWorker -- routes subscriptions according to shard assignment.
+/// The worker is composed of the following pieces:
+/// * UpstreamWorker -- routes messages according to stream assignment.
+/// * PerStream -- detects hot topics and performs stream-level routing for
+///                subscriptions on cold topics.
+/// * PerShard -- handles obtaining and distributing shard routing information.
+/// * Multiplexer -- deduplicates subscriptions on hot topics across all streams
+///                  on one shard.
+///
+/// The worker's structure can be described by the following DAG:
+///   UpstreamWorker
 ///   |
-///   +---> PerShard -- triages hot and cold topics, handles shard failover.
-///   |     +---> Forwarder -- performs stream-level routing.
-///   |     +---> Multiplexer -- deduplicates subscriptions on hot topics.
+///   +---> PerStream         --+
+///   |     |                   |
+///   |     |                   |
+///   |     +---> Multiplexer   } streams on one shard share the Multiplexer
+///   |     |                   |
+///   |     |                   |
+///   +---> PerStream         --+
 ///   |
-///   +---> PerShard
-//    |     [...]
 ///   [...]
+///
+/// Messages received from ProxyServer's subscribers flow as follows:
+/// DownstreamWorker -> UpstreamWorker -> PerStream -> {Stream, Multiplexer},
+/// those received from the server, the proxy connects to, flow in the opposite
+/// direction.
 ///
 /// Worker's own memory requirements must be at most linear in the total number
 /// of active streams.
@@ -56,59 +74,63 @@ class UpstreamWorker : public AbstractWorker {
                         size_t inbound_id,
                         MessageAndStream message) override;
 
-  void ReceiveFromShard(Flow* flow,
-                        PerShard* per_shard,
-                        MessageAndStream message);
+  void ReceiveFromStream(Flow* flow,
+                         PerStream* per_stream,
+                         MessageAndStream message);
 
   ~UpstreamWorker();
 
  private:
   const StreamAllocator::DivisionMapping stream_to_id_;
 
-  std::unordered_map<StreamID, PerShard*> stream_to_shard_;
+  std::unordered_map<StreamID, std::unique_ptr<PerStream>> streams_;
   std::unordered_map<size_t, std::unique_ptr<PerShard>> shard_cache_;
 
-  void CleanupState(PerShard* per_shard, StreamID stream_id);
+  void CleanupState(PerStream* per_stream);
 };
 
-/// A stream-level proxy (per shard of subscriptions).
+/// A stream- and subscription-level proxy (per stream of subscriptions from a
+/// client). Messages related to subscriptions on hot topics are handled by the
+/// Multiplexer.
 ///
-/// Forwarder's memory requirements must be at most linear in the total number
-/// of active streams (not subscriptions).
-///
-/// Forwarder is aware of two "kinds" of streams to/from subscribers or servers.
-/// We call them "down(stream) streams" and "up(stream) streams" respectively.
-class Forwarder {
+/// PerStream's memory requirements must be at most linear in the total number
+/// of active subscriptions on hot topics.
+class PerStream {
  public:
-  explicit Forwarder(PerShard* per_shard);
+  explicit PerStream(UpstreamWorker* worker,
+                     PerShard* per_shard,
+                     StreamID downstream_id);
 
-  EventLoop* GetLoop() const;
-  const ProxyServerOptions& GetOptions() const;
+  EventLoop* GetLoop() const { return worker_->GetLoop(); }
+  const ProxyServerOptions& GetOptions() const { return worker_->GetOptions(); }
+  PerShard* GetShard() const { return per_shard_; }
+  StreamID GetStream() const { return downstream_id_; }
 
-  void Handle(Flow* flow, MessageAndStream message);
+  void ReceiveFromWorker(Flow* flow, MessageAndStream message);
 
   void ReceiveFromStream(Flow* flow, MessageAndStream message);
 
-  void ChangeRoute(const HostId& new_host);
+  void ChangeRoute();
 
-  bool IsEmpty() const { return downstream_to_upstream_.empty(); }
-
-  ~Forwarder();
+  ~PerStream();
 
  private:
+  UpstreamWorker* const worker_;
   PerShard* const per_shard_;
+  const StreamID downstream_id_;
 
-  HostId host_;
-  std::unordered_map<StreamID, std::unique_ptr<Stream>> downstream_to_upstream_;
+  /// A sink for messages on subscriptions that were not picked for
+  /// multiplexing.
+  std::unique_ptr<Stream> upstream_;
+
+  void CleanupState();
 
   /// Closes the stream, ensuring that both client and server receive goodbye
   /// messages and all local state is cleaned up.
-  void ForceCloseStream(StreamID downstream_id);
-
-  void CleanupState(StreamID stream_id);
+  void ForceCloseStream();
 };
 
-/// A subscription-level proxy (per shard of subscriptions).
+/// A subscription-level proxy (per stream of subscriptions).
 ///
 /// Multiplexer's memory requirements may be linear in the total number of
 /// active subscriptions it learns about.
@@ -119,19 +141,7 @@ class Multiplexer {
   EventLoop* GetLoop() const;
   const ProxyServerOptions& GetOptions() const;
 
-  /// Returns true if the message was handled by Multiplexer and doesn't need
-  /// to be handled by the Forwarder.
-  ///
-  /// It is the responsibility of the Multiplexer to filter out all messages
-  /// that refer to active subscriptions it handles.
   bool TryHandle(Flow* flow, const MessageAndStream& message);
-
-  void ChangeRoute(const HostId& new_host);
-
-  bool IsEmpty() const {
-    // FIXME
-    return true;
-  }
 
   ~Multiplexer();
 
@@ -139,26 +149,24 @@ class Multiplexer {
   PerShard* const per_shard_;
 };
 
-/// Handles both kinds of proxying logic for a single shard of subscriptions.
+/// Encapsulates logic and resources that are common to all PerStream objects on
+/// the same shard.
 ///
 /// PerShard's memory requirements must be at most linear in the total number
-/// of active streams (not subscriptions).
+/// of PerStream objects that use it.
 class PerShard {
  public:
   explicit PerShard(UpstreamWorker* worker, size_t shard_id);
 
+  void AddPerStream(PerStream* per_stream);
+  void RemovePerStream(PerStream* per_stream);
+
   EventLoop* GetLoop() const { return worker_->GetLoop(); }
   const ProxyServerOptions& GetOptions() const { return worker_->GetOptions(); }
-
   size_t GetShardID() const { return shard_id_; }
-
-  void Handle(Flow* flow, MessageAndStream message);
-
-  void ReceiveFromForwarder(Flow* flow, MessageAndStream message);
-
-  bool IsEmpty() const {
-    return forwarder_.IsEmpty() && multiplexer_.IsEmpty();
-  }
+  const HostId& GetHost() const { return host_; }
+  bool IsEmpty() const { return streams_on_shard_.empty(); }
+  Multiplexer* GetMultiplexer() { return &multiplexer_; }
 
   ~PerShard();
 
@@ -169,9 +177,13 @@ class PerShard {
   const std::unique_ptr<SubscriptionRouter> router_;
 
   size_t router_version_;
+  HostId host_;
 
+  /// A set of streams on this shard.
+  std::unordered_set<PerStream*> streams_on_shard_;
+
+  /// Handles topic multiplexing.
   Multiplexer multiplexer_;
-  Forwarder forwarder_;
 
   /// Checks if router version has changed and handles router changes.
   void CheckRoutes();
