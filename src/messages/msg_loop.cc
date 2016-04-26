@@ -11,15 +11,16 @@
 #include <numeric>
 #include <thread>
 
+#include "include/BaseEnv.h"
 #include "include/Logger.h"
-#include "src/port/port.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/flow_control.h"
 #include "src/messages/messages.h"
 #include "src/messages/queues.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
-#include "include/BaseEnv.h"
+#include "src/port/port.h"
 
 namespace {
 // free up any thread local storage for worker_ids.
@@ -267,11 +268,12 @@ StreamSocket MsgLoop::CreateOutboundStream(HostId destination,
 }
 
 void MsgLoop::SendCommandToSelf(std::unique_ptr<Command> command) {
-  event_loops_[GetThreadWorkerIndex()]->Dispatch(std::move(command));
+  auto loop = event_loops_[GetThreadWorkerIndex()].get();
+  SourcelessFlow flow(loop->GetFlowControl());
+  loop->Dispatch(&flow, std::move(command));
 }
 
-Status MsgLoop::SendCommand(std::unique_ptr<Command> command,
-                            int worker_id) {
+Status MsgLoop::SendCommand(std::unique_ptr<Command> command, int worker_id) {
   RS_ASSERT(worker_id >= 0 &&
             worker_id < static_cast<int>(event_loops_.size()));
   return event_loops_[worker_id]->SendCommand(command);

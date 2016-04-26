@@ -7,13 +7,14 @@
 
 #include <chrono>
 #include <memory>
+#include <thread>
 
+#include "include/Env.h"
+#include "include/RocketSpeed.h"
 #include "include/Rocketeer.h"
 #include "include/RocketeerServer.h"
-#include "include/RocketSpeed.h"
-#include "include/Env.h"
-#include "src/messages/msg_loop.h"
 #include "src/messages/messages.h"
+#include "src/messages/msg_loop.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
@@ -140,7 +141,7 @@ struct SubscribeTerminate : public Rocketeer {
   void HandleNewSubscription(InboundID inbound_id,
                              SubscriptionParameters params) {
     inbound_id_ = inbound_id;
-    Terminate(inbound_id, Rocketeer::UnsubscribeReason::BackOff);
+    Terminate(nullptr, inbound_id, Rocketeer::UnsubscribeReason::BackOff);
   }
 
   void HandleTermination(InboundID inbound_id, TerminationSource source) {
@@ -214,10 +215,10 @@ struct TopOfStack : public Rocketeer {
   void HandleNewSubscription(InboundID inbound_id,
                              SubscriptionParameters params) {
     inbound_id_ = inbound_id;
-    Deliver(inbound_id, deliver_msg_seqno_, deliver_msg_);
-    Advance(inbound_id, advance_seqno_);
-    DeliverBatch(inbound_id.stream_id, messages_);
-    Terminate(inbound_id, Rocketeer::UnsubscribeReason::BackOff);
+    Deliver(nullptr, inbound_id, deliver_msg_seqno_, deliver_msg_);
+    Advance(nullptr, inbound_id, advance_seqno_);
+    DeliverBatch(nullptr, inbound_id.stream_id, messages_);
+    Terminate(nullptr, inbound_id, Rocketeer::UnsubscribeReason::BackOff);
   }
 
   void HandleTermination(InboundID inbound_id, TerminationSource source) {

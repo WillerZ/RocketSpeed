@@ -74,8 +74,8 @@ typedef std::function<void(int fd)> AcceptCallbackType;
 
 // Callback registered for a command type is invoked for all commands of the
 // type.
-typedef std::function<void(std::unique_ptr<Command> command)>
-  CommandCallbackType;
+typedef std::function<void(Flow* flow, std::unique_ptr<Command> command)>
+    CommandCallbackType;
 
 typedef std::function<void()> TimerCallbackType;
 
@@ -362,7 +362,7 @@ class EventLoop {
    *
    * @param command A command to be executed
    */
-  void Dispatch(std::unique_ptr<Command> command);
+  void Dispatch(Flow* flow, std::unique_ptr<Command> command);
 
   // Get the info log.
   const std::shared_ptr<Logger>& GetLog() { return info_log_; }
@@ -690,7 +690,7 @@ class EventLoop {
   Status AddControlCommandQueue(
     std::shared_ptr<UnboundedMPSCCommandQueue> control_command_queue);
 
-  void HandleSendCommand(std::unique_ptr<Command> command);
+  void HandleSendCommand(Flow* flow, std::unique_ptr<Command> command);
   void HandleAcceptCommand(std::unique_ptr<Command> command);
 
   Status create_connection(const HostId& host, int* fd);

@@ -13,12 +13,13 @@
 
 #include "external/folly/move_wrapper.h"
 
+#include "include/Env.h"
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
+#include "include/Rocketeer.h"
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "include/Env.h"
 #include "src/util/common/hash.h"
 
 namespace rocketspeed {
@@ -35,24 +36,31 @@ std::string InboundID::ToString() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void Rocketeer::Deliver(InboundID inbound_id,
+void Rocketeer::Deliver(Flow* flow,
+                        InboundID inbound_id,
                         SequenceNumber seqno,
                         std::string payload,
                         MsgId msg_id) {
-  GetBelowRocketeer()->Deliver(inbound_id, seqno, std::move(payload), msg_id);
+  GetBelowRocketeer()->Deliver(
+      flow, inbound_id, seqno, std::move(payload), msg_id);
 }
 
-void Rocketeer::DeliverBatch(StreamID stream_id,
+void Rocketeer::DeliverBatch(Flow* flow,
+                             StreamID stream_id,
                              std::vector<RocketeerMessage> messages) {
-  GetBelowRocketeer()->DeliverBatch(stream_id, std::move(messages));
+  GetBelowRocketeer()->DeliverBatch(flow, stream_id, std::move(messages));
 }
 
-void Rocketeer::Advance(InboundID inbound_id, SequenceNumber seqno) {
-  GetBelowRocketeer()->Advance(inbound_id, seqno);
+void Rocketeer::Advance(Flow* flow,
+                        InboundID inbound_id,
+                        SequenceNumber seqno) {
+  GetBelowRocketeer()->Advance(flow, inbound_id, seqno);
 }
 
-void Rocketeer::Terminate(InboundID inbound_id, UnsubscribeReason reason) {
-  GetBelowRocketeer()->Terminate(inbound_id, reason);
+void Rocketeer::Terminate(Flow* flow,
+                          InboundID inbound_id,
+                          UnsubscribeReason reason) {
+  GetBelowRocketeer()->Terminate(flow, inbound_id, reason);
 }
 
 }  // namespace rocketspeed

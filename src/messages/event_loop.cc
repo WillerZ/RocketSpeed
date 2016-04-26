@@ -80,7 +80,8 @@ class AcceptCommand : public Command {
 };
 
 // TODO(t8971722)
-void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
+void EventLoop::HandleSendCommand(Flow* flow,
+                                  std::unique_ptr<Command> command) {
   // Need using otherwise SendCommand is confused with the member function.
   using rocketspeed::SendCommand;
   SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
@@ -119,9 +120,8 @@ void EventLoop::HandleSendCommand(std::unique_ptr<Command> command) {
       RS_ASSERT(result1.second);
     }
 
-    // Send out the message even if there is no room in the send queue.
     auto message = msg;
-    it->second->Write(message);
+    flow->Write(it->second, message);
   }
 }
 
@@ -844,13 +844,10 @@ void EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
 Status EventLoop::AddIncomingQueue(
     std::shared_ptr<CommandQueue> command_queue) {
   // An event that signals new commands in the command queue.
-  command_queue->RegisterReadCallback(
-    this,
-    [this] (std::unique_ptr<Command> cmd) {
-      // Call registered callback.
-      Dispatch(std::move(cmd));
-      return true;
-    });
+  GetFlowControl()->Register<std::unique_ptr<Command>>(
+      command_queue.get(), [this](Flow* flow, std::unique_ptr<Command> cmd) {
+        Dispatch(flow, std::move(cmd));
+      });
   command_queue->SetReadEnabled(this, true);
 
   LOG_INFO(info_log_, "Added new command queue to EventLoop");
@@ -865,7 +862,8 @@ Status EventLoop::AddControlCommandQueue(
     this,
     [this] (std::unique_ptr<Command> cmd) {
       // Call registered callback.
-      Dispatch(std::move(cmd));
+      SourcelessFlow no_flow(GetFlowControl());
+      Dispatch(&no_flow, std::move(cmd));
       return true;
     });
   control_command_queue->SetReadEnabled(this, true);
@@ -926,7 +924,7 @@ void EventLoop::Accept(int fd) {
   SendCommand(command);
 }
 
-void EventLoop::Dispatch(std::unique_ptr<Command> command) {
+void EventLoop::Dispatch(Flow* flow, std::unique_ptr<Command> command) {
   stats_.commands_processed->Add(1);
 
   // Search for callback registered for this command type.
@@ -934,7 +932,7 @@ void EventLoop::Dispatch(std::unique_ptr<Command> command) {
   const auto type = command->GetCommandType();
   auto iter = command_callbacks_.find(type);
   if (iter != command_callbacks_.end()) {
-    iter->second(std::move(command));
+    iter->second(flow, std::move(command));
   } else {
     // If the user has not registered a callback for this command type, then
     // the command will be droped silently.
@@ -1018,14 +1016,13 @@ void EventLoop::EnableDebugThreadUnsafe(DebugCallback log_cb) {
 
 static void CommandQueueUnrefHandler(void* ptr) {
   std::shared_ptr<CommandQueue>* command_queue =
-    static_cast<std::shared_ptr<CommandQueue>*>(ptr);
+      static_cast<std::shared_ptr<CommandQueue>*>(ptr);
   delete command_queue;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 EventLoop::Options::Options()
-: env(ClientEnv::Default()), info_log(std::make_shared<NullLogger>()) {
-}
+: env(ClientEnv::Default()), info_log(std::make_shared<NullLogger>()) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 EventLoop::Runner::Runner(EventLoop* event_loop)
@@ -1073,16 +1070,16 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , flow_control_(new FlowControl(options_.stats_prefix, this)) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
-      std::unique_ptr<Command> command) {
+      Flow* flow, std::unique_ptr<Command> command) {
     HandleAcceptCommand(std::move(command));
   };
   command_callbacks_[CommandType::kSendCommand] = [this](
-      std::unique_ptr<Command> command) {
-    HandleSendCommand(std::move(command));
+      Flow* flow, std::unique_ptr<Command> command) {
+    HandleSendCommand(flow, std::move(command));
   };
   command_callbacks_[CommandType::kExecuteCommand] = [](
-      std::unique_ptr<Command> command) {
-    static_cast<ExecuteCommand*>(command.get())->Execute();
+      Flow* flow, std::unique_ptr<Command> command) {
+    static_cast<ExecuteCommand*>(command.get())->Execute(flow);
   };
 
   LOG_INFO(info_log_, "Created a new Event Loop at port %d", port_number_);
@@ -1131,7 +1128,7 @@ const char* EventLoop::SeverityToString(int severity) {
   } else if (severity == EventLoop::kLogSeverityErr) {
     return "err";
   } else {
-    return "???"; // never reached
+    return "???";  // never reached
   }
 }
 
@@ -1149,7 +1146,7 @@ size_t EventLoop::GetQueueSize() const {
 
 void EventLoop::RegisterFdReadEvent(int fd, std::function<void()> callback) {
   auto event_callback =
-    EventCallback::CreateFdReadCallback(this, fd, std::move(callback));
+      EventCallback::CreateFdReadCallback(this, fd, std::move(callback));
   fd_read_events_.emplace(fd, std::move(event_callback));
 }
 

@@ -143,30 +143,37 @@ class ExecuteCommand : public Command {
 
   virtual ~ExecuteCommand() {}
 
-  virtual CommandType GetCommandType() const {
-    return kExecuteCommand;
-  }
+  virtual CommandType GetCommandType() const { return kExecuteCommand; }
 
-  virtual void Execute() = 0;
+  virtual void Execute(Flow* flow) = 0;
 };
 
 template <typename Function>
-class ExecuteCommandImpl : public ExecuteCommand {
- public:
-  explicit ExecuteCommandImpl(Function func)
-  : func_(std::move(func)) {}
+ExecuteCommand* MakeExecuteCommand(Function func) {
+  class Impl : public ExecuteCommand {
+   public:
+    explicit Impl(Function f) : func_(std::move(f)) {}
 
-  void Execute() override {
-    func_();
-  }
+    void Execute(Flow* /* ignored */) override { func_(); }
 
- private:
-  Function func_;
-};
+   private:
+    Function func_;
+  };
+  return new Impl(std::move(func));
+}
 
 template <typename Function>
-ExecuteCommandImpl<Function>* MakeExecuteCommand(Function func) {
-  return new ExecuteCommandImpl<Function>(std::move(func));
+std::unique_ptr<ExecuteCommand> MakeExecuteWithFlowCommand(Function func) {
+  class Impl : public ExecuteCommand {
+   public:
+    explicit Impl(Function f) : func_(std::move(f)) {}
+
+    void Execute(Flow* flow) override { func_(flow); }
+
+   private:
+    Function func_;
+  };
+  return std::unique_ptr<Impl>(new Impl(std::move(func)));
 }
 
 }  // namespace rocketspeed

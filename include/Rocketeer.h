@@ -13,6 +13,18 @@
 
 namespace rocketspeed {
 
+/**
+ * An opaque type which carries an information about the origin of a request for
+ * end-to-end flow control purposes.
+ *
+ * User of the Rocketeer should either pass the pointer between Rocketeers in
+ * the stack, or, in rare cases, provide nullptr in place of this argument to
+ * ignore backpressure.
+ * The object provided to Rocketeer's callbacks is only guaranteed to exist for
+ * the duration of the callback, hence it is strongly advised NOT to retain it.
+ */
+class Flow;
+
 typedef unsigned long long int StreamID;
 static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
 
@@ -92,7 +104,8 @@ class Rocketeer {
    * @param payload Payload of the message.
    * @param msg_id The ID of the message.
    */
-  virtual void Deliver(InboundID inbound_id,
+  virtual void Deliver(Flow* flow,
+                       InboundID inbound_id,
                        SequenceNumber seqno,
                        std::string payload,
                        MsgId msg_id = MsgId());
@@ -104,7 +117,8 @@ class Rocketeer {
    * @param stream_id ID of the stream where to send messages.
    * @param messages List of messages to send.
    */
-  virtual void DeliverBatch(StreamID stream_id,
+  virtual void DeliverBatch(Flow* flow,
+                            StreamID stream_id,
                             std::vector<RocketeerMessage> messages);
 
   /**
@@ -119,7 +133,7 @@ class Rocketeer {
    *              next sequence number.
    * @return true iff operation was successfully sheduled.
    */
-  virtual void Advance(InboundID inbound_id, SequenceNumber seqno);
+  virtual void Advance(Flow* flow, InboundID inbound_id, SequenceNumber seqno);
 
   /**
    * Terminates given subscription.
@@ -136,7 +150,9 @@ class Rocketeer {
     /** The subscriber should resubscribe later. */
     BackOff,
   };
-  virtual void Terminate(InboundID inbound_id, UnsubscribeReason reason);
+  virtual void Terminate(Flow* flow,
+                         InboundID inbound_id,
+                         UnsubscribeReason reason);
 
   /**
    * Returns a pointer to the Rocketeer below this one in the stack, which
