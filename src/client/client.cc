@@ -26,16 +26,16 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "include/WakeLock.h"
+#include "src/client/multi_threaded_subscriber.h"
 #include "src/client/smart_wake_lock.h"
-#include "src/client/subscriber.h"
+#include "src/messages/flow_control.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
-#include "src/messages/flow_control.h"
-#include "src/util/common/random.h"
-#include "src/util/timeout_list.h"
+#include "src/util/common/fixed_configuration.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
-#include "src/util/common/fixed_configuration.h"
+#include "src/util/common/random.h"
+#include "src/util/timeout_list.h"
 
 namespace rocketspeed {
 

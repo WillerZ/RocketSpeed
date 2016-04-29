@@ -8,7 +8,7 @@
 
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
-#include "src/client/subscriber.h"
+#include "src/client/single_shard_subscriber.h"
 #include "src/util/xxhash.h"
 
 namespace rocketspeed {

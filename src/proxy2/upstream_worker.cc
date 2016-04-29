@@ -13,7 +13,7 @@
 #include "include/Assert.h"
 #include "include/Logger.h"
 #include "include/ProxyServer.h"
-#include "src/client/subscriber.h"
+#include "src/client/single_shard_subscriber.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/flow_control.h"
 #include "src/messages/queues.h"
