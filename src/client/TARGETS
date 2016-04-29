@@ -7,6 +7,10 @@ cpp_library(
         'storage/file_storage.cc',
         'subscriber.cc',
         'topic_subscription_map.cc',
+        'multi_shard_subscriber.cc',
+        'multi_threaded_subscriber.cc',
+        'single_shard_subscriber.cc',
+        'tail_collapsing_subscriber.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github',
