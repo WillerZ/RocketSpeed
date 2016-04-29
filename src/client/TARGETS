@@ -5,7 +5,6 @@ cpp_library(
         'options.cc',
         'publisher.cc',
         'storage/file_storage.cc',
-        'subscriber.cc',
         'topic_subscription_map.cc',
         'multi_shard_subscriber.cc',
         'multi_threaded_subscriber.cc',
