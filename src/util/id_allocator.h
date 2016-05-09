@@ -21,9 +21,11 @@ namespace rocketspeed {
  * same ID twice. The allocator specialised for any numeric type has a period
  * equal to the size of the set of allowed IDs.
  */
-template <typename IDType, typename AllocatorType>
+template <typename IDT, typename AllocatorType>
 class IDAllocator {
  public:
+  using IDType = IDT;
+
   // Noncopyable
   IDAllocator(const IDAllocator&) = delete;
   IDAllocator& operator=(const IDAllocator&) = delete;

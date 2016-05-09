@@ -6,6 +6,7 @@
 #define __STDC_FORMAT_MACROS
 #include "stream.h"
 
+#include <chrono>
 #include <memory>
 
 #include "src/messages/event_loop.h"
@@ -71,7 +72,9 @@ SharedTimestampedString Stream::ToTimestampedString(const Message& message) {
 SharedTimestampedString Stream::ToTimestampedString(const std::string& value) {
   auto serialised = std::make_shared<TimestampedString>();
   serialised->issued_time =
-      socket_event_->GetEventLoop()->GetEnv()->NowMicros();
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count();
   serialised->string = std::move(value);
   return serialised;
 }

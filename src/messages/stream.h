@@ -56,8 +56,8 @@ class Stream : public Sink<SharedTimestampedString> {
   /** Inherited from Sink<SharedTimestampedString>. */
   bool Write(SharedTimestampedString& value) final override;
 
-  SharedTimestampedString ToTimestampedString(const Message& value);
-  SharedTimestampedString ToTimestampedString(const std::string& value);
+  static SharedTimestampedString ToTimestampedString(const Message& value);
+  static SharedTimestampedString ToTimestampedString(const std::string& value);
 
   bool Write(const Message& msg) {
     auto ts = ToTimestampedString(msg);
