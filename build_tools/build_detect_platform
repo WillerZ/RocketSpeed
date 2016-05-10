@@ -96,8 +96,14 @@ if test -z "$DJINNIDIR"; then
     DJINNIDIR="external/djinni"
 fi
 
+# Detect location of sparsehash
+if test -z "$SPARSEHASHDIR"; then
+    SPARSEHASHDIR="external/sparsehash"
+fi
+
 COMMON_FLAGS="$COMMON_FLAGS ${CFLAGS} ${EVENTINCLUDE} -Iexternal"
 COMMON_FLAGS="$COMMON_FLAGS -I ${DJINNIDIR}/support-lib/jni -Isrc/djinni/generated/c++"
+COMMON_FLAGS="$COMMON_FLAGS -I ${SPARSEHASHDIR}"
 CROSS_COMPILE=
 PLATFORM_CCFLAGS=
 PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS ${CXXFLAGS}"
