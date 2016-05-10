@@ -561,10 +561,6 @@ void CopilotWorker::ProcessUnsubscribe(TenantID tenant_id,
       RemoveSubscription(tenant_id, sub_id, subscriber, worker_id);
       break;
 
-    case MessageUnsubscribe::Reason::kBackOff:
-      // Not used.
-      break;
-
     case MessageUnsubscribe::Reason::kInvalid:
       // Control Tower has rejected our subscription.
       HandleInvalidSubscription(subscriber, sub_id);

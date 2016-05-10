@@ -309,7 +309,6 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
       }
       break;
 
-    case MessageUnsubscribe::Reason::kBackOff:
     case MessageUnsubscribe::Reason::kInvalid:
       // Outbound unsubscription from control tower.
       LOG_WARN(options_.info_log,

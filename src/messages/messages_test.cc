@@ -211,7 +211,7 @@ TEST(Messaging, MessageSubscribe) {
 TEST(Messaging, MessageUnsubscribe) {
   MessageUnsubscribe msg1(Tenant::GuestTenant,
                           42,
-                          MessageUnsubscribe::Reason::kBackOff);
+                          MessageUnsubscribe::Reason::kInvalid);
 
   std::string str;
   msg1.Serialize(&str);

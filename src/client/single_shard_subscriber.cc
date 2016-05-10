@@ -88,11 +88,6 @@ void SubscriptionState::Terminate(const std::shared_ptr<Logger>& info_log,
                expected_seqno_);
       sub_status.status_ = Status::InvalidArgument("Invalid subscription");
       break;
-    case MessageUnsubscribe::Reason::kBackOff:
-      RS_ASSERT(false);
-      sub_status.status_ =
-          Status::InternalError("Received backoff termination");
-      break;
       // No default, we will be warned about unhandled code.
   }
 
@@ -604,20 +599,6 @@ void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
     LOG_WARN(options_.info_log,
              "Received unsubscribe with unrecognised ID(%" PRIu64 ")",
              sub_id);
-    return;
-  }
-
-  if (unsubscribe->GetReason() == MessageUnsubscribe::Reason::kBackOff) {
-    // Handle back off unsubscribes separately, as they don't change the state
-    // of the subscription (Copilot could send goodbye message equivalently).
-    LOG_INFO(options_.info_log,
-             "Received back off for ID(%" PRIu64 "), resubscribing",
-             unsubscribe->GetSubID());
-
-    // Reissue subscription.
-    pending_subscriptions_.Add(sub_id);
-
-    // Do not terminate subscription in this case.
     return;
   }
 

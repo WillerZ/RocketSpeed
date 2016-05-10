@@ -698,8 +698,6 @@ class MessageUnsubscribe final : public Message {
   enum class Reason : uint8_t {
     /** Unsubscription was requested by the subscriber. */
     kRequested = 0x00,
-    /** Subscribee wants subscriber to come back with subscription later. */
-    kBackOff = 0x01,
     /**
      * Subscriber shouldn't be subscribing to this subscribee with such
      * subscription parameters.

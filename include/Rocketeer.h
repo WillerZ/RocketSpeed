@@ -147,8 +147,8 @@ class Rocketeer {
     /** The unsubscribe was requested by the subscriber. */
     Requested,
 
-    /** The subscriber should resubscribe later. */
-    BackOff,
+    /** The subscription parameters are invalid and cannot be served. */
+    Invalid,
   };
   virtual void Terminate(Flow* flow,
                          InboundID inbound_id,

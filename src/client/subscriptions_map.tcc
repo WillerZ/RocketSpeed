@@ -263,8 +263,6 @@ void SubscriptionsMap<SubscriptionState>::ReceiveUnsubscribe(
             static_cast<int>(arg.message->GetMessageType()));
 
   switch (reason) {
-    case MessageUnsubscribe::Reason::kBackOff:
-    // TODO(stupaq): just get rid of it
     case MessageUnsubscribe::Reason::kInvalid:
     case MessageUnsubscribe::Reason::kRequested: {
       // Sanity check that the message did not refer to a subscription that has

@@ -255,8 +255,8 @@ void CommunicationRocketeer::Terminate(Flow* flow,
         case UnsubscribeReason::Requested:
           msg_reason = MessageUnsubscribe::Reason::kRequested;
           break;
-        case UnsubscribeReason::BackOff:
-          msg_reason = MessageUnsubscribe::Reason::kBackOff;
+        case UnsubscribeReason::Invalid:
+          msg_reason = MessageUnsubscribe::Reason::kInvalid;
           break;
       }
       MessageUnsubscribe unsubscribe(tenant_id, inbound_id.sub_id, msg_reason);
