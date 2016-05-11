@@ -16,7 +16,7 @@ int main() {
 #include <gflags/gflags.h>
 #include <memory>
 
-#include "src/util/tagged_ptr.h"
+#include "include/TaggedPtr.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 

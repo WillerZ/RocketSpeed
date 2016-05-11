@@ -69,13 +69,12 @@ class TaggedPtr {
     impl_ = kInvalidValue;
   }
 
-  bool IsInvalidValue() const {
-    return kInvalidValue == impl_;
-  }
+  bool IsInvalidValue() const { return kInvalidValue == impl_; }
 
  private:
   static constexpr uint8_t kNumLowBits = 48;
-  static constexpr uintptr_t kBit47 = 1ULL << 47;;
+  static constexpr uintptr_t kBit47 = 1ULL << 47;
+  ;
   static constexpr uintptr_t kLowBitsMask = 0xffffffffffff;
   // Violates 47bit rule
   static constexpr uintptr_t kInvalidValue = 0xfaceb00cfeed;
