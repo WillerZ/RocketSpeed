@@ -562,7 +562,7 @@ void RateLimiterSinkFlowTest::TestImpl(
   );
 
   ASSERT_GT(taken, expected * 0.8);
-  ASSERT_LT(taken, expected * 1.3);
+  ASSERT_LT(taken, expected * 1.4);
 }
 
 TEST(RateLimiterSinkFlowTest, Test_1) {

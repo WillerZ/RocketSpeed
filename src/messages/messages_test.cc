@@ -832,7 +832,11 @@ TEST(Messaging, ConnectTimeout) {
   ASSERT_OK(loop.SendRequest(msg, &socket, 0));
 
   // Check that we receive a goodbye, but not immediately.
+#ifndef OS_MACOSX
+  // On OSX we could not force the OS to defer closure of the connection (i.e.
+  // it happens immediately).
   ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.connect_timeout / 2));
+#endif  // OS_MACOSX
   ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.connect_timeout * 2));
 }
 

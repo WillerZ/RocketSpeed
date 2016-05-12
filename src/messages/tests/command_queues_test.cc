@@ -9,11 +9,12 @@
 #include <random>
 #include <thread>
 
+#include "include/Env.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/queues.h"
+#include "src/util/common/processor.h"
 #include "src/util/random.h"
 #include "src/util/testharness.h"
-#include "include/Env.h"
 
 namespace rocketspeed {
 
@@ -87,12 +88,10 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
 
   // Create callback that reads one from queue then posts to a semaphore
   port::Semaphore sem;
-  queue.RegisterReadCallback(
-    &loop,
-    [&] (int) {
-      sem.Post();
-      return true;
-    });
+  InstallSource<int>(&loop, &queue, [&](Flow*, int) {
+    sem.Post();
+    return true;
+  });
 
   // Before enabling, write 2 commands.
   // We don't care what they are, null will do.
@@ -102,7 +101,6 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
 
   // Now enable and check that we read both.
   std::thread loop_thread([&]() { loop.Run(); });
-  queue.SetReadEnabled(&loop, true);
   ASSERT_TRUE(sem.TimedWait(timeout_));
   ASSERT_TRUE(sem.TimedWait(timeout_));
 
@@ -127,20 +125,17 @@ TEST(CommandQueueTest, WriteHistogram) {
   }
 
   port::Semaphore sem;
-  queue.RegisterReadCallback(
-    &loop,
-    [&] (int x) {
-      if (x == kNumMessages - 1) {
-        // This is the last message, so check stats now.
-        auto histogram = queue.GetStats().size_on_read;
-        ASSERT_EQ(histogram->GetNumSamples(), kNumMessages);
-        ASSERT_LT(histogram->Percentile(0.1), 1);
-        ASSERT_GT(histogram->Percentile(0.9), kNumMessages - 2);
-        sem.Post();
-      }
-      return true;
-    });
-  queue.SetReadEnabled(&loop, true);
+  InstallSource<int>(&loop, &queue, [&](Flow*, int x) {
+    if (x == kNumMessages - 1) {
+      // This is the last message, so check stats now.
+      auto histogram = queue.GetStats().size_on_read;
+      ASSERT_EQ(histogram->GetNumSamples(), kNumMessages);
+      ASSERT_LT(histogram->Percentile(0.1), 1);
+      ASSERT_GT(histogram->Percentile(0.9), kNumMessages - 2);
+      sem.Post();
+    }
+    return true;
+  });
   sem.Wait();
 }
 }  // namespace rocketspeed
