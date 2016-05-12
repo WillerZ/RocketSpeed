@@ -6,7 +6,7 @@
 #pragma once
 
 #include <cstdint>
-#include "include/Assert.h"
+#include "Assert.h"
 
 namespace rocketspeed {
 
@@ -87,6 +87,3 @@ static_assert(false, "TaggedPtr is not supported on your arch");
 static_assert(sizeof(TaggedPtr<void>) == 8, "Should be 64 bits");
 
 }  // namespace rocketspeed
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC visibility pop
-#endif
