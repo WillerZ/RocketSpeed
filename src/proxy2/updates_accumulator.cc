@@ -24,7 +24,7 @@ class DefaultAccumulator : public UpdatesAccumulator {
 
   explicit DefaultAccumulator(size_t count_limit) : count_limit_(count_limit) {}
 
-  Action ConsumeUpdate(const Slice& contents,
+  Action ConsumeUpdate(Slice contents,
                        SequenceNumber prev_seqno,
                        SequenceNumber current_seqno) override {
     if (prev_seqno == 0) {

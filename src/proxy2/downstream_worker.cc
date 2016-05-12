@@ -60,10 +60,8 @@ void DownstreamWorker::operator()(StreamReceiveArg<Message> arg) {
     // MessageSubscribe.
     if (type == MessageType::mSubscribe) {
       auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
-      // TODO(stupaq) get rid of ToString()
-      auto shard_id =
-          options_.routing->GetShard(subscribe->GetNamespace().ToString(),
-                                     subscribe->GetTopicName().ToString());
+      auto shard_id = options_.routing->GetShard(subscribe->GetNamespace(),
+                                                 subscribe->GetTopicName());
       // TODO(stupaq) power of two random choices?
       size_t id =
           MurmurHash2<size_t>()(shard_id) % options_.num_upstream_threads;

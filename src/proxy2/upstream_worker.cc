@@ -112,10 +112,8 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
     // MessageSubscribe.
     if (type == MessageType::mSubscribe) {
       auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
-      // TODO(stupaq) get rid of ToString()
-      auto shard_id =
-          options_.routing->GetShard(subscribe->GetNamespace().ToString(),
-                                     subscribe->GetTopicName().ToString());
+      auto shard_id = options_.routing->GetShard(subscribe->GetNamespace(),
+                                                 subscribe->GetTopicName());
 
       // Reuse or create PerShard for the shard.
       auto it1 = shard_cache_.find(shard_id);

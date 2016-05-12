@@ -89,8 +89,7 @@ class MockShardingStrategy : public ShardingStrategy {
   : config_(config) {
   }
 
-  size_t GetShard(const NamespaceID& namespace_id,
-                  const Topic& topic_name) const override {
+  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
     return 0;
   }
 
@@ -335,18 +334,18 @@ TEST(ClientTest, OfflineOperations) {
       subscriptions;
   port::Semaphore unsubscribe_sem, all_ok_sem;
   std::atomic<bool> expects_request(false);
-  auto subscribe_cb =
-      [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-        ASSERT_TRUE(expects_request.load());
-        auto subscribe = static_cast<MessageSubscribe*>(msg.get());
-        auto it = subscriptions.find(subscribe->GetTopicName().ToString());
-        ASSERT_TRUE(it != subscriptions.end());
-        ASSERT_EQ(it->second.first, subscribe->GetStartSequenceNumber());
-        subscriptions.erase(it);
-        if (subscriptions.empty()) {
-          all_ok_sem.Post();
-        }
-      };
+  auto subscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    ASSERT_TRUE(expects_request.load());
+    auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+    auto it = subscriptions.find(subscribe->GetTopicName().ToString());
+    ASSERT_TRUE(it != subscriptions.end());
+    ASSERT_EQ(it->second.first, subscribe->GetStartSequenceNumber());
+    subscriptions.erase(it);
+    if (subscriptions.empty()) {
+      all_ok_sem.Post();
+    }
+  };
   auto copilot = MockServer({{MessageType::mSubscribe, subscribe_cb}});
 
   ClientOptions options;
@@ -494,8 +493,7 @@ class TestSharding2 : public ShardingStrategy {
   explicit TestSharding2(HostId host0, HostId host1)
   : host0_(host0), host1_(host1) {}
 
-  size_t GetShard(const NamespaceID& namespace_id,
-                  const Topic& topic_name) const override {
+  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
     if (topic_name == "topic0") {
       return 0;
     } else if (topic_name == "topic1") {
@@ -538,11 +536,10 @@ TEST(ClientTest, Sharding) {
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
-  options.thread_selector =
-      [](size_t num_threads, const NamespaceID&, const Topic&) -> size_t {
-        ASSERT_EQ(num_threads, 1);
-        return 0;
-      };
+  options.thread_selector = [](size_t num_threads, Slice, Slice) -> size_t {
+    ASSERT_EQ(num_threads, 1);
+    return 0;
+  };
   options.sharding.reset(new TestSharding2(copilot0.msg_loop->GetHostId(),
                                            copilot1.msg_loop->GetHostId()));
   auto client = CreateClient(std::move(options));
@@ -578,10 +575,13 @@ TEST(ClientTest, ClientSubscriptionLimit) {
     Topic topic_name = std::to_string(i);
     SequenceNumber seq = i;
 
-    if (!rng.OneIn(5)) { // 80% Probability to subscribe
+    if (!rng.OneIn(5)) {  // 80% Probability to subscribe
       auto sub_handle = client->Subscribe(
-          GuestTenant, GuestNamespace,
-          topic_name, seq, nullptr,
+          GuestTenant,
+          GuestNamespace,
+          topic_name,
+          seq,
+          nullptr,
           [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
       if (handles.size() < kMaxSubscriptions) {
         ASSERT_TRUE(sub_handle);
@@ -616,42 +616,45 @@ TEST(ClientTest, ClientSubscriptionRateLimit) {
 
   auto start = TestClock::now();
   std::vector<TestClock::duration> attempts;
-  auto copilot = MockServer({
-      {MessageType::mSubscribe,
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
           attempts.push_back(TestClock::now() - start);
           sub_sem.Post();
-      }},
-      {MessageType::mUnsubscribe,
+        }},
+       {MessageType::mUnsubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
           attempts.push_back(TestClock::now() - start);
           unsub_sem.Post();
-      }}
-    });
+        }}});
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(100);
-  options.subscription_rate_limit = kSubscriptions; // 1000/s => 100/100ms
+  options.subscription_rate_limit = kSubscriptions;  // 1000/s => 100/100ms
   microseconds expected_diff = options.timer_period;
   auto client = CreateClient(std::move(options));
 
   std::vector<SubscriptionHandle> subscriptions;
   for (size_t i = 0; i < kSubscriptions; ++i) {
-    auto h = client->Subscribe(
-        GuestTenant, GuestNamespace, "SubRateLimit", 0, nullptr,
-        [&](const SubscriptionStatus&) {
-          // Need to acknowledge the last unsubscription
-          // The connection is terminated before the message
-          // can be processed in the callback
-          if (attempts.size() == kSubscriptions * 2 - 1) {
-            unsub_sem.Post();
-          }
-        });
+    auto h =
+        client->Subscribe(GuestTenant,
+                          GuestNamespace,
+                          "SubRateLimit",
+                          0,
+                          nullptr,
+                          [&](const SubscriptionStatus&) {
+                            // Need to acknowledge the last unsubscription
+                            // The connection is terminated before the message
+                            // can be processed in the callback
+                            if (attempts.size() == kSubscriptions * 2 - 1) {
+                              unsub_sem.Post();
+                            }
+                          });
     subscriptions.push_back(h);
     ASSERT_TRUE(sub_sem.TimedWait(positive_timeout));
   }
 
-  for (auto h: subscriptions) {
+  for (auto h : subscriptions) {
     client->Unsubscribe(h);
     ASSERT_TRUE(unsub_sem.TimedWait(positive_timeout));
   }
@@ -659,9 +662,8 @@ TEST(ClientTest, ClientSubscriptionRateLimit) {
   // Verify time between consecutive attempts.
   ASSERT_EQ(attempts.size(), kSubscriptions * 2 - 1);
   std::vector<TestClock::duration> diffs;
-  std::adjacent_difference(attempts.begin(),
-                           attempts.end(),
-                           std::back_inserter(diffs));
+  std::adjacent_difference(
+      attempts.begin(), attempts.end(), std::back_inserter(diffs));
   std::sort(diffs.begin(), diffs.end());
 
   // Check max time difference between subscribes is not larger than the tick
@@ -683,14 +685,13 @@ TEST(ClientTest, CachedConnectionsWithoutStreams) {
   const int kTopics = 100;
   const int kIterations = 2;
 
-  auto copilot1 = MockServer({
-      {MessageType::mSubscribe,
-          [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+  auto copilot1 = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
           subscribe_sem.Post();
         }},
-      {MessageType::mUnsubscribe,
-          [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {}}
-    });
+       {MessageType::mUnsubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {}}});
 
   // Check that connections without streams remain open when the
   // connection_without_streams_keepalive flag is set to a high value (20s)
@@ -700,12 +701,16 @@ TEST(ClientTest, CachedConnectionsWithoutStreams) {
     ClientOptions options;
     options.timer_period = std::chrono::milliseconds(1);
     options.connection_without_streams_keepalive =
-      std::chrono::milliseconds((iy % 2) ? 0 : 20000);
+        std::chrono::milliseconds((iy % 2) ? 0 : 20000);
     auto client = CreateClient(std::move(options));
     for (int ix = 0; ix < kTopics; ++ix) {
       auto handle = client->Subscribe(
-        GuestTenant, GuestNamespace, "ConnCache", 0, nullptr,
-        [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
+          GuestTenant,
+          GuestNamespace,
+          "ConnCache",
+          0,
+          nullptr,
+          [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
       ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
       ASSERT_OK(client->Unsubscribe(handle));
       ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
@@ -727,24 +732,27 @@ TEST(ClientTest, CachedConnectionsWithoutStreams) {
   options.connection_without_streams_keepalive = std::chrono::milliseconds(1);
   auto client = CreateClient(std::move(options));
   auto handle = client->Subscribe(
-    GuestTenant, GuestNamespace, "ConnCache", 0, nullptr,
-    [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
+      GuestTenant,
+      GuestNamespace,
+      "ConnCache",
+      0,
+      nullptr,
+      [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
   ASSERT_OK(client->Unsubscribe(handle));
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
 
   auto server_connections_key =
-    copilot1.msg_loop->GetStatsPrefix() + ".all_connections";
+      copilot1.msg_loop->GetStatsPrefix() + ".all_connections";
   auto server_connections =
-    copilot1.msg_loop->GetStatisticsSync().GetCounterValue(
-      server_connections_key);
+      copilot1.msg_loop->GetStatisticsSync().GetCounterValue(
+          server_connections_key);
   ASSERT_EQ(server_connections, 1);
   /* sleep override - Wait long enough for the GC to run.
      The GC runs every 100ms, so 120ms is a safe window.
   */
   std::this_thread::sleep_for(std::chrono::milliseconds(120));
-  server_connections =
-    copilot1.msg_loop->GetStatisticsSync().GetCounterValue(
+  server_connections = copilot1.msg_loop->GetStatisticsSync().GetCounterValue(
       server_connections_key);
   ASSERT_EQ(server_connections, 0);
 }

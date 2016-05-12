@@ -94,10 +94,9 @@ Status ClientImpl::Create(ClientOptions options,
   // Assign default thread selector if not specified.
   if (!options.thread_selector) {
     auto raw_loop = msg_loop.get();
-    options.thread_selector =
-        [raw_loop](size_t num_threads, const NamespaceID&, const Topic&) {
-          return raw_loop->LoadBalancedWorkerId();
-        };
+    options.thread_selector = [raw_loop](size_t num_threads, Slice, Slice) {
+      return raw_loop->LoadBalancedWorkerId();
+    };
   }
 
   std::unique_ptr<ClientImpl> client(

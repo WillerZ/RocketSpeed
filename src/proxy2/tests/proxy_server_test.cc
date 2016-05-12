@@ -73,9 +73,8 @@ class MockSharding : public ShardingStrategy {
     return std::to_string(shard);
   }
 
-  size_t GetShard(const NamespaceID& namespace_id,
-                  const Topic& topic_name) const override {
-    std::istringstream iss(namespace_id);
+  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
+    std::istringstream iss(namespace_id.ToString());
     size_t shard;
     iss >> shard;
     return shard;
@@ -115,7 +114,7 @@ class MockSharding : public ShardingStrategy {
 
 class MockDetector : public HotnessDetector {
  public:
-  bool IsHotTopic(const Slice& namespace_id, const Slice& topic_name) override {
+  bool IsHotTopic(Slice namespace_id, Slice topic_name) override {
     std::lock_guard<std::mutex> lock(mutex_);
     return collapsed_topics_.count(topic_name.ToString()) > 0;
   }
@@ -481,7 +480,7 @@ class SequenceVerifier {
 
   ~SequenceVerifier() { ASSERT_TRUE(sequence_.empty()); }
 
-  bool Call(const Slice& contents,
+  bool Call(Slice contents,
             SequenceNumber prev_seqno,
             SequenceNumber current_seqno) {
     ASSERT_TRUE(!sequence_.empty());
@@ -499,7 +498,7 @@ class SequenceVerifier {
 
 class SequencePreparer {
  public:
-  void AddExpect(const Slice& contents,
+  void AddExpect(Slice contents,
                  SequenceNumber prev_seqno,
                  SequenceNumber current_seqno) {
     sequence_.emplace_back(
@@ -510,7 +509,7 @@ class SequencePreparer {
 
   UpdatesAccumulator::ConsumerCb operator()() const {
     auto verifier = std::make_shared<SequenceVerifier>(sequence_);
-    return [verifier](const Slice& contents,
+    return [verifier](Slice contents,
                       SequenceNumber prev_seqno,
                       SequenceNumber current_seqno) {
       return verifier->Call(contents, prev_seqno, current_seqno);
@@ -572,7 +571,7 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
     proxy_options.info_log = info_log;
     proxy_options.routing = routing;
     proxy_options.hot_topics = hot_topics;
-    proxy_options.accumulator = [&](const Slice&, const Slice&) {
+    proxy_options.accumulator = [&](Slice, Slice) {
       return UpdatesAccumulator::CreateDefault(2 /* count limit */);
     };
     ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
@@ -630,7 +629,7 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   auto deliver_data = [&](SubscriptionID upstream_sub,
                           SequenceNumber prev_seqno,
                           SequenceNumber current_seqno,
-                          const Slice& payload) {
+                          Slice payload) {
     MessageDeliverData data(
         Tenant::GuestTenant, upstream_sub, MsgId(), payload);
     data.SetSequenceNumbers(prev_seqno, current_seqno);
@@ -639,7 +638,7 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   auto receive_data = [&](SubscriptionID downstream_sub,
                           SequenceNumber prev_seqno,
                           SequenceNumber current_seqno,
-                          const Slice& payload) {
+                          Slice payload) {
     auto received = client->Receive();
     ASSERT_TRUE(received.message);
     ASSERT_EQ(client_stream, received.stream_id);
@@ -731,7 +730,7 @@ TEST(ProxyServerTest, ForwardingAndMultiplexing) {
     proxy_options.info_log = info_log;
     proxy_options.routing = routing;
     proxy_options.hot_topics = hot_topics;
-    proxy_options.accumulator = [&](const Slice&, const Slice&) {
+    proxy_options.accumulator = [&](Slice, Slice) {
       return UpdatesAccumulator::CreateDefault(2 /* count limit */);
     };
     ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));

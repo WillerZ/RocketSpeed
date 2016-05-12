@@ -39,11 +39,10 @@ DEFINE_string(jemalloc_output,
               "jemalloc stats output file.");
 
 using rocketspeed::HostId;
-using rocketspeed::NamespaceID;
 using rocketspeed::ShardingStrategy;
+using rocketspeed::Slice;
 using rocketspeed::Status;
 using rocketspeed::SubscriptionRouter;
-using rocketspeed::Topic;
 
 class BadPublisherRouter : public rocketspeed::PublisherRouter {
  public:
@@ -58,8 +57,7 @@ class BadPublisherRouter : public rocketspeed::PublisherRouter {
 
 class BadShardingStrategy : public ShardingStrategy {
  public:
-  size_t GetShard(const NamespaceID& namespace_id,
-                  const Topic& topic_name) const override {
+  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
     return 0;
   }
 

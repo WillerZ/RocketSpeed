@@ -35,15 +35,14 @@ class FixedShardingStrategy : public ShardingStrategy {
  public:
    explicit FixedShardingStrategy(HostId copilot): copilot_(copilot) {}
 
-   size_t GetShard(const NamespaceID& namespace_id,
-       const Topic& topic_name) const override {
+   size_t GetShard(Slice namespace_id, Slice topic_name) const override {
      return 0;
    }
 
    std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override;
 
- private:
-  HostId copilot_;
+  private:
+   HostId copilot_;
 };
 
 /**

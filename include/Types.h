@@ -304,8 +304,7 @@ class ShardingStrategy {
    * The total number of shards can grow over time, and the Client should make
    * no assumptions about it.
    */
-  virtual size_t GetShard(const NamespaceID& namespace_id,
-                          const Topic& topic_name) const = 0;
+  virtual size_t GetShard(Slice namespace_id, Slice topic_name) const = 0;
 
   /**
    * Creates a routing strategy for given shard ID.
@@ -318,8 +317,7 @@ class ShardingStrategy {
 /**
  * Encapsulates thread selection logic.
  */
-using ThreadSelectionStrategy =
-    std::function<size_t(size_t, const NamespaceID&, const Topic&)>;
+using ThreadSelectionStrategy = std::function<size_t(size_t, Slice, Slice)>;
 
 /**
  * A PublisherRouter that specifies how a Client can connect to RocketSpeed.

@@ -23,8 +23,8 @@ class UpdatesAccumulator;
 
 /// A factory for UpdatesAccumulators.
 using UpdatesAccumulatorFactory =
-    std::function<std::unique_ptr<UpdatesAccumulator>(const Slice& namespace_id,
-                                                      const Slice& topic_name)>;
+    std::function<std::unique_ptr<UpdatesAccumulator>(Slice namespace_id,
+                                                      Slice topic_name)>;
 
 class ProxyServerOptions {
  public:
@@ -79,8 +79,7 @@ class ProxyServer {
 /// makes sense to collapse only popular topics.
 class HotnessDetector {
  public:
-  virtual bool IsHotTopic(const Slice& namespace_id,
-                          const Slice& topic_name) = 0;
+  virtual bool IsHotTopic(Slice namespace_id, Slice topic_name) = 0;
 
   virtual ~HotnessDetector() = default;
 };
@@ -105,7 +104,7 @@ class UpdatesAccumulator {
     /// Resubscribe the upstream subscription from SubscriptionNumber(0).
     kResubscribeUpstream,
   };
-  virtual Action ConsumeUpdate(const Slice& contents,
+  virtual Action ConsumeUpdate(Slice contents,
                                SequenceNumber prev_seqno,
                                SequenceNumber current_seqno) = 0;
 
@@ -124,9 +123,8 @@ class UpdatesAccumulator {
   /// method must generate all updates necessary to bootstrap the downstream
   /// subscription to the same expected sequence number as the upstream
   /// subscription.
-  using ConsumerCb = std::function<bool(const Slice& contents,
-                                        SequenceNumber prev_seqno,
-                                        SequenceNumber current_seqno)>;
+  using ConsumerCb = std::function<bool(
+      Slice contents, SequenceNumber prev_seqno, SequenceNumber current_seqno)>;
   virtual SequenceNumber BootstrapSubscription(SequenceNumber initial_seqno,
                                                const ConsumerCb& consumer) = 0;
 
