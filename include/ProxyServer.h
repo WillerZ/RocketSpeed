@@ -41,7 +41,7 @@ class ProxyServerOptions {
 
   /// Provides a strategy that bootstraps new subscribers to the current state
   /// of an upstream subscription.
-  std::shared_ptr<UpdatesAccumulatorFactory> accumulator;
+  UpdatesAccumulatorFactory accumulator;
 
   /// Number of downstream threads.
   size_t num_downstream_threads{1};
@@ -85,16 +85,16 @@ class HotnessDetector {
   virtual ~HotnessDetector() = default;
 };
 
-/// Accumulates updates on a subscription and bootstraps new subscribers to the
-/// current state of the subscription by sending any missing deltas or
-/// snapshots.
+/// Accumulates updates on an upstream subscription and bootstraps new
+/// downstream subscribers to the current state of the subscription by sending
+/// any missing deltas or snapshots.
 ///
 /// Each upstream subscription on a hot topic has a unique UpdatesAccumulator
 /// associated with it.
 class UpdatesAccumulator {
  public:
   /// Creates a default accumulator.
-  static std::unique_ptr<UpdatesAccumulator> CreateDefault();
+  static std::unique_ptr<UpdatesAccumulator> CreateDefault(size_t count_limit);
 
   /// Invoked in-order for every update received from an upstream subscription.
   /// The Proxy adjusts the associated upstream subscription according to the
@@ -109,17 +109,26 @@ class UpdatesAccumulator {
                                SequenceNumber prev_seqno,
                                SequenceNumber current_seqno) = 0;
 
-  /// Provides updates to be delivered on a subscription by calling provided
-  /// consumer callback arbitrary number of times.
+  /// Provides updates to be delivered on a downstream subscription by calling
+  /// provided consumer callback arbitrary number of times.
   ///
   /// All calls to the callback must be synchronous and the callback may not be
   /// invoked after this method returns. It is guaranteed that the Slice
   /// provided to the consumer will not be accessed after the consumer returns.
-  virtual void BootstrapSubscription(
-      SequenceNumber current_seqno,
-      std::function<void(const Slice& contents,
-                         SequenceNumber prev_seqno,
-                         SequenceNumber current_seqno)> consumer) = 0;
+  /// The callback returns false iff an update was scheduled for delivery, but
+  /// no more updates shall be provided for now (flow control). If that is the
+  /// case, the method shall promptly return the next sequence number expected
+  /// on the subscription, assuming all updates provided thus far are delivered.
+  ///
+  /// Provided that no back-pressure has been exerted by the callback, this
+  /// method must generate all updates necessary to bootstrap the downstream
+  /// subscription to the same expected sequence number as the upstream
+  /// subscription.
+  using ConsumerCb = std::function<bool(const Slice& contents,
+                                        SequenceNumber prev_seqno,
+                                        SequenceNumber current_seqno)>;
+  virtual SequenceNumber BootstrapSubscription(SequenceNumber initial_seqno,
+                                               const ConsumerCb& consumer) = 0;
 
   virtual ~UpdatesAccumulator() = default;
 };

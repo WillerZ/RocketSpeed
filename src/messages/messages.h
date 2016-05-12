@@ -714,6 +714,8 @@ class MessageUnsubscribe final : public Message {
 
   SubscriptionID GetSubID() const { return sub_id_; }
 
+  void SetSubID(SubscriptionID sub_id) { sub_id_ = sub_id; }
+
   Reason GetReason() const { return reason_; }
 
   virtual Status Serialize(std::string* out) const override;
@@ -745,6 +747,8 @@ class MessageDeliver : public Message {
   virtual ~MessageDeliver() = 0;
 
   SubscriptionID GetSubID() const { return sub_id_; }
+
+  void SetSubID(SubscriptionID sub_id) { sub_id_ = sub_id; }
 
   SequenceNumber GetPrevSequenceNumber() const { return seqno_prev_; }
 

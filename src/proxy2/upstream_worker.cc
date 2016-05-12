@@ -13,11 +13,11 @@
 #include "include/Assert.h"
 #include "include/Logger.h"
 #include "include/ProxyServer.h"
-#include "src/client/single_shard_subscriber.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/flow_control.h"
 #include "src/messages/queues.h"
 #include "src/messages/stream.h"
+#include "src/proxy2/multiplexer.h"
 
 namespace rocketspeed {
 
@@ -76,6 +76,8 @@ void PerShard::CheckRoutes() {
       per_stream->ChangeRoute();
     }
   }
+  // Afterwards, notify Multiplexer.
+  multiplexer_.ChangeRoute();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -95,7 +97,8 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
   StreamID stream_id = message.first;
   auto type = message.second->GetMessageType();
   LOG_DEBUG(GetOptions().info_log,
-            "Received from queue: %zu, stream: %llu, type: %s",
+            "UpstreamWorker(%p)::ReceiveFromQueue(%zu, %llu, %s)",
+            this,
             inbound_id,
             stream_id,
             MessageTypeName(type));
@@ -157,9 +160,10 @@ void UpstreamWorker::ReceiveFromStream(Flow* flow,
   StreamID stream_id = message.first;
   auto type = message.second->GetMessageType();
   LOG_DEBUG(GetOptions().info_log,
-            "Received from stream: %llu (%p), type: %s",
-            stream_id,
+            "UpstreamWorker(%p)::ReceiveFromStream(%p (%llu), %s)",
+            this,
             per_stream,
+            stream_id,
             MessageTypeName(type));
 
   // Forward.
@@ -203,13 +207,94 @@ PerStream::PerStream(UpstreamWorker* worker,
   per_shard_->AddPerStream(this);
 }
 
+namespace {
+
+// Create and set a receiver that performs the remapping and manages its own
+// lifetime.
+class TheReceiver : public StreamReceiver {
+ public:
+  explicit TheReceiver(PerStream* per_stream) : per_stream_(per_stream) {}
+
+  void operator()(StreamReceiveArg<Message> arg) override {
+    StreamID upstream_id = arg.stream_id;
+    StreamID downstream_id = per_stream_->GetStream();
+    auto type = arg.message->GetMessageType();
+    LOG_DEBUG(per_stream_->GetOptions().info_log,
+              "PerStream(%llu)::TheReceiver::operator()(%llu, %s)",
+              downstream_id,
+              upstream_id,
+              MessageTypeName(type));
+
+    per_stream_->ReceiveFromStream(arg.flow,
+                                   {downstream_id, std::move(arg.message)});
+    // TODO(stupaq) MarkHostDown
+  }
+
+  void EndStream(StreamID) override {
+    // It is guaranteed that the stream will not receive any more signals
+    // and we never use the same receiver for two different streams, hence
+    // it's safe to commit suicide.
+    delete this;
+  }
+
+ private:
+  PerStream* const per_stream_;
+};
+
+}  // namespace
+
 void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
-  StreamID downstream_id = message.first;
+  RS_ASSERT(downstream_id_ == message.first);
   auto type = message.second->GetMessageType();
+  LOG_DEBUG(GetOptions().info_log,
+            "PerStream(%llu)::ReceivedFromWorker(%s)",
+            downstream_id_,
+            MessageTypeName(type));
 
   // Determine whether the topic of the subscription is hot and perform
   // subscription-level proxying if it is.
-  // FIXME
+  switch (type) {
+    case MessageType::mSubscribe: {
+      auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
+      auto namespace_id = subscribe->GetNamespace();
+      auto topic_name = subscribe->GetTopicName();
+      if (GetOptions().hot_topics->IsHotTopic(namespace_id, topic_name)) {
+        auto downstream_sub = subscribe->GetSubID();
+        // Let Multiplexer handle the subscription and record handle.
+        auto ptr = per_shard_->GetMultiplexer()->Subscribe(
+            flow,
+            subscribe->GetTenantID(),
+            namespace_id,
+            topic_name,
+            subscribe->GetStartSequenceNumber(),
+            this,
+            downstream_sub);
+        auto result = downstream_to_upstream_.emplace(downstream_sub, ptr);
+        RS_ASSERT(result.second);
+        (void)result;
+        return;
+      }
+      // Otherwise perform stream-level proxying.
+    } break;
+    case MessageType::mUnsubscribe: {
+      auto unsubscribe = static_cast<MessageUnsubscribe*>(message.second.get());
+      auto downstream_sub = unsubscribe->GetSubID();
+      // Find out if a subscription has been multiplexed, let Multiplexer handle
+      // this even if so.
+      auto it = downstream_to_upstream_.find(downstream_sub);
+      if (it != downstream_to_upstream_.end()) {
+        per_shard_->GetMultiplexer()->Unsubscribe(
+            flow, it->second, this, it->first);
+        downstream_to_upstream_.erase(it);
+        return;
+      }
+      // Otherwise perform stream-level proxying.
+    } break;
+    default:
+      // Other messages than metadata updates must be handled by the
+      // stream-level procy.
+      break;
+  }
 
   // The topic of the subscription is not hot. Perform stream-level proxying.
   if (!upstream_) {
@@ -226,6 +311,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
       ForceCloseStream();
       return;
     }
+
     upstream_ = GetLoop()->OpenStream(host);
     if (!upstream_) {
       LOG_ERROR(GetOptions().info_log,
@@ -238,32 +324,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
       return;
     }
 
-    // Create and set a receiver that performs the remapping and manages its own
-    // lifetime.
-    class TheReceiver : public StreamReceiver {
-     public:
-      TheReceiver(PerStream* per_stream, StreamID stream_id)
-      : per_stream_(per_stream), downstream_id_(stream_id) {}
-
-      void operator()(StreamReceiveArg<Message> arg) override {
-        RS_ASSERT(per_stream_->upstream_->GetLocalID() == arg.stream_id);
-        per_stream_->ReceiveFromStream(
-            arg.flow, {downstream_id_, std::move(arg.message)});
-        // TODO(stupaq) MarkHostDown
-      }
-
-      void EndStream(StreamID) override {
-        // It is guaranteed that the stream will not receive any more signals
-        // and we never use the same receiver for two different streams, hence
-        // it's safe to commit suicide.
-        delete this;
-      }
-
-     private:
-      PerStream* const per_stream_;
-      const StreamID downstream_id_;
-    };
-    upstream_->SetReceiver(new TheReceiver(this, downstream_id));
+    upstream_->SetReceiver(new TheReceiver(this));
   }
 
   // Forward.
@@ -279,6 +340,10 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
 void PerStream::ReceiveFromStream(Flow* flow, MessageAndStream message) {
   RS_ASSERT(downstream_id_ == message.first);
   auto type = message.second->GetMessageType();
+  LOG_DEBUG(GetOptions().info_log,
+            "PerStream(%llu)::ReceivedFromStream(%s)",
+            downstream_id_,
+            MessageTypeName(type));
 
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {
@@ -286,6 +351,30 @@ void PerStream::ReceiveFromStream(Flow* flow, MessageAndStream message) {
   }
 
   // Forward (the StreamID is already remapped by the StreamReceiver).
+  worker_->ReceiveFromStream(flow, this, std::move(message));
+}
+
+void PerStream::ReceiveFromMultiplexer(Flow* flow, MessageAndStream message) {
+  RS_ASSERT(downstream_id_ == message.first);
+  const auto type = message.second->GetMessageType();
+  RS_ASSERT(
+      type == MessageType::mDeliverGap || type == MessageType::mDeliverData ||
+      type == MessageType::mDeliverBatch || type == MessageType::mUnsubscribe);
+  LOG_DEBUG(GetOptions().info_log,
+            "PerStream(%llu)::ReceivedFromStream(%s)",
+            downstream_id_,
+            MessageTypeName(type));
+
+  // Clear the state for that subscripion on forced unsubscribe.
+  if (MessageType::mUnsubscribe == message.second->GetMessageType()) {
+    auto unsubscribe = static_cast<MessageUnsubscribe*>(message.second.get());
+    auto downstream_sub = unsubscribe->GetSubID();
+    auto result = downstream_to_upstream_.erase(downstream_sub);
+    RS_ASSERT(result > 0);
+    (void)result;
+  }
+
+  // Forward.
   worker_->ReceiveFromStream(flow, this, std::move(message));
 }
 
@@ -299,7 +388,15 @@ PerStream::~PerStream() {
 }
 
 void PerStream::CleanupState() {
+  // Close the stream to the server.
   upstream_.reset();
+  // Terminate all subscriptions.
+  SourcelessFlow no_flow(GetLoop()->GetFlowControl());
+  auto subscriptions = std::move(downstream_to_upstream_);
+  for (auto& entry : subscriptions) {
+    per_shard_->GetMultiplexer()->Unsubscribe(
+        &no_flow, entry.second, this, entry.first);
+  }
 }
 
 void PerStream::ForceCloseStream() {
@@ -313,97 +410,5 @@ void PerStream::ForceCloseStream() {
   // A MessageGoodbye will be send to the server as a result of state cleanup
   // performed in ::ReceiveFromStream.
 }
-
-////////////////////////////////////////////////////////////////////////////////
-Multiplexer::Multiplexer(PerShard* per_shard) : per_shard_(per_shard) {}
-
-EventLoop* Multiplexer::GetLoop() const {
-  return per_shard_->GetLoop();
-}
-
-const ProxyServerOptions& Multiplexer::GetOptions() const {
-  return per_shard_->GetOptions();
-}
-
-bool Multiplexer::TryHandle(Flow* flow, const MessageAndStream& message) {
-  auto type = message.second->GetMessageType();
-  switch (type) {
-    case MessageType::mSubscribe: {
-      // auto subscribe =
-      // static_cast<MessageSubscribe*>(message.second.get());
-      // FIXME
-      return false;
-    }
-    case MessageType::mUnsubscribe: {
-      // auto unsubscribe =
-      // static_cast<MessageUnsubscribe*>(message.second.get());
-      // FIXME
-      return false;
-    }
-    case MessageType::mGoodbye: {
-      // FIXME
-      return true;
-    }
-    default: {
-      LOG_WARN(GetOptions().info_log,
-               "Weird message type from DownstreamWorker: %s",
-               MessageTypeName(type));
-      return false;
-    }
-  }
-}
-
-Multiplexer::~Multiplexer() = default;
-
-/*
-// FIXME
-void PerShard::Handle(Flow* flow, MessageAndStream message) {
-  auto type = message.second->GetMessageType();
-  switch (type) {
-    case MessageType::mSubscribe: {
-      auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
-      if (worker_->options_.hot_topics->IsHotTopic(subscribe->GetNamespace(),
-                                                   subscribe->GetTopicName())) {
-        auto handled = multiplexer_.TryHandle(flow, message);
-        RS_ASSERT(handled);
-        (void)handled;
-      } else {
-        per_shard_.Handle(flow, std::move(message));
-      }
-    } break;
-    case MessageType::mUnsubscribe: {
-      if (!multiplexer_.TryHandle(flow, message)) {
-        per_shard_.Handle(flow, std::move(message));
-      }
-    } break;
-    case MessageType::mGoodbye: {
-      auto handled = multiplexer_.TryHandle(flow, message);
-      RS_ASSERT(handled);
-      (void)handled;
-      per_shard_.Handle(flow, std::move(message));
-    } break;
-    default: {
-      LOG_WARN(GetOptions().info_log,
-               "Weird message type from DownstreamWorker: %s",
-               MessageTypeName(type));
-    }
-  }
-}
-
-void PerShard::ReceiveFromForwarder(Flow* flow, MessageAndStream message) {
-  auto type = message.second->GetMessageType();
-  if (type == MessageType::mGoodbye) {
-    // Upon receipt of a MessageGoodbye from the server we must perform the same
-    // actions as if we have received the message from the subscriber, except
-    // that we send the message in the opposite direction.
-    auto handled = multiplexer_->TryHandle(flow, message);
-    RS_ASSERT(handled);
-    (void)handled;
-  }
-
-  // Forward.
-  worker_->ReceiveFromShard(flow, this, std::move(message));
-}
-*/
 
 }  // namespace rocketspeed

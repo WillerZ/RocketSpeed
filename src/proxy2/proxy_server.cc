@@ -107,6 +107,9 @@ Status ProxyServerImpl::Start() {
   downstream_thread_.reset(
       new MsgLoopThread(env, downstream_loop_.get(), "proxy2-downstream"));
 
+  LOG_VITAL(options_.info_log,
+            "Started ProxyServer listening at: %s",
+            downstream_loop_->GetHostId().ToString().c_str());
   return Status::OK();
 }
 

@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <deque>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -21,17 +22,20 @@
 #include "include/ProxyServer.h"
 #include "include/Types.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/flow_control.h"
 #include "src/messages/messages.h"
 #include "src/messages/stream.h"
 #include "src/messages/types.h"
 #include "src/port/port.h"
-#include "src/messages/flow_control.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
 namespace rocketspeed {
+
+static constexpr std::chrono::milliseconds kPositiveTimeout{1000};
+static constexpr std::chrono::milliseconds kNegativeTimeout{100};
 
 class MockRouter : public SubscriptionRouter {
  public:
@@ -113,7 +117,7 @@ class MockDetector : public HotnessDetector {
  public:
   bool IsHotTopic(const Slice& namespace_id, const Slice& topic_name) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    return collapsed_topics_.size() > 0;
+    return collapsed_topics_.count(topic_name.ToString()) > 0;
   }
 
   void SetCollapsing(const Topic& topic_name, bool is_on) {
@@ -139,22 +143,45 @@ class MessageBus : public StreamReceiver {
     };
     loop_.reset(new EventLoop(options, StreamAllocator()));
     runner_.reset(new EventLoop::Runner(loop_.get()));
-    Run([this]() { thread_check_.Check(); });
+    // Can't use Wait as that'd try to inline the call.
+    port::Semaphore done;
+    Run([&]() {
+      thread_check_.Check();
+      done.Post();
+    });
+    ASSERT_TRUE(done.TimedWait(kPositiveTimeout));
+  }
+
+  ~MessageBus() {
+    Wait([&]() { streams_.clear(); });
+    // Relatively quick sanity check that we didn't miss any message.
+    ASSERT_TRUE(NotReceived());
   }
 
   const HostId& GetHost() const { return loop_->GetHostId(); }
 
-  StreamReceiveArg<Message> Receive(std::chrono::milliseconds timeout) {
-    StreamReceiveArg<Message> arg;
-    ASSERT_TRUE(received_sem_.TimedWait(timeout));
-    std::lock_guard<std::mutex> lock(received_mutex_);
-    arg = std::move(received_.front());
-    received_.pop_front();
+  MessageType PeekType(std::chrono::milliseconds timeout = kPositiveTimeout) {
+    if (received_sem_.TimedWait(timeout)) {
+      std::lock_guard<std::mutex> lock(received_mutex_);
+      received_sem_.Post();  // Safe as we're holding a unique lock.
+      return received_.front().message->GetMessageType();
+    }
+    return MessageType::NotInitialized;
+  }
+
+  StreamReceiveArg<Message> Receive(
+      std::chrono::milliseconds timeout = kPositiveTimeout) {
+    StreamReceiveArg<Message> arg = {nullptr, 0, nullptr};
+    if (received_sem_.TimedWait(timeout)) {
+      std::lock_guard<std::mutex> lock(received_mutex_);
+      arg = std::move(received_.front());
+      received_.pop_front();
+    }
     return arg;
   }
 
-  void CheckNotReceived(std::chrono::milliseconds timeout) {
-    ASSERT_TRUE(!received_sem_.TimedWait(timeout));
+  bool NotReceived(std::chrono::milliseconds timeout = kNegativeTimeout) {
+    return !received_sem_.TimedWait(timeout);
   }
 
   StreamID OpenStream(const HostId& host_id) {
@@ -170,14 +197,18 @@ class MessageBus : public StreamReceiver {
   }
 
   void Send(StreamID stream_id, const Message& message) {
+    LOG_DEBUG(loop_->GetLog(),
+              "MessageBus::Send(%llu, %s)",
+              stream_id,
+              MessageTypeName(message.GetMessageType()));
+
     Wait([&]() {
       if (auto stream = loop_->GetInboundStream(stream_id)) {
         stream->Write(message);
       } else {
         auto it = streams_.find(stream_id);
-        if (it != streams_.end()) {
-          it->second->Write(message);
-        }
+        ASSERT_TRUE(it != streams_.end());
+        it->second->Write(message);
       }
     });
   }
@@ -209,7 +240,7 @@ class MessageBus : public StreamReceiver {
         callback();
         done.Post();
       });
-      ASSERT_TRUE(done.TimedWait(std::chrono::seconds(1)));
+      ASSERT_TRUE(done.TimedWait(kPositiveTimeout));
     }
   }
 
@@ -232,8 +263,12 @@ class MessageBus : public StreamReceiver {
 
   void operator()(StreamReceiveArg<Message> arg) override {
     thread_check_.Check();
-
     auto type = arg.message->GetMessageType();
+    LOG_DEBUG(loop_->GetLog(),
+              "MessageBus::operator()(%llu, %s)",
+              arg.stream_id,
+              MessageTypeName(type));
+
     if (type == MessageType::mGoodbye) {
       streams_.erase(arg.stream_id);
     }
@@ -247,14 +282,11 @@ class MessageBus : public StreamReceiver {
 
 class ProxyServerTest {
  public:
-  const std::chrono::milliseconds positive_timeout;
-  const std::chrono::milliseconds negative_timeout;
   Env* const env;
   std::shared_ptr<Logger> info_log;
   EventLoop::Options loop_options;
 
-  ProxyServerTest()
-  : positive_timeout(1000), negative_timeout(100), env(Env::Default()) {
+  ProxyServerTest() : env(Env::Default()) {
     ASSERT_OK(test::CreateLogger(env, "ProxyServerTest", &info_log));
     loop_options.info_log = info_log;
     loop_options.listener_port = 0;
@@ -263,10 +295,19 @@ class ProxyServerTest {
   ~ProxyServerTest() { env->WaitForJoin(); }
 };
 
-TEST(ProxyServerTest, TwoClientsTwoServers) {
+TEST(ProxyServerTest, Forwarding) {
   // Create routing and hot topics detection strategies for the proxy.
   auto routing = std::make_shared<MockSharding>();
   auto hot_topics = std::make_shared<MockDetector>();
+
+  std::unique_ptr<ProxyServer> proxy;
+  {  // Create the proxy.
+    ProxyServerOptions proxy_options;
+    proxy_options.info_log = info_log;
+    proxy_options.routing = routing;
+    proxy_options.hot_topics = hot_topics;
+    ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
+  }
 
   // Create two clients and two servers.
   std::vector<std::unique_ptr<MessageBus>> clients, servers;
@@ -277,15 +318,6 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
   }
   // Create one more server, as a replacement of servers[1];
   servers.emplace_back(folly::make_unique<MessageBus>(loop_options));
-
-  std::unique_ptr<ProxyServer> proxy;
-  {  // Create the proxy.
-    ProxyServerOptions proxy_options;
-    proxy_options.info_log = info_log;
-    proxy_options.routing = routing;
-    proxy_options.hot_topics = hot_topics;
-    ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
-  }
 
   // Create two streams from clients to servers. We won't learn server's
   // StreamIDs until we receive the first message on each stream.
@@ -298,10 +330,11 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
     clients[i]->Send(client_streams[i],
                      MessageSubscribe(Tenant::GuestTenant,
                                       MockSharding::GetNamespace(i),
-                                      "TwoClientsTwoServers",
+                                      "ColdTopic",
                                       0,
                                       sub_id));
-    auto received = servers[i]->Receive(positive_timeout);
+    auto received = servers[i]->Receive();
+    ASSERT_TRUE(received.message);
     server_streams[i] = received.stream_id;
     ASSERT_EQ(MessageType::mSubscribe, received.message->GetMessageType());
     auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
@@ -313,7 +346,8 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
                            sub_id,
                            MessageUnsubscribe::Reason::kRequested));
 
-    received = servers[i]->Receive(positive_timeout);
+    received = servers[i]->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(server_streams[i], received.stream_id);
     ASSERT_EQ(MessageType::mUnsubscribe, received.message->GetMessageType());
     auto unsubscribe = static_cast<MessageUnsubscribe*>(received.message.get());
@@ -323,12 +357,14 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
   // Fail over shard 1 to servers[2].
   routing->GetMockRouter(1)->SetHost(servers[2]->GetHost());
   {  // servers[1] should have received a goodbye message.
-    auto received = servers[1]->Receive(positive_timeout * 10);
+    auto received = servers[1]->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(server_streams[1], received.stream_id);
     ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
   }
   {  // clients[1] should have received a goodbye message.
-    auto received = clients[1]->Receive(positive_timeout * 10);
+    auto received = clients[1]->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(client_streams[1], received.stream_id);
     ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
   }
@@ -345,10 +381,11 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
     clients[i]->Send(client_streams[i],
                      MessageSubscribe(Tenant::GuestTenant,
                                       MockSharding::GetNamespace(i),
-                                      "TwoClientsTwoServers",
+                                      "ColdTopic",
                                       0,
                                       sub_id));
-    auto received = servers[i]->Receive(positive_timeout);
+    auto received = servers[i]->Receive();
+    ASSERT_TRUE(received.message);
     if (i == 1) {
       server_streams[i] = received.stream_id;
     } else {
@@ -364,7 +401,8 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
                            sub_id,
                            MessageUnsubscribe::Reason::kRequested));
 
-    received = servers[i]->Receive(positive_timeout);
+    received = servers[i]->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(server_streams[i], received.stream_id);
     ASSERT_EQ(MessageType::mUnsubscribe, received.message->GetMessageType());
     auto unsubscribe = static_cast<MessageUnsubscribe*>(received.message.get());
@@ -373,22 +411,17 @@ TEST(ProxyServerTest, TwoClientsTwoServers) {
 
   {  // Close one stream from the client side.
     clients[0]->CloseStream(client_streams[0]);
-    auto received = servers[0]->Receive(positive_timeout);
+    auto received = servers[0]->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(server_streams[0], received.stream_id);
     ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
   }
   {  // And the other one from the server side.
     servers[1]->CloseStream(server_streams[1]);
-    auto received = clients[1]->Receive(positive_timeout);
+    auto received = clients[1]->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(client_streams[1], received.stream_id);
     ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
-  }
-
-  for (auto& client : clients) {
-    client->CheckNotReceived(negative_timeout);
-  }
-  for (auto& server : servers) {
-    server->CheckNotReceived(negative_timeout);
   }
 }
 
@@ -397,9 +430,6 @@ TEST(ProxyServerTest, NoRoute) {
   // We do not provide route for any shard.
   auto routing = std::make_shared<MockSharding>();
   auto hot_topics = std::make_shared<MockDetector>();
-
-  // Create a client and no server.
-  MessageBus client(loop_options);
 
   std::unique_ptr<ProxyServer> proxy;
   {  // Create the proxy.
@@ -410,21 +440,411 @@ TEST(ProxyServerTest, NoRoute) {
     ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
   }
 
+  // Create a client and no server.
+  MessageBus client(loop_options);
+
   // Create a stream to the proxy and send a message.
-  auto client_stream = client.OpenStream(proxy->GetListenerAddress());
+  const StreamID client_stream = client.OpenStream(proxy->GetListenerAddress());
   client.Send(client_stream,
               MessageSubscribe(Tenant::GuestTenant,
                                MockSharding::GetNamespace(0),
-                               "TwoClientsTwoServers",
+                               "ColdTopic",
                                0,
                                100));
   // We should immediately see a MessageGoodbye, as the original message sent to
   // the proxy cannot be routed.
-  auto received = client.Receive(positive_timeout);
+  auto received = client.Receive();
+  ASSERT_TRUE(received.message);
   ASSERT_EQ(client_stream, received.stream_id);
   ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
+}
 
-  client.CheckNotReceived(negative_timeout);
+namespace {
+
+struct ExpectedCall {
+  std::string contents;
+  SequenceNumber prev_seqno;
+  SequenceNumber current_seqno;
+};
+
+class SequenceVerifier {
+ public:
+  explicit SequenceVerifier(std::deque<ExpectedCall> sequence)
+  : sequence_(std::move(sequence)) {}
+
+  // Noncopyable
+  SequenceVerifier(const SequenceVerifier&) = delete;
+  SequenceVerifier& operator=(const SequenceVerifier&) = delete;
+  // Movable
+  SequenceVerifier(SequenceVerifier&&) = default;
+  SequenceVerifier& operator=(SequenceVerifier&&) = default;
+
+  ~SequenceVerifier() { ASSERT_TRUE(sequence_.empty()); }
+
+  bool Call(const Slice& contents,
+            SequenceNumber prev_seqno,
+            SequenceNumber current_seqno) {
+    ASSERT_TRUE(!sequence_.empty());
+    auto& expected = sequence_.front();
+    ASSERT_EQ(expected.contents, contents);
+    ASSERT_EQ(expected.prev_seqno, prev_seqno);
+    ASSERT_EQ(expected.current_seqno, current_seqno);
+    sequence_.pop_front();
+    return true;
+  }
+
+ private:
+  std::deque<ExpectedCall> sequence_;
+};
+
+class SequencePreparer {
+ public:
+  void AddExpect(const Slice& contents,
+                 SequenceNumber prev_seqno,
+                 SequenceNumber current_seqno) {
+    sequence_.emplace_back(
+        ExpectedCall{contents.ToString(), prev_seqno, current_seqno});
+  }
+
+  void ClearExpectations() { sequence_.clear(); }
+
+  UpdatesAccumulator::ConsumerCb operator()() const {
+    auto verifier = std::make_shared<SequenceVerifier>(sequence_);
+    return [verifier](const Slice& contents,
+                      SequenceNumber prev_seqno,
+                      SequenceNumber current_seqno) {
+      return verifier->Call(contents, prev_seqno, current_seqno);
+    };
+  }
+
+ private:
+  std::deque<ExpectedCall> sequence_;
+};
+
+}  // namespace
+
+TEST(ProxyServerTest, DefaultAccumulator) {
+  using Action = UpdatesAccumulator::Action;
+  auto acc = UpdatesAccumulator::CreateDefault(2 /* count_limit */);
+
+  SequencePreparer seq;
+  // Establish the first subscription.
+  ASSERT_EQ(0, acc->BootstrapSubscription(0, seq()));
+  // Deliver a snapshot on an upstream subscription.
+  ASSERT_TRUE(Action::kNoOp == acc->ConsumeUpdate("snapshot1", 0, 100));
+  seq.AddExpect("snapshot1", 0, 100);
+  // A new subscription receives a snapshot, as it's stored in the
+  // accumulator.
+  ASSERT_EQ(101, acc->BootstrapSubscription(0, seq()));
+  // Deliver a delta. At the same time, the server is asked to provide a
+  // snapshot, as we've run out of buffer for updates. To the server, it looks
+  // like a brand new subscription.
+  ASSERT_TRUE(Action::kResubscribeUpstream ==
+              acc->ConsumeUpdate("delta1", 101, 103));
+  seq.AddExpect("delta1", 101, 103);
+  // A new subscription receives a snapshot and a delta, as it's stored in the
+  // accumulator.
+  ASSERT_EQ(104, acc->BootstrapSubscription(0, seq()));
+  // The server delivers a snapshot.
+  ASSERT_TRUE(Action::kNoOp == acc->ConsumeUpdate("snapshot2", 0, 103));
+  seq.ClearExpectations();
+  seq.AddExpect("snapshot2", 0, 103);
+  ASSERT_EQ(104, acc->BootstrapSubscription(0, seq()));
+  // And another, fresher snapshot right after.
+  ASSERT_TRUE(Action::kNoOp == acc->ConsumeUpdate("snapshot3", 0, 105));
+  seq.ClearExpectations();
+  seq.AddExpect("snapshot3", 0, 105);
+  ASSERT_EQ(106, acc->BootstrapSubscription(0, seq()));
+}
+
+TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
+  const size_t shard = 1;
+  // Create routing and hot topics detection strategies for the proxy.
+  auto routing = std::make_shared<MockSharding>();
+  auto hot_topics = std::make_shared<MockDetector>();
+  // Make one topic hot.
+  hot_topics->SetCollapsing("HotTopic", true);
+  ASSERT_TRUE(hot_topics->IsHotTopic(std::to_string(shard), "HotTopic"));
+
+  std::unique_ptr<ProxyServer> proxy;
+  {  // Create the proxy.
+    ProxyServerOptions proxy_options;
+    proxy_options.info_log = info_log;
+    proxy_options.routing = routing;
+    proxy_options.hot_topics = hot_topics;
+    proxy_options.accumulator = [&](const Slice&, const Slice&) {
+      return UpdatesAccumulator::CreateDefault(2 /* count limit */);
+    };
+    ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
+  }
+
+  // Create a client and a server.
+  auto client = folly::make_unique<MessageBus>(loop_options);
+  auto server = folly::make_unique<MessageBus>(loop_options);
+  routing->GetMockRouter(shard)->SetHost(server->GetHost());
+
+  // All subscriptions will originate from a single client (which doesn't
+  // matter) and will refer to the only hot topic. We'll interleave subscribe
+  // messages with message deliveries from the server to excersise the code
+  // paths around.
+  const StreamID client_stream =
+      client->OpenStream(proxy->GetListenerAddress());
+  StreamID server_stream;
+  // A tiny DSL to make the test readable.
+  auto issue_subscribe = [&](SubscriptionID downstream_sub) {
+    client->Send(client_stream,
+                 MessageSubscribe(Tenant::GuestTenant,
+                                  MockSharding::GetNamespace(shard),
+                                  "HotTopic",
+                                  0,
+                                  downstream_sub));
+  };
+  auto issue_unsubscribe = [&](SubscriptionID downstream_id) {
+    client->Send(client_stream,
+                 MessageUnsubscribe(Tenant::GuestTenant,
+                                    downstream_id,
+                                    MessageUnsubscribe::Reason::kRequested));
+  };
+  auto receive_subscribe = [&](SubscriptionID expected_sub_id = 0) {
+    auto received = server->Receive();
+    ASSERT_TRUE(received.message);
+    server_stream = received.stream_id;
+    auto message = received.message.get();
+    ASSERT_EQ(MessageType::mSubscribe, message->GetMessageType());
+    SubscriptionID sub_id = static_cast<MessageSubscribe*>(message)->GetSubID();
+    ASSERT_TRUE(sub_id);
+    if (expected_sub_id) {
+      ASSERT_EQ(expected_sub_id, sub_id);
+    }
+    return sub_id;
+  };
+  auto receive_unsubscribe = [&](SubscriptionID expected_sub_id) {
+    auto received = server->Receive();
+    ASSERT_TRUE(received.message);
+    auto message = received.message.get();
+    ASSERT_EQ(MessageType::mUnsubscribe, message->GetMessageType());
+    SubscriptionID sub_id =
+        static_cast<MessageUnsubscribe*>(message)->GetSubID();
+    ASSERT_EQ(expected_sub_id, sub_id);
+  };
+  auto deliver_data = [&](SubscriptionID upstream_sub,
+                          SequenceNumber prev_seqno,
+                          SequenceNumber current_seqno,
+                          const Slice& payload) {
+    MessageDeliverData data(
+        Tenant::GuestTenant, upstream_sub, MsgId(), payload);
+    data.SetSequenceNumbers(prev_seqno, current_seqno);
+    server->Send(server_stream, data);
+  };
+  auto receive_data = [&](SubscriptionID downstream_sub,
+                          SequenceNumber prev_seqno,
+                          SequenceNumber current_seqno,
+                          const Slice& payload) {
+    auto received = client->Receive();
+    ASSERT_TRUE(received.message);
+    ASSERT_EQ(client_stream, received.stream_id);
+    auto message = received.message.get();
+    ASSERT_EQ(MessageType::mDeliverData, message->GetMessageType());
+    auto data = static_cast<MessageDeliverData*>(message);
+    ASSERT_EQ(downstream_sub, data->GetSubID());
+    ASSERT_EQ(prev_seqno, data->GetPrevSequenceNumber());
+    ASSERT_EQ(current_seqno, data->GetSequenceNumber());
+    ASSERT_EQ(payload, data->GetPayload());
+  };
+
+  // Establish the first subscription.
+  issue_subscribe(1);
+  SubscriptionID upstream_sub = receive_subscribe();
+  // Deliver a snapshot on an upstream subscription.
+  deliver_data(upstream_sub, 0, 100, "snapshot1");
+  receive_data(1, 0, 100, "snapshot1");
+  // Establish the second subscription.
+  issue_subscribe(2);
+  // A new subscription receives a snapshot, as it's stored in the
+  // accumulator.
+  receive_data(2, 0, 100, "snapshot1");
+  // Take care to have only one downstream subscription at the time of message
+  // delivery, otherwise the assertions get messy, as the order of downstream
+  // subscribers receiving a message is non-deterministic.
+  issue_unsubscribe(1);
+  // That should not trigger any notification to the server.
+  ASSERT_TRUE(server->NotReceived());
+  // Deliver a delta.
+  deliver_data(upstream_sub, 101, 103, "delta2");
+  receive_data(2, 101, 103, "delta2");
+  // At the same time, the server is asked to provide a snapshot, as we've run
+  // out of buffer for updates. To the server, it looks like a brand new
+  // subscription.
+  if (server->PeekType() == MessageType::mUnsubscribe) {
+    receive_unsubscribe(upstream_sub);
+    upstream_sub = receive_subscribe();
+  } else {
+    auto old_upstream_sub = upstream_sub;
+    upstream_sub = receive_subscribe();
+    receive_unsubscribe(old_upstream_sub);
+  }
+  // Establish the third subscription.
+  issue_subscribe(3);
+  // A new subscription receives a snapshot and a delta, as it's stored in the
+  // accumulator.
+  receive_data(3, 0, 100, "snapshot1");
+  receive_data(3, 101, 103, "delta2");
+  issue_unsubscribe(2);
+  // The server finally delivers a snapshot.
+  deliver_data(upstream_sub, 0, 103, "snapshot2");
+  // Downstream subscribers won't actuallly receive this message, as it's not
+  // newer than previously obtained sequence consisting of a snapshot and a
+  // delta.
+  ASSERT_TRUE(client->NotReceived());
+  // But sending a snapshot that transitions into a fresher state does affect
+  // downstream subscriptions.
+  deliver_data(upstream_sub, 0, 105, "snapshot3");
+  receive_data(3, 0, 105, "snapshot3");
+  // Establish a fourth subscription, that one will receive the last snapshot,
+  // which evicted the previous snapshot from the accumulator even though the
+  // buffer wasn't full.
+  issue_subscribe(4);
+  receive_data(4, 0, 105, "snapshot3");
+
+  // Shut down the client.
+  client.reset();
+  // And read a goodbye message on the server.
+  auto received = server->Receive();
+  ASSERT_TRUE(received.message);
+  ASSERT_EQ(server_stream, received.stream_id);
+  ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
+}
+
+TEST(ProxyServerTest, ForwardingAndMultiplexing) {
+  const size_t shard = 1;
+  // Create routing and hot topics detection strategies for the proxy.
+  auto routing = std::make_shared<MockSharding>();
+  auto hot_topics = std::make_shared<MockDetector>();
+  // Make one topic hot.
+  hot_topics->SetCollapsing("HotTopic", true);
+  ASSERT_TRUE(hot_topics->IsHotTopic(std::to_string(shard), "HotTopic"));
+  ASSERT_TRUE(!hot_topics->IsHotTopic(std::to_string(shard), "ColdTopic"));
+
+  std::unique_ptr<ProxyServer> proxy;
+  {  // Create the proxy.
+    ProxyServerOptions proxy_options;
+    proxy_options.info_log = info_log;
+    proxy_options.routing = routing;
+    proxy_options.hot_topics = hot_topics;
+    proxy_options.accumulator = [&](const Slice&, const Slice&) {
+      return UpdatesAccumulator::CreateDefault(2 /* count limit */);
+    };
+    ASSERT_OK(ProxyServer::Create(proxy_options, &proxy));
+  }
+
+  // Create a client and a server.
+  auto client = folly::make_unique<MessageBus>(loop_options);
+  auto server = folly::make_unique<MessageBus>(loop_options);
+  routing->GetMockRouter(shard)->SetHost(server->GetHost());
+
+  // Establish subscriptions on a hot and a cold topic on a single stream.
+  const StreamID client_stream =
+      client->OpenStream(proxy->GetListenerAddress());
+  std::array<StreamID, 2> server_streams;
+  std::array<SubscriptionID, 2> server_sub_ids;
+  size_t i = 0;
+  for (auto* topic_name : {"ColdTopic", "HotTopic"}) {
+    // Send a subscribe message.
+    SubscriptionID client_sub_id = 100 + i;
+    client->Send(client_stream,
+                 MessageSubscribe(Tenant::GuestTenant,
+                                  MockSharding::GetNamespace(shard),
+                                  topic_name,
+                                  0,
+                                  client_sub_id));
+    {
+      auto received = server->Receive();
+      ASSERT_TRUE(received.message);
+      server_streams[i] = received.stream_id;
+      ASSERT_EQ(MessageType::mSubscribe, received.message->GetMessageType());
+      auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
+      ASSERT_EQ(Slice(topic_name), subscribe->GetTopicName());
+      server_sub_ids[i] = subscribe->GetSubID();
+    }
+    // Send back a message on the subscription.
+    MessageDeliverData data(
+        Tenant::GuestTenant, server_sub_ids[i], MsgId(), "Payload");
+    data.SetSequenceNumbers(0, 1003);
+    server->Send(server_streams[i], data);
+    {
+      auto received = client->Receive();
+      ASSERT_TRUE(received.message);
+      ASSERT_EQ(client_stream, received.stream_id);
+      ASSERT_EQ(MessageType::mDeliverData, received.message->GetMessageType());
+      auto deliver = static_cast<MessageDeliverData*>(received.message.get());
+      ASSERT_EQ("Payload", deliver->GetPayload());
+    }
+    ++i;
+  }
+  // Since cold topics are not multiplexed, the SubscriptionIDs are passed
+  // verbatim.
+  ASSERT_EQ(100, server_sub_ids[0]);
+  // Currently, proxy uses different streams for hot and cold topics. This
+  // might
+  // change in the future -- adjust the assertion if that happens.
+  ASSERT_TRUE(server_streams[0] != server_streams[1]);
+
+  // Create another stream with a subscription on a cold topic to prevent
+  // internal GC from destroying internal structures that keep shard's
+  // context,
+  // which would lead to the server's multiplexed stream receiving a
+  // MessageGoodbye. We will not touch that stream until the end of the test.
+  const StreamID another_client_stream =
+      client->OpenStream(proxy->GetListenerAddress());
+  {
+    ASSERT_TRUE(another_client_stream != client_stream);
+    client->Send(another_client_stream,
+                 MessageSubscribe(Tenant::GuestTenant,
+                                  MockSharding::GetNamespace(shard),
+                                  "ColdTopic",
+                                  0,
+                                  100));
+
+    auto received = server->Receive();
+    ASSERT_TRUE(server_streams.end() == std::find(server_streams.begin(),
+                                                  server_streams.end(),
+                                                  received.stream_id));
+    ASSERT_EQ(MessageType::mSubscribe, received.message->GetMessageType());
+    auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
+    ASSERT_EQ("ColdTopic", subscribe->GetTopicName());
+    ASSERT_EQ(100, subscribe->GetSubID());
+  }
+
+  // Server says goodbye on the stream that forwards a bulk of subscriptions.
+  server->Send(server_streams[0],
+               MessageGoodbye(Tenant::GuestTenant,
+                              MessageGoodbye::Code::Graceful,
+                              MessageGoodbye::OriginType::Server));
+  {  // Proxy should forward the message...
+    auto received = client->Receive();
+    ASSERT_TRUE(received.message);
+    ASSERT_EQ(client_stream, received.stream_id);
+    ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
+  }
+  {  // ...as well as terminate the subscription on hot topic.
+    auto received = server->Receive();
+    ASSERT_TRUE(received.message);
+    ASSERT_EQ(server_streams[1], received.stream_id);
+    ASSERT_EQ(MessageType::mUnsubscribe, received.message->GetMessageType());
+    auto unsubscribe = static_cast<MessageUnsubscribe*>(received.message.get());
+    ASSERT_EQ(server_sub_ids[1], unsubscribe->GetSubID());
+  }
+
+  // Shut down the client.
+  client.reset();
+  // And read goodbye messages on the server -- one on the subscriber stream
+  // and
+  // one on a stream that had only cold subscription on it.
+  for (size_t j = 0; j < 2; ++j) {
+    auto received = server->Receive();
+    ASSERT_TRUE(received.message);
+    ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
+  }
 }
 
 }  // namespace rocketspeed

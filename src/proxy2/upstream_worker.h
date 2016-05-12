@@ -9,11 +9,15 @@
 #include <vector>
 
 #include "include/HostId.h"
+#include "src/client/subscriptions_map.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/flow_control.h"
 #include "src/messages/queues.h"
 #include "src/messages/stream_allocator.h"
+#include "src/messages/types.h"
 #include "src/proxy2/abstract_worker.h"
+#include "src/proxy2/multiplexer.h"
+#include "src/util/id_allocator.h"
 
 namespace rocketspeed {
 
@@ -110,6 +114,8 @@ class PerStream {
 
   void ReceiveFromStream(Flow* flow, MessageAndStream message);
 
+  void ReceiveFromMultiplexer(Flow* flow, MessageAndStream message);
+
   void ChangeRoute();
 
   ~PerStream();
@@ -122,31 +128,17 @@ class PerStream {
   /// A sink for messages on subscriptions that were not picked for
   /// multiplexing.
   std::unique_ptr<Stream> upstream_;
+  /// A mapping from SubscriptionID of the original subscription to the handle
+  /// of the upstream subscription.
+  // TODO(stupaq): intrusive
+  std::unordered_map<SubscriptionID, UpstreamSubscription*>
+      downstream_to_upstream_;
 
   void CleanupState();
 
   /// Closes the stream, ensuring that both client and server receive goodbye
   /// messages and all local state is cleaned up.
   void ForceCloseStream();
-};
-
-/// A subscription-level proxy (per stream of subscriptions).
-///
-/// Multiplexer's memory requirements may be linear in the total number of
-/// active subscriptions it learns about.
-class Multiplexer {
- public:
-  explicit Multiplexer(PerShard* per_shard);
-
-  EventLoop* GetLoop() const;
-  const ProxyServerOptions& GetOptions() const;
-
-  bool TryHandle(Flow* flow, const MessageAndStream& message);
-
-  ~Multiplexer();
-
- private:
-  PerShard* const per_shard_;
 };
 
 /// Encapsulates logic and resources that are common to all PerStream objects on
