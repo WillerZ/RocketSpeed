@@ -244,7 +244,8 @@ tags:
 format:
 	build_tools/format-diff.sh
 
-.PRECIOUS %.test: %.o $(LIBOBJECTS) $(TESTHARNESS)
+.PRECIOUS: %.test
+%.test: %.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
