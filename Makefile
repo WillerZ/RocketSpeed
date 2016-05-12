@@ -49,7 +49,8 @@ else
 	PLATFORM_CCFLAGS += $(JEMALLOC_INCLUDE) -DHAVE_JEMALLOC
 endif
 
-WARNING_FLAGS = -Wall -Werror -Wshadow -Wconversion -Wno-sign-conversion
+#WARNING_FLAGS = -Wall -Werror -Wshadow -Wconversion -Wno-sign-conversion
+WARNING_FLAGS = -Wall -Werror -Wshadow -Wno-sign-conversion
 CFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CCFLAGS) $(OPT)
 CXXFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -DOUTPUT_TEST_TIMES
 
