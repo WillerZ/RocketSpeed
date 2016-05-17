@@ -441,7 +441,7 @@ class KeylessHashMMap {
    *         or equal to End() iterator if not found
    */
 
-  Iterator Find(const Key& key) {
+  Iterator Find(const Key& key) const {
     if (Empty()) {
       return End();
     }
@@ -544,7 +544,9 @@ class KeylessHashMMap {
     KeyStore<Key>* store_;
   };
 
-  KeyStore<Key> store_;
+  // mutable since used in const Find()
+  // via ScopedKeyWarden
+  mutable KeyStore<Key> store_;
   Impl impl_;
   size_t size_;
 };
