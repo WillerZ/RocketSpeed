@@ -63,11 +63,8 @@ Status ClientImpl::Create(ClientOptions options,
   if (!options.sharding) {
     return Status::InvalidArgument("Missing sharding strategy.");
   }
-  if (options.backoff_base < 1.0) {
-    return Status::InvalidArgument("Backoff base must be >= 1.0");
-  }
-  if (!options.backoff_distribution) {
-    return Status::InvalidArgument("Missing backoff distribution.");
+  if (!options.backoff_strategy) {
+    return Status::InvalidArgument("Missing backoff strategy.");
   }
 
   // Default to null logger.

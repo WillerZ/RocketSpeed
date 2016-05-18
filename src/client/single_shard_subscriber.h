@@ -173,14 +173,10 @@ class Subscriber : public SubscriberIf, public StreamReceiver {
   /** A shared statistics. */
   std::shared_ptr<SubscriberStats> stats_;
 
-  /** Time point (in us) until which client should not attempt to reconnect. */
-  uint64_t backoff_until_time_;
-  /** Time point (in us) of last message sending event. */
-  uint64_t last_send_time_;
+  /** Time point until which client should not attempt to reconnect. */
+  std::chrono::steady_clock::time_point backoff_until_;
   /** Number of consecutive goodbye messages. */
-  size_t consecutive_goodbyes_count_;
-  /** Random engine used by this client. */
-  std::mt19937_64& rng_;
+  size_t consecutive_goodbyes_;
 
   /** Stream socket used by this worker to talk to the Rocketeer. */
   std::unique_ptr<Stream> server_stream_;

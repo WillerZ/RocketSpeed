@@ -823,7 +823,9 @@ TEST(IntegrationTest, LostConnection) {
   ClientOptions options;
   // We do this to save some time waiting for client to reconnect.
   options.timer_period = std::chrono::milliseconds(1);
-  options.backoff_distribution = [](ClientRNG*) { return 0.0; };
+  options.backoff_strategy = [](ClientRNG*, size_t) {
+    return std::chrono::seconds(0);
+  };
   std::unique_ptr<Client> client;
   ASSERT_OK(cluster->CreateClient(&client, std::move(options)));
   client->SetDefaultCallbacks(nullptr, receive_callback);

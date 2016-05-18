@@ -231,10 +231,7 @@ Subscriber::Subscriber(const ClientOptions& options,
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
-, backoff_until_time_(0)
-, last_send_time_(0)
-, consecutive_goodbyes_count_(0)
-, rng_(ThreadLocalPRNG())
+, consecutive_goodbyes_(0)
 , last_router_version_(0)
 , router_(std::move(router))
 , pending_subscriptions_(event_loop) {
@@ -414,8 +411,8 @@ void Subscriber::RestoreServerStream() {
   CloseServerStream();  // it must be closed already
 
   // Check if we're still in backoff mode
-  const uint64_t now = options_.env->NowMicros();
-  if (now <= backoff_until_time_) {
+  auto now = decltype(backoff_until_)::clock::now();
+  if (now <= backoff_until_) {
     return;
   }
 
@@ -485,9 +482,6 @@ void Subscriber::ProcessPendingSubscription(Flow* flow,
              "Closing stream (%llu) with no active subscriptions",
              server_stream_->GetLocalID());
     CloseServerStream();
-
-    // We've just sent a message.
-    last_send_time_ = options_.env->NowMicros();
     return;
   }
 
@@ -510,8 +504,6 @@ void Subscriber::ProcessPendingSubscription(Flow* flow,
 
     // Record the fact, so we don't send duplicates of the message.
     recent_terminations_.Add(sub_id);
-    // Record last send time for back-off logic.
-    last_send_time_ = options_.env->NowMicros();
 
     MessageUnsubscribe unsubscribe(
         GuestTenant, sub_id, MessageUnsubscribe::Reason::kRequested);
@@ -526,10 +518,6 @@ void Subscriber::ProcessPendingSubscription(Flow* flow,
                                sub_state->GetExpected(),
                                sub_id);
     WriteToServerStream(flow, subscribe);
-
-    // Remember last sent time for backoff.
-    last_send_time_ = options_.env->NowMicros();
-
     LOG_INFO(options_.info_log, "Subscribed ID (%" PRIu64 ")", sub_id);
   }
 }
@@ -563,7 +551,7 @@ void Subscriber::Tick() {
 }
 
 void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
-  consecutive_goodbyes_count_ = 0;
+  consecutive_goodbyes_ = 0;
 
   auto deliver = std::move(arg.message);
   // Find the right subscription and deliver the message to it.
@@ -589,7 +577,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
 }
 
 void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
-  consecutive_goodbyes_count_ = 0;
+  consecutive_goodbyes_ = 0;
 
   auto unsubscribe = std::move(arg.message);
   const SubscriptionID sub_id = unsubscribe->GetSubID();
@@ -614,37 +602,23 @@ void Subscriber::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
 
   const auto origin = arg.stream_id;
 
-  // A duration type unit-compatible with BaseEnv::NowMicros().
-  typedef std::chrono::microseconds EnvClockDuration;
-
   CloseServerStream();
 
   // Notify the router.
   router_->MarkHostDown(server_host_);
 
   // Failed to reconnect, apply back off logic.
-  ++consecutive_goodbyes_count_;
-  EnvClockDuration backoff_initial = options_.backoff_initial;
-  RS_ASSERT(consecutive_goodbyes_count_ > 0);
-  double backoff_value = static_cast<double>(backoff_initial.count()) *
-                         std::pow(static_cast<double>(options_.backoff_base),
-                                  consecutive_goodbyes_count_ - 1);
-  EnvClockDuration backoff_limit = options_.backoff_limit;
-  backoff_value =
-      std::min(backoff_value, static_cast<double>(backoff_limit.count()));
-  backoff_value *= options_.backoff_distribution(&rng_);
-  const uint64_t backoff_period = static_cast<uint64_t>(backoff_value);
-  // We count backoff period from the time of sending the last message, so
-  // that we can attempt to reconnect right after getting goodbye message, if
-  // we got it after long period of inactivity.
-  backoff_until_time_ = last_send_time_ + backoff_period;
+  auto backoff_duration =
+      options_.backoff_strategy(&ThreadLocalPRNG(), consecutive_goodbyes_);
+  ++consecutive_goodbyes_;
+  backoff_until_ = decltype(backoff_until_)::clock::now() + backoff_duration;
 
   LOG_WARN(options_.info_log,
            "Received %zu goodbye messages in a row (on stream %llu),"
            " back off for %" PRIu64 " ms",
-           consecutive_goodbyes_count_,
+           consecutive_goodbyes_,
            origin,
-           backoff_period / 1000);
+           static_cast<std::chrono::milliseconds>(backoff_duration).count());
 }
 
 }  // namespace rocketspeed

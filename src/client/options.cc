@@ -5,8 +5,9 @@
 //
 #include "include/RocketSpeed.h"
 
-#include <random>
+#include <cmath>
 #include <limits>
+#include <random>
 
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
@@ -15,27 +16,41 @@
 
 namespace rocketspeed {
 
-struct DefaultBackOffDistribution {
-  double operator()(ClientRNG* rng) const {
-    std::uniform_real_distribution<double> distribution(0.0, 1.0);
-    return distribution(*rng);
-  }
-};
+namespace backoff {
+
+BackOffStrategy RandomizedTruncatedExponential(
+    std::chrono::milliseconds backoff_value,
+    std::chrono::milliseconds backoff_limit,
+    double backoff_base,
+    double jitter) {
+  RS_ASSERT(jitter >= 0.0);
+  RS_ASSERT(jitter <= 1.0);
+  return [=](ClientRNG* rng, size_t retry) -> std::chrono::milliseconds {
+    auto multiplier = std::pow(backoff_base, static_cast<double>(retry));
+    auto exp_backoff = decltype(backoff_value)(
+        static_cast<size_t>(backoff_value.count() * multiplier));
+    auto trunc_backoff = std::min(exp_backoff, backoff_limit);
+    // 0.0 and 1.0 have precise representations.
+    std::uniform_real_distribution<double> distribution(1.0 - jitter, 1.0);
+    auto fuzz = distribution(*rng);
+    auto fuzzed_backoff = decltype(trunc_backoff)(
+        static_cast<size_t>(trunc_backoff.count() * fuzz));
+    return fuzzed_backoff;
+  };
+}
+}
 
 ClientOptions::ClientOptions()
 : env(ClientEnv::Default())
 , num_workers(1)
 , timer_period(200)
-, backoff_base(2.0)
-, backoff_initial(1000)
-, backoff_limit(30 * 1000)
-, backoff_distribution(DefaultBackOffDistribution())
+, backoff_strategy(backoff::RandomizedTruncatedExponential(
+      std::chrono::seconds(1), std::chrono::seconds(30), 2.0))
 , unsubscribe_deduplication_timeout(10 * 1000)
 , publish_timeout(5 * 1000)
 , max_subscriptions(std::numeric_limits<size_t>::max())
 , connection_without_streams_keepalive(std::chrono::milliseconds(0))
 , subscription_rate_limit(1000 * 1000 * 1000)
-, collapse_subscriptions_to_tail(false) {
-}
+, collapse_subscriptions_to_tail(false) {}
 
 }  // namespace rocketspeed

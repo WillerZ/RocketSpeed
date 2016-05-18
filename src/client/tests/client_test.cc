@@ -20,6 +20,7 @@
 #include "src/client/single_shard_subscriber.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
+#include "src/util/common/random.h"
 #include "src/util/random.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
@@ -262,21 +263,19 @@ TEST(ClientTest, BackOff) {
   copilot_ptr = copilot.msg_loop.get();
 
   // Back-off parameters.
-  const uint64_t initial = 50 * 1000;
-  const double base = 2.0;
+  std::chrono::milliseconds scale(50);
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
-  options.backoff_initial = std::chrono::milliseconds(initial / 1000);
-  options.backoff_base = base;
-  options.backoff_distribution = [](ClientRNG*) { return 1.0; };
+  options.backoff_strategy = [scale](ClientRNG*, size_t retry) {
+    return scale * (retry + 1);
+  };
   auto client = CreateClient(std::move(options));
 
   // Subscribe and wait until enough reconnection attempts takes place.
   client->Subscribe(GuestTenant, GuestNamespace, "BackOff", 0);
-  std::chrono::microseconds timeout(
-      static_cast<uint64_t>(initial * std::pow(base, num_attempts)));
-  ASSERT_TRUE(subscribe_sem.TimedWait(timeout));
+  std::chrono::milliseconds total(scale * num_attempts * (num_attempts - 1));
+  ASSERT_TRUE(subscribe_sem.TimedWait(total));
 
   // Verify timeouts between consecutive attempts.
   ASSERT_EQ(num_attempts, subscribe_attempts.size());
@@ -285,11 +284,40 @@ TEST(ClientTest, BackOff) {
                            subscribe_attempts.end(),
                            differences.begin());
   for (size_t i = 1; i < num_attempts; ++i) {
-    std::chrono::microseconds expected(
-        static_cast<uint64_t>(initial * std::pow(base, i - 1)));
-    ASSERT_TRUE(differences[i] >= expected - expected / 4);
-    ASSERT_TRUE(differences[i] <= expected + expected / 4);
+    auto expected = scale * i;
+    ASSERT_GE(differences[i], expected - expected / 4);
+    ASSERT_LE(differences[i], expected + expected / 4);
   }
+}
+
+TEST(ClientTest, RandomizedTruncatedExponential) {
+  std::chrono::seconds value(1), limit(30);
+  auto backoff =
+      std::bind(backoff::RandomizedTruncatedExponential(value, limit, 2.0, 0.0),
+                &ThreadLocalPRNG(),
+                std::placeholders::_1);
+
+#define ASSERT_EQD(expected_exp, actual_exp)                               \
+  do {                                                                     \
+    auto expected = (expected_exp);                                        \
+    auto expected_low = expected - expected / 100;                         \
+    auto expected_high = expected + expected / 100;                        \
+    auto actual =                                                          \
+        std::chrono::milliseconds(static_cast<size_t>(actual_exp * 1000)); \
+    ASSERT_LE(expected_low, actual);                                       \
+    ASSERT_GE(expected_high, actual);                                      \
+  } while (0);
+
+  ASSERT_EQD(backoff(0), 1.0);
+  ASSERT_EQD(backoff(1), 2.0);
+  ASSERT_EQD(backoff(2), 4.0);
+  ASSERT_EQD(backoff(3), 8.0);
+  ASSERT_EQD(backoff(4), 16.0);
+  ASSERT_EQD(backoff(5), 30.0);
+  ASSERT_EQD(backoff(6), 30.0);
+
+#undef ASSERT_EQD
+  // FIXME
 }
 
 TEST(ClientTest, GetCopilotFailure) {
@@ -303,7 +331,9 @@ TEST(ClientTest, GetCopilotFailure) {
   ClientOptions options;
   // Speed up client retries.
   options.timer_period = std::chrono::milliseconds(1);
-  options.backoff_distribution = [](ClientRNG*) { return 0.0; };
+  options.backoff_strategy = [](ClientRNG*, size_t) {
+    return std::chrono::seconds(0);
+  };
   auto client = CreateClient(std::move(options));
 
   // Clear configuration entry for the Copilot.
@@ -351,7 +381,9 @@ TEST(ClientTest, OfflineOperations) {
   ClientOptions options;
   // Speed up client retries.
   options.timer_period = std::chrono::milliseconds(1);
-  options.backoff_distribution = [](ClientRNG*) { return 0.0; };
+  options.backoff_strategy = [](ClientRNG*, size_t) {
+    return std::chrono::seconds(0);
+  };
   auto client = CreateClient(std::move(options));
 
   // Disable communication.
@@ -407,11 +439,11 @@ TEST(ClientTest, CopilotSwap) {
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
-  // Make client retries utterly slow, to make sure that we switch host
+  // Make client retries very fast, to make sure that we switch host
   // immediately.
-  options.backoff_initial = std::chrono::seconds(30);
-  options.backoff_limit = std::chrono::seconds(30);
-  options.backoff_distribution = [](ClientRNG*) { return 0.0; };
+  options.backoff_strategy = [](ClientRNG*, size_t) {
+    return std::chrono::seconds(0);
+  };
   auto client = CreateClient(std::move(options));
 
   // Subscribe, call should make it to the copilot.

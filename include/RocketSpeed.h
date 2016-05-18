@@ -41,8 +41,22 @@ typedef std::function<void(const DataLossInfo&)> DataLossCallback;
 /** Notifies about status of a finished subscription snapshot. */
 typedef std::function<void(Status)> SaveSubscriptionsCallback;
 
-/** Client random number generator. */
-typedef std::mt19937_64 ClientRNG;
+using ClientRNG = std::mt19937_64;
+
+/// A strategy that computes for how long the client should wait before
+/// attempting to reconnect.
+using BackOffStrategy =
+    std::function<std::chrono::milliseconds(ClientRNG*, size_t retry)>;
+
+/// Various strategies.
+namespace backoff {
+
+BackOffStrategy RandomizedTruncatedExponential(
+    std::chrono::milliseconds backoff_value,
+    std::chrono::milliseconds backoff_limit,
+    double backoff_base,
+    double jitter = 1.0);
+}
 
 /** Describes the Client object to be created. */
 class ClientOptions {
@@ -82,24 +96,9 @@ class ClientOptions {
   // Default: 200 ms
   std::chrono::milliseconds timer_period;
 
-  // A base of exponential back-off curve.
-  // Default: 2.0
-  double backoff_base;
-
-  // A scaling factor of the exponential back-off curve.
-  // Default: 1 s
-  std::chrono::milliseconds backoff_initial;
-
-  // A limit on back-off period.
-  // Default: 30 s
-  std::chrono::milliseconds backoff_limit;
-
-  // A distribution used to determine final back-off period. If P is the period
-  // calculated according to truncated exponential back-off algorithm, the final
-  // period equals distribution(rng) * P.
-  // Default: std::uniform_real_distribution<double>
-  typedef std::function<double(ClientRNG*)> BackOffDistribution;
-  BackOffDistribution backoff_distribution;
+  // Calculates backoff.
+  // Default: randomised, truncated exponential backoff.
+  BackOffStrategy backoff_strategy;
 
   // If client receives a burst of messages on non-existent subscription ID, it
   // will respond with unsubscribe message only once every specified duration.
