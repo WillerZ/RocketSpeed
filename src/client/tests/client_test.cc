@@ -317,7 +317,6 @@ TEST(ClientTest, RandomizedTruncatedExponential) {
   ASSERT_EQD(backoff(6), 30.0);
 
 #undef ASSERT_EQD
-  // FIXME
 }
 
 TEST(ClientTest, GetCopilotFailure) {
