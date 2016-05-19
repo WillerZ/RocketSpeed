@@ -31,6 +31,7 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
 
 void FlowControl::UnregisterSource(AbstractSource* source) {
   thread_check_.Check();
+  source->SetReadEnabled(event_loop_, false);
   sources_.erase(source);
   // Pointers to the source stored in SinkState will be removed lazily, when
   // the backpressure from respective sink is removed.
