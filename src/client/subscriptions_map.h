@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "include/RocketSpeed.h"
 #include "include/Types.h"
 #include "src/messages/types.h"
 #include "src/util/common/observable_container.h"
@@ -76,12 +77,12 @@ class SubscriptionBase {
                      SequenceNumber previous,
                      SequenceNumber current);
 
-  /// This ID shall only be obtained for logging purposes.
+  /// Retrieves an ID that the subscription currently uses in communication with
+  /// the server.
   ///
-  /// Caller may not rely on the ID being invariant for the whole duration of a
-  /// subscription, but the ID is useful for debugging, as this is precisely
-  /// what the server uses as an identification of the subscription.
-  SubscriptionID GetIDForLogging() const { return sub_id_; }
+  /// The ID is invariant for the whole duration of the subscription iff the
+  /// subscription have not been rewound.
+  SubscriptionID GetIDWhichMayChange() const { return sub_id_; }
 
  private:
   template <typename SubscriptionState>
@@ -133,7 +134,8 @@ class SubscriptionsMap : public StreamReceiver {
 
   SubscriptionsMap(EventLoop* event_loop,
                    DeliverCb deliver_cb,
-                   TerminateCb terminate_cb);
+                   TerminateCb terminate_cb,
+                   BackOffStrategy backoff_strategy);
 
   /// Returns a non-owning pointer to the SubscriptionState.
   ///
@@ -158,6 +160,13 @@ class SubscriptionsMap : public StreamReceiver {
 
   bool Empty() const;
 
+  /// Iterates over the all subscriptions in arbitrary order and invokes
+  /// provided callback for each subscription.
+  ///
+  /// The map must not be modified during the loop.
+  template <typename Iter>
+  void Iterate(Iter&& iter);
+
   /// Forces the map to reestablish communication to the provided host.
   void ReconnectTo(const HostId& host);
 
@@ -165,6 +174,7 @@ class SubscriptionsMap : public StreamReceiver {
   EventLoop* const event_loop_;
   const DeliverCb deliver_cb_;
   const TerminateCb terminate_cb_;
+  const BackOffStrategy backoff_strategy_;
 
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
@@ -172,15 +182,19 @@ class SubscriptionsMap : public StreamReceiver {
   using Subscriptions =
       std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionState>>;
   ObservableContainer<Subscriptions> pending_subscriptions_;
-  ObservableContainer<Subscriptions> synced_subscriptions_;
+  Subscriptions synced_subscriptions_;
   // TODO(stupaq): sparse_hash_set
   using Unsubscribes = std::unordered_set<SubscriptionID>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
-  HostId last_host_;
+  size_t connection_failues_{0};
+  HostId current_host_;
   std::unique_ptr<Sink<SharedTimestampedString>> sink_;
+  std::unique_ptr<EventCallback> backoff_timer_;
 
-  Logger* GetLogger();
+  Logger* GetLogger() const;
+
+  void Reconnect();
 
   void HandlePendingSubscription(
       Flow* flow, std::unique_ptr<SubscriptionState> upstream_sub);

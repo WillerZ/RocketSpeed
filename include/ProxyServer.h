@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 
+#include "RocketSpeed.h"
 #include "Types.h"
 
 namespace rocketspeed {
@@ -50,8 +51,13 @@ class ProxyServerOptions {
   size_t num_upstream_threads{1};
 
   /// A port to listen on.
-  /// IF null, the port will be chosen automatically.
+  /// If null, the port will be chosen automatically.
   uint16_t port{0};
+
+  /// A backoff strategy to follow when reattempting to synchronise multiplexed
+  /// subscriptions after connection failure.
+  /// Defaults to exponential backoff.
+  BackOffStrategy backoff_strategy;
 };
 
 /// A server that acts as a proxy between Subscribers and Rocketeers.

@@ -13,6 +13,7 @@
 #include "include/Assert.h"
 #include "include/Env.h"
 #include "include/Logger.h"
+#include "include/RocketSpeed.h"
 #include "include/Status.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/msg_loop.h"
@@ -27,6 +28,12 @@ ProxyServerOptions::~ProxyServerOptions() = default;
 Status ProxyServer::Create(ProxyServerOptions options,
                            std::unique_ptr<ProxyServer>* out) {
   RS_ASSERT(out);
+
+  if (!options.backoff_strategy) {
+    options.backoff_strategy = backoff::RandomizedTruncatedExponential(
+        std::chrono::milliseconds(100), std::chrono::seconds(1), 2.0);
+  }
+
   auto proxy = folly::make_unique<ProxyServerImpl>(std::move(options));
   auto st = proxy->Start();
   if (!st.ok()) {

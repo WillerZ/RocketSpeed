@@ -29,7 +29,7 @@ bool SubscriptionBase<SubscriptionID>::ProcessUpdate(
     LOG_WARN(info_log,
              "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
              ", %" PRIu64 ") expected %" PRIu64 ", dropped",
-             static_cast<unsigned long long>(GetIDForLogging()),
+             static_cast<unsigned long long>(GetIDWhichMayChange()),
              tenant_and_namespace_.Get().namespace_id.c_str(),
              topic_name_.c_str(),
              previous,
@@ -40,7 +40,7 @@ bool SubscriptionBase<SubscriptionID>::ProcessUpdate(
     LOG_DEBUG(info_log,
               "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
               ", %" PRIu64 ") expected %" PRIu64 ", accepted",
-              static_cast<unsigned long long>(GetIDForLogging()),
+              static_cast<unsigned long long>(GetIDWhichMayChange()),
               tenant_and_namespace_.Get().namespace_id.c_str(),
               topic_name_.c_str(),
               previous,
