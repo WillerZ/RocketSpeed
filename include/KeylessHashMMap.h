@@ -14,6 +14,87 @@
 #include "TaggedPtr.h"
 
 namespace rocketspeed {
+template <typename T>
+class SingleIntArray {
+ public:
+  static const bool implemented = false;
+};
+
+// "Container" for storing single pointer value
+// with array interface required by KeylessHashMMap
+template <typename T>
+class SingleIntArray<T*> {
+ public:
+  static const bool implemented = true;
+
+  // value used by google::sparse_hash_set to internally mark
+  // erased elements.
+  static SingleIntArray<T*> GetDeletedValue() {
+    SingleIntArray<T*> invalid;
+    invalid.ptr_ = kInvalidValue;
+    return invalid;
+  }
+
+  bool IsDeletedValue() const { return kInvalidValue == ptr_; }
+
+  // create empty object
+  SingleIntArray() {}
+
+  // create array with one element
+  explicit SingleIntArray(T* ptr) { PushBack(ptr); }
+
+  SingleIntArray(const SingleIntArray& other) { operator=(other); }
+
+  SingleIntArray& operator=(const SingleIntArray& other) {
+    ptr_ = other.ptr_;
+    return *this;
+  }
+
+  void Clear() { ptr_ = reinterpret_cast<uintptr_t>(nullptr); }
+
+  ~SingleIntArray() = default;
+
+  static constexpr size_t MaxSize() { return 1; }
+
+  T* operator[](size_t idx) const {
+    RS_ASSERT(idx < Size());
+    return reinterpret_cast<T*>(ptr_);
+  }
+
+  bool PushBack(T* ptr) const {
+    RS_ASSERT(ptr != nullptr);
+    if (Size() == MaxSize()) {
+      return false;
+    }
+    ptr_ = reinterpret_cast<uintptr_t>(ptr);
+    return true;
+  }
+
+  bool Erase(T* ptr) const {
+    if (Empty()) {
+      return false;
+    }
+    if (reinterpret_cast<uintptr_t>(ptr) == ptr_) {
+      ptr_ = 0;
+      return true;
+    }
+    return false;
+  }
+
+  // It's important to have Size() == 0 for empty array
+  uint16_t Size() const {
+    return (ptr_ == reinterpret_cast<uintptr_t>(nullptr) ||
+            ptr_ == kInvalidValue)
+               ? 0
+               : 1;
+  }
+
+  bool Empty() const { return Size() == 0; }
+
+ private:
+  static constexpr uintptr_t kInvalidValue = 1ULL;
+  mutable uintptr_t ptr_ = reinterpret_cast<uintptr_t>(nullptr);
+};
 
 /**
  * Compact vector like structure for keeping integrals.
@@ -271,7 +352,7 @@ class KeyStore {
   const Key* key_ = nullptr;
 };
 
-template <typename Key, typename Value, typename Hash>
+template <typename Key, typename Value, typename Hash, typename ArrayImpl>
 class HashUtils {
  public:
   HashUtils(const Hash& hasher, const KeyStore<Key>* store)
@@ -287,7 +368,7 @@ class HashUtils {
   }
 
   // hashing operator
-  size_t operator()(const SmallIntArray<Value>& array) const {
+  size_t operator()(const ArrayImpl& array) const {
     if (store_->IsKeySet()) {
       RS_ASSERT(array.Empty());
       return hasher_.Hash(*store_->GetKey());
@@ -298,8 +379,7 @@ class HashUtils {
   }
 
   // equality operator
-  bool operator()(const SmallIntArray<Value>& lhs,
-                  const SmallIntArray<Value>& rhs) const {
+  bool operator()(const ArrayImpl& lhs, const ArrayImpl& rhs) const {
     const bool lhs_deleted = lhs.IsDeletedValue();
     const bool rhs_deleted = rhs.IsDeletedValue();
 
@@ -337,11 +417,9 @@ struct SetDeletedKey {
   void Set(Impl& impl) {}
 };
 
-template <typename Impl, typename Value>
-struct SetDeletedKey<Impl, Value, true> {
-  void Set(Impl& impl) {
-    impl.set_deleted_key(SmallIntArray<Value>::GetDeletedValue());
-  }
+template <typename Impl, typename Array>
+struct SetDeletedKey<Impl, Array, true> {
+  void Set(Impl& impl) { impl.set_deleted_key(Array::GetDeletedValue()); }
 };
 }  // detail
 
@@ -363,23 +441,23 @@ struct SetDeletedKey<Impl, Value, true> {
  * The mapping must not change during the map existence.
  */
 template <typename Key, typename Value, typename Hash,
-          template <typename...> class HashSetImpl>
+          template <typename...> class HashSetImpl,
+          typename ArrayImpl = SmallIntArray<Value>>
 class KeylessHashMMap {
-  using Impl = HashSetImpl<SmallIntArray<Value>, HashUtils<Key, Value, Hash>,
-                           HashUtils<Key, Value, Hash>>;
+  using Impl = HashSetImpl<ArrayImpl, HashUtils<Key, Value, Hash, ArrayImpl>,
+                           HashUtils<Key, Value, Hash, ArrayImpl>>;
 
  public:
   class Iterator;
   // TODO(dyniusz): we might use num_buckets / num_elements
   KeylessHashMMap(const Hash& hasher = Hash())
       // HashUtils are copied
-      : impl_(0, HashUtils<Key, Value, Hash>(hasher, &store_),
-              HashUtils<Key, Value, Hash>(hasher, &store_)),
+      : impl_(0, HashUtils<Key, Value, Hash, ArrayImpl>(hasher, &store_),
+              HashUtils<Key, Value, Hash, ArrayImpl>(hasher, &store_)),
         size_(0) {
-    static_assert(SmallIntArray<Value>::implemented == true,
-                  "Type not yet supported");
-    detail::SetDeletedKey<Impl, Value, detail::HasSetter<Impl>::value>().Set(
-        impl_);
+    static_assert(ArrayImpl::implemented == true, "Type not yet supported");
+    detail::SetDeletedKey<Impl, ArrayImpl, detail::HasSetter<Impl>::value>()
+        .Set(impl_);
   }
 
   /**
@@ -391,7 +469,7 @@ class KeylessHashMMap {
    * @return true iff successully added
    */
   bool Insert(const Value& value) {
-    SmallIntArray<Value> to_insert(value);
+    ArrayImpl to_insert(value);
     auto it = impl_.find(to_insert);
     if (it == impl_.end()) {
       const bool inserted = impl_.insert(to_insert).second;
@@ -418,7 +496,7 @@ class KeylessHashMMap {
       return false;
     }
 
-    auto it = impl_.find(SmallIntArray<Value>(value));
+    auto it = impl_.find(ArrayImpl(value));
     if (it == impl_.end()) {
       return false;
     }
@@ -447,7 +525,7 @@ class KeylessHashMMap {
     }
 
     ScopedKeyWarden warden(&store_, &key);
-    auto it = impl_.find(SmallIntArray<Value>());
+    auto it = impl_.find(ArrayImpl());
     if (it == impl_.end()) {
       return End();
     }
@@ -469,9 +547,7 @@ class KeylessHashMMap {
     size_ = 0;
   }
 
-  static constexpr size_t MaxElementsPerKey() {
-    return SmallIntArray<Value>::MaxSize();
-  }
+  static constexpr size_t MaxElementsPerKey() { return ArrayImpl::MaxSize(); }
 
   // TODO(dyniusz): iterator interface to be polished
   class Iterator {

@@ -17,8 +17,8 @@ int main() {
 #include <memory>
 #include <unordered_set>
 
-#include "include/KeylessHashMMap.h"
 #include "google/sparse_hash_set"
+#include "include/KeylessHashMMap.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
@@ -61,12 +61,12 @@ class NonUniqueHashValue {
 template <typename Key>
 using UniqueHashValue = NonUniqueHashValue<Key, kUniquePeriod>;
 
-template <size_t period, template <typename...> class Impl>
+template <size_t period, template <typename...> class Impl, typename ArrayImpl>
 void RunMapSearchTestImpl() {
   using Key = size_t;
   using Value = NonUniqueHashValue<Key, period>;
   std::unordered_set<std::unique_ptr<Value> > values;
-  KeylessHashMMap<Key, Value*, Value, Impl> mapa;
+  KeylessHashMMap<Key, Value*, Value, Impl, ArrayImpl> mapa;
   Random random(static_cast<uint32_t>(time(nullptr)));
   auto num_values = random.Next() % (mapa.MaxElementsPerKey() + 1);
 
@@ -100,11 +100,17 @@ void RunMapSearchTestImpl() {
 
 template <size_t period>
 void RunMapSearchTest() {
-  RunMapSearchTestImpl<period, std::unordered_set>();
-  RunMapSearchTestImpl<period, google::sparse_hash_set>();
+  using Key = size_t;
+  using Value = NonUniqueHashValue<Key, period>;
+  RunMapSearchTestImpl<period, std::unordered_set, SingleIntArray<Value*> >();
+  RunMapSearchTestImpl<period, std::unordered_set, SmallIntArray<Value*> >();
+  RunMapSearchTestImpl<period, google::sparse_hash_set,
+                       SingleIntArray<Value*> >();
+  RunMapSearchTestImpl<period, google::sparse_hash_set,
+                       SmallIntArray<Value*> >();
 }
 
-template <size_t period, template <typename...> class Impl>
+template <size_t period, template <typename...> class Impl, typename ArrayImpl>
 void TestIteratorUsageImpl() {
   using Key = size_t;
   using Value = NonUniqueHashValue<Key, period>;
@@ -135,13 +141,20 @@ void TestIteratorUsageImpl() {
 
 template <size_t period>
 void TestIteratorUsage() {
-  TestIteratorUsageImpl<period, std::unordered_set>();
-  TestIteratorUsageImpl<period, google::sparse_hash_set>();
+  using Key = size_t;
+  using Value = NonUniqueHashValue<Key, period>;
+  TestIteratorUsageImpl<period, std::unordered_set, SingleIntArray<Value*> >();
+  TestIteratorUsageImpl<period, std::unordered_set, SmallIntArray<Value*> >();
+  TestIteratorUsageImpl<period, google::sparse_hash_set,
+                        SingleIntArray<Value*> >();
+  TestIteratorUsageImpl<period, google::sparse_hash_set,
+                        SmallIntArray<Value*> >();
 }
 
-template <typename KeyT, typename ValueT, template <typename...> class Impl>
+template <typename KeyT, typename ValueT, template <typename...> class Impl,
+          typename ArrayImpl>
 void RunInsertionDeletionChecksImpl() {
-  KeylessHashMMap<KeyT, ValueT*, ValueT, Impl> mapa;
+  KeylessHashMMap<KeyT, ValueT*, ValueT, Impl, ArrayImpl> mapa;
   Random random(static_cast<uint32_t>(time(nullptr)));
   auto num_values = random.Next() % (mapa.MaxElementsPerKey() + 1);
   std::vector<std::unique_ptr<ValueT> > values;
@@ -167,8 +180,14 @@ void RunInsertionDeletionChecksImpl() {
 
 template <typename KeyT, typename ValueT>
 void RunInsertionDeletionChecks() {
-  RunInsertionDeletionChecksImpl<KeyT, ValueT, std::unordered_set>();
-  RunInsertionDeletionChecksImpl<KeyT, ValueT, google::sparse_hash_set>();
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, std::unordered_set,
+                                 SingleIntArray<ValueT*> >();
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, std::unordered_set,
+                                 SmallIntArray<ValueT*> >();
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, google::sparse_hash_set,
+                                 SingleIntArray<ValueT*> >();
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, google::sparse_hash_set,
+                                 SmallIntArray<ValueT*> >();
 }
 };
 
@@ -248,6 +267,33 @@ TEST(SmallIntArrayTest, Moving) {
     auto ptr = values[i].get();
     ASSERT_EQ(moved[i], ptr);
   }
+}
+
+class SinglePtValueTest {};
+
+TEST(SinglePtValueTest, BasicOps) {
+  SingleIntArray<int*> array;
+  const int value = 12345;
+
+  // Insert one & check if it's there
+  std::unique_ptr<int> ptr(new int(value));
+  ASSERT_TRUE(array.PushBack(ptr.get()));
+  ASSERT_EQ(array.Size(), 1);
+  ASSERT_EQ(*(array[0]), value);
+
+  // Erase it
+  ASSERT_TRUE(array.Erase(ptr.get()));
+  ASSERT_TRUE(array.Empty());
+  ASSERT_EQ(array.Size(), 0);
+
+  // Insert it again
+  ASSERT_TRUE(array.PushBack(ptr.get()));
+  ASSERT_EQ(array.Size(), 1);
+
+  array.Clear();
+
+  ASSERT_TRUE(array.Empty());
+  ASSERT_EQ(array.Size(), 0);
 }
 
 class KeylessHashMMapTest {};
