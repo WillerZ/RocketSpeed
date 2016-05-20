@@ -8,6 +8,7 @@
 #include <functional>
 #include <vector>
 
+#include "include/Slice.h"
 #include "include/Types.h"
 
 namespace rocketspeed {
@@ -20,16 +21,12 @@ class TopicToSubscriptionMap {
   explicit TopicToSubscriptionMap(
       std::function<SubscriptionState*(SubscriptionID)> get_state);
 
-  std::tuple<SubscriptionID, SubscriptionState*> Find(
-      const NamespaceID& namespace_id, const Topic& topic_name) const;
+  std::tuple<SubscriptionID, SubscriptionState*> Find(Slice namespace_id,
+                                                      Slice topic_name) const;
 
-  void Insert(const NamespaceID& namespace_id,
-              const Topic& topic_name,
-              SubscriptionID sub_id);
+  void Insert(Slice namespace_id, Slice topic_name, SubscriptionID sub_id);
 
-  bool Remove(const NamespaceID& namespace_id,
-              const Topic& topic_name,
-              SubscriptionID sub_id);
+  bool Remove(Slice namespace_id, Slice topic_name, SubscriptionID sub_id);
 
  private:
   /**
@@ -55,12 +52,11 @@ class TopicToSubscriptionMap {
    */
   size_t sub_count_;
 
-  void InsertInternal(const NamespaceID& namespace_id,
-                      const Topic& topic_name,
+  void InsertInternal(Slice namespace_id,
+                      Slice topic_name,
                       SubscriptionID sub_id);
 
-  size_t FindOptimalPosition(const NamespaceID& namespace_id,
-                             const Topic& topic_name) const;
+  size_t FindOptimalPosition(Slice namespace_id, Slice topic_name) const;
 
   void Rehash();
 

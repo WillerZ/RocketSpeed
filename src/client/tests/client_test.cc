@@ -18,6 +18,7 @@
 #include "include/Env.h"
 #include "include/RocketSpeed.h"
 #include "src/client/single_shard_subscriber.h"
+#include "src/client/topic_subscription_map.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/random.h"
@@ -186,58 +187,6 @@ class ClientTest {
     return client;
   }
 };
-
-TEST(ClientTest, UnsubscribeDedup) {
-  std::atomic<StreamID> last_origin;
-  std::atomic<SubscriptionID> last_sub_id;
-  port::Semaphore subscribe_sem, unsubscribe_sem;
-  auto copilot = MockServer({
-      {MessageType::mSubscribe,
-       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-         auto subscribe = static_cast<MessageDeliver*>(msg.get());
-         last_origin = origin;
-         last_sub_id = subscribe->GetSubID();
-         subscribe_sem.Post();
-       }},
-      {MessageType::mUnsubscribe,
-       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-         auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
-         ASSERT_EQ(last_sub_id.load() + 1, unsubscribe->GetSubID());
-         unsubscribe_sem.Post();
-       }},
-  });
-
-  auto dedup_timeout = 2 * negative_timeout;
-
-  ClientOptions options;
-  options.unsubscribe_deduplication_timeout = dedup_timeout;
-  auto client = CreateClient(std::move(options));
-
-  // Subscribe, so that we get stream ID of the client.
-  client->Subscribe(GuestTenant, GuestNamespace, "UnsubscribeDedup", 0);
-  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
-
-  MessageDeliverGap deliver(
-      GuestTenant, last_sub_id.load() + 1, GapType::kBenign);
-
-  // Send messages on a non-existent subscription.
-  for (size_t i = 0; i < 10; ++i) {
-    deliver.SetSequenceNumbers(i, i + 1);
-    ASSERT_OK(copilot.msg_loop->SendResponse(deliver, last_origin.load(), 0));
-  }
-  // Should receive only one unsubscribe message.
-  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
-  ASSERT_TRUE(!unsubscribe_sem.TimedWait(negative_timeout));
-
-  // Wait for dedup period.
-  ASSERT_TRUE(!unsubscribe_sem.TimedWait(dedup_timeout));
-
-  // Publish another bad message.
-  deliver.SetSequenceNumbers(11, 12);
-  ASSERT_OK(copilot.msg_loop->SendResponse(deliver, last_origin.load(), 0));
-  // Should receive unsubscribe message.
-  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
-}
 
 TEST(ClientTest, BackOff) {
   const size_t num_attempts = 4;
@@ -638,79 +587,6 @@ TEST(ClientTest, ClientSubscriptionLimit) {
   }
 }
 
-TEST(ClientTest, ClientSubscriptionRateLimit) {
-  using namespace std::chrono;
-  const int kSubscriptions = 1000;
-
-  port::Semaphore sub_sem;
-  port::Semaphore unsub_sem;
-
-  auto start = TestClock::now();
-  std::vector<TestClock::duration> attempts;
-  auto copilot = MockServer(
-      {{MessageType::mSubscribe,
-        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-          attempts.push_back(TestClock::now() - start);
-          sub_sem.Post();
-        }},
-       {MessageType::mUnsubscribe,
-        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-          attempts.push_back(TestClock::now() - start);
-          unsub_sem.Post();
-        }}});
-
-  ClientOptions options;
-  options.timer_period = std::chrono::milliseconds(100);
-  options.subscription_rate_limit = kSubscriptions;  // 1000/s => 100/100ms
-  microseconds expected_diff = options.timer_period;
-  auto client = CreateClient(std::move(options));
-
-  std::vector<SubscriptionHandle> subscriptions;
-  for (size_t i = 0; i < kSubscriptions; ++i) {
-    auto h =
-        client->Subscribe(GuestTenant,
-                          GuestNamespace,
-                          "SubRateLimit",
-                          0,
-                          nullptr,
-                          [&](const SubscriptionStatus&) {
-                            // Need to acknowledge the last unsubscription
-                            // The connection is terminated before the message
-                            // can be processed in the callback
-                            if (attempts.size() == kSubscriptions * 2 - 1) {
-                              unsub_sem.Post();
-                            }
-                          });
-    subscriptions.push_back(h);
-    ASSERT_TRUE(sub_sem.TimedWait(positive_timeout));
-  }
-
-  for (auto h : subscriptions) {
-    client->Unsubscribe(h);
-    ASSERT_TRUE(unsub_sem.TimedWait(positive_timeout));
-  }
-
-  // Verify time between consecutive attempts.
-  ASSERT_EQ(attempts.size(), kSubscriptions * 2 - 1);
-  std::vector<TestClock::duration> diffs;
-  std::adjacent_difference(
-      attempts.begin(), attempts.end(), std::back_inserter(diffs));
-  std::sort(diffs.begin(), diffs.end());
-
-  // Check max time difference between subscribes is not larger than the tick
-  // period, i.e. we are subscribing some every tick period.
-  ASSERT_LT(diffs.back(), expected_diff * 2);  // Factor of 2 for safety.
-
-  // At N subscriptions per second, it takes (N-1)/N seconds to subscribe N
-  // times since we don't wait after the last subscription (e.g. it takes 1
-  // second to subscribe twice at 1 sub/second). Our time unit is 100ms, so
-  // we'll take 900ms to subscribe instead of 1 second. The factor of 2 is for
-  // subscribes+unsubscribes.
-  auto total = 2 * milliseconds(900);
-  ASSERT_GT(attempts.back(), total);
-  ASSERT_LT(attempts.back(), total * 6 / 5);  // allow 20% error
-}
-
 TEST(ClientTest, CachedConnectionsWithoutStreams) {
   port::Semaphore subscribe_sem, unsubscribe_sem, global_sem;
   const int kTopics = 100;
@@ -843,10 +719,10 @@ TEST(ClientTest, TopicToSubscriptionMap) {
     subscriptions.emplace(
         sub_id,
         folly::make_unique<SubscriptionState>(
-            ThreadCheck(),
-            SubscriptionParameters(GuestTenant, GuestNamespace, topic_name, 0),
-            folly::make_unique<Observer>(),
-            factory.GetFlyweight({GuestTenant, GuestNamespace})));
+            factory.GetFlyweight({GuestTenant, GuestNamespace}),
+            topic_name,
+            sub_id,
+            0));
   };
   auto remove = [&](SubscriptionID sub_id) { subscriptions.erase(sub_id); };
   TopicToSubscriptionMap map([&](SubscriptionID sub_id) {

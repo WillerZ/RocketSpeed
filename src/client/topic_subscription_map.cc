@@ -21,11 +21,10 @@ TopicToSubscriptionMap::TopicToSubscriptionMap(
 : get_state_(std::move(get_state))
 , sub_count_low_(0)
 , sub_count_high_(0)
-, sub_count_(0) {
-}
+, sub_count_(0) {}
 
 std::tuple<SubscriptionID, SubscriptionState*> TopicToSubscriptionMap::Find(
-    const NamespaceID& namespace_id, const Topic& topic_name) const {
+    Slice namespace_id, Slice topic_name) const {
   if (vector_.empty()) {
     return std::make_tuple(0, nullptr);
   }
@@ -55,15 +54,15 @@ std::tuple<SubscriptionID, SubscriptionState*> TopicToSubscriptionMap::Find(
   return std::make_tuple(kReservedSubscriptionID, nullptr);
 }
 
-void TopicToSubscriptionMap::Insert(const NamespaceID& namespace_id,
-                                    const Topic& topic_name,
+void TopicToSubscriptionMap::Insert(Slice namespace_id,
+                                    Slice topic_name,
                                     SubscriptionID sub_id) {
   Rehash();
   InsertInternal(namespace_id, topic_name, sub_id);
 }
 
-bool TopicToSubscriptionMap::Remove(const NamespaceID& namespace_id,
-                                    const Topic& topic_name,
+bool TopicToSubscriptionMap::Remove(Slice namespace_id,
+                                    Slice topic_name,
                                     SubscriptionID sub_id) {
   RS_ASSERT(sub_id != kReservedSubscriptionID);
 
@@ -121,8 +120,8 @@ bool TopicToSubscriptionMap::Remove(const NamespaceID& namespace_id,
   return true;
 }
 
-void TopicToSubscriptionMap::InsertInternal(const NamespaceID& namespace_id,
-                                            const Topic& topic_name,
+void TopicToSubscriptionMap::InsertInternal(Slice namespace_id,
+                                            Slice topic_name,
                                             SubscriptionID sub_id) {
   RS_ASSERT(sub_id != kReservedSubscriptionID);
   RS_ASSERT(sub_count_ < vector_.size());
@@ -153,8 +152,8 @@ void TopicToSubscriptionMap::InsertInternal(const NamespaceID& namespace_id,
   RS_ASSERT(false);
 }
 
-size_t TopicToSubscriptionMap::FindOptimalPosition(
-    const NamespaceID& namespace_id, const Topic& topic_name) const {
+size_t TopicToSubscriptionMap::FindOptimalPosition(Slice namespace_id,
+                                                   Slice topic_name) const {
   RS_ASSERT(!vector_.empty());
   const uint64_t seed = 0x57933c4a28a735b0;
   XXH64_state_t state;
