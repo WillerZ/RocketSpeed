@@ -16,7 +16,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/subscriber_if.h"
-#include "src/client/subscription_id.h"
+#include "src/util/common/subscription_id.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/common/statistics.h"

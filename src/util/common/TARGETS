@@ -12,6 +12,7 @@ cpp_library(
         'rate_limiter.cc',
         'statistics.cc',
         'status.cc',
+        'subscription_id.cc',
         'thread_local.cc',
         'thread_check.cc',
     ],

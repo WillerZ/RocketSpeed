@@ -20,7 +20,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/client/subscription_id.h"
+#include "src/util/common/subscription_id.h"
 #include "src/messages/flow_control.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream.h"

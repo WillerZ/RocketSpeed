@@ -12,7 +12,7 @@
 
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
-#include "src/client/subscription_id.h"
+#include "src/util/common/subscription_id.h"
 #include "src/messages/types.h"
 #include "src/util/common/observable_container.h"
 #include "src/util/common/ref_count_flyweight.h"

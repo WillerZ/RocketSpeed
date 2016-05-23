@@ -9,6 +9,7 @@ cpp_library(
         'multi_shard_subscriber.cc',
         'multi_threaded_subscriber.cc',
         'single_shard_subscriber.cc',
+        'subscriptions_map.cc',
         'tail_collapsing_subscriber.cc',
     ],
     preprocessor_flags = [

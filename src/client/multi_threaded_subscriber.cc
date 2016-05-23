@@ -27,7 +27,7 @@
 #include "include/Types.h"
 #include "src/client/multi_shard_subscriber.h"
 #include "src/client/subscriber_stats.h"
-#include "src/client/subscription_id.h"
+#include "src/util/common/subscription_id.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/msg_loop.h"

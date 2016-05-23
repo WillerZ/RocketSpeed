@@ -13,7 +13,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/subscriber_if.h"
-#include "src/client/subscription_id.h"
+#include "src/util/common/subscription_id.h"
 #include "src/client/subscriptions_map.h"
 #include "src/messages/messages.h"
 #include "src/messages/types.h"

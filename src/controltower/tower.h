@@ -9,7 +9,7 @@
 #include <map>
 #include <vector>
 
-#include "src/client/subscription_id.h"
+#include "src/util/common/subscription_id.h"
 #include "src/controltower/options.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/hash.h"

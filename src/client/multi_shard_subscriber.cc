@@ -26,7 +26,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/single_shard_subscriber.h"
-#include "src/client/subscription_id.h"
+#include "src/util/common/subscription_id.h"
 #include "src/client/tail_collapsing_subscriber.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
