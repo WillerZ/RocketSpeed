@@ -27,7 +27,7 @@ class Flow;
 class Stream;
 class SubscriberStats;
 class SubscriptionState;
-typedef uint64_t SubscriptionID;
+class SubscriptionID;
 
 namespace detail {
 class TailCollapsingObserver;

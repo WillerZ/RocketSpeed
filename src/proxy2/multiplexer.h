@@ -25,7 +25,7 @@ class PerStream;
 class ProxyServerOptions;
 class Slice;
 class Stream;
-using SubscriptionID = uint64_t;
+class SubscriptionID;
 class UpdatesAccumulator;
 
 // TODO(stupaq):

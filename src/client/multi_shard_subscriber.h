@@ -15,6 +15,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/subscriber_if.h"
+#include "src/client/subscription_id.h"
 #include "src/port/port.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
@@ -28,7 +29,7 @@ class EventLoop;
 class Stream;
 class SubscriberStats;
 class SubscriptionState;
-typedef uint64_t SubscriptionID;
+class SubscriptionID;
 typedef uint64_t SubscriptionHandle;
 
 /**

@@ -13,7 +13,7 @@ namespace rocketspeed {
 
 class Observer;
 using SequenceNumber = uint64_t;
-using SubscriptionID = uint64_t;
+class SubscriptionID;
 class SubscriptionParameters;
 
 /// An interface shared by all layers of subscribers.

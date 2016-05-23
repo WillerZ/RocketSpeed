@@ -298,9 +298,9 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
     case MessageUnsubscribe::Reason::kRequested:
       // Inbound unsubscription from client.
       LOG_DEBUG(options_.info_log,
-                "Received client unsubscribe for subscription (%" PRIu64
-                ") at stream (%llu)",
-                sub_id,
+                "Received client unsubscribe for subscription (%llu) at stream "
+                "(%llu)",
+                sub_id.ForLogging(),
                 origin);
 
       // Use client subscription ID map to find worker.
@@ -312,9 +312,9 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
     case MessageUnsubscribe::Reason::kInvalid:
       // Outbound unsubscription from control tower.
       LOG_WARN(options_.info_log,
-               "Received server unsubscribe for subscription (%" PRIu64
-               ") at stream (%llu)",
-               sub_id,
+               "Received server unsubscribe for subscription (%llu) at stream "
+               "(%llu)",
+               sub_id.ForLogging(),
                origin);
 
       // Map subscription ID back using CopilotWorker mapping.

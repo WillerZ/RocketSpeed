@@ -66,8 +66,8 @@ void Subscriber::Acknowledge(SubscriptionID sub_id,
                              SequenceNumber acked_seqno) {
   if (!subscriptions_map_.Find(sub_id)) {
     LOG_WARN(options_.info_log,
-             "Cannot acknowledge missing subscription ID (%" PRIu64 ")",
-             sub_id);
+             "Cannot acknowledge missing subscription ID (%lld)",
+             sub_id.ForLogging());
     return;
   }
 

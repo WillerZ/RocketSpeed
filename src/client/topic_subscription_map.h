@@ -14,7 +14,7 @@
 namespace rocketspeed {
 
 class SubscriptionState;
-using SubscriptionID = uint64_t;
+class SubscriptionID;
 
 class TopicToSubscriptionMap {
  public:

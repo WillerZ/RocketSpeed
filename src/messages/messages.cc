@@ -583,7 +583,7 @@ Status MessageSubscribe::Serialize(std::string* out) const {
   Message::Serialize(out);
   PutTopicID(out, namespace_id_, topic_name_);
   PutVarint64(out, start_seqno_);
-  PutVarint64(out, sub_id_);
+  EncodeSubscriptionID(out, sub_id_);
   return Status::OK();
 }
 
@@ -598,7 +598,7 @@ Status MessageSubscribe::DeSerialize(Slice* in) {
   if (!GetVarint64(in, &start_seqno_)) {
     return Status::InvalidArgument("Bad SequenceNumber");
   }
-  if (!GetVarint64(in, &sub_id_)) {
+  if (!DecodeSubscriptionID(in, &sub_id_)) {
     return Status::InvalidArgument("Bad SubscriptionID");
   }
   return Status::OK();
@@ -606,7 +606,7 @@ Status MessageSubscribe::DeSerialize(Slice* in) {
 
 Status MessageUnsubscribe::Serialize(std::string* out) const {
   Message::Serialize(out);
-  PutVarint64(out, sub_id_);
+  EncodeSubscriptionID(out, sub_id_);
   PutFixedEnum8(out, reason_);
   return Status::OK();
 }
@@ -616,7 +616,7 @@ Status MessageUnsubscribe::DeSerialize(Slice* in) {
   if (!st.ok()) {
     return st;
   }
-  if (!GetVarint64(in, &sub_id_)) {
+  if (!DecodeSubscriptionID(in, &sub_id_)) {
     return Status::InvalidArgument("Bad SubscriptionID");
   }
   if (!GetFixedEnum8(in, &reason_)) {
@@ -627,7 +627,7 @@ Status MessageUnsubscribe::DeSerialize(Slice* in) {
 
 Status MessageDeliver::Serialize(std::string* out) const {
   Message::Serialize(out);
-  PutVarint64(out, sub_id_);
+  EncodeSubscriptionID(out, sub_id_);
   PutVarint64(out, seqno_prev_);
   RS_ASSERT(seqno_ >= seqno_prev_);
   uint64_t seqno_diff = seqno_ - seqno_prev_;
@@ -640,7 +640,7 @@ Status MessageDeliver::DeSerialize(Slice* in) {
   if (!st.ok()) {
     return st;
   }
-  if (!GetVarint64(in, &sub_id_)) {
+  if (!DecodeSubscriptionID(in, &sub_id_)) {
     return Status::InvalidArgument("Bad SubscriptionID");
   }
   if (!GetVarint64(in, &seqno_prev_)) {

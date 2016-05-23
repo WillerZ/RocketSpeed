@@ -140,8 +140,7 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
                                              PerStream* per_stream,
                                              SubscriptionID downstream_sub) {
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::Subscribe(%.*s, %.*s, %" PRIu64
-            ", %llu, %" PRIu64 ")",
+            "Multiplexer(%zu)::Subscribe(%.*s, %.*s, %" PRIu64 ", %llu, %llu)",
             per_shard_->GetShardID(),
             static_cast<int>(namespace_id.size()),
             namespace_id.data(),
@@ -149,7 +148,7 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
             topic_name.data(),
             initial_seqno,
             per_stream->GetStream(),
-            downstream_sub);
+            downstream_sub.ForLogging());
 
   // Find a subscription on the topic, if one exists.
   UpstreamSubscription* upstream_sub;
@@ -180,11 +179,11 @@ void Multiplexer::Unsubscribe(Flow* flow,
                               PerStream* per_stream,
                               SubscriptionID downstream_sub) {
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::Unsubscribe(%" PRIu64 ", %llu, %" PRIu64 ")",
+            "Multiplexer(%zu)::Unsubscribe(%" PRIu64 ", %llu, %llu)",
             per_shard_->GetShardID(),
             upstream_sub->GetIDWhichMayChange(),
             per_stream->GetStream(),
-            downstream_sub);
+            downstream_sub.ForLogging());
 
   // Remove a downstream subscriber.
   auto remaining_downstream =

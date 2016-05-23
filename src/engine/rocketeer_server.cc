@@ -20,6 +20,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
+#include "src/client/subscription_id.h"
 #include "src/messages/flow_control.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream.h"
@@ -265,9 +266,9 @@ void CommunicationRocketeer::Terminate(Flow* flow,
     }
   }
   LOG_WARN(server_->options_.info_log,
-           "Missing subscription on stream: %llu, sub_id: %" PRIu64,
+           "Missing subscription on stream: %llu, sub_id: %llu",
            origin,
-           sub_id);
+           sub_id.ForLogging());
 }
 
 size_t CommunicationRocketeer::GetID() const {
@@ -335,9 +336,9 @@ void CommunicationRocketeer::Receive(
                           start_seqno == 0 ? start_seqno : start_seqno - 1));
   if (!result.second) {
     LOG_WARN(server_->options_.info_log,
-             "Duplicated subscription stream: %llu, sub_id: %" PRIu64,
+             "Duplicated subscription stream: %llu, sub_id: %llu",
              origin,
-             subscribe->GetSubID());
+             sub_id.ForLogging());
     return;
   }
   // TODO(stupaq) store subscription parameters in a message and move them out
@@ -370,9 +371,9 @@ void CommunicationRocketeer::Receive(
     }
   }
   LOG_WARN(server_->options_.info_log,
-           "Missing subscription on stream: %llu, sub_id: %" PRIu64,
+           "Missing subscription on stream: %llu, sub_id: %llu",
            origin,
-           sub_id);
+           sub_id.ForLogging());
 }
 
 void CommunicationRocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,

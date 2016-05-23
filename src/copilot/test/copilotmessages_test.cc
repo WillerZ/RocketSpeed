@@ -189,14 +189,14 @@ TEST(CopilotTest, Rollcall) {
   env_->SleepForMicroseconds(500000);
 
   // send subscribe messages to copilot
-  for (SubscriptionID i = 0; i < expected; ++i) {
+  for (uint64_t i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
     MessageSubscribe msg(Tenant::GuestTenant, GuestNamespace, topic, 0, i);
     ASSERT_OK(client.SendRequest(msg, &socket, 0));
   }
 
   // send unsubscribe messages to copilot
-  for (SubscriptionID i = 0; i < expected; ++i) {
+  for (uint64_t i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
     MessageUnsubscribe msg(
         Tenant::GuestTenant, i, MessageUnsubscribe::Reason::kRequested);

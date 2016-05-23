@@ -28,18 +28,16 @@ class Flow;
 typedef unsigned long long int StreamID;
 static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
 
-typedef uint64_t SubscriptionID;
-
 /** Uniquely identifies subscription within a service. */
 class InboundID {
  public:
   InboundID() : stream_id(std::numeric_limits<StreamID>::max()), sub_id(0) {}
 
-  InboundID(StreamID _stream_id, SubscriptionID _sub_id)
+  InboundID(StreamID _stream_id, uint64_t _sub_id)
   : stream_id(_stream_id), sub_id(_sub_id) {}
 
   StreamID stream_id;
-  SubscriptionID sub_id;
+  uint64_t sub_id;
 
   bool operator==(const InboundID& other) const {
     return stream_id == other.stream_id && sub_id == other.sub_id;
@@ -51,15 +49,16 @@ class InboundID {
 };
 
 struct RocketeerMessage {
-  RocketeerMessage(SubscriptionID _sub_id, SequenceNumber _seqno,
-                   std::string _payload, MsgId _msg_id = MsgId()) :
-    sub_id(std::move(_sub_id)),
-    seqno(_seqno),
-    payload(std::move(_payload)),
-    msg_id(_msg_id) {
-  }
+  RocketeerMessage(uint64_t _sub_id,
+                   SequenceNumber _seqno,
+                   std::string _payload,
+                   MsgId _msg_id = MsgId())
+  : sub_id(std::move(_sub_id))
+  , seqno(_seqno)
+  , payload(std::move(_payload))
+  , msg_id(_msg_id) {}
 
-  SubscriptionID sub_id;
+  uint64_t sub_id;
   SequenceNumber seqno;
   std::string payload;
   MsgId msg_id;

@@ -744,7 +744,7 @@ TEST(ClientTest, TopicToSubscriptionMap) {
 
   // Test that upsizing and downsizing works.
   std::vector<SubscriptionID> current_set;
-  SubscriptionID next_sub_id_ = 1;
+  uint64_t next_sub_id_ = 1;
   // Fill up the map.
   for (size_t i = 1; i < 70; ++i) {
     auto sub_id = next_sub_id_++;

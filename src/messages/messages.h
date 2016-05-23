@@ -14,6 +14,7 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
+#include "src/client/subscription_id.h"
 #include "src/messages/serializer.h"
 #include "src/util/common/autovector.h"
 #include "src/util/storage.h"
@@ -646,12 +647,6 @@ class MessageTailSeqno final : public Message {
  * Messages exchanged on a subscription.
  * @{
  */
-
-/**
- * ID of the subscription the message belongs to. IDs uniquely identify
- * subscription within a stream.
- */
-typedef uint64_t SubscriptionID;
 
 /** A request to subscribe to provided topic with given parameters. */
 class MessageSubscribe final : public Message {

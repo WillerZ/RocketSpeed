@@ -16,6 +16,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/subscriber_if.h"
+#include "src/client/subscription_id.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/common/statistics.h"
@@ -27,7 +28,6 @@ class Command;
 class Flow;
 class MsgLoop;
 class SubscriberStats;
-typedef uint64_t SubscriptionID;
 typedef uint64_t SubscriptionHandle;
 template <typename>
 class ThreadLocalQueues;

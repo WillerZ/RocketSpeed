@@ -106,9 +106,10 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Find(
 }
 
 template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
-                                                 SubscriptionID new_sub_id,
-                                                 SequenceNumber new_seqno) {
+void SubscriptionsMap<SubscriptionState>::Rewind(
+    SubscriptionState* ptr,
+    typename SubscriptionState::SubscriptionID new_sub_id,
+    SequenceNumber new_seqno) {
   LOG_DEBUG(GetLogger(),
             "Rewind(%" PRIu64 ", %" PRIu64 ", %" PRIu64 ")",
             ptr->GetIDWhichMayChange(),
@@ -327,7 +328,7 @@ void SubscriptionsMap<SubscriptionState>::HandlePendingSubscription(
 
 template <typename SubscriptionState>
 void SubscriptionsMap<SubscriptionState>::HandlePendingUnsubscription(
-    Flow* flow, SubscriptionID sub_id) {
+    Flow* flow, typename SubscriptionState::SubscriptionID sub_id) {
   LOG_DEBUG(GetLogger(), "HandlePendingUnsubscription(%" PRIu64 ")", sub_id);
 
   RS_ASSERT(sink_);
@@ -353,9 +354,9 @@ void SubscriptionsMap<SubscriptionState>::ReceiveUnsubscribe(
   auto sub_id = arg.message->GetSubID();
   auto reason = arg.message->GetReason();
   LOG_DEBUG(GetLogger(),
-            "ReceiveUnsubscribe(%llu, %" PRIu64 ", %d)",
+            "ReceiveUnsubscribe(%llu, %llu, %d)",
             arg.stream_id,
-            sub_id,
+            sub_id.ForLogging(),
             static_cast<int>(arg.message->GetMessageType()));
 
   switch (reason) {
@@ -386,9 +387,9 @@ void SubscriptionsMap<SubscriptionState>::ReceiveDeliver(
     StreamReceiveArg<MessageDeliver> arg) {
   auto sub_id = arg.message->GetSubID();
   LOG_DEBUG(GetLogger(),
-            "ReceiveDeliver(%llu, %" PRIu64 ", %s)",
+            "ReceiveDeliver(%llu, %llu, %s)",
             arg.stream_id,
-            sub_id,
+            sub_id.ForLogging(),
             MessageTypeName(arg.message->GetMessageType()));
 
   // Sanity check that the message did not refer to a subscription that has

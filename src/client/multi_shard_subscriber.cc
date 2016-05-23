@@ -26,6 +26,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/single_shard_subscriber.h"
+#include "src/client/subscription_id.h"
 #include "src/client/tail_collapsing_subscriber.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
@@ -122,8 +123,8 @@ SubscriberIf* MultiShardSubscriber::GetSubscriberForSubscription(
   auto it = subscription_to_shard_.find(sub_id);
   if (it == subscription_to_shard_.end()) {
     LOG_WARN(options_.info_log,
-             "Cannot find subscriber for SubscriptionID(%" PRIu64 ")",
-             sub_id);
+             "Cannot find subscriber for SubscriptionID(%llu)",
+             sub_id.ForLogging());
     return nullptr;
   }
 

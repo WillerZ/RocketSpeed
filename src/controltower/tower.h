@@ -8,10 +8,12 @@
 #include <memory>
 #include <map>
 #include <vector>
-#include "src/messages/msg_loop.h"
+
+#include "src/client/subscription_id.h"
 #include "src/controltower/options.h"
-#include "src/util/subscription_map.h"
+#include "src/messages/msg_loop.h"
 #include "src/util/common/hash.h"
+#include "src/util/subscription_map.h"
 
 namespace rocketspeed {
 

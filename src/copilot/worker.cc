@@ -92,7 +92,7 @@ CopilotWorker::WorkerCommand(LogID logid,
                            subscribe->GetNamespace(),
                            subscribe->GetTopicName(),
                            subscribe->GetStartSequenceNumber(),
-                           subscribe->GetSubID(),
+                           subscribe->GetSubID().ForLogging(),
                            logid,
                            worker_id,
                            origin);
@@ -101,7 +101,7 @@ CopilotWorker::WorkerCommand(LogID logid,
         case MessageType::mUnsubscribe: {
           auto unsubscribe = static_cast<MessageUnsubscribe*>(message.get());
           ProcessUnsubscribe(unsubscribe->GetTenantID(),
-                             unsubscribe->GetSubID(),
+                             unsubscribe->GetSubID().ForLogging(),
                              unsubscribe->GetReason(),
                              worker_id,
                              origin);
@@ -154,8 +154,9 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
     // This is somewhat expected due to the lag of propagating unsubscription
     // to the control tower.
     LOG_DEBUG(options_.info_log,
-      "Deliver for unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
-      origin, msg->GetSubID());
+              "Deliver for unknown subscription StreamID(%llu) SubID(%llu)",
+              origin,
+              msg->GetSubID().ForLogging());
     return;
   }
   const TopicUUID uuid = *ptr;
@@ -184,10 +185,10 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
       // Do not send a response if the seqno is too low.
       if (sub->seqno > seqno) {
         LOG_DEBUG(options_.info_log,
-                  "Data not delivered to %llu ID(%" PRIu64 ")"
+                  "Data not delivered to %llu ID(%llu)"
                   " (seqno@%" PRIu64 " too low, currently @%" PRIu64 ")",
                   recipient,
-                  sub->sub_id,
+                  sub->sub_id.ForLogging(),
                   seqno,
                   sub->seqno);
         continue;
@@ -196,10 +197,10 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
       // or too high.
       if (sub->seqno < prev_seqno) {
         LOG_DEBUG(options_.info_log,
-                  "Data not delivered to %llu ID(%" PRIu64 ")"
+                  "Data not delivered to %llu ID(%llu)"
                   " (prev_seqno@%" PRIu64 " too high, currently @%" PRIu64 ")",
                   recipient,
-                  sub->sub_id,
+                  sub->sub_id.ForLogging(),
                   prev_seqno,
                   sub->seqno);
         continue;
@@ -209,10 +210,10 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
       if ((sub->seqno == 0 && prev_seqno != 0) ||
           (sub->seqno != 0 && prev_seqno == 0)) {
         LOG_DEBUG(options_.info_log,
-                  "Data not delivered to %llu ID(%" PRIu64 ")"
+                  "Data not delivered to %llu ID(%llu)"
                   " (prev_seqno@%" PRIu64 " not 0)",
                   recipient,
-                  sub->sub_id,
+                  sub->sub_id.ForLogging(),
                   prev_seqno);
         continue;
       }
@@ -233,11 +234,10 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
         ++topic.records_sent;
 
         LOG_DEBUG(options_.info_log,
-                  "Sent data (%.16s)@%" PRIu64 " for ID(%" PRIu64
-                  ") %s to %llu",
+                  "Sent data (%.16s)@%" PRIu64 " for ID(%llu) %s to %llu",
                   msg->GetPayload().ToString().c_str(),
                   msg->GetSequenceNumber(),
-                  data.GetSubID(),
+                  data.GetSubID().ForLogging(),
                   uuid.ToString().c_str(),
                   recipient);
       } else {
@@ -258,13 +258,14 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
                                StreamID origin) {
   MessageDeliverGap* msg = static_cast<MessageDeliverGap*>(message.get());
 
-  auto ptr = sub_to_topic_.Find(origin, msg->GetSubID());
+  auto ptr = sub_to_topic_.Find(origin, msg->GetSubID().ForLogging());
   if (!ptr) {
     // This is somewhat expected due to the lag of propagating unsubscription
     // to the control tower.
     LOG_DEBUG(options_.info_log,
-      "Gap for unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
-      origin, msg->GetSubID());
+              "Gap for unknown subscription StreamID(%llu) SubID(%llu)",
+              origin,
+              msg->GetSubID().ForLogging());
     return;
   }
   const TopicUUID uuid = *ptr;
@@ -338,13 +339,13 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
         ++topic.gaps_sent;
 
         LOG_DEBUG(options_.info_log,
-                 "Sent gap %" PRIu64 "-%" PRIu64
-                 " for subscription ID(%" PRIu64 ") %s to %llu",
-                 msg->GetFirstSequenceNumber(),
-                 msg->GetLastSequenceNumber(),
-                 gap.GetSubID(),
-                 uuid.ToString().c_str(),
-                 recipient);
+                  "Sent gap %" PRIu64 "-%" PRIu64
+                  " for subscription ID(%llu) %s to %llu",
+                  msg->GetFirstSequenceNumber(),
+                  msg->GetLastSequenceNumber(),
+                  gap.GetSubID().ForLogging(),
+                  uuid.ToString().c_str(),
+                  recipient);
       } else {
         LOG_WARN(options_.info_log,
                  "Failed to distribute gap to %llu",
@@ -419,12 +420,12 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
         ++topic.gaps_sent;
 
         LOG_DEBUG(options_.info_log,
-                 "Sent tail senqo %" PRIu64
-                 " for subscription ID(%" PRIu64 ") %s to %llu",
-                 next_seqno,
-                 gap.GetSubID(),
-                 uuid.ToString().c_str(),
-                 recipient);
+                  "Sent tail senqo %" PRIu64
+                  " for subscription ID(%llu) %s to %llu",
+                  next_seqno,
+                  gap.GetSubID().ForLogging(),
+                  uuid.ToString().c_str(),
+                  recipient);
       } else {
         LOG_WARN(options_.info_log,
                  "Failed to distribute tail seqno to %llu",
@@ -449,12 +450,11 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
                                      const StreamID subscriber) {
   TopicUUID uuid(namespace_id, topic_name);
   LOG_INFO(options_.info_log,
-      "Received subscribe request ID(%" PRIu64
-      ") for %s@%" PRIu64 " for %llu",
-      sub_id,
-      uuid.ToString().c_str(),
-      start_seqno,
-      subscriber);
+           "Received subscribe request ID(%llu) for %s@%" PRIu64 " for %llu",
+           sub_id.ForLogging(),
+           uuid.ToString().c_str(),
+           start_seqno,
+           subscriber);
 
   // Insert into client-topic map.
   client_subscriptions_[subscriber]
@@ -480,12 +480,12 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
           tower.next_seqno != 0) {
         // Tower is at the tail for this topic, so re-use its sequence number.
         LOG_DEBUG(options_.info_log,
-          "Using existing tail subscription for %s@%" PRIu64
-          " for ID(%" PRIu64 ") on stream %llu",
-          uuid.ToString().c_str(),
-          tower.next_seqno,
-          sub_id,
-          subscriber);
+                  "Using existing tail subscription for %s@%" PRIu64
+                  " for ID(%llu) on stream %llu",
+                  uuid.ToString().c_str(),
+                  tower.next_seqno,
+                  sub_id.ForLogging(),
+                  subscriber);
 
         start_seqno = tower.next_seqno;
 
@@ -551,8 +551,8 @@ void CopilotWorker::ProcessUnsubscribe(TenantID tenant_id,
                                        int worker_id,
                                        StreamID subscriber) {
   LOG_INFO(options_.info_log,
-           "Received unsubscribe request for ID (%" PRIu64 ") on stream %llu",
-           sub_id,
+           "Received unsubscribe request for ID (%llu) on stream %llu",
+           sub_id.ForLogging(),
            subscriber);
 
   switch (reason) {
@@ -637,9 +637,9 @@ void CopilotWorker::HandleInvalidSubscription(StreamID origin,
   auto ptr = sub_to_topic_.Find(origin, sub_id);
   if (!ptr) {
     LOG_WARN(options_.info_log,
-             "Unknown subscription StreamID(%llu) SubID(%" PRIu64 ")",
+             "Unknown subscription StreamID(%llu) SubID(%llu)",
              origin,
-             sub_id);
+             sub_id.ForLogging());
     return;
   }
   const TopicUUID uuid = *ptr;
@@ -660,15 +660,14 @@ void CopilotWorker::HandleInvalidSubscription(StreamID origin,
       auto cmd = MsgLoop::ResponseCommand(message, sub->stream_id);
       if (client_queues_[sub->worker_id]->Write(cmd)) {
         LOG_DEBUG(options_.info_log,
-          "Sent unsubscribe (invalid) for StreamID(%llu) SubID(%" PRIu64 ")",
-          sub->stream_id, sub->sub_id);
+                  "Sent unsubscribe (invalid) for StreamID(%llu) SubID(%llu)",
+                  sub->stream_id,
+                  sub->sub_id.ForLogging());
       } else {
-        LOG_WARN(
-            options_.info_log,
-            "Failed unsubscribe (invalid) for StreamID(%llu) SubID(%" PRIu64
-            ")",
-            sub->stream_id,
-            sub->sub_id);
+        LOG_WARN(options_.info_log,
+                 "Failed unsubscribe (invalid) for StreamID(%llu) SubID(%llu)",
+                 sub->stream_id,
+                 sub->sub_id.ForLogging());
       }
     }
     stats_.incoming_subscriptions->Add(-int64_t(topic.subscriptions.size()));
@@ -834,11 +833,11 @@ bool CopilotWorker::SendSubscribe(TenantID tenant_id,
   auto command = MsgLoop::RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {
     LOG_DEBUG(options_.info_log,
-      "Sent %s@%" PRIu64 " subscription to tower stream %llu ID(%" PRIu64 ")",
-      uuid.ToString().c_str(),
-      seqno,
-      stream->GetStreamID(),
-      sub_id);
+              "Sent %s@%" PRIu64 " subscription to tower stream %llu ID(%llu)",
+              uuid.ToString().c_str(),
+              seqno,
+              stream->GetStreamID(),
+              sub_id.ForLogging());
     sub_to_topic_.Insert(stream->GetStreamID(), sub_id, std::move(uuid));
     return true;
   } else {
@@ -862,8 +861,8 @@ bool CopilotWorker::SendUnsubscribe(TenantID tenant_id,
   auto command = MsgLoop::RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {
     LOG_DEBUG(options_.info_log,
-      "Sent unsubscription to tower stream %llu",
-      stream->GetStreamID());
+              "Sent unsubscription to tower stream %llu",
+              stream->GetStreamID());
     sub_to_topic_.Remove(stream->GetStreamID(), sub_id);
     return true;
   } else {

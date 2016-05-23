@@ -12,7 +12,7 @@
 
 namespace rocketspeed {
 
-using SubscriptionID = uint64_t;
+class SubscriptionID;
 
 /**
  * Maps a stream ID and subscription ID to any type.

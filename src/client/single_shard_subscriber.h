@@ -13,6 +13,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/subscriber_if.h"
+#include "src/client/subscription_id.h"
 #include "src/client/subscriptions_map.h"
 #include "src/messages/messages.h"
 #include "src/messages/types.h"
@@ -25,7 +26,7 @@ class SubscriberStats;
 
 /// On top of the state needed by the SubscriptionsMap, we also need to hold
 /// Observer pointer.
-class SubscriptionState : public SubscriptionBase<SubscriptionID> {
+class SubscriptionState : public SubscriptionBase<uint64_t> {
  public:
   using SubscriptionBase::SubscriptionBase;
 
