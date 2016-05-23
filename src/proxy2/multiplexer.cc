@@ -155,7 +155,7 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
   if (!(upstream_sub = FindInIndex(namespace_id, topic_name))) {
     // Create an upstream subscription if one doesn't exist.
     upstream_sub = subscriptions_map_.Subscribe(
-        upstream_allocator_.Next(),
+        SubscriptionID::Unsafe(upstream_allocator_.Next()),
         tenant_id,
         namespace_id,
         topic_name,
@@ -255,7 +255,9 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
     if (action == UpdatesAccumulator::Action::kResubscribeUpstream) {
       // Rewind a subscription to zero.
       subscriptions_map_.Rewind(
-          upstream_sub, upstream_allocator_.Next(), 0 /* new_seqno */);
+          upstream_sub,
+          SubscriptionID::Unsafe(upstream_allocator_.Next()),
+          0 /* new_seqno */);
     }
   }
 

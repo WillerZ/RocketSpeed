@@ -18,7 +18,7 @@ bool DecodeSubscriptionID(Slice* in, SubscriptionID* out) {
   if (!GetVarint64(in, &value)) {
     return false;
   }
-  *out = SubscriptionID(value);
+  *out = SubscriptionID::Unsafe(value);
   return true;
 }
 

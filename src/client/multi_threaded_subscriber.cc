@@ -120,7 +120,7 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     RS_ASSERT(false);
     return SubscriptionHandle(0);
   }
-  const SubscriptionID sub_id(sub_handle);
+  auto sub_id = SubscriptionID::Unsafe(sub_handle);
 
   // Send command to responsible worker.
   auto moved_args = folly::makeMoveWrapper(
@@ -157,7 +157,7 @@ bool MultiThreadedSubscriber::Unsubscribe(Flow* flow,
     return true;
   }
   auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
-  const SubscriptionID sub_id(sub_handle);
+  auto sub_id = SubscriptionID::Unsafe(sub_handle);
 
   // Send command to responsible worker.
   std::unique_ptr<Command> command(
@@ -191,7 +191,7 @@ bool MultiThreadedSubscriber::Acknowledge(Flow* flow,
     return true;
   }
   auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
-  const SubscriptionID sub_id(sub_handle);
+  auto sub_id = SubscriptionID::Unsafe(sub_handle);
 
   // Send command to responsible worker.
   const auto seqno = message.GetSequenceNumber();

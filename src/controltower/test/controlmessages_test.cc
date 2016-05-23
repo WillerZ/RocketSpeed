@@ -68,7 +68,7 @@ TEST(ControlTowerTest, Subscribe) {
                                namespace_id,
                                topic_name,
                                SequenceNumber(4 + i),
-                               SubscriptionID(i));
+                               SubscriptionID::Unsafe(i));
     ASSERT_OK(loop.SendRequest(subscribe, &socket, 0));
   }
 
@@ -105,8 +105,9 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   MsgLoopThread t1(env_, &loop1, "loop1");
   ASSERT_OK(loop1.WaitUntilRunning());
 
+  auto subid1 = SubscriptionID::Unsafe(1);
   // first subscriber *******
-  MessageSubscribe meta1(Tenant::GuestTenant, "test", "topic", 1, 1);
+  MessageSubscribe meta1(Tenant::GuestTenant, "test", "topic", 1, subid1);
 
   // send message to control tower
   ASSERT_OK(loop1.SendRequest(meta1, &socket1, 0));
@@ -134,8 +135,9 @@ TEST(ControlTowerTest, MultipleSubscribers) {
   MsgLoopThread t2(env_, &loop2, "loop2");
   ASSERT_OK(loop2.WaitUntilRunning());
 
+  auto subid2 = SubscriptionID::Unsafe(2);
   // The second subscriber subscribes to the same topics.
-  MessageSubscribe meta2(Tenant::GuestTenant, "test", "topic", 2, 2);
+  MessageSubscribe meta2(Tenant::GuestTenant, "test", "topic", 2, subid2);
 
   // send message to control tower
   ASSERT_OK(loop2.SendRequest(meta2, &socket2, 0));
@@ -148,7 +150,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 
   // Unsubscribe all the topics from the first client.
   MessageUnsubscribe meta3(
-    Tenant::GuestTenant, 1, MessageUnsubscribe::Reason::kRequested);
+      Tenant::GuestTenant, subid1, MessageUnsubscribe::Reason::kRequested);
 
   // send message to control tower
   ASSERT_OK(loop1.SendRequest(meta3, &socket1, 0));
@@ -161,7 +163,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 
   // Finally, unsubscribe from the second client too.
   MessageUnsubscribe meta4(
-    Tenant::GuestTenant, 2, MessageUnsubscribe::Reason::kRequested);
+      Tenant::GuestTenant, subid2, MessageUnsubscribe::Reason::kRequested);
 
   // send message to control tower
   ASSERT_OK(loop2.SendRequest(meta4, &socket2, 0));

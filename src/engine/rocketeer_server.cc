@@ -31,17 +31,16 @@ namespace rocketspeed {
 
 ////////////////////////////////////////////////////////////////////////////////
 RocketeerOptions::RocketeerOptions()
-    : env(Env::Default())
-    , info_log(std::make_shared<NullLogger>())
-    , port(DEFAULT_PORT)
-    , stats_prefix("rocketeer.") {
-}
+: env(Env::Default())
+, info_log(std::make_shared<NullLogger>())
+, port(DEFAULT_PORT)
+, stats_prefix("rocketeer.") {}
 
 ////////////////////////////////////////////////////////////////////////////////
 class InboundSubscription {
  public:
   InboundSubscription(TenantID _tenant_id, SequenceNumber _prev_seqno)
-      : tenant_id(_tenant_id), prev_seqno(_prev_seqno) {}
+  : tenant_id(_tenant_id), prev_seqno(_prev_seqno) {}
 
   TenantID tenant_id;
   SequenceNumber prev_seqno;
@@ -151,7 +150,7 @@ void CommunicationRocketeer::Deliver(Flow* flow,
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
       MessageDeliverData data(
-          sub->tenant_id, inbound_id.sub_id, msg_id, payload);
+          sub->tenant_id, inbound_id.GetSubID(), msg_id, payload);
       data.SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
       SendResponse(flow, inbound_id.stream_id, data);
@@ -177,7 +176,7 @@ void CommunicationRocketeer::DeliverBatch(
     if (msg.msg_id.Empty()) {
       msg.msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
     }
-    if (auto* sub = Find(InboundID(stream_id, msg.sub_id))) {
+    if (auto* sub = Find(InboundID(stream_id, msg.GetSubID()))) {
       if (sub->prev_seqno < msg.seqno) {
         if (tenant_id == Tenant::InvalidTenant) {
           tenant_id = sub->tenant_id;
@@ -189,8 +188,11 @@ void CommunicationRocketeer::DeliverBatch(
                      "All messages in a batch must use same tenant ID");
           }
         }
-        messages_vec.emplace_back(new MessageDeliverData(
-            sub->tenant_id, msg.sub_id, msg.msg_id, std::move(msg.payload)));
+        messages_vec.emplace_back(
+            new MessageDeliverData(sub->tenant_id,
+                                   msg.GetSubID(),
+                                   msg.msg_id,
+                                   std::move(msg.payload)));
         messages_vec.back()->SetSequenceNumbers(sub->prev_seqno, msg.seqno);
         sub->prev_seqno = msg.seqno;
       } else {
@@ -217,7 +219,7 @@ void CommunicationRocketeer::Advance(Flow* flow,
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
       MessageDeliverGap gap(
-          sub->tenant_id, inbound_id.sub_id, GapType::kBenign);
+          sub->tenant_id, inbound_id.GetSubID(), GapType::kBenign);
       gap.SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
       SendResponse(flow, inbound_id.stream_id, gap);
@@ -238,7 +240,7 @@ void CommunicationRocketeer::Terminate(Flow* flow,
   thread_check_.Check();
 
   StreamID origin = inbound_id.stream_id;
-  SubscriptionID sub_id = inbound_id.sub_id;
+  SubscriptionID sub_id = inbound_id.GetSubID();
   auto it = inbound_subscriptions_.find(origin);
   if (it != inbound_subscriptions_.end()) {
     auto it1 = it->second.find(sub_id);
@@ -251,7 +253,7 @@ void CommunicationRocketeer::Terminate(Flow* flow,
                         TerminationSource::Rocketeer);
 
       MessageUnsubscribe::Reason msg_reason =
-        MessageUnsubscribe::Reason::kInvalid;
+          MessageUnsubscribe::Reason::kInvalid;
       switch (reason) {
         case UnsubscribeReason::Requested:
           msg_reason = MessageUnsubscribe::Reason::kRequested;
@@ -260,7 +262,8 @@ void CommunicationRocketeer::Terminate(Flow* flow,
           msg_reason = MessageUnsubscribe::Reason::kInvalid;
           break;
       }
-      MessageUnsubscribe unsubscribe(tenant_id, inbound_id.sub_id, msg_reason);
+      MessageUnsubscribe unsubscribe(
+          tenant_id, inbound_id.GetSubID(), msg_reason);
       SendResponse(flow, inbound_id.stream_id, unsubscribe);
       return;
     }
@@ -293,15 +296,15 @@ const Statistics& CommunicationRocketeer::GetStatisticsInternal() {
 InboundSubscription* CommunicationRocketeer::Find(const InboundID& inbound_id) {
   auto it = inbound_subscriptions_.find(inbound_id.stream_id);
   if (it != inbound_subscriptions_.end()) {
-    auto it1 = it->second.find(inbound_id.sub_id);
+    auto it1 = it->second.find(inbound_id.GetSubID());
     if (it1 != it->second.end()) {
       return &it1->second;
     }
   }
   LOG_WARN(server_->options_.info_log,
-           "Missing subscription on stream (%llu) with ID (%" PRIu64 ")",
+           "Missing subscription on stream (%llu) with ID (%llu)",
            inbound_id.stream_id,
-           inbound_id.sub_id);
+           inbound_id.GetSubID().ForLogging());
   return nullptr;
 }
 

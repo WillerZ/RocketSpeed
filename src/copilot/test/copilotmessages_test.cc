@@ -191,15 +191,20 @@ TEST(CopilotTest, Rollcall) {
   // send subscribe messages to copilot
   for (uint64_t i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
-    MessageSubscribe msg(Tenant::GuestTenant, GuestNamespace, topic, 0, i);
+    MessageSubscribe msg(Tenant::GuestTenant,
+                         GuestNamespace,
+                         topic,
+                         0,
+                         SubscriptionID::Unsafe(i));
     ASSERT_OK(client.SendRequest(msg, &socket, 0));
   }
 
   // send unsubscribe messages to copilot
   for (uint64_t i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
-    MessageUnsubscribe msg(
-        Tenant::GuestTenant, i, MessageUnsubscribe::Reason::kRequested);
+    MessageUnsubscribe msg(Tenant::GuestTenant,
+                           SubscriptionID::Unsafe(i),
+                           MessageUnsubscribe::Reason::kRequested);
     ASSERT_OK(client.SendRequest(msg, &socket, 0));
   }
 

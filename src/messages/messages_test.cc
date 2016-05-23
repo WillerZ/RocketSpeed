@@ -189,10 +189,10 @@ TEST(Messaging, TailSeqno) {
 
 TEST(Messaging, MessageSubscribe) {
   MessageSubscribe msg1(Tenant::GuestTenant,
-                              GuestNamespace,
-                              "MessageSubscribe",
-                              123123,
-                              42);
+                        GuestNamespace,
+                        "MessageSubscribe",
+                        123123,
+                        SubscriptionID::Unsafe(42));
 
   std::string str;
   msg1.Serialize(&str);
@@ -210,7 +210,7 @@ TEST(Messaging, MessageSubscribe) {
 
 TEST(Messaging, MessageUnsubscribe) {
   MessageUnsubscribe msg1(Tenant::GuestTenant,
-                          42,
+                          SubscriptionID::Unsafe(42),
                           MessageUnsubscribe::Reason::kInvalid);
 
   std::string str;
@@ -225,7 +225,8 @@ TEST(Messaging, MessageUnsubscribe) {
 }
 
 TEST(Messaging, MessageDeliverGap) {
-  MessageDeliverGap msg1(Tenant::GuestTenant, 42, GapType::kRetention);
+  MessageDeliverGap msg1(
+      Tenant::GuestTenant, SubscriptionID::Unsafe(42), GapType::kRetention);
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   std::string str;
@@ -244,7 +245,7 @@ TEST(Messaging, MessageDeliverGap) {
 
 TEST(Messaging, MessageDeliverData) {
   MessageDeliverData msg1(Tenant::GuestTenant,
-                          42,
+                          SubscriptionID::Unsafe(42),
                           GUIDGenerator().Generate(),
                           Slice("payload"));
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
@@ -266,18 +267,16 @@ TEST(Messaging, MessageDeliverData) {
 
 TEST(Messaging, MessageDeliverBatch) {
   MessageDeliverBatch::MessagesVector messages;
-  messages.emplace_back(new MessageDeliverData(
-      Tenant::GuestTenant,
-      42,
-      GUIDGenerator().Generate(),
-      Slice("message 1")));
+  messages.emplace_back(new MessageDeliverData(Tenant::GuestTenant,
+                                               SubscriptionID::Unsafe(42),
+                                               GUIDGenerator().Generate(),
+                                               Slice("message 1")));
   messages.back()->SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
-  messages.emplace_back(new MessageDeliverData(
-      Tenant::GuestTenant,
-      43,
-      GUIDGenerator().Generate(),
-      Slice("message 2")));
+  messages.emplace_back(new MessageDeliverData(Tenant::GuestTenant,
+                                               SubscriptionID::Unsafe(43),
+                                               GUIDGenerator().Generate(),
+                                               Slice("message 2")));
   messages.back()->SetSequenceNumbers(1000100010001001ULL, 2000200020002002ULL);
 
   MessageDeliverBatch msg1(Tenant::GuestTenant, std::move(messages));

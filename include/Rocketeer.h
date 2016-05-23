@@ -13,6 +13,8 @@
 
 namespace rocketspeed {
 
+class SubscriptionID;
+
 /**
  * An opaque type which carries an information about the origin of a request for
  * end-to-end flow control purposes.
@@ -39,6 +41,8 @@ class InboundID {
   StreamID stream_id;
   uint64_t sub_id;
 
+  SubscriptionID GetSubID() const;
+
   bool operator==(const InboundID& other) const {
     return stream_id == other.stream_id && sub_id == other.sub_id;
   }
@@ -62,6 +66,8 @@ struct RocketeerMessage {
   SequenceNumber seqno;
   std::string payload;
   MsgId msg_id;
+
+  SubscriptionID GetSubID() const;
 };
 
 class Rocketeer {

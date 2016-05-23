@@ -21,11 +21,12 @@ using ShardID = uint32_t;
 /// a Client) and subscribee (e.g. a Rocketeer).
 class SubscriptionID {
  public:
+  /// Creates an ID from uint64_t representation, potentially violating any
+  /// assertions about internal structure of the ID.
+  static SubscriptionID Unsafe(uint64_t value) { return SubscriptionID(value); }
+
   /// Creates an invalid ID, that doesn't represent any subscription.
   constexpr SubscriptionID() noexcept : encoded_(0) {}
-
-  /* implicit */ constexpr SubscriptionID(uint64_t encoded) noexcept
-  : encoded_(encoded) {}
 
   /* implicit */ operator uint64_t() const { return encoded_; }
 
@@ -42,8 +43,12 @@ class SubscriptionID {
   bool operator>=(SubscriptionID rhs) const { return encoded_ >= rhs.encoded_; }
 
  private:
+  explicit SubscriptionID(uint64_t encoded) noexcept : encoded_(encoded) {}
+
   uint64_t encoded_;
-} __attribute__((__packed__));
+};
+
+static_assert(sizeof(SubscriptionID) == 8, "Invalid size");
 
 template <>
 struct MurmurHash2<rocketspeed::SubscriptionID> {

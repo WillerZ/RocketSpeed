@@ -325,7 +325,7 @@ TEST(ProxyServerTest, Forwarding) {
   for (size_t i = 0; i < 2; ++i) {
     client_streams[i] = clients[i]->OpenStream(proxy->GetListenerAddress());
 
-    SubscriptionID sub_id = 100 + i;
+    auto sub_id = SubscriptionID::Unsafe(100 + i);
     clients[i]->Send(client_streams[i],
                      MessageSubscribe(Tenant::GuestTenant,
                                       MockSharding::GetNamespace(i),
@@ -375,7 +375,7 @@ TEST(ProxyServerTest, Forwarding) {
 
   // Send another pair of messages.
   for (size_t i = 0; i < 2; ++i) {
-    SubscriptionID sub_id = 200 + i;
+    auto sub_id = SubscriptionID::Unsafe(200 + i);
 
     clients[i]->Send(client_streams[i],
                      MessageSubscribe(Tenant::GuestTenant,
@@ -449,7 +449,7 @@ TEST(ProxyServerTest, NoRoute) {
                                MockSharding::GetNamespace(0),
                                "ColdTopic",
                                0,
-                               100));
+                               SubscriptionID::Unsafe(100)));
   // We should immediately see a MessageGoodbye, as the original message sent to
   // the proxy cannot be routed.
   auto received = client.Receive();
@@ -590,21 +590,21 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
       client->OpenStream(proxy->GetListenerAddress());
   StreamID server_stream;
   // A tiny DSL to make the test readable.
-  auto issue_subscribe = [&](SubscriptionID downstream_sub) {
+  auto issue_subscribe = [&](uint64_t downstream_sub) {
     client->Send(client_stream,
                  MessageSubscribe(Tenant::GuestTenant,
                                   MockSharding::GetNamespace(shard),
                                   "HotTopic",
                                   0,
-                                  downstream_sub));
+                                  SubscriptionID::Unsafe(downstream_sub)));
   };
-  auto issue_unsubscribe = [&](SubscriptionID downstream_id) {
+  auto issue_unsubscribe = [&](uint64_t downstream_id) {
     client->Send(client_stream,
                  MessageUnsubscribe(Tenant::GuestTenant,
-                                    downstream_id,
+                                    SubscriptionID::Unsafe(downstream_id),
                                     MessageUnsubscribe::Reason::kRequested));
   };
-  auto receive_subscribe = [&](SubscriptionID expected_sub_id = 0) {
+  auto receive_subscribe = [&](uint64_t expected_sub_id = 0) {
     auto received = server->Receive();
     ASSERT_TRUE(received.message);
     server_stream = received.stream_id;
@@ -617,7 +617,7 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
     }
     return sub_id;
   };
-  auto receive_unsubscribe = [&](SubscriptionID expected_sub_id) {
+  auto receive_unsubscribe = [&](uint64_t expected_sub_id) {
     auto received = server->Receive();
     ASSERT_TRUE(received.message);
     auto message = received.message.get();
@@ -626,16 +626,18 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
         static_cast<MessageUnsubscribe*>(message)->GetSubID();
     ASSERT_EQ(expected_sub_id, sub_id);
   };
-  auto deliver_data = [&](SubscriptionID upstream_sub,
+  auto deliver_data = [&](uint64_t upstream_sub,
                           SequenceNumber prev_seqno,
                           SequenceNumber current_seqno,
                           Slice payload) {
-    MessageDeliverData data(
-        Tenant::GuestTenant, upstream_sub, MsgId(), payload);
+    MessageDeliverData data(Tenant::GuestTenant,
+                            SubscriptionID::Unsafe(upstream_sub),
+                            MsgId(),
+                            payload);
     data.SetSequenceNumbers(prev_seqno, current_seqno);
     server->Send(server_stream, data);
   };
-  auto receive_data = [&](SubscriptionID downstream_sub,
+  auto receive_data = [&](uint64_t downstream_sub,
                           SequenceNumber prev_seqno,
                           SequenceNumber current_seqno,
                           Slice payload) {
@@ -749,7 +751,7 @@ TEST(ProxyServerTest, ForwardingAndMultiplexing) {
   size_t i = 0;
   for (auto* topic_name : {"ColdTopic", "HotTopic"}) {
     // Send a subscribe message.
-    SubscriptionID client_sub_id = 100 + i;
+    auto client_sub_id = SubscriptionID::Unsafe(100 + i);
     client->Send(client_stream,
                  MessageSubscribe(Tenant::GuestTenant,
                                   MockSharding::GetNamespace(shard),
@@ -802,7 +804,7 @@ TEST(ProxyServerTest, ForwardingAndMultiplexing) {
                                   MockSharding::GetNamespace(shard),
                                   "ColdTopic",
                                   0,
-                                  100));
+                                  SubscriptionID::Unsafe(100)));
 
     auto received = server->Receive();
     ASSERT_TRUE(server_streams.end() == std::find(server_streams.begin(),

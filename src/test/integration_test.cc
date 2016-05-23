@@ -763,7 +763,8 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   // Subscribe.
   NamespaceID ns = GuestNamespace;
   Topic topic = "UnsubscribeOnGoodbye";
-  MessageSubscribe sub(Tenant::GuestTenant, ns, topic, 1, 1);
+  MessageSubscribe sub(
+      Tenant::GuestTenant, ns, topic, 1, SubscriptionID::Unsafe(1));
   ASSERT_OK(client.SendRequest(sub, &socket, 0));
 
   // Now say goodbye.
@@ -1056,7 +1057,7 @@ TEST(IntegrationTest, NewControlTower) {
 
 class MessageReceivedMock : public MessageReceived {
  public:
-  MessageReceivedMock(SubscriptionID sub_id,
+  MessageReceivedMock(SubscriptionHandle sub_id,
                       SequenceNumber seqno,
                       Slice payload)
   : sub_id_(sub_id), seqno_(seqno), payload_(std::move(payload)) {}
@@ -1068,7 +1069,7 @@ class MessageReceivedMock : public MessageReceived {
   Slice GetContents() const override { return payload_; }
 
  private:
-  SubscriptionID sub_id_;
+  SubscriptionHandle sub_id_;
   SequenceNumber seqno_;
   Slice payload_;
 };

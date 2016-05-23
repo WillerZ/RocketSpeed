@@ -86,7 +86,7 @@ class TailCollapsingObserver : public Observer {
       const SubscriptionStatus& status_;
 
       explicit SubscriptionStatusImpl(const SubscriptionStatus& status)
-      : sub_id_(0), status_(status) {}
+      : status_(status) {}
 
       SubscriptionHandle GetSubscriptionHandle() const override {
         return sub_id_;
@@ -128,7 +128,7 @@ class TailCollapsingObserver : public Observer {
       subscriber_->upstream_subscriptions_.Remove(
           up_status.GetNamespace(),
           up_status.GetTopicName(),
-          up_status.GetSubscriptionHandle());
+          SubscriptionID::Unsafe(up_status.GetSubscriptionHandle()));
     }
   }
 

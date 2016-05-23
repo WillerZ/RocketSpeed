@@ -747,7 +747,7 @@ TEST(ClientTest, TopicToSubscriptionMap) {
   uint64_t next_sub_id_ = 1;
   // Fill up the map.
   for (size_t i = 1; i < 70; ++i) {
-    auto sub_id = next_sub_id_++;
+    auto sub_id = SubscriptionID::Unsafe(next_sub_id_++);
     auto topic = "TopicToSubscriptionMap" + std::to_string(sub_id);
     add(sub_id, topic);
     map.Insert(GuestNamespace, topic, sub_id);

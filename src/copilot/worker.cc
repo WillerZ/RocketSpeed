@@ -92,7 +92,7 @@ CopilotWorker::WorkerCommand(LogID logid,
                            subscribe->GetNamespace(),
                            subscribe->GetTopicName(),
                            subscribe->GetStartSequenceNumber(),
-                           subscribe->GetSubID().ForLogging(),
+                           subscribe->GetSubID(),
                            logid,
                            worker_id,
                            origin);
@@ -101,7 +101,7 @@ CopilotWorker::WorkerCommand(LogID logid,
         case MessageType::mUnsubscribe: {
           auto unsubscribe = static_cast<MessageUnsubscribe*>(message.get());
           ProcessUnsubscribe(unsubscribe->GetTenantID(),
-                             unsubscribe->GetSubID().ForLogging(),
+                             unsubscribe->GetSubID(),
                              unsubscribe->GetReason(),
                              worker_id,
                              origin);
@@ -258,7 +258,7 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
                                StreamID origin) {
   MessageDeliverGap* msg = static_cast<MessageDeliverGap*>(message.get());
 
-  auto ptr = sub_to_topic_.Find(origin, msg->GetSubID().ForLogging());
+  auto ptr = sub_to_topic_.Find(origin, msg->GetSubID());
   if (!ptr) {
     // This is somewhat expected due to the lag of propagating unsubscription
     // to the control tower.

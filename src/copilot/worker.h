@@ -93,7 +93,7 @@ class CopilotWorker {
     uint64_t local_id = (*state)++;
     uint64_t global_id = static_cast<uint64_t>(worker_id);
     uint64_t base = static_cast<uint64_t>(num_workers);
-    return global_id + local_id * base;
+    return SubscriptionID::Unsafe(global_id + local_id * base);
   }
 
   /**

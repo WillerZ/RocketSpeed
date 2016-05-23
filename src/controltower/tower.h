@@ -25,10 +25,7 @@ class Statistics;
 template <typename> class ThreadLocalQueues;
 
 struct CopilotSub {
-  CopilotSub()
-  : stream_id(0)
-  , sub_id(0) {
-  }
+  CopilotSub() : stream_id(0), sub_id() {}
 
   CopilotSub(StreamID _stream_id, SubscriptionID _sub_id)
   : stream_id(_stream_id)

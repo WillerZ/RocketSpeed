@@ -26,14 +26,23 @@
 namespace rocketspeed {
 
 ////////////////////////////////////////////////////////////////////////////////
+SubscriptionID InboundID::GetSubID() const {
+  return SubscriptionID::Unsafe(sub_id);
+}
+
 size_t InboundID::Hash() const {
-  return MurmurHash2<StreamID, SubscriptionID>()(stream_id, sub_id);
+  return MurmurHash2<StreamID, uint64_t>()(stream_id, sub_id);
 }
 
 std::string InboundID::ToString() const {
   std::ostringstream ss;
   ss << "InboundID(" << stream_id << ", " << sub_id << ")";
   return ss.str();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+SubscriptionID RocketeerMessage::GetSubID() const {
+  return SubscriptionID::Unsafe(sub_id);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

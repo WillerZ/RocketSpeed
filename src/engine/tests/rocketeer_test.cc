@@ -111,21 +111,23 @@ TEST(RocketeerTest, SubscribeUnsubscribe) {
   auto client = MockClient(std::map<MessageType, MsgCallbackType>());
   auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
 
+  auto subid1 = SubscriptionID::Unsafe(1);
+  auto subid2 = SubscriptionID::Unsafe(2);
   // Subscribe.
   MessageSubscribe subscribe(
-      GuestTenant, GuestNamespace, "SubscribeUnsubscribe", 101, 2);
+      GuestTenant, GuestNamespace, "SubscribeUnsubscribe", 101, subid2);
   ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
   // Send again, to verify that only one will be delivered.
   ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
 
   // Send some broken unsubscribe, that doesn't match anything.
   MessageUnsubscribe unsubscribe1(
-      GuestTenant, 1, MessageUnsubscribe::Reason::kRequested);
+      GuestTenant, subid1, MessageUnsubscribe::Reason::kRequested);
   ASSERT_OK(client.msg_loop->SendRequest(unsubscribe1, &socket, 0));
 
   // Send valid unsubscribe.
   MessageUnsubscribe unsubscribe(
-      GuestTenant, 2, MessageUnsubscribe::Reason::kRequested);
+      GuestTenant, subid2, MessageUnsubscribe::Reason::kRequested);
   ASSERT_OK(client.msg_loop->SendRequest(unsubscribe, &socket, 0));
 
   ASSERT_TRUE(rocketeer.terminate_sem_.TimedWait(positive_timeout));
@@ -170,8 +172,11 @@ TEST(RocketeerTest, SubscribeTerminate) {
   auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
 
   // Subscribe.
-  MessageSubscribe subscribe(
-      GuestTenant, GuestNamespace, "SubscribeTerminate", 101, 2);
+  MessageSubscribe subscribe(GuestTenant,
+                             GuestNamespace,
+                             "SubscribeTerminate",
+                             101,
+                             SubscriptionID::Unsafe(2));
   ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
 
   // Wait for unsubscribe message.
@@ -284,7 +289,8 @@ TEST(RocketeerTest, StackRocketeerTest) {
   auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
 
   // Subscribe.
-  MessageSubscribe subscribe(GuestTenant, GuestNamespace, "stackable", 101, 2);
+  MessageSubscribe subscribe(
+      GuestTenant, GuestNamespace, "stackable", 101, SubscriptionID::Unsafe(2));
   ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
 
   ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));

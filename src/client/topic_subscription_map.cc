@@ -13,9 +13,6 @@
 
 namespace rocketspeed {
 
-// Reserved subscription ID, that doesn't represent any valid subscription.
-constexpr SubscriptionID kReservedSubscriptionID = 0;
-
 TopicToSubscriptionMap::TopicToSubscriptionMap(
     std::function<SubscriptionState*(SubscriptionID)> get_state)
 : get_state_(std::move(get_state))
@@ -26,7 +23,7 @@ TopicToSubscriptionMap::TopicToSubscriptionMap(
 std::tuple<SubscriptionID, SubscriptionState*> TopicToSubscriptionMap::Find(
     Slice namespace_id, Slice topic_name) const {
   if (vector_.empty()) {
-    return std::make_tuple(0, nullptr);
+    return std::make_tuple(SubscriptionID(), nullptr);
   }
 
   const size_t optimal_position = FindOptimalPosition(namespace_id, topic_name);
@@ -34,9 +31,9 @@ std::tuple<SubscriptionID, SubscriptionState*> TopicToSubscriptionMap::Find(
   size_t position = optimal_position;
   do {
     SubscriptionID sub_id = vector_[position];
-    if (sub_id == kReservedSubscriptionID) {
+    if (!sub_id) {
       // Reached the gap.
-      return std::make_tuple(kReservedSubscriptionID, nullptr);
+      return std::make_tuple(SubscriptionID(), nullptr);
     }
 
     SubscriptionState* state = get_state_(sub_id);
@@ -51,7 +48,7 @@ std::tuple<SubscriptionID, SubscriptionState*> TopicToSubscriptionMap::Find(
   } while (position != optimal_position);
 
   // Went through entire vector and didn't find the subscription.
-  return std::make_tuple(kReservedSubscriptionID, nullptr);
+  return std::make_tuple(SubscriptionID(), nullptr);
 }
 
 void TopicToSubscriptionMap::Insert(Slice namespace_id,
@@ -64,7 +61,7 @@ void TopicToSubscriptionMap::Insert(Slice namespace_id,
 bool TopicToSubscriptionMap::Remove(Slice namespace_id,
                                     Slice topic_name,
                                     SubscriptionID sub_id) {
-  RS_ASSERT(sub_id != kReservedSubscriptionID);
+  RS_ASSERT(sub_id);
 
   size_t position;
   {  // Find position of an entry with this ID.
@@ -72,8 +69,7 @@ bool TopicToSubscriptionMap::Remove(Slice namespace_id,
         FindOptimalPosition(namespace_id, topic_name);
     position = optimal_position;
     do {
-      if (vector_[position] == kReservedSubscriptionID ||
-          vector_[position] == sub_id) {
+      if (!vector_[position] || vector_[position] == sub_id) {
         break;
       }
       position = (position + 1) % vector_.size();
@@ -94,11 +90,11 @@ bool TopicToSubscriptionMap::Remove(Slice namespace_id,
   // by a gap, it would have been sparated by the gap before removal.
   size_t current_position = position;
   do {
-    vector_[position] = kReservedSubscriptionID;
+    vector_[position] = SubscriptionID();
     current_position = (current_position + 1) % vector_.size();
 
     SubscriptionID current_id = vector_[current_position];
-    if (current_id == kReservedSubscriptionID) {
+    if (!current_id) {
       break;
     }
 
@@ -123,7 +119,7 @@ bool TopicToSubscriptionMap::Remove(Slice namespace_id,
 void TopicToSubscriptionMap::InsertInternal(Slice namespace_id,
                                             Slice topic_name,
                                             SubscriptionID sub_id) {
-  RS_ASSERT(sub_id != kReservedSubscriptionID);
+  RS_ASSERT(sub_id);
   RS_ASSERT(sub_count_ < vector_.size());
   RS_ASSERT(sub_count_ < sub_count_high_);
 
@@ -139,7 +135,7 @@ void TopicToSubscriptionMap::InsertInternal(Slice namespace_id,
       return;
     }
 
-    if (vector_[position] == kReservedSubscriptionID) {
+    if (!vector_[position]) {
       vector_[position] = sub_id;
       ++sub_count_;
       return;
@@ -188,7 +184,7 @@ void TopicToSubscriptionMap::Rehash() {
   sub_count_high_ = (size_t)((double)new_size * kLoadFHigh);
 
   // Resize the vector and clear it.
-  std::vector<SubscriptionID> old_vector(new_size, kReservedSubscriptionID);
+  std::vector<SubscriptionID> old_vector(new_size);
   std::swap(old_vector, vector_);
 #ifndef NO_RS_ASSERT
   std::unordered_set<SubscriptionID> seen_ids;
@@ -197,7 +193,7 @@ void TopicToSubscriptionMap::Rehash() {
   sub_count_ = 0;
   // Reinsert all elements we expect to find in the hash set.
   for (SubscriptionID sub_id : old_vector) {
-    if (sub_id != kReservedSubscriptionID) {
+    if (sub_id) {
 #ifndef NO_RS_ASSERT
       // Check for any duplicated subscription IDs.
       RS_ASSERT(seen_ids.emplace(sub_id).second);
