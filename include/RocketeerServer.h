@@ -76,7 +76,7 @@ class RocketeerServer {
   /**
    * A thread-safe version of Rocketeer::Deliver.
    *
-   * @return true iff operation was successfully sheduled.
+   * @return true iff operation was successfully scheduled.
    */
   bool Deliver(InboundID inbound_id,
                SequenceNumber seqno,
@@ -86,7 +86,7 @@ class RocketeerServer {
   /**
    * A thread-safe version of Rocketeer::DeliverBatch.
    *
-   * @return true iff operation was successfully sheduled.
+   * @return true iff operation was successfully scheduled.
    */
   bool DeliverBatch(StreamID stream_id,
                     int worker_id,
@@ -95,13 +95,13 @@ class RocketeerServer {
   /**
    * A thread-safe version of Rocketeer::Advance.
    *
-   * @return true iff operation was successfully sheduled.
+   * @return true iff operation was successfully scheduled.
    */
   bool Advance(InboundID inbound_id, SequenceNumber seqno);
 
   /** A thread-safe version of Rocketeer::.
    *
-   * @return true iff operation was successfully sheduled.
+   * @return true iff operation was successfully scheduled.
    */
   bool Terminate(InboundID inbound_id, Rocketeer::UnsubscribeReason reason);
 

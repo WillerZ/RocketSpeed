@@ -130,7 +130,7 @@ class Rocketeer {
    * @param inbound_id ID of the subscription to advance.
    * @param seqno The subscription will be advanced, so that it expects the
    *              next sequence number.
-   * @return true iff operation was successfully sheduled.
+   * @return true iff operation was successfully scheduled.
    */
   virtual void Advance(Flow* flow, InboundID inbound_id, SequenceNumber seqno);
 
@@ -140,7 +140,7 @@ class Rocketeer {
    *
    * @param inbound_id ID of the subscription to terminate.
    * @param reason A reason why this subscription was terminated.
-   * @return true iff operation was successfully sheduled.
+   * @return true iff operation was successfully scheduled.
    */
   enum class UnsubscribeReason {
     /** The unsubscribe was requested by the subscriber. */
