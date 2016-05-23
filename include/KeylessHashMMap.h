@@ -208,6 +208,7 @@ class SmallIntArray<T*> {
     array_[Size() - 1].SetPtr(ptr);
     if (Size() == 1) {
       IncRefCount();
+      RS_ASSERT(GetRefCount() == 1) << GetRefCount();
     }
     return true;
   }
@@ -274,8 +275,8 @@ class SmallIntArray<T*> {
     auto new_array = new_size ? new TaggedPtr<T>[new_size] : nullptr;
     if (to_copy > 0) {
       ::memcpy(new_array, array_, to_copy * sizeof(TaggedPtr<T>));
-      delete[] array_;
     }
+    delete[] array_; // there's nullptr in case there was no array
     array_ = new_array;
     SetSize(new_size);
   }
@@ -459,6 +460,8 @@ class KeylessHashMMap {
     detail::SetDeletedKey<Impl, ArrayImpl, detail::HasSetter<Impl>::value>()
         .Set(impl_);
   }
+
+  ~KeylessHashMMap() { Clear(); }
 
   /**
    * Tries to inserts value in a map.
