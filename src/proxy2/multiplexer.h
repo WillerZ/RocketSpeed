@@ -41,15 +41,13 @@ class UpstreamAllocator : public IDAllocator<uint64_t, UpstreamAllocator> {
   using Base::Base;
 };
 
-class UpstreamSubscription
-    : public SubscriptionBase<UpstreamAllocator::IDType> {
-  using Base = SubscriptionBase<UpstreamAllocator::IDType>;
-
+class UpstreamSubscription : public SubscriptionBase {
  public:
-  using Base::Base;
   using DownstreamSubscriptionsSet =
       std::unordered_set<std::pair<PerStream*, SubscriptionID>,
                          MurmurHash2<std::pair<PerStream*, SubscriptionID>>>;
+
+  using SubscriptionBase::SubscriptionBase;
 
   UpdatesAccumulator* GetAccumulator() const { return accumulator_.get(); }
 

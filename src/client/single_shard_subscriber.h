@@ -26,7 +26,7 @@ class SubscriberStats;
 
 /// On top of the state needed by the SubscriptionsMap, we also need to hold
 /// Observer pointer.
-class SubscriptionState : public SubscriptionBase<uint64_t> {
+class SubscriptionState : public SubscriptionBase {
  public:
   using SubscriptionBase::SubscriptionBase;
 

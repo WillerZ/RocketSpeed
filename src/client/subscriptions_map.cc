@@ -14,11 +14,9 @@
 namespace rocketspeed {
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename SubscriptionID>
-bool SubscriptionBase<SubscriptionID>::ProcessUpdate(
-    Logger* info_log,
-    const SequenceNumber previous,
-    const SequenceNumber current) {
+bool SubscriptionBase::ProcessUpdate(Logger* info_log,
+                                     const SequenceNumber previous,
+                                     const SequenceNumber current) {
   RS_ASSERT(current >= previous);
   RS_ASSERT(current != 0);
 
@@ -29,7 +27,7 @@ bool SubscriptionBase<SubscriptionID>::ProcessUpdate(
     LOG_WARN(info_log,
              "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
              ", %" PRIu64 ") expected %" PRIu64 ", dropped",
-             static_cast<unsigned long long>(GetIDWhichMayChange()),
+             GetIDWhichMayChange().ForLogging(),
              tenant_and_namespace_.Get().namespace_id.c_str(),
              topic_name_.c_str(),
              previous,
@@ -40,7 +38,7 @@ bool SubscriptionBase<SubscriptionID>::ProcessUpdate(
     LOG_DEBUG(info_log,
               "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
               ", %" PRIu64 ") expected %" PRIu64 ", accepted",
-              static_cast<unsigned long long>(GetIDWhichMayChange()),
+              GetIDWhichMayChange().ForLogging(),
               tenant_and_namespace_.Get().namespace_id.c_str(),
               topic_name_.c_str(),
               previous,
@@ -51,9 +49,5 @@ bool SubscriptionBase<SubscriptionID>::ProcessUpdate(
     return true;
   }
 }
-
-// There aren't that many possibilities for the subscription ID...
-template class SubscriptionBase<uint32_t>;
-template class SubscriptionBase<uint64_t>;
 
 }  // namespace rocketspeed

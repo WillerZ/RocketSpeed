@@ -12,6 +12,7 @@
 
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
+#include "src/client/subscription_id.h"
 #include "src/messages/types.h"
 #include "src/util/common/observable_container.h"
 #include "src/util/common/ref_count_flyweight.h"
@@ -46,11 +47,8 @@ using TenantAndNamespaceFlyweight = RefCountFlyweight<TenantAndNamespace>;
 ///
 /// The layout is optimised primarly for memory usage, and secondary for the
 /// performance of metadata updates.
-template <typename S>
 class SubscriptionBase {
  public:
-  using SubscriptionID = S;
-
   SubscriptionBase(TenantAndNamespaceFlyweight tenant_and_namespace,
                    const Slice& topic_name,
                    SubscriptionID sub_id,
@@ -125,8 +123,6 @@ class SubscriptionBase {
 template <typename SubscriptionState>
 class SubscriptionsMap : public StreamReceiver {
  public:
-  using SubscriptionID = typename SubscriptionState::SubscriptionID;
-
   using DeliverCb = std::function<void(
       Flow* flow, SubscriptionState*, std::unique_ptr<MessageDeliver>)>;
   using TerminateCb = std::function<void(

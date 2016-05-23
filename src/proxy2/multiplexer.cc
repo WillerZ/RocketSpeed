@@ -59,10 +59,10 @@ void UpstreamSubscription::ReceiveDeliver(
     // Drop the message as no downsteam subscriber really needs it. We likely
     // received as a result of rewinding a subscription.
     LOG_DEBUG(per_shard->GetOptions().info_log,
-              "Multiplexer(%zu)::ReceiveDeliver(%" PRIu64 ") expecting %" PRIu64
+              "Multiplexer(%zu)::ReceiveDeliver(%llu) expecting %" PRIu64
               " > received %" PRIu64,
               per_shard->GetShardID(),
-              GetIDWhichMayChange(),
+              GetIDWhichMayChange().ForLogging(),
               expected_seqno_,
               received_seqno);
     return;
@@ -74,12 +74,12 @@ void UpstreamSubscription::ReceiveDeliver(
     StreamID downstream_id = per_stream->GetStream();
     SubscriptionID downstream_sub = entry.second;
     LOG_DEBUG(per_shard->GetOptions().info_log,
-              "Multiplexer(%zu)::ReceiveDeliver(%" PRIu64
-              ") -> ReceiveFromMultiplexer(%llu, %" PRIu64 ")",
+              "Multiplexer(%zu)::ReceiveDeliver(%llu) -> "
+              "ReceiveFromMultiplexer(%llu, %llu)",
               per_shard->GetShardID(),
-              GetIDWhichMayChange(),
+              GetIDWhichMayChange().ForLogging(),
               downstream_id,
-              downstream_sub);
+              downstream_sub.ForLogging());
 
     deliver->SetSubID(downstream_sub);
     per_stream->ReceiveFromMultiplexer(
@@ -96,12 +96,12 @@ void UpstreamSubscription::ReceiveTerminate(
     StreamID downstream_id = per_stream->GetStream();
     SubscriptionID downstream_sub = entry.second;
     LOG_DEBUG(per_shard->GetOptions().info_log,
-              "Multiplexer(%zu)::ReceiveTerminate(%" PRIu64
-              ") -> ReceiveFromMultiplexer(%llu, %" PRIu64 ")",
+              "Multiplexer(%zu)::ReceiveTerminate(%llu) -> "
+              "ReceiveFromMultiplexer(%llu, %llu)",
               per_shard->GetShardID(),
-              GetIDWhichMayChange(),
+              GetIDWhichMayChange().ForLogging(),
               downstream_id,
-              downstream_sub);
+              downstream_sub.ForLogging());
 
     unsubscribe->SetSubID(downstream_sub);
     per_stream->ReceiveFromMultiplexer(
@@ -179,9 +179,9 @@ void Multiplexer::Unsubscribe(Flow* flow,
                               PerStream* per_stream,
                               SubscriptionID downstream_sub) {
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::Unsubscribe(%" PRIu64 ", %llu, %llu)",
+            "Multiplexer(%zu)::Unsubscribe(%llu, %llu, %llu)",
             per_shard_->GetShardID(),
-            upstream_sub->GetIDWhichMayChange(),
+            upstream_sub->GetIDWhichMayChange().ForLogging(),
             per_stream->GetStream(),
             downstream_sub.ForLogging());
 
@@ -235,9 +235,9 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
                                  UpstreamSubscription* upstream_sub,
                                  std::unique_ptr<MessageDeliver> deliver) {
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::ReceiveDeliver(%" PRIu64 ")",
+            "Multiplexer(%zu)::ReceiveDeliver(%llu)",
             per_shard_->GetShardID(),
-            upstream_sub->GetIDWhichMayChange());
+            upstream_sub->GetIDWhichMayChange().ForLogging());
 
   const auto type = deliver->GetMessageType();
   RS_ASSERT(type == MessageType::mDeliverGap ||
@@ -268,9 +268,9 @@ void Multiplexer::ReceiveTerminate(
     UpstreamSubscription* upstream_sub,
     std::unique_ptr<MessageUnsubscribe> unsubscribe) {
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::ReceiveTerminate(%" PRIu64 ")",
+            "Multiplexer(%zu)::ReceiveTerminate(%llu)",
             per_shard_->GetShardID(),
-            upstream_sub->GetIDWhichMayChange());
+            upstream_sub->GetIDWhichMayChange().ForLogging());
 
   // The subscription has been removed from the map, so update an index.
   RemoveFromIndex(upstream_sub);

@@ -58,14 +58,14 @@ SubscriptionsMap<SubscriptionState>::SubscriptionsMap(
 
 template <typename SubscriptionState>
 SubscriptionState* SubscriptionsMap<SubscriptionState>::Subscribe(
-    typename SubscriptionState::SubscriptionID sub_id,
+    SubscriptionID sub_id,
     TenantID tenant_id,
     const Slice& namespace_id,
     const Slice& topic_name,
     SequenceNumber initial_seqno) {
   LOG_DEBUG(GetLogger(),
-            "Subscribe(%" PRIu64 ", %u, %s, %s, %" PRIu64 ")",
-            sub_id,
+            "Subscribe(%llu, %u, %s, %s, %" PRIu64 ")",
+            sub_id.ForLogging(),
             tenant_id,
             namespace_id.ToString().c_str(),
             topic_name.ToString().c_str(),
@@ -91,8 +91,8 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Subscribe(
 
 template <typename SubscriptionState>
 SubscriptionState* SubscriptionsMap<SubscriptionState>::Find(
-    typename SubscriptionState::SubscriptionID sub_id) const {
-  LOG_DEBUG(GetLogger(), "Find(%" PRIu64 ")", sub_id);
+    SubscriptionID sub_id) const {
+  LOG_DEBUG(GetLogger(), "Find(%llu)", sub_id.ForLogging());
 
   auto it = synced_subscriptions_.find(sub_id);
   if (it != synced_subscriptions_.end()) {
@@ -106,14 +106,13 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Find(
 }
 
 template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::Rewind(
-    SubscriptionState* ptr,
-    typename SubscriptionState::SubscriptionID new_sub_id,
-    SequenceNumber new_seqno) {
+void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
+                                                 SubscriptionID new_sub_id,
+                                                 SequenceNumber new_seqno) {
   LOG_DEBUG(GetLogger(),
-            "Rewind(%" PRIu64 ", %" PRIu64 ", %" PRIu64 ")",
-            ptr->GetIDWhichMayChange(),
-            new_sub_id,
+            "Rewind(%llu, %llu, %" PRIu64 ")",
+            ptr->GetIDWhichMayChange().ForLogging(),
+            new_sub_id.ForLogging(),
             new_seqno);
 
   auto old_sub_id = ptr->GetSubscriptionID();
@@ -156,8 +155,9 @@ void SubscriptionsMap<SubscriptionState>::Rewind(
 
 template <typename SubscriptionState>
 void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionState* ptr) {
-  LOG_DEBUG(
-      GetLogger(), "Unsubscribe(%" PRIu64 ")", ptr->GetIDWhichMayChange());
+  LOG_DEBUG(GetLogger(),
+            "Unsubscribe(%llu)",
+            ptr->GetIDWhichMayChange().ForLogging());
 
   auto sub_id = ptr->GetSubscriptionID();
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
@@ -306,8 +306,8 @@ template <typename SubscriptionState>
 void SubscriptionsMap<SubscriptionState>::HandlePendingSubscription(
     Flow* flow, std::unique_ptr<SubscriptionState> state) {
   LOG_DEBUG(GetLogger(),
-            "HandlePendingSubscription(%" PRIu64 ")",
-            state->GetIDWhichMayChange());
+            "HandlePendingSubscription(%llu)",
+            state->GetIDWhichMayChange().ForLogging());
 
   RS_ASSERT(sink_);
   // Send a message.
@@ -328,8 +328,9 @@ void SubscriptionsMap<SubscriptionState>::HandlePendingSubscription(
 
 template <typename SubscriptionState>
 void SubscriptionsMap<SubscriptionState>::HandlePendingUnsubscription(
-    Flow* flow, typename SubscriptionState::SubscriptionID sub_id) {
-  LOG_DEBUG(GetLogger(), "HandlePendingUnsubscription(%" PRIu64 ")", sub_id);
+    Flow* flow, SubscriptionID sub_id) {
+  LOG_DEBUG(
+      GetLogger(), "HandlePendingUnsubscription(%llu)", sub_id.ForLogging());
 
   RS_ASSERT(sink_);
   // Send the message.
