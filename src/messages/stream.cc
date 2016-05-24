@@ -149,6 +149,9 @@ void Stream::Receive(access::Stream,
   if (!socket_event_) {
     return;
   }
+  // We have to cache logger pointer on the stack for logging, as after the
+  // socket has been destroyed we cannot obtain the logger from it.
+  auto* info_log = socket_event_->GetLogger().get();
 
   if (message->GetMessageType() == MessageType::mGoodbye) {
     CloseFromSocketEvent(access::Stream());
@@ -163,7 +166,7 @@ void Stream::Receive(access::Stream,
     // invoked, as the callback may delete the stream object.
     (*receiver_)(std::move(arg));
   } else {
-    LOG_DEBUG(socket_event_->GetLogger(),
+    LOG_DEBUG(info_log,
               "Receiver not set for Stream(%llu, %llu), dropping message: %s",
               local_id_,
               remote_id_,
