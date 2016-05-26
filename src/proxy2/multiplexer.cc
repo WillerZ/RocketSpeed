@@ -153,9 +153,14 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
   // Find a subscription on the topic, if one exists.
   UpstreamSubscription* upstream_sub;
   if (!(upstream_sub = FindInIndex(namespace_id, topic_name))) {
+    auto upstream_id = SubscriptionID::ForShard(per_shard_->GetShardID(),
+                                                upstream_allocator_.Next());
+    // This could fire if shard and hierarchical ID cannot be encoded in 8
+    // bytes.
+    RS_ASSERT(upstream_id);
     // Create an upstream subscription if one doesn't exist.
     upstream_sub = subscriptions_map_.Subscribe(
-        SubscriptionID::Unsafe(upstream_allocator_.Next()),
+        upstream_id,
         tenant_id,
         namespace_id,
         topic_name,
@@ -253,11 +258,14 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
         data->GetSequenceNumber());
     // Adjust the subscription based on an action.
     if (action == UpdatesAccumulator::Action::kResubscribeUpstream) {
+      auto new_upstream_id = SubscriptionID::ForShard(
+          per_shard_->GetShardID(), upstream_allocator_.Next());
+      // This could fire if shard and hierarchical ID cannot be encoded in 8
+      // bytes.
+      RS_ASSERT(new_upstream_id);
       // Rewind a subscription to zero.
       subscriptions_map_.Rewind(
-          upstream_sub,
-          SubscriptionID::Unsafe(upstream_allocator_.Next()),
-          0 /* new_seqno */);
+          upstream_sub, new_upstream_id, 0 /* new_seqno */);
     }
   }
 

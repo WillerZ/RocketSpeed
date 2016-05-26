@@ -25,8 +25,17 @@ class SubscriptionID {
   /// assertions about internal structure of the ID.
   static SubscriptionID Unsafe(uint64_t value) { return SubscriptionID(value); }
 
+  /// Creates an ID out of a shard ID and an ID unique _within_ the shard.
+  static SubscriptionID ForShard(ShardID shard_id, uint64_t hierarchical_id);
+
   /// Creates an invalid ID, that doesn't represent any subscription.
   constexpr SubscriptionID() noexcept : encoded_(0) {}
+
+  /// Retrieves shard of the subscription.
+  ShardID GetShardID() const;
+
+  /// Retrieves shard of the subscription.
+  uint64_t GetHierarchicalID() const;
 
   /* implicit */ operator uint64_t() const { return encoded_; }
 

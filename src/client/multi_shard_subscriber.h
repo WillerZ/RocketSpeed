@@ -73,9 +73,6 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   /** A statistics object shared between subscribers. */
   std::shared_ptr<SubscriberStats> stats_;
 
-  // TODO(t9432312)
-  std::unordered_map<SubscriptionID, size_t> subscription_to_shard_;
-
   /**
    * Returns a subscriber for provided subscription ID or null if cannot
    * recognise the ID.

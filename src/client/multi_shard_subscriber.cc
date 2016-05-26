@@ -58,9 +58,10 @@ void MultiShardSubscriber::StartSubscription(
     SubscriptionParameters parameters,
     std::unique_ptr<Observer> observer) {
   // Determine the shard ID.
-  size_t shard_id = options_.sharding->GetShard(parameters.namespace_id,
-                                                parameters.topic_name);
-  subscription_to_shard_.emplace(sub_id, shard_id);
+  size_t shard_id = sub_id.GetShardID();
+  RS_ASSERT(shard_id ==
+            options_.sharding->GetShard(parameters.namespace_id,
+                                        parameters.topic_name));
 
   // Find or create a subscriber for this shard.
   auto it = subscribers_.find(shard_id);
@@ -98,13 +99,9 @@ void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
     subscriber->TerminateSubscription(sub_id);
     if (subscriber->Empty()) {
       // Subscriber no longer serves any subscriptions, destroy it
-      auto it = subscription_to_shard_.find(sub_id);
-      RS_ASSERT(it != subscription_to_shard_.end());
-      subscribers_.erase(it->second);
+      subscribers_.erase(sub_id.GetShardID());
     }
   }
-  // Remove the mapping from subscription ID to a shard.
-  subscription_to_shard_.erase(sub_id);
 }
 
 Status MultiShardSubscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
@@ -120,19 +117,11 @@ Status MultiShardSubscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
 
 SubscriberIf* MultiShardSubscriber::GetSubscriberForSubscription(
     SubscriptionID sub_id) {
-  auto it = subscription_to_shard_.find(sub_id);
-  if (it == subscription_to_shard_.end()) {
-    LOG_WARN(options_.info_log,
-             "Cannot find subscriber for SubscriptionID(%llu)",
-             sub_id.ForLogging());
-    return nullptr;
-  }
-
-  auto it1 = subscribers_.find(it->second);
+  auto it1 = subscribers_.find(sub_id.GetShardID());
   if (it1 == subscribers_.end()) {
     LOG_WARN(options_.info_log,
-             "Cannot find subscriber for ShardID(%zu)",
-             it->second);
+             "Cannot find subscriber for ShardID(%u)",
+             sub_id.GetShardID());
     return nullptr;
   }
   return it1->second.get();

@@ -100,13 +100,13 @@ class MultiThreadedSubscriber {
    * @param worker_id A worker this subscription will be bound to.
    * @return A handle, if fails to allocate returns a null-handle.
    */
-  SubscriptionHandle CreateNewHandle(size_t worker_id);
+  SubscriptionID CreateNewHandle(size_t shard_id, size_t worker_id);
 
   /**
-   * Extracts worker ID from provided subscription handle.
+   * Extracts worker ID from provided subscription ID.
    * In case of error, returned worker ID is negative.
    */
-  ssize_t GetWorkerID(SubscriptionHandle sub_handle) const;
+  ssize_t GetWorkerID(SubscriptionID sub_id) const;
 };
 
 }  // namespace rocketspeed

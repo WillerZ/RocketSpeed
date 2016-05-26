@@ -106,6 +106,9 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     Flow* flow,
     SubscriptionParameters parameters,
     std::unique_ptr<Observer> observer) {
+  // Find a shard this subscripttion belongs to.
+  const auto shard_id = options_.sharding->GetShard(parameters.namespace_id,
+                                                    parameters.topic_name);
   // Choose worker for this subscription and find appropriate queue.
   const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
                                                   parameters.namespace_id,
@@ -114,13 +117,12 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
   auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
 
   // Create new subscription handle that encodes destination worker.
-  const auto sub_handle = CreateNewHandle(worker_id);
-  if (!sub_handle) {
+  const auto sub_id = CreateNewHandle(shard_id, worker_id);
+  if (!sub_id) {
     LOG_ERROR(options_.info_log, "Client run out of subscription handles");
     RS_ASSERT(false);
     return SubscriptionHandle(0);
   }
-  auto sub_id = SubscriptionID::Unsafe(sub_handle);
 
   // Send command to responsible worker.
   auto moved_args = folly::makeMoveWrapper(
@@ -139,25 +141,24 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
       return SubscriptionHandle(0);
     }
   }
-  return sub_handle;
+  return sub_id;
 }
 
 bool MultiThreadedSubscriber::Unsubscribe(Flow* flow,
                                           SubscriptionHandle sub_handle) {
-  if (!sub_handle) {
-    LOG_ERROR(options_.info_log,
-              "Cannot unsubscribe unengaged subscription handle.");
+  const auto sub_id = SubscriptionID::Unsafe(sub_handle);
+  if (!sub_id) {
+    LOG_ERROR(options_.info_log, "Invalid SubscriptionID");
     return true;
   }
 
   // Determine corresponding worker, its queue, and subscription ID.
-  const auto worker_id = GetWorkerID(sub_handle);
+  const auto worker_id = GetWorkerID(sub_id);
   if (worker_id < 0) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return true;
   }
   auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
-  auto sub_id = SubscriptionID::Unsafe(sub_handle);
 
   // Send command to responsible worker.
   std::unique_ptr<Command> command(
@@ -177,21 +178,19 @@ bool MultiThreadedSubscriber::Unsubscribe(Flow* flow,
 
 bool MultiThreadedSubscriber::Acknowledge(Flow* flow,
                                           const MessageReceived& message) {
-  const SubscriptionHandle sub_handle = message.GetSubscriptionHandle();
-  if (!sub_handle) {
-    LOG_ERROR(options_.info_log,
-              "Cannot unsubscribe unengaged subscription handle.");
+  const auto sub_id = SubscriptionID::Unsafe(message.GetSubscriptionHandle());
+  if (!sub_id) {
+    LOG_ERROR(options_.info_log, "Invalid SubscriptionID");
     return true;
   }
 
   // Determine corresponding worker, its queue, and subscription ID.
-  const auto worker_id = GetWorkerID(sub_handle);
+  const auto worker_id = GetWorkerID(sub_id);
   if (worker_id < 0) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return true;
   }
   auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
-  auto sub_id = SubscriptionID::Unsafe(sub_handle);
 
   // Send command to responsible worker.
   const auto seqno = message.GetSequenceNumber();
@@ -263,19 +262,21 @@ Statistics MultiThreadedSubscriber::GetStatisticsSync() {
       [this](int i) -> Statistics { return statistics_[i]->all; });
 }
 
-SubscriptionHandle MultiThreadedSubscriber::CreateNewHandle(size_t worker_id) {
+SubscriptionID MultiThreadedSubscriber::CreateNewHandle(size_t shard_id,
+                                                        size_t worker_id) {
   const auto num_workers = msg_loop_->GetNumWorkers();
-  const auto handle = 1 + worker_id + num_workers * next_sub_id_++;
-  if (static_cast<size_t>(GetWorkerID(handle)) != worker_id) {
-    return SubscriptionHandle(0);
+  const auto hierarchical_id = 1 + worker_id + num_workers * next_sub_id_++;
+  const auto sub_id = SubscriptionID::ForShard(shard_id, hierarchical_id);
+  if (!sub_id || static_cast<size_t>(GetWorkerID(sub_id)) != worker_id) {
+    return SubscriptionID();
   }
-  return handle;
+  return sub_id;
 }
 
-ssize_t MultiThreadedSubscriber::GetWorkerID(
-    SubscriptionHandle sub_handle) const {
+ssize_t MultiThreadedSubscriber::GetWorkerID(SubscriptionID sub_id) const {
   const auto num_workers = msg_loop_->GetNumWorkers();
-  const auto worker_id = static_cast<int>((sub_handle - 1) % num_workers);
+  const auto hierarchical_id = sub_id.GetHierarchicalID();
+  const auto worker_id = static_cast<int>((hierarchical_id - 1) % num_workers);
   if (worker_id < 0 || worker_id >= num_workers) {
     return -1;
   }
