@@ -43,6 +43,7 @@ void PerShard::AddPerStream(PerStream* per_stream) {
 void PerShard::RemovePerStream(PerStream* per_stream) {
   auto result = streams_on_shard_.erase(per_stream);
   RS_ASSERT(result > 0);
+  (void)result;
 }
 
 PerShard::~PerShard() = default;

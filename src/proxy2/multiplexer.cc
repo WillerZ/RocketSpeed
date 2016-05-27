@@ -37,11 +37,12 @@ void UpstreamSubscription::AddDownstream(PerStream* per_stream,
       accumulator_->BootstrapSubscription(initial_seqno, callback);
   RS_ASSERT(bootstrapped_to == 0 || GetExpectedSeqno() == 0 ||
             bootstrapped_to == GetExpectedSeqno());
+  (void)bootstrapped_to;
   // Register the subscription after it's been bootstrapped to the same
   // sequence number as the upstream subscription.
   auto result = downstream_subscriptions_.emplace(per_stream, downstream_sub);
-  (void)result;
   RS_ASSERT(result.second);
+  (void)result;
 }
 
 size_t UpstreamSubscription::RemoveDownstream(PerStream* per_stream,
@@ -49,6 +50,7 @@ size_t UpstreamSubscription::RemoveDownstream(PerStream* per_stream,
   auto pair = std::make_pair(per_stream, downstream_sub);
   auto result = downstream_subscriptions_.erase(pair);
   RS_ASSERT(result == 1);
+  (void)result;
   return downstream_subscriptions_.size();
 }
 
@@ -122,6 +124,7 @@ Multiplexer::Multiplexer(PerShard* per_shard)
   // Don't use the null SubscriptionID.
   auto null_id = upstream_allocator_.Next();
   RS_ASSERT(null_id == 0);
+  (void)null_id;
 }
 
 EventLoop* Multiplexer::GetLoop() const {

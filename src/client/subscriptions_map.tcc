@@ -144,6 +144,7 @@ void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
     // Reinsert the subscription as pending one.
     auto result = pending_subscriptions.emplace(new_sub_id, std::move(state));
     RS_ASSERT(result.second);
+    (void)result;
   });
   // Terminate the subscription on old ID, the server sees rewound
   // subscription as a new one.

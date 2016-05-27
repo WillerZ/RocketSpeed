@@ -245,6 +245,7 @@ SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
   if (subscription != SubscriptionHandle(0)) {
     auto next = ++num_subscriptions_;
     RS_ASSERT(next != 0);
+    (void)next;
   }
   return subscription;
 }
@@ -276,6 +277,7 @@ Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
   if (result) {
     auto prev = num_subscriptions_--;
     RS_ASSERT(prev != 0);
+    (void)prev;
     return Status::OK();
   }
   return Status::NoBuffer();
