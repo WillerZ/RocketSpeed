@@ -55,6 +55,6 @@ class RSNoAssertion {
 
 }
 
-#define RS_ASSERT(cond) if (0) rocketspeed::RSNoAssertion((cond))
+#define RS_ASSERT(cond) if (0) rocketspeed::RSNoAssertion(!!(cond))
 
 #endif
