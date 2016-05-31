@@ -16,11 +16,13 @@
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/flow_control.h"
+#include "src/messages/load_balancer.h"
 #include "src/messages/messages.h"
 #include "src/messages/queues.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
 #include "src/port/port.h"
+#include "external/folly/Memory.h"
 
 namespace {
 // free up any thread local storage for worker_ids.
@@ -78,10 +80,14 @@ MsgLoop::MsgLoop(BaseEnv* env,
     , worker_index_(&free_thread_local)
     , env_options_(env_options)
     , info_log_(info_log)
-    , stats_prefix_(stats_prefix)
-    , next_worker_id_(0){
+    , stats_prefix_(stats_prefix) {
   RS_ASSERT(info_log);
   RS_ASSERT(num_workers >= 1);
+
+  auto get_load = [this](size_t worker_id) {
+    return this->event_loops_[worker_id]->GetLoadFactor();
+  };
+  load_balancer_ = folly::make_unique<PowerOfTwoLoadBalancer>(get_load);
 
   const auto event_callback = [this](
       Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -109,6 +115,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
     // Create the loop.
     auto event_loop = new EventLoop(options.event_loop, std::move(allocs[i]));
     event_loops_.emplace_back(event_loop);
+    load_balancer_->AddShard(i);
   }
 
   // log an informational message
@@ -361,17 +368,7 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg, StreamID origin) {
 }
 
 int MsgLoop::LoadBalancedWorkerId() const {
-  // Find the event loop with minimum load.
-  int worker_id = static_cast<int>(next_worker_id_++ % event_loops_.size());
-  /*uint64_t load_factor = event_loops_[worker_id]->GetLoadFactor();
-  for (int i = 0; i < static_cast<int>(event_loops_.size()); ++i) {
-    uint64_t next_load_factor = event_loops_[i]->GetLoadFactor();
-    if (next_load_factor < load_factor) {
-      worker_id = i;
-      load_factor = next_load_factor;
-    }
-  }*/
-  return worker_id;
+  return static_cast<int>(load_balancer_->GetPreferredShard());
 }
 
 Status MsgLoop::WaitUntilRunning(std::chrono::seconds timeout) {

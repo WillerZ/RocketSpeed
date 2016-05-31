@@ -1,4 +1,17 @@
 cpp_library(
+    name = 'load_balancer',
+    srcs = [
+        'load_balancer.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    deps = [],
+)
+
+cpp_library(
     name = 'messages',
     srcs = [
         'descriptor_event.cc',
@@ -16,6 +29,7 @@ cpp_library(
         '@/rocketspeed/github/src/port:port',
         '@/rocketspeed/github/src/util/common:common',
         '@/rocketspeed/github/src/util:util',
+        ':load_balancer',
         ':event_loop',
     ],
 )

@@ -28,6 +28,7 @@ class EventCallback;
 class EventLoop;
 class Logger;
 class StreamAllocator;
+class LoadBalancer;
 
 class MsgLoop : public MsgLoopBase {
  public:
@@ -239,9 +240,6 @@ class MsgLoop : public MsgLoopBase {
   /** External synchronisation for getting sockets. */
   std::mutex stream_allocation_mutex_;
 
-  // Looping counter to distribute load on the message loop.
-  mutable std::atomic<int> next_worker_id_;
-
   /** Start timer callback objects **/
   std::vector<std::unique_ptr<rocketspeed::EventCallback>> timer_callbacks_;
 
@@ -252,6 +250,9 @@ class MsgLoop : public MsgLoopBase {
   void ProcessPing(std::unique_ptr<Message> msg, StreamID origin);
   std::map<MessageType, MsgCallbackType> SanitizeCallbacks(
                   const std::map<MessageType, MsgCallbackType>& cb);
+
+  // Load Balancer
+  std::unique_ptr<LoadBalancer> load_balancer_;
 };
 
 }  // namespace rocketspeed
