@@ -179,8 +179,8 @@ class MockSubscriber : public SubscriberIf
     return Status::NotSupported("This is a mock subscriber");
   }
 
-  virtual SubscriptionState *GetState(SubscriptionID sub_id) {
-    if(sub_id == sub_id_) {
+  virtual SubscriptionState* GetState(SubscriptionID sub_id) override {
+    if (sub_id == sub_id_) {
       return subscription_state_.get();
     } else {
       return nullptr;
