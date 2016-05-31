@@ -40,7 +40,7 @@ class TailCollapsingObserver;
  */
 class TailCollapsingSubscriber : public SubscriberIf {
  public:
-  explicit TailCollapsingSubscriber(std::unique_ptr<Subscriber> subscriber);
+  explicit TailCollapsingSubscriber(std::unique_ptr<SubscriberIf> subscriber);
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
@@ -55,12 +55,16 @@ class TailCollapsingSubscriber : public SubscriberIf {
   Status SaveState(SubscriptionStorage::Snapshot* snapshot,
                    size_t worker_id) override;
 
+  SubscriptionState *GetState(SubscriptionID sub_id) override {
+    return subscriber_->GetState(sub_id);
+  }
+
  private:
   friend class detail::TailCollapsingObserver;
 
   ThreadCheck thread_check_;
   /** The underlying subscriber. */
-  std::unique_ptr<Subscriber> subscriber_;
+  std::unique_ptr<SubscriberIf> subscriber_;
 
   /**
    * Maps ID of downstream subscription to the ID of the upstream one that

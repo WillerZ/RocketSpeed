@@ -24,21 +24,43 @@ namespace rocketspeed {
 class Status;
 class SubscriberStats;
 
-/// On top of the state needed by the SubscriptionsMap, we also need to hold
-/// Observer pointer.
-class SubscriptionState : public SubscriptionBase {
+class SubscriptionStatusImpl : public SubscriptionStatus {
  public:
-  using SubscriptionBase::SubscriptionBase;
+  const SubscriptionState& state_;
+  Status status_;
+  NamespaceID namespace_id_;
+  Topic topic_name_;
 
-  Observer* GetObserver() const { return observer_.get(); }
+  explicit SubscriptionStatusImpl(const SubscriptionState& state)
+  : state_(state)
+  , namespace_id_(state.GetNamespace().ToString())
+  , topic_name_(state.GetTopicName().ToString()) {}
 
-  void SwapObserver(std::unique_ptr<Observer>* observer) {
-    std::swap(observer_, *observer);
-    RS_ASSERT(observer_);
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    // Note that we never rewind a subscriptions, hence the ID here matches the
+    // handle given out to the user.
+    return state_.GetIDWhichMayChange();
   }
 
- private:
-  std::unique_ptr<Observer> observer_;
+  TenantID GetTenant() const override { return state_.GetTenant(); }
+
+  const NamespaceID& GetNamespace() const override {
+    // TODO: may return Slice just as well
+    return namespace_id_;
+  }
+
+  const Topic& GetTopicName() const override {
+    // TODO: may return Slice just as well
+    return topic_name_;
+  }
+
+  SequenceNumber GetSequenceNumber() const override {
+    return state_.GetExpectedSeqno();
+  }
+
+  bool IsSubscribed() const override { return false; }
+
+  const Status& GetStatus() const override { return status_; }
 };
 
 /// A subscriber that manages subscription on a single shard.
@@ -62,7 +84,7 @@ class Subscriber : public SubscriberIf {
   Status SaveState(SubscriptionStorage::Snapshot* snapshot,
                    size_t worker_id) override;
 
-  SubscriptionState* GetState(SubscriptionID sub_id) {
+  SubscriptionState* GetState(SubscriptionID sub_id) override {
     return subscriptions_map_.Find(sub_id);
   }
 

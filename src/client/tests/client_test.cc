@@ -19,8 +19,10 @@
 #include "include/RocketSpeed.h"
 #include "src/client/single_shard_subscriber.h"
 #include "src/client/topic_subscription_map.h"
+#include "src/client/tail_collapsing_subscriber.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
+#include "src/util/common/client_env.h"
 #include "src/util/common/random.h"
 #include "src/util/random.h"
 #include "src/util/testharness.h"
@@ -103,6 +105,91 @@ class MockShardingStrategy : public ShardingStrategy {
 
  private:
   const std::shared_ptr<MockPublisherRouter> config_;
+};
+
+class MockObserver : public Observer {
+ public:
+  static void StaticReset() {
+    active_count_ = 0;
+    deleted_count_ = 0;
+  }
+
+  explicit MockObserver(SubscriptionHandle handle)
+  : handle_(handle), received_count_(0) {
+    ++active_count_;
+  }
+
+  ~MockObserver() {
+    --active_count_;
+    ++deleted_count_;
+  }
+
+  virtual void OnMessageReceived(Flow*, std::unique_ptr<MessageReceived>& msg) {
+    ASSERT_EQ(handle_, msg->GetSubscriptionHandle());
+    ++received_count_;
+  }
+
+  // How many MockObservers are currently allocated
+  static std::atomic<int> active_count_;
+  static std::atomic<int> deleted_count_;
+
+  SubscriptionHandle handle_;
+  int received_count_;
+};
+std::atomic<int> MockObserver::active_count_;
+std::atomic<int> MockObserver::deleted_count_;
+
+class MockSubscriber : public SubscriberIf
+{
+  virtual void StartSubscription(SubscriptionID sub_id,
+                                 SubscriptionParameters parameters,
+                                 std::unique_ptr<Observer> observer) override {
+    // MockSubscriber supports only one subscription id
+    ASSERT_TRUE(!subscription_state_);
+
+    TenantAndNamespaceFactory factory;
+    auto tenant_and_namespace = factory.GetFlyweight(
+      {parameters.tenant_id, parameters.namespace_id});
+    subscription_state_ = folly::make_unique<SubscriptionState>(
+      tenant_and_namespace,
+      parameters.topic_name,
+      sub_id, parameters.start_seqno);
+    sub_id_ = sub_id;
+    subscription_state_->SwapObserver(&observer);
+  }
+
+  virtual void Acknowledge(SubscriptionID sub_id,
+                           SequenceNumber seqno) override {
+  }
+
+  virtual void TerminateSubscription(SubscriptionID sub_id) override {
+    ASSERT_TRUE(subscription_state_ && sub_id_ == sub_id);
+    SubscriptionState *state = GetState(sub_id);
+    SubscriptionStatusImpl sub_status(*state);
+    state->GetObserver()->OnSubscriptionStatusChange(sub_status);
+    subscription_state_ = nullptr;
+  }
+
+  virtual bool Empty() const override {
+    return subscription_state_.get() == nullptr;
+  }
+
+  virtual Status SaveState(SubscriptionStorage::Snapshot* snapshot,
+                           size_t worker_id) override {
+    return Status::NotSupported("This is a mock subscriber");
+  }
+
+  virtual SubscriptionState *GetState(SubscriptionID sub_id) {
+    if(sub_id == sub_id_) {
+      return subscription_state_.get();
+    } else {
+      return nullptr;
+    }
+  }
+
+ private:
+  std::unique_ptr<SubscriptionState> subscription_state_;
+  SubscriptionID sub_id_;
 };
 
 static std::unique_ptr<ShardingStrategy> MakeShardingStrategyFromConfig(
@@ -709,6 +796,126 @@ TEST(ClientTest, TailCollapsingSubscriber) {
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
   client->Unsubscribe(s4);
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
+}
+
+// This is exactly the same as single_shard_subscriber's
+// MessageReceivedImpl at the time of writing
+class MockMessageReceivedImpl : public MessageReceived {
+ public:
+  explicit MockMessageReceivedImpl(std::unique_ptr<MessageDeliverData> data)
+  : data_(std::move(data)) {}
+
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    return data_->GetSubID();
+  }
+
+  SequenceNumber GetSequenceNumber() const override {
+    return data_->GetSequenceNumber();
+  }
+
+  Slice GetContents() const override { return data_->GetPayload(); }
+
+ private:
+  std::unique_ptr<MessageDeliverData> data_;
+};
+
+
+static void SendMessageDeliver(int& sequence,
+                               SubscriptionID sub_id,
+                               SubscriberIf* subscriber) {
+  // Doesn't really matter what data we initialize this test message with,
+  // we just want to make sure the subscription id gets rewritten before
+  // delivery
+  std::unique_ptr<MessageDeliverData> msg(new MessageDeliverData(
+                                            (TenantID)0,
+                                            sub_id, MsgId(), Slice("data")));
+  msg->SetSequenceNumbers(sequence - 1, sequence);
+  ++sequence;
+  std::unique_ptr<MessageReceived> received(
+    new MockMessageReceivedImpl(std::move(msg)));
+  subscriber->GetState(sub_id)->GetObserver()->OnMessageReceived(
+    nullptr, received);
+}
+
+static void RunDemultiplexTest(
+    std::unique_ptr<TailCollapsingSubscriber>& subscriber,
+    SubscriberIf* base_subscriber) {
+  // Be careful with these observer pointers, they're actually
+  // unique_ptrs that are handed off to internals of the subscriber
+  // system.  IE don't copy this pattern outside of unit tests, it's
+  // bad.
+  static const int observer_count = 3;
+  std::vector<MockObserver*> observers;
+  std::vector<SubscriptionID> sub_ids;
+
+  int sequence = 2;
+  SubscriptionID first_sub_id;
+  SubscriptionParameters params;
+  params.tenant_id = 0;
+  params.namespace_id = "demultiplex";
+  params.topic_name = "demultiplex_test";
+  params.start_seqno = sequence;
+
+  MockObserver::StaticReset();
+
+  for (int i = 0; i < observer_count; ++i) {
+    sub_ids.push_back(SubscriptionID::Unsafe(i + 2));
+    if (i == 0) {
+      first_sub_id = sub_ids[0];
+    }
+    observers.push_back(new MockObserver(sub_ids[i]));
+    subscriber->StartSubscription(
+      sub_ids[i], params, std::unique_ptr<MockObserver>(observers[i]));
+    ASSERT_EQ(MockObserver::active_count_, i + 1);
+    // Send a message as we add each observer, especially to test the very first
+    // observer before multiplexing starts
+    SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+  }
+
+  // Reset all received counts to 0, they're out of sync due to above sends
+  for(int i = 0; i < observer_count; ++i) {
+    observers[i]->received_count_ = 0;
+  }
+
+  ASSERT_EQ(MockObserver::deleted_count_, 0);
+
+  SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+  ASSERT_EQ(observers[0]->received_count_, 1);
+  ASSERT_EQ(observers[1]->received_count_, 1);
+
+  subscriber->TerminateSubscription(sub_ids[0]);
+  ASSERT_EQ(MockObserver::deleted_count_, 1);
+
+  // Important test: There were 3 observers, now there are two.  They
+  // both should receive the message.
+  SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+  ASSERT_EQ(observers[1]->received_count_, 2);
+  ASSERT_EQ(observers[2]->received_count_, 2);
+
+  subscriber->TerminateSubscription(sub_ids[1]);
+  ASSERT_EQ(MockObserver::deleted_count_, 2);
+  ASSERT_EQ(MockObserver::active_count_, 1);
+
+  // Key test: verify that despite all but one observer having been
+  // deleted, the remaining observer receives the message.
+  SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+  ASSERT_EQ(observers[2]->received_count_, 3);
+  subscriber->TerminateSubscription(sub_ids[2]);
+  ASSERT_EQ(MockObserver::deleted_count_, 3);
+  ASSERT_EQ(MockObserver::active_count_, 0);
+}
+
+TEST(ClientTest, TailCollapsingSubscriberDemultiplex) {
+  // Set up a basic subscriber for the TailCollapsingSubscriber to wrap
+  MockSubscriber *base_subscriber = new MockSubscriber;
+  std::unique_ptr<TailCollapsingSubscriber> subscriber(
+      new TailCollapsingSubscriber(
+          std::unique_ptr<SubscriberIf>(base_subscriber)));
+
+  // Run all the tests twice to verify that removing all subscribers
+  // and then resubscribing to the same topic works
+  RunDemultiplexTest(subscriber, base_subscriber);
+  RunDemultiplexTest(subscriber, base_subscriber);
 }
 
 TEST(ClientTest, TopicToSubscriptionMap) {

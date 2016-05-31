@@ -86,6 +86,10 @@ void MultiThreadedSubscriber::Stop() {
                                size_t worker_id) override {
                 return Status::InternalError("Stopped");
               };
+
+              SubscriptionState* GetState(SubscriptionID) override {
+                return nullptr;
+              }
             };
             subscribers_[i].reset(new NullSubscriber());
             if (--count == 0) {

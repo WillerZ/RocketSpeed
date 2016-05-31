@@ -126,7 +126,6 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
 
 void Subscriber::CheckRouterVersion() {
   thread_check_.Check();
-
   const auto version = router_->GetVersion();
   if (last_router_version_ != version || last_router_version_ == 0) {
     last_router_version_ = version;
@@ -221,48 +220,6 @@ void Subscriber::ReceiveDeliver(Flow* flow,
     default:
       RS_ASSERT(false);
   }
-}
-
-namespace {
-
-class SubscriptionStatusImpl : public SubscriptionStatus {
- public:
-  const SubscriptionState& state_;
-  Status status_;
-  NamespaceID namespace_id_;
-  Topic topic_name_;
-
-  explicit SubscriptionStatusImpl(const SubscriptionState& state)
-  : state_(state)
-  , namespace_id_(state.GetNamespace().ToString())
-  , topic_name_(state.GetTopicName().ToString()) {}
-
-  SubscriptionHandle GetSubscriptionHandle() const override {
-    // Note that we never rewind a subscriptions, hence the ID here matches the
-    // handle given out to the user.
-    return state_.GetIDWhichMayChange();
-  }
-
-  TenantID GetTenant() const override { return state_.GetTenant(); }
-
-  const NamespaceID& GetNamespace() const override {
-    // TODO: may return Slice just as well
-    return namespace_id_;
-  }
-
-  const Topic& GetTopicName() const override {
-    // TODO: may return Slice just as well
-    return topic_name_;
-  }
-
-  SequenceNumber GetSequenceNumber() const override {
-    return state_.GetExpectedSeqno();
-  }
-
-  bool IsSubscribed() const override { return false; }
-
-  const Status& GetStatus() const override { return status_; }
-};
 }
 
 void Subscriber::ReceiveTerminate(

@@ -57,6 +57,11 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   Status SaveState(SubscriptionStorage::Snapshot* snapshot,
                    size_t worker_id) override;
 
+  SubscriptionState *GetState(SubscriptionID) override {
+    RS_ASSERT(false);
+    return nullptr;
+  }
+
  private:
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;

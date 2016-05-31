@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "include/SubscriptionStorage.h"
+#include "subscriptions_map.h"
 
 namespace rocketspeed {
 
@@ -15,6 +16,23 @@ class Observer;
 using SequenceNumber = uint64_t;
 class SubscriptionID;
 class SubscriptionParameters;
+
+/// On top of the state needed by the SubscriptionsMap, we also need to hold
+/// Observer pointer.
+class SubscriptionState : public SubscriptionBase {
+ public:
+  using SubscriptionBase::SubscriptionBase;
+
+  Observer* GetObserver() const { return observer_.get(); }
+
+  void SwapObserver(std::unique_ptr<Observer>* observer) {
+    std::swap(observer_, *observer);
+    RS_ASSERT(observer_);
+  }
+
+ private:
+  std::unique_ptr<Observer> observer_;
+};
 
 /// An interface shared by all layers of subscribers.
 ///
@@ -49,6 +67,8 @@ class SubscriberIf {
   /// Saves state of the subscriber using provided storage strategy.
   virtual Status SaveState(SubscriptionStorage::Snapshot* snapshot,
                            size_t worker_id) = 0;
+
+  virtual SubscriptionState *GetState(SubscriptionID sub_id) = 0;
 };
 
 }  // namespace rocketspeed

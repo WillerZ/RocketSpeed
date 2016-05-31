@@ -168,7 +168,7 @@ class TailCollapsingObserver : public Observer {
 }  // namespace details
 
 TailCollapsingSubscriber::TailCollapsingSubscriber(
-    std::unique_ptr<Subscriber> subscriber)
+    std::unique_ptr<SubscriberIf> subscriber)
 : subscriber_(std::move(subscriber))
 , upstream_subscriptions_([this](SubscriptionID sub_id) {
   return subscriber_->GetState(sub_id);
@@ -290,7 +290,6 @@ void TailCollapsingSubscriber::TerminateSubscription(
       auto result = special_observers_.erase(upstream_state->GetObserver());
       (void)result;
       RS_ASSERT(result);
-
       subscriber_->TerminateSubscription(upstream_id);
       upstream_state = nullptr;
     }
