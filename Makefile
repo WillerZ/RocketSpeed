@@ -49,10 +49,12 @@ else
 	PLATFORM_CCFLAGS += $(JEMALLOC_INCLUDE) -DHAVE_JEMALLOC
 endif
 
-#WARNING_FLAGS = -Wall -Werror -Wshadow -Wconversion -Wno-sign-conversion
-WARNING_FLAGS = -Wall -Werror -Wshadow -Wno-sign-conversion
-CFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CCFLAGS) $(OPT)
-CXXFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -DOUTPUT_TEST_TIMES
+# No warnings for C code. The only C code we use is from third-party libraries,
+# where we cannot address any warnings that arise.
+CFLAGS += -I. $(PLATFORM_CCFLAGS) $(OPT)
+
+WARNING_FLAGS = -Wall -Werror -Wshadow -Wno-sign-conversion -Woverloaded-virtual -Wnon-virtual-dtor
+CXXFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CXXFLAGS) $(OPT) -DOUTPUT_TEST_TIMES
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 

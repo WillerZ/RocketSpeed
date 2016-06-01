@@ -90,7 +90,6 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
   port::Semaphore sem;
   InstallSource<int>(&loop, &queue, [&](Flow*, int) {
     sem.Post();
-    return true;
   });
 
   // Before enabling, write 2 commands.
@@ -134,7 +133,6 @@ TEST(CommandQueueTest, WriteHistogram) {
       ASSERT_GT(histogram->Percentile(0.9), kNumMessages - 2);
       sem.Post();
     }
-    return true;
   });
   sem.Wait();
 }

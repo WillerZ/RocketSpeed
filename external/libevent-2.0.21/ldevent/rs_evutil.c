@@ -1,9 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpragmas"
-#pragma GCC diagnostic ignored "-Wshorten-64-to-32"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wconversion"
-
 #include "src/messages/event2_version.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -13,4 +7,3 @@
 #include <event2/util.h>
 
 #include <../evutil.c>
-#pragma GCC diagnostic pop
