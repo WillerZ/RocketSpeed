@@ -60,12 +60,12 @@ TEST(PowerOfTwoLoadBalancerTest, MaxLoadTest) {
   // (tasks assigned to different shards)
   // with large # of shards with full O(n) load check,
   // and you should be close to that....
-  unsigned num_steps = 1000;
-  unsigned cur_step = 0;
-  unsigned num_shards = 1000;
-  unsigned num_tasks_per_step = 5;
-  unsigned assigned_counts[num_shards][num_steps];
-  auto get_load = [&assigned_counts, &cur_step](ShardId shard_id) {
+  const int num_steps = 1000;
+  int cur_step = 0;
+  const int num_shards = 1000;
+  int num_tasks_per_step = 5;
+  int assigned_counts[num_shards][num_steps] = {};
+  auto get_load = [&](ShardId shard_id) {
     auto assigned = assigned_counts[shard_id];
     return static_cast<LoadT>(
       cur_step < 2 ? 0 : assigned[cur_step-1] + assigned[cur_step-2]
@@ -77,15 +77,12 @@ TEST(PowerOfTwoLoadBalancerTest, MaxLoadTest) {
   }
   double sum_max_load = 0.0;
   for (cur_step = 0; cur_step < num_steps; ++cur_step) {
-    for (int id = 0; id < num_shards; ++id) {
-      assigned_counts[id][cur_step] = 0;
-    }
-    for (size_t task = 0; task < num_tasks_per_step; ++task) {
+    for (int task = 0; task < num_tasks_per_step; ++task) {
       auto shard_id = lb.GetPreferredShard();
       assigned_counts[shard_id][cur_step]++;
     }
     LoadT max_load = std::numeric_limits<LoadT>::min();
-    for (size_t shard_id = 0; shard_id < num_shards; ++shard_id) {
+    for (int shard_id = 0; shard_id < num_shards; ++shard_id) {
       max_load = std::max(max_load, get_load(shard_id));
     }
     sum_max_load += max_load;
