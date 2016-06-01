@@ -982,6 +982,37 @@ TEST(ClientTest, TopicToSubscriptionMap) {
   }
 }
 
+TEST(ClientTest, ExportStatistics) {
+  // Create client, subscribe to a bunch of topics, and sanity check that
+  // some statistics exist and have sensible values. Subscribe to 10k topics
+  // to get variety in percentiles.
+  ClientOptions options;
+  auto client = CreateClient(std::move(options));
+  for (int i = 0; i < 10000; ++i) {
+    client->Subscribe(GuestTenant, GuestNamespace, std::to_string(i), 0);
+  }
+
+  // Export stats into maps.
+  std::unordered_map<std::string, int64_t> counters;
+  std::unordered_map<std::string, double> histos;
+  client->ExportStatistics(
+      [&](const std::string& name, int64_t value) { counters[name] = value; },
+      [&](const std::string& name, double value) { histos[name] = value; });
+
+  // At least 1 command should have been processed.
+  ASSERT_GT(counters["client.commands_processed"], 0);
+
+  // Command latencies percentiles should be non-zero and increasing.
+  auto p50 = histos["client.queues.response_latency.p50"];
+  auto p90 = histos["client.queues.response_latency.p90"];
+  auto p99 = histos["client.queues.response_latency.p99"];
+  auto p999 = histos["client.queues.response_latency.p999"];
+  ASSERT_GT(p50, 0.0);
+  ASSERT_GT(p90, p50);
+  ASSERT_GT(p99, p90);
+  ASSERT_GT(p999, p99);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

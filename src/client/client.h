@@ -99,6 +99,10 @@ class ClientImpl : public Client {
   Status RestoreSubscriptions(
       std::vector<SubscriptionParameters>* subscriptions) override;
 
+  void ExportStatistics(
+      std::function<void(const std::string&, int64_t)> counter_cb,
+      std::function<void(const std::string&, double)> histogram_cb) override;
+
   Statistics GetStatisticsSync();
 
   /**
