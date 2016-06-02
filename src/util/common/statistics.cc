@@ -11,6 +11,8 @@
 #include <limits>
 #include <string>
 
+#include "include/Types.h"
+
 #include "src/port/port.h"
 #include "src/util/common/thread_check.h"
 
@@ -306,6 +308,23 @@ Statistics Statistics::MoveThread() {
     p.second.reset(new Histogram(std::move(*p.second)));
   }
   return stats;
+}
+
+void Statistics::Export(StatisticsVisitor* visitor) const {
+  for (const auto& counter : GetCounters()) {
+    visitor->VisitCounter(counter.first, counter.second->Get());
+  }
+  for (const auto& histogram : GetHistograms()) {
+    const double p50 = histogram.second->Percentile(0.50);
+    const double p90 = histogram.second->Percentile(0.90);
+    const double p99 = histogram.second->Percentile(0.99);
+    const double p999 = histogram.second->Percentile(0.999);
+    const std::string& metric = histogram.first;
+    visitor->VisitHistogram(metric + ".p50", p50);
+    visitor->VisitHistogram(metric + ".p90", p90);
+    visitor->VisitHistogram(metric + ".p99", p99);
+    visitor->VisitHistogram(metric + ".p999", p999);
+  }
 }
 
 StatisticsWindowAggregator::StatisticsWindowAggregator(size_t window_size)

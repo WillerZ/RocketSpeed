@@ -15,6 +15,8 @@
 
 namespace rocketspeed {
 
+class StatisticsVisitor;
+
 /**
  * Simple counter.
  * Not thread safe.
@@ -239,6 +241,9 @@ class Statistics {
     }
     return it->second->Get();
   }
+
+  /** Visits each statistic using the visitor. */
+  void Export(StatisticsVisitor* visitor) const;
 
  private:
   // Aggregates one set of statistics into another.

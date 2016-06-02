@@ -106,7 +106,15 @@ class RocketeerServer {
   bool Terminate(InboundID inbound_id, Rocketeer::UnsubscribeReason reason);
 
   /** Returns server-wide statistics. */
-  Statistics GetStatisticsSync();
+  // DEPRECATED
+  Statistics GetStatisticsSync() const;
+
+  /**
+   * Walks over all statistics using the provided StatisticsVisitor.
+   *
+   * @param visitor Used to visit all statistics maintained by the client.
+   */
+  void ExportStatistics(StatisticsVisitor* visitor) const;
 
   int GetWorkerID(const InboundID& inbound_id) const;
 

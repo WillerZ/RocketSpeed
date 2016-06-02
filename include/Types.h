@@ -477,6 +477,28 @@ class DataLossInfo {
   virtual ~DataLossInfo() {}
 };
 
+/** Visitor for RocketSpeed statistics. */
+class StatisticsVisitor {
+ public:
+  /**
+   * Called for each histogram with each percentile (50, 90, 99, 99.9).
+   *
+   * @param name Name of the histogram stats, e.g. "latency.p50"
+   * @param value The value of that percentile
+   */
+  virtual void VisitHistogram(const std::string& name, double value) {}
+
+  /**
+   * Called for each counter.
+   *
+   * @param name Name of the counter.
+   * @param value The count.
+   */
+  virtual void VisitCounter(const std::string& name, int64_t value) {}
+
+  virtual ~StatisticsVisitor() {}
+};
+
 }  // namespace rocketspeed
 
 #if defined(__GNUC__) && !defined(__clang__)

@@ -337,20 +337,11 @@ class Client {
       std::vector<SubscriptionParameters>* subscriptions) = 0;
 
   /**
-   * Walks over all statistics and invokes provided callbacks synchronously.
+   * Walks over all statistics using the provided StatisticsVisitor.
    *
-   * @param counter_cb Called for each counter with the name and value.
-   * @param histogram_cb Called for each histogram percentile with name and
-   *                     and value. For a histogram named foo, the callback
-   *                     will be called with:
-   *                       foo.p50   (median)
-   *                       foo.p90   (90th percentile)
-   *                       foo.p99   (99th percentile)
-   *                       foo.p999  (99.9th percentile)
+   * @param visitor Used to visit all statistics maintained by the client.
    */
-  virtual void ExportStatistics(
-      std::function<void(const std::string&, int64_t)> counter_cb,
-      std::function<void(const std::string&, double)> histogram_cb) = 0;
+  virtual void ExportStatistics(StatisticsVisitor* visitor) const = 0;
 };
 
 }  // namespace rocketspeed

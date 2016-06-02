@@ -36,6 +36,7 @@ class LogStorage;
 class MsgLoop;
 class Pilot;
 class Statistics;
+class StatisticsVisitor;
 class SupervisorLoop;
 
 class RocketSpeed {
@@ -89,7 +90,15 @@ class RocketSpeed {
   /** ControlTower */
   ControlTower* GetControlTower() { return tower_.get(); }
 
-  Statistics GetStatisticsSync();
+  // DEPRECATED
+  Statistics GetStatisticsSync() const;
+
+  /**
+   * Walks over all statistics using the provided StatisticsVisitor.
+   *
+   * @param visitor Used to visit all statistics maintained by the client.
+   */
+  void ExportStatistics(StatisticsVisitor* visitor) const;
 
   /** SupervisorLoop **/
   SupervisorLoop* GetSupervisorLoop() { return supervisor_loop_.get(); }

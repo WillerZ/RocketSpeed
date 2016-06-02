@@ -505,11 +505,15 @@ bool RocketeerServer::Terminate(InboundID inbound_id,
       .ok();
 }
 
-Statistics RocketeerServer::GetStatisticsSync() {
+Statistics RocketeerServer::GetStatisticsSync() const {
   auto stats = msg_loop_->AggregateStatsSync(
       [this](int i) { return rocketeers_[i]->GetStatisticsInternal(); });
   stats.Aggregate(msg_loop_->GetStatisticsSync());
   return stats;
+}
+
+void RocketeerServer::ExportStatistics(StatisticsVisitor* visitor) const {
+  GetStatisticsSync().Export(visitor);
 }
 
 int RocketeerServer::GetWorkerID(const InboundID& inbound_id) const {

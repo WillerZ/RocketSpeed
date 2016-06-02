@@ -491,7 +491,7 @@ void RocketSpeed::Stop() {
   msg_loops_.clear();
 }
 
-Statistics RocketSpeed::GetStatisticsSync() {
+Statistics RocketSpeed::GetStatisticsSync() const {
   Statistics server_stats;
   // Set of MsgLoops for all components.
   // std::set is used since pilot and copilot often share same MsgLoop, and
@@ -513,6 +513,10 @@ Statistics RocketSpeed::GetStatisticsSync() {
     server_stats.Aggregate(msg_loop->GetStatisticsSync());
   }
   return server_stats;
+}
+
+void RocketSpeed::ExportStatistics(StatisticsVisitor* visitor) const {
+  GetStatisticsSync().Export(visitor);
 }
 
 }  // namespace rocketspeed

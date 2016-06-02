@@ -301,31 +301,11 @@ Status ClientImpl::RestoreSubscriptions(
   return options_.storage->RestoreSubscriptions(subscriptions);
 }
 
-void ClientImpl::ExportStatistics(
-    std::function<void(const std::string&, int64_t)> counter_cb,
-    std::function<void(const std::string&, double)> histogram_cb) {
-  auto stats = GetStatisticsSync();
-  if (counter_cb) {
-    for (const auto& counter : stats.GetCounters()) {
-      counter_cb(counter.first, counter.second->Get());
-    }
-  }
-  if (histogram_cb) {
-    for (const auto& histogram : stats.GetHistograms()) {
-      const double p50 = histogram.second->Percentile(0.50);
-      const double p90 = histogram.second->Percentile(0.90);
-      const double p99 = histogram.second->Percentile(0.99);
-      const double p999 = histogram.second->Percentile(0.999);
-      const std::string& metric = histogram.first;
-      histogram_cb(metric + ".p50", p50);
-      histogram_cb(metric + ".p90", p90);
-      histogram_cb(metric + ".p99", p99);
-      histogram_cb(metric + ".p999", p999);
-    }
-  }
+void ClientImpl::ExportStatistics(StatisticsVisitor* visitor) const {
+  GetStatisticsSync().Export(visitor);
 }
 
-Statistics ClientImpl::GetStatisticsSync() {
+Statistics ClientImpl::GetStatisticsSync() const {
   Statistics aggregated = msg_loop_->GetStatisticsSync();
   aggregated.Aggregate(subscriber_->GetStatisticsSync());
   return aggregated;

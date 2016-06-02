@@ -993,20 +993,31 @@ TEST(ClientTest, ExportStatistics) {
   }
 
   // Export stats into maps.
-  std::unordered_map<std::string, int64_t> counters;
-  std::unordered_map<std::string, double> histos;
-  client->ExportStatistics(
-      [&](const std::string& name, int64_t value) { counters[name] = value; },
-      [&](const std::string& name, double value) { histos[name] = value; });
+  class TestVisitor : public StatisticsVisitor {
+   public:
+    void VisitCounter(const std::string& name, int64_t value) override {
+      counters[name] = value;
+    }
+
+    void VisitHistogram(const std::string& name, double value) override {
+      histos[name] = value;
+    }
+
+    std::unordered_map<std::string, int64_t> counters;
+    std::unordered_map<std::string, double> histos;
+  };
+
+  TestVisitor visitor;
+  client->ExportStatistics(&visitor);
 
   // At least 1 command should have been processed.
-  ASSERT_GT(counters["client.commands_processed"], 0);
+  ASSERT_GT(visitor.counters["client.commands_processed"], 0);
 
   // Command latencies percentiles should be non-zero and increasing.
-  auto p50 = histos["client.queues.response_latency.p50"];
-  auto p90 = histos["client.queues.response_latency.p90"];
-  auto p99 = histos["client.queues.response_latency.p99"];
-  auto p999 = histos["client.queues.response_latency.p999"];
+  auto p50 = visitor.histos["client.queues.response_latency.p50"];
+  auto p90 = visitor.histos["client.queues.response_latency.p90"];
+  auto p99 = visitor.histos["client.queues.response_latency.p99"];
+  auto p999 = visitor.histos["client.queues.response_latency.p999"];
   ASSERT_GT(p50, 0.0);
   ASSERT_GT(p90, p50);
   ASSERT_GT(p99, p90);
