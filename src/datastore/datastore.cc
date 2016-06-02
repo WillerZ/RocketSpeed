@@ -330,7 +330,7 @@ DataStore::Open(HostId machine,
 
   // create a configuration
   ClientOptions options;
-  options.publisher = std::make_shared<FixedPubilsherRouter>(machine);
+  options.publisher = std::make_shared<FixedPublisherRouter>(machine);
   options.sharding = folly::make_unique<FixedShardingStrategy>(machine);
 
   // open the client

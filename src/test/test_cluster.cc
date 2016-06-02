@@ -295,7 +295,7 @@ LocalTestCluster::CreateClient(std::unique_ptr<ClientImpl>* client,
   options.info_log = info_log_;
 
   HostId pilot = pilot_ ? pilot_->GetHostId() : HostId();
-  options.publisher = std::make_shared<FixedPubilsherRouter>(pilot);
+  options.publisher = std::make_shared<FixedPublisherRouter>(pilot);
 
   HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
   options.sharding = folly::make_unique<FixedShardingStrategy>(copilot);
@@ -318,7 +318,7 @@ LocalTestCluster::CreateClient(std::unique_ptr<Client>* client,
 
   if (!options.publisher) {
     HostId pilot = pilot_ ? pilot_->GetHostId() : HostId();
-    options.publisher = std::make_shared<FixedPubilsherRouter>(pilot);
+    options.publisher = std::make_shared<FixedPublisherRouter>(pilot);
   }
 
   if (!options.sharding) {

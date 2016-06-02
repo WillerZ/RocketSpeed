@@ -17,9 +17,9 @@ namespace rocketspeed {
  * testing and benchmarking where the hosts are known beforehand, and are
  * unlikely to change.
  */
-class FixedPubilsherRouter : public PublisherRouter {
+class FixedPublisherRouter : public PublisherRouter {
  public:
-  explicit FixedPubilsherRouter(HostId pilot): pilot_(pilot) {}
+  explicit FixedPublisherRouter(HostId pilot): pilot_(pilot) {}
 
   Status GetPilot(HostId* host_out) const override;
 

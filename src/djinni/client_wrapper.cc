@@ -61,7 +61,7 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
   }
 
   rocketspeed::ClientOptions options;
-  options.publisher = std::make_shared<FixedPubilsherRouter>(cockpit1);
+  options.publisher = std::make_shared<FixedPublisherRouter>(cockpit1);
   options.sharding = folly::make_unique<FixedShardingStrategy>(cockpit1);
   options.env = jvm_env;
   options.info_log = info_log;

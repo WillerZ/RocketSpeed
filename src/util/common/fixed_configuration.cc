@@ -45,7 +45,7 @@ Status CreateFixedConfiguration(
 
   auto config = ParseMap(config_str);
   if (config.find("one-host") == config.end()) {
-    return Status::InvalidArgument("Not a FixedPubilsherRouter");
+    return Status::InvalidArgument("Not a FixedPublisherRouter");
   }
 
   std::vector<HostId> hosts;
@@ -63,7 +63,7 @@ Status CreateFixedConfiguration(
 
   RS_ASSERT(hosts.size() == 2);
   if (out_publisher) {
-    out_publisher->reset(new FixedPubilsherRouter(std::move(hosts[0])));
+    out_publisher->reset(new FixedPublisherRouter(std::move(hosts[0])));
   }
   if (out_sharding) {
     out_sharding->reset(new FixedShardingStrategy(std::move(hosts[1])));
@@ -72,7 +72,7 @@ Status CreateFixedConfiguration(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Status FixedPubilsherRouter::GetPilot(HostId* host_out) const {
+Status FixedPublisherRouter::GetPilot(HostId* host_out) const {
   if (!pilot_) {
     return Status::NotFound();
   }

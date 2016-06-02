@@ -132,7 +132,7 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
     // removed in the future.
     ClientOptions client_options;
     client_options.publisher =
-      std::make_shared<FixedPubilsherRouter>(options.pilots[0]);
+      std::make_shared<FixedPublisherRouter>(options.pilots[0]);
     client_options.sharding =
       folly::make_unique<FixedShardingStrategy>(HostId());
 

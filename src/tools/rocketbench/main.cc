@@ -1002,7 +1002,7 @@ int main(int argc, char** argv) {
       }
     } else {
       // Fall back to picking pilot and copilot in a round robin fashion.
-      options.publisher = std::make_shared<rocketspeed::FixedPubilsherRouter>(
+      options.publisher = std::make_shared<rocketspeed::FixedPublisherRouter>(
           pilots[i % pilots.size()]);
       options.sharding = folly::make_unique<rocketspeed::FixedShardingStrategy>(
           copilots[i % copilots.size()]);
