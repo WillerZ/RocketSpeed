@@ -430,9 +430,6 @@ class SubscriptionStatus {
   /** Current sequence number of the subscription. */
   virtual SequenceNumber GetSequenceNumber() const = 0;
 
-  /** True iff the subscription is active after the callback. */
-  virtual bool IsSubscribed() const = 0;
-
   /** The reason of this notification. */
   virtual const Status& GetStatus() const = 0;
 

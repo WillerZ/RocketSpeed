@@ -974,9 +974,7 @@ int main(int argc, char** argv) {
   // Subscribe callback.
   std::atomic<uint64_t> num_topics_subscribed{0};
   auto subscribe_callback = [&](const rocketspeed::SubscriptionStatus& ss) {
-    if (!ss.IsSubscribed()) {
-      LOG_WARN(info_log, "Received an unsubscribe response");
-    }
+    LOG_WARN(info_log, "Received an unsubscribe response");
   };
 
   // Data loss callback.

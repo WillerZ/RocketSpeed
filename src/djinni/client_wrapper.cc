@@ -166,7 +166,7 @@ int64_t ClientWrapper::Subscribe(
                            status.GetNamespace(),
                            status.GetTopicName(),
                            FromSequenceNumber(status.GetSequenceNumber()),
-                           status.IsSubscribed(),
+                           false,
                            FromStatus(status.GetStatus()));
       } catch (const std::exception& e) {
         LOG_WARN(info_log_, "SubscribeCallback caught exception: %s", e.what());

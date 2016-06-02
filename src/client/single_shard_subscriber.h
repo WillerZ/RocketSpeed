@@ -58,8 +58,6 @@ class SubscriptionStatusImpl : public SubscriptionStatus {
     return state_.GetExpectedSeqno();
   }
 
-  bool IsSubscribed() const override { return false; }
-
   const Status& GetStatus() const override { return status_; }
 };
 

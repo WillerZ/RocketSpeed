@@ -106,8 +106,6 @@ class TailCollapsingObserver : public Observer {
         return status_.GetSequenceNumber();
       }
 
-      bool IsSubscribed() const override { return status_.IsSubscribed(); }
-
       const Status& GetStatus() const override { return status_.GetStatus(); }
     } down_status(up_status);
 
@@ -117,19 +115,17 @@ class TailCollapsingObserver : public Observer {
     }
     // State of downstream subscriptions might have been removed, if we got this
     // notification as a confirmation that TerminateSubscription(...) finished.
-    if (!up_status.IsSubscribed()) {
-      // Remove all data associated with all subscriptions on this topic.
-      for (const auto& entry : downstream_observers_) {
-        SubscriptionID downstream_id = entry.first;
-        subscriber_->downstream_to_upstream_.erase(downstream_id);
-        subscriber_->special_observers_.erase(this);
-      }
-      // Remove metadata for this topic, as it was the only subscription on it.
-      subscriber_->upstream_subscriptions_.Remove(
-          up_status.GetNamespace(),
-          up_status.GetTopicName(),
-          SubscriptionID::Unsafe(up_status.GetSubscriptionHandle()));
+    // Remove all data associated with all subscriptions on this topic.
+    for (const auto& entry : downstream_observers_) {
+      SubscriptionID downstream_id = entry.first;
+      subscriber_->downstream_to_upstream_.erase(downstream_id);
+      subscriber_->special_observers_.erase(this);
     }
+    // Remove metadata for this topic, as it was the only subscription on it.
+    subscriber_->upstream_subscriptions_.Remove(
+      up_status.GetNamespace(),
+      up_status.GetTopicName(),
+      SubscriptionID::Unsafe(up_status.GetSubscriptionHandle()));
   }
 
   void OnDataLoss(Flow* flow, const DataLossInfo& up_info) override {
