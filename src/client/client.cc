@@ -230,7 +230,7 @@ class StdFunctionObserver : public Observer,
 }  // namespace
 
 SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
-                                         std::unique_ptr<Observer> observer) {
+                                         std::unique_ptr<Observer>& observer) {
   RS_ASSERT(!!observer);
 
   if (num_subscriptions_.load() >= options_.max_subscriptions) {
@@ -240,12 +240,15 @@ SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
   }
 
   SubscriptionHandle subscription = subscriber_->Subscribe(
-      nullptr, std::move(parameters), std::move(observer));
+      nullptr, std::move(parameters), observer);
 
   if (subscription != SubscriptionHandle(0)) {
+    RS_ASSERT(!observer);  // should be consumed
     auto next = ++num_subscriptions_;
     RS_ASSERT(next != 0);
     (void)next;
+  } else {
+    RS_ASSERT(!!observer);  // should not be consumed
   }
   return subscription;
 }

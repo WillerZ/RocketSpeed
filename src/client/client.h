@@ -62,7 +62,10 @@ class ClientImpl : public Client {
                                 const MsgId messageId) override;
 
   SubscriptionHandle Subscribe(SubscriptionParameters parameters,
-                               std::unique_ptr<Observer> observer) override;
+                               std::unique_ptr<Observer>& observer) override;
+
+  // For the rvalue observer overload.
+  using Client::Subscribe;
 
   SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,

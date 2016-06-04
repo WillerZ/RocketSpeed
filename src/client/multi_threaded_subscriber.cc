@@ -50,7 +50,8 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
     statistics_.emplace_back(std::make_shared<SubscriberStats>("subscriber."));
     subscribers_.emplace_back(new MultiShardSubscriber(
         options_, msg_loop_->GetEventLoop(i), statistics_.back()));
-    subscriber_queues_.emplace_back(msg_loop_->CreateThreadLocalQueues(i));
+    subscriber_queues_.emplace_back(msg_loop_->CreateThreadLocalQueues(
+        i, options_.queue_size));
   }
 }
 
@@ -106,10 +107,37 @@ MultiThreadedSubscriber::~MultiThreadedSubscriber() {
   RS_ASSERT(!msg_loop_->IsRunning());
 }
 
+class SubscribeCommand : public ExecuteCommand {
+ public:
+  SubscribeCommand(MultiThreadedSubscriber* subscriber,
+                   int worker_id,
+                   SubscriptionID sub_id,
+                   SubscriptionParameters&& params,
+                   std::unique_ptr<Observer>&& observer)
+  : subscriber_(subscriber)
+  , worker_id_(worker_id)
+  , sub_id_(sub_id)
+  , params_(std::move(params))
+  , observer_(std::move(observer)) {}
+
+  void Execute(Flow*) override {
+    subscriber_->subscribers_[worker_id_]->StartSubscription(
+      sub_id_, std::move(params_), std::move(observer_));
+  }
+
+  ~SubscribeCommand() = default;
+
+  MultiThreadedSubscriber* subscriber_;
+  int worker_id_;
+  SubscriptionID sub_id_;
+  SubscriptionParameters params_;
+  std::unique_ptr<Observer> observer_;
+};
+
 SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     Flow* flow,
     SubscriptionParameters parameters,
-    std::unique_ptr<Observer> observer) {
+    std::unique_ptr<Observer>& observer) {
   // Find a shard this subscripttion belongs to.
   const auto shard_id = options_.sharding->GetShard(parameters.namespace_id,
                                                     parameters.topic_name);
@@ -128,20 +156,28 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     return SubscriptionHandle(0);
   }
 
+  // Create command to subscribe, to be sent to sharded worker.
+  std::unique_ptr<SubscribeCommand> sub_command(
+      new SubscribeCommand(this,
+                           worker_id,
+                           sub_id,
+                           std::move(parameters),
+                           std::move(observer)));
+
+  // Type-erase, as TryWrite needs l-value.
+  std::unique_ptr<Command> command(std::move(sub_command));
+
   // Send command to responsible worker.
-  auto moved_args = folly::makeMoveWrapper(
-      std::make_tuple(std::move(parameters), std::move(observer)));
-  std::unique_ptr<Command> command(
-      MakeExecuteCommand([this, sub_id, moved_args, worker_id]() mutable {
-        subscribers_[worker_id]->StartSubscription(
-            sub_id,
-            std::move(std::get<0>(*moved_args)),
-            std::move(std::get<1>(*moved_args)));
-      }));
   if (flow) {
     flow->Write(worker_queue, command);
   } else {
     if (!worker_queue->TryWrite(command)) {
+      // Make sure we still have the command and observer, and give the
+      // observer back to the caller, so they can retry later.
+      RS_ASSERT(!!command);
+      sub_command.reset(static_cast<SubscribeCommand*>(command.release()));
+      RS_ASSERT(!!sub_command->observer_);
+      observer = std::move(sub_command->observer_);
       return SubscriptionHandle(0);
     }
   }

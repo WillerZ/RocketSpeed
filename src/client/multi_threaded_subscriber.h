@@ -52,11 +52,11 @@ class MultiThreadedSubscriber {
   /**
    * If flow is non-null, the overflow is communicated via flow object.
    * Returns invalid SubscriptionHandle if and only if call attempt should be
-   * retried due to queue overflow.
+   * retried due to queue overflow. In that case, observer will not be consumed.
    */
   SubscriptionHandle Subscribe(Flow* flow,
                                SubscriptionParameters parameters,
-                               std::unique_ptr<Observer> observer);
+                               std::unique_ptr<Observer>& observer);
 
   /**
    * If flow is non-null, the overflow is communicated via flow object.
@@ -78,6 +78,8 @@ class MultiThreadedSubscriber {
   Statistics GetStatisticsSync();
 
  private:
+  friend class SubscribeCommand;
+
   /** Options provided when creating the Client. */
   const ClientOptions& options_;
   /** A set of loops to use. */

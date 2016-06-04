@@ -1024,6 +1024,28 @@ TEST(ClientTest, ExportStatistics) {
   ASSERT_GT(p999, p99);
 }
 
+TEST(ClientTest, FailedSubscriptionObserver) {
+  // Fail a Subscribe call and ensure observer is preserved.
+  // Keep subscribing until at least one fails due to flow control.
+  ClientOptions options;
+  options.queue_size = 1;
+  auto client = CreateClient(std::move(options));
+  bool one_failed = false;
+  for (int i = 0; i < 10000; ++i) {
+    std::unique_ptr<Observer> observer(new Observer());
+    SubscriptionParameters params(GuestTenant, GuestNamespace, "foo", 0);
+    auto handle = client->Subscribe(params, observer);
+    if (handle) {
+      ASSERT_TRUE(!observer);
+    } else {
+      ASSERT_TRUE(!!observer);
+      one_failed = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(one_failed);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

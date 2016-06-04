@@ -131,6 +131,12 @@ class ClientOptions {
   // Default: false
   bool collapse_subscriptions_to_tail;
 
+  // Size of per-thread queues.
+  // Queues are pre-allocated, so larger queues consume more memory, but
+  // can be used to smooth out larger spikes in subscriptions.
+  // Default: 50000
+  size_t queue_size;
+
   /** Creates options with default values. */
   ClientOptions();
 };
@@ -233,13 +239,23 @@ class Client {
    *
    * @param parameters Parameters of the subscription.
    * @param observer Observer interface with one or more methods implemented
-   *                 by the application. Must be not-nullptr.
+   *                 by the application. Must be not-nullptr. Will only be
+   *                 moved away if the subscription a valid subscription
+   *                 handle is returned.
    * @return A handle that identifies this subscription. The handle is unengaged
    *         iff the Client failed to create the subscription
    *         or the subscription limit is reached.
    */
   virtual SubscriptionHandle Subscribe(SubscriptionParameters parameters,
-                                       std::unique_ptr<Observer> observer) = 0;
+                                       std::unique_ptr<Observer>& observer) = 0;
+
+  /**
+   * As above, except for rvalue observers.
+   */
+  SubscriptionHandle Subscribe(SubscriptionParameters parameters,
+                               std::unique_ptr<Observer>&& observer) {
+    return Subscribe(std::move(parameters), observer);
+  }
 
   /**
    * Convenience method, see the other overload for details.

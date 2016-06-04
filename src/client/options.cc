@@ -51,6 +51,7 @@ ClientOptions::ClientOptions()
 , max_subscriptions(std::numeric_limits<size_t>::max())
 , connection_without_streams_keepalive(std::chrono::milliseconds(0))
 , subscription_rate_limit(1000 * 1000 * 1000)
-, collapse_subscriptions_to_tail(false) {}
+, collapse_subscriptions_to_tail(false)
+, queue_size(50000) {}
 
 }  // namespace rocketspeed
