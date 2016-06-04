@@ -14,6 +14,7 @@
 #include "src/messages/observable_map.h"
 #include "src/messages/queues.h"
 #include "src/util/common/rate_limiter_sink.h"
+#include "src/util/common/retry_later_sink.h"
 
 namespace rocketspeed {
 
@@ -587,6 +588,68 @@ TEST(RateLimiterSinkFlowTest, Test_5) {
 
 TEST(RateLimiterSinkFlowTest, Test_6) {
   TestImpl(5000, 1000, 1000, 10000, 0);
+}
+
+TEST(FlowTest, RetryLaterSink) {
+  // Tests that backoff times specified by a RetryLaterSink are fulfilled.
+  // We first write messages to a queue, which is read by an EventLoop and fed
+  // into the RetryLaterSink.
+
+  // The time to back off for on each consecutive read.
+  std::vector<int> backoffs = {
+    0, 100, 200, 0, 0, 200, 200, 200, 0, 0
+  };
+  int num_messages = std::count(backoffs.begin(), backoffs.end(), 0);
+  int total_ms = std::accumulate(backoffs.begin(), backoffs.end(), 0);
+
+  MsgLoop loop(env_, env_options_, 0, 2, info_log_, "flow");
+  ASSERT_OK(loop.Initialize());
+  EventLoop* event_loop[2];
+  for (int i = 0; i < 2; ++i) {
+    event_loop[i] = loop.GetEventLoop(i);
+  }
+
+  // Create our queue.
+  auto queue = MakeIntQueue(num_messages);
+
+  // Create retry later sink.
+  int expected = 0;
+  size_t hits = 0;
+  auto last_time = std::chrono::steady_clock::now();
+  std::chrono::milliseconds expected_delay(0);
+  port::Semaphore done;
+  RetryLaterSink<int> sink([&] (int& x) {
+    ASSERT_EQ(x, expected);
+    ASSERT_LT(hits, backoffs.size());
+    ASSERT_GE(std::chrono::steady_clock::now() - last_time, expected_delay);
+    auto backoff = backoffs[hits++];
+    if (backoff == 0) {
+      expected++;
+      if (expected == num_messages) {
+        done.Post();
+      }
+    }
+    expected_delay = std::chrono::milliseconds(backoff);
+    last_time = std::chrono::steady_clock::now();
+    return expected_delay;
+  });
+
+  // Register queue read event handlers.
+  InstallSource<int>(
+    event_loop[0],
+    queue.get(),
+    [&] (Flow* flow, int x) {
+      flow->Write(&sink, x);
+    });
+
+  MsgLoopThread flow_threads(env_, &loop, "flow");
+  for (int i = 0; i < num_messages; ++i) {
+    // Queue is big enough for all these writes, all writes should succeed.
+    int x = i;
+    ASSERT_TRUE(queue->Write(x));
+  }
+
+  ASSERT_TRUE(done.TimedWait(std::chrono::milliseconds(2 * total_ms)));
 }
 
 }  // namespace rocketspeed
