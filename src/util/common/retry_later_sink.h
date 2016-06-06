@@ -22,7 +22,7 @@ class RetryLaterSink : public SinkWithOverflow<T> {
   : handler_(std::move(handler)) {}
 
   std::unique_ptr<EventCallback> CreateWriteCallback(
-      EventLoop* event_loop, std::function<void()> callback) {
+      EventLoop* event_loop, std::function<void()> callback) override {
     // When blocked, the sink will wake up every 10ms to check if it's time
     // to write again (see TryWrite). This isn't ideal as it would be more
     // efficient to just schedule to wake up at the right time, but the flow
