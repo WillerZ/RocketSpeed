@@ -58,9 +58,13 @@ CXXFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CXXFLAGS) $(OPT) -DOUTPUT_TEST_TIMES
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 
+LIBBUILDVERSION = src/util/build_version.o
+
 LIBOBJECTS = $(SOURCES:.cc=.o)
 LIBOBJECTS += $(SOURCESCPP:.cpp=.o)
 LIBOBJECTS += $(SOURCESC:.c=.o)
+
+LIBOBJECTS_NOVERSION = $(filter-out $(LIBBUILDVERSION),$(LIBOBJECTS))
 
 TESTUTIL = ./src/util/testutil.o
 TESTCLUSTER = ./src/test/test_cluster.o
@@ -179,7 +183,8 @@ rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCLUSTER)
 
 # run all unit tests
 check: $(TESTS)
-	-rm -f test_times; \
+	@-\
+	rm -f test_times; \
 	for t in $(TESTS); do \
 		echo "***** Running $$t"; \
 		./$$t || exit 1; \
@@ -247,8 +252,8 @@ format:
 	build_tools/format-diff.sh
 
 .PRECIOUS: %.test
-%.test: %.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CXX) $< $(LIBOBJECTS) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+%.test: %.o $(LIBOBJECTS_NOVERSION) $(TESTHARNESS)
+	$(CXX) $< $(LIBOBJECTS_NOVERSION) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Benchmarks and stress test
