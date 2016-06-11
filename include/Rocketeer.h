@@ -43,6 +43,8 @@ class InboundID {
 
   SubscriptionID GetSubID() const;
 
+  size_t GetShard() const;
+
   bool operator==(const InboundID& other) const {
     return stream_id == other.stream_id && sub_id == other.sub_id;
   }

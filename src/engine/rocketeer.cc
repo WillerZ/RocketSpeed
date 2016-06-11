@@ -30,6 +30,10 @@ SubscriptionID InboundID::GetSubID() const {
   return SubscriptionID::Unsafe(sub_id);
 }
 
+size_t InboundID::GetShard() const {
+  return GetSubID().GetShardID();
+}
+
 size_t InboundID::Hash() const {
   return MurmurHash2<StreamID, uint64_t>()(stream_id, sub_id);
 }
