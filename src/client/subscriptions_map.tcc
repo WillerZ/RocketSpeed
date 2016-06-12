@@ -46,6 +46,13 @@ SubscriptionsMap<SubscriptionState>::SubscriptionsMap(
         HandlePendingSubscription(flow, std::move(entry.second));
       });
 
+  // Required by sparse_hash_set to mark deleted elements.
+  // SubscriptionID() cannot be inserted from now on.
+  pending_unsubscribes_.Modify(
+    [this](Unsubscribes& set) {
+      set.set_deleted_key(SubscriptionID());
+  });
+
   // Wire the source of unsubscribe events.
   flow_control->Register<SubscriptionID>(
       &pending_unsubscribes_,
@@ -119,7 +126,7 @@ void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
   RS_ASSERT(new_sub_id != old_sub_id);
   // Generate an unsubscibe message for the old ID.
   pending_unsubscribes_.Modify(
-      [&](Unsubscribes& set) { set.emplace(old_sub_id); });
+      [&](Unsubscribes& set) { set.insert(old_sub_id); });
   // Reinsert the subscription, as we may not change the
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     std::unique_ptr<SubscriptionState> state;
@@ -149,7 +156,7 @@ void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
   // Terminate the subscription on old ID, the server sees rewound
   // subscription as a new one.
   pending_unsubscribes_.Modify(
-      [&](Unsubscribes& set) { set.emplace(old_sub_id); });
+      [&](Unsubscribes& set) { set.insert(old_sub_id); });
   // Pending subscribe and unsubscribe events will be synced opportunistically,
   // as adding an element renders the Sources readable.
 }
@@ -166,7 +173,7 @@ void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionState* ptr) {
       // Schedule an unsubscribe message to be sent only if a subscription has
       // been sent out.
       pending_unsubscribes_.Modify(
-          [&](Unsubscribes& set) { set.emplace(sub_id); });
+          [&](Unsubscribes& set) { set.insert(sub_id); });
     } else if (pending_subscriptions.erase(sub_id) == 0) {
       // We probably corrupted memory when dereferencing `state`
       // anyway...

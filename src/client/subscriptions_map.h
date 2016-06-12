@@ -6,9 +6,9 @@
 
 #include <cstdint>
 #include <functional>
+#include <google/sparse_hash_set>
 #include <memory>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
@@ -179,8 +179,8 @@ class SubscriptionsMap : public StreamReceiver {
       std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionState>>;
   ObservableContainer<Subscriptions> pending_subscriptions_;
   Subscriptions synced_subscriptions_;
-  // TODO(stupaq): sparse_hash_set
-  using Unsubscribes = std::unordered_set<SubscriptionID>;
+
+  using Unsubscribes = google::sparse_hash_set<SubscriptionID>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
   size_t connection_failues_{0};

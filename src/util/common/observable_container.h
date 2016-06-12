@@ -23,7 +23,6 @@ namespace rocketspeed {
 template <typename C, typename T = typename C::value_type>
 class ObservableContainer : public Source<T> {
  public:
-  using ContainerType = C;
 
   explicit ObservableContainer(EventLoop* event_loop)
   : ObservableContainer(event_loop, C()) {}
@@ -79,7 +78,9 @@ class ObservableContainer : public Source<T> {
     changed_ = false;
     for (auto it = container_.begin(); !changed_ && it != container_.end();) {
       T t(std::move(*it));
-      it = container_.erase(it);
+      container_.erase(it);
+      // to support pre C++11 containers
+      it = container_.begin();
       if (!this->DrainOne(std::move(t))) {
         break;
       }
