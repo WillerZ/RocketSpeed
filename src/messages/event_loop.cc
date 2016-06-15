@@ -559,7 +559,7 @@ std::unique_ptr<EventCallback> EventLoop::RegisterTimerCallback(
     base_,
     -1,
     EV_PERSIST,
-    static_cast<EventLoop*>(nullptr)->do_timerevent,
+    EventLoop::do_timerevent,
     reinterpret_cast<void*>(timed_event.get()));
 
   if (loop_event == nullptr) {

@@ -140,7 +140,9 @@ double Histogram::Percentile(double p) const {
 }
 
 double Histogram::Mean() const {
-  return sample_total_ / static_cast<double>(num_samples_);
+  return num_samples_
+          ? sample_total_ / static_cast<double>(num_samples_)
+          : nan("");
 }
 
 void Histogram::Aggregate(const Histogram& histogram) {
