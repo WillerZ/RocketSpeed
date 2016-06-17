@@ -56,23 +56,23 @@ void RunPtrChecks(const T* ptr1, const T* ptr2, bool dereference) {
   ASSERT_TRUE(moved == copied);
 }
 
-class TaggedPtrTest {};
+class TaggedPtrTest : public ::testing::Test {};
 
-TEST(TaggedPtrTest, HeapPointers) {
+TEST_F(TaggedPtrTest, HeapPointers) {
   std::unique_ptr<std::string> str1(new std::string(sentence));
   std::unique_ptr<std::string> str2(new std::string(sentence));
   const bool dereference = true;
   RunPtrChecks(str1.get(), str2.get(), dereference);
 }
 
-TEST(TaggedPtrTest, StackPointers) {
+TEST_F(TaggedPtrTest, StackPointers) {
   auto str1(sentence);
   auto str2(sentence);
   const bool dereference = true;
   RunPtrChecks(&str1, &str2, dereference);
 }
 
-TEST(TaggedPtrTest, MixedPointers) {
+TEST_F(TaggedPtrTest, MixedPointers) {
   std::unique_ptr<uint32_t> int1(
       new uint32_t(std::numeric_limits<uint32_t>::max()));
   auto int2 = std::numeric_limits<uint32_t>::max();
@@ -80,7 +80,7 @@ TEST(TaggedPtrTest, MixedPointers) {
   RunPtrChecks(int1.get(), &int2, dereference);
 }
 
-TEST(TaggedPtrTest, artificialPointer) {
+TEST_F(TaggedPtrTest, artificialPointer) {
   uintptr_t ptr1 = 0xffff800000000000;
   uintptr_t ptr2 = 0xffffffffffffffff;
   const bool dereference = false;
@@ -106,7 +106,7 @@ TEST(TaggedPtrTest, artificialPointer) {
 int main(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }
 
 #endif  // GFLAGS

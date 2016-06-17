@@ -4,9 +4,9 @@
 
 namespace rocketspeed {
 
-class RefCountFlyweightTest {};
+class RefCountFlyweightTest : public ::testing::Test {};
 
-TEST(RefCountFlyweightTest, AllTemplatesInstantiate) {  // Compile time test
+TEST_F(RefCountFlyweightTest, AllTemplatesInstantiate) {  // Compile time test
   RefCountFlyweightFactory<std::string> factory;
   auto f1 = factory.GetFlyweight("");
   (void)f1.Get();
@@ -17,7 +17,7 @@ TEST(RefCountFlyweightTest, AllTemplatesInstantiate) {  // Compile time test
   // + destructors
 }
 
-TEST(RefCountFlyweightTest, GetAfterAddReturnsAddedValue) {
+TEST_F(RefCountFlyweightTest, GetAfterAddReturnsAddedValue) {
   RefCountFlyweightFactory<int> factory;
   auto h1 = factory.GetFlyweight(1);
   auto h2 = factory.GetFlyweight(2);
@@ -59,7 +59,7 @@ const char* InstanceCounter::PAYLOAD =
                                                            // small-string
                                                            // optimization)
 
-TEST(RefCountFlyweightTest, DataNotDuppedMoreThanTwiceAndDestroyedAtEnd) {
+TEST_F(RefCountFlyweightTest, DataNotDuppedMoreThanTwiceAndDestroyedAtEnd) {
   int instanceCount = 0;
   RefCountFlyweightFactory<InstanceCounter> factory;
   ASSERT_EQ(instanceCount, 0);
@@ -76,7 +76,7 @@ TEST(RefCountFlyweightTest, DataNotDuppedMoreThanTwiceAndDestroyedAtEnd) {
   ASSERT_EQ(instanceCount, 0);
 }
 
-TEST(RefCountFlyweightTest, FlyweightsCanBeDestroyedBeforeOrAfterFactory) {
+TEST_F(RefCountFlyweightTest, FlyweightsCanBeDestroyedBeforeOrAfterFactory) {
   int instanceCountUniqueAfter = 0;
   int instanceCountUniqueBefore = 0;
   int instanceCountShared = 0;
@@ -118,5 +118,5 @@ TEST(RefCountFlyweightTest, FlyweightsCanBeDestroyedBeforeOrAfterFactory) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

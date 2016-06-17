@@ -13,9 +13,9 @@
 
 namespace rocketspeed {
 
-class FastlogTest { };
+class FastlogTest : public ::testing::Test { };
 
-TEST(FastlogTest, Basic) {
+TEST_F(FastlogTest, Basic) {
   const float ACCEPTABLE_DELTA = 0.05f;
   for (float i = 1; i < 2000000; i += 0.3f) {
     ASSERT_LT(std::abs(log(i) - fastlog(i)), ACCEPTABLE_DELTA);
@@ -25,5 +25,5 @@ TEST(FastlogTest, Basic) {
 } // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

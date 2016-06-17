@@ -13,7 +13,7 @@
 
 namespace rocketspeed {
 
-class ThreadLocalTest {
+class ThreadLocalTest : public ::testing::Test {
  public:
   ThreadLocalTest() : env_(Env::Default()) {}
 
@@ -58,7 +58,7 @@ class IDChecker : public ThreadLocalPtr {
 
 }  // anonymous namespace
 
-TEST(ThreadLocalTest, UniqueIdTest) {
+TEST_F(ThreadLocalTest, UniqueIdTest) {
   port::Mutex mu;
   port::CondVar cv(&mu);
 
@@ -105,7 +105,7 @@ TEST(ThreadLocalTest, UniqueIdTest) {
   // 3, 1, 2, 0
 }
 
-TEST(ThreadLocalTest, SequentialReadWriteTest) {
+TEST_F(ThreadLocalTest, SequentialReadWriteTest) {
   // global id list carries over 3, 1, 2, 0
   ASSERT_EQ(IDChecker::PeekId(), 0u);
 
@@ -149,7 +149,7 @@ TEST(ThreadLocalTest, SequentialReadWriteTest) {
   }
 }
 
-TEST(ThreadLocalTest, ConcurrentReadWriteTest) {
+TEST_F(ThreadLocalTest, ConcurrentReadWriteTest) {
   // global id list carries over 3, 1, 2, 0
   ASSERT_EQ(IDChecker::PeekId(), 0u);
 
@@ -233,7 +233,7 @@ TEST(ThreadLocalTest, ConcurrentReadWriteTest) {
   ASSERT_EQ(IDChecker::PeekId(), 3u);
 }
 
-TEST(ThreadLocalTest, Unref) {
+TEST_F(ThreadLocalTest, Unref) {
   ASSERT_EQ(IDChecker::PeekId(), 0u);
 
   auto unref = [](void* ptr) {
@@ -376,7 +376,7 @@ TEST(ThreadLocalTest, Unref) {
   }
 }
 
-TEST(ThreadLocalTest, Swap) {
+TEST_F(ThreadLocalTest, Swap) {
   ThreadLocalPtr tls;
   tls.Reset(reinterpret_cast<void*>(1));
   ASSERT_EQ(reinterpret_cast<int64_t>(tls.Swap(nullptr)), 1);
@@ -385,7 +385,7 @@ TEST(ThreadLocalTest, Swap) {
   ASSERT_EQ(reinterpret_cast<int64_t>(tls.Swap(reinterpret_cast<void*>(3))), 2);
 }
 
-TEST(ThreadLocalTest, CompareAndSwap) {
+TEST_F(ThreadLocalTest, CompareAndSwap) {
   ThreadLocalPtr tls;
   ASSERT_TRUE(tls.Swap(reinterpret_cast<void*>(1)) == nullptr);
   void* expected = reinterpret_cast<void*>(1);
@@ -404,5 +404,5 @@ TEST(ThreadLocalTest, CompareAndSwap) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

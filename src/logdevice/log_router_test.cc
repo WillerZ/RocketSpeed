@@ -15,9 +15,9 @@ using std::string;
 
 namespace rocketspeed {
 
-class LogRouterTest { };
+class LogRouterTest : public ::testing::Test { };
 
-TEST(LogRouterTest, ConsistencyTest) {
+TEST_F(LogRouterTest, ConsistencyTest) {
   // Test that topic mapping changes minimally when increasing number of logs.
   int numLogs = 10000;
   LogDeviceLogRouter router1(1, numLogs);
@@ -42,7 +42,7 @@ TEST(LogRouterTest, ConsistencyTest) {
   ASSERT_GT(numChanged, numTopics * 2 / 100);
 }
 
-TEST(LogRouterTest, LogDistribution) {
+TEST_F(LogRouterTest, LogDistribution) {
   // Test that topics are well distributed among logs
   int numLogs = 1000 * static_cast<int>(Retention::Total);
   LogDeviceLogRouter router(1, numLogs);
@@ -67,5 +67,5 @@ TEST(LogRouterTest, LogDistribution) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

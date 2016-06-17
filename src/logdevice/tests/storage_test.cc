@@ -16,14 +16,14 @@
 
 using namespace rocketspeed;
 
-class LogDeviceStorageTest {
+class LogDeviceStorageTest : public ::testing::Test {
  public:
   // This needs to be large, see INITIAL_REDELIVERY_DELAY in
   // ClientReadStream.cpp
   std::chrono::milliseconds client_redelivery_timeout_{2000};
 
   LogDeviceStorageTest() : env_(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env_, "LogDeviceStorageTest", &info_log));
+    EXPECT_OK(test::CreateLogger(env_, "LogDeviceStorageTest", &info_log));
   }
 
  protected:
@@ -31,7 +31,7 @@ class LogDeviceStorageTest {
   std::shared_ptr<rocketspeed::Logger> info_log;
 };
 
-TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
+TEST_F(LogDeviceStorageTest, FlowControlWithRecordStealing) {
   LocalTestCluster cluster(info_log);
   ASSERT_OK(cluster.GetStatus());
 
@@ -42,17 +42,17 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
   std::string payload = "test_message";
 
   auto publish_cb = [&](std::unique_ptr<ResultStatus> rs) {
-    ASSERT_OK(rs->GetStatus());
+    EXPECT_OK(rs->GetStatus());
 
     // Find the log ID for published topic.
     LogID log_id;
-    ASSERT_OK(cluster.GetLogRouter()->GetLogID(
+    EXPECT_OK(cluster.GetLogRouter()->GetLogID(
         Slice(namespace_id), Slice(topic), &log_id));
 
     // No gap expected.
     auto gap_cb = [](const GapRecord& r) {
       RS_ASSERT(false);
-      ASSERT_TRUE(false);
+      EXPECT_TRUE(false);
       return true;
     };
 
@@ -65,37 +65,37 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
     auto record_cb = [&](LogRecord& r) mutable {
       ++delivery_attempt;
       if (delivery_attempt == 1) {
-        ASSERT_TRUE(!r.payload.empty());
-        ASSERT_EQ(seqno, r.seqno);
-        ASSERT_EQ(log_id, r.log_id);
+        EXPECT_TRUE(!r.payload.empty());
+        EXPECT_EQ(seqno, r.seqno);
+        EXPECT_EQ(log_id, r.log_id);
         // Steal the record.
         stolen_record = std::move(r);
-        ASSERT_TRUE(!r.context);
+        EXPECT_TRUE(!r.context);
         // Apply flow control.
         return false;
       } else if (delivery_attempt == 2) {
         // We should receive an empty record.
-        ASSERT_TRUE(r.payload.empty());
-        ASSERT_EQ(seqno, r.seqno);
-        ASSERT_EQ(log_id, r.log_id);
+        EXPECT_TRUE(r.payload.empty());
+        EXPECT_EQ(seqno, r.seqno);
+        EXPECT_EQ(log_id, r.log_id);
         record_sem.Post();
         // Do not apply flow control.
         return true;
       } else {
         RS_ASSERT(false);
-        ASSERT_TRUE(false);
+        EXPECT_TRUE(false);
         return true;
       }
     };
 
     // Create readers and read the appended message.
     std::vector<AsyncLogReader*> readers;
-    ASSERT_OK(cluster.GetLogStorage()->CreateAsyncReaders(
+    EXPECT_OK(cluster.GetLogStorage()->CreateAsyncReaders(
         1, record_cb, gap_cb, &readers));
-    ASSERT_OK(readers.front()->Open(log_id, seqno, seqno));
+    EXPECT_OK(readers.front()->Open(log_id, seqno, seqno));
 
     // Wait for read callback to be invoked twice.
-    ASSERT_TRUE(record_sem.TimedWait(client_redelivery_timeout_));
+    EXPECT_TRUE(record_sem.TimedWait(client_redelivery_timeout_));
 
     for (auto r : readers) {
       r->Close(log_id);
@@ -123,7 +123,7 @@ TEST(LogDeviceStorageTest, FlowControlWithRecordStealing) {
   ASSERT_TRUE(publish_sem.TimedWait(client_redelivery_timeout_));
 }
 
-TEST(LogDeviceStorageTest, AsyncReaderCleanup) {
+TEST_F(LogDeviceStorageTest, AsyncReaderCleanup) {
   // Checks that deleting an AsyncReader with all logs closed does not
   // cause segfaults.
   LocalTestCluster cluster(info_log);
@@ -162,5 +162,5 @@ TEST(LogDeviceStorageTest, AsyncReaderCleanup) {
 }
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

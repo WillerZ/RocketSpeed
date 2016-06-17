@@ -11,9 +11,9 @@
 
 namespace rocketspeed {
 
-class SubscriptionIDTest {};
+class SubscriptionIDTest : public ::testing::Test {};
 
-TEST(SubscriptionIDTest, Random) {
+TEST_F(SubscriptionIDTest, Random) {
   auto& rng = ThreadLocalPRNG();
   std::uniform_int_distribution<uint32_t> shard_dist;
   std::uniform_int_distribution<uint32_t> hierarchical_dist;
@@ -31,7 +31,7 @@ TEST(SubscriptionIDTest, Random) {
   }
 }
 
-TEST(SubscriptionIDTest, Packing) {
+TEST_F(SubscriptionIDTest, Packing) {
 #define CHECK(a, b, p)                                                 \
   do {                                                                 \
     uint32_t shard_id = (1 << (a)) - 1;                                \
@@ -71,5 +71,5 @@ TEST(SubscriptionIDTest, Packing) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

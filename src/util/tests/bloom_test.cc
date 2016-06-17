@@ -35,7 +35,7 @@ static Slice Key(int i, char* buffer) {
   return Slice(buffer, sizeof(i));
 }
 
-class BloomTest {
+class BloomTest : public ::testing::Test {
  private:
   const FilterPolicy* policy_;
   std::string filter_;
@@ -103,12 +103,12 @@ class BloomTest {
   }
 };
 
-TEST(BloomTest, EmptyFilter) {
+TEST_F(BloomTest, EmptyFilter) {
   ASSERT_TRUE(! Matches("hello"));
   ASSERT_TRUE(! Matches("world"));
 }
 
-TEST(BloomTest, Small) {
+TEST_F(BloomTest, Small) {
   Add("hello");
   Add("world");
   ASSERT_TRUE(Matches("hello"));
@@ -130,7 +130,7 @@ static int NextLength(int length) {
   return length;
 }
 
-TEST(BloomTest, VaryingLengths) {
+TEST_F(BloomTest, VaryingLengths) {
   char buffer[sizeof(int)];
 
   // Count number of filters that significantly exceed the false positive rate
@@ -175,7 +175,7 @@ TEST(BloomTest, VaryingLengths) {
 int main(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }
 
 #endif  // GFLAGS

@@ -27,7 +27,7 @@ using facebook::logdevice::LSN_INVALID;
 using facebook::logdevice::LSN_MAX;
 using facebook::logdevice::LSN_OLDEST;
 
-class MockLogDeviceTest { };
+class MockLogDeviceTest : public ::testing::Test : public ::testing::Test { };
 
 facebook::logdevice::Payload payload(std::string s) {
   return facebook::logdevice::Payload(s.c_str(), s.size() + 1);
@@ -62,7 +62,7 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
 
 #endif  // USE_LOGDEVICE
 
-TEST(MockLogDeviceTest, Basic) {
+TEST_F(MockLogDeviceTest, Basic) {
   auto client = MakeTestClient();
 
   // Write a bunch of messages to a single log.
@@ -135,7 +135,7 @@ TEST(MockLogDeviceTest, Basic) {
   ASSERT_EQ(count1, 8);
 }
 
-TEST(MockLogDeviceTest, FindTime) {
+TEST_F(MockLogDeviceTest, FindTime) {
   auto client = MakeTestClient();
 
   // Write a bunch of messages to a single log.
@@ -204,7 +204,7 @@ TEST(MockLogDeviceTest, FindTime) {
   ASSERT_EQ(count, 3);  // ensure they were eventually called
 }
 
-TEST(MockLogDeviceTest, Trim) {
+TEST_F(MockLogDeviceTest, Trim) {
   auto client = MakeTestClient();
 
   // Write a bunch of messages to a single log.
@@ -248,7 +248,7 @@ TEST(MockLogDeviceTest, Trim) {
   ASSERT_EQ(count, 2);  // should only have read the last two messages
 }
 
-TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
+TEST_F(MockLogDeviceTest, ConcurrentReadsWrites) {
   auto client = MakeTestClient();
 
   // Write a bunch of messages to a single log.
@@ -312,10 +312,3 @@ TEST(MockLogDeviceTest, ConcurrentReadsWrites) {
 }
 
 }  // namespace rocketspeed
-
-int main(int argc, char** argv) {
-#if !defined(OS_MACOSX)
-  // Does not work on OS X due to lack of DeleteDirRecursive.
-  return rocketspeed::test::RunAllTests();
-#endif
-}

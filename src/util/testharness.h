@@ -14,6 +14,7 @@
 #include <vector>
 #include <stdio.h>
 #include <stdlib.h>
+#include <gtest/gtest.h>
 #include "include/Slice.h"
 #include "include/Env.h"
 #include "src/port/stack_trace.h"
@@ -62,20 +63,6 @@ inline std::string PrettyPrint(const std::vector<T>& container) {
 namespace rocketspeed {
 namespace test {
 
-// Run some of the tests registered by the TEST() macro.  If the
-// environment variable "ROCKETSPEED_TESTS" is not set, runs all tests.
-// Otherwise, runs only the tests whose name contains the value of
-// "ROCKETSPEED_TESTS" as a substring.  E.g., suppose the tests are:
-//    TEST(Foo, Hello) { ... }
-//    TEST(Foo, World) { ... }
-// ROCKETSPEED_TESTS=Hello will run the first test
-// ROCKETSPEED_TESTS=o     will run both tests
-// ROCKETSPEED_TESTS=Junk  will run no tests
-//
-// Returns 0 if all tests pass.
-// Dies or returns a non-zero value if some test fails.
-extern int RunAllTests();
-
 // Return the directory to use for temporary storage.
 extern std::string TmpDir();
 
@@ -89,98 +76,14 @@ extern Status CreateLogger(Env* env,
 // runs may be able to vary the seed.
 extern int RandomSeed();
 
-// An instance of Tester is allocated to hold temporary state during
-// the execution of an assertion.
-class Tester {
- private:
-  const char* fname_;
-  int line_;
-  std::stringstream ss_;
+extern int RunAllTests(int argc, char** argv);
 
- public:
-  Tester(const char* f, int l)
-      : fname_(f), line_(l) {
-  }
+::testing::AssertionResult AssertStatus(const char* s_expr, const Status& s);
 
-  void Fail() {
-    fprintf(stderr, "%s:%d:%s\n", fname_, line_, ss_.str().c_str());
-    port::PrintStack(2);
-    throw std::logic_error("test failed");
-  }
-
-  Tester& Is(bool b, const char* msg) {
-    if (!b) {
-      ss_ << " Assertion failure " << msg;
-      Fail();
-    }
-    return *this;
-  }
-
-  Tester& IsOk(const Status& s) {
-    if (!s.ok()) {
-      ss_ << " " << s.ToString();
-      Fail();
-    }
-    return *this;
-  }
-
-#define BINARY_OP(name, op)                              \
-  template <class X, class Y>                           \
-  Tester& name(const X& x, const Y& y) {                \
-    if (!(x op y)) {                                   \
-      ss_ << " failed: " << PrettyPrint(x) << (" " #op " ") << PrettyPrint(y); \
-      Fail();                                      \
-    }                                                   \
-    return *this;                                       \
-  }
-
-  BINARY_OP(IsEq, ==)
-  BINARY_OP(IsNe, !=)
-  BINARY_OP(IsGe, >=)
-  BINARY_OP(IsGt, >)
-  BINARY_OP(IsLe, <=)
-  BINARY_OP(IsLt, <)
-#undef BINARY_OP
-};
-
-#define ASSERT_TRUE(c) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .Is(!!(c), #c)
-#define ASSERT_OK(s) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .IsOk((s))
-#define ASSERT_EQ(a, b) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .IsEq((a), (b))
-#define ASSERT_NE(a, b) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .IsNe((a), (b))
-#define ASSERT_GE(a, b) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .IsGe((a), (b))
-#define ASSERT_GT(a, b) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .IsGt((a), (b))
-#define ASSERT_LE(a, b) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .IsLe((a), (b))
-#define ASSERT_LT(a, b) ::rocketspeed::test::Tester(__FILE__, __LINE__) \
-  .IsLt((a), (b))
-
-#define TCONCAT(a, b) TCONCAT1(a, b)
-#define TCONCAT1(a, b) a##b
-
-#define TEST(base, name)                                                \
-class TCONCAT(_Test_, name) : public base {                             \
-  public:                                                               \
-    void _Run();                                                        \
-    static void _RunIt() {                                              \
-      TCONCAT(_Test_, name) t;                                          \
-      t._Run();                                                         \
-    }                                                                   \
-};                                                                      \
-bool TCONCAT(_Test_ignored_, name) =                                    \
-  ::rocketspeed::test::RegisterTest(                                    \
-    #base, #name, &TCONCAT(_Test_, name)::_RunIt);                      \
-void TCONCAT(_Test_, name)::_Run()
-
-// Register the specified test.  Typically not used directly, but
-// invoked via the macro expansion of TEST.
-extern bool RegisterTest(const char* base, const char* name, void (*func)());
-
+#define ASSERT_OK(s) ASSERT_PRED_FORMAT1(rocketspeed::test::AssertStatus, s)
+#define ASSERT_NOK(s) ASSERT_FALSE((s).ok())
+#define EXPECT_OK(s) EXPECT_PRED_FORMAT1(rocketspeed::test::AssertStatus, s)
+#define EXPECT_NOK(s) EXPECT_FALSE((s).ok())
 
 }  // namespace test
 }  // namespace rocketspeed

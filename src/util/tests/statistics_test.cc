@@ -15,9 +15,9 @@
 
 namespace rocketspeed {
 
-class StatisticsTest { };
+class StatisticsTest : public ::testing::Test { };
 
-TEST(StatisticsTest, Basic) {
+TEST_F(StatisticsTest, Basic) {
   Statistics stats1;
   Counter* count_a1 = stats1.AddCounter("count1");
   Counter* count_b1 = stats1.AddCounter("count2");
@@ -97,7 +97,7 @@ TEST(StatisticsTest, Basic) {
     "histo3:                                   mean: 53.3      p50: 55.0      p90: 77.5      p99: 77.5      p99.9: 77.5      (3 samples)\n");
 }
 
-TEST(StatisticsTest, HistogramPercentiles) {
+TEST_F(StatisticsTest, HistogramPercentiles) {
   std::vector<float> ratios = { 1.1f, 1.2f, 1.3f, 2.0f, 10.0f };
   std::vector<float> thresholds = { 0.1f, 1.0f, 10.0f, 100.0f };
 
@@ -136,7 +136,7 @@ TEST(StatisticsTest, HistogramPercentiles) {
   }
 }
 
-TEST(StatisticsTest, HistogramPercentilesOneBucket) {
+TEST_F(StatisticsTest, HistogramPercentilesOneBucket) {
   // Test percentile sampling within a bucket
   Histogram histogram(0.0, 1000.0, 1.0, 10.0);
 
@@ -156,7 +156,7 @@ TEST(StatisticsTest, HistogramPercentilesOneBucket) {
   ASSERT_LT(histogram.Percentile(0.1), histogram.Percentile(0.9));
 }
 
-TEST(StatisticsTest, StatisticsWindowAggregator) {
+TEST_F(StatisticsTest, StatisticsWindowAggregator) {
   Statistics s0, s1, s2, s3;
   s1.AddCounter("a")->Add(1);
   s2.AddCounter("a")->Add(2);
@@ -223,5 +223,5 @@ TEST(StatisticsTest, StatisticsWindowAggregator) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

@@ -22,12 +22,12 @@
 
 namespace rocketspeed {
 
-class IntegrationTest {
+class IntegrationTest : public ::testing::Test {
  public:
   std::chrono::seconds timeout;
 
   IntegrationTest() : timeout(5), env_(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env_, "IntegrationTest", &info_log));
+    EXPECT_OK(test::CreateLogger(env_, "IntegrationTest", &info_log));
   }
 
   int64_t GetNumOpenLogs(ControlTower* ct) const {
@@ -45,7 +45,7 @@ class IntegrationTest {
   std::shared_ptr<rocketspeed::Logger> info_log;
 };
 
-TEST(IntegrationTest, OneMessage) {
+TEST_F(IntegrationTest, OneMessage) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
   ASSERT_OK(cluster.GetStatus());
@@ -106,7 +106,7 @@ TEST(IntegrationTest, OneMessage) {
  * Publishes 1 message. Trims message. Attempts to read
  * message and ensures that one gap is received.
  */
-TEST(IntegrationTest, TrimAll) {
+TEST_F(IntegrationTest, TrimAll) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
   ASSERT_OK(cluster.GetStatus());
@@ -143,14 +143,14 @@ TEST(IntegrationTest, TrimAll) {
     // Reader callbacks
     auto record_cb = [&](LogRecord& r) {
       // We should not be reading any records as they have been trimmed.
-      ASSERT_TRUE(false);
+      EXPECT_TRUE(false);
       return true;
     };
 
     auto gap_cb = [&](const GapRecord& r) {
       // We expect a Gap, and we expect the low seqno should be our
       // previously published publish lsn.
-      ASSERT_TRUE(r.from == seqno);
+      EXPECT_TRUE(r.from == seqno);
       num_gaps++;
       read_sem.Post();
       return true;
@@ -217,7 +217,7 @@ class IntegrationTest::SubscriptionCallbacksTestContext {
 
   explicit SubscriptionCallbacksTestContext(IntegrationTest* parent)
   : cluster(parent->info_log) {
-    ASSERT_OK(cluster.GetStatus());
+    EXPECT_OK(cluster.GetStatus());
 
     // PART 1 - Create a sender client, send N messages and trim the first K.
 
@@ -262,12 +262,12 @@ class IntegrationTest::SubscriptionCallbacksTestContext {
                                 Slice(data),
                                 publish_callback,
                                 message_id);
-      ASSERT_OK(ps.status);
-      ASSERT_TRUE(ps.msgid == message_id);
+      EXPECT_OK(ps.status);
+      EXPECT_TRUE(ps.msgid == message_id);
     }
 
     // Wait on the last message to be published.
-    ASSERT_TRUE(publish_sem.TimedWait(parent->timeout));
+    EXPECT_TRUE(publish_sem.TimedWait(parent->timeout));
 
     // PART 2 - Create a receiver client, sync to the first seqno and
     // confirm received and lost messages.
@@ -281,7 +281,7 @@ class IntegrationTest::SubscriptionCallbacksTestContext {
  * Publishes N messages and trims the first K from a sender client.
  * After this a receiver client validates DataLoss callback is correctly called.
  */
-TEST(IntegrationTest, TestDataLossCallback) {
+TEST_F(IntegrationTest, TestDataLossCallback) {
   SubscriptionCallbacksTestContext ctx(this);
 
   // Receiver flow control semaphores.
@@ -317,7 +317,7 @@ TEST(IntegrationTest, TestDataLossCallback) {
  * Observer interface instead of std::functions and checks that
  * all the callbacks have been called.
  */
-TEST(IntegrationTest, ObserverInterfaceUsage) {
+TEST_F(IntegrationTest, ObserverInterfaceUsage) {
   SubscriptionCallbacksTestContext ctx(this);
 
   // Semaphores for callbacks to fire.
@@ -386,7 +386,7 @@ TEST(IntegrationTest, ObserverInterfaceUsage) {
  * range [0, n-1] and ensures that one gap is received and
  * n-1 records are read.
  */
-TEST(IntegrationTest, TrimFirst) {
+TEST_F(IntegrationTest, TrimFirst) {
   int num_publish = 3;
 
   // Setup local RocketSpeed cluster.
@@ -510,7 +510,7 @@ TEST(IntegrationTest, TrimFirst) {
   }
 }
 
-TEST(IntegrationTest, TrimGapHandling) {
+TEST_F(IntegrationTest, TrimGapHandling) {
   // Test to ensure that correct records are received when subscribing to
   // trimmed sections of log.
 
@@ -566,7 +566,7 @@ TEST(IntegrationTest, TrimGapHandling) {
         GuestTenant, ns, topics[topic], seqno, receive_callback);
     ASSERT_TRUE(handle);
     while (expected--) {
-      ASSERT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
+      EXPECT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
     }
     ASSERT_TRUE(!recv_sem[topic].TimedWait(std::chrono::milliseconds(100)));
     ASSERT_OK(client->Unsubscribe(std::move(handle)));
@@ -588,7 +588,7 @@ TEST(IntegrationTest, TrimGapHandling) {
   test_receipt(1, seqnos[6], 2);
 }
 
-TEST(IntegrationTest, SequenceNumberZero) {
+TEST_F(IntegrationTest, SequenceNumberZero) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
   ASSERT_OK(cluster.GetStatus());
@@ -697,7 +697,7 @@ TEST(IntegrationTest, SequenceNumberZero) {
 /*
  * Verify that we do not leak any threads
  */
-TEST(IntegrationTest, ThreadLeaks) {
+TEST_F(IntegrationTest, ThreadLeaks) {
   // Setup local RocketSpeed cluster with default environment.
   Env* env = Env::Default();
 
@@ -736,7 +736,7 @@ TEST(IntegrationTest, ThreadLeaks) {
 /**
  * Check that sending goodbye message removes subscriptions.
  */
-TEST(IntegrationTest, UnsubscribeOnGoodbye) {
+TEST_F(IntegrationTest, UnsubscribeOnGoodbye) {
   LocalTestCluster cluster(info_log, true, true, true);
   ASSERT_OK(cluster.GetStatus());
 
@@ -785,7 +785,7 @@ TEST(IntegrationTest, UnsubscribeOnGoodbye) {
   env_->WaitForJoin(tid);
 }
 
-TEST(IntegrationTest, LostConnection) {
+TEST_F(IntegrationTest, LostConnection) {
   // Tests that client can be used after it loses connection to the cloud.
 
   // Setup local RocketSpeed cluster.
@@ -879,7 +879,7 @@ TEST(IntegrationTest, LostConnection) {
   ASSERT_TRUE(msg_received.TimedWait(timeout));
 }
 
-TEST(IntegrationTest, OneMessageWithoutRollCall) {
+TEST_F(IntegrationTest, OneMessageWithoutRollCall) {
   // This test is a duplicate of OneMessage, just with RollCall disabled.
   // The intention is just to be a quick check to ensure that things still
   // function without RollCall.
@@ -974,7 +974,7 @@ TEST(IntegrationTest, OneMessageWithoutRollCall) {
   ASSERT_EQ(tail2, 1);
 }
 
-TEST(IntegrationTest, NewControlTower) {
+TEST_F(IntegrationTest, NewControlTower) {
   // Will send a message to one control tower. Stop it, bring up a new one,
   // inform copilot of the change, then try to send another.
 
@@ -1074,7 +1074,7 @@ class MessageReceivedMock : public MessageReceived {
   Slice payload_;
 };
 
-TEST(IntegrationTest, SubscriptionStorage) {
+TEST_F(IntegrationTest, SubscriptionStorage) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
   ASSERT_OK(cluster.GetStatus());
@@ -1128,7 +1128,7 @@ TEST(IntegrationTest, SubscriptionStorage) {
   ASSERT_TRUE(expected == restored);
 }
 
-TEST(IntegrationTest, SubscriptionManagement) {
+TEST_F(IntegrationTest, SubscriptionManagement) {
   // Tests various sub/unsub combinations with multiple clients on the same
   // copilot on the same topic.
 
@@ -1174,7 +1174,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
                          pub_seqno = rs->GetSequenceNumber();
                          sem.Post();
                        });
-    ASSERT_TRUE(sem.TimedWait(timeout));
+    EXPECT_TRUE(sem.TimedWait(timeout));
     return pub_seqno;
   };
 
@@ -1377,7 +1377,7 @@ TEST(IntegrationTest, SubscriptionManagement) {
   recv(1, {"k1"});
 }
 
-TEST(IntegrationTest, LogAvailability) {
+TEST_F(IntegrationTest, LogAvailability) {
   // Tests the availability of a single log after control tower failure.
   // Requires copilot talks to at least 2 control towers for each log.
   // Will test CT failure by stopping the CT loop, without closing connections.
@@ -1500,7 +1500,7 @@ TEST(IntegrationTest, LogAvailability) {
   ASSERT_EQ(GetNumOpenLogs(ct_cluster[0]->GetControlTower()), 0);
 }
 
-TEST(IntegrationTest, TowerDeathReconnect) {
+TEST_F(IntegrationTest, TowerDeathReconnect) {
   // Connect to a tower, kill it, bring back up at same host ID, and check that
   // we reconnect and resub.
   const size_t kNumTopics = 100;
@@ -1599,7 +1599,7 @@ TEST(IntegrationTest, TowerDeathReconnect) {
   ASSERT_EQ(0, stats2.GetCounterValue("copilot.orphaned_topics"));
 }
 
-TEST(IntegrationTest, CopilotDeath) {
+TEST_F(IntegrationTest, CopilotDeath) {
   const size_t kNumTopics = 10;
 
   // Setup local RocketSpeed cluster.
@@ -1666,7 +1666,7 @@ TEST(IntegrationTest, CopilotDeath) {
   ASSERT_EQ(GetNumOpenLogs(cluster.GetControlTower()), 0);
 }
 
-TEST(IntegrationTest, ControlTowerCache) {
+TEST_F(IntegrationTest, ControlTowerCache) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster::Options opts;
   opts.tower.topic_tailer.cache_size = 1024 * 1024;
@@ -1899,7 +1899,7 @@ TEST(IntegrationTest, ControlTowerCache) {
   ASSERT_EQ(cached_hits4, cached_hits3);
 }
 
-TEST(IntegrationTest, ReadingFromCache) {
+TEST_F(IntegrationTest, ReadingFromCache) {
   // Run this test twice, the first time with cache enabled and the
   // second time with cache disabled.
   bool cache_enabled = true;
@@ -2051,7 +2051,7 @@ TEST(IntegrationTest, ReadingFromCache) {
 #ifndef USE_LOGDEVICE
 // This test doesn't work with the LogDevice integration test utils since they
 // only support one log, meaning there is no way to balance.
-TEST(IntegrationTest, TowerRebalance) {
+TEST_F(IntegrationTest, TowerRebalance) {
   // Tests that subscriptions are rebalanced across control towers gradually
   // when new towers become available.
 
@@ -2121,7 +2121,7 @@ TEST(IntegrationTest, TowerRebalance) {
 }
 #endif
 
-TEST(IntegrationTest, InvalidSubscription) {
+TEST_F(IntegrationTest, InvalidSubscription) {
   // Subscribes to InvalidNamespace, expects bad subscription status.
   LocalTestCluster cluster(info_log);
   ASSERT_OK(cluster.GetStatus());
@@ -2146,7 +2146,7 @@ TEST(IntegrationTest, InvalidSubscription) {
   ASSERT_TRUE(sem.TimedWait(timeout));
 }
 
-TEST(IntegrationTest, ReaderRestarts) {
+TEST_F(IntegrationTest, ReaderRestarts) {
   // Test that messages are still received with frequent reader restarts.
   const size_t kNumTopics = 10;
   const size_t kNumMessages = 1000;
@@ -2207,7 +2207,7 @@ TEST(IntegrationTest, ReaderRestarts) {
   ASSERT_LE(restarts, max_expected + 1);  // + 1 for timer tolerance
 }
 
-TEST(IntegrationTest, VirtualReaderMerge) {
+TEST_F(IntegrationTest, VirtualReaderMerge) {
   // Tests the virtual reader merge path.
 
   // Setup local RocketSpeed cluster.
@@ -2277,9 +2277,9 @@ TEST(IntegrationTest, VirtualReaderMerge) {
   env_->SleepForMicroseconds(100000);
 }
 
-TEST(IntegrationTest, SmallRoomQueues) {
+TEST_F(IntegrationTest, SmallRoomQueues) {
   // Tests control tower with room queue size 1.
-  const size_t kNumMessages = 100;
+  const size_t kNumMessages = 1000;
 
   // Setup local RocketSpeed cluster.
   LocalTestCluster::Options opts;
@@ -2399,7 +2399,7 @@ TEST(IntegrationTest, SmallRoomQueues) {
   ASSERT_EQ(cache_backoff3, cache_backoff2);
 }
 
-TEST(IntegrationTest, CacheReentrance) {
+TEST_F(IntegrationTest, CacheReentrance) {
   // This tests that a reader subscribed outside of the cached data, can
   // read into the cache.
   LocalTestCluster::Options opts;
@@ -2521,7 +2521,7 @@ TEST(IntegrationTest, CacheReentrance) {
   ASSERT_EQ(stats3["readers_stopped"], 3);
 }
 
-TEST(IntegrationTest, CopilotTailSubscribeFast) {
+TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   // Setup local RocketSpeed cluster.
   LocalTestCluster cluster(info_log);
   ASSERT_OK(cluster.GetStatus());
@@ -2578,5 +2578,5 @@ TEST(IntegrationTest, CopilotTailSubscribeFast) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

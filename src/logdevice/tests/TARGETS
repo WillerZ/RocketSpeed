@@ -13,14 +13,12 @@ cpp_unittest(
         '@/rocketspeed/github/src/client:client',
         '@/rocketspeed/github/src/logdevice:logdevice_storage',
         '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:test',
         '@/rocketspeed/github/src/test:test_cluster',
         '@/rocketspeed/github/src/util:util',
         '@/rocketspeed/github/src/util/common:common',
     ],
-    tags = [
-        'serialize',
-        'serialize_test_cases',
-        'unmanaged_test_cases',
-        'multiple-results',
+    external_deps = [
+        'gtest',
     ],
 )

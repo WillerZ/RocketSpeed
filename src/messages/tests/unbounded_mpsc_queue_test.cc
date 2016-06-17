@@ -10,7 +10,7 @@
 
 namespace rocketspeed {
 
-class UnboundedMPSCQueueTest {
+class UnboundedMPSCQueueTest : public ::testing::Test {
   public:
   UnboundedMPSCQueueTest(){}
   static void TestImpl(int num_writers);
@@ -74,20 +74,20 @@ void UnboundedMPSCQueueTest::TestImpl(int num_writers) {
 
 // Multiple producers write a different sequence of values to the queue.
 // Reader ensures that the read values are some interleaving of those values.
-TEST(UnboundedMPSCQueueTest, ReadWrite_1) {
+TEST_F(UnboundedMPSCQueueTest, ReadWrite_1) {
   TestImpl(1);
 }
 
-TEST(UnboundedMPSCQueueTest, ReadWrite_4) {
+TEST_F(UnboundedMPSCQueueTest, ReadWrite_4) {
   TestImpl(4);
 }
 
-TEST(UnboundedMPSCQueueTest, ReadWrite_16) {
+TEST_F(UnboundedMPSCQueueTest, ReadWrite_16) {
   TestImpl(16);
 }
 
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

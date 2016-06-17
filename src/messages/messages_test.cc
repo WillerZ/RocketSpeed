@@ -18,11 +18,11 @@
 
 namespace rocketspeed {
 
-class Messaging {
+class Messaging : public ::testing::Test {
  public:
   Messaging() : timeout_(1) {
     env_ = Env::Default();
-    ASSERT_OK(test::CreateLogger(env_, "MessagesTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "MessagesTest", &info_log_));
   }
 
   const std::chrono::seconds timeout_;
@@ -31,7 +31,7 @@ class Messaging {
   std::shared_ptr<Logger> info_log_;
 };
 
-TEST(Messaging, Data) {
+TEST_F(Messaging, Data) {
   Slice name1("Topic1");
   Slice payload1("Payload1");
   HostId host1(HostId::CreateLocal(1234));
@@ -66,7 +66,7 @@ TEST(Messaging, Data) {
   ASSERT_EQ(data2.GetSequenceNumber(), 2000200020002000ULL);
 }
 
-TEST(Messaging, DataAck) {
+TEST_F(Messaging, DataAck) {
   HostId hostid(HostId::CreateLocal(200));
 
   // create a message
@@ -93,7 +93,7 @@ TEST(Messaging, DataAck) {
   ASSERT_TRUE(ack1.GetAcks() == ack2.GetAcks());
 }
 
-TEST(Messaging, DataGap) {
+TEST_F(Messaging, DataGap) {
   // create a message
   MessageGap gap1(Tenant::GuestTenant,
                   "guest",
@@ -136,7 +136,7 @@ static void TestMessage(const Message& msg) {
   }
 }
 
-TEST(Messaging, Goodbye) {
+TEST_F(Messaging, Goodbye) {
   // create a message
   MessageGoodbye goodbye1(Tenant::GuestTenant,
                           MessageGoodbye::Code::Graceful,
@@ -157,7 +157,7 @@ TEST(Messaging, Goodbye) {
   ASSERT_EQ(goodbye2.GetOriginType(), goodbye1.GetOriginType());
 }
 
-TEST(Messaging, FindTailSeqno) {
+TEST_F(Messaging, FindTailSeqno) {
   MessageFindTailSeqno msg1(Tenant::GuestTenant,
                             "TestNamespace",
                             "TestTopic");
@@ -171,7 +171,7 @@ TEST(Messaging, FindTailSeqno) {
   ASSERT_EQ(msg2.GetTopicName(), msg1.GetTopicName());
 }
 
-TEST(Messaging, TailSeqno) {
+TEST_F(Messaging, TailSeqno) {
   MessageTailSeqno msg1(Tenant::GuestTenant,
                         "TestNamespace",
                         "TestTopic",
@@ -187,7 +187,7 @@ TEST(Messaging, TailSeqno) {
   ASSERT_EQ(msg2.GetSequenceNumber(), msg1.GetSequenceNumber());
 }
 
-TEST(Messaging, MessageSubscribe) {
+TEST_F(Messaging, MessageSubscribe) {
   MessageSubscribe msg1(Tenant::GuestTenant,
                         GuestNamespace,
                         "MessageSubscribe",
@@ -208,7 +208,7 @@ TEST(Messaging, MessageSubscribe) {
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
 }
 
-TEST(Messaging, MessageUnsubscribe) {
+TEST_F(Messaging, MessageUnsubscribe) {
   MessageUnsubscribe msg1(Tenant::GuestTenant,
                           SubscriptionID::Unsafe(42),
                           MessageUnsubscribe::Reason::kInvalid);
@@ -224,7 +224,7 @@ TEST(Messaging, MessageUnsubscribe) {
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
 }
 
-TEST(Messaging, MessageDeliverGap) {
+TEST_F(Messaging, MessageDeliverGap) {
   MessageDeliverGap msg1(
       Tenant::GuestTenant, SubscriptionID::Unsafe(42), GapType::kRetention);
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
@@ -243,7 +243,7 @@ TEST(Messaging, MessageDeliverGap) {
   ASSERT_EQ(msg1.GetGapType(), msg2.GetGapType());
 }
 
-TEST(Messaging, MessageDeliverData) {
+TEST_F(Messaging, MessageDeliverData) {
   MessageDeliverData msg1(Tenant::GuestTenant,
                           SubscriptionID::Unsafe(42),
                           GUIDGenerator().Generate(),
@@ -265,7 +265,7 @@ TEST(Messaging, MessageDeliverData) {
   ASSERT_EQ(msg1.GetPayload().ToString(), msg2.GetPayload().ToString());
 }
 
-TEST(Messaging, MessageDeliverBatch) {
+TEST_F(Messaging, MessageDeliverBatch) {
   MessageDeliverBatch::MessagesVector messages;
   messages.emplace_back(new MessageDeliverData(Tenant::GuestTenant,
                                                SubscriptionID::Unsafe(42),
@@ -301,7 +301,7 @@ TEST(Messaging, MessageDeliverBatch) {
   }
 }
 
-TEST(Messaging, InvalidEnum) {
+TEST_F(Messaging, InvalidEnum) {
   // create a message
   MessageGoodbye goodbye1(
     Tenant::GuestTenant,
@@ -318,7 +318,7 @@ TEST(Messaging, InvalidEnum) {
   ASSERT_TRUE(!goodbye2.DeSerialize(&original).ok());
 }
 
-TEST(Messaging, ErrorHandling) {
+TEST_F(Messaging, ErrorHandling) {
   // Test that Message::CreateNewInstance handles bad messages.
   TenantID tenant = Tenant::GuestTenant;
   NamespaceID nsid = GuestNamespace;
@@ -338,7 +338,7 @@ TEST(Messaging, ErrorHandling) {
   TestMessage(msg4);
 }
 
-TEST(Messaging, PingPong) {
+TEST_F(Messaging, PingPong) {
   // Create server loop.
   MsgLoop server(env_, env_options_, 0, 1, info_log_, "server");
   ASSERT_OK(server.Initialize());
@@ -400,7 +400,7 @@ TEST(Messaging, PingPong) {
   ASSERT_EQ(pings_recv(server), 1 + num_msgs);
 }
 
-TEST(Messaging, SameStreamsOnDifferentSockets) {
+TEST_F(Messaging, SameStreamsOnDifferentSockets) {
   // Posted on any ping message received by the server.
   port::Semaphore server_ping;
 
@@ -500,7 +500,7 @@ TEST(Messaging, SameStreamsOnDifferentSockets) {
   ASSERT_EQ(2, seen_by_server.size());
 }
 
-TEST(Messaging, MultipleStreamsOneSocket) {
+TEST_F(Messaging, MultipleStreamsOneSocket) {
   static const int kNumStreams = 10;
 
   // Server loop.
@@ -552,7 +552,7 @@ TEST(Messaging, MultipleStreamsOneSocket) {
   }
 }
 
-TEST(Messaging, GracefulGoodbye) {
+TEST_F(Messaging, GracefulGoodbye) {
   // Tests that a client can disengage from communication.
   // Create two clients on one socket, talking to a server.
   // One client will send a goodbye, followed by a ping.
@@ -658,7 +658,7 @@ TEST(Messaging, GracefulGoodbye) {
 }
 
 
-TEST(Messaging, Timer) {
+TEST_F(Messaging, Timer) {
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "loop");
   std::atomic_int counter1(0);
   std::atomic_int counter2(0);
@@ -677,7 +677,7 @@ TEST(Messaging, Timer) {
   ASSERT_EQ(counter2.load(), 2);
 }
 
-TEST(Messaging, InitializeFailure) {
+TEST_F(Messaging, InitializeFailure) {
   // Check that Initialize returns failure.
   MsgLoop loop1(env_, env_options_, 0, 1, info_log_, "loop1");
   ASSERT_OK(loop1.Initialize());
@@ -691,7 +691,7 @@ TEST(Messaging, InitializeFailure) {
   ASSERT_TRUE(!loop2.Initialize().ok());
 }
 
-TEST(Messaging, SocketDeath) {
+TEST_F(Messaging, SocketDeath) {
   // Tests that a client cannot unwillingly send messages on the same logical
   // stream, if the stream has broken during transmission.
   MsgLoop receiver_loop(env_, env_options_, 0, 1, info_log_, "receiver_loop");
@@ -763,7 +763,7 @@ TEST(Messaging, SocketDeath) {
   ASSERT_TRUE(checkpoint.TimedWait(timeout_));
 }
 
-TEST(Messaging, GatherTest) {
+TEST_F(Messaging, GatherTest) {
   MsgLoop loop(env_, env_options_, -1, 10, info_log_, "loop");
   ASSERT_OK(loop.Initialize());
   MsgLoopThread t1(env_, &loop, "loop");
@@ -782,7 +782,7 @@ TEST(Messaging, GatherTest) {
   ASSERT_EQ(n, 45); // 45 = 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9
 }
 
-TEST(Messaging, TimeoutTest) {
+TEST_F(Messaging, TimeoutTest) {
   // Initialize, but don't start loop.
   MsgLoop loop(env_, env_options_, -1, 4, info_log_, "loop");
   ASSERT_OK(loop.Initialize());
@@ -803,7 +803,7 @@ TEST(Messaging, TimeoutTest) {
   ASSERT_EQ(st.ToString(), "Timed out: Queue sizes = 1, 1, 2, 1");
 }
 
-TEST(Messaging, ConnectTimeout) {
+TEST_F(Messaging, ConnectTimeout) {
   MsgLoop::Options opts;
   opts.event_loop.connect_timeout = std::chrono::milliseconds(200);
   MsgLoop loop(env_, env_options_, -1, 1, info_log_, "loop", opts);
@@ -839,7 +839,7 @@ TEST(Messaging, ConnectTimeout) {
   ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.connect_timeout * 2));
 }
 
-TEST(Messaging, FlowControlOnDelivery) {
+TEST_F(Messaging, FlowControlOnDelivery) {
   MsgLoop::Options opts;
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "loop", opts);
   ASSERT_OK(loop.Initialize());
@@ -899,5 +899,5 @@ TEST(Messaging, FlowControlOnDelivery) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

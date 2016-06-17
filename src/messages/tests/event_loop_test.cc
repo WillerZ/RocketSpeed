@@ -21,11 +21,11 @@
 
 namespace rocketspeed {
 
-class EventLoopTest {
+class EventLoopTest : public ::testing::Test {
  public:
   EventLoopTest()
   : positive_timeout(1000), negative_timeout(100), env(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env, "EventLoopTest", &info_log));
+    EXPECT_OK(test::CreateLogger(env, "EventLoopTest", &info_log));
     options.info_log = info_log;
   }
 
@@ -51,7 +51,7 @@ class EventLoopTest {
   }
 };
 
-TEST(EventLoopTest, AddTask) {
+TEST_F(EventLoopTest, AddTask) {
   EventLoop loop(options, std::move(stream_allocator));
   EventLoop::Runner runner(&loop);
 
@@ -74,7 +74,7 @@ TEST(EventLoopTest, AddTask) {
   ASSERT_TRUE(done);
 }
 
-TEST(EventLoopTest, TriggerableEvent) {
+TEST_F(EventLoopTest, TriggerableEvent) {
   EventLoop loop(options, std::move(stream_allocator));
   EventLoop::Runner runner(&loop);
 
@@ -138,7 +138,7 @@ class TestSink : public Sink<T> {
  public:
   explicit TestSink(int initial_capacity)
   : write_ready_fd_(true, true), capacity_(initial_capacity) {
-    ASSERT_EQ(0, write_ready_fd_.status());
+    EXPECT_EQ(0, write_ready_fd_.status());
   }
 
   ~TestSink() { write_ready_fd_.closefd(); }
@@ -183,7 +183,7 @@ class TestSink : public Sink<T> {
   std::atomic<int> capacity_;
 };
 
-TEST(EventLoopTest, StreamsFlowControl) {
+TEST_F(EventLoopTest, StreamsFlowControl) {
 // This test is disabled on OSX.
 // On OSX we cannot control size of TCP send and receive buffers and they are
 // rather large. Consequently, we would have to write plenty of data to the
@@ -280,5 +280,5 @@ TEST(EventLoopTest, StreamsFlowControl) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

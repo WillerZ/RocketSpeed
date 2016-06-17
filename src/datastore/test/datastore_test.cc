@@ -23,12 +23,12 @@
 
 namespace rocketspeed {
 
-class DataStoreTest {
+class DataStoreTest : public ::testing::Test {
  public:
   // Create a new instance of the copilot
   DataStoreTest() : env_(Env::Default()) {
     // Create Logger
-    ASSERT_OK(test::CreateLogger(env_, "DataStoreTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "DataStoreTest", &info_log_));
   }
 
  protected:
@@ -51,7 +51,7 @@ class DataStoreTest {
   }
 };
 
-TEST(DataStoreTest, GetPut) {
+TEST_F(DataStoreTest, GetPut) {
   LocalTestCluster cluster(info_log_);
   ASSERT_OK(cluster.GetStatus());
 
@@ -91,7 +91,7 @@ TEST(DataStoreTest, GetPut) {
   ASSERT_TRUE(!handle->Put("_k1", "v1").ok());
 }
 
-TEST(DataStoreTest, Iteration) {
+TEST_F(DataStoreTest, Iteration) {
   LocalTestCluster cluster(info_log_);
   ASSERT_OK(cluster.GetStatus());
 
@@ -154,5 +154,5 @@ TEST(DataStoreTest, Iteration) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

@@ -49,6 +49,12 @@ else
 	PLATFORM_CCFLAGS += $(JEMALLOC_INCLUDE) -DHAVE_JEMALLOC
 endif
 
+# Setup gtest
+export GTEST_THROW_ON_FAILURE=1 GTEST_HAS_EXCEPTIONS=1
+GTEST_DIR = ./external/gtest-1.7.0/fused-src
+PLATFORM_CCFLAGS += -isystem $(GTEST_DIR)
+PLATFORM_CXXFLAGS += -isystem $(GTEST_DIR)
+
 # No warnings for C code. The only C code we use is from third-party libraries,
 # where we cannot address any warnings that arise.
 CFLAGS += -I. $(PLATFORM_CCFLAGS) $(OPT)
@@ -66,9 +72,10 @@ LIBOBJECTS += $(SOURCESC:.c=.o)
 
 LIBOBJECTS_NOVERSION = $(filter-out $(LIBBUILDVERSION),$(LIBOBJECTS))
 
+GTEST = $(GTEST_DIR)/gtest/gtest-all.o
 TESTUTIL = ./src/util/testutil.o
 TESTCLUSTER = ./src/test/test_cluster.o
-TESTHARNESS = ./src/util/testharness.o $(TESTUTIL) $(TESTCLUSTER)
+TESTHARNESS = ./src/util/testharness.o $(TESTUTIL) $(TESTCLUSTER) $(GTEST)
 BENCHHARNESS = ./src/util/benchharness.o
 VALGRIND_ERROR = 2
 VALGRIND_DIR = build_tools/VALGRIND_LOGS
@@ -141,6 +148,8 @@ endif  # PLATFORM_SHARED_EXT
 	release tags valgrind_check whitebox_crash_test format static_lib shared_lib all \
 	dbg
 
+.SECONDARY: $(GTEST)
+
 all: $(LIBRARY) $(PROGRAMS) $(TESTS) $(CLIENT_LIBRARY_STATIC)
 
 static_lib: $(LIBRARY)
@@ -184,17 +193,10 @@ rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCLUSTER)
 # run all unit tests
 check: $(TESTS)
 	@-\
-	rm -f test_times; \
 	for t in $(TESTS); do \
 		echo "***** Running $$t"; \
 		./$$t || exit 1; \
-	done; \
-	echo ""; \
-	echo "**** Total time (ms)"; \
-	cat test_times | awk '{s+=$$1} END {print s}'; \
-	echo ""; \
-	echo "**** Slowest tests (ms)"; \
-	cat test_times | sort -n -r | head -n10  # show 10 slowest tests
+	done;
 
 # test unexpected crashing of pilots, copilots and controltowers
 crash_test:
@@ -251,7 +253,6 @@ tags:
 format:
 	build_tools/format-diff.sh
 
-.PRECIOUS: %.test
 %.test: %.o $(LIBOBJECTS_NOVERSION) $(TESTHARNESS)
 	$(CXX) $< $(LIBOBJECTS_NOVERSION) $(TESTHARNESS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 

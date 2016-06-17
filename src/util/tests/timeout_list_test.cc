@@ -13,9 +13,9 @@
 
 namespace rocketspeed {
 
-class TimeoutListTest {};
+class TimeoutListTest : public ::testing::Test {};
 
-TEST(TimeoutListTest, Count) {
+TEST_F(TimeoutListTest, Count) {
   TimeoutList<std::string> tlist;
   tlist.Add("Red");
   tlist.Add("Green");
@@ -24,7 +24,7 @@ TEST(TimeoutListTest, Count) {
   ASSERT_EQ(tlist.Size(), 3);
 }
 
-TEST(TimeoutListTest, SimpleExpiry) {
+TEST_F(TimeoutListTest, SimpleExpiry) {
   TimeoutList<std::string> tlist;
   tlist.Add("Red");
   tlist.Add("Green");
@@ -38,7 +38,7 @@ TEST(TimeoutListTest, SimpleExpiry) {
   ASSERT_EQ(tlist.Size(), 0);
 }
 
-TEST(TimeoutListTest, UpdatedExpiry) {
+TEST_F(TimeoutListTest, UpdatedExpiry) {
   TimeoutList<std::string> tlist;
   tlist.Add("Red");
   tlist.Add("Green");
@@ -58,7 +58,7 @@ TEST(TimeoutListTest, UpdatedExpiry) {
   ASSERT_EQ(tlist.Size(), 1);
 }
 
-TEST(TimeoutListTest, CallbackExpiry) {
+TEST_F(TimeoutListTest, CallbackExpiry) {
   TimeoutList<std::string> tlist;
   tlist.Add("Red");
   tlist.Add("Green");
@@ -76,7 +76,7 @@ TEST(TimeoutListTest, CallbackExpiry) {
   ASSERT_EQ(tlist.Size(), 0);
 }
 
-TEST(TimeoutListTest, BatchLimitExpiry) {
+TEST_F(TimeoutListTest, BatchLimitExpiry) {
   TimeoutList<std::string> tlist;
   tlist.Add("Red");
   tlist.Add("Green");
@@ -97,5 +97,5 @@ TEST(TimeoutListTest, BatchLimitExpiry) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

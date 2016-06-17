@@ -7,9 +7,9 @@
 
 namespace rocketspeed {
 
-class LinkedMapTest {};
+class LinkedMapTest : public ::testing::Test {};
 
-TEST(LinkedMapTest, Constness) {  // Compile time test
+TEST_F(LinkedMapTest, Constness) {  // Compile time test
   const LinkedMap<std::string, std::string> linked_map;
   linked_map.begin();
   linked_map.cbegin();
@@ -62,7 +62,7 @@ struct EqualStub {
   }
 };
 
-TEST(LinkedMapTest, InsertNonCopyable) {  // Compile time test
+TEST_F(LinkedMapTest, InsertNonCopyable) {  // Compile time test
   using Type = NonCopyable;
   LinkedMap<Type, Type, HashStub, EqualStub> linked_map;
   linked_map.emplace(linked_map.begin(),
@@ -73,7 +73,7 @@ TEST(LinkedMapTest, InsertNonCopyable) {  // Compile time test
       std::piecewise_construct, std::tuple<>(), std::tuple<>());
 }
 
-TEST(LinkedMapTest, InsertMovable) {  // Compile time test
+TEST_F(LinkedMapTest, InsertMovable) {  // Compile time test
   using Type = Movable;
   LinkedMap<Type, Type, HashStub, EqualStub> linked_map;
   linked_map.insert(linked_map.begin(), std::make_pair(Type(), Type()));
@@ -89,7 +89,7 @@ TEST(LinkedMapTest, InsertMovable) {  // Compile time test
   linked_map.emplace_back(Type(), Type());
 }
 
-TEST(LinkedMapTest, InsertCopyable) {  // Compile time test
+TEST_F(LinkedMapTest, InsertCopyable) {  // Compile time test
   using Type = Copyable;
   LinkedMap<Type, Type, HashStub, EqualStub> linked_map;
   linked_map.insert(linked_map.begin(), std::make_pair(Type(), Type()));
@@ -106,7 +106,7 @@ TEST(LinkedMapTest, InsertCopyable) {  // Compile time test
 }
 
 
-TEST(LinkedMapTest, Emplace) {
+TEST_F(LinkedMapTest, Emplace) {
   LinkedMap<int, int> linked_map;
   using Value = std::pair<const int, int>;
   const Value value1(1, 2);
@@ -139,7 +139,7 @@ TEST(LinkedMapTest, Emplace) {
 }
 
 
-TEST(LinkedMapTest, Find) {
+TEST_F(LinkedMapTest, Find) {
   LinkedMap<int, int> linked_map;
   const auto& const_linked_map = linked_map;
   const auto it1 = linked_map.emplace_back(1, 2).first;
@@ -160,7 +160,7 @@ TEST(LinkedMapTest, Find) {
 }
 
 
-TEST(LinkedMapTest, Contains) {
+TEST_F(LinkedMapTest, Contains) {
   LinkedMap<int, int> linked_map;
   linked_map.emplace_back(1, 2);
   linked_map.emplace_back(2, 3);
@@ -173,7 +173,7 @@ TEST(LinkedMapTest, Contains) {
 }
 
 
-TEST(LinkedMapTest, Erase) {
+TEST_F(LinkedMapTest, Erase) {
   LinkedMap<int, int> linked_map;
   const auto it1 = linked_map.emplace_back(1, 2).first;
   const auto it2 = linked_map.emplace_back(2, 3).first;
@@ -206,7 +206,7 @@ TEST(LinkedMapTest, Erase) {
 }
 
 
-TEST(LinkedMapTest, Empty) {
+TEST_F(LinkedMapTest, Empty) {
   LinkedMap<int, int> linked_map;
   ASSERT_TRUE (linked_map.empty());
 
@@ -224,7 +224,7 @@ TEST(LinkedMapTest, Empty) {
 }
 
 
-TEST(LinkedMapTest, Size) {
+TEST_F(LinkedMapTest, Size) {
   LinkedMap<int, int> linked_map;
   ASSERT_EQ (linked_map.size(), 0);
 
@@ -242,7 +242,7 @@ TEST(LinkedMapTest, Size) {
 }
 
 
-TEST(LinkedMapTest, Front) {
+TEST_F(LinkedMapTest, Front) {
   LinkedMap<int, int> linked_map;
   const auto& const_linked_map = linked_map;
 
@@ -264,7 +264,7 @@ TEST(LinkedMapTest, Front) {
 }
 
 
-TEST(LinkedMapTest, Back) {
+TEST_F(LinkedMapTest, Back) {
   LinkedMap<int, int> linked_map;
   const auto& const_linked_map = linked_map;
 
@@ -286,7 +286,7 @@ TEST(LinkedMapTest, Back) {
 }
 
 
-TEST(LinkedMapTest, MoveTo) {
+TEST_F(LinkedMapTest, MoveTo) {
   LinkedMap<int, int> linked_map;
   using Value = std::pair<const int, int>;
 
@@ -334,4 +334,4 @@ TEST(LinkedMapTest, MoveTo) {
 } // namespace rocketspeed
 
 
-int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(); }
+int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(argc, argv); }

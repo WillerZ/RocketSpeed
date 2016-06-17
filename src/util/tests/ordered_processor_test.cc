@@ -16,18 +16,18 @@
 
 namespace rocketspeed {
 
-class OrderedProcessorTest {
+class OrderedProcessorTest : public ::testing::Test {
  public:
   OrderedProcessorTest() {
     env_ = Env::Default();
-    ASSERT_OK(test::CreateLogger(env_, "OrderedProcessorTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "OrderedProcessorTest", &info_log_));
   }
 
   Env* env_;
   std::shared_ptr<Logger> info_log_;
 };
 
-TEST(OrderedProcessorTest, Basic) {
+TEST_F(OrderedProcessorTest, Basic) {
   typedef std::vector<int> Ints;
   Ints processed;
   OrderedProcessor<int> p(
@@ -75,7 +75,7 @@ TEST(OrderedProcessorTest, Basic) {
   ASSERT_TRUE(p.Process(666, 103).IsNoBuffer());  // not enough buffer space
 }
 
-TEST(OrderedProcessorTest, Randomized) {
+TEST_F(OrderedProcessorTest, Randomized) {
   const int n = 1000;
   std::vector<int> processed;
   OrderedProcessor<int> p(
@@ -97,7 +97,7 @@ TEST(OrderedProcessorTest, Randomized) {
   }
 }
 
-TEST(OrderedProcessorTest, LossyRandomized) {
+TEST_F(OrderedProcessorTest, LossyRandomized) {
   const int n = 1000;
   const int buffer = 50;
 
@@ -150,7 +150,7 @@ TEST(OrderedProcessorTest, LossyRandomized) {
   }
 }
 
-TEST(OrderedProcessorTest, LossyBasic) {
+TEST_F(OrderedProcessorTest, LossyBasic) {
     typedef std::vector<int> Ints;
   Ints processed;
   OrderedProcessor<int> p(
@@ -186,5 +186,5 @@ TEST(OrderedProcessorTest, LossyBasic) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

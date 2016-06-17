@@ -29,7 +29,7 @@ static int DecodeValue(void* v) {
   return static_cast<int>(reinterpret_cast<uintptr_t>(v));
 }
 
-class CacheTest {
+class CacheTest : public ::testing::Test {
  public:
   static CacheTest* current_;
 
@@ -104,7 +104,7 @@ namespace {
 void dumbDeleter(const Slice& key, void* value) { }
 }  // namespace
 
-TEST(CacheTest, UsageTest) {
+TEST_F(CacheTest, UsageTest) {
   // cache is shared_ptr and will be automatically cleaned up.
   const uint64_t kCapacity = 100000;
   auto cache = NewLRUCache(kCapacity);
@@ -135,7 +135,7 @@ TEST(CacheTest, UsageTest) {
   ASSERT_LT(kCapacity * 0.95, cache->GetUsage());
 }
 
-TEST(CacheTest, PinnedUsageTest) {
+TEST_F(CacheTest, PinnedUsageTest) {
   // cache is shared_ptr and will be automatically cleaned up.
   const uint64_t kCapacity = 100000;
   auto cache = NewLRUCache(kCapacity);
@@ -185,7 +185,7 @@ TEST(CacheTest, PinnedUsageTest) {
   }
 }
 
-TEST(CacheTest, HitAndMiss) {
+TEST_F(CacheTest, HitAndMiss) {
   ASSERT_EQ(-1, Lookup(100));
 
   Insert(100, 101);
@@ -208,7 +208,7 @@ TEST(CacheTest, HitAndMiss) {
   ASSERT_EQ(101, deleted_values_[0]);
 }
 
-TEST(CacheTest, Erase) {
+TEST_F(CacheTest, Erase) {
   Erase(200);
   ASSERT_EQ(0U, deleted_keys_.size());
 
@@ -227,7 +227,7 @@ TEST(CacheTest, Erase) {
   ASSERT_EQ(1U, deleted_keys_.size());
 }
 
-TEST(CacheTest, EntriesArePinned) {
+TEST_F(CacheTest, EntriesArePinned) {
   Insert(100, 101);
   Cache::Handle* h1 = cache_->Lookup(EncodeKey(100));
   ASSERT_EQ(101, DecodeValue(cache_->Value(h1)));
@@ -257,7 +257,7 @@ TEST(CacheTest, EntriesArePinned) {
   ASSERT_EQ(0U, cache_->GetUsage());
 }
 
-TEST(CacheTest, EvictionPolicy) {
+TEST_F(CacheTest, EvictionPolicy) {
   Insert(100, 101);
   Insert(200, 201);
 
@@ -271,7 +271,7 @@ TEST(CacheTest, EvictionPolicy) {
   ASSERT_EQ(-1, Lookup(200));
 }
 
-TEST(CacheTest, EvictionPolicyRef) {
+TEST_F(CacheTest, EvictionPolicyRef) {
   Insert(100, 101);
   Insert(101, 102);
   Insert(102, 103);
@@ -319,7 +319,7 @@ TEST(CacheTest, EvictionPolicyRef) {
   cache_->Release(h204);
 }
 
-TEST(CacheTest, ErasedHandleState) {
+TEST_F(CacheTest, ErasedHandleState) {
   // insert a key and get two handles
   Insert(100, 1000);
   Cache::Handle* h1 = cache_->Lookup(EncodeKey(100));
@@ -341,7 +341,7 @@ TEST(CacheTest, ErasedHandleState) {
   cache_->Release(h2);
 }
 
-TEST(CacheTest, HeavyEntries) {
+TEST_F(CacheTest, HeavyEntries) {
   // Add a bunch of light and heavy entries and then count the combined
   // size of items still in the cache, which must be approximately the
   // same as the total capacity.
@@ -383,7 +383,7 @@ void deleter(const Slice& key, void* value) {
 }
 }  // namespace
 
-TEST(CacheTest, SetCapacity) {
+TEST_F(CacheTest, SetCapacity) {
   // test1: increase capacity
   // lets create a cache with capacity 5,
   // then, insert 5 elements, then increase capacity
@@ -426,7 +426,7 @@ TEST(CacheTest, SetCapacity) {
   }
 }
 
-TEST(CacheTest, OverCapacity) {
+TEST_F(CacheTest, OverCapacity) {
   size_t n = 10;
 
   // a LRUCache with n entries and one shard only
@@ -479,7 +479,7 @@ void callback(void* entry, size_t charge) {
 }
 };
 
-TEST(CacheTest, ApplyToAllCacheEntiresTest) {
+TEST_F(CacheTest, ApplyToAllCacheEntiresTest) {
   std::vector<std::pair<int, int>> inserted;
   callback_state.clear();
 
@@ -497,5 +497,5 @@ TEST(CacheTest, ApplyToAllCacheEntiresTest) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

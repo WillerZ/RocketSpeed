@@ -18,7 +18,7 @@
 
 namespace rocketspeed {
 
-class CommandQueueTest {
+class CommandQueueTest : public ::testing::Test {
  public:
   CommandQueueTest() : timeout_(std::chrono::seconds(5)) {}
 
@@ -27,7 +27,7 @@ class CommandQueueTest {
   StreamAllocator stream_allocator_;
 };
 
-TEST(CommandQueueTest, Liveness) {
+TEST_F(CommandQueueTest, Liveness) {
   EventLoop loop(EventLoop::Options(), std::move(stream_allocator_));
   EventLoop::Runner runner(&loop);
   ASSERT_OK(runner.GetStatus());
@@ -77,7 +77,7 @@ TEST(CommandQueueTest, Liveness) {
   ASSERT_TRUE(sem2.TimedWait(timeout_));
 }
 
-TEST(CommandQueueTest, TwoItemsTwoBatches) {
+TEST_F(CommandQueueTest, TwoItemsTwoBatches) {
   EventLoop loop(EventLoop::Options(), std::move(stream_allocator_));
   ASSERT_OK(loop.Initialize());
 
@@ -108,7 +108,7 @@ TEST(CommandQueueTest, TwoItemsTwoBatches) {
 }
 
 
-TEST(CommandQueueTest, WriteHistogram) {
+TEST_F(CommandQueueTest, WriteHistogram) {
   EventLoop loop(EventLoop::Options(), std::move(stream_allocator_));
   EventLoop::Runner runner(&loop);
   ASSERT_OK(runner.GetStatus());
@@ -139,5 +139,5 @@ TEST(CommandQueueTest, WriteHistogram) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

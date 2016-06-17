@@ -20,11 +20,11 @@
 
 namespace rocketspeed {
 
-class RocketeerTest {
+class RocketeerTest : public ::testing::Test {
  public:
   RocketeerTest()
   : positive_timeout(1000), negative_timeout(100), env_(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env_, "RocketeerTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "RocketeerTest", &info_log_));
     RocketeerOptions options;
     options.info_log = info_log_;
     options.env = env_;
@@ -75,9 +75,9 @@ class RocketeerTest {
     std::unique_ptr<MsgLoop> client(
         new MsgLoop(env_, EnvOptions(), 0, 1, info_log_, "client"));
     client->RegisterCallbacks(callbacks);
-    ASSERT_OK(client->Initialize());
+    EXPECT_OK(client->Initialize());
     std::thread thread([&]() { client->Run(); });
-    ASSERT_OK(client->WaitUntilRunning());
+    EXPECT_OK(client->WaitUntilRunning());
     return ClientMock(std::move(client), std::move(thread));
   }
 };
@@ -102,7 +102,7 @@ struct SubscribeUnsubscribe : public Rocketeer {
   }
 };
 
-TEST(RocketeerTest, SubscribeUnsubscribe) {
+TEST_F(RocketeerTest, SubscribeUnsubscribe) {
   SubscribeUnsubscribe rocketeer;
   server_->Register(&rocketeer);
   ASSERT_OK(server_->Start());
@@ -153,7 +153,7 @@ struct SubscribeTerminate : public Rocketeer {
   }
 };
 
-TEST(RocketeerTest, SubscribeTerminate) {
+TEST_F(RocketeerTest, SubscribeTerminate) {
   SubscribeTerminate rocketeer;
   server_->Register(&rocketeer);
   ASSERT_OK(server_->Start());
@@ -233,7 +233,7 @@ struct TopOfStack : public Rocketeer {
   }
 };
 
-TEST(RocketeerTest, StackRocketeerTest) {
+TEST_F(RocketeerTest, StackRocketeerTest) {
   TopOfStack topRocketeer;
   Noop* rocketeer = new Noop(new Noop(new Noop(&topRocketeer)));
   server_->Register(rocketeer);
@@ -306,5 +306,5 @@ TEST(RocketeerTest, StackRocketeerTest) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

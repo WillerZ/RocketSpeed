@@ -23,6 +23,10 @@ cpp_library(
         '@/rocketspeed/github/src/util:util',
         '@/rocketspeed/github/src/util/common:common',
     ],
+    external_deps = [
+        'gtest',
+        ('sparsehash', None),
+    ],
 )
 
 cpp_unittest(
@@ -39,14 +43,12 @@ cpp_unittest(
         ':client',
         '@/rocketspeed/github/src/messages:messages',
         '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:test',
         '@/rocketspeed/github/src/util:util',
         '@/rocketspeed/github/src/util/common:common',
     ],
-    tags = [
-        'serialize',
-        'serialize_test_cases',
-        'unmanaged_test_cases',
-        'multiple-results',
+    external_deps = [
+        'gtest',
     ],
 )
 
@@ -63,13 +65,11 @@ cpp_unittest(
     deps = [
         ':client',
         '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:test',
         '@/rocketspeed/github/src/util:util',
         '@/rocketspeed/github/src/util/common:common',
     ],
-    tags = [
-        'serialize',
-        'serialize_test_cases',
-        'unmanaged_test_cases',
-        'multiple-results',
+    external_deps = [
+        'gtest',
     ],
 )

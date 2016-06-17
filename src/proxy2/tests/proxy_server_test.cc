@@ -148,13 +148,13 @@ class MessageBus : public StreamReceiver {
       thread_check_.Check();
       done.Post();
     });
-    ASSERT_TRUE(done.TimedWait(kPositiveTimeout));
+    EXPECT_TRUE(done.TimedWait(kPositiveTimeout));
   }
 
   ~MessageBus() {
     Wait([&]() { streams_.clear(); });
     // Relatively quick sanity check that we didn't miss any message.
-    ASSERT_TRUE(NotReceived());
+    EXPECT_TRUE(NotReceived());
   }
 
   const HostId& GetHost() const { return loop_->GetHostId(); }
@@ -279,14 +279,14 @@ class MessageBus : public StreamReceiver {
   }
 };
 
-class ProxyServerTest {
+class ProxyServerTest : public ::testing::Test {
  public:
   Env* const env;
   std::shared_ptr<Logger> info_log;
   EventLoop::Options loop_options;
 
   ProxyServerTest() : env(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env, "ProxyServerTest", &info_log));
+    EXPECT_OK(test::CreateLogger(env, "ProxyServerTest", &info_log));
     loop_options.info_log = info_log;
     loop_options.listener_port = 0;
   }
@@ -294,7 +294,7 @@ class ProxyServerTest {
   ~ProxyServerTest() { env->WaitForJoin(); }
 };
 
-TEST(ProxyServerTest, Forwarding) {
+TEST_F(ProxyServerTest, Forwarding) {
   // Create routing and hot topics detection strategies for the proxy.
   auto routing = std::make_shared<MockSharding>();
   auto hot_topics = std::make_shared<MockDetector>();
@@ -424,7 +424,7 @@ TEST(ProxyServerTest, Forwarding) {
   }
 }
 
-TEST(ProxyServerTest, NoRoute) {
+TEST_F(ProxyServerTest, NoRoute) {
   // Create routing and hot topics detection strategies for the proxy.
   // We do not provide route for any shard.
   auto routing = std::make_shared<MockSharding>();
@@ -453,8 +453,8 @@ TEST(ProxyServerTest, NoRoute) {
   // We should immediately see a MessageGoodbye, as the original message sent to
   // the proxy cannot be routed.
   auto received = client.Receive();
-  ASSERT_TRUE(received.message);
-  ASSERT_EQ(client_stream, received.stream_id);
+  EXPECT_TRUE(received.message);
+  EXPECT_EQ(client_stream, received.stream_id);
   ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
 }
 
@@ -478,16 +478,16 @@ class SequenceVerifier {
   SequenceVerifier(SequenceVerifier&&) = default;
   SequenceVerifier& operator=(SequenceVerifier&&) = default;
 
-  ~SequenceVerifier() { ASSERT_TRUE(sequence_.empty()); }
+  ~SequenceVerifier() { EXPECT_TRUE(sequence_.empty()); }
 
   bool Call(Slice contents,
             SequenceNumber prev_seqno,
             SequenceNumber current_seqno) {
-    ASSERT_TRUE(!sequence_.empty());
+    EXPECT_TRUE(!sequence_.empty());
     auto& expected = sequence_.front();
-    ASSERT_EQ(expected.contents, contents);
-    ASSERT_EQ(expected.prev_seqno, prev_seqno);
-    ASSERT_EQ(expected.current_seqno, current_seqno);
+    EXPECT_EQ(expected.contents, contents);
+    EXPECT_EQ(expected.prev_seqno, prev_seqno);
+    EXPECT_EQ(expected.current_seqno, current_seqno);
     sequence_.pop_front();
     return true;
   }
@@ -522,7 +522,7 @@ class SequencePreparer {
 
 }  // namespace
 
-TEST(ProxyServerTest, DefaultAccumulator) {
+TEST_F(ProxyServerTest, DefaultAccumulator) {
   using Action = UpdatesAccumulator::Action;
   auto acc = UpdatesAccumulator::CreateDefault(2 /* count_limit */);
 
@@ -556,7 +556,7 @@ TEST(ProxyServerTest, DefaultAccumulator) {
   ASSERT_EQ(106, acc->BootstrapSubscription(0, seq()));
 }
 
-TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
+TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   const size_t shard = 1;
   // Create routing and hot topics detection strategies for the proxy.
   auto routing = std::make_shared<MockSharding>();
@@ -606,14 +606,14 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   };
   auto receive_subscribe = [&](uint64_t expected_sub_id = 0) {
     auto received = server->Receive();
-    ASSERT_TRUE(received.message);
+    EXPECT_TRUE(received.message);
     server_stream = received.stream_id;
     auto message = received.message.get();
-    ASSERT_EQ(MessageType::mSubscribe, message->GetMessageType());
+    EXPECT_EQ(MessageType::mSubscribe, message->GetMessageType());
     SubscriptionID sub_id = static_cast<MessageSubscribe*>(message)->GetSubID();
-    ASSERT_TRUE(sub_id);
+    EXPECT_TRUE(sub_id);
     if (expected_sub_id) {
-      ASSERT_EQ(expected_sub_id, sub_id);
+      EXPECT_EQ(expected_sub_id, sub_id);
     }
     return sub_id;
   };
@@ -716,7 +716,7 @@ TEST(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   ASSERT_EQ(MessageType::mGoodbye, received.message->GetMessageType());
 }
 
-TEST(ProxyServerTest, ForwardingAndMultiplexing) {
+TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
   const size_t shard = 1;
   // Create routing and hot topics detection strategies for the proxy.
   auto routing = std::make_shared<MockSharding>();
@@ -851,5 +851,5 @@ TEST(ProxyServerTest, ForwardingAndMultiplexing) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <gflags/gflags.h>
 
 #include "include/Env.h"
 #include "src/port/stack_trace.h"
@@ -21,97 +22,18 @@
 namespace rocketspeed {
 namespace test {
 
-namespace {
-struct Test {
-  const char* base;
-  const char* name;
-  void (*func)();
-};
-std::vector<Test>* tests;
-}
-
-bool RegisterTest(const char* base, const char* name, void (*func)()) {
-  if (tests == nullptr) {
-    tests = new std::vector<Test>;
+::testing::AssertionResult AssertStatus(const char* s_expr, const Status& s) {
+  if (s.ok()) {
+    return ::testing::AssertionSuccess();
+  } else {
+    return ::testing::AssertionFailure() << s_expr << std::endl << s.ToString();
   }
-  Test t;
-  t.base = base;
-  t.name = name;
-  t.func = func;
-  tests->push_back(t);
-  return true;
-}
-
-int RunAllTests() {
-  rocketspeed::Env::InstallSignalHandlers();
-  Env* env = Env::Default();
-
-  std::string test_dir;
-  Status st = env->GetTestDirectory(&test_dir);
-  if (!st.ok()) {
-    fprintf(stderr, "Failed to GetTestDirectory: %s\n", st.ToString().c_str());
-    return 1;
-  }
-  std::string lock_filename = test_dir + "/test_serialize_lock";
-
-  // Grab file lock
-  // This serializes tests that are run in parallel.
-  ScopedFileLock file_lock(env, lock_filename, true);
-
-  const char* matcher = getenv("ROCKETSPEED_TESTS");
-
-  using clock = std::chrono::steady_clock;
-
-  int num = 0;
-  if (tests != nullptr) {
-#ifdef OUTPUT_TEST_TIMES
-    FILE* times_file = fopen("test_times", "a");
-#else
-    FILE* times_file = nullptr;
-#endif
-    for (unsigned int i = 0; i < tests->size(); i++) {
-      const Test& t = (*tests)[i];
-      if (matcher != nullptr) {
-        std::string name = t.base;
-        name.push_back('.');
-        name.append(t.name);
-        if (strstr(name.c_str(), matcher) == nullptr) {
-          continue;
-        }
-      }
-      fprintf(stderr, "==== Test %s.%s\n", t.base, t.name);
-      auto start = clock::now();
-      try {
-        (*t.func)();
-      } catch(...) {
-        if (times_file) {
-          fclose(times_file);
-        }
-        return 1;
-      }
-      auto end = clock::now();
-      if (times_file) {
-        fprintf(times_file, "%-7" PRIu64 " %s.%s\n",
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                  end - start).count(),
-                t.base, t.name);
-      }
-      ++num;
-    }
-    if (times_file) {
-      fclose(times_file);
-    }
-    delete tests;
-    tests = nullptr;
-  }
-  fprintf(stderr, "==== PASSED %d tests\n", num);
-  return 0;
 }
 
 std::string TmpDir() {
   std::string dir;
   Status s = Env::Default()->GetTestDirectory(&dir);
-  ASSERT_OK(s);
+  [&]() { ASSERT_OK(s); }();
   return dir;
 }
 
@@ -134,6 +56,12 @@ int RandomSeed() {
     result = 301;
   }
   return result;
+}
+
+int RunAllTests(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  google::ParseCommandLineFlags(&argc, &argv, true);
+  return RUN_ALL_TESTS();
 }
 
 }  // namespace test

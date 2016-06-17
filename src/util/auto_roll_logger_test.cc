@@ -16,7 +16,7 @@
 
 namespace rocketspeed {
 
-class AutoRollLoggerTest {
+class AutoRollLoggerTest : public ::testing::Test {
  public:
   static void InitTestDb() {
     std::string deleteCmd = "rm -rf " + kTestDir;
@@ -85,7 +85,7 @@ void AutoRollLoggerTest::RollLogFileBySizeTest(AutoRollLogger* logger,
   while (current_log_size + message_size < log_max_size) {
     LogMessage(logger, log_message.c_str());
     current_log_size += message_size;
-    ASSERT_EQ(current_log_size, logger->GetLogFileSize());
+    EXPECT_EQ(current_log_size, logger->GetLogFileSize());
   }
 
   // Now the log file will be rolled
@@ -102,7 +102,7 @@ uint64_t AutoRollLoggerTest::RollLogFileByTimeTest(
   uint64_t expected_create_time;
   uint64_t actual_create_time;
   uint64_t total_log_size;
-  ASSERT_OK(env->GetFileSize(kLogFile, &total_log_size));
+  EXPECT_OK(env->GetFileSize(kLogFile, &total_log_size));
   GetFileCreateTime(kLogFile, &expected_create_time);
   logger->SetCallNowMicrosEveryNRecords(0);
 
@@ -110,14 +110,14 @@ uint64_t AutoRollLoggerTest::RollLogFileByTimeTest(
   // to be finished before time.
   for (int i = 0; i < 10; ++i) {
      LogMessage(logger, log_message.c_str());
-     ASSERT_OK(logger->GetStatus());
+     EXPECT_OK(logger->GetStatus());
      // Make sure we always write to the same log file (by
      // checking the create time);
      GetFileCreateTime(kLogFile, &actual_create_time);
 
      // Also make sure the log size is increasing.
-     ASSERT_EQ(expected_create_time, actual_create_time);
-     ASSERT_GT(logger->GetLogFileSize(), total_log_size);
+     EXPECT_EQ(expected_create_time, actual_create_time);
+     EXPECT_GT(logger->GetLogFileSize(), total_log_size);
      total_log_size = logger->GetLogFileSize();
   }
 
@@ -127,14 +127,14 @@ uint64_t AutoRollLoggerTest::RollLogFileByTimeTest(
 
   // At this time, the new log file should be created.
   GetFileCreateTime(kLogFile, &actual_create_time);
-  ASSERT_GT(actual_create_time, expected_create_time);
-  ASSERT_LT(logger->GetLogFileSize(), total_log_size);
+  EXPECT_GT(actual_create_time, expected_create_time);
+  EXPECT_LT(logger->GetLogFileSize(), total_log_size);
   expected_create_time = actual_create_time;
 
   return expected_create_time;
 }
 
-TEST(AutoRollLoggerTest, RollLogFileBySize) {
+TEST_F(AutoRollLoggerTest, RollLogFileBySize) {
     InitTestDb();
     size_t log_max_size = 1024 * 5;
 
@@ -144,7 +144,7 @@ TEST(AutoRollLoggerTest, RollLogFileBySize) {
                           kSampleMessage + ":RollLogFileBySize");
 }
 
-TEST(AutoRollLoggerTest, RollLogFileByTime) {
+TEST_F(AutoRollLoggerTest, RollLogFileByTime) {
     size_t time = 1;
     size_t log_size = 1024 * 5;
 
@@ -157,7 +157,7 @@ TEST(AutoRollLoggerTest, RollLogFileByTime) {
     RollLogFileByTimeTest(&logger, time, kSampleMessage + ":RollLogFileByTime");
 }
 
-TEST(AutoRollLoggerTest,
+TEST_F(AutoRollLoggerTest,
      OpenLogFilesMultipleTimesWithOptionLog_max_size) {
   // If only 'log_max_size' options is specified, then every time
   // when rocketspeed is restarted, a new empty log file will be created.
@@ -183,7 +183,7 @@ TEST(AutoRollLoggerTest,
   delete logger;
 }
 
-TEST(AutoRollLoggerTest, CompositeRollByTimeAndSizeLogger) {
+TEST_F(AutoRollLoggerTest, CompositeRollByTimeAndSizeLogger) {
   size_t time = 1, log_max_size = 1024 * 5;
 
   InitTestDb();
@@ -200,7 +200,7 @@ TEST(AutoRollLoggerTest, CompositeRollByTimeAndSizeLogger) {
       kSampleMessage + ":CompositeRollByTimeAndSizeLogger");
 }
 
-TEST(AutoRollLoggerTest, CreateLoggerFromOptions) {
+TEST_F(AutoRollLoggerTest, CreateLoggerFromOptions) {
   InitTestDb();
   shared_ptr<Logger> logger;
 
@@ -247,7 +247,7 @@ TEST(AutoRollLoggerTest, CreateLoggerFromOptions) {
       kSampleMessage + ":CreateLoggerFromOptions - both");
 }
 
-TEST(AutoRollLoggerTest, InfoLogLevel) {
+TEST_F(AutoRollLoggerTest, InfoLogLevel) {
   InitTestDb();
 
   size_t log_size = 8192;
@@ -290,5 +290,5 @@ TEST(AutoRollLoggerTest, InfoLogLevel) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

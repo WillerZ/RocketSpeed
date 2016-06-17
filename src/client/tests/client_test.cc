@@ -98,7 +98,7 @@ class MockShardingStrategy : public ShardingStrategy {
   }
 
   std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-    ASSERT_EQ(shard, 0);
+    EXPECT_EQ(shard, 0);
     return std::unique_ptr<SubscriptionRouter>(
         new MockSubscriptionRouter(config_));
   }
@@ -197,7 +197,7 @@ static std::unique_ptr<ShardingStrategy> MakeShardingStrategyFromConfig(
   return folly::make_unique<MockShardingStrategy>(config);
 }
 
-class ClientTest {
+class ClientTest : public ::testing::Test {
  public:
   ClientTest()
   : positive_timeout(1000)
@@ -205,7 +205,7 @@ class ClientTest {
   , env_(Env::Default())
   , config_(std::make_shared<MockPublisherRouter>())
   , next_server_port_(5450) {
-    ASSERT_OK(test::CreateLogger(env_, "ClientTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "ClientTest", &info_log_));
   }
 
   virtual ~ClientTest() { env_->WaitForJoin(); }
@@ -250,9 +250,9 @@ class ClientTest {
     std::unique_ptr<MsgLoop> server(new MsgLoop(
         env_, EnvOptions(), next_server_port_++, 1, info_log_, "server"));
     server->RegisterCallbacks(callbacks);
-    ASSERT_OK(server->Initialize());
+    EXPECT_OK(server->Initialize());
     std::thread thread([&]() { server->Run(); });
-    ASSERT_OK(server->WaitUntilRunning());
+    EXPECT_OK(server->WaitUntilRunning());
     // Set pilot/copilot address in the configuration.
     config_->SetCopilot(server->GetHostId());
     config_->SetPilot(server->GetHostId());
@@ -270,12 +270,12 @@ class ClientTest {
       options.sharding = MakeShardingStrategyFromConfig(config_);
     }
     std::unique_ptr<Client> client;
-    ASSERT_OK(Client::Create(std::move(options), &client));
+    EXPECT_OK(Client::Create(std::move(options), &client));
     return client;
   }
 };
 
-TEST(ClientTest, BackOff) {
+TEST_F(ClientTest, BackOff) {
   const size_t num_attempts = 4;
   std::vector<TestClock::duration> subscribe_attempts;
   port::Semaphore subscribe_sem;
@@ -326,7 +326,7 @@ TEST(ClientTest, BackOff) {
   }
 }
 
-TEST(ClientTest, RandomizedTruncatedExponential) {
+TEST_F(ClientTest, RandomizedTruncatedExponential) {
   std::chrono::seconds value(1), limit(30);
   auto backoff =
       std::bind(backoff::RandomizedTruncatedExponential(value, limit, 2.0, 0.0),
@@ -355,7 +355,7 @@ TEST(ClientTest, RandomizedTruncatedExponential) {
 #undef ASSERT_EQD
 }
 
-TEST(ClientTest, GetCopilotFailure) {
+TEST_F(ClientTest, GetCopilotFailure) {
   port::Semaphore subscribe_sem;
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
@@ -394,7 +394,7 @@ TEST(ClientTest, GetCopilotFailure) {
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
 }
 
-TEST(ClientTest, OfflineOperations) {
+TEST_F(ClientTest, OfflineOperations) {
   std::unordered_map<Topic, std::pair<SequenceNumber, SubscriptionHandle>>
       subscriptions;
   port::Semaphore unsubscribe_sem, all_ok_sem;
@@ -464,7 +464,7 @@ TEST(ClientTest, OfflineOperations) {
   ASSERT_TRUE(all_ok_sem.TimedWait(positive_timeout));
 }
 
-TEST(ClientTest, CopilotSwap) {
+TEST_F(ClientTest, CopilotSwap) {
   port::Semaphore subscribe_sem1, subscribe_sem2;
   auto copilot1 = MockServer(
       {{MessageType::mSubscribe,
@@ -483,7 +483,7 @@ TEST(ClientTest, CopilotSwap) {
 
   // Subscribe, call should make it to the copilot.
   client->Subscribe(GuestTenant, GuestNamespace, "CopilotSwap", 0);
-  ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
+  EXPECT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
 
   // Launch another copilot, this will automatically update configuration.
   auto copilot2 = MockServer(
@@ -494,7 +494,7 @@ TEST(ClientTest, CopilotSwap) {
   ASSERT_TRUE(subscribe_sem2.TimedWait(positive_timeout));
 }
 
-TEST(ClientTest, NoPilot) {
+TEST_F(ClientTest, NoPilot) {
   port::Semaphore publish_sem;
   auto client = CreateClient(ClientOptions());
 
@@ -512,7 +512,7 @@ TEST(ClientTest, NoPilot) {
   ASSERT_TRUE(publish_sem.TimedWait(negative_timeout));
 }
 
-TEST(ClientTest, PublishTimeout) {
+TEST_F(ClientTest, PublishTimeout) {
   port::Semaphore publish_sem;
   auto pilot = MockServer(
       {{MessageType::mPublish,
@@ -566,13 +566,13 @@ class TestSharding2 : public ShardingStrategy {
     } else if (topic_name == "topic1") {
       return 1;
     } else {
-      ASSERT_TRUE(false);
+      EXPECT_TRUE(false);
     }
     return 0;
   }
 
   std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-    ASSERT_LT(shard, 2);
+    EXPECT_LT(shard, 2);
     return std::unique_ptr<SubscriptionRouter>(
         new ConstRouter(shard == 0 ? host0_ : host1_));
   }
@@ -583,7 +583,7 @@ class TestSharding2 : public ShardingStrategy {
 
 }  // namespace
 
-TEST(ClientTest, Sharding) {
+TEST_F(ClientTest, Sharding) {
   port::Semaphore subscribe_sem0, subscribe_sem1;
   // Launch two subscribees for different shards.
   auto copilot0 = MockServer(
@@ -604,7 +604,7 @@ TEST(ClientTest, Sharding) {
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
   options.thread_selector = [](size_t num_threads, Slice, Slice) -> size_t {
-    ASSERT_EQ(num_threads, 1);
+    EXPECT_EQ(num_threads, 1);
     return 0;
   };
   options.sharding.reset(new TestSharding2(copilot0.msg_loop->GetHostId(),
@@ -625,7 +625,7 @@ TEST(ClientTest, Sharding) {
   ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
 }
 
-TEST(ClientTest, ClientSubscriptionLimit) {
+TEST_F(ClientTest, ClientSubscriptionLimit) {
   size_t kMaxSubscriptions = 1000;
   size_t kSubscriptions = 100000;
 
@@ -674,7 +674,7 @@ TEST(ClientTest, ClientSubscriptionLimit) {
   }
 }
 
-TEST(ClientTest, CachedConnectionsWithoutStreams) {
+TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
   port::Semaphore subscribe_sem, unsubscribe_sem, global_sem;
   const int kTopics = 100;
   const int kIterations = 2;
@@ -751,7 +751,7 @@ TEST(ClientTest, CachedConnectionsWithoutStreams) {
   ASSERT_EQ(server_connections, 0);
 }
 
-TEST(ClientTest, TailCollapsingSubscriber) {
+TEST_F(ClientTest, TailCollapsingSubscriber) {
   std::string topic0("TailCollapsingSubscriber0"),
       topic1("TailCollapsingSubscriber1");
   port::Semaphore subscribe_sem, unsubscribe_sem;
@@ -905,7 +905,7 @@ static void RunDemultiplexTest(
   ASSERT_EQ(MockObserver::active_count_, 0);
 }
 
-TEST(ClientTest, TailCollapsingSubscriberDemultiplex) {
+TEST_F(ClientTest, TailCollapsingSubscriberDemultiplex) {
   // Set up a basic subscriber for the TailCollapsingSubscriber to wrap
   MockSubscriber *base_subscriber = new MockSubscriber;
   std::unique_ptr<TailCollapsingSubscriber> subscriber(
@@ -918,7 +918,7 @@ TEST(ClientTest, TailCollapsingSubscriberDemultiplex) {
   RunDemultiplexTest(subscriber, base_subscriber);
 }
 
-TEST(ClientTest, TopicToSubscriptionMap) {
+TEST_F(ClientTest, TopicToSubscriptionMap) {
   std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionState>>
       subscriptions;
   TenantAndNamespaceFactory factory;
@@ -982,7 +982,7 @@ TEST(ClientTest, TopicToSubscriptionMap) {
   }
 }
 
-TEST(ClientTest, ExportStatistics) {
+TEST_F(ClientTest, ExportStatistics) {
   // Create client, subscribe to a bunch of topics, and sanity check that
   // some statistics exist and have sensible values. Subscribe to 10k topics
   // to get variety in percentiles.
@@ -1024,7 +1024,7 @@ TEST(ClientTest, ExportStatistics) {
   ASSERT_GT(p999, p99);
 }
 
-TEST(ClientTest, FailedSubscriptionObserver) {
+TEST_F(ClientTest, FailedSubscriptionObserver) {
   // Fail a Subscribe call and ensure observer is preserved.
   // Keep subscribing until at least one fails due to flow control.
   ClientOptions options;
@@ -1049,5 +1049,5 @@ TEST(ClientTest, FailedSubscriptionObserver) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

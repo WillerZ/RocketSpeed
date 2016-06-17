@@ -12,7 +12,7 @@
 
 namespace rocketspeed {
 
-class AutoVectorTest {};
+class AutoVectorTest : public ::testing::Test {};
 
 template <class AutoVector>
 inline bool IsOnStack(const AutoVector& autoVector)
@@ -22,18 +22,18 @@ inline bool IsOnStack(const AutoVector& autoVector)
   return begin <= autoVector.data() && autoVector.data() < end;
 }
 
-TEST(AutoVectorTest, DefaultCapacity) {
+TEST_F(AutoVectorTest, DefaultCapacity) {
   ASSERT_EQ(autovector<int>().capacity(), 8);
 }
 
-TEST(AutoVectorTest, DefaultConstructor) {
+TEST_F(AutoVectorTest, DefaultConstructor) {
   autovector<int, 3> vec;
   ASSERT_TRUE(IsOnStack(vec));
   ASSERT_EQ(vec.size(), 0);
   ASSERT_EQ(vec.capacity(), 3);
 }
 
-TEST(AutoVectorTest, ConstructorWithSize) {
+TEST_F(AutoVectorTest, ConstructorWithSize) {
   { // on stack
     autovector<int, 3> vec(2);
     ASSERT_TRUE(IsOnStack(vec));
@@ -54,7 +54,7 @@ TEST(AutoVectorTest, ConstructorWithSize) {
   }
 }
 
-TEST(AutoVectorTest, ConstructorWithSizeAndValue) {
+TEST_F(AutoVectorTest, ConstructorWithSizeAndValue) {
   { // on stack
     autovector<int, 3> vec(2, -1);
     ASSERT_TRUE(IsOnStack(vec));
@@ -75,7 +75,7 @@ TEST(AutoVectorTest, ConstructorWithSizeAndValue) {
   }
 }
 
-TEST(AutoVectorTest, CopyConstructor) {
+TEST_F(AutoVectorTest, CopyConstructor) {
   { // on stack
     const autovector<int, 3> vec = { 0, 1 };
     auto copy = vec;
@@ -96,7 +96,7 @@ TEST(AutoVectorTest, CopyConstructor) {
   }
 }
 
-TEST(AutoVectorTest, MoveConstructor) {
+TEST_F(AutoVectorTest, MoveConstructor) {
   { // on stack
     autovector<int, 3> vec = { 0, 1 };
     auto copy = std::move(vec);
@@ -119,7 +119,7 @@ TEST(AutoVectorTest, MoveConstructor) {
   }
 }
 
-TEST(AutoVectorTest, ConstructorWithInitializerList) {
+TEST_F(AutoVectorTest, ConstructorWithInitializerList) {
   { // on stack
     autovector<int, 3> vec = { 0, 1 };
     ASSERT_TRUE(IsOnStack(vec));
@@ -138,7 +138,7 @@ TEST(AutoVectorTest, ConstructorWithInitializerList) {
   }
 }
 
-TEST(AutoVectorTest, CopyOperator) {
+TEST_F(AutoVectorTest, CopyOperator) {
   using AutoVector = autovector<int, 3>;
   { // stack to stack
     AutoVector vec = { 0, 1 };
@@ -222,7 +222,7 @@ StringVector RandomStringVector(
 } // namespace
 
 
-TEST(AutoVectorTest, SmallRandomTest) {
+TEST_F(AutoVectorTest, SmallRandomTest) {
   using Vector = std::vector<std::string>;
   using AutoVector = autovector<std::string, 8>;
 
@@ -241,7 +241,7 @@ TEST(AutoVectorTest, SmallRandomTest) {
   ASSERT_TRUE(vector == Vector(autovector.begin(), autovector.end()));
 }
 
-TEST(AutoVectorTest, BigRandomTest) {
+TEST_F(AutoVectorTest, BigRandomTest) {
   using Vector = std::vector<std::string>;
   using AutoVector = autovector<std::string, 8>;
 
@@ -264,7 +264,7 @@ TEST(AutoVectorTest, BigRandomTest) {
 
 int main(int argc, char** argv) {
 #ifndef ROCKETSPEED_LITE
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 #else
   return 0;
 #endif

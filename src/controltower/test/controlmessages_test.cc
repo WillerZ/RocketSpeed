@@ -18,13 +18,13 @@
 
 namespace rocketspeed {
 
-class ControlTowerTest {
+class ControlTowerTest : public ::testing::Test {
  public:
   std::chrono::seconds timeout;
 
   ControlTowerTest()
       : timeout(5), env_(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env_, "ControlTowerTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "ControlTowerTest", &info_log_));
   }
 
  protected:
@@ -39,7 +39,7 @@ class ControlTowerTest {
   }
 };
 
-TEST(ControlTowerTest, Subscribe) {
+TEST_F(ControlTowerTest, Subscribe) {
   // Create cluster with copilot and controltower.
   LocalTestCluster cluster(info_log_, true, true, false);
   ASSERT_OK(cluster.GetStatus());
@@ -79,7 +79,7 @@ TEST(ControlTowerTest, Subscribe) {
   ASSERT_LE(open_logs, num_topics);
 }
 
-TEST(ControlTowerTest, MultipleSubscribers) {
+TEST_F(ControlTowerTest, MultipleSubscribers) {
   // Create cluster with copilot and controltower.
   LocalTestCluster::Options opts;
   opts.info_log = info_log_;
@@ -176,7 +176,7 @@ TEST(ControlTowerTest, MultipleSubscribers) {
 }
 
 
-TEST(ControlTowerTest, NoLogger) {
+TEST_F(ControlTowerTest, NoLogger) {
   // Create cluster with tower only (only need this for the log storage).
   LocalTestCluster cluster(info_log_, true, false, false);
   ASSERT_OK(cluster.GetStatus());
@@ -200,5 +200,5 @@ TEST(ControlTowerTest, NoLogger) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

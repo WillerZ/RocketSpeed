@@ -14,9 +14,9 @@
 
 namespace rocketspeed {
 
-class GUIDGeneratorTest { };
+class GUIDGeneratorTest : public ::testing::Test { };
 
-TEST(GUIDGeneratorTest, Uniqueness) {
+TEST_F(GUIDGeneratorTest, Uniqueness) {
   const int num_threads = 100;
   const int guids_per_thread = 10;
 
@@ -49,5 +49,5 @@ TEST(GUIDGeneratorTest, Uniqueness) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

@@ -14,7 +14,6 @@ cpp_library(
         'pacer.cc',
         'scoped_file_lock.cc',
         'storage.cc',
-        'testharness.cc',
         'testutil.cc',
         'topic_uuid.cc',
         'xxhash.cc',
@@ -30,6 +29,26 @@ cpp_library(
         '@/rocketspeed/github/external/folly:headers',
         # TODO: refactor ControlTowerRouter to remove dep
         '@/rocketspeed/github/src/copilot:control_tower_router',
+    ],
+)
+
+cpp_library(
+    name = 'test',
+    srcs = [
+        'testharness.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    external_deps = [
+        'gflags',
+        'gtest',
+    ],
+    deps = [
+        '@/rocketspeed/github/src/util/common:common',
+        '@/rocketspeed/github/src/port:port',
     ],
 )
 

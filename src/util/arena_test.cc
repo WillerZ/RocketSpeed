@@ -9,11 +9,11 @@
 
 namespace rocketspeed {
 
-class ArenaTest {};
+class ArenaTest : public ::testing::Test {};
 
-TEST(ArenaTest, Empty) { Arena arena0; }
+TEST_F(ArenaTest, Empty) { Arena arena0; }
 
-TEST(ArenaTest, MemoryAllocatedBytes) {
+TEST_F(ArenaTest, MemoryAllocatedBytes) {
   const int N = 17;
   size_t req_sz;  // requested size
   size_t bsz = 8192;  // block size
@@ -55,7 +55,7 @@ TEST(ArenaTest, MemoryAllocatedBytes) {
 
 // Make sure we didn't count the allocate but not used memory space in
 // Arena::ApproximateMemoryUsage()
-TEST(ArenaTest, ApproximateMemoryUsageTest) {
+TEST_F(ArenaTest, ApproximateMemoryUsageTest) {
   const size_t kBlockSize = 4096;
   const size_t kEntrySize = kBlockSize / 8;
   const size_t kZero = 0;
@@ -86,7 +86,7 @@ TEST(ArenaTest, ApproximateMemoryUsageTest) {
   ASSERT_GT(usage, mem_usage);
 }
 
-TEST(ArenaTest, Simple) {
+TEST_F(ArenaTest, Simple) {
   std::vector<std::pair<size_t, char*>> allocated;
   Arena arena;
   const int N = 10000;
@@ -135,4 +135,4 @@ TEST(ArenaTest, Simple) {
 
 }  // namespace rocketspeed
 
-int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(); }
+int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(argc, argv); }

@@ -25,12 +25,12 @@
 
 namespace rocketspeed {
 
-class CopilotTest {
+class CopilotTest : public ::testing::Test {
  public:
   // Create a new instance of the copilot
   CopilotTest() : env_(Env::Default()) {
     // Create Logger
-    ASSERT_OK(test::CreateLogger(env_, "CopilotTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "CopilotTest", &info_log_));
   }
 
  protected:
@@ -39,7 +39,7 @@ class CopilotTest {
   std::shared_ptr<Logger> info_log_;
 };
 
-TEST(CopilotTest, WorkerMapping) {
+TEST_F(CopilotTest, WorkerMapping) {
   // Create cluster with controltower only.
   LocalTestCluster cluster(info_log_, true, false, false);
   ASSERT_OK(cluster.GetStatus());
@@ -93,7 +93,7 @@ TEST(CopilotTest, WorkerMapping) {
   delete copilot;
 }
 
-TEST(CopilotTest, NoLogger) {
+TEST_F(CopilotTest, NoLogger) {
   // Create cluster with tower+copilot (only need this for the log router).
   LocalTestCluster cluster(info_log_, true, false, false);
   ASSERT_OK(cluster.GetStatus());
@@ -118,7 +118,7 @@ TEST(CopilotTest, NoLogger) {
   delete copilot;
 }
 
-TEST(CopilotTest, Rollcall) {
+TEST_F(CopilotTest, Rollcall) {
   using namespace std::placeholders;
 
   // Create cluster with pilot, copilot and controltower only.
@@ -259,5 +259,5 @@ TEST(CopilotTest, Rollcall) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

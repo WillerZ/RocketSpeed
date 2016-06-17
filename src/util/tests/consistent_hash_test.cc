@@ -17,9 +17,9 @@ using std::vector;
 
 namespace rocketspeed {
 
-class ConsistentHashTest { };
+class ConsistentHashTest : public ::testing::Test { };
 
-TEST(ConsistentHashTest, BasicAPI) {
+TEST_F(ConsistentHashTest, BasicAPI) {
   ConsistentHash<string, string> hash;
   ASSERT_EQ(hash.SlotCount(), 0);
   ASSERT_EQ(hash.VirtualSlotCount(), 0);
@@ -55,7 +55,7 @@ TEST(ConsistentHashTest, BasicAPI) {
   ASSERT_EQ(hash.SlotRatio("bar"), 0.0);
 }
 
-TEST(ConsistentHashTest, Distribution) {
+TEST_F(ConsistentHashTest, Distribution) {
   ConsistentHash<string, string> hash;
   string hosts[] = { "host1", "host2", "host3", "host4" };
   for (const string& host : hosts) {
@@ -69,7 +69,7 @@ TEST(ConsistentHashTest, Distribution) {
   }
 }
 
-TEST(ConsistentHashTest, Weighting) {
+TEST_F(ConsistentHashTest, Weighting) {
   ConsistentHash<string, string> hash;
   hash.Add("foo", 100);
   hash.Add("bar", 1000);
@@ -79,7 +79,7 @@ TEST(ConsistentHashTest, Weighting) {
   ASSERT_LT(ratio, 11.0);
 }
 
-TEST(ConsistentHashTest, SlotRatioTest) {
+TEST_F(ConsistentHashTest, SlotRatioTest) {
   ConsistentHash<size_t, string> hash;
   string hosts[] = { "host1", "host2", "host3", "host4" };
   int weights[] = { 100, 200, 300, 400 };
@@ -107,7 +107,7 @@ TEST(ConsistentHashTest, SlotRatioTest) {
   }
 }
 
-TEST(ConsistentHashTest, Consistency) {
+TEST_F(ConsistentHashTest, Consistency) {
   ConsistentHash<size_t, string> hash;
   string myhost = "abcde";
   do {
@@ -154,7 +154,7 @@ TEST(ConsistentHashTest, Consistency) {
   }
 }
 
-TEST(ConsistentHashTest, Collisions) {
+TEST_F(ConsistentHashTest, Collisions) {
   typedef std::pair<size_t, size_t> Value;
   typedef std::function<size_t(Value)> HashFunc;
   HashFunc first_func = [](Value val) { return val.first; };
@@ -197,7 +197,7 @@ TEST(ConsistentHashTest, Collisions) {
   ASSERT_TRUE(hash.Get(Value(1000, 0)) == Value(256, 10));
 }
 
-TEST(ConsistentHashTest, Multiget) {
+TEST_F(ConsistentHashTest, Multiget) {
   ConsistentHash<size_t, string> hash;
   string myhost = "abcde";
   do {
@@ -265,5 +265,5 @@ TEST(ConsistentHashTest, Multiget) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

@@ -24,7 +24,7 @@ namespace rocketspeed {
 
 static const int kDelayMicros = 20000;
 
-class EnvPosixTest {
+class EnvPosixTest : public ::testing::Test {
  private:
   port::Mutex mu_;
   std::string events_;
@@ -38,14 +38,14 @@ static void SetBool(void* ptr) {
   reinterpret_cast<port::AtomicPointer*>(ptr)->NoBarrier_Store(ptr);
 }
 
-TEST(EnvPosixTest, RunImmediately) {
+TEST_F(EnvPosixTest, RunImmediately) {
   port::AtomicPointer called (nullptr);
   env_->Schedule(&SetBool, &called);
   Env::Default()->SleepForMicroseconds(kDelayMicros);
   ASSERT_TRUE(called.NoBarrier_Load() != nullptr);
 }
 
-TEST(EnvPosixTest, RunMany) {
+TEST_F(EnvPosixTest, RunMany) {
   port::AtomicPointer last_id (nullptr);
 
   struct CB {
@@ -91,7 +91,7 @@ static void ThreadBody(void* arg) {
   s->mu.Unlock();
 }
 
-TEST(EnvPosixTest, StartThread) {
+TEST_F(EnvPosixTest, StartThread) {
   State state;
   state.val = 0;
   state.num_running = 3;
@@ -110,7 +110,7 @@ TEST(EnvPosixTest, StartThread) {
   ASSERT_EQ(state.val, 3);
 }
 
-TEST(EnvPosixTest, TwoPools) {
+TEST_F(EnvPosixTest, TwoPools) {
 
   class CB {
    public:
@@ -194,7 +194,7 @@ TEST(EnvPosixTest, TwoPools) {
   ASSERT_EQ(0U, env_->GetThreadPoolQueueLen(Env::Priority::HIGH));
 }
 
-TEST(EnvPosixTest, DecreaseNumBgThreads) {
+TEST_F(EnvPosixTest, DecreaseNumBgThreads) {
   class SleepingBackgroundTask {
    public:
     explicit SleepingBackgroundTask()
@@ -424,7 +424,7 @@ std::string GetOnDiskTestDir() {
 }  // namespace
 
 // Only works in linux platforms
-TEST(EnvPosixTest, RandomAccessUniqueID) {
+TEST_F(EnvPosixTest, RandomAccessUniqueID) {
   // Create file.
   const EnvOptions soptions;
   std::string fname = GetOnDiskTestDir() + "/" + "testfile";
@@ -465,7 +465,7 @@ TEST(EnvPosixTest, RandomAccessUniqueID) {
 
 // only works in linux platforms
 #ifdef ROCKETSPEED_FALLOCATE_PRESENT
-TEST(EnvPosixTest, AllocateTest) {
+TEST_F(EnvPosixTest, AllocateTest) {
   std::string fname = GetOnDiskTestDir() + "/preallocate_testfile";
   EnvOptions soptions;
   soptions.use_mmap_writes = false;
@@ -517,7 +517,7 @@ bool HasPrefix(const std::unordered_set<std::string>& ss) {
 }
 
 // Only works in linux platforms
-TEST(EnvPosixTest, RandomAccessUniqueIDConcurrent) {
+TEST_F(EnvPosixTest, RandomAccessUniqueIDConcurrent) {
   // Check whether a bunch of concurrently existing files have unique IDs.
   const EnvOptions soptions;
 
@@ -555,7 +555,7 @@ TEST(EnvPosixTest, RandomAccessUniqueIDConcurrent) {
 }
 
 // Only works in linux platforms
-TEST(EnvPosixTest, RandomAccessUniqueIDDeletes) {
+TEST_F(EnvPosixTest, RandomAccessUniqueIDDeletes) {
   const EnvOptions soptions;
 
   std::string fname = GetOnDiskTestDir() + "/" + "testfile";
@@ -591,7 +591,7 @@ TEST(EnvPosixTest, RandomAccessUniqueIDDeletes) {
 }
 
 // Only works in linux platforms
-TEST(EnvPosixTest, InvalidateCache) {
+TEST_F(EnvPosixTest, InvalidateCache) {
   const EnvOptions soptions;
   std::string fname = test::TmpDir() + "/" + "testfile";
 
@@ -632,7 +632,7 @@ TEST(EnvPosixTest, InvalidateCache) {
 }
 #endif
 
-TEST(EnvPosixTest, PosixRandomRWFileTest) {
+TEST_F(EnvPosixTest, PosixRandomRWFileTest) {
   EnvOptions soptions;
   soptions.use_mmap_writes = soptions.use_mmap_reads = false;
   std::string fname = test::TmpDir() + "/" + "testfile";
@@ -690,7 +690,7 @@ class TestLogger : public Logger {
   int char_0_count;
 };
 
-TEST(EnvPosixTest, LogBufferTest) {
+TEST_F(EnvPosixTest, LogBufferTest) {
   TestLogger test_logger;
   test_logger.SetInfoLogLevel(InfoLogLevel::INFO_LEVEL);
   test_logger.log_count = 0;
@@ -730,5 +730,5 @@ TEST(EnvPosixTest, LogBufferTest) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

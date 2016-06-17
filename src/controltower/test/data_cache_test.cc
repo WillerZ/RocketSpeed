@@ -11,11 +11,11 @@
 
 namespace rocketspeed {
 
-class DataCacheTest {
+class DataCacheTest : public ::testing::Test {
 };
 
 // Check that data_cache is sane
-TEST(DataCacheTest, Check) {
+TEST_F(DataCacheTest, Check) {
   size_t cache_size = 10 * 1024 * 1024; // 10 MB
   bool cache_data_from_system_namespaces = false;
   int bloom_bits_per_msg = 10;
@@ -97,8 +97,8 @@ TEST(DataCacheTest, Check) {
     auto visit =
       [&] (MessageData* data_raw, bool* processed) {
            if (data_raw->GetSequenceNumber() == seqno) {
-             ASSERT_EQ(topicname.compare(data_raw->GetTopicName()), 0);
-             ASSERT_EQ(payload.compare(data_raw->GetPayload()), 0);
+             EXPECT_EQ(topicname.compare(data_raw->GetTopicName()), 0);
+             EXPECT_EQ(payload.compare(data_raw->GetPayload()), 0);
              count++;
            }
            *processed = true;
@@ -112,7 +112,7 @@ TEST(DataCacheTest, Check) {
 }
 
 // Check that blooms are working fine
-TEST(DataCacheTest, CheckBloom) {
+TEST_F(DataCacheTest, CheckBloom) {
   size_t cache_size = 50 * 1024 * 1024; // 50 MB
   bool cache_data_from_system_namespaces = false;
   int bloom_bits_per_msg = 10;
@@ -204,8 +204,8 @@ TEST(DataCacheTest, CheckBloom) {
     auto visit =
       [&] (MessageData* data_raw, bool* processed) {
            if (data_raw->GetSequenceNumber() == seqno) {
-             ASSERT_EQ(topicname.compare(data_raw->GetTopicName()), 0);
-             ASSERT_EQ(payload.compare(data_raw->GetPayload()), 0);
+             EXPECT_EQ(topicname.compare(data_raw->GetTopicName()), 0);
+             EXPECT_EQ(payload.compare(data_raw->GetPayload()), 0);
              count++;
            }
            *processed = true;
@@ -227,5 +227,5 @@ TEST(DataCacheTest, CheckBloom) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

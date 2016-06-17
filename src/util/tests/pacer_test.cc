@@ -10,11 +10,11 @@
 
 namespace rocketspeed {
 
-class PacerTest {
+class PacerTest : public ::testing::Test {
  public:
   PacerTest() {
     env_ = Env::Default();
-    ASSERT_OK(test::CreateLogger(env_, "PacerTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "PacerTest", &info_log_));
   }
 
   uint64_t RunTests(uint64_t max_throughput,
@@ -25,7 +25,7 @@ class PacerTest {
                     int job_parallelism) {
     // Start loops
     MsgLoop loop(env_, EnvOptions(), 0, job_parallelism, info_log_, "pacer");
-    ASSERT_OK(loop.Initialize());
+    EXPECT_OK(loop.Initialize());
 
     Pacer pacer(max_throughput, max_latency, max_inflight, num_samples);
 
@@ -85,7 +85,7 @@ class PacerTest {
 
 
 
-TEST(PacerTest, MaxLatencyLimited) {
+TEST_F(PacerTest, MaxLatencyLimited) {
   // With 10x parallelism and 1ms service time, this system can handle 1kqps,
   // with 1ms latency. If we try to put significantly more load then latency
   // will suffer. Limiting latency to 2ms forces QPS and windows size down,
@@ -100,7 +100,7 @@ TEST(PacerTest, MaxLatencyLimited) {
   ASSERT_LT(latency, 2300);
 }
 
-TEST(PacerTest, MinLatencyLimited) {
+TEST_F(PacerTest, MinLatencyLimited) {
   // This system cannot reach < 1ms latency, no matter what the qps.
   // The pacer should optimize for lowest latency, however, which is ~1ms.
   auto latency = RunTests(100, 100, std::chrono::microseconds(500), 100,
@@ -113,7 +113,7 @@ TEST(PacerTest, MinLatencyLimited) {
   ASSERT_LT(latency, 1500);
 }
 
-TEST(PacerTest, ThroughputLimited) {
+TEST_F(PacerTest, ThroughputLimited) {
   // With 10x parallelism and 1ms service time, this system cannot reach more
   // that 10kqps. Asking for higher QPS (20k) will never be achieved, no
   // matter the max latency, so resulting latency will just keep getting higher,
@@ -132,5 +132,5 @@ TEST(PacerTest, ThroughputLimited) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

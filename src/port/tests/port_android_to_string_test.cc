@@ -11,7 +11,7 @@
 
 namespace rocketspeed {
 
-class ToStringTest {
+class ToStringTest : public ::testing::Test {
 public:
   static const float FLOAT_EPSILON;
   static const double DOUBLE_EPSILON;
@@ -22,7 +22,7 @@ const float ToStringTest::FLOAT_EPSILON = 0.000001f;
 const double ToStringTest::DOUBLE_EPSILON = 0.000001;
 const long double ToStringTest::LONG_DOUBLE_EPSILON = 0.000001;
 
-TEST(ToStringTest, Simple) {
+TEST_F(ToStringTest, Simple) {
   ASSERT_EQ(std::to_string(0), "0");
 
   ASSERT_EQ(std::to_string(752338274), "752338274");
@@ -64,4 +64,4 @@ TEST(ToStringTest, Simple) {
 
 }  // namespace rocketspeed
 
-int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(); }
+int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(argc, argv); }

@@ -19,11 +19,11 @@
 
 namespace rocketspeed {
 
-class SupervisorTest {
+class SupervisorTest : public ::testing::Test {
  public:
   SupervisorTest()
     : env_(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env_, "SupervisorTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "SupervisorTest", &info_log_));
   }
 
   std::shared_ptr<SupervisorLoop> MakeSupervisor(LocalTestCluster* cluster);
@@ -38,7 +38,7 @@ class SupervisorTest {
 std::shared_ptr<SupervisorLoop> SupervisorTest::MakeSupervisor(
     LocalTestCluster* cluster) {
   // We allow to create a single supervisor per test, but do not own it.
-  ASSERT_TRUE(last_supervisor_.expired());
+  EXPECT_TRUE(last_supervisor_.expired());
 
   SupervisorOptions options{0,  // Automatically allocate the port.
                             info_log_,
@@ -47,8 +47,8 @@ std::shared_ptr<SupervisorLoop> SupervisorTest::MakeSupervisor(
                             cluster->GetCopilot()};
 
   std::unique_ptr<SupervisorLoop> supervisor;
-  ASSERT_OK(SupervisorLoop::CreateNewInstance(options, &supervisor));
-  ASSERT_OK(supervisor->Initialize());
+  EXPECT_OK(SupervisorLoop::CreateNewInstance(options, &supervisor));
+  EXPECT_OK(supervisor->Initialize());
 
   std::shared_ptr<SupervisorLoop> supervisor_shared = std::move(supervisor);
   last_supervisor_ = supervisor_shared;
@@ -57,7 +57,7 @@ std::shared_ptr<SupervisorLoop> SupervisorTest::MakeSupervisor(
 
 std::string SupervisorTest::DoRequest(std::string request) {
   auto supervisor = last_supervisor_.lock();
-  ASSERT_TRUE(supervisor);
+  EXPECT_TRUE(supervisor);
 
   std::unique_ptr<Connection> connection;
   env_->NewConnection("localhost",
@@ -65,16 +65,16 @@ std::string SupervisorTest::DoRequest(std::string request) {
                       true,
                       &connection,
                       EnvOptions());
-  ASSERT_TRUE(connection);
-  ASSERT_OK(connection->Send(request.c_str()));
+  EXPECT_TRUE(connection);
+  EXPECT_OK(connection->Send(request.c_str()));
   char buffer[4096] = { 0 };
   ssize_t size = sizeof(buffer);
-  ASSERT_OK(connection->Receive(buffer, &size));
+  EXPECT_OK(connection->Receive(buffer, &size));
   connection.reset();
   return std::string(buffer);
 }
 
-TEST(SupervisorTest, Basic) {
+TEST_F(SupervisorTest, Basic) {
   LocalTestCluster cluster(info_log_, true, true, true);
   ASSERT_OK(cluster.GetStatus());
 
@@ -93,7 +93,7 @@ TEST(SupervisorTest, Basic) {
   env_->WaitForJoin(supervisor_thread_id);
 }
 
-TEST(SupervisorTest, TowerLog) {
+TEST_F(SupervisorTest, TowerLog) {
   LocalTestCluster::Options opts;
   opts.copilot.rollcall_enabled = false;
   opts.info_log = info_log_;
@@ -185,5 +185,5 @@ TEST(SupervisorTest, TowerLog) {
 } // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

@@ -18,11 +18,11 @@
 
 namespace rocketspeed {
 
-class FlowTest {
+class FlowTest : public ::testing::Test {
  public:
   FlowTest() {
     env_ = Env::Default();
-    ASSERT_OK(test::CreateLogger(env_, "FlowTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "FlowTest", &info_log_));
   }
 
   template <typename T>
@@ -42,7 +42,7 @@ class FlowTest {
   std::shared_ptr<Logger> info_log_;
 };
 
-TEST(FlowTest, PartitionedFlow) {
+TEST_F(FlowTest, PartitionedFlow) {
   // Setup:
   //                    overflow
   //                  P0   |     P1
@@ -135,7 +135,7 @@ TEST(FlowTest, PartitionedFlow) {
   ASSERT_LT(taken, expected * 2.0);
 }
 
-TEST(FlowTest, Fanout) {
+TEST_F(FlowTest, Fanout) {
   // Setup:
   //                    overflow
   //                  P0   |     P1
@@ -218,7 +218,7 @@ TEST(FlowTest, Fanout) {
   ASSERT_LT(taken, expected * 2.0);
 }
 
-TEST(FlowTest, MultiLayerRandomized) {
+TEST_F(FlowTest, MultiLayerRandomized) {
   // Setup:
   // Many layers of processors, with each processor in each layer forwarding to
   // all processors in next layer. Inter-layer queues will be very small to
@@ -311,7 +311,7 @@ TEST(FlowTest, MultiLayerRandomized) {
   ASSERT_TRUE(!sem.TimedWait(std::chrono::milliseconds(1000)));
 }
 
-TEST(FlowTest, ObservableMap) {
+TEST_F(FlowTest, ObservableMap) {
   // Setup:
   //
   //   +----------+    +---------+    +--------+
@@ -370,7 +370,7 @@ TEST(FlowTest, ObservableMap) {
   ASSERT_EQ(last_b, kNumMessages - 1);  // ensure all written
 }
 
-TEST(FlowTest, ObservableSet) {
+TEST_F(FlowTest, ObservableSet) {
   // This test checks that ObservableSet correctly executes subscriptions,
   // and tolerant to modifications from within the callback
 
@@ -438,7 +438,7 @@ TEST(FlowTest, ObservableSet) {
   send_exec_command([&]() { obs_set.reset(); });
 }
 
-TEST(FlowTest, SourcelessFlow) {
+TEST_F(FlowTest, SourcelessFlow) {
   // This tests that when one uses SourcelessFlow to write to a Sink and the
   // Sink overflows, the messages still get flushed once the Sink becomes
   // writable again.
@@ -566,31 +566,31 @@ void RateLimiterSinkFlowTest::TestImpl(
   ASSERT_LT(taken, expected * 1.4);
 }
 
-TEST(RateLimiterSinkFlowTest, Test_1) {
+TEST_F(RateLimiterSinkFlowTest, Test_1) {
   TestImpl(500, 2, 1, 1000, 2000);
 }
 
-TEST(RateLimiterSinkFlowTest, Test_2) {
+TEST_F(RateLimiterSinkFlowTest, Test_2) {
   TestImpl(500, 1, 2, 1000, 2000);
 }
 
-TEST(RateLimiterSinkFlowTest, Test_3) {
+TEST_F(RateLimiterSinkFlowTest, Test_3) {
   TestImpl(500, 1, 1, 1000, 2000);
 }
 
-TEST(RateLimiterSinkFlowTest, Test_4) {
+TEST_F(RateLimiterSinkFlowTest, Test_4) {
   TestImpl(5000, 100, 100, 1000, 1000);
 }
 
-TEST(RateLimiterSinkFlowTest, Test_5) {
+TEST_F(RateLimiterSinkFlowTest, Test_5) {
   TestImpl(5000, 1000, 5000, 10000, 0);
 }
 
-TEST(RateLimiterSinkFlowTest, Test_6) {
+TEST_F(RateLimiterSinkFlowTest, Test_6) {
   TestImpl(5000, 1000, 1000, 10000, 0);
 }
 
-TEST(FlowTest, RetryLaterSink) {
+TEST_F(FlowTest, RetryLaterSink) {
   // Tests that backoff times specified by a RetryLaterSink are fulfilled.
   // We first write messages to a queue, which is read by an EventLoop and fed
   // into the RetryLaterSink.
@@ -619,9 +619,9 @@ TEST(FlowTest, RetryLaterSink) {
   std::chrono::milliseconds expected_delay(0);
   port::Semaphore done;
   RetryLaterSink<int> sink([&] (int& x) {
-    ASSERT_EQ(x, expected);
-    ASSERT_LT(hits, backoffs.size());
-    ASSERT_GE(std::chrono::steady_clock::now() - last_time, expected_delay);
+    EXPECT_EQ(x, expected);
+    EXPECT_LT(hits, backoffs.size());
+    EXPECT_GE(std::chrono::steady_clock::now() - last_time, expected_delay);
     auto backoff = backoffs[hits++];
     if (backoff == 0) {
       expected++;
@@ -655,5 +655,5 @@ TEST(FlowTest, RetryLaterSink) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

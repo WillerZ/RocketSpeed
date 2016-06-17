@@ -20,12 +20,12 @@
 
 namespace rocketspeed {
 
-class BufferedLogStorageTest {
+class BufferedLogStorageTest : public ::testing::Test {
  public:
   BufferedLogStorageTest()
   : env(Env::Default())
   , log_range(1, 1000) {
-    ASSERT_OK(test::CreateLogger(env, "BufferedLogStorageTest", &info_log));
+    EXPECT_OK(test::CreateLogger(env, "BufferedLogStorageTest", &info_log));
   }
 
  protected:
@@ -34,7 +34,7 @@ class BufferedLogStorageTest {
   std::pair<LogID, LogID> log_range;
 };
 
-TEST(BufferedLogStorageTest, Creation) {
+TEST_F(BufferedLogStorageTest, Creation) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
 
@@ -72,20 +72,20 @@ class VerifyingReader : public AsyncLogReader {
   Status Open(LogID log_id,
               SequenceNumber start_point,
               SequenceNumber end_point) override {
-    ASSERT_TRUE(open_log_ == 0);
+    EXPECT_TRUE(open_log_ == 0);
     open_log_ = log_id;
     next_seqno_ = start_point;
     return Status::OK();
   }
 
   Status Close(LogID log_id) override {
-    ASSERT_TRUE(open_log_ == log_id);
+    EXPECT_TRUE(open_log_ == log_id);
     open_log_ = 0;
     return Status::OK();
   }
 
   bool DeliverRecord(LogID log_id, std::string data) {
-    ASSERT_TRUE(open_log_ == log_id);
+    EXPECT_TRUE(open_log_ == log_id);
     std::unique_ptr<std::string> context(new std::string(std::move(data)));
     Slice payload(*context);
     LogRecord record(log_id,
@@ -101,8 +101,8 @@ class VerifyingReader : public AsyncLogReader {
   }
 
   bool DeliverGap(LogID log_id, GapType type, size_t num_seqnos) {
-    ASSERT_TRUE(open_log_ == log_id);
-    ASSERT_GE(num_seqnos, 1);
+    EXPECT_TRUE(open_log_ == log_id);
+    EXPECT_GE(num_seqnos, 1);
     bool result =
         gap_cb_({type, log_id, next_seqno_, next_seqno_ + num_seqnos - 1});
     if (result) {
@@ -148,8 +148,8 @@ class VerifyingStorage : public LogStorage {
       std::function<bool(LogRecord&)> record_cb,
       std::function<bool(const GapRecord&)> gap_cb,
       std::vector<AsyncLogReader*>* readers) {
-    ASSERT_TRUE(!verify_reader_);
-    ASSERT_EQ(1, parallelism);
+    EXPECT_TRUE(!verify_reader_);
+    EXPECT_EQ(1, parallelism);
     verify_reader_ = new VerifyingReader(record_cb, gap_cb);
     readers->push_back(verify_reader_);
     return Status::OK();
@@ -166,7 +166,7 @@ class VerifyingStorage : public LogStorage {
   std::unordered_map<LogID, SequenceNumber> seqnos_;
 };
 
-TEST(BufferedLogStorageTest, SingleBatching) {
+TEST_F(BufferedLogStorageTest, SingleBatching) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
 
@@ -229,7 +229,7 @@ TEST(BufferedLogStorageTest, SingleBatching) {
   sem.TimedWait(std::chrono::seconds(1));
 }
 
-TEST(BufferedLogStorageTest, CountLimitedBatch) {
+TEST_F(BufferedLogStorageTest, CountLimitedBatch) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
 
@@ -288,7 +288,7 @@ TEST(BufferedLogStorageTest, CountLimitedBatch) {
   }
 }
 
-TEST(BufferedLogStorageTest, ByteLimitedBatches) {
+TEST_F(BufferedLogStorageTest, ByteLimitedBatches) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
 
@@ -352,7 +352,7 @@ TEST(BufferedLogStorageTest, ByteLimitedBatches) {
   }
 }
 
-TEST(BufferedLogStorageTest, LatencyLimitedBatches) {
+TEST_F(BufferedLogStorageTest, LatencyLimitedBatches) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
 
@@ -420,7 +420,7 @@ TEST(BufferedLogStorageTest, LatencyLimitedBatches) {
   }
 }
 
-TEST(BufferedLogStorageTest, AsyncReader) {
+TEST_F(BufferedLogStorageTest, AsyncReader) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
 
@@ -453,8 +453,8 @@ TEST(BufferedLogStorageTest, AsyncReader) {
                record.seqno);
       return false;
     }
-    ASSERT_EQ(log_id, record.log_id);
-    ASSERT_EQ(next_seqno, record.seqno);
+    EXPECT_EQ(log_id, record.log_id);
+    EXPECT_EQ(next_seqno, record.seqno);
     ++next_seqno;
     LOG_INFO(info_log, "Received record (%" PRIu64 ")", record.seqno);
     return true;
@@ -467,9 +467,9 @@ TEST(BufferedLogStorageTest, AsyncReader) {
                gap.to);
       return false;
     }
-    ASSERT_EQ(log_id, gap.log_id);
-    ASSERT_TRUE(GapType::kBenign == gap.type);
-    ASSERT_EQ(next_seqno, gap.from);
+    EXPECT_EQ(log_id, gap.log_id);
+    EXPECT_TRUE(GapType::kBenign == gap.type);
+    EXPECT_EQ(next_seqno, gap.from);
     next_seqno = gap.to + 1;
     LOG_INFO(
         info_log, "Received gap (%" PRIu64 ", %" PRIu64 ")", gap.from, gap.to);
@@ -539,5 +539,5 @@ TEST(BufferedLogStorageTest, AsyncReader) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

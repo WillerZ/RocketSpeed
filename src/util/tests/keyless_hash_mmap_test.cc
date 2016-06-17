@@ -196,9 +196,9 @@ struct TestValue {
   size_t idx;
 };
 
-class SmallIntArrayTest {};
+class SmallIntArrayTest : public ::testing::Test {};
 
-TEST(SmallIntArrayTest, InsertionDelition) {
+TEST_F(SmallIntArrayTest, InsertionDelition) {
   SmallIntArray<TestValue*> array;
   std::vector<std::unique_ptr<TestValue> > values;
   const size_t num_values = array.MaxSize();
@@ -226,7 +226,7 @@ TEST(SmallIntArrayTest, InsertionDelition) {
   ASSERT_TRUE(array.Empty());
 }
 
-TEST(SmallIntArrayTest, BracketsOperator) {
+TEST_F(SmallIntArrayTest, BracketsOperator) {
   Random random(static_cast<uint32_t>(time(nullptr)));
   SmallIntArray<TestValue*> array;
   const size_t num_values = random.Next() % (array.MaxSize() + 1);
@@ -246,7 +246,7 @@ TEST(SmallIntArrayTest, BracketsOperator) {
   ASSERT_EQ(array.Size(), 0);
 }
 
-TEST(SmallIntArrayTest, Moving) {
+TEST_F(SmallIntArrayTest, Moving) {
   Random random(static_cast<uint32_t>(time(nullptr)));
   SmallIntArray<TestValue*> array;
   const size_t num_values = random.Next() % (array.MaxSize() + 1);
@@ -269,9 +269,9 @@ TEST(SmallIntArrayTest, Moving) {
   }
 }
 
-class SinglePtValueTest {};
+class SinglePtValueTest : public ::testing::Test {};
 
-TEST(SinglePtValueTest, BasicOps) {
+TEST_F(SinglePtValueTest, BasicOps) {
   SingleIntArray<int*> array;
   const int value = 12345;
 
@@ -296,9 +296,9 @@ TEST(SinglePtValueTest, BasicOps) {
   ASSERT_EQ(array.Size(), 0);
 }
 
-class KeylessHashMMapTest {};
+class KeylessHashMMapTest : public ::testing::Test {};
 
-TEST(KeylessHashMMapTest, InsertionDeletion) {
+TEST_F(KeylessHashMMapTest, InsertionDeletion) {
   using Key = size_t;
   RunInsertionDeletionChecks<Key, UniqueHashValue<Key> >();
   RunInsertionDeletionChecks<Key, NonUniqueHashValue<Key, 2> >();
@@ -306,14 +306,14 @@ TEST(KeylessHashMMapTest, InsertionDeletion) {
   RunInsertionDeletionChecks<Key, NonUniqueHashValue<Key, 17> >();
 }
 
-TEST(KeylessHashMMapTest, IteratorUsage) {
+TEST_F(KeylessHashMMapTest, IteratorUsage) {
   TestIteratorUsage<kUniquePeriod>();
   TestIteratorUsage<1>();
   TestIteratorUsage<2>();
   TestIteratorUsage<13>();
 }
 
-TEST(KeylessHashMMapTest, Searching) {
+TEST_F(KeylessHashMMapTest, Searching) {
   RunMapSearchTest<kUniquePeriod>();
   RunMapSearchTest<1>();
   RunMapSearchTest<2>();
@@ -326,7 +326,7 @@ TEST(KeylessHashMMapTest, Searching) {
 int main(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }
 
 #endif  // GFLAGS

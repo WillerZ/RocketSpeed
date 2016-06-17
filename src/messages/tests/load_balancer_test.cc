@@ -13,7 +13,7 @@
 
 namespace rocketspeed {
 
-class PowerOfTwoLoadBalancerTest {
+class PowerOfTwoLoadBalancerTest : public ::testing::Test {
  public:
   PowerOfTwoLoadBalancerTest() : timeout_(std::chrono::seconds(5)) {}
 
@@ -24,7 +24,7 @@ class PowerOfTwoLoadBalancerTest {
 using ShardId = LoadBalancer::ShardId;
 using LoadT = LoadBalancer::LoadT;
 
-TEST(PowerOfTwoLoadBalancerTest, FairnessTest) {
+TEST_F(PowerOfTwoLoadBalancerTest, FairnessTest) {
   auto always_zero = [](ShardId shard_id) {
     return 0;
   };
@@ -53,7 +53,7 @@ TEST(PowerOfTwoLoadBalancerTest, FairnessTest) {
   ASSERT_LT(diff, 0.01);
 }
 
-TEST(PowerOfTwoLoadBalancerTest, MaxLoadTest) {
+TEST_F(PowerOfTwoLoadBalancerTest, MaxLoadTest) {
   // run a simulation where tasks take two time steps
   // to finish and load is number of items assigned
   // in last two steps. max_load should be 1.0
@@ -95,5 +95,5 @@ TEST(PowerOfTwoLoadBalancerTest, MaxLoadTest) {
 }
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

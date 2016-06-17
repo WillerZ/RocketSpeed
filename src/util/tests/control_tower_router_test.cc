@@ -16,8 +16,8 @@
 
 namespace rocketspeed {
 
-class ConsistentHashTowerRouterTest { };
-class RendezvousHashTowerRouterTest { };
+class ConsistentHashTowerRouterTest : public ::testing::Test { };
+class RendezvousHashTowerRouterTest : public ::testing::Test { };
 
 std::unordered_map<ControlTowerId, HostId> MakeControlTowers(int num) {
   std::unordered_map<ControlTowerId, HostId> control_towers;
@@ -81,11 +81,11 @@ void ConsistencyTest(Func make_router) {
   ASSERT_GT(num_relocations, (num_logs * num_copies) * 2 / 100);
 }
 
-TEST(ConsistentHashTowerRouterTest, ConsistencyTestCH) {
+TEST_F(ConsistentHashTowerRouterTest, ConsistencyTestCH) {
   ConsistencyTest(MakeCHRouter());
 }
 
-TEST(RendezvousHashTowerRouterTest, ConsistencyTestRH) {
+TEST_F(RendezvousHashTowerRouterTest, ConsistencyTestRH) {
   ConsistencyTest(MakeRHRouter());
 }
 
@@ -115,11 +115,11 @@ void LogDistribution(Func make_router) {
   ASSERT_LT(minmax.second->second, expected * 1.6);
 }
 
-TEST(ConsistentHashTowerRouterTest, LogDistributionCH) {
+TEST_F(ConsistentHashTowerRouterTest, LogDistributionCH) {
   LogDistribution(MakeCHRouter());
 }
 
-TEST(RendezvousHashTowerRouterTest, LogDistributionRH) {
+TEST_F(RendezvousHashTowerRouterTest, LogDistributionRH) {
   LogDistribution(MakeRHRouter());
 }
 
@@ -164,16 +164,16 @@ void ChangeHost(Func make_router) {
               host_logs_after[HostId::CreateLocal(3)]);
 }
 
-TEST(ConsistentHashTowerRouterTest, ChangeHostCH) {
+TEST_F(ConsistentHashTowerRouterTest, ChangeHostCH) {
   ChangeHost(MakeCHRouter());
 }
 
-TEST(RendezvousHashTowerRouterTest, ChangeHostRH) {
+TEST_F(RendezvousHashTowerRouterTest, ChangeHostRH) {
   ChangeHost(MakeRHRouter());
 }
 
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

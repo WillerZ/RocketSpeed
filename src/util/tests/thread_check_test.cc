@@ -12,9 +12,9 @@
 
 namespace rocketspeed {
 
-class ThreadCheckTest { };
+class ThreadCheckTest : public ::testing::Test { };
 
-TEST(ThreadCheckTest, Test) {
+TEST_F(ThreadCheckTest, Test) {
   ThreadCheck c1;
   ThreadCheck c2;
   ASSERT_TRUE(c1.Ok());
@@ -33,7 +33,7 @@ TEST(ThreadCheckTest, Test) {
   ASSERT_TRUE(!c2.Ok());  // owned by other thread, should fail
 }
 
-TEST(ThreadCheckTest, MoveTest) {
+TEST_F(ThreadCheckTest, MoveTest) {
   ThreadCheck c1;
   ThreadCheck c2(c1);
   ThreadCheck c3 = c1;
@@ -54,5 +54,5 @@ TEST(ThreadCheckTest, MoveTest) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

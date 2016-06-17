@@ -12,9 +12,9 @@
 
 namespace rocketspeed {
 
-class HeterogeneousQueueTest {};
+class HeterogeneousQueueTest : public ::testing::Test {};
 
-TEST(HeterogeneousQueueTest, Basic) {
+TEST_F(HeterogeneousQueueTest, Basic) {
   HeterogeneousQueue q(16);  // 16 bytes
 
   char c = '\0';
@@ -74,7 +74,7 @@ TEST(HeterogeneousQueueTest, Basic) {
   ASSERT_EQ(i, 789);
 }
 
-TEST(HeterogeneousQueueTest, MultiThreaded) {
+TEST_F(HeterogeneousQueueTest, MultiThreaded) {
   Env* env = Env::Default();
 
 
@@ -178,5 +178,5 @@ TEST(HeterogeneousQueueTest, MultiThreaded) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

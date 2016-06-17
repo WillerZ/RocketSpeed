@@ -17,12 +17,12 @@
 
 namespace rocketspeed {
 
-class PilotTest {
+class PilotTest : public ::testing::Test {
  public:
   // Create a new instance of the pilot
   PilotTest() : env_(Env::Default()) {
     // Create Logger
-    ASSERT_OK(test::CreateLogger(env_, "PilotTest", &info_log_));
+    EXPECT_OK(test::CreateLogger(env_, "PilotTest", &info_log_));
   }
 
  protected:
@@ -41,7 +41,7 @@ class PilotTest {
   }
 };
 
-TEST(PilotTest, Publish) {
+TEST_F(PilotTest, Publish) {
   // Create cluster with pilot only.
   LocalTestCluster cluster(info_log_, false, false, true);
   ASSERT_OK(cluster.GetStatus());
@@ -95,7 +95,7 @@ TEST(PilotTest, Publish) {
   ASSERT_NE(stats_report.find("pilot.append_latency_us"), std::string::npos);
 }
 
-TEST(PilotTest, NoLogger) {
+TEST_F(PilotTest, NoLogger) {
   // Create cluster with pilot only (only need this for the log storage).
   LocalTestCluster cluster(info_log_, false, false, true);
   ASSERT_OK(cluster.GetStatus());
@@ -119,5 +119,5 @@ TEST(PilotTest, NoLogger) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

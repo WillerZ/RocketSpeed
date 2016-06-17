@@ -9,22 +9,22 @@
 
 namespace rocketspeed {
 
-class UnsafeSharedPtrTest {};
+class UnsafeSharedPtrTest : public ::testing::Test {};
 
-TEST(UnsafeSharedPtrTest, NullTest) {
+TEST_F(UnsafeSharedPtrTest, NullTest) {
   UnsafeSharedPtr<int> shared;
   ASSERT_TRUE(!shared.get());
   ASSERT_TRUE(!shared.unique());
 }
 
-TEST(UnsafeSharedPtrTest, TakeOwnershipTest) {
+TEST_F(UnsafeSharedPtrTest, TakeOwnershipTest) {
   int* ptr = new int(1);
   auto shared = UnsafeSharedPtr<int>(ptr);
   ASSERT_EQ(shared.get(), ptr);
   ASSERT_TRUE(shared.unique());
 }
 
-TEST(UnsafeSharedPtrTest, CopyConstructorTest) {
+TEST_F(UnsafeSharedPtrTest, CopyConstructorTest) {
   int* ptr = new int(1);
   auto shared = UnsafeSharedPtr<int>(ptr);
   ASSERT_TRUE(shared.unique());
@@ -39,7 +39,7 @@ TEST(UnsafeSharedPtrTest, CopyConstructorTest) {
   ASSERT_TRUE(shared.unique());
 }
 
-TEST(UnsafeSharedPtrTest, AssignCopyTest) {
+TEST_F(UnsafeSharedPtrTest, AssignCopyTest) {
   int* ptr = new int(1);
   auto shared = UnsafeSharedPtr<int>(ptr);
   ASSERT_TRUE(shared.unique());
@@ -60,7 +60,7 @@ TEST(UnsafeSharedPtrTest, AssignCopyTest) {
   ASSERT_TRUE(shared.unique());
 }
 
-TEST(UnsafeSharedPtrTest, ResetTest) {
+TEST_F(UnsafeSharedPtrTest, ResetTest) {
   int* ptr = new int(1);
   auto shared = UnsafeSharedPtr<int>(ptr);
   ASSERT_EQ(shared.get(), ptr);
@@ -76,7 +76,7 @@ TEST(UnsafeSharedPtrTest, ResetTest) {
   ASSERT_TRUE(!shared.unique());
 }
 
-TEST(UnsafeSharedPtrTest, MakeTest) {
+TEST_F(UnsafeSharedPtrTest, MakeTest) {
   auto shared = MakeUnsafeSharedPtr<int>(5);
   ASSERT_TRUE(shared.get());
   ASSERT_EQ(*shared, 5);
@@ -86,5 +86,5 @@ TEST(UnsafeSharedPtrTest, MakeTest) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

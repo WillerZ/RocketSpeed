@@ -9,9 +9,9 @@
 
 namespace rocketspeed {
 
-class Coding { };
+class Coding : public ::testing::Test { };
 
-TEST(Coding, Fixed16) {
+TEST_F(Coding, Fixed16) {
   std::string s;
   for (uint32_t v = 0; v < (1 << 16); v++) {
     PutFixed16(&s, static_cast<uint16_t>(v));
@@ -25,7 +25,7 @@ TEST(Coding, Fixed16) {
   }
 }
 
-TEST(Coding, Fixed32) {
+TEST_F(Coding, Fixed32) {
   std::string s;
   for (uint32_t v = 0; v < 100000; v++) {
     PutFixed32(&s, v);
@@ -39,7 +39,7 @@ TEST(Coding, Fixed32) {
   }
 }
 
-TEST(Coding, Fixed64) {
+TEST_F(Coding, Fixed64) {
   std::string s;
   for (int power = 0; power <= 63; power++) {
     uint64_t v = static_cast<uint64_t>(1) << power;
@@ -67,7 +67,7 @@ TEST(Coding, Fixed64) {
 }
 
 // Test that encoding routines generate little-endian encodings
-TEST(Coding, EncodingOutput) {
+TEST_F(Coding, EncodingOutput) {
   std::string dst;
   PutFixed32(&dst, 0x04030201);
   ASSERT_EQ(4U, dst.size());
@@ -89,7 +89,7 @@ TEST(Coding, EncodingOutput) {
   ASSERT_EQ(0x08, static_cast<int>(dst[7]));
 }
 
-TEST(Coding, Varint32) {
+TEST_F(Coding, Varint32) {
   std::string s;
   for (uint32_t i = 0; i < (32 * 32); i++) {
     uint32_t v = (i / 32) << (i % 32);
@@ -110,7 +110,7 @@ TEST(Coding, Varint32) {
   ASSERT_EQ(p, s.data() + s.size());
 }
 
-TEST(Coding, Varint64) {
+TEST_F(Coding, Varint64) {
   // Construct the list of values to check
   std::vector<uint64_t> values;
   // Some special values
@@ -146,14 +146,14 @@ TEST(Coding, Varint64) {
 
 }
 
-TEST(Coding, Varint32Overflow) {
+TEST_F(Coding, Varint32Overflow) {
   uint32_t result;
   std::string input("\x81\x82\x83\x84\x85\x11");
   ASSERT_TRUE(GetVarint32Ptr(input.data(), input.data() + input.size(), &result)
               == nullptr);
 }
 
-TEST(Coding, Varint32Truncation) {
+TEST_F(Coding, Varint32Truncation) {
   uint32_t large_value = (1u << 31) + 100;
   std::string s;
   PutVarint32(&s, large_value);
@@ -166,14 +166,14 @@ TEST(Coding, Varint32Truncation) {
   ASSERT_EQ(large_value, result);
 }
 
-TEST(Coding, Varint64Overflow) {
+TEST_F(Coding, Varint64Overflow) {
   uint64_t result;
   std::string input("\x81\x82\x83\x84\x85\x81\x82\x83\x84\x85\x11");
   ASSERT_TRUE(GetVarint64Ptr(input.data(), input.data() + input.size(), &result)
               == nullptr);
 }
 
-TEST(Coding, Varint64Truncation) {
+TEST_F(Coding, Varint64Truncation) {
   uint64_t large_value = (1ull << 63) + 100ull;
   std::string s;
   PutVarint64(&s, large_value);
@@ -186,7 +186,7 @@ TEST(Coding, Varint64Truncation) {
   ASSERT_EQ(large_value, result);
 }
 
-TEST(Coding, Strings) {
+TEST_F(Coding, Strings) {
   std::string s;
   PutLengthPrefixedSlice(&s, Slice(""));
   PutLengthPrefixedSlice(&s, Slice("foo"));
@@ -206,7 +206,7 @@ TEST(Coding, Strings) {
   ASSERT_EQ("", input.ToString());
 }
 
-TEST(Coding, BitStream) {
+TEST_F(Coding, BitStream) {
   const int kNumBytes = 10;
   char bytes[kNumBytes+1];
   for (int i = 0; i < kNumBytes + 1; ++i) {
@@ -266,7 +266,7 @@ TEST(Coding, BitStream) {
 
 }
 
-TEST(Coding, BitStreamConvenienceFuncs) {
+TEST_F(Coding, BitStreamConvenienceFuncs) {
   std::string bytes(1, '\0');
 
   // Check that independent changes to byte are preserved.
@@ -309,7 +309,7 @@ bool ValidateEnum(Fixed16) { return true; }
 bool ValidateEnum(Fixed32) { return true; }
 bool ValidateEnum(Fixed64) { return true; }
 
-TEST(Coding, FixedEnum) {
+TEST_F(Coding, FixedEnum) {
   Fixed8  in8  = Fixed8::x,  out8  = Fixed8::empty;
   Fixed16 in16 = Fixed16::x, out16 = Fixed16::empty;
   Fixed32 in32 = Fixed32::x, out32 = Fixed32::empty;
@@ -346,5 +346,5 @@ TEST(Coding, FixedEnum) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }

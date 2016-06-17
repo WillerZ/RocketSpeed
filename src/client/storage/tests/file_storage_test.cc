@@ -18,13 +18,13 @@
 
 namespace rocketspeed {
 
-class FileStorageTest {
+class FileStorageTest : public ::testing::Test {
  public:
   FileStorageTest()
       : timeout(5),
         file_path(test::TmpDir() + "/FileStorageTest-file_storage_data"),
         env(Env::Default()) {
-    ASSERT_OK(test::CreateLogger(env, "FileStorageTest", &info_log));
+    EXPECT_OK(test::CreateLogger(env, "FileStorageTest", &info_log));
     // Make sure there is no stale data.
     env->DeleteFile(file_path);
   }
@@ -37,7 +37,7 @@ class FileStorageTest {
   std::shared_ptr<rocketspeed::Logger> info_log;
 };
 
-TEST(FileStorageTest, GenericSubscriptionStorage) {
+TEST_F(FileStorageTest, GenericSubscriptionStorage) {
   FileStorage storage(env, info_log, file_path);
 
   // Sample subscription data.
@@ -87,7 +87,7 @@ TEST(FileStorageTest, GenericSubscriptionStorage) {
   ASSERT_TRUE(restored == expected);
 }
 
-TEST(FileStorageTest, MissingFile) {
+TEST_F(FileStorageTest, MissingFile) {
   FileStorage storage(env, info_log, file_path);
 
   // Make sure that there is not file.
@@ -98,7 +98,7 @@ TEST(FileStorageTest, MissingFile) {
   ASSERT_TRUE(storage.RestoreSubscriptions(&restored).IsIOError());
 }
 
-TEST(FileStorageTest, CorruptedFile) {
+TEST_F(FileStorageTest, CorruptedFile) {
   // Create corrupted snapshot file.
   {
     std::unique_ptr<WritableFile> file_handle;
@@ -130,4 +130,4 @@ TEST(FileStorageTest, CorruptedFile) {
 
 }  // namespace rocketspeed
 
-int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(); }
+int main(int argc, char** argv) { return rocketspeed::test::RunAllTests(argc, argv); }

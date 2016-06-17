@@ -11,6 +11,7 @@
 #include "src/util/filter_policy.h"
 #include "src/util/storage.h"
 #include "src/util/common/statistics.h"
+#include <gtest/gtest.h>
 
 namespace rocketspeed {
 
@@ -20,8 +21,9 @@ extern std::shared_ptr<Cache> NewDataCache(size_t capacity);
 
 class DataCache {
  friend class CacheEntry;
- friend class _Test_Check;
- friend class _Test_CheckBloom;
+ FRIEND_TEST(DataCacheTest, Check);
+ FRIEND_TEST(DataCacheTest, CheckBloom);
+
  public:
   DataCache(size_t size_in_bytes,
             bool cache_data_from_system_namespaces, // true: cache system ns

@@ -18,7 +18,7 @@ namespace rocketspeed {
 
 class WrappedMessage {};
 
-TEST(WrappedMessage, Serialization) {
+TEST_F(WrappedMessage, Serialization) {
   MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Request);
   const StreamID stream = 42;
   const MessageSequenceNumber seqno = 1337;
@@ -42,7 +42,7 @@ TEST(WrappedMessage, Serialization) {
   ASSERT_EQ(seqno, seqno1);
 }
 
-class ProxyTest {
+class ProxyTest : public ::testing::Test : public ::testing::Test {
  public:
   static const int kOrderingBufferSize = 10;
 
@@ -70,7 +70,7 @@ class ProxyTest {
   std::unique_ptr<Proxy> proxy;
 };
 
-TEST(ProxyTest, Publish) {
+TEST_F(ProxyTest, Publish) {
   // Start the proxy.
   // We're going to publish a message and expect an ack in return.
   port::Semaphore checkpoint;
@@ -152,7 +152,7 @@ TEST(ProxyTest, Publish) {
   ASSERT_EQ(0, forcibly_disconnected.load());
 }
 
-TEST(ProxyTest, SeqnoError) {
+TEST_F(ProxyTest, SeqnoError) {
   const StreamID expected_stream = 1337;
 
   // Start the proxy.
@@ -176,7 +176,7 @@ TEST(ProxyTest, SeqnoError) {
   ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(1)));
 }
 
-TEST(ProxyTest, DestroySession) {
+TEST_F(ProxyTest, DestroySession) {
   const int64_t expected_session = 123;
   const StreamID expected_stream = 1337;
 
@@ -224,7 +224,7 @@ TEST(ProxyTest, DestroySession) {
   ASSERT_EQ(cluster->GetCopilot()->GetMsgLoop()->GetNumClientsSync(), 0);
 }
 
-TEST(ProxyTest, ServerDown) {
+TEST_F(ProxyTest, ServerDown) {
   const StreamID expected_stream = 1337;
 
   // Start the proxy.
@@ -274,7 +274,7 @@ TEST(ProxyTest, ServerDown) {
   ASSERT_EQ(1, disconnected_sessions.count(456));
 }
 
-TEST(ProxyTest, ForwardGoodbye) {
+TEST_F(ProxyTest, ForwardGoodbye) {
   const int64_t expected_session = 123;
   const StreamID pilot_stream = 123;
   const StreamID copilot_stream = 321;
@@ -378,7 +378,3 @@ TEST(ProxyTest, ForwardGoodbye) {
 }
 
 }  // namespace rocketspeed
-
-int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
-}

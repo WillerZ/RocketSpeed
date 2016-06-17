@@ -7,14 +7,14 @@
 
 namespace rocketspeed {
 
-class RefCountFlyweightTestNDebug {};
+class RefCountFlyweightTestNDebug : public ::testing::Test {};
 
-TEST(RefCountFlyweightTestNDebug, NotLargerThanRawPointer) {
+TEST_F(RefCountFlyweightTestNDebug, NotLargerThanRawPointer) {
   ASSERT_LE(sizeof(RefCountFlyweight<std::string>), sizeof(void*));
 }
 
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  return rocketspeed::test::RunAllTests();
+  return rocketspeed::test::RunAllTests(argc, argv);
 }
