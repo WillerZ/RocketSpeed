@@ -44,7 +44,7 @@ struct ThreadCheck {
 
   ThreadCheck& operator=(const ThreadCheck& other) {
 #ifdef RS_USE_THREAD_CHECK
-    auto thread_id = other.thread_id_.load(std::memory_order_consume);
+    auto thread_id = other.thread_id_.load(std::memory_order_acquire);
     thread_id_.store(thread_id, std::memory_order_release);
 #endif
     return *this;
