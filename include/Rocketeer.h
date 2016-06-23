@@ -5,13 +5,19 @@
 //
 #pragma once
 
+#include <chrono>
+#include <functional>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "BackPressure.h"
 #include "Types.h"
 
 namespace rocketspeed {
+
+template <typename> class RetryLaterSink;
 
 class SubscriptionID;
 
@@ -74,33 +80,72 @@ struct RocketeerMessage {
 
 class Rocketeer {
  public:
-  Rocketeer() : below_rocketeer_(nullptr) {}
+  Rocketeer();
 
-  virtual ~Rocketeer() = default;
+  virtual ~Rocketeer();
 
   /**
    * Notifies about new inbound subscription.
    * This method is guaranteed to always be called on the same thread.
+   * Implementations should provide either TryHandleNewSubscription or
+   * HandleNewSubscription, but not both. If both are provided, this version
+   * is ignored.
    *
    * @param inbound_id Globally unique ID of this subscription.
    * @param params Parameters of the subscription provided by the subscriber.
+   * @return Back pressure status. Use BackPressure::None() if message was
+   *         processed successfully, otherwise specify type of back pressure.
    */
-  virtual void HandleNewSubscription(InboundID inbound_id,
-                                     SubscriptionParameters params) = 0;
+  virtual BackPressure TryHandleNewSubscription(
+      InboundID inbound_id, SubscriptionParameters params);
+
+  /**
+   * Notifies about new inbound subscription.
+   * This method is guaranteed to always be called on the same thread.
+   * Implementations should provide either TryHandleNewSubscription or
+   * HandleNewSubscription, but not both. If both are provided, this version
+   * is preferred.
+   *
+   * @param flow Flow control handle for exerting back-pressure.
+   * @param inbound_id Globally unique ID of this subscription.
+   * @param params Parameters of the subscription provided by the subscriber.
+   */
+  virtual void HandleNewSubscription(Flow* flow,
+                                     InboundID inbound_id,
+                                     SubscriptionParameters params);
 
   /**
    * Notifies that given subscription was terminated by the user.
    * This method is guaranteed to always be called on the same thread.
+   * Implementations should provide either TryHandleTermination or
+   * HandleTermination, but not both. If both are provided, this version is
+   * ignored.
    *
    * @param inbound_id ID of the subscription to be terminated.
    * @param source Who terminated the subscription.
+   * @return Back pressure status. Use BackPressure::None() if message was
+   *         processed successfully, otherwise specify type of back pressure.
    */
   enum class TerminationSource {
     Subscriber,
     Rocketeer,
   };
-  virtual void HandleTermination(InboundID inbound_id,
-                                 TerminationSource source) = 0;
+  virtual BackPressure TryHandleTermination(
+      InboundID inbound_id, TerminationSource source);
+
+  /**
+   * Notifies that given subscription was terminated by the user.
+   * This method is guaranteed to always be called on the same thread.
+   * Implementations should provide either TryHandleTermination or
+   * HandleTermination, but not both. If both are provided, this version is
+   * preferred.
+   *
+   * @param flow Flow control handle for exerting back-pressure.
+   * @param inbound_id ID of the subscription to be terminated.
+   * @param source Who terminated the subscription.
+   */
+  virtual void HandleTermination(
+      Flow* flow, InboundID inbound_id, TerminationSource source);
 
   /**
    * Sends a message on given subscription.
@@ -176,6 +221,7 @@ class Rocketeer {
 
  private:
   Rocketeer* below_rocketeer_;
+  std::unique_ptr<RetryLaterSink<std::function<BackPressure()>>> metadata_sink_;
 };
 
 }  // namespace rocketspeed

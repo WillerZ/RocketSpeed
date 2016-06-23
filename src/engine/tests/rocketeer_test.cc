@@ -87,14 +87,15 @@ struct SubscribeUnsubscribe : public Rocketeer {
   InboundID inbound_id_;
   port::Semaphore terminate_sem_;
 
-  void HandleNewSubscription(InboundID inbound_id,
-                             SubscriptionParameters params) {
+  void HandleNewSubscription(
+      Flow*, InboundID inbound_id, SubscriptionParameters params) override {
     ASSERT_TRUE(!is_set_);
     is_set_ = true;
     inbound_id_ = inbound_id;
   }
 
-  void HandleTermination(InboundID inbound_id, TerminationSource source) {
+  void HandleTermination(
+      Flow*, InboundID inbound_id, TerminationSource source) {
     ASSERT_TRUE(TerminationSource::Subscriber == source);
     ASSERT_TRUE(is_set_);
     ASSERT_TRUE(inbound_id_ == inbound_id);
@@ -140,13 +141,14 @@ struct SubscribeTerminate : public Rocketeer {
   InboundID inbound_id_;
   port::Semaphore terminate_sem_;
 
-  void HandleNewSubscription(InboundID inbound_id,
-                             SubscriptionParameters params) {
+  void HandleNewSubscription(
+      Flow*, InboundID inbound_id, SubscriptionParameters params) override {
     inbound_id_ = inbound_id;
     Terminate(nullptr, inbound_id, Rocketeer::UnsubscribeReason::Invalid);
   }
 
-  void HandleTermination(InboundID inbound_id, TerminationSource source) {
+  void HandleTermination(
+      Flow*, InboundID inbound_id, TerminationSource source) {
     ASSERT_TRUE(TerminationSource::Rocketeer == source);
     ASSERT_TRUE(inbound_id_ == inbound_id);
     terminate_sem_.Post();
@@ -195,13 +197,14 @@ struct Noop : public Rocketeer {
     rocketeer_ = rocketeer;
   }
 
-  void HandleNewSubscription(InboundID inbound_id,
-                             SubscriptionParameters params) {
-    rocketeer_->HandleNewSubscription(inbound_id, params);
+  void HandleNewSubscription(Flow* flow, InboundID inbound_id,
+      SubscriptionParameters params) override {
+    return rocketeer_->HandleNewSubscription(flow, inbound_id, params);
   }
 
-  void HandleTermination(InboundID inbound_id, TerminationSource source) {
-    rocketeer_->HandleTermination(inbound_id, source);
+  void HandleTermination(
+      Flow* flow, InboundID inbound_id, TerminationSource source) {
+    rocketeer_->HandleTermination(flow, inbound_id, source);
   }
 };
 
@@ -217,8 +220,8 @@ struct TopOfStack : public Rocketeer {
   port::Semaphore terminate_sem_;
   InboundID inbound_id_;
 
-  void HandleNewSubscription(InboundID inbound_id,
-                             SubscriptionParameters params) {
+  void HandleNewSubscription(
+      Flow*, InboundID inbound_id, SubscriptionParameters params) override {
     inbound_id_ = inbound_id;
     Deliver(nullptr, inbound_id, deliver_msg_seqno_, deliver_msg_);
     Advance(nullptr, inbound_id, advance_seqno_);
@@ -226,7 +229,8 @@ struct TopOfStack : public Rocketeer {
     Terminate(nullptr, inbound_id, Rocketeer::UnsubscribeReason::Invalid);
   }
 
-  void HandleTermination(InboundID inbound_id, TerminationSource source) {
+  void HandleTermination(
+      Flow*, InboundID inbound_id, TerminationSource source) {
     ASSERT_TRUE(TerminationSource::Rocketeer == source);
     ASSERT_TRUE(inbound_id_ == inbound_id);
     terminate_sem_.Post();
@@ -298,6 +302,108 @@ TEST_F(RocketeerTest, StackRocketeerTest) {
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(batch_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(topRocketeer.terminate_sem_.TimedWait(positive_timeout));
+
+  // Stop explicitly, as the Rocketeer is destroyed before the Server.
+  server_->Stop();
+}
+
+struct MetadataFlowControl : public Rocketeer {
+  // Backoff to use for new subscriptions.
+  static const std::chrono::milliseconds kDelay;
+  enum : uint32_t { kNumShards = 1 };
+
+  // Semaphore to signal when we are done.
+  port::Semaphore terminate_sem_;
+
+  // Number of topics (used to know when we're done).
+  const int num_topics_;
+
+  // Next expected topic per shard. Incremented when we do not backoff.
+  std::array<int, kNumShards> next_topic_;
+
+  // Should we delay next topic on this shard? This alternates true/false.
+  std::array<bool, kNumShards> delay_next_;
+
+  std::chrono::steady_clock::time_point start_;
+  std::array<std::chrono::steady_clock::time_point, kNumShards> next_time_;
+
+  explicit MetadataFlowControl(int num_topics)
+  : num_topics_(num_topics)
+  , start_(std::chrono::steady_clock::now()) {
+    std::fill(next_topic_.begin(), next_topic_.end(), 0);
+    std::fill(delay_next_.begin(), delay_next_.end(), true);
+    std::fill(next_time_.begin(), next_time_.end(), start_);
+  }
+
+  BackPressure TryHandleNewSubscription(
+      InboundID inbound_id, SubscriptionParameters params) override {
+    auto shard = inbound_id.GetShard();
+    auto now = std::chrono::steady_clock::now();
+    EXPECT_LT(shard, kNumShards);
+    EXPECT_GE(now - start_, next_time_[shard] - start_);
+    EXPECT_EQ(params.topic_name, std::to_string(next_topic_[shard]));
+    auto delay = std::chrono::milliseconds::zero();
+    if (delay_next_[shard]) {
+      delay = kDelay;
+    } else {
+      ++next_topic_[shard];
+      if (next_topic_[shard] == num_topics_) {
+        terminate_sem_.Post();
+      }
+    }
+    delay_next_[shard] = !delay_next_[shard];
+    next_time_[shard] = now + delay;
+    if (delay.count()) {
+      return BackPressure::RetryAfter(delay);
+    } else {
+      return BackPressure::None();
+    }
+  }
+
+  BackPressure TryHandleTermination(
+      InboundID inbound_id, TerminationSource source) override {
+    return BackPressure::None();
+  }
+};
+
+const std::chrono::milliseconds MetadataFlowControl::kDelay =
+    std::chrono::milliseconds(100);
+
+TEST_F(RocketeerTest, MetadataFlowControl) {
+  const auto kNumTopics = 10;
+  const auto kNumShards = MetadataFlowControl::kNumShards;
+  MetadataFlowControl rocketeer(kNumTopics);
+  server_->Register(&rocketeer);
+  ASSERT_OK(server_->Start());
+  auto server_addr = server_->GetHostId();
+
+  auto client = MockClient(std::map<MessageType, MsgCallbackType>());
+
+  // Open sockets for each shard.
+  // Test relies on the fact that we have a different from per shard.
+  StreamSocket socket[kNumShards];
+  for (uint32_t shard = 0; shard < kNumShards; ++shard) {
+    socket[shard] = client.msg_loop->CreateOutboundStream(server_addr, 0);
+  }
+
+  for (int t = 0; t < kNumTopics; ++t) {
+    for (uint32_t shard = 0; shard < kNumShards; ++shard) {
+      // Subscribe.
+      auto subid = SubscriptionID::ForShard(shard, t + 1);
+      auto topic = std::to_string(t);
+      MessageSubscribe subscribe(GuestTenant, GuestNamespace, topic, 1, subid);
+      ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket[shard], 0));
+    }
+  }
+
+  // Wait for first shard to finish.
+  ASSERT_TRUE(rocketeer.terminate_sem_.TimedWait(
+      negative_timeout + MetadataFlowControl::kDelay * kNumTopics));
+
+  // Other shards should finish shortly after (unaffected by first)
+  for (uint32_t shard = 1; shard < kNumShards; ++shard) {
+    ASSERT_TRUE(rocketeer.terminate_sem_.TimedWait(negative_timeout));
+  }
 
   // Stop explicitly, as the Rocketeer is destroyed before the Server.
   server_->Stop();

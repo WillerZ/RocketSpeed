@@ -51,10 +51,12 @@ class CommunicationRocketeer : public Rocketeer {
  public:
   explicit CommunicationRocketeer(Rocketeer* rocketeer);
 
-  void HandleNewSubscription(InboundID inbound_id,
+  void HandleNewSubscription(Flow* flow,
+                             InboundID inbound_id,
                              SubscriptionParameters params) final override;
 
-  void HandleTermination(InboundID inbound_id,
+  void HandleTermination(Flow* flow,
+                         InboundID inbound_id,
                          Rocketeer::TerminationSource source) final override;
 
   void Deliver(Flow* flow,
@@ -114,27 +116,31 @@ class CommunicationRocketeer : public Rocketeer {
 
   void SendResponse(Flow* flow, StreamID stream_id, const Message& message);
 
-  void Receive(std::unique_ptr<MessageSubscribe> subscribe, StreamID origin);
+  void Receive(
+      Flow* flow, std::unique_ptr<MessageSubscribe> subscribe, StreamID origin);
 
-  void Receive(std::unique_ptr<MessageUnsubscribe> unsubscribe,
-               StreamID origin);
+  void Receive(
+      Flow* flow, std::unique_ptr<MessageUnsubscribe> unsubscribe,
+      StreamID origin);
 
-  void Receive(std::unique_ptr<MessageGoodbye> goodbye, StreamID origin);
+  void Receive(
+      Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin);
 };
 
 CommunicationRocketeer::CommunicationRocketeer(Rocketeer* rocketeer)
-: server_(nullptr), above_rocketeer_(rocketeer) {
+: server_(nullptr),
+  above_rocketeer_(rocketeer) {
   rocketeer->SetBelowRocketeer(this);
 }
 
 void CommunicationRocketeer::HandleNewSubscription(
-    InboundID inbound_id, SubscriptionParameters params) {
-  above_rocketeer_->HandleNewSubscription(inbound_id, std::move(params));
+    Flow* flow, InboundID inbound_id, SubscriptionParameters params) {
+  above_rocketeer_->HandleNewSubscription(flow, inbound_id, std::move(params));
 }
 
-void CommunicationRocketeer::HandleTermination(InboundID inbound_id,
-                                               TerminationSource source) {
-  above_rocketeer_->HandleTermination(inbound_id, source);
+void CommunicationRocketeer::HandleTermination(
+    Flow* flow, InboundID inbound_id, TerminationSource source) {
+  above_rocketeer_->HandleTermination(flow, inbound_id, source);
 }
 
 void CommunicationRocketeer::Deliver(Flow* flow,
@@ -249,7 +255,8 @@ void CommunicationRocketeer::Terminate(Flow* flow,
       it->second.erase(it1);
       stats_->inbound_subscriptions->Add(-1);
       stats_->terminations->Add(1);
-      HandleTermination(InboundID(origin, sub_id),
+      HandleTermination(flow,
+                        InboundID(origin, sub_id),
                         TerminationSource::Rocketeer);
 
       MessageUnsubscribe::Reason msg_reason =
@@ -328,7 +335,7 @@ void CommunicationRocketeer::SendResponse(Flow* flow,
 }
 
 void CommunicationRocketeer::Receive(
-    std::unique_ptr<MessageSubscribe> subscribe, StreamID origin) {
+    Flow* flow, std::unique_ptr<MessageSubscribe> subscribe, StreamID origin) {
   thread_check_.Check();
 
   SubscriptionID sub_id = subscribe->GetSubID();
@@ -349,13 +356,14 @@ void CommunicationRocketeer::Receive(
                                 subscribe->GetNamespace().ToString(),
                                 subscribe->GetTopicName().ToString(),
                                 subscribe->GetStartSequenceNumber());
-  HandleNewSubscription(InboundID(origin, sub_id), std::move(params));
+  HandleNewSubscription(flow, InboundID(origin, sub_id), std::move(params));
   stats_->subscribes->Add(1);
   stats_->inbound_subscriptions->Add(1);
 }
 
 void CommunicationRocketeer::Receive(
-    std::unique_ptr<MessageUnsubscribe> unsubscribe, StreamID origin) {
+    Flow* flow, std::unique_ptr<MessageUnsubscribe> unsubscribe,
+    StreamID origin) {
   thread_check_.Check();
 
   SubscriptionID sub_id = unsubscribe->GetSubID();
@@ -365,7 +373,8 @@ void CommunicationRocketeer::Receive(
     if (removed > 0) {
       stats_->inbound_subscriptions->Add(-1);
       stats_->unsubscribes->Add(1);
-      HandleTermination(InboundID(origin, sub_id),
+      HandleTermination(flow,
+                        InboundID(origin, sub_id),
                         TerminationSource::Subscriber);
       if (it->second.empty()) {
         inbound_subscriptions_.erase(it);
@@ -379,8 +388,8 @@ void CommunicationRocketeer::Receive(
            sub_id.ForLogging());
 }
 
-void CommunicationRocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
-                                     StreamID origin) {
+void CommunicationRocketeer::Receive(
+    Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin) {
   thread_check_.Check();
 
   auto it = inbound_subscriptions_.find(origin);
@@ -391,7 +400,8 @@ void CommunicationRocketeer::Receive(std::unique_ptr<MessageGoodbye> goodbye,
   for (const auto& entry : it->second) {
     stats_->inbound_subscriptions->Add(-1);
     stats_->unsubscribes->Add(1);
-    HandleTermination(InboundID(origin, entry.first),
+    HandleTermination(flow,
+                      InboundID(origin, entry.first),
                       TerminationSource::Subscriber);
   }
   inbound_subscriptions_.erase(it);
@@ -526,7 +536,7 @@ MsgCallbackType RocketeerServer::CreateCallback() {
   return [this](Flow* flow, std::unique_ptr<Message> message, StreamID origin) {
     std::unique_ptr<Msg> casted(static_cast<Msg*>(message.release()));
     auto worker_id = msg_loop_->GetThreadWorkerIndex();
-    rocketeers_[worker_id]->Receive(std::move(casted), origin);
+    rocketeers_[worker_id]->Receive(flow, std::move(casted), origin);
   };
 }
 

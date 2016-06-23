@@ -3,6 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include "include/BackPressure.h"
 #include "src/messages/event_loop.h"
 #include "src/util/common/flow.h"
 
@@ -17,8 +18,7 @@ namespace rocketspeed {
 template <typename T>
 class RetryLaterSink : public SinkWithOverflow<T> {
  public:
-  explicit RetryLaterSink(
-      std::function<std::chrono::milliseconds(T&)>&& handler)
+  explicit RetryLaterSink(std::function<BackPressure(T&)>&& handler)
   : handler_(std::move(handler)) {}
 
   std::unique_ptr<EventCallback> CreateWriteCallback(
@@ -39,18 +39,18 @@ class RetryLaterSink : public SinkWithOverflow<T> {
     if (std::chrono::steady_clock::now() < next_time_) {
       return false;
     }
-    const std::chrono::milliseconds backoff = handler_(value);
-    if (backoff != std::chrono::milliseconds::zero()) {
+    const BackPressure backoff = handler_(value);
+    if (backoff) {
       // Handler has requested that we retry later.
       // Update the time for next allowed write and back-off the sources.
-      next_time_ = std::chrono::steady_clock::now() + backoff;
+      next_time_ = std::chrono::steady_clock::now() + backoff.Delay();
       return false;
     }
     return true;
   }
 
  private:
-  std::function<std::chrono::milliseconds(T&)> handler_;
+  std::function<BackPressure(T&)> handler_;
   std::chrono::steady_clock::time_point next_time_;
 };
 

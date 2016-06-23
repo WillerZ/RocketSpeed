@@ -16,10 +16,12 @@
 #include "include/Env.h"
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
-#include "include/Rocketeer.h"
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
+#include "src/messages/flow_control.h"
+#include "src/util/common/flow.h"
+#include "src/util/common/retry_later_sink.h"
 #include "src/util/common/subscription_id.h"
 #include "src/util/common/hash.h"
 
@@ -50,6 +52,58 @@ SubscriptionID RocketeerMessage::GetSubID() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+Rocketeer::Rocketeer()
+: below_rocketeer_(nullptr)
+, metadata_sink_(new RetryLaterSink<std::function<BackPressure()>>(
+    [] (std::function<BackPressure()>& handler) { return handler(); })) {}
+
+Rocketeer::~Rocketeer() = default;
+
+BackPressure Rocketeer::TryHandleNewSubscription(
+    InboundID inbound_id, SubscriptionParameters params) {
+  RS_ASSERT(false) << "TryHandleNewSubscription is not implemented.";
+  return BackPressure::None();
+}
+
+void Rocketeer::HandleNewSubscription(Flow* flow,
+                                      InboundID inbound_id,
+                                      SubscriptionParameters params) {
+  // This is the default implementation of HandleNewSubscription.
+  // Most application Rocketeers will implement TryHandleNewSubscription, but
+  // internally RocketSpeed calls HandleNewSubscription.
+  //
+  // The default implementation forward the call to TryHandleNewSubscription
+  // through a RetryLaterSink, which will retry the call later if the Try
+  // called requested a retry.
+  std::function<BackPressure()> cmd(
+    [this, inbound_id, params] () {
+      return TryHandleNewSubscription(inbound_id, params);
+    });
+  flow->Write(metadata_sink_.get(), cmd);
+}
+
+BackPressure Rocketeer::TryHandleTermination(
+    InboundID inbound_id, TerminationSource source) {
+  RS_ASSERT(false) << "TryHandleTermination is not implemented.";
+  return BackPressure::None();
+}
+
+void Rocketeer::HandleTermination(
+    Flow* flow, InboundID inbound_id, TerminationSource source) {
+  // This is the default implementation of HandleTermination.
+  // Most application Rocketeers will implement TryHandleTermination, but
+  // internally RocketSpeed calls HandleTermination.
+  //
+  // The default implementation forward the call to TryHandleTermination
+  // through a RetryLaterSink, which will retry the call later if the Try
+  // called requested a retry.
+  std::function<BackPressure()> cmd(
+    [this, inbound_id, source] () {
+      return TryHandleTermination(inbound_id, source);
+    });
+  flow->Write(metadata_sink_.get(), cmd);
+}
+
 void Rocketeer::Deliver(Flow* flow,
                         InboundID inbound_id,
                         SequenceNumber seqno,

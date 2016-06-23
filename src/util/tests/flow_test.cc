@@ -631,7 +631,11 @@ TEST_F(FlowTest, RetryLaterSink) {
     }
     expected_delay = std::chrono::milliseconds(backoff);
     last_time = std::chrono::steady_clock::now();
-    return expected_delay;
+    if (backoff) {
+      return BackPressure::RetryAfter(expected_delay);
+    } else {
+      return BackPressure::None();
+    }
   });
 
   // Register queue read event handlers.
