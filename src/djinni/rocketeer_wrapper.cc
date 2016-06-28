@@ -69,7 +69,8 @@ class ForwardingRocketeer : public rs::Rocketeer {
                       std::shared_ptr<Logger> info_log)
   : rocketeer_(std::move(rocketeer)), info_log_(std::move(info_log)) {}
 
-  void HandleNewSubscription(rs::InboundID inbound_id,
+  void HandleNewSubscription(rs::Flow*,
+                             rs::InboundID inbound_id,
                              rs::SubscriptionParameters params) override {
     try {
       rocketeer_->HandleNewSubscription(FromInboundID(inbound_id),
@@ -80,7 +81,8 @@ class ForwardingRocketeer : public rs::Rocketeer {
     };
   }
 
-  void HandleTermination(rs::InboundID inbound_id,
+  void HandleTermination(rs::Flow*,
+                         rs::InboundID inbound_id,
                          TerminationSource source) override {
     try {
       rocketeer_->HandleTermination(FromInboundID(inbound_id),

@@ -14,6 +14,7 @@ cpp_binary(
     deps = [
         ':logdevice_storage',
         '@/rocketspeed/github/src/port:port',
+        '@/rocketspeed/github/src/util:test',
         '@/rocketspeed/github/src/util:util',
         '@/rocketspeed/github/src/messages:messages',
     ],

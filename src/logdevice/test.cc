@@ -27,7 +27,7 @@ using facebook::logdevice::LSN_INVALID;
 using facebook::logdevice::LSN_MAX;
 using facebook::logdevice::LSN_OLDEST;
 
-class MockLogDeviceTest : public ::testing::Test : public ::testing::Test { };
+class MockLogDeviceTest : public ::testing::Test { };
 
 facebook::logdevice::Payload payload(std::string s) {
   return facebook::logdevice::Payload(s.c_str(), s.size() + 1);
@@ -41,8 +41,8 @@ std::shared_ptr<facebook::logdevice::Client> MakeTestClient() {
     facebook::logdevice::IntegrationTestUtils::ClusterFactory().create(5);
   auto client = cluster->createClient();
   lsn_t now_lsn = client->appendSync(logid_t(1), payload(""));
-  ASSERT_NE(now_lsn, LSN_INVALID);
-  ASSERT_EQ(client->trimSync(logid_t(1), now_lsn), 0);
+  EXPECT_NE(now_lsn, LSN_INVALID);
+  EXPECT_EQ(client->trimSync(logid_t(1), now_lsn), 0);
   return client;
 }
 
@@ -88,7 +88,7 @@ TEST_F(MockLogDeviceTest, Basic) {
   std::atomic<int> count2{0};
   reader1->setRecordCallback(
     [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
-      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+      EXPECT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count1));
       ++count1;
       if (count1 == 6 && count2 == 4) {
@@ -101,7 +101,7 @@ TEST_F(MockLogDeviceTest, Basic) {
     });
   reader2->setRecordCallback(
     [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
-      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+      EXPECT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count2 + 1));
       ++count2;
       if (count1 == 6 && count2 == 4) {
@@ -160,7 +160,7 @@ TEST_F(MockLogDeviceTest, FindTime) {
   std::atomic<int> count{0};
   reader->setRecordCallback(
     [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
-      ASSERT_LT(count, 3);
+      EXPECT_LT(count, 3);
       timestamps[count] = rec->attrs.timestamp;
       ++count;
       if (count == 3) {
@@ -189,8 +189,8 @@ TEST_F(MockLogDeviceTest, FindTime) {
   for (int i = 0; i < 3; ++i) {
     client->findTime(logid, timestamps[i],
       [i, &count, &lsn, &checkpoint](facebook::logdevice::Status err, lsn_t l) {
-        ASSERT_EQ(l, lsn[i]);
-        ASSERT_TRUE(err == facebook::logdevice::E::OK ||
+        EXPECT_EQ(l, lsn[i]);
+        EXPECT_TRUE(err == facebook::logdevice::E::OK ||
                     err == facebook::logdevice::E::PARTIAL);
         ++count;
         if (count == 3) {
@@ -233,7 +233,7 @@ TEST_F(MockLogDeviceTest, Trim) {
   std::atomic<int> count{0};
   reader->setRecordCallback(
     [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
-      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+      EXPECT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count + 2));
       ++count;
       if (count == 2) {
@@ -264,7 +264,7 @@ TEST_F(MockLogDeviceTest, ConcurrentReadsWrites) {
   auto reader1 = client->createAsyncReader();
   reader1->setRecordCallback(
     [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
-      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+      EXPECT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count1));
       ++count1;
       lsn1 = rec->attrs.lsn;
@@ -281,7 +281,7 @@ TEST_F(MockLogDeviceTest, ConcurrentReadsWrites) {
   auto reader2 = client->createAsyncReader();
   reader2->setRecordCallback(
     [&] (std::unique_ptr<facebook::logdevice::DataRecord>& rec) {
-      ASSERT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
+      EXPECT_EQ(std::string(reinterpret_cast<const char*>(rec->payload.data)),
                 "test" + std::to_string(count2));
       ++count2;
       lsn2 = rec->attrs.lsn;
@@ -312,3 +312,7 @@ TEST_F(MockLogDeviceTest, ConcurrentReadsWrites) {
 }
 
 }  // namespace rocketspeed
+
+int main(int argc, char** argv) {
+  return rocketspeed::test::RunAllTests(argc, argv);
+}

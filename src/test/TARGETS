@@ -33,6 +33,7 @@ cpp_binary(
     ],
     deps = [
         ':test_cluster',
+        '@/rocketspeed/github/src/util:test',
     ],
 )
 
