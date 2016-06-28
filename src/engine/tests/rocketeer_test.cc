@@ -5,6 +5,7 @@
 //
 #define __STDC_FORMAT_MACROS
 
+#include <array>
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -95,7 +96,7 @@ struct SubscribeUnsubscribe : public Rocketeer {
   }
 
   void HandleTermination(
-      Flow*, InboundID inbound_id, TerminationSource source) {
+      Flow*, InboundID inbound_id, TerminationSource source) override {
     ASSERT_TRUE(TerminationSource::Subscriber == source);
     ASSERT_TRUE(is_set_);
     ASSERT_TRUE(inbound_id_ == inbound_id);
@@ -148,7 +149,7 @@ struct SubscribeTerminate : public Rocketeer {
   }
 
   void HandleTermination(
-      Flow*, InboundID inbound_id, TerminationSource source) {
+      Flow*, InboundID inbound_id, TerminationSource source) override {
     ASSERT_TRUE(TerminationSource::Rocketeer == source);
     ASSERT_TRUE(inbound_id_ == inbound_id);
     terminate_sem_.Post();
@@ -203,7 +204,7 @@ struct Noop : public Rocketeer {
   }
 
   void HandleTermination(
-      Flow* flow, InboundID inbound_id, TerminationSource source) {
+      Flow* flow, InboundID inbound_id, TerminationSource source) override {
     rocketeer_->HandleTermination(flow, inbound_id, source);
   }
 };
@@ -230,7 +231,7 @@ struct TopOfStack : public Rocketeer {
   }
 
   void HandleTermination(
-      Flow*, InboundID inbound_id, TerminationSource source) {
+      Flow*, InboundID inbound_id, TerminationSource source) override {
     ASSERT_TRUE(TerminationSource::Rocketeer == source);
     ASSERT_TRUE(inbound_id_ == inbound_id);
     terminate_sem_.Post();
