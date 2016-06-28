@@ -240,8 +240,7 @@ class Client {
    * @param parameters Parameters of the subscription.
    * @param observer Observer interface with one or more methods implemented
    *                 by the application. Must be not-nullptr. Will only be
-   *                 moved away if the subscription a valid subscription
-   *                 handle is returned.
+   *                 moved away if a valid subscription handle is returned.
    * @return A handle that identifies this subscription. The handle is unengaged
    *         iff the Client failed to create the subscription
    *         or the subscription limit is reached.
@@ -251,10 +250,22 @@ class Client {
 
   /**
    * As above, except for rvalue observers.
+   *
+   * @param parameters Parameters of the subscription.
+   * @param observer Typed observer rvalue, same as for the Subscribe method
+   *                 above. The observer is moved away only if a valid
+   *                 subscription handle is returned.
+   * @return A handle that identifies the subscription (as above).
    */
+  template <typename ObserverType>
   SubscriptionHandle Subscribe(SubscriptionParameters parameters,
-                               std::unique_ptr<Observer>&& observer) {
-    return Subscribe(std::move(parameters), observer);
+                               std::unique_ptr<ObserverType>&& observer) {
+    std::unique_ptr<Observer> tmp = std::move(observer);
+    auto r = Subscribe(std::move(parameters), tmp);
+    if (!r) {
+      observer.reset(static_cast<ObserverType*>(tmp.release()));
+    }
+    return r;
   }
 
   /**

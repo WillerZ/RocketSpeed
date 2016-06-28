@@ -1031,10 +1031,17 @@ TEST_F(ClientTest, FailedSubscriptionObserver) {
   options.queue_size = 1;
   auto client = CreateClient(std::move(options));
   bool one_failed = false;
+
+  class MyObserver : public Observer {
+  };
+
   for (int i = 0; i < 10000; ++i) {
-    std::unique_ptr<Observer> observer(new Observer());
+    // Using unique_ptr<MyObserver> to trigger call to the templated
+    // version of Subscribe. This is the most likely way the API is
+    // going to be used by apps.
+    std::unique_ptr<MyObserver> observer(new MyObserver());
     SubscriptionParameters params(GuestTenant, GuestNamespace, "foo", 0);
-    auto handle = client->Subscribe(params, observer);
+    auto handle = client->Subscribe(params, std::move(observer));
     if (handle) {
       ASSERT_TRUE(!observer);
     } else {
