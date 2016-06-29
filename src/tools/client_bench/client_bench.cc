@@ -9,6 +9,7 @@
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/testutil.h"
+#include "src/util/xxhash.h"
 
 #include "stdlib.h"
 #include "stdio.h"
@@ -35,8 +36,9 @@ DEFINE_uint64(subscribe_calls_amount,
 DEFINE_bool(logging, false, "enable/disable logging");
 DEFINE_uint64(topic_size, 20, "topic name size in bytes");
 DEFINE_string(jemalloc_output,
-              "/tmp/client_memory_usage_bench",
+              "/tmp/client_bench",
               "jemalloc stats output file.");
+DEFINE_uint64(client_threads, 4, "number of client threads");
 
 using rocketspeed::HostId;
 using rocketspeed::ShardingStrategy;
@@ -55,14 +57,14 @@ class BadPublisherRouter : public rocketspeed::PublisherRouter {
   }
 };
 
-class BadShardingStrategy : public ShardingStrategy {
+class SimpleShardingStrategy : public ShardingStrategy {
  public:
   size_t GetShard(Slice namespace_id, Slice topic_name) const override {
-    return 0;
+    return rocketspeed::XXH64(topic_name.data(), topic_name.size(), 0) %
+      FLAGS_client_threads;
   }
 
   std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-    RS_ASSERT(shard == 0);
     struct DummyRouter : public SubscriptionRouter {
       size_t GetVersion() override { return 0; }
       HostId GetHost() override { return HostId(); }
@@ -75,13 +77,14 @@ class BadShardingStrategy : public ShardingStrategy {
 Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   rocketspeed::ClientOptions client_options;
   client_options.publisher.reset(new BadPublisherRouter());
-  client_options.sharding.reset(new BadShardingStrategy());
+  client_options.sharding.reset(new SimpleShardingStrategy());
+  client_options.num_workers = FLAGS_client_threads;
   if (FLAGS_logging) {
     std::shared_ptr<rocketspeed::Logger> info_log;
     auto st =
         rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
                                              "logs",
-                                             "LOG.client_memory_used_bench",
+                                             "LOG.client_bench",
                                              0,
                                              0,
                                              rocketspeed::INFO_LEVEL,
@@ -110,7 +113,7 @@ void PrintJEMallocStats() {
 
   printf("jemalloc stats at '%s' !\n", FLAGS_jemalloc_output.c_str());
 #else
-  printf("jemalloc stats not available.\n");
+  fprintf(stderr, "ERROR: jemalloc stats not available.\n");
 #endif
 }
 
@@ -125,13 +128,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  size_t before = -1;
-  if (!rocketspeed::Env::Default()->GetVirtualMemoryUsed(&before).ok()) {
-    printf("Cannot get used virtual memory amount\n");
-    return -1;
+  size_t before = 0;
+  st = rocketspeed::Env::Default()->GetVirtualMemoryUsed(&before);
+  if (!st.ok()) {
+    fprintf(stderr, "ERROR: Cannot get VMM, \"%s\"\n", st.ToString().c_str());
   }
 
+  using clock = std::chrono::steady_clock;
   std::size_t i = 0;
+  auto start_time = clock::now();
+  std::chrono::seconds print_delay(1);
+  auto next_time = start_time + print_delay;
+  std::size_t last_subs = i;
   for (; i < FLAGS_subscribe_calls_amount; ++i) {
     std::string holder;
     auto slice = rocketspeed::test::RandomString(
@@ -143,27 +151,34 @@ int main(int argc, char** argv) {
                            0},
                           folly::make_unique<rocketspeed::Observer>());
     if (subscription_handle == 0) {
-      fprintf(stderr,
-              "Ran out of subscriptions. "
-              "This is because of flow control. Sleep a bit\n");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       --i;
     }
+    auto now = clock::now();
+    if (now > next_time) {
+      auto total_time = now - start_time;
+      auto total_time_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+          total_time).count();
+      auto rate_now = i - last_subs;
+      auto rate = static_cast<double>(i) * 1000.0 / total_time_ms;
+      size_t after = 0;
+      rocketspeed::Env::Default()->GetVirtualMemoryUsed(&after);
+      printf("time: %-6.0lf "
+             "subs: %-12zu "
+             "rate-now: %-10zu "
+             "rate-overall: %-10.0lf "
+             "mem/sub: %-6s\n",
+        double(total_time_ms / 1000.0),
+        i,
+        rate_now,
+        rate,
+        after ? rocketspeed::BytesToString((after - before) / i).c_str() :
+          "---");
+      next_time += print_delay;
+      last_subs = i;
+    }
   }
-
-  printf("Waiting some time to let subscription requests be processed...\n");
-  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-  size_t after = -1;
-  if (!rocketspeed::Env::Default()->GetVirtualMemoryUsed(&after).ok()) {
-    printf("Cannot get used virtual memory amount\n");
-    return -1;
-  }
-  printf("Subscriptions: %zu\n", i);
-  printf("Memory consumption: %s\n",
-         rocketspeed::BytesToString(after - before).c_str());
-  printf("Memory consumption per subscription: %s\n",
-         rocketspeed::BytesToString((after - before) / i).c_str());
 
   PrintJEMallocStats();
 
@@ -177,12 +192,12 @@ int main(int argc, char** argv) {
   //              sizeof(const char *));
   // 2. Recompile the benchmark and run as following:
   //      $ export MALLOC_CONF=prof:true
-  //      $ ./client_memory_used_bench
+  //      $ ./client_bench
   //      $ unset MALLOC_CONF
   //    You can explore other possible options for MALLOC_CONF here:
   //      www.canonware.com/download/jemalloc/jemalloc-latest/doc/jemalloc.html
   // 3. Generate PDF based on the collected data
-  //      $ jeprof --pdf --lines ./client_memory_used_bench jeprof.out > je.pdf
+  //      $ jeprof --pdf --lines ./client_bench jeprof.out > je.pdf
   //    You can explore other jeprof options by running
   //      $ jeprof --help
 }

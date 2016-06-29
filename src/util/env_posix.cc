@@ -1257,7 +1257,7 @@ class PosixEnv : public Env {
     return result;
   };
 
-#if defined(OS_ANDROID) || defined(OS_MACOSX)
+#if defined(OS_ANDROID) || defined(__MACH__)
   virtual Status DeleteDirRecursive(const std::string& name) override {
     return Status::NotSupported("DeleteDirRecursive is not suported");
   }
@@ -1579,6 +1579,16 @@ class PosixEnv : public Env {
 
     fclose(file);
     return Status::NotFound();
+#elif defined(__MACH__)
+    struct task_basic_info t_info;
+    mach_msg_type_number_t t_info_count = TASK_BASIC_INFO_COUNT;
+    if (KERN_SUCCESS != task_info(mach_task_self(),
+                                  TASK_BASIC_INFO, (task_info_t)&t_info,
+                                  &t_info_count)) {
+      return Status::NotFound();
+    }
+    *memory_used = t_info.virtual_size;
+    return Status::OK();
 #else
     return Env::GetVirtualMemoryUsed(memory_used);
 #endif

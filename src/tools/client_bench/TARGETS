@@ -1,8 +1,8 @@
-# client_memory_used_bench binary
+# client_bench binary
 cpp_binary(
-    name = 'client_memory_used_bench',
+    name = 'client_bench',
     srcs = [
-        'client_memory_used_bench.cc',
+        'client_bench.cc',
     ],
     preprocessor_flags = [
         '-Irocketspeed/github',
