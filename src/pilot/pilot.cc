@@ -333,10 +333,9 @@ Pilot::WorkerData::WorkerData(MsgLoop* msg_loop, int worker_id, Pilot* pilot)
   append_response_queues_.reset(
     new ThreadLocalQueues<AppendResponse>(
       [this, pilot, event_loop] () {
-        return InstallQueue<AppendResponse>(
+        return InstallSPSCQueue<AppendResponse>(
           event_loop,
           pilot->options_.info_log,
-          event_loop->GetQueueStats(),
           1000,
           [this, pilot] (Flow* flow, AppendResponse response) {
             // Update statistics.

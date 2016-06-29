@@ -28,14 +28,13 @@ class QueueStats;
  * @param callback Callback to invoke on queue reads.
  */
 template <typename T>
-std::shared_ptr<Queue<T>>
-InstallQueue(EventLoop* event_loop,
-             std::shared_ptr<Logger> info_log,
-             std::shared_ptr<QueueStats> queue_stats,
-             size_t size,
-             std::function<void(Flow*, T)> callback) {
-  auto queue = std::make_shared<Queue<T>>(std::move(info_log),
-                                          std::move(queue_stats),
+std::shared_ptr<SPSCQueue<T>>
+InstallSPSCQueue(EventLoop* event_loop,
+                 std::shared_ptr<Logger> info_log,
+                 size_t size,
+                 std::function<void(Flow*, T)> callback) {
+  auto queue = std::make_shared<SPSCQueue<T>>(std::move(info_log),
+                                          event_loop->GetQueueStats(),
                                           size);
   InstallSource(event_loop, queue.get(), std::move(callback));
   return queue;

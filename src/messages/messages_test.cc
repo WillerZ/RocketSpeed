@@ -845,7 +845,7 @@ TEST_F(Messaging, FlowControlOnDelivery) {
   ASSERT_OK(loop.Initialize());
 
   // Create a test sink of capacity 1.
-  auto queue = std::make_shared<Queue<int>>(
+  auto queue = std::make_shared<SPSCQueue<int>>(
       info_log_, loop.GetEventLoop(0)->GetQueueStats(), 1);
 
   // Register callback for a goodbye message.

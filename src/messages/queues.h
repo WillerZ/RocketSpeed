@@ -67,7 +67,7 @@ CreateEventFdReadCallback(EventLoop* event_loop,
  * Fixed-size, single-producer, single-consumer queue.
  */
 template <typename Item>
-class Queue : public Source<Item>, public SinkWithOverflow<Item> {
+class SPSCQueue : public Source<Item>, public SinkWithOverflow<Item> {
  public:
   using ElementType = Item;
 
@@ -78,11 +78,11 @@ class Queue : public Source<Item>, public SinkWithOverflow<Item> {
    * @param stats A stats that can be shared with other queues.
    * @param size Maximum number of queued up commands.
    */
-  Queue(std::shared_ptr<Logger> info_log,
+  SPSCQueue(std::shared_ptr<Logger> info_log,
         std::shared_ptr<QueueStats> stats,
         size_t size);
 
-  ~Queue();
+  ~SPSCQueue();
 
   bool TryWrite(Item& command) final override;
 
@@ -132,12 +132,12 @@ class Queue : public Source<Item>, public SinkWithOverflow<Item> {
 };
 
 /**
- * Queue of std::unique_ptr<Command>.
+ * SPSCQueue of std::unique_ptr<Command>.
  * Not a typedef so that it can be forward declared.
  */
-class CommandQueue : public Queue<std::unique_ptr<Command>> {
+class CommandQueue : public SPSCQueue<std::unique_ptr<Command>> {
  public:
-  using Base = Queue<std::unique_ptr<Command>>;
+  using Base = SPSCQueue<std::unique_ptr<Command>>;
   using Base::Base;
 };
 
@@ -168,7 +168,7 @@ class BatchedRead {
    *
    * @param queue A queue to read from.
    */
-  explicit BatchedRead(Queue<Item>* queue);
+  explicit BatchedRead(SPSCQueue<Item>* queue);
 
   ~BatchedRead();
 
@@ -181,7 +181,7 @@ class BatchedRead {
   bool Read(Item& item);
 
  private:
-  Queue<Item>* queue_;
+  SPSCQueue<Item>* queue_;
   size_t pending_reads_;  // pending items we intend to process.
   size_t commands_read_;  // successful reads from the queue.
   size_t delayed_reads_;  // pending items we intend not to process (yet).
@@ -199,7 +199,7 @@ class ThreadLocalQueues {
    * @param create_queue Callback for creating thread-local queues.
    */
   explicit ThreadLocalQueues(
-      std::function<std::shared_ptr<Queue<T>>()> create_queue);
+      std::function<std::shared_ptr<SPSCQueue<T>>()> create_queue);
 
   // non-copyable, non-moveable
   ThreadLocalQueues(const ThreadLocalQueues&) = delete;
@@ -210,29 +210,29 @@ class ThreadLocalQueues {
   /**
    * The thread-local queue.
    */
-  Queue<T>* GetThreadLocal();
+  SPSCQueue<T>* GetThreadLocal();
 
  private:
-  ThreadLocalObject<std::shared_ptr<Queue<T>>> thread_local_;
+  ThreadLocalObject<std::shared_ptr<SPSCQueue<T>>> thread_local_;
 };
 
 using ThreadLocalCommandQueues = ThreadLocalQueues<std::unique_ptr<Command>>;
 
 template <typename T>
 ThreadLocalQueues<T>::ThreadLocalQueues(
-  std::function<std::shared_ptr<Queue<T>>()> create_queue)
+  std::function<std::shared_ptr<SPSCQueue<T>>()> create_queue)
 : thread_local_([this, create_queue] () {
-    return new std::shared_ptr<Queue<T>>(create_queue());
+    return new std::shared_ptr<SPSCQueue<T>>(create_queue());
   }) {
 }
 
 template <typename T>
-Queue<T>* ThreadLocalQueues<T>::GetThreadLocal() {
+SPSCQueue<T>* ThreadLocalQueues<T>::GetThreadLocal() {
   return thread_local_.GetThreadLocal().get();
 }
 
 template <typename Item>
-BatchedRead<Item>::BatchedRead(Queue<Item>* queue)
+BatchedRead<Item>::BatchedRead(SPSCQueue<Item>* queue)
     : queue_(queue), pending_reads_(0), commands_read_(0), delayed_reads_(0) {
   // Clear notification, it will be added if batch finishes after hitting size
   // limit.
@@ -338,9 +338,9 @@ bool BatchedRead<Item>::Read(Item& item) {
 }
 
 template <typename Item>
-Queue<Item>::Queue(std::shared_ptr<Logger> info_log,
-                   std::shared_ptr<QueueStats> stats,
-                   size_t size)
+SPSCQueue<Item>::SPSCQueue(std::shared_ptr<Logger> info_log,
+                           std::shared_ptr<QueueStats> stats,
+                           size_t size)
     : info_log_(std::move(info_log))
     , stats_(std::move(stats))
     , queue_(static_cast<uint32_t>(size + 1))  // ProducerConsumerQueue needs
@@ -356,13 +356,13 @@ Queue<Item>::Queue(std::shared_ptr<Logger> info_log,
 }
 
 template <typename Item>
-Queue<Item>::~Queue() {
+SPSCQueue<Item>::~SPSCQueue() {
   read_ready_fd_.closefd();
   write_ready_fd_.closefd();
 }
 
 template <typename Item>
-bool Queue<Item>::TryWrite(Item& item) {
+bool SPSCQueue<Item>::TryWrite(Item& item) {
   write_check_.Check();
 
   // Attempt to write to queue.
@@ -432,7 +432,7 @@ bool Queue<Item>::TryWrite(Item& item) {
 }
 
 template <typename Item>
-void Queue<Item>::Drain() {
+void SPSCQueue<Item>::Drain() {
   BatchedRead<Item> batch(this);
   Item item;
   while (batch.Read(item)) {

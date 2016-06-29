@@ -747,10 +747,9 @@ TopicTailer::TopicTailer(
   latest_seqno_queues_.reset(
     new ThreadLocalQueues<FindLatestSeqnoResponse>(
       [this] () {
-        return InstallQueue<FindLatestSeqnoResponse>(
+        return InstallSPSCQueue<FindLatestSeqnoResponse>(
           event_loop_,
           info_log_,
-          event_loop_->GetQueueStats(),
           options_.max_find_time_requests, // queue size = max inflight requests
           [this] (Flow* flow, FindLatestSeqnoResponse response) {
             ProcessFindLatestSeqnoResponse(flow, std::move(response));

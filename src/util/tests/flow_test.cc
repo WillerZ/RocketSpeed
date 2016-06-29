@@ -26,14 +26,14 @@ class FlowTest : public ::testing::Test {
   }
 
   template <typename T>
-  std::shared_ptr<Queue<T>> MakeQueue(size_t size) {
-    return std::make_shared<Queue<T>>(
+  std::shared_ptr<SPSCQueue<T>> MakeQueue(size_t size) {
+    return std::make_shared<SPSCQueue<T>>(
       info_log_,
       std::make_shared<QueueStats>("queue"),
       size);
   }
 
-  std::shared_ptr<Queue<int>> MakeIntQueue(size_t size) {
+  std::shared_ptr<SPSCQueue<int>> MakeIntQueue(size_t size) {
     return MakeQueue<int>(size);
   }
 
@@ -243,7 +243,7 @@ TEST_F(FlowTest, MultiLayerRandomized) {
   // Create all our queues.
   // queue[i][j][k] is to processor j in the ith layer, from processor k in
   // layer (i - 1).
-  std::shared_ptr<Queue<int>> queue[kLayers][kPerLayer][kPerLayer];
+  std::shared_ptr<SPSCQueue<int>> queue[kLayers][kPerLayer][kPerLayer];
   for (int i = 1; i < kLayers; ++i) {
     for (int j = 0; j < kPerLayer; ++j) {
       for (int k = 0; k < kPerLayer; ++k) {
@@ -252,7 +252,7 @@ TEST_F(FlowTest, MultiLayerRandomized) {
     }
   }
   // Queues into top layer processors.
-  std::shared_ptr<Queue<int>> input[kPerLayer];
+  std::shared_ptr<SPSCQueue<int>> input[kPerLayer];
   for (int i = 0; i < kPerLayer; ++i) {
     input[i] = MakeIntQueue(kNumMessages);
   }

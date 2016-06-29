@@ -366,11 +366,8 @@ EventLoop::Initialize() {
 
   control_command_queue_ =
     std::make_shared<UnboundedMPSCCommandQueue>(info_log_, queue_stats_);
-  Status st = AddControlCommandQueue(control_command_queue_);
-  if (!st.ok()) {
-    LOG_FATAL(info_log_, "Failed to add control command queue");
-  }
-  return st;
+  AddControlCommandQueue(control_command_queue_);
+  return Status::OK();
 }
 
 void EventLoop::Run() {
@@ -829,33 +826,24 @@ void EventLoop::AttachQueue(std::shared_ptr<CommandQueue> command_queue) {
   // Attach the new command queue to the event loop.
   std::unique_ptr<Command> attach_command(
     MakeExecuteCommand([this, command_queue] () mutable {
-      Status st = AddIncomingQueue(std::move(command_queue));
-      if (!st.ok()) {
-        LOG_FATAL(info_log_, "Failed to attach command queue to EventLoop: %s",
-          st.ToString().c_str());
-        internal_status_ = st;
-        shutting_down_ = true;
-        event_base_loopbreak(base_);
-      }
+      AddIncomingQueue(std::move(command_queue));
     }));
   SendControlCommand(std::move(attach_command));
 }
 
-Status EventLoop::AddIncomingQueue(
+void EventLoop::AddIncomingQueue(
     std::shared_ptr<CommandQueue> command_queue) {
   // An event that signals new commands in the command queue.
   GetFlowControl()->Register<std::unique_ptr<Command>>(
       command_queue.get(), [this](Flow* flow, std::unique_ptr<Command> cmd) {
         Dispatch(flow, std::move(cmd));
       });
-  command_queue->SetReadEnabled(this, true);
 
-  LOG_INFO(info_log_, "Added new command queue to EventLoop");
+  LOG_DEBUG(info_log_, "Added new command queue to EventLoop");
   incoming_queues_.emplace_back(std::move(command_queue));
-  return Status::OK();
 }
 
-Status EventLoop::AddControlCommandQueue(
+void EventLoop::AddControlCommandQueue(
     std::shared_ptr<UnboundedMPSCCommandQueue> control_command_queue) {
   // An event that signals new commands in the command queue.
   control_command_queue->RegisterReadCallback(
@@ -868,8 +856,7 @@ Status EventLoop::AddControlCommandQueue(
     });
   control_command_queue->SetReadEnabled(this, true);
 
-  LOG_INFO(info_log_, "Added control command queue to EventLoop");
-  return Status::OK();
+  LOG_DEBUG(info_log_, "Added control command queue to EventLoop");
 }
 
 event* EventLoop::CreateFdReadEvent(int fd,

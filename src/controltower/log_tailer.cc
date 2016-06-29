@@ -52,10 +52,9 @@ LogTailer::LogTailer(std::shared_ptr<LogStorage> storage,
   storage_to_room_queues_.reset(
     new ThreadLocalQueues<std::function<void(Flow*)>>(
       [this] () {
-        return InstallQueue<std::function<void(Flow*)>>(
+        return InstallSPSCQueue<std::function<void(Flow*)>>(
           event_loop_,
           info_log_,
-          event_loop_->GetQueueStats(),
           options_.storage_to_room_queue_size,
           [] (Flow* flow, std::function<void(Flow*)> fn) {
             fn(flow);

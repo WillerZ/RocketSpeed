@@ -685,9 +685,9 @@ class EventLoop {
 
   const std::shared_ptr<CommandQueue>& GetThreadLocalQueue();
 
-  Status AddIncomingQueue(std::shared_ptr<CommandQueue> command_queue);
+  void AddIncomingQueue(std::shared_ptr<CommandQueue> command_queue);
 
-  Status AddControlCommandQueue(
+  void AddControlCommandQueue(
     std::shared_ptr<UnboundedMPSCCommandQueue> control_command_queue);
 
   void HandleSendCommand(Flow* flow, std::unique_ptr<Command> command);

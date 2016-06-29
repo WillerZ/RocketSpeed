@@ -18,11 +18,11 @@ class EventLoop;
 class Message;
 class ProxyServerOptions;
 template <typename Item>
-class Queue;
+class SPSCQueue;
 class QueueStats;
 
 using MessageAndStream = std::pair<StreamID, std::unique_ptr<Message>>;
-using MessageQueue = Queue<MessageAndStream>;
+using MessageQueue = SPSCQueue<MessageAndStream>;
 using WorkerQueues = std::vector<std::shared_ptr<MessageQueue>>;
 
 /// Shared functionality of all proxy workers.

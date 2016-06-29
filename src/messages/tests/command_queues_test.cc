@@ -82,9 +82,9 @@ TEST_F(CommandQueueTest, TwoItemsTwoBatches) {
   ASSERT_OK(loop.Initialize());
 
   // Simple unattached queue.
-  Queue<int> queue(std::make_shared<NullLogger>(),
-                   std::make_shared<QueueStats>("test"),
-                   100);
+  SPSCQueue<int> queue(std::make_shared<NullLogger>(),
+                       std::make_shared<QueueStats>("test"),
+                       100);
 
   // Create callback that reads one from queue then posts to a semaphore
   port::Semaphore sem;
@@ -114,9 +114,9 @@ TEST_F(CommandQueueTest, WriteHistogram) {
   ASSERT_OK(runner.GetStatus());
 
   // Simple unattached queue.
-  Queue<int> queue(std::make_shared<NullLogger>(),
-                   std::make_shared<QueueStats>("test"),
-                   100);
+  SPSCQueue<int> queue(std::make_shared<NullLogger>(),
+                       std::make_shared<QueueStats>("test"),
+                       100);
 
   const int kNumMessages = 5;
   for(int i = 0; i < kNumMessages; i++){
