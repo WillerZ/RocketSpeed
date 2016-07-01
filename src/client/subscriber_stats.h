@@ -14,11 +14,13 @@ class SubscriberStats {
  public:
   explicit SubscriberStats(const std::string& prefix) {
     active_subscriptions = all.AddCounter(prefix + "active_subscriptions");
+    router_version_checks = all.AddCounter(prefix + "router_version_checks");
     unsubscribes_invalid_handle =
         all.AddCounter(prefix + "unsubscribes_invalid_handle");
   }
 
   Counter* active_subscriptions;
+  Counter* router_version_checks;
   Counter* unsubscribes_invalid_handle;
   Statistics all;
 };

@@ -126,6 +126,7 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
 
 void Subscriber::CheckRouterVersion() {
   thread_check_.Check();
+  stats_->router_version_checks->Add(1);
   const auto version = router_->GetVersion();
   if (last_router_version_ != version || last_router_version_ == 0) {
     last_router_version_ = version;
