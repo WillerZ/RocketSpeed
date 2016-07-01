@@ -88,6 +88,7 @@ Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   client_options.publisher.reset(new BadPublisherRouter());
   client_options.sharding.reset(new SimpleShardingStrategy());
   client_options.num_workers = FLAGS_client_threads;
+  client_options.timer_period = std::chrono::minutes(1);
   auto sharding = client_options.sharding;
   client_options.thread_selector =
     [sharding](size_t num_threads, Slice namespace_id, Slice topic_name) {
