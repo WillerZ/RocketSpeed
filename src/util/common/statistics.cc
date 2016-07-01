@@ -218,8 +218,11 @@ void Statistics::Disaggregate(const Statistics& stats) {
 
 Counter* Statistics::AddCounter(const std::string& name) {
   thread_check_.Check();
-  counters_[name] = std::unique_ptr<Counter>(new Counter());
-  return counters_[name].get();
+  auto& counter = counters_[name];
+  if (!counter) {
+    counter = std::unique_ptr<Counter>(new Counter());
+  }
+  return counter.get();
 }
 
 Histogram* Statistics::AddHistogram(const std::string& name,
@@ -228,16 +231,16 @@ Histogram* Statistics::AddHistogram(const std::string& name,
                                     float smallest_bucket,
                                     float bucket_ratio) {
   thread_check_.Check();
-  histograms_[name] = std::unique_ptr<Histogram>(
-    new Histogram(min, max, smallest_bucket, bucket_ratio));
-  return histograms_[name].get();
+  auto& histogram = histograms_[name];
+  if (!histogram) {
+    histogram = std::unique_ptr<Histogram>(
+        new Histogram(min, max, smallest_bucket, bucket_ratio));
+  }
+  return histogram.get();
 }
 
 Histogram* Statistics::AddLatency(const std::string& name) {
-  thread_check_.Check();
-  histograms_[name] = std::unique_ptr<Histogram>(
-    new Histogram(0, 1e12f, 1.0f, 1.1f));
-  return histograms_[name].get();
+  return AddHistogram(name, 0, 1e12f, 1.0f, 1.1f);
 }
 
 std::string Statistics::Report() const {

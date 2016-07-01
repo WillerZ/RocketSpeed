@@ -15,11 +15,13 @@
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Status.h"
+#include "include/Types.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/msg_loop.h"
 #include "src/proxy2/downstream_worker.h"
 #include "src/proxy2/upstream_worker.h"
 #include "src/util/common/client_env.h"
+#include "src/util/common/statistics.h"
 
 namespace rocketspeed {
 
@@ -84,6 +86,7 @@ Status ProxyServerImpl::Start() {
         upstream_loop_->GetEventLoop(static_cast<int>(i)),
         downstream_loop_->GetStreamMapping()));
   }
+
   for (size_t i = 0; i < options_.num_downstream_threads; ++i) {
     downstream_workers_.emplace_back(folly::make_unique<DownstreamWorker>(
         options_, downstream_loop_->GetEventLoop(static_cast<int>(i))));
@@ -114,6 +117,13 @@ Status ProxyServerImpl::Start() {
   downstream_thread_.reset(
       new MsgLoopThread(env, downstream_loop_.get(), "proxy2-downstream"));
 
+  upstream_loop_->ReliableGather(
+      [&](size_t i) -> int {
+        upstream_workers_[i]->Start();
+        return 0;
+      },
+      [](std::vector<int>) -> int { return 0; });
+
   LOG_VITAL(options_.info_log,
             "Started ProxyServer listening at: %s",
             downstream_loop_->GetHostId().ToString().c_str());
@@ -122,6 +132,22 @@ Status ProxyServerImpl::Start() {
 
 const HostId& ProxyServerImpl::GetListenerAddress() const {
   return downstream_loop_->GetHostId();
+}
+
+void ProxyServerImpl::ExportStatistics(StatisticsVisitor* visitor) const {
+  Statistics stats;
+  stats.Aggregate(upstream_loop_->GetStatisticsSync());
+  stats.Aggregate(downstream_loop_->GetStatisticsSync());
+  stats.Aggregate(
+      upstream_loop_->AggregateStatsSync([this](size_t i) -> Statistics {
+        return *upstream_workers_[i]->GetStatistics();
+      }));
+  stats.Aggregate(
+      downstream_loop_->AggregateStatsSync([this](size_t i) -> Statistics {
+        return *downstream_workers_[i]->GetStatistics();
+      }));
+
+  stats.Export(visitor);
 }
 
 ProxyServerImpl::~ProxyServerImpl() = default;

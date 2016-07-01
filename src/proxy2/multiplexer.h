@@ -17,6 +17,7 @@
 
 namespace rocketspeed {
 
+class Counter;
 class EventLoop;
 class Flow;
 class Multiplexer;
@@ -24,6 +25,7 @@ class PerShard;
 class PerStream;
 class ProxyServerOptions;
 class Slice;
+class Statistics;
 class Stream;
 class SubscriptionID;
 class UpdatesAccumulator;
@@ -87,6 +89,7 @@ class Multiplexer {
 
   EventLoop* GetLoop() const;
   const ProxyServerOptions& GetOptions() const;
+  Statistics* GetStatistics() const;
 
   /// Handles a subscription that was chosen for multiplexing.
   ///
@@ -110,6 +113,10 @@ class Multiplexer {
   ~Multiplexer();
 
  private:
+  struct Stats {
+    Counter* num_upstream_subscriptions;
+  } stats_;
+
   PerShard* const per_shard_;
 
   UpstreamAllocator upstream_allocator_;

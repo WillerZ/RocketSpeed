@@ -16,6 +16,7 @@ namespace rocketspeed {
 class DownstreamWorker;
 class MsgLoop;
 class MsgLoopThread;
+class Statistics;
 class UpstreamWorker;
 
 class ProxyServerImpl : public ProxyServer {
@@ -25,6 +26,8 @@ class ProxyServerImpl : public ProxyServer {
   Status Start();
 
   const HostId& GetListenerAddress() const override;
+
+  void ExportStatistics(StatisticsVisitor* visitor) const override;
 
   ~ProxyServerImpl() override;
 

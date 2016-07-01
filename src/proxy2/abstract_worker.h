@@ -11,6 +11,7 @@
 #include "include/Assert.h"
 #include "include/ProxyServer.h"
 #include "src/messages/types.h"
+#include "src/util/common/statistics.h"
 
 namespace rocketspeed {
 
@@ -31,13 +32,12 @@ using WorkerQueues = std::vector<std::shared_ptr<MessageQueue>>;
 /// It probaby isn't, but it does work.
 class AbstractWorker {
  public:
-  const ProxyServerOptions options_;
-  EventLoop* const event_loop_;
-
   AbstractWorker(const ProxyServerOptions& options,
                  EventLoop* event_loop,
                  size_t num_inbound_queues,
                  size_t num_outbound_queues);
+
+  Statistics* GetStatistics() { return &statistics_; }
 
   std::shared_ptr<MessageQueue> CreateInboundQueue(size_t inbound_id);
 
@@ -51,6 +51,10 @@ class AbstractWorker {
   virtual ~AbstractWorker() = 0;
 
  protected:
+  const ProxyServerOptions options_;
+  EventLoop* const event_loop_;
+  Statistics statistics_;
+
   MessageQueue* GetOutboundQueue(size_t outbound_id);
 
  private:

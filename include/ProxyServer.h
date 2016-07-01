@@ -19,6 +19,7 @@ class Logger;
 class ShardingStrategy;
 class Slice;
 class Status;
+class StatisticsVisitor;
 class SubscriptionResultState;
 class UpdatesAccumulator;
 
@@ -58,6 +59,9 @@ class ProxyServerOptions {
   /// subscriptions after connection failure.
   /// Defaults to exponential backoff.
   BackOffStrategy backoff_strategy;
+
+  /// Stats prefix.
+  std::string stats_prefix;
 };
 
 /// A server that acts as a proxy between Subscribers and Rocketeers.
@@ -72,6 +76,11 @@ class ProxyServer {
                        std::unique_ptr<ProxyServer>* out);
 
   virtual const HostId& GetListenerAddress() const = 0;
+
+  /// Walks over all statistics using the provided StatisticsVisitor.
+  ///
+  /// @param visitor Used to visit all statistics maintained by the client.
+  virtual void ExportStatistics(StatisticsVisitor* visitor) const = 0;
 
   virtual ~ProxyServer() = 0;
 };

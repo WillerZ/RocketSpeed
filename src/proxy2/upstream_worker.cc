@@ -27,7 +27,7 @@ PerShard::PerShard(UpstreamWorker* worker, size_t shard_id)
 , shard_id_(shard_id)
 , timer_(GetLoop()->CreateTimedEventCallback([this]() { CheckRoutes(); },
                                              std::chrono::milliseconds(100)))
-, router_(worker_->options_.routing->GetRouter(shard_id))
+, router_(worker_->GetOptions().routing->GetRouter(shard_id))
 , router_version_(router_->GetVersion())
 , host_(router_->GetHost())
 , multiplexer_(this) {
@@ -90,7 +90,14 @@ UpstreamWorker::UpstreamWorker(
                  event_loop,
                  options.num_upstream_threads,
                  options.num_downstream_threads)
-, stream_to_id_(stream_to_id) {}
+, stream_to_id_(stream_to_id) {
+}
+
+void UpstreamWorker::Start() {
+  auto prefix = GetOptions().stats_prefix + "upstream.";
+  stats_.num_streams = statistics_.AddCounter(prefix + "num_streams");
+  stats_.num_shards = statistics_.AddCounter(prefix + "num_shards");
+}
 
 void UpstreamWorker::ReceiveFromQueue(Flow* flow,
                                       size_t inbound_id,
@@ -123,6 +130,7 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
             shard_id, folly::make_unique<PerShard>(this, shard_id));
         RS_ASSERT(result.second);
         it1 = result.first;
+        stats_.num_shards->Add(1);
       }
 
       auto result = streams_.emplace(
@@ -130,6 +138,7 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
           folly::make_unique<PerStream>(this, it1->second.get(), stream_id));
       RS_ASSERT(result.second);
       it = result.first;
+      stats_.num_streams->Add(1);
     } else {
       // This may happen if routes change or there is a race between server and
       // client closing the stream.
@@ -184,7 +193,7 @@ void UpstreamWorker::CleanupState(PerStream* per_stream) {
 
   auto erased = streams_.erase(stream_id);
   RS_ASSERT(erased == 1);
-  (void)erased;
+  stats_.num_streams->Add(-1);
 
   if (per_shard->IsEmpty()) {
     auto it = shard_cache_.find(per_shard->GetShardID());
@@ -194,6 +203,7 @@ void UpstreamWorker::CleanupState(PerStream* per_stream) {
       GetLoop()->AddTask(
           [moved_per_shard]() mutable { moved_per_shard->reset(); });
       shard_cache_.erase(it);
+      stats_.num_shards->Add(-1);
     }
   }
 }
@@ -204,6 +214,11 @@ PerStream::PerStream(UpstreamWorker* worker,
                      StreamID downstream_id)
 : worker_(worker), per_shard_(per_shard), downstream_id_(downstream_id) {
   per_shard_->AddPerStream(this);
+  // Create stats.
+  auto prefix = per_shard->GetOptions().stats_prefix + "per_stream.";
+  auto stats = per_shard->GetStatistics();
+  stats_.num_downstream_subscriptions =
+      stats->AddCounter(prefix + "num_downstream_subscriptions");
 }
 
 namespace {
@@ -271,6 +286,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
         auto result = downstream_to_upstream_.emplace(downstream_sub, ptr);
         RS_ASSERT(result.second);
         (void)result;
+        stats_.num_downstream_subscriptions->Add(1);
         return;
       }
       // Otherwise perform stream-level proxying.
@@ -285,6 +301,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
         per_shard_->GetMultiplexer()->Unsubscribe(
             flow, it->second, this, it->first);
         downstream_to_upstream_.erase(it);
+        stats_.num_downstream_subscriptions->Add(-1);
         return;
       }
       // Otherwise perform stream-level proxying.
@@ -369,8 +386,8 @@ void PerStream::ReceiveFromMultiplexer(Flow* flow, MessageAndStream message) {
     auto unsubscribe = static_cast<MessageUnsubscribe*>(message.second.get());
     auto downstream_sub = unsubscribe->GetSubID();
     auto result = downstream_to_upstream_.erase(downstream_sub);
-    RS_ASSERT(result > 0);
-    (void)result;
+    RS_ASSERT(result == 1);
+    stats_.num_downstream_subscriptions->Add(-1);
   }
 
   // Forward.
@@ -393,6 +410,7 @@ void PerStream::CleanupState() {
   SourcelessFlow no_flow(GetLoop()->GetFlowControl());
   auto subscriptions = std::move(downstream_to_upstream_);
   for (auto& entry : subscriptions) {
+    stats_.num_downstream_subscriptions->Add(-1);
     per_shard_->GetMultiplexer()->Unsubscribe(
         &no_flow, entry.second, this, entry.first);
   }

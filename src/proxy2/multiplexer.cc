@@ -119,6 +119,11 @@ Multiplexer::Multiplexer(PerShard* per_shard)
       std::bind(&Multiplexer::ReceiveDeliver, this, _1, _2, _3),
       std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3),
       GetOptions().backoff_strategy) {
+  // Create stats.
+  auto prefix = per_shard->GetOptions().stats_prefix + "multiplexer.";
+  auto stats = per_shard->GetStatistics();
+  stats_.num_upstream_subscriptions =
+      stats->AddCounter(prefix + "num_upstream_subscriptions");
   // Connect to the server.
   subscriptions_map_.ReconnectTo(per_shard_->GetHost());
   // Don't use the null SubscriptionID.
@@ -133,6 +138,10 @@ EventLoop* Multiplexer::GetLoop() const {
 
 const ProxyServerOptions& Multiplexer::GetOptions() const {
   return per_shard_->GetOptions();
+}
+
+Statistics* Multiplexer::GetStatistics() const {
+  return per_shard_->GetStatistics();
 }
 
 UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
@@ -227,6 +236,7 @@ void Multiplexer::InsertIntoIndex(UpstreamSubscription* upstream_sub) {
   auto result = topic_index_.emplace(std::move(key), upstream_sub);
   (void)result;
   RS_ASSERT(result.second);
+  stats_.num_upstream_subscriptions->Add(1);
 }
 
 void Multiplexer::RemoveFromIndex(UpstreamSubscription* upstream_sub) {
@@ -236,6 +246,7 @@ void Multiplexer::RemoveFromIndex(UpstreamSubscription* upstream_sub) {
   RS_ASSERT(it != topic_index_.end());
   if (it != topic_index_.end()) {
     topic_index_.erase(it);
+    stats_.num_upstream_subscriptions->Add(-1);
   }
 }
 

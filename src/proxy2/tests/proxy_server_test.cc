@@ -652,10 +652,39 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
     ASSERT_EQ(current_seqno, data->GetSequenceNumber());
     ASSERT_EQ(payload, data->GetPayload());
   };
+  auto counter_value = [&](const std::string& name) -> int64_t {
+    struct MockVisitor : public StatisticsVisitor {
+      const std::string& name_;
+      int64_t value_;
+      bool set_{false};
+
+      explicit MockVisitor(const std::string& _name) : name_(_name) {}
+
+      void VisitCounter(const std::string& _name, int64_t value) override {
+        if (name_ == _name) {
+          value_ = value;
+          set_ = true;
+        }
+      }
+    } visitor(name);
+    proxy->ExportStatistics(&visitor);
+    EXPECT_TRUE(visitor.set_);
+    return visitor.value_;
+  };
+  auto check_counters = [&](
+      int64_t streams, int64_t downstreams_subs, int64_t upstream_subs) {
+    ASSERT_EQ(streams, counter_value("upstream.num_streams"));
+    ASSERT_EQ(1, counter_value("upstream.num_shards"));
+    ASSERT_EQ(downstreams_subs,
+              counter_value("per_stream.num_downstream_subscriptions"));
+    ASSERT_EQ(upstream_subs,
+              counter_value("multiplexer.num_upstream_subscriptions"));
+  };
 
   // Establish the first subscription.
   issue_subscribe(1);
   SubscriptionID upstream_sub = receive_subscribe();
+  check_counters(1, 1, 1);
   // Deliver a snapshot on an upstream subscription.
   deliver_data(upstream_sub, 0, 100, "snapshot1");
   receive_data(1, 0, 100, "snapshot1");
@@ -664,6 +693,7 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   // A new subscription receives a snapshot, as it's stored in the
   // accumulator.
   receive_data(2, 0, 100, "snapshot1");
+  check_counters(1, 2, 1);
   // Take care to have only one downstream subscription at the time of message
   // delivery, otherwise the assertions get messy, as the order of downstream
   // subscribers receiving a message is non-deterministic.
@@ -673,6 +703,7 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   // Deliver a delta.
   deliver_data(upstream_sub, 101, 103, "delta2");
   receive_data(2, 101, 103, "delta2");
+  check_counters(1, 1, 1);
   // At the same time, the server is asked to provide a snapshot, as we've run
   // out of buffer for updates. To the server, it looks like a brand new
   // subscription.
@@ -690,6 +721,7 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   // accumulator.
   receive_data(3, 0, 100, "snapshot1");
   receive_data(3, 101, 103, "delta2");
+  check_counters(1, 2, 1);
   issue_unsubscribe(2);
   // The server finally delivers a snapshot.
   deliver_data(upstream_sub, 0, 103, "snapshot2");
@@ -701,11 +733,13 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   // downstream subscriptions.
   deliver_data(upstream_sub, 0, 105, "snapshot3");
   receive_data(3, 0, 105, "snapshot3");
+  check_counters(1, 1, 1);
   // Establish a fourth subscription, that one will receive the last snapshot,
   // which evicted the previous snapshot from the accumulator even though the
   // buffer wasn't full.
   issue_subscribe(4);
   receive_data(4, 0, 105, "snapshot3");
+  check_counters(1, 2, 1);
 
   // Shut down the client.
   client.reset();
@@ -839,8 +873,7 @@ TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
   // Shut down the client.
   client.reset();
   // And read goodbye messages on the server -- one on the subscriber stream
-  // and
-  // one on a stream that had only cold subscription on it.
+  // and one on a stream that had only cold subscription on it.
   for (size_t j = 0; j < 2; ++j) {
     auto received = server->Receive();
     ASSERT_TRUE(received.message);

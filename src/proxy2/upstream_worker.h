@@ -21,6 +21,7 @@
 
 namespace rocketspeed {
 
+class Counter;
 class EventCallback;
 class EventLoop;
 class Message;
@@ -28,6 +29,7 @@ class Multiplexer;
 class PerShard;
 class PerStream;
 class ProxyServerOptions;
+class Statistics;
 class Stream;
 class UpstreamWorker;
 
@@ -74,6 +76,8 @@ class UpstreamWorker : public AbstractWorker {
   EventLoop* GetLoop() const { return event_loop_; }
   const ProxyServerOptions& GetOptions() const { return options_; }
 
+  void Start();
+
   void ReceiveFromQueue(Flow* flow,
                         size_t inbound_id,
                         MessageAndStream message) override;
@@ -85,6 +89,11 @@ class UpstreamWorker : public AbstractWorker {
   ~UpstreamWorker();
 
  private:
+  struct Stats {
+    Counter* num_streams;
+    Counter* num_shards;
+  } stats_;
+
   const StreamAllocator::DivisionMapping stream_to_id_;
 
   std::unordered_map<StreamID, std::unique_ptr<PerStream>> streams_;
@@ -107,6 +116,7 @@ class PerStream {
 
   EventLoop* GetLoop() const { return worker_->GetLoop(); }
   const ProxyServerOptions& GetOptions() const { return worker_->GetOptions(); }
+  Statistics* GetStatistics() const { return worker_->GetStatistics(); }
   PerShard* GetShard() const { return per_shard_; }
   StreamID GetStream() const { return downstream_id_; }
 
@@ -121,6 +131,10 @@ class PerStream {
   ~PerStream();
 
  private:
+  struct Stats {
+    Counter* num_downstream_subscriptions;
+  } stats_;
+
   UpstreamWorker* const worker_;
   PerShard* const per_shard_;
   const StreamID downstream_id_;
@@ -155,6 +169,7 @@ class PerShard {
 
   EventLoop* GetLoop() const { return worker_->GetLoop(); }
   const ProxyServerOptions& GetOptions() const { return worker_->GetOptions(); }
+  Statistics* GetStatistics() const { return worker_->GetStatistics(); }
   size_t GetShardID() const { return shard_id_; }
   const HostId& GetHost() const { return host_; }
   bool IsEmpty() const { return streams_on_shard_.empty(); }
