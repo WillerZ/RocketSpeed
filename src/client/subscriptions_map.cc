@@ -20,7 +20,6 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
   RS_ASSERT(current >= previous);
 
   if ((current < previous) /* this should never happen */ ||
-      (current == 0) /* message 0-0 carries no information */ ||
       (expected_seqno_ == 0 &&
        previous != 0) /* must receive a snapshot if expected */ ||
       (expected_seqno_ > current) /* must not go back in time */ ||
