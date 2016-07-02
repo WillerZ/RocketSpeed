@@ -18,9 +18,10 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
                                      const SequenceNumber previous,
                                      const SequenceNumber current) {
   RS_ASSERT(current >= previous);
-  RS_ASSERT(current != 0);
 
-  if ((expected_seqno_ == 0 &&
+  if ((current < previous) /* this should never happen */ ||
+      (current == 0) /* message 0-0 carries no information */ ||
+      (expected_seqno_ == 0 &&
        previous != 0) /* must receive a snapshot if expected */ ||
       (expected_seqno_ > current) /* must not go back in time */ ||
       (expected_seqno_ < previous) /* must not skip an update */) {
