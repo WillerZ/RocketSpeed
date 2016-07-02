@@ -203,8 +203,7 @@ class ClientTest : public ::testing::Test {
   : positive_timeout(1000)
   , negative_timeout(100)
   , env_(Env::Default())
-  , config_(std::make_shared<MockPublisherRouter>())
-  , next_server_port_(5450) {
+  , config_(std::make_shared<MockPublisherRouter>()) {
     EXPECT_OK(test::CreateLogger(env_, "ClientTest", &info_log_));
   }
 
@@ -220,7 +219,6 @@ class ClientTest : public ::testing::Test {
   Env* const env_;
   const std::shared_ptr<MockPublisherRouter> config_;
   std::shared_ptr<rocketspeed::Logger> info_log_;
-  std::atomic<int> next_server_port_;
 
   class ServerMock {
    public:
@@ -248,7 +246,7 @@ class ClientTest : public ::testing::Test {
   ServerMock MockServer(
       const std::map<MessageType, MsgCallbackType>& callbacks) {
     std::unique_ptr<MsgLoop> server(new MsgLoop(
-        env_, EnvOptions(), next_server_port_++, 1, info_log_, "server"));
+        env_, EnvOptions(), 0 /* auto */, 1, info_log_, "server"));
     server->RegisterCallbacks(callbacks);
     EXPECT_OK(server->Initialize());
     std::thread thread([&]() { server->Run(); });
