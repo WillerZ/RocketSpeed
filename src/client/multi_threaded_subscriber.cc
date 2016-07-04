@@ -155,7 +155,7 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
   const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
                                                   parameters.namespace_id,
                                                   parameters.topic_name);
-  RS_ASSERT(worker_id < subscriber_queues_.size());
+  RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
   auto* worker_queue = subscriber_queues_[worker_id].get();
 
   // Create new subscription handle that encodes destination worker.
@@ -203,7 +203,7 @@ void MultiThreadedSubscriber::Unsubscribe(SubscriptionHandle sub_handle) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return;
   }
-  RS_ASSERT(worker_id < subscriber_queues_.size());
+  RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
   auto* worker_queue = subscriber_queues_[worker_id].get();
 
   // Send command to responsible worker.
@@ -232,7 +232,7 @@ bool MultiThreadedSubscriber::Acknowledge(const MessageReceived& message) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return true;
   }
-  RS_ASSERT(worker_id < subscriber_queues_.size());
+  RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
   auto* worker_queue = subscriber_queues_[worker_id].get();
 
   // Send command to responsible worker.
