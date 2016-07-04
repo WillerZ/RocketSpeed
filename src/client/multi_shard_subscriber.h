@@ -62,6 +62,8 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
     return nullptr;
   }
 
+  void RefreshRouting() override;
+
  private:
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;
@@ -77,6 +79,12 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
 
   /** A statistics object shared between subscribers. */
   std::shared_ptr<SubscriberStats> stats_;
+
+  /// Version of the router when we last fetched hosts.
+  size_t last_router_version_;
+
+  /// A timer to periodically check for router updates.
+  std::unique_ptr<EventCallback> router_timer_;
 
   /**
    * Returns a subscriber for provided subscription ID or null if cannot

@@ -67,7 +67,7 @@ class Subscriber : public SubscriberIf {
   Subscriber(const ClientOptions& options,
              EventLoop* event_loop,
              std::shared_ptr<SubscriberStats> stats,
-             std::unique_ptr<SubscriptionRouter> router);
+             size_t shard_id);
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
@@ -86,6 +86,8 @@ class Subscriber : public SubscriberIf {
     return subscriptions_map_.Find(sub_id);
   }
 
+  void RefreshRouting() override;
+
  private:
   ThreadCheck thread_check_;
 
@@ -100,13 +102,8 @@ class Subscriber : public SubscriberIf {
 
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
-  /// Version of the router when we last fetched hosts.
-  size_t last_router_version_;
-  /// The router for this subscriber.
-  std::unique_ptr<SubscriptionRouter> router_;
-
-  /// A timer to periodically check for router updates.
-  std::unique_ptr<EventCallback> router_timer_;
+  /// Shard for this subscriber.
+  size_t shard_id_;
 
   /// Returns sequence number of last acknowledged message about
   /// the given subscription id.

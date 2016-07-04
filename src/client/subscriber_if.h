@@ -69,6 +69,9 @@ class SubscriberIf {
                            size_t worker_id) = 0;
 
   virtual SubscriptionState *GetState(SubscriptionID sub_id) = 0;
+
+  /// Check if routing has changed and reroute subscriptions if necessary.
+  virtual void RefreshRouting() = 0;
 };
 
 }  // namespace rocketspeed

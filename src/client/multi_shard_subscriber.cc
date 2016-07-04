@@ -26,7 +26,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/single_shard_subscriber.h"
-#include "src/util/common/subscription_id.h"
+#include "src/client/subscriber_stats.h"
 #include "src/client/tail_collapsing_subscriber.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
@@ -37,6 +37,7 @@
 #include "src/util/common/random.h"
 #include "src/util/common/rate_limiter_sink.h"
 #include "src/util/common/statistics.h"
+#include "src/util/common/subscription_id.h"
 #include "src/util/timeout_list.h"
 #include "src/util/xxhash.h"
 
@@ -47,10 +48,33 @@ MultiShardSubscriber::MultiShardSubscriber(
     const ClientOptions& options,
     EventLoop* event_loop,
     std::shared_ptr<SubscriberStats> stats)
-: options_(options), event_loop_(event_loop), stats_(std::move(stats)) {}
+: options_(options)
+, event_loop_(event_loop)
+, stats_(std::move(stats))
+, last_router_version_(options_.sharding->GetVersion()) {
+  // Periodically check for new router versions.
+  router_timer_ = event_loop_->CreateTimedEventCallback(
+      std::bind(&MultiShardSubscriber::RefreshRouting, this),
+      options_.timer_period);
+  router_timer_->Enable();
+}
 
 MultiShardSubscriber::~MultiShardSubscriber() {
   subscribers_.clear();
+}
+
+void MultiShardSubscriber::RefreshRouting() {
+  stats_->router_version_checks->Add(1);
+  const auto version = options_.sharding->GetVersion();
+  if (last_router_version_ != version) {
+    stats_->router_version_changes->Add(1);
+    last_router_version_ = version;
+
+    // Routing has changed; inform all shards.
+    for (auto& entry : subscribers_) {
+      entry.second->RefreshRouting();
+    }
+  }
 }
 
 void MultiShardSubscriber::StartSubscription(
@@ -68,7 +92,7 @@ void MultiShardSubscriber::StartSubscription(
   if (it == subscribers_.end()) {
     // Subscriber is missing, create and start one.
     std::unique_ptr<SubscriberIf> subscriber(new Subscriber(
-        options_, event_loop_, stats_, options_.sharding->GetRouter(shard_id)));
+        options_, event_loop_, stats_, shard_id));
     if (options_.collapse_subscriptions_to_tail) {
       // TODO(t10132320)
       RS_ASSERT(parameters.start_seqno == 0);

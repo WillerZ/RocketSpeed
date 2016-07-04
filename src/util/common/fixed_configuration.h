@@ -33,13 +33,15 @@ class FixedPublisherRouter : public PublisherRouter {
  */
 class FixedShardingStrategy : public ShardingStrategy {
  public:
-   explicit FixedShardingStrategy(HostId copilot): copilot_(copilot) {}
+  explicit FixedShardingStrategy(HostId copilot): copilot_(copilot) {}
 
-   size_t GetShard(Slice namespace_id, Slice topic_name) const override {
-     return 0;
-   }
+  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
+    return 0;
+  }
 
-   std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override;
+  size_t GetVersion() override { return 0; }
+  HostId GetHost(size_t) override { return copilot_; }
+  void MarkHostDown(const HostId& host_id) override {}
 
   private:
    HostId copilot_;

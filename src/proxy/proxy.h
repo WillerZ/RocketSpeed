@@ -123,7 +123,7 @@ class Proxy {
 
   /** Assume there is only one single router */
   std::shared_ptr<PublisherRouter> publisher_;
-  std::unique_ptr<SubscriptionRouter> router_;
+  std::shared_ptr<ShardingStrategy> router_;
 
   const int ordering_buffer_size_;
 

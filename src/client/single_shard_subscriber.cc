@@ -30,7 +30,7 @@ using namespace std::placeholders;
 Subscriber::Subscriber(const ClientOptions& options,
                        EventLoop* event_loop,
                        std::shared_ptr<SubscriberStats> stats,
-                       std::unique_ptr<SubscriptionRouter> router)
+                       size_t shard_id)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
@@ -38,15 +38,9 @@ Subscriber::Subscriber(const ClientOptions& options,
                      std::bind(&Subscriber::ReceiveDeliver, this, _1, _2, _3),
                      std::bind(&Subscriber::ReceiveTerminate, this, _1, _2, _3),
                      options_.backoff_strategy)
-, last_router_version_(0)
-, router_(std::move(router)) {
+, shard_id_(shard_id) {
   thread_check_.Check();
-
-  router_timer_ = event_loop_->CreateTimedEventCallback(
-      std::bind(&Subscriber::CheckRouterVersion, this), options_.timer_period);
-  router_timer_->Enable();
-
-  CheckRouterVersion();
+  RefreshRouting();
 }
 
 void Subscriber::StartSubscription(SubscriptionID sub_id,
@@ -124,15 +118,9 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
   return it == last_acks_map_.end() ? 0 : it->second;
 }
 
-void Subscriber::CheckRouterVersion() {
+void Subscriber::RefreshRouting() {
   thread_check_.Check();
-  stats_->router_version_checks->Add(1);
-  const auto version = router_->GetVersion();
-  if (last_router_version_ != version || last_router_version_ == 0) {
-    last_router_version_ = version;
-
-    subscriptions_map_.ReconnectTo(router_->GetHost());
-  }
+  subscriptions_map_.ReconnectTo(options_.sharding->GetHost(shard_id_));
 }
 
 namespace {

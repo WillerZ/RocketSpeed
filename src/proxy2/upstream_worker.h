@@ -181,7 +181,7 @@ class PerShard {
   UpstreamWorker* const worker_;
   const size_t shard_id_;
   const std::unique_ptr<EventCallback> timer_;
-  const std::unique_ptr<SubscriptionRouter> router_;
+  const std::shared_ptr<ShardingStrategy> router_;
 
   size_t router_version_;
   HostId host_;

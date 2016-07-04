@@ -30,7 +30,6 @@
 
 namespace rocketspeed {
 
-class MockSubscriptionRouter;
 class MockShardingStrategy;
 
 class MockPublisherRouter : public PublisherRouter {
@@ -68,23 +67,7 @@ class MockPublisherRouter : public PublisherRouter {
     return out;
   }
 
-  friend class MockSubscriptionRouter;
-};
-
-class MockSubscriptionRouter : public SubscriptionRouter {
- public:
-  explicit MockSubscriptionRouter(std::shared_ptr<MockPublisherRouter> config)
-  : config_(config) {
-  }
-
-  size_t GetVersion() override { return config_->version_.load(); }
-
-  HostId GetHost() override { return config_->GetCopilot(); }
-
-  void MarkHostDown(const HostId& host_id) override {}
-
- private:
-  const std::shared_ptr<MockPublisherRouter> config_;
+  friend class MockShardingStrategy;
 };
 
 class MockShardingStrategy : public ShardingStrategy {
@@ -97,11 +80,11 @@ class MockShardingStrategy : public ShardingStrategy {
     return 0;
   }
 
-  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-    EXPECT_EQ(shard, 0);
-    return std::unique_ptr<SubscriptionRouter>(
-        new MockSubscriptionRouter(config_));
-  }
+  size_t GetVersion() override { return config_->version_.load(); }
+
+  HostId GetHost(size_t) override { return config_->GetCopilot(); }
+
+  void MarkHostDown(const HostId& host_id) override {}
 
  private:
   const std::shared_ptr<MockPublisherRouter> config_;
@@ -186,6 +169,8 @@ class MockSubscriber : public SubscriberIf
       return nullptr;
     }
   }
+
+  virtual void RefreshRouting() override {}
 
  private:
   std::unique_ptr<SubscriptionState> subscription_state_;
@@ -539,20 +524,6 @@ TEST_F(ClientTest, PublishTimeout) {
 
 namespace {
 
-class ConstRouter : public SubscriptionRouter {
- public:
-  explicit ConstRouter(HostId host_id) : host_id_(host_id) {}
-
-  size_t GetVersion() override { return 0; }
-
-  HostId GetHost() override { return host_id_; }
-
-  void MarkHostDown(const HostId& host_id) override {}
-
- private:
-  HostId host_id_;
-};
-
 class TestSharding2 : public ShardingStrategy {
  public:
   explicit TestSharding2(HostId host0, HostId host1)
@@ -569,11 +540,14 @@ class TestSharding2 : public ShardingStrategy {
     return 0;
   }
 
-  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
+  size_t GetVersion() override { return 0; }
+
+  HostId GetHost(size_t shard) override {
     EXPECT_LT(shard, 2);
-    return std::unique_ptr<SubscriptionRouter>(
-        new ConstRouter(shard == 0 ? host0_ : host1_));
+    return shard == 0 ? host0_ : host1_;
   }
+
+  void MarkHostDown(const HostId& host_id) override {}
 
  private:
   HostId host0_, host1_;

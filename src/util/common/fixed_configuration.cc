@@ -17,26 +17,6 @@
 namespace rocketspeed {
 
 ////////////////////////////////////////////////////////////////////////////////
-class FixedSubscriptionRouter : public SubscriptionRouter {
- public:
-  explicit FixedSubscriptionRouter(HostId copilot): copilot_(copilot) {}
-
-  size_t GetVersion() override { return 0; }
-  HostId GetHost() override { return copilot_; }
-  void MarkHostDown(const HostId& host_id) override {}
-
- private:
-  HostId copilot_;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-std::unique_ptr<SubscriptionRouter> FixedShardingStrategy::GetRouter(
-    size_t shard) {
-  RS_ASSERT(shard == 0);
-  return folly::make_unique<FixedSubscriptionRouter>(copilot_);
-}
-
-////////////////////////////////////////////////////////////////////////////////
 Status CreateFixedConfiguration(
     const std::string& config_str,
     std::unique_ptr<PublisherRouter>* out_publisher,

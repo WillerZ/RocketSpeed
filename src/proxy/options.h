@@ -32,7 +32,7 @@ struct ProxyOptions {
   std::shared_ptr<PublisherRouter> publisher;
 
   // The sharding policy of the Rocketspeed instance.
-  std::unique_ptr<ShardingStrategy> sharding;
+  std::shared_ptr<ShardingStrategy> sharding;
 
   // Info logs are written to this object.
   std::shared_ptr<Logger> info_log;

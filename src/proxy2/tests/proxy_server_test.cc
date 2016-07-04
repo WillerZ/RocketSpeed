@@ -37,36 +37,6 @@ namespace rocketspeed {
 static constexpr std::chrono::milliseconds kPositiveTimeout{1000};
 static constexpr std::chrono::milliseconds kNegativeTimeout{100};
 
-class MockRouter : public SubscriptionRouter {
- public:
-  size_t GetVersion() override { return version_.load(); }
-
-  HostId GetHost() override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto host = host_;
-    return host;
-  }
-
-  void MarkHostDown(const HostId& host) override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (host == host_) {
-      marked_down_ = true;
-    }
-  }
-
-  void SetHost(const HostId& host) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    host_ = host;
-    version_++;
-  }
-
- private:
-  std::atomic<uint64_t> version_;
-  std::mutex mutex_;
-  HostId host_;
-  bool marked_down_{false};
-};
-
 class MockSharding : public ShardingStrategy {
  public:
   static NamespaceID GetNamespace(size_t shard) {
@@ -80,36 +50,26 @@ class MockSharding : public ShardingStrategy {
     return shard;
   }
 
-  std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) override {
-    class ProxyRouter : public SubscriptionRouter {
-     public:
-      std::shared_ptr<SubscriptionRouter> router;
+  size_t GetVersion() override { return version_.load(); }
 
-      size_t GetVersion() override { return router->GetVersion(); }
-
-      HostId GetHost() override { return router->GetHost(); }
-
-      void MarkHostDown(const HostId& host) override {
-        router->MarkHostDown(host);
-      }
-    };
-    auto router = folly::make_unique<ProxyRouter>();
-    router->router = GetMockRouter(shard);
-    return std::move(router);
+  HostId GetHost(size_t shard) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return hosts_[shard];
   }
 
-  const std::shared_ptr<MockRouter>& GetMockRouter(size_t shard) {
+  void UpdateHost(size_t shard, const HostId& host) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto& router = routers_[shard];
-    if (!router) {
-      router.reset(new MockRouter());
-    }
-    return router;
+    hosts_[shard] = host;
+    version_++;
+  }
+
+  void MarkHostDown(const HostId&) override {
   }
 
  private:
   std::mutex mutex_;
-  std::unordered_map<size_t, std::shared_ptr<MockRouter>> routers_;
+  std::atomic<uint64_t> version_;
+  std::unordered_map<size_t, HostId> hosts_;
 };
 
 class MockDetector : public HotnessDetector {
@@ -313,7 +273,7 @@ TEST_F(ProxyServerTest, Forwarding) {
   for (size_t i = 0; i < 2; ++i) {
     clients.emplace_back(folly::make_unique<MessageBus>(loop_options));
     servers.emplace_back(folly::make_unique<MessageBus>(loop_options));
-    routing->GetMockRouter(i)->SetHost(servers[i]->GetHost());
+    routing->UpdateHost(i, servers[i]->GetHost());
   }
   // Create one more server, as a replacement of servers[1];
   servers.emplace_back(folly::make_unique<MessageBus>(loop_options));
@@ -354,7 +314,7 @@ TEST_F(ProxyServerTest, Forwarding) {
   }
 
   // Fail over shard 1 to servers[2].
-  routing->GetMockRouter(1)->SetHost(servers[2]->GetHost());
+  routing->UpdateHost(1, servers[2]->GetHost());
   {  // servers[1] should have received a goodbye message.
     auto received = servers[1]->Receive();
     ASSERT_TRUE(received.message);
@@ -580,7 +540,7 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   // Create a client and a server.
   auto client = folly::make_unique<MessageBus>(loop_options);
   auto server = folly::make_unique<MessageBus>(loop_options);
-  routing->GetMockRouter(shard)->SetHost(server->GetHost());
+  routing->UpdateHost(shard, server->GetHost());
 
   // All subscriptions will originate from a single client (which doesn't
   // matter) and will refer to the only hot topic. We'll interleave subscribe
@@ -775,7 +735,7 @@ TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
   // Create a client and a server.
   auto client = folly::make_unique<MessageBus>(loop_options);
   auto server = folly::make_unique<MessageBus>(loop_options);
-  routing->GetMockRouter(shard)->SetHost(server->GetHost());
+  routing->UpdateHost(shard, server->GetHost());
 
   // Establish subscriptions on a hot and a cold topic on a single stream.
   const StreamID client_stream =

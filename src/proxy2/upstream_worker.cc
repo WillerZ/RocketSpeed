@@ -27,9 +27,9 @@ PerShard::PerShard(UpstreamWorker* worker, size_t shard_id)
 , shard_id_(shard_id)
 , timer_(GetLoop()->CreateTimedEventCallback([this]() { CheckRoutes(); },
                                              std::chrono::milliseconds(100)))
-, router_(worker_->GetOptions().routing->GetRouter(shard_id))
+, router_(worker_->GetOptions().routing)
 , router_version_(router_->GetVersion())
-, host_(router_->GetHost())
+, host_(router_->GetHost(shard_id))
 , multiplexer_(this) {
   timer_->Enable();
 }
@@ -56,7 +56,7 @@ void PerShard::CheckRoutes() {
   }
   router_version_ = new_version;
   {
-    auto new_host = router_->GetHost();
+    auto new_host = router_->GetHost(shard_id_);
     if (host_ == new_host) {
       return;
     }

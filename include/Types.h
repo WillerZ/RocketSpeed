@@ -246,38 +246,6 @@ enum Tenant : TenantID {
 };
 
 /**
- * And interface that encapsulates the routing logic for a single shard.
- * Objects of this class will be called into from a single thread only.
- */
-class SubscriptionRouter {
- public:
-  virtual ~SubscriptionRouter() = default;
-
-  /**
-   * Returns a version of the router, which can spontaneously increase.
-   * A version change could mean that the host selected by the router has
-   * changed.
-   * Calling this method should be cheap, uncontended atomic is the heaviest
-   * acceptable implementation.
-   */
-  virtual size_t GetVersion() = 0;
-
-  /**
-   * Returns the currently selected host.
-   * This method can acquire a mutex or perform other heavy synchronisation, but
-   * no IO.
-   */
-  virtual HostId GetHost() = 0;
-
-  /**
-   * Tell the router that we could not connect to provided host.
-   * This method can acquire a mutex or perform other heavy synchronisation, but
-   * no IO.
-   */
-  virtual void MarkHostDown(const HostId& host_id) = 0;
-};
-
-/**
  * And interface that encapsulates sharding logic.
  */
 class ShardingStrategy {
@@ -307,11 +275,27 @@ class ShardingStrategy {
   virtual size_t GetShard(Slice namespace_id, Slice topic_name) const = 0;
 
   /**
-   * Creates a routing strategy for given shard ID.
-   * The configuration object is not to be accessed concurrently from multiple
-   * threads.
+   * Returns a version of the strategy, which can spontaneously increase.
+   * A version change could mean that the host selected by the strategy on one
+   * or more shards may have changed.
+   * Calling this method should be cheap, uncontended atomic is the heaviest
+   * acceptable implementation.
    */
-  virtual std::unique_ptr<SubscriptionRouter> GetRouter(size_t shard) = 0;
+  virtual size_t GetVersion() = 0;
+
+  /**
+   * Returns the currently selected host for a particular shard.
+   * This method can acquire a mutex or perform other heavy synchronisation, but
+   * no IO.
+   */
+  virtual HostId GetHost(size_t shard) = 0;
+
+  /**
+   * Tell the strategy that we could not connect to provided host.
+   * This method can acquire a mutex or perform other heavy synchronisation, but
+   * no IO.
+   */
+  virtual void MarkHostDown(const HostId& host_id) = 0;
 };
 
 /**

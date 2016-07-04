@@ -59,6 +59,10 @@ class TailCollapsingSubscriber : public SubscriberIf {
     return subscriber_->GetState(sub_id);
   }
 
+  void RefreshRouting() override {
+    subscriber_->RefreshRouting();
+  }
+
  private:
   friend class detail::TailCollapsingObserver;
 

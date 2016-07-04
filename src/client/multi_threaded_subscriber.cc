@@ -100,6 +100,8 @@ void MultiThreadedSubscriber::Stop() {
               SubscriptionState* GetState(SubscriptionID) override {
                 return nullptr;
               }
+
+              void RefreshRouting() override {}
             };
             subscribers_[i].reset(new NullSubscriber());
             if (--count == 0) {
