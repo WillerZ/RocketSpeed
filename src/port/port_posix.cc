@@ -12,6 +12,7 @@
 #include <string.h>
 #include <cstdlib>
 #include "include/Assert.h"
+#include "src/util/common/mutexlock.h"
 
 namespace rocketspeed {
 namespace port {
@@ -130,7 +131,8 @@ void InitOnce(OnceType* once, void (*initializer)()) {
 }
 
 #if defined(OS_MACOSX)
-Eventfd::Eventfd(bool nonblock, bool close_on_exec) {
+Eventfd::Eventfd(bool nonblock, bool close_on_exec)
+: mutex_(new Mutex()) {
   int flags = 0;
   if (nonblock) flags |= O_NONBLOCK;
   if (close_on_exec) flags |= O_CLOEXEC;
@@ -141,10 +143,10 @@ Eventfd::Eventfd(bool nonblock, bool close_on_exec) {
   // Set attributes on both the pipe descriptors
   if (flags) {
     if (!status_) {
-      status_ =  fcntl(fd_[0], F_SETFL, flags);
+      status_ =  fcntl(fd_[0], F_SETFL, flags | O_RDONLY);
     }
     if (!status_) {
-      status_ =  fcntl(fd_[1], F_SETFL, flags);
+      status_ =  fcntl(fd_[1], F_SETFL, flags | O_WRONLY);
     }
   }
 }
@@ -153,29 +155,48 @@ int Eventfd::closefd() { int tmp = close(fd_[0]); return close(fd_[1]) || tmp; }
 int Eventfd::readfd() const { return fd_[0]; }
 int Eventfd::writefd() const { return fd_[1]; }
 
+namespace {
+// Identical to src/util/common/mutexlock.h, but here to avoid circular
+// dependency between higher level and lower level code.
+struct ScopedLock {
+ public:
+  explicit ScopedLock(Mutex* mutex) : mutex_(mutex) { mutex_->Lock(); }
+  ~ScopedLock() { mutex_->Unlock(); }
+
+ private:
+  ScopedLock(const ScopedLock&) = delete;
+  ScopedLock(ScopedLock&&) = delete;
+  ScopedLock& operator=(const ScopedLock&) = delete;
+  ScopedLock& operator=(ScopedLock&&) = delete;
+  ScopedLock() = delete;
+
+  Mutex* mutex_;
+};
+}
+
 int Eventfd::read_event(eventfd_t *value) {
-  ssize_t num = read(fd_[0], static_cast<void *>(value),
-                     sizeof(eventfd_t));
-  if (num == -1) {
-    return -1;   // error
-  }
-  if (static_cast<unsigned int>(num) == sizeof(eventfd_t)) {
-    return 0;   // success
-  }
-  return -1;    // error
+  ScopedLock lock(mutex_.get());
+  *value = value_;
+  value_ = 0;
+  char c = 1;
+  ssize_t num = sizeof(c);
+  do {
+    num = read(fd_[0], &c, sizeof(c));
+  } while ((num < 0 && errno == EINTR) || (num == sizeof(c)));
+  return *value ? 0 : -1;
 }
 int Eventfd::write_event(eventfd_t value) {
-  if (value == 0) {
-    return 0;  // success
+  ScopedLock lock(mutex_.get());
+  char c = 1;
+  ssize_t num = sizeof(c);
+  if (value_ == 0) {
+    do {
+      num = write(fd_[1], &c, sizeof(c));
+    } while (num < 0 && errno == EINTR);
   }
-  ssize_t num = write(fd_[1], static_cast<void *>(&value), sizeof(eventfd_t));
-  if (num == -1) {
-    return -1;   // error
-  }
-  if (static_cast<unsigned int>(num) == sizeof(eventfd_t)) {
-    return 0;   // success
-  }
-  return -1;    // error
+  value_ += value;
+  RS_ASSERT(num == 1);
+  return num == sizeof(c) ? 0 : -1;
 }
 
 #else

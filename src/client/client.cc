@@ -240,7 +240,7 @@ SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
   }
 
   SubscriptionHandle subscription = subscriber_->Subscribe(
-      nullptr, std::move(parameters), observer);
+      std::move(parameters), observer);
 
   if (subscription != SubscriptionHandle(0)) {
     RS_ASSERT(!observer);  // should be consumed
@@ -276,19 +276,15 @@ SubscriptionHandle ClientImpl::Subscribe(
 }
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
-  bool result = subscriber_->Unsubscribe(nullptr, sub_handle);
-  if (result) {
-    auto prev = num_subscriptions_--;
-    RS_ASSERT(prev != 0);
-    (void)prev;
-    return Status::OK();
-  }
-  return Status::NoBuffer();
+  subscriber_->Unsubscribe(sub_handle);
+  auto prev = num_subscriptions_--;
+  RS_ASSERT(prev != 0);
+  (void)prev;
+  return Status::OK();
 }
 
 Status ClientImpl::Acknowledge(const MessageReceived& message) {
-  return subscriber_->Acknowledge(nullptr, message) ? Status::OK()
-                                                   : Status::NoBuffer();
+  return subscriber_->Acknowledge(message) ? Status::OK() : Status::NoBuffer();
 }
 
 void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {

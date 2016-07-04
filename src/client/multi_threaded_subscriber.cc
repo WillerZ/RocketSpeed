@@ -32,6 +32,7 @@
 #include "src/messages/event_loop.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream.h"
+#include "src/messages/unbounded_mpsc_queue.h"
 #include "src/port/port.h"
 #include "src/util/common/processor.h"
 #include "src/util/common/random.h"
@@ -47,11 +48,19 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
     const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
 : options_(options), msg_loop_(std::move(msg_loop)), next_sub_id_(0) {
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
+    EventLoop* event_loop = msg_loop_->GetEventLoop(i);
     statistics_.emplace_back(std::make_shared<SubscriberStats>("subscriber."));
     subscribers_.emplace_back(new MultiShardSubscriber(
-        options_, msg_loop_->GetEventLoop(i), statistics_.back()));
-    subscriber_queues_.emplace_back(msg_loop_->CreateThreadLocalQueues(
-        i, options_.queue_size));
+        options_, event_loop, statistics_.back()));
+    subscriber_queues_.emplace_back(
+        new UnboundedMPSCQueue<std::unique_ptr<ExecuteCommand>>(
+          options_.info_log, event_loop->GetQueueStats(), options_.queue_size));
+    InstallSource<std::unique_ptr<ExecuteCommand>>(
+        event_loop,
+        subscriber_queues_.back().get(),
+        [this] (Flow* flow, std::unique_ptr<ExecuteCommand> command) {
+          command->Execute(flow);
+        });
   }
 }
 
@@ -135,7 +144,6 @@ class SubscribeCommand : public ExecuteCommand {
 };
 
 SubscriptionHandle MultiThreadedSubscriber::Subscribe(
-    Flow* flow,
     SubscriptionParameters parameters,
     std::unique_ptr<Observer>& observer) {
   // Find a shard this subscripttion belongs to.
@@ -146,7 +154,7 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
                                                   parameters.namespace_id,
                                                   parameters.topic_name);
   RS_ASSERT(worker_id < subscriber_queues_.size());
-  auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
+  auto* worker_queue = subscriber_queues_[worker_id].get();
 
   // Create new subscription handle that encodes destination worker.
   const auto sub_id = CreateNewHandle(shard_id, worker_id);
@@ -165,59 +173,51 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
                            std::move(observer)));
 
   // Type-erase, as TryWrite needs l-value.
-  std::unique_ptr<Command> command(std::move(sub_command));
+  std::unique_ptr<ExecuteCommand> command(std::move(sub_command));
 
   // Send command to responsible worker.
-  if (flow) {
-    flow->Write(worker_queue, command);
-  } else {
-    if (!worker_queue->TryWrite(command)) {
-      // Make sure we still have the command and observer, and give the
-      // observer back to the caller, so they can retry later.
-      RS_ASSERT(!!command);
-      sub_command.reset(static_cast<SubscribeCommand*>(command.release()));
-      RS_ASSERT(!!sub_command->observer_);
-      observer = std::move(sub_command->observer_);
-      return SubscriptionHandle(0);
-    }
+  if (!worker_queue->TryWrite(command)) {
+    // Make sure we still have the command and observer, and give the
+    // observer back to the caller, so they can retry later.
+    RS_ASSERT(!!command);
+    sub_command.reset(static_cast<SubscribeCommand*>(command.release()));
+    RS_ASSERT(!!sub_command->observer_);
+    observer = std::move(sub_command->observer_);
+    return SubscriptionHandle(0);
   }
   return sub_id;
 }
 
-bool MultiThreadedSubscriber::Unsubscribe(Flow* flow,
-                                          SubscriptionHandle sub_handle) {
+void MultiThreadedSubscriber::Unsubscribe(SubscriptionHandle sub_handle) {
   const auto sub_id = SubscriptionID::Unsafe(sub_handle);
   if (!sub_id) {
     LOG_ERROR(options_.info_log, "Invalid SubscriptionID");
-    return true;
+    return;
   }
 
   // Determine corresponding worker, its queue, and subscription ID.
   const auto worker_id = GetWorkerID(sub_id);
   if (worker_id < 0) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
-    return true;
+    return;
   }
-  auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
+  RS_ASSERT(worker_id < subscriber_queues_.size());
+  auto* worker_queue = subscriber_queues_[worker_id].get();
 
   // Send command to responsible worker.
-  std::unique_ptr<Command> command(
+  std::unique_ptr<ExecuteCommand> command(
       MakeExecuteCommand([this, sub_id, worker_id]() mutable {
         subscribers_[worker_id]->TerminateSubscription(sub_id);
       }));
 
-  if (flow) {
-    flow->Write(worker_queue, command);
-  } else {
-    if (!worker_queue->TryWrite(command)) {
-      return false;
-    }
-  }
-  return true;
+  // Unsubscribe uses Write instead of TryWrite so that the write always
+  // succeeds. Flow control is not needed as number of unsubscribes in flight
+  // is bounded by total number of subscriptions + the number of subscribes
+  // in flight.
+  worker_queue->Write(command);
 }
 
-bool MultiThreadedSubscriber::Acknowledge(Flow* flow,
-                                          const MessageReceived& message) {
+bool MultiThreadedSubscriber::Acknowledge(const MessageReceived& message) {
   const auto sub_id = SubscriptionID::Unsafe(message.GetSubscriptionHandle());
   if (!sub_id) {
     LOG_ERROR(options_.info_log, "Invalid SubscriptionID");
@@ -230,21 +230,18 @@ bool MultiThreadedSubscriber::Acknowledge(Flow* flow,
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return true;
   }
-  auto* worker_queue = subscriber_queues_[worker_id]->GetThreadLocal();
+  RS_ASSERT(worker_id < subscriber_queues_.size());
+  auto* worker_queue = subscriber_queues_[worker_id].get();
 
   // Send command to responsible worker.
   const auto seqno = message.GetSequenceNumber();
-  std::unique_ptr<Command> command(
+  std::unique_ptr<ExecuteCommand> command(
       MakeExecuteCommand([this, sub_id, worker_id, seqno]() mutable {
         subscribers_[worker_id]->Acknowledge(sub_id, seqno);
       }));
 
-  if (flow) {
-    flow->Write(worker_queue, command);
-  } else {
-    if (!worker_queue->TryWrite(command)) {
-      return false;
-    }
+  if (!worker_queue->TryWrite(command)) {
+    return false;
   }
   return true;
 }

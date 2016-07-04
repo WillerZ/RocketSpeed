@@ -15,22 +15,21 @@
 #include "include/Status.h"
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
-#include "src/client/subscriber_if.h"
 #include "src/util/common/subscription_id.h"
-#include "src/util/common/noncopyable.h"
-#include "src/util/common/nonmovable.h"
-#include "src/util/common/statistics.h"
 
 namespace rocketspeed {
 
+
 class ClientOptions;
 class Command;
-class Flow;
+class ExecuteCommand;
 class MsgLoop;
+class Statistics;
 class SubscriberStats;
 typedef uint64_t SubscriptionHandle;
+class SubscriberIf;
 template <typename>
-class ThreadLocalQueues;
+class UnboundedMPSCQueue;
 
 /** A multi-threaded subscriber. */
 class MultiThreadedSubscriber {
@@ -50,27 +49,22 @@ class MultiThreadedSubscriber {
   ~MultiThreadedSubscriber();
 
   /**
-   * If flow is non-null, the overflow is communicated via flow object.
    * Returns invalid SubscriptionHandle if and only if call attempt should be
    * retried due to queue overflow. In that case, observer will not be consumed.
    */
-  SubscriptionHandle Subscribe(Flow* flow,
-                               SubscriptionParameters parameters,
+  SubscriptionHandle Subscribe(SubscriptionParameters parameters,
                                std::unique_ptr<Observer>& observer);
 
   /**
-   * If flow is non-null, the overflow is communicated via flow object.
-   * Returns false if and only if call attempt should be retried due to queue
-   * overflow.
+   * Unsubscribes from a subscription. Never fails.
    */
-  bool Unsubscribe(Flow* flow, SubscriptionHandle sub_handle);
+  void Unsubscribe(SubscriptionHandle sub_handle);
 
   /**
-   * If flow is non-null, the overflow is communicated via flow object.
    * Returns false if and only if call attempt should be retried due to queue
    * overflow.
    */
-  bool Acknowledge(Flow* flow, const MessageReceived& message);
+  bool Acknowledge(const MessageReceived& message);
 
   // TODO(t9457879)
   void SaveSubscriptions(SaveSubscriptionsCallback save_callback);
@@ -90,8 +84,8 @@ class MultiThreadedSubscriber {
   /** Statistics per subscriber. */
   std::vector<std::shared_ptr<SubscriberStats>> statistics_;
   /** Queues to communicate with each subscriber. */
-  std::vector<std::unique_ptr<ThreadLocalQueues<std::unique_ptr<Command>>>>
-      subscriber_queues_;
+  std::vector<std::unique_ptr<
+      UnboundedMPSCQueue<std::unique_ptr<ExecuteCommand>>>> subscriber_queues_;
 
   /** Next subscription ID seed to be used for new subscription ID. */
   std::atomic<uint64_t> next_sub_id_;

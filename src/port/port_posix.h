@@ -274,6 +274,8 @@ class Eventfd {
   int fd_[2];
 #if defined(OS_MACOSX)
   int status_;
+  std::unique_ptr<Mutex> mutex_;
+  eventfd_t value_ = 0;
 #endif
 };
 

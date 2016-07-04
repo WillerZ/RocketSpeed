@@ -898,11 +898,7 @@ Status EventLoop::SendResponse(const Message& msg, StreamID stream_id) {
 }
 
 void EventLoop::SendControlCommand(std::unique_ptr<Command> command) {
-  // Need to lock when writing to control_command_queue_ since it is shared.
-  MutexLock lock(&control_command_mutex_);
-  bool ok = control_command_queue_->Write(command);
-  RS_ASSERT(ok);
-  (void)ok;
+  control_command_queue_->Write(command);
 }
 
 void EventLoop::Accept(int fd) {

@@ -346,7 +346,7 @@ class EventLoop {
    * Sends a command through the control queue. The control queue is used
    * for one-off initialization, so should be be used at all in steady state.
    * For this reason, it is shared and unbounded to ensure that control
-   * commands never fail.
+   * commands never fail. This call is thread safe.
    *
    * @param command The command to send.
    */
@@ -576,7 +576,6 @@ class EventLoop {
 
   // Shared command queue for sending control commands.
   // This should only be used for creating new queues.
-  port::Mutex control_command_mutex_;
   std::shared_ptr<UnboundedMPSCCommandQueue> control_command_queue_;
 
   /**

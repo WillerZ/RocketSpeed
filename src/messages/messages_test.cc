@@ -835,8 +835,8 @@ TEST_F(Messaging, ConnectTimeout) {
   // On OSX we could not force the OS to defer closure of the connection (i.e.
   // it happens immediately).
   ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.connect_timeout / 2));
-#endif  // OS_MACOSX
   ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.connect_timeout * 2));
+#endif  // OS_MACOSX
 }
 
 TEST_F(Messaging, FlowControlOnDelivery) {

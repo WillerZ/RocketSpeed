@@ -19,6 +19,7 @@
 #include <chrono>
 #include <deque>
 #include <cstdlib>
+#include <limits>
 #include <mutex>
 
 #include "include/Logger.h"
@@ -48,13 +49,33 @@ class UnboundedMPSCQueue : public Source<Item> {
    *
    * @param info_log Logging interface.
    * @param stats A stats that can be shared with other queues.
+   * @param soft_limit Queue size limit used by TryWrite.
    */
   UnboundedMPSCQueue(std::shared_ptr<Logger> info_log,
-        std::shared_ptr<QueueStats> stats);
+                     std::shared_ptr<QueueStats> stats,
+                     size_t soft_limit = std::numeric_limits<size_t>::max());
 
   ~UnboundedMPSCQueue();
 
-  bool Write(Item& item);
+  /**
+   * Writes an element to the queue, ignoring soft limit. Always succeeds.
+   * WARNING: only use Write if the size of the queue is bounded in some other
+   * way. Unmoderated use could result in out-of-memory errors.
+   *
+   * @param item The item to write to the queue.
+   */
+  template <typename ItemRef>
+  void Write(ItemRef&& item);
+
+  /**
+   * Writes an element to the queue if the queue size is under the soft limit,
+   * otherwise fails and does not move item.
+   *
+   * @param item The item to write to the queue.
+   * @return false iff the queue size is above the soft limit.
+   */
+  template <typename ItemRef>
+  bool TryWrite(ItemRef&& item);
 
   /**
    * Try to read an item from the queue.
@@ -82,6 +103,7 @@ class UnboundedMPSCQueue : public Source<Item> {
   mutable std::mutex mutex_;
   port::Eventfd read_ready_fd_;
   ThreadCheck read_check_;
+  const size_t soft_limit_;
 
   void Drain();
 };
@@ -98,12 +120,15 @@ class UnboundedMPSCCommandQueue : public UnboundedMPSCQueue<
 };
 
 template <typename Item>
-UnboundedMPSCQueue<Item>::UnboundedMPSCQueue(std::shared_ptr<Logger> info_log,
-                           std::shared_ptr<QueueStats> stats)
-    : info_log_(std::move(info_log))
-    , stats_(std::move(stats))
-    , queue_()
-    , read_ready_fd_(true, true) {
+UnboundedMPSCQueue<Item>::UnboundedMPSCQueue(
+    std::shared_ptr<Logger> info_log,
+    std::shared_ptr<QueueStats> stats,
+    size_t soft_limit)
+: info_log_(std::move(info_log))
+, stats_(std::move(stats))
+, queue_()
+, read_ready_fd_(true, true)
+, soft_limit_(soft_limit) {
   if (read_ready_fd_.status() != 0) {
     LOG_FATAL(info_log_, "Queue cannot be created: unable to create Eventfd");
     info_log_->Flush();
@@ -117,9 +142,35 @@ UnboundedMPSCQueue<Item>::~UnboundedMPSCQueue() {
 }
 
 template <typename Item>
-bool UnboundedMPSCQueue<Item>::Write(Item& item) {
+template <typename ItemRef>
+void UnboundedMPSCQueue<Item>::Write(ItemRef&& item) {
   Timestamped<Item> entry { std::move(item), std::chrono::steady_clock::now() };
   std::unique_lock<std::mutex> lock(mutex_);
+  queue_.emplace_back(std::move(entry));
+  lock.unlock();
+
+  if (read_ready_fd_.write_event(1)) {
+    LOG_ERROR(info_log_,
+              "Error writing a notification to command eventfd, errno=%d",
+              errno);
+
+    // Can only fail with EAGAIN or EINVAL.
+    // Linux: EAGAIN only happens if we have written 2^64 events without reading
+    // MacOS: EAGAIN happens after pipe's buffer (small by default) overflows
+    // EINVAL should never happen since we are writing the correct number
+    // of bytes.
+    RS_ASSERT(errno != EINVAL);
+  }
+}
+
+template <typename Item>
+template <typename ItemRef>
+bool UnboundedMPSCQueue<Item>::TryWrite(ItemRef&& item) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (queue_.size() >= soft_limit_) {
+    return false;
+  }
+  Timestamped<Item> entry { std::move(item), std::chrono::steady_clock::now() };
   queue_.emplace_back(std::move(entry));
   lock.unlock();
 
