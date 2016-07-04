@@ -25,6 +25,15 @@ class EventCallback;
 class EventLoop;
 class Stream;
 
+/// Current version of protocol being emitted by this client/server.
+/// Receiving a later versioned message will cause connection to close with
+/// an error.
+constexpr uint8_t kCurrentMsgVersion = 1;
+
+/// Minimum supported version of protocol of this client/server.
+/// Anything below will cause connection to close with error.
+constexpr uint8_t kMinAcceptedVersion = 1;
+
 struct MessageOnStream {
   Stream* stream;
   std::unique_ptr<Message> message;
@@ -63,11 +72,13 @@ class SocketEvent : public Source<MessageOnStream>,
    *
    * @param event_loop An event loop to register the socket with.
    * @param fd The physical socket.
+   * @param protocol_version Version of the protocol to use for this socket.
    * @param destination An optional destination, if present indicates that this
    *                    is an outbound socket.
    */
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
                                              int fd,
+                                             uint8_t protocol_version,
                                              HostId destination = HostId());
 
   /**
@@ -136,6 +147,9 @@ class SocketEvent : public Source<MessageOnStream>,
   size_t msg_size_;
   std::unique_ptr<char[]> msg_buf_;  // receive buffer
 
+  /** Version of protocol to use for communication. */
+  uint8_t protocol_version_;
+
   /** Writer and serializer state. */
   /** A list of chunks of data to be written. */
   std::deque<std::shared_ptr<TimestampedString>> send_queue_;
@@ -172,7 +186,10 @@ class SocketEvent : public Source<MessageOnStream>,
    */
   std::chrono::time_point<std::chrono::steady_clock> without_streams_since_;
 
-  SocketEvent(EventLoop* event_loop, int fd, HostId destination);
+  SocketEvent(EventLoop* event_loop,
+              int fd,
+              uint8_t protocol_version,
+              HostId destination);
 
   /**
    * Unregisters a stream with provided remote StreamID from the SocketEvent and

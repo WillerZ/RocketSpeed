@@ -131,7 +131,7 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
   AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
   // Create SocketEvent and pass ownership to the loop.
   int fd = accept_cmd->DetachFD();
-  auto owned_socket = SocketEvent::Create(this, fd);
+  auto owned_socket = SocketEvent::Create(this, fd, options_.protocol_version);
   const auto socket = owned_socket.get();
   if (!socket) {
     LOG_ERROR(info_log_,
@@ -690,7 +690,8 @@ SocketEvent* EventLoop::OpenSocketEvent(const HostId& destination) {
   }
 
   // Create SocketEvent and pass ownership to the loop.
-  auto owned_socket = SocketEvent::Create(this, fd, destination);
+  auto owned_socket =
+      SocketEvent::Create(this, fd, options_.protocol_version, destination);
   const auto socket = owned_socket.get();
   if (!socket) {
     LOG_ERROR(info_log_,
@@ -1005,7 +1006,9 @@ static void CommandQueueUnrefHandler(void* ptr) {
 
 ////////////////////////////////////////////////////////////////////////////////
 EventLoop::Options::Options()
-: env(ClientEnv::Default()), info_log(std::make_shared<NullLogger>()) {}
+: env(ClientEnv::Default())
+, info_log(std::make_shared<NullLogger>())
+, protocol_version(kCurrentMsgVersion) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 EventLoop::Runner::Runner(EventLoop* event_loop)

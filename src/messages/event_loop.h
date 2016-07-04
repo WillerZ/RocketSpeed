@@ -129,6 +129,8 @@ class EventLoop {
      * For how long should we keep a connection without streams alive.
      */
     std::chrono::milliseconds connection_without_streams_keepalive{0};
+    /** Preferred protocol version. */
+    uint8_t protocol_version;
   };
 
   /**

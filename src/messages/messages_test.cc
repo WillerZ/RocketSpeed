@@ -896,6 +896,60 @@ TEST_F(Messaging, FlowControlOnDelivery) {
   ASSERT_TRUE(delivered.TimedWait(timeout_));
 }
 
+TEST_F(Messaging, VersionMismatch) {
+  // Tests that sending a mismatched version results in socket death.
+  MsgLoop receiver_loop(env_, env_options_, 0, 1, info_log_, "receiver_loop");
+  port::Semaphore receiver_checkpoint;
+  receiver_loop.RegisterCallbacks({
+      {MessageType::mPing, [&](Flow*, std::unique_ptr<Message>, StreamID) {
+        // Should not receive the ping request.
+        EXPECT_TRUE(false);
+      }},
+      {MessageType::mGoodbye, [&](Flow*, std::unique_ptr<Message>, StreamID) {
+        receiver_checkpoint.Post();
+      }}
+    });
+  ASSERT_OK(receiver_loop.Initialize());
+  std::unique_ptr<MsgLoopThread> t1(
+    new MsgLoopThread(env_, &receiver_loop, "receiver_loop"));
+
+  for (int version_diff : {-1, +1}) {
+    // Setup sender loop (different protocol version).
+    MsgLoop::Options sender_opts;
+    sender_opts.event_loop.protocol_version += version_diff;
+    MsgLoop sender_loop(
+        env_, env_options_, 0, 1, info_log_, "sender_loop", sender_opts);
+    port::Semaphore sender_checkpoint;
+    sender_loop.RegisterCallbacks({
+        {MessageType::mPing, [&](Flow*, std::unique_ptr<Message>, StreamID) {
+          // Should not receive the ping response.
+          EXPECT_TRUE(false);
+        }},
+        {MessageType::mGoodbye, [&](Flow*, std::unique_ptr<Message>, StreamID) {
+          sender_checkpoint.Post();
+        }}
+      });
+    ASSERT_OK(sender_loop.Initialize());
+    MsgLoopThread t2(env_, &sender_loop, "sender_loop");
+
+    ASSERT_OK(sender_loop.WaitUntilRunning());
+    ASSERT_OK(receiver_loop.WaitUntilRunning());
+
+    // Receiver client ID.
+    auto receiver_host_id = receiver_loop.GetHostId();
+
+    // Create logical stream and corresponding socket1.
+    StreamSocket socket1(sender_loop.CreateOutboundStream(receiver_host_id, 0));
+
+    // Send a ping from sender_loop on socket1.
+    MessagePing ping(
+        Tenant::GuestTenant, MessagePing::PingType::Request, "expected");
+    ASSERT_OK(sender_loop.SendRequest(ping, &socket1, 0));
+    receiver_checkpoint.TimedWait(timeout_);
+    sender_checkpoint.TimedWait(timeout_);
+  }
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

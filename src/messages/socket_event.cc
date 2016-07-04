@@ -23,8 +23,6 @@
 
 namespace rocketspeed {
 
-static constexpr uint8_t kCurrentMsgVersion = 1;
-
 namespace {
 
 struct MessageHeader {
@@ -37,10 +35,24 @@ struct MessageHeader {
    */
   static Status Parse(Slice* in, MessageHeader* header) {
     if (!GetFixed8(in, &header->version)) {
-      return Status::InvalidArgument("Bad version");
+      return Status::InvalidArgument("Failed to parse version");
+    }
+    if (header->version < kMinAcceptedVersion) {
+      char buf[256];
+      snprintf(buf, sizeof(buf), "Message version too low (%d < %d)",
+        static_cast<int>(header->version),
+        static_cast<int>(kMinAcceptedVersion));
+      return Status::InvalidArgument(buf);
+    }
+    if (header->version > kCurrentMsgVersion) {
+      char buf[256];
+      snprintf(buf, sizeof(buf), "Message version too high (%d > %d)",
+        static_cast<int>(header->version),
+        static_cast<int>(kCurrentMsgVersion));
+      return Status::InvalidArgument(buf);
     }
     if (!GetFixed32(in, &header->size)) {
-      return Status::InvalidArgument("Bad size");
+      return Status::InvalidArgument("Failed to parse size");
     }
     return Status::OK();
   }
@@ -88,9 +100,11 @@ SocketEventStats::SocketEventStats(const std::string& prefix) {
 
 std::unique_ptr<SocketEvent> SocketEvent::Create(EventLoop* event_loop,
                                                  const int fd,
+                                                 uint8_t protocol_version,
                                                  HostId destination) {
   std::unique_ptr<SocketEvent> sev(
-      new SocketEvent(event_loop, fd, std::move(destination)));
+      new SocketEvent(
+          event_loop, fd, protocol_version, std::move(destination)));
 
   if (!sev->read_ev_ || !sev->write_ev_) {
     LOG_ERROR(
@@ -232,7 +246,7 @@ bool SocketEvent::Write(SerializedOnStream& value) {
   // Serialise message header.
   size_t frame_size =
       stream_ser->string.size() + value.serialised->string.size();
-  MessageHeader header{kCurrentMsgVersion, static_cast<uint32_t>(frame_size)};
+  MessageHeader header{protocol_version_, static_cast<uint32_t>(frame_size)};
   auto header_ser = std::make_shared<TimestampedString>();
   header_ser->string = header.ToString();
   header_ser->issued_time = now;
@@ -276,11 +290,13 @@ const std::shared_ptr<Logger>& SocketEvent::GetLogger() const {
   return event_loop_->GetLog();
 }
 
-SocketEvent::SocketEvent(EventLoop* event_loop, int fd, HostId destination)
+SocketEvent::SocketEvent(
+    EventLoop* event_loop, int fd, uint8_t protocol_version, HostId destination)
 : stats_(event_loop->GetSocketStats())
 , hdr_idx_(0)
 , msg_idx_(0)
 , msg_size_(0)
+, protocol_version_(protocol_version)
 , fd_(fd)
 , write_ready_(event_loop->CreateEventTrigger())
 , flow_control_("socket_event.flow_control", event_loop)
