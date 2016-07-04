@@ -12,7 +12,6 @@
 #include <string.h>
 #include <cstdlib>
 #include "include/Assert.h"
-#include "src/util/common/mutexlock.h"
 
 namespace rocketspeed {
 namespace port {
