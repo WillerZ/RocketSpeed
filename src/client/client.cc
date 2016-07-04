@@ -117,8 +117,7 @@ ClientImpl::ClientImpl(ClientOptions options,
 , msg_loop_thread_spawned_(false)
 , is_internal_(is_internal)
 , publisher_(options_, msg_loop_.get(), &wake_lock_)
-, subscriber_(new MultiThreadedSubscriber(options_, msg_loop_))
-, num_subscriptions_(0) {
+, subscriber_(new MultiThreadedSubscriber(options_, msg_loop_)) {
   LOG_VITAL(options_.info_log, "Creating Client");
 }
 
@@ -233,20 +232,11 @@ SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
                                          std::unique_ptr<Observer>& observer) {
   RS_ASSERT(!!observer);
 
-  if (num_subscriptions_.load() >= options_.max_subscriptions) {
-    LOG_ERROR(options_.info_log,
-      "Subscription limit of %zu reached.", options_.max_subscriptions);
-    return SubscriptionHandle(0);
-  }
-
   SubscriptionHandle subscription = subscriber_->Subscribe(
       std::move(parameters), observer);
 
   if (subscription != SubscriptionHandle(0)) {
     RS_ASSERT(!observer);  // should be consumed
-    auto next = ++num_subscriptions_;
-    RS_ASSERT(next != 0);
-    (void)next;
   } else {
     RS_ASSERT(!!observer);  // should not be consumed
   }
@@ -277,9 +267,6 @@ SubscriptionHandle ClientImpl::Subscribe(
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
   subscriber_->Unsubscribe(sub_handle);
-  auto prev = num_subscriptions_--;
-  RS_ASSERT(prev != 0);
-  (void)prev;
   return Status::OK();
 }
 

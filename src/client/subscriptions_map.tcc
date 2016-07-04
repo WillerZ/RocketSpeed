@@ -381,12 +381,14 @@ void SubscriptionsMap<SubscriptionState>::ReceiveUnsubscribe(
         state = std::move(it->second);
         synced_subscriptions_.erase(it);
         // No need to send unsubscribe request, as we've just received one.
+        // Notify via callback.
+        terminate_cb_(arg.flow, state.get(), std::move(arg.message));
       } else {
         // A natural race between the server and the client terminating a
         // subscription.
+        // State is null at this point, No need to call the terminate callback,
+        // as the client has already Unsubscribed.
       }
-      // Notify via callback.
-      terminate_cb_(arg.flow, state.get(), std::move(arg.message));
     } break;
   }
 }

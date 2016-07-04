@@ -47,11 +47,20 @@ namespace rocketspeed {
 MultiThreadedSubscriber::MultiThreadedSubscriber(
     const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
 : options_(options), msg_loop_(std::move(msg_loop)), next_sub_id_(0) {
+  size_t max_subscriptions_per_thread =
+      options_.max_subscriptions / options_.num_workers;
+  size_t remaining_subscriptions =
+      options_.max_subscriptions % options_.num_workers;
+
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     EventLoop* event_loop = msg_loop_->GetEventLoop(i);
     statistics_.emplace_back(std::make_shared<SubscriberStats>("subscriber."));
     subscribers_.emplace_back(new MultiShardSubscriber(
-        options_, event_loop, statistics_.back()));
+        options_,
+        event_loop,
+        statistics_.back(),
+        max_subscriptions_per_thread +
+            ((static_cast<size_t>(i) < remaining_subscriptions) ? 1 : 0)));
     subscriber_queues_.emplace_back(
         new UnboundedMPSCQueue<std::unique_ptr<ExecuteCommand>>(
           options_.info_log, event_loop->GetQueueStats(), options_.queue_size));
@@ -232,6 +241,7 @@ bool MultiThreadedSubscriber::Acknowledge(const MessageReceived& message) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return true;
   }
+
   RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
   auto* worker_queue = subscriber_queues_[worker_id].get();
 

@@ -79,7 +79,7 @@ class MultiThreadedSubscriber {
   /** A set of loops to use. */
   const std::shared_ptr<MsgLoop> msg_loop_;
 
-  /** One multi-threaded subscriber per thread. */
+  /** One multi-shard subscriber per thread. */
   std::vector<std::unique_ptr<SubscriberIf>> subscribers_;
   /** Statistics per subscriber. */
   std::vector<std::shared_ptr<SubscriberStats>> statistics_;

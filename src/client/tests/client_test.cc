@@ -8,7 +8,6 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
-#include <numeric>
 #include <mutex>
 #include <thread>
 #include <unordered_set>
@@ -598,52 +597,131 @@ TEST_F(ClientTest, Sharding) {
 }
 
 TEST_F(ClientTest, ClientSubscriptionLimit) {
-  size_t kMaxSubscriptions = 1000;
-  size_t kSubscriptions = 100000;
-
-  Random rng((uint32_t)std::time(0));
+  size_t kMaxSubscriptions = 1;
 
   ClientOptions options;
   options.max_subscriptions = kMaxSubscriptions;
+  options.num_workers = 1;
   auto client = CreateClient(std::move(options));
 
-  std::unordered_set<SubscriptionHandle> handles;
   port::Semaphore unsubscribe_sem;
+  port::Semaphore invalid_subscription_sem;
 
-  for (size_t i = 0; i < kSubscriptions; i++) {
-    Topic topic_name = std::to_string(i);
-    SequenceNumber seq = i;
+  auto subscribe = [&](Topic topic_name) -> SubscriptionHandle {
+    return client->Subscribe(GuestTenant,
+                             GuestNamespace,
+                             topic_name,
+                             1 /* seqno */,
+                             nullptr,
+                             [&](const SubscriptionStatus& status) {
+                               if (status.GetStatus().IsInvalidArgument()) {
+                                 invalid_subscription_sem.Post();
+                               } else {
+                                 unsubscribe_sem.Post();
+                               }
+                             });
+  };
 
-    if (!rng.OneIn(5)) {  // 80% Probability to subscribe
-      auto sub_handle = client->Subscribe(
-          GuestTenant,
-          GuestNamespace,
-          topic_name,
-          seq,
-          nullptr,
-          [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
-      if (handles.size() < kMaxSubscriptions) {
-        ASSERT_TRUE(sub_handle);
-        handles.insert(sub_handle);
-      } else {
-        ASSERT_TRUE(!sub_handle);
-      }
-    } else {
-      if (handles.size() > 0) {
-        SubscriptionHandle handle = *handles.begin();
-        handles.erase(handle);
-        ASSERT_OK(client->Unsubscribe(handle));
-        ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
-      }
-    }
-  }
-
-  ASSERT_LE(handles.size(), kMaxSubscriptions);
-
-  for (auto handle : handles) {
+  auto unsubscribe = [&](SubscriptionHandle handle) {
     ASSERT_OK(client->Unsubscribe(handle));
     ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
-  }
+  };
+
+  // First Subscription (can subscribe)
+  Topic topic_name = "1";
+  auto sub_handle_1 = subscribe(topic_name);
+  ASSERT_TRUE(sub_handle_1);
+
+  // Second Subscription (cannot subscribe)
+  topic_name = "2";
+  auto sub_handle_2 = subscribe(topic_name);
+  ASSERT_TRUE(sub_handle_2);
+  ASSERT_TRUE(invalid_subscription_sem.TimedWait(positive_timeout));
+
+  unsubscribe(sub_handle_1);
+
+  // can subscribe now
+  topic_name = "2";
+  sub_handle_2 = subscribe(topic_name);
+  ASSERT_TRUE(sub_handle_2);
+
+  unsubscribe(sub_handle_2);
+}
+
+TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
+  size_t kMaxSubscriptions = 1;
+
+  port::Semaphore server_subscribe_sem;
+  port::Semaphore client_unsubscribe_sem;
+  port::Semaphore invalid_subscription_sem;
+  StreamID stream_id;
+
+  MsgLoop* server_ptr;
+  auto server = MockServer({
+      {MessageType::mSubscribe,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         stream_id = origin;
+         server_subscribe_sem.Post();
+       }},
+  });
+  server_ptr = server.msg_loop.get();
+
+  ClientOptions options;
+  options.max_subscriptions = kMaxSubscriptions;
+  options.num_workers = 1;
+  auto client = CreateClient(std::move(options));
+
+  auto subscribe = [&](Topic topic_name) -> SubscriptionHandle {
+    return client->Subscribe(GuestTenant,
+                             GuestNamespace,
+                             topic_name,
+                             1 /* seqno */,
+                             nullptr,
+                             [&](const SubscriptionStatus& status) {
+                               if (status.GetStatus().IsInvalidArgument()) {
+                                 invalid_subscription_sem.Post();
+                               } else {
+                                 client_unsubscribe_sem.Post();
+                               }
+                             });
+  };
+
+  auto unsubscribe = [&](SubscriptionHandle handle, bool wait = true) {
+    ASSERT_OK(client->Unsubscribe(handle));
+    if (wait) {
+      ASSERT_TRUE(client_unsubscribe_sem.TimedWait(positive_timeout));
+    }
+  };
+
+  // First Subscription (can subscribe)
+  Topic topic_name = "1";
+  auto sub_handle_1 = subscribe(topic_name);
+  ASSERT_TRUE(sub_handle_1);
+  ASSERT_TRUE(server_subscribe_sem.TimedWait(positive_timeout));
+
+  // Second Subscription (cannot subscribe)
+  topic_name = "2";
+  auto sub_handle_2 = subscribe(topic_name);
+  ASSERT_TRUE(sub_handle_2);
+  ASSERT_TRUE(invalid_subscription_sem.TimedWait(positive_timeout));
+
+  // Send an unsubscribe back to the client for the first subscription and wait.
+  MessageUnsubscribe unsubscribe_cmd(GuestTenant,
+                                     SubscriptionID::Unsafe(sub_handle_1),
+                                     MessageUnsubscribe::Reason::kRequested);
+  server_ptr->SendResponse(unsubscribe_cmd, stream_id, 0);
+  ASSERT_TRUE(client_unsubscribe_sem.TimedWait(positive_timeout));
+
+  // Now the subscription should pass
+  sub_handle_2 = subscribe(topic_name);
+  ASSERT_TRUE(sub_handle_2);
+  ASSERT_TRUE(server_subscribe_sem.TimedWait(positive_timeout));
+
+  // This would have no effect on the counter as this handle has already been
+  // unsubscribed.
+  unsubscribe(sub_handle_1, false);
+
+  unsubscribe(sub_handle_2);
 }
 
 TEST_F(ClientTest, CachedConnectionsWithoutStreams) {

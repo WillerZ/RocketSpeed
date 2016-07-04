@@ -47,11 +47,14 @@ namespace rocketspeed {
 MultiShardSubscriber::MultiShardSubscriber(
     const ClientOptions& options,
     EventLoop* event_loop,
-    std::shared_ptr<SubscriberStats> stats)
+    std::shared_ptr<SubscriberStats> stats,
+    size_t max_active_subscriptions)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
-, last_router_version_(options_.sharding->GetVersion()) {
+, last_router_version_(options_.sharding->GetVersion())
+, max_active_subscriptions_(max_active_subscriptions)
+, num_active_subscriptions_(std::make_shared<size_t>(0)) {
   // Periodically check for new router versions.
   router_timer_ = event_loop_->CreateTimedEventCallback(
       std::bind(&MultiShardSubscriber::RefreshRouting, this),
@@ -91,8 +94,13 @@ void MultiShardSubscriber::StartSubscription(
   auto it = subscribers_.find(shard_id);
   if (it == subscribers_.end()) {
     // Subscriber is missing, create and start one.
-    std::unique_ptr<SubscriberIf> subscriber(new Subscriber(
-        options_, event_loop_, stats_, shard_id));
+    std::unique_ptr<SubscriberIf> subscriber(
+        new Subscriber(options_,
+                       event_loop_,
+                       stats_,
+                       shard_id,
+                       max_active_subscriptions_,
+                       num_active_subscriptions_));
     if (options_.collapse_subscriptions_to_tail) {
       // TODO(t10132320)
       RS_ASSERT(parameters.start_seqno == 0);

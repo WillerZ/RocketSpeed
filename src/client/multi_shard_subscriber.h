@@ -40,7 +40,8 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
  public:
   MultiShardSubscriber(const ClientOptions& options,
                        EventLoop* event_loop,
-                       std::shared_ptr<SubscriberStats> stats);
+                       std::shared_ptr<SubscriberStats> stats,
+                       size_t max_active_subscriptions);
 
   ~MultiShardSubscriber() override;
 
@@ -91,6 +92,12 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
    * recognise the ID.
    */
   SubscriberIf* GetSubscriberForSubscription(SubscriptionID sub_id);
+
+  /** Maximum number of active subscription across the shards in this thread. */
+  const size_t max_active_subscriptions_;
+
+  /** Number of active subscriptions in this thread across shards. */
+  std::shared_ptr<size_t> num_active_subscriptions_;
 };
 
 }  // namespace rocketspeed

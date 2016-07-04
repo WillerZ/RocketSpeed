@@ -67,7 +67,9 @@ class Subscriber : public SubscriberIf {
   Subscriber(const ClientOptions& options,
              EventLoop* event_loop,
              std::shared_ptr<SubscriberStats> stats,
-             size_t shard_id);
+             size_t shard_id,
+             size_t max_active_subscriptions,
+             std::shared_ptr<size_t> num_active_subscriptions);
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
@@ -119,6 +121,17 @@ class Subscriber : public SubscriberIf {
   void ReceiveTerminate(Flow* flow,
                         SubscriptionState*,
                         std::unique_ptr<MessageUnsubscribe>);
+
+  void TerminateSubscriptionImpl(
+      Flow* flow,
+      SubscriptionState* state,
+      std::unique_ptr<MessageUnsubscribe> unsubscribe);
+
+  /// Max active subscriptions across the thread.
+  const size_t max_active_subscriptions_;
+
+  /// Number of active subscriptions in this thread
+  std::shared_ptr<size_t> num_active_subscriptions_;
 };
 
 }  // namespace rocketspeed

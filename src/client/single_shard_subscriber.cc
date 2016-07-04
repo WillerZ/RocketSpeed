@@ -22,6 +22,50 @@
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
 
+namespace {
+
+using namespace rocketspeed;
+
+class InvalidSubscriptionStatus : public SubscriptionStatus {
+ public:
+  explicit InvalidSubscriptionStatus(Status status,
+                                     SubscriptionHandle sub_handle,
+                                     SequenceNumber seq_no,
+                                     TenantID tenant_id,
+                                     NamespaceID namespace_id,
+                                     Topic topic_name)
+  : status_(status)
+  , sub_handle_(sub_handle)
+  , seq_no_(seq_no)
+  , tenant_id_(tenant_id)
+  , namespace_id_(std::move(namespace_id))
+  , topic_name_(std::move(topic_name)) {}
+
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    return sub_handle_;
+  }
+
+  TenantID GetTenant() const override { return tenant_id_; }
+
+  const NamespaceID& GetNamespace() const override { return namespace_id_; }
+
+  const Topic& GetTopicName() const override { return topic_name_; }
+
+  SequenceNumber GetSequenceNumber() const override { return seq_no_; }
+
+  const Status& GetStatus() const override { return status_; }
+
+ private:
+  Status status_;
+  SubscriptionHandle sub_handle_;
+  SequenceNumber seq_no_;
+  TenantID tenant_id_;
+  NamespaceID namespace_id_;
+  Topic topic_name_;
+};
+
+}  // anonymous namespace
+
 namespace rocketspeed {
 
 using namespace std::placeholders;
@@ -30,7 +74,9 @@ using namespace std::placeholders;
 Subscriber::Subscriber(const ClientOptions& options,
                        EventLoop* event_loop,
                        std::shared_ptr<SubscriberStats> stats,
-                       size_t shard_id)
+                       size_t shard_id,
+                       size_t max_active_subscriptions,
+                       std::shared_ptr<size_t> num_active_subscriptions)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
@@ -38,7 +84,9 @@ Subscriber::Subscriber(const ClientOptions& options,
                      std::bind(&Subscriber::ReceiveDeliver, this, _1, _2, _3),
                      std::bind(&Subscriber::ReceiveTerminate, this, _1, _2, _3),
                      options_.backoff_strategy)
-, shard_id_(shard_id) {
+, shard_id_(shard_id)
+, max_active_subscriptions_(max_active_subscriptions)
+, num_active_subscriptions_(std::move(num_active_subscriptions)) {
   thread_check_.Check();
   RefreshRouting();
 }
@@ -48,12 +96,31 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                    std::unique_ptr<Observer> observer) {
   thread_check_.Check();
 
+  if (*num_active_subscriptions_ >= max_active_subscriptions_) {
+    LOG_WARN(options_.info_log,
+             "Subscription limit of %zu reached.",
+             max_active_subscriptions_);
+
+    // Cancel subscription
+    InvalidSubscriptionStatus sub_status(
+        Status::InvalidArgument(
+            "Invalid subscription as maximum subscription limit reached."),
+        sub_id,
+        parameters.start_seqno,
+        parameters.tenant_id,
+        parameters.namespace_id,
+        parameters.topic_name);
+    observer->OnSubscriptionStatusChange(sub_status);
+    return;
+  }
+
   auto ptr = subscriptions_map_.Subscribe(sub_id,
                                           parameters.tenant_id,
                                           parameters.namespace_id,
                                           parameters.topic_name,
                                           parameters.start_seqno);
   ptr->SwapObserver(&observer);
+  (*num_active_subscriptions_)++;
 }
 
 void Subscriber::Acknowledge(SubscriptionID sub_id,
@@ -74,12 +141,12 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
   if (auto ptr = subscriptions_map_.Find(sub_id)) {
     // Notify the user.
     SourcelessFlow no_flow(event_loop_->GetFlowControl());
-    ReceiveTerminate(&no_flow,
-                     ptr,
-                     folly::make_unique<MessageUnsubscribe>(
-                         ptr->GetTenant(),
-                         ptr->GetIDWhichMayChange(),
-                         MessageUnsubscribe::Reason::kRequested));
+    TerminateSubscriptionImpl(&no_flow,
+                              ptr,
+                              folly::make_unique<MessageUnsubscribe>(
+                                  ptr->GetTenant(),
+                                  ptr->GetIDWhichMayChange(),
+                                  MessageUnsubscribe::Reason::kRequested));
 
     // Terminate the subscription, which will invalidate the pointer.
     subscriptions_map_.Unsubscribe(ptr);
@@ -215,6 +282,16 @@ void Subscriber::ReceiveTerminate(
     Flow* flow,
     SubscriptionState* state,
     std::unique_ptr<MessageUnsubscribe> unsubscribe) {
+  // The callback would only be called if the state is not null
+  // at this point, that is the Client must have Unsubscribed before we receive
+  // a Terminate from the server.
+  TerminateSubscriptionImpl(flow, state, std::move(unsubscribe));
+}
+
+void Subscriber::TerminateSubscriptionImpl(
+    Flow* flow,
+    SubscriptionState* state,
+    std::unique_ptr<MessageUnsubscribe> unsubscribe) {
   SubscriptionStatusImpl sub_status(*state);
   switch (unsubscribe->GetReason()) {
     case MessageUnsubscribe::Reason::kRequested:
@@ -228,6 +305,9 @@ void Subscriber::ReceiveTerminate(
 
   auto sub_id = state->GetIDWhichMayChange();
   last_acks_map_.erase(sub_id);
+
+  // Decrement number of active subscriptions
+  (*num_active_subscriptions_)--;
 }
 
 }  // namespace rocketspeed
