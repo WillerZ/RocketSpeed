@@ -541,7 +541,7 @@ Status SocketEvent::ReadCallback() {
 
       // Now have read header, prepare msg buffer.
       Slice hdr_slice(hdr_buf_, sizeof(hdr_buf_));
-      MessageHeader hdr;
+      MessageHeader hdr{0, 0};
       Status st = MessageHeader::Parse(&hdr_slice, &hdr);
       if (!st.ok()) {
         return st;
