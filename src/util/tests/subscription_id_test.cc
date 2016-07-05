@@ -11,9 +11,7 @@
 
 namespace rocketspeed {
 
-class SubscriptionIDTest : public ::testing::Test {};
-
-TEST_F(SubscriptionIDTest, Random) {
+TEST(SubscriptionIDTest, Random) {
   auto& rng = ThreadLocalPRNG();
   std::uniform_int_distribution<uint32_t> shard_dist;
   std::uniform_int_distribution<uint32_t> hierarchical_dist;
@@ -31,7 +29,7 @@ TEST_F(SubscriptionIDTest, Random) {
   }
 }
 
-TEST_F(SubscriptionIDTest, Packing) {
+TEST(SubscriptionIDTest, Packing) {
 #define CHECK(a, b, p)                                                 \
   do {                                                                 \
     uint32_t shard_id = (1 << (a)) - 1;                                \
@@ -66,6 +64,28 @@ TEST_F(SubscriptionIDTest, Packing) {
 #undef NCHECK
 #undef YCHECK
 #undef CHECK
+}
+
+TEST(SubscriptionIDAllocatorTest, Random) {
+  auto& rng = ThreadLocalPRNG();
+  std::uniform_int_distribution<uint32_t> shard_dist(0, 31337);
+  const size_t num_workers = 11;
+  std::uniform_int_distribution<uint32_t> worker_dist(0, num_workers - 1);
+  const size_t allocator_size = 100;
+  SubscriptionIDAllocator allocator(num_workers, allocator_size);
+  const size_t num_attempts = 3 * 100;
+  for (size_t i = 0; i < num_attempts; ++i) {
+    auto shard_id = shard_dist(rng);
+    auto worker_id = worker_dist(rng);
+    auto sub_id = allocator.Next(shard_id, worker_id);
+    ASSERT_TRUE(sub_id);
+    ASSERT_EQ(shard_id, sub_id.GetShardID());
+    ASSERT_EQ(worker_id, allocator.GetWorkerID(sub_id));
+    // Find out what was the seed at the time of allocation.
+    auto seed = (sub_id.GetHierarchicalID() - 1 - worker_id) / num_workers;
+    // Poisson CDF for mean = 3 and x >= 30 is < 10^-10.
+    ASSERT_LE(seed, 30);
+  }
 }
 
 }  // namespace rocketspeed

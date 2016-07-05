@@ -10,6 +10,7 @@
 #include "include/Assert.h"
 #include "include/Slice.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/hash.h"
 
 namespace rocketspeed {
 
@@ -77,6 +78,36 @@ uint64_t SubscriptionID::GetHierarchicalID() const {
     return 0;
   }
   return hierarchical_id;
+}
+
+SubscriptionID SubscriptionIDAllocator::Next(const ShardID shard_id,
+                                             const size_t worker_id) {
+  RS_ASSERT(worker_id < num_workers_);
+  const size_t allocator_index =
+      MurmurHash2<size_t, size_t>()(shard_id, worker_id) % allocators_.size();
+  const uint64_t seed = allocators_[allocator_index]++;
+  const uint64_t hierarchical_id = 1 + worker_id + num_workers_ * seed;
+  {  // The expression above overflows only if one of the following does.
+    const uint64_t a = seed + 1;
+    if (a == 0) {
+      return SubscriptionID();
+    }
+    const uint64_t b = num_workers_ * a;
+    if (b / a != num_workers_) {
+      return SubscriptionID();
+    }
+  }
+  return SubscriptionID::ForShard(shard_id, hierarchical_id);
+}
+
+size_t SubscriptionIDAllocator::GetWorkerID(SubscriptionID sub_id) const {
+  RS_ASSERT(sub_id);
+  const uint64_t hierarchical_id = sub_id.GetHierarchicalID();
+  if (hierarchical_id == 0) {
+    return num_workers_;
+  }
+  const size_t worker_id = (hierarchical_id - 1) % num_workers_;
+  return worker_id;
 }
 
 void EncodeSubscriptionID(std::string* out, SubscriptionID in) {

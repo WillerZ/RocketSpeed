@@ -87,8 +87,7 @@ class MultiThreadedSubscriber {
   std::vector<std::unique_ptr<
       UnboundedMPSCQueue<std::unique_ptr<ExecuteCommand>>>> subscriber_queues_;
 
-  /** Next subscription ID seed to be used for new subscription ID. */
-  std::atomic<uint64_t> next_sub_id_;
+  SubscriptionIDAllocator allocator_;
 
   /**
    * Returns a new subscription handle. This method is thread-safe.

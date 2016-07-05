@@ -46,7 +46,9 @@ namespace rocketspeed {
 ///////////////////////////////////////////////////////////////////////////////
 MultiThreadedSubscriber::MultiThreadedSubscriber(
     const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
-: options_(options), msg_loop_(std::move(msg_loop)), next_sub_id_(0) {
+: options_(options)
+, msg_loop_(std::move(msg_loop))
+, allocator_(msg_loop_->GetNumWorkers(), options_.allocator_size) {
   size_t max_subscriptions_per_thread =
       options_.max_subscriptions / options_.num_workers;
   size_t remaining_subscriptions =
@@ -63,11 +65,13 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
             ((static_cast<size_t>(i) < remaining_subscriptions) ? 1 : 0)));
     subscriber_queues_.emplace_back(
         new UnboundedMPSCQueue<std::unique_ptr<ExecuteCommand>>(
-          options_.info_log, event_loop->GetQueueStats(), options_.queue_size));
+            options_.info_log,
+            event_loop->GetQueueStats(),
+            options_.queue_size));
     InstallSource<std::unique_ptr<ExecuteCommand>>(
         event_loop,
         subscriber_queues_.back().get(),
-        [this] (Flow* flow, std::unique_ptr<ExecuteCommand> command) {
+        [this](Flow* flow, std::unique_ptr<ExecuteCommand> command) {
           command->Execute(flow);
         });
   }
@@ -313,23 +317,16 @@ Statistics MultiThreadedSubscriber::GetStatisticsSync() {
 
 SubscriptionID MultiThreadedSubscriber::CreateNewHandle(size_t shard_id,
                                                         size_t worker_id) {
-  const auto num_workers = msg_loop_->GetNumWorkers();
-  const auto hierarchical_id = 1 + worker_id + num_workers * next_sub_id_++;
-  const auto sub_id = SubscriptionID::ForShard(shard_id, hierarchical_id);
-  if (!sub_id || static_cast<size_t>(GetWorkerID(sub_id)) != worker_id) {
-    return SubscriptionID();
-  }
-  return sub_id;
+  return allocator_.Next(shard_id, worker_id);
 }
 
 ssize_t MultiThreadedSubscriber::GetWorkerID(SubscriptionID sub_id) const {
-  const auto num_workers = msg_loop_->GetNumWorkers();
-  const auto hierarchical_id = sub_id.GetHierarchicalID();
-  const auto worker_id = static_cast<int>((hierarchical_id - 1) % num_workers);
-  if (worker_id < 0 || worker_id >= num_workers) {
+  const size_t num_workers = msg_loop_->GetNumWorkers();
+  const size_t worker_id = allocator_.GetWorkerID(sub_id);
+  if (worker_id >= num_workers) {
     return -1;
   }
-  return worker_id;
+  return static_cast<ssize_t>(worker_id);
 }
 
 }  // namespace rocketspeed

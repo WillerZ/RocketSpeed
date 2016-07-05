@@ -4,9 +4,11 @@
 /// of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "src/util/common/hash.h"
 
@@ -64,6 +66,50 @@ struct MurmurHash2<rocketspeed::SubscriptionID> {
   size_t operator()(rocketspeed::SubscriptionID id) const {
     return rocketspeed::MurmurHash2<uint64_t>()(static_cast<uint64_t>(id));
   }
+};
+
+/// A thread-safe allocator for SubscriptionIDs.
+///
+/// When allocating a unique SubscriptionIDs, we consistently hash the
+/// subscription's shard and worker thread into a set of allocators, and use
+/// chosen allocator's next value as the seed for hierarchical ID.
+///
+/// This enables us to reduce a cost of ID allocation to a single atomic
+/// increment, without assuming anything about the total number of shards in the
+/// system.
+///
+/// In the proposed allocation scheme, the trade-off is between memory used for
+/// the allocator and the number of allocations that can be performed. If all
+/// allocations end up on the same worker and shard, changing the allocator size
+/// (number of atomics) does not affect the lifetime.
+///
+/// To estimate the time before the allocator runs out of subscription IDs, let
+/// us assume that:
+/// * there are no more than 2 M shards (which fits in 3 byte VL-ecoded uint),
+/// * the client uses 2^5 threads,
+/// * the allocator size is 2^10.
+///
+/// We have 5 bytes left to encode the seed and thread ID, which leaves us with
+/// over 2^35 unique seed values. If the number of distinct (thread, shard)
+/// pairs is sufficiently large, we can perform 2^45 allocations before all
+/// allocators overflow.
+///
+/// At a modest rate of 1 M new subscriptions being created every second, that
+/// translates to a bit over a year of uninterrupted operation.
+class SubscriptionIDAllocator {
+ public:
+  SubscriptionIDAllocator(size_t num_workers, size_t num_allocators)
+  : num_workers_(num_workers), allocators_(num_allocators) {}
+
+  SubscriptionID Next(ShardID shard_id, size_t worker_id);
+
+  size_t GetWorkerID(SubscriptionID sub_id) const;
+
+ private:
+  const size_t num_workers_;
+
+  // TODO(stupaq): would false sharing cause any observable problems?
+  std::vector<std::atomic<uint64_t>> allocators_;
 };
 
 /// Appends serialized SubscriptionID to provided string.

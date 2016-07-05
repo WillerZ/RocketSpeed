@@ -137,6 +137,12 @@ class ClientOptions {
   // Default: 50000
   size_t queue_size;
 
+  // Size of the allocator for SubscriptionIDs.
+  // Larger allocator occupies more memory, but reduces contention and increases
+  // lifetime of a client.
+  // Default: 1024
+  size_t allocator_size;
+
   /** Creates options with default values. */
   ClientOptions();
 };
