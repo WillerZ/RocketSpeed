@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 
 #include "Assert.h"
 #include "TaggedPtr.h"
@@ -75,7 +76,7 @@ class SingleIntArray<T*> {
       return false;
     }
     if (reinterpret_cast<uintptr_t>(ptr) == ptr_) {
-      ptr_ = 0;
+      ptr_ = reinterpret_cast<uintptr_t>(nullptr);
       return true;
     }
     return false;
@@ -450,15 +451,54 @@ class KeylessHashMMap {
 
  public:
   class Iterator;
+  using value_type = Value;
+  using key_type = Key;
   // TODO(dyniusz): we might use num_buckets / num_elements
-  KeylessHashMMap(const Hash& hasher = Hash())
+  // NOTE(dyniusz): non-default hasher provided by the user
+  //                doesn't work with copy semantics
+  KeylessHashMMap()
       // HashUtils are copied
-      : impl_(0, HashUtils<Key, Value, Hash, ArrayImpl>(hasher, &store_),
-              HashUtils<Key, Value, Hash, ArrayImpl>(hasher, &store_)),
+      : store_(new KeyStore<Key>),
+        impl_(0, HashUtils<Key, Value, Hash, ArrayImpl>(Hash(), store_.get()),
+              HashUtils<Key, Value, Hash, ArrayImpl>(Hash(), store_.get())),
         size_(0) {
     static_assert(ArrayImpl::implemented == true, "Type not yet supported");
     detail::SetDeletedKey<Impl, ArrayImpl, detail::HasSetter<Impl>::value>()
         .Set(impl_);
+  }
+
+  /**
+   * Creates new map by copying all elements from the other.
+   * std::bad_alloc might be thrown.
+   * NOTE: After the copy maps aren't necessary the same in terms
+   *       of memory layout and memory consumption. They are identical
+   *       element-wise.
+   *
+   * @param other - copy-from map
+   */
+  KeylessHashMMap(const KeylessHashMMap& other) : KeylessHashMMap() {
+    operator=(other);
+  }
+
+  /**
+   * Copy-assignment operator.
+   * std::bad_alloc might be thrown.
+   * Note from copy ctor applies here as well.
+   *
+   * @param other - assign-from map
+   * @return reference to this map
+   */
+  KeylessHashMMap& operator=(const KeylessHashMMap& other) {
+    RS_ASSERT(!other.store_->IsKeySet());
+    // I don't use sparse container operator because
+    // there's no way to change its store_ pointer. After such copy
+    // both maps would share the same store_. Inserting all elements instead.
+    impl_.clear();
+    for (auto it = other.impl_.begin(); it != other.impl_.end(); ++it) {
+      impl_.insert(*it);
+    }
+    size_ = other.Size();
+    return *this;
   }
 
   ~KeylessHashMMap() { Clear(); }
@@ -487,8 +527,30 @@ class KeylessHashMMap {
   }
 
   /**
+   * Removes entry from the map.
+   * std::bad_alloc might be thrown.
+
+   * @param value value to be erased
+   */
+  void Erase(Iterator it) {
+    RS_ASSERT(!Empty());
+    RS_ASSERT(&impl_ == it.owner_);
+    RS_ASSERT(it.it_ != it.owner_->end());
+
+    // TODO(dyniusz): this doesn't use the fact that we have the exact element
+    // in hand already but searches the ArrayImpl. This might be inefficient
+    // for large out of line arrays (multimaps). Unfortunately at the moment
+    // ArrayImpl doesn't provide required interface to do it in a right way.
+    const bool erased = it.it_->Erase(*it);
+    RS_ASSERT(erased);
+    if (it.it_->Empty()) {
+      impl_.erase(it.it_);
+    }
+    --size_;
+  }
+
+  /**
    * Tries to erase value from the map (if there's any).
-   * TODO(dyniusz): Erase(Iterator) implementation
    * std::bad_alloc might be thrown.
    *
    * @param value value to be erased
@@ -527,7 +589,7 @@ class KeylessHashMMap {
       return End();
     }
 
-    ScopedKeyWarden warden(&store_, &key);
+    ScopedKeyWarden warden(store_.get(), &key);
     auto it = impl_.find(ArrayImpl());
     if (it == impl_.end()) {
       return End();
@@ -552,7 +614,6 @@ class KeylessHashMMap {
 
   static constexpr size_t MaxElementsPerKey() { return ArrayImpl::MaxSize(); }
 
-  // TODO(dyniusz): iterator interface to be polished
   class Iterator {
    public:
     Iterator(const Iterator&) = default;
@@ -610,6 +671,19 @@ class KeylessHashMMap {
     size_t idx_;
   };
 
+  /**
+   * Swaps the content of two hash maps.
+   *
+   * @param other map to be swapped with.
+   */
+  void Swap(KeylessHashMMap& other) {
+    RS_ASSERT(!store_->IsKeySet());
+    RS_ASSERT(!other.store_->IsKeySet());
+    std::swap(store_, other.store_);
+    impl_.swap(other.impl_);
+    std::swap(size_, other.size_);
+  }
+
  private:
   class ScopedKeyWarden {
    public:
@@ -623,9 +697,7 @@ class KeylessHashMMap {
     KeyStore<Key>* store_;
   };
 
-  // mutable since used in const Find()
-  // via ScopedKeyWarden
-  mutable KeyStore<Key> store_;
+  std::unique_ptr<KeyStore<Key>> store_;
   Impl impl_;
   size_t size_;
 };

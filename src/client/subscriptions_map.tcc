@@ -42,8 +42,11 @@ SubscriptionsMap<SubscriptionState>::SubscriptionsMap(
   // Wire the source of pending subscriptions.
   flow_control->Register<typename Subscriptions::value_type>(
       &pending_subscriptions_,
-      [this](Flow* flow, typename Subscriptions::value_type entry) {
-        HandlePendingSubscription(flow, std::move(entry.second));
+      [this](Flow* flow, typename Subscriptions::value_type ptr) {
+        using T
+          = typename std::remove_pointer<decltype(ptr)>::type;
+        // we own the pointer now
+        HandlePendingSubscription(flow, std::unique_ptr<T>(ptr));
       });
 
   // Required by sparse_hash_set to mark deleted elements.
@@ -61,6 +64,20 @@ SubscriptionsMap<SubscriptionState>::SubscriptionsMap(
   // Disable sources that point to non-existent sink.
   pending_subscriptions_.SetReadEnabled(event_loop_, false);
   pending_unsubscribes_.SetReadEnabled(event_loop_, false);
+}
+
+template <typename SubscriptionState>
+SubscriptionsMap<SubscriptionState>::~SubscriptionsMap() {
+  pending_subscriptions_.Modify([&](Subscriptions& map) {
+    for (auto it = map.Begin(); it != map.End(); ++it) {
+      delete *it;
+    }
+  });
+
+  for (auto it = synced_subscriptions_.Begin();
+      it != synced_subscriptions_.End(); ++it) {
+    delete *it;
+  }
 }
 
 template <typename SubscriptionState>
@@ -82,14 +99,11 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Subscribe(
       {tenant_id, namespace_id.ToString()});
   // Record the subscription, we check that the ID is unique among all active
   // subscriptions.
-  SubscriptionState* state;
+  SubscriptionState* state = new SubscriptionState(
+            tenant_and_namespace, topic_name, sub_id, initial_seqno);
   pending_subscriptions_.Modify([&](Subscriptions& map) {
-    auto result = map.emplace(
-        sub_id,
-        folly::make_unique<SubscriptionState>(
-            tenant_and_namespace, topic_name, sub_id, initial_seqno));
-    RS_ASSERT(result.second);
-    state = result.first->second.get();
+    auto inserted = map.emplace(sub_id, state);
+    RS_ASSERT(inserted);
   });
   // Pending subscriptions will be synced opportunistically, as adding an
   // element renders the Source readable.
@@ -101,13 +115,13 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Find(
     SubscriptionID sub_id) const {
   LOG_DEBUG(GetLogger(), "Find(%llu)", sub_id.ForLogging());
 
-  auto it = synced_subscriptions_.find(sub_id);
-  if (it != synced_subscriptions_.end()) {
-    return it->second.get();
+  auto sync_it = synced_subscriptions_.Find(sub_id);
+  if (sync_it != synced_subscriptions_.End()) {
+    return *sync_it;
   }
-  it = pending_subscriptions_->find(sub_id);
-  if (it != pending_subscriptions_->end()) {
-    return it->second.get();
+  auto pend_it = pending_subscriptions_->Find(sub_id);
+  if (pend_it != pending_subscriptions_->End()) {
+    return *pend_it;
   }
   return nullptr;
 }
@@ -129,29 +143,24 @@ void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
       [&](Unsubscribes& set) { set.insert(old_sub_id); });
   // Reinsert the subscription, as we may not change the
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
-    std::unique_ptr<SubscriptionState> state;
+    SubscriptionState* state = nullptr;
     {  // We have to remove the state before modifying it.
-      auto it = synced_subscriptions_.find(old_sub_id);
-      if (it != synced_subscriptions_.end()) {
-        state = std::move(it->second);
-        synced_subscriptions_.erase(it);
+      auto sync_it = synced_subscriptions_.Find(old_sub_id);
+      if (sync_it != synced_subscriptions_.End()) {
+        state = *sync_it; // don't delete, it will be inserted to map
+        synced_subscriptions_.erase(sync_it);
       } else {
-        it = pending_subscriptions.find(old_sub_id);
-        if (it != pending_subscriptions.end()) {
-          state = std::move(it->second);
-          pending_subscriptions.erase(it);
-        } else {
-          RS_ASSERT(false);
-          return;
-        }
+        auto pend_it = pending_subscriptions.Find(old_sub_id);
+        RS_ASSERT(pend_it != pending_subscriptions.End());
+        state = *pend_it;
+        pending_subscriptions.erase(pend_it);
       }
     }
     // Rewind the state.
     state->Rewind(new_sub_id, new_seqno);
     // Reinsert the subscription as pending one.
-    auto result = pending_subscriptions.emplace(new_sub_id, std::move(state));
-    RS_ASSERT(result.second);
-    (void)result;
+    auto inserted = pending_subscriptions.emplace(new_sub_id, state);
+    RS_ASSERT(inserted);
   });
   // Terminate the subscription on old ID, the server sees rewound
   // subscription as a new one.
@@ -169,15 +178,19 @@ void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionState* ptr) {
 
   auto sub_id = ptr->GetSubscriptionID();
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
-    if (synced_subscriptions_.erase(sub_id) > 0) {
+    auto sync_it = synced_subscriptions_.Find(sub_id);
+    if (sync_it != synced_subscriptions_.End()) {
+      delete *sync_it;
+      synced_subscriptions_.erase(sync_it);
       // Schedule an unsubscribe message to be sent only if a subscription has
       // been sent out.
       pending_unsubscribes_.Modify(
           [&](Unsubscribes& set) { set.insert(sub_id); });
-    } else if (pending_subscriptions.erase(sub_id) == 0) {
-      // We probably corrupted memory when dereferencing `state`
-      // anyway...
-      RS_ASSERT(false);
+    } else {
+      auto pend_it = pending_subscriptions.Find(sub_id);
+      RS_ASSERT(pend_it != pending_subscriptions.End());
+      delete *pend_it;
+      pending_subscriptions.erase(pend_it);
     }
   });
   // Pending unsubscribe events will be synced opportunistically, as adding an
@@ -186,17 +199,17 @@ void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionState* ptr) {
 
 template <typename SubscriptionState>
 bool SubscriptionsMap<SubscriptionState>::Empty() const {
-  return synced_subscriptions_.empty() && pending_subscriptions_->empty();
+  return synced_subscriptions_.Empty() && pending_subscriptions_->Empty();
 }
 
 template <typename SubscriptionState>
 template <typename Iter>
 void SubscriptionsMap<SubscriptionState>::Iterate(Iter&& iter) {
-  for (auto& entry : pending_subscriptions_.Read()) {
-    iter(entry.second.get());
+  for (auto ptr : pending_subscriptions_.Read()) {
+    iter(ptr);
   }
-  for (auto& entry : synced_subscriptions_) {
-    iter(entry.second.get());
+  for (auto ptr : synced_subscriptions_) {
+    iter(ptr);
   }
 }
 
@@ -265,14 +278,14 @@ void SubscriptionsMap<SubscriptionState>::Reconnect() {
       // magnitude smaller, swapping sets and moving elements from the one with
       // pending subscriptions to the former one would trigger less
       // reallocations and reduce peak memory usage.
-      if (pending_subscriptions.size() < synced_subscriptions_.size()) {
-        std::swap(pending_subscriptions, synced_subscriptions_);
+      if (pending_subscriptions.Size() < synced_subscriptions_.Size()) {
+        pending_subscriptions.Swap(synced_subscriptions_);
       }
-      std::move(
-          synced_subscriptions_.begin(),
-          synced_subscriptions_.end(),
-          std::inserter(pending_subscriptions, pending_subscriptions.begin()));
-      RS_ASSERT(synced_subscriptions_.empty());
+
+      for (auto sub: synced_subscriptions_) {
+        pending_subscriptions.emplace(sub->GetSubscriptionID(), sub);
+      }
+      synced_subscriptions_.Clear();
     });
 
     // All subscriptions have been implicitly unsubscribed when the stream
@@ -328,10 +341,9 @@ void SubscriptionsMap<SubscriptionState>::HandlePendingSubscription(
   flow->Write(sink_.get(), ts);
 
   // Mark the subscription as synced.
-  auto result = synced_subscriptions_.emplace(state->GetSubscriptionID(),
-                                              std::move(state));
-  (void)result;
-  RS_ASSERT(result.second);
+  // We own the state pointer now.
+  auto inserted = synced_subscriptions_.Insert(state.release());
+  RS_ASSERT(inserted);
 }
 
 template <typename SubscriptionState>
@@ -373,12 +385,13 @@ void SubscriptionsMap<SubscriptionState>::ReceiveUnsubscribe(
     case MessageUnsubscribe::Reason::kRequested: {
       // Sanity check that the message did not refer to a subscription that has
       // not been synced to the server.
-      RS_ASSERT(pending_subscriptions_->count(sub_id) == 0);
+      RS_ASSERT(pending_subscriptions_->Find(sub_id)
+        == pending_subscriptions_->End());
       // Terminate the subscription.
       std::unique_ptr<SubscriptionState> state;
-      auto it = synced_subscriptions_.find(sub_id);
-      if (it != synced_subscriptions_.end()) {
-        state = std::move(it->second);
+      auto it = synced_subscriptions_.Find(sub_id);
+      if (it != synced_subscriptions_.End()) {
+        state.reset(*it); // erased from map so will be deleted after callback
         synced_subscriptions_.erase(it);
         // No need to send unsubscribe request, as we've just received one.
         // Notify via callback.
@@ -405,12 +418,13 @@ void SubscriptionsMap<SubscriptionState>::ReceiveDeliver(
 
   // Sanity check that the message did not refer to a subscription that has
   // not been synced to the server.
-  RS_ASSERT(pending_subscriptions_->count(sub_id) == 0);
+  RS_ASSERT(pending_subscriptions_->Find(sub_id)
+    == pending_subscriptions_->End());
   // Find the subscription.
-  SubscriptionState* state;
-  auto it = synced_subscriptions_.find(sub_id);
-  if (it != synced_subscriptions_.end()) {
-    state = it->second.get();
+  SubscriptionState* state = nullptr;
+  auto it = synced_subscriptions_.Find(sub_id);
+  if (it != synced_subscriptions_.End()) {
+    state = *it; // don't delete since it stays in the map
   } else {
     // A natural race between the server delivering a message and the client
     // terminating a subscription.

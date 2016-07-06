@@ -8,7 +8,6 @@
 #include <functional>
 #include <google/sparse_hash_set>
 #include <memory>
-#include <unordered_map>
 
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
@@ -16,6 +15,7 @@
 #include "src/messages/types.h"
 #include "src/util/common/observable_container.h"
 #include "src/util/common/ref_count_flyweight.h"
+#include "src/util/common/sparse_hash_maps.h"
 
 namespace rocketspeed {
 
@@ -132,6 +132,7 @@ class SubscriptionsMap : public StreamReceiver {
                    DeliverCb deliver_cb,
                    TerminateCb terminate_cb,
                    BackOffStrategy backoff_strategy);
+  ~SubscriptionsMap();
 
   /// Returns a non-owning pointer to the SubscriptionState.
   ///
@@ -174,9 +175,23 @@ class SubscriptionsMap : public StreamReceiver {
 
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
-  // TODO(stupaq): intrusive
+  struct SubscriptionsMapping {
+    SubscriptionID ExtractKey(const SubscriptionState* sub) const {
+      return sub->GetSubscriptionID();
+    }
+    size_t Hash(const SubscriptionID& id) const { return id; }
+    bool Equals(const SubscriptionID& id1, const SubscriptionID& id2) const {
+      return id1 == id2;
+    }
+  };
+
+  // NOTE: these raw SubscriptionState pointers are owned by the maps.
+  // If you to remove an element from the map it's your responsibility
+  // to take care of the memory.
   using Subscriptions =
-      std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionState>>;
+    STLAdapter<SparseKeylessMap<
+                  SubscriptionID, SubscriptionState*, SubscriptionsMapping>,
+                SubscriptionsMapping>;
   ObservableContainer<Subscriptions> pending_subscriptions_;
   Subscriptions synced_subscriptions_;
 
@@ -192,8 +207,9 @@ class SubscriptionsMap : public StreamReceiver {
 
   void Reconnect();
 
+  // Function takes upstream_sub ownership
   void HandlePendingSubscription(
-      Flow* flow, std::unique_ptr<SubscriptionState> upstream_sub);
+        Flow* flow, std::unique_ptr<SubscriptionState> upstream_sub);
 
   void HandlePendingUnsubscription(Flow* flow, SubscriptionID sub_id);
 

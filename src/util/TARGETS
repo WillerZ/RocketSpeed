@@ -30,6 +30,9 @@ cpp_library(
         # TODO: refactor ControlTowerRouter to remove dep
         '@/rocketspeed/github/src/copilot:control_tower_router',
     ],
+    external_deps=[
+        ('sparsehash'),
+    ],
 )
 
 cpp_library(
