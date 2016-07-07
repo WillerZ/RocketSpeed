@@ -11,6 +11,7 @@
 #include <random>
 #include <vector>
 
+#include "EnvOptions.h"
 #include "Slice.h"
 #include "Status.h"
 #include "SubscriptionStorage.h"
@@ -74,6 +75,10 @@ class ClientOptions {
   // BaseEnv to be used by all client side components.
   // Default: a default env of a client.
   BaseEnv* env;
+
+  // Environment options that will be used by client components.
+  // Default: default construction of EnvOptions.
+  EnvOptions env_options;
 
   // WakeLock acquired by the client when it processes messages.
   // Default: nullptr

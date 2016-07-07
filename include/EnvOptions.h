@@ -45,13 +45,13 @@ class EnvOptions {
 
   // Keep-alive options:
   // Turn keepalive on/off
-  bool use_tcp_keep_alive = false;
+  bool use_tcp_keep_alive = true;
 
-  // interval between last data packet and
+  // interval (in secs) between last data packet and
   // first keepalive probe
   int keepalive_time = 300;
 
-  // interval between keepalive probes
+  // interval (in secs) between keepalive probes
   int keepalive_intvl = 75;
 
   // number of unsuccessful probes before

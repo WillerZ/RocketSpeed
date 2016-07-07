@@ -43,6 +43,7 @@ BackOffStrategy RandomizedTruncatedExponential(
 
 ClientOptions::ClientOptions()
 : env(ClientEnv::Default())
+, env_options(EnvOptions())
 , num_workers(1)
 , timer_period(200)
 , backoff_strategy(backoff::RandomizedTruncatedExponential(

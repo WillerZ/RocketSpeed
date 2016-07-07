@@ -76,7 +76,7 @@ Status ClientImpl::Create(ClientOptions options,
   m_opts.event_loop.connection_without_streams_keepalive =
     options.connection_without_streams_keepalive;
   std::unique_ptr<MsgLoop> msg_loop(new MsgLoop(options.env,
-                                                EnvOptions(),
+                                                options.env_options,
                                                 -1,  // port
                                                 options.num_workers,
                                                 options.info_log,
