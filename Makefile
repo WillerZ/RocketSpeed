@@ -101,7 +101,9 @@ INCLUDE_CHECK_HEADERS = $(filter-out $(ANDROID_HEADERS), $(ALL_HEADERS:.h=.check
 
 TOOLS = \
 	rocketbench \
-	client_bench
+	client_bench \
+	accept_all_rocketeer \
+	reject_all_rocketeer
 
 PROGRAMS = rocketspeed $(TOOLS)
 
@@ -263,14 +265,17 @@ $(LIBRARY): $(LIBOBJECTS)
 	rm -f $@
 	$(AR) -rs $@ $(LIBOBJECTS)
 
-rs_bench: db/rs_bench.o $(LIBOBJECTS) $(TESTUTIL)
-	$(CXX) db/rs_bench.o $(LIBOBJECTS) $(TESTUTIL) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
-
-rs_stress: tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL)
-	$(CXX) tools/rs_stress.o $(LIBOBJECTS) $(TESTUTIL) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
-
 client_bench: src/tools/client_bench/client_bench.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
 	$(CXX) src/tools/client_bench/client_bench.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
+
+# ---------------------------------------------------------------------------
+# 	Example rocketeers
+# ---------------------------------------------------------------------------
+accept_all_rocketeer: src/tools/accept_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
+	$(CXX) src/tools/accept_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
+
+reject_all_rocketeer: src/tools/reject_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
+	$(CXX) src/tools/reject_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 #  	Build client-only library
