@@ -85,6 +85,16 @@ class UnboundedMPSCQueue : public Source<Item> {
    */
   bool TryRead(Item& item);
 
+  /**
+   * Reads many items at once efficiently.
+   *
+   * @param items Pointer to array of Item object. Must have space for at least
+   *              max elements.
+   * @param max Maximum number of elements to write to the items array.
+   * @return number of elements read, <= max.
+   */
+  size_t TryRead(Item* items, size_t max);
+
   size_t GetQueueSize() const;
 
   void RegisterReadEvent(EventLoop* event_loop) final override {
@@ -192,6 +202,13 @@ bool UnboundedMPSCQueue<Item>::TryWrite(ItemRef&& item) {
 
 template <typename Item>
 bool UnboundedMPSCQueue<Item>::TryRead(Item& item) {
+  size_t n = TryRead(&item, 1);
+  RS_ASSERT(n <= 1);
+  return n != 0;
+}
+
+template <typename Item>
+size_t UnboundedMPSCQueue<Item>::TryRead(Item* items, size_t max) {
   read_check_.Check();
 
   stats_->eventfd_num_reads->Add(1);
@@ -201,22 +218,25 @@ bool UnboundedMPSCQueue<Item>::TryRead(Item& item) {
   }
   RS_ASSERT(value > 0);
 
+  size_t read = 0;
   std::unique_lock<std::mutex> lock(mutex_);
-  Timestamped<Item> entry = std::move(queue_.front());
-  queue_.pop_front();
+  auto now = std::chrono::steady_clock::now();
+  RS_ASSERT(!queue_.empty());
+  while (read < max && !queue_.empty() && read < value) {
+    Timestamped<Item> entry = std::move(queue_.front());
+    items[read] = std::move(entry.item);
+    auto delta = now - entry.timestamp;
+    auto micros = std::chrono::duration_cast<std::chrono::microseconds>(delta);
+    stats_->response_latency->Record(micros.count());
+    queue_.pop_front();
+    ++read;
+  }
   lock.unlock();
 
-  read_ready_fd_.write_event(value - 1);
-  stats_->eventfd_num_writes->Add(2); // read side + write side
-
-  auto now = std::chrono::steady_clock::now();
-  auto delta = now - entry.timestamp;
-  auto micros = std::chrono::duration_cast<std::chrono::microseconds>(delta);
-  stats_->response_latency->Record(micros.count());
-  item = std::move(entry.item);
-
-  stats_->num_reads->Add(1);
-  return true;
+  read_ready_fd_.write_event(value - read);
+  stats_->eventfd_num_writes->Add(1 + read); // read side + write side
+  stats_->num_reads->Add(read);
+  return read;
 }
 
 template <typename Item>
@@ -227,9 +247,14 @@ size_t UnboundedMPSCQueue<Item>::GetQueueSize() const {
 
 template <typename Item>
 void UnboundedMPSCQueue<Item>::Drain() {
-  Item item;
-  while (TryRead(item)) {
-    if (!this->DrainOne(std::move(item))) {
+  // We add a limit to the number of reads in the Drain call otherwise a
+  // fast producer could ensure that the queue never becomes empty and prevent
+  // the reading thread reading from other sources or performing other actions.
+  const size_t kMaxReads = 32;
+  Item items[kMaxReads];
+  size_t read = TryRead(items, kMaxReads);
+  for (size_t i = 0; i < read; ++i) {
+    if (!this->DrainOne(std::move(items[i]))) {
       break;
     }
   }
