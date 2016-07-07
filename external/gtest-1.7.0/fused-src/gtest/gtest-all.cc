@@ -109,6 +109,8 @@
 #ifndef GTEST_INCLUDE_GTEST_GTEST_SPI_H_
 #define GTEST_INCLUDE_GTEST_GTEST_SPI_H_
 
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic push
 
 namespace testing {
 
@@ -10251,6 +10253,7 @@ const char* TypedTestCasePState::VerifyRegisteredTestNames(
   return registered_tests;
 }
 
+#pragma GCC diagnostic pop // ignored "-Wconversion"
 #endif  // GTEST_HAS_TYPED_TEST_P
 
 }  // namespace internal

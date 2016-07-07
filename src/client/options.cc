@@ -28,13 +28,14 @@ BackOffStrategy RandomizedTruncatedExponential(
   return [=](ClientRNG* rng, size_t retry) -> std::chrono::milliseconds {
     auto multiplier = std::pow(backoff_base, static_cast<double>(retry));
     auto exp_backoff = decltype(backoff_value)(
-        static_cast<size_t>(backoff_value.count() * multiplier));
+        static_cast<size_t>(static_cast<double>(backoff_value.count())
+                            * multiplier));
     auto trunc_backoff = std::min(exp_backoff, backoff_limit);
     // 0.0 and 1.0 have precise representations.
     std::uniform_real_distribution<double> distribution(1.0 - jitter, 1.0);
     auto fuzz = distribution(*rng);
     auto fuzzed_backoff = decltype(trunc_backoff)(
-        static_cast<size_t>(trunc_backoff.count() * fuzz));
+        static_cast<size_t>(static_cast<double>(trunc_backoff.count()) * fuzz));
     return fuzzed_backoff;
   };
 }

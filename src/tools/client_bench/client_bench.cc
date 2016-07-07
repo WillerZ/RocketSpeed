@@ -81,7 +81,7 @@ Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   rocketspeed::ClientOptions client_options;
   client_options.publisher.reset(new BadPublisherRouter());
   client_options.sharding.reset(new SimpleShardingStrategy());
-  client_options.num_workers = FLAGS_client_threads;
+  client_options.num_workers = static_cast<int>(FLAGS_client_threads);
   auto sharding = client_options.sharding;
   client_options.thread_selector =
     [sharding](size_t num_threads, Slice namespace_id, Slice topic_name) {
@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
       for (size_t j = 0; j < sizeof(shard_bytes); ++j) {
         holder[j] = shard_bytes[j];
       }
-      rr_shard = (rr_shard + 1) % FLAGS_shards;
+      rr_shard = static_cast<uint32_t>((rr_shard + 1) % FLAGS_shards);
     }
     auto subscription_handle =
         client->Subscribe({rocketspeed::Tenant::GuestTenant,
@@ -186,7 +186,8 @@ int main(int argc, char** argv) {
         std::chrono::duration_cast<std::chrono::milliseconds>(
           total_time).count();
       auto rate_now = i - last_subs;
-      auto rate = static_cast<double>(i) * 1000.0 / total_time_ms;
+      auto rate = (static_cast<double>(i) * 1000.0)
+                  / static_cast<double>(total_time_ms);
       size_t after = 0;
       rocketspeed::Env::Default()->GetVirtualMemoryUsed(&after);
       printf("time: %-6.0lf "
@@ -194,7 +195,7 @@ int main(int argc, char** argv) {
              "rate-now: %-10zu "
              "rate-overall: %-10.0lf "
              "mem/sub: %-6s\n",
-        double(total_time_ms / 1000.0),
+        double(total_time_ms) / 1000.0,
         i + 1,
         rate_now,
         rate,

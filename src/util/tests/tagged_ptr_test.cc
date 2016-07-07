@@ -37,15 +37,15 @@ void RunPtrChecks(const T* ptr1, const T* ptr2, bool dereference) {
     ASSERT_EQ(ptr.GetTag(), tag);
     ASSERT_EQ(ptr.GetPtr(), ptr1);
 
-    ptr.SetTag(tag + 1);
-    ASSERT_EQ(ptr.GetTag(), tag + 1);
+    ptr.SetTag(static_cast<TagType>(tag + 1));
+    ASSERT_EQ(ptr.GetTag(), static_cast<TagType>(tag + 1));
     ASSERT_EQ(ptr.GetPtr(), ptr1);
     if (dereference) {
       ASSERT_EQ(*ptr.GetPtr(), *ptr1);
     }
     ptr.SetPtr(ptr2);
     ASSERT_EQ(ptr.GetPtr(), ptr2);
-    ASSERT_EQ(ptr.GetTag(), tag + 1);
+    ASSERT_EQ(ptr.GetTag(), static_cast<TagType>(tag + 1));
     if (dereference) {
       ASSERT_EQ(*ptr.GetPtr(), *ptr2);
     }

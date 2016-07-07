@@ -916,7 +916,11 @@ TEST_F(Messaging, VersionMismatch) {
   for (int version_diff : {-1, +1}) {
     // Setup sender loop (different protocol version).
     MsgLoop::Options sender_opts;
-    sender_opts.event_loop.protocol_version += version_diff;
+    if (version_diff < 0 ) {
+      sender_opts.event_loop.protocol_version--;
+    } else {
+      sender_opts.event_loop.protocol_version++;
+    }
     MsgLoop sender_loop(
         env_, env_options_, 0, 1, info_log_, "sender_loop", sender_opts);
     port::Semaphore sender_checkpoint;

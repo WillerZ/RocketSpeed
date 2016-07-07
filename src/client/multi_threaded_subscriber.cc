@@ -180,9 +180,10 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
   }
 
   // Create command to subscribe, to be sent to sharded worker.
+  RS_ASSERT(worker_id <= std::numeric_limits<int>::max());
   std::unique_ptr<SubscribeCommand> sub_command(
       new SubscribeCommand(this,
-                           worker_id,
+                           static_cast<int>(worker_id),
                            sub_id,
                            std::move(parameters),
                            std::move(observer)));
@@ -317,7 +318,8 @@ Statistics MultiThreadedSubscriber::GetStatisticsSync() {
 
 SubscriptionID MultiThreadedSubscriber::CreateNewHandle(size_t shard_id,
                                                         size_t worker_id) {
-  return allocator_.Next(shard_id, worker_id);
+  RS_ASSERT(shard_id <= std::numeric_limits<ShardID>::max());
+  return allocator_.Next(static_cast<ShardID>(shard_id), worker_id);
 }
 
 ssize_t MultiThreadedSubscriber::GetWorkerID(SubscriptionID sub_id) const {

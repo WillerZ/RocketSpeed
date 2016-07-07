@@ -20,7 +20,7 @@ class Random {
   explicit Random(uint32_t s) : generator_(s) { }
 
   // Generates the next random number
-  uint32_t Next() { return generator_(); }
+  uint32_t Next() { return static_cast<uint32_t>(generator_()); }
 
   // Returns a uniformly distributed value in the range [0..n-1]
   // REQUIRES: n > 0

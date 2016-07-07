@@ -42,11 +42,11 @@ TEST_F(PowerOfTwoLoadBalancerTest, FairnessTest) {
   // Test the distribution over selected shards
   // looks like the unfiorm distribution (i.e, we break ties fairly)
   double log2 = log(2.0);
-  double expected_entropy = log(num_test_shards) / log2;
+  double expected_entropy = log(static_cast<double>(num_test_shards)) / log2;
   double emprirical_entropy = 0.0;
   for (auto& entry: shard_counts) {
       double count = static_cast<double>(entry.second);
-      double prob = count / num_requests;
+      double prob = count / static_cast<double>(num_requests);
       emprirical_entropy += -(prob * log(prob) / log2);
   }
   double diff = fabs(emprirical_entropy - expected_entropy);
@@ -85,7 +85,7 @@ TEST_F(PowerOfTwoLoadBalancerTest, MaxLoadTest) {
     for (int shard_id = 0; shard_id < num_shards; ++shard_id) {
       max_load = std::max(max_load, get_load(shard_id));
     }
-    sum_max_load += max_load;
+    sum_max_load += static_cast<double>(max_load);
   }
   double avg_max_load = sum_max_load / static_cast<double>(num_steps);
   double diff = fabs(avg_max_load - 1.0);

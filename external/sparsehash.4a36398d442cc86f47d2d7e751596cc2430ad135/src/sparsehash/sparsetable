@@ -224,6 +224,9 @@
 #ifndef UTIL_GTL_SPARSETABLE_H_
 #define UTIL_GTL_SPARSETABLE_H_
 
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic push
+
 #include <sparsehash/internal/sparseconfig.h>
 #include <stdlib.h>             // for malloc/free
 #include <stdio.h>              // to read/write tables
@@ -1816,5 +1819,7 @@ inline void swap(sparsetable<T,GROUP_SIZE,Alloc> &x,
 }
 
 _END_GOOGLE_NAMESPACE_
+
+#pragma GCC diagnostic pop // ignored "-Wconversion"
 
 #endif  // UTIL_GTL_SPARSETABLE_H_

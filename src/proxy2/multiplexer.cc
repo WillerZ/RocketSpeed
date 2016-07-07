@@ -165,8 +165,10 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
   // Find a subscription on the topic, if one exists.
   UpstreamSubscription* upstream_sub;
   if (!(upstream_sub = FindInIndex(namespace_id, topic_name))) {
-    auto upstream_id = SubscriptionID::ForShard(per_shard_->GetShardID(),
-                                                upstream_allocator_.Next());
+    RS_ASSERT(per_shard_->GetShardID() <= std::numeric_limits<ShardID>::max());
+    auto upstream_id = SubscriptionID::ForShard(
+                          static_cast<ShardID>(per_shard_->GetShardID()),
+                          upstream_allocator_.Next());
     // This could fire if shard and hierarchical ID cannot be encoded in 8
     // bytes.
     RS_ASSERT(upstream_id);
@@ -272,8 +274,11 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
         data->GetSequenceNumber());
     // Adjust the subscription based on an action.
     if (action == UpdatesAccumulator::Action::kResubscribeUpstream) {
+      RS_ASSERT(per_shard_->GetShardID() <=
+        std::numeric_limits<ShardID>::max());
       auto new_upstream_id = SubscriptionID::ForShard(
-          per_shard_->GetShardID(), upstream_allocator_.Next());
+          static_cast<ShardID>(per_shard_->GetShardID()),
+          upstream_allocator_.Next());
       // This could fire if shard and hierarchical ID cannot be encoded in 8
       // bytes.
       RS_ASSERT(new_upstream_id);

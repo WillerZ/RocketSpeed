@@ -599,7 +599,7 @@ TEST_F(FlowTest, RetryLaterSink) {
   std::vector<int> backoffs = {
     0, 100, 200, 0, 0, 200, 200, 200, 0, 0
   };
-  int num_messages = std::count(backoffs.begin(), backoffs.end(), 0);
+  auto num_messages = std::count(backoffs.begin(), backoffs.end(), 0);
   int total_ms = std::accumulate(backoffs.begin(), backoffs.end(), 0);
 
   MsgLoop loop(env_, env_options_, 0, 2, info_log_, "flow");
