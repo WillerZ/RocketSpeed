@@ -39,6 +39,7 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "find_tail_seqno",
   "tail_seqno",
   "deliver_batch",
+  "heartbeat",
 };
 
 MessageType Message::ReadMessageType(Slice slice) {
@@ -166,6 +167,15 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mDeliverBatch: {
       std::unique_ptr<MessageDeliverBatch> msg(new MessageDeliverBatch());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mHeartbeat: {
+      std::unique_ptr<MessageHeartbeat> msg(new MessageHeartbeat());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -726,6 +736,24 @@ Status MessageDeliverBatch::DeSerialize(Slice* in) {
     if (!st.ok()) {
       return st;
     }
+  }
+  return Status::OK();
+}
+
+Status MessageHeartbeat::Serialize(std::string* out) const {
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
+  return Status::OK();
+}
+
+Status MessageHeartbeat::DeSerialize(Slice* in) {
+  // extract type
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
+
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
   }
   return Status::OK();
 }

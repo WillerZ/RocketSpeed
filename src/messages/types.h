@@ -27,6 +27,7 @@ class MessageDeliverData;
 class MessageFindTailSeqno;
 class MessageTailSeqno;
 class MessageDeliverBatch;
+class MessageHeartbeat;
 class Slice;
 
 /**
@@ -103,6 +104,7 @@ class StreamReceiver : public NonMovable, public NonCopyable {
   virtual void ReceiveFindTailSeqno(StreamReceiveArg<MessageFindTailSeqno>) {}
   virtual void ReceiveTailSeqno(StreamReceiveArg<MessageTailSeqno>) {}
   virtual void ReceiveDeliverBatch(StreamReceiveArg<MessageDeliverBatch>) {}
+  virtual void ReceiveHeartbeat(StreamReceiveArg<MessageHeartbeat>) {}
 
  private:
   template <typename T, typename M>

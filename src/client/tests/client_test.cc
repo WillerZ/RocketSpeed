@@ -337,6 +337,37 @@ TEST_F(ClientTest, RandomizedTruncatedExponential) {
 #undef ASSERT_EQD
 }
 
+TEST_F(ClientTest, HeartbeatsDoNotKillClient) {
+  std::atomic<int> sub_attempts(0);
+  port::Semaphore sem;
+  CopilotAtomicPtr copilot_ptr;
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          if (++sub_attempts == 2) {
+            // we've received the goodbye and retried, meaning we've
+            // also received the heartbeat and not died
+            sem.Post();
+            return;
+          }
+          MessageHeartbeat hb(GuestTenant);
+          copilot_ptr.load()->SendResponse(hb, origin, 0);
+
+          // Send back goodbye, so that client will resubscribe.
+          MessageGoodbye goodbye(GuestTenant,
+                                 MessageGoodbye::Code::Graceful,
+                                 MessageGoodbye::OriginType::Server);
+          copilot_ptr.load()->SendResponse(goodbye, origin, 0);
+        }}});
+  copilot_ptr = copilot.msg_loop.get();
+
+  ClientOptions options;
+  auto client = CreateClient(std::move(options));
+
+  client->Subscribe(GuestTenant, GuestNamespace, "Hb", 0);
+  ASSERT_TRUE(sem.TimedWait(positive_timeout));
+}
+
 TEST_F(ClientTest, GetCopilotFailure) {
   port::Semaphore subscribe_sem;
   auto copilot = MockServer(

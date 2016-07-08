@@ -48,9 +48,10 @@ enum class MessageType : uint8_t {
   mFindTailSeqno = 0x0C, // MessageFindTailSeqno
   mTailSeqno = 0x0D,     // MessageTailSeqno
   mDeliverBatch = 0x0E,  // MessageDeliverBatch
+  mHeartbeat = 0x0F,     // MessageHeartbeat
 
   min = mPing,
-  max = mDeliverBatch,
+  max = mHeartbeat,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -846,6 +847,22 @@ class MessageDeliverBatch : public Message {
   Status DeSerialize(Slice* in) override;
  private:
   MessagesVector messages_;
+};
+
+/*
+ * This is a heartbeat message
+ */
+class MessageHeartbeat : public Message {
+ public:
+  MessageHeartbeat() {}
+  explicit MessageHeartbeat(TenantID tenantid)
+      : Message(MessageType::mHeartbeat, tenantid) {}
+
+  /*
+   * Inherited from Serializer
+   */
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
 };
 
 /** @} */
