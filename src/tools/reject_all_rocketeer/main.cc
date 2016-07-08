@@ -48,5 +48,6 @@ int main(int argc, char** argv) {
     return 1;
   }
   pause();
+  server.Stop();
   return 0;
 }
