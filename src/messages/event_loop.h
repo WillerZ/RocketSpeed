@@ -252,6 +252,10 @@ class EventLoop {
   /** Notified the loop that the callback was enabled. */
   void TriggerableCallbackEnable(access::EventLoop, TriggerableCallback* event);
 
+  /** Notified the loop that the callback was disabled. */
+  void TriggerableCallbackDisable(access::EventLoop,
+                                  TriggerableCallback* event);
+
   /** Cleans up all the state associated with the callback. */
   void TriggerableCallbackClose(access::EventLoop, TriggerableCallback* event);
 
@@ -543,11 +547,15 @@ class EventLoop {
 
   /** Next free ID of an EventTrigger. */
   std::atomic<TriggerID> next_trigger_id_{0};
-  /** Maps a trigger ID to all callbacks registered with the trigger. */
+
+  /** Maps a trigger ID to all enabled callbacks registered with the trigger. */
   std::unordered_map<TriggerID, std::unordered_set<TriggerableCallback*>>
-      registered_callbacks_;
+      trigger_to_enabled_callbacks_;
   /** A set of notified triggers. */
   std::unordered_set<TriggerID> notified_triggers_;
+  /** A set of enabled callbacks on notified triggers. */
+  std::unordered_set<TriggerableCallback*> notified_enabled_callbacks_;
+
   /** An EventCallback invoked when there is any notified trigger. */
   std::unique_ptr<EventCallback> notified_triggers_event_;
   /** An eventfd that is readable whenever there is a pending trigger. */

@@ -20,6 +20,7 @@ void TriggerableCallback::Enable() {
 
 void TriggerableCallback::Disable() {
   enabled_ = false;
+  event_loop_->TriggerableCallbackDisable(access::EventLoop(), this);
 }
 
 }  // namespace rocketspeed

@@ -30,18 +30,19 @@
 
 #include "external/folly/move_wrapper.h"
 
-#include "src/port/port.h"
-#include "src/messages/unbounded_mpsc_queue.h"
 #include "src/messages/serializer.h"
 #include "src/messages/socket_event.h"
 #include "src/messages/stream.h"
 #include "src/messages/stream_socket.h"
 #include "src/messages/timed_callback.h"
 #include "src/messages/triggerable_callback.h"
+#include "src/messages/unbounded_mpsc_queue.h"
+#include "src/port/port.h"
 #include "src/util/common/autovector.h"
 #include "src/util/common/client_env.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/random.h"
+#include "src/util/common/select_random.h"
 
 #ifdef OS_LINUX
 #include <netinet/tcp.h>
@@ -498,51 +499,23 @@ void EventLoop::HandlePendingTriggers() {
   eventfd_t value;
   notified_triggers_fd_.read_event(&value);
 
-  // Fail quickly if there is no notified trigger.
-  if (notified_triggers_.empty()) {
-    return;
-  }
+  auto& prng = ThreadLocalPRNG();
+  size_t attempts = 32;
+  while (!notified_enabled_callbacks_.empty() && attempts-- > 0) {
+    TriggerableCallback* cb = SelectRandom(&notified_enabled_callbacks_, &prng);
+    RS_ASSERT(cb->IsEnabled());
+    RS_ASSERT(notified_triggers_.count(cb->GetTriggerID()));
 
-  // Find the number of notified and enabled callbacks.
-  size_t total_active_callbacks = 0;
-  for (const auto& trigger : registered_callbacks_) {
-    if (notified_triggers_.count(trigger.first) > 0) {
-      for (auto* callback : trigger.second) {
-        if (callback->IsEnabled()) {
-          ++total_active_callbacks;
-        }
-      }
+    if (cb->IsEnabled() && notified_triggers_.count(cb->GetTriggerID())) {
+      // Invoke the callback.
+      cb->Invoke();
     }
   }
 
-  // All callbacks registered with notified triggers might be disabled.
-  if (total_active_callbacks == 0) {
-    return;
+  if (!notified_enabled_callbacks_.empty()) {
+    // More work to be done.
+    notified_triggers_fd_.write_event(1);
   }
-
-  // Draw the random index of the callback to be notified.
-  std::uniform_int_distribution<size_t> dist(0, total_active_callbacks - 1);
-  size_t index = dist(ThreadLocalPRNG());
-
-  // Find the corresponding callback, no polymorphic lambda, so C&P.
-  TriggerableCallback* cb = nullptr;
-  for (const auto& trigger : registered_callbacks_) {
-    if (notified_triggers_.count(trigger.first) > 0) {
-      for (auto* callback : trigger.second) {
-        if (callback->IsEnabled() && index-- == 0) {
-          cb = callback;
-          break;
-        }
-      }
-    }
-  }
-
-  // This might do arbitrary things, like destroy callbacks. Better to break out
-  // of any loops before calling into this function.
-  cb->Invoke();
-
-  // There might be more work to be done.
-  notified_triggers_fd_.write_event(1);
 }
 
 std::unique_ptr<EventCallback> EventLoop::RegisterTimerCallback(
@@ -585,15 +558,27 @@ void EventLoop::Notify(const EventTrigger& trigger) {
   thread_check_.Check();
 
   notified_triggers_.emplace(trigger.id_);
-  // Notify the event that handles pending triggers.
+  auto it = trigger_to_enabled_callbacks_.find(trigger.id_);
+  if (it == trigger_to_enabled_callbacks_.end()) {
+    return;
+  }
+  for (auto* event : it->second) {
+    notified_enabled_callbacks_.emplace(event);
+  }
   notified_triggers_fd_.write_event(1);
 }
 
 void EventLoop::Unnotify(const EventTrigger& trigger) {
   thread_check_.Check();
 
-  // Remove the trigger from the set of notified ones.
   notified_triggers_.erase(trigger.id_);
+  auto it = trigger_to_enabled_callbacks_.find(trigger.id_);
+  if (it == trigger_to_enabled_callbacks_.end()) {
+    return;
+  }
+  for (auto* event : it->second) {
+    notified_enabled_callbacks_.erase(event);
+  }
 }
 
 std::unique_ptr<EventCallback> EventLoop::CreateEventCallback(
@@ -601,10 +586,6 @@ std::unique_ptr<EventCallback> EventLoop::CreateEventCallback(
   thread_check_.Check();
 
   auto event = new TriggerableCallback(this, trigger.id_, std::move(cb));
-  // Record the trigger to callback mapping.
-  auto result = registered_callbacks_[trigger.id_].emplace(event);
-  (void)result;
-  RS_ASSERT(result.second);
   return std::unique_ptr<EventCallback>(event);
 }
 
@@ -612,23 +593,32 @@ void EventLoop::TriggerableCallbackEnable(access::EventLoop,
                                           TriggerableCallback* event) {
   thread_check_.Check();
 
-  // Notify the event that handles pending triggers.
+  auto trigger = event->GetTriggerID();
+  trigger_to_enabled_callbacks_[trigger].emplace(event);
+  if (notified_triggers_.count(trigger)) {
+    notified_enabled_callbacks_.emplace(event);
+  }
+
   notified_triggers_fd_.write_event(1);
 }
 
-void EventLoop::TriggerableCallbackClose(access::EventLoop,
+void EventLoop::TriggerableCallbackDisable(access::EventLoop,
+                                           TriggerableCallback* event) {
+  thread_check_.Check();
+
+  auto trigger = event->GetTriggerID();
+  trigger_to_enabled_callbacks_[trigger].erase(event);
+  if (trigger_to_enabled_callbacks_[trigger].empty()) {
+    trigger_to_enabled_callbacks_.erase(trigger);
+  }
+  notified_enabled_callbacks_.erase(event);
+}
+
+void EventLoop::TriggerableCallbackClose(access::EventLoop access,
                                          TriggerableCallback* event) {
   thread_check_.Check();
 
-  auto it = registered_callbacks_.find(event->GetTriggerID());
-  RS_ASSERT(it != registered_callbacks_.end());
-  auto& events = it->second;
-  size_t result = events.erase(event);
-  (void)result;
-  RS_ASSERT(result == 1);
-  if (events.empty()) {
-    registered_callbacks_.erase(it);
-  }
+  TriggerableCallbackDisable(access, event);
 }
 
 // TODO(t8971722)
