@@ -39,7 +39,7 @@ TEST_F(BufferedLogStorageTest, Creation) {
   ASSERT_OK(loop.Initialize());
 
   std::unique_ptr<TestStorage> underlying_storage =
-    LocalTestCluster::CreateStorage(env, info_log, log_range);
+    LocalTestCluster::CreateStorage(env, info_log, log_range, "", {});
   ASSERT_TRUE(underlying_storage);
 
   LogStorage* storage;

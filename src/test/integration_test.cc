@@ -847,6 +847,7 @@ TEST_F(IntegrationTest, LostConnection) {
   ASSERT_TRUE(msg_received.TimedWait(timeout));
 
   // Restart the cluster, which kills connection.
+  opts.cluster = cluster->GetLogCluster();  // use same log cluster
   cluster.reset();
   env_->SleepForMicroseconds(200000);
 
@@ -1027,6 +1028,7 @@ TEST_F(IntegrationTest, NewControlTower) {
   new_opts.start_controltower = true;
   new_opts.start_copilot = false;
   new_opts.start_pilot = false;
+  new_opts.cluster = cluster.GetLogCluster();  // use same log cluster
   LocalTestCluster new_cluster(new_opts);
   ASSERT_OK(new_cluster.GetStatus());
 
@@ -1400,6 +1402,7 @@ TEST_F(IntegrationTest, LogAvailability) {
     ct_opts[i].start_controltower = true;
     ct_opts[i].start_copilot = false;
     ct_opts[i].start_pilot = false;
+    ct_opts[i].cluster = cluster.GetLogCluster();  // use same log cluster
     ct_cluster[i].reset(new LocalTestCluster(ct_opts[i]));
     ASSERT_OK(ct_cluster[i]->GetStatus());
   }
@@ -1569,6 +1572,7 @@ TEST_F(IntegrationTest, TowerDeathReconnect) {
   new_opts.start_copilot = false;
   new_opts.start_pilot = false;
   new_opts.controltower_port = original_port;
+  new_opts.cluster = cluster.GetLogCluster();  // use same log cluster
 
   uint64_t start = env_->NowMicros();
   LocalTestCluster new_cluster(new_opts);
@@ -1603,19 +1607,25 @@ TEST_F(IntegrationTest, CopilotDeath) {
   const size_t kNumTopics = 10;
 
   // Setup local RocketSpeed cluster.
-  LocalTestCluster::Options opts;
-  opts.info_log = info_log;
-  opts.start_controltower = true;
-  opts.start_pilot = false;
-  opts.start_copilot = true;
-  opts.copilot.timer_interval_micros = 100000;
-  opts.copilot.resubscriptions_per_second = kNumTopics;
-  LocalTestCluster cluster(opts);
+  LocalTestCluster::Options opts1;
+  opts1.info_log = info_log;
+  opts1.start_controltower = true;
+  opts1.start_pilot = false;
+  opts1.start_copilot = true;
+  opts1.copilot.timer_interval_micros = 100000;
+  opts1.copilot.resubscriptions_per_second = kNumTopics;
+  LocalTestCluster cluster(opts1);
   ASSERT_OK(cluster.GetStatus());
 
   // Separate cluster for pilot (since we need to stop the copilot
   // independently from the pilot).
-  LocalTestCluster pilot_cluster(info_log, false, false, true);
+  LocalTestCluster::Options opts2;
+  opts2.info_log = info_log;
+  opts2.start_controltower = false;
+  opts2.start_pilot = true;
+  opts2.start_copilot = false;
+  opts2.cluster = cluster.GetLogCluster();  // use same log cluster
+  LocalTestCluster pilot_cluster(opts2);
   ASSERT_OK(pilot_cluster.GetStatus());
 
   // Create RocketSpeed clients.

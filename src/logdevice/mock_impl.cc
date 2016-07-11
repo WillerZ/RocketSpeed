@@ -122,22 +122,17 @@ class DataStore {
   std::unordered_map<logid_t, Log, LogIDHash> logs_;
 };
 
-// The one and only DataStore.
-DataStore& TheDataStore() {
-  static DataStore it;
-  return it;
-}
-
 class ClientImpl : public Client {
  public:
-  ClientImpl()
+  explicit ClientImpl(DataStore* data_store)
   : env_(rocketspeed::Env::Default())
   , msg_loop_(env_,
               rocketspeed::EnvOptions(),
               -1,
               1,
               std::make_shared<rocketspeed::NullLogger>(),
-              "ldclient") {
+              "ldclient")
+  , data_store_(data_store) {
     // Client has its own set of threads.
     rocketspeed::Status st = msg_loop_.Initialize();
     RS_ASSERT(st.ok());
@@ -151,12 +146,14 @@ class ClientImpl : public Client {
  private:
   friend class Client;
   friend class AsyncReader;
+  friend class AsyncReaderImpl;
 
   rocketspeed::Env* env_;
   std::unique_ptr<ClientSettings> settings_;
   std::chrono::milliseconds timeout_;
   rocketspeed::MsgLoop msg_loop_;
   std::unique_ptr<rocketspeed::MsgLoopThread> msg_loop_thread_;
+  DataStore* data_store_;
 };
 
 struct DataRecordOwned : public DataRecord {
@@ -307,6 +304,7 @@ class AsyncReaderImpl : public AsyncReader {
   std::function<bool(std::unique_ptr<DataRecord>&)> data_cb_;
   std::function<bool(const GapRecord&)> gap_cb_;
   std::unordered_map<logid_t, uint64_t, LogIDHash> log_to_id_;
+  DataStore* data_store_;
 };
 
 std::shared_ptr<Client> Client::create(
@@ -316,11 +314,8 @@ std::shared_ptr<Client> Client::create(
   std::chrono::milliseconds timeout,
   std::unique_ptr<ClientSettings> &&settings) noexcept {
   // ignore cluster_name, config_url, and credentials.
-  ClientImpl* impl = new ClientImpl();
-  impl->env_ = rocketspeed::Env::Default();
-  impl->settings_ = std::move(settings);
-  impl->timeout_ = timeout;
-  return std::shared_ptr<Client>(impl);
+  RS_ASSERT(false) << "Must create from DataStore";
+  return {};
 }
 
 lsn_t Client::appendSync(logid_t logid, const Payload& payload) noexcept {
@@ -342,7 +337,7 @@ lsn_t Client::appendSync(logid_t logid, const Payload& payload) noexcept {
 int Client::append(logid_t logid,
                    const Payload& payload,
                    append_callback_t cb) noexcept {
-  return TheDataStore().append(logid, payload, std::move(cb));
+  return impl()->data_store_->append(logid, payload, std::move(cb));
 }
 
 std::unique_ptr<Reader> Client::createReader(
@@ -361,7 +356,7 @@ void Client::setTimeout(std::chrono::milliseconds timeout) noexcept {
 }
 
 int Client::trimSync(logid_t logid, lsn_t lsn) noexcept {
-  return TheDataStore().trimSync(logid, lsn);
+  return impl()->data_store_->trimSync(logid, lsn);
 }
 
 lsn_t Client::findTimeSync(logid_t logid,
@@ -388,7 +383,7 @@ int Client::findTime(logid_t logid,
                      std::chrono::milliseconds timestamp,
                      find_time_callback_t cb,
                      FindTimeAccuracy) noexcept {
-  return TheDataStore().findTime(logid, timestamp, std::move(cb));
+  return impl()->data_store_->findTime(logid, timestamp, std::move(cb));
 }
 
 std::pair<logid_t, logid_t> Client::getLogRangeByName(
@@ -412,7 +407,8 @@ ClientImpl *Client::impl() {
 }
 
 AsyncReaderImpl::AsyncReaderImpl(ClientImpl* client)
-: client_(client) {
+: client_(client)
+, data_store_(client->data_store_) {
   (void)client_;
 }
 
@@ -446,7 +442,7 @@ int AsyncReader::startReading(logid_t log_id, lsn_t from, lsn_t until) {
   static std::atomic<uint64_t> id_gen{0};
   auto id = id_gen++;
   self->log_to_id_.emplace(log_id, id);
-  TheDataStore().startReading(
+  impl()->data_store_->startReading(
     id, self->data_cb_, self->gap_cb_, log_id, from, until);
   return 0;
 }
@@ -457,7 +453,7 @@ int AsyncReader::stopReading(logid_t log_id, std::function<void()> cb) {
   if (it != self->log_to_id_.end()) {
     auto id = it->second;
     self->log_to_id_.erase(it);
-    TheDataStore().stopReading(id, log_id, std::move(cb));
+    impl()->data_store_->stopReading(id, log_id, std::move(cb));
     return 0;
   } else {
     return -1;
@@ -513,6 +509,28 @@ int ClientSettings::set(const char *name, int64_t value) {
 
 ClientSettingsImpl* ClientSettings::impl() {
   return static_cast<ClientSettingsImpl*>(this);
+}
+
+namespace IntegrationTestUtils {
+// Cluster typedefs DataStore -- implemented as a separate class so that
+// Cluster can be forward declared.
+class Cluster : public DataStore {
+ public:
+  using DataStore::DataStore;
+};
+}
+
+std::shared_ptr<IntegrationTestUtils::Cluster>
+CreateLogDeviceTestCluster(size_t /* num_logs */) {
+  // DataStore supports writing to any log number, so number of logs is
+  // not needed.
+  return std::make_shared<IntegrationTestUtils::Cluster>();
+}
+
+std::shared_ptr<facebook::logdevice::Client>
+CreateLogDeviceTestClient(
+    std::shared_ptr<IntegrationTestUtils::Cluster> cluster) {
+  return std::make_shared<ClientImpl>(cluster.get());
 }
 
 }  // namespace logdevice

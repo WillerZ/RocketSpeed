@@ -22,6 +22,14 @@
 #include "src/logdevice/storage.h"
 #include "src/logdevice/log_router.h"
 
+namespace facebook {
+namespace logdevice {
+namespace IntegrationTestUtils {
+class Cluster;
+}
+}
+}
+
 namespace rocketspeed {
 
 struct TestStorage {
@@ -29,6 +37,8 @@ struct TestStorage {
   virtual ~TestStorage() {}
   virtual std::shared_ptr<LogStorage> GetLogStorage() = 0;
   virtual std::shared_ptr<LogRouter> GetLogRouter() = 0;
+  virtual std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+      GetLogCluster() = 0;
 
  protected:
   TestStorage() {}
@@ -42,6 +52,7 @@ struct TestStorage {
 class LocalTestCluster {
  public:
   struct Options {
+   public:
     Options() {
       // Flush aggressively for tests.
       copilot.rollcall_max_batch_size_bytes = 100;
@@ -62,6 +73,10 @@ class LocalTestCluster {
     // Allocate ports automatically.
     int controltower_port = 0;
     int cockpit_port = 0;
+    std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster> cluster;
+
+   private:
+    friend class LocalTestCluster;
     std::shared_ptr<LogDeviceStorage> log_storage;
     std::shared_ptr<LogDeviceLogRouter> log_router;
   };
@@ -108,10 +123,13 @@ class LocalTestCluster {
    * Creates storage.
    */
   static std::unique_ptr<TestStorage>
-  CreateStorage(Env* env,
-                std::shared_ptr<Logger> info_log,
-                std::pair<LogID, LogID> log_range,
-                std::string storage_url = "");
+  CreateStorage(
+      Env* env,
+      std::shared_ptr<Logger> info_log,
+      std::pair<LogID, LogID> log_range,
+      std::string storage_url,
+      std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+          cluster);
 
   Pilot* GetPilot() {
     return pilot_;
@@ -132,6 +150,9 @@ class LocalTestCluster {
   MsgLoop* GetControlTowerLoop() {
     return control_tower_loop_.get();
   }
+
+  std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+      GetLogCluster();
 
   std::shared_ptr<LogStorage> GetLogStorage();
 

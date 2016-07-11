@@ -25,15 +25,46 @@
 #endif  // USE_LOGDEVICE
 #pragma GCC diagnostic pop
 
+namespace facebook {
+namespace logdevice {
+
+#ifdef USE_LOGDEVICE
+std::shared_ptr<IntegrationTestUtils::Cluster>
+CreateLogDeviceTestCluster(size_t num_logs) {
+  return IntegrationTestUtils::ClusterFactory().setNumLogs(num_logs).create(1);
+}
+
+std::shared_ptr<facebook::logdevice::Client>
+CreateLogDeviceTestClient(
+    std::shared_ptr<IntegrationTestUtils::Cluster> cluster) {
+  return cluster->createClient();
+}
+#else
+// Mock implementations of these functions are defined in
+// src/logdevice/mock_impl.cc
+extern std::shared_ptr<IntegrationTestUtils::Cluster>
+CreateLogDeviceTestCluster(size_t num_logs);
+
+extern std::shared_ptr<facebook::logdevice::Client>
+CreateLogDeviceTestClient(
+    std::shared_ptr<IntegrationTestUtils::Cluster> cluster);
+#endif  // USE_LOGDEVICE
+} // namespace logdevice
+} // namespace facebook
+
+
 namespace rocketspeed {
 
 struct TestStorageImpl : public TestStorage {
  public:
   ~TestStorageImpl() {
-#ifdef USE_LOGDEVICE
     client_.reset();
-#endif
     RS_ASSERT(storage_.unique());  // should be last reference
+  }
+
+  std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+      GetLogCluster() override {
+    return cluster_;
   }
 
   std::shared_ptr<LogStorage> GetLogStorage() override {
@@ -44,20 +75,12 @@ struct TestStorageImpl : public TestStorage {
     return log_router_;
   }
 
-#ifdef USE_LOGDEVICE
   // LogDevice cluster and client.
-  static std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
-    cluster_;
+  std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster> cluster_;
   std::shared_ptr<facebook::logdevice::Client> client_;
-#endif  // USE_LOGDEVICE
   std::shared_ptr<LogDeviceStorage> storage_;
   std::shared_ptr<LogDeviceLogRouter> log_router_;
 };
-
-#ifdef USE_LOGDEVICE
-std::unique_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
-  TestStorageImpl::cluster_;
-#endif  // USE_LOGDEVICE
 
 LocalTestCluster::LocalTestCluster(std::shared_ptr<Logger> info_log,
                                    bool start_controltower,
@@ -80,24 +103,32 @@ LocalTestCluster::LocalTestCluster(Options opts) {
 }
 
 std::unique_ptr<TestStorage>
-LocalTestCluster::CreateStorage(Env* env,
-                                std::shared_ptr<Logger> info_log,
-                                std::pair<LogID, LogID> log_range,
-                                std::string storage_url) {
+LocalTestCluster::CreateStorage(
+    Env* env,
+    std::shared_ptr<Logger> info_log,
+    std::pair<LogID, LogID> log_range,
+    std::string storage_url,
+    std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+        cluster) {
   std::unique_ptr<TestStorageImpl> test_storage(new TestStorageImpl);
   Status st;
   LogDeviceStorage* storage = nullptr;
 
-#ifdef USE_LOGDEVICE
+#ifndef USE_LOGDEVICE
+  // Mock LogDevice cannot connect to a real cluster.
+  RS_ASSERT(storage_url.empty());
+#endif
+
   if (storage_url.empty()) {
-    // Setup the local LogDevice cluster and create, client, and storage.
-    if (!TestStorageImpl::cluster_) {
-      TestStorageImpl::cluster_ =
-        facebook::logdevice::IntegrationTestUtils::ClusterFactory()
-          .setNumLogs(log_range.second - log_range.first + 1)
-          .create(3);
+    if (!cluster) {
+      cluster = facebook::logdevice::CreateLogDeviceTestCluster(
+          log_range.second - log_range.first + 1);
     }
-    test_storage->client_ = TestStorageImpl::cluster_->createClient();
+
+    // Setup the local LogDevice cluster and create, client, and storage.
+    test_storage->cluster_ = cluster;
+    test_storage->client_ =
+        facebook::logdevice::CreateLogDeviceTestClient(cluster);
     st = LogDeviceStorage::Create(test_storage->client_,
                                   env,
                                   info_log,
@@ -115,19 +146,6 @@ LocalTestCluster::CreateStorage(Env* env,
                                   info_log,
                                   &storage);
   }
-#else
-  st = LogDeviceStorage::Create("",
-                                "",
-                                "",
-                                std::chrono::milliseconds(1000),
-                                4,
-                                32 * 1024 * 1024,
-                                "none",
-                                "",
-                                env,
-                                info_log,
-                                &storage);
-#endif  // USE_LOGDEVICE
   if (!st.ok()) {
     return nullptr;
   }
@@ -158,28 +176,22 @@ void LocalTestCluster::Initialize(Options opts) {
 #endif  // NDEBUG
 #endif  // USE_LOGDEVICE
 
-  if (!opts.log_storage) {
-    // Range of logs to use.
-    std::pair<LogID, LogID> log_range;
-    if (opts.single_log) {
-      log_range = std::pair<LogID, LogID>(1, 1);
-    } else {
-      log_range = std::pair<LogID, LogID>(1, 1000);
-    }
-
-    if (opts.start_pilot || opts.start_controltower) {
-      storage_ = CreateStorage(env_, info_log_, log_range, opts.storage_url);
-      if (!storage_) {
-        status_ = Status::InternalError("Failed to create storage");
-        LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
-        return;
-      }
-    }
+  // Range of logs to use.
+  std::pair<LogID, LogID> log_range;
+  if (opts.single_log) {
+    log_range = std::pair<LogID, LogID>(1, 1);
   } else {
-    std::unique_ptr<TestStorageImpl> temp;
-    temp->storage_ = std::move(opts.log_storage);
-    temp->log_router_ = std::move(opts.log_router);
-    storage_ = std::move(temp);
+    log_range = std::pair<LogID, LogID>(1, 1000);
+  }
+
+  if (opts.start_pilot || opts.start_controltower) {
+    storage_ = CreateStorage(
+        env_, info_log_, log_range, opts.storage_url, opts.cluster);
+    if (!storage_) {
+      status_ = Status::InternalError("Failed to create storage");
+      LOG_ERROR(info_log_, "Failed to create LogDeviceStorage.");
+      return;
+    }
   }
 
   // Tell rocketspeed to use this storage interface/router.
@@ -385,6 +397,11 @@ Statistics LocalTestCluster::GetStatisticsSync() const {
     aggregated.Aggregate(msg_loop->GetStatisticsSync());
   }
   return aggregated;
+}
+
+std::shared_ptr<facebook::logdevice::IntegrationTestUtils::Cluster>
+    LocalTestCluster::GetLogCluster() {
+  return storage_->GetLogCluster();
 }
 
 std::shared_ptr<LogStorage> LocalTestCluster::GetLogStorage() {
