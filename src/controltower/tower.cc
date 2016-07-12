@@ -257,24 +257,16 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
   ControlRoom* room = rooms_[room_number].get();
   int worker_id = options_.msg_loop->GetThreadWorkerIndex();
 
+  LOG_DEBUG(options_.info_log,
+        "Forwarding subscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
+        subscribe->GetNamespace().ToString().c_str(),
+        subscribe->GetTopicName().ToString().c_str(),
+        subscribe->GetStartSequenceNumber(),
+        room_number);
+
   auto command = room->MsgCommand(std::move(msg), worker_id, origin);
   auto& queue = tower_to_room_queues_[worker_id][room_number];
-  if (!queue->Write(command)) {
-    LOG_WARN(options_.info_log,
-        "Unable to forward subscription for Topic(%s,%s)@%" PRIu64
-        " to rooms-%u",
-        subscribe->GetNamespace().ToString().c_str(),
-        subscribe->GetTopicName().ToString().c_str(),
-        subscribe->GetStartSequenceNumber(),
-        room_number);
-  } else {
-    LOG_DEBUG(options_.info_log,
-        "Forwarded subscription for Topic(%s,%s)@%" PRIu64 " to rooms-%u",
-        subscribe->GetNamespace().ToString().c_str(),
-        subscribe->GetTopicName().ToString().c_str(),
-        subscribe->GetStartSequenceNumber(),
-        room_number);
-  }
+  queue->Write(command);
 
   auto& room_map = sub_to_room_[worker_id];
   room_map.Insert(origin, sub_id, room_number);

@@ -78,12 +78,34 @@ extern int RandomSeed();
 
 extern int RunAllTests(int argc, char** argv);
 
+template <typename P>
+bool WaitUntil(
+    P&& p,
+    std::chrono::milliseconds timeout = std::chrono::milliseconds(10000)) {
+  using clock = std::chrono::steady_clock;
+  auto start = clock::now();
+  std::chrono::milliseconds wait(1);
+  while (!p()) {
+    if (clock::now() - start > timeout) {
+      return false;
+    }
+    /* sleep override */
+    std::this_thread::sleep_for(wait);
+    wait *= 2;  // exp backoff
+  }
+  return true;
+}
+
 ::testing::AssertionResult AssertStatus(const char* s_expr, const Status& s);
 
 #define ASSERT_OK(s) ASSERT_PRED_FORMAT1(rocketspeed::test::AssertStatus, s)
 #define ASSERT_NOK(s) ASSERT_FALSE((s).ok())
 #define EXPECT_OK(s) EXPECT_PRED_FORMAT1(rocketspeed::test::AssertStatus, s)
 #define EXPECT_NOK(s) EXPECT_FALSE((s).ok())
+
+#define ASSERT_EVENTUALLY_TRUE(p) do { \
+    ASSERT_TRUE(::rocketspeed::test::WaitUntil([&](){ return (p); })); \
+  } while(0)
 
 }  // namespace test
 }  // namespace rocketspeed

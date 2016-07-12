@@ -83,7 +83,7 @@ TEST_F(PilotTest, Publish) {
   }
 
   // Ensure all messages were ack'd
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(5)));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(20)));
   ASSERT_TRUE(sent_msgs_ == acked_msgs_);
 
   Statistics stats = cluster.GetPilot()->GetStatisticsSync();

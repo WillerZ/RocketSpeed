@@ -20,7 +20,7 @@ class LogDeviceStorageTest : public ::testing::Test {
  public:
   // This needs to be large, see INITIAL_REDELIVERY_DELAY in
   // ClientReadStream.cpp
-  std::chrono::milliseconds client_redelivery_timeout_{2000};
+  std::chrono::milliseconds client_redelivery_timeout_{5000};
 
   LogDeviceStorageTest() : env_(Env::Default()) {
     EXPECT_OK(test::CreateLogger(env_, "LogDeviceStorageTest", &info_log));

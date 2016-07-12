@@ -26,7 +26,7 @@ class IntegrationTest : public ::testing::Test {
  public:
   std::chrono::seconds timeout;
 
-  IntegrationTest() : timeout(5), env_(Env::Default()) {
+  IntegrationTest() : timeout(60), env_(Env::Default()) {
     EXPECT_OK(test::CreateLogger(env_, "IntegrationTest", &info_log));
   }
 
@@ -150,7 +150,7 @@ TEST_F(IntegrationTest, TrimAll) {
     auto gap_cb = [&](const GapRecord& r) {
       // We expect a Gap, and we expect the low seqno should be our
       // previously published publish lsn.
-      EXPECT_TRUE(r.from == seqno);
+      EXPECT_EQ(r.from, seqno);
       num_gaps++;
       read_sem.Post();
       return true;
@@ -167,7 +167,7 @@ TEST_F(IntegrationTest, TrimAll) {
     ASSERT_OK(st);
 
     // Wait on read.
-    ASSERT_TRUE(read_sem.TimedWait(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(read_sem.TimedWait(timeout));
     ASSERT_TRUE(num_gaps == 1);
 
     // Delete readers
@@ -461,7 +461,7 @@ TEST_F(IntegrationTest, TrimFirst) {
 
     // Wait on n reads.
     for (int i = 0; i < num_publish; ++i) {
-      ASSERT_TRUE(read_sem.TimedWait(std::chrono::milliseconds(100)));
+      ASSERT_TRUE(read_sem.TimedWait(timeout));
     }
     // Assert that num gaps and num logs is what we expected.
     ASSERT_TRUE(num_gaps == 1);
@@ -548,7 +548,7 @@ TEST_F(IntegrationTest, TrimGapHandling) {
                               std::to_string(i),
                               publish_callback);
     ASSERT_TRUE(ps.status.ok());
-    ASSERT_TRUE(publish_sem.TimedWait(std::chrono::seconds(1)));
+    ASSERT_TRUE(publish_sem.TimedWait(timeout));
   }
 
   // Find topic log (for trimming).
@@ -566,7 +566,7 @@ TEST_F(IntegrationTest, TrimGapHandling) {
         GuestTenant, ns, topics[topic], seqno, receive_callback);
     ASSERT_TRUE(handle);
     while (expected--) {
-      EXPECT_TRUE(recv_sem[topic].TimedWait(std::chrono::seconds(1)));
+      EXPECT_TRUE(recv_sem[topic].TimedWait(timeout));
     }
     ASSERT_TRUE(!recv_sem[topic].TimedWait(std::chrono::milliseconds(100)));
     ASSERT_OK(client->Unsubscribe(std::move(handle)));
@@ -603,10 +603,7 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
   NamespaceID ns = GuestNamespace;
   TopicOptions opts;
 
-  // RocketSpeed callbacks;
-  auto publish_callback =
-      [&](std::unique_ptr<ResultStatus> rs) { publish_sem.Post(); };
-
+  // RocketSpeed callbacks.
   std::vector<std::string> received;
   ThreadCheck thread_check;
   auto receive_callback = [&](std::unique_ptr<MessageReceived>& mr) {
@@ -619,20 +616,26 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
   // Create RocketSpeed client.
   std::unique_ptr<Client> client;
   ASSERT_OK(cluster.CreateClient(&client));
-  client->SetDefaultCallbacks(nullptr, receive_callback);
+
+  // Witness for publishes to ensure all are released.
+  port::Semaphore witness;
+  client->Subscribe(GuestTenant, ns, topic, 1,
+    [&](std::unique_ptr<MessageReceived>& mr) {
+      witness.Post();
+    });
 
   // Send some messages and wait for the acks.
   for (int i = 0; i < 3; ++i) {
     std::string data = std::to_string(i);
     ASSERT_TRUE(
         client->Publish(
-                    GuestTenant, topic, ns, opts, Slice(data), publish_callback)
+                    GuestTenant, topic, ns, opts, Slice(data), nullptr)
             .status.ok());
-    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+    ASSERT_TRUE(witness.TimedWait(timeout));
   }
 
   // Subscribe using seqno 0.
-  auto handle = client->Subscribe(GuestTenant, ns, topic, 0);
+  auto handle = client->Subscribe(GuestTenant, ns, topic, 0, receive_callback);
   ASSERT_TRUE(handle);
   ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
 
@@ -642,9 +645,9 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
     std::string data = std::to_string(i);
     ASSERT_TRUE(
         client->Publish(
-                    GuestTenant, topic, ns, opts, Slice(data), publish_callback)
+                    GuestTenant, topic, ns, opts, Slice(data), nullptr)
             .status.ok());
-    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+    ASSERT_TRUE(witness.TimedWait(timeout));
     ASSERT_TRUE(message_sem.TimedWait(timeout));
   }
 
@@ -652,9 +655,6 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
     std::vector<std::string> expected = {"3", "4", "5"};
     ASSERT_TRUE(received == expected);
   }
-
-  // Verify that we have a client on the Copilot.
-  auto num_clients = cluster.GetCopilot()->GetMsgLoop()->GetNumClientsSync();
 
   // Unsubscribe from previously subscribed topic.
   ASSERT_OK(client->Unsubscribe(std::move(handle)));
@@ -664,17 +664,13 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
     std::string data = std::to_string(i);
     ASSERT_TRUE(
         client->Publish(
-                    GuestTenant, topic, ns, opts, Slice(data), publish_callback)
+                    GuestTenant, topic, ns, opts, Slice(data), nullptr)
             .status.ok());
-    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+    ASSERT_TRUE(witness.TimedWait(timeout));
   }
 
-  // Number of streams on the Copilot's MsgLoop should drop by one.
-  ASSERT_EQ(num_clients - 1,
-            cluster.GetCopilot()->GetMsgLoop()->GetNumClientsSync());
-
   // Subscribe using seqno 0.
-  ASSERT_TRUE(client->Subscribe(GuestTenant, ns, topic, 0));
+  ASSERT_TRUE(client->Subscribe(GuestTenant, ns, topic, 0, receive_callback));
   ASSERT_TRUE(!message_sem.TimedWait(std::chrono::milliseconds(100)));
 
   // Send 3 more messages again.
@@ -682,9 +678,9 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
     std::string data = std::to_string(i);
     ASSERT_TRUE(
         client->Publish(
-                    GuestTenant, topic, ns, opts, Slice(data), publish_callback)
+                    GuestTenant, topic, ns, opts, Slice(data), nullptr)
             .status.ok());
-    ASSERT_TRUE(publish_sem.TimedWait(timeout));
+    ASSERT_TRUE(witness.TimedWait(timeout));
     ASSERT_TRUE(message_sem.TimedWait(timeout));
   }
 
@@ -1428,13 +1424,10 @@ TEST_F(IntegrationTest, LogAvailability) {
         GuestTenant,
         GuestNamespace,
         "LogAvailability" + std::to_string(i),
-        0,
+        1,
         [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); });
     subscriptions.push_back(handle);
   }
-
-  // The copilot should be subscribed to all topics on BOTH control towers.
-  env_->SleepForMicroseconds(200000);
 
   // Stop the first control tower to ensure it cannot deliver records.
   cluster.GetControlTowerLoop()->Stop();
@@ -1528,17 +1521,15 @@ TEST_F(IntegrationTest, TowerDeathReconnect) {
   // Create RocketSpeed client.
   std::unique_ptr<Client> client;
   ASSERT_OK(cluster.CreateClient(&client));
-  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Listen for messages.
   for (size_t t = 0; t < kNumTopics; ++t) {
     ASSERT_TRUE(client->Subscribe(GuestTenant,
                                   GuestNamespace,
                                   "TowerDeathReconnect" + std::to_string(t),
-                                  0));
+                                  1,
+                                  receive_callback));
   }
-
-  env_->SleepForMicroseconds(1000000);
 
   // Send a message.
   for (size_t t = 0; t < kNumTopics; ++t) {
@@ -1559,11 +1550,10 @@ TEST_F(IntegrationTest, TowerDeathReconnect) {
   cluster.GetControlTowerLoop()->Stop();
   cluster.GetControlTower()->Stop();
 
-  // Let the copilot fail to reconnect for a few ticks (to check that code path)
-  env_->SleepForMicroseconds(3 * int(opts.copilot.timer_interval_micros));
-
-  auto stats1 = cluster.GetCopilot()->GetStatisticsSync();
-  ASSERT_EQ(kNumTopics, stats1.GetCounterValue("copilot.orphaned_topics"));
+  // Copilot should eventually orphan all topics since there are no CTs left.
+  ASSERT_EVENTUALLY_TRUE(
+    cluster.GetCopilot()->GetStatisticsSync()
+      .GetCounterValue("copilot.orphaned_topics") == kNumTopics);
 
   // Start new control tower (only) with same host:port.
   LocalTestCluster::Options new_opts;
@@ -1642,11 +1632,9 @@ TEST_F(IntegrationTest, CopilotDeath) {
         GuestTenant,
         GuestNamespace,
         "CopilotDeath" + std::to_string(t),
-        0,
+        1,
         [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); }));
   }
-
-  env_->SleepForMicroseconds(100000);
 
   // Send a more messages.
   for (size_t t = 0; t < kNumTopics; ++t) {
@@ -2159,17 +2147,17 @@ TEST_F(IntegrationTest, InvalidSubscription) {
 TEST_F(IntegrationTest, ReaderRestarts) {
   // Test that messages are still received with frequent reader restarts.
   const size_t kNumTopics = 10;
-  const size_t kNumMessages = 1000;
-  const std::chrono::milliseconds kMessageDelay(1);
+  const size_t kNumMessages = 100;
+  const std::chrono::milliseconds kMessageDelay(100);
 
   // Setup local RocketSpeed cluster.
   LocalTestCluster::Options opts;
   opts.info_log = info_log;
   opts.tower.timer_interval = std::chrono::microseconds(10000);  // 10ms
   opts.tower.log_tailer.min_reader_restart_duration =
-      std::chrono::milliseconds(20);
+      std::chrono::milliseconds(200);
   opts.tower.log_tailer.max_reader_restart_duration =
-      std::chrono::milliseconds(40);
+      std::chrono::milliseconds(400);
   LocalTestCluster cluster(opts);
   ASSERT_OK(cluster.GetStatus());
 
@@ -2184,10 +2172,9 @@ TEST_F(IntegrationTest, ReaderRestarts) {
         GuestTenant,
         GuestNamespace,
         "ReaderRestarts" + std::to_string(t),
-        0,
+        1,
         [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); }));
   }
-  env_->SleepForMicroseconds(100000);
 
   // Send messages.
   for (size_t i = 0; i < kNumMessages; ++i) {
@@ -2340,7 +2327,6 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
       stats1.GetCounterValue("tower.flow_control.backpressure_lifted");
   auto received1 =
       stats1.GetCounterValue("tower.topic_tailer.log_records_received");
-  ASSERT_GT(applied1, 0);  // ensure that backpressure was applied
   ASSERT_GE(applied1,
             lifted1);  // ensure that it was lifted as often as applied
   ASSERT_LE(applied1, lifted1 + 1);  // could be 1 less if not lifted yet.
@@ -2369,7 +2355,6 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
       stats2.GetCounterValue("tower.topic_tailer.records_served_from_cache");
   auto cache_backoff2 =
       stats2.GetCounterValue("tower.topic_tailer.cache_reader_backoff");
-  ASSERT_GT(applied2, 0);  // ensure that backpressure was applied
   ASSERT_GE(applied2,
             lifted2);  // ensure that it was lifted as often as applied
   ASSERT_LE(applied2, lifted2 + 1);       // could be 1 less if not lifted yet.
@@ -2400,7 +2385,6 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
       stats3.GetCounterValue("tower.topic_tailer.records_served_from_cache");
   auto cache_backoff3 =
       stats3.GetCounterValue("tower.topic_tailer.cache_reader_backoff");
-  ASSERT_GT(applied3, applied2);  // ensure that backpressure was applied
   ASSERT_GE(applied3,
             lifted3);  // ensure that it was lifted as often as applied
   ASSERT_LE(applied3, lifted3 + 1);  // could be 1 less if not lifted yet.
@@ -2540,49 +2524,67 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   std::unique_ptr<Client> client;
   cluster.CreateClient(&client);
 
+  auto fast_subs = [&]() {
+    auto stats = cluster.GetCopilot()->GetStatisticsSync();
+    return stats.GetCounterValue("copilot.tail_subscribe_fast_path");
+  };
+
+  auto total_subs = [&]() {
+    auto stats = cluster.GetCopilot()->GetStatisticsSync();
+    return stats.GetCounterValue("copilot.incoming_subscriptions");
+  };
+
+  auto delivered_gaps = [&]() {
+    auto stats = cluster.GetCockpitLoop()->GetStatisticsSync();
+    return stats.GetCounterValue("cockpit.messages_received.deliver_gap");
+  };
+
   // First subscribe should not be a fast subscription.
   client->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast1", 0, nullptr);
-  env_->SleepForMicroseconds(100000);
-  auto stats = cluster.GetCopilot()->GetStatisticsSync();
-  auto fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
-  ASSERT_EQ(fast_subs, 0);
+  ASSERT_EVENTUALLY_TRUE(total_subs() == 1);
+  ASSERT_EQ(fast_subs(), 0);
+
+  // Wait for tail seqno on copilot so that next sub is fast.
+  ASSERT_EVENTUALLY_TRUE(delivered_gaps() == 1);
 
   // Second subscribe should be a fast subscription.
   client->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast1", 0, nullptr);
-  env_->SleepForMicroseconds(100000);
-  stats = cluster.GetCopilot()->GetStatisticsSync();
-  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
-  ASSERT_EQ(fast_subs, 1);
+  ASSERT_EVENTUALLY_TRUE(total_subs() == 2);
+  ASSERT_EQ(fast_subs(), 1);
+  ASSERT_EQ(delivered_gaps(), 1);  // should still be 1
 
   // Different topic now.
   // First subscribe should not be a fast subscription.
+  port::Semaphore sem;
   client->Subscribe(
-      GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 1, nullptr);
-  env_->SleepForMicroseconds(100000);
-  stats = cluster.GetCopilot()->GetStatisticsSync();
-  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
-  ASSERT_EQ(fast_subs, 1);
+      GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 1,
+      [&](std::unique_ptr<MessageReceived>&) { sem.Post(); });
+  ASSERT_EVENTUALLY_TRUE(total_subs() == 3);
+  ASSERT_EQ(fast_subs(), 1);
+  client->Publish(GuestTenant, "CopilotTailSubscribeFast2", GuestNamespace,
+      TopicOptions(), "data");
+  ASSERT_TRUE(sem.TimedWait(timeout));
+  auto gaps_now = delivered_gaps();
 
   // Second subscribe should not be a fast subscription since we don't have
   // tail subscription.
   // Note: this could change with better tail subscription logic.
   client->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 0, nullptr);
-  env_->SleepForMicroseconds(100000);
-  stats = cluster.GetCopilot()->GetStatisticsSync();
-  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
-  ASSERT_EQ(fast_subs, 1);
+  ASSERT_EVENTUALLY_TRUE(total_subs() == 4);
+  ASSERT_EQ(fast_subs(), 1);
+
+  // Wait for tail seqno on copilot so that next sub is fast.
+  ASSERT_EVENTUALLY_TRUE(delivered_gaps() == gaps_now + 1);
 
   // Third subscribe should be a fast subscription.
   // Note: this could change with better tail subscription logic.
   client->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 0, nullptr);
-  env_->SleepForMicroseconds(100000);
-  stats = cluster.GetCopilot()->GetStatisticsSync();
-  fast_subs = stats.GetCounterValue("copilot.tail_subscribe_fast_path");
-  ASSERT_EQ(fast_subs, 2);
+  ASSERT_EVENTUALLY_TRUE(total_subs() == 5);
+  ASSERT_EQ(fast_subs(), 2);
 }
 
 }  // namespace rocketspeed

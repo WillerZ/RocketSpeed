@@ -184,7 +184,7 @@ static std::unique_ptr<ShardingStrategy> MakeShardingStrategyFromConfig(
 class ClientTest : public ::testing::Test {
  public:
   ClientTest()
-  : positive_timeout(1000)
+  : positive_timeout(5000)
   , negative_timeout(100)
   , env_(Env::Default())
   , config_(std::make_shared<MockPublisherRouter>()) {
@@ -281,10 +281,10 @@ TEST_F(ClientTest, BackOff) {
   copilot_ptr = copilot.msg_loop.get();
 
   // Back-off parameters.
-  std::chrono::milliseconds scale(50);
+  std::chrono::milliseconds scale(100);
 
   ClientOptions options;
-  options.timer_period = std::chrono::milliseconds(1);
+  options.timer_period = std::chrono::milliseconds(10);
   options.backoff_strategy = [scale](ClientRNG*, size_t retry) {
     return scale * (retry + 1);
   };
@@ -303,8 +303,8 @@ TEST_F(ClientTest, BackOff) {
                            differences.begin());
   for (size_t i = 1; i < num_attempts; ++i) {
     auto expected = scale * i;
-    ASSERT_GE(differences[i], expected - expected / 4);
-    ASSERT_LE(differences[i], expected + expected / 4);
+    ASSERT_GE(differences[i], expected - expected / 2);
+    ASSERT_LE(differences[i], expected + expected);
   }
 }
 

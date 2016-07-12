@@ -49,7 +49,7 @@ ClientOptions::ClientOptions()
 , backoff_strategy(backoff::RandomizedTruncatedExponential(
       std::chrono::seconds(1), std::chrono::seconds(30), 2.0))
 , unsubscribe_deduplication_timeout(10 * 1000)
-, publish_timeout(5 * 1000)
+, publish_timeout(10 * 1000)
 , max_subscriptions(std::numeric_limits<size_t>::max())
 , connection_without_streams_keepalive(std::chrono::milliseconds(0))
 , subscription_rate_limit(1000 * 1000 * 1000)

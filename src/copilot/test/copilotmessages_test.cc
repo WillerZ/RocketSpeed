@@ -194,7 +194,7 @@ TEST_F(CopilotTest, Rollcall) {
     MessageSubscribe msg(Tenant::GuestTenant,
                          GuestNamespace,
                          topic,
-                         0,
+                         1,
                          SubscriptionID::Unsafe(i));
     ASSERT_OK(client.SendRequest(msg, &socket, 0));
   }
@@ -209,7 +209,7 @@ TEST_F(CopilotTest, Rollcall) {
   }
 
   // Ensure that all expected entries were received by Rolcall clients.
-  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(5)));
+  ASSERT_TRUE(checkpoint.TimedWait(std::chrono::seconds(10)));
   std::lock_guard<std::mutex> lock(callback_mutex);
   // Verify that every client got something. This might get flaky when we change
   // topic names or Rollcall sharding hash.
@@ -254,6 +254,9 @@ TEST_F(CopilotTest, Rollcall) {
             num_msg / 2 + num_shards);
   ASSERT_EQ(stats.GetCounterValue("cockpit.messages_received.unsubscribe"),
             num_msg / 2);
+
+  // Destroy Rollcall first to avoid dangling callback closures.
+  rollcall.reset();
 }
 
 }  // namespace rocketspeed
