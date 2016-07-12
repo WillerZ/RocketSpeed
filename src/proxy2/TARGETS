@@ -1,0 +1,24 @@
+cpp_library(
+    name = 'proxy2',
+    srcs = [
+        'abstract_worker.cc',
+        'downstream_worker.cc',
+        'multiplexer.cc',
+        'proxy_server.cc',
+        'updates_accumulator.cc',
+        'upstream_worker.cc',
+    ],
+    preprocessor_flags = [
+        '-Irocketspeed/github',
+        '-DROCKETSPEED_PLATFORM_POSIX=1',
+        '-DOS_LINUX=1',
+    ],
+    deps = [
+      '@/rocketspeed/github/include:rocketspeed',
+      '@/rocketspeed/github/src/client:client',
+      '@/rocketspeed/github/src/messages:messages',
+      '@/rocketspeed/github/src/port:port',
+      '@/rocketspeed/github/src/util:util',
+      '@/rocketspeed/github/src/util/common:common',
+    ],
+)

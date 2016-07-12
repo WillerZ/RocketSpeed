@@ -255,12 +255,13 @@ void Multiplexer::RemoveFromIndex(UpstreamSubscription* upstream_sub) {
 void Multiplexer::ReceiveDeliver(Flow* flow,
                                  UpstreamSubscription* upstream_sub,
                                  std::unique_ptr<MessageDeliver> deliver) {
-  LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::ReceiveDeliver(%llu)",
-            per_shard_->GetShardID(),
-            upstream_sub->GetIDWhichMayChange().ForLogging());
-
   const auto type = deliver->GetMessageType();
+  LOG_DEBUG(GetOptions().info_log,
+            "Multiplexer(%zu)::ReceiveDeliver(%llu, %s)",
+            per_shard_->GetShardID(),
+            upstream_sub->GetIDWhichMayChange().ForLogging(),
+            MessageTypeName(type));
+
   RS_ASSERT(type == MessageType::mDeliverGap ||
             type == MessageType::mDeliverData);
 
@@ -274,8 +275,16 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
         data->GetSequenceNumber());
     // Adjust the subscription based on an action.
     if (action == UpdatesAccumulator::Action::kResubscribeUpstream) {
+      LOG_DEBUG(GetOptions().info_log,
+                "Multiplexer(%zu)::ReceiveDeliver(%llu, %" PRIu64 ", %" PRIu64
+                ") : resubscribing",
+                per_shard_->GetShardID(),
+                upstream_sub->GetIDWhichMayChange().ForLogging(),
+                data->GetPrevSequenceNumber(),
+                data->GetSequenceNumber());
+
       RS_ASSERT(per_shard_->GetShardID() <=
-        std::numeric_limits<ShardID>::max());
+                std::numeric_limits<ShardID>::max());
       auto new_upstream_id = SubscriptionID::ForShard(
           static_cast<ShardID>(per_shard_->GetShardID()),
           upstream_allocator_.Next());
