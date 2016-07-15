@@ -121,7 +121,7 @@ class SubscriptionBase {
 /// thread-safe.
 // TODO(stupaq): generalise the sink and reshard by host in the proxy
 template <typename SubscriptionState>
-class SubscriptionsMap : public StreamReceiver {
+class SubscriptionsMap : public ConnectionAwareReceiver {
  public:
   using DeliverCb = std::function<void(
       Flow* flow, SubscriptionState*, std::unique_ptr<MessageDeliver>)>;
@@ -130,8 +130,7 @@ class SubscriptionsMap : public StreamReceiver {
 
   SubscriptionsMap(EventLoop* event_loop,
                    DeliverCb deliver_cb,
-                   TerminateCb terminate_cb,
-                   BackOffStrategy backoff_strategy);
+                   TerminateCb terminate_cb);
   ~SubscriptionsMap();
 
   /// Returns a non-owning pointer to the SubscriptionState.
@@ -164,14 +163,10 @@ class SubscriptionsMap : public StreamReceiver {
   template <typename Iter>
   void Iterate(Iter&& iter);
 
-  /// Forces the map to reestablish communication to the provided host.
-  void ReconnectTo(const HostId& host);
-
  private:
   EventLoop* const event_loop_;
   const DeliverCb deliver_cb_;
   const TerminateCb terminate_cb_;
-  const BackOffStrategy backoff_strategy_;
 
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
@@ -198,14 +193,9 @@ class SubscriptionsMap : public StreamReceiver {
   using Unsubscribes = google::sparse_hash_set<SubscriptionID>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
-  size_t connection_failues_{0};
-  HostId current_host_;
   std::unique_ptr<Sink<SharedTimestampedString>> sink_;
-  std::unique_ptr<EventCallback> backoff_timer_;
 
   Logger* GetLogger() const;
-
-  void Reconnect();
 
   // Function takes upstream_sub ownership
   void HandlePendingSubscription(
@@ -213,7 +203,9 @@ class SubscriptionsMap : public StreamReceiver {
 
   void HandlePendingUnsubscription(Flow* flow, SubscriptionID sub_id);
 
-  void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye>) final override;
+  void ConnectionDropped() final override;
+  void ConnectionEstablished(
+    std::unique_ptr<Sink<SharedTimestampedString>> sink) final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
 };

@@ -28,6 +28,8 @@ class MessageFindTailSeqno;
 class MessageTailSeqno;
 class MessageDeliverBatch;
 class MessageHeartbeat;
+template<typename>
+class Sink;
 class Slice;
 
 /**
@@ -72,6 +74,16 @@ struct SerializedOnStream {
   SharedTimestampedString serialised;
 };
 
+
+class ConnectionObserver {
+ public:
+  virtual ~ConnectionObserver() = default;
+
+  virtual void ConnectionDropped() = 0;
+  virtual void ConnectionEstablished(
+    std::unique_ptr<Sink<SharedTimestampedString>> sink) = 0;
+};
+
 /** An object which receives messages from a Stream. */
 template <typename T>
 struct StreamReceiveArg {
@@ -112,5 +124,8 @@ class StreamReceiver : public NonMovable, public NonCopyable {
                                               StreamID stream_id,
                                               std::unique_ptr<M>& message);
 };
+
+class ConnectionAwareReceiver : public StreamReceiver,
+                                public ConnectionObserver {};
 
 }  // namespace rocketspeed

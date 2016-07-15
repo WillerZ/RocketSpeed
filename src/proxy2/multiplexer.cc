@@ -117,15 +117,16 @@ Multiplexer::Multiplexer(PerShard* per_shard)
 , subscriptions_map_(
       GetLoop(),
       std::bind(&Multiplexer::ReceiveDeliver, this, _1, _2, _3),
-      std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3),
-      GetOptions().backoff_strategy) {
+      std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3))
+, stream_supervisor_(GetLoop(), &subscriptions_map_,
+                     GetOptions().backoff_strategy) {
   // Create stats.
   auto prefix = per_shard->GetOptions().stats_prefix + "multiplexer.";
   auto stats = per_shard->GetStatistics();
   stats_.num_upstream_subscriptions =
       stats->AddCounter(prefix + "num_upstream_subscriptions");
   // Connect to the server.
-  subscriptions_map_.ReconnectTo(per_shard_->GetHost());
+  stream_supervisor_.ConnectTo(per_shard_->GetHost());
   // Don't use the null SubscriptionID.
   auto null_id = upstream_allocator_.Next();
   RS_ASSERT(null_id == 0);
@@ -218,7 +219,7 @@ void Multiplexer::Unsubscribe(Flow* flow,
 }
 
 void Multiplexer::ChangeRoute() {
-  subscriptions_map_.ReconnectTo(per_shard_->GetHost());
+  stream_supervisor_.ConnectTo(per_shard_->GetHost());
   // Topic to subscription index is unaffected as UpstreamSubscription objects
   // have stable pointers.
 }

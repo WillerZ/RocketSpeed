@@ -19,7 +19,6 @@
 #include "src/messages/messages.h"
 #include "src/messages/stream.h"
 #include "src/util/common/flow.h"
-#include "src/util/common/random.h"
 
 namespace rocketspeed {
 
@@ -30,12 +29,10 @@ template <typename SubscriptionState>
 SubscriptionsMap<SubscriptionState>::SubscriptionsMap(
     EventLoop* event_loop,
     DeliverCb deliver_cb,
-    TerminateCb terminate_cb,
-    BackOffStrategy backoff_strategy)
+    TerminateCb terminate_cb)
 : event_loop_(event_loop)
 , deliver_cb_(std::move(deliver_cb))
 , terminate_cb_(std::move(terminate_cb))
-, backoff_strategy_(std::move(backoff_strategy))
 , pending_subscriptions_(event_loop)
 , pending_unsubscribes_(event_loop) {
   auto flow_control = event_loop_->GetFlowControl();
@@ -214,113 +211,8 @@ void SubscriptionsMap<SubscriptionState>::Iterate(Iter&& iter) {
 }
 
 template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::ReconnectTo(const HostId& host) {
-  if (current_host_ == host) {
-    return;
-  }
-  LOG_INFO(GetLogger(), "ReconnectTo(%s)", host.ToString().c_str());
-
-  connection_failues_ = 0;
-  current_host_ = host;
-  Reconnect();
-}
-
-template <typename SubscriptionState>
 Logger* SubscriptionsMap<SubscriptionState>::GetLogger() const {
   return event_loop_->GetLog().get();
-}
-
-template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::Reconnect() {
-  // Think about this method as something that can be called in almost arbitrary
-  // state and should leave the SubscriptionsMap in a perfectly valid state.
-  // Code over here should be rather defensive. Corner cases should be severely
-  // underrepresented.
-
-  // Kill any scheduled reconnection.
-  backoff_timer_.reset();
-
-  if (sink_) {
-    auto flow_control = event_loop_->GetFlowControl();
-    // Unwire and close the stream sink.
-    flow_control->UnregisterSink(sink_.get());
-    sink_.reset();
-  }
-
-  // Disable sources that point to the destroyed sink.
-  pending_subscriptions_.SetReadEnabled(event_loop_, false);
-  pending_unsubscribes_.SetReadEnabled(event_loop_, false);
-
-  // If no remote host is known, we're done. The procedure will be repeated
-  // after router update.
-  if (!current_host_) {
-    LOG_INFO(GetLogger(), "Reconnect(): unknown host");
-    return;
-  }
-
-  auto reconnect = [this]() {
-    RS_ASSERT(!sink_);
-    RS_ASSERT(current_host_);
-
-    // Open the stream.
-    auto stream = event_loop_->OpenStream(current_host_);
-    stream->SetReceiver(this);
-    LOG_INFO(GetLogger(),
-             "Reconnect()::reconnect(%s, %lld)",
-             current_host_.ToString().c_str(),
-             stream->GetLocalID());
-
-    sink_ = std::move(stream);
-
-    // Make all subscriptions pending.
-    pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
-      // Most of the times, the set of pending subscriptions is orders of
-      // magnitude smaller, swapping sets and moving elements from the one with
-      // pending subscriptions to the former one would trigger less
-      // reallocations and reduce peak memory usage.
-      if (pending_subscriptions.Size() < synced_subscriptions_.Size()) {
-        pending_subscriptions.Swap(synced_subscriptions_);
-      }
-
-      for (auto sub: synced_subscriptions_) {
-        pending_subscriptions.emplace(sub->GetSubscriptionID(), sub);
-      }
-      synced_subscriptions_.Clear();
-    });
-
-    // All subscriptions have been implicitly unsubscribed when the stream
-    // was closed.
-    pending_unsubscribes_.Modify([&](Unsubscribes& set) { set.clear(); });
-
-    // Enable sources as the sink is there.
-    pending_subscriptions_.SetReadEnabled(event_loop_, true);
-    pending_unsubscribes_.SetReadEnabled(event_loop_, true);
-
-    // Kill the backoff timer, if set.
-    backoff_timer_.reset();
-  };
-
-  // We do not apply backoff if there have been no recorded connection failure
-  // to this host.
-  if (connection_failues_ == 0) {
-    reconnect();
-  } else {
-    RS_ASSERT(connection_failues_ > 0);
-    // Figure out the backoff.
-    auto backoff_duration =
-        backoff_strategy_(&ThreadLocalPRNG(), connection_failues_ - 1);
-
-    LOG_INFO(GetLogger(),
-             "Reconnect()::backoff(%zu, %zd)",
-             connection_failues_,
-             backoff_duration.count());
-
-    // Schedule asynchronous creation of a new stream.
-    RS_ASSERT(!backoff_timer_);
-    backoff_timer_ =
-        event_loop_->CreateTimedEventCallback(reconnect, backoff_duration);
-    backoff_timer_->Enable();
-  }
 }
 
 template <typename SubscriptionState>
@@ -361,12 +253,49 @@ void SubscriptionsMap<SubscriptionState>::HandlePendingUnsubscription(
 }
 
 template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::ReceiveGoodbye(
-    StreamReceiveArg<MessageGoodbye> arg) {
-  LOG_DEBUG(GetLogger(), "ReceiveGoodbye(%llu)", arg.stream_id);
+void SubscriptionsMap<SubscriptionState>::ConnectionEstablished(
+    std::unique_ptr<Sink<SharedTimestampedString>> sink) {
 
-  ++connection_failues_;
-  Reconnect();
+  sink_ = std::move(sink);
+
+  // Make all subscriptions pending.
+  pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
+
+      // Most of the times, the set of pending subscriptions is orders of
+      // magnitude smaller, swapping sets and moving elements from the one with
+      // pending subscriptions to the former one would trigger less
+      // reallocations and reduce peak memory usage.
+      if (pending_subscriptions.Size() < synced_subscriptions_.Size()) {
+        pending_subscriptions.Swap(synced_subscriptions_);
+      }
+
+      for (auto sub: synced_subscriptions_) {
+        pending_subscriptions.emplace(sub->GetSubscriptionID(), sub);
+      }
+      synced_subscriptions_.Clear();
+    });
+
+  // All subscriptions have been implicitly unsubscribed when the stream
+  // was closed.
+  pending_unsubscribes_.Modify([&](Unsubscribes& set) { set.clear(); });
+
+  // Enable sources as the sink is there.
+  pending_subscriptions_.SetReadEnabled(event_loop_, true);
+  pending_unsubscribes_.SetReadEnabled(event_loop_, true);
+}
+
+template <typename SubscriptionState>
+void SubscriptionsMap<SubscriptionState>::ConnectionDropped() {
+  if (sink_) {
+    auto flow_control = event_loop_->GetFlowControl();
+    // Unwire and close the stream sink.
+    flow_control->UnregisterSink(sink_.get());
+    sink_.reset();
+  }
+
+  // Disable sources that point to the destroyed sink.
+  pending_subscriptions_.SetReadEnabled(event_loop_, false);
+  pending_unsubscribes_.SetReadEnabled(event_loop_, false);
 }
 
 template <typename SubscriptionState>

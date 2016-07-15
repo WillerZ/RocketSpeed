@@ -15,6 +15,7 @@
 #include "src/client/subscriber_if.h"
 #include "src/util/common/subscription_id.h"
 #include "src/client/subscriptions_map.h"
+#include "src/client/resilient_receiver.h"
 #include "src/messages/messages.h"
 #include "src/messages/types.h"
 #include "src/util/common/statistics.h"
@@ -101,6 +102,7 @@ class Subscriber : public SubscriberIf {
   std::shared_ptr<SubscriberStats> stats_;
 
   SubscriptionsMap<SubscriptionState> subscriptions_map_;
+  ResilientStreamReceiver stream_supervisor_;
 
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 

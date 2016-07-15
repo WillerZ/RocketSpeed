@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "include/Types.h"
+#include "src/client/resilient_receiver.h"
 #include "src/client/subscriptions_map.h"
 #include "src/util/common/hash.h"
 #include "src/util/id_allocator.h"
@@ -121,6 +122,7 @@ class Multiplexer {
 
   UpstreamAllocator upstream_allocator_;
   SubscriptionsMap<UpstreamSubscription> subscriptions_map_;
+  ResilientStreamReceiver stream_supervisor_;
 
   // TODO(stupaq): intrusive
   std::unordered_map<std::pair<std::string, std::string>,

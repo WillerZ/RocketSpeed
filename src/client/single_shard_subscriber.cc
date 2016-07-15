@@ -82,8 +82,10 @@ Subscriber::Subscriber(const ClientOptions& options,
 , stats_(std::move(stats))
 , subscriptions_map_(event_loop_,
                      std::bind(&Subscriber::ReceiveDeliver, this, _1, _2, _3),
-                     std::bind(&Subscriber::ReceiveTerminate, this, _1, _2, _3),
-                     options_.backoff_strategy)
+                     std::bind(&Subscriber::ReceiveTerminate,
+                               this, _1, _2, _3))
+, stream_supervisor_(event_loop_, &subscriptions_map_,
+                     options.backoff_strategy)
 , shard_id_(shard_id)
 , max_active_subscriptions_(max_active_subscriptions)
 , num_active_subscriptions_(std::move(num_active_subscriptions)) {
@@ -187,7 +189,7 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
 
 void Subscriber::RefreshRouting() {
   thread_check_.Check();
-  subscriptions_map_.ReconnectTo(options_.sharding->GetHost(shard_id_));
+  stream_supervisor_.ConnectTo(options_.sharding->GetHost(shard_id_));
 }
 
 namespace {
