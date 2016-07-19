@@ -213,7 +213,7 @@ void Multiplexer::Unsubscribe(Flow* flow,
     // Remove from index first.
     RemoveFromIndex(upstream_sub);
     // Remove the subscription state, that'd invalidate the pointer.
-    subscriptions_map_.Unsubscribe(upstream_sub);
+    subscriptions_map_.Unsubscribe(upstream_sub->GetIDWhichMayChange());
     upstream_sub = nullptr;
   }
 }
@@ -293,8 +293,8 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
       // bytes.
       RS_ASSERT(new_upstream_id);
       // Rewind a subscription to zero.
-      subscriptions_map_.Rewind(
-          upstream_sub, new_upstream_id, 0 /* new_seqno */);
+      subscriptions_map_.Rewind(upstream_sub->GetIDWhichMayChange(),
+          new_upstream_id, 0 /* new_seqno */);
     }
   }
 

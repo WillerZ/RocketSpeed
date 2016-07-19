@@ -124,16 +124,33 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Find(
 }
 
 template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
+bool SubscriptionsMap<SubscriptionState>::Exists(SubscriptionID sub_id) const {
+  LOG_DEBUG(GetLogger(), "Exists(%llu)", sub_id.ForLogging());
+
+  auto sync_it = synced_subscriptions_.Find(sub_id);
+  if (sync_it != synced_subscriptions_.End()) {
+    return true;
+  }
+  auto pend_it = pending_subscriptions_->Find(sub_id);
+  if (pend_it != pending_subscriptions_->End()) {
+    return true;
+  }
+  return false;
+}
+
+template <typename SubscriptionState>
+void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionID old_sub_id,
                                                  SubscriptionID new_sub_id,
                                                  SequenceNumber new_seqno) {
+  auto ptr = Find(old_sub_id);
+  RS_ASSERT(ptr);
+
   LOG_DEBUG(GetLogger(),
             "Rewind(%llu, %llu, %" PRIu64 ")",
             ptr->GetIDWhichMayChange().ForLogging(),
             new_sub_id.ForLogging(),
             new_seqno);
 
-  auto old_sub_id = ptr->GetSubscriptionID();
   RS_ASSERT(new_sub_id != old_sub_id);
   // Generate an unsubscibe message for the old ID.
   pending_unsubscribes_.Modify(
@@ -168,12 +185,11 @@ void SubscriptionsMap<SubscriptionState>::Rewind(SubscriptionState* ptr,
 }
 
 template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionState* ptr) {
+void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionID sub_id) {
   LOG_DEBUG(GetLogger(),
             "Unsubscribe(%llu)",
-            ptr->GetIDWhichMayChange().ForLogging());
+            sub_id.ForLogging());
 
-  auto sub_id = ptr->GetSubscriptionID();
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     auto sync_it = synced_subscriptions_.Find(sub_id);
     if (sync_it != synced_subscriptions_.End()) {
@@ -202,11 +218,41 @@ bool SubscriptionsMap<SubscriptionState>::Empty() const {
 template <typename SubscriptionState>
 template <typename Iter>
 void SubscriptionsMap<SubscriptionState>::Iterate(Iter&& iter) {
+  class SubscriptionStateData : public SubscriptionData {
+   public:
+    explicit SubscriptionStateData(SubscriptionState* state) : state_(state) {}
+
+    TenantID GetTenant() const override {
+      return state_->GetTenant();
+    }
+
+    Slice GetNamespace() const override {
+      return state_->GetNamespace();
+    }
+
+    Slice GetTopicName() const override {
+      return state_->GetTopicName();
+    }
+
+    SequenceNumber GetExpectedSeqno() const override {
+      return state_->GetExpectedSeqno();
+    }
+
+    SubscriptionID GetID() const override {
+      return state_->GetIDWhichMayChange();
+    }
+
+   private:
+    SubscriptionState* state_;
+  };
+
   for (auto ptr : pending_subscriptions_.Read()) {
-    iter(ptr);
+    const SubscriptionStateData data(ptr);
+    iter(data);
   }
   for (auto ptr : synced_subscriptions_) {
-    iter(ptr);
+    const SubscriptionStateData data(ptr);
+    iter(data);
   }
 }
 

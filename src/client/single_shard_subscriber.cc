@@ -127,7 +127,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
 
 void Subscriber::Acknowledge(SubscriptionID sub_id,
                              SequenceNumber acked_seqno) {
-  if (!subscriptions_map_.Find(sub_id)) {
+  if (!subscriptions_map_.Exists(sub_id)) {
     LOG_WARN(options_.info_log,
              "Cannot acknowledge missing subscription ID (%lld)",
              sub_id.ForLogging());
@@ -143,15 +143,15 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
   if (auto ptr = subscriptions_map_.Find(sub_id)) {
     // Notify the user.
     SourcelessFlow no_flow(event_loop_->GetFlowControl());
-    TerminateSubscriptionImpl(&no_flow,
-                              ptr,
-                              folly::make_unique<MessageUnsubscribe>(
-                                  ptr->GetTenant(),
-                                  ptr->GetIDWhichMayChange(),
-                                  MessageUnsubscribe::Reason::kRequested));
+    ReceiveTerminate(&no_flow,
+                     ptr,
+                     folly::make_unique<MessageUnsubscribe>(
+                         ptr->GetTenant(),
+                         ptr->GetIDWhichMayChange(),
+                         MessageUnsubscribe::Reason::kRequested));
 
     // Terminate the subscription, which will invalidate the pointer.
-    subscriptions_map_.Unsubscribe(ptr);
+    subscriptions_map_.Unsubscribe(sub_id);
     ptr = nullptr;
   }
 
@@ -161,22 +161,22 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
 Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
                              size_t worker_id) {
   Status status;
-  subscriptions_map_.Iterate([&](SubscriptionState* state) {
+  subscriptions_map_.Iterate([&](const SubscriptionData& state) {
     if (!status.ok()) {
       return;
     }
 
     SequenceNumber start_seqno =
-        GetLastAcknowledged(state->GetIDWhichMayChange());
+        GetLastAcknowledged(state.GetID());
     // Subscription storage stores parameters of subscribe requests that shall
     // be reissued, therefore we must persiste the next sequence number.
     if (start_seqno > 0) {
       ++start_seqno;
     }
     status = snapshot->Append(worker_id,
-                              state->GetTenant(),
-                              state->GetNamespace().ToString(),
-                              state->GetTopicName().ToString(),
+                              state.GetTenant(),
+                              state.GetNamespace().ToString(),
+                              state.GetTopicName().ToString(),
                               start_seqno);
   });
   return status;
@@ -287,13 +287,6 @@ void Subscriber::ReceiveTerminate(
   // The callback would only be called if the state is not null
   // at this point, that is the Client must have Unsubscribed before we receive
   // a Terminate from the server.
-  TerminateSubscriptionImpl(flow, state, std::move(unsubscribe));
-}
-
-void Subscriber::TerminateSubscriptionImpl(
-    Flow* flow,
-    SubscriptionState* state,
-    std::unique_ptr<MessageUnsubscribe> unsubscribe) {
   SubscriptionStatusImpl sub_status(*state);
   switch (unsubscribe->GetReason()) {
     case MessageUnsubscribe::Reason::kRequested:

@@ -58,7 +58,9 @@ class SubscriptionBase {
   , sub_id_(sub_id)
   , expected_seqno_(initial_seqno) {}
 
-  TenantID GetTenant() const { return tenant_and_namespace_.Get().tenant_id; }
+  TenantID GetTenant() const {
+    return tenant_and_namespace_.Get().tenant_id;
+  }
 
   Slice GetNamespace() const {
     return tenant_and_namespace_.Get().namespace_id;
@@ -110,6 +112,32 @@ class SubscriptionBase {
   /// @}
 };
 
+/// Interface for accessing subscription metadata internals that is decoupled
+/// from the specifics of storage.
+class SubscriptionData {
+ public:
+  /// Tenant of the subscription.
+  virtual TenantID GetTenant() const = 0;
+
+  /// Namespace of the subscription. The lifetime of the slice is equal to that
+  /// of the SubscriptionData.
+  virtual Slice GetNamespace() const = 0;
+
+  /// Topic name of the subscription. The lifetime of the slice is equal to that
+  /// of the SubscriptionData.
+  virtual Slice GetTopicName() const = 0;
+
+  /// Next sequence number expected on the subscription, e.g. if last received
+  /// was N then the next expected seqno is N+1.
+  virtual SequenceNumber GetExpectedSeqno() const = 0;
+
+  /// Subscription's ID.
+  virtual SubscriptionID GetID() const = 0;
+
+ protected:
+  virtual ~SubscriptionData() {}
+};
+
 /// A map of active subscriptions that replicates itself to the remove end over
 /// provided sink and processes messages delivered on a subscription.
 ///
@@ -146,18 +174,23 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   /// exist.
   SubscriptionState* Find(SubscriptionID sub_id) const;
 
+  /// Checks if subscription exists.
+  bool Exists(SubscriptionID sub_id) const;
+
   /// Rewinds provided subscription to a given sequence number.
-  void Rewind(SubscriptionState* ptr,
+  void Rewind(SubscriptionID old_sub_id,
               SubscriptionID new_sub_id,
               SequenceNumber new_seqno);
 
   /// Returns true if a subscription was terminated, false if it didn't exist.
-  void Unsubscribe(SubscriptionState* ptr);
+  void Unsubscribe(SubscriptionID sub_id);
 
   bool Empty() const;
 
   /// Iterates over the all subscriptions in arbitrary order and invokes
-  /// provided callback for each subscription.
+  /// provided callback with a `const SubscriptionData&` for each subscription.
+  /// The SubscriptionData reference is only valid for the duration of the
+  /// callback, and references must not escape that scope.
   ///
   /// The map must not be modified during the loop.
   template <typename Iter>
