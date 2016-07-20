@@ -330,6 +330,7 @@ void Statistics::Export(StatisticsVisitor* visitor) const {
     visitor->VisitHistogram(metric + ".p99", p99);
     visitor->VisitHistogram(metric + ".p999", p999);
   }
+  visitor->Flush();
 }
 
 StatisticsWindowAggregator::StatisticsWindowAggregator(size_t window_size)

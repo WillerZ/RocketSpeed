@@ -11,6 +11,7 @@ cpp_library(
         'random.cc',
         'rate_limiter.cc',
         'statistics.cc',
+        'statistics_exporter.cc',
         'status.cc',
         'subscription_id.cc',
         'thread_local.cc',

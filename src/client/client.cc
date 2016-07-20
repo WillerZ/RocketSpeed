@@ -35,6 +35,7 @@
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 #include "src/util/common/random.h"
+#include "src/util/common/statistics_exporter.h"
 #include "src/util/timeout_list.h"
 
 namespace rocketspeed {
@@ -119,6 +120,14 @@ ClientImpl::ClientImpl(ClientOptions options,
 , publisher_(options_, msg_loop_.get(), &wake_lock_)
 , subscriber_(new MultiThreadedSubscriber(options_, msg_loop_)) {
   LOG_VITAL(options_.info_log, "Creating Client");
+
+  if (options_.statistics_visitor) {
+    // Start thread for exporting statistics.
+    stats_exporter_.reset(new StatisticsExporter(
+        options_.env,
+        [this] () { return GetStatisticsSync(); },
+        options_.statistics_visitor.get()));
+  }
 }
 
 void ClientImpl::SetDefaultCallbacks(
@@ -135,6 +144,9 @@ ClientImpl::~ClientImpl() {
 }
 
 void ClientImpl::Stop() {
+  // Stop the statistics exporter. May block.
+  stats_exporter_.reset();
+
   // Stop the subscriber. May block.
   subscriber_->Stop();
 

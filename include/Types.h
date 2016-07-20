@@ -477,6 +477,11 @@ class StatisticsVisitor {
    */
   virtual void VisitCounter(const std::string& name, int64_t value) {}
 
+  /**
+   * Called after a batch of statistics have been exported.
+   */
+  virtual void Flush() {}
+
   virtual ~StatisticsVisitor() {}
 };
 

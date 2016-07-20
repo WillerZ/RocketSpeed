@@ -9,9 +9,12 @@
 #include <set>
 #include <string>
 
+#include "include/Types.h"
 #include "src/util/common/statistics.h"
+#include "src/util/common/statistics_exporter.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
+#include "src/port/port.h"
 
 namespace rocketspeed {
 
@@ -218,6 +221,82 @@ TEST_F(StatisticsTest, StatisticsWindowAggregator) {
   window.AddSample(s3);
   ASSERT_GE(GetB()->Percentile(0.5), 3.5);
   ASSERT_LE(GetB()->Percentile(0.5), 4.5);
+}
+
+TEST_F(StatisticsTest, StatisticsExporter) {
+  // Test that statistics exporter works.
+  // Create a counter that increments once every tick until it reaches 4,
+  // and an exporter with window sizes 1, 2, and 4.
+  //
+  // Should see:
+  //
+  // x   | x.1 | x.2 | x.4
+  // ----|-----|-----|-----
+  // 1   | 1   | 1   | 1
+  // 2   | 1   | 2   | 2
+  // 3   | 1   | 2   | 3
+  // 4   | 1   | 2   | 4
+  // 4   | 0   | 1   | 3
+  // 4   | 0   | 0   | 2
+  // 4   | 0   | 0   | 1
+  // 4   | 0   | 0   | 0
+  int x = 1;
+  auto get_stats = [&] () {
+    Statistics stats;
+    stats.AddCounter("x")->Add(x);
+    if (x < 4) {
+      ++x;
+    }
+    return stats;
+  };
+
+  // Test over 8 iterations to see the table above.
+  static constexpr size_t kMaxIterations = 8;
+
+  class TestVisitor : public StatisticsVisitor {
+   public:
+    void VisitCounter(const std::string& name, int64_t value) override {
+      // Just collect the results into results_.
+      EXPECT_EQ(results_[name].size(), iteration_);
+      results_[name].push_back(value);
+    }
+
+    void VisitHistogram(const std::string& name, double value) override {
+      EXPECT_TRUE(false);
+    }
+
+    void Flush() override {
+      if (++iteration_ == kMaxIterations) {
+        done_.Post();
+      }
+    }
+
+    size_t iteration_ = 0;
+    port::Semaphore done_;
+    std::unordered_map<std::string, std::vector<int64_t>> results_;
+  };
+
+  TestVisitor visitor;
+
+  StatisticsExporter exporter(
+      Env::Default(),
+      get_stats,
+      &visitor,
+      {{1, ".1"}, {2, ".2"}, {4, ".4"}},
+      std::chrono::milliseconds(1));
+
+  // Wait for all iterations.
+  ASSERT_TRUE(visitor.done_.TimedWait(std::chrono::seconds(10)));
+
+  // Check results.
+  ASSERT_EQ(visitor.results_["x"],
+            std::vector<int64_t>({1, 2, 3, 4, 4, 4, 4, 4}));
+  ASSERT_EQ(visitor.results_["x.1"],
+            std::vector<int64_t>({1, 1, 1, 1, 0, 0, 0, 0}));
+  ASSERT_EQ(visitor.results_["x.2"],
+            std::vector<int64_t>({1, 2, 2, 2, 1, 0, 0, 0}));
+  ASSERT_EQ(visitor.results_["x.4"],
+            std::vector<int64_t>({1, 2, 3, 4, 3, 2, 1, 0}));
 }
 
 }  // namespace rocketspeed

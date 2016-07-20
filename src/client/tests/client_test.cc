@@ -1084,8 +1084,13 @@ TEST_F(ClientTest, ExportStatistics) {
       histos[name] = value;
     }
 
+    void Flush() override {
+      ++flushed;
+    }
+
     std::unordered_map<std::string, int64_t> counters;
     std::unordered_map<std::string, double> histos;
+    size_t flushed = 0;
   };
 
   TestVisitor visitor;
@@ -1103,6 +1108,7 @@ TEST_F(ClientTest, ExportStatistics) {
   ASSERT_GT(p90, p50);
   ASSERT_GT(p99, p90);
   ASSERT_GT(p999, p99);
+  ASSERT_EQ(visitor.flushed, 1);
 }
 
 TEST_F(ClientTest, FailedSubscriptionObserver) {

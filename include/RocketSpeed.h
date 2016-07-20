@@ -148,6 +148,13 @@ class ClientOptions {
   // Default: 1024
   size_t allocator_size;
 
+  // If provided, the statistics visitor will be invoked every minute with
+  // client statistics, including rolling averages over the past minute, hour,
+  // and day. The visitor will be invoked from the same thread each time, and
+  // then flushed.
+  // Default: nullptr
+  std::shared_ptr<StatisticsVisitor> statistics_visitor;
+
   /** Creates options with default values. */
   ClientOptions();
 };

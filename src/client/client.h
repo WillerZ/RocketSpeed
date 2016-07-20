@@ -28,11 +28,13 @@ namespace rocketspeed {
 
 class ClientEnv;
 class Flow;
+class Logger;
 class MessageReceived;
 class MsgLoop;
 class MultiThreadedSubscriber;
-class Logger;
+class StatisticsExporter;
 class WakeLock;
+
 
 /** Implementation of the client interface. */
 class ClientImpl : public Client {
@@ -140,6 +142,8 @@ class ClientImpl : public Client {
   std::function<void(std::unique_ptr<MessageReceived>&)> deliver_cb_fallback_;
   /** Default callback for data loss */
   DataLossCallback data_loss_callback_;
+  /** Statistics exporter. May be null if no visitor was provided in options. */
+  std::unique_ptr<StatisticsExporter> stats_exporter_;
 
   /** Starts the client. */
   Status Start();
