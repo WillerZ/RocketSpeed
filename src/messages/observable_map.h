@@ -6,8 +6,10 @@
 #pragma once
 
 #include <utility>
-#include "src/port/port.h"
+
+#include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
+#include "src/port/port.h"
 #include "src/util/common/flow.h"
 #include "src/util/common/linked_map.h"
 #include "src/util/common/thread_check.h"
@@ -63,13 +65,18 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
   }
 
   void RegisterReadEvent(EventLoop* event_loop) final override {
-    event_loop->RegisterFdReadEvent(
-      read_ready_fd_.readfd(),
-      [this] () { this->Drain(); });
+    thread_check_.Check();
+    read_callback_ = EventCallback::CreateFdReadCallback(
+        event_loop, read_ready_fd_.readfd(), [this]() { this->Drain(); });
   }
 
   void SetReadEnabled(EventLoop* event_loop, bool enabled) final override {
-    event_loop->SetFdReadEnabled(read_ready_fd_.readfd(), enabled);
+    thread_check_.Check();
+    if (enabled) {
+      read_callback_->Enable();
+    } else {
+      read_callback_->Disable();
+    }
   }
 
  private:
@@ -101,7 +108,8 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
   }
 
   ThreadCheck thread_check_;
-  rocketspeed::port::Eventfd read_ready_fd_;
+  port::Eventfd read_ready_fd_;
+  std::unique_ptr<EventCallback> read_callback_;
   LinkedMap<Key, Value> map_;
 };
 
