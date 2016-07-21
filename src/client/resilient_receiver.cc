@@ -124,7 +124,8 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
   // Schedule asynchronous creation of a new stream.
   RS_ASSERT(!backoff_timer_);
   backoff_timer_ =
-      event_loop_->CreateTimedEventCallback(reconnect, backoff_duration);
+      event_loop_->CreateTimedEventCallback(
+        [reconnect]() { (void)reconnect(); }, backoff_duration);
   backoff_timer_->Enable();
 }
 }
