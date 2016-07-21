@@ -41,6 +41,8 @@
 #include "src/util/common/autovector.h"
 #include "src/util/common/client_env.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/observable_set.h"
+#include "src/util/common/processor.h"
 #include "src/util/common/random.h"
 #include "src/util/common/select_random.h"
 
@@ -368,6 +370,29 @@ EventLoop::Initialize() {
   control_command_queue_ =
     std::make_shared<UnboundedMPSCCommandQueue>(info_log_, queue_stats_);
   AddControlCommandQueue(control_command_queue_);
+
+  if (options_.enable_heartbeats) {
+    auto send_heartbeats = [this]() {
+      for (const auto& kv : stream_id_to_stream_) {
+        heartbeats_to_send_->Add(kv.second);
+      }
+    };
+
+    InstallSource<Stream*>(
+      this,
+      heartbeats_to_send_.get(),
+      [this](Flow* flow, Stream* stream) {
+        MessageHeartbeat hb(SystemTenant);
+        auto ts = Stream::ToTimestampedString(hb);
+        flow->Write(stream, ts);
+        stats_.hbs_sent->Add(1);
+      });
+
+    hb_timer_ = RegisterTimerCallback(send_heartbeats,
+                                      options_.heartbeat_period);
+    RS_ASSERT(hb_timer_);
+  }
+
   return Status::OK();
 }
 
@@ -444,6 +469,7 @@ void EventLoop::Run() {
   shutdown_event_.reset();
   CloseAllSocketEvents();
   flow_control_.reset();
+  heartbeats_to_send_.reset();
   expired_connections_timer.reset();
 
   if (!internal_status_.ok()) {
@@ -753,15 +779,18 @@ void EventLoop::CloseAllSocketEvents() {
   }
 }
 
-// TODO(t8971722)
 void EventLoop::AddInboundStream(access::EventLoop, Stream* stream) {
   RS_ASSERT(stream);
   thread_check_.Check();
-  auto result = stream_id_to_stream_.emplace(stream->GetLocalID(), stream);
-  RS_ASSERT(result.second);
-  (void)result;
+
+  {
+    auto result = stream_id_to_stream_.emplace(stream->GetLocalID(), stream);
+    RS_ASSERT(result.second);
+    (void)result;
+  }
 
   if (options_.enable_heartbeats) {
+    // send immediately on connection
     stream->Write(MessageHeartbeat(SystemTenant));
   }
 }
@@ -1047,6 +1076,7 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix + ".queues"))
 , socket_stats_(std::make_shared<SocketEventStats>(options_.stats_prefix))
 , default_command_queue_size_(options_.command_queue_size)
+, heartbeats_to_send_(new ObservableSet<Stream*>(this))
 , flow_control_(new FlowControl(options_.stats_prefix, this)) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
@@ -1074,6 +1104,7 @@ EventLoop::Stats::Stats(const std::string& prefix) {
   owned_streams = all.AddCounter(prefix + ".owned_streams");
   outbound_connections = all.AddCounter(prefix + ".outbound_connections");
   all_connections = all.AddCounter(prefix + ".all_connections");
+  hbs_sent = all.AddCounter(prefix + ".hbs_sent");
 }
 
 Statistics EventLoop::GetStatistics() const {

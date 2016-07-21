@@ -65,6 +65,9 @@ class ProxyServerOptions {
 
   /// Notify callback after we perform this many reconnect attempts.
   size_t max_silent_reconnects{3};
+
+  /// Notify callback if a heartbeat is not received within this period.
+  std::chrono::milliseconds heartbeat_timeout;
 };
 
 /// A server that acts as a proxy between Subscribers and Rocketeers.

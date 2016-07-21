@@ -56,10 +56,13 @@ MultiShardSubscriber::MultiShardSubscriber(
 , max_active_subscriptions_(max_active_subscriptions)
 , num_active_subscriptions_(std::make_shared<size_t>(0)) {
   // Periodically check for new router versions.
-  router_timer_ = event_loop_->CreateTimedEventCallback(
-      std::bind(&MultiShardSubscriber::RefreshRouting, this),
-      options_.timer_period);
-  router_timer_->Enable();
+  maintenance_timer_ = event_loop_->CreateTimedEventCallback(
+    [this]() {
+      RefreshRouting();
+      HeartbeatTick();
+    },
+    options_.timer_period);
+  maintenance_timer_->Enable();
 }
 
 MultiShardSubscriber::~MultiShardSubscriber() {
@@ -78,6 +81,26 @@ void MultiShardSubscriber::RefreshRouting() {
       entry.second->RefreshRouting();
     }
   }
+}
+
+void MultiShardSubscriber::NotifyHealthy(bool isHealthy) {
+  for (const auto& kv : subscribers_) {
+    kv.second->NotifyHealthy(isHealthy);
+  }
+}
+
+void MultiShardSubscriber::HeartbeatTick() {
+  if (options_.heartbeat_timeout.count() < 1) {
+    return;                     // disabled
+  }
+
+  std::vector<SubscriberIf*> expired;
+  hb_timeout_list_.GetExpired(options_.heartbeat_timeout,
+                              std::back_inserter(expired));
+  for (auto subscriber : expired) {
+    subscriber->NotifyHealthy(false);
+  }
+  stats_->hb_timeouts->Add(expired.size());
 }
 
 void MultiShardSubscriber::StartSubscription(
@@ -100,7 +123,8 @@ void MultiShardSubscriber::StartSubscription(
                        stats_,
                        shard_id,
                        max_active_subscriptions_,
-                       num_active_subscriptions_));
+                       num_active_subscriptions_,
+                       hb_timeout_list_));
     if (options_.collapse_subscriptions_to_tail) {
       // TODO(t10132320)
       RS_ASSERT(parameters.start_seqno == 0);

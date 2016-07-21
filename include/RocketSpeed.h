@@ -164,6 +164,11 @@ class ClientOptions {
   // Default: 3
   size_t max_silent_reconnects;
 
+  // Notify observers that a shard is unhealthy if we haven't received
+  // a heartbeat within this period. Set to zero to disable.
+  // Default: 2 minutes
+  std::chrono::milliseconds heartbeat_timeout;
+
   /** Creates options with default values. */
   ClientOptions();
 };

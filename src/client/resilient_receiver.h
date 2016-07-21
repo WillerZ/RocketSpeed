@@ -8,6 +8,8 @@
 #include "src/messages/event_loop.h"
 #include "src/messages/types.h"
 
+#include <chrono>
+
 namespace rocketspeed {
 
 /**
@@ -25,28 +27,39 @@ namespace rocketspeed {
  * We also take a connection status callback. This is used to advise
  * the client when a connection is unhealthy. We make
  * max_silent_reconnects before advising the client that the
- * connection is bad.
+ * connection is bad. The callback is invoked with a healthy status on
+ * every healthy message that is delivered.
  */
 class ResilientStreamReceiver final : public StreamReceiver {
  public:
+  using HealthStatusCb = std::function<void(bool isHealthy)>;
 
-  using ConnectionStatusCb = std::function<void(bool isConnected)>;
-
+  /**
+   * Constructor.
+   *
+   * @param event_loop Event loop to use.
+   * @param receiver Decorated delegate.
+   * @param health_status_cb Notify this when the connection is
+   * detected as unhealthy or on each healthy message received.
+   * @param backoff_strategy Determines the backoff period.
+   * @param max_silent_reconnects Reconnect this many times before
+   * notifying the connection_status_cb.
+   */
   ResilientStreamReceiver(EventLoop* event_loop,
                           ConnectionAwareReceiver* receiver,
-                          ConnectionStatusCb connection_status_cb,
+                          HealthStatusCb health_status_cb,
                           BackOffStrategy backoff_strategy,
                           size_t max_silent_reconnects);
 
   /// Establish communication to the provided host. This must be
   /// called at least once. Calling this at any point is allowed and
-  /// will force a reconnectioh.
+  /// will force a reconnection.
   void ConnectTo(const HostId& host);
 
  private:
   EventLoop* const event_loop_;
   ConnectionAwareReceiver* const receiver_;
-  const ConnectionStatusCb connection_status_cb_;
+  const HealthStatusCb health_status_cb_;
   const BackOffStrategy backoff_strategy_;
   const size_t max_silent_reconnects_;
 
@@ -55,7 +68,11 @@ class ResilientStreamReceiver final : public StreamReceiver {
   size_t sequential_conn_failures_{0};
 
   virtual void operator()(StreamReceiveArg<Message> arg) override;
-  void Reconnect();
-  bool NotifyConnectionHealthy(bool isHealthy);
+  void Reconnect(size_t conn_failures, HostId host);
+  size_t UpdateConnectionState(bool isNowHealthy);
+
+  void NotifyConnectionHealthy(bool currentState) {
+    health_status_cb_(currentState);
+  }
 };
 }

@@ -80,7 +80,7 @@ class ConnectionObserver {
   virtual ~ConnectionObserver() = default;
 
   virtual void ConnectionDropped() = 0;
-  virtual void ConnectionEstablished(
+  virtual void ConnectionCreated(
     std::unique_ptr<Sink<SharedTimestampedString>> sink) = 0;
 };
 

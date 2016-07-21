@@ -76,7 +76,8 @@ Subscriber::Subscriber(const ClientOptions& options,
                        std::shared_ptr<SubscriberStats> stats,
                        size_t shard_id,
                        size_t max_active_subscriptions,
-                       std::shared_ptr<size_t> num_active_subscriptions)
+                       std::shared_ptr<size_t> num_active_subscriptions,
+                       TimeoutList<SubscriberIf*>& hb_timeout_list)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
@@ -90,7 +91,8 @@ Subscriber::Subscriber(const ClientOptions& options,
                      options_.max_silent_reconnects)
 , shard_id_(shard_id)
 , max_active_subscriptions_(max_active_subscriptions)
-, num_active_subscriptions_(std::move(num_active_subscriptions)) {
+, num_active_subscriptions_(std::move(num_active_subscriptions))
+, hb_timeout_list_(hb_timeout_list) {
   thread_check_.Check();
   RefreshRouting();
 }
@@ -192,6 +194,30 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
 void Subscriber::RefreshRouting() {
   thread_check_.Check();
   stream_supervisor_.ConnectTo(options_.sharding->GetHost(shard_id_));
+  hb_timeout_list_.Add(this);
+}
+
+void Subscriber::NotifyHealthy(bool isHealthy) {
+  thread_check_.Check();
+
+  if (previously_healthy_ == isHealthy) {
+    return;
+  }
+  previously_healthy_ = isHealthy;
+
+  if (!options_.should_notify_health) {
+    return;
+  }
+
+  subscriptions_map_.Iterate([this, isHealthy](const SubscriptionData& data) {
+      auto* state = subscriptions_map_.Find(data.GetID());
+      if (!state) {
+        return;                 // no state to tell
+      }
+      auto status = SubscriptionStatusImpl(*state);
+      status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
+      state->GetObserver()->OnSubscriptionStatusChange(status);
+    });
 }
 
 namespace {
@@ -308,19 +334,10 @@ void Subscriber::ReceiveTerminate(
 }
 
 void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
-  if (!options_.should_notify_health) {
-    return;
+  if (isHealthy) {
+    hb_timeout_list_.Add(this);
   }
 
-  subscriptions_map_.Iterate([this, isHealthy](const SubscriptionData& data) {
-      auto* state = subscriptions_map_.Find(data.GetID());
-      if (!state) {
-        return;                 // no state to tell
-      }
-      auto status = SubscriptionStatusImpl(*state);
-      status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
-      state->GetObserver()->OnSubscriptionStatusChange(status);
-    });
+  NotifyHealthy(isHealthy);
 }
-
 }  // namespace rocketspeed

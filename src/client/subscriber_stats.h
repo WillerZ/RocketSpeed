@@ -14,6 +14,7 @@ class SubscriberStats {
  public:
   explicit SubscriberStats(const std::string& prefix) {
     active_subscriptions = all.AddCounter(prefix + "active_subscriptions");
+    hb_timeouts = all.AddCounter(prefix + "hb_timeouts");
     router_version_checks = all.AddCounter(prefix + "router_version_checks");
     router_version_changes = all.AddCounter(prefix + "router_version_changes");
     unsubscribes_invalid_handle =
@@ -21,6 +22,7 @@ class SubscriberStats {
   }
 
   Counter* active_subscriptions;
+  Counter* hb_timeouts;
   Counter* router_version_checks;
   Counter* router_version_changes;
   Counter* unsubscribes_invalid_handle;

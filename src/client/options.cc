@@ -57,6 +57,7 @@ ClientOptions::ClientOptions()
 , queue_size(50000)
 , allocator_size(1024)
 , should_notify_health(true)
-, max_silent_reconnects(3) {}
+, max_silent_reconnects(3)
+, heartbeat_timeout(std::chrono::minutes(2)) {}
 
 }  // namespace rocketspeed

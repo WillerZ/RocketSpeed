@@ -139,7 +139,7 @@ void MsgLoop::RegisterCallbacks(
 }
 
 Status MsgLoop::RegisterTimerCallback(TimerCallbackType callback,
-                                    std::chrono::microseconds period) {
+                                      std::chrono::microseconds period) {
   // Cannot call this when it is already running.
   RS_ASSERT(!IsRunning());
 

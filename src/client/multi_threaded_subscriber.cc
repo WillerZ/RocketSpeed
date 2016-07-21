@@ -115,6 +115,7 @@ void MultiThreadedSubscriber::Stop() {
               }
 
               void RefreshRouting() override {}
+              void NotifyHealthy(bool isHealthy) override {}
             };
             subscribers_[i].reset(new NullSubscriber());
             if (--count == 0) {

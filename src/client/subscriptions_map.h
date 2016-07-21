@@ -237,7 +237,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   void HandlePendingUnsubscription(Flow* flow, SubscriptionID sub_id);
 
   void ConnectionDropped() final override;
-  void ConnectionEstablished(
+  void ConnectionCreated(
     std::unique_ptr<Sink<SharedTimestampedString>> sink) final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;

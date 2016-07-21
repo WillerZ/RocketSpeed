@@ -65,7 +65,7 @@ class MsgLoop : public MsgLoopBase {
 
   Status Initialize() override;
 
-  // Start this instance of the Event Loop
+  // Start this instance of the message loop
   void Run() override;
 
   // Is the MsgLoop up and running?

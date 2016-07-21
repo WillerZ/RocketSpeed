@@ -70,7 +70,8 @@ class Subscriber : public SubscriberIf {
              std::shared_ptr<SubscriberStats> stats,
              size_t shard_id,
              size_t max_active_subscriptions,
-             std::shared_ptr<size_t> num_active_subscriptions);
+             std::shared_ptr<size_t> num_active_subscriptions,
+             TimeoutList<SubscriberIf*>& hb_timeout_list);
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
@@ -91,6 +92,8 @@ class Subscriber : public SubscriberIf {
 
   void RefreshRouting() override;
 
+  void NotifyHealthy(bool isHealthy) override;
+
  private:
   ThreadCheck thread_check_;
 
@@ -103,6 +106,7 @@ class Subscriber : public SubscriberIf {
 
   SubscriptionsMap<SubscriptionState> subscriptions_map_;
   ResilientStreamReceiver stream_supervisor_;
+  bool previously_healthy_{true};
 
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
@@ -131,6 +135,8 @@ class Subscriber : public SubscriberIf {
 
   /// Number of active subscriptions in this thread
   std::shared_ptr<size_t> num_active_subscriptions_;
+
+  TimeoutList<SubscriberIf*>& hb_timeout_list_;
 };
 
 }  // namespace rocketspeed

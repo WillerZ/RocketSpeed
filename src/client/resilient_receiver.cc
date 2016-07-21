@@ -12,12 +12,12 @@ namespace rocketspeed {
 ResilientStreamReceiver::ResilientStreamReceiver(
     EventLoop* event_loop,
     ConnectionAwareReceiver* receiver,
-    ConnectionStatusCb connection_status_cb,
+    HealthStatusCb health_status_cb,
     BackOffStrategy backoff_strategy,
     size_t max_silent_reconnects)
 : event_loop_(event_loop)
 , receiver_(receiver)
-, connection_status_cb_(std::move(connection_status_cb))
+, health_status_cb_(std::move(health_status_cb))
 , backoff_strategy_(std::move(backoff_strategy))
 , max_silent_reconnects_(max_silent_reconnects) {}
 
@@ -25,44 +25,43 @@ void ResilientStreamReceiver::ConnectTo(const HostId& host) {
   if (current_host_ == host) {
     return;
   }
+
   Logger* logger = event_loop_->GetLog().get();
   LOG_INFO(logger, "ReconnectTo(%s)", host.ToString().c_str());
 
-  sequential_conn_failures_ = 0;
   current_host_ = host;
-  Reconnect();
+  Reconnect(0, host);
 }
 
 void ResilientStreamReceiver::operator()(StreamReceiveArg<Message> arg) {
-  NotifyConnectionHealthy(arg.message->GetMessageType() !=
-                          MessageType::mGoodbye);
+  auto sequential_failures = UpdateConnectionState(
+      arg.message->GetMessageType() != MessageType::mGoodbye);
 
-  if (arg.message->GetMessageType() == MessageType::mGoodbye) {
-    Reconnect();
+  if (sequential_failures > 0) {
+    Reconnect(sequential_failures, current_host_);
   }
 
   // forward the message to delegate
   (*receiver_)(std::move(arg));
 }
 
-bool ResilientStreamReceiver::NotifyConnectionHealthy(bool isHealthy) {
+size_t ResilientStreamReceiver::UpdateConnectionState(bool isNowHealthy) {
+  if (isNowHealthy) {
+    NotifyConnectionHealthy(isNowHealthy);
+  }
+
+  sequential_conn_failures_ = isNowHealthy ? 0 : sequential_conn_failures_ + 1;
+
   size_t notify_after = max_silent_reconnects_ + 1;
-  bool previously_notified_failure = sequential_conn_failures_ >= notify_after;
-
-  if (isHealthy && previously_notified_failure) {
-    connection_status_cb_(isHealthy);
-  }
-
-  sequential_conn_failures_ = isHealthy ? 0 : sequential_conn_failures_ + 1;
-
   if (sequential_conn_failures_ == notify_after) {
-    connection_status_cb_(isHealthy);
+    RS_ASSERT(!isNowHealthy);
+    NotifyConnectionHealthy(isNowHealthy);
   }
 
-  return isHealthy;
+  return sequential_conn_failures_;
 }
 
-void ResilientStreamReceiver::Reconnect() {
+void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
   // Think about this method as something that can be called in almost arbitrary
   // state and should leave the receiver in a perfectly valid state.
   // Code over here should be rather defensive. Corner cases should be severely
@@ -76,48 +75,50 @@ void ResilientStreamReceiver::Reconnect() {
 
   // If no remote host is known, we're done. The procedure will be repeated
   // after router update.
-  if (!current_host_) {
+  if (!host) {
     LOG_INFO(logger, "Reconnect(): unknown host");
     return;
   }
 
-  auto reconnect = [this, logger]() {
-    RS_ASSERT(current_host_);
+  auto reconnect = [this, host, logger]() {
+    RS_ASSERT(host);
 
     // Open the stream.
-    auto stream = event_loop_->OpenStream(current_host_);
+    auto stream = event_loop_->OpenStream(host);
     if (!stream) {
-      return NotifyConnectionHealthy(false);
+      auto failures = UpdateConnectionState(false);
+      Reconnect(failures, host);
+      return false;
     }
     stream->SetReceiver(this);
     LOG_INFO(logger,
              "Reconnect()::reconnect(%s, %lld)",
-             current_host_.ToString().c_str(),
+             host.ToString().c_str(),
              stream->GetLocalID());
 
     // Kill the backoff timer, if set.
     backoff_timer_.reset();
 
-    receiver_->ConnectionEstablished(std::move(stream));
+    receiver_->ConnectionCreated(std::move(stream));
     return true;
   };
 
   // We do not apply backoff if there have been no recorded connection failure
   // to this host.
-  if (sequential_conn_failures_ == 0) {
+  if (conn_failures == 0) {
     if (reconnect()) {
       return;
     }
   }
 
-  RS_ASSERT(sequential_conn_failures_ > 0);
+  RS_ASSERT(conn_failures > 0);
   // Figure out the backoff.
   auto backoff_duration =
-      backoff_strategy_(&ThreadLocalPRNG(), sequential_conn_failures_ - 1);
+      backoff_strategy_(&ThreadLocalPRNG(), conn_failures - 1);
 
   LOG_INFO(logger,
            "Reconnect()::backoff(%zu, %zd)",
-           sequential_conn_failures_,
+           conn_failures,
            backoff_duration.count());
 
   // Schedule asynchronous creation of a new stream.

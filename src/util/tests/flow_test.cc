@@ -232,14 +232,6 @@ TEST_F(FlowTest, MultiLayerRandomized) {
   MsgLoop loop(env_, env_options_, 0, kNumProcessors, info_log_, "flow");
   ASSERT_OK(loop.Initialize());
 
-  // Setup flow control state for each processor.
-  FlowControl* flows[kLayers][kPerLayer];
-  for (int i = 0; i < kLayers; ++i) {
-    for (int j = 0; j < kPerLayer; ++j) {
-      flows[i][j] = loop.GetEventLoop(i * kPerLayer + j)->GetFlowControl();
-    }
-  }
-
   // Create all our queues.
   // queue[i][j][k] is to processor j in the ith layer, from processor k in
   // layer (i - 1).
@@ -262,7 +254,9 @@ TEST_F(FlowTest, MultiLayerRandomized) {
   for (int i = 1; i < kLayers; ++i) {
     for (int j = 0; j < kPerLayer; ++j) {
       for (int k = 0; k < kPerLayer; ++k) {
-        flows[i][j]->Register<int>(queue[i][j][k].get(),
+        InstallSource<int>(
+          loop.GetEventLoop(i * kPerLayer + j),
+          queue[i][j][k].get(),
           [&, i, j] (Flow* flow, int x) {
             if (i == kLayers - 1) {
               sem.Post();

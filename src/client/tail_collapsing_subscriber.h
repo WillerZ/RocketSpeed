@@ -63,6 +63,10 @@ class TailCollapsingSubscriber : public SubscriberIf {
     subscriber_->RefreshRouting();
   }
 
+  void NotifyHealthy(bool isHealthy) override {
+    subscriber_->NotifyHealthy(isHealthy);
+  }
+
  private:
   friend class detail::TailCollapsingObserver;
 

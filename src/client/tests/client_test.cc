@@ -171,6 +171,8 @@ class MockSubscriber : public SubscriberIf
 
   virtual void RefreshRouting() override {}
 
+  virtual void NotifyHealthy(bool) override {}
+
  private:
   std::unique_ptr<SubscriptionState> subscription_state_;
   SubscriptionID sub_id_;
@@ -313,7 +315,7 @@ TEST_F(ClientTest, BackOff) {
   }
 }
 
-TEST_F(ClientTest, NotifyShardUnhealthy) {
+TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
   const size_t num_attempts = 1;
   size_t subscribe_attempts = 0;
   port::Semaphore subscribe_sem;
@@ -379,7 +381,7 @@ TEST_F(ClientTest, NotifyShardUnhealthy) {
   ASSERT_TRUE(status_change_sem.TimedWait(total));
 }
 
-TEST_F(ClientTest, DoNotNotifyShardUnhealthy) {
+TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
   const size_t num_attempts = 4;
   size_t subscribe_attempts = 0;
   port::Semaphore subscribe_sem;
@@ -410,6 +412,7 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthy) {
   ClientOptions options;
   options.should_notify_health = false; // <--
   options.timer_period = std::chrono::milliseconds(1);
+  options.heartbeat_timeout = std::chrono::milliseconds(0);
   options.backoff_strategy = [](ClientRNG*, size_t) {
     return std::chrono::milliseconds(1);
   };
@@ -437,6 +440,110 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthy) {
   ASSERT_TRUE(subscribe_sem.TimedWait(total));
   ASSERT_EQ(num_attempts, subscribe_attempts);
   ASSERT_FALSE(status_change_sem.TimedWait(total));
+}
+
+TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
+  port::Semaphore subscribe_sem;
+  CopilotAtomicPtr copilot_ptr;
+
+  // we will manually take control of heartbeats for the test
+  msg_loop_options_.event_loop.enable_heartbeats = false;
+  StreamID client_stream;
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+            client_stream = origin;
+        }}});
+  copilot_ptr = copilot.msg_loop.get();
+
+  ClientOptions options;
+  options.timer_period = std::chrono::milliseconds(1);
+  options.heartbeat_timeout = std::chrono::milliseconds(5);
+  auto client = CreateClient(std::move(options));
+
+  class StatusObserver : public Observer {
+   public:
+    StatusObserver(port::Semaphore& healthy,
+                   port::Semaphore& unhealthy)
+      : healthy_(healthy), unhealthy_(unhealthy) {}
+
+    virtual void OnSubscriptionStatusChange(const SubscriptionStatus& status) {
+      if (status.GetStatus().IsShardUnhealthy()) {
+        unhealthy_.Post();
+      } else {
+        healthy_.Post();
+      }
+    }
+   private:
+    port::Semaphore& healthy_;
+    port::Semaphore& unhealthy_;
+  };
+
+  port::Semaphore now_unhealthy;
+  port::Semaphore now_healthy;
+
+  client->Subscribe({GuestTenant, GuestNamespace, "Test", 0},
+                    folly::make_unique<StatusObserver>(now_healthy,
+                                                       now_unhealthy));
+
+  // we fail due to lack of heartbeat which has been disabled
+  std::chrono::milliseconds total(10);
+  ASSERT_TRUE(now_unhealthy.TimedWait(total));
+
+  // send the heartbeat
+  MessageHeartbeat hb(SystemTenant);
+  copilot_ptr.load()->SendResponse(hb, client_stream, 0);
+
+  // we should now be healthy again
+  ASSERT_TRUE(now_healthy.TimedWait(total));
+
+  // and fail again
+  ASSERT_TRUE(now_unhealthy.TimedWait(total));
+}
+
+TEST_F(ClientTest, HeartbeatsAreSentByServer) {
+  // in NotifyShardUnhealthyOnHBTimeout we prove that the client
+  // complains when a hb is not received. Here we ensure the server
+  // sends them by running for long enough that we would have timed
+  // out otherwise.
+
+  msg_loop_options_.event_loop.heartbeat_period = std::chrono::milliseconds(1);
+
+  StreamID client_stream;
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+            client_stream = origin;
+        }}});
+
+  ClientOptions options;
+  options.timer_period = std::chrono::milliseconds(1);
+  options.heartbeat_timeout = std::chrono::milliseconds(2);
+  auto client = CreateClient(std::move(options));
+
+  class StatusObserver : public Observer {
+   public:
+    StatusObserver(port::Semaphore& unhealthy)
+      : unhealthy_(unhealthy) {}
+
+    virtual void OnSubscriptionStatusChange(const SubscriptionStatus& status) {
+      if (status.GetStatus().IsShardUnhealthy()) {
+        unhealthy_.Post();
+      }
+    }
+   private:
+    port::Semaphore& unhealthy_;
+  };
+
+  port::Semaphore now_unhealthy;
+
+  client->Subscribe({GuestTenant, GuestNamespace, "Test", 0},
+                    folly::make_unique<StatusObserver>(now_unhealthy));
+
+  std::chrono::milliseconds total(10);
+  // we should not be marked as unhealthy: server should send hbs
+  // every millisecond
+  ASSERT_FALSE(now_unhealthy.TimedWait(total));
 }
 
 TEST_F(ClientTest, RandomizedTruncatedExponential) {

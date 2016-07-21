@@ -299,7 +299,7 @@ void SubscriptionsMap<SubscriptionState>::HandlePendingUnsubscription(
 }
 
 template <typename SubscriptionState>
-void SubscriptionsMap<SubscriptionState>::ConnectionEstablished(
+void SubscriptionsMap<SubscriptionState>::ConnectionCreated(
     std::unique_ptr<Sink<SharedTimestampedString>> sink) {
 
   sink_ = std::move(sink);

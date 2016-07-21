@@ -72,6 +72,9 @@ class SubscriberIf {
 
   /// Check if routing has changed and reroute subscriptions if necessary.
   virtual void RefreshRouting() = 0;
+
+  /// Tell the subscriber that it is healthy or unhealthy.
+  virtual void NotifyHealthy(bool isHealthy) = 0;
 };
 
 }  // namespace rocketspeed

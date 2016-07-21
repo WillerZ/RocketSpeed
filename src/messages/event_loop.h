@@ -65,6 +65,8 @@ class TriggerableCallback;
 class SocketEventStats;
 class Stream;
 class QueueStats;
+template <typename T>
+class ObservableSet;
 
 typedef std::function<void(
     Flow* flow, std::unique_ptr<Message> message, StreamID origin)>
@@ -133,6 +135,8 @@ class EventLoop {
     uint8_t protocol_version;
     /** Should we send out heartbeats? */
     bool enable_heartbeats = true;
+    /** Send heartbeats every X milliseconds */
+    std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);
   };
 
   /**
@@ -244,7 +248,7 @@ class EventLoop {
    * Creates an EventCallback that will be invoked after every time the
    * duration passes.
    *
-   * @param cb Callback to invoke when the trigger is notified.
+   * @param cb Callback to invoke after timer fires
    * @param duration the time after which callback should run.
    * @return EventCallback object, nullptr only if allocation failed.
    */
@@ -615,6 +619,9 @@ class EventLoop {
    */
   // TODO(t8971722)
   std::unordered_map<StreamID, Stream*> stream_id_to_stream_;
+
+  std::unique_ptr<EventCallback> hb_timer_;
+
   /**
    * A map of all streams owned by the loop.
    * This should disappear once we get rid of the old API.
@@ -677,6 +684,7 @@ class EventLoop {
     Counter* owned_streams;  // number of stream the loop owns
     Counter* outbound_connections;  // number of outbound connections
     Counter* all_connections;       // number of all connections
+    Counter* hbs_sent;              // number of heartbeats sent
   } stats_;
 
   const std::shared_ptr<QueueStats> queue_stats_;
@@ -687,6 +695,8 @@ class EventLoop {
   std::vector<std::shared_ptr<CommandQueue>> incoming_queues_;
 
   std::unordered_map<int, std::unique_ptr<EventCallback>> fd_read_events_;
+
+  std::unique_ptr<ObservableSet<Stream*>> heartbeats_to_send_;
 
   std::unique_ptr<FlowControl> flow_control_;
 

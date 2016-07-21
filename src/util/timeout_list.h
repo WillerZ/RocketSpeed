@@ -9,6 +9,7 @@
 #include <chrono>
 
 namespace rocketspeed {
+
 // A list of items which internally contains a timestamp using a steady_clock.
 // Adding a new entry adds it to the back of the list with now() timestamp.
 // Adding an existing entry, updates the internal timestamp and moves the entry
@@ -37,7 +38,6 @@ namespace rocketspeed {
 //
 //   (green) (blue) (yellow)
 //
-
 template <class T, class Hash = std::hash<T>> class TimeoutList {
  public:
   TimeoutList() {}
