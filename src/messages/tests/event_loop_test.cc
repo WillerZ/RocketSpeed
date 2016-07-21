@@ -197,6 +197,7 @@ TEST_F(EventLoopTest, StreamsFlowControl) {
 
   // We pipe all messages received on a stream to the test sink.
   port::Semaphore delivered;
+  options.enable_heartbeats = false;
   options.event_callback =
       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream) {
         int value;

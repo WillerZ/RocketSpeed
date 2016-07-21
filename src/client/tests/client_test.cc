@@ -203,6 +203,7 @@ class ClientTest : public ::testing::Test {
   Env* const env_;
   const std::shared_ptr<MockPublisherRouter> config_;
   std::shared_ptr<rocketspeed::Logger> info_log_;
+  MsgLoop::Options msg_loop_options_;
 
   class ServerMock {
    public:
@@ -230,7 +231,8 @@ class ClientTest : public ::testing::Test {
   ServerMock MockServer(
       const std::map<MessageType, MsgCallbackType>& callbacks) {
     std::unique_ptr<MsgLoop> server(new MsgLoop(
-        env_, EnvOptions(), 0 /* auto */, 1, info_log_, "server"));
+        env_, EnvOptions(), 0 /* auto */, 1,
+        info_log_, "server", msg_loop_options_));
     server->RegisterCallbacks(callbacks);
     EXPECT_OK(server->Initialize());
     std::thread thread([&]() { server->Run(); });
@@ -262,6 +264,9 @@ TEST_F(ClientTest, BackOff) {
   std::vector<TestClock::duration> subscribe_attempts;
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
+  // disable to prevent heartbeats from notifying the retry mechanism
+  // that the connection is healthy
+  msg_loop_options_.event_loop.enable_heartbeats = false;
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -309,23 +314,20 @@ TEST_F(ClientTest, BackOff) {
 }
 
 TEST_F(ClientTest, NotifyShardUnhealthy) {
-  const size_t num_attempts = 4;
+  const size_t num_attempts = 1;
   size_t subscribe_attempts = 0;
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
+
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-          if (subscribe_attempts >= num_attempts) {
-            MessageDeliverData data(GuestTenant,
-                                    SubscriptionID::Unsafe(0),
-                                    GUID(),
-                                    "foo");
-            copilot_ptr.load()->SendResponse(data, origin, 0);
+          subscribe_attempts++;
+
+          if (subscribe_attempts > num_attempts) {
             subscribe_sem.Post();
             return;
           }
-          subscribe_attempts++;
           // Send back goodbye, so that client will resubscribe.
           MessageGoodbye goodbye(GuestTenant,
                                  MessageGoodbye::Code::Graceful,
@@ -338,6 +340,8 @@ TEST_F(ClientTest, NotifyShardUnhealthy) {
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
+  // notify unhealthy as soon as goodbye received
+  options.max_silent_reconnects = 0;
   options.backoff_strategy = [](ClientRNG*, size_t) {
     return std::chrono::milliseconds(1);
   };
@@ -370,8 +374,8 @@ TEST_F(ClientTest, NotifyShardUnhealthy) {
   std::chrono::milliseconds total(10);
   ASSERT_TRUE(status_change_sem.TimedWait(total));
   ASSERT_TRUE(subscribe_sem.TimedWait(total));
-  ASSERT_EQ(num_attempts, subscribe_attempts);
-  // should go back to ok after ping
+  ASSERT_EQ(num_attempts + 1, subscribe_attempts);
+  // should go back to ok after heartbeat
   ASSERT_TRUE(status_change_sem.TimedWait(total));
 }
 
@@ -380,6 +384,11 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthy) {
   size_t subscribe_attempts = 0;
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
+
+  // disable to prevent heartbeats from notifying the retry mechanism
+  // that the connection is healthy
+  msg_loop_options_.event_loop.enable_heartbeats = false;
+
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -457,37 +466,6 @@ TEST_F(ClientTest, RandomizedTruncatedExponential) {
   ASSERT_EQD(backoff(6), 30.0);
 
 #undef ASSERT_EQD
-}
-
-TEST_F(ClientTest, HeartbeatsDoNotKillClient) {
-  std::atomic<int> sub_attempts(0);
-  port::Semaphore sem;
-  CopilotAtomicPtr copilot_ptr;
-  auto copilot = MockServer(
-      {{MessageType::mSubscribe,
-        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-          if (++sub_attempts == 2) {
-            // we've received the goodbye and retried, meaning we've
-            // also received the heartbeat and not died
-            sem.Post();
-            return;
-          }
-          MessageHeartbeat hb(GuestTenant);
-          copilot_ptr.load()->SendResponse(hb, origin, 0);
-
-          // Send back goodbye, so that client will resubscribe.
-          MessageGoodbye goodbye(GuestTenant,
-                                 MessageGoodbye::Code::Graceful,
-                                 MessageGoodbye::OriginType::Server);
-          copilot_ptr.load()->SendResponse(goodbye, origin, 0);
-        }}});
-  copilot_ptr = copilot.msg_loop.get();
-
-  ClientOptions options;
-  auto client = CreateClient(std::move(options));
-
-  client->Subscribe(GuestTenant, GuestNamespace, "Hb", 0);
-  ASSERT_TRUE(sem.TimedWait(positive_timeout));
 }
 
 TEST_F(ClientTest, GetCopilotFailure) {

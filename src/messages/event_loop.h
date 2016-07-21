@@ -131,6 +131,8 @@ class EventLoop {
     std::chrono::milliseconds connection_without_streams_keepalive{0};
     /** Preferred protocol version. */
     uint8_t protocol_version;
+    /** Should we send out heartbeats? */
+    bool enable_heartbeats = true;
   };
 
   /**

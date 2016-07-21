@@ -228,6 +228,11 @@ class MessageBus : public StreamReceiver {
               arg.stream_id,
               MessageTypeName(type));
 
+    if (type == MessageType::mHeartbeat) {
+      // these make tests noisy
+      return;
+    }
+
     if (type == MessageType::mGoodbye) {
       streams_.erase(arg.stream_id);
     }

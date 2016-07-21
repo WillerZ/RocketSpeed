@@ -760,6 +760,10 @@ void EventLoop::AddInboundStream(access::EventLoop, Stream* stream) {
   auto result = stream_id_to_stream_.emplace(stream->GetLocalID(), stream);
   RS_ASSERT(result.second);
   (void)result;
+
+  if (options_.enable_heartbeats) {
+    stream->Write(MessageHeartbeat(SystemTenant));
+  }
 }
 
 // TODO(t8971722)

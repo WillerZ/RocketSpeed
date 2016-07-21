@@ -199,6 +199,14 @@ void MsgLoop::Run() {
     };
   }
 
+  // Add heartbeat callback if it hasn't already been added.
+  if (msg_callbacks_.find(MessageType::mHeartbeat) == msg_callbacks_.end()) {
+    msg_callbacks_[MessageType::mHeartbeat] = [](
+        Flow*, std::unique_ptr<Message>, StreamID) {
+      // ignore heartbeats
+    };
+  }
+
   // Add goodbye callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mGoodbye) == msg_callbacks_.end()) {
     msg_callbacks_[MessageType::mGoodbye] = [this](
