@@ -55,6 +55,10 @@ Status Status::NoBuffer() {
   return Status(Code::kNoBuffer);
 }
 
+Status Status::ShardUnhealthy() {
+  return Status(Code::kShardUnhealthy);
+}
+
 // Returns true iff the status indicates success.
 bool Status::ok() const { return code_ == Code::kOk; }
 
@@ -89,6 +93,9 @@ bool Status::IsTimedOut() const { return code_ == Code::kTimedOut; }
 // Returns true iff the status indicates buffer full.
 bool Status::IsNoBuffer() const { return code_ == Code::kNoBuffer; }
 
+// Returns true iff the status indicates shard unhealthy.
+bool Status::IsShardUnhealthy() const { return code_ == Code::kShardUnhealthy; }
+
 // Return a string representation of this status suitable for printing.
 // Returns the string "OK" for success.
 std::string Status::ToString() const {
@@ -114,6 +121,8 @@ std::string Status::ToString() const {
       return "Timed out: " + state_;
     case Code::kNoBuffer:
       return "No buffer: " + state_;
+    case Code::kShardUnhealthy:
+      return "Shard marked unhealthy: " + state_;
     default:
       return "Unknown code " + std::to_string(code);
   }

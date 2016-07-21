@@ -12,10 +12,14 @@ namespace rocketspeed {
 ResilientStreamReceiver::ResilientStreamReceiver(
     EventLoop* event_loop,
     ConnectionAwareReceiver* receiver,
-    BackOffStrategy backoff_strategy)
+    ConnectionStatusCb connection_status_cb,
+    BackOffStrategy backoff_strategy,
+    size_t max_silent_reconnects)
 : event_loop_(event_loop)
 , receiver_(receiver)
-, backoff_strategy_(backoff_strategy) {}
+, connection_status_cb_(std::move(connection_status_cb))
+, backoff_strategy_(std::move(backoff_strategy))
+, max_silent_reconnects_(max_silent_reconnects) {}
 
 void ResilientStreamReceiver::ConnectTo(const HostId& host) {
   if (current_host_ == host) {
@@ -24,19 +28,38 @@ void ResilientStreamReceiver::ConnectTo(const HostId& host) {
   Logger* logger = event_loop_->GetLog().get();
   LOG_INFO(logger, "ReconnectTo(%s)", host.ToString().c_str());
 
-  connection_failures_ = 0;
+  sequential_conn_failures_ = 0;
   current_host_ = host;
   Reconnect();
 }
 
 void ResilientStreamReceiver::operator()(StreamReceiveArg<Message> arg) {
+  NotifyConnectionHealthy(arg.message->GetMessageType() !=
+                          MessageType::mGoodbye);
+
   if (arg.message->GetMessageType() == MessageType::mGoodbye) {
-    connection_failures_++;
     Reconnect();
   }
 
   // forward the message to delegate
   (*receiver_)(std::move(arg));
+}
+
+bool ResilientStreamReceiver::NotifyConnectionHealthy(bool isHealthy) {
+  size_t notify_after = max_silent_reconnects_ + 1;
+  bool previously_notified_failure = sequential_conn_failures_ >= notify_after;
+
+  if (isHealthy && previously_notified_failure) {
+    connection_status_cb_(isHealthy);
+  }
+
+  sequential_conn_failures_ = isHealthy ? 0 : sequential_conn_failures_ + 1;
+
+  if (sequential_conn_failures_ == notify_after) {
+    connection_status_cb_(isHealthy);
+  }
+
+  return isHealthy;
 }
 
 void ResilientStreamReceiver::Reconnect() {
@@ -63,6 +86,9 @@ void ResilientStreamReceiver::Reconnect() {
 
     // Open the stream.
     auto stream = event_loop_->OpenStream(current_host_);
+    if (!stream) {
+      return NotifyConnectionHealthy(false);
+    }
     stream->SetReceiver(this);
     LOG_INFO(logger,
              "Reconnect()::reconnect(%s, %lld)",
@@ -73,28 +99,31 @@ void ResilientStreamReceiver::Reconnect() {
     backoff_timer_.reset();
 
     receiver_->ConnectionEstablished(std::move(stream));
+    return true;
   };
 
   // We do not apply backoff if there have been no recorded connection failure
   // to this host.
-  if (connection_failures_ == 0) {
-    reconnect();
-  } else {
-    RS_ASSERT(connection_failures_ > 0);
-    // Figure out the backoff.
-    auto backoff_duration =
-        backoff_strategy_(&ThreadLocalPRNG(), connection_failures_ - 1);
-
-    LOG_INFO(logger,
-             "Reconnect()::backoff(%zu, %zd)",
-             connection_failures_,
-             backoff_duration.count());
-
-    // Schedule asynchronous creation of a new stream.
-    RS_ASSERT(!backoff_timer_);
-    backoff_timer_ =
-        event_loop_->CreateTimedEventCallback(reconnect, backoff_duration);
-    backoff_timer_->Enable();
+  if (sequential_conn_failures_ == 0) {
+    if (reconnect()) {
+      return;
+    }
   }
+
+  RS_ASSERT(sequential_conn_failures_ > 0);
+  // Figure out the backoff.
+  auto backoff_duration =
+      backoff_strategy_(&ThreadLocalPRNG(), sequential_conn_failures_ - 1);
+
+  LOG_INFO(logger,
+           "Reconnect()::backoff(%zu, %zd)",
+           sequential_conn_failures_,
+           backoff_duration.count());
+
+  // Schedule asynchronous creation of a new stream.
+  RS_ASSERT(!backoff_timer_);
+  backoff_timer_ =
+      event_loop_->CreateTimedEventCallback(reconnect, backoff_duration);
+  backoff_timer_->Enable();
 }
 }

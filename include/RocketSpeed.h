@@ -155,6 +155,15 @@ class ClientOptions {
   // Default: nullptr
   std::shared_ptr<StatisticsVisitor> statistics_visitor;
 
+  // Should a new health notification propagate to observers?
+  // Default: true
+  bool should_notify_health;
+
+  // Notify observers that a shard is unhealthy if it is still trying
+  // to connect after this many attempts.
+  // Default: 3
+  size_t max_silent_reconnects;
+
   /** Creates options with default values. */
   ClientOptions();
 };

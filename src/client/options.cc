@@ -55,6 +55,8 @@ ClientOptions::ClientOptions()
 , subscription_rate_limit(1000 * 1000 * 1000)
 , collapse_subscriptions_to_tail(false)
 , queue_size(50000)
-, allocator_size(1024) {}
+, allocator_size(1024)
+, should_notify_health(true)
+, max_silent_reconnects(3) {}
 
 }  // namespace rocketspeed

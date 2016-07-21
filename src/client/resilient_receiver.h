@@ -21,12 +21,22 @@ namespace rocketspeed {
  * creating a new connection, it passes ownership of the stream to the
  * delegate. The delegate should not reassign the receiver on the
  * stream!
+ *
+ * We also take a connection status callback. This is used to advise
+ * the client when a connection is unhealthy. We make
+ * max_silent_reconnects before advising the client that the
+ * connection is bad.
  */
 class ResilientStreamReceiver final : public StreamReceiver {
  public:
+
+  using ConnectionStatusCb = std::function<void(bool isConnected)>;
+
   ResilientStreamReceiver(EventLoop* event_loop,
                           ConnectionAwareReceiver* receiver,
-                          BackOffStrategy backoff_strategy);
+                          ConnectionStatusCb connection_status_cb,
+                          BackOffStrategy backoff_strategy,
+                          size_t max_silent_reconnects);
 
   /// Establish communication to the provided host. This must be
   /// called at least once. Calling this at any point is allowed and
@@ -36,13 +46,16 @@ class ResilientStreamReceiver final : public StreamReceiver {
  private:
   EventLoop* const event_loop_;
   ConnectionAwareReceiver* const receiver_;
+  const ConnectionStatusCb connection_status_cb_;
   const BackOffStrategy backoff_strategy_;
+  const size_t max_silent_reconnects_;
 
   HostId current_host_;
   std::unique_ptr<EventCallback> backoff_timer_;
-  size_t connection_failures_{0};
+  size_t sequential_conn_failures_{0};
 
   virtual void operator()(StreamReceiveArg<Message> arg) override;
   void Reconnect();
+  bool NotifyConnectionHealthy(bool isHealthy);
 };
 }

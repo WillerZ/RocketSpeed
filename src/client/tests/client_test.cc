@@ -308,6 +308,128 @@ TEST_F(ClientTest, BackOff) {
   }
 }
 
+TEST_F(ClientTest, NotifyShardUnhealthy) {
+  const size_t num_attempts = 4;
+  size_t subscribe_attempts = 0;
+  port::Semaphore subscribe_sem;
+  CopilotAtomicPtr copilot_ptr;
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          if (subscribe_attempts >= num_attempts) {
+            MessageDeliverData data(GuestTenant,
+                                    SubscriptionID::Unsafe(0),
+                                    GUID(),
+                                    "foo");
+            copilot_ptr.load()->SendResponse(data, origin, 0);
+            subscribe_sem.Post();
+            return;
+          }
+          subscribe_attempts++;
+          // Send back goodbye, so that client will resubscribe.
+          MessageGoodbye goodbye(GuestTenant,
+                                 MessageGoodbye::Code::Graceful,
+                                 MessageGoodbye::OriginType::Server);
+          // This is a tad fishy, but Copilot should not receive any message
+          // before we perform the assignment to copilot_ptr.
+          copilot_ptr.load()->SendResponse(goodbye, origin, 0);
+        }}});
+  copilot_ptr = copilot.msg_loop.get();
+
+  ClientOptions options;
+  options.timer_period = std::chrono::milliseconds(1);
+  options.backoff_strategy = [](ClientRNG*, size_t) {
+    return std::chrono::milliseconds(1);
+  };
+  auto client = CreateClient(std::move(options));
+
+  class StatusObserver : public Observer {
+   public:
+    StatusObserver(port::Semaphore& sem) : sem_(sem), ok_(true) {}
+
+    virtual void OnSubscriptionStatusChange(const SubscriptionStatus& status) {
+      if (status.GetStatus().IsShardUnhealthy() && ok_) {
+        sem_.Post();
+        ok_ = false;
+      }
+      if (status.GetStatus().ok() && !ok_) {
+        sem_.Post();
+        ok_ = true;
+      }
+    }
+   private:
+    port::Semaphore& sem_;
+    bool ok_;
+  };
+
+  port::Semaphore status_change_sem;
+
+  // Subscribe and wait until enough reconnection attempts takes place.
+  client->Subscribe({GuestTenant, GuestNamespace, "BackOff", 0},
+                    folly::make_unique<StatusObserver>(status_change_sem));
+  std::chrono::milliseconds total(10);
+  ASSERT_TRUE(status_change_sem.TimedWait(total));
+  ASSERT_TRUE(subscribe_sem.TimedWait(total));
+  ASSERT_EQ(num_attempts, subscribe_attempts);
+  // should go back to ok after ping
+  ASSERT_TRUE(status_change_sem.TimedWait(total));
+}
+
+TEST_F(ClientTest, DoNotNotifyShardUnhealthy) {
+  const size_t num_attempts = 4;
+  size_t subscribe_attempts = 0;
+  port::Semaphore subscribe_sem;
+  CopilotAtomicPtr copilot_ptr;
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          if (subscribe_attempts >= num_attempts) {
+            subscribe_sem.Post();
+            return;
+          }
+          subscribe_attempts++;
+          // Send back goodbye, so that client will resubscribe.
+          MessageGoodbye goodbye(GuestTenant,
+                                 MessageGoodbye::Code::Graceful,
+                                 MessageGoodbye::OriginType::Server);
+          // This is a tad fishy, but Copilot should not receive any message
+          // before we perform the assignment to copilot_ptr.
+          copilot_ptr.load()->SendResponse(goodbye, origin, 0);
+        }}});
+  copilot_ptr = copilot.msg_loop.get();
+
+  ClientOptions options;
+  options.should_notify_health = false; // <--
+  options.timer_period = std::chrono::milliseconds(1);
+  options.backoff_strategy = [](ClientRNG*, size_t) {
+    return std::chrono::milliseconds(1);
+  };
+  auto client = CreateClient(std::move(options));
+
+  class StatusObserver : public Observer {
+   public:
+    StatusObserver(port::Semaphore& sem) : sem_(sem) {}
+
+    virtual void OnSubscriptionStatusChange(const SubscriptionStatus& status) {
+      if (status.GetStatus().IsShardUnhealthy()) {
+        sem_.Post();
+      }
+    }
+   private:
+    port::Semaphore& sem_;
+  };
+
+  port::Semaphore status_change_sem;
+
+  // Subscribe and wait until enough reconnection attempts takes place.
+  client->Subscribe({GuestTenant, GuestNamespace, "BackOff", 0},
+                    folly::make_unique<StatusObserver>(status_change_sem));
+  std::chrono::milliseconds total(10);
+  ASSERT_TRUE(subscribe_sem.TimedWait(total));
+  ASSERT_EQ(num_attempts, subscribe_attempts);
+  ASSERT_FALSE(status_change_sem.TimedWait(total));
+}
+
 TEST_F(ClientTest, RandomizedTruncatedExponential) {
   std::chrono::seconds value(1), limit(30);
   auto backoff =

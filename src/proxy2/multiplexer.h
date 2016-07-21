@@ -144,6 +144,8 @@ class Multiplexer {
   void ReceiveTerminate(Flow* flow,
                         UpstreamSubscription*,
                         std::unique_ptr<MessageUnsubscribe> unsubscribe);
+
+  void ReceiveConnectionStatus(bool isHealthy);
 };
 
 }  // namespace rocketspeed

@@ -43,6 +43,8 @@ class Status {
 
   static Status NoBuffer();
 
+  static Status ShardUnhealthy();
+
   /// Returns true iff the status indicates success.
   bool ok() const;
 
@@ -73,6 +75,8 @@ class Status {
   /// Returns true iff the status indicates buffer full.
   bool IsNoBuffer() const;
 
+  bool IsShardUnhealthy() const;
+
   /// Return a string representation of this status suitable for printing.
   /// Returns the string "OK" for success.
   std::string ToString() const;
@@ -89,6 +93,7 @@ class Status {
     kUnauthorized = 7,
     kTimedOut = 8,
     kNoBuffer = 9,
+    kShardUnhealthy = 10,
   };
 
   Code code_;

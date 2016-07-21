@@ -62,6 +62,9 @@ class ProxyServerOptions {
 
   /// Stats prefix.
   std::string stats_prefix;
+
+  /// Notify callback after we perform this many reconnect attempts.
+  size_t max_silent_reconnects{3};
 };
 
 /// A server that acts as a proxy between Subscribers and Rocketeers.

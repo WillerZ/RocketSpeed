@@ -246,7 +246,7 @@ enum Tenant : TenantID {
 };
 
 /**
- * And interface that encapsulates sharding logic.
+ * An interface that encapsulates sharding logic.
  */
 class ShardingStrategy {
  public:

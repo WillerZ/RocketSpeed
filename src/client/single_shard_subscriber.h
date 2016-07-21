@@ -124,6 +124,8 @@ class Subscriber : public SubscriberIf {
                         SubscriptionState*,
                         std::unique_ptr<MessageUnsubscribe>);
 
+  void ReceiveConnectionStatus(bool isHealthy);
+
   /// Max active subscriptions across the thread.
   const size_t max_active_subscriptions_;
 

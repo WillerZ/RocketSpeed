@@ -115,11 +115,13 @@ void UpstreamSubscription::ReceiveTerminate(
 Multiplexer::Multiplexer(PerShard* per_shard)
 : per_shard_(per_shard)
 , subscriptions_map_(
-      GetLoop(),
-      std::bind(&Multiplexer::ReceiveDeliver, this, _1, _2, _3),
-      std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3))
+    GetLoop(),
+    std::bind(&Multiplexer::ReceiveDeliver, this, _1, _2, _3),
+    std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3))
 , stream_supervisor_(GetLoop(), &subscriptions_map_,
-                     GetOptions().backoff_strategy) {
+                     std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
+                     GetOptions().backoff_strategy,
+                     GetOptions().max_silent_reconnects) {
   // Create stats.
   auto prefix = per_shard->GetOptions().stats_prefix + "multiplexer.";
   auto stats = per_shard->GetStatistics();
@@ -318,4 +320,7 @@ void Multiplexer::ReceiveTerminate(
   upstream_sub->ReceiveTerminate(per_shard_, flow, std::move(unsubscribe));
 }
 
+void Multiplexer::ReceiveConnectionStatus(bool isHealthy) {
+  // TODO(gds): what should happen here?
+}
 }  // namespace rocketspeed

@@ -85,7 +85,9 @@ Subscriber::Subscriber(const ClientOptions& options,
                      std::bind(&Subscriber::ReceiveTerminate,
                                this, _1, _2, _3))
 , stream_supervisor_(event_loop_, &subscriptions_map_,
-                     options.backoff_strategy)
+                     std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
+                     options.backoff_strategy,
+                     options_.max_silent_reconnects)
 , shard_id_(shard_id)
 , max_active_subscriptions_(max_active_subscriptions)
 , num_active_subscriptions_(std::move(num_active_subscriptions)) {
@@ -303,6 +305,22 @@ void Subscriber::ReceiveTerminate(
 
   // Decrement number of active subscriptions
   (*num_active_subscriptions_)--;
+}
+
+void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
+  if (!options_.should_notify_health) {
+    return;
+  }
+
+  subscriptions_map_.Iterate([this, isHealthy](const SubscriptionData& data) {
+      auto* state = subscriptions_map_.Find(data.GetID());
+      if (!state) {
+        return;                 // no state to tell
+      }
+      auto status = SubscriptionStatusImpl(*state);
+      status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
+      state->GetObserver()->OnSubscriptionStatusChange(status);
+    });
 }
 
 }  // namespace rocketspeed
