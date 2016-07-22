@@ -110,13 +110,14 @@ TEST_F(CommandQueueTest, TwoItemsTwoBatches) {
 
 TEST_F(CommandQueueTest, WriteHistogram) {
   EventLoop loop(EventLoop::Options(), std::move(stream_allocator_));
-  EventLoop::Runner runner(&loop);
-  ASSERT_OK(runner.GetStatus());
 
   // Simple unattached queue.
   SPSCQueue<int> queue(std::make_shared<NullLogger>(),
                        std::make_shared<QueueStats>("test"),
                        100);
+
+  EventLoop::Runner runner(&loop);
+  ASSERT_OK(runner.GetStatus());
 
   const int kNumMessages = 5;
   for(int i = 0; i < kNumMessages; i++){

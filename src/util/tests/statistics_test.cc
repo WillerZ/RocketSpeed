@@ -257,8 +257,10 @@ TEST_F(StatisticsTest, StatisticsExporter) {
    public:
     void VisitCounter(const std::string& name, int64_t value) override {
       // Just collect the results into results_.
-      EXPECT_EQ(results_[name].size(), iteration_);
-      results_[name].push_back(value);
+      if (iteration_ < kMaxIterations) {
+        EXPECT_EQ(results_[name].size(), iteration_);
+        results_[name].push_back(value);
+      }
     }
 
     void VisitHistogram(const std::string& name, double value) override {

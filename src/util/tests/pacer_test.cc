@@ -126,7 +126,7 @@ TEST_F(PacerTest, ThroughputLimited) {
     },
     10);
   ASSERT_GT(latency, 80000);
-  ASSERT_LT(latency, 120000);
+  ASSERT_LT(latency, 125000);
 }
 
 }  // namespace rocketspeed
