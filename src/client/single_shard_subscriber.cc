@@ -209,6 +209,12 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
     return;
   }
 
+  LOG_WARN(options_.info_log,
+           "Notifying subscriptions for shard %zu that they are %s.",
+           shard_id_, (isHealthy ? "healthy" : "unhealthy"));
+
+  auto start = std::chrono::steady_clock::now();
+
   subscriptions_map_.Iterate([this, isHealthy](const SubscriptionData& data) {
       auto* state = subscriptions_map_.Find(data.GetID());
       if (!state) {
@@ -218,6 +224,14 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
       state->GetObserver()->OnSubscriptionStatusChange(status);
     });
+
+  auto delta = std::chrono::steady_clock::now() - start;
+  if (delta > std::chrono::milliseconds(10)) {
+    LOG_WARN(options_.info_log,
+             "Took a long time notifying subscriptions of health: %li ms.",
+             std::chrono::duration_cast<std::chrono::milliseconds>(delta)
+             .count());
+  }
 }
 
 namespace {
