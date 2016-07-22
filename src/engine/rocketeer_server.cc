@@ -437,12 +437,18 @@ size_t RocketeerServer::Register(Rocketeer* rocketeer) {
 }
 
 Status RocketeerServer::Start() {
+  MsgLoop::Options msg_loop_options;
+  msg_loop_options.event_loop.enable_heartbeats =
+    options_.heartbeat_period.count() > 0;
+  msg_loop_options.event_loop.heartbeat_period = options_.heartbeat_period;
+
   msg_loop_.reset(new MsgLoop(options_.env,
                               EnvOptions(),
                               options_.port,
                               static_cast<int>(rocketeers_.size()),
                               options_.info_log,
-                              "rocketeer"));
+                              "rocketeer",
+                              msg_loop_options));
 
   Status st = msg_loop_->Initialize();
   if (!st.ok()) {

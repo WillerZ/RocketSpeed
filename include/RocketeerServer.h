@@ -45,6 +45,10 @@ struct RocketeerOptions {
 
   /** Stats prefix, defaults to "rocketeer.". */
   std::string stats_prefix;
+
+  /** Send heartbeats every X milliseconds. Default is once a minute.
+   * Set to zero to disable. */
+  std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);
 };
 
 class RocketeerServer {
