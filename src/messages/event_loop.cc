@@ -374,14 +374,18 @@ EventLoop::Initialize() {
   if (options_.enable_heartbeats) {
     auto send_heartbeats = [this]() {
       for (const auto& kv : stream_id_to_stream_) {
-        heartbeats_to_send_->Add(kv.second);
+        heartbeats_to_send_->Add(kv.first);
       }
     };
 
-    InstallSource<Stream*>(
+    InstallSource<StreamID>(
       this,
       heartbeats_to_send_.get(),
-      [this](Flow* flow, Stream* stream) {
+      [this](Flow* flow, StreamID stream_id) {
+        auto* stream = GetInboundStream(stream_id);
+        if (!stream) {
+          return;               // stream closed since add
+        }
         MessageHeartbeat hb(SystemTenant);
         auto ts = Stream::ToTimestampedString(hb);
         flow->Write(stream, ts);
@@ -812,6 +816,8 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, Stream* stream) {
     RS_ASSERT(owned_stream.get() == stream);
     AddTask(MakeDeferredDeleter(owned_stream));
   }
+
+  heartbeats_to_send_->Remove(stream->GetLocalID());
 }
 
 StreamSocket EventLoop::CreateOutboundStream(HostId destination) {
@@ -1076,7 +1082,7 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix + ".queues"))
 , socket_stats_(std::make_shared<SocketEventStats>(options_.stats_prefix))
 , default_command_queue_size_(options_.command_queue_size)
-, heartbeats_to_send_(new ObservableSet<Stream*>(this))
+, heartbeats_to_send_(new ObservableSet<StreamID>(this))
 , flow_control_(new FlowControl(options_.stats_prefix, this)) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
