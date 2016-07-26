@@ -89,7 +89,7 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   /// A timer to periodically check for router updates and heartbeat timeouts.
   std::unique_ptr<EventCallback> maintenance_timer_;
 
-  TimeoutList<SubscriberIf*> hb_timeout_list_;
+  TimeoutList<size_t> hb_timeout_list_;
 
   /**
    * Returns a subscriber for provided subscription ID or null if cannot

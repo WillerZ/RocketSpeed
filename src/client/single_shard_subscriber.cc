@@ -77,7 +77,7 @@ Subscriber::Subscriber(const ClientOptions& options,
                        size_t shard_id,
                        size_t max_active_subscriptions,
                        std::shared_ptr<size_t> num_active_subscriptions,
-                       TimeoutList<SubscriberIf*>& hb_timeout_list)
+                       TimeoutList<size_t>* hb_timeout_list)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
@@ -194,7 +194,7 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
 void Subscriber::RefreshRouting() {
   thread_check_.Check();
   stream_supervisor_.ConnectTo(options_.sharding->GetHost(shard_id_));
-  hb_timeout_list_.Add(this);
+  hb_timeout_list_->Add(shard_id_);
 }
 
 void Subscriber::NotifyHealthy(bool isHealthy) {
@@ -227,10 +227,11 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
 
   auto delta = std::chrono::steady_clock::now() - start;
   if (delta > std::chrono::milliseconds(10)) {
+    auto delta_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(delta).count();
     LOG_WARN(options_.info_log,
              "Took a long time notifying subscriptions of health: %li ms.",
-             std::chrono::duration_cast<std::chrono::milliseconds>(delta)
-             .count());
+             static_cast<long int>(delta_ms));
   }
 }
 
@@ -349,7 +350,7 @@ void Subscriber::ReceiveTerminate(
 
 void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
   if (isHealthy) {
-    hb_timeout_list_.Add(this);
+    hb_timeout_list_->Add(shard_id_);
   }
 
   NotifyHealthy(isHealthy);

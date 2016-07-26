@@ -94,11 +94,14 @@ void MultiShardSubscriber::HeartbeatTick() {
     return;                     // disabled
   }
 
-  std::vector<SubscriberIf*> expired;
+  std::vector<size_t> expired;
   hb_timeout_list_.GetExpired(options_.heartbeat_timeout,
                               std::back_inserter(expired));
-  for (auto subscriber : expired) {
-    subscriber->NotifyHealthy(false);
+  for (auto shard_id : expired) {
+    auto it = subscribers_.find(shard_id);
+    if (it != subscribers_.end()) {
+      it->second->NotifyHealthy(false);
+    }
   }
   stats_->hb_timeouts->Add(expired.size());
 }
@@ -124,7 +127,7 @@ void MultiShardSubscriber::StartSubscription(
                        shard_id,
                        max_active_subscriptions_,
                        num_active_subscriptions_,
-                       hb_timeout_list_));
+                       &hb_timeout_list_));
     if (options_.collapse_subscriptions_to_tail) {
       // TODO(t10132320)
       RS_ASSERT(parameters.start_seqno == 0);

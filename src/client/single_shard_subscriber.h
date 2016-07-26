@@ -71,7 +71,7 @@ class Subscriber : public SubscriberIf {
              size_t shard_id,
              size_t max_active_subscriptions,
              std::shared_ptr<size_t> num_active_subscriptions,
-             TimeoutList<SubscriberIf*>& hb_timeout_list);
+             TimeoutList<size_t>* hb_timeout_list);
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
@@ -111,7 +111,7 @@ class Subscriber : public SubscriberIf {
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
   /// Shard for this subscriber.
-  size_t shard_id_;
+  const size_t shard_id_;
 
   /// Returns sequence number of last acknowledged message about
   /// the given subscription id.
@@ -136,7 +136,7 @@ class Subscriber : public SubscriberIf {
   /// Number of active subscriptions in this thread
   std::shared_ptr<size_t> num_active_subscriptions_;
 
-  TimeoutList<SubscriberIf*>& hb_timeout_list_;
+  TimeoutList<size_t>* hb_timeout_list_;
 };
 
 }  // namespace rocketspeed
