@@ -317,7 +317,7 @@ TEST_F(ClientTest, BackOff) {
 
 TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
   const size_t num_attempts = 1;
-  size_t subscribe_attempts = 0;
+  std::atomic<size_t> subscribe_attempts(0);
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
 
@@ -373,17 +373,16 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
   // Subscribe and wait until enough reconnection attempts takes place.
   client->Subscribe({GuestTenant, GuestNamespace, "BackOff", 0},
                     folly::make_unique<StatusObserver>(status_change_sem));
-  std::chrono::milliseconds total(10);
-  ASSERT_TRUE(status_change_sem.TimedWait(total));
-  ASSERT_TRUE(subscribe_sem.TimedWait(total));
+  ASSERT_TRUE(status_change_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
   ASSERT_EQ(num_attempts + 1, subscribe_attempts);
   // should go back to ok after heartbeat
-  ASSERT_TRUE(status_change_sem.TimedWait(total));
+  ASSERT_TRUE(status_change_sem.TimedWait(positive_timeout));
 }
 
 TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
   const size_t num_attempts = 4;
-  size_t subscribe_attempts = 0;
+  std::atomic<size_t> subscribe_attempts(0);
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
 
@@ -436,10 +435,9 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
   // Subscribe and wait until enough reconnection attempts takes place.
   client->Subscribe({GuestTenant, GuestNamespace, "BackOff", 0},
                     folly::make_unique<StatusObserver>(status_change_sem));
-  std::chrono::milliseconds total(10);
-  ASSERT_TRUE(subscribe_sem.TimedWait(total));
+  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
   ASSERT_EQ(num_attempts, subscribe_attempts);
-  ASSERT_FALSE(status_change_sem.TimedWait(total));
+  ASSERT_FALSE(status_change_sem.TimedWait(negative_timeout));
 }
 
 TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
@@ -448,7 +446,7 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
 
   // we will manually take control of heartbeats for the test
   msg_loop_options_.event_loop.enable_heartbeats = false;
-  StreamID client_stream;
+  std::atomic<StreamID> client_stream;
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -487,18 +485,17 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
                                                        now_unhealthy));
 
   // we fail due to lack of heartbeat which has been disabled
-  std::chrono::milliseconds total(10);
-  ASSERT_TRUE(now_unhealthy.TimedWait(total));
+  ASSERT_TRUE(now_unhealthy.TimedWait(positive_timeout));
 
   // send the heartbeat
   MessageHeartbeat hb(SystemTenant);
   copilot_ptr.load()->SendResponse(hb, client_stream, 0);
 
   // we should now be healthy again
-  ASSERT_TRUE(now_healthy.TimedWait(total));
+  ASSERT_TRUE(now_healthy.TimedWait(positive_timeout));
 
   // and fail again
-  ASSERT_TRUE(now_unhealthy.TimedWait(total));
+  ASSERT_TRUE(now_unhealthy.TimedWait(positive_timeout));
 }
 
 TEST_F(ClientTest, HeartbeatsAreSentByServer) {
@@ -507,7 +504,7 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
   // sends them by running for long enough that we would have timed
   // out otherwise.
 
-  msg_loop_options_.event_loop.heartbeat_period = std::chrono::milliseconds(1);
+  msg_loop_options_.event_loop.heartbeat_period = std::chrono::milliseconds(10);
 
   StreamID client_stream;
   auto copilot = MockServer(
@@ -518,7 +515,7 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
-  options.heartbeat_timeout = std::chrono::milliseconds(2);
+  options.heartbeat_timeout = std::chrono::milliseconds(20);
   auto client = CreateClient(std::move(options));
 
   class StatusObserver : public Observer {
@@ -540,10 +537,9 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
   client->Subscribe({GuestTenant, GuestNamespace, "Test", 0},
                     folly::make_unique<StatusObserver>(now_unhealthy));
 
-  std::chrono::milliseconds total(10);
   // we should not be marked as unhealthy: server should send hbs
   // every millisecond
-  ASSERT_FALSE(now_unhealthy.TimedWait(total));
+  ASSERT_FALSE(now_unhealthy.TimedWait(negative_timeout));
 }
 
 TEST_F(ClientTest, RandomizedTruncatedExponential) {
