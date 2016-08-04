@@ -68,6 +68,21 @@ struct MurmurHash2<rocketspeed::SubscriptionID> {
   }
 };
 
+} // namespace rocketspeed
+
+namespace std {
+
+template <>
+struct hash<rocketspeed::SubscriptionID> {
+  size_t operator()(rocketspeed::SubscriptionID id) const {
+    return rocketspeed::MurmurHash2<rocketspeed::SubscriptionID>()(id);
+  }
+};
+
+}  // namespace std
+
+namespace rocketspeed {
+
 /// A thread-safe allocator for SubscriptionIDs.
 ///
 /// When allocating a unique SubscriptionIDs, we consistently hash the
@@ -119,12 +134,3 @@ bool DecodeSubscriptionID(Slice* in, SubscriptionID* out);
 
 }  // namespace rocketspeed
 
-namespace std {
-
-template <>
-struct hash<rocketspeed::SubscriptionID> {
-  size_t operator()(rocketspeed::SubscriptionID id) const {
-    return rocketspeed::MurmurHash2<rocketspeed::SubscriptionID>()(id);
-  }
-};
-}  // namespace std

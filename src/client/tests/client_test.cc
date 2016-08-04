@@ -1343,6 +1343,21 @@ TEST_F(ClientTest, FailedSubscriptionObserver) {
   ASSERT_TRUE(one_failed);
 }
 
+class SubscriptionIDTest: public ::testing::Test {};
+
+TEST_F(SubscriptionIDTest, SubscriptionIDHash) {
+  // Check we don't use identity function as SubscriptionID hash
+
+  // meaningless value with 1s and 0s throughout whole length
+  uint64_t currentId = 0xce0f7906ed89319e;
+
+  for (size_t i = 0; i < 1024; ++i) {
+    auto id = SubscriptionID::Unsafe(currentId);
+    ASSERT_TRUE(currentId != std::hash<SubscriptionID>()(id));
+    currentId += currentId;
+  }
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

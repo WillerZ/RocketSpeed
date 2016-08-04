@@ -208,7 +208,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
       return sub->GetSubscriptionID();
     }
     size_t Hash(const SubscriptionID& id) const {
-      return MurmurHash2<rocketspeed::SubscriptionID>()(id);
+      return std::hash<SubscriptionID>()(id);
     }
     bool Equals(const SubscriptionID& id1, const SubscriptionID& id2) const {
       return id1 == id2;
