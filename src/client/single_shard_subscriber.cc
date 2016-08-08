@@ -25,49 +25,9 @@
 namespace {
 
 using namespace rocketspeed;
-
-class InvalidSubscriptionStatus : public SubscriptionStatus {
- public:
-  explicit InvalidSubscriptionStatus(Status status,
-                                     SubscriptionHandle sub_handle,
-                                     SequenceNumber seq_no,
-                                     TenantID tenant_id,
-                                     NamespaceID namespace_id,
-                                     Topic topic_name)
-  : status_(status)
-  , sub_handle_(sub_handle)
-  , seq_no_(seq_no)
-  , tenant_id_(tenant_id)
-  , namespace_id_(std::move(namespace_id))
-  , topic_name_(std::move(topic_name)) {}
-
-  SubscriptionHandle GetSubscriptionHandle() const override {
-    return sub_handle_;
-  }
-
-  TenantID GetTenant() const override { return tenant_id_; }
-
-  const NamespaceID& GetNamespace() const override { return namespace_id_; }
-
-  const Topic& GetTopicName() const override { return topic_name_; }
-
-  SequenceNumber GetSequenceNumber() const override { return seq_no_; }
-
-  const Status& GetStatus() const override { return status_; }
-
- private:
-  Status status_;
-  SubscriptionHandle sub_handle_;
-  SequenceNumber seq_no_;
-  TenantID tenant_id_;
-  NamespaceID namespace_id_;
-  Topic topic_name_;
-};
-
 void UserDataCleanup(void* user_data) {
   delete static_cast<Observer*>(user_data);
 }
-
 }  // anonymous namespace
 
 namespace rocketspeed {
@@ -113,14 +73,14 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
              max_active_subscriptions_);
 
     // Cancel subscription
-    InvalidSubscriptionStatus sub_status(
-        Status::InvalidArgument(
-            "Invalid subscription as maximum subscription limit reached."),
+    SubscriptionStatusImpl sub_status(
         sub_id,
-        parameters.start_seqno,
         parameters.tenant_id,
         parameters.namespace_id,
-        parameters.topic_name);
+        parameters.topic_name,
+        parameters.start_seqno);
+    sub_status.status_ = Status::InvalidArgument(
+        "Invalid subscription as maximum subscription limit reached.");
     observer->OnSubscriptionStatusChange(sub_status);
     return;
   }
@@ -150,19 +110,19 @@ void Subscriber::Acknowledge(SubscriptionID sub_id,
 void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
   thread_check_.Check();
 
-  if (auto ptr = subscriptions_map_.Find(sub_id)) {
+  Info info;
+  if (Select(sub_id, Info::kTenant, &info)) {
     // Notify the user.
     SourcelessFlow no_flow(event_loop_->GetFlowControl());
     ReceiveTerminate(&no_flow,
                      sub_id,
                      folly::make_unique<MessageUnsubscribe>(
-                         ptr->GetTenant(),
-                         ptr->GetIDWhichMayChange(),
+                         info.GetTenant(),
+                         sub_id,
                          MessageUnsubscribe::Reason::kRequested));
 
     // Terminate the subscription, which will invalidate the pointer.
     subscriptions_map_.Unsubscribe(sub_id);
-    ptr = nullptr;
   }
 
   last_acks_map_.erase(sub_id);
@@ -197,6 +157,35 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
   return it == last_acks_map_.end() ? 0 : it->second;
 }
 
+bool Subscriber::Select(
+    SubscriptionID sub_id, Info::Flags flags, Info* info) const {
+  if (auto sub = subscriptions_map_.Find(sub_id)) {
+    if (flags & Info::kTenant) {
+      info->SetTenant(sub->GetTenant());
+    }
+    if (flags & Info::kNamespace) {
+      info->SetNamespace(sub->GetNamespace().ToString());
+    }
+    if (flags & Info::kTopic) {
+      info->SetTopic(sub->GetTopicName().ToString());
+    }
+    if (flags & Info::kSequenceNumber) {
+      info->SetSequenceNumber(sub->GetExpectedSeqno());
+    }
+    if (flags & Info::kObserver) {
+      info->SetObserver(static_cast<Observer*>(sub->GetUserData()));
+    }
+    return true;
+  }
+  return false;
+}
+
+void Subscriber::SetUserData(SubscriptionID sub_id, void* user_data) {
+  auto sub = subscriptions_map_.Find(sub_id);
+  RS_ASSERT(sub);
+  sub->SetUserData(user_data);
+}
+
 void Subscriber::RefreshRouting() {
   thread_check_.Check();
   stream_supervisor_.ConnectTo(options_.sharding->GetHost(shard_id_));
@@ -222,13 +211,13 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
   auto start = std::chrono::steady_clock::now();
 
   subscriptions_map_.Iterate([this, isHealthy](const SubscriptionData& data) {
-      auto* state = subscriptions_map_.Find(data.GetID());
-      if (!state) {
-        return;                 // no state to tell
-      }
-      auto status = SubscriptionStatusImpl(*state);
+      Info info;
+      bool success = Select(data.GetID(), Info::kAll, &info);
+      RS_ASSERT(success);
+      SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
+          info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
-      state->GetObserver()->OnSubscriptionStatusChange(status);
+      info.GetObserver()->OnSubscriptionStatusChange(status);
     });
 
   auto delta = std::chrono::steady_clock::now() - start;
@@ -304,8 +293,9 @@ void Subscriber::ReceiveDeliver(Flow* flow,
                                 std::unique_ptr<MessageDeliver> deliver) {
   thread_check_.Check();
 
-  SubscriptionState* state = subscriptions_map_.Find(sub_id);
-  RS_ASSERT(state);
+  Info info;
+  bool success = Select(sub_id, Info::kObserver, &info);
+  RS_ASSERT(success);
 
   switch (deliver->GetMessageType()) {
     case MessageType::mDeliverData: {
@@ -314,7 +304,7 @@ void Subscriber::ReceiveDeliver(Flow* flow,
           static_cast<MessageDeliverData*>(deliver.release()));
       std::unique_ptr<MessageReceived> received(
           new MessageReceivedImpl(std::move(data)));
-      state->GetObserver()->OnMessageReceived(flow, received);
+      info.GetObserver()->OnMessageReceived(flow, received);
       break;
     }
     case MessageType::mDeliverGap: {
@@ -323,7 +313,7 @@ void Subscriber::ReceiveDeliver(Flow* flow,
 
       if (gap->GetGapType() != GapType::kBenign) {
         DataLossInfoImpl data_loss_info(std::move(gap));
-        state->GetObserver()->OnDataLoss(flow, data_loss_info);
+        info.GetObserver()->OnDataLoss(flow, data_loss_info);
       }
       break;
     }
@@ -336,13 +326,15 @@ void Subscriber::ReceiveTerminate(
     Flow* flow,
     SubscriptionID sub_id,
     std::unique_ptr<MessageUnsubscribe> unsubscribe) {
-  SubscriptionState* state = subscriptions_map_.Find(sub_id);
-  RS_ASSERT(state);
+  Info info;
+  bool success = Select(sub_id, Info::kAll, &info);
+  RS_ASSERT(success);
 
   // The callback would only be called if the state is not null
   // at this point, that is the Client must have Unsubscribed before we receive
   // a Terminate from the server.
-  SubscriptionStatusImpl sub_status(*state);
+  SubscriptionStatusImpl sub_status(sub_id, info.GetTenant(),
+      info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
   switch (unsubscribe->GetReason()) {
     case MessageUnsubscribe::Reason::kRequested:
       break;
@@ -351,8 +343,8 @@ void Subscriber::ReceiveTerminate(
       break;
       // No default, we will be warned about unhandled code.
   }
-  RS_ASSERT(state->GetObserver());
-  state->GetObserver()->OnSubscriptionStatusChange(sub_status);
+  RS_ASSERT(info.GetObserver());
+  info.GetObserver()->OnSubscriptionStatusChange(sub_status);
 
   last_acks_map_.erase(sub_id);
 

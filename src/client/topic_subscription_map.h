@@ -13,16 +13,14 @@
 
 namespace rocketspeed {
 
-class SubscriptionState;
 class SubscriptionID;
 
 class TopicToSubscriptionMap {
  public:
   explicit TopicToSubscriptionMap(
-      std::function<SubscriptionState*(SubscriptionID)> get_state);
+      std::function<bool(SubscriptionID, NamespaceID*, Topic*)> get_topic);
 
-  std::tuple<SubscriptionID, SubscriptionState*> Find(Slice namespace_id,
-                                                      Slice topic_name) const;
+  SubscriptionID Find(Slice namespace_id, Slice topic_name) const;
 
   void Insert(Slice namespace_id, Slice topic_name, SubscriptionID sub_id);
 
@@ -30,10 +28,10 @@ class TopicToSubscriptionMap {
 
  private:
   /**
-   * Returns a SubscriptionState pointer for given ID or a null if the
-   * subscription with the ID doesn't exist.
+   * Extract namespace and topic name for given ID and returns true or
+   * returns false if the subscription with the ID doesn't exist.
    */
-  const std::function<SubscriptionState*(SubscriptionID)> get_state_;
+  const std::function<bool(SubscriptionID, NamespaceID*, Topic*)> get_topic_;
   /**
    * A linear hashing scheme to map namespace and topic to the ID of the only
    * upstream subscription.

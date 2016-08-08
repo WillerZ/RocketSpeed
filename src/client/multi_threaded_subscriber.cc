@@ -110,10 +110,6 @@ void MultiThreadedSubscriber::Stop() {
                 return Status::InternalError("Stopped");
               };
 
-              SubscriptionState* GetState(SubscriptionID) override {
-                return nullptr;
-              }
-
               void RefreshRouting() override {}
               void NotifyHealthy(bool isHealthy) override {}
             };

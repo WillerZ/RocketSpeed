@@ -166,24 +166,32 @@ class TailCollapsingObserver : public Observer {
 TailCollapsingSubscriber::TailCollapsingSubscriber(
     std::unique_ptr<SubscriberIf> subscriber)
 : subscriber_(std::move(subscriber))
-, upstream_subscriptions_([this](SubscriptionID sub_id) {
-  return subscriber_->GetState(sub_id);
-}) {}
+, upstream_subscriptions_(
+  [this](SubscriptionID sub_id, NamespaceID* namespace_id, Topic* topic_name) {
+    Info info;
+    Info::Flags flags = Info::kNamespace | Info::kTopic;
+    if (subscriber_->Select(sub_id, flags, &info)) {
+      *namespace_id = info.GetNamespace();
+      *topic_name = info.GetTopic();
+      return true;
+    }
+    return false;
+  }) {}
 
 void TailCollapsingSubscriber::StartSubscription(
     SubscriptionID downstream_id,
     SubscriptionParameters parameters,
-    std::unique_ptr<Observer> observer) {
-  SubscriptionID upstream_id;
-  SubscriptionState* upstream_state;
-  std::tie(upstream_id, upstream_state) = upstream_subscriptions_.Find(
+    std::unique_ptr<Observer> new_observer) {
+  SubscriptionID upstream_id = upstream_subscriptions_.Find(
       parameters.namespace_id, parameters.topic_name);
-  if (upstream_state) {
-    RS_ASSERT(upstream_state->GetNamespace() == parameters.namespace_id);
-    RS_ASSERT(upstream_state->GetTopicName() == parameters.topic_name);
+  Info info;
+  Info::Flags flags = Info::kNamespace | Info::kTopic | Info::kObserver;
+  if (subscriber_->Select(upstream_id, flags, &info)) {
+    RS_ASSERT(info.GetNamespace() == parameters.namespace_id);
+    RS_ASSERT(info.GetTopic() == parameters.topic_name);
     // There exists a subscription on the topic already.
     detail::TailCollapsingObserver* collapsing_observer;
-    if (special_observers_.count(upstream_state->GetObserver()) == 0) {
+    if (special_observers_.count(info.GetObserver()) == 0) {
       {  // There exists only one subscription on the topic, set up
          // multiplexing.
         collapsing_observer = new detail::TailCollapsingObserver(this);
@@ -191,8 +199,8 @@ void TailCollapsingSubscriber::StartSubscription(
         (void)result;
         RS_ASSERT(result.second);
       }
-      std::unique_ptr<Observer> old_observer(collapsing_observer);
-      upstream_state->SwapObserver(&old_observer);
+      std::unique_ptr<Observer> old_observer(info.GetObserver());
+      subscriber_->SetUserData(upstream_id, collapsing_observer);
 
       // Add existing subscription to the multiplexer.
       auto result = collapsing_observer->downstream_observers_.emplace(
@@ -202,14 +210,14 @@ void TailCollapsingSubscriber::StartSubscription(
     } else {
       // We can safely downcast.
       collapsing_observer = static_cast<detail::TailCollapsingObserver*>(
-          upstream_state->GetObserver());
+          info.GetObserver());
     }
     RS_ASSERT(collapsing_observer);
 
     {  // We've already set up multiplexing for the upstream subscription, just
        // add the new downstream subscription.
       auto result = collapsing_observer->downstream_observers_.emplace(
-          downstream_id, std::move(observer));
+          downstream_id, std::move(new_observer));
       (void)result;
       RS_ASSERT(result.second);
     }
@@ -223,7 +231,7 @@ void TailCollapsingSubscriber::StartSubscription(
     upstream_subscriptions_.Insert(
         parameters.namespace_id, parameters.topic_name, downstream_id);
     subscriber_->StartSubscription(
-        downstream_id, parameters, std::move(observer));
+        downstream_id, parameters, std::move(new_observer));
   }
 }
 
@@ -250,24 +258,23 @@ void TailCollapsingSubscriber::TerminateSubscription(
     }
   }
   // Find the upstream subscription's state.
-  auto* upstream_state = subscriber_->GetState(upstream_id);
-  if (!upstream_state) {
+  Info info;
+  Info::Flags flags = Info::kNamespace | Info::kTopic | Info::kObserver;
+  if (!subscriber_->Select(upstream_id, flags, &info)) {
     RS_ASSERT(upstream_id == downstream_id);
     // The subscription just doesn't exist, this is fine.
     return;
   }
 
-  if (special_observers_.count(upstream_state->GetObserver()) == 0) {
+  if (special_observers_.count(info.GetObserver()) == 0) {
     // This subscription is unique, just unsubscribe.
-    upstream_subscriptions_.Remove(upstream_state->GetNamespace(),
-                                   upstream_state->GetTopicName(),
-                                   upstream_id);
+    upstream_subscriptions_.Remove(
+        info.GetNamespace(), info.GetTopic(), upstream_id);
     subscriber_->TerminateSubscription(upstream_id);
-    upstream_state = nullptr;
   } else {
     // This subscription is multiplexed, we can downcast the observer.
     auto* collapsing_observer = static_cast<detail::TailCollapsingObserver*>(
-        upstream_state->GetObserver());
+        info.GetObserver());
 
     auto& downstream_observers = collapsing_observer->downstream_observers_;
     if (downstream_observers.size() > 1) {
@@ -283,11 +290,10 @@ void TailCollapsingSubscriber::TerminateSubscription(
       // This is the last downstream subscription on this upstream subscription,
       // we just unsubscribe.
       // Remove the observer pointer from the set.
-      auto result = special_observers_.erase(upstream_state->GetObserver());
+      auto result = special_observers_.erase(info.GetObserver());
       (void)result;
       RS_ASSERT(result);
       subscriber_->TerminateSubscription(upstream_id);
-      upstream_state = nullptr;
     }
   }
 }

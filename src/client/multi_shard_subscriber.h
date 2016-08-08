@@ -28,7 +28,6 @@ class Flow;
 class EventLoop;
 class Stream;
 class SubscriberStats;
-class SubscriptionState;
 class SubscriptionID;
 typedef uint64_t SubscriptionHandle;
 
@@ -57,11 +56,6 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
 
   Status SaveState(SubscriptionStorage::Snapshot* snapshot,
                    size_t worker_id) override;
-
-  SubscriptionState *GetState(SubscriptionID) override {
-    RS_ASSERT(false);
-    return nullptr;
-  }
 
   void RefreshRouting() override;
 

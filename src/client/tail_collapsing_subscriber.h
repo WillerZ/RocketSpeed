@@ -26,7 +26,6 @@ class ClientOptions;
 class Flow;
 class Stream;
 class SubscriberStats;
-class SubscriptionState;
 class SubscriptionID;
 
 namespace detail {
@@ -54,10 +53,6 @@ class TailCollapsingSubscriber : public SubscriberIf {
 
   Status SaveState(SubscriptionStorage::Snapshot* snapshot,
                    size_t worker_id) override;
-
-  SubscriptionState *GetState(SubscriptionID sub_id) override {
-    return subscriber_->GetState(sub_id);
-  }
 
   void RefreshRouting() override {
     subscriber_->RefreshRouting();

@@ -133,7 +133,7 @@ class MockSubscriber : public SubscriberIf
     auto tenant_and_namespace = factory.GetFlyweight(
       {parameters.tenant_id, parameters.namespace_id});
     void* user_data = static_cast<void*>(observer.release());
-    subscription_state_ = folly::make_unique<SubscriptionState>(
+    subscription_state_ = folly::make_unique<SubscriptionBase>(
       tenant_and_namespace,
       parameters.topic_name,
       sub_id, parameters.start_seqno, user_data);
@@ -146,10 +146,13 @@ class MockSubscriber : public SubscriberIf
 
   virtual void TerminateSubscription(SubscriptionID sub_id) override {
     ASSERT_TRUE(subscription_state_ && sub_id_ == sub_id);
-    SubscriptionState *state = GetState(sub_id);
-    SubscriptionStatusImpl sub_status(*state);
-    state->GetObserver()->OnSubscriptionStatusChange(sub_status);
-    delete subscription_state_->GetObserver();
+    using Info = MockSubscriber::Info;
+    Info info;
+    Select(sub_id, Info::kAll, &info);
+    SubscriptionStatusImpl sub_status(sub_id, info.GetTenant(),
+        info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
+    info.GetObserver()->OnSubscriptionStatusChange(sub_status);
+    delete info.GetObserver();
     subscription_state_->SetUserData(nullptr);
     subscription_state_ = nullptr;
   }
@@ -163,12 +166,35 @@ class MockSubscriber : public SubscriberIf
     return Status::NotSupported("This is a mock subscriber");
   }
 
-  virtual SubscriptionState* GetState(SubscriptionID sub_id) override {
-    if (sub_id == sub_id_) {
-      return subscription_state_.get();
+  virtual bool Select(
+      SubscriptionID sub_id, Info::Flags flags, Info* info) const override {
+    if (sub_id == sub_id_ && subscription_state_) {
+      if (flags & Info::kTenant) {
+        info->SetTenant(subscription_state_->GetTenant());
+      }
+      if (flags & Info::kNamespace) {
+        info->SetNamespace(subscription_state_->GetNamespace().ToString());
+      }
+      if (flags & Info::kTopic) {
+        info->SetTopic(subscription_state_->GetTopicName().ToString());
+      }
+      if (flags & Info::kSequenceNumber) {
+        info->SetSequenceNumber(subscription_state_->GetExpectedSeqno());
+      }
+      if (flags & Info::kObserver) {
+        info->SetObserver(
+            static_cast<Observer*>(subscription_state_->GetUserData()));
+      }
+      return true;
     } else {
-      return nullptr;
+      return false;
     }
+  }
+
+  virtual void SetUserData(SubscriptionID sub_id, void* user_data) override {
+    RS_ASSERT(sub_id == sub_id_);
+    RS_ASSERT(subscription_state_);
+    subscription_state_->SetUserData(user_data);
   }
 
   virtual void RefreshRouting() override {}
@@ -176,7 +202,7 @@ class MockSubscriber : public SubscriberIf
   virtual void NotifyHealthy(bool) override {}
 
  private:
-  std::unique_ptr<SubscriptionState> subscription_state_;
+  std::unique_ptr<SubscriptionBase> subscription_state_;
   SubscriptionID sub_id_;
 };
 
@@ -1119,8 +1145,10 @@ static void SendMessageDeliver(int& sequence,
   ++sequence;
   std::unique_ptr<MessageReceived> received(
     new MockMessageReceivedImpl(std::move(msg)));
-  subscriber->GetState(sub_id)->GetObserver()->OnMessageReceived(
-    nullptr, received);
+  using Info = MockSubscriber::Info;
+  Info info;
+  subscriber->Select(sub_id, Info::kObserver, &info);
+  info.GetObserver()->OnMessageReceived(nullptr, received);
 }
 
 static void RunDemultiplexTest(
@@ -1205,13 +1233,13 @@ TEST_F(ClientTest, TailCollapsingSubscriberDemultiplex) {
 }
 
 TEST_F(ClientTest, TopicToSubscriptionMap) {
-  std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionState>>
+  std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionBase>>
       subscriptions;
   TenantAndNamespaceFactory factory;
   auto add = [&](SubscriptionID sub_id, const Topic& topic_name) {
     subscriptions.emplace(
         sub_id,
-        folly::make_unique<SubscriptionState>(
+        folly::make_unique<SubscriptionBase>(
             factory.GetFlyweight({GuestTenant, GuestNamespace}),
             topic_name,
             sub_id,
@@ -1219,21 +1247,23 @@ TEST_F(ClientTest, TopicToSubscriptionMap) {
             nullptr));
   };
   auto remove = [&](SubscriptionID sub_id) { subscriptions.erase(sub_id); };
-  TopicToSubscriptionMap map([&](SubscriptionID sub_id) {
-    auto it = subscriptions.find(sub_id);
-    return it == subscriptions.end() ? nullptr : it->second.get();
-  });
+  TopicToSubscriptionMap map(
+    [&](SubscriptionID sub_id, NamespaceID* namespace_id, Topic* topic_name) {
+      auto it = subscriptions.find(sub_id);
+      if (it == subscriptions.end()) {
+        return false;
+      }
+      *namespace_id = it->second->GetNamespace().ToString();
+      *topic_name = it->second->GetTopicName().ToString();
+      return true;
+    });
   auto assert_found = [&](const Topic& topic_name, SubscriptionID sub_id) {
-    SubscriptionID found_id;
-    SubscriptionState* found_state;
-    std::tie(found_id, found_state) = map.Find(GuestNamespace, topic_name);
-    ASSERT_TRUE(found_state);
+    SubscriptionID found_id = map.Find(GuestNamespace, topic_name);
     ASSERT_EQ(found_id, sub_id);
   };
   auto assert_missing = [&](const Topic& topic_name) {
-    SubscriptionState* found_state;
-    std::tie(std::ignore, found_state) = map.Find(GuestNamespace, topic_name);
-    ASSERT_TRUE(!found_state);
+    SubscriptionID found_id = map.Find(GuestNamespace, topic_name);
+    ASSERT_TRUE(!found_id);
   };
 
   // Test that upsizing and downsizing works.

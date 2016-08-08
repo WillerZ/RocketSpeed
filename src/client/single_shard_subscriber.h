@@ -27,37 +27,33 @@ class SubscriberStats;
 
 class SubscriptionStatusImpl : public SubscriptionStatus {
  public:
-  const SubscriptionState& state_;
   Status status_;
+  SubscriptionID sub_id_;
+  TenantID tenant_id_;
   NamespaceID namespace_id_;
   Topic topic_name_;
+  SequenceNumber seqno_;
 
-  explicit SubscriptionStatusImpl(const SubscriptionState& state)
-  : state_(state)
-  , namespace_id_(state.GetNamespace().ToString())
-  , topic_name_(state.GetTopicName().ToString()) {}
+  explicit SubscriptionStatusImpl(SubscriptionID sub_id,
+                                  TenantID tenant_id,
+                                  NamespaceID namespace_id,
+                                  Topic topic_name,
+                                  SequenceNumber seqno)
+  : sub_id_(sub_id)
+  , tenant_id_(tenant_id)
+  , namespace_id_(std::move(namespace_id))
+  , topic_name_(std::move(topic_name))
+  , seqno_(seqno) {}
 
-  SubscriptionHandle GetSubscriptionHandle() const override {
-    // Note that we never rewind a subscriptions, hence the ID here matches the
-    // handle given out to the user.
-    return state_.GetIDWhichMayChange();
-  }
+  SubscriptionHandle GetSubscriptionHandle() const override { return sub_id_; }
 
-  TenantID GetTenant() const override { return state_.GetTenant(); }
+  TenantID GetTenant() const override { return tenant_id_; }
 
-  const NamespaceID& GetNamespace() const override {
-    // TODO: may return Slice just as well
-    return namespace_id_;
-  }
+  const NamespaceID& GetNamespace() const override { return namespace_id_; }
 
-  const Topic& GetTopicName() const override {
-    // TODO: may return Slice just as well
-    return topic_name_;
-  }
+  const Topic& GetTopicName() const override { return topic_name_; }
 
-  SequenceNumber GetSequenceNumber() const override {
-    return state_.GetExpectedSeqno();
-  }
+  SequenceNumber GetSequenceNumber() const override { return seqno_; }
 
   const Status& GetStatus() const override { return status_; }
 };
@@ -86,9 +82,10 @@ class Subscriber : public SubscriberIf {
   Status SaveState(SubscriptionStorage::Snapshot* snapshot,
                    size_t worker_id) override;
 
-  SubscriptionState* GetState(SubscriptionID sub_id) override {
-    return subscriptions_map_.Find(sub_id);
-  }
+  bool Select(
+      SubscriptionID sub_id, Info::Flags flags, Info* info) const override;
+
+  void SetUserData(SubscriptionID sub_id, void* user_data) override;
 
   void RefreshRouting() override;
 
@@ -104,7 +101,7 @@ class Subscriber : public SubscriberIf {
   /// A shared statistics.
   std::shared_ptr<SubscriberStats> stats_;
 
-  SubscriptionsMap<SubscriptionState> subscriptions_map_;
+  SubscriptionsMap<SubscriptionBase> subscriptions_map_;
   ResilientStreamReceiver stream_supervisor_;
   bool previously_healthy_{true};
 

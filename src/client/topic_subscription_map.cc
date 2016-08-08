@@ -14,16 +14,16 @@
 namespace rocketspeed {
 
 TopicToSubscriptionMap::TopicToSubscriptionMap(
-    std::function<SubscriptionState*(SubscriptionID)> get_state)
-: get_state_(std::move(get_state))
+    std::function<bool(SubscriptionID, NamespaceID*, Topic*)> get_topic)
+: get_topic_(std::move(get_topic))
 , sub_count_low_(0)
 , sub_count_high_(0)
 , sub_count_(0) {}
 
-std::tuple<SubscriptionID, SubscriptionState*> TopicToSubscriptionMap::Find(
+SubscriptionID TopicToSubscriptionMap::Find(
     Slice namespace_id, Slice topic_name) const {
   if (vector_.empty()) {
-    return std::make_tuple(SubscriptionID(), nullptr);
+    return SubscriptionID();
   }
 
   const size_t optimal_position = FindOptimalPosition(namespace_id, topic_name);
@@ -33,22 +33,23 @@ std::tuple<SubscriptionID, SubscriptionState*> TopicToSubscriptionMap::Find(
     SubscriptionID sub_id = vector_[position];
     if (!sub_id) {
       // Reached the gap.
-      return std::make_tuple(SubscriptionID(), nullptr);
+      return SubscriptionID();
     }
 
-    SubscriptionState* state = get_state_(sub_id);
-    RS_ASSERT(state);
-    if (state->GetTopicName() == topic_name &&
-        state->GetNamespace() == namespace_id) {
+    NamespaceID this_namespace_id;
+    Topic this_topic_name;
+    bool success = get_topic_(sub_id, &this_namespace_id, &this_topic_name);
+    RS_ASSERT(success);
+    if (this_topic_name == topic_name && this_namespace_id == namespace_id) {
       // Found the right subscription ID.
-      return std::make_tuple(sub_id, state);
+      return sub_id;
     }
     // Namespace or topic don't match, move on.
     position = (position + 1) % vector_.size();
   } while (position != optimal_position);
 
   // Went through entire vector and didn't find the subscription.
-  return std::make_tuple(SubscriptionID(), nullptr);
+  return SubscriptionID();
 }
 
 void TopicToSubscriptionMap::Insert(Slice namespace_id,
@@ -98,10 +99,11 @@ bool TopicToSubscriptionMap::Remove(Slice namespace_id,
       break;
     }
 
-    SubscriptionState* current_state = get_state_(current_id);
-    RS_ASSERT(current_state);
-    const auto x = FindOptimalPosition(current_state->GetNamespace(),
-                                       current_state->GetTopicName());
+    NamespaceID this_namespace_id;
+    Topic this_topic_name;
+    bool success = get_topic_(current_id, &this_namespace_id, &this_topic_name);
+    RS_ASSERT(success);
+    const auto x = FindOptimalPosition(this_namespace_id, this_topic_name);
     if (position <= current_position
             ? /* regular range */ (position < x && x <= current_position)
             : /* wrapped range */ (position < x || x <= current_position)) {
@@ -198,9 +200,11 @@ void TopicToSubscriptionMap::Rehash() {
       // Check for any duplicated subscription IDs.
       RS_ASSERT(seen_ids.emplace(sub_id).second);
 #endif  // NO_RS_ASSERT
-      SubscriptionState* state = get_state_(sub_id);
-      RS_ASSERT(state);
-      InsertInternal(state->GetNamespace(), state->GetTopicName(), sub_id);
+      NamespaceID namespace_id;
+      Topic topic_name;
+      bool success = get_topic_(sub_id, &namespace_id, &topic_name);
+      RS_ASSERT(success);
+      InsertInternal(namespace_id, topic_name, sub_id);
     }
   }
 
