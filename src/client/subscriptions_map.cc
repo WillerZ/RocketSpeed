@@ -14,6 +14,13 @@
 namespace rocketspeed {
 
 ////////////////////////////////////////////////////////////////////////////////
+SubscriptionBase::~SubscriptionBase() {
+  // We set user_data_ to null on deletion. This is a sanity check to ensure
+  // that we are always calling the user data cleanup callback, and not leaking
+  // user data.
+  RS_ASSERT(user_data_ == nullptr);
+}
+
 bool SubscriptionBase::ProcessUpdate(Logger* info_log,
                                      const SequenceNumber previous,
                                      const SequenceNumber current) {

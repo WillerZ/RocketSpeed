@@ -52,11 +52,15 @@ class SubscriptionBase {
   SubscriptionBase(TenantAndNamespaceFlyweight tenant_and_namespace,
                    const Slice& topic_name,
                    SubscriptionID sub_id,
-                   SequenceNumber initial_seqno)
+                   SequenceNumber initial_seqno,
+                   void* user_data)
   : tenant_and_namespace_(std::move(tenant_and_namespace))
   , topic_name_(topic_name.ToString())
   , sub_id_(sub_id)
-  , expected_seqno_(initial_seqno) {}
+  , expected_seqno_(initial_seqno)
+  , user_data_(user_data) {}
+
+  ~SubscriptionBase();
 
   TenantID GetTenant() const {
     return tenant_and_namespace_.Get().tenant_id;
@@ -69,6 +73,10 @@ class SubscriptionBase {
   Slice GetTopicName() const { return topic_name_; }
 
   SequenceNumber GetExpectedSeqno() const { return expected_seqno_; }
+
+  void* GetUserData() const { return user_data_; }
+
+  void SetUserData(void* user_data) { user_data_ = user_data; }
 
   /// Returns true if the state transition carried by the update has been
   /// recorded and the update shall be delivered, false if the update could not
@@ -95,6 +103,8 @@ class SubscriptionBase {
   SubscriptionID sub_id_;
   /// Next expected sequence number on this subscription.
   SequenceNumber expected_seqno_;
+  /// Opaque user data.
+  void* user_data_;
 
   /// @{
   /// These methods shall not be accessed anyone but the SubscriptionMap that
@@ -152,23 +162,26 @@ template <typename SubscriptionState>
 class SubscriptionsMap : public ConnectionAwareReceiver {
  public:
   using DeliverCb = std::function<void(
-      Flow* flow, SubscriptionState*, std::unique_ptr<MessageDeliver>)>;
+      Flow* flow, SubscriptionID, std::unique_ptr<MessageDeliver>)>;
   using TerminateCb = std::function<void(
-      Flow* flow, SubscriptionState*, std::unique_ptr<MessageUnsubscribe>)>;
+      Flow* flow, SubscriptionID, std::unique_ptr<MessageUnsubscribe>)>;
+  using UserDataCleanupCb = std::function<void(void*)>;
 
   SubscriptionsMap(EventLoop* event_loop,
                    DeliverCb deliver_cb,
-                   TerminateCb terminate_cb);
+                   TerminateCb terminate_cb,
+                   UserDataCleanupCb user_data_cleanup_cb);
   ~SubscriptionsMap();
 
   /// Returns a non-owning pointer to the SubscriptionState.
   ///
   /// The pointer is valid until matching ::Unsubscribe call.
-  SubscriptionState* Subscribe(SubscriptionID sub_id,
-                               TenantID tenant_id,
-                               const Slice& namespace_id,
-                               const Slice& topic_name,
-                               SequenceNumber initial_seqno);
+  void Subscribe(SubscriptionID sub_id,
+                 TenantID tenant_id,
+                 const Slice& namespace_id,
+                 const Slice& topic_name,
+                 SequenceNumber initial_seqno,
+                 void* user);
 
   /// Returns a non-owning pointer to the SubscriptionState or null if doesn't
   /// exist.
@@ -200,6 +213,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   EventLoop* const event_loop_;
   const DeliverCb deliver_cb_;
   const TerminateCb terminate_cb_;
+  const UserDataCleanupCb user_data_cleanup_cb_;
 
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
@@ -243,6 +257,8 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
     std::unique_ptr<Sink<SharedTimestampedString>> sink) final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
+
+  void CleanupSubscription(SubscriptionState* sub);
 };
 
 }  // namespace rocketspeed

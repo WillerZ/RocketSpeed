@@ -132,12 +132,12 @@ class MockSubscriber : public SubscriberIf
     TenantAndNamespaceFactory factory;
     auto tenant_and_namespace = factory.GetFlyweight(
       {parameters.tenant_id, parameters.namespace_id});
+    void* user_data = static_cast<void*>(observer.release());
     subscription_state_ = folly::make_unique<SubscriptionState>(
       tenant_and_namespace,
       parameters.topic_name,
-      sub_id, parameters.start_seqno);
+      sub_id, parameters.start_seqno, user_data);
     sub_id_ = sub_id;
-    subscription_state_->SwapObserver(&observer);
   }
 
   virtual void Acknowledge(SubscriptionID sub_id,
@@ -149,6 +149,8 @@ class MockSubscriber : public SubscriberIf
     SubscriptionState *state = GetState(sub_id);
     SubscriptionStatusImpl sub_status(*state);
     state->GetObserver()->OnSubscriptionStatusChange(sub_status);
+    delete subscription_state_->GetObserver();
+    subscription_state_->SetUserData(nullptr);
     subscription_state_ = nullptr;
   }
 
@@ -1213,7 +1215,8 @@ TEST_F(ClientTest, TopicToSubscriptionMap) {
             factory.GetFlyweight({GuestTenant, GuestNamespace}),
             topic_name,
             sub_id,
-            0));
+            0,
+            nullptr));
   };
   auto remove = [&](SubscriptionID sub_id) { subscriptions.erase(sub_id); };
   TopicToSubscriptionMap map([&](SubscriptionID sub_id) {

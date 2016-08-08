@@ -16,7 +16,9 @@ using namespace std::placeholders;
 
 void UpstreamSubscription::AddDownstream(PerStream* per_stream,
                                          SubscriptionID downstream_sub,
-                                         SequenceNumber initial_seqno) {
+                                         SequenceNumber initial_seqno,
+                                         TenantID tenant_id,
+                                         SequenceNumber expected_seqno_check) {
   // Bootstrap the downstream subscription to the same sequence number as the
   // upstream subscription, so we can simply forward any updates received on
   // the upstream subscription.
@@ -24,7 +26,7 @@ void UpstreamSubscription::AddDownstream(PerStream* per_stream,
                       SequenceNumber prev_seqno,
                       SequenceNumber current_seqno) -> bool {
     // Prepare a message.
-    MessageDeliverData data(GetTenant(), downstream_sub, MsgId(), contents);
+    MessageDeliverData data(tenant_id, downstream_sub, MsgId(), contents);
     data.SetSequenceNumbers(prev_seqno, current_seqno);
     // Send the message on downstream subscription.
     SourcelessFlow no_flow(per_stream->GetLoop()->GetFlowControl());
@@ -35,8 +37,8 @@ void UpstreamSubscription::AddDownstream(PerStream* per_stream,
   };
   auto bootstrapped_to =
       accumulator_->BootstrapSubscription(initial_seqno, callback);
-  RS_ASSERT(bootstrapped_to == 0 || GetExpectedSeqno() == 0 ||
-            bootstrapped_to == GetExpectedSeqno());
+  RS_ASSERT(bootstrapped_to == 0 || expected_seqno_check == 0 ||
+            bootstrapped_to == expected_seqno_check);
   (void)bootstrapped_to;
   // Register the subscription after it's been bootstrapped to the same
   // sequence number as the upstream subscription.
@@ -56,6 +58,7 @@ size_t UpstreamSubscription::RemoveDownstream(PerStream* per_stream,
 
 void UpstreamSubscription::ReceiveDeliver(
     PerShard* per_shard, Flow* flow, std::unique_ptr<MessageDeliver> deliver) {
+  const auto sub_id = deliver->GetSubID();
   SequenceNumber received_seqno = deliver->GetSequenceNumber();
   if (expected_seqno_ != 0 && expected_seqno_ > received_seqno) {
     // Drop the message as no downsteam subscriber really needs it. We likely
@@ -64,7 +67,7 @@ void UpstreamSubscription::ReceiveDeliver(
               "Multiplexer(%zu)::ReceiveDeliver(%llu) expecting %" PRIu64
               " > received %" PRIu64,
               per_shard->GetShardID(),
-              GetIDWhichMayChange().ForLogging(),
+              sub_id.ForLogging(),
               expected_seqno_,
               received_seqno);
     return;
@@ -79,7 +82,7 @@ void UpstreamSubscription::ReceiveDeliver(
               "Multiplexer(%zu)::ReceiveDeliver(%llu) -> "
               "ReceiveFromMultiplexer(%llu, %llu)",
               per_shard->GetShardID(),
-              GetIDWhichMayChange().ForLogging(),
+              sub_id.ForLogging(),
               downstream_id,
               downstream_sub.ForLogging());
 
@@ -93,6 +96,7 @@ void UpstreamSubscription::ReceiveTerminate(
     PerShard* per_shard,
     Flow* flow,
     std::unique_ptr<MessageUnsubscribe> unsubscribe) {
+  const auto sub_id = unsubscribe->GetSubID();
   for (auto& entry : downstream_subscriptions_) {
     PerStream* per_stream = entry.first;
     StreamID downstream_id = per_stream->GetStream();
@@ -101,7 +105,7 @@ void UpstreamSubscription::ReceiveTerminate(
               "Multiplexer(%zu)::ReceiveTerminate(%llu) -> "
               "ReceiveFromMultiplexer(%llu, %llu)",
               per_shard->GetShardID(),
-              GetIDWhichMayChange().ForLogging(),
+              sub_id.ForLogging(),
               downstream_id,
               downstream_sub.ForLogging());
 
@@ -112,12 +116,19 @@ void UpstreamSubscription::ReceiveTerminate(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+namespace {
+void UserDataCleanup(void* user_data) {
+  delete static_cast<UpstreamSubscription*>(user_data);
+}
+}
+
 Multiplexer::Multiplexer(PerShard* per_shard)
 : per_shard_(per_shard)
 , subscriptions_map_(
     GetLoop(),
     std::bind(&Multiplexer::ReceiveDeliver, this, _1, _2, _3),
-    std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3))
+    std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3),
+    &UserDataCleanup)
 , stream_supervisor_(GetLoop(), &subscriptions_map_,
                      std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
                      GetOptions().backoff_strategy,
@@ -166,33 +177,43 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
             downstream_sub.ForLogging());
 
   // Find a subscription on the topic, if one exists.
-  UpstreamSubscription* upstream_sub;
-  if (!(upstream_sub = FindInIndex(namespace_id, topic_name))) {
+  UpstreamSubscription* upstream_sub =
+      FindInIndex(namespace_id.ToString(), topic_name.ToString());
+  if (!upstream_sub) {
     RS_ASSERT(per_shard_->GetShardID() <= std::numeric_limits<ShardID>::max());
-    auto upstream_id = SubscriptionID::ForShard(
+    SubscriptionID upstream_id = SubscriptionID::ForShard(
                           static_cast<ShardID>(per_shard_->GetShardID()),
                           upstream_allocator_.Next());
     // This could fire if shard and hierarchical ID cannot be encoded in 8
     // bytes.
     RS_ASSERT(upstream_id);
+
+    upstream_sub = new UpstreamSubscription(upstream_id);
+    upstream_sub->SetAccumulator(
+        GetOptions().accumulator(namespace_id, topic_name));
     // Create an upstream subscription if one doesn't exist.
-    upstream_sub = subscriptions_map_.Subscribe(
+    subscriptions_map_.Subscribe(
         upstream_id,
         tenant_id,
         namespace_id,
         topic_name,
         // TODO(stupaq): consider subscribing from initial_seqno instead of "0"
         // and rewinding to "0" if/when we receive a subscription at that seqno
-        /* initial_seqno */ 0);
+        /* initial_seqno */ 0,
+        static_cast<void*>(upstream_sub));
     // Assign updates accumulator (subscription bootstrapping).
-    upstream_sub->SetAccumulator(
-        GetOptions().accumulator(namespace_id, topic_name));
+
     // Insert into an index.
-    InsertIntoIndex(upstream_sub);
+    InsertIntoIndex(
+        namespace_id.ToString(), topic_name.ToString(), upstream_sub);
   }
   // Add a downstream subscription, this may result in messages being delivered
   // on the downstream subscription due to subscription bootstrapping.
-  upstream_sub->AddDownstream(per_stream, downstream_sub, initial_seqno);
+  // expected_seqno_check is only used for assertion.
+  auto expected_seqno_check = upstream_sub->GetExpectedSeqno();
+  upstream_sub->AddDownstream(
+      per_stream, downstream_sub, initial_seqno, tenant_id,
+      expected_seqno_check);
   return upstream_sub;
 }
 
@@ -203,7 +224,7 @@ void Multiplexer::Unsubscribe(Flow* flow,
   LOG_DEBUG(GetOptions().info_log,
             "Multiplexer(%zu)::Unsubscribe(%llu, %llu, %llu)",
             per_shard_->GetShardID(),
-            upstream_sub->GetIDWhichMayChange().ForLogging(),
+            upstream_sub->GetSubID().ForLogging(),
             per_stream->GetStream(),
             downstream_sub.ForLogging());
 
@@ -212,10 +233,14 @@ void Multiplexer::Unsubscribe(Flow* flow,
       upstream_sub->RemoveDownstream(per_stream, downstream_sub);
   // If we have no downstream subscriptions, kill upstream one.
   if (remaining_downstream == 0) {
+    // Find the topic and namespace.
+    auto sub = subscriptions_map_.Find(upstream_sub->GetSubID());
+    RS_ASSERT(sub);
     // Remove from index first.
-    RemoveFromIndex(upstream_sub);
+    RemoveFromIndex(sub->GetNamespace().ToString(),
+                    sub->GetTopicName().ToString());
     // Remove the subscription state, that'd invalidate the pointer.
-    subscriptions_map_.Unsubscribe(upstream_sub->GetIDWhichMayChange());
+    subscriptions_map_.Unsubscribe(upstream_sub->GetSubID());
     upstream_sub = nullptr;
   }
 }
@@ -228,25 +253,31 @@ void Multiplexer::ChangeRoute() {
 
 Multiplexer::~Multiplexer() = default;
 
-UpstreamSubscription* Multiplexer::FindInIndex(const Slice& namespace_id,
-                                               const Slice& topic_name) {
-  auto key = std::make_pair(namespace_id.ToString(), topic_name.ToString());
+UpstreamSubscription* Multiplexer::GetUpstreamSubscription(
+    SubscriptionID sub_id) {
+  return static_cast<UpstreamSubscription*>(
+      subscriptions_map_.Find(sub_id)->GetUserData());
+}
+
+UpstreamSubscription* Multiplexer::FindInIndex(NamespaceID namespace_id,
+                                        Topic topic_name) {
+  auto key = std::make_pair(std::move(namespace_id), std::move(topic_name));
   auto it = topic_index_.find(key);
   return it == topic_index_.end() ? nullptr : it->second;
 }
 
-void Multiplexer::InsertIntoIndex(UpstreamSubscription* upstream_sub) {
-  auto key = std::make_pair(upstream_sub->GetNamespace().ToString(),
-                            upstream_sub->GetTopicName().ToString());
+void Multiplexer::InsertIntoIndex(NamespaceID namespace_id,
+                                  Topic topic_name,
+                                  UpstreamSubscription* upstream_sub) {
+  auto key = std::make_pair(std::move(namespace_id), std::move(topic_name));
   auto result = topic_index_.emplace(std::move(key), upstream_sub);
   (void)result;
   RS_ASSERT(result.second);
   stats_.num_upstream_subscriptions->Add(1);
 }
 
-void Multiplexer::RemoveFromIndex(UpstreamSubscription* upstream_sub) {
-  auto key = std::make_pair(upstream_sub->GetNamespace().ToString(),
-                            upstream_sub->GetTopicName().ToString());
+void Multiplexer::RemoveFromIndex(NamespaceID namespace_id, Topic topic_name) {
+  auto key = std::make_pair(std::move(namespace_id), std::move(topic_name));
   auto it = topic_index_.find(key);
   RS_ASSERT(it != topic_index_.end());
   if (it != topic_index_.end()) {
@@ -256,23 +287,24 @@ void Multiplexer::RemoveFromIndex(UpstreamSubscription* upstream_sub) {
 }
 
 void Multiplexer::ReceiveDeliver(Flow* flow,
-                                 UpstreamSubscription* upstream_sub,
+                                 SubscriptionID upstream_sub,
                                  std::unique_ptr<MessageDeliver> deliver) {
   const auto type = deliver->GetMessageType();
   LOG_DEBUG(GetOptions().info_log,
             "Multiplexer(%zu)::ReceiveDeliver(%llu, %s)",
             per_shard_->GetShardID(),
-            upstream_sub->GetIDWhichMayChange().ForLogging(),
+            upstream_sub.ForLogging(),
             MessageTypeName(type));
 
   RS_ASSERT(type == MessageType::mDeliverGap ||
             type == MessageType::mDeliverData);
 
   // Update state in the accumulator
+  UpstreamSubscription* sub = GetUpstreamSubscription(upstream_sub);
   if (type == MessageType::mDeliverData) {
     auto data = static_cast<MessageDeliverData*>(deliver.get());
     // Update the accumulator.
-    auto action = upstream_sub->GetAccumulator()->ConsumeUpdate(
+    auto action = sub->GetAccumulator()->ConsumeUpdate(
         data->GetPayload(),
         data->GetPrevSequenceNumber(),
         data->GetSequenceNumber());
@@ -282,7 +314,7 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
                 "Multiplexer(%zu)::ReceiveDeliver(%llu, %" PRIu64 ", %" PRIu64
                 ") : resubscribing",
                 per_shard_->GetShardID(),
-                upstream_sub->GetIDWhichMayChange().ForLogging(),
+                upstream_sub.ForLogging(),
                 data->GetPrevSequenceNumber(),
                 data->GetSequenceNumber());
 
@@ -295,29 +327,36 @@ void Multiplexer::ReceiveDeliver(Flow* flow,
       // bytes.
       RS_ASSERT(new_upstream_id);
       // Rewind a subscription to zero.
-      subscriptions_map_.Rewind(upstream_sub->GetIDWhichMayChange(),
-          new_upstream_id, 0 /* new_seqno */);
+      subscriptions_map_.Rewind(
+          upstream_sub, new_upstream_id, 0 /* new_seqno */);
+      // Update subscription.
+      sub->SetSubID(new_upstream_id);
     }
   }
 
   // Broadcast delivery.
-  upstream_sub->ReceiveDeliver(per_shard_, flow, std::move(deliver));
+  sub->ReceiveDeliver(per_shard_, flow, std::move(deliver));
 }
 
 void Multiplexer::ReceiveTerminate(
     Flow* flow,
-    UpstreamSubscription* upstream_sub,
+    SubscriptionID upstream_sub,
     std::unique_ptr<MessageUnsubscribe> unsubscribe) {
   LOG_DEBUG(GetOptions().info_log,
             "Multiplexer(%zu)::ReceiveTerminate(%llu)",
             per_shard_->GetShardID(),
-            upstream_sub->GetIDWhichMayChange().ForLogging());
+            upstream_sub.ForLogging());
+
+  auto sub = subscriptions_map_.Find(upstream_sub);
+  RS_ASSERT(sub);
 
   // The subscription has been removed from the map, so update an index.
-  RemoveFromIndex(upstream_sub);
+  RemoveFromIndex(sub->GetNamespace().ToString(),
+                  sub->GetTopicName().ToString());
 
   // Broadcast termination.
-  upstream_sub->ReceiveTerminate(per_shard_, flow, std::move(unsubscribe));
+  GetUpstreamSubscription(upstream_sub)->ReceiveTerminate(
+      per_shard_, flow, std::move(unsubscribe));
 }
 
 void Multiplexer::ReceiveConnectionStatus(bool isHealthy) {

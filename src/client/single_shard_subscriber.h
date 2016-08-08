@@ -121,12 +121,12 @@ class Subscriber : public SubscriberIf {
   void CheckRouterVersion();
 
   void ReceiveDeliver(Flow* flow,
-                      SubscriptionState*,
-                      std::unique_ptr<MessageDeliver>);
+                      SubscriptionID sub_id,
+                      std::unique_ptr<MessageDeliver> deliver);
 
   void ReceiveTerminate(Flow* flow,
-                        SubscriptionState*,
-                        std::unique_ptr<MessageUnsubscribe>);
+                        SubscriptionID sub_id,
+                        std::unique_ptr<MessageUnsubscribe> unsubscribe);
 
   void ReceiveConnectionStatus(bool isHealthy);
 

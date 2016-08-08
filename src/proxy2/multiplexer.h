@@ -44,13 +44,20 @@ class UpstreamAllocator : public IDAllocator<uint64_t, UpstreamAllocator> {
   using Base::Base;
 };
 
-class UpstreamSubscription : public SubscriptionBase {
+class UpstreamSubscription {
  public:
+  explicit UpstreamSubscription(SubscriptionID sub_id)
+  : sub_id_(sub_id) {}
+
+  UpstreamSubscription() = delete;
+
   using DownstreamSubscriptionsSet =
       std::unordered_set<std::pair<PerStream*, SubscriptionID>,
                          MurmurHash2<std::pair<PerStream*, SubscriptionID>>>;
 
-  using SubscriptionBase::SubscriptionBase;
+  SubscriptionID GetSubID() const { return sub_id_; }
+
+  void SetSubID(SubscriptionID sub_id) { sub_id_ = sub_id; }
 
   UpdatesAccumulator* GetAccumulator() const { return accumulator_.get(); }
 
@@ -61,7 +68,9 @@ class UpstreamSubscription : public SubscriptionBase {
 
   void AddDownstream(PerStream* per_stream,
                      SubscriptionID downstream_sub,
-                     SequenceNumber initial_seqno);
+                     SequenceNumber initial_seqno,
+                     TenantID tenant_id,
+                     SequenceNumber expected_seqno_check);
 
   size_t RemoveDownstream(PerStream* per_stream, SubscriptionID downstream_sub);
 
@@ -73,7 +82,10 @@ class UpstreamSubscription : public SubscriptionBase {
                         Flow* flow,
                         std::unique_ptr<MessageUnsubscribe> unsubscribe);
 
+  SequenceNumber GetExpectedSeqno() const { return expected_seqno_; }
+
  private:
+  SubscriptionID sub_id_;
   std::unique_ptr<UpdatesAccumulator> accumulator_;
   SequenceNumber expected_seqno_{0};
   // TODO(stupaq): optimise for small cardinality
@@ -121,7 +133,7 @@ class Multiplexer {
   PerShard* const per_shard_;
 
   UpstreamAllocator upstream_allocator_;
-  SubscriptionsMap<UpstreamSubscription> subscriptions_map_;
+  SubscriptionsMap<SubscriptionBase> subscriptions_map_;
   ResilientStreamReceiver stream_supervisor_;
 
   // TODO(stupaq): intrusive
@@ -130,19 +142,22 @@ class Multiplexer {
                      MurmurHash2<std::pair<std::string, std::string>>>
       topic_index_;
 
-  UpstreamSubscription* FindInIndex(const Slice& namespace_id,
-                                    const Slice& topic_name);
+  UpstreamSubscription* GetUpstreamSubscription(SubscriptionID sub_id);
 
-  void InsertIntoIndex(UpstreamSubscription* upstream_sub);
+  UpstreamSubscription* FindInIndex(NamespaceID namespace_id, Topic topic_name);
 
-  void RemoveFromIndex(UpstreamSubscription* upstream_sub);
+  void InsertIntoIndex(NamespaceID namespace_id,
+                       Topic topic_name,
+                       UpstreamSubscription* upstream_sub);
+
+  void RemoveFromIndex(NamespaceID namespace_id, Topic topic_name);
 
   void ReceiveDeliver(Flow* flow,
-                      UpstreamSubscription*,
-                      std::unique_ptr<MessageDeliver>);
+                      SubscriptionID upstream_sub,
+                      std::unique_ptr<MessageDeliver> deliver);
 
   void ReceiveTerminate(Flow* flow,
-                        UpstreamSubscription*,
+                        SubscriptionID upstream_sub,
                         std::unique_ptr<MessageUnsubscribe> unsubscribe);
 
   void ReceiveConnectionStatus(bool isHealthy);

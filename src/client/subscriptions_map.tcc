@@ -29,10 +29,12 @@ template <typename SubscriptionState>
 SubscriptionsMap<SubscriptionState>::SubscriptionsMap(
     EventLoop* event_loop,
     DeliverCb deliver_cb,
-    TerminateCb terminate_cb)
+    TerminateCb terminate_cb,
+    UserDataCleanupCb user_data_cleanup_cb)
 : event_loop_(event_loop)
 , deliver_cb_(std::move(deliver_cb))
 , terminate_cb_(std::move(terminate_cb))
+, user_data_cleanup_cb_(std::move(user_data_cleanup_cb))
 , pending_subscriptions_(event_loop)
 , pending_unsubscribes_(event_loop) {
   auto flow_control = event_loop_->GetFlowControl();
@@ -67,23 +69,24 @@ template <typename SubscriptionState>
 SubscriptionsMap<SubscriptionState>::~SubscriptionsMap() {
   pending_subscriptions_.Modify([&](Subscriptions& map) {
     for (auto it = map.Begin(); it != map.End(); ++it) {
-      delete *it;
+      CleanupSubscription(*it);
     }
   });
 
   for (auto it = synced_subscriptions_.Begin();
       it != synced_subscriptions_.End(); ++it) {
-    delete *it;
+    CleanupSubscription(*it);
   }
 }
 
 template <typename SubscriptionState>
-SubscriptionState* SubscriptionsMap<SubscriptionState>::Subscribe(
+void SubscriptionsMap<SubscriptionState>::Subscribe(
     SubscriptionID sub_id,
     TenantID tenant_id,
     const Slice& namespace_id,
     const Slice& topic_name,
-    SequenceNumber initial_seqno) {
+    SequenceNumber initial_seqno,
+    void* user_data) {
   LOG_DEBUG(GetLogger(),
             "Subscribe(%llu, %u, %s, %s, %" PRIu64 ")",
             sub_id.ForLogging(),
@@ -97,14 +100,13 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Subscribe(
   // Record the subscription, we check that the ID is unique among all active
   // subscriptions.
   SubscriptionState* state = new SubscriptionState(
-            tenant_and_namespace, topic_name, sub_id, initial_seqno);
+            tenant_and_namespace, topic_name, sub_id, initial_seqno, user_data);
   pending_subscriptions_.Modify([&](Subscriptions& map) {
     auto inserted = map.emplace(sub_id, state);
     RS_ASSERT(inserted);
   });
   // Pending subscriptions will be synced opportunistically, as adding an
   // element renders the Source readable.
-  return state;
 }
 
 template <typename SubscriptionState>
@@ -193,7 +195,7 @@ void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionID sub_id) {
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     auto sync_it = synced_subscriptions_.Find(sub_id);
     if (sync_it != synced_subscriptions_.End()) {
-      delete *sync_it;
+      CleanupSubscription(*sync_it);
       synced_subscriptions_.erase(sync_it);
       // Schedule an unsubscribe message to be sent only if a subscription has
       // been sent out.
@@ -202,7 +204,7 @@ void SubscriptionsMap<SubscriptionState>::Unsubscribe(SubscriptionID sub_id) {
     } else {
       auto pend_it = pending_subscriptions.Find(sub_id);
       RS_ASSERT(pend_it != pending_subscriptions.End());
-      delete *pend_it;
+      CleanupSubscription(*pend_it);
       pending_subscriptions.erase(pend_it);
     }
   });
@@ -363,14 +365,13 @@ void SubscriptionsMap<SubscriptionState>::ReceiveUnsubscribe(
       RS_ASSERT(pending_subscriptions_->Find(sub_id)
         == pending_subscriptions_->End());
       // Terminate the subscription.
-      std::unique_ptr<SubscriptionState> state;
       auto it = synced_subscriptions_.Find(sub_id);
       if (it != synced_subscriptions_.End()) {
-        state.reset(*it); // erased from map so will be deleted after callback
-        synced_subscriptions_.erase(it);
         // No need to send unsubscribe request, as we've just received one.
         // Notify via callback.
-        terminate_cb_(arg.flow, state.get(), std::move(arg.message));
+        terminate_cb_(arg.flow, sub_id, std::move(arg.message));
+        // Remove after callback so callback has chance to query final state.
+        synced_subscriptions_.erase(it);
       } else {
         // A natural race between the server and the client terminating a
         // subscription.
@@ -413,7 +414,17 @@ void SubscriptionsMap<SubscriptionState>::ReceiveDeliver(
     return;
   }
   // Deliver.
-  deliver_cb_(arg.flow, state, std::move(arg.message));
+  deliver_cb_(arg.flow, sub_id, std::move(arg.message));
+}
+
+template <typename SubscriptionState>
+void SubscriptionsMap<SubscriptionState>::CleanupSubscription(
+    SubscriptionState* sub) {
+  if (user_data_cleanup_cb_) {
+    user_data_cleanup_cb_(sub->GetUserData());
+  }
+  sub->SetUserData(nullptr);
+  delete sub;
 }
 
 }  // namespace rocketspeed

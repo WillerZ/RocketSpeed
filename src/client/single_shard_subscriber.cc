@@ -64,6 +64,10 @@ class InvalidSubscriptionStatus : public SubscriptionStatus {
   Topic topic_name_;
 };
 
+void UserDataCleanup(void* user_data) {
+  delete static_cast<Observer*>(user_data);
+}
+
 }  // anonymous namespace
 
 namespace rocketspeed {
@@ -84,7 +88,8 @@ Subscriber::Subscriber(const ClientOptions& options,
 , subscriptions_map_(event_loop_,
                      std::bind(&Subscriber::ReceiveDeliver, this, _1, _2, _3),
                      std::bind(&Subscriber::ReceiveTerminate,
-                               this, _1, _2, _3))
+                               this, _1, _2, _3),
+                     &UserDataCleanup)
 , stream_supervisor_(event_loop_, &subscriptions_map_,
                      std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
                      options.backoff_strategy,
@@ -120,12 +125,13 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
     return;
   }
 
-  auto ptr = subscriptions_map_.Subscribe(sub_id,
-                                          parameters.tenant_id,
-                                          parameters.namespace_id,
-                                          parameters.topic_name,
-                                          parameters.start_seqno);
-  ptr->SwapObserver(&observer);
+  auto user_data = static_cast<void*>(observer.release());
+  subscriptions_map_.Subscribe(sub_id,
+                               parameters.tenant_id,
+                               parameters.namespace_id,
+                               parameters.topic_name,
+                               parameters.start_seqno,
+                               user_data);
   (*num_active_subscriptions_)++;
 }
 
@@ -148,7 +154,7 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
     // Notify the user.
     SourcelessFlow no_flow(event_loop_->GetFlowControl());
     ReceiveTerminate(&no_flow,
-                     ptr,
+                     sub_id,
                      folly::make_unique<MessageUnsubscribe>(
                          ptr->GetTenant(),
                          ptr->GetIDWhichMayChange(),
@@ -294,9 +300,12 @@ class DataLossInfoImpl : public DataLossInfo {
 }
 
 void Subscriber::ReceiveDeliver(Flow* flow,
-                                SubscriptionState* state,
+                                SubscriptionID sub_id,
                                 std::unique_ptr<MessageDeliver> deliver) {
   thread_check_.Check();
+
+  SubscriptionState* state = subscriptions_map_.Find(sub_id);
+  RS_ASSERT(state);
 
   switch (deliver->GetMessageType()) {
     case MessageType::mDeliverData: {
@@ -325,8 +334,11 @@ void Subscriber::ReceiveDeliver(Flow* flow,
 
 void Subscriber::ReceiveTerminate(
     Flow* flow,
-    SubscriptionState* state,
+    SubscriptionID sub_id,
     std::unique_ptr<MessageUnsubscribe> unsubscribe) {
+  SubscriptionState* state = subscriptions_map_.Find(sub_id);
+  RS_ASSERT(state);
+
   // The callback would only be called if the state is not null
   // at this point, that is the Client must have Unsubscribed before we receive
   // a Terminate from the server.
@@ -339,9 +351,9 @@ void Subscriber::ReceiveTerminate(
       break;
       // No default, we will be warned about unhandled code.
   }
+  RS_ASSERT(state->GetObserver());
   state->GetObserver()->OnSubscriptionStatusChange(sub_status);
 
-  auto sub_id = state->GetIDWhichMayChange();
   last_acks_map_.erase(sub_id);
 
   // Decrement number of active subscriptions

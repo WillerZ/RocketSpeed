@@ -23,15 +23,15 @@ class SubscriptionState : public SubscriptionBase {
  public:
   using SubscriptionBase::SubscriptionBase;
 
-  Observer* GetObserver() const { return observer_.get(); }
-
-  void SwapObserver(std::unique_ptr<Observer>* observer) {
-    std::swap(observer_, *observer);
-    RS_ASSERT(observer_);
+  Observer* GetObserver() const {
+    return static_cast<Observer*>(GetUserData());
   }
 
- private:
-  std::unique_ptr<Observer> observer_;
+  void SwapObserver(std::unique_ptr<Observer>* observer) {
+    auto tmp = GetObserver();
+    SetUserData(static_cast<void*>(observer->release()));
+    observer->reset(tmp);
+  }
 };
 
 /// An interface shared by all layers of subscribers.
