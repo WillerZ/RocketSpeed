@@ -356,8 +356,8 @@ TEST_F(BufferedLogStorageTest, LatencyLimitedBatches) {
   MsgLoop loop(env, EnvOptions(), -1, 4, info_log, "loop");
   ASSERT_OK(loop.Initialize());
 
-  const std::chrono::microseconds time_limit(10000);
-  const std::chrono::microseconds between_messages(3000);
+  const std::chrono::microseconds time_limit(100000);
+  const std::chrono::microseconds between_messages(30000);
   const uint8_t min_batch = 3;
   const uint8_t max_batch = 4;
   const size_t kNumMessages = 100;
