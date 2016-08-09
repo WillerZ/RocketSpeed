@@ -108,7 +108,7 @@ class SmallIntArray {
 
 /**
  * Compact vector like structure for keeping pointers.
- * It uses 8 bytes + 8 * Size() of memory.
+ * It uses 16 bytes + 8 * Size() bytes of memory.
  * For each insertion and deletion reallocation happens.
  * NOTE: mutating methods marked const to be able to use the class as a Key in
  * sets & maps.
@@ -123,12 +123,12 @@ class SmallIntArray<T*> {
   // erased elements.
   static SmallIntArray<T*> GetDeletedValue() {
     SmallIntArray<T*> invalid;
-    invalid.array_ = reinterpret_cast<TaggedPtr<T>*>(kInvalidValue);
+    invalid.data_ = reinterpret_cast<Data*>(kInvalidValue);
     return invalid;
   }
 
   bool IsDeletedValue() const {
-    return kInvalidValue == reinterpret_cast<uintptr_t>(array_);
+    return kInvalidValue == reinterpret_cast<uintptr_t>(data_);
   }
 
   // create empty array
@@ -140,15 +140,10 @@ class SmallIntArray<T*> {
   SmallIntArray(const SmallIntArray& other) { operator=(other); }
 
   // google::sparse_hash_set is pre C++11 and uses copy instead of move.
-  // We own the array so we need to count references. We use 4 MSBs
-  // of arrays first TaggedPtr, rest (12 bites) are used for array size.
+  // We own the array so we need to count references.
   SmallIntArray& operator=(const SmallIntArray& other) {
     if (this != std::addressof(other)) {
-      if (other.GetRefCount() == other.MaxRefs()) {
-        throw std::runtime_error("SmallIntArray refcount overflow");
-      }
-
-      array_ = other.array_;
+      data_ = other.data_;
       if (!Empty()) {
         IncRefCount();
       }
@@ -162,7 +157,7 @@ class SmallIntArray<T*> {
   SmallIntArray& operator=(SmallIntArray&& other) {
     if (this != std::addressof(other)) {
       Clear();
-      std::swap(array_, other.array_);
+      std::swap(data_, other.data_);
       RS_ASSERT(Empty() || GetRefCount() > 0) << GetRefCount();
     }
     return *this;
@@ -174,23 +169,25 @@ class SmallIntArray<T*> {
     if (!Empty()) {
       DecRefCount();
       if (GetRefCount() == 0) {
-        delete[] array_;
+        delete data_;
       }
     }
-    array_ = nullptr;
+    data_ = nullptr;
   }
 
   ~SmallIntArray() { Clear(); }
 
   static constexpr size_t MaxSize() {
-    return std::numeric_limits<Tag>::max() >> kNumRefBits;
+    return std::numeric_limits<uint32_t>::max();
   }
 
-  const size_t MaxRefs() const { return (1ULL << (kNumRefBits + 1)) - 1; }
+  static constexpr size_t MaxRefs() {
+    return std::numeric_limits<uint32_t>::max();
+  }
 
   T* operator[](size_t idx) const {
     RS_ASSERT(idx < Size());
-    return array_[idx].GetPtr();
+    return data_->arr[idx];
   }
 
   /**
@@ -206,7 +203,7 @@ class SmallIntArray<T*> {
       return false;
     }
     Reallocate(Size(), Size() + 1);
-    array_[Size() - 1].SetPtr(ptr);
+    data_->arr[Size() - 1] = ptr;
     if (Size() == 1) {
       IncRefCount();
       RS_ASSERT(GetRefCount() == 1) << GetRefCount();
@@ -228,11 +225,8 @@ class SmallIntArray<T*> {
     }
 
     for (size_t i = 0; i < Size(); ++i) {
-      if (array_[i].GetPtr() == ptr) {
-        if (i == 0) {
-          array_[Size() - 1].SetTag(array_[0].GetTag());
-        }
-        std::swap(array_[i], array_[Size() - 1]);
+      if (data_->arr[i] == ptr) {
+        std::swap(data_->arr[i], data_->arr[Size() - 1]);
         Reallocate(Size() - 1, Size() - 1);
         return true;
       }
@@ -243,17 +237,16 @@ class SmallIntArray<T*> {
   // It's important to have Size() == 0 for empty array (sic)
   // and kInvalidValue-array to make the code skipped all heap-array
   // specific things, like dereferencing, nicely.
-  typename TaggedPtr<T>::Tag Size() const {
-    return (array_ == nullptr ||
-            reinterpret_cast<uintptr_t>(array_) == kInvalidValue)
-               ? 0
-               : array_[0].GetTag() & ~kRefMask;
+  uint32_t Size() const {
+    return (data_ == nullptr ||
+            reinterpret_cast<uintptr_t>(data_) == kInvalidValue)
+            ? 0
+            : data_->size;
   }
 
   bool Empty() const { return Size() == 0; }
 
  private:
-  using Tag = typename TaggedPtr<T>::Tag;
 
   template <typename U>
   friend std::ostream& operator<<(std::ostream& out,
@@ -263,7 +256,7 @@ class SmallIntArray<T*> {
    * Allocates new array and copy elements from the current one.
    * Deallocates current array iff it's nonempty and new one was successully
    * allocated.
-   * Assings new array to array_.
+   * Assings new array to data_->arr.
    * If the new array is bigger than to_copy elements the rest will be left
    * default contructed.
    * std::bad_alloc is populated and the array stays untouched in that case.
@@ -271,54 +264,60 @@ class SmallIntArray<T*> {
    * @param  to_copy number of elements to copy from old array
    * @param  new_size of the array to be allocated
    */
-  void Reallocate(Tag to_copy, Tag new_size) const {
+  void Reallocate(uint32_t to_copy, uint32_t new_size) const {
     RS_ASSERT(to_copy <= Size());
-    auto new_array = new_size ? new TaggedPtr<T>[new_size] : nullptr;
-    if (to_copy > 0) {
-      ::memcpy(new_array, array_, to_copy * sizeof(TaggedPtr<T>));
+    Data* new_data = nullptr;
+    if (new_size) {
+      new_data = (Data *) operator new (sizeof(Data) + sizeof(T*) * new_size);
+      new_data->ref = new_data->size = 0;
     }
-    delete[] array_; // there's nullptr in case there was no array
-    array_ = new_array;
+    if (to_copy > 0) {
+      ::memcpy(new_data, data_, sizeof(Data) + to_copy * sizeof(T*));
+    }
+    delete data_; // there's nullptr in case there was no data
+    data_ = new_data;
     SetSize(new_size);
   }
 
-  Tag GetRefCount() const {
+  uint32_t GetRefCount() const {
     if (Empty()) {
       return 0;
     }
-    return (array_[0].GetTag() & kRefMask) >> kNumSizeBits;
+    return data_->ref;
   }
 
   void IncRefCount() const {
     RS_ASSERT(GetRefCount() < MaxRefs());
     RS_ASSERT(!Empty());
-    array_[0].SetTag(Tag((GetRefCount() + 1) << kNumSizeBits) | Size());
+    ++data_->ref;
   }
 
   void DecRefCount() const {
     RS_ASSERT(GetRefCount() > 0);
     RS_ASSERT(!Empty());
-    array_[0].SetTag(Tag((GetRefCount() - 1) << kNumSizeBits) | Size());
+    --data_->ref;
   }
 
-  void SetSize(Tag size) const {
+  void SetSize(uint32_t size) const {
     if (size == 0) {
-      RS_ASSERT(array_ == nullptr);
+      RS_ASSERT(data_ == nullptr);
       return;
     }
     RS_ASSERT(size <= MaxSize());
-    RS_ASSERT(array_);
-    array_[0].SetTag(Tag(GetRefCount() << kNumSizeBits) | size);
+    RS_ASSERT(data_);
+    data_->size = size;
   }
 
-  static constexpr Tag kNumSizeBits = 12;
-  static constexpr Tag kNumRefBits = 4;
-  static constexpr Tag kRefMask = 0xf000;
   // Note: conversion from uintptr_t to pointer and back
   // is implementation defined
   static constexpr uintptr_t kInvalidValue = 1ULL;
 
-  mutable TaggedPtr<T>* array_ = nullptr;
+  struct Data {
+    uint32_t ref;
+    uint32_t size;
+    T* arr[0];
+  };
+  mutable Data* data_ = nullptr;
 };
 
 template <typename T>

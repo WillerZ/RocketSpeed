@@ -13,7 +13,6 @@ int main() {
 #else
 
 #include <gflags/gflags.h>
-#include <iostream>
 #include <memory>
 #include <unordered_set>
 
@@ -68,7 +67,8 @@ void RunMapSearchTestImpl() {
   std::unordered_set<std::unique_ptr<Value> > values;
   KeylessHashMMap<Key, Value*, Value, Impl, ArrayImpl> mapa;
   Random random(static_cast<uint32_t>(time(nullptr)));
-  auto num_values = random.Next() % (mapa.MaxElementsPerKey() + 1);
+  auto maxElements = std::min<size_t>(mapa.MaxElementsPerKey() + 1, 4096ULL);
+  auto num_values = random.Next() % maxElements;
 
   for (size_t i = 0; i < num_values; ++i) {
     auto it = values.emplace(new Value(i)).first;
@@ -118,7 +118,8 @@ void TestIteratorUsageImpl() {
   std::unordered_set<Value*> values;
   KeylessHashMMap<Key, Value*, Value, Impl> mapa;
   Random random(static_cast<uint32_t>(time(nullptr)));
-  auto num_values = random.Next() % (mapa.MaxElementsPerKey() + 1);
+  auto maxElements = std::min<size_t>(mapa.MaxElementsPerKey() + 1, 4096ULL);
+  auto num_values = random.Next() % maxElements;
 
   for (size_t i = 0; i < num_values; ++i) {
     std::unique_ptr<Value> value(new Value(i));
@@ -156,7 +157,8 @@ template <typename KeyT, typename ValueT, template <typename...> class Impl,
 void RunInsertionDeletionChecksImpl() {
   KeylessHashMMap<KeyT, ValueT*, ValueT, Impl, ArrayImpl> mapa;
   Random random(static_cast<uint32_t>(time(nullptr)));
-  auto num_values = random.Next() % (mapa.MaxElementsPerKey() + 1);
+  auto maxElements = std::min<size_t>(mapa.MaxElementsPerKey() + 1, 4096ULL);
+  auto num_values = random.Next() % maxElements;
   std::vector<std::unique_ptr<ValueT> > values;
   values.reserve(num_values);
 
@@ -198,38 +200,10 @@ struct TestValue {
 
 class SmallIntArrayTest : public ::testing::Test {};
 
-TEST_F(SmallIntArrayTest, InsertionDelition) {
-  SmallIntArray<TestValue*> array;
-  std::vector<std::unique_ptr<TestValue> > values;
-  const size_t num_values = array.MaxSize();
-  values.reserve(num_values);
-
-  for (size_t i = 0; i < num_values; ++i) {
-    values.emplace_back(new TestValue(i));
-    ASSERT_TRUE(array.PushBack(values[i].get()));
-    ASSERT_EQ(array.Size(), i + 1);
-    ASSERT_TRUE(!array.Empty());
-  }
-
-  // enough is enough, we inserted MaxSize() already
-  ASSERT_TRUE(!array.PushBack(values[0].get()));
-
-  Random random(static_cast<uint32_t>(time(nullptr)));
-  while (!values.empty()) {
-    auto idx = random.Next() % values.size();
-    auto ptr = values[idx].get();
-    ASSERT_EQ(array.Size(), values.size());
-    ASSERT_TRUE(array.Erase(ptr));
-    values.erase(values.begin() + idx);
-  }
-  ASSERT_EQ(array.Size(), 0);
-  ASSERT_TRUE(array.Empty());
-}
-
 TEST_F(SmallIntArrayTest, BracketsOperator) {
   Random random(static_cast<uint32_t>(time(nullptr)));
   SmallIntArray<TestValue*> array;
-  const size_t num_values = random.Next() % (array.MaxSize() + 1);
+  const size_t num_values = random.Next() % 371;
   std::vector<std::unique_ptr<TestValue> > values;
   values.reserve(num_values);
 
@@ -249,7 +223,7 @@ TEST_F(SmallIntArrayTest, BracketsOperator) {
 TEST_F(SmallIntArrayTest, Moving) {
   Random random(static_cast<uint32_t>(time(nullptr)));
   SmallIntArray<TestValue*> array;
-  const size_t num_values = random.Next() % (array.MaxSize() + 1);
+  const size_t num_values = random.Next() % 717;
   std::vector<std::unique_ptr<TestValue> > values;
   values.reserve(num_values);
 
