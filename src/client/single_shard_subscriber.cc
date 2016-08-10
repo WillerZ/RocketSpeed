@@ -200,13 +200,13 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
   }
   previously_healthy_ = isHealthy;
 
+  LOG_WARN(options_.info_log,
+           "Notified that subscriptions for shard %zu are now %s.",
+           shard_id_, (isHealthy ? "healthy" : "unhealthy"));
+
   if (!options_.should_notify_health) {
     return;
   }
-
-  LOG_WARN(options_.info_log,
-           "Notifying subscriptions for shard %zu that they are %s.",
-           shard_id_, (isHealthy ? "healthy" : "unhealthy"));
 
   auto start = std::chrono::steady_clock::now();
 

@@ -155,7 +155,10 @@ class ClientOptions {
   // Default: nullptr
   std::shared_ptr<StatisticsVisitor> statistics_visitor;
 
-  // Should a new health notification propagate to observers?
+  // Should a new health notification propagate to observers? This
+  // doesn't disable the heartbeat timeout mechanism. It will stop all
+  // observers from being notified when a shard's health status
+  // changes.
   // Default: true
   bool should_notify_health;
 
@@ -165,7 +168,9 @@ class ClientOptions {
   size_t max_silent_reconnects;
 
   // Notify observers that a shard is unhealthy if we haven't received
-  // a heartbeat within this period. Set to zero to disable.
+  // a heartbeat within this period. Set to zero to disable the
+  // timeout mechanism. Heartbeats will still be received but will
+  // have no effect.
   // Default: 2 minutes
   std::chrono::milliseconds heartbeat_timeout;
 
