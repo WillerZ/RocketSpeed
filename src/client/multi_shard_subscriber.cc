@@ -136,7 +136,7 @@ void MultiShardSubscriber::StartSubscription(
           new TailCollapsingSubscriber(std::unique_ptr<Subscriber>(sub)));
     }
 
-    // Put it back in the map so it can be resued.
+    // Put it back in the map so it can be reused.
     auto result = subscribers_.emplace(shard_id, std::move(subscriber));
     RS_ASSERT(result.second);
     it = result.first;

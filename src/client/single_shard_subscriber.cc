@@ -86,6 +86,15 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
     return;
   }
 
+  if (!currently_healthy_) {
+    SubscriptionStatusImpl status(sub_id, parameters.tenant_id,
+                                  parameters.namespace_id,
+                                  parameters.topic_name,
+                                  parameters.start_seqno);
+    status.status_ = Status::ShardUnhealthy();
+    observer->OnSubscriptionStatusChange(status);
+  }
+
   auto user_data = static_cast<void*>(observer.release());
   subscriptions_map_.Subscribe(sub_id,
                                parameters.tenant_id,
@@ -176,10 +185,10 @@ void Subscriber::RefreshRouting() {
 void Subscriber::NotifyHealthy(bool isHealthy) {
   thread_check_.Check();
 
-  if (previously_healthy_ == isHealthy) {
+  if (currently_healthy_ == isHealthy) {
     return;
   }
-  previously_healthy_ = isHealthy;
+  currently_healthy_ = isHealthy;
 
   LOG_WARN(options_.info_log,
            "Notified that subscriptions for shard %zu are now %s.",

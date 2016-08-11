@@ -103,7 +103,7 @@ class Subscriber : public SubscriberIf {
 
   SubscriptionsMap subscriptions_map_;
   ResilientStreamReceiver stream_supervisor_;
-  bool previously_healthy_{true};
+  bool currently_healthy_{true};
 
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
