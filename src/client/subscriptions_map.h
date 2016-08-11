@@ -93,7 +93,6 @@ class SubscriptionBase {
   SubscriptionID GetIDWhichMayChange() const { return sub_id_; }
 
  private:
-  template <typename SubscriptionState>
   friend class SubscriptionsMap;
 
   const TenantAndNamespaceFlyweight tenant_and_namespace_;
@@ -158,7 +157,6 @@ class SubscriptionData {
 /// The class is optimised for memory usage per subscription and is not
 /// thread-safe.
 // TODO(stupaq): generalise the sink and reshard by host in the proxy
-template <typename SubscriptionState>
 class SubscriptionsMap : public ConnectionAwareReceiver {
  public:
   using DeliverCb = std::function<void(
@@ -173,7 +171,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
                    UserDataCleanupCb user_data_cleanup_cb);
   ~SubscriptionsMap();
 
-  /// Returns a non-owning pointer to the SubscriptionState.
+  /// Returns a non-owning pointer to the SubscriptionBase.
   ///
   /// The pointer is valid until matching ::Unsubscribe call.
   void Subscribe(SubscriptionID sub_id,
@@ -261,7 +259,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
 
   /// Extracts information about a subscription.
   bool Select(SubscriptionID sub_id,
-              typename Info::Flags flags,
+              Info::Flags flags,
               Info* info) const;
 
   /// Checks if subscription exists.
@@ -298,7 +296,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
   struct SubscriptionsMapping {
-    SubscriptionID ExtractKey(const SubscriptionState* sub) const {
+    SubscriptionID ExtractKey(const SubscriptionBase* sub) const {
       return sub->GetSubscriptionID();
     }
     size_t Hash(const SubscriptionID& id) const {
@@ -309,12 +307,12 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
     }
   };
 
-  // NOTE: these raw SubscriptionState pointers are owned by the maps.
+  // NOTE: these raw SubscriptionBase pointers are owned by the maps.
   // If you to remove an element from the map it's your responsibility
   // to take care of the memory.
   using Subscriptions =
     STLAdapter<SparseKeylessMap<
-                  SubscriptionID, SubscriptionState*, SubscriptionsMapping>,
+                  SubscriptionID, SubscriptionBase*, SubscriptionsMapping>,
                 SubscriptionsMapping>;
   ObservableContainer<Subscriptions> pending_subscriptions_;
   Subscriptions synced_subscriptions_;
@@ -324,15 +322,15 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
 
   std::unique_ptr<Sink<SharedTimestampedString>> sink_;
 
-  /// Returns a non-owning pointer to the SubscriptionState or null if doesn't
+  /// Returns a non-owning pointer to the SubscriptionBase or null if doesn't
   /// exist.
-  SubscriptionState* Find(SubscriptionID sub_id) const;
+  SubscriptionBase* Find(SubscriptionID sub_id) const;
 
   Logger* GetLogger() const;
 
   // Function takes upstream_sub ownership
   void HandlePendingSubscription(
-        Flow* flow, std::unique_ptr<SubscriptionState> upstream_sub);
+        Flow* flow, std::unique_ptr<SubscriptionBase> upstream_sub);
 
   void HandlePendingUnsubscription(Flow* flow, SubscriptionID sub_id);
 
@@ -342,7 +340,47 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
 
-  void CleanupSubscription(SubscriptionState* sub);
+  void CleanupSubscription(SubscriptionBase* sub);
 };
+
+template <typename Iter>
+void SubscriptionsMap::Iterate(Iter&& iter) {
+  class SubscriptionStateData : public SubscriptionData {
+   public:
+    explicit SubscriptionStateData(SubscriptionBase* state) : state_(state) {}
+
+    TenantID GetTenant() const override {
+      return state_->GetTenant();
+    }
+
+    Slice GetNamespace() const override {
+      return state_->GetNamespace();
+    }
+
+    Slice GetTopicName() const override {
+      return state_->GetTopicName();
+    }
+
+    SequenceNumber GetExpectedSeqno() const override {
+      return state_->GetExpectedSeqno();
+    }
+
+    SubscriptionID GetID() const override {
+      return state_->GetIDWhichMayChange();
+    }
+
+   private:
+    SubscriptionBase* state_;
+  };
+
+  for (auto ptr : pending_subscriptions_.Read()) {
+    const SubscriptionStateData data(ptr);
+    iter(data);
+  }
+  for (auto ptr : synced_subscriptions_) {
+    const SubscriptionStateData data(ptr);
+    iter(data);
+  }
+}
 
 }  // namespace rocketspeed

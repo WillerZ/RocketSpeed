@@ -16,9 +16,10 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/subscriber_stats.h"
-#include "src/client/subscriptions_map.tcc"
+#include "src/client/subscriptions_map.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/flow_control.h"
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
 

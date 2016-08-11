@@ -101,7 +101,7 @@ class Subscriber : public SubscriberIf {
   /// A shared statistics.
   std::shared_ptr<SubscriberStats> stats_;
 
-  SubscriptionsMap<SubscriptionBase> subscriptions_map_;
+  SubscriptionsMap subscriptions_map_;
   ResilientStreamReceiver stream_supervisor_;
   bool previously_healthy_{true};
 

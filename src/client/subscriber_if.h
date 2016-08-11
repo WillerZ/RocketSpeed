@@ -52,7 +52,7 @@ class SubscriberIf {
                            size_t worker_id) = 0;
 
   /// Contains information of the result of a selection.
-  class Info : public SubscriptionsMap<SubscriptionBase>::Info {
+  class Info : public SubscriptionsMap::Info {
    public:
     enum : Flags {
       kObserver = kUserData,

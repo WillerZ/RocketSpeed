@@ -133,7 +133,7 @@ class Multiplexer {
   PerShard* const per_shard_;
 
   UpstreamAllocator upstream_allocator_;
-  SubscriptionsMap<SubscriptionBase> subscriptions_map_;
+  SubscriptionsMap subscriptions_map_;
   ResilientStreamReceiver stream_supervisor_;
 
   // TODO(stupaq): intrusive

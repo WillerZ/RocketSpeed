@@ -7,7 +7,7 @@
 
 #include "external/folly/Memory.h"
 
-#include "src/client/subscriptions_map.tcc"
+#include "src/client/subscriptions_map.h"
 #include "src/proxy2/upstream_worker.h"
 
 namespace rocketspeed {
