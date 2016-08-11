@@ -71,6 +71,20 @@ class TaggedPtr {
 
   bool IsInvalidValue() const { return kInvalidValue == impl_; }
 
+  // sets both Tag & pointer part
+  // NOTE: you probably shouldn't use it
+  void SetRaw(const T* ptr) {
+    RS_ASSERT(0 == impl_);
+    impl_ = reinterpret_cast<uintptr_t>(ptr);
+  }
+
+  // returns pointer with Tag set
+  // NOTE: you probably shouldn't use it
+  T* GetRaw() const {
+    RS_ASSERT(!IsInvalidValue());
+    return reinterpret_cast<T*>(impl_);
+  }
+
  private:
   static constexpr uint8_t kNumLowBits = 48;
   static constexpr uintptr_t kBit47 = 1ULL << 47;

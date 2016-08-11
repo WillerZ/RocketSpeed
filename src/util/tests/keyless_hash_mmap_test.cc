@@ -33,7 +33,7 @@ namespace {
 constexpr size_t kUniquePeriod = std::numeric_limits<size_t>::max();
 
 template <typename Key, size_t period>
-class NonUniqueHashValue {
+class NonUniqueHashValue : public StdEqualsAndHash<Key> {
  public:
   // default ctor to be used for Hashing construction purpose
   NonUniqueHashValue(Key k = std::numeric_limits<Key>::max())
@@ -51,8 +51,6 @@ class NonUniqueHashValue {
 
   // Hash from Key
   size_t Hash(const Key& someKey) const { return someKey; }
-
-  bool Equals(const Key& key1, const Key& key2) const { return key1 == key2; }
 
   Key key_;
 };

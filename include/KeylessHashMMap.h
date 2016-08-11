@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 
@@ -699,6 +700,12 @@ class KeylessHashMMap {
   std::unique_ptr<KeyStore<Key>> store_;
   Impl impl_;
   size_t size_;
+};
+
+template <typename KeyT>
+struct StdEqualsAndHash {
+  size_t Hash(const KeyT& k) const { return std::hash<KeyT>()(k); }
+  bool Equals(const KeyT& k1, const KeyT& k2) const { return k1 == k2; }
 };
 
 }  // namespace rocketspeed

@@ -101,6 +101,21 @@ TEST_F(TaggedPtrTest, artificialPointer) {
                dereference);
 }
 
+TEST_F(TaggedPtrTest, rawAccessors) {
+  std::unique_ptr<int> ptr(new int(123456));
+  TaggedPtr<int> tagged1;
+  TaggedPtr<int> tagged2;
+
+  tagged1.SetRaw(ptr.get());
+  ASSERT_EQ(tagged1.GetRaw(), ptr.get());
+
+  tagged1.SetTag(987);
+  tagged2.SetRaw(tagged1.GetRaw());
+
+  ASSERT_EQ(tagged1, tagged2);
+  ASSERT_NE(tagged2.GetRaw(), ptr.get());
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
