@@ -126,6 +126,31 @@ SubscriptionState* SubscriptionsMap<SubscriptionState>::Find(
 }
 
 template <typename SubscriptionState>
+bool SubscriptionsMap<SubscriptionState>::Select(
+    SubscriptionID sub_id, typename Info::Flags flags, Info* info) const {
+  if (auto sub = Find(sub_id)) {
+    if (flags & Info::kTenant) {
+      info->SetTenant(sub->GetTenant());
+    }
+    if (flags & Info::kNamespace) {
+      info->SetNamespace(sub->GetNamespace().ToString());
+    }
+    if (flags & Info::kTopic) {
+      info->SetTopic(sub->GetTopicName().ToString());
+    }
+    if (flags & Info::kSequenceNumber) {
+      info->SetSequenceNumber(sub->GetExpectedSeqno());
+    }
+    if (flags & Info::kUserData) {
+      info->SetUserData(sub->GetUserData());
+    }
+    return true;
+  }
+  return false;
+}
+
+
+template <typename SubscriptionState>
 bool SubscriptionsMap<SubscriptionState>::Exists(SubscriptionID sub_id) const {
   LOG_DEBUG(GetLogger(), "Exists(%llu)", sub_id.ForLogging());
 
@@ -256,6 +281,14 @@ void SubscriptionsMap<SubscriptionState>::Iterate(Iter&& iter) {
     const SubscriptionStateData data(ptr);
     iter(data);
   }
+}
+
+template <typename SubscriptionState>
+void SubscriptionsMap<SubscriptionState>::SetUserData(SubscriptionID sub_id,
+                                                      void* user_data) {
+  auto sub = Find(sub_id);
+  RS_ASSERT(sub);
+  sub->SetUserData(user_data);
 }
 
 template <typename SubscriptionState>

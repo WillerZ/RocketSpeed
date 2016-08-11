@@ -183,9 +183,86 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
                  SequenceNumber initial_seqno,
                  void* user);
 
-  /// Returns a non-owning pointer to the SubscriptionState or null if doesn't
-  /// exist.
-  SubscriptionState* Find(SubscriptionID sub_id) const;
+  /// Contains information of the result of a selection.
+  class Info {
+   public:
+    using Flags = uint64_t;
+
+    enum : Flags {
+      kNone = 0,
+
+      kTenant = 1 << 0,
+      kNamespace = 1 << 1,
+      kTopic = 1 << 2,
+      kSequenceNumber = 1 << 3,
+      kUserData = 1 << 4,
+
+      kAll = ~0ULL,
+    };
+
+    TenantID GetTenant() const {
+      RS_ASSERT(flags_ & kTenant);
+      return tenant_id_;
+    }
+
+    const NamespaceID& GetNamespace() const {
+      RS_ASSERT(flags_ & kNamespace);
+      return namespace_id_;
+    }
+
+    const Topic& GetTopic() const {
+      RS_ASSERT(flags_ & kTopic);
+      return topic_name_;
+    }
+
+    SequenceNumber GetSequenceNumber() const {
+      RS_ASSERT(flags_ & kSequenceNumber);
+      return seqno_;
+    }
+
+    void* GetUserData() const {
+      RS_ASSERT(flags_ & kUserData);
+      return user_data_;
+    }
+
+    void SetTenant(TenantID tenant_id) {
+      flags_ |= kTenant;
+      tenant_id_ = tenant_id;
+    }
+
+    void SetNamespace(NamespaceID namespace_id) {
+      flags_ |= kNamespace;
+      namespace_id_ = std::move(namespace_id);
+    }
+
+    void SetTopic(Topic topic_name) {
+      flags_ |= kTopic;
+      topic_name_ = std::move(topic_name);
+    }
+
+    void SetSequenceNumber(SequenceNumber seqno) {
+      flags_ |= kSequenceNumber;
+      seqno_ = seqno;
+    }
+
+    void SetUserData(void* user_data) {
+      flags_ |= kUserData;
+      user_data_ = user_data;
+    }
+
+   private:
+    TenantID tenant_id_;
+    NamespaceID namespace_id_;
+    Topic topic_name_;
+    SequenceNumber seqno_;
+    void* user_data_;
+    Flags flags_ = kNone;
+  };
+
+  /// Extracts information about a subscription.
+  bool Select(SubscriptionID sub_id,
+              typename Info::Flags flags,
+              Info* info) const;
 
   /// Checks if subscription exists.
   bool Exists(SubscriptionID sub_id) const;
@@ -208,6 +285,9 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   /// The map must not be modified during the loop.
   template <typename Iter>
   void Iterate(Iter&& iter);
+
+  /// Sets the user data for a subscription.
+  void SetUserData(SubscriptionID sub_id, void* user_data);
 
  private:
   EventLoop* const event_loop_;
@@ -243,6 +323,10 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
   std::unique_ptr<Sink<SharedTimestampedString>> sink_;
+
+  /// Returns a non-owning pointer to the SubscriptionState or null if doesn't
+  /// exist.
+  SubscriptionState* Find(SubscriptionID sub_id) const;
 
   Logger* GetLogger() const;
 

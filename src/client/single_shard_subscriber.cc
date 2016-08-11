@@ -159,31 +159,11 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
 
 bool Subscriber::Select(
     SubscriptionID sub_id, Info::Flags flags, Info* info) const {
-  if (auto sub = subscriptions_map_.Find(sub_id)) {
-    if (flags & Info::kTenant) {
-      info->SetTenant(sub->GetTenant());
-    }
-    if (flags & Info::kNamespace) {
-      info->SetNamespace(sub->GetNamespace().ToString());
-    }
-    if (flags & Info::kTopic) {
-      info->SetTopic(sub->GetTopicName().ToString());
-    }
-    if (flags & Info::kSequenceNumber) {
-      info->SetSequenceNumber(sub->GetExpectedSeqno());
-    }
-    if (flags & Info::kObserver) {
-      info->SetObserver(static_cast<Observer*>(sub->GetUserData()));
-    }
-    return true;
-  }
-  return false;
+  return subscriptions_map_.Select(sub_id, flags, info);
 }
 
 void Subscriber::SetUserData(SubscriptionID sub_id, void* user_data) {
-  auto sub = subscriptions_map_.Find(sub_id);
-  RS_ASSERT(sub);
-  sub->SetUserData(user_data);
+  subscriptions_map_.SetUserData(sub_id, user_data);
 }
 
 void Subscriber::RefreshRouting() {

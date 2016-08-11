@@ -52,79 +52,19 @@ class SubscriberIf {
                            size_t worker_id) = 0;
 
   /// Contains information of the result of a selection.
-  class Info {
+  class Info : public SubscriptionsMap<SubscriptionBase>::Info {
    public:
-    using Flags = uint64_t;
-
     enum : Flags {
-      kNone = 0,
-
-      kTenant = 1 << 0,
-      kNamespace = 1 << 1,
-      kTopic = 1 << 2,
-      kSequenceNumber = 1 << 3,
-      kObserver = 1 << 4,
-
-      kAll = ~0ULL,
+      kObserver = kUserData,
     };
 
-    TenantID GetTenant() const {
-      RS_ASSERT(flags_ & kTenant);
-      return tenant_id_;
-    }
-
-    const NamespaceID& GetNamespace() const {
-      RS_ASSERT(flags_ & kNamespace);
-      return namespace_id_;
-    }
-
-    const Topic& GetTopic() const {
-      RS_ASSERT(flags_ & kTopic);
-      return topic_name_;
-    }
-
-    SequenceNumber GetSequenceNumber() const {
-      RS_ASSERT(flags_ & kSequenceNumber);
-      return seqno_;
-    }
-
     Observer* GetObserver() const {
-      RS_ASSERT(flags_ & kObserver);
-      return observer_;
-    }
-
-    void SetTenant(TenantID tenant_id) {
-      flags_ |= kTenant;
-      tenant_id_ = tenant_id;
-    }
-
-    void SetNamespace(NamespaceID namespace_id) {
-      flags_ |= kNamespace;
-      namespace_id_ = std::move(namespace_id);
-    }
-
-    void SetTopic(Topic topic_name) {
-      flags_ |= kTopic;
-      topic_name_ = std::move(topic_name);
-    }
-
-    void SetSequenceNumber(SequenceNumber seqno) {
-      flags_ |= kSequenceNumber;
-      seqno_ = seqno;
+      return static_cast<Observer*>(GetUserData());
     }
 
     void SetObserver(Observer* observer) {
-      flags_ |= kObserver;
-      observer_ = observer;
+      SetUserData(static_cast<void*>(observer));
     }
-
-   private:
-    TenantID tenant_id_;
-    NamespaceID namespace_id_;
-    Topic topic_name_;
-    SequenceNumber seqno_;
-    Observer* observer_;
-    Flags flags_ = kNone;
   };
 
   /// Queries a subscription for a subset of fields, specified by flags.

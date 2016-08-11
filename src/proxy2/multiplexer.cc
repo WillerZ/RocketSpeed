@@ -221,10 +221,11 @@ void Multiplexer::Unsubscribe(Flow* flow,
                               UpstreamSubscription* upstream_sub,
                               PerStream* per_stream,
                               SubscriptionID downstream_sub) {
+  const auto sub_id = upstream_sub->GetSubID();
   LOG_DEBUG(GetOptions().info_log,
             "Multiplexer(%zu)::Unsubscribe(%llu, %llu, %llu)",
             per_shard_->GetShardID(),
-            upstream_sub->GetSubID().ForLogging(),
+            sub_id.ForLogging(),
             per_stream->GetStream(),
             downstream_sub.ForLogging());
 
@@ -234,13 +235,15 @@ void Multiplexer::Unsubscribe(Flow* flow,
   // If we have no downstream subscriptions, kill upstream one.
   if (remaining_downstream == 0) {
     // Find the topic and namespace.
-    auto sub = subscriptions_map_.Find(upstream_sub->GetSubID());
-    RS_ASSERT(sub);
+    using Info = decltype(subscriptions_map_)::Info;
+    Info info;
+    Info::Flags flags = Info::kTopic | Info::kNamespace;
+    bool success = subscriptions_map_.Select(sub_id, flags, &info);
+    RS_ASSERT(success);
     // Remove from index first.
-    RemoveFromIndex(sub->GetNamespace().ToString(),
-                    sub->GetTopicName().ToString());
+    RemoveFromIndex(info.GetNamespace(), info.GetTopic());
     // Remove the subscription state, that'd invalidate the pointer.
-    subscriptions_map_.Unsubscribe(upstream_sub->GetSubID());
+    subscriptions_map_.Unsubscribe(sub_id);
     upstream_sub = nullptr;
   }
 }
@@ -255,8 +258,11 @@ Multiplexer::~Multiplexer() = default;
 
 UpstreamSubscription* Multiplexer::GetUpstreamSubscription(
     SubscriptionID sub_id) {
-  return static_cast<UpstreamSubscription*>(
-      subscriptions_map_.Find(sub_id)->GetUserData());
+  using Info = decltype(subscriptions_map_)::Info;
+  Info info;
+  bool success = subscriptions_map_.Select(sub_id, Info::kUserData, &info);
+  RS_ASSERT(success);
+  return static_cast<UpstreamSubscription*>(info.GetUserData());
 }
 
 UpstreamSubscription* Multiplexer::FindInIndex(NamespaceID namespace_id,
@@ -347,12 +353,14 @@ void Multiplexer::ReceiveTerminate(
             per_shard_->GetShardID(),
             upstream_sub.ForLogging());
 
-  auto sub = subscriptions_map_.Find(upstream_sub);
-  RS_ASSERT(sub);
+  using Info = decltype(subscriptions_map_)::Info;
+  Info info;
+  Info::Flags flags = Info::kTopic | Info::kNamespace;
+  bool success = subscriptions_map_.Select(upstream_sub, flags, &info);
+  RS_ASSERT(success);
 
   // The subscription has been removed from the map, so update an index.
-  RemoveFromIndex(sub->GetNamespace().ToString(),
-                  sub->GetTopicName().ToString());
+  RemoveFromIndex(info.GetNamespace(), info.GetTopic());
 
   // Broadcast termination.
   GetUpstreamSubscription(upstream_sub)->ReceiveTerminate(
