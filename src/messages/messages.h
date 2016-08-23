@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <unordered_set>
 #include <vector>
 
 #include "include/Slice.h"
@@ -854,15 +855,39 @@ class MessageDeliverBatch : public Message {
  */
 class MessageHeartbeat : public Message {
  public:
+  using ShardSet = std::unordered_set<uint32_t>;
+  using Clock = std::chrono::system_clock;
+
   MessageHeartbeat() {}
-  explicit MessageHeartbeat(TenantID tenantid)
-      : Message(MessageType::mHeartbeat, tenantid) {}
+  explicit MessageHeartbeat(TenantID tenantid,
+                            Clock::time_point timestamp = Clock::now(),
+                            ShardSet healthy_shards = ShardSet())
+    : Message(MessageType::mHeartbeat, tenantid),
+      timestamp_(timestamp),
+      healthy_shards_(std::move(healthy_shards)) {}
 
   /*
    * Inherited from Serializer
    */
   Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
+
+  /**
+   * Time at the origin of this heartbeat. Recipients of heartbeats
+   * can use this to determine the end-to-end latency of propagation
+   * and ensure this is below a threshold.
+   */
+  Clock::time_point GetTimestamp() const {
+    return timestamp_;
+  }
+
+  const ShardSet& GetHealthyShards() const {
+    return healthy_shards_;
+  }
+
+ private:
+  Clock::time_point timestamp_;
+  ShardSet healthy_shards_;
 };
 
 /** @} */

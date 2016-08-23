@@ -954,6 +954,43 @@ TEST_F(Messaging, VersionMismatch) {
   }
 }
 
+TEST_F(Messaging, RoundTripAllHeartbeatFields) {
+  auto healthy_shards = MessageHeartbeat::ShardSet();
+  healthy_shards.insert(1);
+  healthy_shards.insert(5);
+  healthy_shards.insert(18273483);
+  MessageHeartbeat msg(Tenant::GuestTenant, MessageHeartbeat::Clock::now(),
+                       healthy_shards);
+
+  std::string str;
+  msg.Serialize(&str);
+  Slice original(str);
+  MessageHeartbeat res;
+  ASSERT_OK(res.DeSerialize(&original));
+
+  ASSERT_EQ(msg.GetMessageType(), res.GetMessageType());
+  ASSERT_EQ(msg.GetTenantID(), res.GetTenantID());
+  ASSERT_EQ(msg.GetHealthyShards(), res.GetHealthyShards());
+
+  auto ts1 = msg.GetTimestamp();
+  auto ts2 = res.GetTimestamp();
+  auto delta = ts1 - ts2;
+  ASSERT_TRUE(
+    std::chrono::duration_cast<std::chrono::milliseconds>(delta).count() < 1);
+}
+
+TEST_F(Messaging, SupportPreviousHeartbeatSerialization) {
+  MessageHeartbeat msg(Tenant::GuestTenant);
+
+  std::string str;
+  msg.Serialize(&str);
+  Slice original(str.c_str(), 3); // type and tenant
+  MessageHeartbeat res;
+  ASSERT_OK(res.DeSerialize(&original));
+
+  ASSERT_EQ(msg.GetMessageType(), res.GetMessageType());
+  ASSERT_EQ(msg.GetTenantID(), res.GetTenantID());
+}
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

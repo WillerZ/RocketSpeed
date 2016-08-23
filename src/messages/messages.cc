@@ -741,8 +741,19 @@ Status MessageDeliverBatch::DeSerialize(Slice* in) {
 }
 
 Status MessageHeartbeat::Serialize(std::string* out) const {
+  using namespace std::chrono;
   PutFixedEnum8(out, type_);
   PutFixed16(out, tenantid_);
+
+  uint64_t epoch_ms = duration_cast<milliseconds>(
+    timestamp_.time_since_epoch())
+    .count();
+  PutFixed64(out, epoch_ms);
+
+  for (uint shard : healthy_shards_) {
+    PutVarint32(out, shard);
+  }
+
   return Status::OK();
 }
 
@@ -755,6 +766,23 @@ Status MessageHeartbeat::DeSerialize(Slice* in) {
   if (!GetFixed16(in, &tenantid_)) {
     return Status::InvalidArgument("Bad tenant ID");
   }
+
+  if (in->size() == 0) {
+    return Status::OK();        // for backwards compatibility
+  }
+
+  uint64_t epoch_ms;
+  if (!GetFixed64(in, &epoch_ms)) {
+    return Status::InvalidArgument("Bad timestamp");
+  }
+  Clock::duration since_epoch = std::chrono::milliseconds(epoch_ms);
+  timestamp_ = Clock::time_point(since_epoch);
+
+  uint32_t shard;
+  while (GetVarint32(in, &shard)) {
+    healthy_shards_.insert(shard);
+  }
+
   return Status::OK();
 }
 
