@@ -81,7 +81,7 @@ Status ClientImpl::Create(ClientOptions options,
                                                 -1,  // port
                                                 options.num_workers,
                                                 options.info_log,
-                                                "client",
+                                                "rocketspeed",
                                                 m_opts));
 
   Status st = msg_loop->Initialize();
