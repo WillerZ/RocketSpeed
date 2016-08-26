@@ -26,8 +26,14 @@ template <typename T>
 class TaggedPtr {
  public:
   using Tag = uint16_t;
+  using Underlying = T;
 
   TaggedPtr() { Reset(); }
+
+  explicit TaggedPtr(Underlying* ptr, Tag tag) {
+    SetPtr(ptr);
+    SetTag(tag);
+  }
 
   // acts like a raw pointer in terms of copy & move
   TaggedPtr(const TaggedPtr&) = default;
@@ -73,16 +79,16 @@ class TaggedPtr {
 
   // sets both Tag & pointer part
   // NOTE: you probably shouldn't use it
-  void SetRaw(const T* ptr) {
+  void SetRawTaggedPtr(uintptr_t ptr) {
     RS_ASSERT(0 == impl_);
-    impl_ = reinterpret_cast<uintptr_t>(ptr);
+    impl_ = ptr;
   }
 
   // returns pointer with Tag set
   // NOTE: you probably shouldn't use it
-  T* GetRaw() const {
+  uintptr_t GetRawTaggedPtr() const {
     RS_ASSERT(!IsInvalidValue());
-    return reinterpret_cast<T*>(impl_);
+    return impl_;
   }
 
  private:

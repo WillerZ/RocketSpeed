@@ -106,14 +106,14 @@ TEST_F(TaggedPtrTest, rawAccessors) {
   TaggedPtr<int> tagged1;
   TaggedPtr<int> tagged2;
 
-  tagged1.SetRaw(ptr.get());
-  ASSERT_EQ(tagged1.GetRaw(), ptr.get());
+  tagged1.SetRawTaggedPtr(reinterpret_cast<uintptr_t>(ptr.get()));
+  ASSERT_EQ(tagged1.GetRawTaggedPtr(), reinterpret_cast<uintptr_t>(ptr.get()));
 
   tagged1.SetTag(987);
-  tagged2.SetRaw(tagged1.GetRaw());
+  tagged2.SetRawTaggedPtr(tagged1.GetRawTaggedPtr());
 
   ASSERT_EQ(tagged1, tagged2);
-  ASSERT_NE(tagged2.GetRaw(), ptr.get());
+  ASSERT_NE(tagged2.GetRawTaggedPtr(), reinterpret_cast<uintptr_t>(ptr.get()));
 }
 
 }  // namespace rocketspeed
