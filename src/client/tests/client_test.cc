@@ -1382,13 +1382,13 @@ TEST_F(ClientTest, ExportStatistics) {
   client->ExportStatistics(&visitor);
 
   // At least 1 command should have been processed.
-  ASSERT_GT(visitor.counters["client.commands_processed"], 0);
+  ASSERT_GT(visitor.counters["rocketspeed.commands_processed"], 0);
 
   // Command latencies percentiles should be non-zero and increasing.
-  auto p50 = visitor.histos["client.queues.response_latency.p50"];
-  auto p90 = visitor.histos["client.queues.response_latency.p90"];
-  auto p99 = visitor.histos["client.queues.response_latency.p99"];
-  auto p999 = visitor.histos["client.queues.response_latency.p999"];
+  auto p50 = visitor.histos["rocketspeed.queues.response_latency.p50"];
+  auto p90 = visitor.histos["rocketspeed.queues.response_latency.p90"];
+  auto p99 = visitor.histos["rocketspeed.queues.response_latency.p99"];
+  auto p999 = visitor.histos["rocketspeed.queues.response_latency.p999"];
   ASSERT_GT(p50, 0.0);
   ASSERT_GT(p90, p50);
   ASSERT_GT(p99, p90);
