@@ -120,6 +120,10 @@ SubscriptionsMap::~SubscriptionsMap() {
       it != synced_subscriptions_.End(); ++it) {
     CleanupSubscription(*it);
   }
+
+  auto flow_control = event_loop_->GetFlowControl();
+  flow_control->UnregisterSource(&pending_unsubscribes_);
+  flow_control->UnregisterSource(&pending_subscriptions_);
 }
 
 void SubscriptionsMap::Subscribe(
