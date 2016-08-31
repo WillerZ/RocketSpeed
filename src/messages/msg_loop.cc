@@ -76,7 +76,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
                  const std::shared_ptr<Logger>& info_log,
                  std::string stats_prefix,
                  MsgLoop::Options options)
-    : MsgLoopBase(env)
+    : env_(env)
     , worker_index_(&free_thread_local)
     , env_options_(env_options)
     , info_log_(info_log)
@@ -437,6 +437,23 @@ Statistics MsgLoop::GetStatisticsSync() {
   return AggregateStatsSync([this] (int i) {
     return event_loops_[i]->GetStatistics();
   });
+}
+
+Statistics MsgLoop::AggregateStatsSync(WorkerStatsProvider stats_provider) {
+  Statistics aggregated_stats;
+  port::Semaphore done;
+
+  // Attempt to gather num clients from each event loop.
+  ReliableGather(stats_provider,
+    [&done, &aggregated_stats] (std::vector<Statistics> clients) {
+      for (Statistics& stat: clients) {
+        aggregated_stats.Aggregate(stat.MoveThread());
+      }
+      done.Post();
+    });
+  done.Wait();
+
+  return aggregated_stats.MoveThread();
 }
 
 }  // namespace rocketspeed
