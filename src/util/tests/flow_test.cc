@@ -650,6 +650,66 @@ TEST_F(FlowTest, RetryLaterSink) {
   ASSERT_TRUE(done.TimedWait(std::chrono::milliseconds(2 * total_ms)));
 }
 
+TEST_F(FlowTest, BackpressureLiftedStat) {
+  // Check that the backpressure_lifted statistics is correctly updated when
+  // a source is unregistered.
+  // To test, we setup a source queue, which writes into a sink queue until it
+  // becomes blocked. Nothing is reading the sink queue. We then unregisterd
+  // the source queue and check that the statistic updates.
+
+  // The time to back off for on each consecutive read.
+  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
+  ASSERT_OK(loop.Initialize());
+  EventLoop* event_loop = loop.GetEventLoop(0);
+
+  // Create our queues.
+  auto source_queue = MakeIntQueue(2);
+  auto sink_queue = MakeIntQueue(1);
+
+  // Register source_queue read event handlers.
+  port::Semaphore sem;
+  InstallSource<int>(
+    event_loop,
+    source_queue.get(),
+    [&] (Flow* flow, int x) {
+      flow->Write(sink_queue.get(), x);
+      sem.Post();
+    });
+
+  MsgLoopThread flow_threads(env_, &loop, "flow");
+  int x = 1;
+  source_queue->Write(x);
+  source_queue->Write(x);
+
+  // sink_queue should be blocked soon.
+  ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
+
+  // Check that backpressure was applied, but not lifted.
+  auto stats1 = loop.GetStatisticsSync();
+  auto applied_stat = "flow.flow_control.backpressure_applied";
+  auto lifted_stat = "flow.flow_control.backpressure_lifted";
+  ASSERT_EQ(stats1.GetCounterValue(applied_stat), 1);
+  ASSERT_EQ(stats1.GetCounterValue(lifted_stat), 0);
+
+  // Read from the sink queue to relieve backpressure.
+  InstallSource<int>(
+    event_loop,
+    sink_queue.get(),
+    [&] (Flow*, int) {
+      sem.Post();
+    });
+
+  // Ensure all is read.
+  ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
+  ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
+
+  // Check that backpressure was applied, and lifted.
+  auto stats2 = loop.GetStatisticsSync();
+  ASSERT_EQ(stats2.GetCounterValue(applied_stat), 1);
+  ASSERT_EQ(stats2.GetCounterValue(lifted_stat), 1);
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

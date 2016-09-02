@@ -24,8 +24,8 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
       // No more sinks blocking source, so re-enable.
       disabled_source->SetReadEnabled(event_loop_, true);
     }
-    stats_.backpressure_lifted->Add(1);
   }
+  stats_.backpressure_lifted->Add(sink_state.backpressure.size());
   sink_state.backpressure.clear();
 }
 
