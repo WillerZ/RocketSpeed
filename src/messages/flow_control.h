@@ -84,7 +84,7 @@ class FlowControl {
    */
   template <typename T>
   void Register(Source<T>* source, std::function<void(Flow*, T)> on_read) {
-    thread_check_.Check();
+    event_loop_->ThreadCheck();
     auto read_cb = [this, on_read, source](T item) {
       // When source is read available, drain it into on_read until backpressure
       // is applied.
@@ -204,7 +204,7 @@ class FlowControl {
     // a single read from a source causes multiple writes to a single sink.
     if (result.second) {
       stats_.backpressure_applied->Add(1);
-      source_state.blockers++;
+      source_state.blockers.emplace(sink);
 
       LOG_WARN(info_log_, "Backpressure applied from sink '%s' to source '%s'",
         sink->GetSinkName().c_str(), source->GetSourceName().c_str());
@@ -228,12 +228,11 @@ class FlowControl {
   };
 
   struct SourceState {
-    // Number of sinks blocking this source.
-    uint32_t blockers = 0;
+    // Sinks blocking this source.
+    std::unordered_set<AbstractSink*> blockers;
   };
 
   EventLoop* event_loop_;
-  ThreadCheck thread_check_;
   std::unordered_map<AbstractSink*, SinkState> sinks_;
   std::unordered_map<AbstractSource*, SourceState> sources_;
   std::shared_ptr<Logger> info_log_;

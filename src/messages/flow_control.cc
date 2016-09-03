@@ -19,14 +19,14 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
   SinkState& sink_state = sinks_[sink];
   for (auto disabled_source : sink_state.backpressure) {
     auto source_it = sources_.find(disabled_source);
-    // If the source was unregistered, while a backpressure was applied to it,
-    // the list of sources might contain dangling pointer to it.
-    if (source_it == sources_.end()) {
-      continue;
-    }
+    RS_ASSERT(source_it != sources_.end());
+
     SourceState& source_state = source_it->second;
-    RS_ASSERT(source_state.blockers > 0);
-    if (--source_state.blockers == 0) {
+    RS_ASSERT(!source_state.blockers.empty());
+    auto r = source_state.blockers.erase(sink);
+    RS_ASSERT(r) << "sink '" << sink->GetSinkName() << "' has backpressure on "
+      "source '" << disabled_source->GetSourceName() << "' not blocked by sink";
+    if (source_state.blockers.empty()) {
       // No more sinks blocking source, so re-enable.
       disabled_source->SetReadEnabled(event_loop_, true);
     }
@@ -39,15 +39,26 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
 }
 
 void FlowControl::UnregisterSource(AbstractSource* source) {
-  thread_check_.Check();
+  event_loop_->ThreadCheck();
   source->SetReadEnabled(event_loop_, false);
-  sources_.erase(source);
-  // Pointers to the source stored in SinkState will be removed lazily, when
-  // the backpressure from respective sink is removed.
+  auto it = sources_.find(source);
+  if (it != sources_.end()) {
+    // Source is going away, so remove from sink maps.
+    for (AbstractSink* sink : it->second.blockers) {
+      auto sink_it = sinks_.find(sink);
+      RS_ASSERT(sink_it != sinks_.end());
+      if (sink_it != sinks_.end()) {
+        auto r = sink_it->second.backpressure.erase(source);
+        RS_ASSERT(r) << "source '" << source->GetSourceName() << "' blocked by "
+          "sink '" << sink->GetSinkName() << "' without backpressure on source";
+      }
+    }
+    sources_.erase(it);
+  }
 }
 
 void FlowControl::UnregisterSink(AbstractSink* sink) {
-  thread_check_.Check();
+  event_loop_->ThreadCheck();
   auto it = sinks_.find(sink);
   if (it != sinks_.end()) {
     RemoveBackpressure(sink);
