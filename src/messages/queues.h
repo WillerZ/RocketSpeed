@@ -77,10 +77,12 @@ class SPSCQueue : public Source<Item>, public SinkWithOverflow<Item> {
    * @param info_log Logging interface.
    * @param stats A stats that can be shared with other queues.
    * @param size Maximum number of queued up commands.
+   * @param name Name of the queue for debugging.
    */
   SPSCQueue(std::shared_ptr<Logger> info_log,
         std::shared_ptr<QueueStats> stats,
-        size_t size);
+        size_t size,
+        std::string name = "unknown_spscqueue");
 
   ~SPSCQueue();
 
@@ -108,6 +110,10 @@ class SPSCQueue : public Source<Item>, public SinkWithOverflow<Item> {
 
   const QueueStats& GetStats() const { return *stats_; }
 
+  std::string GetSinkName() const override { return name_; }
+
+  std::string GetSourceName() const override { return name_; }
+
  private:
   friend class BatchedRead<Item>;
 
@@ -126,6 +132,7 @@ class SPSCQueue : public Source<Item>, public SinkWithOverflow<Item> {
   std::atomic<size_t> synced_size_;
   ThreadCheck read_check_;
   ThreadCheck write_check_;
+  const std::string name_;
 
   void Drain();
 
@@ -340,13 +347,15 @@ bool BatchedRead<Item>::Read(Item& item) {
 template <typename Item>
 SPSCQueue<Item>::SPSCQueue(std::shared_ptr<Logger> info_log,
                            std::shared_ptr<QueueStats> stats,
-                           size_t size)
+                           size_t size,
+                           std::string name)
     : info_log_(std::move(info_log))
     , stats_(std::move(stats))
     , queue_(static_cast<uint32_t>(size + 1))  // ProducerConsumerQueue needs
     , read_ready_fd_(true, true)               // n+1 to store n items.
     , write_ready_fd_(true, true)
-    , synced_size_(0) {
+    , synced_size_(0)
+    , name_(std::move(name)) {
   if (read_ready_fd_.status() != 0 || write_ready_fd_.status() != 0) {
     LOG_FATAL(info_log_, "Queue cannot be created: unable to create Eventfd");
     info_log_->Flush();

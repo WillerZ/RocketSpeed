@@ -33,8 +33,9 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
  public:
   using KeyValue = std::pair<Key, Value>;
 
-  ObservableMap()
-  : read_ready_fd_(true, true) {
+  ObservableMap(std::string name = "unknown_observablemap")
+  : read_ready_fd_(true, true)
+  , name_(std::move(name)) {
   }
 
   void Write(Key key, Value value) {
@@ -79,6 +80,10 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
     }
   }
 
+  std::string GetSourceName() const override {
+    return name_;
+  }
+
  private:
   void Drain() {
     // Drainining the Observable map simply means drain each key-value entry
@@ -111,6 +116,7 @@ class ObservableMap : public Source<std::pair<Key, Value>> {
   port::Eventfd read_ready_fd_;
   std::unique_ptr<EventCallback> read_callback_;
   LinkedMap<Key, Value> map_;
+  const std::string name_;
 };
 
 }  // namespace rocketspeed

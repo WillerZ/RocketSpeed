@@ -409,9 +409,12 @@ class EventLoop {
    *
    * @param size Size of the queue (number of commands). Defaults to whatever
    *             the EventLoop default command queue size is.
+   * @param suffix Suffix to append to queue name for debugging.
    * @return The created queue.
    */
-  std::shared_ptr<CommandQueue> CreateCommandQueue(size_t size = 0);
+  std::shared_ptr<CommandQueue> CreateCommandQueue(
+      size_t size = 0,
+      const std::string& suffix = "");
 
   /**
    * Attaches the command queue to the EventLoop for processing.

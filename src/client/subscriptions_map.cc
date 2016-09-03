@@ -79,8 +79,8 @@ SubscriptionsMap::SubscriptionsMap(
 , deliver_cb_(std::move(deliver_cb))
 , terminate_cb_(std::move(terminate_cb))
 , user_data_cleanup_cb_(std::move(user_data_cleanup_cb))
-, pending_subscriptions_(event_loop)
-, pending_unsubscribes_(event_loop) {
+, pending_subscriptions_(event_loop, "pending_subs")
+, pending_unsubscribes_(event_loop, "pending_unsubs") {
   auto flow_control = event_loop_->GetFlowControl();
   // Wire the source of pending subscriptions.
   flow_control->Register<typename Subscriptions::value_type>(

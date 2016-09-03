@@ -174,4 +174,12 @@ void Stream::Receive(access::Stream,
   }
 }
 
+std::string Stream::GetSinkName() const {
+  char buffer[256];
+  std::snprintf(buffer, sizeof(buffer), "socket_stream-[%s]-r%llu-l%llu",
+    socket_event_->GetDestination().ToString().c_str(),
+    remote_id_, local_id_);
+  return std::string(buffer);
+}
+
 }  // namespace rocketspeed

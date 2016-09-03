@@ -132,6 +132,10 @@ class SocketEvent : public Source<MessageOnStream>,
 
   bool IsWithoutStreamsForLongerThan(std::chrono::milliseconds mil) const;
 
+  std::string GetSinkName() const override;
+
+  std::string GetSourceName() const override;
+
  private:
   ThreadCheck thread_check_;
 

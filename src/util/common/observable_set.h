@@ -26,7 +26,10 @@ class ObservableSet : public ObservableContainer<std::unordered_set<T>> {
  public:
   using KeyType = T;
 
-  explicit ObservableSet(EventLoop* event_loop) : Base(event_loop) {}
+  explicit ObservableSet(EventLoop* event_loop,
+                         std::string name = "unknown_observableset")
+  : Base(event_loop, std::move(name)) {
+  }
 
   bool Empty() const { return Base::Read().empty(); }
 

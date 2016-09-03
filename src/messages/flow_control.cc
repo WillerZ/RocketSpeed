@@ -8,6 +8,12 @@
 
 namespace rocketspeed {
 
+FlowControl::FlowControl(const std::string& stats_prefix, EventLoop* event_loop)
+: event_loop_(event_loop)
+, info_log_(event_loop->GetLog())
+, stats_(stats_prefix) {
+}
+
 void FlowControl::RemoveBackpressure(AbstractSink* sink) {
   event_loop_->ThreadCheck();
   SinkState& sink_state = sinks_[sink];
@@ -27,6 +33,9 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
   }
   stats_.backpressure_lifted->Add(sink_state.backpressure.size());
   sink_state.backpressure.clear();
+
+  LOG_WARN(info_log_, "Backpressure removed from sink '%s'",
+    sink->GetSinkName().c_str());
 }
 
 void FlowControl::UnregisterSource(AbstractSource* source) {

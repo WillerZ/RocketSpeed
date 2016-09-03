@@ -92,6 +92,8 @@ class Stream : public Sink<SharedTimestampedString> {
 
   StreamID GetRemoteID() const { return remote_id_; }
 
+  std::string GetSinkName() const override;
+
  private:
   ThreadCheck thread_check_;
 

@@ -16,6 +16,7 @@
 namespace rocketspeed {
 
 class FlowControl;
+class Logger;
 
 /**
  * Interface to the flow of message. To enable flow control, writes to sinks
@@ -71,10 +72,7 @@ class FlowControl {
    * @param stats_prefix Prefix for flow control statistics.
    * @param event_loop The EventLoop to register processors with.
    */
-  explicit FlowControl(const std::string& stats_prefix, EventLoop* event_loop)
-  : event_loop_(event_loop)
-  , stats_(stats_prefix) {
-  }
+  explicit FlowControl(const std::string& stats_prefix, EventLoop* event_loop);
 
   /**
    * Registers a callback to be invoked when a source is ready for reading.
@@ -207,6 +205,9 @@ class FlowControl {
     if (result.second) {
       stats_.backpressure_applied->Add(1);
       source_state.blockers++;
+
+      LOG_WARN(info_log_, "Backpressure applied from sink '%s' to source '%s'",
+        sink->GetSinkName().c_str(), source->GetSourceName().c_str());
     }
   }
 
@@ -235,6 +236,7 @@ class FlowControl {
   ThreadCheck thread_check_;
   std::unordered_map<AbstractSink*, SinkState> sinks_;
   std::unordered_map<AbstractSource*, SourceState> sources_;
+  std::shared_ptr<Logger> info_log_;
 
   struct Stats {
     explicit Stats(std::string prefix) {

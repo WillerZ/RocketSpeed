@@ -24,14 +24,17 @@ template <typename C, typename T = typename C::value_type>
 class ObservableContainer : public Source<T> {
  public:
 
-  explicit ObservableContainer(EventLoop* event_loop)
-  : ObservableContainer(event_loop, C()) {}
+  explicit ObservableContainer(EventLoop* event_loop, std::string name)
+  : ObservableContainer(event_loop, C(), std::move(name)) {}
 
-  explicit ObservableContainer(EventLoop* event_loop, C container)
+  explicit ObservableContainer(EventLoop* event_loop,
+                               C container,
+                               std::string name)
   : event_loop_(event_loop)
   , container_(std::move(container))
   , read_ready_(event_loop->CreateEventTrigger())
-  , changed_(false) {}
+  , changed_(false)
+  , name_(std::move(name)) {}
 
   const C* operator->() const { return &Read(); }
 
@@ -66,12 +69,17 @@ class ObservableContainer : public Source<T> {
     }
   }
 
+  std::string GetSourceName() const override {
+    return name_;
+  }
+
  private:
   EventLoop* const event_loop_;
   C container_;
   EventTrigger read_ready_;
   std::unique_ptr<EventCallback> read_callback_;
   bool changed_;
+  const std::string name_;
 
   void Drain() {
     bool changed_orig = changed_;

@@ -53,7 +53,8 @@ class UnboundedMPSCQueue : public Source<Item> {
    */
   UnboundedMPSCQueue(std::shared_ptr<Logger> info_log,
                      std::shared_ptr<QueueStats> stats,
-                     size_t soft_limit = std::numeric_limits<size_t>::max());
+                     size_t soft_limit = std::numeric_limits<size_t>::max(),
+                     std::string name = "unknown_unboundedmpscqueue");
 
   ~UnboundedMPSCQueue();
 
@@ -106,6 +107,10 @@ class UnboundedMPSCQueue : public Source<Item> {
     event_loop->SetFdReadEnabled(read_ready_fd_.readfd(), enabled);
   }
 
+  std::string GetSourceName() const override {
+    return name_;
+  }
+
  private:
   std::shared_ptr<Logger> info_log_;
   std::shared_ptr<QueueStats> stats_;
@@ -114,6 +119,7 @@ class UnboundedMPSCQueue : public Source<Item> {
   port::Eventfd read_ready_fd_;
   ThreadCheck read_check_;
   const size_t soft_limit_;
+  const std::string name_;
 
   void Drain();
 };
@@ -133,12 +139,14 @@ template <typename Item>
 UnboundedMPSCQueue<Item>::UnboundedMPSCQueue(
     std::shared_ptr<Logger> info_log,
     std::shared_ptr<QueueStats> stats,
-    size_t soft_limit)
+    size_t soft_limit,
+    std::string name)
 : info_log_(std::move(info_log))
 , stats_(std::move(stats))
 , queue_()
 , read_ready_fd_(true, true)
-, soft_limit_(soft_limit) {
+, soft_limit_(soft_limit)
+, name_(std::move(name)) {
   if (read_ready_fd_.status() != 0) {
     LOG_FATAL(info_log_, "Queue cannot be created: unable to create Eventfd");
     info_log_->Flush();

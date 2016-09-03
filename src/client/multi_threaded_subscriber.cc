@@ -67,7 +67,8 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
         new UnboundedMPSCQueue<std::unique_ptr<ExecuteCommand>>(
             options_.info_log,
             event_loop->GetQueueStats(),
-            options_.queue_size));
+            options_.queue_size,
+            "metadata_queue-" + std::to_string(i)));
     InstallSource<std::unique_ptr<ExecuteCommand>>(
         event_loop,
         subscriber_queues_.back().get(),

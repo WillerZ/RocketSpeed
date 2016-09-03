@@ -831,8 +831,10 @@ const std::shared_ptr<CommandQueue>& EventLoop::GetThreadLocalQueue() {
 
   if (!command_queue_ptr) {
     // Doesn't exist yet, so create a new one.
+    auto tid = env_->GetCurrentThreadId();
+    std::string suffix = "-[tid=" + std::to_string(tid) + "]";
     std::shared_ptr<CommandQueue> command_queue =
-      CreateCommandQueue(default_command_queue_size_);
+      CreateCommandQueue(default_command_queue_size_, suffix);
 
     // Set this as the thread local queue.
     command_queue_ptr = new std::shared_ptr<CommandQueue>(command_queue);
@@ -841,13 +843,15 @@ const std::shared_ptr<CommandQueue>& EventLoop::GetThreadLocalQueue() {
   return *command_queue_ptr;
 }
 
-std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(size_t size) {
+std::shared_ptr<CommandQueue> EventLoop::CreateCommandQueue(
+    size_t size, const std::string& suffix) {
   if (size == 0) {
     // Use default size when size == 0.
     size = default_command_queue_size_;
   }
+  std::string name = "loop_queue" + suffix;
   auto command_queue =
-      std::make_shared<CommandQueue>(info_log_, queue_stats_, size);
+      std::make_shared<CommandQueue>(info_log_, queue_stats_, size, name);
   AttachQueue(command_queue);
   return command_queue;
 }
@@ -1082,7 +1086,7 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix + ".queues"))
 , socket_stats_(std::make_shared<SocketEventStats>(options_.stats_prefix))
 , default_command_queue_size_(options_.command_queue_size)
-, heartbeats_to_send_(new ObservableSet<StreamID>(this))
+, heartbeats_to_send_(new ObservableSet<StreamID>(this, "heartbeats"))
 , flow_control_(new FlowControl(options_.stats_prefix, this)) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](

@@ -31,6 +31,13 @@ class AbstractSource : public NonMovable, public NonCopyable {
    * @param enabled Should callback be enabled or disabled.
    */
   virtual void SetReadEnabled(EventLoop* event_loop, bool enabled) = 0;
+
+  /**
+   * Human-readable name for the source. Used only for logging and debugging.
+   */
+  virtual std::string GetSourceName() const {
+    return "unknown";
+  }
 };
 
 /**
@@ -39,6 +46,13 @@ class AbstractSource : public NonMovable, public NonCopyable {
 class AbstractSink : public NonMovable, public NonCopyable {
  public:
   virtual ~AbstractSink() {}
+
+  /**
+   * Human-readable name for the sink. Used only for logging and debugging.
+   */
+  virtual std::string GetSinkName() const {
+    return "unknown";
+  }
 };
 
 /** A source of messages of type T */

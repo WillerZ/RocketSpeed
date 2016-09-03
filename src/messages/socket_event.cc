@@ -652,4 +652,18 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
   return DrainOne({stream, std::move(msg)});
 }
 
+std::string SocketEvent::GetSinkName() const {
+  char buffer[256];
+  std::snprintf(buffer, sizeof(buffer), "socket-[%s]",
+    GetDestination().ToString().c_str());
+  return std::string(buffer);
+}
+
+std::string SocketEvent::GetSourceName() const {
+  char buffer[256];
+  std::snprintf(buffer, sizeof(buffer), "socket-[%s]",
+    GetDestination().ToString().c_str());
+  return std::string(buffer);
+}
+
 }  // namespace rocketspeed
