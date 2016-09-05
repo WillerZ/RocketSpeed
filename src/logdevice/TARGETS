@@ -3,6 +3,7 @@
 #
 cpp_binary(
     name = 'logdevice_storage_test',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'test.cc',
     ],
@@ -22,6 +23,7 @@ cpp_binary(
 
 cpp_library(
     name = 'logdevice_storage',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'storage.cc',
         'log_router.cc',

@@ -1,5 +1,6 @@
 cpp_library(
     name = 'client',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'client.cc',
         'options.cc',
@@ -32,6 +33,7 @@ cpp_library(
 
 cpp_unittest(
     name = 'client_test',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'tests/client_test.cc',
     ],
@@ -55,6 +57,7 @@ cpp_unittest(
 
 cpp_unittest(
     name = 'file_storage_test',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'storage/tests/file_storage_test.cc',
     ],

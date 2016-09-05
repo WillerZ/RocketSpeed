@@ -1,6 +1,7 @@
 # create the rocketbench binary
 cpp_binary(
     name = 'rocketbench',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'main.cc',
     ],
@@ -26,6 +27,7 @@ cpp_binary(
 
 cpp_library(
     name = 'bench_random_distribution',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'random_distribution.cc',
     ],

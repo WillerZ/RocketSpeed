@@ -1,6 +1,7 @@
 # create a library for all classes needed for control tower
 cpp_library(
     name = 'control_tower_library',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'data_cache.cc',
         'log_tailer.cc',

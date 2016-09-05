@@ -1,5 +1,6 @@
 cpp_library(
     name = 'test_cluster',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'test_cluster.cc',
     ],
@@ -22,6 +23,7 @@ cpp_library(
 
 cpp_binary(
     name = 'test_cluster_proc',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'test_cluster_proc.cc',
     ],
@@ -39,6 +41,7 @@ cpp_binary(
 
 cpp_unittest(
     name = 'integration_test',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'integration_test.cc',
     ],

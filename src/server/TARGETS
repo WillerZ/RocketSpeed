@@ -1,6 +1,7 @@
 # create the rocketspeed binary
 cpp_library(
   name = 'rocketspeed_library',
+  headers = AutoHeaders.RECURSIVE_GLOB,
   srcs = [
     'server.cc',
   ],
@@ -26,6 +27,7 @@ cpp_library(
 
 cpp_library(
   name = 'logdevice_setup',
+  headers = AutoHeaders.RECURSIVE_GLOB,
   srcs = [
     'logdevice.cc',
   ],
@@ -44,6 +46,7 @@ cpp_library(
 
 cpp_binary(
   name = 'rocketspeed',
+  headers = AutoHeaders.RECURSIVE_GLOB,
   srcs = [
     'main.cc',
   ],

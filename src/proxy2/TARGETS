@@ -1,5 +1,6 @@
 cpp_library(
     name = 'proxy2',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'abstract_worker.cc',
         'downstream_worker.cc',

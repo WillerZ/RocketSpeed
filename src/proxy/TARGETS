@@ -1,6 +1,7 @@
 # create a library for all classes needed for proxy
 cpp_library(
     name = 'proxy_library',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'options.cc',
         'proxy.cc',

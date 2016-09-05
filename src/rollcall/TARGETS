@@ -1,5 +1,6 @@
 cpp_library(
     name = 'rollcall',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'rollcall.cc',
     ],

@@ -1,6 +1,7 @@
 # create a library for all classes needed for pilot
 cpp_library(
     name = 'supervisor_library',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'supervisor_loop.cc',
     ],

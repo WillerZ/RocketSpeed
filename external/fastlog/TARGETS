@@ -1,3 +1,4 @@
 cpp_library(
   name = 'fastlog',
+  headers = AutoHeaders.RECURSIVE_GLOB,
 )

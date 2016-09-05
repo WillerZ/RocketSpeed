@@ -1,5 +1,6 @@
 cpp_library(
     name = 'common',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'base_env.cc',
         'client_env.cc',
@@ -35,6 +36,7 @@ cpp_library(
 
 cpp_library(
     name = 'fixed_configuration',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'fixed_configuration.cc',
     ],
@@ -52,6 +54,7 @@ cpp_library(
 
 cpp_library(
     name = 'configuration_create',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'configuration_create.cc',
     ],

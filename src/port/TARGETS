@@ -1,5 +1,6 @@
 cpp_library(
     name = 'port',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'port_posix.cc',
         'stack_trace.cc',

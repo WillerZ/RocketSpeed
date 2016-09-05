@@ -1,6 +1,7 @@
 # create a library for all classes needed for pilot
 cpp_library(
     name = 'pilot_library',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'pilot.cc',
         'options.cc',

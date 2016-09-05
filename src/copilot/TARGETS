@@ -1,6 +1,7 @@
 # create a library for all classes needed for copilot
 cpp_library(
     name = 'copilot_library',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'copilot.cc',
         'options.cc',

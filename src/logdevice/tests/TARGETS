@@ -1,5 +1,6 @@
 cpp_unittest(
     name = 'storage_test',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'storage_test.cc',
     ],

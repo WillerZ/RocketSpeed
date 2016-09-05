@@ -1,6 +1,7 @@
 # unit tests for pilot
 cpp_unittest(
     name = 'pilotmessages_test',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'pilotmessages_test.cc',
     ],

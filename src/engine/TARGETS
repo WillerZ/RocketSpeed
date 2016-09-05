@@ -1,5 +1,6 @@
 cpp_library(
     name = 'rocketeer',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'rocketeer.cc',
         'rocketeer_server.cc',

@@ -1,5 +1,6 @@
 cpp_library(
     name = 'jvm_env',
+    headers = AutoHeaders.RECURSIVE_GLOB,
     srcs = [
         'jvm_env.cc',
         'jvm_logger.cc',
