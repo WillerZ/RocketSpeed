@@ -30,7 +30,8 @@ class FlowTest : public ::testing::Test {
     return std::make_shared<SPSCQueue<T>>(
       info_log_,
       std::make_shared<QueueStats>("queue"),
-      size);
+      size,
+      "test_queue");
   }
 
   std::shared_ptr<SPSCQueue<int>> MakeIntQueue(size_t size) {
@@ -650,15 +651,28 @@ TEST_F(FlowTest, RetryLaterSink) {
   ASSERT_TRUE(done.TimedWait(std::chrono::milliseconds(2 * total_ms)));
 }
 
-TEST_F(FlowTest, BackpressureLiftedStat) {
+TEST_F(FlowTest, BackpressureStatsAndLogging) {
   // Check that the backpressure_lifted statistics is correctly updated when
   // a source is unregistered.
   // To test, we setup a source queue, which writes into a sink queue until it
   // becomes blocked. Nothing is reading the sink queue. We then unregisterd
   // the source queue and check that the statistic updates.
 
-  // The time to back off for on each consecutive read.
-  MsgLoop loop(env_, env_options_, 0, 1, info_log_, "flow");
+  // Also check that flow control logs a warning when a source is blocked for
+  // too long.
+  port::Semaphore block_msg;
+  auto checker = [&] (std::string msg) {
+    if (msg.find("source 'test_queue' blocked") != std::string::npos) {
+      block_msg.Post();
+    }
+  };
+  std::shared_ptr<Logger> test_log =
+    std::make_shared<test::TestLogger>(checker);
+
+  MsgLoop::Options opts;
+  opts.event_loop.flow_control_blocked_warn_period = std::chrono::seconds(1);
+
+  MsgLoop loop(env_, env_options_, 0, 1, test_log, "flow", opts);
   ASSERT_OK(loop.Initialize());
   EventLoop* event_loop = loop.GetEventLoop(0);
 
@@ -692,6 +706,11 @@ TEST_F(FlowTest, BackpressureLiftedStat) {
   ASSERT_EQ(stats1.GetCounterValue(applied_stat), 1);
   ASSERT_EQ(stats1.GetCounterValue(lifted_stat), 0);
 
+  // Check that the message was logged a few times (should take 3 seconds total)
+  ASSERT_TRUE(block_msg.TimedWait(std::chrono::seconds(5)));
+  ASSERT_TRUE(block_msg.TimedWait(std::chrono::seconds(5)));
+  ASSERT_TRUE(block_msg.TimedWait(std::chrono::seconds(5)));
+
   // Read from the sink queue to relieve backpressure.
   InstallSource<int>(
     event_loop,
@@ -708,6 +727,9 @@ TEST_F(FlowTest, BackpressureLiftedStat) {
   auto stats2 = loop.GetStatisticsSync();
   ASSERT_EQ(stats2.GetCounterValue(applied_stat), 1);
   ASSERT_EQ(stats2.GetCounterValue(lifted_stat), 1);
+
+  // Should no longer receive any blocked messages.
+  ASSERT_TRUE(!block_msg.TimedWait(std::chrono::seconds(2)));
 }
 
 }  // namespace rocketspeed

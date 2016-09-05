@@ -12,6 +12,7 @@
 #include "src/messages/event_loop.h"
 #include "src/util/common/flow.h"
 #include "src/util/memory.h"
+#include "src/util/timeout_list.h"
 
 namespace rocketspeed {
 
@@ -72,7 +73,10 @@ class FlowControl {
    * @param stats_prefix Prefix for flow control statistics.
    * @param event_loop The EventLoop to register processors with.
    */
-  explicit FlowControl(const std::string& stats_prefix, EventLoop* event_loop);
+  explicit FlowControl(const std::string& stats_prefix,
+                       EventLoop* event_loop,
+                       std::chrono::milliseconds warn_period =
+                         std::chrono::seconds(10));
 
   /**
    * Registers a callback to be invoked when a source is ready for reading.
@@ -196,6 +200,21 @@ class FlowControl {
     // Disable events from the source that caused the write.
     source->SetReadEnabled(event_loop_, false);
 
+    if (source_state.blockers.empty()) {
+      // This is first time source has become blocked.
+      blocked_sources_.Add(source);
+      source_state.blocked_since = std::chrono::steady_clock::now();
+
+      if (!warning_timer_) {
+        // Setup timer to periodically check for, and warn when sinks are
+        // blocked for too long. We do this lazily because the event loop isn't
+        // yet initialized when the FlowControl is constructed.
+        warning_timer_ = event_loop_->RegisterTimerCallback(
+          [this] () { WarnOnBlockedSources(); },
+          warn_period_ / 10 /* allow ~10% error on timing */);
+      }
+    }
+
     // Add this source as one that will be re-enabled on the sink write event.
     auto result = sink_state.backpressure.emplace(source);
 
@@ -219,6 +238,12 @@ class FlowControl {
    */
   void RemoveBackpressure(AbstractSink* sink);
 
+  /**
+   * Will LOG_WARN when a source has been blocked for a large amount of time.
+   * This is for debugging purposes only.
+   */
+  void WarnOnBlockedSources();
+
   struct SinkState {
     // Set of sources that the sink is blocking with backpressure.
     std::unordered_set<AbstractSource*> backpressure;
@@ -230,12 +255,21 @@ class FlowControl {
   struct SourceState {
     // Sinks blocking this source.
     std::unordered_set<AbstractSink*> blockers;
+
+    // Time when initially blocked.
+    std::chrono::steady_clock::time_point blocked_since;
   };
 
   EventLoop* event_loop_;
   std::unordered_map<AbstractSink*, SinkState> sinks_;
   std::unordered_map<AbstractSource*, SourceState> sources_;
   std::shared_ptr<Logger> info_log_;
+
+  // FlowControl logs a warning when a source is blocked for too long.
+  // This is the related state/config.
+  const std::chrono::milliseconds warn_period_;
+  std::unique_ptr<EventCallback> warning_timer_;
+  TimeoutList<AbstractSource*> blocked_sources_;
 
   struct Stats {
     explicit Stats(std::string prefix) {

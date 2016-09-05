@@ -137,6 +137,9 @@ class EventLoop {
     bool enable_heartbeats = true;
     /** Send heartbeats every X milliseconds */
     std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);
+    /** How long a source must be blocked before logging warnings. */
+    std::chrono::milliseconds flow_control_blocked_warn_period =
+      std::chrono::seconds(10);
   };
 
   /**

@@ -1087,7 +1087,8 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , socket_stats_(std::make_shared<SocketEventStats>(options_.stats_prefix))
 , default_command_queue_size_(options_.command_queue_size)
 , heartbeats_to_send_(new ObservableSet<StreamID>(this, "heartbeats"))
-, flow_control_(new FlowControl(options_.stats_prefix, this)) {
+, flow_control_(new FlowControl(
+    options_.stats_prefix, this, options_.flow_control_blocked_warn_period)) {
   // Setup callbacks.
   command_callbacks_[CommandType::kAcceptCommand] = [this](
       Flow* flow, std::unique_ptr<Command> command) {

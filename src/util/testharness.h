@@ -96,6 +96,29 @@ bool WaitUntil(
   return true;
 }
 
+/**
+ * Logger implementation which calls a provided function for eached logged
+ * message. Useful for testing the logging output.
+ */
+class TestLogger final : public Logger {
+ public:
+  explicit TestLogger(std::function<void(std::string)> callback)
+  : Logger(DEBUG_LEVEL)
+  , callback_(std::move(callback)) {}
+
+  void SetInfoLogLevel(const InfoLogLevel log_level) {}
+
+ protected:
+  void Append(const char* format, va_list ap) {
+    vsnprintf(buffer_, sizeof(buffer_), format, ap);
+    callback_(std::string(buffer_));
+  }
+
+ private:
+  std::function<void(std::string)> callback_;
+  char buffer_[1 << 20];  // 1MB ought to be enough for anyone
+};
+
 ::testing::AssertionResult AssertStatus(const char* s_expr, const Status& s);
 
 #define ASSERT_OK(s) ASSERT_PRED_FORMAT1(rocketspeed::test::AssertStatus, s)
