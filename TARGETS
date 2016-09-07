@@ -32,6 +32,7 @@ java_unittest(
 
 cpp_binary(
     name = SO_NAME,
+    headers = AutoHeaders.RECURSIVE_GLOB,  # https://fburl.com/424819295
     srcs = glob([
         'src/djinni/*.cc',
         'src-gen/djinni/cpp/*.cpp'
@@ -57,6 +58,7 @@ cpp_binary(
 
 cpp_library(
     name = 'djinni_support',
+    headers = AutoHeaders.RECURSIVE_GLOB,  # https://fburl.com/424819295
     srcs = [
         'external/djinni/support-lib/jni/djinni_support.cpp',
     ],
