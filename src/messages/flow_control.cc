@@ -40,9 +40,8 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
     stats_.backpressure_lifted->Add(sink_state.backpressure.size());
     LOG_WARN(info_log_, "Backpressure removed from sink '%s'",
       sink->GetSinkName().c_str());
+    sink_state.backpressure.clear();
   }
-
-  sink_state.backpressure.clear();
 }
 
 void FlowControl::UnregisterSource(AbstractSource* source) {
