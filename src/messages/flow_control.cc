@@ -35,11 +35,14 @@ void FlowControl::RemoveBackpressure(AbstractSink* sink) {
       blocked_sources_.Erase(disabled_source);
     }
   }
-  stats_.backpressure_lifted->Add(sink_state.backpressure.size());
-  sink_state.backpressure.clear();
 
-  LOG_WARN(info_log_, "Backpressure removed from sink '%s'",
-    sink->GetSinkName().c_str());
+  if (!sink_state.backpressure.empty()) {
+    stats_.backpressure_lifted->Add(sink_state.backpressure.size());
+    LOG_WARN(info_log_, "Backpressure removed from sink '%s'",
+      sink->GetSinkName().c_str());
+  }
+
+  sink_state.backpressure.clear();
 }
 
 void FlowControl::UnregisterSource(AbstractSource* source) {
