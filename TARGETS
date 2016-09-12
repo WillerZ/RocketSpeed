@@ -28,6 +28,7 @@ java_unittest(
         ('java', 'org/slf4j/slf4j-api', None, 'slf4j-api'),
         ('java', 'org/slf4j/slf4j-simple', None, 'slf4j-simple'),
     ],
+    tags = [ 'disabled' ],
 )
 
 cpp_binary(
