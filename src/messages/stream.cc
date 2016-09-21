@@ -30,6 +30,12 @@ Stream::Stream(SocketEvent* socket_event, StreamID remote_id, StreamID local_id)
            remote_id_,
            socket_event_->IsInbound() ? "" : " to: ",
            socket_event->GetDestination().ToString().c_str());
+
+  char buffer[256];
+  std::snprintf(buffer, sizeof(buffer), "socket_stream-[%s]-r%llu-l%llu",
+    socket_event_->GetDestination().ToString().c_str(),
+    remote_id_, local_id_);
+  sink_name_ = buffer;
 }
 
 Stream::~Stream() {
@@ -175,11 +181,7 @@ void Stream::Receive(access::Stream,
 }
 
 std::string Stream::GetSinkName() const {
-  char buffer[256];
-  std::snprintf(buffer, sizeof(buffer), "socket_stream-[%s]-r%llu-l%llu",
-    socket_event_->GetDestination().ToString().c_str(),
-    remote_id_, local_id_);
-  return std::string(buffer);
+  return sink_name_;
 }
 
 }  // namespace rocketspeed
