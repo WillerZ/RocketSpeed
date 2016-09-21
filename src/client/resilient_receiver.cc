@@ -88,7 +88,7 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
     if (!stream) {
       auto failures = UpdateConnectionState(false);
       Reconnect(failures, host);
-      return false;
+      return;
     }
     stream->SetReceiver(this);
     LOG_INFO(logger,
@@ -100,15 +100,13 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
     backoff_timer_.reset();
 
     receiver_->ConnectionCreated(std::move(stream));
-    return true;
   };
 
   // We do not apply backoff if there have been no recorded connection failure
   // to this host.
   if (conn_failures == 0) {
-    if (reconnect()) {
-      return;
-    }
+    reconnect();
+    return;
   }
 
   RS_ASSERT(conn_failures > 0);
@@ -125,7 +123,7 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
   RS_ASSERT(!backoff_timer_);
   backoff_timer_ =
       event_loop_->CreateTimedEventCallback(
-        [reconnect]() { (void)reconnect(); }, backoff_duration);
+        [reconnect]() { reconnect(); }, backoff_duration);
   backoff_timer_->Enable();
 }
 }
