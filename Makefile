@@ -102,6 +102,7 @@ INCLUDE_CHECK_HEADERS = $(filter-out $(ANDROID_HEADERS), $(ALL_HEADERS:.h=.check
 TOOLS = \
 	rocketbench \
 	client_bench \
+	centrifuge_client \
 	accept_all_rocketeer \
 	reject_all_rocketeer
 
@@ -267,6 +268,9 @@ $(LIBRARY): $(LIBOBJECTS)
 
 client_bench: src/tools/client_bench/client_bench.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
 	$(CXX) src/tools/client_bench/client_bench.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
+
+centrifuge_client: src/tools/centrifuge/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
+	$(CXX) src/tools/centrifuge/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Example rocketeers

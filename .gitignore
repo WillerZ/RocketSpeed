@@ -35,6 +35,7 @@ build_config.mk
 /test_times
 /accept_all_rocketeer
 /reject_all_rocketeer
+/centrifuge_client
 
 src/util/build_version.cc
 /build_tools/VALGRIND_LOGS/

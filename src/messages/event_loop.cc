@@ -490,7 +490,14 @@ void EventLoop::Run() {
 
 bool EventLoop::RunOnce() {
   // Handle libevent events.
+  auto start = std::chrono::steady_clock::now();
   bool stopped = event_base_loop(base_, EVLOOP_ONCE);
+  auto taken = std::chrono::steady_clock::now() - start;
+  if (taken > std::chrono::seconds(1)) {
+    const uint64_t millis = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(taken).count());
+    LOG_WARN(info_log_, "Single event loop tick took %" PRIu64 "ms", millis);
+  }
   stopped |= shutting_down_;
   // Execute some scheduled tasks.
   ExecuteTasks();
