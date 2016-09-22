@@ -13,5 +13,9 @@ cpp_library(
         '-DGFLAGS=google',
     ],
     deps = [
+        'rocketspeed/github/include:rocketspeed',
+    ],
+    external_deps = [
+        'gflags',
     ],
 )
