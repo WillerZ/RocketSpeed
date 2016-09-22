@@ -47,14 +47,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  st = PublisherRouter::Create(options.client_options.info_log,
-                               FLAGS_config,
-                               &options.client_options.publisher);
-  if (!st.ok()) {
-    CentrifugeFatal(st);
-    return 1;
-  }
-
   options.generator.reset(new Generator());
   return RunCentrifugeClient(std::move(options), argc, argv);
 }

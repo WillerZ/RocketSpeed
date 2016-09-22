@@ -52,6 +52,23 @@ Status Client::Create(ClientOptions options,
   return st;
 }
 
+namespace {
+class NullPublisher : public PublisherRouter {
+ public:
+  Status GetPilot(HostId* /* hostOut */) const override {
+    return Status::NotFound("");
+  }
+};
+
+class NullSharding : public ShardingStrategy {
+ public:
+  size_t GetShard(Slice, Slice) const override { return 0; }
+  size_t GetVersion() override { return 0; }
+  HostId GetHost(size_t) override { return HostId(); }
+  void MarkHostDown(const HostId&) override {}
+};
+}
+
 Status ClientImpl::Create(ClientOptions options,
                           std::unique_ptr<ClientImpl>* out_client,
                           bool is_internal) {
@@ -59,10 +76,10 @@ Status ClientImpl::Create(ClientOptions options,
 
   // Validate arguments.
   if (!options.publisher) {
-    return Status::InvalidArgument("Missing publisher configuration.");
+    options.publisher = std::make_shared<NullPublisher>();
   }
   if (!options.sharding) {
-    return Status::InvalidArgument("Missing sharding strategy.");
+    options.sharding = std::make_shared<NullSharding>();
   }
   if (!options.backoff_strategy) {
     return Status::InvalidArgument("Missing backoff strategy.");
