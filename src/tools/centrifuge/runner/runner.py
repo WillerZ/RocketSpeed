@@ -84,8 +84,8 @@ def start_runner(port, handler, processor):
     pfactory = TBinaryProtocol.TBinaryProtocolFactory()
     server = TServer.TThreadedServer(processor, transport, tfactory, pfactory)
     t = threading.Thread(target=server.serve)
-    t.daemon = True
     t.start()
+    return t
 
 def create_client(host, port, runner):
     transport = TSocket.TSocket(host, port)
@@ -212,17 +212,18 @@ def run(env, config):
     client_port = 8090
     server_port = 8091
     log.info("Starting a test sequence run")
+    thread = None
     if env.is_client():
         log.info("Acting as a client runner")
         handler = ClientRunnerHandler(config)
         processor = ClientRunner.Processor(handler)
-        start_runner(client_port, handler, processor)
+        thread = start_runner(client_port, handler, processor)
 
     if env.is_server():
         log.info("Acting as a server runner")
         handler = ServerRunnerHandler(config)
         processor = ServerRunner.Processor(handler)
-        start_runner(server_port, handler, processor)
+        thread = start_runner(server_port, handler, processor)
 
     if env.is_orchestrator():
         log.info("Acting as the orchestrator")
@@ -241,4 +242,7 @@ def run(env, config):
             raise Exception('Need at least one runner for each clients and servers: %s' %
                             peers)
         return orchestrate(peers, config)
+    else:
+        if thread is not None:
+            thread.join()
     return 0

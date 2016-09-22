@@ -11,7 +11,7 @@ class HardcodedEnv:
         return any([self.__is_me(x) for x in self.hosts_.get('clients', [])])
 
     def is_server(self):
-        return any([self.__is_me(x) for x in self.hosts_.get('clients', [])])
+        return any([self.__is_me(x) for x in self.hosts_.get('servers', [])])
 
     def is_orchestrator(self):
         return self.__is_me(self.hosts_.get('orchestrator', ''))
