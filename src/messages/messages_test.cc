@@ -834,7 +834,8 @@ TEST_F(Messaging, ConnectTimeout) {
 #ifndef OS_MACOSX
   // On OSX we could not force the OS to defer closure of the connection (i.e.
   // it happens immediately).
-  ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.connect_timeout / 2));
+  // TODO: renable this after reworking test: t13526223
+  // ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.connect_timeout / 2));
   ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.connect_timeout * 2));
 #endif  // OS_MACOSX
 }
