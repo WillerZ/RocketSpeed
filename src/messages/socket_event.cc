@@ -769,17 +769,19 @@ void SocketEvent::FlushCapturedHeartbeats() {
   MessageHeartbeat::StreamSet streams;
   shard_heartbeats_received_.swap(streams);
 
-  MessageHeartbeat msg(Tenant::GuestTenant,
-                       MessageHeartbeat::Clock::now(),
-                       std::move(streams));
+  for (uint32_t stream : streams) {
+    MessageHeartbeat msg(Tenant::GuestTenant,
+                         MessageHeartbeat::Clock::now(),
+                         MessageHeartbeat::StreamSet({stream}));
 
-  auto value = Stream::ToTimestampedString(msg);
-  stats_->agg_hb_serialized_bytes->Record(value->string.size());
-  SerializedOnStream serialised;
-  serialised.stream_id = 0;     // we ignore this for heartbeats on receive
-  serialised.serialised = std::move(value);
+    auto value = Stream::ToTimestampedString(msg);
+    stats_->agg_hb_serialized_bytes->Record(value->string.size());
+    SerializedOnStream serialised;
+    serialised.stream_id = stream;
+    serialised.serialised = std::move(value);
 
-  // cannot use public write interface as it captures the heartbeat
-  EnqueueWrite(serialised);
+    // cannot use public write interface as it captures the heartbeat
+    EnqueueWrite(serialised);
+  }
 }
 }  // namespace rocketspeed
