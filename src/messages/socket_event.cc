@@ -90,8 +90,14 @@ SocketEventStats::SocketEventStats(const std::string& prefix) {
       all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1f);
   write_succeed_iovec =
       all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1f);
+  agg_hb_serialized_bytes =
+    // works out at about 120 buckets
+    all.AddHistogram(prefix + ".agg_hb_serialized_bytes", 0, 10*1000*1000,
+                     100, 1.1f);
   socket_writes = all.AddCounter(prefix + ".socket_writes");
   partial_socket_writes = all.AddCounter(prefix + ".partial_socket_writes");
+  individual_hb_deliveries =
+    all.AddCounter(prefix + ".individual_hb_deliveries");
   for (int i = 0; i < int(MessageType::max) + 1; ++i) {
     messages_received[i] = all.AddCounter(prefix + ".messages_received." +
                                           MessageTypeName(MessageType(i)));
@@ -189,6 +195,7 @@ SocketEvent::~SocketEvent() {
 
   read_ev_.reset();
   write_ev_.reset();
+  hb_timer_.reset();
   close(fd_);
 }
 
@@ -237,11 +244,28 @@ bool SocketEvent::Write(SerializedOnStream& value) {
   auto type = Message::ReadMessageType(value.serialised->string);
   RS_ASSERT(type != MessageType::NotInitialized);
 
+  if (type == MessageType::mHeartbeat) {
+    CaptureHeartbeat(value);
+    return true;
+  }
+
+  const auto remote_id = value.stream_id;
+  bool has_room = EnqueueWrite(value);
+
+  if (type == MessageType::mGoodbye) {
+    // If it was a goodbye the stream will be closed once this call returns.
+    // We need to unregister it from the loop.
+    UnregisterStream(remote_id);
+  }
+  return has_room;
+}
+
+bool SocketEvent::EnqueueWrite(SerializedOnStream& value) {
   auto now = event_loop_->GetEnv()->NowMicros();
+
   // Serialise stream metadata.
   auto stream_ser = std::make_shared<TimestampedString>();
-  const auto remote_id = value.stream_id;
-  EncodeOrigin(&stream_ser->string, remote_id);
+  EncodeOrigin(&stream_ser->string, value.stream_id);
   stream_ser->issued_time = now;
   // Serialise message header.
   size_t frame_size =
@@ -257,6 +281,7 @@ bool SocketEvent::Write(SerializedOnStream& value) {
   send_queue_.emplace_back(std::move(stream_ser));
   send_queue_.emplace_back(std::move(value.serialised));
   // Signal overflow if size limit was matched or exceeded.
+
   const bool has_room =
       send_queue_.size() < event_loop_->GetOptions().send_queue_limit;
   if (!has_room) {
@@ -266,11 +291,6 @@ bool SocketEvent::Write(SerializedOnStream& value) {
   // Enable write event, as we have stuff to write.
   write_ev_->Enable();
 
-  if (type == MessageType::mGoodbye) {
-    // If it was a goodbye the stream will be closed once this call returns.
-    // We need to unregister it from the loop.
-    UnregisterStream(remote_id);
-  }
   return has_room;
 }
 
@@ -334,6 +354,12 @@ SocketEvent::SocketEvent(
 
   // Socket's send_queue is empty, so the sink is writable.
   event_loop_->Notify(write_ready_);
+
+  if (IsInbound() && event_loop_->GetOptions().enable_heartbeats) {
+    hb_timer_ = event_loop_->RegisterTimerCallback(
+      std::bind(&SocketEvent::FlushCapturedHeartbeats, this),
+      event_loop_->GetOptions().heartbeat_period);
+  }
 }
 
 void SocketEvent::UnregisterStream(StreamID remote_id, bool force) {
@@ -589,6 +615,8 @@ Status SocketEvent::ReadCallback() {
         Message::CreateNewInstance(std::move(msg_buf_), in);
     if (!msg) {
       LOG_WARN(GetLogger(), "Failed to decode message");
+      // TODO: what happens now? are we in a bad state? we should
+      // probably reconnect?
       continue;
     }
 
@@ -603,6 +631,15 @@ Status SocketEvent::ReadCallback() {
 bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
   const auto msg_type = msg->GetMessageType();
   RS_ASSERT(ValidateEnum(msg_type));
+
+  // Update stats.
+  stats_->messages_received[size_t(msg_type)]->Add(1);
+
+  if (msg_type == MessageType::mHeartbeat) {
+    std::unique_ptr<MessageHeartbeat> hb(
+      static_cast<MessageHeartbeat*>(msg.release()));
+    return DeliverAggregatedHeartbeat(std::move(hb));
+  }
 
   // Find a stream for this message or create one if missing.
   auto it = remote_id_to_stream_.find(remote_id);
@@ -640,9 +677,6 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
   RS_ASSERT(it != remote_id_to_stream_.end());
   Stream* stream = it->second;
 
-  // Update stats.
-  stats_->messages_received[size_t(msg_type)]->Add(1);
-
   // Unregister the stream if we've received a goodbye message.
   if (msg_type == MessageType::mGoodbye) {
     UnregisterStream(remote_id);
@@ -666,4 +700,67 @@ std::string SocketEvent::GetSourceName() const {
   return std::string(buffer);
 }
 
+bool SocketEvent::DeliverAggregatedHeartbeat(
+  std::unique_ptr<MessageHeartbeat> msg) {
+  LOG_DEBUG(GetLogger(), "Deliver aggregated");
+
+  bool overflow = false;
+  size_t deliveries = 0;
+
+  for (auto stream_id : msg->GetHealthyStreams()) {
+    auto it = remote_id_to_stream_.find(stream_id);
+    if (it == remote_id_to_stream_.end()) {
+      LOG_WARN(GetLogger(),
+               "Failed to find StreamID(%u), dropping individual heartbeat",
+               stream_id);
+      continue;
+    }
+
+    Stream* stream = it->second;
+    MessageHeartbeat::StreamSet streams = {
+      static_cast<uint32_t>(stream->GetRemoteID())
+    };
+    std::unique_ptr<Message> hb(new MessageHeartbeat(SystemTenant,
+                                                     msg->GetTimestamp(),
+                                                     streams));
+    overflow |= DrainOne({stream, std::move(hb)});
+    deliveries++;
+  }
+  stats_->individual_hb_deliveries->Add(deliveries);
+
+  return overflow;
+}
+
+void SocketEvent::CaptureHeartbeat(SerializedOnStream& value) {
+  RS_ASSERT(Message::ReadMessageType(value.serialised->string)
+            == MessageType::mHeartbeat);
+
+  MessageHeartbeat msg;
+  Slice slice(value.serialised->string);
+  msg.DeSerialize(&slice);
+
+  // TODO(gds): check the heartbeat timestamp is within sla
+
+  auto streams = msg.GetHealthyStreams();
+  shard_heartbeats_received_.insert(streams.begin(), streams.end());
+}
+
+void SocketEvent::FlushCapturedHeartbeats() {
+  LOG_DEBUG(GetLogger(), "Flushing heartbeats");
+  MessageHeartbeat::StreamSet streams;
+  shard_heartbeats_received_.swap(streams);
+
+  MessageHeartbeat msg(Tenant::GuestTenant,
+                       MessageHeartbeat::Clock::now(),
+                       std::move(streams));
+
+  auto value = Stream::ToTimestampedString(msg);
+  stats_->agg_hb_serialized_bytes->Record(value->string.size());
+  SerializedOnStream serialised;
+  serialised.stream_id = 0;     // we ignore this for heartbeats on receive
+  serialised.serialised = std::move(value);
+
+  // cannot use public write interface as it captures the heartbeat
+  EnqueueWrite(serialised);
+}
 }  // namespace rocketspeed

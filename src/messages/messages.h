@@ -855,16 +855,16 @@ class MessageDeliverBatch : public Message {
  */
 class MessageHeartbeat : public Message {
  public:
-  using ShardSet = std::unordered_set<uint32_t>;
+  using StreamSet = std::unordered_set<uint32_t>;
   using Clock = std::chrono::system_clock;
 
   MessageHeartbeat() {}
   explicit MessageHeartbeat(TenantID tenantid,
                             Clock::time_point timestamp = Clock::now(),
-                            ShardSet healthy_shards = ShardSet())
+                            StreamSet healthy_streams = StreamSet())
     : Message(MessageType::mHeartbeat, tenantid),
       timestamp_(timestamp),
-      healthy_shards_(std::move(healthy_shards)) {}
+      healthy_streams_(std::move(healthy_streams)) {}
 
   /*
    * Inherited from Serializer
@@ -881,13 +881,13 @@ class MessageHeartbeat : public Message {
     return timestamp_;
   }
 
-  const ShardSet& GetHealthyShards() const {
-    return healthy_shards_;
+  const StreamSet& GetHealthyStreams() const {
+    return healthy_streams_;
   }
 
  private:
   Clock::time_point timestamp_;
-  ShardSet healthy_shards_;
+  StreamSet healthy_streams_;
 };
 
 /** @} */

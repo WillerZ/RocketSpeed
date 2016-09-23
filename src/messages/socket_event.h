@@ -62,6 +62,9 @@ class SocketEventStats {
   Counter* socket_writes;          // number of calls to write(v)
   Counter* partial_socket_writes;  // number of writes that partially succeeded
   Counter* messages_received[size_t(MessageType::max) + 1];
+
+  Histogram* agg_hb_serialized_bytes; // lower-bound size on the wire for hbs
+  Counter* individual_hb_deliveries;  // fan-out from aggregated hbs
 };
 
 class SocketEvent : public Source<MessageOnStream>,
@@ -165,6 +168,8 @@ class SocketEvent : public Source<MessageOnStream>,
   std::unique_ptr<EventCallback> read_ev_;
   std::unique_ptr<EventCallback> write_ev_;
 
+  std::unique_ptr<EventCallback> hb_timer_;
+
   /** An EventTrigger to notify that the sink has some spare capacity. */
   EventTrigger write_ready_;
   /** A flow control object for this socket. */
@@ -189,6 +194,12 @@ class SocketEvent : public Source<MessageOnStream>,
    * This is only set or read when there are zero streams associated with it.
    */
   std::chrono::time_point<std::chrono::steady_clock> without_streams_since_;
+
+  /**
+   * Collected shard heartbeats since last multiplexed heartbeat was
+   * flushed.
+   */
+  std::unordered_set<uint32_t> shard_heartbeats_received_;
 
   SocketEvent(EventLoop* event_loop,
               int fd,
@@ -219,6 +230,27 @@ class SocketEvent : public Source<MessageOnStream>,
    * @return True if another message can be received in the same read callback.
    */
   bool Receive(StreamID remote_id, std::unique_ptr<Message> message);
+
+
+  bool EnqueueWrite(SerializedOnStream& value);
+
+  /**
+   * Take a heartbeat representing one or more heartbeats and fan out
+   * deliver to necessary streams.
+   */
+  bool DeliverAggregatedHeartbeat(std::unique_ptr<MessageHeartbeat> msg);
+
+  /**
+   * Collect per-stream heartbeats in order to flush an aggregated
+   * heartbeat.
+   */
+  void CaptureHeartbeat(SerializedOnStream& value);
+
+  /**
+   * Construct an aggregate heartbeat from those seen and write this
+   * to the socket.
+   */
+  void FlushCapturedHeartbeats();
 };
 
 }  // namespace rocketspeed

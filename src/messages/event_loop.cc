@@ -386,14 +386,21 @@ EventLoop::Initialize() {
         if (!stream) {
           return;               // stream closed since add
         }
-        MessageHeartbeat hb(SystemTenant);
+        MessageHeartbeat::StreamSet streams = {
+          static_cast<uint32_t>(stream->GetRemoteID())
+        };
+        MessageHeartbeat hb(SystemTenant,
+                            MessageHeartbeat::Clock::now(),
+                            std::move(streams));
         auto ts = Stream::ToTimestampedString(hb);
         flow->Write(stream, ts);
         stats_.hbs_sent->Add(1);
       });
 
+    // divide by 2 to ensure we're within the period even
+    // after some overhead drift
     hb_timer_ = RegisterTimerCallback(send_heartbeats,
-                                      options_.heartbeat_period);
+                                      options_.heartbeat_period / 2);
     RS_ASSERT(hb_timer_);
   }
 
@@ -798,11 +805,6 @@ void EventLoop::AddInboundStream(access::EventLoop, Stream* stream) {
     auto result = stream_id_to_stream_.emplace(stream->GetLocalID(), stream);
     RS_ASSERT(result.second);
     (void)result;
-  }
-
-  if (options_.enable_heartbeats) {
-    // send immediately on connection
-    stream->Write(MessageHeartbeat(SystemTenant));
   }
 }
 

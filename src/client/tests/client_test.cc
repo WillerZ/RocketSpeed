@@ -259,7 +259,11 @@ class ClientTest : public ::testing::Test {
   };
 
   ServerMock MockServer(
-      const std::map<MessageType, MsgCallbackType>& callbacks) {
+    const std::map<MessageType, MsgCallbackType>& callbacks,
+    std::chrono::milliseconds hb_period = std::chrono::milliseconds(100)) {
+
+    msg_loop_options_.event_loop.heartbeat_period = hb_period;
+
     std::unique_ptr<MsgLoop> server(new MsgLoop(
         env_, EnvOptions(), 0 /* auto */, 1,
         info_log_, "server", msg_loop_options_));
@@ -370,6 +374,7 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
+
   // notify unhealthy as soon as goodbye received
   options.max_silent_reconnects = 0;
   options.backoff_strategy = [](ClientRNG*, size_t) {
@@ -514,16 +519,6 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
 
   // we fail due to lack of heartbeat which has been disabled
   ASSERT_TRUE(now_unhealthy.TimedWait(positive_timeout));
-
-  // send the heartbeat
-  MessageHeartbeat hb(SystemTenant);
-  copilot_ptr.load()->SendResponse(hb, client_stream, 0);
-
-  // we should now be healthy again
-  ASSERT_TRUE(now_healthy.TimedWait(positive_timeout));
-
-  // and fail again
-  ASSERT_TRUE(now_unhealthy.TimedWait(positive_timeout));
 }
 
 TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthy) {
@@ -581,14 +576,13 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
   // sends them by running for long enough that we would have timed
   // out otherwise.
 
-  msg_loop_options_.event_loop.heartbeat_period = std::chrono::milliseconds(10);
-
   StreamID client_stream;
   auto copilot = MockServer(
-      {{MessageType::mSubscribe,
-        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-            client_stream = origin;
-        }}});
+    {{MessageType::mSubscribe,
+          [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          client_stream = origin;
+        }}},
+    std::chrono::milliseconds(5));
 
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
@@ -615,7 +609,7 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
                     folly::make_unique<StatusObserver>(now_unhealthy));
 
   // we should not be marked as unhealthy: server should send hbs
-  // every millisecond
+  // every 5 milliseconds
   ASSERT_FALSE(now_unhealthy.TimedWait(negative_timeout));
 }
 

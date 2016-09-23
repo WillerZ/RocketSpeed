@@ -956,12 +956,12 @@ TEST_F(Messaging, VersionMismatch) {
 }
 
 TEST_F(Messaging, RoundTripAllHeartbeatFields) {
-  auto healthy_shards = MessageHeartbeat::ShardSet();
-  healthy_shards.insert(1);
-  healthy_shards.insert(5);
-  healthy_shards.insert(18273483);
+  auto healthy_streams = MessageHeartbeat::StreamSet();
+  healthy_streams.insert(1);
+  healthy_streams.insert(5);
+  healthy_streams.insert(18273483);
   MessageHeartbeat msg(Tenant::GuestTenant, MessageHeartbeat::Clock::now(),
-                       healthy_shards);
+                       healthy_streams);
 
   std::string str;
   msg.Serialize(&str);
@@ -971,7 +971,7 @@ TEST_F(Messaging, RoundTripAllHeartbeatFields) {
 
   ASSERT_EQ(msg.GetMessageType(), res.GetMessageType());
   ASSERT_EQ(msg.GetTenantID(), res.GetTenantID());
-  ASSERT_EQ(msg.GetHealthyShards(), res.GetHealthyShards());
+  ASSERT_EQ(msg.GetHealthyStreams(), res.GetHealthyStreams());
 
   auto ts1 = msg.GetTimestamp();
   auto ts2 = res.GetTimestamp();
