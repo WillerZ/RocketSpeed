@@ -93,6 +93,7 @@ Status ClientImpl::Create(ClientOptions options,
   MsgLoop::Options m_opts;
   m_opts.event_loop.connection_without_streams_keepalive =
     options.connection_without_streams_keepalive;
+  m_opts.event_loop.heartbeat_timeout = options.heartbeat_timeout;
   std::unique_ptr<MsgLoop> msg_loop(new MsgLoop(options.env,
                                                 options.env_options,
                                                 -1,  // port

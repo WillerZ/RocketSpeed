@@ -41,8 +41,7 @@ Subscriber::Subscriber(const ClientOptions& options,
                        std::shared_ptr<SubscriberStats> stats,
                        size_t shard_id,
                        size_t max_active_subscriptions,
-                       std::shared_ptr<size_t> num_active_subscriptions,
-                       TimeoutList<size_t>* hb_timeout_list)
+                       std::shared_ptr<size_t> num_active_subscriptions)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
@@ -57,8 +56,7 @@ Subscriber::Subscriber(const ClientOptions& options,
                      options_.max_silent_reconnects)
 , shard_id_(shard_id)
 , max_active_subscriptions_(max_active_subscriptions)
-, num_active_subscriptions_(std::move(num_active_subscriptions))
-, hb_timeout_list_(hb_timeout_list) {
+, num_active_subscriptions_(std::move(num_active_subscriptions)) {
   thread_check_.Check();
   RefreshRouting();
 }
@@ -179,7 +177,6 @@ void Subscriber::SetUserData(SubscriptionID sub_id, void* user_data) {
 void Subscriber::RefreshRouting() {
   thread_check_.Check();
   stream_supervisor_.ConnectTo(options_.sharding->GetHost(shard_id_));
-  hb_timeout_list_->Add(shard_id_);
 }
 
 void Subscriber::NotifyHealthy(bool isHealthy) {
@@ -343,10 +340,6 @@ void Subscriber::ReceiveTerminate(
 }
 
 void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
-  if (isHealthy) {
-    hb_timeout_list_->Add(shard_id_);
-  }
-
   NotifyHealthy(isHealthy);
 }
 }  // namespace rocketspeed

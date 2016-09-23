@@ -64,7 +64,7 @@ class SocketEventStats {
   Counter* messages_received[size_t(MessageType::max) + 1];
 
   Histogram* agg_hb_serialized_bytes; // lower-bound size on the wire for hbs
-  Counter* individual_hb_deliveries;  // fan-out from aggregated hbs
+  Counter* hb_timeouts;
 };
 
 class SocketEvent : public Source<MessageOnStream>,
@@ -201,6 +201,11 @@ class SocketEvent : public Source<MessageOnStream>,
    */
   std::unordered_set<uint32_t> shard_heartbeats_received_;
 
+  /**
+   * Records last heartbeat received for each stream.
+   */
+  TimeoutList<size_t> hb_timeout_list_;
+
   SocketEvent(EventLoop* event_loop,
               int fd,
               uint8_t protocol_version,
@@ -235,10 +240,15 @@ class SocketEvent : public Source<MessageOnStream>,
   bool EnqueueWrite(SerializedOnStream& value);
 
   /**
+   * Check for streams that haven't received a heartbeat.
+   */
+  void CheckHeartbeats();
+
+  /**
    * Take a heartbeat representing one or more heartbeats and fan out
    * deliver to necessary streams.
    */
-  bool DeliverAggregatedHeartbeat(std::unique_ptr<MessageHeartbeat> msg);
+  void DeliverAggregatedHeartbeat(std::unique_ptr<MessageHeartbeat> msg);
 
   /**
    * Collect per-stream heartbeats in order to flush an aggregated

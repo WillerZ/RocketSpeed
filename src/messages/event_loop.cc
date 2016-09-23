@@ -371,7 +371,7 @@ EventLoop::Initialize() {
     std::make_shared<UnboundedMPSCCommandQueue>(info_log_, queue_stats_);
   AddControlCommandQueue(control_command_queue_);
 
-  if (options_.enable_heartbeats) {
+  if (options_.heartbeat_period.count() > 0) {
     auto send_heartbeats = [this]() {
       for (const auto& kv : stream_id_to_stream_) {
         heartbeats_to_send_->Add(kv.first);

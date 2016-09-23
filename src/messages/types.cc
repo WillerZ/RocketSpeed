@@ -73,8 +73,9 @@ void StreamReceiver::operator()(StreamReceiveArg<Message> arg) {
           PrepareArguments<MessageDeliverBatch>(flow, stream_id, message));
       return;
     case MessageType::mHeartbeat:
-      ReceiveHeartbeat(
-          PrepareArguments<MessageHeartbeat>(flow, stream_id, message));
+      // sockets should swallow heartbeats, they shouldn't be exposed
+      // to consumers
+      RS_ASSERT(false);
       return;
     default:
       RS_ASSERT(false);

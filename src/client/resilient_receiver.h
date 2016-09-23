@@ -68,6 +68,11 @@ class ResilientStreamReceiver final : public StreamReceiver {
   size_t sequential_conn_failures_{0};
 
   virtual void operator()(StreamReceiveArg<Message> arg) override;
+  virtual void NotifyHealthy(bool isHealthy) override {
+    receiver_->NotifyHealthy(isHealthy); // just forward
+    NotifyConnectionHealthy(isHealthy);
+  }
+
   void Reconnect(size_t conn_failures, HostId host);
   size_t UpdateConnectionState(bool isNowHealthy);
 

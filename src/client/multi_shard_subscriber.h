@@ -80,10 +80,8 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   /// Version of the router when we last fetched hosts.
   size_t last_router_version_;
 
-  /// A timer to periodically check for router updates and heartbeat timeouts.
+  /// A timer to periodically check for router updates
   std::unique_ptr<EventCallback> maintenance_timer_;
-
-  TimeoutList<size_t> hb_timeout_list_;
 
   /**
    * Returns a subscriber for provided subscription ID or null if cannot
@@ -96,8 +94,6 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
 
   /** Number of active subscriptions in this thread across shards. */
   std::shared_ptr<size_t> num_active_subscriptions_;
-
-  void HeartbeatTick();
 };
 
 }  // namespace rocketspeed

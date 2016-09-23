@@ -133,13 +133,26 @@ class EventLoop {
     std::chrono::milliseconds connection_without_streams_keepalive{0};
     /** Preferred protocol version. */
     uint8_t protocol_version;
-    /** Should we send out heartbeats? */
-    bool enable_heartbeats = true;
-    /** Send heartbeats every X milliseconds */
+
+    /** Send heartbeats every X milliseconds. Set to zero to disable. */
     std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);
     /** How long a source must be blocked before logging warnings. */
     std::chrono::milliseconds flow_control_blocked_warn_period =
       std::chrono::seconds(10);
+
+    /**
+     * Notify observers that a shard is unhealthy if we haven't
+     * received a heartbeat within this period. Set to zero to disable
+     * the timeout mechanism. Heartbeats will still be received but
+     * will have no effect.
+     *
+     * The timeout is checked 10x as regularly as the timeout period
+     * itself. A timeout may be observed after up to: period + (1/10 *
+     * period).
+     *
+     * Default: 2 minutes.
+    */
+    std::chrono::milliseconds heartbeat_timeout = std::chrono::minutes(2);
   };
 
   /**

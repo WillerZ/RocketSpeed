@@ -66,8 +66,7 @@ class Subscriber : public SubscriberIf {
              std::shared_ptr<SubscriberStats> stats,
              size_t shard_id,
              size_t max_active_subscriptions,
-             std::shared_ptr<size_t> num_active_subscriptions,
-             TimeoutList<size_t>* hb_timeout_list);
+             std::shared_ptr<size_t> num_active_subscriptions);
 
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
@@ -132,8 +131,6 @@ class Subscriber : public SubscriberIf {
 
   /// Number of active subscriptions in this thread
   std::shared_ptr<size_t> num_active_subscriptions_;
-
-  TimeoutList<size_t>* hb_timeout_list_;
 };
 
 }  // namespace rocketspeed

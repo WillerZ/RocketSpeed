@@ -59,7 +59,6 @@ MultiShardSubscriber::MultiShardSubscriber(
   maintenance_timer_ = event_loop_->CreateTimedEventCallback(
     [this]() {
       RefreshRouting();
-      HeartbeatTick();
     },
     options_.timer_period);
   maintenance_timer_->Enable();
@@ -89,23 +88,6 @@ void MultiShardSubscriber::NotifyHealthy(bool isHealthy) {
   }
 }
 
-void MultiShardSubscriber::HeartbeatTick() {
-  if (options_.heartbeat_timeout.count() < 1) {
-    return;                     // disabled
-  }
-
-  std::vector<size_t> expired;
-  hb_timeout_list_.GetExpired(options_.heartbeat_timeout,
-                              std::back_inserter(expired));
-  for (auto shard_id : expired) {
-    auto it = subscribers_.find(shard_id);
-    if (it != subscribers_.end()) {
-      it->second->NotifyHealthy(false);
-    }
-  }
-  stats_->hb_timeouts->Add(expired.size());
-}
-
 void MultiShardSubscriber::StartSubscription(
     SubscriptionID sub_id,
     SubscriptionParameters parameters,
@@ -126,8 +108,7 @@ void MultiShardSubscriber::StartSubscription(
                        stats_,
                        shard_id,
                        max_active_subscriptions_,
-                       num_active_subscriptions_,
-                       &hb_timeout_list_));
+                       num_active_subscriptions_));
     if (options_.collapse_subscriptions_to_tail) {
       // TODO(t10132320)
       RS_ASSERT(parameters.start_seqno == 0);

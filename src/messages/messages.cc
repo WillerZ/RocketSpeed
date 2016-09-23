@@ -750,7 +750,7 @@ Status MessageHeartbeat::Serialize(std::string* out) const {
     .count();
   PutFixed64(out, epoch_ms);
 
-  for (uint shard : healthy_streams_) {
+  for (uint32_t shard : healthy_streams_) {
     PutVarint32(out, shard);
   }
 

@@ -298,9 +298,6 @@ TEST_F(ClientTest, BackOff) {
   std::vector<TestClock::duration> subscribe_attempts;
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
-  // disable to prevent heartbeats from notifying the retry mechanism
-  // that the connection is healthy
-  msg_loop_options_.event_loop.enable_heartbeats = false;
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -316,7 +313,10 @@ TEST_F(ClientTest, BackOff) {
           // This is a tad fishy, but Copilot should not receive any message
           // before we perform the assignment to copilot_ptr.
           copilot_ptr.load()->SendResponse(goodbye, origin, 0);
-        }}});
+          }}},
+      std::chrono::milliseconds(0)); // disable heartbeats
+  // disable to prevent heartbeats from notifying the retry mechanism
+  // that the connection is healthy
   copilot_ptr = copilot.msg_loop.get();
 
   // Back-off parameters.
@@ -419,10 +419,6 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
 
-  // disable to prevent heartbeats from notifying the retry mechanism
-  // that the connection is healthy
-  msg_loop_options_.event_loop.enable_heartbeats = false;
-
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
@@ -438,12 +434,14 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
           // This is a tad fishy, but Copilot should not receive any message
           // before we perform the assignment to copilot_ptr.
           copilot_ptr.load()->SendResponse(goodbye, origin, 0);
-        }}});
+          }}},
+      std::chrono::milliseconds(0));
+  // disable to prevent heartbeats from notifying the retry mechanism
+  // that the connection is healthy
   copilot_ptr = copilot.msg_loop.get();
 
   ClientOptions options;
   options.should_notify_health = false; // <--
-  options.timer_period = std::chrono::milliseconds(1);
   options.heartbeat_timeout = std::chrono::milliseconds(0);
   options.backoff_strategy = [](ClientRNG*, size_t) {
     return std::chrono::milliseconds(1);
@@ -477,19 +475,17 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
 
-  // we will manually take control of heartbeats for the test
-  msg_loop_options_.event_loop.enable_heartbeats = false;
   std::atomic<StreamID> client_stream;
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             client_stream = origin;
-        }}});
+          }}},
+      std::chrono::milliseconds(0)); // disable heartbeats
   copilot_ptr = copilot.msg_loop.get();
 
   ClientOptions options;
-  options.timer_period = std::chrono::milliseconds(1);
-  options.heartbeat_timeout = std::chrono::milliseconds(5);
+  options.heartbeat_timeout = std::chrono::milliseconds(10);
   auto client = CreateClient(std::move(options));
 
   class StatusObserver : public Observer {
@@ -525,19 +521,17 @@ TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthy) {
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
 
-  // we will manually take control of heartbeats for the test
-  msg_loop_options_.event_loop.enable_heartbeats = false;
   std::atomic<StreamID> client_stream;
   auto copilot = MockServer(
       {{MessageType::mSubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             client_stream = origin;
-        }}});
+          }}},
+      std::chrono::milliseconds(0)); // disable heartbeats
   copilot_ptr = copilot.msg_loop.get();
 
   ClientOptions options;
-  options.timer_period = std::chrono::milliseconds(1);
-  options.heartbeat_timeout = std::chrono::milliseconds(5);
+  options.heartbeat_timeout = std::chrono::milliseconds(10);
   auto client = CreateClient(std::move(options));
 
   class StatusObserver : public Observer {
@@ -585,7 +579,6 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
     std::chrono::milliseconds(5));
 
   ClientOptions options;
-  options.timer_period = std::chrono::milliseconds(1);
   options.heartbeat_timeout = std::chrono::milliseconds(20);
   auto client = CreateClient(std::move(options));
 

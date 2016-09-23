@@ -90,14 +90,13 @@ SocketEventStats::SocketEventStats(const std::string& prefix) {
       all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1f);
   write_succeed_iovec =
       all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1f);
+  hb_timeouts = all.AddCounter(prefix + "hb_timeouts");
   agg_hb_serialized_bytes =
     // works out at about 120 buckets
     all.AddHistogram(prefix + ".agg_hb_serialized_bytes", 0, 10*1000*1000,
                      100, 1.1f);
   socket_writes = all.AddCounter(prefix + ".socket_writes");
   partial_socket_writes = all.AddCounter(prefix + ".partial_socket_writes");
-  individual_hb_deliveries =
-    all.AddCounter(prefix + ".individual_hb_deliveries");
   for (int i = 0; i < int(MessageType::max) + 1; ++i) {
     messages_received[i] = all.AddCounter(prefix + ".messages_received." +
                                           MessageTypeName(MessageType(i)));
@@ -205,6 +204,7 @@ std::unique_ptr<Stream> SocketEvent::OpenStream(StreamID stream_id) {
 
   std::unique_ptr<Stream> stream(new Stream(this, stream_id, stream_id));
   auto result = remote_id_to_stream_.emplace(stream_id, stream.get());
+  hb_timeout_list_.Add(stream_id);
   RS_ASSERT(result.second);
   (void)result;
   // TODO(t8971722)
@@ -355,10 +355,22 @@ SocketEvent::SocketEvent(
   // Socket's send_queue is empty, so the sink is writable.
   event_loop_->Notify(write_ready_);
 
-  if (IsInbound() && event_loop_->GetOptions().enable_heartbeats) {
-    hb_timer_ = event_loop_->RegisterTimerCallback(
-      std::bind(&SocketEvent::FlushCapturedHeartbeats, this),
-      event_loop_->GetOptions().heartbeat_period);
+  if (IsInbound()) {
+    auto period = event_loop_->GetOptions().heartbeat_period;
+    if (period.count() > 0) {
+      // setup timer to send aggregated heartbeats
+      hb_timer_ = event_loop_->RegisterTimerCallback(
+        std::bind(&SocketEvent::FlushCapturedHeartbeats, this),
+        period);
+    }
+  } else {
+    // setup timer to check timeout list
+    auto timeout = event_loop_->GetOptions().heartbeat_timeout;
+    if (timeout.count() > 0) {
+      hb_timer_ = event_loop_->RegisterTimerCallback(
+        std::bind(&SocketEvent::CheckHeartbeats, this),
+        timeout / 10);          // check every 1/10th of the timeout
+    }
   }
 }
 
@@ -614,10 +626,8 @@ Status SocketEvent::ReadCallback() {
     std::unique_ptr<Message> msg =
         Message::CreateNewInstance(std::move(msg_buf_), in);
     if (!msg) {
-      LOG_WARN(GetLogger(), "Failed to decode message");
-      // TODO: what happens now? are we in a bad state? we should
-      // probably reconnect?
-      continue;
+      LOG_WARN(GetLogger(), "Failed to decode a message");
+      return Status::IOError("Failed to decode a message.");
     }
 
     if (!Receive(remote_id, std::move(msg))) {
@@ -638,7 +648,8 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
   if (msg_type == MessageType::mHeartbeat) {
     std::unique_ptr<MessageHeartbeat> hb(
       static_cast<MessageHeartbeat*>(msg.release()));
-    return DeliverAggregatedHeartbeat(std::move(hb));
+    DeliverAggregatedHeartbeat(std::move(hb));
+    return true;
   }
 
   // Find a stream for this message or create one if missing.
@@ -700,35 +711,43 @@ std::string SocketEvent::GetSourceName() const {
   return std::string(buffer);
 }
 
-bool SocketEvent::DeliverAggregatedHeartbeat(
+void SocketEvent::DeliverAggregatedHeartbeat(
   std::unique_ptr<MessageHeartbeat> msg) {
-  LOG_DEBUG(GetLogger(), "Deliver aggregated");
-
-  bool overflow = false;
-  size_t deliveries = 0;
 
   for (auto stream_id : msg->GetHealthyStreams()) {
+    hb_timeout_list_.Add(stream_id);
+
     auto it = remote_id_to_stream_.find(stream_id);
     if (it == remote_id_to_stream_.end()) {
       LOG_WARN(GetLogger(),
-               "Failed to find StreamID(%u), dropping individual heartbeat",
+               "StreamID(%u) healthy but could not find stream.",
                stream_id);
       continue;
     }
 
     Stream* stream = it->second;
-    MessageHeartbeat::StreamSet streams = {
-      static_cast<uint32_t>(stream->GetRemoteID())
-    };
-    std::unique_ptr<Message> hb(new MessageHeartbeat(SystemTenant,
-                                                     msg->GetTimestamp(),
-                                                     streams));
-    overflow |= DrainOne({stream, std::move(hb)});
-    deliveries++;
+    stream->NotifyHealthy(true);
   }
-  stats_->individual_hb_deliveries->Add(deliveries);
+}
 
-  return overflow;
+void SocketEvent::CheckHeartbeats() {
+  auto timeout = event_loop_->GetOptions().heartbeat_timeout;
+
+  std::vector<size_t> expired;
+  hb_timeout_list_.GetExpired(timeout, std::back_inserter(expired));
+  for (auto stream_id : expired) {
+    auto it = remote_id_to_stream_.find(stream_id);
+    if (it == remote_id_to_stream_.end()) {
+      LOG_WARN(GetLogger(),
+               "StreamID(%lu) heartbeat timed out but could not find stream.",
+               stream_id);
+      continue;
+    }
+
+    Stream* stream = it->second;
+    stream->NotifyHealthy(false);
+  }
+  stats_->hb_timeouts->Add(expired.size());
 }
 
 void SocketEvent::CaptureHeartbeat(SerializedOnStream& value) {

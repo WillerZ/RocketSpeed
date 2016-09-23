@@ -27,7 +27,6 @@ class MessageDeliverData;
 class MessageFindTailSeqno;
 class MessageTailSeqno;
 class MessageDeliverBatch;
-class MessageHeartbeat;
 template<typename>
 class Sink;
 class Slice;
@@ -98,10 +97,16 @@ class StreamReceiver : public NonMovable, public NonCopyable {
   virtual void operator()(StreamReceiveArg<Message> arg);
 
   /**
-   * Invoked after the stream is definitively closed and the receiver will not
-   * receive any more messages on it.
+   * Invoked after the stream is definitively closed and the receiver
+   * will not receive any more messages on it.
    */
   virtual void EndStream(StreamID stream_id) {}
+
+  /**
+   * Invoked when a stream is made aware that it is either healthy or
+   * unhealthy. This represents a transient state change.
+   */
+  virtual void NotifyHealthy(bool isHealthy) {}
 
  protected:
   virtual void ReceivePing(StreamReceiveArg<MessagePing>) {}
@@ -116,7 +121,6 @@ class StreamReceiver : public NonMovable, public NonCopyable {
   virtual void ReceiveFindTailSeqno(StreamReceiveArg<MessageFindTailSeqno>) {}
   virtual void ReceiveTailSeqno(StreamReceiveArg<MessageTailSeqno>) {}
   virtual void ReceiveDeliverBatch(StreamReceiveArg<MessageDeliverBatch>) {}
-  virtual void ReceiveHeartbeat(StreamReceiveArg<MessageHeartbeat>) {}
 
  private:
   template <typename T, typename M>

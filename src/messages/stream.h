@@ -94,6 +94,12 @@ class Stream : public Sink<SharedTimestampedString> {
 
   std::string GetSinkName() const override;
 
+  void NotifyHealthy(bool isHealthy) {
+    if (receiver_) {
+      receiver_->NotifyHealthy(isHealthy);
+    }
+  }
+
  private:
   ThreadCheck thread_check_;
 
