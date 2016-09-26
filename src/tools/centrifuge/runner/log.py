@@ -4,7 +4,7 @@ import datetime
 def log(severity, msg):
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime(
         '%Y-%m-%d %H:%M:%S:%f')
-    print("[%s][%s]: %s" % (severity, timestamp, msg))
+    print("[%s][%s]: %s" % (severity, timestamp, msg), flush=True)
 
 def info(msg):
     log('INFO', msg)
@@ -16,7 +16,7 @@ def error(msg):
     log('ERROR', msg)
 
 def orchestrate(msg):
-    print(">>> %s" % msg)
+    print(">>> %s" % msg, flush=True)
 
 # TODO: these should be streams that can be passed to a process
 # probably want to send output somewhere other than the console and
