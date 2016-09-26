@@ -90,7 +90,7 @@ SocketEventStats::SocketEventStats(const std::string& prefix) {
       all.AddHistogram(prefix + ".write_succeed_bytes", 0, kMaxIovecs, 1, 1.1f);
   write_succeed_iovec =
       all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1f);
-  hb_timeouts = all.AddCounter(prefix + "hb_timeouts");
+  hb_timeouts = all.AddCounter(prefix + ".hb_timeouts");
   agg_hb_serialized_bytes =
     // works out at about 120 buckets
     all.AddHistogram(prefix + ".agg_hb_serialized_bytes", 0, 10*1000*1000,
