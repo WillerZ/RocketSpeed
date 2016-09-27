@@ -10,6 +10,7 @@ from thrift.transport import TTransport
 from thrift.protocol import TBinaryProtocol
 from thrift.server import TServer
 
+import sys
 import traceback
 import time
 import functools
@@ -176,7 +177,7 @@ def orchestrate_test(peers, client, server):
         summarize_test(states)
     except Exception as e:
         log.orchestrate('TEST EXPLODED')
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stdout)
     return False
 
 def summarize_tests(test_results):
