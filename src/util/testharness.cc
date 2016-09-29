@@ -61,6 +61,7 @@ int RandomSeed() {
 int RunAllTests(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   google::ParseCommandLineFlags(&argc, &argv, true);
+  rocketspeed::port::InstallStackTraceHandler();
   return RUN_ALL_TESTS();
 }
 

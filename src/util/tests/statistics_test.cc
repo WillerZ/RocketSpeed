@@ -282,6 +282,7 @@ TEST_F(StatisticsTest, StatisticsExporter) {
 
   StatisticsExporter exporter(
       Env::Default(),
+      std::make_shared<NullLogger>(),
       get_stats,
       &visitor,
       {{1, ".1"}, {2, ".2"}, {4, ".4"}},

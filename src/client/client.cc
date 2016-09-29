@@ -143,6 +143,7 @@ ClientImpl::ClientImpl(ClientOptions options,
     // Start thread for exporting statistics.
     stats_exporter_.reset(new StatisticsExporter(
         options_.env,
+        options_.info_log,
         [this] () { return GetStatisticsSync(); },
         options_.statistics_visitor.get()));
   }

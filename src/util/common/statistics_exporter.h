@@ -16,6 +16,7 @@
 
 namespace rocketspeed {
 
+class Logger;
 class Statistics;
 class StatisticsVisitor;
 
@@ -54,6 +55,7 @@ class StatisticsExporter final {
    *   foo.3600
    *
    * @param env Environment
+   * @param info_log For logging.
    * @param statistics_query Query to capture current statistics.
    * @param visitor Visitor for all computed statistics. Will be invoked each
    *                tick duration on a stable thread.
@@ -61,6 +63,7 @@ class StatisticsExporter final {
    * @param tick_duration How often to wake up and export statistics.
    */
   explicit StatisticsExporter(BaseEnv* env,
+                              std::shared_ptr<Logger> info_log,
                               StatisticsQuery statistics_query,
                               StatisticsVisitor* visitor,
                               std::vector<StatisticsWindow> windows =

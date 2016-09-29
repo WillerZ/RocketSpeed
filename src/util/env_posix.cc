@@ -1841,9 +1841,15 @@ unsigned int PosixEnv::GetThreadPoolQueueLen(Priority pri) const {
 }
 
 static void* StartThreadWrapper(void* arg) {
-  std::function<void()>* state = reinterpret_cast<std::function<void()>*>(arg);
-  (*state)();
-  delete state;
+  // We should not crash the process unnecessarily. It is better for the client
+  // to be in a bad state than for it to bring down the process.
+  try {
+    auto state = reinterpret_cast<std::function<void()>*>(arg);
+    (*state)();
+    delete state;
+  } catch (...) {
+    fprintf(stderr, "thread threw an exception -- this should not happen\n");
+  }
   return nullptr;
 }
 

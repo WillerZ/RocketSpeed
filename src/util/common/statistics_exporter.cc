@@ -8,6 +8,7 @@
 #include <chrono>
 #include <string>
 
+#include "include/Logger.h"
 #include "include/Types.h"
 #include "src/util/common/statistics.h"
 
@@ -41,13 +42,14 @@ std::vector<StatisticsWindow> StatisticsWindow::kDefaults = {
 };
 
 StatisticsExporter::StatisticsExporter(BaseEnv* env,
+                                       std::shared_ptr<Logger> info_log,
                                        StatisticsQuery statistics_query,
                                        StatisticsVisitor* visitor,
                                        std::vector<StatisticsWindow> windows,
                                        std::chrono::milliseconds tick_duration)
 : env_(env) {
   thread_ = env_->StartThread(
-    [this, statistics_query, visitor, windows, tick_duration]() {
+    [this, statistics_query, visitor, windows, tick_duration, info_log]() {
     // Aggregators for each window size.
     std::vector<std::unique_ptr<StatisticsWindowAggregator>> aggregators;
     for (auto window : windows) {
@@ -62,7 +64,14 @@ StatisticsExporter::StatisticsExporter(BaseEnv* env,
     Statistics previous_all_time;
     while (!shutdown_signal_.TimedWait(tick_duration)) {
       // All time stats.
-      Statistics all_time = statistics_query();
+      Statistics all_time;
+      try {
+        all_time = statistics_query();
+      } catch (...) {
+        // Failed to get the current statistics.
+        // Continue with empty sample so that windows add up.
+        LOG_ERROR(info_log, "Exception querying statistics. Sample empty.");
+      }
       ExportStatistics(all_time, "", visitor);
 
       // Last tick stats.

@@ -459,11 +459,22 @@ void EventLoop::Run() {
     }
   }
 
-  // Start the event loop.
-  // This will not exit until Stop is called, or some error
-  // happens within libevent.
-  while (!RunOnce()) {
-    // Once more.
+  // We should not crash the process unnecessarily. It is better for
+  // the client/server to be in a bad state than for it to bring down the
+  // process.
+  try {
+    // Start the event loop.
+    // This will not exit until Stop is called, or some error
+    // happens within libevent.
+    while (!RunOnce()) {
+      // Once more.
+    }
+  } catch (...) {
+    // EventLoop will stop running, which for the client means that
+    // queues will just back up and start failing at the client API
+    // layer. We'll stop sending any notifications of any sort, so
+    // things will be in a bad state, but nothing should crash.
+    LOG_FATAL(info_log_, "EventLoop thread threw an exception");
   }
 
   // Shutdown everything
