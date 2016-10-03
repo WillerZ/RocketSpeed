@@ -16,6 +16,7 @@
 
 #include "include/Env.h"
 #include "include/RocketSpeed.h"
+#include "include/ShadowedClient.h"
 #include "src/client/single_shard_subscriber.h"
 #include "src/client/topic_subscription_map.h"
 #include "src/client/tail_collapsing_subscriber.h"
@@ -217,7 +218,8 @@ class ClientTest : public ::testing::Test {
   : positive_timeout(5000)
   , negative_timeout(100)
   , env_(Env::Default())
-  , config_(std::make_shared<MockPublisherRouter>()) {
+  , config_(std::make_shared<MockPublisherRouter>())
+  , shadow_config_(std::make_shared<MockPublisherRouter>()) {
     EXPECT_OK(test::CreateLogger(env_, "ClientTest", &info_log_));
   }
 
@@ -232,6 +234,7 @@ class ClientTest : public ::testing::Test {
   const std::chrono::milliseconds negative_timeout;
   Env* const env_;
   const std::shared_ptr<MockPublisherRouter> config_;
+  const std::shared_ptr<MockPublisherRouter> shadow_config_;
   std::shared_ptr<rocketspeed::Logger> info_log_;
   MsgLoop::Options msg_loop_options_;
 
@@ -258,7 +261,7 @@ class ClientTest : public ::testing::Test {
     std::thread msg_loop_thread_;
   };
 
-  ServerMock MockServer(
+  ServerMock MockServer(std::shared_ptr<MockPublisherRouter> config,
     const std::map<MessageType, MsgCallbackType>& callbacks,
     std::chrono::milliseconds hb_period = std::chrono::milliseconds(100)) {
 
@@ -272,23 +275,54 @@ class ClientTest : public ::testing::Test {
     std::thread thread([&]() { server->Run(); });
     EXPECT_OK(server->WaitUntilRunning());
     // Set pilot/copilot address in the configuration.
-    config_->SetCopilot(server->GetHostId());
-    config_->SetPilot(server->GetHostId());
+    config->SetCopilot(server->GetHostId());
+    config->SetPilot(server->GetHostId());
     return ServerMock(std::move(server), std::move(thread));
   }
 
-  std::unique_ptr<Client> CreateClient(ClientOptions options) {
+  ServerMock MockServer(
+    const std::map<MessageType, MsgCallbackType>& callbacks,
+    std::chrono::milliseconds hb_period = std::chrono::milliseconds(100)) {
+    return MockServer(config_, std::move(callbacks), hb_period);
+  }
+
+  ServerMock MockShadowServer(
+    const std::map<MessageType, MsgCallbackType>& callbacks,
+    std::chrono::milliseconds hb_period = std::chrono::milliseconds(100)) {
+    return MockServer(shadow_config_, std::move(callbacks), hb_period);
+  }
+
+  void FixOptions(ClientOptions& options,
+      std::shared_ptr<MockPublisherRouter> config) {
     if (!options.info_log) {
       options.info_log = info_log_;
     }
     if (!options.publisher) {
-      options.publisher = config_;
+      options.publisher = config;
     }
     if (!options.sharding) {
-      options.sharding = MakeShardingStrategyFromConfig(config_);
+      options.sharding = MakeShardingStrategyFromConfig(config);
     }
+  }
+
+  std::unique_ptr<Client> CreateClient(ClientOptions options) {
+    FixOptions(options, config_);
+
     std::unique_ptr<Client> client;
     EXPECT_OK(Client::Create(std::move(options), &client));
+    return client;
+  }
+
+  std::unique_ptr<Client> CreateShadowedClient(
+      ClientOptions client_options,
+      ClientOptions shadowed_client_options) {
+    FixOptions(client_options, config_);
+    FixOptions(shadowed_client_options, shadow_config_);
+
+    std::unique_ptr<Client> client;
+    EXPECT_OK(ShadowedClient::Create(std::move(client_options),
+                                     std::move(shadowed_client_options),
+                                     &client));
     return client;
   }
 };
@@ -1425,6 +1459,171 @@ TEST_F(SubscriptionIDTest, SubscriptionIDHash) {
     ASSERT_TRUE(currentId != std::hash<SubscriptionID>()(id));
     currentId += currentId;
   }
+}
+
+TEST_F(ClientTest, ShadowedClientSubscribe) {
+  port::Semaphore sub_semaphore, shadow_sub_semaphore;
+  port::Semaphore unsub_semaphore, shadow_unsub_semaphore;
+
+  // Subscribe callbacks
+  auto subscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    sub_semaphore.Post();
+  };
+  auto shadow_subscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    shadow_sub_semaphore.Post();
+  };
+
+  // Unsubscribe callbacks
+  auto unsubscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    unsub_semaphore.Post();
+  };
+  auto shadow_unsubscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    shadow_unsub_semaphore.Post();
+  };
+
+  // Mock sever and shadow server
+  auto copilot = MockServer({
+    {MessageType::mSubscribe, subscribe_cb},
+    {MessageType::mGoodbye, unsubscribe_cb},
+    {MessageType::mUnsubscribe, unsubscribe_cb}});
+  auto copilot2 = MockShadowServer({
+    {MessageType::mSubscribe, shadow_subscribe_cb},
+    {MessageType::mGoodbye, shadow_unsubscribe_cb},
+    {MessageType::mUnsubscribe, shadow_unsubscribe_cb}});
+
+  ClientOptions client_options, shadowed_client_options;
+
+  auto client = CreateShadowedClient(
+                  std::move(client_options),
+                  std::move(shadowed_client_options));
+
+  // Simulate one subscription
+  auto sub_handle = client->Subscribe(
+    GuestTenant, /* tenantID */
+    GuestNamespace, /* namespaceID */
+    "Sample topic name", /* topic name */
+    0, /* start sequence number */
+    nullptr, /* deliver callback */
+    [&](const SubscriptionStatus&) { }); /* subscription callback */
+
+  ASSERT_TRUE(sub_handle);
+
+  // Check Subscribe - Semaphore and shadow semaphore should have value of 1
+  ASSERT_TRUE(sub_semaphore.TimedWait(positive_timeout));
+  ASSERT_TRUE(shadow_sub_semaphore.TimedWait(positive_timeout));
+  ASSERT_FALSE(sub_semaphore.TimedWait(negative_timeout));
+  ASSERT_FALSE(shadow_sub_semaphore.TimedWait(negative_timeout));
+
+  // Simulate one unsubscription
+  ASSERT_OK(client->Unsubscribe(sub_handle));
+
+  // Check Unsubscribe - Semaphore and shadow semaphore should have value of 1
+  ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
+  ASSERT_TRUE(shadow_unsub_semaphore.TimedWait(positive_timeout));
+  ASSERT_FALSE(unsub_semaphore.TimedWait(negative_timeout));
+  ASSERT_FALSE(shadow_unsub_semaphore.TimedWait(negative_timeout));
+}
+
+TEST_F(ClientTest, ShadowClientComparison) {
+  constexpr int N = 10; // Number of topics
+
+  std::unordered_map<std::string, port::Semaphore>
+    semaphores, shadow_semaphores;
+
+  std::mutex semaphores_mutex, shadow_semaphores_mutex;
+  std::set<SubscriptionHandle> handles;
+  port::Semaphore unsub_semaphore, shadow_unsub_semaphore;
+
+  // Topics: "a", "aa", "aaa", "aaaa"...
+  for (int i = 1; i <= N; i++) {
+    semaphores.insert(std::make_pair(std::string(i, 'a'), port::Semaphore()));
+    shadow_semaphores.insert(
+      std::make_pair(std::string(i, 'a'), port::Semaphore()));
+  }
+
+  // Prepare callbacks
+  auto subscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+    auto topic = subscribe->GetTopicName().ToString();
+    std::lock_guard<std::mutex> lock(semaphores_mutex);
+    ASSERT_TRUE(semaphores.find(topic) != semaphores.end());
+    semaphores[topic].Post();
+  };
+  auto shadow_subscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    auto subscribe = static_cast<MessageSubscribe*>(msg.get());
+    auto topic = subscribe->GetTopicName().ToString();
+    std::lock_guard<std::mutex> lock(shadow_semaphores_mutex);
+    ASSERT_TRUE(shadow_semaphores.find(topic) != shadow_semaphores.end());
+    shadow_semaphores[topic].Post();
+  };
+  auto unsubscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    unsub_semaphore.Post();
+  };
+  auto shadow_unsubscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    shadow_unsub_semaphore.Post();
+  };
+
+  // Mock sever and shadow server
+  auto copilot = MockServer(
+    {{MessageType::mSubscribe, subscribe_cb},
+    {MessageType::mUnsubscribe, unsubscribe_cb},
+    {MessageType::mGoodbye, unsubscribe_cb}});
+  auto copilot2 = MockShadowServer(
+    {{MessageType::mSubscribe, shadow_subscribe_cb},
+    {MessageType::mUnsubscribe, shadow_unsubscribe_cb},
+    {MessageType::mGoodbye, shadow_unsubscribe_cb}});
+
+  // Create ShadowedClient
+  ClientOptions client_options, shadowed_client_options;
+
+  auto client = CreateShadowedClient(
+                  std::move(client_options),
+                  std::move(shadowed_client_options));
+
+  // Simulate subscriptions
+  for (int i = 1; i <= N; i++) {
+    auto sub_handle = client->Subscribe(
+      GuestTenant, /* tenantID */
+      GuestNamespace, /* namespaceID */
+      std::string(i, 'a'), /* topic name */
+      i, /* start sequence number */
+      nullptr, /* deliver callback */
+      [&](const SubscriptionStatus&) {}); /* subscription callback */
+    ASSERT_TRUE(sub_handle);
+    handles.insert(sub_handle);
+  }
+
+  // Check subcribe method results
+  for (int i = 1; i <= N; i++) {
+    ASSERT_TRUE(semaphores[std::string(i, 'a')].TimedWait(positive_timeout));
+    ASSERT_FALSE(semaphores[std::string(i, 'a')].TimedWait(negative_timeout));
+    ASSERT_TRUE(
+      shadow_semaphores[std::string(i, 'a')].TimedWait(positive_timeout));
+    ASSERT_FALSE(
+      shadow_semaphores[std::string(i, 'a')].TimedWait(negative_timeout));
+  }
+
+  // Number of topic should be equal number of handles
+  ASSERT_EQ(N, handles.size());
+
+  // Simulate unsubscriptions and check results
+  for (auto handle : handles) {
+    ASSERT_OK(client->Unsubscribe(handle));
+    ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
+    ASSERT_TRUE(shadow_unsub_semaphore.TimedWait(positive_timeout));
+  }
+
+  ASSERT_FALSE(unsub_semaphore.TimedWait(negative_timeout));
+  ASSERT_FALSE(shadow_unsub_semaphore.TimedWait(negative_timeout));
+
 }
 
 }  // namespace rocketspeed
