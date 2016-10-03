@@ -153,7 +153,7 @@ class CacheEntry {
     // TODO: Bloom filters are not updated on Erase
 #ifndef NO_RS_ASSERT
     RS_ASSERT(logid_ == log_id);
-    RS_ASSERT(seqno_block_ = seqno_block);
+    RS_ASSERT(seqno_block_ == seqno_block);
 #endif /* NO_RS_ASSERT */
 
     // if there isn't an entry, then there is nothing more to do
