@@ -315,14 +315,19 @@ class ClientTest : public ::testing::Test {
 
   std::unique_ptr<Client> CreateShadowedClient(
       ClientOptions client_options,
-      ClientOptions shadowed_client_options) {
+      ClientOptions shadowed_client_options,
+      bool is_internal = false,
+      ShouldShadow shadow_predicate =
+          [](const SubscriptionParameters& params) { return true; }) {
     FixOptions(client_options, config_);
     FixOptions(shadowed_client_options, shadow_config_);
 
     std::unique_ptr<Client> client;
     EXPECT_OK(ShadowedClient::Create(std::move(client_options),
                                      std::move(shadowed_client_options),
-                                     &client));
+                                     &client,
+                                     is_internal,
+                                     shadow_predicate));
     return client;
   }
 };
@@ -1624,6 +1629,99 @@ TEST_F(ClientTest, ShadowClientComparison) {
   ASSERT_FALSE(unsub_semaphore.TimedWait(negative_timeout));
   ASSERT_FALSE(shadow_unsub_semaphore.TimedWait(negative_timeout));
 
+}
+
+TEST_F(ClientTest, ShadowedClientPredicate) {
+  port::Semaphore sub_semaphore, shadow_sub_semaphore;
+  port::Semaphore unsub_semaphore, shadow_unsub_semaphore;
+
+  // Subscribe callbacks
+  auto subscribe_cb = [&](Flow* flow,
+                          std::unique_ptr<Message> msg,
+                          StreamID origin) { sub_semaphore.Post(); };
+  auto shadow_subscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    shadow_sub_semaphore.Post();
+  };
+
+  // Unsubscribe callbacks
+  auto unsubscribe_cb = [&](Flow* flow,
+                            std::unique_ptr<Message> msg,
+                            StreamID origin) { unsub_semaphore.Post(); };
+  auto shadow_unsubscribe_cb = [&](
+      Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+    shadow_unsub_semaphore.Post();
+  };
+
+  // Mock sever and shadow server
+  auto copilot = MockServer({{MessageType::mSubscribe, subscribe_cb},
+                             {MessageType::mGoodbye, unsubscribe_cb},
+                             {MessageType::mUnsubscribe, unsubscribe_cb}});
+  auto copilot2 =
+      MockShadowServer({{MessageType::mSubscribe, shadow_subscribe_cb},
+                        {MessageType::mGoodbye, shadow_unsubscribe_cb},
+                        {MessageType::mUnsubscribe, shadow_unsubscribe_cb}});
+
+  ClientOptions client_options, shadowed_client_options;
+
+  auto shadow_predicate = [](const SubscriptionParameters& params) {
+    return !params.topic_name.compare("Correct topic");
+  };
+
+  auto client = CreateShadowedClient(std::move(client_options),
+                                     std::move(shadowed_client_options),
+                                     false,
+                                     shadow_predicate);
+
+  // Simulate one subscription with correct topic
+  auto sub_handle = client->Subscribe(
+      GuestTenant,                        /* tenantID */
+      GuestNamespace,                     /* namespaceID */
+      "Correct topic",                    /* topic name */
+      0,                                  /* start sequence number */
+      nullptr,                            /* deliver callback */
+      [&](const SubscriptionStatus&) {}); /* subscription callback */
+
+  ASSERT_TRUE(sub_handle);
+
+  // Check Subscribe - Semaphore and shadow semaphore should have value of 1
+  ASSERT_TRUE(sub_semaphore.TimedWait(positive_timeout));
+  ASSERT_TRUE(shadow_sub_semaphore.TimedWait(positive_timeout));
+  ASSERT_FALSE(sub_semaphore.TimedWait(negative_timeout));
+  ASSERT_FALSE(shadow_sub_semaphore.TimedWait(negative_timeout));
+
+  // Simulate one unsubscription
+  ASSERT_OK(client->Unsubscribe(sub_handle));
+
+  // Check Unsubscribe - Semaphore and shadow semaphore should have value of 1
+  ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
+  ASSERT_TRUE(shadow_unsub_semaphore.TimedWait(positive_timeout));
+  ASSERT_FALSE(unsub_semaphore.TimedWait(negative_timeout));
+  ASSERT_FALSE(shadow_unsub_semaphore.TimedWait(negative_timeout));
+
+  // Simulate one subscription with incorrect topic
+  sub_handle = client->Subscribe(
+      GuestTenant,                        /* tenantID */
+      GuestNamespace,                     /* namespaceID */
+      "Incorrect topic",                  /* topic name */
+      0,                                  /* start sequence number */
+      nullptr,                            /* deliver callback */
+      [&](const SubscriptionStatus&) {}); /* subscription callback */
+
+  ASSERT_TRUE(sub_handle);
+
+  // Check Subscribe - Semaphore value of 1, shadow semaphore value of 0
+  ASSERT_TRUE(sub_semaphore.TimedWait(positive_timeout));
+  ASSERT_FALSE(sub_semaphore.TimedWait(negative_timeout));
+  ASSERT_FALSE(shadow_sub_semaphore.TimedWait(negative_timeout));
+
+  // Simulate one unsubscription
+  ASSERT_OK(client->Unsubscribe(sub_handle));
+
+  // Check Unsubscribe - Semaphore value of 1, shadow semaphore value of 0
+  ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
+  ASSERT_FALSE(unsub_semaphore.TimedWait(negative_timeout));
+  ASSERT_FALSE(shadow_unsub_semaphore.TimedWait(negative_timeout));
 }
 
 }  // namespace rocketspeed

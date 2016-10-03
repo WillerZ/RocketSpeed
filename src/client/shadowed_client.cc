@@ -11,10 +11,12 @@
 
 namespace rocketspeed {
 
-Status ShadowedClient::Create(ClientOptions client_options,
-                              ClientOptions client_proxy_options,
-                              std::unique_ptr<Client>* out_client,
-                              bool is_internal) {
+Status ShadowedClient::Create(
+    ClientOptions client_options,
+    ClientOptions shadowed_client_options,
+    std::unique_ptr<Client>* out_client,
+    bool is_internal,
+    ShouldShadow shadow_predicate) {
   RS_ASSERT(out_client);
 
   std::unique_ptr<ClientImpl> client;
@@ -24,16 +26,16 @@ Status ShadowedClient::Create(ClientOptions client_options,
     return st;
   }
 
-  std::unique_ptr<ClientImpl> proxy_client;
-  auto st_proxy = ClientImpl::Create(std::move(client_proxy_options),
-                                     &proxy_client);
+  std::unique_ptr<ClientImpl> shadowed_client;
+  auto st_shadowed =
+      ClientImpl::Create(std::move(shadowed_client_options), &shadowed_client);
 
-  if (!st_proxy.ok()) {
-    return st_proxy;
+  if (!st_shadowed.ok()) {
+    return st_shadowed;
   }
 
-  std::unique_ptr<Client> result_client(
-    new ShadowedClient(std::move(client), std::move(proxy_client)));
+  std::unique_ptr<Client> result_client(new ShadowedClient(
+      std::move(client), std::move(shadowed_client), shadow_predicate));
 
   *out_client = std::move(result_client);
 
@@ -42,10 +44,11 @@ Status ShadowedClient::Create(ClientOptions client_options,
 
 ShadowedClient::ShadowedClient(
     std::unique_ptr<Client> client,
-    std::unique_ptr<Client> proxy_client)
+    std::unique_ptr<Client> shadowed_client,
+    ShouldShadow shadow_predicate)
 : client_(std::move(client))
-, proxy_client_(std::move(proxy_client))   {
-}
+, shadowed_client_(std::move(shadowed_client))
+, shadow_predicate_(shadow_predicate) {}
 
 void ShadowedClient::SetDefaultCallbacks(
     SubscribeCallback subscription_callback,
@@ -81,16 +84,17 @@ SubscriptionHandle ShadowedClient::Subscribe(SubscriptionParameters parameters,
     return subscription;
   }
 
-  class EmptyObserver : public Observer {
-  };
+  if (shadow_predicate_(parameters)) {
+    class EmptyObserver : public Observer {};
 
-  std::unique_ptr<EmptyObserver> empty_observer(new EmptyObserver());
-  auto proxy_subscription = proxy_client_->Subscribe(parameters,
-                                                     std::move(empty_observer));
+    std::unique_ptr<EmptyObserver> empty_observer(new EmptyObserver());
+    auto shadowed_subscription =
+        shadowed_client_->Subscribe(parameters, std::move(empty_observer));
 
-  if (proxy_subscription != SubscriptionHandle(0)) {
-    std::lock_guard<std::mutex> lock(subs_mutex_);
-    client_to_proxy_subs_[subscription] = proxy_subscription;
+    if (shadowed_subscription != SubscriptionHandle(0)) {
+      std::lock_guard<std::mutex> lock(subs_mutex_);
+      client_to_shadowed_subs_[subscription] = shadowed_subscription;
+    }
   }
 
   return subscription;
@@ -112,16 +116,17 @@ SubscriptionHandle ShadowedClient::Subscribe(
     return subscription;
   }
 
-  class EmptyObserver : public Observer {
-  };
+  if (shadow_predicate_(parameters)) {
+    class EmptyObserver : public Observer {};
 
-  std::unique_ptr<EmptyObserver> empty_observer(new EmptyObserver());
-  auto proxy_subscription = proxy_client_->Subscribe(parameters,
-                                                     std::move(empty_observer));
+    std::unique_ptr<EmptyObserver> empty_observer(new EmptyObserver());
+    auto shadowed_subscription =
+        shadowed_client_->Subscribe(parameters, std::move(empty_observer));
 
-  if (proxy_subscription != SubscriptionHandle(0)) {
-    std::lock_guard<std::mutex> lock(subs_mutex_);
-    client_to_proxy_subs_[subscription] = proxy_subscription;
+    if (shadowed_subscription != SubscriptionHandle(0)) {
+      std::lock_guard<std::mutex> lock(subs_mutex_);
+      client_to_shadowed_subs_[subscription] = shadowed_subscription;
+    }
   }
 
   return subscription;
@@ -132,11 +137,11 @@ Status ShadowedClient::Unsubscribe(SubscriptionHandle sub_handle) {
 
   if (st.ok()) {
     std::lock_guard<std::mutex> lock(subs_mutex_);
-    auto it = client_to_proxy_subs_.find(sub_handle);
+    auto it = client_to_shadowed_subs_.find(sub_handle);
 
-    if(it != client_to_proxy_subs_.end()) {
-      proxy_client_->Unsubscribe(it->second);
-      client_to_proxy_subs_.erase(it);
+    if (it != client_to_shadowed_subs_.end()) {
+      shadowed_client_->Unsubscribe(it->second);
+      client_to_shadowed_subs_.erase(it);
     }
   }
 

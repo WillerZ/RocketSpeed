@@ -18,19 +18,39 @@
 namespace rocketspeed {
 
 /**
+  * ShouldShadow is a function which decides if send a subscription
+  * from the shadow client or not
+*/
+typedef std::function<bool(const SubscriptionParameters&)> ShouldShadow;
+
+/**
  * Implementation of the client interface.
- * In this implementation we can add special second proxy client
+ * In this implementation we can add special second shadowed client
  * and send to him a shadow traffic.
 */
 class ShadowedClient : public Client {
  public:
-   static Status Create(ClientOptions client_options,
-                        ClientOptions client_proxy_options,
-                        std::unique_ptr<Client>* client,
-                        bool is_internal = false);
+  /**
+    * Create a new client with a second shadowed client.
+    *
+    * @param client_options Options for the normal client.
+    * @param shadowed_client Options for the shadowed client.
+    * @param is_internal Set if it is only internal client.
+    * @param shadow_predicate Predicate which decides if send a subscription
+    *   from the shadow client or not
+    * @return the status of the created client.
+  */
+  static Status Create(
+      ClientOptions client_options,
+      ClientOptions shadowed_client_options,
+      std::unique_ptr<Client>* client,
+      bool is_internal = false,
+      ShouldShadow shadow_predicate =
+          [](const SubscriptionParameters& params) { return true; });
 
   ShadowedClient(std::unique_ptr<Client> client,
-                  std::unique_ptr<Client> client_proxy);
+                 std::unique_ptr<Client> shadowed_client,
+                 ShouldShadow shadow_predicate);
 
   virtual ~ShadowedClient();
 
@@ -100,16 +120,18 @@ class ShadowedClient : public Client {
 
  private:
   std::unique_ptr<Client> client_;
-  std::unique_ptr<Client> proxy_client_;
+  std::unique_ptr<Client> shadowed_client_;
 
   // A map from subscriptionHandle for client_
-  // to subscriptionHandle for proxy_client_
+  // to subscriptionHandle for shadowed_client_
   std::unordered_map<SubscriptionHandle, SubscriptionHandle>
-    client_to_proxy_subs_;
+      client_to_shadowed_subs_;
 
-  //A mutex to protect client_to_proxy_subs_ map
+  // A mutex to protect client_to_shadowed_subs_ map
   std::mutex subs_mutex_;
 
+  // Predicate if send subscription from shadow client
+  ShouldShadow shadow_predicate_;
 };
 
 }  // namespace rocketspeed
