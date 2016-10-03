@@ -5,6 +5,7 @@ cpp_library(
         'client.cc',
         'options.cc',
         'publisher.cc',
+        'shadowed_client.cc',
         'storage/file_storage.cc',
         'topic_subscription_map.cc',
         'multi_shard_subscriber.cc',
