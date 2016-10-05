@@ -60,8 +60,10 @@
       info_log_expr, __VA_ARGS__)
 
 #define LOG_INFO(info_log_expr, ...) \
-  RS_LOG(::rocketspeed::InfoLogLevel::INFO_LEVEL, \
-      info_log_expr, __VA_ARGS__)
+  RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::INFO_LEVEL, \
+                   info_log_expr, \
+                   10, std::chrono::seconds(10), \
+                   __VA_ARGS__)
 
 #define LOG_WARN(info_log_expr, ...) \
   RS_LOG_RATELIMIT(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
