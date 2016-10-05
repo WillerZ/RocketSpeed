@@ -6,6 +6,7 @@
 #include "include/Centrifuge.h"
 #include "include/Env.h"
 #include "src/tools/centrifuge/centrifuge.h"
+#include "src/util/timeout_list.h"
 #include <gflags/gflags.h>
 #include <thread>
 #include <cstdlib>
@@ -23,6 +24,9 @@ DEFINE_uint64(num_subscriptions, 1000000,
 
 DEFINE_uint64(receive_sleep_ms, 1000,
   "Milliseconds to sleep on receiving a message");
+
+DEFINE_uint64(subscription_ttl, 100,
+  "Milliseconds before unsubscribing");
 
 
 namespace {
@@ -58,6 +62,7 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv) {
     SubscribeUnsubscribeRapidOptions opts;
     SetupGeneralOptions(options, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
+    opts.subscription_ttl = std::chrono::milliseconds(FLAGS_subscription_ttl);
     result = SubscribeUnsubscribeRapid(std::move(opts));
   } else if (FLAGS_mode == "slow-consumer") {
     SlowConsumerOptions opts;
@@ -103,6 +108,8 @@ SubscribeUnsubscribeRapidOptions::SubscribeUnsubscribeRapidOptions()
 
 int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options) {
   auto num_subscriptions = options.num_subscriptions;
+  auto subscription_ttl = options.subscription_ttl;
+  TimeoutList<SubscriptionHandle> handles;
   std::unique_ptr<CentrifugeSubscription> sub;
   while (num_subscriptions-- && (sub = options.generator->Next())) {
     auto start = std::chrono::steady_clock::now();
@@ -116,7 +123,13 @@ int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options) {
         return 1;
       }
     }
-    options.client->Unsubscribe(handle);
+    handles.Add(handle);
+    handles.ProcessExpired(
+      subscription_ttl,
+      [&] (SubscriptionHandle to_unsubscribe) {
+        options.client->Unsubscribe(to_unsubscribe);
+      },
+      -1 /* no limit to number unsubscribed at once */);
   }
   return 0;
 }

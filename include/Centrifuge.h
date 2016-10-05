@@ -104,12 +104,14 @@ int SubscribeRapid(SubscribeRapidOptions options);
  * Flags for RunCentrifugeClient:
  * --mode=subscribe-unsubscribe-rapid
  * --num_subscriptions
+ * --subscription_ttl
  */
 struct SubscribeUnsubscribeRapidOptions {
   SubscribeUnsubscribeRapidOptions();
   std::unique_ptr<Client> client;
   std::unique_ptr<SubscriptionGenerator> generator;
   uint64_t num_subscriptions;
+  std::chrono::milliseconds subscription_ttl;
 };
 int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options);
 
