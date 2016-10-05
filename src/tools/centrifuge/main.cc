@@ -5,27 +5,39 @@
 //
 #include "include/Centrifuge.h"
 #include "include/Env.h"
+#include "include/HostId.h"
 #include "include/RocketSpeed.h"
 #include <gflags/gflags.h>
 #include <memory>
 
-DEFINE_string(config, "one-host;pilot=localhost:5834;copilot=localhost:5834",
+DEFINE_string(config,
+    "one-host;pilot=localhost:5834;copilot=localhost:5834;shards=1024",
     "Server configuration");
 DEFINE_string(log_level, "info", "Logging level");
 
 using namespace rocketspeed;
 
+namespace {
 class Generator : public SubscriptionGenerator {
  public:
   std::unique_ptr<CentrifugeSubscription> Next() override {
+    auto topic = std::to_string(topic_++);
     std::unique_ptr<CentrifugeSubscription> sub(
-      new CentrifugeSubscription(GuestTenant, GuestNamespace, "foo", 0));
+      new CentrifugeSubscription(GuestTenant, GuestNamespace, topic, 0));
     return sub;
   }
+
+ private:
+  uint64_t topic_ = 0;
 };
+} // anonymous namespace
 
 int main(int argc, char** argv) {
   Env::InstallSignalHandlers();
+
+  // Parse command line flags.
+  // This is done in RunCentrifugeClient as well, but it's idempotent, so ok.
+  GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
 
   CentrifugeOptions options;
   Env* env = Env::Default();

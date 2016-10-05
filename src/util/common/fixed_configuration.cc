@@ -13,6 +13,7 @@
 #include "include/Types.h"
 #include "include/HostId.h"
 #include "src/util/common/parsing.h"
+#include "src/util/xxhash.h"
 
 namespace rocketspeed {
 
@@ -40,13 +41,21 @@ Status CreateFixedConfiguration(
     }
     hosts.emplace_back(std::move(host));
   }
+  size_t shards = 1;
+  {
+    auto it = config.find("shards");
+    if (it != config.end()) {
+      std::istringstream ss(it->second);
+      ss >> shards;
+    }
+  }
 
   RS_ASSERT(hosts.size() == 2);
   if (out_publisher) {
     out_publisher->reset(new FixedPublisherRouter(std::move(hosts[0])));
   }
   if (out_sharding) {
-    out_sharding->reset(new FixedShardingStrategy(std::move(hosts[1])));
+    out_sharding->reset(new FixedShardingStrategy(std::move(hosts[1]), shards));
   }
   return Status::OK();
 }
@@ -58,6 +67,11 @@ Status FixedPublisherRouter::GetPilot(HostId* host_out) const {
   }
   *host_out = pilot_;
   return Status::OK();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+size_t FixedShardingStrategy::GetShard(Slice, Slice topic) const {
+  return XXH64(topic.data(), topic.size(), 0xFA3A228DC86EA1B6ULL) % shards_;
 }
 
 }  // namespace rocketspeed

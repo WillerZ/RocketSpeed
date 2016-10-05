@@ -33,18 +33,18 @@ class FixedPublisherRouter : public PublisherRouter {
  */
 class FixedShardingStrategy : public ShardingStrategy {
  public:
-  explicit FixedShardingStrategy(HostId copilot): copilot_(copilot) {}
+  explicit FixedShardingStrategy(HostId copilot, size_t shards = 1)
+  : copilot_(copilot)
+  , shards_(shards) {}
 
-  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
-    return 0;
-  }
-
+  size_t GetShard(Slice namespace_id, Slice topic_name) const override;
   size_t GetVersion() override { return 0; }
   HostId GetHost(size_t) override { return copilot_; }
-  void MarkHostDown(const HostId& host_id) override {}
+  void MarkHostDown(const HostId&) override {}
 
-  private:
-   HostId copilot_;
+ private:
+  HostId copilot_;
+  const size_t shards_;
 };
 
 /**
