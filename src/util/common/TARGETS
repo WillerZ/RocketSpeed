@@ -48,6 +48,7 @@ cpp_library(
     deps = [
         '@/rocketspeed/github/include:rocketspeed',
         '@/rocketspeed/github/external/folly:headers',
+        '@/rocketspeed/github/src/util:util',
     ],
     link_whole = True,
 )
