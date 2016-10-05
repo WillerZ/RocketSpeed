@@ -275,10 +275,11 @@ void CommunicationRocketeer::Terminate(Flow* flow,
       return;
     }
   }
-  LOG_WARN(server_->options_.info_log,
-           "Missing subscription on stream: %llu, sub_id: %llu",
-           origin,
-           sub_id.ForLogging());
+  LOG_DEBUG(server_->options_.info_log,
+            "Missing subscription on stream: %llu, sub_id: %llu. "
+            "Likely a race with termination on this subscription.",
+            origin,
+            sub_id.ForLogging());
 }
 
 size_t CommunicationRocketeer::GetID() const {
@@ -308,10 +309,11 @@ InboundSubscription* CommunicationRocketeer::Find(const InboundID& inbound_id) {
       return &it1->second;
     }
   }
-  LOG_WARN(server_->options_.info_log,
-           "Missing subscription on stream (%llu) with ID (%llu)",
-           inbound_id.stream_id,
-           inbound_id.GetSubID().ForLogging());
+  LOG_DEBUG(server_->options_.info_log,
+            "Missing subscription on stream (%llu) with ID (%llu). "
+            "Likely a race with termination on this subscription.",
+            inbound_id.stream_id,
+            inbound_id.GetSubID().ForLogging());
   return nullptr;
 }
 
