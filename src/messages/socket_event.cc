@@ -656,9 +656,18 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
   auto it = remote_id_to_stream_.find(remote_id);
   if (it == remote_id_to_stream_.end()) {
     // Allow accepting new streams on inbound connections only.
-    // The special case is MessageGoodbye, for which we do not create a stream
-    // if it doesn't exist.
-    if (IsInbound() && msg_type != MessageType::mGoodbye) {
+    if (IsInbound()) {
+      if (msg_type == MessageType::mGoodbye) {
+        // For MessageGoodbye, we don't want to create a new stream, even if it
+        // doesn't exist. This could be the case if a stream is opened and the
+        // client didn't send anything before sending a goodbye. This is fine,
+        // and expected in some cases (unsubscribe immediately after subscribe),
+        // but should be relatively uncommon, so logging here for monitoring.
+        LOG_INFO(GetLogger(),
+                 "StreamID(%llu) received goodbye message only.",
+                 remote_id);
+        return true;
+      }
       std::unique_ptr<Stream> owned_stream(new Stream(
           this,
           remote_id,
