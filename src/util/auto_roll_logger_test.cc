@@ -52,7 +52,7 @@ Env* AutoRollLoggerTest::env = Env::Default();
 // call Log(logger, log_message) directly.
 namespace {
 void LogMessage(Logger* logger, const char* message) {
-  LOG_INFO(logger, "%s", message);
+  LOG_INFO_NOLIMIT(logger, "%s", message);
 }
 
 void LogMessage(const InfoLogLevel log_level, Logger* logger,
@@ -273,7 +273,7 @@ TEST_F(AutoRollLoggerTest, InfoLogLevel) {
 
       // again, messages with level smaller than log_level will not be logged.
       LOG_DEBUG(&logger, "%s", kSampleMessage.c_str());
-      LOG_INFO(&logger, "%s", kSampleMessage.c_str());
+      LOG_INFO_NOLIMIT(&logger, "%s", kSampleMessage.c_str());
       LOG_WARN_NOLIMIT(&logger, "%s", kSampleMessage.c_str());
       LOG_ERROR_NOLIMIT(&logger, "%s", kSampleMessage.c_str());
       LOG_FATAL(&logger, "%s", kSampleMessage.c_str());

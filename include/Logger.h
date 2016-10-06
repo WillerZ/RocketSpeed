@@ -85,6 +85,10 @@
   RS_LOG(::rocketspeed::InfoLogLevel::VITAL_LEVEL, \
       info_log_expr, __VA_ARGS__)
 
+#define LOG_INFO_NOLIMIT(info_log_expr, ...) \
+  RS_LOG(::rocketspeed::InfoLogLevel::INFO_LEVEL, \
+      info_log_expr, __VA_ARGS__)
+
 #define LOG_WARN_NOLIMIT(info_log_expr, ...) \
   RS_LOG(::rocketspeed::InfoLogLevel::WARN_LEVEL, \
       info_log_expr, __VA_ARGS__)
