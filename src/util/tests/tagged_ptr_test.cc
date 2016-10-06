@@ -119,8 +119,6 @@ TEST_F(TaggedPtrTest, rawAccessors) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  ParseCommandLineFlags(&argc, &argv, true);
-
   return rocketspeed::test::RunAllTests(argc, argv);
 }
 

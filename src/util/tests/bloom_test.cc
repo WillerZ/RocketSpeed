@@ -173,8 +173,6 @@ TEST_F(BloomTest, VaryingLengths) {
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {
-  ParseCommandLineFlags(&argc, &argv, true);
-
   return rocketspeed::test::RunAllTests(argc, argv);
 }
 
