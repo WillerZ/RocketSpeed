@@ -1,9 +1,0 @@
-cpp_library(
-    name='include',
-    headers=glob(['*.h', '*.inc']),
-)
-
-cpp_library(
-    name='headers',
-    headers=glob(['*.h', '*.inc']),
-)

@@ -1,4 +1,0 @@
-cpp_library(
-  name='rocketspeed',
-  headers=glob(['*.h']),
-)

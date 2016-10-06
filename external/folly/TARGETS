@@ -1,4 +1,0 @@
-cpp_library(
-  name = 'headers',
-  headers = AutoHeaders.RECURSIVE_GLOB,
-)
