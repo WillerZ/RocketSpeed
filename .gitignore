@@ -34,6 +34,7 @@ build_config.mk
 /local_server
 /test_times
 /accept_all_rocketeer
+/echo_rocketeer
 /reject_all_rocketeer
 /centrifuge_client
 

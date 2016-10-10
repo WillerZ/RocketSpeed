@@ -104,6 +104,7 @@ TOOLS = \
 	client_bench \
 	centrifuge_client \
 	accept_all_rocketeer \
+	echo_rocketeer \
 	reject_all_rocketeer
 
 PROGRAMS = rocketspeed $(TOOLS)
@@ -277,6 +278,9 @@ centrifuge_client: src/tools/centrifuge/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTC
 # ---------------------------------------------------------------------------
 accept_all_rocketeer: src/tools/accept_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
 	$(CXX) src/tools/accept_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
+
+echo_rocketeer: src/tools/echo_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
+	$(CXX) src/tools/echo_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
 
 reject_all_rocketeer: src/tools/reject_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
 	$(CXX) src/tools/reject_all_rocketeer/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
