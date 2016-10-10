@@ -10,9 +10,10 @@
 #include <functional>
 #include <string>
 
-#include "Status.h"
-#include "Slice.h"
 #include "EnvOptions.h"
+#include "Logger.h"
+#include "Slice.h"
+#include "Status.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC visibility push(default)
@@ -81,6 +82,9 @@ class BaseEnv {
   virtual Status NewSequentialFile(const std::string& fname,
                                    std::unique_ptr<SequentialFile>* result,
                                    const EnvOptions& options);
+
+  // Create and return a logger that writes to the standard error stream.
+  virtual Status StdErrLogger(std::shared_ptr<Logger>* result);
 
  private:
   // No copying allowed

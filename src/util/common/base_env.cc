@@ -125,4 +125,9 @@ Status BaseEnv::NewSequentialFile(const std::string& fname,
   }
 }
 
+Status BaseEnv::StdErrLogger(std::shared_ptr<Logger>* /* result */) {
+  return Status::NotSupported("StdErrLogger not implemented.");
+}
+
+
 }  // namespace rocketspeed

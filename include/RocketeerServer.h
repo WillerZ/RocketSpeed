@@ -16,7 +16,7 @@
 
 namespace rocketspeed {
 
-class Env;
+class BaseEnv;
 class CommunicationRocketeer;
 class Flow;
 class HostId;
@@ -35,7 +35,7 @@ struct RocketeerOptions {
   RocketeerOptions();
 
   /** Environment, defaults to Env::Default(). */
-  Env* env;
+  BaseEnv* env;
 
   /** Logger, defaults to stderr. */
   std::shared_ptr<Logger> info_log;

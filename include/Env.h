@@ -18,7 +18,6 @@
 #include <vector>
 
 #include "Status.h"
-#include "Logger.h"
 #include "EnvOptions.h"
 #include "BaseEnv.h"
 
@@ -209,9 +208,6 @@ class Env : public BaseEnv {
   // Create and return a log file for storing informational messages.
   virtual Status NewLogger(const std::string& fname,
                            shared_ptr<Logger>* result) = 0;
-
-  // Create and return a logger that writes to the standard error stream.
-  virtual Status StdErrLogger(shared_ptr<Logger>* result) = 0;
 
   // Returns the number of micro-seconds since some fixed point in time. Only
   // useful for computing deltas of time.
