@@ -32,9 +32,14 @@ namespace rocketspeed {
 ////////////////////////////////////////////////////////////////////////////////
 RocketeerOptions::RocketeerOptions()
 : env(Env::Default())
-, info_log(std::make_shared<NullLogger>())
 , port(DEFAULT_PORT)
-, stats_prefix("rocketeer.") {}
+, stats_prefix("rocketeer.") {
+  Status st = env->StdErrLogger(&info_log);
+  if (!st.ok()) {
+    fprintf(stderr, "Failed to create stderr logger, logging disabled!\n");
+    info_log = std::make_shared<NullLogger>();
+  }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 class InboundSubscription {
