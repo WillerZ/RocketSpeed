@@ -79,6 +79,8 @@ class Stream : public Sink<SharedTimestampedString> {
   /** Closes a stream without sending or delivering a MessageGoodbye. */
   void CloseFromSocketEvent(access::Stream);
 
+  void Close();
+
   /**
    * Receives a message from the socket and invokes appropriate callback.
    * Closes the stream if MessageGoodbye was received.

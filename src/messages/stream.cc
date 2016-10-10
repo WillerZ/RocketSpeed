@@ -65,7 +65,12 @@ void Stream::CloseFromSocketEvent(access::Stream) {
            "Closing Stream(%llu, %llu)",
            local_id_,
            remote_id_);
+  Close();
+}
+
+void Stream::Close() {
   // Mark stream as closed.
+  socket_event_->GetEventLoop()->GetFlowControl()->UnregisterSink(this);
   socket_event_ = nullptr;
 }
 
@@ -123,8 +128,7 @@ bool Stream::Write(SharedTimestampedString& value) {
              "Closing Stream(%llu, %llu) on owner's request",
              local_id_,
              remote_id_);
-    // Mark stream as closed.
-    socket_event_ = nullptr;
+    Close();
   }
   return has_room;
 }
