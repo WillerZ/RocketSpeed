@@ -112,7 +112,7 @@ class EventLoop {
     /** Statistics prefix. */
     std::string stats_prefix;
     /** Default size of the command queue. */
-    uint32_t command_queue_size = 50000;
+    size_t command_queue_size = 50000;
     /** Timeout for asynchronous ::connect calls. */
     std::chrono::milliseconds connect_timeout{10000};
     /**
@@ -709,7 +709,7 @@ class EventLoop {
   const std::shared_ptr<QueueStats> queue_stats_;
   const std::shared_ptr<SocketEventStats> socket_stats_;
 
-  const uint32_t default_command_queue_size_;
+  const size_t default_command_queue_size_;
 
   std::vector<std::shared_ptr<CommandQueue>> incoming_queues_;
 

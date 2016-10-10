@@ -446,6 +446,7 @@ size_t RocketeerServer::Register(Rocketeer* rocketeer) {
 Status RocketeerServer::Start() {
   MsgLoop::Options msg_loop_options;
   msg_loop_options.event_loop.heartbeat_period = options_.heartbeat_period;
+  msg_loop_options.event_loop.command_queue_size = options_.queue_size;
 
   msg_loop_.reset(new MsgLoop(options_.env,
                               EnvOptions(),

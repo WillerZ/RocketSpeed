@@ -49,6 +49,9 @@ struct RocketeerOptions {
   /** Send heartbeats every X milliseconds. Default is once a minute.
    * Set to zero to disable. */
   std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);
+
+  /** Queue size for event loop. */
+  size_t queue_size = 10000;
 };
 
 class RocketeerServer {
