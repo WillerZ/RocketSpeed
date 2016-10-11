@@ -561,14 +561,16 @@ Status SocketEvent::ReadCallback() {
       ssize_t count = sizeof(hdr_buf_) - hdr_idx_;
       ssize_t n = read(fd_, hdr_buf_ + hdr_idx_, count);
       // If n == -1 then an error has occurred (don't close on EAGAIN though).
-      // If n == 0 and this is our first read (total_read == 0) then this
-      // means the other end has closed, so we should close, too.
-      if (n == -1 || (n == 0 && total_read == 0)) {
-        if (!(n == -1 && errno == EAGAIN)) {
-          // Read error, close connection.
+      // If n == 0 then we have reached EOF.
+      if (n == 0) {
+        return Status::IOError("EOF");
+      }
+      if (n == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          return Status::OK();
+        } else {
           return Status::IOError("read call failed: " + std::to_string(errno));
         }
-        return Status::OK();
       }
       total_read += n;
       hdr_idx_ += n;
@@ -593,14 +595,16 @@ Status SocketEvent::ReadCallback() {
     ssize_t count = msg_size_ - msg_idx_;
     ssize_t n = read(fd_, msg_buf_.get() + msg_idx_, count);
     // If n == -1 then an error has occurred (don't close on EAGAIN though).
-    // If n == 0 and this is our first read (total_read == 0) then this
-    // means the other end has closed, so we should close, too.
-    if (n == -1 || (n == 0 && total_read == 0)) {
-      if (!(n == -1 && errno == EAGAIN)) {
-        // Read error, close connection.
+    // If n == 0 then we have reached EOF.
+    if (n == 0) {
+      return Status::IOError("EOF");
+    }
+    if (n == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return Status::OK();
+      } else {
         return Status::IOError("read call failed: " + std::to_string(errno));
       }
-      return Status::OK();
     }
     total_read += n;
     msg_idx_ += n;

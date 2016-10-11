@@ -50,7 +50,7 @@ class EchoRocketeer : public Rocketeer {
       Flow* flow, InboundID id, SubscriptionParameters params) override {
     Task task;
     task.payload = params.topic_name;
-    task.seqno = 1;
+    task.seqno = params.start_seqno + 1;
     std::lock_guard<std::mutex> lock(task_lock_);
     tasks_.emplace(id, std::move(task));
   }

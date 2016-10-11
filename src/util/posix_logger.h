@@ -40,7 +40,7 @@ class PosixLogger : public Logger {
   PosixLogger(FILE* f,
               bool close_on_free,
               BaseEnv* env,
-              const InfoLogLevel log_level = InfoLogLevel::ERROR_LEVEL)
+              const InfoLogLevel log_level = InfoLogLevel::WARN_LEVEL)
       : Logger(log_level),
         file_(f),
         log_size_(0),
