@@ -142,6 +142,7 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
               fd);
     // Close the socket.
     close(fd);
+    return;
   }
   owned_connections_.emplace(socket, std::move(owned_socket));
 
@@ -485,7 +486,6 @@ void EventLoop::Run() {
     event_free(startup_event_);
   }
 
-  fd_read_events_.clear();
   incoming_queues_.clear();
   notified_triggers_event_.reset();
   shutdown_event_.reset();
@@ -493,6 +493,10 @@ void EventLoop::Run() {
   flow_control_.reset();
   heartbeats_to_send_.reset();
   expired_connections_timer.reset();
+
+  // fd_read_events_ must be cleared after closing sockets as the read events
+  // may be modified as a result of the sockets freeing some flow sources/sinks.
+  fd_read_events_.clear();
 
   if (!internal_status_.ok()) {
     LOG_ERROR(info_log_,

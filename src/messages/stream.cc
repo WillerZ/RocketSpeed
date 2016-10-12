@@ -129,6 +129,10 @@ bool Stream::Write(SharedTimestampedString& value) {
              local_id_,
              remote_id_);
     Close();
+
+    // Now return true since we don't want to apply backpressure from a stream
+    // that is closed.
+    return true;
   }
   return has_room;
 }

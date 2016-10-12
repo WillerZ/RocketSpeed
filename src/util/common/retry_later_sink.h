@@ -33,6 +33,10 @@ class RetryLaterSink : public SinkWithOverflow<T> {
         std::move(callback), std::chrono::milliseconds(10));
   }
 
+  std::string GetSinkName() const override {
+    return "retry-later-sink";
+  }
+
  protected:
   bool TryWrite(T& value) final override {
     // Check if we are after the requested retry time.

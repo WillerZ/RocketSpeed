@@ -172,8 +172,6 @@ class SocketEvent : public Source<MessageOnStream>,
 
   /** An EventTrigger to notify that the sink has some spare capacity. */
   EventTrigger write_ready_;
-  /** A flow control object for this socket. */
-  FlowControl flow_control_;
 
   EventLoop* event_loop_;
 

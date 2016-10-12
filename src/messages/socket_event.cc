@@ -141,8 +141,8 @@ void SocketEvent::Close(ClosureReason reason) {
            static_cast<int>(reason));
 
   // Unregister this socket from flow control.
-  flow_control_.UnregisterSource(this);
-  flow_control_.UnregisterSink(this);
+  event_loop_->GetFlowControl()->UnregisterSource(this);
+  event_loop_->GetFlowControl()->UnregisterSink(this);
 
   // Disable read and write events.
   read_ev_->Disable();
@@ -159,7 +159,9 @@ void SocketEvent::Close(ClosureReason reason) {
   while (!remote_id_to_stream_.empty()) {
     Stream* stream = remote_id_to_stream_.begin()->second;
     // Unregister the stream.
-    UnregisterStream(stream->GetRemoteID(), true);
+    // Must be forced here so that we ignore the time-without-stream check.
+    const bool force_close = true;
+    UnregisterStream(stream->GetRemoteID(), force_close);
 
     if (reason == ClosureReason::Graceful) {
       // Close the socket silently if shutting down connection gracefully.
@@ -319,7 +321,6 @@ SocketEvent::SocketEvent(
 , protocol_version_(protocol_version)
 , fd_(fd)
 , write_ready_(event_loop->CreateEventTrigger())
-, flow_control_("socket_event.flow_control", event_loop)
 , event_loop_(event_loop)
 , timeout_cancelled_(false)
 , destination_(std::move(destination)) {
@@ -345,7 +346,7 @@ SocketEvent::SocketEvent(
                                            });
 
   // Register the socket with flow control.
-  flow_control_.Register<MessageOnStream>(
+  event_loop_->GetFlowControl()->Register<MessageOnStream>(
       this,
       [this](Flow* flow, MessageOnStream message) {
         message.stream->Receive(
