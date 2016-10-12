@@ -328,22 +328,30 @@ SocketEvent::SocketEvent(
 
   // Create read and write events
   read_ev_ =
-      EventCallback::CreateFdReadCallback(event_loop,
-                                          fd,
-                                          [this]() {
-                                            if (!ReadCallback().ok()) {
-                                              Close(ClosureReason::Error);
-                                            }
-                                          });
+      EventCallback::CreateFdReadCallback(
+        event_loop,
+        fd,
+        [this, fd]() {
+          Status st = ReadCallback();
+          if (!st.ok()) {
+            LOG_INFO(GetLogger(), "fd(%d) read failed: %s",
+                fd, st.ToString().c_str());
+            Close(ClosureReason::Error);
+          }
+        });
 
   write_ev_ =
-      EventCallback::CreateFdWriteCallback(event_loop,
-                                           fd,
-                                           [this]() {
-                                             if (!WriteCallback().ok()) {
-                                               Close(ClosureReason::Error);
-                                             }
-                                           });
+      EventCallback::CreateFdWriteCallback(
+        event_loop,
+        fd,
+        [this, fd]() {
+          Status st = WriteCallback();
+          if (!st.ok()) {
+            LOG_INFO(GetLogger(), "fd(%d) write failed: %s",
+                fd, st.ToString().c_str());
+            Close(ClosureReason::Error);
+          }
+        });
 
   // Register the socket with flow control.
   event_loop_->GetFlowControl()->Register<MessageOnStream>(
@@ -473,19 +481,11 @@ Status SocketEvent::WriteCallback() {
       ssize_t count = writev(fd_, iov, iovcnt);
       if (count == -1) {
         auto e = errno;
-        LOG_WARN(
-            GetLogger(),
-            "Wanted to write %zu bytes to remote host fd(%d) but encountered "
-            "errno(%d) \"%s\".",
-            total,
-            fd_,
-            e,
-            strerror(e));
         stats_->write_succeed_bytes->Record(0);
         stats_->write_succeed_iovec->Record(0);
         if (e != EAGAIN && e != EWOULDBLOCK) {
           // write error, close connection.
-          return Status::IOError("write call failed: " + std::to_string(e));
+          return Status::IOError(strerror(e));
         }
         return Status::OK();
       }
@@ -556,7 +556,11 @@ Status SocketEvent::ReadCallback() {
   // This will keep reading while there is data to be read,
   // but not more than 1MB to give other sockets a chance to read.
   ssize_t total_read = 0;
-  while (total_read < 1024 * 1024) {
+  for (;;) {
+    if (total_read >= 1024 * 1024) {
+      LOG_INFO(GetLogger(), "Reached read limit on fd(%d) for this event", fd_);
+      break;
+    }
     if (hdr_idx_ < sizeof(hdr_buf_)) {
       // Read the header.
       ssize_t count = sizeof(hdr_buf_) - hdr_idx_;
@@ -567,10 +571,11 @@ Status SocketEvent::ReadCallback() {
         return Status::IOError("EOF");
       }
       if (n == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        auto e = errno;
+        if (e == EAGAIN || e == EWOULDBLOCK) {
           return Status::OK();
         } else {
-          return Status::IOError("read call failed: " + std::to_string(errno));
+          return Status::IOError(strerror(e));
         }
       }
       total_read += n;
@@ -601,10 +606,11 @@ Status SocketEvent::ReadCallback() {
       return Status::IOError("EOF");
     }
     if (n == -1) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      auto e = errno;
+      if (e == EAGAIN || e == EWOULDBLOCK) {
         return Status::OK();
       } else {
-        return Status::IOError("read call failed: " + std::to_string(errno));
+        return Status::IOError(strerror(e));
       }
     }
     total_read += n;
@@ -624,7 +630,7 @@ Status SocketEvent::ReadCallback() {
     // Decode the recipients.
     StreamID remote_id = 0;
     if (!DecodeOrigin(&in, &remote_id)) {
-      continue;
+      return Status::IOError("Failed to decode origin");
     }
 
     // Decode the rest of the message.

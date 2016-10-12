@@ -428,6 +428,8 @@ void EventLoop::Run() {
       connect_timeout_.GetExpired(options_.connect_timeout,
                                   std::back_inserter(expired));
       for (auto socket : expired) {
+        LOG_WARN(info_log_, "connect on fd(%d) timed out, closing",
+            socket->GetFd());
         socket->Close(SocketEvent::ClosureReason::Error);
       }
     }, options_.connect_timeout);
@@ -448,6 +450,8 @@ void EventLoop::Run() {
         for (auto s_ptr: outbound_connections_copy) {
           if (s_ptr->IsWithoutStreamsForLongerThan(
                 options_.connection_without_streams_keepalive)) {
+            LOG_INFO(info_log_, "cleaning up socket fd(%d) without streams",
+                s_ptr->GetFd());
             s_ptr->Close(SocketEvent::ClosureReason::Graceful);
           }
         }

@@ -139,6 +139,8 @@ class SocketEvent : public Source<MessageOnStream>,
 
   std::string GetSourceName() const override;
 
+  int GetFd() const { return fd_; }
+
  private:
   ThreadCheck thread_check_;
 
