@@ -28,17 +28,42 @@ DEFINE_uint64(receive_sleep_ms, 1000,
 DEFINE_uint64(subscription_ttl, 100,
   "Milliseconds before unsubscribing");
 
+DEFINE_uint64(ms_between_config_changes, 5000,
+  "Milliseconds between config changes (0 to disable)");
+
+DEFINE_double(shard_failure_ratio, 0.1,
+  "Ratio of shards to fail on config change (e.g. 0.1 == 10%%)");
+
 
 namespace {
 /** Sets the client and generator for a specicific behavior's options. */
 template <typename BehaviorOptions>
 void SetupGeneralOptions(CentrifugeOptions& general_options,
                          BehaviorOptions& behavior_options) {
+  // Setup volatile sharding.
+  using namespace std::chrono;
+  if (FLAGS_ms_between_config_changes) {
+    VolatileShardingOptions volatile_sharding_options;
+    volatile_sharding_options.next_setup = []() {
+      VolatileSetup setup;
+      setup.duration = milliseconds(FLAGS_ms_between_config_changes);
+      setup.failure_rate = FLAGS_shard_failure_ratio;
+      return setup;
+    };
+    auto sharding = std::move(general_options.client_options.sharding);
+    general_options.client_options.sharding =
+        CreateVolatileShardingStrategy(std::move(sharding),
+                                       std::move(volatile_sharding_options));
+  }
+
+  // Create client.
   auto st = Client::Create(std::move(general_options.client_options),
                            &behavior_options.client);
   if (!st.ok()) {
     CentrifugeFatal(st);
   }
+
+  // Setup centrifuge options.
   behavior_options.generator = std::move(general_options.generator);
 }
 }

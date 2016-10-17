@@ -87,6 +87,8 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv);
  * Flags for RunCentrifugeClient:
  * --mode=subscribe-rapid
  * --num_subscriptions
+ * --ms_between_config_changes
+ * --shard_failure_ratio
  */
 struct SubscribeRapidOptions {
   SubscribeRapidOptions();
@@ -105,6 +107,8 @@ int SubscribeRapid(SubscribeRapidOptions options);
  * --mode=subscribe-unsubscribe-rapid
  * --num_subscriptions
  * --subscription_ttl
+ * --ms_between_config_changes
+ * --shard_failure_ratio
  */
 struct SubscribeUnsubscribeRapidOptions {
   SubscribeUnsubscribeRapidOptions();
@@ -124,6 +128,8 @@ int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options);
  * --mode=slow-consumer
  * --num_subscriptions
  * --receive_sleep_ms
+ * --ms_between_config_changes
+ * --shard_failure_ratio
  */
 struct SlowConsumerOptions : public SubscribeRapidOptions {
   SlowConsumerOptions();
@@ -194,6 +200,36 @@ class SubscriptionGenerator {
    */
   virtual std::unique_ptr<CentrifugeSubscription> Next() = 0;
 };
+
+/**
+ * Describes the state of the config manipulation by a volatile sharding
+ * strategy.
+ */
+struct VolatileSetup {
+  /// Function that returns time until next setup change.
+  std::chrono::milliseconds duration{1};
+
+  /// Function that returns the average ratio of shards to re-route to no host.
+  double failure_rate{0.0};
+};
+
+/** Options for CreateVolatileShardingStrategy */
+struct VolatileShardingOptions {
+  VolatileShardingOptions();
+
+  /// Function that returns the next config setup to use.
+  /// Default: 10% failures for 5 seconds.
+  std::function<VolatileSetup()> next_setup;
+};
+
+/**
+ * An implementation of ShardingStrategy that wraps another ShardingStrategy
+ * and invokes various volatile behaviours designed to test a clients
+ * resilience to unstable tiers.
+ */
+std::shared_ptr<ShardingStrategy> CreateVolatileShardingStrategy(
+    std::shared_ptr<ShardingStrategy> strategy,
+    VolatileShardingOptions&& options);
 
 /**
  * To be called when an invariant has been violated, but execution can
