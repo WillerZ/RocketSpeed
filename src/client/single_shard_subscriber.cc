@@ -101,6 +101,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                parameters.start_seqno,
                                user_data);
   (*num_active_subscriptions_)++;
+  stats_->active_subscriptions->Set(*num_active_subscriptions_);
 }
 
 void Subscriber::Acknowledge(SubscriptionID sub_id,
@@ -337,6 +338,7 @@ void Subscriber::ReceiveTerminate(
 
   // Decrement number of active subscriptions
   (*num_active_subscriptions_)--;
+  stats_->active_subscriptions->Set(*num_active_subscriptions_);
 }
 
 void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
