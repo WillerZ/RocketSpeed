@@ -11,7 +11,7 @@ def wait(_):
 config = {
     'clients': {
         'foo': {'cmd': 'echo client'},
-        'baz': {'cmd': 'false'}
+        'fail': {'cmd': 'false'}
     },
     'servers': {
         'bar': {
@@ -23,7 +23,23 @@ config = {
             'cmd': 'cat',
             'is_started': wait
         }
-    }
+    },
+    'tests': [
+        {
+            'client': 'foo',
+            'server': 'bar',
+            'hosts': {
+                'client_count': 1,
+            },
+        },
+        {
+            'client': 'fail',
+            'server': 'quux',
+            'hosts': {
+                'server_count': 1,
+            },
+        },
+    ],
 }
 
 if __name__ == '__main__':

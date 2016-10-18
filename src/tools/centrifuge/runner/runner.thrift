@@ -5,7 +5,7 @@ enum HealthStatus {
   UNHEALTHY,
 }
 
-enum ClientStatus {
+enum ProcessStatus {
   NO_PROCESS,                   //if nothing has started up yet
   RUNNING,
   STOPPED,
@@ -13,26 +13,21 @@ enum ClientStatus {
   TIMED_OUT,
 }
 
-struct ClientState {
-  1: required ClientStatus status;
+struct ProcessState {
+  1: required ProcessStatus status;
   2: required string message = "";
 }
 
-service ClientRunner {
+service ProcessRunner {
 
   HealthStatus ping(),
 
   // return true when the client has begun running successfully
-  bool run(1: string client),
+  bool run(1: string proc, 2: string key),
 
-  ClientState poll_running_client()
-}
+  // idempotently stop process for key
+  bool stop(1: string key),
 
-service ServerRunner {
+  ProcessState poll_running_proc(1: string key),
 
-  HealthStatus ping(),
-
-  // kills any previous server that was running and starts a new one
-  // return true when the server is up and running, false otherwise
-  bool run(1: string server_key),
 }

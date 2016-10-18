@@ -1,4 +1,4 @@
-from runner_thrift.runner import ClientRunner, ServerRunner
+from runner_thrift.runner import ProcessRunner
 import runner_thrift.runner.ttypes as Svc
 
 import centrifuge.log as log
@@ -29,55 +29,44 @@ def kill_proc(proc):
         proc.kill()
     return proc.wait()
 
-class ClientRunnerHandler:
+class ProcessRunnerHandler:
     def __init__(self, config):
         self.config = config
-        self.proc = None
+        self.procs = {}
 
     def ping(self):
         return Svc.HealthStatus.HEALTHY
 
-    def run(self, client):
-        args = self.config.get('clients', {}).get(client, {}).get('cmd')
+    def run(self, proc, key):
+        config = self.config.get(proc, {})
+        args = config.get('cmd')
         if not args:
             return False
-        kill_proc(self.proc)
-        self.proc = sp.Popen(args, shell=True)
+        kill_proc(self.procs.get(key))
+        p = sp.Popen(args, shell=True)
+        self.procs[key] = p
+        return config.get('is_started', lambda _: True)(p)
+
+    def stop(self, key):
+        kill_proc(self.procs.get(key))
         return True
 
-    def poll_running_client(self):
+    def poll_running_proc(self, key):
         def get_status(proc):
-            if not self.proc:
-                return Svc.ClientStatus.NO_PROCESS
+            if not proc:
+                return Svc.ProcessStatus.NO_PROCESS
             else:
-                ret = self.proc.poll()
+                ret = proc.poll()
                 if ret is None:
-                    return Svc.ClientStatus.RUNNING
+                    return Svc.ProcessStatus.RUNNING
                 if ret > 0:
-                    return Svc.ClientStatus.FAILED
-                return Svc.ClientStatus.STOPPED
+                    return Svc.ProcessStatus.FAILED
+                return Svc.ProcessStatus.STOPPED
 
-        state = Svc.ClientState()
-        state.status = get_status(self.proc)
+        state = Svc.ProcessState()
+        state.status = get_status(self.procs.get(key))
         state.message = ''      # TODO:
         return state
-
-class ServerRunnerHandler:
-    def __init__(self, config):
-        self.config = config
-        self.proc = None
-
-    def ping(self):
-        return Svc.HealthStatus.HEALTHY
-
-    def run(self, server_key):
-        server_config = self.config.get('servers', {}).get(server_key, {})
-        args = server_config.get('cmd')
-        if not args:
-            return False
-        kill_proc(self.proc)
-        self.proc = sp.Popen(args, shell=True)
-        return server_config.get('is_started', lambda p: True)(self.proc)
 
 def start_runner(port, handler, processor):
     transport = TSocket.TServerSocket(port=port)
@@ -104,25 +93,30 @@ def close(transport, client):
     transport.close()
 
 def connect_all(clients):
-    for k, v in clients.items():
-        connect(*v)
-        response = v[1].ping()
+    for host, client in clients:
+        connect(*client)
+        response = client[1].ping()
         if response != Svc.HealthStatus.HEALTHY:
-            raise (BlockingIOError("%s returned %s from ping" % (k, response)))
+            raise (BlockingIOError("%s returned %s from ping" % (host, response)))
 
 def close_all(clients):
-    for k, v in clients.items():
+    for k, v in clients:
         close(*v)
 
-def run_everywhere(runners, test_key):
-    for host, runner in runners.items():
-        if not runner.run(test_key):
-            raise Exception('Running %s on host %s failed.' % (test_key, host))
+def run_everywhere(runners, proc, key):
+    for host, runner in runners:
+        if not runner[1].run(proc, key):
+            raise Exception('Running %s on host %s failed.' % (proc, host))
 
-def check_client_everywhere(client_runners):
+def stop_everywhere(runners, key):
+    for host, runner in runners:
+        if not runner[1].stop(key):
+            raise Exception('Stopping %s on host %s failed.' % (key, host))
+
+def check_proc_everywhere(runners, key):
     return {
-        host: client_runner.poll_running_client()
-        for host, client_runner in client_runners.items()
+        host: runner[1].poll_running_proc(key)
+        for host, runner in runners
     }
 
 def states_in_state(states, state):
@@ -132,52 +126,52 @@ def states_in_state(states, state):
 
 def nothing_failed(states):
     count = len(states)
-    count -= len(states_in_state(states, Svc.ClientStatus.RUNNING))
-    count -= len(states_in_state(states, Svc.ClientStatus.STOPPED))
+    count -= len(states_in_state(states, Svc.ProcessStatus.RUNNING))
+    count -= len(states_in_state(states, Svc.ProcessStatus.STOPPED))
     return count == 0
 
 def all_clients_finished_successfully(states):
-    return len(states) == len(states_in_state(states, Svc.ClientStatus.STOPPED))
+    return len(states) == len(states_in_state(states, Svc.ProcessStatus.STOPPED))
 
 def summarize_test(states):
     def data(state):
         filtered = states_in_state(states, state)
         return (len(filtered), ' '.join(filtered.keys()))
-    stopped = data(Svc.ClientStatus.STOPPED)
-    running = data(Svc.ClientStatus.RUNNING)
-    failed = data(Svc.ClientStatus.FAILED)
-    timed_out = data(Svc.ClientStatus.TIMED_OUT)
+    stopped = data(Svc.ProcessStatus.STOPPED)
+    running = data(Svc.ProcessStatus.RUNNING)
+    failed = data(Svc.ProcessStatus.FAILED)
+    timed_out = data(Svc.ProcessStatus.TIMED_OUT)
     log.orchestrate('Summary: %s clients finished successfully [%s]' % stopped)
     log.orchestrate('Summary: %s clients still running [%s]' % running)
     log.orchestrate('Summary: %s clients failed [%s]' % failed)
     log.orchestrate('Summary: %s clients timed out [%s]' % timed_out)
 
-def orchestrate_test(peers, client, server):
+def orchestrate_test(client_runners, server_runners, client, server):
     try:
         log.orchestrate('-' * 80)
         log.orchestrate('Starting test -- server: %s client: %s' % (server, client))
-        client_runners = {
-            host: peer[1] for host, peer in peers['client_runners'].items()
-        }
-        server_runners = {
-            host: peer[1] for host, peer in peers['server_runners'].items()
-        }
-        run_everywhere(server_runners, server)
+
+        run_everywhere(server_runners, server, 'server')
         log.info("Server is up on %s host(s)" % len(server_runners))
-        run_everywhere(client_runners, client)
+
+        run_everywhere(client_runners, client, 'client')
         log.info("Client has started on %s host(s)" % len(client_runners))
-        states = check_client_everywhere(client_runners)
+
+        states = check_proc_everywhere(client_runners, 'client')
         while nothing_failed(states):
             if all_clients_finished_successfully(states):
                 log.orchestrate('TEST SUCCEEDED -- all clients finished gracefully')
                 return True
             time.sleep(1)
-            states = check_client_everywhere(client_runners)
+            states = check_proc_everywhere(client_runners, 'client')
         log.orchestrate('TEST FAILED')
         summarize_test(states)
     except Exception as e:
         log.orchestrate('TEST EXPLODED')
         traceback.print_exc(file=sys.stdout)
+    finally:
+        stop_everywhere(server_runners, 'server')
+        stop_everywhere(client_runners, 'client')
     return False
 
 def summarize_tests(test_results):
@@ -189,60 +183,57 @@ def summarize_tests(test_results):
                      count_succeeded,
                      len(test_results) - count_succeeded))
 
-def orchestrate(peers, config):
-    def tests(config):
-        for client in config.get('clients', {}).keys():
-            for server in config.get('servers', {}).keys():
-                yield (client, server)
+def partition(hosts, config):
+    clients = config.get('client_count')
+    servers = config.get('server_count')
+    if not clients and not servers:
+        # split 50:50
+        clients = len(hosts) / 2
+        servers = len(hosts) - clients
+    if not clients:
+        clients = len(hosts) - servers
+    if not servers:
+        servers = len(hosts) - clients
 
+    return (hosts[0:clients], hosts[clients:])
+
+def orchestrate(clients, tests):
     # block until everyone is up and ready to take requests
-    connect_all(peers['server_runners'])
-    connect_all(peers['client_runners'])
+    connect_all(clients)
 
     log.info('All runners up and responding')
 
-    test_results = [orchestrate_test(peers, *test) for test in tests(config)]
+    test_results = [orchestrate_test(*partition(clients, test.get('hosts', {})),
+                                     test['client'], test['server'])
+                    for test in tests]
     summarize_tests(test_results)
 
-    close_all(peers['client_runners'])
-    close_all(peers['server_runners'])
+    close_all(clients)
 
     return 0 if all(test_results) else 1
 
 def run(env, config):
-    client_port = 8090
-    server_port = 8091
+    runner_port = 8090
     log.info("Starting a test sequence run")
-    thread = None
-    if env.is_client():
-        log.info("Acting as a client runner")
-        handler = ClientRunnerHandler(config)
-        processor = ClientRunner.Processor(handler)
-        thread = start_runner(client_port, handler, processor)
 
-    if env.is_server():
-        log.info("Acting as a server runner")
-        handler = ServerRunnerHandler(config)
-        processor = ServerRunner.Processor(handler)
-        thread = start_runner(server_port, handler, processor)
+    log.info("Acting as a process runner")
+    processes = {**config['clients'], **config['servers']}
+    handler = ProcessRunnerHandler(processes)
+    processor = ProcessRunner.Processor(handler)
+    thread = start_runner(runner_port, handler, processor)
 
     if env.is_orchestrator():
         log.info("Acting as the orchestrator")
         hosts = env.hosts()
-        peers = {
-            'client_runners': {
-                host: create_client(host, client_port, ClientRunner)
-                for host in hosts['clients']
-            },
-            'server_runners': {
-                host: create_client(host, server_port, ServerRunner)
-                for host in hosts['servers']
-            }
-        }
-        if len(peers['client_runners']) == 0 or len(peers['server_runners']) == 0:
+        # list of pairs - multiset
+        clients = [
+            (host, create_client(host, runner_port, ProcessRunner)) for host in hosts
+        ]
+        if len(clients) < 2:
             raise Exception('Need at least one runner for each clients and servers: %s' %
-                            peers)
-        return orchestrate(peers, config)
+                            clients)
+        tests = config.get('tests', [])
+        return orchestrate(clients, tests)
     else:
         if thread is not None:
             thread.join()

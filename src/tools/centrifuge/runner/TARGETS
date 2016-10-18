@@ -2,7 +2,7 @@ thrift_library(
   name='runner_thrift',
   languages=['python'],
 
-  thrift_srcs={"runner.thrift": ["ClientRunner", "ServerRunner"]},
+  thrift_srcs={"runner.thrift": ["ProcessRunner"]},
   deps=[],
   py_base_module="runner_thrift",
 )
