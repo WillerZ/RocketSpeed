@@ -43,4 +43,6 @@ config = {
 }
 
 if __name__ == '__main__':
-    sys.exit(runner.run(SingleBoxEnv(), config))
+    test_runner = runner.create_runner(SingleBoxEnv(), config)
+    for test in test_runner():
+        print (test)

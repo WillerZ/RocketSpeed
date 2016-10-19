@@ -175,7 +175,7 @@ def orchestrate_test(client_runners, server_runners, client, server):
     return False
 
 def summarize_tests(test_results):
-    count_succeeded = sum(1 for x in test_results if x)
+    count_succeeded = sum(1 for x in test_results if x['success'])
     log.orchestrate('-' * 80)
     log.orchestrate('')
     log.orchestrate('Ran %s tests. %s succeeded. %s failed.' %
@@ -203,18 +203,19 @@ def orchestrate(clients, tests):
 
     log.info('All runners up and responding')
 
-    test_results = [orchestrate_test(*partition(clients, test.get('hosts', {})),
-                                     test['client'], test['server'])
-                    for test in tests]
-    summarize_tests(test_results)
+    for test in tests:
+        start = time.time()
+        test['success'] = orchestrate_test(
+            *partition(clients, test.get('hosts', {})),
+            test['client'], test['server'])
+        test['test_duration'] = int(time.time() - start)
+        yield test
 
+    summarize_tests(tests)
     close_all(clients)
 
-    return 0 if all(test_results) else 1
-
-def run(env, config):
+def create_runner(env, config):
     runner_port = 8090
-    log.info("Starting a test sequence run")
 
     log.info("Acting as a process runner")
     processes = {**config['clients'], **config['servers']}
@@ -222,19 +223,23 @@ def run(env, config):
     processor = ProcessRunner.Processor(handler)
     thread = start_runner(runner_port, handler, processor)
 
-    if env.is_orchestrator():
-        log.info("Acting as the orchestrator")
-        hosts = env.hosts()
-        # list of pairs - multiset
-        clients = [
-            (host, create_client(host, runner_port, ProcessRunner)) for host in hosts
-        ]
-        if len(clients) < 2:
-            raise Exception('Need at least one runner for each clients and servers: %s' %
-                            clients)
-        tests = config.get('tests', [])
-        return orchestrate(clients, tests)
-    else:
-        if thread is not None:
+    def f():
+        log.info("Starting a test sequence run")
+
+        if env.is_orchestrator():
+            log.info("Acting as the orchestrator")
+            hosts = env.hosts()
+            # list of pairs - multiset
+            clients = [
+                (host, create_client(host, runner_port, ProcessRunner)) for host in hosts
+            ]
+            if len(clients) < 2:
+                raise Exception('Need at least one runner for each clients and servers: %s' %
+                                clients)
+            for test in orchestrate(clients, config.get('tests', [])):
+                yield test
+
+        else:
             thread.join()
-    return 0
+
+    return f
