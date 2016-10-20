@@ -99,6 +99,28 @@ struct SubscribeRapidOptions {
 int SubscribeRapid(SubscribeRapidOptions options);
 
 /**
+ * The subscribe-burst centrifuge client simply subscribes and unsubscribes
+ * to topics in bursts.
+ *
+ * Flags for RunCentrifugeClient:
+ * --mode=subscribe-burst
+ * --num_subscriptions
+ * --num_bursts
+ * --ms_between_bursts
+ * --ms_between_config_changes
+ * --shard_failure_ratio
+ */
+struct SubscribeBurstOptions {
+  SubscribeBurstOptions();
+  std::unique_ptr<Client> client;
+  std::unique_ptr<SubscriptionGenerator> generator;
+  uint64_t num_subscriptions;
+  uint64_t num_bursts;
+  std::chrono::milliseconds between_bursts;
+};
+int SubscribeBurst(SubscribeBurstOptions options);
+
+/**
  * The subscribe_unsubscribe_rapid centrifuge client rapidly subscribes and
  * then immediately unsubscribes on the same thread, with no delay between
  * the subscribe and unsubscribe.

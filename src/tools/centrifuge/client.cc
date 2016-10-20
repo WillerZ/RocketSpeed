@@ -22,6 +22,12 @@ DEFINE_string(mode, "", "Which behaviour to use. Options are "
 DEFINE_uint64(num_subscriptions, 1000000,
   "Number of times to subscribe");
 
+DEFINE_uint64(num_bursts, 10,
+  "Number of subscription bursts (num_subscriptions is divided among bursts)");
+
+DEFINE_uint64(ms_between_bursts, 5000,
+  "Milliseconds between subscription bursts");
+
 DEFINE_uint64(receive_sleep_ms, 1000,
   "Milliseconds to sleep on receiving a message");
 
@@ -83,6 +89,13 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv) {
     SetupGeneralOptions(options, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
     result = SubscribeRapid(std::move(opts));
+  } else if (FLAGS_mode == "subscribe-burst") {
+    SubscribeBurstOptions opts;
+    SetupGeneralOptions(options, opts);
+    opts.num_subscriptions = FLAGS_num_subscriptions;
+    opts.num_bursts = FLAGS_num_bursts;
+    opts.between_bursts = std::chrono::milliseconds(FLAGS_ms_between_bursts);
+    result = SubscribeBurst(std::move(opts));
   } else if (FLAGS_mode == "subscribe-unsubscribe-rapid") {
     SubscribeUnsubscribeRapidOptions opts;
     SetupGeneralOptions(options, opts);
@@ -107,6 +120,24 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv) {
   return result;
 }
 
+SubscriptionHandle SubscribeWithRetries(
+    Client* client,
+    const SubscriptionParameters& params,
+    std::unique_ptr<Observer>& observer) {
+  auto start = std::chrono::steady_clock::now();
+  SubscriptionHandle handle = 0;
+  while (!(handle = client->Subscribe(params, observer))) {
+    // Wait for backpressure to be lifted.
+    /* sleep override */
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(10)) {
+      CentrifugeFatal(Status::TimedOut("Unable to subscribe for 10 seconds"));
+      return 0;
+    }
+  }
+  return handle;
+}
+
 SubscribeRapidOptions::SubscribeRapidOptions()
 : num_subscriptions(10000000) {}
 
@@ -114,16 +145,29 @@ int SubscribeRapid(SubscribeRapidOptions options) {
   auto num_subscriptions = options.num_subscriptions;
   std::unique_ptr<CentrifugeSubscription> sub;
   while (num_subscriptions-- && (sub = options.generator->Next())) {
-    auto start = std::chrono::steady_clock::now();
-    while (!options.client->Subscribe(sub->params, sub->observer)) {
-      // Wait for backpressure to be lifted.
-      /* sleep override */
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      if (std::chrono::steady_clock::now() - start > std::chrono::seconds(10)) {
-        CentrifugeFatal(Status::TimedOut("Unable to subscribe for 10 seconds"));
-        return 1;
-      }
+    SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
+  }
+  return 0;
+}
+
+SubscribeBurstOptions::SubscribeBurstOptions()
+: num_subscriptions(10000000)
+, num_bursts(10)
+, between_bursts(5000) {}
+
+int SubscribeBurst(SubscribeBurstOptions options) {
+  auto num_subscriptions = options.num_subscriptions;
+  auto num_bursts = options.num_bursts;
+  std::unique_ptr<CentrifugeSubscription> sub;
+  while (num_bursts) {
+    auto subs_this_burst = num_subscriptions / num_bursts;
+    --num_bursts;
+    num_subscriptions -= subs_this_burst;
+    while (subs_this_burst-- && (sub = options.generator->Next())) {
+      SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
     }
+    /* sleep override */
+    std::this_thread::sleep_for(options.between_bursts);
   }
   return 0;
 }
@@ -137,17 +181,8 @@ int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options) {
   TimeoutList<SubscriptionHandle> handles;
   std::unique_ptr<CentrifugeSubscription> sub;
   while (num_subscriptions-- && (sub = options.generator->Next())) {
-    auto start = std::chrono::steady_clock::now();
-    SubscriptionHandle handle;
-    while (!(handle = options.client->Subscribe(sub->params, sub->observer))) {
-      // Wait for backpressure to be lifted.
-      /* sleep override */
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      if (std::chrono::steady_clock::now() - start > std::chrono::seconds(10)) {
-        CentrifugeFatal(Status::TimedOut("Unable to subscribe for 10 seconds"));
-        return 1;
-      }
-    }
+    SubscriptionHandle handle =
+      SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
     handles.Add(handle);
     handles.ProcessExpired(
       subscription_ttl,
