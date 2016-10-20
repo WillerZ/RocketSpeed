@@ -711,19 +711,17 @@ TEST_F(FlowTest, BackpressureStatsAndLogging) {
   ASSERT_TRUE(block_msg.TimedWait(std::chrono::seconds(5)));
   ASSERT_TRUE(block_msg.TimedWait(std::chrono::seconds(5)));
 
-  // Read from the sink queue to relieve backpressure.
-  InstallSource<int>(
-    event_loop,
-    sink_queue.get(),
-    [&] (Flow*, int) {
-      sem.Post();
-    });
+  // Unregister the source.
+  port::Semaphore done;
+  std::unique_ptr<Command> cmd(
+    MakeExecuteCommand([&] () {
+      event_loop->GetFlowControl()->UnregisterSource(source_queue.get());
+      done.Post();
+    }));
+  loop.SendCommand(std::move(cmd), 0);
+  ASSERT_TRUE(done.TimedWait(std::chrono::seconds(5)));
 
-  // Ensure all is read.
-  ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
-  ASSERT_TRUE(sem.TimedWait(std::chrono::seconds(1)));
-
-  // Check that backpressure was applied, and lifted.
+  // Check that backpressure was lifted.
   auto stats2 = loop.GetStatisticsSync();
   ASSERT_EQ(stats2.GetCounterValue(applied_stat), 1);
   ASSERT_EQ(stats2.GetCounterValue(lifted_stat), 1);

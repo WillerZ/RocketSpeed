@@ -50,6 +50,7 @@ void FlowControl::UnregisterSource(AbstractSource* source) {
   auto it = sources_.find(source);
   if (it != sources_.end()) {
     // Source is going away, so remove from sink maps.
+    stats_.backpressure_lifted->Add(it->second.blockers.size());
     for (AbstractSink* sink : it->second.blockers) {
       auto sink_it = sinks_.find(sink);
       RS_ASSERT(sink_it != sinks_.end());
