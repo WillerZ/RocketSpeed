@@ -815,7 +815,7 @@ function run_subscriptionchurn {
         nsid="--namespaceid=$namespaceid"
       fi
       cmdn="$cmd $nsid 2>&1 | tee $output_dir/benchmark_subscriptionchurn.log"
-      cmdnew="ssh root@$_host -- $cmdn"
+      cmdnew="ssh root@$host -- $cmdn"
       echo $cmdnew | tee -a $output_dir/benchmark_subscriptionchurn.log
       eval $cmdnew | sed "s/^/${host:0:22}: /" &
     done
