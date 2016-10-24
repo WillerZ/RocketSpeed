@@ -58,6 +58,11 @@ class InboundID {
   size_t Hash() const;
 
   std::string ToString() const;
+
+  friend bool operator<(const InboundID& lhs, const InboundID& rhs) {
+    return lhs.stream_id < rhs.stream_id ||
+      (lhs.stream_id == rhs.stream_id && lhs.sub_id < rhs.sub_id);
+  }
 };
 
 struct RocketeerMessage {
@@ -231,4 +236,5 @@ template <>
 struct hash<rocketspeed::InboundID> {
   size_t operator()(const rocketspeed::InboundID& x) const { return x.Hash(); }
 };
+
 }  // namespace std
