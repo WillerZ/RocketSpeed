@@ -32,7 +32,7 @@ def kill_proc(proc):
 class ProcessRunnerHandler:
     def __init__(self, config):
         self.config = config
-        self.procs = {}
+        self.procs = {}         # key -> (proc, start time, config)
 
     def ping(self):
         return Svc.HealthStatus.HEALTHY
@@ -42,30 +42,39 @@ class ProcessRunnerHandler:
         args = config.get('cmd')
         if not args:
             return False
-        kill_proc(self.procs.get(key))
+        self.stop(key)
         p = sp.Popen(args, shell=True)
-        self.procs[key] = p
+        self.procs[key] = (p, time.time(), config)
         return config.get('is_started', lambda _: True)(p)
 
     def stop(self, key):
-        kill_proc(self.procs.get(key))
+        kill_proc(self.procs.get(key, (None,))[0])
         return True
 
     def poll_running_proc(self, key):
-        def get_status(proc):
+        def interpret_inv(result):
+            if type(result) is str:
+                return (Svc.ProcessStatus.INVARIANT_FAILED, result)
+            if not result:
+                return (Svc.ProcessStatus.INVARIANT_FAILED, 'No message provided')
+            return (Svc.ProcessStatus.RUNNING, '')
+
+        def get_status(proc, start_time, config):
             if not proc:
-                return Svc.ProcessStatus.NO_PROCESS
+                return (Svc.ProcessStatus.NO_PROCESS, '')
             else:
                 ret = proc.poll()
                 if ret is None:
-                    return Svc.ProcessStatus.RUNNING
+                    inv = config.get('invariant')
+                    if not inv is None:
+                        return interpret_inv(inv(proc, time.time() - start_time))
+                    return (Svc.ProcessStatus.RUNNING, '')
                 if ret > 0:
-                    return Svc.ProcessStatus.FAILED
-                return Svc.ProcessStatus.STOPPED
+                    return (Svc.ProcessStatus.FAILED, 'Failed with exit code %s' % ret)
+                return (Svc.ProcessStatus.STOPPED, '')
 
         state = Svc.ProcessState()
-        state.status = get_status(self.procs.get(key))
-        state.message = ''      # TODO:
+        state.status, state.message = get_status(*self.procs.get(key, (None, 0, {})))
         return state
 
 def start_runner(port, handler, processor):
@@ -136,15 +145,16 @@ def all_clients_finished_successfully(states):
 def summarize_test(states):
     def data(state):
         filtered = states_in_state(states, state)
-        return (len(filtered), ' '.join(filtered.keys()))
+        msg = ['[%s - %s]' % (host, state.message) for host, state in filtered.items()]
+        return (len(filtered), ' '.join(msg))
     stopped = data(Svc.ProcessStatus.STOPPED)
     running = data(Svc.ProcessStatus.RUNNING)
     failed = data(Svc.ProcessStatus.FAILED)
-    timed_out = data(Svc.ProcessStatus.TIMED_OUT)
-    log.orchestrate('Summary: %s clients finished successfully [%s]' % stopped)
-    log.orchestrate('Summary: %s clients still running [%s]' % running)
-    log.orchestrate('Summary: %s clients failed [%s]' % failed)
-    log.orchestrate('Summary: %s clients timed out [%s]' % timed_out)
+    invariant_failed = data(Svc.ProcessStatus.INVARIANT_FAILED)
+    log.orchestrate('Summary: %s clients finished successfully %s' % stopped)
+    log.orchestrate('Summary: %s clients still running %s' % running)
+    log.orchestrate('Summary: %s clients failed %s' % failed)
+    log.orchestrate('Summary: %s clients with invariant failures %s' % invariant_failed)
 
 def orchestrate_test(client_runners, server_runners, client, server):
     try:

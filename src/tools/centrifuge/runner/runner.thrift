@@ -10,7 +10,7 @@ enum ProcessStatus {
   RUNNING,
   STOPPED,
   FAILED,
-  TIMED_OUT,
+  INVARIANT_FAILED,
 }
 
 struct ProcessState {
