@@ -37,7 +37,7 @@ DEFINE_uint64(subscription_ttl, 100,
 DEFINE_uint64(ms_between_config_changes, 5000,
   "Milliseconds between config changes (0 to disable)");
 
-DEFINE_double(shard_failure_ratio, 0.1,
+DEFINE_double(shard_failure_ratio, 0,
   "Ratio of shards to fail on config change (e.g. 0.1 == 10%%)");
 
 
