@@ -48,8 +48,27 @@ DEFINE_double(shard_failure_ratio, 0,
 namespace {
 /** Sets the client and generator for a specicific behavior's options. */
 template <typename BehaviorOptions>
-void SetupGeneralOptions(CentrifugeOptions& general_options,
+void SetupGeneralOptions(Client* client,
+                         CentrifugeOptions& general_options,
                          BehaviorOptions& behavior_options) {
+  // Setup centrifuge options.
+  behavior_options.client = client;
+  behavior_options.generator = std::move(general_options.generator);
+}
+}
+
+int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv) {
+  return CentrifugeClient(std::move(options), argc, argv).Run();
+}
+
+CentrifugeClient::CentrifugeClient(
+    CentrifugeOptions options, int argc, char** argv)
+: options_(std::move(options)) {
+  GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
+
+  auto env = Env::Default();
+  env->StdErrLogger(&centrifuge_logger);
+
   // Setup volatile sharding.
   using namespace std::chrono;
   if (FLAGS_ms_between_config_changes) {
@@ -60,64 +79,51 @@ void SetupGeneralOptions(CentrifugeOptions& general_options,
       setup.failure_rate = FLAGS_shard_failure_ratio;
       return setup;
     };
-    auto sharding = std::move(general_options.client_options.sharding);
-    general_options.client_options.sharding =
+    auto sharding = std::move(options_.client_options.sharding);
+    options_.client_options.sharding =
         CreateVolatileShardingStrategy(std::move(sharding),
                                        std::move(volatile_sharding_options));
   }
 
   // Create client.
-  auto st = Client::Create(std::move(general_options.client_options),
-                           &behavior_options.client);
+  auto st = Client::Create(std::move(options_.client_options), &client_);
   if (!st.ok()) {
     CentrifugeFatal(st);
   }
-
-  // Setup centrifuge options.
-  behavior_options.generator = std::move(general_options.generator);
-}
 }
 
-int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv) {
-  GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
-
-  auto env = Env::Default();
-  Status st = env->StdErrLogger(&centrifuge_logger);
-  if (!st.ok()) {
-    return 1;
-  }
-
+int CentrifugeClient::Run() {
   int result = 0;
+
   if (FLAGS_mode == "subscribe-rapid") {
     SubscribeRapidOptions opts;
-    SetupGeneralOptions(options, opts);
+    SetupGeneralOptions(client_.get(), options_, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
     opts.subscribe_rate = FLAGS_subscribe_rate;
     result = SubscribeRapid(std::move(opts));
   } else if (FLAGS_mode == "subscribe-burst") {
     SubscribeBurstOptions opts;
-    SetupGeneralOptions(options, opts);
+    SetupGeneralOptions(client_.get(), options_, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
     opts.num_bursts = FLAGS_num_bursts;
     opts.between_bursts = std::chrono::milliseconds(FLAGS_ms_between_bursts);
     result = SubscribeBurst(std::move(opts));
   } else if (FLAGS_mode == "subscribe-unsubscribe-rapid") {
     SubscribeUnsubscribeRapidOptions opts;
-    SetupGeneralOptions(options, opts);
+    SetupGeneralOptions(client_.get(), options_, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
     opts.subscribe_rate = FLAGS_subscribe_rate;
     opts.subscription_ttl = std::chrono::milliseconds(FLAGS_subscription_ttl);
     result = SubscribeUnsubscribeRapid(std::move(opts));
   } else if (FLAGS_mode == "slow-consumer") {
     SlowConsumerOptions opts;
-    SetupGeneralOptions(options, opts);
+    SetupGeneralOptions(client_.get(), options_, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
     opts.subscribe_rate = FLAGS_subscribe_rate;
     opts.receive_sleep_time = std::chrono::milliseconds(FLAGS_receive_sleep_ms);
     result = SlowConsumer(std::move(opts));
   } else {
     CentrifugeFatal(Status::InvalidArgument("Unknown mode flag"));
-    return 1;
   }
 
   if (!result) {
@@ -156,7 +162,7 @@ int SubscribeRapid(SubscribeRapidOptions options) {
   while (num_subscriptions-- && (sub = options.generator->Next())) {
     pacer.Wait();
     pacer.EndRequest();
-    SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
+    SubscribeWithRetries(options.client, sub->params, sub->observer);
   }
   return 0;
 }
@@ -175,7 +181,7 @@ int SubscribeBurst(SubscribeBurstOptions options) {
     --num_bursts;
     num_subscriptions -= subs_this_burst;
     while (subs_this_burst-- && (sub = options.generator->Next())) {
-      SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
+      SubscribeWithRetries(options.client, sub->params, sub->observer);
     }
     /* sleep override */
     std::this_thread::sleep_for(options.between_bursts);
@@ -197,7 +203,7 @@ int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options) {
     pacer.Wait();
     pacer.EndRequest();
     SubscriptionHandle handle =
-      SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
+      SubscribeWithRetries(options.client, sub->params, sub->observer);
     handles.Add(handle);
     handles.ProcessExpired(
       subscription_ttl,

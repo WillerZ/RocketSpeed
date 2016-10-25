@@ -68,17 +68,39 @@ struct CentrifugeOptions {
 };
 
 /**
- * This is the main entry point for centrifuge clients. Setup the options
- * to provide a RocketSpeed client and subscription generator and then invoke
- * this function to start the client. Does not return until the client has
- * finished running. This allows the client to do setup and teardown.
- *
- * @param options Options for centrifuge client.
- * @param argc From main - client may parse options from here.
- * @param argv From main - client may parse options from here.
- * @return 0 if succeeded, otherwise 1.
+ * DEPRECATED - Use CentrifugeClient(options, argc, argv).Run();
  */
 int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv);
+
+/** Encapsulates the centrifuge client state */
+class CentrifugeClient {
+ public:
+  /**
+   * This is the main entry point for centrifuge clients. Setup the options
+   * to provide a RocketSpeed client and subscription generator.
+   *
+   * @param options Options for centrifuge client.
+   * @param argc From main - client may parse options from here.
+   * @param argv From main - client may parse options from here.
+   */
+  CentrifugeClient(CentrifugeOptions options, int argc, char** argv);
+
+  /**
+   * Starts the client. Does not return until the client has finished running.
+   * This allows the client to do setup and teardown.
+   *
+   * @return 0 if succeeded, otherwise 1.
+   */
+  int Run();
+
+  /** Get the instantiated RocketSpeed client. */
+  Client* GetClient() { return client_.get(); }
+
+ private:
+  CentrifugeOptions options_;
+  std::unique_ptr<Client> client_;
+  std::function<int()> run_;
+};
 
 /**
  * The subscribe_rapid centrifuge client simply subscribes to some number of
@@ -93,7 +115,7 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv);
  */
 struct SubscribeRapidOptions {
   SubscribeRapidOptions();
-  std::unique_ptr<Client> client;
+  Client* client;
   std::unique_ptr<SubscriptionGenerator> generator;
   uint64_t num_subscriptions;
   uint64_t subscribe_rate;
@@ -114,7 +136,7 @@ int SubscribeRapid(SubscribeRapidOptions options);
  */
 struct SubscribeBurstOptions {
   SubscribeBurstOptions();
-  std::unique_ptr<Client> client;
+  Client* client;
   std::unique_ptr<SubscriptionGenerator> generator;
   uint64_t num_subscriptions;
   uint64_t num_bursts;
@@ -137,7 +159,7 @@ int SubscribeBurst(SubscribeBurstOptions options);
  */
 struct SubscribeUnsubscribeRapidOptions {
   SubscribeUnsubscribeRapidOptions();
-  std::unique_ptr<Client> client;
+  Client* client;
   std::unique_ptr<SubscriptionGenerator> generator;
   uint64_t num_subscriptions;
   uint64_t subscribe_rate;
@@ -160,7 +182,7 @@ int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options);
  */
 struct SlowConsumerOptions : public SubscribeRapidOptions {
   SlowConsumerOptions();
-  std::unique_ptr<Client> client;
+  Client* client;
   std::unique_ptr<SubscriptionGenerator> generator;
   std::chrono::milliseconds receive_sleep_time;
 };
