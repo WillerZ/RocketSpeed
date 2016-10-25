@@ -87,6 +87,7 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv);
  * Flags for RunCentrifugeClient:
  * --mode=subscribe-rapid
  * --num_subscriptions
+ * --subscribe_rate
  * --ms_between_config_changes
  * --shard_failure_ratio
  */
@@ -95,6 +96,7 @@ struct SubscribeRapidOptions {
   std::unique_ptr<Client> client;
   std::unique_ptr<SubscriptionGenerator> generator;
   uint64_t num_subscriptions;
+  uint64_t subscribe_rate;
 };
 int SubscribeRapid(SubscribeRapidOptions options);
 
@@ -128,6 +130,7 @@ int SubscribeBurst(SubscribeBurstOptions options);
  * Flags for RunCentrifugeClient:
  * --mode=subscribe-unsubscribe-rapid
  * --num_subscriptions
+ * --subscribe_rate
  * --subscription_ttl
  * --ms_between_config_changes
  * --shard_failure_ratio
@@ -137,6 +140,7 @@ struct SubscribeUnsubscribeRapidOptions {
   std::unique_ptr<Client> client;
   std::unique_ptr<SubscriptionGenerator> generator;
   uint64_t num_subscriptions;
+  uint64_t subscribe_rate;
   std::chrono::milliseconds subscription_ttl;
 };
 int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options);
@@ -149,6 +153,7 @@ int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options);
  * Flags for RunCentrifugeClient:
  * --mode=slow-consumer
  * --num_subscriptions
+ * --subscribe_rate
  * --receive_sleep_ms
  * --ms_between_config_changes
  * --shard_failure_ratio

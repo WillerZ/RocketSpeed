@@ -7,6 +7,7 @@
 #include "include/Env.h"
 #include "src/tools/centrifuge/centrifuge.h"
 #include "src/util/timeout_list.h"
+#include "src/util/pacer.h"
 #include <gflags/gflags.h>
 #include <thread>
 #include <cstdlib>
@@ -21,6 +22,9 @@ DEFINE_string(mode, "", "Which behaviour to use. Options are "
 
 DEFINE_uint64(num_subscriptions, 1000000,
   "Number of times to subscribe");
+
+DEFINE_uint64(subscribe_rate, 10000,
+  "Maximum subscribes per second");
 
 DEFINE_uint64(num_bursts, 10,
   "Number of subscription bursts (num_subscriptions is divided among bursts)");
@@ -88,6 +92,7 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv) {
     SubscribeRapidOptions opts;
     SetupGeneralOptions(options, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
+    opts.subscribe_rate = FLAGS_subscribe_rate;
     result = SubscribeRapid(std::move(opts));
   } else if (FLAGS_mode == "subscribe-burst") {
     SubscribeBurstOptions opts;
@@ -100,12 +105,14 @@ int RunCentrifugeClient(CentrifugeOptions options, int argc, char** argv) {
     SubscribeUnsubscribeRapidOptions opts;
     SetupGeneralOptions(options, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
+    opts.subscribe_rate = FLAGS_subscribe_rate;
     opts.subscription_ttl = std::chrono::milliseconds(FLAGS_subscription_ttl);
     result = SubscribeUnsubscribeRapid(std::move(opts));
   } else if (FLAGS_mode == "slow-consumer") {
     SlowConsumerOptions opts;
     SetupGeneralOptions(options, opts);
     opts.num_subscriptions = FLAGS_num_subscriptions;
+    opts.subscribe_rate = FLAGS_subscribe_rate;
     opts.receive_sleep_time = std::chrono::milliseconds(FLAGS_receive_sleep_ms);
     result = SlowConsumer(std::move(opts));
   } else {
@@ -139,12 +146,16 @@ SubscriptionHandle SubscribeWithRetries(
 }
 
 SubscribeRapidOptions::SubscribeRapidOptions()
-: num_subscriptions(10000000) {}
+: num_subscriptions(10000000)
+, subscribe_rate(10000) {}
 
 int SubscribeRapid(SubscribeRapidOptions options) {
   auto num_subscriptions = options.num_subscriptions;
   std::unique_ptr<CentrifugeSubscription> sub;
+  Pacer pacer(options.subscribe_rate, 1);
   while (num_subscriptions-- && (sub = options.generator->Next())) {
+    pacer.Wait();
+    pacer.EndRequest();
     SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
   }
   return 0;
@@ -173,14 +184,18 @@ int SubscribeBurst(SubscribeBurstOptions options) {
 }
 
 SubscribeUnsubscribeRapidOptions::SubscribeUnsubscribeRapidOptions()
-: num_subscriptions(1000000) {}
+: num_subscriptions(1000000)
+, subscribe_rate(10000) {}
 
 int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options) {
   auto num_subscriptions = options.num_subscriptions;
   auto subscription_ttl = options.subscription_ttl;
   TimeoutList<SubscriptionHandle> handles;
   std::unique_ptr<CentrifugeSubscription> sub;
+  Pacer pacer(options.subscribe_rate, 1);
   while (num_subscriptions-- && (sub = options.generator->Next())) {
+    pacer.Wait();
+    pacer.EndRequest();
     SubscriptionHandle handle =
       SubscribeWithRetries(options.client.get(), sub->params, sub->observer);
     handles.Add(handle);
