@@ -45,6 +45,15 @@ class TailCollapsingSubscriber : public SubscriberIf {
                          SubscriptionParameters parameters,
                          std::unique_ptr<Observer> observer) override;
 
+  void InstallHooks(const HooksParameters& params,
+                  std::shared_ptr<SubscriberHooks> hooks) override {
+    subscriber_->InstallHooks(params, hooks);
+  }
+
+  void UnInstallHooks(const HooksParameters& params) override {
+    subscriber_->UnInstallHooks(params);
+  }
+
   void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) override;
 
   void TerminateSubscription(SubscriptionID sub_id) override;
@@ -60,6 +69,10 @@ class TailCollapsingSubscriber : public SubscriberIf {
 
   void NotifyHealthy(bool isHealthy) override {
     subscriber_->NotifyHealthy(isHealthy);
+  }
+
+  bool CallInSubscriptionThread(SubscriptionParameters params, std::function<void()> job) override {
+    return subscriber_->CallInSubscriptionThread(std::move(params), std::move(job));
   }
 
  private:

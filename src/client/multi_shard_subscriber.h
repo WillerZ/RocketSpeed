@@ -15,6 +15,7 @@
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
 #include "src/client/subscriber_if.h"
+#include "src/client/subscriber_hooks_container.h"
 #include "src/util/common/subscription_id.h"
 #include "src/port/port.h"
 #include "src/util/common/noncopyable.h"
@@ -44,6 +45,10 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
 
   ~MultiShardSubscriber() override;
 
+  void InstallHooks(const HooksParameters& params,
+                std::shared_ptr<SubscriberHooks> hooks) override;
+  void UnInstallHooks(const HooksParameters& params) override;
+
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
                          std::unique_ptr<Observer> observer) override;
@@ -60,6 +65,13 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   void RefreshRouting() override;
 
   void NotifyHealthy(bool isHealthy) override;
+
+  // I should forward the call to per shard subscriber but one might not exists yet.
+  // We're single threaded so there's a little reason to create it only to call the function.
+  bool CallInSubscriptionThread(SubscriptionParameters, std::function<void()> job) override {
+    job();
+    return true;
+  }
 
  private:
   /** Options, whose lifetime must be managed by the owning client. */

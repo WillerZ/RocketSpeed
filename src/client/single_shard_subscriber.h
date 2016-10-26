@@ -14,6 +14,7 @@
 #include "include/Types.h"
 #include "src/client/subscriber_if.h"
 #include "src/util/common/subscription_id.h"
+#include "src/client/subscriber_hooks_container.h"
 #include "src/client/subscriptions_map.h"
 #include "src/client/resilient_receiver.h"
 #include "src/messages/messages.h"
@@ -68,6 +69,10 @@ class Subscriber : public SubscriberIf {
              size_t max_active_subscriptions,
              std::shared_ptr<size_t> num_active_subscriptions);
 
+  void InstallHooks(const HooksParameters& parameters,
+                    std::shared_ptr<SubscriberHooks> hooks) override;
+  void UnInstallHooks(const HooksParameters& parameters) override;
+
   void StartSubscription(SubscriptionID sub_id,
                          SubscriptionParameters parameters,
                          std::unique_ptr<Observer> observer) override;
@@ -89,6 +94,11 @@ class Subscriber : public SubscriberIf {
   void RefreshRouting() override;
 
   void NotifyHealthy(bool isHealthy) override;
+
+  bool CallInSubscriptionThread(SubscriptionParameters, std::function<void()> job) override {
+    job();
+    return true;
+  }
 
  private:
   ThreadCheck thread_check_;
@@ -131,6 +141,8 @@ class Subscriber : public SubscriberIf {
 
   /// Number of active subscriptions in this thread
   std::shared_ptr<size_t> num_active_subscriptions_;
+
+  SubscriberHooksContainer hooks_;
 };
 
 }  // namespace rocketspeed

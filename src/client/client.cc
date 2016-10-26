@@ -28,6 +28,7 @@
 #include "include/WakeLock.h"
 #include "src/client/multi_threaded_subscriber.h"
 #include "src/client/smart_wake_lock.h"
+#include "src/client/subscriber_if.h"
 #include "src/messages/flow_control.h"
 #include "src/messages/msg_loop.h"
 #include "src/port/port.h"
@@ -37,6 +38,42 @@
 #include "src/util/common/random.h"
 #include "src/util/common/statistics_exporter.h"
 #include "src/util/timeout_list.h"
+
+namespace {
+using namespace rocketspeed;
+
+class SubscriberHooksAdapter : public SubscriberHooks {
+ public:
+
+  explicit SubscriberHooksAdapter(std::shared_ptr<ClientHooks> hooks) :
+    hooks_(hooks) {
+  }
+  virtual void SubscriptionExists() override {
+    hooks_->SubscriptionExists();
+  }
+  virtual void OnStartSubscription() override {
+    hooks_->OnSubscribe();
+  }
+  virtual void OnAcknowledge(SequenceNumber seqno) override {
+    hooks_->OnAcknowledge(seqno);
+  }
+  virtual void OnTerminateSubscription() override {
+    hooks_->OnUnsubscribe();
+  }
+  virtual void OnMessageReceived(MessageReceived* msg) override {
+    hooks_->OnMessageReceived(msg);
+  }
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus& status) override {
+    hooks_->OnSubscriptionStatusChange(status);
+  }
+  virtual void OnDataLoss(const DataLossInfo& info) override {
+    hooks_->OnDataLoss(info);
+  }
+ private:
+  std::shared_ptr<ClientHooks> hooks_;
+};
+
+}
 
 namespace rocketspeed {
 
@@ -156,6 +193,16 @@ void ClientImpl::SetDefaultCallbacks(
   subscription_cb_fallback_ = std::move(subscription_callback);
   deliver_cb_fallback_ = std::move(deliver_callback);
   data_loss_callback_ = std::move(data_loss_callback);
+}
+
+void ClientImpl::InstallHooks(const HooksParameters& params,
+    std::shared_ptr<ClientHooks> hooks) {
+  auto sub_hooks = std::make_shared<SubscriberHooksAdapter>(hooks);
+  subscriber_->InstallHooks(params, sub_hooks);
+}
+
+void ClientImpl::UnInstallHooks(const HooksParameters& params) {
+  subscriber_->UnInstallHooks(params);
 }
 
 ClientImpl::~ClientImpl() {
@@ -320,6 +367,10 @@ Status ClientImpl::RestoreSubscriptions(
 
 void ClientImpl::ExportStatistics(StatisticsVisitor* visitor) const {
   GetStatisticsSync().Export(visitor);
+}
+
+bool ClientImpl::CallInSubscriptionThread(SubscriptionParameters params, std::function<void()> job) {
+  return subscriber_->CallInSubscriptionThread(std::move(params), std::move(job));
 }
 
 Statistics ClientImpl::GetStatisticsSync() const {

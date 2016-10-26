@@ -17,6 +17,8 @@
 
 namespace rocketspeed {
 
+class ClientHooks;
+
 /**
   * ShouldShadow is a function which decides if send a subscription
   * from the shadow client or not
@@ -59,6 +61,9 @@ class ShadowedClient : public Client {
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
       DataLossCallback data_loss_callback)
       override;
+
+  void InstallHooks(const HooksParameters&, std::shared_ptr<ClientHooks> ) override;
+  void UnInstallHooks(const HooksParameters&) override;
 
   virtual PublishStatus Publish(const TenantID tenant_id,
                                 const Topic& name,

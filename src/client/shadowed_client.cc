@@ -6,6 +6,7 @@
 #define __STDC_FORMAT_MACROS
 #include "include/ShadowedClient.h"
 
+#include "include/ApiHooks.h"
 #include "include/RocketSpeed.h"
 #include "src/client/client.h"
 
@@ -57,6 +58,14 @@ void ShadowedClient::SetDefaultCallbacks(
 }
 
 ShadowedClient::~ShadowedClient() {
+}
+
+void ShadowedClient::InstallHooks(const HooksParameters& params, std::shared_ptr<ClientHooks> hooks) {
+  client_->InstallHooks(params, hooks);
+}
+
+void ShadowedClient::UnInstallHooks(const HooksParameters& params) {
+  client_->UnInstallHooks(params);
 }
 
 PublishStatus ShadowedClient::Publish(const TenantID tenant_id,

@@ -27,6 +27,7 @@ class DataLossInfo;
 class Flow;
 class Logger;
 class WakeLock;
+class ClientHooks;
 
 /** Notifies about the status of a message published to the RocketSpeed. */
 typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
@@ -255,6 +256,24 @@ class Client {
           data_loss_callback = nullptr) = 0;
 
   /**
+   * Connect hooks instance to specified subscription.
+   * Subscription may exists or not. Only one instance of hooks
+   * is allowed to be installed at the same time.
+   *
+   * @params params subscription description
+   * @params hooks hooks callback
+   */
+  virtual void InstallHooks(const HooksParameters& params,
+                            std::shared_ptr<ClientHooks> hooks) = 0;
+  /**
+   * Disconnect hooks instance from subscription (no matter its state).
+   * This call should match previous InstallHooks() call.
+   *
+   * @params params subscription description
+   */
+  virtual void UnInstallHooks(const HooksParameters& params) = 0;
+
+  /**
    * Asynchronously publishes a new message to the Topic. The return parameter
    * indicates whether the publish was successfully enqueued.
    *
@@ -413,6 +432,20 @@ class Client {
    * @param visitor Used to visit all statistics maintained by the client.
    */
   virtual void ExportStatistics(StatisticsVisitor* visitor) const = 0;
+
+  /**
+   * Calls the function on the thread dedicated for the subscription. 
+   * For single threaded clients it should be called synchronously.
+   *
+   * @params params A subscription specific to the job.
+   * @params job A function to be called.
+   * @return true iff the job was successfully scheduled to be exacuted
+   */
+  virtual bool CallInSubscriptionThread(SubscriptionParameters params,
+                                          std::function<void()> job) {
+    RS_ASSERT(false) << "Not implemented";
+    return false;
+  }
 };
 
 }  // namespace rocketspeed

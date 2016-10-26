@@ -275,11 +275,12 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
 
   bool Empty() const;
 
-  /// Iterates over the all subscriptions in arbitrary order and invokes
+  /// Iterates over the all subscriptions or (until false is returned from the callback)
+  /// in arbitrary order and invokes
   /// provided callback with a `const SubscriptionData&` for each subscription.
   /// The SubscriptionData reference is only valid for the duration of the
   /// callback, and references must not escape that scope.
-  ///
+  /// 
   /// The map must not be modified during the loop.
   template <typename Iter>
   void Iterate(Iter&& iter);
@@ -375,11 +376,17 @@ void SubscriptionsMap::Iterate(Iter&& iter) {
 
   for (auto ptr : pending_subscriptions_.Read()) {
     const SubscriptionStateData data(ptr);
-    iter(data);
+    bool keep_iterating = iter(data);
+    if (!keep_iterating) {
+      return;
+    }
   }
   for (auto ptr : synced_subscriptions_) {
     const SubscriptionStateData data(ptr);
-    iter(data);
+    bool keep_iterating = iter(data);
+    if (!keep_iterating) {
+      return;
+    }
   }
 }
 

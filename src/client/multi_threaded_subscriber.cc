@@ -94,6 +94,11 @@ void MultiThreadedSubscriber::Stop() {
             // We replace the underlying subscriber with a one that'll ignore
             // all calls.
             class NullSubscriber : public SubscriberIf {
+              void InstallHooks(const HooksParameters& ,
+                    std::shared_ptr<SubscriberHooks>) override {};
+
+              void UnInstallHooks(const HooksParameters& ) override {}
+
               void StartSubscription(
                   SubscriptionID sub_id,
                   SubscriptionParameters parameters,
@@ -113,6 +118,9 @@ void MultiThreadedSubscriber::Stop() {
 
               void RefreshRouting() override {}
               void NotifyHealthy(bool isHealthy) override {}
+              bool CallInSubscriptionThread(SubscriptionParameters, std::function<void()> job) override {
+                return false;
+              }
             };
             subscribers_[i].reset(new NullSubscriber());
             if (--count == 0) {
@@ -127,6 +135,35 @@ void MultiThreadedSubscriber::Stop() {
 
 MultiThreadedSubscriber::~MultiThreadedSubscriber() {
   RS_ASSERT(!msg_loop_->IsRunning());
+}
+
+void MultiThreadedSubscriber::InstallHooks(const HooksParameters& params,
+  std::shared_ptr<SubscriberHooks> hooks) {
+  const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
+                                                  params.namespace_id,
+                                                  params.topic_name);
+  RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
+  auto* worker_queue = subscriber_queues_[worker_id].get();
+
+  std::unique_ptr<ExecuteCommand> command(
+      MakeExecuteCommand([this, worker_id, params, hooks]() mutable {
+        subscribers_[worker_id]->InstallHooks(params, hooks);
+      }));
+  worker_queue->Write(command);
+}
+
+void MultiThreadedSubscriber::UnInstallHooks(const HooksParameters& params) {
+  const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
+                                                  params.namespace_id,
+                                                  params.topic_name);
+  RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
+  auto* worker_queue = subscriber_queues_[worker_id].get();
+
+  std::unique_ptr<ExecuteCommand> command(
+      MakeExecuteCommand([this, worker_id, params]() mutable {
+        subscribers_[worker_id]->UnInstallHooks(params);
+      }));
+  worker_queue->Write(command);
 }
 
 class SubscribeCommand : public ExecuteCommand {
@@ -307,6 +344,24 @@ void MultiThreadedSubscriber::SaveSubscriptions(
     save_callback(std::move(st));
     return;
   }
+}
+
+bool MultiThreadedSubscriber::CallInSubscriptionThread(SubscriptionParameters params, std::function<void()> job) {
+  const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
+                                                  params.namespace_id,
+                                                  params.topic_name);
+  RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
+  auto* worker_queue = subscriber_queues_[worker_id].get();
+
+  std::unique_ptr<ExecuteCommand> command(
+      MakeExecuteCommand([this, worker_id, params, f = std::move(job)]() {
+        subscribers_[worker_id]->CallInSubscriptionThread(params, std::move(f));
+      }));
+
+  if (!worker_queue->TryWrite(command)) {
+    return false;
+  }
+  return true;
 }
 
 Statistics MultiThreadedSubscriber::GetStatisticsSync() {

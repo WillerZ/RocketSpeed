@@ -124,6 +124,15 @@ std::atomic<int> MockObserver::deleted_count_;
 
 class MockSubscriber : public SubscriberIf
 {
+  virtual void InstallHooks(const HooksParameters&,
+                              std::shared_ptr<SubscriberHooks>) override {
+    ASSERT_TRUE(false) << "Not supported";
+  }
+
+  virtual void UnInstallHooks(const HooksParameters&) override {
+    ASSERT_TRUE(false) << "Not supported";
+  }
+
   virtual void StartSubscription(SubscriptionID sub_id,
                                  SubscriptionParameters parameters,
                                  std::unique_ptr<Observer> observer) override {
@@ -201,6 +210,11 @@ class MockSubscriber : public SubscriberIf
   virtual void RefreshRouting() override {}
 
   virtual void NotifyHealthy(bool) override {}
+
+  bool CallInSubscriptionThread(SubscriptionParameters, std::function<void()> job) override {
+    job();
+    return true;
+  }
 
  private:
   std::unique_ptr<SubscriptionBase> subscription_state_;
@@ -1726,6 +1740,73 @@ TEST_F(ClientTest, ShadowedClientPredicate) {
   ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
   ASSERT_FALSE(unsub_semaphore.TimedWait(negative_timeout));
   ASSERT_FALSE(shadow_unsub_semaphore.TimedWait(negative_timeout));
+}
+
+class SubscriberHooksTest: public ::testing::Test {};
+
+class TestHooks : public SubscriberHooks {
+ public:
+  virtual void SubscriptionExists() override { called_ = true; }
+  virtual void OnStartSubscription() override { called_ = true; }
+  virtual void OnAcknowledge(SequenceNumber seqno) override { called_ = true; }
+  virtual void OnTerminateSubscription() override { called_ = true; }
+  virtual void OnMessageReceived(MessageReceived* ) override { called_ = true; }
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) override { called_ = true; }
+  virtual void OnDataLoss(const DataLossInfo& ) override { called_ = true; }
+  void reset() { called_ = false; }
+  bool called() const { return called_; }
+ private:
+  bool called_ = false;
+};
+
+TEST_F(SubscriberHooksTest, HooksContainerTest) {
+
+  const size_t num_hooks = 33;
+  std::vector<HooksParameters> params;
+  SubscriberHooksContainer container;
+  std::vector<std::shared_ptr<TestHooks>> hooks;
+  std::vector<SubscriptionID> sub_ids;
+  for (size_t i = 0; i < num_hooks; ++i) {
+    params.emplace_back(17, "test_namespace", "topic-" + std::to_string(i));
+    auto ptr = std::make_shared<TestHooks>();
+    hooks.push_back(ptr);
+    sub_ids.push_back(SubscriptionID::Unsafe(i));
+    container.Install(params[i], ptr);
+  }
+
+  // hooks installed but subscription not yet started, none should be called
+  for (size_t i = 0; i < num_hooks; ++i) {
+    container[sub_ids[i]].OnTerminateSubscription();
+  }
+  for (size_t i = 0; i < num_hooks; ++i) {
+    ASSERT_FALSE(hooks[i]->called());
+  }
+
+  // Start every other, check only those started were called
+  for (size_t i = 0; i < num_hooks; ++i) {
+    if ((i % 2) == 0) {
+      container.SubscriptionStarted(params[i], sub_ids[i]);
+    }
+    container[sub_ids[i]].OnStartSubscription();
+    ASSERT_EQ(hooks[i]->called(), (i % 2) == 0) << i;
+    hooks[i]->reset();
+  }
+
+  // Stop started subscription, check none was called
+  for (size_t i = 0; i < num_hooks; ++i) {
+    if ((i % 2) == 0) {
+      container.SubscriptionEnded(sub_ids[i]);
+    }
+    container[sub_ids[i]].OnTerminateSubscription();
+    ASSERT_FALSE(hooks[i]->called());
+  }
+
+  // Uninstall, none should be called 
+  for (size_t i = 0; i < num_hooks; ++i) {
+    container.UnInstall(params[i]);
+    container[sub_ids[i]].OnTerminateSubscription();
+    ASSERT_FALSE(hooks[i]->called());
+  }
 }
 
 }  // namespace rocketspeed

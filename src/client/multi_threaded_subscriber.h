@@ -30,12 +30,17 @@ typedef uint64_t SubscriptionHandle;
 class SubscriberIf;
 template <typename>
 class UnboundedMPSCQueue;
+class SubscriberHooks;
 
 /** A multi-threaded subscriber. */
 class MultiThreadedSubscriber {
  public:
   MultiThreadedSubscriber(const ClientOptions& options,
                           std::shared_ptr<MsgLoop> msg_loop);
+
+  void InstallHooks(const HooksParameters& params,
+                      std::shared_ptr<SubscriberHooks> hooks);
+  void UnInstallHooks(const HooksParameters& params);
 
   /**
    * Unsubscribes all subscriptions and prepares the subscriber for destruction.
@@ -68,6 +73,13 @@ class MultiThreadedSubscriber {
 
   // TODO(t9457879)
   void SaveSubscriptions(SaveSubscriptionsCallback save_callback);
+
+  /**
+   * Returns false if and only if call attempt should be retried due to queue
+   * overflow.
+   */
+  bool CallInSubscriptionThread(SubscriptionParameters parameters,
+        std::function<void()> job);
 
   Statistics GetStatisticsSync();
 

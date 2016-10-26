@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "include/ApiHooks.h"
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
@@ -63,6 +64,10 @@ class ClientImpl : public Client {
                                 PublishCallback callback,
                                 const MsgId messageId) override;
 
+  virtual void InstallHooks(const HooksParameters& params,
+                            std::shared_ptr<ClientHooks> hooks) override;
+  virtual void UnInstallHooks(const HooksParameters& params) override;
+
   SubscriptionHandle Subscribe(SubscriptionParameters parameters,
                                std::unique_ptr<Observer>& observer) override;
 
@@ -105,6 +110,8 @@ class ClientImpl : public Client {
       std::vector<SubscriptionParameters>* subscriptions) override;
 
   void ExportStatistics(StatisticsVisitor* visitor) const override;
+  bool CallInSubscriptionThread(SubscriptionParameters params,
+        std::function<void()> job) override;
 
   Statistics GetStatisticsSync() const;
 

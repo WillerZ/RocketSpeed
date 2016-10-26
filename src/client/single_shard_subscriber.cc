@@ -29,6 +29,13 @@ using namespace rocketspeed;
 void UserDataCleanup(void* user_data) {
   delete static_cast<Observer*>(user_data);
 }
+
+bool DataMatchParams(const SubscriptionData& data, const HooksParameters& params) {
+  return params.tenant_id == data.GetTenant() &&
+          params.namespace_id == data.GetNamespace() &&
+          params.topic_name == data.GetTopicName();
+}
+
 }  // anonymous namespace
 
 namespace rocketspeed {
@@ -61,6 +68,24 @@ Subscriber::Subscriber(const ClientOptions& options,
   RefreshRouting();
 }
 
+void Subscriber::InstallHooks(const HooksParameters& params, std::shared_ptr<SubscriberHooks> hooks) {
+  hooks_.Install(params, hooks);
+  // TODO: this linear search to be removed when we change the data structure to be topic-oriented
+  subscriptions_map_.Iterate([&](const SubscriptionData& data) mutable {
+    bool keep_iterating = true;
+    if (DataMatchParams(data, params)) {
+      keep_iterating = false;
+      hooks_[data.GetID()].SubscriptionExists();
+      hooks_.SubscriptionStarted(params, data.GetID());
+    }
+    return keep_iterating;
+  });
+}
+
+void Subscriber::UnInstallHooks(const HooksParameters& params) {
+  hooks_.UnInstall(params);
+}
+
 void Subscriber::StartSubscription(SubscriptionID sub_id,
                                    SubscriptionParameters parameters,
                                    std::unique_ptr<Observer> observer) {
@@ -80,6 +105,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
         parameters.start_seqno);
     sub_status.status_ = Status::InvalidArgument(
         "Invalid subscription as maximum subscription limit reached.");
+    hooks_[sub_id].OnSubscriptionStatusChange(sub_status);
     observer->OnSubscriptionStatusChange(sub_status);
     return;
   }
@@ -90,9 +116,12 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                   parameters.topic_name,
                                   parameters.start_seqno);
     status.status_ = Status::ShardUnhealthy();
+    hooks_[sub_id].OnSubscriptionStatusChange(status);
     observer->OnSubscriptionStatusChange(status);
   }
 
+  hooks_.SubscriptionStarted(HooksParameters(parameters), sub_id);
+  hooks_[sub_id].OnStartSubscription();
   auto user_data = static_cast<void*>(observer.release());
   subscriptions_map_.Subscribe(sub_id,
                                parameters.tenant_id,
@@ -113,6 +142,7 @@ void Subscriber::Acknowledge(SubscriptionID sub_id,
     return;
   }
 
+  hooks_[sub_id].OnAcknowledge(acked_seqno);
   last_acks_map_[sub_id] = acked_seqno;
 }
 
@@ -134,6 +164,8 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
     subscriptions_map_.Unsubscribe(sub_id);
   }
 
+  hooks_[sub_id].OnTerminateSubscription();
+  hooks_.SubscriptionEnded(sub_id);
   last_acks_map_.erase(sub_id);
 }
 
@@ -142,7 +174,7 @@ Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
   Status status;
   subscriptions_map_.Iterate([&](const SubscriptionData& state) {
     if (!status.ok()) {
-      return;
+      return true;
     }
 
     SequenceNumber start_seqno =
@@ -157,6 +189,7 @@ Status Subscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
                               state.GetNamespace().ToString(),
                               state.GetTopicName().ToString(),
                               start_seqno);
+    return true;
   });
   return status;
 }
@@ -205,7 +238,9 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
       SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
           info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
+      hooks_[data.GetID()].OnSubscriptionStatusChange(status);
       info.GetObserver()->OnSubscriptionStatusChange(status);
+      return true;
     });
 
   auto delta = std::chrono::steady_clock::now() - start;
@@ -292,6 +327,7 @@ void Subscriber::ReceiveDeliver(Flow* flow,
           static_cast<MessageDeliverData*>(deliver.release()));
       std::unique_ptr<MessageReceived> received(
           new MessageReceivedImpl(std::move(data)));
+      hooks_[sub_id].OnMessageReceived(received.get());
       info.GetObserver()->OnMessageReceived(flow, received);
       break;
     }
@@ -301,6 +337,7 @@ void Subscriber::ReceiveDeliver(Flow* flow,
 
       if (gap->GetGapType() != GapType::kBenign) {
         DataLossInfoImpl data_loss_info(std::move(gap));
+        hooks_[sub_id].OnDataLoss(data_loss_info);
         info.GetObserver()->OnDataLoss(flow, data_loss_info);
       }
       break;
@@ -332,8 +369,10 @@ void Subscriber::ReceiveTerminate(
       // No default, we will be warned about unhandled code.
   }
   RS_ASSERT(info.GetObserver());
+  hooks_[sub_id].OnSubscriptionStatusChange(sub_status);
   info.GetObserver()->OnSubscriptionStatusChange(sub_status);
 
+  hooks_[sub_id].OnTerminateSubscription();
   last_acks_map_.erase(sub_id);
 
   // Decrement number of active subscriptions

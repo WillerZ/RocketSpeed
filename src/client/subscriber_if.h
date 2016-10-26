@@ -17,6 +17,25 @@ using SequenceNumber = uint64_t;
 class SubscriptionID;
 class SubscriptionParameters;
 
+/**
+ * Interface letting user to trace or debug Subscriber with a set of hooks
+ * corresponding to its API and Observer API.
+ * Multithread clients will callback from thread specific 
+ * to particular subscription.
+ */
+class SubscriberHooks {
+ public:
+  virtual ~SubscriberHooks() = default;
+  virtual void SubscriptionExists() = 0;
+  virtual void OnStartSubscription() = 0;
+  virtual void OnAcknowledge(SequenceNumber seqno) = 0;
+  // TODO: ReceiveTerminate vs TerminateSubscription
+  virtual void OnTerminateSubscription() = 0;
+  virtual void OnMessageReceived(MessageReceived* msg) = 0;
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus& ) = 0;
+  virtual void OnDataLoss(const DataLossInfo& info) = 0;
+};
+
 /// An interface shared by all layers of subscribers.
 ///
 /// Common interface helps in proper unit testing of higher-level subscribers,
@@ -25,6 +44,12 @@ class SubscriberIf {
  public:
   /// Destructor must close all remaining active subscriptions.
   virtual ~SubscriberIf() = default;
+
+  /// Install hooks for specific subscription
+  virtual void InstallHooks(const HooksParameters& params,
+                      std::shared_ptr<SubscriberHooks> hooks) = 0;
+  /// Uninstall previously installed hooks
+  virtual void UnInstallHooks(const HooksParameters& params) = 0;
 
   /// Establishes a subscription with provided SubscriptionParameters.
   ///
@@ -88,6 +113,8 @@ class SubscriberIf {
 
   /// Tell the subscriber that it is healthy or unhealthy.
   virtual void NotifyHealthy(bool isHealthy) = 0;
-};
 
+  virtual bool CallInSubscriptionThread(SubscriptionParameters params,
+    std::function<void()> job) = 0;
+};
 }  // namespace rocketspeed

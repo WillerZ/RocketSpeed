@@ -396,6 +396,48 @@ class SubscriptionParameters {
   }
 };
 
+/**
+ * Describes parameters of a subscription to be traced by hooks.
+ * Similar to SubscriptionParameters but doesn't require SequenceNumber.
+ */
+struct HooksParameters {
+  TenantID tenant_id;
+  NamespaceID namespace_id;
+  Topic topic_name;
+
+  explicit HooksParameters(TenantID tid, NamespaceID nid, Topic topic) :
+    tenant_id(tid), namespace_id(nid), topic_name(topic) {}
+
+  explicit HooksParameters(const SubscriptionParameters& p) :
+    tenant_id(p.tenant_id),
+    namespace_id(p.namespace_id),
+    topic_name(p.topic_name) {}
+
+  bool operator==(const HooksParameters& other) const {
+    return tenant_id == other.tenant_id &&
+    namespace_id == other.namespace_id &&
+    topic_name == other.topic_name;
+  }
+
+  bool operator!=(const HooksParameters& params) const {
+    return !operator==(params); 
+  }
+};
+
+} // namespace rocketspeed
+
+namespace std {
+template <>
+struct hash<rocketspeed::HooksParameters> {
+  size_t operator()(const rocketspeed::HooksParameters& params) const {
+    return std::hash<rocketspeed::Topic>()(params.topic_name);
+  }
+};
+
+} // namespace std
+
+namespace rocketspeed {
+
 /** Status of a subscription requested by the application. */
 class SubscriptionStatus {
  public:
