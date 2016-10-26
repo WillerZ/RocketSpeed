@@ -17,6 +17,7 @@ namespace rocketspeed {
 /** Flags used by the generic RunCentrifugeClient runner. */
 DEFINE_string(mode, "", "Which behaviour to use. Options are "
   "subscribe-rapid,"
+  "subscribe-burst,"
   "subscribe-unsubscribe-rapid,"
   "slow-consumer");
 

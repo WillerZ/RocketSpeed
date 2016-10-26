@@ -156,24 +156,35 @@ def summarize_test(states):
     log.orchestrate('Summary: %s clients failed %s' % failed)
     log.orchestrate('Summary: %s clients with invariant failures %s' % invariant_failed)
 
+def log_stopped_clients(stopped_clients, states):
+    for host in states_in_state(states, Svc.ProcessStatus.STOPPED).keys():
+        if not host in stopped_clients:
+            log.info("%s finished successfully" % host)
+            stopped_clients.add(host)
+
 def orchestrate_test(client_runners, server_runners, client, server):
     try:
-        log.orchestrate('-' * 80)
+        log.orchestrate('-' * 50)
         log.orchestrate('Starting test -- server: %s client: %s' % (server, client))
 
         run_everywhere(server_runners, server, 'server')
         log.info("Server is up on %s host(s)" % len(server_runners))
 
+        start = time.localtime()
+
         run_everywhere(client_runners, client, 'client')
         log.info("Client has started on %s host(s)" % len(client_runners))
 
+        stopped_clients = set()
         states = check_proc_everywhere(client_runners, 'client')
+        log_stopped_clients(stopped_clients, states)
         while nothing_failed(states):
             if all_clients_finished_successfully(states):
                 log.orchestrate('TEST SUCCEEDED -- all clients finished gracefully')
-                return True
+                return (True, start)
             time.sleep(1)
             states = check_proc_everywhere(client_runners, 'client')
+            log_stopped_clients(stopped_clients, states)
         log.orchestrate('TEST FAILED')
         summarize_test(states)
     except Exception as e:
@@ -182,7 +193,7 @@ def orchestrate_test(client_runners, server_runners, client, server):
     finally:
         stop_everywhere(server_runners, 'server')
         stop_everywhere(client_runners, 'client')
-    return False
+    return (False, start)
 
 def summarize_tests(test_results):
     count_succeeded = sum(1 for x in test_results if x['success'])
@@ -215,7 +226,7 @@ def orchestrate(clients, tests):
 
     for test in tests:
         start = time.time()
-        test['success'] = orchestrate_test(
+        test['success'], test['start_time'] = orchestrate_test(
             *partition(clients, test.get('hosts', {})),
             test['client'], test['server'])
         test['test_duration'] = int(time.time() - start)

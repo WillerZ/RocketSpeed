@@ -16,7 +16,7 @@ def error(msg):
     log('ERROR', msg)
 
 def orchestrate(msg):
-    print(">>> %s" % msg, flush=True)
+    log('RUN ', msg)
 
 # TODO: these should be streams that can be passed to a process
 # probably want to send output somewhere other than the console and
