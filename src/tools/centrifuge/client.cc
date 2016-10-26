@@ -38,7 +38,7 @@ DEFINE_uint64(receive_sleep_ms, 1000,
 DEFINE_uint64(subscription_ttl, 100,
   "Milliseconds before unsubscribing");
 
-DEFINE_uint64(ms_between_config_changes, 5000,
+DEFINE_uint64(ms_between_config_changes, 0,
   "Milliseconds between config changes (0 to disable)");
 
 DEFINE_double(shard_failure_ratio, 0,
