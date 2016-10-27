@@ -62,7 +62,7 @@ class BufferedLogStorageWorker {
   , batch_bits_(batch_bits)
   , stats_(max_batch_entries, max_batch_bytes) {}
 
-  void Enqueue(LogID log_id, Slice data, AppendCallback callback) {
+  void Enqueue(LogID log_id, std::string data, AppendCallback callback) {
     thread_check_.Check();
     auto it = queues_.find(log_id);
     if (it == queues_.end()) {
@@ -73,8 +73,8 @@ class BufferedLogStorageWorker {
       timeouts_.Add(log_id);
     }
     // Enqueue request.
-    it->second.requests.emplace_back(data, std::move(callback));
     it->second.bytes += data.size();
+    it->second.requests.emplace_back(std::move(data), std::move(callback));
 
     // Check if we are at max requests or bytes.
     if (it->second.requests.size() >= max_batch_entries_ ||
@@ -101,12 +101,12 @@ class BufferedLogStorageWorker {
       // Create encoded string.
       // Consists of 1-byte batch size followed by a series of
       // length-prefixed slices for each entry.
-      std::unique_ptr<std::string> encoded(new std::string());
-      encoded->reserve(1 + it->second.bytes);
+      std::string encoded;
+      encoded.reserve(1 + it->second.bytes);
       const auto batch_size = static_cast<uint8_t>(it->second.requests.size());
-      PutFixed8(encoded.get(), batch_size);
+      PutFixed8(&encoded, batch_size);
       for (Request& req : it->second.requests) {
-        PutLengthPrefixedSlice(encoded.get(), req.data);
+        PutLengthPrefixedSlice(&encoded, req.data);
       }
 
       stats_.batch_entries->Record(batch_size);
@@ -119,14 +119,10 @@ class BufferedLogStorageWorker {
       // Capture the context so that the slices are still valid.
       auto context = folly::makeMoveWrapper(std::move(it->second.requests));
 
-      // Forward encoded string to underlying storage.
-      Slice encoded_slice(*encoded);
-      // Capture the serialised payload as well.
-      auto moved_encoded = folly::makeMoveWrapper(std::move(encoded));
       storage_->AppendAsync(
         log_id,
-        encoded_slice,
-        [this, context, moved_encoded] (Status st, SequenceNumber seqno) {
+        std::move(encoded),
+        [this, context] (Status st, SequenceNumber seqno) {
           for (size_t i = 0; i < context->size(); ++i) {
             // Invoke callback on original requests with modified seqno.
             (*context)[i].callback(st, seqno << batch_bits_ | i);
@@ -140,14 +136,12 @@ class BufferedLogStorageWorker {
 
  private:
   // Single request.
-  // Assumes that the context for the data is captured in the callback,
-  // or otherwise available through some higher level organization.
   struct Request {
-    explicit Request(Slice _data, AppendCallback _callback)
-    : data(_data)
+    explicit Request(std::string _data, AppendCallback _callback)
+    : data(std::move(_data))
     , callback(_callback) {}
 
-    Slice data;
+    std::string data;
     AppendCallback callback;
   };
 
@@ -220,16 +214,15 @@ Statistics BufferedLogStorage::GetStatistics() {
 }
 
 Status BufferedLogStorage::AppendAsync(LogID id,
-                                       const Slice& data,
+                                       std::string data,
                                        AppendCallback callback) {
   // Send to the worker thread for batching, sharded by log so that all
   // requests for a log go to the same thread (better batching).
   int worker_id = static_cast<int>(id % msg_loop_->GetNumWorkers());
-  Slice data_copy(data);
   auto moved_callback = folly::makeMoveWrapper(std::move(callback));
   std::unique_ptr<Command> cmd(MakeExecuteCommand(
-    [this, id, data_copy, moved_callback, worker_id] () mutable {
-      workers_[worker_id]->Enqueue(id, data_copy, moved_callback.move());
+    [this, id, data = std::move(data), moved_callback, worker_id] () mutable {
+      workers_[worker_id]->Enqueue(id, std::move(data), moved_callback.move());
     }));
   return msg_loop_->SendCommand(std::move(cmd), worker_id);
 }

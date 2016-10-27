@@ -74,9 +74,9 @@ TEST_F(PilotTest, Publish) {
     std::string topic = "test" + std::to_string(i);
     MessageData data(MessageType::mPublish,
                      Tenant::GuestTenant,
-                     Slice(topic),
+                     topic,
                      nsid,
-                     Slice(payload));
+                     payload);
     data.SetMessageId(GUIDGenerator::ThreadLocalGUIDGenerator()->Generate());
     sent_msgs_.insert(data.GetMessageId());
     ASSERT_OK(loop.SendRequest(data, &socket, 0));

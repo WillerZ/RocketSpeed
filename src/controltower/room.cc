@@ -175,7 +175,7 @@ ControlRoom::ProcessDeliver(Flow* flow,
     MessageDeliverData deliver(request->GetTenantID(),
                                recipient.sub_id,
                                request->GetMessageId(),
-                               request->GetPayload());
+                               request->GetPayload().ToString());
     deliver.SetSequenceNumbers(prev_seqno, next_seqno);
     auto command = MsgLoop::ResponseCommand(deliver, recipient.stream_id);
 

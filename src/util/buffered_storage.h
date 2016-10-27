@@ -38,7 +38,7 @@ class BufferedLogStorage : public LogStorage {
   ~BufferedLogStorage() final;
 
   Status AppendAsync(LogID id,
-                     const Slice& data,
+                     std::string data,
                      AppendCallback callback) final;
 
   Status FindTimeAsync(LogID id,

@@ -128,9 +128,9 @@ class VerifyingStorage : public LogStorage {
   virtual ~VerifyingStorage() {}
 
   virtual Status AppendAsync(LogID id,
-                             const Slice& data,
+                             std::string data,
                              AppendCallback callback) {
-    on_append_(id, data);
+    on_append_(id, Slice(data));
     std::lock_guard<std::mutex> lock(mutex_);
     callback(Status::OK(), seqnos_[id]++);
     return Status::OK();

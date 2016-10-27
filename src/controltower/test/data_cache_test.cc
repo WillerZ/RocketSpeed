@@ -64,9 +64,9 @@ TEST_F(DataCacheTest, Check) {
     std::unique_ptr<MessageData> data(new MessageData(
                             MessageType::mDeliver,
                             Tenant::GuestTenant,
-                            topicname,
-                            ns,
-                            payload));
+                            topicname.ToString(),
+                            ns.ToString(),
+                            payload.ToString()));
     data->SetSequenceNumbers(i, i+1);
 
     // Make a copy of this message
@@ -170,9 +170,9 @@ TEST_F(DataCacheTest, CheckBloom) {
     std::unique_ptr<MessageData> data(new MessageData(
                             MessageType::mDeliver,
                             Tenant::GuestTenant,
-                            topicname,
-                            ns,
-                            payload));
+                            topicname.ToString(),
+                            ns.ToString(),
+                            payload.ToString()));
     data->SetSequenceNumbers(i, i+1);
 
     // Make a copy of this message

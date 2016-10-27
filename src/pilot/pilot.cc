@@ -225,7 +225,7 @@ void Pilot::ProcessPublish(std::unique_ptr<Message> msg, StreamID origin) {
   // Asynchronously append to log storage.
   auto append_callback = std::ref(*closure);
   auto status = log_storage_->AppendAsync(logid,
-                                          msg_data->GetStorageSlice(),
+                                          msg_data->GetStorage(),
                                           std::move(append_callback));
 
   // Fault injection: insert corrupt data into the logs.

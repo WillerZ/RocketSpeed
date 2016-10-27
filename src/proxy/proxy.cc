@@ -370,9 +370,7 @@ void Proxy::HandleMessageForwarded(std::string msg,
 
   // TODO(pja) 1 : Really inefficient. Only need to deserialize header,
   // not entire message, and don't need to copy entire message.
-  std::unique_ptr<char[]> buffer = Slice(msg).ToUniqueChars();
-  std::unique_ptr<Message> message =
-      Message::CreateNewInstance(std::move(buffer), msg.size());
+  std::unique_ptr<Message> message = Message::CreateNewInstance(msg);
 
   // Find message type.
   if (!message) {

@@ -294,8 +294,11 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   const auto worker_id = GetWorkerForTopic(topic_name);
 
   // Construct message.
-  MessageData message(
-      MessageType::mPublish, tenant_id, Slice(topic_name), namespace_id, data);
+  MessageData message(MessageType::mPublish,
+                      tenant_id,
+                      topic_name,
+                      namespace_id,
+                      data.ToString());
 
   // Take note of message ID before we move into the command.
   const MsgId empty_msgid = MsgId();

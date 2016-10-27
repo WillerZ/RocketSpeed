@@ -773,7 +773,7 @@ TEST_F(IntegrationTest, UnsubscribeOnGoodbye) {
   // Now publish to pilot.
   // We shouldn't get the message.
   MessageData publish(
-      MessageType::mPublish, Tenant::GuestTenant, topic, ns, Slice("data"));
+      MessageType::mPublish, Tenant::GuestTenant, topic, ns, "data");
   ASSERT_OK(client.SendRequest(publish, &socket, 0));
   ASSERT_TRUE(!received_data.TimedWait(std::chrono::milliseconds(100)));
 

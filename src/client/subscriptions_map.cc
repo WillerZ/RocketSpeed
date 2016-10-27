@@ -301,8 +301,8 @@ void SubscriptionsMap::HandlePendingSubscription(
   RS_ASSERT(sink_);
   // Send a message.
   MessageSubscribe subscribe(state->GetTenant(),
-                             state->GetNamespace(),
-                             state->GetTopicName(),
+                             state->GetNamespace().ToString(),
+                             state->GetTopicName().ToString(),
                              state->GetExpectedSeqno(),
                              state->GetSubscriptionID());
   auto ts = Stream::ToTimestampedString(subscribe);

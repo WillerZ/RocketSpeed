@@ -226,7 +226,7 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
       MessageDeliverData data(sub->tenant_id,
                               sub->sub_id,
                               msg->GetMessageID(),
-                              msg->GetPayload());
+                              msg->GetPayload().ToString());
       data.SetSequenceNumbers(prev_seqno, seqno);
       auto command = MsgLoop::ResponseCommand(data, recipient);
       if (client_queues_[sub->worker_id]->Write(command)) {
@@ -828,7 +828,11 @@ bool CopilotWorker::SendSubscribe(TenantID tenant_id,
   Slice topic_name;
   uuid.GetTopicID(&namespace_id, &topic_name);
 
-  MessageSubscribe message(tenant_id, namespace_id, topic_name, seqno, sub_id);
+  MessageSubscribe message(tenant_id,
+                           namespace_id.ToString(),
+                           topic_name.ToString(),
+                           seqno,
+                           sub_id);
 
   auto command = MsgLoop::RequestCommand(message, stream);
   if (tower_queues_[worker_id]->Write(command)) {

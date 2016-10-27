@@ -221,7 +221,7 @@ LogDeviceStorage::~LogDeviceStorage() {
 }
 
 Status LogDeviceStorage::AppendAsync(LogID id,
-                                     const Slice& data,
+                                     std::string data,
                                      AppendCallback callback) {
   // Check data isn't over the LogDevice maximum payload size.
   const size_t maxSize = facebook::logdevice::Payload::maxSize();
@@ -238,11 +238,8 @@ Status LogDeviceStorage::AppendAsync(LogID id,
   };
 
   // Asynchronously append the data.
-  facebook::logdevice::Payload payload(
-    reinterpret_cast<const void*>(data.data()),
-    data.size());
   int result = client_->append(facebook::logdevice::logid_t(id),
-                               payload,
+                               std::move(data),
                                std::move(logdevice_callback));
 
   // Check for errors

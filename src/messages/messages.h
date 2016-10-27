@@ -144,17 +144,7 @@ class Message : private Serializer {
    * MessageType. Returns nullptr on error.  The memory ownership is passed
    * to the message itself, and will be discarded once the message is destroyed.
    */
-  static std::unique_ptr<Message> CreateNewInstance(std::unique_ptr<char[]> in,
-                                                    size_t size);
-
-  /**
-   * Creates a Message of the appropriate subtype by looking at the
-   * MessageType. Returns nullptr on error.  The memory ownership is passed
-   * to the message itself, and will be discarded once the message is destroyed.
-   * Uses a subslice of `in` to parse the message.
-   */
-  static std::unique_ptr<Message> CreateNewInstance(std::unique_ptr<char[]> in,
-                                                    Slice slice);
+  static std::unique_ptr<Message> CreateNewInstance(Slice in);
 
   /*
    * Inherited from Serializer
@@ -182,7 +172,6 @@ class Message : private Serializer {
 
   MessageType type_;                // type of this message
   TenantID tenantid_;               // unique id for tenant
-  std::unique_ptr<char[]> buffer_;  // owned memory for slices
 
  private:
   static std::unique_ptr<Message> CreateNewInstance(Slice* in);
@@ -258,9 +247,9 @@ class MessageData : public Message {
    */
   MessageData(MessageType type,
               TenantID tenantID,
-              const Slice& topic_name,
-              const Slice& namespace_id,
-              const Slice& payload);
+              Topic topic_name,
+              NamespaceID namespace_id,
+              std::string payload);
 
   /*
    * constructor with type
@@ -316,23 +305,23 @@ class MessageData : public Message {
   /**
    * @return The Topic Name
    */
-  Slice GetTopicName() const { return topic_name_; }
+  Slice GetTopicName() const { return Slice(topic_name_); }
 
   /**
    * @return The namespace of this topic
    */
-  Slice GetNamespaceId() const { return namespaceid_; }
+  Slice GetNamespaceId() const { return Slice(namespaceid_); }
 
   /**
    * @return The Message payload
    */
-  Slice GetPayload() const { return payload_; }
+  Slice GetPayload() const { return Slice(payload_); }
 
   /**
    * @return the slice containing tenant ID, topic_name and paylodad from
    * buffer_
    */
-  Slice GetStorageSlice() const;
+  std::string GetStorage() const;
 
   /**
    * @return Deserializes the message from the log storage format.
@@ -360,10 +349,9 @@ class MessageData : public Message {
   SequenceNumber seqno_prev_; // previous sequence number on topic
   SequenceNumber seqno_;      // sequence number of message
   MsgId msgid_;               // globally unique id for message
-  Slice topic_name_;          // name of topic
-  Slice payload_;             // user data of message
-  Slice namespaceid_;         // message namespace
-  Slice storage_slice_;       // slice starting from tenantid from buffer_
+  Topic topic_name_;          // name of topic
+  std::string payload_;       // user data of message
+  NamespaceID namespaceid_;   // message namespace
 };
 
 /*
@@ -654,21 +642,21 @@ class MessageTailSeqno final : public Message {
 class MessageSubscribe final : public Message {
  public:
   MessageSubscribe(TenantID tenant_id,
-                   Slice namespace_id,
-                   Slice topic_name,
+                   NamespaceID namespace_id,
+                   Topic topic_name,
                    SequenceNumber start_seqno,
                    SubscriptionID sub_id)
       : Message(MessageType::mSubscribe, tenant_id),
-        namespace_id_(namespace_id),
-        topic_name_(topic_name),
+        namespace_id_(std::move(namespace_id)),
+        topic_name_(std::move(topic_name)),
         start_seqno_(start_seqno),
         sub_id_(sub_id) {}
 
   MessageSubscribe() : Message(MessageType::mSubscribe) {}
 
-  const Slice& GetNamespace() const { return namespace_id_; }
+  Slice GetNamespace() const { return Slice(namespace_id_); }
 
-  const Slice& GetTopicName() const { return topic_name_; }
+  Slice GetTopicName() const { return Slice(topic_name_); }
 
   SequenceNumber GetStartSequenceNumber() const { return start_seqno_; }
 
@@ -679,8 +667,8 @@ class MessageSubscribe final : public Message {
 
  private:
   /** Parameters of the subscription. */
-  Slice namespace_id_;
-  Slice topic_name_;
+  NamespaceID namespace_id_;
+  Topic topic_name_;
   SequenceNumber start_seqno_;
   /** ID of the requested subscription assigned by the subscriber. */
   SubscriptionID sub_id_;
@@ -803,16 +791,16 @@ class MessageDeliverData final : public MessageDeliver {
   MessageDeliverData(TenantID tenant_id,
                      SubscriptionID sub_id,
                      MsgId message_id,
-                     Slice payload)
+                     std::string payload)
       : MessageDeliver(MessageType::mDeliverData, tenant_id, sub_id)
       , message_id_(message_id)
-      , payload_(payload) {}
+      , payload_(std::move(payload)) {}
 
   MessageDeliverData() : MessageDeliver(MessageType::mDeliverData) {}
 
   const MsgId& GetMessageID() const { return message_id_; };
 
-  Slice GetPayload() const { return payload_; }
+  Slice GetPayload() const { return Slice(payload_); }
 
   virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
@@ -821,7 +809,7 @@ class MessageDeliverData final : public MessageDeliver {
   /** ID of the message assigned by the publisher. */
   MsgId message_id_;
   /** Payload delivered with the message. */
-  Slice payload_;
+  std::string payload_;
 };
 
 /**

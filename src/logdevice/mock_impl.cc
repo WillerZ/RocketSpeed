@@ -71,7 +71,7 @@ class DataStore {
 
   /** All these APIs are thread safe. */
   int append(logid_t logid,
-             const Payload& payload,
+             std::string payload,
              append_callback_t cb) noexcept;
 
   void startReading(uint64_t id,
@@ -175,17 +175,17 @@ struct DataRecordOwned : public DataRecord {
 };
 
 int DataStore::append(logid_t logid,
-                      const Payload& payload,
+                      std::string payload,
                       append_callback_t cb) noexcept {
   std::unique_ptr<rocketspeed::Command> cmd(rocketspeed::MakeExecuteCommand(
-    [this, logid, payload, cb] () {
+    [this, logid, payload = std::move(payload), cb] () {
       auto now = std::chrono::system_clock::now().time_since_epoch();
-      std::string data(static_cast<const char*>(payload.data), payload.size);
       auto& thelog = logs_[logid];
       lsn_t lsn(thelog.first_seqno + thelog.records.size());
-      thelog.records.emplace_back(std::move(data),
+      thelog.records.emplace_back(payload,
         std::chrono::duration_cast<std::chrono::milliseconds>(now));
-      DataRecord record(logid, payload, lsn);
+      Payload ld_payload(payload.data(), payload.size());
+      DataRecord record(logid, ld_payload, lsn);
       cb(E::OK, record);
 
       // Check for any tail readers.
@@ -318,10 +318,10 @@ std::shared_ptr<Client> Client::create(
   return {};
 }
 
-lsn_t Client::appendSync(logid_t logid, const Payload& payload) noexcept {
+lsn_t Client::appendSync(logid_t logid, std::string payload) noexcept {
   lsn_t result;
   rocketspeed::port::Semaphore sem;
-  int r = append(logid, payload,
+  int r = append(logid, std::move(payload),
     [&] (Status st, const DataRecord& rec) {
       result = rec.attrs.lsn;
       sem.Post();
@@ -335,9 +335,9 @@ lsn_t Client::appendSync(logid_t logid, const Payload& payload) noexcept {
 }
 
 int Client::append(logid_t logid,
-                   const Payload& payload,
+                   std::string payload,
                    append_callback_t cb) noexcept {
-  return impl()->data_store_->append(logid, payload, std::move(cb));
+  return impl()->data_store_->append(logid, std::move(payload), std::move(cb));
 }
 
 std::unique_ptr<Reader> Client::createReader(

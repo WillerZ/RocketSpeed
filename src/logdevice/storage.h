@@ -90,7 +90,7 @@ class LogDeviceStorage : public LogStorage {
   ~LogDeviceStorage() final;
 
   Status AppendAsync(LogID id,
-                     const Slice& data,
+                     std::string data,
                      AppendCallback callback) final;
 
   Status Trim(LogID id,

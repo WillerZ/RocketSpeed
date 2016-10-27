@@ -119,16 +119,13 @@ class LogStorage {
    * callback will be called with a Status indicating if the append was
    * successfully written to the storage.
    *
-   * Important: the data slice must remain valid and unmodified until the
-   * callback is called.
-   *
    * @param topic_name the name of the topic to append to.
    * @param data the data to write.
    * @param callback Callback to process the append request.
    * @return on success returns OK(), otherwise errorcode.
    */
   virtual Status AppendAsync(LogID id,
-                             const Slice& data,
+                             std::string data,
                              AppendCallback callback) = 0;
 
   /**

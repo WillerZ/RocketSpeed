@@ -68,10 +68,7 @@ Status UnwrapMessage(std::string wrapped_message,
   if (!st.ok()) {
     return st;
   }
-  Slice message_slice(raw_message.data(), raw_message.size());
-  std::unique_ptr<char[]> message_buf(message_slice.ToUniqueChars());
-  *message =
-      Message::CreateNewInstance(std::move(message_buf), message_slice.size());
+  *message = Message::CreateNewInstance(Slice(raw_message));
   if (!*message) {
     return Status::IOError("Failed to decode the message.");
   }

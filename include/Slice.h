@@ -70,6 +70,11 @@ class Slice {
     size_ -= n;
   }
 
+  // Returns a prefix of the slice.
+  Slice prefix(size_t n) {
+    return Slice(data_, std::min(size_, n));
+  }
+
   // Return a string that contains the copy of the referenced data.
   std::string ToString(bool hex = false) const {
     if (hex) {

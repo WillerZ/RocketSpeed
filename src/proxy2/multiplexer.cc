@@ -26,7 +26,8 @@ void UpstreamSubscription::AddDownstream(PerStream* per_stream,
                       SequenceNumber prev_seqno,
                       SequenceNumber current_seqno) -> bool {
     // Prepare a message.
-    MessageDeliverData data(tenant_id, downstream_sub, MsgId(), contents);
+    MessageDeliverData data(
+        tenant_id, downstream_sub, MsgId(), contents.ToString());
     data.SetSequenceNumbers(prev_seqno, current_seqno);
     // Send the message on downstream subscription.
     SourcelessFlow no_flow(per_stream->GetLoop()->GetFlowControl());

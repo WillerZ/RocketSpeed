@@ -32,8 +32,8 @@ class Messaging : public ::testing::Test {
 };
 
 TEST_F(Messaging, Data) {
-  Slice name1("Topic1");
-  Slice payload1("Payload1");
+  Topic name1("Topic1");
+  std::string payload1("Payload1");
   HostId host1(HostId::CreateLocal(1234));
   {  // A swift check that things are fine
     std::string hostname;
@@ -58,8 +58,8 @@ TEST_F(Messaging, Data) {
 
   // verify that the new message is the same as original
   ASSERT_TRUE(data2.GetMessageId() == data1.GetMessageId());
-  ASSERT_EQ(data2.GetTopicName().ToString(), name1.ToString());
-  ASSERT_EQ(data2.GetPayload().ToString(), payload1.ToString());
+  ASSERT_EQ(data2.GetTopicName().ToString(), name1);
+  ASSERT_EQ(data2.GetPayload().ToString(), payload1);
   ASSERT_EQ(data2.GetTenantID(), (TenantID)Tenant::GuestTenant);
   ASSERT_EQ(data2.GetNamespaceId().ToString(), nsid1);
   ASSERT_EQ(data2.GetPrevSequenceNumber(), 1000100010001000ULL);
@@ -125,14 +125,12 @@ static void TestMessage(const Message& msg) {
   Slice slice(str);
 
   // Should successfully parse.
-  ASSERT_TRUE(Message::CreateNewInstance(slice.ToUniqueChars(),
-                                         slice.size()) != nullptr);
+  ASSERT_TRUE(Message::CreateNewInstance(slice) != nullptr);
 
   // All sub-sizes should fail to parse:
   for (size_t n = 0; n < slice.size(); ++n) {
     // Only first n bytes
-    ASSERT_TRUE(Message::CreateNewInstance(slice.ToUniqueChars(),
-                                           n) == nullptr);
+    ASSERT_TRUE(Message::CreateNewInstance(slice.prefix(n)) == nullptr);
   }
 }
 
@@ -247,7 +245,7 @@ TEST_F(Messaging, MessageDeliverData) {
   MessageDeliverData msg1(Tenant::GuestTenant,
                           SubscriptionID::Unsafe(42),
                           GUIDGenerator().Generate(),
-                          Slice("payload"));
+                          "payload");
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   std::string str;
@@ -270,13 +268,13 @@ TEST_F(Messaging, MessageDeliverBatch) {
   messages.emplace_back(new MessageDeliverData(Tenant::GuestTenant,
                                                SubscriptionID::Unsafe(42),
                                                GUIDGenerator().Generate(),
-                                               Slice("message 1")));
+                                               "message 1"));
   messages.back()->SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   messages.emplace_back(new MessageDeliverData(Tenant::GuestTenant,
                                                SubscriptionID::Unsafe(43),
                                                GUIDGenerator().Generate(),
-                                               Slice("message 2")));
+                                               "message 2"));
   messages.back()->SetSequenceNumbers(1000100010001001ULL, 2000200020002002ULL);
 
   MessageDeliverBatch msg1(Tenant::GuestTenant, std::move(messages));

@@ -1219,7 +1219,7 @@ static void SendMessageDeliver(int& sequence,
   // delivery
   std::unique_ptr<MessageDeliverData> msg(new MessageDeliverData(
                                             (TenantID)0,
-                                            sub_id, MsgId(), Slice("data")));
+                                            sub_id, MsgId(), "data"));
   msg->SetSequenceNumbers(sequence - 1, sequence);
   ++sequence;
   std::unique_ptr<MessageReceived> received(

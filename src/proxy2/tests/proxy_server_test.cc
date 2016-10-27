@@ -598,7 +598,7 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
     MessageDeliverData data(Tenant::GuestTenant,
                             SubscriptionID::Unsafe(upstream_sub),
                             MsgId(),
-                            payload);
+                            payload.ToString());
     data.SetSequenceNumbers(prev_seqno, current_seqno);
     server->Send(server_stream, data);
   };

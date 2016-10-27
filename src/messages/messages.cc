@@ -189,19 +189,8 @@ Message::CreateNewInstance(Slice* in) {
   return nullptr;
 }
 
-std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
-                                                    size_t size) {
-  Slice slice(in.get(), size);
-  return CreateNewInstance(std::move(in), slice);
-}
-
-std::unique_ptr<Message> Message::CreateNewInstance(std::unique_ptr<char[]> in,
-                                                    Slice slice) {
-  std::unique_ptr<Message> msg = Message::CreateNewInstance(&slice);
-  if (msg) {
-    msg->buffer_ = std::move(in);
-  }
-  return msg;
+std::unique_ptr<Message> Message::CreateNewInstance(Slice in) {
+  return CreateNewInstance(&in);
 }
 
 std::unique_ptr<Message> Message::Copy(const Message& msg) {
@@ -210,7 +199,7 @@ std::unique_ptr<Message> Message::Copy(const Message& msg) {
   std::string serial;
   msg.SerializeToString(&serial);
   Slice slice(serial);
-  return CreateNewInstance(slice.ToUniqueChars(), slice.size());
+  return CreateNewInstance(&slice);
 }
 
 Status Message::Serialize(std::string* out) const {
@@ -269,21 +258,21 @@ Status MessagePing::DeSerialize(Slice* in) {
 
 MessageData::MessageData(MessageType type,
                          TenantID tenantID,
-                         const Slice& topic_name,
-                         const Slice& namespace_id,
-                         const Slice& payload) :
+                         Topic topic_name,
+                         NamespaceID namespace_id,
+                         std::string payload) :
   Message(type, tenantID),
-  topic_name_(topic_name),
-  payload_(payload),
-  namespaceid_(namespace_id) {
+  topic_name_(std::move(topic_name)),
+  payload_(std::move(payload)),
+  namespaceid_(std::move(namespace_id)) {
   RS_ASSERT(type == MessageType::mPublish || type == MessageType::mDeliver);
   seqno_ = 0;
   seqno_prev_ = 0;
 }
 
 MessageData::MessageData(MessageType type):
-  MessageData(type, Tenant::InvalidTenant, Slice(),
-              InvalidNamespace, Slice()) {
+  MessageData(type, Tenant::InvalidTenant, "",
+              InvalidNamespace, "") {
 }
 
 MessageData::MessageData():
@@ -321,20 +310,18 @@ Status MessageData::DeSerialize(Slice* in) {
   }
 
   // The rest of the message is what goes into log storage.
-  storage_slice_ = *in;
   return DeSerializeStorage(in);
 }
 
-Slice MessageData::GetStorageSlice() const {
-  // Returns a Slice starting from tenant_id of the message.
-  // storage_slice_ is constructed during deserialization.
-  RS_ASSERT(storage_slice_.size() != 0);
-  return storage_slice_;
+std::string MessageData::GetStorage() const {
+  std::string storage;
+  SerializeInternal(&storage);
+  return storage;
 }
 
 size_t MessageData::GetTotalSize() const {
   return sizeof(MessageData) + topic_name_.size() +
-         payload_.size() + namespaceid_.size() + storage_slice_.size();
+         payload_.size() + namespaceid_.size() + payload_.size();
 }
 
 void MessageData::SerializeInternal(std::string* out) const {

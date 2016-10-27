@@ -634,8 +634,7 @@ Status SocketEvent::ReadCallback() {
     }
 
     // Decode the rest of the message.
-    std::unique_ptr<Message> msg =
-        Message::CreateNewInstance(std::move(msg_buf_), in);
+    std::unique_ptr<Message> msg = Message::CreateNewInstance(in);
     if (!msg) {
       LOG_WARN(GetLogger(), "Failed to decode a message");
       return Status::IOError("Failed to decode a message.");
