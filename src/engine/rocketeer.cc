@@ -52,10 +52,25 @@ SubscriptionID RocketeerMessage::GetSubID() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+struct RocketeerMetadataMessage {
+  // Represents either a subscribe or termination.
+  enum { kSubscribe, kTerminate } type;
+  InboundID inbound_id;
+  SubscriptionParameters params;        // only valid for type == kSubscribe
+  Rocketeer::TerminationSource source;  // only valid for type == kTerminate
+};
+
 Rocketeer::Rocketeer()
 : below_rocketeer_(nullptr)
-, metadata_sink_(new RetryLaterSink<std::function<BackPressure()>>(
-    [] (std::function<BackPressure()>& handler) { return handler(); })) {}
+, metadata_sink_(new RetryLaterSink<RocketeerMetadataMessage>(
+    [this] (RocketeerMetadataMessage& msg) mutable {
+      if (msg.type == RocketeerMetadataMessage::kSubscribe) {
+        // Cannot move msg.params since it may need to be retried later.
+        return TryHandleNewSubscription(msg.inbound_id, msg.params);
+      } else {
+        return TryHandleTermination(msg.inbound_id, msg.source);
+      }
+    })) {}
 
 Rocketeer::~Rocketeer() = default;
 
@@ -75,11 +90,11 @@ void Rocketeer::HandleNewSubscription(Flow* flow,
   // The default implementation forward the call to TryHandleNewSubscription
   // through a RetryLaterSink, which will retry the call later if the Try
   // called requested a retry.
-  std::function<BackPressure()> cmd(
-    [this, inbound_id, params] () {
-      return TryHandleNewSubscription(inbound_id, params);
-    });
-  flow->Write(metadata_sink_.get(), cmd);
+  RocketeerMetadataMessage msg;
+  msg.type = RocketeerMetadataMessage::kSubscribe;
+  msg.inbound_id = inbound_id;
+  msg.params = std::move(params);
+  flow->Write(metadata_sink_.get(), msg);
 }
 
 BackPressure Rocketeer::TryHandleTermination(
@@ -97,11 +112,11 @@ void Rocketeer::HandleTermination(
   // The default implementation forward the call to TryHandleTermination
   // through a RetryLaterSink, which will retry the call later if the Try
   // called requested a retry.
-  std::function<BackPressure()> cmd(
-    [this, inbound_id, source] () {
-      return TryHandleTermination(inbound_id, source);
-    });
-  flow->Write(metadata_sink_.get(), cmd);
+  RocketeerMetadataMessage msg;
+  msg.type = RocketeerMetadataMessage::kTerminate;
+  msg.inbound_id = inbound_id;
+  msg.source = source;
+  flow->Write(metadata_sink_.get(), msg);
 }
 
 void Rocketeer::Deliver(Flow* flow,

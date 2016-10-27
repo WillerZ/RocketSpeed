@@ -19,6 +19,7 @@ namespace rocketspeed {
 
 template <typename> class RetryLaterSink;
 
+struct RocketeerMetadataMessage;
 class SubscriptionID;
 
 /**
@@ -226,7 +227,7 @@ class Rocketeer {
 
  private:
   Rocketeer* below_rocketeer_;
-  std::unique_ptr<RetryLaterSink<std::function<BackPressure()>>> metadata_sink_;
+  std::unique_ptr<RetryLaterSink<RocketeerMetadataMessage>> metadata_sink_;
 };
 
 }  // namespace rocketspeed
