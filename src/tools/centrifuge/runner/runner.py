@@ -164,8 +164,7 @@ def log_stopped_clients(stopped_clients, states):
 
 def orchestrate_test(client_runners, server_runners, client, server):
     try:
-        log.orchestrate('-' * 50)
-        log.orchestrate('Starting test -- server: %s client: %s' % (server, client))
+        log.orchestrate('server: %s client: %s' % (server, client))
 
         run_everywhere(server_runners, server, 'server')
         log.info("Server is up on %s host(s)" % len(server_runners))
@@ -224,7 +223,9 @@ def orchestrate(clients, tests):
 
     log.info('All runners up and responding')
 
-    for test in tests:
+    for i, test in enumerate(tests):
+        log.orchestrate('-' * 50)
+        log.orchestrate('Starting test %s of %s' % (i+1, len(tests)))
         start = time.time()
         test['success'], test['start_time'] = orchestrate_test(
             *partition(clients, test.get('hosts', {})),
