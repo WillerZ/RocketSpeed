@@ -91,6 +91,8 @@ SocketEventStats::SocketEventStats(const std::string& prefix) {
   write_succeed_iovec =
       all.AddHistogram(prefix + ".write_succeed_iovec", 0, kMaxIovecs, 1, 1.1f);
   hb_timeouts = all.AddCounter(prefix + ".hb_timeouts");
+  stream_unhealthy_notifications = all.AddCounter(
+    prefix + ".stream_unhealthy_notifications");
   agg_hb_serialized_bytes =
     // works out at about 120 buckets
     all.AddHistogram(prefix + ".agg_hb_serialized_bytes", 0, 10*1000*1000,
@@ -757,14 +759,13 @@ void SocketEvent::CheckHeartbeats() {
   for (auto stream_id : expired) {
     auto it = remote_id_to_stream_.find(stream_id);
     if (it == remote_id_to_stream_.end()) {
-      LOG_WARN(GetLogger(),
-               "StreamID(%lu) heartbeat timed out but could not find stream.",
-               stream_id);
+      // stream no longer exists
       continue;
     }
 
     Stream* stream = it->second;
     stream->NotifyHealthy(false);
+    stats_->stream_unhealthy_notifications->Add(1);
   }
   stats_->hb_timeouts->Add(expired.size());
 }

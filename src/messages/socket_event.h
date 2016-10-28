@@ -65,6 +65,7 @@ class SocketEventStats {
 
   Histogram* agg_hb_serialized_bytes; // lower-bound size on the wire for hbs
   Counter* hb_timeouts;
+  Counter* stream_unhealthy_notifications;
 };
 
 class SocketEvent : public Source<MessageOnStream>,
