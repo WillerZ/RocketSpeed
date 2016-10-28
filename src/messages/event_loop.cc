@@ -90,8 +90,11 @@ void EventLoop::HandleSendCommand(Flow* flow,
   SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
 
   auto now = env_->NowMicros();
-  const auto msg = std::make_shared<TimestampedString>();
-  send_cmd->GetMessage(&msg->string);
+  std::unique_ptr<Message> msg_object;
+  send_cmd->GetMessage(&msg_object);
+
+  auto msg = std::make_shared<TimestampedString>();
+  msg_object->SerializeToString(&msg->string);
   msg->issued_time = now;
   RS_ASSERT(!msg->string.empty());
 
@@ -940,10 +943,8 @@ Status EventLoop::SendCommand(std::unique_ptr<Command>& command) {
 }
 
 Status EventLoop::SendRequest(const Message& msg, StreamSocket* socket) {
-  std::string serial;
-  msg.SerializeToString(&serial);
   std::unique_ptr<Command> command(
-      SerializedSendCommand::Request(std::move(serial), {socket}));
+      MessageSendCommand::Request(Message::Copy(msg), {socket}));
   Status st = SendCommand(command);
   if (st.ok()) {
     socket->Open();
@@ -952,10 +953,8 @@ Status EventLoop::SendRequest(const Message& msg, StreamSocket* socket) {
 }
 
 Status EventLoop::SendResponse(const Message& msg, StreamID stream_id) {
-  std::string serial;
-  msg.SerializeToString(&serial);
   std::unique_ptr<Command> command(
-      SerializedSendCommand::Response(std::move(serial), {stream_id}));
+      MessageSendCommand::Response(Message::Copy(msg), {stream_id}));
   return SendCommand(command);
 }
 

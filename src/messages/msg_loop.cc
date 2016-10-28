@@ -301,54 +301,6 @@ void MsgLoop::SendControlCommand(std::unique_ptr<Command> command,
   event_loops_[worker_id]->SendControlCommand(std::move(command));
 }
 
-Status MsgLoop::SendRequest(const Message& msg,
-                            StreamSocket* socket,
-                            int worker_id) {
-  // Create command and append it to the proper event loop.
-  RS_ASSERT(event_loops_[worker_id]->IsOutboundStream(socket->GetStreamID()));
-  Status st = SendCommand(RequestCommand(msg, socket), worker_id);
-  if (st.ok()) {
-    socket->Open();
-  }
-  return st;
-}
-
-Status MsgLoop::SendResponse(const Message& msg,
-                             StreamID stream,
-                             int worker_id) {
-  // Create command and append it to the proper event loop.
-  RS_ASSERT(event_loops_[worker_id]->IsInboundStream(stream));
-  return SendCommand(ResponseCommand(msg, stream), worker_id);
-}
-
-Status MsgLoop::SendRequest(const Message& msg,
-                            StreamSocket* socket) {
-  int worker_id = static_cast<int>(stream_mapping_(socket->GetStreamID()));
-  return SendRequest(msg, socket, worker_id);
-}
-
-Status MsgLoop::SendResponse(const Message& msg,
-                             StreamID stream) {
-  int worker_id = static_cast<int>(stream_mapping_(stream));
-  return SendResponse(msg, stream, worker_id);
-}
-
-std::unique_ptr<Command> MsgLoop::RequestCommand(const Message& msg,
-                                                 StreamSocket* socket) {
-  // Serialize the message.
-  std::string serial;
-  msg.SerializeToString(&serial);
-  return SerializedSendCommand::Request(std::move(serial), {socket});
-}
-
-std::unique_ptr<Command> MsgLoop::ResponseCommand(const Message& msg,
-                                                  StreamID stream) {
-  // Serialize the message.
-  std::string serial;
-  msg.SerializeToString(&serial);
-  return SerializedSendCommand::Response(std::move(serial), {stream});
-}
-
 //
 // This is the system's handling of the ping message.
 // Applications can override this behaviour if desired.

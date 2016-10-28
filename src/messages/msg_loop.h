@@ -130,22 +130,24 @@ class MsgLoop {
   void SendControlCommand(std::unique_ptr<Command> command,
                           int worker_id);
 
-  Status SendRequest(const Message& msg,
-                     StreamSocket* socket,
-                     int worker_id);
+  template <typename TMsg>
+  Status SendRequest(TMsg msg, StreamSocket* socket, int worker_id);
 
-  Status SendResponse(const Message& msg,
-                      StreamID stream,
-                      int worker_id);
+  template <typename TMsg>
+  Status SendResponse(TMsg msg, StreamID stream, int worker_id);
 
-  Status SendRequest(const Message& msg, StreamSocket* socket);
+  template <typename TMsg>
+  Status SendRequest(TMsg msg, StreamSocket* socket);
 
-  Status SendResponse(const Message& msg, StreamID stream);
+  template <typename TMsg>
+  Status SendResponse(TMsg msg, StreamID stream);
 
-  static std::unique_ptr<Command> RequestCommand(const Message& msg,
+  template <typename TMsg>
+  static std::unique_ptr<Command> RequestCommand(TMsg msg,
                                                  StreamSocket* socket);
 
-  static std::unique_ptr<Command> ResponseCommand(const Message& msg,
+  template <typename TMsg>
+  static std::unique_ptr<Command> ResponseCommand(TMsg msg,
                                                   StreamID stream);
 
   Statistics GetStatisticsSync();
@@ -492,5 +494,47 @@ class MsgLoopThread {
   MsgLoop* msg_loop_;
   BaseEnv::ThreadId tid_;
 };
+
+template <typename TMsg>
+Status MsgLoop::SendRequest(TMsg msg, StreamSocket* socket, int worker_id) {
+  // Create command and append it to the proper event loop.
+  RS_ASSERT(event_loops_[worker_id]->IsOutboundStream(socket->GetStreamID()));
+  Status st = SendCommand(RequestCommand(std::move(msg), socket), worker_id);
+  if (st.ok()) {
+    socket->Open();
+  }
+  return st;
+}
+
+template <typename TMsg>
+Status MsgLoop::SendResponse(TMsg msg, StreamID stream, int worker_id) {
+  // Create command and append it to the proper event loop.
+  RS_ASSERT(event_loops_[worker_id]->IsInboundStream(stream));
+  return SendCommand(ResponseCommand(std::move(msg), stream), worker_id);
+}
+
+template <typename TMsg>
+Status MsgLoop::SendRequest(TMsg msg, StreamSocket* socket) {
+  int worker_id = static_cast<int>(stream_mapping_(socket->GetStreamID()));
+  return SendRequest(std::move(msg), socket, worker_id);
+}
+
+template <typename TMsg>
+Status MsgLoop::SendResponse(TMsg msg, StreamID stream) {
+  int worker_id = static_cast<int>(stream_mapping_(stream));
+  return SendResponse(std::move(msg), stream, worker_id);
+}
+
+template <typename TMsg>
+std::unique_ptr<Command> MsgLoop::RequestCommand(TMsg msg,
+                                                 StreamSocket* socket) {
+  return MessageSendCommand::Request(Message::Copy(std::move(msg)), {socket});
+}
+
+template <typename TMsg>
+std::unique_ptr<Command> MsgLoop::ResponseCommand(TMsg msg,
+                                                  StreamID stream) {
+  return MessageSendCommand::Response(Message::Copy(std::move(msg)), {stream});
+}
 
 }  // namespace rocketspeed

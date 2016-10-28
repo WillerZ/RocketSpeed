@@ -72,11 +72,9 @@ class SendCommand : public Command {
   CommandType GetCommandType() const { return kSendCommand; }
 
   /**
-   * Writes a serialised form of a message to provided string.
-   * Depending on implementation, this call might perform a move of message
-   * content into provided string.
+   * Extracts the message from this command.
    */
-  virtual void GetMessage(std::string* out) = 0;
+  virtual void GetMessage(std::unique_ptr<Message>* out) = 0;
 
   /**
    * If this is a command to send a mesage to remote hosts, then returns the
@@ -88,11 +86,11 @@ class SendCommand : public Command {
   Recipients recipients_;
 };
 
-/** SendCommand where message is passed in a serialized form. */
-class SerializedSendCommand : public SendCommand {
+/** SendCommand with message object. */
+class MessageSendCommand : public SendCommand {
  public:
-  static std::unique_ptr<SerializedSendCommand> Request(
-      std::string serialized,
+  static std::unique_ptr<MessageSendCommand> Request(
+      std::unique_ptr<Message> message,
       const SocketList& sockets) {
     Recipients recipients;
     for (const auto& socket : sockets) {
@@ -100,35 +98,33 @@ class SerializedSendCommand : public SendCommand {
           socket->GetStreamID(),
           socket->IsOpen() ? HostId() : socket->GetDestination());
     }
-    return std::unique_ptr<SerializedSendCommand>(new SerializedSendCommand(
-        std::move(serialized), std::move(recipients)));
+    return std::unique_ptr<MessageSendCommand>(new MessageSendCommand(
+        std::move(message), std::move(recipients)));
   }
 
-  static std::unique_ptr<SerializedSendCommand> Response(
-      std::string serialized,
+  static std::unique_ptr<MessageSendCommand> Response(
+      std::unique_ptr<Message> message,
       const StreamList& streams) {
     Recipients recipients;
     for (auto stream : streams) {
       recipients.emplace_back(stream, HostId());
     }
-    return std::unique_ptr<SerializedSendCommand>(new SerializedSendCommand(
-        std::move(serialized), std::move(recipients)));
+    return std::unique_ptr<MessageSendCommand>(new MessageSendCommand(
+        std::move(message), std::move(recipients)));
   }
 
-  void GetMessage(std::string* out) {
-    out->assign(std::move(message_));
+  void GetMessage(std::unique_ptr<Message>* out) {
+    *out = std::move(message_);
   }
 
  private:
   // Hiding, as it's not super convenient to work with this class without
   // std::make_unique.
-  SerializedSendCommand(std::string message, Recipients recipients)
+  MessageSendCommand(std::unique_ptr<Message> message, Recipients recipients)
       : SendCommand(std::move(recipients)), message_(std::move(message)) {
-    RS_ASSERT(message_.size() > 0);
+    RS_ASSERT(message_);
   }
-  // Buffer with the message. It's content is moved away on first attempt to get
-  // serialized message.
-  std::string message_;
+  std::unique_ptr<Message> message_;
 };
 
 /**

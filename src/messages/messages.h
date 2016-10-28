@@ -157,6 +157,11 @@ class Message : private Serializer {
    */
   static std::unique_ptr<Message> Copy(const Message& msg);
 
+  template <typename TMsg>
+  static std::unique_ptr<TMsg> Copy(TMsg msg) {
+    return std::make_unique<TMsg>(std::move(msg));
+  }
+
  protected:
   Message(MessageType type, TenantID tenantid) :
           type_(type), tenantid_(tenantid) {
