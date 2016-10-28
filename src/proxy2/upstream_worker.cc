@@ -344,8 +344,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
   }
 
   // Forward.
-  auto ts = upstream_->ToTimestampedString(*message.second);
-  flow->Write(upstream_.get(), ts);
+  flow->Write(upstream_.get(), message.second);
 
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {

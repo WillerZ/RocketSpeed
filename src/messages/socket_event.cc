@@ -81,7 +81,6 @@ struct MessageHeader {
 }  // namespace
 
 SocketEventStats::SocketEventStats(const std::string& prefix) {
-  write_latency = all.AddLatency(prefix + ".write_latency");
   write_size_bytes =
       all.AddHistogram(prefix + ".write_size_bytes", 0, kMaxIovecs, 1, 1.1f);
   write_size_iovec =
@@ -235,26 +234,32 @@ void SocketEvent::SetReadEnabled(EventLoop* event_loop, bool enabled) {
   }
 }
 
-bool SocketEvent::Write(SerializedOnStream& value) {
+bool SocketEvent::Write(MessageOnStream& value) {
+  const auto type = value.message->GetMessageType();
+  RS_ASSERT(type != MessageType::NotInitialized);
+
+  // For efficiency, we aggregate up heartbeat messages so that they can be
+  // sent as a batch. See FlushCapturedHeartbeats.
+  if (type == MessageType::mHeartbeat) {
+    CaptureHeartbeat(static_cast<const MessageHeartbeat&>(*value.message));
+    return true;
+  }
+
+  const auto remote_id = value.stream->GetRemoteID();
+
+  SerializedOnStream serialised;
+  serialised.stream_id = remote_id;
+  value.message->SerializeToString(&serialised.serialised);
+
   thread_check_.Check();
 
   LOG_DEBUG(GetLogger(),
             "Writing %zd bytes to SocketEvent(%d, %s)",
-            value.serialised->string.size(),
+            serialised.serialised.size(),
             fd_,
             destination_.ToString().c_str());
 
-  // Sneak-peak message type, we will handle MessageGoodbye differently.
-  auto type = Message::ReadMessageType(value.serialised->string);
-  RS_ASSERT(type != MessageType::NotInitialized);
-
-  if (type == MessageType::mHeartbeat) {
-    CaptureHeartbeat(value);
-    return true;
-  }
-
-  const auto remote_id = value.stream_id;
-  bool has_room = EnqueueWrite(value);
+  bool has_room = EnqueueWrite(serialised);
 
   if (type == MessageType::mGoodbye) {
     // If it was a goodbye the stream will be closed once this call returns.
@@ -265,19 +270,14 @@ bool SocketEvent::Write(SerializedOnStream& value) {
 }
 
 bool SocketEvent::EnqueueWrite(SerializedOnStream& value) {
-  auto now = event_loop_->GetEnv()->NowMicros();
-
   // Serialise stream metadata.
-  auto stream_ser = std::make_shared<TimestampedString>();
-  EncodeOrigin(&stream_ser->string, value.stream_id);
-  stream_ser->issued_time = now;
+  std::string stream_ser;
+  EncodeOrigin(&stream_ser, value.stream_id);
+
   // Serialise message header.
-  size_t frame_size =
-      stream_ser->string.size() + value.serialised->string.size();
+  size_t frame_size = stream_ser.size() + value.serialised.size();
   MessageHeader header{protocol_version_, static_cast<uint32_t>(frame_size)};
-  auto header_ser = std::make_shared<TimestampedString>();
-  header_ser->string = header.ToString();
-  header_ser->issued_time = now;
+  std::string header_ser = header.ToString();
 
   // Add chunks carrying the message header, destinations, and serialised
   // message to the send queue.
@@ -471,7 +471,7 @@ Status SocketEvent::WriteCallback() {
       int limit = static_cast<int>(std::min(kMaxIovecs, send_queue_.size()));
       size_t total = 0;
       for (; iovcnt < limit; ++iovcnt) {
-        Slice v(iovcnt != 0 ? Slice(send_queue_[iovcnt]->string) : partial_);
+        Slice v(iovcnt != 0 ? Slice(send_queue_[iovcnt]) : partial_);
         iov[iovcnt].iov_base = (void*)v.data();
         iov[iovcnt].iov_len = v.size();
         total += v.size();
@@ -507,7 +507,7 @@ Status SocketEvent::WriteCallback() {
         RS_ASSERT(!send_queue_.empty());
         auto& item = send_queue_.front();
         if (i != 0) {
-          partial_ = Slice(item->string);
+          partial_ = Slice(item);
         }
         if (written >= partial_.size()) {
           // Fully wrote section.
@@ -518,8 +518,6 @@ Status SocketEvent::WriteCallback() {
           stats_->write_succeed_iovec->Record(i);
           return Status::OK();
         }
-        stats_->write_latency->Record(event_loop_->GetEnv()->NowMicros() -
-                                      item->issued_time);
         send_queue_.pop_front();
 
         // We've taken one element from the send queue, now check whether we can
@@ -542,7 +540,7 @@ Status SocketEvent::WriteCallback() {
     // No more partial data to be sent out.
     if (send_queue_.size() > 0) {
       // If there are any new pending messages, start processing it.
-      partial_ = send_queue_.front()->string;
+      partial_ = send_queue_.front();
       RS_ASSERT(partial_.size() > 0);
     } else {
       // No more queued messages. Switch off ready-to-write event on socket.
@@ -770,17 +768,9 @@ void SocketEvent::CheckHeartbeats() {
   stats_->hb_timeouts->Add(expired.size());
 }
 
-void SocketEvent::CaptureHeartbeat(SerializedOnStream& value) {
-  RS_ASSERT(Message::ReadMessageType(value.serialised->string)
-            == MessageType::mHeartbeat);
-
-  MessageHeartbeat msg;
-  Slice slice(value.serialised->string);
-  msg.DeSerialize(&slice);
-
+void SocketEvent::CaptureHeartbeat(const MessageHeartbeat& msg) {
   // TODO(gds): check the heartbeat timestamp is within sla
-
-  auto streams = msg.GetHealthyStreams();
+  const auto& streams = msg.GetHealthyStreams();
   shard_heartbeats_received_.insert(streams.begin(), streams.end());
 }
 
@@ -792,9 +782,9 @@ void SocketEvent::FlushCapturedHeartbeats() {
   MessageHeartbeat msg(Tenant::GuestTenant,
                        MessageHeartbeat::Clock::now(),
                        std::move(streams));
-
-  auto value = Stream::ToTimestampedString(msg);
-  stats_->agg_hb_serialized_bytes->Record(value->string.size());
+  std::string value;
+  msg.SerializeToString(&value);
+  stats_->agg_hb_serialized_bytes->Record(value.size());
   SerializedOnStream serialised;
   serialised.stream_id = 0;     // we ignore this for heartbeats on receive
   serialised.serialised = std::move(value);

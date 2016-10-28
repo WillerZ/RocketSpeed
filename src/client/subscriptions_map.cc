@@ -300,13 +300,13 @@ void SubscriptionsMap::HandlePendingSubscription(
 
   RS_ASSERT(sink_);
   // Send a message.
-  MessageSubscribe subscribe(state->GetTenant(),
-                             state->GetNamespace().ToString(),
-                             state->GetTopicName().ToString(),
-                             state->GetExpectedSeqno(),
-                             state->GetSubscriptionID());
-  auto ts = Stream::ToTimestampedString(subscribe);
-  flow->Write(sink_.get(), ts);
+  std::unique_ptr<Message> subscribe(new MessageSubscribe(
+      state->GetTenant(),
+      state->GetNamespace().ToString(),
+      state->GetTopicName().ToString(),
+      state->GetExpectedSeqno(),
+      state->GetSubscriptionID()));
+  flow->Write(sink_.get(), subscribe);
 
   // Mark the subscription as synced.
   // We own the state pointer now.
@@ -321,14 +321,13 @@ void SubscriptionsMap::HandlePendingUnsubscription(
 
   RS_ASSERT(sink_);
   // Send the message.
-  MessageUnsubscribe unsubscribe(
-      GuestTenant, sub_id, MessageUnsubscribe::Reason::kRequested);
-  auto ts = Stream::ToTimestampedString(unsubscribe);
-  flow->Write(sink_.get(), ts);
+  std::unique_ptr<Message> unsubscribe(new MessageUnsubscribe(
+      GuestTenant, sub_id, MessageUnsubscribe::Reason::kRequested));
+  flow->Write(sink_.get(), unsubscribe);
 }
 
 void SubscriptionsMap::ConnectionCreated(
-    std::unique_ptr<Sink<SharedTimestampedString>> sink) {
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
 
   sink_ = std::move(sink);
 

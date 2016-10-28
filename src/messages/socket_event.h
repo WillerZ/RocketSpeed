@@ -54,7 +54,6 @@ class SocketEventStats {
   explicit SocketEventStats(const std::string& prefix);
 
   Statistics all;
-  Histogram* write_latency;     // time between message was serialised and sent
   Histogram* write_size_bytes;  // total bytes in write calls
   Histogram* write_size_iovec;  // total iovecs in write calls.
   Histogram* write_succeed_bytes;  // successful bytes written in write calls
@@ -69,7 +68,7 @@ class SocketEventStats {
 };
 
 class SocketEvent : public Source<MessageOnStream>,
-                    public Sink<SerializedOnStream> {
+                    public Sink<MessageOnStream> {
  public:
   /**
    * Creates a new SocketEvent for provided physical socket.
@@ -116,13 +115,13 @@ class SocketEvent : public Source<MessageOnStream>,
   /** Inherited from Source<MessageOnStream>. */
   void SetReadEnabled(EventLoop* event_loop, bool enabled) final override;
 
-  /** Inherited from Sink<SerializedOnStream>. */
-  bool Write(SerializedOnStream& value) final override;
+  /** Inherited from Sink<MessageOnStream>. */
+  bool Write(MessageOnStream& value) final override;
 
-  /** Inherited from Sink<SerializedOnStream>. */
+  /** Inherited from Sink<MessageOnStream>. */
   bool FlushPending() final override;
 
-  /** Inherited from Sink<SerializedOnStream>. */
+  /** Inherited from Sink<MessageOnStream>. */
   std::unique_ptr<EventCallback> CreateWriteCallback(
       EventLoop* event_loop, std::function<void()> callback) final override;
 
@@ -162,7 +161,7 @@ class SocketEvent : public Source<MessageOnStream>,
 
   /** Writer and serializer state. */
   /** A list of chunks of data to be written. */
-  std::deque<std::shared_ptr<TimestampedString>> send_queue_;
+  std::deque<std::string> send_queue_;
   /** The next valid offset in the earliest chunk of data to be written. */
   Slice partial_;
 
@@ -255,7 +254,7 @@ class SocketEvent : public Source<MessageOnStream>,
    * Collect per-stream heartbeats in order to flush an aggregated
    * heartbeat.
    */
-  void CaptureHeartbeat(SerializedOnStream& value);
+  void CaptureHeartbeat(const MessageHeartbeat& value);
 
   /**
    * Construct an aggregate heartbeat from those seen and write this

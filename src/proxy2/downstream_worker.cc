@@ -34,8 +34,7 @@ void DownstreamWorker::ReceiveFromQueue(Flow* flow,
   }
 
   // Forward.
-  auto ts = stream->ToTimestampedString(*message.second);
-  flow->Write(stream, ts);
+  flow->Write(stream, message.second);
   stream = nullptr;
 
   // Clean up the state if this is the last message on the stream.

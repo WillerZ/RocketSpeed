@@ -32,17 +32,11 @@ namespace rocketspeed {
 class ClientResultStatus : public ResultStatus {
  public:
   ClientResultStatus(Status status,
-                     std::string serialized_message,
+                     MessageData message,
                      SequenceNumber seqno)
-      : status_(status)
-      , serialized_(std::move(serialized_message))
-      , seqno_(seqno) {
-    Slice in(serialized_);
-    if (!message_.DeSerialize(&in).ok()) {
-      // Failed to deserialize a message after it has been serialized?
-      RS_ASSERT(false);
-      status_ = Status::InternalError("Message corrupt.");
-    }
+  : status_(status)
+  , message_(std::move(message))
+  , seqno_(seqno) {
   }
 
   virtual Status GetStatus() const { return status_; }
@@ -72,8 +66,7 @@ class ClientResultStatus : public ResultStatus {
 
  private:
   Status status_;
-  MessageData message_;
-  std::string serialized_;
+  const MessageData message_;
   SequenceNumber seqno_;
 };
 
@@ -81,11 +74,11 @@ class ClientResultStatus : public ResultStatus {
 /** Describes published message awaiting response. */
 class PendingAck {
  public:
-  PendingAck(PublishCallback _callback, std::string _data)
+  PendingAck(PublishCallback _callback, MessageData _data)
       : callback(std::move(_callback)), data(std::move(_data)) {}
 
   PublishCallback callback;
-  std::string data;
+  MessageData data;
 };
 
 /** State of a single publisher, aligned to avoid false sharing. */
@@ -102,8 +95,7 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData : public StreamReceiver {
   }
 
   /** Publishes message to the Pilot. */
-  void Publish(MsgId message_id,
-               std::string serialized,
+  void Publish(std::unique_ptr<MessageData> message,
                PublishCallback callback);
 
  private:
@@ -130,9 +122,9 @@ class alignas(CACHE_LINE_SIZE) PublisherWorkerData : public StreamReceiver {
   void ReceiveGoodbye(StreamReceiveArg<MessageGoodbye>) final override;
 };
 
-void PublisherWorkerData::Publish(MsgId message_id,
-                                  std::string serialized,
+void PublisherWorkerData::Publish(std::unique_ptr<MessageData> message,
                                   PublishCallback callback) {
+  const MsgId message_id = message->GetMessageId();
   thread_check_.Check();
 
   // Check if we have a valid socket to the Pilot, recreate it if not.
@@ -149,7 +141,7 @@ void PublisherWorkerData::Publish(MsgId message_id,
       std::unique_ptr<ClientResultStatus> result_status(
         new ClientResultStatus(
           Status::IOError("No available RocketSpeed hosts"),
-          std::move(serialized), 0));
+          *message, 0));
       callback(std::move(result_status));
       return;
     }
@@ -164,15 +156,18 @@ void PublisherWorkerData::Publish(MsgId message_id,
              pilot_stream_->GetLocalID());
   }
 
+  auto result = messages_sent_.emplace(
+    message_id, PendingAck(std::move(callback), *message));
+  (void)result;
+  RS_ASSERT(result.second);
+
   // Send out the request.
-  pilot_stream_->Write(serialized);
+  // Need an L-value unique_ptr<Message> (not MessageData)
+  std::unique_ptr<Message> message_to_write(std::move(message));
+  pilot_stream_->Write(message_to_write);
 
   // Add message to the sent list.
   timeouts_.Add(message_id);
-  auto result = messages_sent_.emplace(
-    message_id, PendingAck(std::move(callback), std::move(serialized)));
-  (void)result;
-  RS_ASSERT(result.second);
 }
 
 
@@ -294,32 +289,30 @@ PublishStatus PublisherImpl::Publish(TenantID tenant_id,
   const auto worker_id = GetWorkerForTopic(topic_name);
 
   // Construct message.
-  MessageData message(MessageType::mPublish,
-                      tenant_id,
-                      topic_name,
-                      namespace_id,
-                      data.ToString());
+  std::unique_ptr<MessageData> message(
+    new MessageData(MessageType::mPublish,
+                    tenant_id,
+                    topic_name,
+                    namespace_id,
+                    data.ToString()));
 
   // Take note of message ID before we move into the command.
   const MsgId empty_msgid = MsgId();
   if (!(message_id == empty_msgid)) {
-    message.SetMessageId(message_id);
+    message->SetMessageId(message_id);
   } else {
-    message.SetMessageId(GUIDGenerator::ThreadLocalGUIDGenerator()->Generate());
+    message->SetMessageId(
+        GUIDGenerator::ThreadLocalGUIDGenerator()->Generate());
   }
-  const MsgId msgid = message.GetMessageId();
-
-  std::string serialized;
-  message.SerializeToString(&serialized);
+  const MsgId msgid = message->GetMessageId();
 
   // Schedule command to publish the message.
-  auto moved_serialized = folly::makeMoveWrapper(std::move(serialized));
-  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
   Status st = msg_loop_->SendCommand(
       std::unique_ptr<ExecuteCommand>(MakeExecuteCommand(
-          [this, worker_id, msgid, moved_serialized, moved_callback]() mutable {
+          [this, worker_id, msg = std::move(message),
+           callback = std::move(callback)]() mutable {
             worker_data_[worker_id]->Publish(
-                msgid, moved_serialized.move(), moved_callback.move());
+                std::move(msg), std::move(callback));
           })),
       worker_id);
 

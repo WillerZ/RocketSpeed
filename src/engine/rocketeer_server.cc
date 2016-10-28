@@ -119,7 +119,9 @@ class CommunicationRocketeer : public Rocketeer {
 
   InboundSubscription* Find(const InboundID& inbound_id);
 
-  void SendResponse(Flow* flow, StreamID stream_id, const Message& message);
+  void SendResponse(Flow* flow,
+                    StreamID stream_id,
+                    std::unique_ptr<Message> message);
 
   void Receive(
       Flow* flow, std::unique_ptr<MessageSubscribe> subscribe, StreamID origin);
@@ -160,11 +162,11 @@ void CommunicationRocketeer::Deliver(Flow* flow,
   }
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
-      MessageDeliverData data(
+      auto data = std::make_unique<MessageDeliverData>(
           sub->tenant_id, inbound_id.GetSubID(), msg_id, payload);
-      data.SetSequenceNumbers(sub->prev_seqno, seqno);
+      data->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
-      SendResponse(flow, inbound_id.stream_id, data);
+      SendResponse(flow, inbound_id.stream_id, std::move(data));
     } else {
       stats_->dropped_reordered->Add(1);
       LOG_WARN(server_->options_.info_log,
@@ -217,8 +219,9 @@ void CommunicationRocketeer::DeliverBatch(
     }
   }
   if (!messages_vec.empty()) {
-    MessageDeliverBatch batch(tenant_id, std::move(messages_vec));
-    SendResponse(flow, stream_id, batch);
+    auto batch = std::make_unique<MessageDeliverBatch>(
+        tenant_id, std::move(messages_vec));
+    SendResponse(flow, stream_id, std::move(batch));
   }
 }
 
@@ -229,11 +232,11 @@ void CommunicationRocketeer::Advance(Flow* flow,
 
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
-      MessageDeliverGap gap(
+      auto gap = std::make_unique<MessageDeliverGap>(
           sub->tenant_id, inbound_id.GetSubID(), GapType::kBenign);
-      gap.SetSequenceNumbers(sub->prev_seqno, seqno);
+      gap->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
-      SendResponse(flow, inbound_id.stream_id, gap);
+      SendResponse(flow, inbound_id.stream_id, std::move(gap));
     } else {
       stats_->dropped_reordered->Add(1);
       LOG_WARN(server_->options_.info_log,
@@ -274,9 +277,9 @@ void CommunicationRocketeer::Terminate(Flow* flow,
           msg_reason = MessageUnsubscribe::Reason::kInvalid;
           break;
       }
-      MessageUnsubscribe unsubscribe(
+      auto unsubscribe = std::make_unique<MessageUnsubscribe>(
           tenant_id, inbound_id.GetSubID(), msg_reason);
-      SendResponse(flow, inbound_id.stream_id, unsubscribe);
+      SendResponse(flow, inbound_id.stream_id, std::move(unsubscribe));
       return;
     }
   }
@@ -324,15 +327,14 @@ InboundSubscription* CommunicationRocketeer::Find(const InboundID& inbound_id) {
 
 void CommunicationRocketeer::SendResponse(Flow* flow,
                                           StreamID stream_id,
-                                          const Message& message) {
+                                          std::unique_ptr<Message> message) {
   auto loop = server_->msg_loop_->GetEventLoop((int)GetID());
   if (auto stream = loop->GetInboundStream(stream_id)) {
-    auto ts = stream->ToTimestampedString(message);
     if (flow) {
-      flow->Write(stream, ts);
+      flow->Write(stream, message);
     } else {
       SourcelessFlow no_flow(loop->GetFlowControl());
-      no_flow.Write(stream, ts);
+      no_flow.Write(stream, message);
     }
   } else {
     LOG_WARN(server_->options_.info_log,

@@ -162,12 +162,13 @@ class MessageBus : public StreamReceiver {
               MessageTypeName(message.GetMessageType()));
 
     Wait([&]() {
+      auto msg = Message::Copy(message);
       if (auto stream = loop_->GetInboundStream(stream_id)) {
-        stream->Write(message);
+        stream->Write(msg);
       } else {
         auto it = streams_.find(stream_id);
         ASSERT_TRUE(it != streams_.end());
-        it->second->Write(message);
+        it->second->Write(msg);
       }
     });
   }
@@ -175,10 +176,11 @@ class MessageBus : public StreamReceiver {
   void CloseStream(StreamID stream_id) {
     Wait([&]() {
       if (auto stream = loop_->GetInboundStream(stream_id)) {
-        MessageGoodbye message(Tenant::GuestTenant,
+        std::unique_ptr<Message> msg(
+            new MessageGoodbye(Tenant::GuestTenant,
                                MessageGoodbye::Code::Graceful,
-                               MessageGoodbye::OriginType::Server);
-        stream->Write(message);
+                               MessageGoodbye::OriginType::Server));
+        stream->Write(msg);
       } else {
         streams_.erase(stream_id);
       }

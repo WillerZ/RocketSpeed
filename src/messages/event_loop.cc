@@ -89,15 +89,10 @@ void EventLoop::HandleSendCommand(Flow* flow,
   using rocketspeed::SendCommand;
   SendCommand* send_cmd = static_cast<SendCommand*>(command.get());
 
-  auto now = env_->NowMicros();
   std::unique_ptr<Message> msg_object;
   send_cmd->GetMessage(&msg_object);
 
-  auto msg = std::make_shared<TimestampedString>();
-  msg_object->SerializeToString(&msg->string);
-  msg->issued_time = now;
-  RS_ASSERT(!msg->string.empty());
-
+  bool single_destination = (send_cmd->GetDestinations().size() == 1);
   for (const SendCommand::StreamSpec& spec : send_cmd->GetDestinations()) {
     // Find or create a stream.
     auto it = stream_id_to_stream_.find(spec.stream);
@@ -126,8 +121,12 @@ void EventLoop::HandleSendCommand(Flow* flow,
       RS_ASSERT(result1.second);
     }
 
-    auto message = msg;
-    flow->Write(it->second, message);
+    if (single_destination) {
+      flow->Write(it->second, msg_object);
+    } else {
+      auto msg_copy = Message::Copy(*msg_object);
+      flow->Write(it->second, msg_copy);
+    }
   }
 }
 
@@ -393,11 +392,11 @@ EventLoop::Initialize() {
         MessageHeartbeat::StreamSet streams = {
           static_cast<uint32_t>(stream->GetRemoteID())
         };
-        MessageHeartbeat hb(SystemTenant,
-                            MessageHeartbeat::Clock::now(),
-                            std::move(streams));
-        auto ts = Stream::ToTimestampedString(hb);
-        flow->Write(stream, ts);
+        std::unique_ptr<Message> hb(
+            new MessageHeartbeat(SystemTenant,
+                                 MessageHeartbeat::Clock::now(),
+                                 std::move(streams)));
+        flow->Write(stream, hb);
         stats_.hbs_sent->Add(1);
       });
 

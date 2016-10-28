@@ -61,16 +61,9 @@ void EncodeOrigin(std::string* out, StreamID origin);
  */
 bool DecodeOrigin(Slice* in, StreamID* origin);
 
-struct TimestampedString {
-  std::string string;
-  uint64_t issued_time;
-};
-
-typedef std::shared_ptr<TimestampedString> SharedTimestampedString;
-
 struct SerializedOnStream {
   StreamID stream_id;
-  SharedTimestampedString serialised;
+  std::string serialised;
 };
 
 
@@ -80,7 +73,7 @@ class ConnectionObserver {
 
   virtual void ConnectionDropped() = 0;
   virtual void ConnectionCreated(
-    std::unique_ptr<Sink<SharedTimestampedString>> sink) = 0;
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) = 0;
 };
 
 /** An object which receives messages from a Stream. */

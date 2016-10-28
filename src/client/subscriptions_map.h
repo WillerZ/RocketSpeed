@@ -322,7 +322,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   using Unsubscribes = google::sparse_hash_set<SubscriptionID>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
-  std::unique_ptr<Sink<SharedTimestampedString>> sink_;
+  std::unique_ptr<Sink<std::unique_ptr<Message>>> sink_;
 
   /// Returns a non-owning pointer to the SubscriptionBase or null if doesn't
   /// exist.
@@ -338,7 +338,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
 
   void ConnectionDropped() final override;
   void ConnectionCreated(
-    std::unique_ptr<Sink<SharedTimestampedString>> sink) final override;
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
 

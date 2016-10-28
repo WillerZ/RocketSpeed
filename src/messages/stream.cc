@@ -40,13 +40,14 @@ Stream::~Stream() {
     thread_check_.Check();
 
     // Send a goodbye message to self to trigger stream closure.
-    MessageGoodbye goodbye(Tenant::GuestTenant,
+    std::unique_ptr<Message> goodbye(
+        new MessageGoodbye(Tenant::GuestTenant,
                            MessageGoodbye::Code::Graceful,
                            // Since we're sending a message the roles of server
                            // and client are exchanged.
                            socket_event_->IsInbound()
                                ? MessageGoodbye::OriginType::Server
-                               : MessageGoodbye::OriginType::Client);
+                               : MessageGoodbye::OriginType::Client));
     Write(goodbye);
   }
   RS_ASSERT(!socket_event_);
@@ -69,23 +70,7 @@ void Stream::Close() {
   socket_event_ = nullptr;
 }
 
-SharedTimestampedString Stream::ToTimestampedString(const Message& message) {
-  std::string str;
-  message.SerializeToString(&str);
-  return ToTimestampedString(str);
-}
-
-SharedTimestampedString Stream::ToTimestampedString(const std::string& value) {
-  auto serialised = std::make_shared<TimestampedString>();
-  serialised->issued_time =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count();
-  serialised->string = std::move(value);
-  return serialised;
-}
-
-bool Stream::Write(SharedTimestampedString& value) {
+bool Stream::Write(std::unique_ptr<Message>& value) {
   thread_check_.Check();
 
   if (!socket_event_) {
@@ -99,23 +84,20 @@ bool Stream::Write(SharedTimestampedString& value) {
   }
 
   // Sneak-peak message type, we will handle MessageGoodbye differently.
-  auto type = Message::ReadMessageType(value->string);
+  auto type = value->GetMessageType();
   RS_ASSERT(type != MessageType::NotInitialized);
 
   LOG_DEBUG(socket_event_->GetLogger(),
-            "Writing %zd bytes to Stream(%llu, %llu)",
-            value->string.size(),
+            "Writing message to Stream(%llu, %llu)",
             local_id_,
             remote_id_);
+
   // Instead of associating a buffer with each stream, we use the one in the
   // socket.
-  SerializedOnStream serialised;
-  // When writing out the message we use the StreamID known by remote loop.
-  serialised.stream_id = remote_id_;
-  serialised.serialised = std::move(value);
-  // Write a Goodbye message to the Socket, after SocketEvent::Write completes
-  // the message is owned by the SocketEvent.
-  const bool has_room = socket_event_->Write(serialised);
+  MessageOnStream msg;
+  msg.stream = this;
+  msg.message = std::move(value);
+  const bool has_room = socket_event_->Write(msg);
 
   if (type == MessageType::mGoodbye) {
     // After sending a goodbye we must close the stream.
