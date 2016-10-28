@@ -137,7 +137,7 @@ void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
 void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
   if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
     subscriber->TerminateSubscription(sub_id);
-    if (subscriber->Empty()) {
+    if (options_.close_empty_streams && subscriber->Empty()) {
       // Subscriber no longer serves any subscriptions, destroy it
       subscribers_.erase(sub_id.GetShardID());
     }

@@ -1000,6 +1000,8 @@ TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
          stream_id = origin;
          server_subscribe_sem.Post();
        }},
+      {MessageType::mUnsubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {}}
   });
   server_ptr = server.msg_loop.get();
 
@@ -1083,6 +1085,7 @@ TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
     options.timer_period = std::chrono::milliseconds(1);
     options.connection_without_streams_keepalive =
         std::chrono::milliseconds((iy % 2) ? 0 : 20000);
+    options.close_empty_streams = true;
     auto client = CreateClient(std::move(options));
     for (int ix = 0; ix < kTopics; ++ix) {
       auto handle = client->Subscribe(
@@ -1111,6 +1114,7 @@ TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
   ClientOptions options;
   options.timer_period = std::chrono::milliseconds(1);
   options.connection_without_streams_keepalive = std::chrono::milliseconds(1);
+  options.close_empty_streams = true;
   auto client = CreateClient(std::move(options));
   auto handle = client->Subscribe(
       GuestTenant,
