@@ -17,15 +17,13 @@ def timeout(proc, runtime_in_secs):
     return True
 
 config = {
-    'clients': {
-        'foo': {'cmd': 'echo client'},
+    'processes': {
+        'foo': {'cmd': lambda x: 'echo ' + str(x)},
         'cat': {
             'cmd': 'cat',
             'invariant': timeout, # currently only works for clients
         },
         'fail': {'cmd': 'false'},
-    },
-    'servers': {
         'bar': {
             'cmd': 'echo server',
             # obviously this makes no sense in real life..
@@ -38,14 +36,17 @@ config = {
     },
     'tests': [
         {
+            'test_name': 'basic startup and shutdown',
             'client': 'foo',
             'server': 'bar',
             'hosts': {
+                'clients_per_host': 8,
                 'client_count': 1, # you may specify either client or
                                    # server count, neither or both
             },
         },
         {
+            'test_name': 'client timeout; server hangs',
             'client': 'cat',
             'server': 'quux',
             'hosts': {
@@ -53,9 +54,11 @@ config = {
             },
         },
         {
+            'test_name': 'client fails; server hangs',
             'client': 'fail',
             'server': 'quux',
             'hosts': {
+                'client_count': 3,
                 'server_count': 1,
             },
         },

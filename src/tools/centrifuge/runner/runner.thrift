@@ -23,7 +23,7 @@ service ProcessRunner {
   HealthStatus ping(),
 
   // return true when the client has begun running successfully
-  bool run(1: string proc, 2: string key),
+  bool run(1: string proc, 2: i32 nth, 3: string key),
 
   // idempotently stop process for key
   bool stop(1: string key),

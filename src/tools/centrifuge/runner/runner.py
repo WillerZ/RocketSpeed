@@ -37,11 +37,13 @@ class ProcessRunnerHandler:
     def ping(self):
         return Svc.HealthStatus.HEALTHY
 
-    def run(self, proc, key):
+    def run(self, proc, nth, key):
         config = self.config.get(proc, {})
         args = config.get('cmd')
         if not args:
             return False
+        if callable(args):
+            args = args(nth)
         self.stop(key)
         p = sp.Popen(args, shell=True)
         self.procs[key] = (p, time.time(), config)
@@ -112,26 +114,26 @@ def close_all(clients):
     for k, v in clients:
         close(*v)
 
-def run_everywhere(runners, proc, key):
-    for host, runner in runners:
-        if not runner[1].run(proc, key):
+def run_everywhere(runners):
+    for host, runner, proc, nth, key in runners:
+        if not runner[1].run(proc, nth, key):
             raise Exception('Running %s on host %s failed.' % (proc, host))
 
-def stop_everywhere(runners, key):
-    for host, runner in runners:
+def stop_everywhere(runners):
+    for host, runner, _, _, key in runners:
         if not runner[1].stop(key):
             raise Exception('Stopping %s on host %s failed.' % (key, host))
 
-def check_proc_everywhere(runners, key):
-    return {
-        host: runner[1].poll_running_proc(key)
-        for host, runner in runners
-    }
+def check_proc_everywhere(runners):
+    return [
+        (host, runner[1].poll_running_proc(key))
+        for host, runner, _, _, key in runners
+    ]
 
 def states_in_state(states, state):
-    return {
-        host: s for host, s in states.items() if s.status == state
-    }
+    return [
+        (host, s) for host, s in states if s.status == state
+    ]
 
 def nothing_failed(states):
     count = len(states)
@@ -145,7 +147,7 @@ def all_clients_finished_successfully(states):
 def summarize_test(states):
     def data(state):
         filtered = states_in_state(states, state)
-        msg = ['[%s - %s]' % (host, state.message) for host, state in filtered.items()]
+        msg = ['[%s - %s]' % (host, state.message) for host, state in filtered]
         return (len(filtered), ' '.join(msg))
     stopped = data(Svc.ProcessStatus.STOPPED)
     running = data(Svc.ProcessStatus.RUNNING)
@@ -157,32 +159,36 @@ def summarize_test(states):
     log.orchestrate('Summary: %s clients with invariant failures %s' % invariant_failed)
 
 def log_stopped_clients(stopped_clients, states):
-    for host in states_in_state(states, Svc.ProcessStatus.STOPPED).keys():
-        if not host in stopped_clients:
+    if stopped_clients is None:
+        ret = {}
+        for host, _ in states:
+            ret[host] = ret.get(host, 0) + 1
+        return ret
+
+    for host, _ in states_in_state(states, Svc.ProcessStatus.STOPPED):
+        new_count = stopped_clients.get(host, 1) - 1
+        stopped_clients[host] = new_count
+        if new_count < 1:
             log.info("%s finished successfully" % host)
-            stopped_clients.add(host)
 
-def orchestrate_test(client_runners, server_runners, client, server):
+def orchestrate_test(clients, servers):
     try:
-        log.orchestrate('server: %s client: %s' % (server, client))
-
-        run_everywhere(server_runners, server, 'server')
-        log.info("Server is up on %s host(s)" % len(server_runners))
+        run_everywhere(servers)
+        log.info("All servers started")
 
         start = time.localtime()
 
-        run_everywhere(client_runners, client, 'client')
-        log.info("Client has started on %s host(s)" % len(client_runners))
+        run_everywhere(clients)
+        log.info("All clients started")
 
-        stopped_clients = set()
-        states = check_proc_everywhere(client_runners, 'client')
-        log_stopped_clients(stopped_clients, states)
+        states = check_proc_everywhere(clients)
+        stopped_clients = log_stopped_clients(None, states)
         while nothing_failed(states):
             if all_clients_finished_successfully(states):
                 log.orchestrate('TEST SUCCEEDED -- all clients finished gracefully')
                 return (True, start)
             time.sleep(1)
-            states = check_proc_everywhere(client_runners, 'client')
+            states = check_proc_everywhere(clients)
             log_stopped_clients(stopped_clients, states)
         log.orchestrate('TEST FAILED')
         summarize_test(states)
@@ -190,8 +196,10 @@ def orchestrate_test(client_runners, server_runners, client, server):
         log.orchestrate('TEST EXPLODED')
         traceback.print_exc(file=sys.stdout)
     finally:
-        stop_everywhere(server_runners, 'server')
-        stop_everywhere(client_runners, 'client')
+        stop_everywhere(servers)
+        log.info("Stopped servers")
+        stop_everywhere(clients)
+        log.info("Stopped clients")
     return (False, start)
 
 def summarize_tests(test_results):
@@ -215,7 +223,7 @@ def partition(hosts, config):
     if not servers:
         servers = len(hosts) - clients
 
-    return (hosts[0:clients], hosts[clients:])
+    return (hosts[0:clients], hosts[clients:][-servers:])
 
 def orchestrate(clients, tests):
     # block until everyone is up and ready to take requests
@@ -224,12 +232,35 @@ def orchestrate(clients, tests):
     log.info('All runners up and responding')
 
     for i, test in enumerate(tests):
+        name = test.get('test_name', '<name not provided>')
+        server = test['server']
+        client = test['client']
+
         log.orchestrate('-' * 50)
-        log.orchestrate('Starting test %s of %s' % (i+1, len(tests)))
+        log.orchestrate('Starting test \'%s\' (%s of %s)' %
+                        (name, i+1, len(tests)))
+        log.orchestrate('server: %s client: %s' % (server, client))
+
         start = time.time()
+
+        client_runners, server_runners = partition(clients, test.get('hosts', {}))
+        clients_per_host = test.get('hosts', {}).get('clients_per_host', 1)
+        servers_per_host = test.get('hosts', {}).get('servers_per_host', 1)
+        clients_to_run = [(*runner, client, i, 'client-%s' % i)
+                          for i in range(clients_per_host)
+                          for runner in client_runners]
+        servers_to_run = [(*runner, server, i, 'server-%s' % i)
+                          for i in range(servers_per_host)
+                          for runner in server_runners]
+
+        log.info("Will attempt to start %s clients on %s hosts" %
+                 (len(clients_to_run), len(client_runners)))
+        log.info("Will attempt to start %s servers on %s hosts" %
+                 (len(servers_to_run), len(server_runners)))
+
         test['success'], test['start_time'] = orchestrate_test(
-            *partition(clients, test.get('hosts', {})),
-            test['client'], test['server'])
+            clients_to_run, servers_to_run)
+
         test['test_duration'] = int(time.time() - start)
         yield test
 
@@ -240,8 +271,7 @@ def create_runner(env, config):
     runner_port = 8090
 
     log.info("Acting as a process runner")
-    processes = {**config['clients'], **config['servers']}
-    handler = ProcessRunnerHandler(processes)
+    handler = ProcessRunnerHandler(config.get('processes', {}))
     processor = ProcessRunner.Processor(handler)
     thread = start_runner(runner_port, handler, processor)
 
