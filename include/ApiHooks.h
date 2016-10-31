@@ -42,7 +42,7 @@ class ClientHooks {
   /**
    * Called when MessageReceived() was called on the observer.
    */
-  virtual void OnMessageReceived(MessageReceived* msg) = 0;
+  virtual void OnMessageReceived(const MessageReceived* msg) = 0;
   /**
    * Called when OnSubscriptionStatusChange() was called on observer.
    */

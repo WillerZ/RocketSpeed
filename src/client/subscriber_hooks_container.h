@@ -92,8 +92,8 @@ class SubscriberHooksContainer {
     virtual void OnStartSubscription() final {}
     virtual void OnAcknowledge(SequenceNumber) final {}
     virtual void OnTerminateSubscription() final {}
-    virtual void OnReceiveTerminate() final {};
-    virtual void OnMessageReceived(MessageReceived*) final {}
+    virtual void OnReceiveTerminate() final{};
+    virtual void OnMessageReceived(const MessageReceived*) final {}
     virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) final {}
     virtual void OnDataLoss(const DataLossInfo&) final {}
   };

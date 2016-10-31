@@ -31,7 +31,7 @@ class SubscriberHooks {
   virtual void OnAcknowledge(SequenceNumber seqno) = 0;
   virtual void OnTerminateSubscription() = 0;
   virtual void OnReceiveTerminate() = 0;
-  virtual void OnMessageReceived(MessageReceived* msg) = 0;
+  virtual void OnMessageReceived(const MessageReceived* msg) = 0;
   virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) = 0;
   virtual void OnDataLoss(const DataLossInfo& info) = 0;
 };

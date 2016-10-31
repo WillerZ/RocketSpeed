@@ -439,7 +439,7 @@ class Client {
    *
    * @params params A subscription specific to the job.
    * @params job A function to be called.
-   * @return true iff the job was successfully scheduled to be exacuted
+   * @return true iff the job was successfully scheduled to be executed
    */
   virtual bool CallInSubscriptionThread(SubscriptionParameters params,
                                         std::function<void()> job) {

@@ -53,7 +53,7 @@ class SubscriberHooksAdapter : public SubscriberHooks {
   }
   virtual void OnTerminateSubscription() override { hooks_->OnUnsubscribe(); }
   virtual void OnReceiveTerminate() override { hooks_->OnReceiveTerminate(); }
-  virtual void OnMessageReceived(MessageReceived* msg) override {
+  virtual void OnMessageReceived(const MessageReceived* msg) override {
     hooks_->OnMessageReceived(msg);
   }
   virtual void OnSubscriptionStatusChange(
