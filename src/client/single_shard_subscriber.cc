@@ -375,7 +375,7 @@ void Subscriber::ReceiveTerminate(
   hooks_[sub_id].OnSubscriptionStatusChange(sub_status);
   info.GetObserver()->OnSubscriptionStatusChange(sub_status);
 
-  hooks_[sub_id].OnTerminateSubscription();
+  hooks_[sub_id].OnReceiveTerminate();
   last_acks_map_.erase(sub_id);
 
   // Decrement number of active subscriptions

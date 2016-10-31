@@ -52,6 +52,7 @@ class SubscriberHooksAdapter : public SubscriberHooks {
     hooks_->OnAcknowledge(seqno);
   }
   virtual void OnTerminateSubscription() override { hooks_->OnUnsubscribe(); }
+  virtual void OnReceiveTerminate() override { hooks_->OnReceiveTerminate(); }
   virtual void OnMessageReceived(MessageReceived* msg) override {
     hooks_->OnMessageReceived(msg);
   }

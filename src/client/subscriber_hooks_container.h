@@ -6,10 +6,11 @@
 
 #pragma once
 
+#include <assert.h>
 #include <memory>
 #include <unordered_map>
 
-#include <assert.h>
+#include "src/client/subscriber_if.h"
 
 namespace rocketspeed {
 
@@ -91,6 +92,7 @@ class SubscriberHooksContainer {
     virtual void OnStartSubscription() final {}
     virtual void OnAcknowledge(SequenceNumber) final {}
     virtual void OnTerminateSubscription() final {}
+    virtual void OnReceiveTerminate() final {};
     virtual void OnMessageReceived(MessageReceived*) final {}
     virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) final {}
     virtual void OnDataLoss(const DataLossInfo&) final {}

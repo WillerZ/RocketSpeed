@@ -109,6 +109,10 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
 
   /** Number of active subscriptions in this thread across shards. */
   std::shared_ptr<size_t> num_active_subscriptions_;
+
+  /** stash of hooks for not (yet) existing subscribers */
+  using HooksMap = std::unordered_map<HooksParameters, std::shared_ptr<SubscriberHooks>>;
+  std::unordered_map<ShardID, HooksMap> pending_hooks_;
 };
 
 }  // namespace rocketspeed

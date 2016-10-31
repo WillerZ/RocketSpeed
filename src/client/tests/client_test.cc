@@ -1751,6 +1751,7 @@ class TestHooks : public SubscriberHooks {
   virtual void OnStartSubscription() override { called_ = true; }
   virtual void OnAcknowledge(SequenceNumber seqno) override { called_ = true; }
   virtual void OnTerminateSubscription() override { called_ = true; }
+  virtual void OnReceiveTerminate() override { called_ = true; };
   virtual void OnMessageReceived(MessageReceived*) override { called_ = true; }
   virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) override {
     called_ = true;

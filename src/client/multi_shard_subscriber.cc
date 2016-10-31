@@ -76,7 +76,7 @@ void MultiShardSubscriber::InstallHooks(
   if (it != subscribers_.end()) {
     it->second->InstallHooks(params, hooks);
   } else {
-    hooks_[shard_id].emplace(params, hooks);
+    pending_hooks_[shard_id].emplace(params, hooks);
   }
 }
 
@@ -85,10 +85,10 @@ void MultiShardSubscriber::UnInstallHooks(const HooksParameters& params) {
       options_.sharding->GetShard(params.namespace_id, params.topic_name);
   auto it = subscribers_.find(shard_id);
   if (it == subscribers_.end()) {
-    auto& shard_hooks = hooks_[shard_id];
+    auto& shard_hooks = pending_hooks_[shard_id];
     shard_hooks.erase(params);
     if (shard_hooks.empty()) {
-      hooks_.erase(shard_id);
+      pending_hooks_.erase(shard_id);
     }
   } else {
     it->second->UnInstallHooks(params);
@@ -144,12 +144,12 @@ void MultiShardSubscriber::StartSubscription(
           new TailCollapsingSubscriber(std::unique_ptr<Subscriber>(sub)));
     }
 
-    auto hooks = hooks_.find(shard_id);
-    if (hooks != hooks_.end()) {
+    auto hooks = pending_hooks_.find(shard_id);
+    if (hooks != pending_hooks_.end()) {
       for (auto& p : hooks->second) {
         subscriber->InstallHooks(p.first, p.second);
       }
-      hooks_.erase(hooks);
+      pending_hooks_.erase(hooks);
     }
 
     // Put it back in the map so it can be reused.

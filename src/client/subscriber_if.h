@@ -29,8 +29,8 @@ class SubscriberHooks {
   virtual void SubscriptionExists() = 0;
   virtual void OnStartSubscription() = 0;
   virtual void OnAcknowledge(SequenceNumber seqno) = 0;
-  // TODO: ReceiveTerminate vs TerminateSubscription
   virtual void OnTerminateSubscription() = 0;
+  virtual void OnReceiveTerminate() = 0;
   virtual void OnMessageReceived(MessageReceived* msg) = 0;
   virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) = 0;
   virtual void OnDataLoss(const DataLossInfo& info) = 0;

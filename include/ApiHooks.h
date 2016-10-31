@@ -32,6 +32,10 @@ class ClientHooks {
    */
   virtual void OnUnsubscribe() = 0;
   /**
+   * Called when server terminated the subscription.
+   */
+  virtual void OnReceiveTerminate() = 0;
+  /**
    * Called when Acknowledge() was called on the client.
    */
   virtual void OnAcknowledge(SequenceNumber seqno) = 0;
