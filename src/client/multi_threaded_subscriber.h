@@ -39,7 +39,7 @@ class MultiThreadedSubscriber {
                           std::shared_ptr<MsgLoop> msg_loop);
 
   void InstallHooks(const HooksParameters& params,
-                      std::shared_ptr<SubscriberHooks> hooks);
+                    std::shared_ptr<SubscriberHooks> hooks);
   void UnInstallHooks(const HooksParameters& params);
 
   /**
@@ -79,7 +79,7 @@ class MultiThreadedSubscriber {
    * overflow.
    */
   bool CallInSubscriptionThread(SubscriptionParameters parameters,
-        std::function<void()> job);
+                                std::function<void()> job);
 
   Statistics GetStatisticsSync();
 

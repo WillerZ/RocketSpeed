@@ -12,7 +12,7 @@ namespace rocketspeed {
 /**
  * Interface letting user to trace or debug Client with a set of hooks
  * corresponding to its API.
- * Multithread clients will callback from thread specific 
+ * Multithread clients will callback from thread specific
  * to particular subscription.
  */
 class ClientHooks {
@@ -42,7 +42,7 @@ class ClientHooks {
   /**
    * Called when OnSubscriptionStatusChange() was called on observer.
    */
-  virtual void OnSubscriptionStatusChange(const SubscriptionStatus& ) = 0;
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) = 0;
   /**
    * Called when OnDataLoss() was called on observer.
    */

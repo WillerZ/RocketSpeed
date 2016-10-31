@@ -125,7 +125,7 @@ std::atomic<int> MockObserver::deleted_count_;
 class MockSubscriber : public SubscriberIf
 {
   virtual void InstallHooks(const HooksParameters&,
-                              std::shared_ptr<SubscriberHooks>) override {
+                            std::shared_ptr<SubscriberHooks>) override {
     ASSERT_TRUE(false) << "Not supported";
   }
 
@@ -211,7 +211,8 @@ class MockSubscriber : public SubscriberIf
 
   virtual void NotifyHealthy(bool) override {}
 
-  bool CallInSubscriptionThread(SubscriptionParameters, std::function<void()> job) override {
+  bool CallInSubscriptionThread(SubscriptionParameters,
+                                std::function<void()> job) override {
     job();
     return true;
   }
@@ -1742,7 +1743,7 @@ TEST_F(ClientTest, ShadowedClientPredicate) {
   ASSERT_FALSE(shadow_unsub_semaphore.TimedWait(negative_timeout));
 }
 
-class SubscriberHooksTest: public ::testing::Test {};
+class SubscriberHooksTest : public ::testing::Test {};
 
 class TestHooks : public SubscriberHooks {
  public:
@@ -1750,17 +1751,19 @@ class TestHooks : public SubscriberHooks {
   virtual void OnStartSubscription() override { called_ = true; }
   virtual void OnAcknowledge(SequenceNumber seqno) override { called_ = true; }
   virtual void OnTerminateSubscription() override { called_ = true; }
-  virtual void OnMessageReceived(MessageReceived* ) override { called_ = true; }
-  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) override { called_ = true; }
-  virtual void OnDataLoss(const DataLossInfo& ) override { called_ = true; }
+  virtual void OnMessageReceived(MessageReceived*) override { called_ = true; }
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) override {
+    called_ = true;
+  }
+  virtual void OnDataLoss(const DataLossInfo&) override { called_ = true; }
   void reset() { called_ = false; }
   bool called() const { return called_; }
+
  private:
   bool called_ = false;
 };
 
 TEST_F(SubscriberHooksTest, HooksContainerTest) {
-
   const size_t num_hooks = 33;
   std::vector<HooksParameters> params;
   SubscriberHooksContainer container;
@@ -1801,7 +1804,7 @@ TEST_F(SubscriberHooksTest, HooksContainerTest) {
     ASSERT_FALSE(hooks[i]->called());
   }
 
-  // Uninstall, none should be called 
+  // Uninstall, none should be called
   for (size_t i = 0; i < num_hooks; ++i) {
     container.UnInstall(params[i]);
     container[sub_ids[i]].OnTerminateSubscription();

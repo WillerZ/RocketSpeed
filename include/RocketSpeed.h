@@ -434,7 +434,7 @@ class Client {
   virtual void ExportStatistics(StatisticsVisitor* visitor) const = 0;
 
   /**
-   * Calls the function on the thread dedicated for the subscription. 
+   * Calls the function on the thread dedicated for the subscription.
    * For single threaded clients it should be called synchronously.
    *
    * @params params A subscription specific to the job.
@@ -442,7 +442,7 @@ class Client {
    * @return true iff the job was successfully scheduled to be exacuted
    */
   virtual bool CallInSubscriptionThread(SubscriptionParameters params,
-                                          std::function<void()> job) {
+                                        std::function<void()> job) {
     RS_ASSERT(false) << "Not implemented";
     return false;
   }

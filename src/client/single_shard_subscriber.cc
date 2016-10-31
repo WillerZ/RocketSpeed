@@ -30,10 +30,11 @@ void UserDataCleanup(void* user_data) {
   delete static_cast<Observer*>(user_data);
 }
 
-bool DataMatchParams(const SubscriptionData& data, const HooksParameters& params) {
+bool DataMatchParams(const SubscriptionData& data,
+                     const HooksParameters& params) {
   return params.tenant_id == data.GetTenant() &&
-          params.namespace_id == data.GetNamespace() &&
-          params.topic_name == data.GetTopicName();
+         params.namespace_id == data.GetNamespace() &&
+         params.topic_name == data.GetTopicName();
 }
 
 }  // anonymous namespace
@@ -68,9 +69,11 @@ Subscriber::Subscriber(const ClientOptions& options,
   RefreshRouting();
 }
 
-void Subscriber::InstallHooks(const HooksParameters& params, std::shared_ptr<SubscriberHooks> hooks) {
+void Subscriber::InstallHooks(const HooksParameters& params,
+                              std::shared_ptr<SubscriberHooks> hooks) {
   hooks_.Install(params, hooks);
-  // TODO: this linear search to be removed when we change the data structure to be topic-oriented
+  // TODO: this linear search to be removed when we change the data structure to
+  // be topic-oriented
   subscriptions_map_.Iterate([&](const SubscriptionData& data) mutable {
     bool keep_iterating = true;
     if (DataMatchParams(data, params)) {

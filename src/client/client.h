@@ -14,15 +14,15 @@
 #include <unordered_set>
 
 #include "include/ApiHooks.h"
+#include "include/BaseEnv.h"
+#include "include/RocketSpeed.h"
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "include/RocketSpeed.h"
 #include "src/client/publisher.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/messages.h"
 #include "src/messages/stream_socket.h"
-#include "include/BaseEnv.h"
 #include "src/util/common/statistics.h"
 
 namespace rocketspeed {
@@ -111,7 +111,7 @@ class ClientImpl : public Client {
 
   void ExportStatistics(StatisticsVisitor* visitor) const override;
   bool CallInSubscriptionThread(SubscriptionParameters params,
-        std::function<void()> job) override;
+                                std::function<void()> job) override;
 
   Statistics GetStatisticsSync() const;
 

@@ -12,14 +12,14 @@
 #include "include/RocketSpeed.h"
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
-#include "src/client/subscriber_if.h"
-#include "src/util/common/subscription_id.h"
-#include "src/client/subscriber_hooks_container.h"
-#include "src/client/subscriptions_map.h"
 #include "src/client/resilient_receiver.h"
+#include "src/client/subscriber_hooks_container.h"
+#include "src/client/subscriber_if.h"
+#include "src/client/subscriptions_map.h"
 #include "src/messages/messages.h"
 #include "src/messages/types.h"
 #include "src/util/common/statistics.h"
+#include "src/util/common/subscription_id.h"
 
 namespace rocketspeed {
 
@@ -95,7 +95,8 @@ class Subscriber : public SubscriberIf {
 
   void NotifyHealthy(bool isHealthy) override;
 
-  bool CallInSubscriptionThread(SubscriptionParameters, std::function<void()> job) override {
+  bool CallInSubscriptionThread(SubscriptionParameters,
+                                std::function<void()> job) override {
     job();
     return true;
   }

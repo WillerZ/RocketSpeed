@@ -20,7 +20,7 @@ class SubscriptionParameters;
 /**
  * Interface letting user to trace or debug Subscriber with a set of hooks
  * corresponding to its API and Observer API.
- * Multithread clients will callback from thread specific 
+ * Multithread clients will callback from thread specific
  * to particular subscription.
  */
 class SubscriberHooks {
@@ -32,7 +32,7 @@ class SubscriberHooks {
   // TODO: ReceiveTerminate vs TerminateSubscription
   virtual void OnTerminateSubscription() = 0;
   virtual void OnMessageReceived(MessageReceived* msg) = 0;
-  virtual void OnSubscriptionStatusChange(const SubscriptionStatus& ) = 0;
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) = 0;
   virtual void OnDataLoss(const DataLossInfo& info) = 0;
 };
 
@@ -47,7 +47,7 @@ class SubscriberIf {
 
   /// Install hooks for specific subscription
   virtual void InstallHooks(const HooksParameters& params,
-                      std::shared_ptr<SubscriberHooks> hooks) = 0;
+                            std::shared_ptr<SubscriberHooks> hooks) = 0;
   /// Uninstall previously installed hooks
   virtual void UnInstallHooks(const HooksParameters& params) = 0;
 
@@ -115,6 +115,6 @@ class SubscriberIf {
   virtual void NotifyHealthy(bool isHealthy) = 0;
 
   virtual bool CallInSubscriptionThread(SubscriptionParameters params,
-    std::function<void()> job) = 0;
+                                        std::function<void()> job) = 0;
 };
 }  // namespace rocketspeed

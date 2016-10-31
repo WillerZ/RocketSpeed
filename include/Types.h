@@ -405,26 +405,25 @@ struct HooksParameters {
   NamespaceID namespace_id;
   Topic topic_name;
 
-  explicit HooksParameters(TenantID tid, NamespaceID nid, Topic topic) :
-    tenant_id(tid), namespace_id(nid), topic_name(topic) {}
+  explicit HooksParameters(TenantID tid, NamespaceID nid, Topic topic)
+      : tenant_id(tid), namespace_id(nid), topic_name(topic) {}
 
-  explicit HooksParameters(const SubscriptionParameters& p) :
-    tenant_id(p.tenant_id),
-    namespace_id(p.namespace_id),
-    topic_name(p.topic_name) {}
+  explicit HooksParameters(const SubscriptionParameters& p)
+      : tenant_id(p.tenant_id),
+        namespace_id(p.namespace_id),
+        topic_name(p.topic_name) {}
 
   bool operator==(const HooksParameters& other) const {
-    return tenant_id == other.tenant_id &&
-    namespace_id == other.namespace_id &&
-    topic_name == other.topic_name;
+    return tenant_id == other.tenant_id && namespace_id == other.namespace_id &&
+           topic_name == other.topic_name;
   }
 
   bool operator!=(const HooksParameters& params) const {
-    return !operator==(params); 
+    return !operator==(params);
   }
 };
 
-} // namespace rocketspeed
+}  // namespace rocketspeed
 
 namespace std {
 template <>
@@ -434,7 +433,7 @@ struct hash<rocketspeed::HooksParameters> {
   }
 };
 
-} // namespace std
+}  // namespace std
 
 namespace rocketspeed {
 

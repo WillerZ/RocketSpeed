@@ -68,10 +68,10 @@ MultiShardSubscriber::~MultiShardSubscriber() {
   subscribers_.clear();
 }
 
-void MultiShardSubscriber::InstallHooks(const HooksParameters& params, std::shared_ptr<SubscriberHooks> hooks) {
+void MultiShardSubscriber::InstallHooks(
+    const HooksParameters& params, std::shared_ptr<SubscriberHooks> hooks) {
   size_t shard_id =
-            options_.sharding->GetShard(params.namespace_id,
-                                        params.topic_name);
+      options_.sharding->GetShard(params.namespace_id, params.topic_name);
   auto it = subscribers_.find(shard_id);
   if (it != subscribers_.end()) {
     it->second->InstallHooks(params, hooks);
@@ -82,8 +82,7 @@ void MultiShardSubscriber::InstallHooks(const HooksParameters& params, std::shar
 
 void MultiShardSubscriber::UnInstallHooks(const HooksParameters& params) {
   size_t shard_id =
-            options_.sharding->GetShard(params.namespace_id,
-                                        params.topic_name);
+      options_.sharding->GetShard(params.namespace_id, params.topic_name);
   auto it = subscribers_.find(shard_id);
   if (it == subscribers_.end()) {
     auto& shard_hooks = hooks_[shard_id];

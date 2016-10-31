@@ -60,7 +60,8 @@ void ShadowedClient::SetDefaultCallbacks(
 ShadowedClient::~ShadowedClient() {
 }
 
-void ShadowedClient::InstallHooks(const HooksParameters& params, std::shared_ptr<ClientHooks> hooks) {
+void ShadowedClient::InstallHooks(const HooksParameters& params,
+                                  std::shared_ptr<ClientHooks> hooks) {
   client_->InstallHooks(params, hooks);
 }
 

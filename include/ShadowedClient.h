@@ -62,7 +62,8 @@ class ShadowedClient : public Client {
       DataLossCallback data_loss_callback)
       override;
 
-  void InstallHooks(const HooksParameters&, std::shared_ptr<ClientHooks> ) override;
+  void InstallHooks(const HooksParameters&,
+                    std::shared_ptr<ClientHooks>) override;
   void UnInstallHooks(const HooksParameters&) override;
 
   virtual PublishStatus Publish(const TenantID tenant_id,

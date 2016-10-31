@@ -19,12 +19,11 @@ namespace rocketspeed {
  */
 class SubscriberHooksContainer {
  public:
-
   /**
    * Add new hooks to container.
    */
   void Install(const HooksParameters& params,
-              std::shared_ptr<SubscriberHooks> hooks) {
+               std::shared_ptr<SubscriberHooks> hooks) {
     bool inserted = to_be_hooked_.emplace(params, hooks).second;
     assert(inserted);
   }
@@ -46,7 +45,7 @@ class SubscriberHooksContainer {
   }
 
   /**
-   * Should be called on new subscription. 
+   * Should be called on new subscription.
    */
   void SubscriptionStarted(const HooksParameters& params, SubscriptionID id) {
     assert(currently_hooked_.find(params) == currently_hooked_.end());
@@ -90,20 +89,25 @@ class SubscriberHooksContainer {
   class NoopHooks : public SubscriberHooks {
     virtual void SubscriptionExists() final {}
     virtual void OnStartSubscription() final {}
-    virtual void OnAcknowledge(SequenceNumber ) final {}
+    virtual void OnAcknowledge(SequenceNumber) final {}
     virtual void OnTerminateSubscription() final {}
-    virtual void OnMessageReceived(MessageReceived* ) final {}
+    virtual void OnMessageReceived(MessageReceived*) final {}
     virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) final {}
-    virtual void OnDataLoss(const DataLossInfo& ) final {}
+    virtual void OnDataLoss(const DataLossInfo&) final {}
   };
   /** Called when no hooks for subscription were installed */
   NoopHooks noop_hooks_;
-  /** Hooks are kept here when there's now subscription (yet) for the parameters */
-  std::unordered_map<HooksParameters, std::shared_ptr<SubscriberHooks>> to_be_hooked_;
-  /** Mapping kept when subscriptions exists (i.e. has SubscriptionID assigned) */
+  /** Hooks are kept here when there's now subscription (yet) for the parameters
+   */
+  std::unordered_map<HooksParameters, std::shared_ptr<SubscriberHooks>>
+      to_be_hooked_;
+  /** Mapping kept when subscriptions exists (i.e. has SubscriptionID assigned)
+   */
   std::unordered_map<HooksParameters, SubscriptionID> currently_hooked_;
   struct HooksWithParams {
-    explicit HooksWithParams(std::shared_ptr<SubscriberHooks> _hooks, const HooksParameters& _params) : hooks(_hooks), params(_params) {}
+    explicit HooksWithParams(std::shared_ptr<SubscriberHooks> _hooks,
+                             const HooksParameters& _params)
+        : hooks(_hooks), params(_params) {}
 
     std::shared_ptr<SubscriberHooks> hooks;
     HooksParameters params;
