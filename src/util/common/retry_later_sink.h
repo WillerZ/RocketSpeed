@@ -40,8 +40,14 @@ class RetryLaterSink : public SinkWithOverflow<T> {
  protected:
   bool TryWrite(T& value) final override {
     // Check if we are after the requested retry time.
-    if (std::chrono::steady_clock::now() < next_time_) {
-      return false;
+    if (next_time_ != Clock::time_point()) {
+      // We have a fast path where next_time_ == Clock::time_point() to avoid
+      // querying for time on every write (which is slower than needed).
+      if (std::chrono::steady_clock::now() < next_time_) {
+        return false;
+      }
+      // Once now() >= next_time_, it will never be < until we reset next_time_.
+      next_time_ = Clock::time_point();
     }
     const BackPressure backoff = handler_(value);
     if (backoff) {
@@ -54,8 +60,9 @@ class RetryLaterSink : public SinkWithOverflow<T> {
   }
 
  private:
+  using Clock = std::chrono::steady_clock;
   std::function<BackPressure(T&)> handler_;
-  std::chrono::steady_clock::time_point next_time_;
+  Clock::time_point next_time_;
 };
 
 } // naemspace rocketspeed

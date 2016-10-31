@@ -8,7 +8,7 @@
 
 namespace rocketspeed {
 
-Status::Status() : code_(Code::kOk), state_("") { }
+Status::Status() : code_(Code::kOk), state_() { }
 
 // Return a success status.
 Status Status::OK() { return Status(); }

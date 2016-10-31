@@ -120,8 +120,8 @@ class Stream : public Sink<SharedTimestampedString> {
   const StreamID local_id_;
   /** An object to accept received messages. */
   StreamReceiver* receiver_;
-  /** Name of the sink for debugging. */
-  std::string sink_name_;
+  /** Name of the remove host for debugging. */
+  std::string host_name_;
 };
 
 }  // namespace rocketspeed
