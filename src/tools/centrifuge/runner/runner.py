@@ -171,6 +171,10 @@ def log_stopped_clients(stopped_clients, states):
         if new_count < 1:
             log.info("%s finished successfully" % host)
 
+def log_failed_servers(states):
+    msgs = ['[%s - %s]' % (host, state.message) for host, state in states]
+    log.orchestrate('Server(s) failed invariant checks: %s' % ' '.join(msgs))
+
 def orchestrate_test(clients, servers):
     try:
         run_everywhere(servers)
@@ -187,9 +191,18 @@ def orchestrate_test(clients, servers):
             if all_clients_finished_successfully(states):
                 log.orchestrate('TEST SUCCEEDED -- all clients finished gracefully')
                 return (True, start)
+
             time.sleep(1)
+
             states = check_proc_everywhere(clients)
             log_stopped_clients(stopped_clients, states)
+
+            failed_server_states = states_in_state(check_proc_everywhere(servers),
+                                                   Svc.ProcessStatus.INVARIANT_FAILED)
+            if len(failed_server_states) > 0:
+                log_failed_servers(failed_server_states)
+                break
+
         log.orchestrate('TEST FAILED')
         summarize_test(states)
     except Exception as e:
@@ -204,7 +217,7 @@ def orchestrate_test(clients, servers):
 
 def summarize_tests(test_results):
     count_succeeded = sum(1 for x in test_results if x['success'])
-    log.orchestrate('-' * 80)
+    log.orchestrate('-' * 50)
     log.orchestrate('')
     log.orchestrate('Ran %s tests. %s succeeded. %s failed.' %
                     (len(test_results),
@@ -212,8 +225,8 @@ def summarize_tests(test_results):
                      len(test_results) - count_succeeded))
 
 def partition(hosts, config):
-    clients = config.get('client_count')
-    servers = config.get('server_count')
+    clients = config.get('client_host_count')
+    servers = config.get('server_host_count')
     if not clients and not servers:
         # split 50:50
         clients = len(hosts) / 2
@@ -239,17 +252,16 @@ def orchestrate(clients, tests):
         log.orchestrate('-' * 50)
         log.orchestrate('Starting test \'%s\' (%s of %s)' %
                         (name, i+1, len(tests)))
-        log.orchestrate('server: %s client: %s' % (server, client))
 
         start = time.time()
 
         client_runners, server_runners = partition(clients, test.get('hosts', {}))
         clients_per_host = test.get('hosts', {}).get('clients_per_host', 1)
         servers_per_host = test.get('hosts', {}).get('servers_per_host', 1)
-        clients_to_run = [(*runner, client, i, 'client-%s' % i)
+        clients_to_run = [(*runner, client['key'], i, 'client-%s' % i)
                           for i in range(clients_per_host)
                           for runner in client_runners]
-        servers_to_run = [(*runner, server, i, 'server-%s' % i)
+        servers_to_run = [(*runner, server['key'], i, 'server-%s' % i)
                           for i in range(servers_per_host)
                           for runner in server_runners]
 
@@ -267,11 +279,28 @@ def orchestrate(clients, tests):
     summarize_tests(tests)
     close_all(clients)
 
+def build_processes(tests):
+    acc = {}
+    for i, test in enumerate(tests):
+        key = 'client-%s' % i
+        client = test['client']
+        client['key'] = key
+        acc[key] = client
+
+        key = 'server-%s' % i
+        server = test['server']
+        server['key'] = key
+        acc[key] = server
+
+    return acc
+
 def create_runner(env, config):
     runner_port = 8090
 
+    tests = config.get('tests', [])
+
     log.info("Acting as a process runner")
-    handler = ProcessRunnerHandler(config.get('processes', {}))
+    handler = ProcessRunnerHandler(build_processes(tests))
     processor = ProcessRunner.Processor(handler)
     thread = start_runner(runner_port, handler, processor)
 
@@ -288,7 +317,7 @@ def create_runner(env, config):
             if len(clients) < 2:
                 raise Exception('Need at least one runner for each clients and servers: %s' %
                                 clients)
-            for test in orchestrate(clients, config.get('tests', [])):
+            for test in orchestrate(clients, tests):
                 yield test
 
         else:

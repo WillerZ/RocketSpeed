@@ -17,49 +17,66 @@ def timeout(proc, runtime_in_secs):
     return True
 
 config = {
-    'processes': {
-        'foo': {'cmd': lambda x: 'echo ' + str(x)},
-        'cat': {
-            'cmd': 'cat',
-            'invariant': timeout, # currently only works for clients
-        },
-        'fail': {'cmd': 'false'},
-        'bar': {
-            'cmd': 'echo server',
-            # obviously this makes no sense in real life..
-            'is_started': lambda proc: proc.wait() == 0
-        },
-        'quux': {
-            'cmd': 'cat',
-            'is_started': wait, # can be specified for servers or clients
-        }
-    },
     'tests': [
         {
             'test_name': 'basic startup and shutdown',
-            'client': 'foo',
-            'server': 'bar',
+            'client': {
+                'cmd': lambda x: 'echo ' + str(x),
+            },
+            'server': {
+                'cmd': 'echo server',
+                # obviously this makes no sense in real life..
+                'is_started': lambda proc: proc.wait() == 0
+            },
             'hosts': {
                 'clients_per_host': 8,
-                'client_count': 1, # you may specify either client or
-                                   # server count, neither or both
+                'client_host_count': 1, # you may specify either client or
+                # server count, neither or both
             },
         },
+
         {
             'test_name': 'client timeout; server hangs',
-            'client': 'cat',
-            'server': 'quux',
+            'client': {
+                'cmd': 'cat',
+                'invariant': timeout,
+            },
+            'server': {
+                'cmd': 'cat',
+                'is_started': wait, # can be specified for servers or clients
+            },
             'hosts': {
-                'server_count': 1,
+                'server_host_count': 1,
             },
         },
+
+        {
+            'test_name': 'client hangs; server timeout',
+            'client': {
+                'cmd': 'cat',
+            },
+            'server': {
+                'cmd': 'cat',
+                'is_started': wait, # can be specified for servers or clients
+                'invariant': timeout,
+            },
+            'hosts': {
+                'server_host_count': 1,
+            },
+        },
+
         {
             'test_name': 'client fails; server hangs',
-            'client': 'fail',
-            'server': 'quux',
+            'client': {
+                'cmd': 'false'
+            },
+            'server': {
+                'cmd': 'cat',
+                'is_started': wait, # can be specified for servers or clients
+            },
             'hosts': {
-                'client_count': 3,
-                'server_count': 1,
+                'client_host_count': 3,
+                'server_host_count': 1,
             },
         },
     ],
