@@ -5,7 +5,13 @@
 //
 #pragma once
 
-#ifndef NO_RS_ASSERT
+// If NO_RS_ASSERT_DBG isn't set by compiler then automatically set it if we
+// are not in debug mode.
+#ifndef NO_RS_ASSERT_DBG
+# ifdef NDEBUG
+#  define NO_RS_ASSERT_DBG
+# endif
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,22 +32,6 @@ class RSAssertion : public std::ostringstream {
   }
 };
 
-// bang turns off 'value computed is not used' error
-inline bool bang(bool in) {
-  return !in;
-}
-
-}
-
-// you need C++11 support for literal string to work as 1st argument.
-// C++03 binds it to operator<<(const void *) and prints its address.
-#define RS_ASSERT(cond) \
-  rocketspeed::bang(!!(cond)) \
-  && rocketspeed::RSAssertion(#cond, __FILE__, __LINE__, __FUNCTION__)
-#else
-
-namespace rocketspeed {
-
 class RSNoAssertion {
  public:
   RSNoAssertion(bool ) {
@@ -53,8 +43,28 @@ class RSNoAssertion {
   }
 };
 
+// bang turns off 'value computed is not used' error
+inline bool bang(bool in) {
+  return !in;
 }
 
-#define RS_ASSERT(cond) if (0) rocketspeed::RSNoAssertion(!!(cond))
+}
 
+// you need C++11 support for literal string to work as 1st argument.
+// C++03 binds it to operator<<(const void *) and prints its address.
+#ifndef NO_RS_ASSERT
+# define RS_ASSERT(cond) \
+   rocketspeed::bang(!!(cond)) \
+   && rocketspeed::RSAssertion(#cond, __FILE__, __LINE__, __FUNCTION__)
+#else
+# define RS_ASSERT(cond) if (0) rocketspeed::RSNoAssertion(!!(cond))
+#endif
+
+
+#ifndef NO_RS_ASSERT_DBG
+# define RS_ASSERT_DBG(cond) \
+   rocketspeed::bang(!!(cond)) \
+   && rocketspeed::RSAssertion(#cond, __FILE__, __LINE__, __FUNCTION__)
+#else
+# define RS_ASSERT_DBG(cond) if (0) rocketspeed::RSNoAssertion(!!(cond))
 #endif

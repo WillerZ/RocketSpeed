@@ -26,7 +26,7 @@ class SubscriberHooksContainer {
   void Install(const HooksParameters& params,
                std::shared_ptr<SubscriberHooks> hooks) {
     bool inserted = to_be_hooked_.emplace(params, hooks).second;
-    assert(inserted);
+    RS_ASSERT_DBG(inserted);
   }
 
   /**
@@ -40,7 +40,7 @@ class SubscriberHooksContainer {
     RS_ASSERT(it != currently_hooked_.end()) << "wrong call";
     if (it != currently_hooked_.end()) {
       bool erased = hooks_.erase(it->second);
-      assert(erased);
+      RS_ASSERT_DBG(erased);
       currently_hooked_.erase(it);
     }
   }
@@ -49,13 +49,13 @@ class SubscriberHooksContainer {
    * Should be called on new subscription.
    */
   void SubscriptionStarted(const HooksParameters& params, SubscriptionID id) {
-    assert(currently_hooked_.find(params) == currently_hooked_.end());
+    RS_ASSERT_DBG(currently_hooked_.find(params) == currently_hooked_.end());
     auto it = to_be_hooked_.find(params);
     if (it != to_be_hooked_.end()) {
       auto in = currently_hooked_.emplace(params, id).second;
-      assert(in);
+      RS_ASSERT_DBG(in);
       hooks_.emplace(id, HooksWithParams(it->second, params));
-      assert(in);
+      RS_ASSERT_DBG(in);
       to_be_hooked_.erase(it);
     }
   }
@@ -67,7 +67,7 @@ class SubscriberHooksContainer {
     auto it = hooks_.find(id);
     if (it != hooks_.end()) {
       auto erased = currently_hooked_.erase(it->second.params);
-      assert(erased);
+      RS_ASSERT_DBG(erased);
       to_be_hooked_.emplace(it->second.params, it->second.hooks);
       hooks_.erase(it);
     }
