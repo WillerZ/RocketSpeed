@@ -21,6 +21,7 @@
 #include "src/util/common/nonmovable.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/subscription_id.h"
+#include "src/util/timeout_list.h"
 
 namespace rocketspeed {
 
@@ -77,6 +78,8 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   }
 
  private:
+  void GarbageCollectInactiveSubscribers();
+
   /** Options, whose lifetime must be managed by the owning client. */
   const ClientOptions& options_;
   /** An event loop object this subscriber runs on. */
@@ -114,6 +117,12 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   using HooksMap =
       std::unordered_map<HooksParameters, std::shared_ptr<SubscriberHooks>>;
   std::unordered_map<ShardID, HooksMap> pending_hooks_;
+
+  /**
+   * List of empty shards. This adds hysteresis to the cleanup process to avoid
+   * rapid oscillations in the number of active streams.
+   */
+  TimeoutList<ShardID> inactive_shards_;
 };
 
 }  // namespace rocketspeed
