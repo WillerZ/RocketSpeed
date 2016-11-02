@@ -9,7 +9,7 @@
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/testutil.h"
-#include "src/util/xxhash.h"
+#include "external/xxhash/xxhash.h"
 
 #include "stdlib.h"
 #include "stdio.h"
