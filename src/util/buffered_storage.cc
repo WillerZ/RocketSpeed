@@ -10,7 +10,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include "external/folly/move_wrapper.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/thread_check.h"
@@ -117,15 +116,14 @@ class BufferedLogStorageWorker {
       stats_.batch_latency_us->Record(batch_latency.count());
 
       // Capture the context so that the slices are still valid.
-      auto context = folly::makeMoveWrapper(std::move(it->second.requests));
-
       storage_->AppendAsync(
         log_id,
         std::move(encoded),
-        [this, context] (Status st, SequenceNumber seqno) {
-          for (size_t i = 0; i < context->size(); ++i) {
+        [this, context = std::move(it->second.requests)]
+        (Status st, SequenceNumber seqno) {
+          for (size_t i = 0; i < context.size(); ++i) {
             // Invoke callback on original requests with modified seqno.
-            (*context)[i].callback(st, seqno << batch_bits_ | i);
+            context[i].callback(st, seqno << batch_bits_ | i);
           }
         });
       queues_.erase(it);
@@ -219,10 +217,10 @@ Status BufferedLogStorage::AppendAsync(LogID id,
   // Send to the worker thread for batching, sharded by log so that all
   // requests for a log go to the same thread (better batching).
   int worker_id = static_cast<int>(id % msg_loop_->GetNumWorkers());
-  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
   std::unique_ptr<Command> cmd(MakeExecuteCommand(
-    [this, id, data = std::move(data), moved_callback, worker_id] () mutable {
-      workers_[worker_id]->Enqueue(id, std::move(data), moved_callback.move());
+    [this, id, data = std::move(data), callback = std::move(callback),
+        worker_id] () mutable {
+      workers_[worker_id]->Enqueue(id, std::move(data), std::move(callback));
     }));
   return msg_loop_->SendCommand(std::move(cmd), worker_id);
 }
@@ -232,13 +230,12 @@ Status BufferedLogStorage::FindTimeAsync(
   std::chrono::milliseconds timestamp,
   std::function<void(Status, SequenceNumber)> callback) {
   // Forward to underlying storage.
-  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
   return storage_->FindTimeAsync(
     id,
     timestamp,
-    [this, moved_callback] (Status st, SequenceNumber seqno) {
+    [this, callback = std::move(callback)] (Status st, SequenceNumber seqno) {
       // Adjust seqno and invoke callback.
-      (*moved_callback)(st, seqno << batch_bits_);
+      callback(st, seqno << batch_bits_);
     });
 }
 

@@ -17,7 +17,6 @@
 #include <unordered_set>
 
 #include "external/folly/Memory.h"
-#include "external/folly/move_wrapper.h"
 
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"

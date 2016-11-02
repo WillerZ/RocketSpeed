@@ -15,8 +15,6 @@
 #include "src/copilot/copilot.h"
 #include "src/rollcall/rollcall_impl.h"
 
-#include "external/folly/move_wrapper.h"
-
 namespace rocketspeed {
 
 CopilotWorker::CopilotWorker(
@@ -69,10 +67,9 @@ CopilotWorker::WorkerCommand(LogID logid,
                              std::unique_ptr<Message> msg,
                              int worker_id,
                              StreamID origin) {
-  auto moved_msg = folly::makeMoveWrapper(std::move(msg));
   std::unique_ptr<Command> command(
-    MakeExecuteCommand([this, moved_msg, logid, worker_id, origin]() mutable {
-      auto message = moved_msg.move();
+    MakeExecuteCommand(
+      [this, message = std::move(msg), logid, worker_id, origin]() mutable {
       switch (message->GetMessageType()) {
         case MessageType::mDeliverData: {
           ProcessData(std::move(message), origin);

@@ -11,8 +11,6 @@
 #include <sstream>
 #include <string>
 
-#include "external/folly/move_wrapper.h"
-
 #include "include/Env.h"
 #include "include/HostId.h"
 #include "include/Logger.h"
@@ -482,12 +480,11 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
                               SequenceNumber seqno,
                               std::string payload,
                               MsgId msg_id) {
-  auto moved_payload = folly::makeMoveWrapper(std::move(payload));
   auto worker_id = GetWorkerID(inbound_id);
-  auto command = [this, worker_id, inbound_id, seqno, moved_payload, msg_id](
-      Flow* flow) mutable {
+  auto command = [this, worker_id, inbound_id, seqno,
+      payload = std::move(payload), msg_id](Flow* flow) mutable {
     rocketeers_[worker_id]->Deliver(
-        flow, inbound_id, seqno, moved_payload.move(), msg_id);
+        flow, inbound_id, seqno, std::move(payload), msg_id);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
@@ -497,11 +494,11 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
 bool RocketeerServer::DeliverBatch(StreamID stream_id,
                                    int worker_id,
                                    std::vector<RocketeerMessage> messages) {
-  auto moved_messages = folly::makeMoveWrapper(std::move(messages));
   auto command =
-      [this, stream_id, worker_id, moved_messages](Flow* flow) mutable {
+      [this, stream_id, worker_id, messages = std::move(messages)]
+      (Flow* flow) mutable {
         rocketeers_[worker_id]->DeliverBatch(
-            flow, stream_id, moved_messages.move());
+            flow, stream_id, std::move(messages));
       };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)

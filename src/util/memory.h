@@ -8,8 +8,6 @@
 #include <functional>
 #include <memory>
 
-#include "external/folly/move_wrapper.h"
-
 namespace rocketspeed {
 
 /**
@@ -44,12 +42,18 @@ template <typename T>
 class DeferredDeleter {
  public:
   explicit DeferredDeleter(std::unique_ptr<T> object)
-  : object_(folly::makeMoveWrapper(std::move(object))) {}
+  : object_(std::move(object)) {}
 
-  void operator()() const { object_->reset(); }
+  DeferredDeleter(const DeferredDeleter& other)
+  : object_(std::move(other.object_)) {}
+
+  DeferredDeleter(DeferredDeleter&& other)
+  : object_(std::move(other.object_)) {}
+
+  void operator()() const { object_.reset(); }
 
  private:
-  mutable folly::MoveWrapper<std::unique_ptr<T>> object_;
+  mutable std::unique_ptr<T> object_;
 };
 
 /**
