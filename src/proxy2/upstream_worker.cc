@@ -7,8 +7,6 @@
 #include <chrono>
 #include <vector>
 
-#include "external/folly/Memory.h"
-
 #include "include/Assert.h"
 #include "include/Logger.h"
 #include "include/ProxyServer.h"
@@ -127,7 +125,7 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
       auto it1 = shard_cache_.find(shard_id);
       if (it1 == shard_cache_.end()) {
         auto result = shard_cache_.emplace(
-            shard_id, folly::make_unique<PerShard>(this, shard_id));
+            shard_id, std::make_unique<PerShard>(this, shard_id));
         RS_ASSERT(result.second);
         it1 = result.first;
         stats_.num_shards->Add(1);
@@ -135,7 +133,7 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
 
       auto result = streams_.emplace(
           stream_id,
-          folly::make_unique<PerStream>(this, it1->second.get(), stream_id));
+          std::make_unique<PerStream>(this, it1->second.get(), stream_id));
       RS_ASSERT(result.second);
       it = result.first;
       stats_.num_streams->Add(1);

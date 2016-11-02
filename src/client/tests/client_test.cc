@@ -12,8 +12,6 @@
 #include <thread>
 #include <unordered_set>
 
-#include "external/folly/Memory.h"
-
 #include "include/Env.h"
 #include "include/RocketSpeed.h"
 #include "include/ShadowedClient.h"
@@ -143,7 +141,7 @@ class MockSubscriber : public SubscriberIf
     auto tenant_and_namespace = factory.GetFlyweight(
       {parameters.tenant_id, parameters.namespace_id});
     void* user_data = static_cast<void*>(observer.release());
-    subscription_state_ = folly::make_unique<SubscriptionBase>(
+    subscription_state_ = std::make_unique<SubscriptionBase>(
       tenant_and_namespace,
       parameters.topic_name,
       sub_id, parameters.start_seqno, user_data);
@@ -224,7 +222,7 @@ class MockSubscriber : public SubscriberIf
 
 static std::unique_ptr<ShardingStrategy> MakeShardingStrategyFromConfig(
     std::shared_ptr<MockPublisherRouter> config) {
-  return folly::make_unique<MockShardingStrategy>(config);
+  return std::make_unique<MockShardingStrategy>(config);
 }
 
 class ClientTest : public ::testing::Test {
@@ -459,7 +457,7 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
 
   // Subscribe and wait until enough reconnection attempts takes place.
   client->Subscribe({GuestTenant, GuestNamespace, "BackOff", 0},
-                    folly::make_unique<StatusObserver>(status_change_sem));
+                    std::make_unique<StatusObserver>(status_change_sem));
   ASSERT_TRUE(status_change_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
   ASSERT_EQ(num_attempts + 1, subscribe_attempts);
@@ -519,7 +517,7 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
 
   // Subscribe and wait until enough reconnection attempts takes place.
   client->Subscribe({GuestTenant, GuestNamespace, "BackOff", 0},
-                    folly::make_unique<StatusObserver>(status_change_sem));
+                    std::make_unique<StatusObserver>(status_change_sem));
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
   ASSERT_EQ(num_attempts, subscribe_attempts);
   ASSERT_FALSE(status_change_sem.TimedWait(negative_timeout));
@@ -564,7 +562,7 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
   port::Semaphore now_healthy;
 
   client->Subscribe({GuestTenant, GuestNamespace, "Test", 0},
-                    folly::make_unique<StatusObserver>(now_healthy,
+                    std::make_unique<StatusObserver>(now_healthy,
                                                        now_unhealthy));
 
   // we fail due to lack of heartbeat which has been disabled
@@ -605,14 +603,14 @@ TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthy) {
   port::Semaphore now_unhealthy;
 
   client->Subscribe({GuestTenant, GuestNamespace, "Test", 0},
-                    folly::make_unique<StatusObserver>(now_unhealthy));
+                    std::make_unique<StatusObserver>(now_unhealthy));
 
   // we fail due to lack of heartbeat which has been disabled
   ASSERT_TRUE(now_unhealthy.TimedWait(positive_timeout));
 
   port::Semaphore unhealthy;
   client->Subscribe({GuestTenant, GuestNamespace, "Test2", 0},
-                    folly::make_unique<StatusObserver>(unhealthy));
+                    std::make_unique<StatusObserver>(unhealthy));
 
   // notify new sub immediately
   ASSERT_TRUE(unhealthy.TimedWait(positive_timeout));
@@ -653,7 +651,7 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
   port::Semaphore now_unhealthy;
 
   client->Subscribe({GuestTenant, GuestNamespace, "Test", 0},
-                    folly::make_unique<StatusObserver>(now_unhealthy));
+                    std::make_unique<StatusObserver>(now_unhealthy));
 
   // we should not be marked as unhealthy: server should send hbs
   // every 5 milliseconds
@@ -937,13 +935,13 @@ TEST_F(ClientTest, Sharding) {
   SubscriptionParameters params(GuestTenant, GuestNamespace, "", 0);
   // Subscribe on topic0 should get to the owner of the shard 0.
   params.topic_name = "topic0";
-  client->Subscribe(params, folly::make_unique<Observer>());
+  client->Subscribe(params, std::make_unique<Observer>());
   ASSERT_TRUE(subscribe_sem0.TimedWait(positive_timeout));
   ASSERT_TRUE(!subscribe_sem1.TimedWait(negative_timeout));
 
   // Subscribe on topic1 should get to the owner of the shard 1.
   params.topic_name = "topic1";
-  client->Subscribe(params, folly::make_unique<Observer>());
+  client->Subscribe(params, std::make_unique<Observer>());
   ASSERT_TRUE(!subscribe_sem0.TimedWait(negative_timeout));
   ASSERT_TRUE(subscribe_sem1.TimedWait(positive_timeout));
 }
@@ -1333,7 +1331,7 @@ TEST_F(ClientTest, TopicToSubscriptionMap) {
   auto add = [&](SubscriptionID sub_id, const Topic& topic_name) {
     subscriptions.emplace(
         sub_id,
-        folly::make_unique<SubscriptionBase>(
+        std::make_unique<SubscriptionBase>(
             factory.GetFlyweight({GuestTenant, GuestNamespace}),
             topic_name,
             sub_id,

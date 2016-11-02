@@ -15,8 +15,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "external/folly/Memory.h"
-
 #include "include/Env.h"
 #include "include/HostId.h"
 #include "include/ProxyServer.h"
@@ -278,12 +276,12 @@ TEST_F(ProxyServerTest, Forwarding) {
   // Create two clients and two servers.
   std::vector<std::unique_ptr<MessageBus>> clients, servers;
   for (size_t i = 0; i < 2; ++i) {
-    clients.emplace_back(folly::make_unique<MessageBus>(loop_options));
-    servers.emplace_back(folly::make_unique<MessageBus>(loop_options));
+    clients.emplace_back(std::make_unique<MessageBus>(loop_options));
+    servers.emplace_back(std::make_unique<MessageBus>(loop_options));
     routing->UpdateHost(i, servers[i]->GetHost());
   }
   // Create one more server, as a replacement of servers[1];
-  servers.emplace_back(folly::make_unique<MessageBus>(loop_options));
+  servers.emplace_back(std::make_unique<MessageBus>(loop_options));
 
   // Create two streams from clients to servers. We won't learn server's
   // StreamIDs until we receive the first message on each stream.
@@ -545,8 +543,8 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   }
 
   // Create a client and a server.
-  auto client = folly::make_unique<MessageBus>(loop_options);
-  auto server = folly::make_unique<MessageBus>(loop_options);
+  auto client = std::make_unique<MessageBus>(loop_options);
+  auto server = std::make_unique<MessageBus>(loop_options);
   routing->UpdateHost(shard, server->GetHost());
 
   // All subscriptions will originate from a single client (which doesn't
@@ -740,8 +738,8 @@ TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
   }
 
   // Create a client and a server.
-  auto client = folly::make_unique<MessageBus>(loop_options);
-  auto server = folly::make_unique<MessageBus>(loop_options);
+  auto client = std::make_unique<MessageBus>(loop_options);
+  auto server = std::make_unique<MessageBus>(loop_options);
   routing->UpdateHost(shard, server->GetHost());
 
   // Establish subscriptions on a hot and a cold topic on a single stream.

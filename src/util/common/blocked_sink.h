@@ -7,8 +7,6 @@
 #include <functional>
 #include <memory>
 
-#include "external/folly/Memory.h"
-
 #include "src/messages/event_callback.h"
 #include "src/util/common/flow.h"
 
@@ -32,7 +30,7 @@ class BlockedSink : public Sink<T> {
       void Enable() final override {}
       void Disable() final override {}
     };
-    return folly::make_unique<DeadCallback>();
+    return std::make_unique<DeadCallback>();
   }
 };
 

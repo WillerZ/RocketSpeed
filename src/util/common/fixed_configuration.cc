@@ -7,8 +7,6 @@
 
 #include <memory>
 
-#include "external/folly/Memory.h"
-
 #include "include/Status.h"
 #include "include/Types.h"
 #include "include/HostId.h"

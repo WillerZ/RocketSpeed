@@ -17,8 +17,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "external/folly/Memory.h"
-
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
@@ -259,7 +257,7 @@ class StdFunctionObserver : public Observer,
       std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
       SubscribeCallback subscription_callback,
       DataLossCallback data_loss_callback) {
-    return folly::make_unique<StdFunctionObserver>(
+    return std::make_unique<StdFunctionObserver>(
         std::move(deliver_callback),
         std::move(subscription_callback),
         std::move(data_loss_callback));

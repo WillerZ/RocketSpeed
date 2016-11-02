@@ -7,8 +7,6 @@
 
 #include <memory>
 
-#include "external/folly/Memory.h"
-
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
@@ -158,7 +156,7 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
     SourcelessFlow no_flow(event_loop_->GetFlowControl());
     ReceiveTerminate(&no_flow,
                      sub_id,
-                     folly::make_unique<MessageUnsubscribe>(
+                     std::make_unique<MessageUnsubscribe>(
                          info.GetTenant(),
                          sub_id,
                          MessageUnsubscribe::Reason::kRequested));

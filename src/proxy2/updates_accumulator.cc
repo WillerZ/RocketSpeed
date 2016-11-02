@@ -9,8 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "external/folly/Memory.h"
-
 #include "include/ProxyServer.h"
 
 namespace rocketspeed {
@@ -65,7 +63,7 @@ class DefaultAccumulator : public UpdatesAccumulator {
 
 std::unique_ptr<UpdatesAccumulator> UpdatesAccumulator::CreateDefault(
     size_t count_limit) {
-  return folly::make_unique<DefaultAccumulator>(count_limit);
+  return std::make_unique<DefaultAccumulator>(count_limit);
 }
 
 }  // namespace rocketspeed

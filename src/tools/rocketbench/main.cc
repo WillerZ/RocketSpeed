@@ -12,7 +12,6 @@
 #include <gflags/gflags.h>
 #include <signal.h>
 #include <unistd.h>
-#include "external/folly/Memory.h"
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 #include "include/WakeLock.h"
@@ -1002,7 +1001,7 @@ int main(int argc, char** argv) {
       // Fall back to picking pilot and copilot in a round robin fashion.
       options.publisher = std::make_shared<rocketspeed::FixedPublisherRouter>(
           pilots[i % pilots.size()]);
-      options.sharding = folly::make_unique<rocketspeed::FixedShardingStrategy>(
+      options.sharding = std::make_unique<rocketspeed::FixedShardingStrategy>(
           copilots[i % copilots.size()]);
     }
 

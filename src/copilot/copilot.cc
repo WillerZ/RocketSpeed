@@ -12,8 +12,6 @@
 #include <thread>
 #include <vector>
 
-#include "external/folly/Memory.h"
-
 #include "src/client/client.h"
 #include "src/copilot/control_tower_router.h"
 #include "src/util/common/fixed_configuration.h"
@@ -134,7 +132,7 @@ Status Copilot::CreateNewInstance(CopilotOptions options,
     client_options.publisher =
       std::make_shared<FixedPublisherRouter>(options.pilots[0]);
     client_options.sharding =
-      folly::make_unique<FixedShardingStrategy>(HostId());
+      std::make_unique<FixedShardingStrategy>(HostId());
 
     // Create a client to write rollcall topic.
     Status status = ClientImpl::Create(std::move(client_options),

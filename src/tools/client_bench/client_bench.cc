@@ -3,8 +3,6 @@
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 
-#include "external/folly/Memory.h"
-
 #include "src/test/test_cluster.h"
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
@@ -191,7 +189,7 @@ int main(int argc, char** argv) {
                              rocketspeed::GuestNamespace,
                              slice.ToString(),
                              0},
-                            folly::make_unique<rocketspeed::Observer>());
+                            std::make_unique<rocketspeed::Observer>());
       if (subscription_handle == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         --i;

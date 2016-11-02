@@ -5,8 +5,6 @@
 //
 #define __STDC_FORMAT_MACROS
 
-#include "external/folly/Memory.h"
-
 #include "include/Logger.h"
 #include "datastore_impl.h"
 #include "src/port/port.h"
@@ -331,7 +329,7 @@ DataStore::Open(HostId machine,
   // create a configuration
   ClientOptions options;
   options.publisher = std::make_shared<FixedPublisherRouter>(machine);
-  options.sharding = folly::make_unique<FixedShardingStrategy>(machine);
+  options.sharding = std::make_unique<FixedShardingStrategy>(machine);
 
   // open the client
   Status status = ClientImpl::Create(

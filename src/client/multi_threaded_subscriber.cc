@@ -16,8 +16,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "external/folly/Memory.h"
-
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"

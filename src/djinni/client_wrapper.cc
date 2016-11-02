@@ -10,8 +10,6 @@
 #include <stdexcept>
 #include <string>
 
-#include "external/folly/Memory.h"
-
 #include "include/RocketSpeed.h"
 #include "include/Status.h"
 #include "include/Types.h"
@@ -62,7 +60,7 @@ std::shared_ptr<ClientImpl> ClientImpl::Create(LogLevel log_level,
 
   rocketspeed::ClientOptions options;
   options.publisher = std::make_shared<FixedPublisherRouter>(cockpit1);
-  options.sharding = folly::make_unique<FixedShardingStrategy>(cockpit1);
+  options.sharding = std::make_unique<FixedShardingStrategy>(cockpit1);
   options.env = jvm_env;
   options.info_log = info_log;
 

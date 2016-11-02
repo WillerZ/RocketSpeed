@@ -8,8 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "external/folly/Memory.h"
-
 #include "include/RocketSpeed.h"
 #include "src/client/client.h"
 #include "src/controltower/log_tailer.h"
@@ -367,7 +365,7 @@ TEST_F(IntegrationTest, ObserverInterfaceUsage) {
   // Listen for the message.
   auto sub_handle = ctx.receiver->Subscribe(
       sub_params,
-      folly::make_unique<TestObserver>(
+      std::make_unique<TestObserver>(
           ctx, msg_received, substat_received, dataloss_received));
   ASSERT_TRUE(sub_handle != 0);
 

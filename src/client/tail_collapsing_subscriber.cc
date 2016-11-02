@@ -16,8 +16,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "external/folly/Memory.h"
-
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
@@ -67,7 +65,7 @@ class TailCollapsingObserver : public Observer {
     // Deliver to every observer served by this upstream subscription.
     for (const auto& entry : downstream_observers_) {
       // TODO(t10075129)
-      auto down_message = folly::make_unique<SharedMessageReceived>();
+      auto down_message = std::make_unique<SharedMessageReceived>();
       down_message->id_ = entry.first;
       down_message->message_ = shared_message;
       std::unique_ptr<MessageReceived> tmp(std::move(down_message));

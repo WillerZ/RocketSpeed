@@ -9,7 +9,6 @@
 #include <memory>
 #include <utility>
 
-#include "external/folly/Memory.h"
 #include "include/Assert.h"
 #include "include/Env.h"
 #include "include/Logger.h"
@@ -36,7 +35,7 @@ Status ProxyServer::Create(ProxyServerOptions options,
         std::chrono::milliseconds(100), std::chrono::seconds(1), 2.0);
   }
 
-  auto proxy = folly::make_unique<ProxyServerImpl>(std::move(options));
+  auto proxy = std::make_unique<ProxyServerImpl>(std::move(options));
   auto st = proxy->Start();
   if (!st.ok()) {
     return st;
@@ -81,14 +80,14 @@ Status ProxyServerImpl::Start() {
   }
 
   for (size_t i = 0; i < options_.num_upstream_threads; ++i) {
-    upstream_workers_.emplace_back(folly::make_unique<UpstreamWorker>(
+    upstream_workers_.emplace_back(std::make_unique<UpstreamWorker>(
         options_,
         upstream_loop_->GetEventLoop(static_cast<int>(i)),
         downstream_loop_->GetStreamMapping()));
   }
 
   for (size_t i = 0; i < options_.num_downstream_threads; ++i) {
-    downstream_workers_.emplace_back(folly::make_unique<DownstreamWorker>(
+    downstream_workers_.emplace_back(std::make_unique<DownstreamWorker>(
         options_, downstream_loop_->GetEventLoop(static_cast<int>(i))));
   }
 

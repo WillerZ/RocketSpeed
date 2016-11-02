@@ -22,7 +22,6 @@
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
 #include "src/port/port.h"
-#include "external/folly/Memory.h"
 
 namespace {
 // free up any thread local storage for worker_ids.
@@ -87,7 +86,7 @@ MsgLoop::MsgLoop(BaseEnv* env,
   auto get_load = [this](size_t worker_id) {
     return this->event_loops_[worker_id]->GetLoadFactor();
   };
-  load_balancer_ = folly::make_unique<PowerOfTwoLoadBalancer>(get_load);
+  load_balancer_ = std::make_unique<PowerOfTwoLoadBalancer>(get_load);
 
   const auto event_callback = [this](
       Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {

@@ -9,8 +9,6 @@
 #include <cstddef>
 #include <memory>
 
-#include "external/folly/Memory.h"
-
 #include "include/Assert.h"
 #include "include/Logger.h"
 #include "include/Slice.h"

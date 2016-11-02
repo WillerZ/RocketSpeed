@@ -5,8 +5,6 @@
 #define __STDC_FORMAT_MACROS
 #include "multiplexer.h"
 
-#include "external/folly/Memory.h"
-
 #include "src/client/subscriptions_map.h"
 #include "src/proxy2/upstream_worker.h"
 

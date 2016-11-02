@@ -10,8 +10,6 @@
 #include <vector>
 #include <stdio.h>
 
-#include "external/folly/Memory.h"
-
 #include "src/logdevice/storage.h"
 #include "src/logdevice/log_router.h"
 #include "src/util/common/fixed_configuration.h"
@@ -310,7 +308,7 @@ LocalTestCluster::CreateClient(std::unique_ptr<ClientImpl>* client,
   options.publisher = std::make_shared<FixedPublisherRouter>(pilot);
 
   HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
-  options.sharding = folly::make_unique<FixedShardingStrategy>(copilot);
+  options.sharding = std::make_unique<FixedShardingStrategy>(copilot);
 
   return ClientImpl::Create(std::move(options), client, is_internal);
 }
@@ -335,7 +333,7 @@ LocalTestCluster::CreateClient(std::unique_ptr<Client>* client,
 
   if (!options.sharding) {
     HostId copilot = copilot_ ? copilot_->GetHostId() : HostId();
-    options.sharding = folly::make_unique<FixedShardingStrategy>(copilot);
+    options.sharding = std::make_unique<FixedShardingStrategy>(copilot);
   }
 
   return Client::Create(std::move(options), client);
