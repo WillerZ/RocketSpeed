@@ -12,7 +12,7 @@
 #include <stdlib.h>
 
 #include "src/port/port.h"
-#include "src/util/xxhash.h"
+#include "external/xxhash/xxhash.h"
 #include "src/util/common/autovector.h"
 
 namespace rocketspeed {

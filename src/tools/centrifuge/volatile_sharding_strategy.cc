@@ -9,7 +9,7 @@
 #include <limits>
 #include <mutex>
 #include "src/tools/centrifuge/centrifuge.h"
-#include "src/util/xxhash.h"
+#include "external/xxhash/xxhash.h"
 
 namespace rocketspeed {
 
