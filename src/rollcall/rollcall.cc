@@ -6,8 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "rollcall_impl.h"
 
-#include "external/folly/move_wrapper.h"
-
 #include "include/Slice.h"
 #include "src/client/client.h"
 #include "src/util/topic_uuid.h"
@@ -164,10 +162,10 @@ Status RollcallImpl::FlushBatch(const BatchKey& key) {
     stats_.batch_writes->Add(1);
     stats_.entry_writes->Add(num_entries);
 
-    auto moved_callbacks = folly::makeMoveWrapper(std::move(batch.callbacks));
     PublishCallback publish_callback =
-      [moved_callbacks] (std::unique_ptr<ResultStatus> result) {
-        for (auto& callback : *moved_callbacks) {
+      [callbacks = std::move(batch.callbacks)]
+      (std::unique_ptr<ResultStatus> result) {
+        for (auto& callback : callbacks) {
           // Invoke all callbacks from the batch.
           callback(result->GetStatus());
         }

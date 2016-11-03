@@ -19,8 +19,6 @@
 #include "src/messages/flow_control.h"
 #include "src/util/topic_uuid.h"
 
-#include "external/folly/move_wrapper.h"
-
 namespace rocketspeed {
 
 ControlRoom::ControlRoom(const ControlTowerOptions& options,
@@ -44,10 +42,10 @@ std::unique_ptr<Command>
 ControlRoom::MsgCommand(std::unique_ptr<Message> msg,
                         int worker_id,
                         StreamID origin) {
-  auto moved_msg = folly::makeMoveWrapper(std::move(msg));
   std::unique_ptr<Command> cmd(
-    MakeExecuteCommand([this, moved_msg, worker_id, origin] () mutable {
-      std::unique_ptr<Message> message(moved_msg.move());
+    MakeExecuteCommand(
+      [this, msg = std::move(msg), worker_id, origin] () mutable {
+      std::unique_ptr<Message> message(std::move(msg));
       if (message->GetMessageType() == MessageType::mSubscribe) {
         RS_ASSERT(worker_id != -1);
         ProcessSubscribe(std::move(message), worker_id, origin);

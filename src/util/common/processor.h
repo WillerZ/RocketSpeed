@@ -7,8 +7,6 @@
 #include <functional>
 #include <memory>
 
-#include "external/folly/move_wrapper.h"
-
 #include "src/messages/commands.h"
 #include "src/messages/queues.h"
 #include "src/messages/flow_control.h"
@@ -53,10 +51,10 @@ template <typename T>
 void InstallSource(EventLoop* event_loop,
                    Source<T>* source,
                    std::function<void(Flow*, T)> callback) {
-  auto moved_callback = folly::makeMoveWrapper(std::move(callback));
   std::unique_ptr<Command> cmd(
-    MakeExecuteCommand([moved_callback, source, event_loop]() mutable {
-      event_loop->GetFlowControl()->Register(source, moved_callback.move());
+    MakeExecuteCommand(
+      [callback = std::move(callback), source, event_loop]() mutable {
+      event_loop->GetFlowControl()->Register(source, std::move(callback));
     }));
   event_loop->SendControlCommand(std::move(cmd));
 }

@@ -23,8 +23,6 @@
 #include "src/controltower/room.h"
 #include "src/controltower/topic_tailer.h"
 
-#include "external/folly/move_wrapper.h"
-
 namespace rocketspeed {
 
 /**
@@ -319,17 +317,14 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
   }
 
   // Send FindLatestSeqno request to log tailer.
-  auto msg_moved = folly::makeMoveWrapper(std::move(msg));
   auto callback =
-    [this, log_id, msg_moved, origin, worker_id]
+    [this, log_id, req = std::move(*request), origin, worker_id]
     (Status status, SequenceNumber seqno) mutable {
-      MessageFindTailSeqno* req =
-        static_cast<MessageFindTailSeqno*>(msg_moved->get());
       if (status.ok()) {
         // Sequence number found, so send gap back to clinet.
-        MessageTailSeqno response(req->GetTenantID(),
-                                  req->GetNamespace(),
-                                  req->GetTopicName(),
+        MessageTailSeqno response(req.GetTenantID(),
+                                  req.GetNamespace(),
+                                  req.GetTopicName(),
                                   seqno);
         auto command = MsgLoop::ResponseCommand(response, origin);
         auto& queues = find_latest_seqno_response_queues_[worker_id];
@@ -338,14 +333,14 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
             "Sent latest seqno %" PRIu64 " to %llu for Topic(%s,%s)",
             seqno,
             origin,
-            req->GetNamespace().c_str(),
-            req->GetTopicName().c_str());
+            req.GetNamespace().c_str(),
+            req.GetTopicName().c_str());
         } else {
           LOG_WARN(options_.info_log,
             "Failed to send latest seqno to %llu for Topic(%s,%s)",
             origin,
-            req->GetNamespace().c_str(),
-            req->GetTopicName().c_str());
+            req.GetNamespace().c_str(),
+            req.GetTopicName().c_str());
         }
       } else {
         LOG_ERROR(options_.info_log,
@@ -357,12 +352,14 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
 
   const int room = LogIDToRoom(log_id);
   std::unique_ptr<Command> cmd(
-    MakeExecuteCommand([this, room, log_id, callback] () mutable {
+    MakeExecuteCommand(
+      [this, room, log_id, callback = std::move(callback)] () mutable {
       SequenceNumber seqno = topic_tailer_[room]->GetTailSeqnoEstimate(log_id);
       if (seqno) {
         callback(Status::OK(), seqno);
       } else {
-        Status status = log_tailer_[room]->FindLatestSeqno(log_id, callback);
+        Status status = log_tailer_[room]->FindLatestSeqno(
+            log_id, std::move(callback));
         if (status.ok()) {
           LOG_DEBUG(options_.info_log,
             "Sent FindLatestSeqno for Log(%" PRIu64 ")",

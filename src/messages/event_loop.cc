@@ -28,8 +28,6 @@
 #include <event2/thread.h>
 #include <event2/util.h>
 
-#include "external/folly/move_wrapper.h"
-
 #include "src/messages/serializer.h"
 #include "src/messages/socket_event.h"
 #include "src/messages/stream.h"

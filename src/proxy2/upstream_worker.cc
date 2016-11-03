@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "external/folly/Memory.h"
-#include "external/folly/move_wrapper.h"
 
 #include "include/Assert.h"
 #include "include/Logger.h"
@@ -18,6 +17,7 @@
 #include "src/messages/queues.h"
 #include "src/messages/stream.h"
 #include "src/proxy2/multiplexer.h"
+#include "src/util/memory.h"
 
 namespace rocketspeed {
 
@@ -199,9 +199,7 @@ void UpstreamWorker::CleanupState(PerStream* per_stream) {
     auto it = shard_cache_.find(per_shard->GetShardID());
     RS_ASSERT(it != shard_cache_.end());
     if (it != shard_cache_.end()) {
-      auto moved_per_shard = folly::makeMoveWrapper(std::move(it->second));
-      GetLoop()->AddTask(
-          [moved_per_shard]() mutable { moved_per_shard->reset(); });
+      GetLoop()->AddTask(MakeDeferredDeleter(it->second));
       shard_cache_.erase(it);
       stats_.num_shards->Add(-1);
     }

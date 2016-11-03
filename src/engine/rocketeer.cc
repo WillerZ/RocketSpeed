@@ -11,8 +11,6 @@
 #include <sstream>
 #include <string>
 
-#include "external/folly/move_wrapper.h"
-
 #include "include/Env.h"
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"

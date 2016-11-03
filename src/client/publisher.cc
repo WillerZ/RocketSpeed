@@ -10,8 +10,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "external/folly/move_wrapper.h"
-
 #include "src/client/smart_wake_lock.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/messages.h"
