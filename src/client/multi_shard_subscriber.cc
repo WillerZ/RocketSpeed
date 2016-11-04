@@ -58,6 +58,7 @@ MultiShardSubscriber::MultiShardSubscriber(
   maintenance_timer_ = event_loop_->CreateTimedEventCallback(
     [this]() {
       RefreshRouting();
+      GarbageCollectInactiveSubscribers();
     },
     options_.timer_period);
   maintenance_timer_->Enable();
@@ -106,6 +107,22 @@ void MultiShardSubscriber::RefreshRouting() {
       entry.second->RefreshRouting();
     }
   }
+}
+
+void MultiShardSubscriber::GarbageCollectInactiveSubscribers() {
+  // Once shards have been inactive for some time (i.e. they have no
+  // subscriptions), we remove them and close the stream.
+  inactive_shards_.ProcessExpired(
+      options_.inactive_stream_linger,
+      [this] (ShardID shard_id) {
+        auto it = subscribers_.find(shard_id);
+        if (it != subscribers_.end()) {
+          if (it->second->Empty()) {
+            subscribers_.erase(it);
+          }
+        }
+      },
+      -1);
 }
 
 void MultiShardSubscriber::NotifyHealthy(bool isHealthy) {
@@ -171,9 +188,15 @@ void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
 void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
   if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
     subscriber->TerminateSubscription(sub_id);
-    if (options_.close_empty_streams && subscriber->Empty()) {
-      // Subscriber no longer serves any subscriptions, destroy it
-      subscribers_.erase(sub_id.GetShardID());
+    if (subscriber->Empty()) {
+      // Subscriber no longer serves any subscriptions, destroy it if this is
+      // still true after some time.
+      inactive_shards_.Add(sub_id.GetShardID());
+
+      if (options_.inactive_stream_linger.count() == 0) {
+        // Fast, deterministic path when linger is 0.
+        GarbageCollectInactiveSubscribers();
+      }
     }
   }
 }

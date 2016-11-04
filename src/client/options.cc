@@ -58,6 +58,6 @@ ClientOptions::ClientOptions()
 , allocator_size(1024)
 , should_notify_health(true)
 , max_silent_reconnects(3)
-, close_empty_streams(true) {}
+, inactive_stream_linger(std::chrono::seconds(10)) {}
 
 }  // namespace rocketspeed

@@ -177,10 +177,11 @@ class ClientOptions {
 
   // When the last subscription on a shard is unsubscribed, the client closes
   // the stream to free some resources. Freeing the stream has some overhead
-  // both on the client and server. If this happens often, it may be less
-  // expensive to keep the stream alive. This flag is purely for low-level
-  // optimization and does not affect semantics.
-  bool close_empty_streams;
+  // both on the client and server. If this happens often, and we expect a new
+  // subscription later, it may be less expensive to keep the stream alive.
+  // This option sets the time to stay alive while inactive.
+  // Default: 10 seconds
+  std::chrono::milliseconds inactive_stream_linger;
 
   /** Creates options with default values. */
   ClientOptions();
