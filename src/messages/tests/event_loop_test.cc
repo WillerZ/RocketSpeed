@@ -232,9 +232,12 @@ TEST_F(EventLoopTest, StreamsFlowControl) {
     // Initially, the stream is writable.
     ASSERT_TRUE(writable.TimedWait(positive_timeout));
     // The send queue can fit a single message only.
-    ASSERT_TRUE(stream->Write(ping));
-    ASSERT_TRUE(!stream->Write(ping));
-    ASSERT_TRUE(!stream->Write(ping));
+    std::unique_ptr<Message> p = Message::Copy(ping);
+    ASSERT_TRUE(stream->Write(p));
+    p = Message::Copy(ping);
+    ASSERT_TRUE(!stream->Write(p));
+    p = Message::Copy(ping);
+    ASSERT_TRUE(!stream->Write(p));
   }, &loop);
 
   // Test that flow control on delivery path works.
@@ -252,7 +255,8 @@ TEST_F(EventLoopTest, StreamsFlowControl) {
   // Now fill up the socket buffers and send queue.
   Wait([&]() {
     for (int i = 0; i < kManyMessages; ++i) {
-      stream->Write(ping);
+      std::unique_ptr<Message> p = Message::Copy(ping);
+      stream->Write(p);
     }
     // Enable the write-enabled event so we get notification when the stream is
     // writable.
