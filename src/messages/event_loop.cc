@@ -374,9 +374,12 @@ EventLoop::Initialize() {
 
   if (options_.heartbeat_period.count() > 0) {
     auto send_heartbeats = [this]() {
-      for (const auto& kv : stream_id_to_stream_) {
-        heartbeats_to_send_->Add(kv.first);
-      }
+      heartbeats_to_send_->Modify(
+        [&](std::unordered_set<StreamID>& raw_set) {
+          for (const auto& kv : stream_id_to_stream_) {
+            raw_set.emplace(kv.first);
+          }
+        });
     };
 
     InstallSource<StreamID>(
