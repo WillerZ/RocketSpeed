@@ -45,7 +45,8 @@ class SubscriberHooksAdapter : public SubscriberHooks {
   explicit SubscriberHooksAdapter(std::shared_ptr<ClientHooks> hooks)
       : hooks_(hooks) {}
   virtual void SubscriptionExists(const SubscriptionStatus& status) override {
-    hooks_->SubscriptionExists(status); }
+    hooks_->SubscriptionExists(status);
+  }
   virtual void OnStartSubscription() override { hooks_->OnSubscribe(); }
   virtual void OnAcknowledge(SequenceNumber seqno) override {
     hooks_->OnAcknowledge(seqno);
