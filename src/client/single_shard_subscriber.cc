@@ -76,8 +76,14 @@ void Subscriber::InstallHooks(const HooksParameters& params,
     bool keep_iterating = true;
     if (DataMatchParams(data, params)) {
       keep_iterating = false;
-      hooks_[data.GetID()].SubscriptionExists();
       hooks_.SubscriptionStarted(params, data.GetID());
+      Info info;
+      bool success = Select(data.GetID(), Info::kAll, &info);
+      RS_ASSERT(success);
+      SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
+          info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
+      status.status_ = currently_healthy_ ? Status::OK() : Status::ShardUnhealthy();
+      hooks_[data.GetID()].SubscriptionExists(status);
     }
     return keep_iterating;
   });

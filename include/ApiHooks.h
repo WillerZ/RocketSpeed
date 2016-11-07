@@ -22,7 +22,7 @@ class ClientHooks {
   /**
    * Called after hooks are installed iff subscription exists.
    */
-  virtual void SubscriptionExists() = 0;
+  virtual void SubscriptionExists(const SubscriptionStatus& ) = 0;
   /**
    * Called when Subscribe() was called on the client.
    */

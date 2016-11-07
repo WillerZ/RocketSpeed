@@ -1745,7 +1745,9 @@ class SubscriberHooksTest : public ::testing::Test {};
 
 class TestHooks : public SubscriberHooks {
  public:
-  virtual void SubscriptionExists() override { called_ = true; }
+  virtual void SubscriptionExists(const SubscriptionStatus& ) override {
+    called_ = true;
+  }
   virtual void OnStartSubscription() override { called_ = true; }
   virtual void OnAcknowledge(SequenceNumber seqno) override { called_ = true; }
   virtual void OnTerminateSubscription() override { called_ = true; }
