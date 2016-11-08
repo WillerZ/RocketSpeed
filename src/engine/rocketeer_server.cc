@@ -42,10 +42,9 @@ RocketeerOptions::RocketeerOptions()
 ////////////////////////////////////////////////////////////////////////////////
 class InboundSubscription {
  public:
-  InboundSubscription(TenantID _tenant_id, SequenceNumber _prev_seqno)
-  : tenant_id(_tenant_id), prev_seqno(_prev_seqno) {}
+  explicit InboundSubscription(SequenceNumber _prev_seqno)
+  : prev_seqno(_prev_seqno) {}
 
-  TenantID tenant_id;
   SequenceNumber prev_seqno;
 };
 
@@ -110,10 +109,14 @@ class CommunicationRocketeer : public Rocketeer {
   using SubscriptionsOnStream =
       std::unordered_map<SubscriptionID, InboundSubscription>;
   std::unordered_map<StreamID, SubscriptionsOnStream> inbound_subscriptions_;
+  std::unordered_map<StreamID, TenantID> stream_tenant_;
+
 
   void Initialize(RocketeerServer* server, size_t id);
 
   const Statistics& GetStatisticsInternal();
+
+  TenantID GetTenant(StreamID stream_id) const;
 
   InboundSubscription* Find(const InboundID& inbound_id);
 
@@ -160,8 +163,9 @@ void CommunicationRocketeer::Deliver(Flow* flow,
   }
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
+      auto tenant_id = GetTenant(inbound_id.stream_id);
       auto data = std::make_unique<MessageDeliverData>(
-          sub->tenant_id, inbound_id.GetSubID(), msg_id, payload);
+          tenant_id, inbound_id.GetSubID(), msg_id, payload);
       data->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
       SendResponse(flow, inbound_id.stream_id, std::move(data));
@@ -182,25 +186,15 @@ void CommunicationRocketeer::DeliverBatch(
 
   MessageDeliverBatch::MessagesVector messages_vec;
   messages_vec.reserve(messages.size());
-  TenantID tenant_id = Tenant::InvalidTenant;
+  auto tenant_id = GetTenant(stream_id);
   for (auto& msg : messages) {
     if (msg.msg_id.Empty()) {
       msg.msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
     }
     if (auto* sub = Find(InboundID(stream_id, msg.GetSubID()))) {
       if (sub->prev_seqno < msg.seqno) {
-        if (tenant_id == Tenant::InvalidTenant) {
-          tenant_id = sub->tenant_id;
-        } else {
-          RS_ASSERT(tenant_id == sub->tenant_id)
-              << "All messages in a batch must use same tenant ID";
-          if (tenant_id != sub->tenant_id) {
-            LOG_WARN(server_->options_.info_log,
-                     "All messages in a batch must use same tenant ID");
-          }
-        }
         messages_vec.emplace_back(
-            new MessageDeliverData(sub->tenant_id,
+            new MessageDeliverData(tenant_id,
                                    msg.GetSubID(),
                                    msg.msg_id,
                                    std::move(msg.payload)));
@@ -230,8 +224,9 @@ void CommunicationRocketeer::Advance(Flow* flow,
 
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
+      auto tenant_id = GetTenant(inbound_id.stream_id);
       auto gap = std::make_unique<MessageDeliverGap>(
-          sub->tenant_id, inbound_id.GetSubID(), GapType::kBenign);
+          tenant_id, inbound_id.GetSubID(), GapType::kBenign);
       gap->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
       SendResponse(flow, inbound_id.stream_id, std::move(gap));
@@ -257,7 +252,7 @@ void CommunicationRocketeer::Terminate(Flow* flow,
   if (it != inbound_subscriptions_.end()) {
     auto it1 = it->second.find(sub_id);
     if (it1 != it->second.end()) {
-      TenantID tenant_id = it1->second.tenant_id;
+      auto tenant_id = GetTenant(origin);
       it->second.erase(it1);
       stats_->inbound_subscriptions->Add(-1);
       stats_->terminations->Add(1);
@@ -307,6 +302,16 @@ const Statistics& CommunicationRocketeer::GetStatisticsInternal() {
   return stats_->all;
 }
 
+TenantID CommunicationRocketeer::GetTenant(StreamID stream_id) const {
+  auto it = stream_tenant_.find(stream_id);
+  if (it != stream_tenant_.end()) {
+    return stream_id;
+  }
+  LOG_ERROR(server_->options_.info_log,
+            "Stream(%llu) does not have a tenant ID yet.", stream_id);
+  return Tenant::InvalidTenant;
+}
+
 InboundSubscription* CommunicationRocketeer::Find(const InboundID& inbound_id) {
   auto it = inbound_subscriptions_.find(inbound_id.stream_id);
   if (it != inbound_subscriptions_.end()) {
@@ -345,12 +350,16 @@ void CommunicationRocketeer::Receive(
     Flow* flow, std::unique_ptr<MessageSubscribe> subscribe, StreamID origin) {
   thread_check_.Check();
 
+  // For now, we determine a stream's tenant by the first subscribe we see.
+  // In the future, we should require streams to introduce themselves first to
+  // set the tenant, among other things.
+  stream_tenant_.emplace(origin, subscribe->GetTenantID());
+
   SubscriptionID sub_id = subscribe->GetSubID();
   SequenceNumber start_seqno = subscribe->GetStartSequenceNumber();
   auto result = inbound_subscriptions_[origin].emplace(
       sub_id,
-      InboundSubscription(subscribe->GetTenantID(),
-                          start_seqno == 0 ? start_seqno : start_seqno - 1));
+      InboundSubscription(start_seqno == 0 ? start_seqno : start_seqno - 1));
   if (!result.second) {
     LOG_WARN(server_->options_.info_log,
              "Duplicated subscription stream: %llu, sub_id: %llu",
@@ -412,6 +421,7 @@ void CommunicationRocketeer::Receive(
                       TerminationSource::Subscriber);
   }
   inbound_subscriptions_.erase(it);
+  stream_tenant_.erase(origin);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
