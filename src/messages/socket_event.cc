@@ -771,13 +771,18 @@ void SocketEvent::CheckHeartbeats() {
 void SocketEvent::CaptureHeartbeat(const MessageHeartbeat& msg) {
   // TODO(gds): check the heartbeat timestamp is within sla
   const auto& streams = msg.GetHealthyStreams();
-  shard_heartbeats_received_.insert(streams.begin(), streams.end());
+  shard_heartbeats_received_.insert(
+      shard_heartbeats_received_.end(), streams.begin(), streams.end());
 }
 
 void SocketEvent::FlushCapturedHeartbeats() {
   LOG_DEBUG(GetLogger(), "Flushing heartbeats");
   MessageHeartbeat::StreamSet streams;
   shard_heartbeats_received_.swap(streams);
+
+  // Remove duplicates.
+  std::sort(streams.begin(), streams.end());
+  streams.erase(std::unique(streams.begin(), streams.end()), streams.end());
 
   MessageHeartbeat msg(Tenant::GuestTenant,
                        MessageHeartbeat::Clock::now(),

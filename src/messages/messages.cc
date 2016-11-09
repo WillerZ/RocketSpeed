@@ -737,6 +737,11 @@ Status MessageHeartbeat::Serialize(std::string* out) const {
     .count();
   PutFixed64(out, epoch_ms);
 
+  // Check that heartbeats are strictly sorted.
+  RS_ASSERT_DBG(std::is_sorted(
+      healthy_streams_.begin(),
+      healthy_streams_.end(),
+      std::less_equal<uint32_t>()));
   for (uint32_t shard : healthy_streams_) {
     PutVarint32(out, shard);
   }
@@ -767,7 +772,7 @@ Status MessageHeartbeat::DeSerialize(Slice* in) {
 
   uint32_t shard;
   while (GetVarint32(in, &shard)) {
-    healthy_streams_.insert(shard);
+    healthy_streams_.push_back(shard);
   }
 
   return Status::OK();

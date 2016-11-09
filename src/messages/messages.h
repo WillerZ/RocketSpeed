@@ -848,7 +848,7 @@ class MessageDeliverBatch : public Message {
  */
 class MessageHeartbeat : public Message {
  public:
-  using StreamSet = std::unordered_set<uint32_t>;
+  using StreamSet = std::vector<uint32_t>;
   using Clock = std::chrono::system_clock;
 
   MessageHeartbeat() {}
