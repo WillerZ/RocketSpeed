@@ -129,7 +129,10 @@ inline const char* LogLevelToString(InfoLogLevel level) {
     "VITAL",
     "NONE"
   };
-  RS_ASSERT(level >= 0 && level < NUM_INFO_LOG_LEVELS);
+  if (level < 0 || level >= NUM_INFO_LOG_LEVELS) {
+    RS_ASSERT_DBG(false) << "Level is out of range: " << level;
+    level = WARN_LEVEL;
+  }
   return kInfoLogLevelNames[level];
 }
 

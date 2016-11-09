@@ -302,7 +302,12 @@ class StdFunctionObserver : public Observer,
 
 SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
                                          std::unique_ptr<Observer>& observer) {
-  RS_ASSERT(!!observer);
+  RS_ASSERT_DBG(!!observer);
+  if (!observer) {
+    // Client should never provide this, but in an edge case it could happen.
+    // There is no need to crash.
+    observer = std::make_unique<Observer>();
+  }
 
   SubscriptionHandle subscription = subscriber_->Subscribe(
       std::move(parameters), observer);

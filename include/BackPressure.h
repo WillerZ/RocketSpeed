@@ -52,7 +52,7 @@ class BackPressure {
 
   /** Get the delay, if any. */
   std::chrono::milliseconds Delay() const {
-    RS_ASSERT(type_ == Type::kRetryAfter);
+    RS_ASSERT_DBG(type_ == Type::kRetryAfter);
     return delay_;
   }
 
@@ -71,7 +71,7 @@ class BackPressure {
   : type_(type), delay_(delay) {}
 
   const Type type_;
-  const std::chrono::milliseconds delay_;
+  const std::chrono::milliseconds delay_{10};
 };
 
 }  // namespace rocketspeed

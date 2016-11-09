@@ -132,7 +132,7 @@ void MultiThreadedSubscriber::Stop() {
 }
 
 MultiThreadedSubscriber::~MultiThreadedSubscriber() {
-  RS_ASSERT(!msg_loop_->IsRunning());
+  RS_ASSERT_DBG(!msg_loop_->IsRunning());
 }
 
 void MultiThreadedSubscriber::InstallHooks(
@@ -206,7 +206,7 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
   const auto sub_id = CreateNewHandle(shard_id, worker_id);
   if (!sub_id) {
     LOG_ERROR(options_.info_log, "Client run out of subscription handles");
-    RS_ASSERT(false);
+    RS_ASSERT_DBG(false);
     return SubscriptionHandle(0);
   }
 

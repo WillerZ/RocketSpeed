@@ -65,7 +65,8 @@ class Slice {
 
   // Drop the first "n" bytes from this slice.
   void remove_prefix(size_t n) {
-    RS_ASSERT(n <= size());
+    RS_ASSERT_DBG(n <= size());
+    n = std::min(n, size_);
     data_ += n;
     size_ -= n;
   }
