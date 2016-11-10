@@ -86,6 +86,10 @@ bool HostId::operator==(const HostId& rhs) const {
   return memcmp(&storage_, &rhs.storage_, sizeof(storage_)) == 0;
 }
 
+bool HostId::operator!=(const HostId& rhs) const {
+  return !(*this == rhs);
+}
+
 size_t HostId::Hash() const {
   return MurmurHash2<Slice>()(
       Slice(reinterpret_cast<const char*>(&storage_), sizeof(storage_)));
