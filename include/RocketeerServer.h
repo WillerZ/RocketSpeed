@@ -51,7 +51,7 @@ struct RocketeerOptions {
   std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);
 
   /** Queue size for event loop. */
-  size_t queue_size = 10000;
+  size_t queue_size = 1000;
 };
 
 class RocketeerServer {

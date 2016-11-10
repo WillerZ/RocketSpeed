@@ -40,8 +40,8 @@ class EnvOptions {
 
   // Send and receive buffer sizes for TCP connections.
   // Set to 0 to use OS defaults.
-  int tcp_send_buffer_size = 1 << 20;
-  int tcp_recv_buffer_size = 1 << 20;
+  int tcp_send_buffer_size = 0;
+  int tcp_recv_buffer_size = 0;
 
   // Keep-alive options:
   // Turn keepalive on/off

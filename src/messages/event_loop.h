@@ -126,7 +126,7 @@ class EventLoop {
     /** A callback for handling new incoming connections. */
     AcceptCallbackType accept_callback;
     /** A bound on the size of socket's send queue. */
-    size_t send_queue_limit = 30000;
+    size_t send_queue_limit = 100;
     /**
      * For how long should we keep a connection without streams alive.
      */
