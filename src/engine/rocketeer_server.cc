@@ -392,9 +392,6 @@ void CommunicationRocketeer::Receive(
       HandleTermination(flow,
                         InboundID(origin, sub_id),
                         TerminationSource::Subscriber);
-      if (it->second.empty()) {
-        inbound_subscriptions_.erase(it);
-      }
       return;
     }
   }
