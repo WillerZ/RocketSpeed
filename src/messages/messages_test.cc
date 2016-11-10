@@ -738,8 +738,8 @@ TEST_F(Messaging, SocketDeath) {
                          info_log_,
                          "receiver_loop1");
   ASSERT_OK(receiver_loop1.Initialize());
-  MsgLoopThread t3(env_, &receiver_loop1, "receiver_loop1");
   receiver_loop1.RegisterCallbacks(callbacks);
+  MsgLoopThread t3(env_, &receiver_loop1, "receiver_loop1");
   ASSERT_OK(receiver_loop1.WaitUntilRunning());
 
   // It has to listen on the same address.
@@ -955,9 +955,9 @@ TEST_F(Messaging, VersionMismatch) {
 
 TEST_F(Messaging, RoundTripAllHeartbeatFields) {
   auto healthy_streams = MessageHeartbeat::StreamSet();
-  healthy_streams.insert(1);
-  healthy_streams.insert(5);
-  healthy_streams.insert(18273483);
+  healthy_streams.push_back(1);
+  healthy_streams.push_back(5);
+  healthy_streams.push_back(18273483);
   MessageHeartbeat msg(Tenant::GuestTenant, MessageHeartbeat::Clock::now(),
                        healthy_streams);
 

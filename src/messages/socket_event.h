@@ -197,9 +197,10 @@ class SocketEvent : public Source<MessageOnStream>,
 
   /**
    * Collected shard heartbeats since last multiplexed heartbeat was
-   * flushed.
+   * flushed. May contain duplicates, that will be removed when flushed.
+   * Appending to a vector is much faster than inserting to a set container.
    */
-  std::unordered_set<uint32_t> shard_heartbeats_received_;
+  std::vector<uint32_t> shard_heartbeats_received_;
 
   /**
    * Records last heartbeat received for each stream.
