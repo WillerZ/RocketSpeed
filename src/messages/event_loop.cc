@@ -374,32 +374,19 @@ EventLoop::Initialize() {
 
   if (options_.heartbeat_period.count() > 0) {
     auto send_heartbeats = [this]() {
-      heartbeats_to_send_->Modify(
-        [&](std::unordered_set<StreamID>& raw_set) {
-          for (const auto& kv : stream_id_to_stream_) {
-            raw_set.emplace(kv.first);
-          }
-        });
-    };
-
-    InstallSource<StreamID>(
-      this,
-      heartbeats_to_send_.get(),
-      [this](Flow* flow, StreamID stream_id) {
-        auto* stream = GetInboundStream(stream_id);
-        if (!stream) {
-          return;               // stream closed since add
-        }
+      SourcelessFlow flow(flow_control_.get());
+      for (const auto& kv : stream_id_to_stream_) {
         MessageHeartbeat::StreamSet streams = {
-          static_cast<uint32_t>(stream->GetRemoteID())
+          static_cast<uint32_t>(kv.second->GetRemoteID())
         };
         std::unique_ptr<Message> hb(
-            new MessageHeartbeat(SystemTenant,
-                                 MessageHeartbeat::Clock::now(),
-                                 std::move(streams)));
-        flow->Write(stream, hb);
-        stats_.hbs_sent->Add(1);
-      });
+          new MessageHeartbeat(SystemTenant,
+                               MessageHeartbeat::Clock::now(),
+                               std::move(streams)));
+        flow.Write(kv.second, hb);
+      }
+      stats_.hbs_sent->Add(stream_id_to_stream_.size());
+    };
 
     // divide by 2 to ensure we're within the period even
     // after some overhead drift
@@ -498,7 +485,6 @@ void EventLoop::Run() {
   shutdown_event_.reset();
   CloseAllSocketEvents();
   flow_control_.reset();
-  heartbeats_to_send_.reset();
   expired_connections_timer.reset();
 
   // fd_read_events_ must be cleared after closing sockets as the read events
@@ -847,8 +833,6 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, Stream* stream) {
     RS_ASSERT(owned_stream.get() == stream);
     AddTask(MakeDeferredDeleter(owned_stream));
   }
-
-  heartbeats_to_send_->Remove(stream->GetLocalID());
 }
 
 StreamSocket EventLoop::CreateOutboundStream(HostId destination) {
@@ -1113,7 +1097,6 @@ EventLoop::EventLoop(EventLoop::Options options, StreamAllocator allocator)
 , queue_stats_(std::make_shared<QueueStats>(options_.stats_prefix + ".queues"))
 , socket_stats_(std::make_shared<SocketEventStats>(options_.stats_prefix))
 , default_command_queue_size_(options_.command_queue_size)
-, heartbeats_to_send_(new ObservableSet<StreamID>(this, "heartbeats"))
 , flow_control_(new FlowControl(
     options_.stats_prefix, this, options_.flow_control_blocked_warn_period)) {
   // Setup callbacks.

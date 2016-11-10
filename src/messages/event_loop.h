@@ -715,8 +715,6 @@ class EventLoop {
 
   std::unordered_map<int, std::unique_ptr<EventCallback>> fd_read_events_;
 
-  std::unique_ptr<ObservableSet<StreamID>> heartbeats_to_send_;
-
   std::unique_ptr<FlowControl> flow_control_;
 
   // Send a command using a particular command queue.
