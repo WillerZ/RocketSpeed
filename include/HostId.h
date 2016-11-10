@@ -49,6 +49,7 @@ class HostId {
 
   bool operator<(const HostId& rhs) const;
   bool operator==(const HostId& rhs) const;
+  bool operator!=(const HostId& rhs) const;
   size_t Hash() const;
 
   bool operator!() const { return addrlen_ == 0; }
