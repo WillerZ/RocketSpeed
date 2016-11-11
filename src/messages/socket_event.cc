@@ -768,11 +768,19 @@ void SocketEvent::CheckHeartbeats() {
   stats_->hb_timeouts->Add(expired.size());
 }
 
+void SocketEvent::SendHeartbeat(StreamID stream_id,
+                                MessageHeartbeat::Clock::time_point hb_time) {
+  // TODO(gds): check the heartbeat timestamp is within sla
+  (void)hb_time;
+  shard_heartbeats_received_.push_back(stream_id);
+}
+
 void SocketEvent::CaptureHeartbeat(const MessageHeartbeat& msg) {
   // TODO(gds): check the heartbeat timestamp is within sla
   const auto& streams = msg.GetHealthyStreams();
-  shard_heartbeats_received_.insert(
-      shard_heartbeats_received_.end(), streams.begin(), streams.end());
+  for (StreamID stream_id : streams) {
+    SendHeartbeat(stream_id, msg.GetTimestamp());
+  }
 }
 
 void SocketEvent::FlushCapturedHeartbeats() {

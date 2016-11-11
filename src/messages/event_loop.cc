@@ -374,16 +374,9 @@ EventLoop::Initialize() {
 
   if (options_.heartbeat_period.count() > 0) {
     auto send_heartbeats = [this]() {
-      SourcelessFlow flow(flow_control_.get());
+      auto now = MessageHeartbeat::Clock::now();
       for (const auto& kv : stream_id_to_stream_) {
-        MessageHeartbeat::StreamSet streams = {
-          static_cast<uint32_t>(kv.second->GetRemoteID())
-        };
-        std::unique_ptr<Message> hb(
-          new MessageHeartbeat(SystemTenant,
-                               MessageHeartbeat::Clock::now(),
-                               std::move(streams)));
-        flow.Write(kv.second, hb);
+        kv.second->SendHeartbeat(now);
       }
       stats_.hbs_sent->Add(stream_id_to_stream_.size());
     };

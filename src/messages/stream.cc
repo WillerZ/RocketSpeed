@@ -114,6 +114,12 @@ bool Stream::Write(std::unique_ptr<Message>& value) {
   return has_room;
 }
 
+void Stream::SendHeartbeat(MessageHeartbeat::Clock::time_point hb_time) {
+  if (socket_event_) {
+    socket_event_->SendHeartbeat(remote_id_, hb_time);
+  }
+}
+
 bool Stream::FlushPending() {
   thread_check_.Check();
   return true;

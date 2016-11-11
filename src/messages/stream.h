@@ -89,6 +89,11 @@ class Stream : public Sink<std::unique_ptr<Message>> {
     }
   }
 
+  /**
+   * Sends a heartbeat on this stream to indicate that it is healthy.
+   */
+  void SendHeartbeat(MessageHeartbeat::Clock::time_point hb_time);
+
  private:
   ThreadCheck thread_check_;
 

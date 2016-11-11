@@ -141,6 +141,14 @@ class SocketEvent : public Source<MessageOnStream>,
 
   int GetFd() const { return fd_; }
 
+  /**
+   * Sends a heartbeat on this socket for a particular stream. Note that
+   * heartbeats are batched over time windows to improve I/O, so its receipt
+   * may be delayed.
+   */
+  void SendHeartbeat(StreamID stream_id,
+                     MessageHeartbeat::Clock::time_point hb_time);
+
  private:
   ThreadCheck thread_check_;
 
