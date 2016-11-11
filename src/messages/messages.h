@@ -34,25 +34,26 @@ namespace rocketspeed {
 
 /** The message types. */
 enum class MessageType : uint8_t {
-  NotInitialized = 0,    // not initialized yet
-  mPing = 0x01,          // ping data
-  mPublish = 0x02,       // data publish
-//mMetadata = 0x03,      // subscription information (DEPRECATED)
-  mDataAck = 0x04,       // ack for user data
-  mGap = 0x05,           // gap in the log
-  mDeliver = 0x06,       // data delivery
-  mGoodbye = 0x07,       // MessageGoodbye
-  mSubscribe = 0x08,     // MessageSubscribe
-  mUnsubscribe = 0x09,   // MessageUnsubscribe
-  mDeliverGap = 0x0A,    // MessageDeliverGap
-  mDeliverData = 0x0B,   // MessageDeliverData
-  mFindTailSeqno = 0x0C, // MessageFindTailSeqno
-  mTailSeqno = 0x0D,     // MessageTailSeqno
-  mDeliverBatch = 0x0E,  // MessageDeliverBatch
-  mHeartbeat = 0x0F,     // MessageHeartbeat
+  NotInitialized = 0,     // not initialized yet
+  mPing = 0x01,           // ping data
+  mPublish = 0x02,        // data publish
+//mMetadata = 0x03,       // subscription information (DEPRECATED)
+  mDataAck = 0x04,        // ack for user data
+  mGap = 0x05,            // gap in the log
+  mDeliver = 0x06,        // data delivery
+  mGoodbye = 0x07,        // MessageGoodbye
+  mSubscribe = 0x08,      // MessageSubscribe
+  mUnsubscribe = 0x09,    // MessageUnsubscribe
+  mDeliverGap = 0x0A,     // MessageDeliverGap
+  mDeliverData = 0x0B,    // MessageDeliverData
+  mFindTailSeqno = 0x0C,  // MessageFindTailSeqno
+  mTailSeqno = 0x0D,      // MessageTailSeqno
+  mDeliverBatch = 0x0E,   // MessageDeliverBatch
+  mHeartbeat = 0x0F,      // MessageHeartbeat
+  mHeartbeatDelta = 0x10, // MessageHeartbeatDelta
 
   min = mPing,
-  max = mHeartbeat,
+  max = mHeartbeatDelta,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -881,6 +882,55 @@ class MessageHeartbeat : public Message {
  private:
   Clock::time_point timestamp_;
   StreamSet healthy_streams_;
+};
+
+/*
+ * This is a heartbeat delta message. It is used as an optimisation of
+ * regular heartbeats over stateful connections, allowing us to send only
+ * those streams that have changed in healthiness.
+ */
+class MessageHeartbeatDelta : public Message {
+ public:
+  using StreamSet = MessageHeartbeat::StreamSet;
+  using Clock = MessageHeartbeat::Clock;
+
+  MessageHeartbeatDelta() {}
+  explicit MessageHeartbeatDelta(TenantID tenantid,
+                                 Clock::time_point timestamp,
+                                 StreamSet added_healthy,
+                                 StreamSet removed_healthy)
+    : Message(MessageType::mHeartbeatDelta, tenantid),
+      timestamp_(timestamp),
+      added_healthy_(std::move(added_healthy)),
+      removed_healthy_(std::move(removed_healthy)) {}
+
+  /*
+   * Inherited from Serializer
+   */
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
+
+  /**
+   * Time at the origin of this heartbeat. Recipients of heartbeats
+   * can use this to determine the end-to-end latency of propagation
+   * and ensure this is below a threshold.
+   */
+  Clock::time_point GetTimestamp() const {
+    return timestamp_;
+  }
+
+  const StreamSet& GetAddedHealthyStreams() const {
+    return added_healthy_;
+  }
+
+  const StreamSet& GetRemovedHealthyStreams() const {
+    return removed_healthy_;
+  }
+
+ private:
+  Clock::time_point timestamp_;
+  StreamSet added_healthy_;
+  StreamSet removed_healthy_;
 };
 
 /** @} */

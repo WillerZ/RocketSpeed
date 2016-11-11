@@ -141,8 +141,8 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
   int fd = accept_cmd->DetachFD();
   const bool is_inbound = true;
   auto owned_socket = SocketEvent::Create(
-      this, fd, options_.protocol_version, accept_cmd->GetRemoteId(),
-      is_inbound);
+      this, fd, options_.protocol_version, options_.use_heartbeat_deltas,
+      accept_cmd->GetRemoteId(), is_inbound);
   const auto socket = owned_socket.get();
   if (!socket) {
     LOG_ERROR(info_log_,
@@ -742,7 +742,8 @@ SocketEvent* EventLoop::OpenSocketEvent(const HostId& destination) {
   // Create SocketEvent and pass ownership to the loop.
   const bool is_inbound = false;
   auto owned_socket = SocketEvent::Create(
-      this, fd, options_.protocol_version, destination, is_inbound);
+      this, fd, options_.protocol_version, options_.use_heartbeat_deltas,
+      destination, is_inbound);
   const auto socket = owned_socket.get();
   if (!socket) {
     LOG_ERROR(info_log_,

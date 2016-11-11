@@ -50,6 +50,9 @@ struct RocketeerOptions {
    * Set to zero to disable. */
   std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);
 
+  /** Set to true to use heartbeat delta encoding. */
+  bool use_heartbeat_deltas = false;
+
   /** Queue size for event loop. */
   size_t queue_size = 1000;
 

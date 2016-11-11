@@ -135,6 +135,8 @@ class EventLoop {
     std::chrono::milliseconds connection_without_streams_keepalive{0};
     /** Preferred protocol version. */
     uint8_t protocol_version;
+    /** True to use heartbeat delta encoding. */
+    bool use_heartbeat_deltas = false;
 
     /** Send heartbeats every X milliseconds. Set to zero to disable. */
     std::chrono::milliseconds heartbeat_period = std::chrono::seconds(60);

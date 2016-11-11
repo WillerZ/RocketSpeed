@@ -455,7 +455,8 @@ Status RocketeerServer::Start() {
   msg_loop_options.event_loop.heartbeat_period = options_.heartbeat_period;
   msg_loop_options.event_loop.command_queue_size = options_.queue_size;
   msg_loop_options.event_loop.socket_timeout = options_.socket_timeout;
-
+  msg_loop_options.event_loop.use_heartbeat_deltas =
+      options_.use_heartbeat_deltas;
   msg_loop_.reset(new MsgLoop(options_.env,
                               EnvOptions(),
                               options_.port,

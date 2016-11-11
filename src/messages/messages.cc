@@ -40,6 +40,7 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "tail_seqno",
   "deliver_batch",
   "heartbeat",
+  "heartbeat_delta",
 };
 
 MessageType Message::ReadMessageType(Slice slice) {
@@ -176,6 +177,15 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mHeartbeat: {
       std::unique_ptr<MessageHeartbeat> msg(new MessageHeartbeat());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mHeartbeatDelta: {
+      std::unique_ptr<MessageHeartbeatDelta> msg(new MessageHeartbeatDelta());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -773,6 +783,91 @@ Status MessageHeartbeat::DeSerialize(Slice* in) {
   uint32_t shard;
   while (GetVarint32(in, &shard)) {
     healthy_streams_.push_back(shard);
+  }
+
+  return Status::OK();
+}
+
+Status MessageHeartbeatDelta::Serialize(std::string* out) const {
+  using namespace std::chrono;
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
+
+  uint64_t epoch_ms = duration_cast<milliseconds>(
+    timestamp_.time_since_epoch())
+    .count();
+  PutFixed64(out, epoch_ms);
+
+  // Check that heartbeats are strictly sorted.
+  RS_ASSERT_DBG(std::is_sorted(
+      added_healthy_.begin(),
+      added_healthy_.end(),
+      std::less_equal<uint32_t>()));
+  RS_ASSERT_DBG(std::is_sorted(
+      removed_healthy_.begin(),
+      removed_healthy_.end(),
+      std::less_equal<uint32_t>()));
+
+  PutVarint64(out, added_healthy_.size());
+  for (uint32_t shard : added_healthy_) {
+    PutVarint32(out, shard);
+  }
+
+  PutVarint64(out, removed_healthy_.size());
+  for (uint32_t shard : removed_healthy_) {
+    PutVarint32(out, shard);
+  }
+
+  return Status::OK();
+}
+
+Status MessageHeartbeatDelta::DeSerialize(Slice* in) {
+  // extract type
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
+
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
+  }
+
+  if (in->size() == 0) {
+    return Status::OK();        // for backwards compatibility
+  }
+
+  uint64_t epoch_ms;
+  if (!GetFixed64(in, &epoch_ms)) {
+    return Status::InvalidArgument("Bad timestamp");
+  }
+  Clock::duration since_epoch = std::chrono::milliseconds(epoch_ms);
+  timestamp_ = Clock::time_point(since_epoch);
+
+  uint64_t num_added;
+  if (!GetVarint64(in, &num_added)) {
+    return Status::InvalidArgument("Bad num_added");
+  }
+
+  added_healthy_.reserve(num_added);
+  while (num_added--) {
+    uint32_t shard;
+    if (!GetVarint32(in, &shard)) {
+      return Status::InvalidArgument("Bad added shard");
+    }
+    added_healthy_.push_back(shard);
+  }
+
+  uint64_t num_removed;
+  if (!GetVarint64(in, &num_removed)) {
+    return Status::InvalidArgument("Bad num_removed");
+  }
+
+  removed_healthy_.reserve(num_removed);
+  while (num_removed--) {
+    uint32_t shard;
+    if (!GetVarint32(in, &shard)) {
+      return Status::InvalidArgument("Bad removed shard");
+    }
+    removed_healthy_.push_back(shard);
   }
 
   return Status::OK();

@@ -82,6 +82,7 @@ class SocketEvent : public Source<MessageOnStream>,
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
                                              int fd,
                                              uint8_t protocol_version,
+                                             bool use_heartbeat_deltas,
                                              HostId remote,
                                              bool is_inbound);
 
@@ -168,6 +169,9 @@ class SocketEvent : public Source<MessageOnStream>,
   /** Version of protocol to use for communication. */
   uint8_t protocol_version_;
 
+  /** True if the socket should write heartbeats with delta encoding. */
+  const bool use_heartbeat_deltas_;
+
   /** Writer and serializer state. */
   /** A list of chunks of data to be written. */
   std::deque<std::string> send_queue_;
@@ -215,6 +219,13 @@ class SocketEvent : public Source<MessageOnStream>,
   std::vector<uint32_t> shard_heartbeats_received_;
 
   /**
+   * To optimise network I/O, we only send deltas of the set of heartbeats
+   * that have changed. This is used to compute the delta. The set is sorted.
+   */
+  MessageHeartbeat::StreamSet previous_sent_heartbeats_;
+  MessageHeartbeat::StreamSet previous_recv_heartbeats_;
+
+  /**
    * Records last heartbeat received for each stream.
    */
   TimeoutList<size_t> hb_timeout_list_;
@@ -222,6 +233,7 @@ class SocketEvent : public Source<MessageOnStream>,
   SocketEvent(EventLoop* event_loop,
               int fd,
               uint8_t protocol_version,
+              bool use_heartbeat_deltas,
               HostId destination,
               bool is_inbound);
 
@@ -274,10 +286,14 @@ class SocketEvent : public Source<MessageOnStream>,
   void CheckHeartbeats();
 
   /**
-   * Take a heartbeat representing one or more heartbeats and fan out
-   * deliver to necessary streams.
+   * Delivers heartbeats for a set of streams.
    */
-  void DeliverAggregatedHeartbeat(std::unique_ptr<MessageHeartbeat> msg);
+  void DeliverHeartbeats(const MessageHeartbeat::StreamSet& streams);
+
+  /**
+   * Processes a heartbeat delta and delivers the heartbeats.
+   */
+  void ProcessHeartbeatDelta(std::unique_ptr<MessageHeartbeatDelta> msg);
 
   /**
    * Collect per-stream heartbeats in order to flush an aggregated

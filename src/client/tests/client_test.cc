@@ -274,11 +274,15 @@ class ClientTest : public ::testing::Test {
     std::thread msg_loop_thread_;
   };
 
-  ServerMock MockServer(std::shared_ptr<MockPublisherRouter> config,
-    const std::map<MessageType, MsgCallbackType>& callbacks,
-    std::chrono::milliseconds hb_period = std::chrono::milliseconds(100)) {
+  ServerMock MockServer(
+      std::shared_ptr<MockPublisherRouter> config,
+      const std::map<MessageType,
+      MsgCallbackType>& callbacks,
+      std::chrono::milliseconds hb_period = std::chrono::milliseconds(100),
+      bool use_deltas = true) {
 
     msg_loop_options_.event_loop.heartbeat_period = hb_period;
+    msg_loop_options_.event_loop.use_heartbeat_deltas = use_deltas;
 
     std::unique_ptr<MsgLoop> server(new MsgLoop(
         env_, EnvOptions(), 0 /* auto */, 1,
@@ -294,9 +298,11 @@ class ClientTest : public ::testing::Test {
   }
 
   ServerMock MockServer(
-    const std::map<MessageType, MsgCallbackType>& callbacks,
-    std::chrono::milliseconds hb_period = std::chrono::milliseconds(100)) {
-    return MockServer(config_, std::move(callbacks), hb_period);
+      const std::map<MessageType,
+      MsgCallbackType>& callbacks,
+      std::chrono::milliseconds hb_period = std::chrono::milliseconds(100),
+      bool use_deltas = true) {
+    return MockServer(config_, std::move(callbacks), hb_period, use_deltas);
   }
 
   ServerMock MockShadowServer(
@@ -343,6 +349,12 @@ class ClientTest : public ::testing::Test {
                                      shadow_predicate));
     return client;
   }
+
+  void NotifyShardUnhealthyOnDisconnect(bool use_deltas);
+  void DoNotNotifyShardUnhealthyWhenDisabled(bool use_deltas);
+  void NotifyShardUnhealthyOnHBTimeout(bool use_deltas);
+  void NotifyNewSubscriptionsUnhealthy(bool use_deltas);
+  void HeartbeatsAreSentByServer(bool use_deltas);
 };
 
 TEST_F(ClientTest, BackOff) {
@@ -399,7 +411,7 @@ TEST_F(ClientTest, BackOff) {
   }
 }
 
-TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
+void ClientTest::NotifyShardUnhealthyOnDisconnect(bool use_deltas) {
   const size_t num_attempts = 1;
   std::atomic<size_t> subscribe_attempts(0);
   port::Semaphore subscribe_sem;
@@ -421,7 +433,9 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
           // This is a tad fishy, but Copilot should not receive any message
           // before we perform the assignment to copilot_ptr.
           copilot_ptr.load()->SendResponse(goodbye, origin, 0);
-        }}});
+        }}},
+      std::chrono::milliseconds(100),
+      use_deltas);;
   copilot_ptr = copilot.msg_loop.get();
 
   ClientOptions options;
@@ -465,7 +479,15 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
   ASSERT_TRUE(status_change_sem.TimedWait(positive_timeout));
 }
 
-TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
+TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnect) {
+  NotifyShardUnhealthyOnDisconnect(false);
+}
+
+TEST_F(ClientTest, NotifyShardUnhealthyOnDisconnectWithDeltas) {
+  NotifyShardUnhealthyOnDisconnect(true);
+}
+
+void ClientTest::DoNotNotifyShardUnhealthyWhenDisabled(bool use_deltas) {
   const size_t num_attempts = 4;
   std::atomic<size_t> subscribe_attempts(0);
   port::Semaphore subscribe_sem;
@@ -487,7 +509,8 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
           // before we perform the assignment to copilot_ptr.
           copilot_ptr.load()->SendResponse(goodbye, origin, 0);
           }}},
-      std::chrono::milliseconds(0));
+      std::chrono::milliseconds(0),
+      use_deltas);
   // disable to prevent heartbeats from notifying the retry mechanism
   // that the connection is healthy
   copilot_ptr = copilot.msg_loop.get();
@@ -523,7 +546,15 @@ TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
   ASSERT_FALSE(status_change_sem.TimedWait(negative_timeout));
 }
 
-TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
+TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabled) {
+  DoNotNotifyShardUnhealthyWhenDisabled(false);
+}
+
+TEST_F(ClientTest, DoNotNotifyShardUnhealthyWhenDisabledWithDeltas) {
+  DoNotNotifyShardUnhealthyWhenDisabled(true);
+}
+
+void ClientTest::NotifyShardUnhealthyOnHBTimeout(bool use_deltas) {
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
 
@@ -533,7 +564,8 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             client_stream = origin;
           }}},
-      std::chrono::milliseconds(0)); // disable heartbeats
+      std::chrono::milliseconds(0),
+      use_deltas); // disable heartbeats
   copilot_ptr = copilot.msg_loop.get();
 
   ClientOptions options;
@@ -569,7 +601,15 @@ TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
   ASSERT_TRUE(now_unhealthy.TimedWait(positive_timeout));
 }
 
-TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthy) {
+TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeout) {
+  NotifyShardUnhealthyOnHBTimeout(false);
+}
+
+TEST_F(ClientTest, NotifyShardUnhealthyOnHBTimeoutWithDeltas) {
+  NotifyShardUnhealthyOnHBTimeout(true);
+}
+
+void ClientTest::NotifyNewSubscriptionsUnhealthy(bool use_deltas) {
   port::Semaphore subscribe_sem;
   CopilotAtomicPtr copilot_ptr;
 
@@ -579,7 +619,8 @@ TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthy) {
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             client_stream = origin;
           }}},
-      std::chrono::milliseconds(0)); // disable heartbeats
+      std::chrono::milliseconds(0),
+      use_deltas); // disable heartbeats
   copilot_ptr = copilot.msg_loop.get();
 
   ClientOptions options;
@@ -616,7 +657,15 @@ TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthy) {
   ASSERT_TRUE(unhealthy.TimedWait(positive_timeout));
 }
 
-TEST_F(ClientTest, HeartbeatsAreSentByServer) {
+TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthy) {
+  NotifyNewSubscriptionsUnhealthy(false);
+}
+
+TEST_F(ClientTest, NotifyNewSubscriptionsUnhealthyWithDeltas) {
+  NotifyNewSubscriptionsUnhealthy(true);
+}
+
+void ClientTest::HeartbeatsAreSentByServer(bool use_deltas) {
   // in NotifyShardUnhealthyOnHBTimeout we prove that the client
   // complains when a hb is not received. Here we ensure the server
   // sends them by running for long enough that we would have timed
@@ -628,7 +677,8 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
           [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
           client_stream = origin;
         }}},
-    std::chrono::milliseconds(5));
+    std::chrono::milliseconds(5),
+    use_deltas);
 
   ClientOptions options;
   options.heartbeat_timeout = std::chrono::milliseconds(20);
@@ -656,6 +706,14 @@ TEST_F(ClientTest, HeartbeatsAreSentByServer) {
   // we should not be marked as unhealthy: server should send hbs
   // every 5 milliseconds
   ASSERT_FALSE(now_unhealthy.TimedWait(negative_timeout));
+}
+
+TEST_F(ClientTest, HeartbeatsAreSentByServer) {
+  HeartbeatsAreSentByServer(false);
+}
+
+TEST_F(ClientTest, HeartbeatsAreSentByServerWithDeltas) {
+  HeartbeatsAreSentByServer(true);
 }
 
 TEST_F(ClientTest, RandomizedTruncatedExponential) {

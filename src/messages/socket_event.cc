@@ -17,6 +17,7 @@
 #include "src/messages/types.h"
 #include "src/messages/event_loop.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/set_operations.h"
 #include "src/messages/flow_control.h"
 #include "include/HostId.h"
 #include "src/util/memory.h"
@@ -107,11 +108,13 @@ SocketEventStats::SocketEventStats(const std::string& prefix) {
 std::unique_ptr<SocketEvent> SocketEvent::Create(EventLoop* event_loop,
                                                  const int fd,
                                                  uint8_t protocol_version,
+                                                 bool use_heartbeat_deltas,
                                                  HostId remote,
                                                  bool is_inbound) {
   std::unique_ptr<SocketEvent> sev(
       new SocketEvent(
-          event_loop, fd, protocol_version, std::move(remote), is_inbound));
+          event_loop, fd, protocol_version, use_heartbeat_deltas,
+          std::move(remote), is_inbound));
 
   if (!sev->read_ev_ || !sev->write_ev_) {
     LOG_ERROR(
@@ -318,6 +321,7 @@ const std::shared_ptr<Logger>& SocketEvent::GetLogger() const {
 SocketEvent::SocketEvent(EventLoop* event_loop,
                          int fd,
                          uint8_t protocol_version,
+                         bool use_heartbeat_deltas,
                          HostId remote,
                          bool is_inbound)
 : stats_(event_loop->GetSocketStats())
@@ -325,6 +329,7 @@ SocketEvent::SocketEvent(EventLoop* event_loop,
 , msg_idx_(0)
 , msg_size_(0)
 , protocol_version_(protocol_version)
+, use_heartbeat_deltas_(use_heartbeat_deltas)
 , fd_(fd)
 , write_ready_(event_loop->CreateEventTrigger())
 , event_loop_(event_loop)
@@ -676,7 +681,14 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
   if (msg_type == MessageType::mHeartbeat) {
     std::unique_ptr<MessageHeartbeat> hb(
       static_cast<MessageHeartbeat*>(msg.release()));
-    DeliverAggregatedHeartbeat(std::move(hb));
+    DeliverHeartbeats(hb->GetHealthyStreams());
+    return true;
+  }
+
+  if (msg_type == MessageType::mHeartbeatDelta) {
+    std::unique_ptr<MessageHeartbeatDelta> hb(
+      static_cast<MessageHeartbeatDelta*>(msg.release()));
+    ProcessHeartbeatDelta(std::move(hb));
     return true;
   }
 
@@ -748,10 +760,10 @@ std::string SocketEvent::GetSourceName() const {
   return std::string(buffer);
 }
 
-void SocketEvent::DeliverAggregatedHeartbeat(
-  std::unique_ptr<MessageHeartbeat> msg) {
+void SocketEvent::DeliverHeartbeats(
+  const MessageHeartbeat::StreamSet& streams) {
 
-  for (auto stream_id : msg->GetHealthyStreams()) {
+  for (auto stream_id : streams) {
     hb_timeout_list_.Add(stream_id);
 
     auto it = remote_id_to_stream_.find(stream_id);
@@ -765,6 +777,15 @@ void SocketEvent::DeliverAggregatedHeartbeat(
     Stream* stream = it->second;
     stream->NotifyHealthy(true);
   }
+}
+
+void SocketEvent::ProcessHeartbeatDelta(
+    std::unique_ptr<MessageHeartbeatDelta> msg) {
+  // Apply deltas to our received heartbeat state and deliver.
+  ApplyDeltas(msg->GetAddedHealthyStreams(),
+              msg->GetRemovedHealthyStreams(),
+              &previous_recv_heartbeats_);
+  DeliverHeartbeats(previous_recv_heartbeats_);
 }
 
 void SocketEvent::CheckHeartbeats() {
@@ -810,11 +831,24 @@ void SocketEvent::FlushCapturedHeartbeats() {
   std::sort(streams.begin(), streams.end());
   streams.erase(std::unique(streams.begin(), streams.end()), streams.end());
 
-  MessageHeartbeat msg(Tenant::GuestTenant,
-                       MessageHeartbeat::Clock::now(),
-                       std::move(streams));
   std::string value;
-  msg.SerializeToString(&value);
+  if (use_heartbeat_deltas_) {
+    // Compute deltas (added and removed heartbeats compared to last).
+    // e.g. if prev=(1,2,3) and streams=(1,4) then added=(4), removed=(2,3)
+    auto added_removed = GetDeltas(previous_sent_heartbeats_, streams);
+    previous_sent_heartbeats_ = std::move(streams);
+
+    MessageHeartbeatDelta msg(Tenant::GuestTenant,
+                              MessageHeartbeatDelta::Clock::now(),
+                              std::move(added_removed.first),
+                              std::move(added_removed.second));
+    msg.SerializeToString(&value);
+  } else {
+    MessageHeartbeat msg(Tenant::GuestTenant,
+                         MessageHeartbeat::Clock::now(),
+                         std::move(streams));
+    msg.SerializeToString(&value);
+  }
   stats_->agg_hb_serialized_bytes->Record(value.size());
   SerializedOnStream serialised;
   serialised.stream_id = 0;     // we ignore this for heartbeats on receive
