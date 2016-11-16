@@ -285,12 +285,12 @@ bool SocketEvent::EnqueueWrite(SerializedOnStream& value) {
   send_queue_.emplace_back(std::move(header_ser));
   send_queue_.emplace_back(std::move(stream_ser));
   send_queue_.emplace_back(std::move(value.serialised));
-  // Signal overflow if size limit was matched or exceeded.
 
+  // Signal overflow if size limit was matched or exceeded.
   const bool has_room =
       send_queue_.size() < event_loop_->GetOptions().send_queue_limit;
   if (!has_room) {
-    event_loop_->Unnotify(write_ready_);
+    SignalSocketUnwritable();
   }
 
   // Enable write event, as we have stuff to write.
@@ -328,7 +328,7 @@ SocketEvent::SocketEvent(EventLoop* event_loop,
 , fd_(fd)
 , write_ready_(event_loop->CreateEventTrigger())
 , event_loop_(event_loop)
-, timeout_cancelled_(false)
+, first_write_happened_(false)
 , remote_(std::move(remote))
 , is_inbound_(is_inbound) {
   thread_check_.Check();
@@ -434,6 +434,19 @@ void SocketEvent::UnregisterStream(StreamID remote_id, bool force) {
   }
 }
 
+void SocketEvent::SignalSocketWritable() {
+  event_loop_->Notify(write_ready_);
+  event_loop_->MarkWritable(this);
+}
+
+void SocketEvent::SignalSocketUnwritable() {
+  LOG_WARN(GetLogger(),
+           "Signaling that %s is unwritable. Starting a close timeout.",
+           GetSinkName().c_str());
+  event_loop_->Unnotify(write_ready_);
+  event_loop_->MarkUnwritable(this);
+}
+
 bool SocketEvent::IsWithoutStreamsForLongerThan(
   std::chrono::milliseconds mil) const {
   thread_check_.Check();
@@ -449,10 +462,10 @@ bool SocketEvent::IsWithoutStreamsForLongerThan(
 Status SocketEvent::WriteCallback() {
   thread_check_.Check();
 
-  if (!timeout_cancelled_) {
+  if (!first_write_happened_) {
     // This socket is now writable, so we can cancel the connect timeout.
-    event_loop_->MarkConnected(access::EventLoop(), this);
-    timeout_cancelled_ = true;
+    SignalSocketWritable();
+    first_write_happened_ = true;
   }
 
   RS_ASSERT(send_queue_.size() > 0);
@@ -529,7 +542,7 @@ Status SocketEvent::WriteCallback() {
         // enable the sink.
         if (send_queue_.size() ==
             event_loop_->GetOptions().send_queue_limit / 2) {
-          event_loop_->Notify(write_ready_);
+          SignalSocketWritable();
         }
       }
       stats_->write_succeed_iovec->Record(iovcnt);

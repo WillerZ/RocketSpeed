@@ -186,7 +186,8 @@ class SocketEvent : public Source<MessageOnStream>,
 
   EventLoop* event_loop_;
 
-  bool timeout_cancelled_;  // have we removed from EventLoop connect_timeout_?
+  bool first_write_happened_;  // have we told the EventLoop we're
+                               // connected and so writable?
 
   /** The remote destination. */
   HostId remote_;
@@ -250,6 +251,21 @@ class SocketEvent : public Source<MessageOnStream>,
   bool Receive(StreamID remote_id, std::unique_ptr<Message> message);
 
 
+  /**
+   * Tell anything listening that you can write to this socket.
+   */
+  void SignalSocketWritable();
+
+  /**
+   * Tell anything listening to stop writing.
+   */
+  void SignalSocketUnwritable();
+
+  /**
+   * Enqueue a message to be written to this socket.
+   *
+   * @return true iff the queue is not full.
+   */
   bool EnqueueWrite(SerializedOnStream& value);
 
   /**

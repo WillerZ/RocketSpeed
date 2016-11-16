@@ -113,8 +113,10 @@ class EventLoop {
     std::string stats_prefix;
     /** Default size of the command queue. */
     size_t command_queue_size = 50000;
-    /** Timeout for asynchronous ::connect calls. */
-    std::chrono::milliseconds connect_timeout{10000};
+    /** Close sockets that remain unwritable for longer than this
+     * period. This includes newly created sockets that do not connect
+     * within this timeout. */
+    std::chrono::milliseconds socket_timeout{10000};
     /**
      * The port on which the loop is listening.
      * Set to 0 to have auto-allocated port.
@@ -305,8 +307,13 @@ class EventLoop {
     return &inbound_allocator_;
   }
 
-  void MarkConnected(access::EventLoop, SocketEvent* socket) {
-    connect_timeout_.Erase(socket);
+  // We let the event loop check for socket timeouts as this is much
+  // more efficient than having many timeout events
+  void MarkWritable(SocketEvent* socket) {
+    unwritable_sockets_timeout_.Erase(socket);
+  }
+  void MarkUnwritable(SocketEvent* socket) {
+    unwritable_sockets_timeout_.Add(socket);
   }
 
   // TODO(t8971722)
@@ -682,11 +689,11 @@ class EventLoop {
   // received any data on.
   std::atomic<uint64_t> active_connections_;
 
-  // Timeouts for connect calls.
-  // Non-blocking connects do eventually timeout after ~2 minutes, but this
-  // is too long, and generally non-configurable, so we actively close the
-  // socket if it doesn't become writable after some time.
-  TimeoutList<SocketEvent*> connect_timeout_;
+  // Timeouts for connect calls and when sockets become unwritable.
+  // Non-blocking connects do eventually timeout after ~2 minutes, but
+  // this is too long, and generally non-configurable. We actively
+  // close the socket if it doesn't become writable after some time.
+  TimeoutList<SocketEvent*> unwritable_sockets_timeout_;
 
   // Thread check
   rocketspeed::ThreadCheck thread_check_;

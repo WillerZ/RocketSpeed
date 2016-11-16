@@ -418,14 +418,14 @@ void EventLoop::Run() {
       // The timeout list might be modified during the procedure
       // that closes the socket.
       std::vector<SocketEvent*> expired;
-      connect_timeout_.GetExpired(options_.connect_timeout,
-                                  std::back_inserter(expired));
+      unwritable_sockets_timeout_.GetExpired(options_.socket_timeout,
+                                             std::back_inserter(expired));
       for (auto socket : expired) {
         LOG_WARN(info_log_, "connect on fd(%d) timed out, closing",
             socket->GetFd());
         socket->Close(SocketEvent::ClosureReason::Error);
       }
-    }, options_.connect_timeout);
+    }, options_.socket_timeout);
 
 
   std::unique_ptr<EventCallback> connection_gc_timer;
@@ -752,8 +752,7 @@ SocketEvent* EventLoop::OpenSocketEvent(const HostId& destination) {
 
   // Record the connection in the cache.
   outbound_connections_.emplace(destination, socket);
-  // Setup a connect timeout.
-  connect_timeout_.Add(socket);
+  MarkUnwritable(socket); // Setup a connect timeout.
 
   // Update the number of active connections.
   active_connections_.store(owned_connections_.size(),
@@ -770,8 +769,8 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, SocketEvent* socket) {
   RS_ASSERT(socket);
   thread_check_.Check();
 
-  // Cancel connect timeout.
-  connect_timeout_.Erase(socket);
+  // Cancel any timeout.
+  unwritable_sockets_timeout_.Erase(socket);
 
   // Remove the socket from internal routing structures.
   size_t removed = outbound_connections_.erase(socket->GetDestination());

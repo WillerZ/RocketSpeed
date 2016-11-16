@@ -803,7 +803,7 @@ TEST_F(Messaging, TimeoutTest) {
 
 TEST_F(Messaging, ConnectTimeout) {
   MsgLoop::Options opts;
-  opts.event_loop.connect_timeout = std::chrono::milliseconds(200);
+  opts.event_loop.socket_timeout = std::chrono::milliseconds(500);
   MsgLoop loop(env_, env_options_, -1, 1, info_log_, "loop", opts);
   ASSERT_OK(loop.Initialize());
 
@@ -833,8 +833,8 @@ TEST_F(Messaging, ConnectTimeout) {
   // On OSX we could not force the OS to defer closure of the connection (i.e.
   // it happens immediately).
   // TODO: renable this after reworking test: t13526223
-  // ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.connect_timeout / 2));
-  ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.connect_timeout * 2));
+  // ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.socket_timeout / 2));
+  ASSERT_TRUE(goodbye.TimedWait(opts.event_loop.socket_timeout * 2));
 #endif  // OS_MACOSX
 }
 
