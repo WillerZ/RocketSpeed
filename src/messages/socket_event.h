@@ -76,13 +76,14 @@ class SocketEvent : public Source<MessageOnStream>,
    * @param event_loop An event loop to register the socket with.
    * @param fd The physical socket.
    * @param protocol_version Version of the protocol to use for this socket.
-   * @param destination An optional destination, if present indicates that this
-   *                    is an outbound socket.
+   * @param remote Description of the remote.
+   * @param is_inbound Is this socket inbound?
    */
   static std::unique_ptr<SocketEvent> Create(EventLoop* event_loop,
                                              int fd,
                                              uint8_t protocol_version,
-                                             HostId destination = HostId());
+                                             HostId remote,
+                                             bool is_inbound);
 
   /**
    * Closes all streams on the connection and connection itself.
@@ -125,9 +126,9 @@ class SocketEvent : public Source<MessageOnStream>,
   std::unique_ptr<EventCallback> CreateWriteCallback(
       EventLoop* event_loop, std::function<void()> callback) final override;
 
-  bool IsInbound() const { return !destination_; }
+  bool IsInbound() const { return is_inbound_; }
 
-  const HostId& GetDestination() const { return destination_; }
+  const HostId& GetDestination() const { return remote_; }
 
   EventLoop* GetEventLoop() const { return event_loop_; }
 
@@ -187,8 +188,10 @@ class SocketEvent : public Source<MessageOnStream>,
 
   bool timeout_cancelled_;  // have we removed from EventLoop connect_timeout_?
 
-  /** A remote destination, non-empty for outbound connections only. */
-  HostId destination_;
+  /** The remote destination. */
+  HostId remote_;
+  /** Is this socket inbound? */
+  bool is_inbound_;
   /**
    * A map from remote (the one on the wire) StreamID to corresponding Stream
    * object for all (both inbound and outbound) streams.
@@ -218,7 +221,8 @@ class SocketEvent : public Source<MessageOnStream>,
   SocketEvent(EventLoop* event_loop,
               int fd,
               uint8_t protocol_version,
-              HostId destination);
+              HostId destination,
+              bool is_inbound);
 
   /**
    * Unregisters a stream with provided remote StreamID from the SocketEvent and

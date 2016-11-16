@@ -93,9 +93,9 @@ MsgLoop::MsgLoop(BaseEnv* env,
     EventCallback(flow, std::move(msg), origin);
   };
 
-  const auto accept_callback = [this](int fd) {
+  const auto accept_callback = [this](int fd, HostId host_id) {
     // Assign the new connection to the least loaded event loop.
-    event_loops_[LoadBalancedWorkerId()]->Accept(fd);
+    event_loops_[LoadBalancedWorkerId()]->Accept(fd, host_id);
   };
 
   // Setup EventLoop options.

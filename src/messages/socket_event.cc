@@ -107,10 +107,11 @@ SocketEventStats::SocketEventStats(const std::string& prefix) {
 std::unique_ptr<SocketEvent> SocketEvent::Create(EventLoop* event_loop,
                                                  const int fd,
                                                  uint8_t protocol_version,
-                                                 HostId destination) {
+                                                 HostId remote,
+                                                 bool is_inbound) {
   std::unique_ptr<SocketEvent> sev(
       new SocketEvent(
-          event_loop, fd, protocol_version, std::move(destination)));
+          event_loop, fd, protocol_version, std::move(remote), is_inbound));
 
   if (!sev->read_ev_ || !sev->write_ev_) {
     LOG_ERROR(
@@ -138,7 +139,7 @@ void SocketEvent::Close(ClosureReason reason) {
   LOG_INFO(GetLogger(),
            "Closing SocketEvent(%d, %s), reason: %d",
            fd_,
-           destination_.ToString().c_str(),
+           remote_.ToString().c_str(),
            static_cast<int>(reason));
 
   // Unregister this socket from flow control.
@@ -193,7 +194,7 @@ SocketEvent::~SocketEvent() {
   LOG_INFO(GetLogger(),
            "Destroying SocketEvent(%d, %s)",
            fd_,
-           destination_.ToString().c_str());
+           remote_.ToString().c_str());
 
   read_ev_.reset();
   write_ev_.reset();
@@ -257,7 +258,7 @@ bool SocketEvent::Write(MessageOnStream& value) {
             "Writing %zd bytes to SocketEvent(%d, %s)",
             serialised.serialised.size(),
             fd_,
-            destination_.ToString().c_str());
+            remote_.ToString().c_str());
 
   bool has_room = EnqueueWrite(serialised);
 
@@ -314,8 +315,11 @@ const std::shared_ptr<Logger>& SocketEvent::GetLogger() const {
   return event_loop_->GetLog();
 }
 
-SocketEvent::SocketEvent(
-    EventLoop* event_loop, int fd, uint8_t protocol_version, HostId destination)
+SocketEvent::SocketEvent(EventLoop* event_loop,
+                         int fd,
+                         uint8_t protocol_version,
+                         HostId remote,
+                         bool is_inbound)
 : stats_(event_loop->GetSocketStats())
 , hdr_idx_(0)
 , msg_idx_(0)
@@ -325,7 +329,8 @@ SocketEvent::SocketEvent(
 , write_ready_(event_loop->CreateEventTrigger())
 , event_loop_(event_loop)
 , timeout_cancelled_(false)
-, destination_(std::move(destination)) {
+, remote_(std::move(remote))
+, is_inbound_(is_inbound) {
   thread_check_.Check();
 
   // Create read and write events

@@ -10,16 +10,16 @@
 #include <cstring>
 #include <string>
 
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "src/util/common/hash.h"
 #include "src/util/common/parsing.h"
-
-#include <netdb.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 
 namespace rocketspeed {
 
@@ -73,6 +73,36 @@ HostId HostId::CreateLocal(uint16_t port, std::string description) {
   socklen_t addrlen = static_cast<socklen_t>(sizeof(loopback));
   return HostId(addr, addrlen, std::move(description));
 }
+
+HostId HostId::CreateFromSockaddr(const sockaddr* addr, socklen_t addrlen) {
+  std::string description;
+  switch (addr->sa_family) {
+    case AF_INET: {
+      auto v4addr = reinterpret_cast<const sockaddr_in*>(addr);
+      uint16_t port = v4addr->sin_port;
+      char buffer[INET_ADDRSTRLEN];
+      const char* str =
+          inet_ntop(AF_INET, &(v4addr->sin_addr), buffer, INET_ADDRSTRLEN);
+      description = std::string(str) + ":" + std::to_string(port);
+      break;
+    }
+    case AF_INET6: {
+      auto v6addr = reinterpret_cast<const sockaddr_in6*>(addr);
+      uint16_t port = v6addr->sin6_port;
+      char buffer[INET6_ADDRSTRLEN];
+      const char* str =
+          inet_ntop(AF_INET6, &(v6addr->sin6_addr), buffer, INET6_ADDRSTRLEN);
+      description = std::string(str) + ":" + std::to_string(port);
+      break;
+    }
+    default:
+      RS_ASSERT_DBG(false) << "Unknown sa_family";
+      description = "ERROR - unknown sa_family";
+      break;
+  }
+  return HostId(addr, addrlen, std::move(description));
+}
+
 
 HostId::HostId() : addrlen_(0) {
   memset(&storage_, 0, sizeof(storage_));

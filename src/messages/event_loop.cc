@@ -60,8 +60,8 @@ const int EventLoop::kLogSeverityErr = _EVENT_LOG_ERR;
 
 class AcceptCommand : public Command {
  public:
-  explicit AcceptCommand(int fd)
-      : fd_(fd) {}
+  explicit AcceptCommand(int fd, HostId remote_id)
+      : fd_(fd), remote_id_(remote_id) {}
   virtual ~AcceptCommand() {
     if (fd_ >= 0) {
       close(fd_);
@@ -76,8 +76,13 @@ class AcceptCommand : public Command {
     return fd;
   }
 
+  const HostId& GetRemoteId() const {
+    return remote_id_;
+  }
+
  private:
   int fd_;
+  const HostId remote_id_;
 };
 
 // TODO(t8971722)
@@ -134,7 +139,10 @@ void EventLoop::HandleAcceptCommand(std::unique_ptr<Command> command) {
   AcceptCommand* accept_cmd = static_cast<AcceptCommand*>(command.get());
   // Create SocketEvent and pass ownership to the loop.
   int fd = accept_cmd->DetachFD();
-  auto owned_socket = SocketEvent::Create(this, fd, options_.protocol_version);
+  const bool is_inbound = true;
+  auto owned_socket = SocketEvent::Create(
+      this, fd, options_.protocol_version, accept_cmd->GetRemoteId(),
+      is_inbound);
   const auto socket = owned_socket.get();
   if (!socket) {
     LOG_ERROR(info_log_,
@@ -175,10 +183,12 @@ EventLoop::do_accept(evconnlistener *listener,
   EventLoop* event_loop = static_cast<EventLoop *>(arg);
   event_loop->thread_check_.Check();
   setup_fd(fd, event_loop);
+
+  HostId host_id = HostId::CreateFromSockaddr(address, socklen);
   if (event_loop->accept_callback_) {
-    event_loop->accept_callback_(fd);
+    event_loop->accept_callback_(fd, host_id);
   } else {
-    event_loop->Accept(fd);
+    event_loop->Accept(fd, host_id);
   }
 }
 
@@ -725,8 +735,9 @@ SocketEvent* EventLoop::OpenSocketEvent(const HostId& destination) {
   }
 
   // Create SocketEvent and pass ownership to the loop.
-  auto owned_socket =
-      SocketEvent::Create(this, fd, options_.protocol_version, destination);
+  const bool is_inbound = false;
+  auto owned_socket = SocketEvent::Create(
+      this, fd, options_.protocol_version, destination, is_inbound);
   const auto socket = owned_socket.get();
   if (!socket) {
     LOG_ERROR(info_log_,
@@ -764,8 +775,7 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, SocketEvent* socket) {
 
   // Remove the socket from internal routing structures.
   size_t removed = outbound_connections_.erase(socket->GetDestination());
-  RS_ASSERT(removed == 1 || !socket->GetDestination());
-  (void)removed;
+  RS_ASSERT_DBG(removed == 1 || socket->IsInbound());
 
   // Defer destruction of the socket.
   auto it = owned_connections_.find(socket);
@@ -939,9 +949,9 @@ void EventLoop::SendControlCommand(std::unique_ptr<Command> command) {
   control_command_queue_->Write(command);
 }
 
-void EventLoop::Accept(int fd) {
+void EventLoop::Accept(int fd, HostId host_id) {
   // May be called from another thread, so must add to the command queue.
-  std::unique_ptr<Command> command(new AcceptCommand(fd));
+  std::unique_ptr<Command> command(new AcceptCommand(fd, host_id));
   SendCommand(command);
 }
 

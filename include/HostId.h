@@ -45,6 +45,11 @@ class HostId {
    */
   static HostId CreateLocal(uint16_t port, std::string description = "");
 
+  /**
+   * Creates HostID out of sockaddr struct.
+   */
+  static HostId CreateFromSockaddr(const sockaddr* addr, socklen_t addrlen);
+
   HostId();
 
   bool operator<(const HostId& rhs) const;

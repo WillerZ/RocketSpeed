@@ -72,7 +72,7 @@ typedef std::function<void(
     Flow* flow, std::unique_ptr<Message> message, StreamID origin)>
     EventCallbackType;
 
-typedef std::function<void(int fd)> AcceptCallbackType;
+typedef std::function<void(int fd, HostId host_id)> AcceptCallbackType;
 
 // Callback registered for a command type is invoked for all commands of the
 // type.
@@ -382,7 +382,7 @@ class EventLoop {
 
   // Start communicating on a fd.
   // This call is thread-safe.
-  void Accept(int fd);
+  void Accept(int fd, HostId host_id);
 
   /**
    * Invokes callback for provided command in the calling thread.
