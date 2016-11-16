@@ -52,6 +52,9 @@ struct RocketeerOptions {
 
   /** Queue size for event loop. */
   size_t queue_size = 1000;
+
+  /** If socket is unwriteable for this amount of time, it will be closed. */
+  std::chrono::milliseconds socket_timeout{10000};
 };
 
 class RocketeerServer {

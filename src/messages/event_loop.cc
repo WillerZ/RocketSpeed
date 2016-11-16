@@ -413,6 +413,8 @@ void EventLoop::Run() {
   info_log_->Flush();
 
   // Register a timer for checking expired connections.
+  // Timeouts are checked 10x more often than the period to avoid delay.
+  auto check_period = options_.socket_timeout / 10;
   std::unique_ptr<EventCallback> expired_connections_timer =
     RegisterTimerCallback([this]() {
       // The timeout list might be modified during the procedure
@@ -421,11 +423,11 @@ void EventLoop::Run() {
       unwritable_sockets_timeout_.GetExpired(options_.socket_timeout,
                                              std::back_inserter(expired));
       for (auto socket : expired) {
-        LOG_WARN(info_log_, "connect on fd(%d) timed out, closing",
+        LOG_WARN(info_log_, "Writes to fd(%d) timed out, closing socket",
             socket->GetFd());
         socket->Close(SocketEvent::ClosureReason::Error);
       }
-    }, options_.socket_timeout);
+    }, check_period);
 
 
   std::unique_ptr<EventCallback> connection_gc_timer;
@@ -483,6 +485,9 @@ void EventLoop::Run() {
     event_free(startup_event_);
   }
 
+  for (auto& queue : incoming_queues_) {
+    flow_control_->UnregisterSource(queue.get());
+  }
   incoming_queues_.clear();
   notified_triggers_event_.reset();
   shutdown_event_.reset();

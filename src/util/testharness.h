@@ -92,6 +92,7 @@ bool WaitUntil(
     /* sleep override */
     std::this_thread::sleep_for(wait);
     wait *= 2;  // exp backoff
+    wait = std::min(wait, std::chrono::milliseconds(200));
   }
   return true;
 }
