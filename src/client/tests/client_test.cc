@@ -152,6 +152,9 @@ class MockSubscriber : public SubscriberIf
                            SequenceNumber seqno) override {
   }
 
+  void HasMessageSince(HasMessageSinceParams) override {
+  }
+
   virtual void TerminateSubscription(SubscriptionID sub_id) override {
     ASSERT_TRUE(subscription_state_ && sub_id_ == sub_id);
     using Info = MockSubscriber::Info;

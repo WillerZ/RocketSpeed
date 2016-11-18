@@ -405,6 +405,38 @@ class Client {
   virtual Status Acknowledge(const MessageReceived& message) = 0;
 
   /**
+   * Check if a subscription has had an update in the recent past. This can
+   * be useful when trying to synchronise two subscribers on the same topic,
+   * which may be at different sequence numbers.
+   *
+   * The callback will be called with 'true' if there has been a message on the
+   * topic between (epoch, seqno) and the current position of the subscription.
+   * The callback will be invoked in the same thread as the subscription
+   * callbacks, and in the same order so that the result is correct for the
+   * subscription's position as the application sees it.
+   *
+   * @param sub_handle The subscription to test against.
+   * @param namespace_id The namespace of the subscription.
+   * @param topic The topic of the subscription.
+   * @param epoch The epoch of the lower bound on the query.
+   * @param seqno The sequence number of the lower bound on the query.
+   * @param callback The callback to invoke when the query completes. This is
+   *                 guaranteed to be called, unless the client is destroyed.
+   *                 Will be invoked with true if there has been a message
+   *                 at or after (epoch, seqno), up to (but not including) the
+   *                 current position of the subscription.
+   * @return Status::OK() if the message was sent.
+   *         Status::NoBuffer() if the message could not be queued. In this
+   *         case the application should try again later.
+   */
+  virtual Status HasMessageSince(SubscriptionHandle sub_handle,
+                                 NamespaceID namespace_id,
+                                 Topic topic,
+                                 Epoch epoch,
+                                 SequenceNumber seqno,
+                                 std::function<void(bool)> callback) = 0;
+
+  /**
    * Saves state of subscriptions according to strategy selected when opening
    * the client.
    * All messages acknowledged before this call will be included in the saved

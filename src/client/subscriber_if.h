@@ -18,6 +18,19 @@ class SubscriptionID;
 class SubscriptionParameters;
 
 /**
+ * Parameters for HasMessageSince call.
+ */
+class HasMessageSinceParams {
+ public:
+  SubscriptionID sub_id;
+  NamespaceID namespace_id;
+  Topic topic;
+  Epoch epoch;
+  SequenceNumber seqno;
+  std::function<void(bool)> callback;
+};
+
+/**
  * Interface letting user to trace or debug Subscriber with a set of hooks
  * corresponding to its API and Observer API.
  * Multithread clients will callback from thread specific
@@ -65,6 +78,9 @@ class SubscriberIf {
   /// If SubscriptionStorage is being used, the Subscriber can resume
   /// subscripions from storage starting from next unacknowledged message.
   virtual void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) = 0;
+
+  /// Sends a request to know if message has been
+  virtual void HasMessageSince(HasMessageSinceParams params) = 0;
 
   /// Terminates previously established subscription.
   virtual void TerminateSubscription(SubscriptionID sub_id) = 0;

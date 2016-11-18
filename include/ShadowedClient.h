@@ -110,6 +110,13 @@ class ShadowedClient : public Client {
 
   Status Acknowledge(const MessageReceived& message) override;
 
+  Status HasMessageSince(SubscriptionHandle sub_handle,
+                         NamespaceID namespace_id,
+                         Topic topic,
+                         Epoch epoch,
+                         SequenceNumber seqno,
+                         std::function<void(bool)> callback) override;
+
   void SaveSubscriptions(SaveSubscriptionsCallback save_callback) override;
 
   Status RestoreSubscriptions(

@@ -153,6 +153,11 @@ void Subscriber::Acknowledge(SubscriptionID sub_id,
   last_acks_map_[sub_id] = acked_seqno;
 }
 
+void Subscriber::HasMessageSince(HasMessageSinceParams params) {
+  // TODO(pja)
+  params.callback(false);
+}
+
 void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
   thread_check_.Check();
 

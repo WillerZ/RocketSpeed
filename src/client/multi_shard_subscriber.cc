@@ -184,6 +184,12 @@ void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
   }
 }
 
+void MultiShardSubscriber::HasMessageSince(HasMessageSinceParams params) {
+  if (auto subscriber = GetSubscriberForSubscription(params.sub_id)) {
+    subscriber->HasMessageSince(std::move(params));
+  }
+}
+
 void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
   if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
     subscriber->TerminateSubscription(sub_id);

@@ -83,6 +83,14 @@ typedef std::string Topic;
 typedef uint64_t SequenceNumber;
 
 /**
+ * Along with a sequence number, each message belongs to an epoch. An epoch
+ * can be considered the high-order, but unordered part of the sequencing space.
+ * Epochs generally change when there is some failover or other loss of
+ * continuity in the data source, where monotonic sequencing is lost.
+ */
+using Epoch = std::string;
+
+/**
  * A globally unique identifier.
  */
 struct GUID {

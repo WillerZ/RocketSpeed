@@ -104,6 +104,8 @@ void MultiThreadedSubscriber::Stop() {
               void Acknowledge(SubscriptionID sub_id,
                                SequenceNumber seqno) override{};
 
+              void HasMessageSince(HasMessageSinceParams) override{};
+
               void TerminateSubscription(SubscriptionID sub_id) override{};
 
               bool Empty() const override { return true; };
@@ -292,6 +294,30 @@ bool MultiThreadedSubscriber::Acknowledge(const MessageReceived& message) {
     return false;
   }
   return true;
+}
+
+Status MultiThreadedSubscriber::HasMessageSince(HasMessageSinceParams params) {
+  // Determine corresponding worker, its queue, and subscription ID.
+  const auto worker_id = GetWorkerID(params.sub_id);
+  if (worker_id < 0) {
+    LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
+    return Status::InvalidArgument("Corrupted subscription handle");;
+  }
+
+  RS_ASSERT(static_cast<size_t>(worker_id) < subscriber_queues_.size());
+  auto* worker_queue = subscriber_queues_[worker_id].get();
+
+  // Send command to responsible worker.
+  std::unique_ptr<ExecuteCommand> command(
+      MakeExecuteCommand(
+          [this, worker_id, params = std::move(params)]() mutable {
+        subscribers_[worker_id]->HasMessageSince(std::move(params));
+      }));
+
+  if (!worker_queue->TryWrite(command)) {
+    return Status::NoBuffer();
+  }
+  return Status::OK();
 }
 
 void MultiThreadedSubscriber::SaveSubscriptions(

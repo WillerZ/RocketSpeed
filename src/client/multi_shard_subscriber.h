@@ -56,6 +56,8 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
 
   void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) override;
 
+  void HasMessageSince(HasMessageSinceParams params) override;
+
   void TerminateSubscription(SubscriptionID sub_id) override;
 
   bool Empty() const override { return subscribers_.empty(); }

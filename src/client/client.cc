@@ -351,6 +351,30 @@ Status ClientImpl::Acknowledge(const MessageReceived& message) {
   return subscriber_->Acknowledge(message) ? Status::OK() : Status::NoBuffer();
 }
 
+Status ClientImpl::HasMessageSince(SubscriptionHandle sub_handle,
+                                   NamespaceID namespace_id,
+                                   Topic topic,
+                                   Epoch epoch,
+                                   SequenceNumber seqno,
+                                   std::function<void(bool)> callback) {
+  RS_ASSERT_DBG(callback);
+  if (!callback) {
+    return Status::InvalidArgument("No callback provided");
+  }
+  HasMessageSinceParams params;
+  params.sub_id = SubscriptionID::Unsafe(sub_handle);
+  if (!params.sub_id) {
+    LOG_ERROR(options_.info_log, "Invalid subscription handle");
+    return Status::InvalidArgument("Invalid subscription handle");
+  }
+  params.namespace_id = std::move(namespace_id);
+  params.topic = std::move(topic);
+  params.epoch = std::move(epoch);
+  params.seqno = seqno;
+  params.callback = std::move(callback);
+  return subscriber_->HasMessageSince(std::move(params));
+}
+
 void ClientImpl::SaveSubscriptions(SaveSubscriptionsCallback save_callback) {
   subscriber_->SaveSubscriptions(std::move(save_callback));
 }

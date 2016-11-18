@@ -237,6 +237,10 @@ void TailCollapsingSubscriber::Acknowledge(SubscriptionID downstream_id,
   // TODO(t10075879)
 }
 
+void TailCollapsingSubscriber::HasMessageSince(HasMessageSinceParams params) {
+  subscriber_->HasMessageSince(std::move(params));
+}
+
 void TailCollapsingSubscriber::TerminateSubscription(
     SubscriptionID downstream_id) {
   SubscriptionID upstream_id;

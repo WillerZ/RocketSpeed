@@ -23,6 +23,7 @@ namespace rocketspeed {
 class ClientOptions;
 class Command;
 class ExecuteCommand;
+class HasMessageSinceParams;
 class MsgLoop;
 class Statistics;
 class SubscriberStats;
@@ -70,6 +71,8 @@ class MultiThreadedSubscriber {
    * overflow.
    */
   bool Acknowledge(const MessageReceived& message);
+
+  Status HasMessageSince(HasMessageSinceParams params);
 
   // TODO(t9457879)
   void SaveSubscriptions(SaveSubscriptionsCallback save_callback);

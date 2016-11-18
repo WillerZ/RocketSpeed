@@ -79,6 +79,8 @@ class Subscriber : public SubscriberIf {
 
   void Acknowledge(SubscriptionID sub_id, SequenceNumber seqno) override;
 
+  void HasMessageSince(HasMessageSinceParams params) override;
+
   void TerminateSubscription(SubscriptionID sub_id) override;
 
   bool Empty() const override { return subscriptions_map_.Empty(); }
