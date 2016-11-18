@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-#include <folly/producer_consumer_queue.h>
+#include "external/folly/producer_consumer_queue.h"
 
 #include "include/Rocketeer.h"
 #include "include/RocketeerServer.h"
