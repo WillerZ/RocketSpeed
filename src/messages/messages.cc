@@ -831,10 +831,6 @@ Status MessageHeartbeatDelta::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad tenant ID");
   }
 
-  if (in->size() == 0) {
-    return Status::OK();        // for backwards compatibility
-  }
-
   uint64_t epoch_ms;
   if (!GetFixed64(in, &epoch_ms)) {
     return Status::InvalidArgument("Bad timestamp");
