@@ -154,6 +154,55 @@ class Rocketeer {
       Flow* flow, InboundID inbound_id, TerminationSource source);
 
   /**
+   * Notifies about a new HasMessageSince request.
+   * The implementation must successfully invoke HasMessageSinceResponse at
+   * least once on the same inbound_id, namespace, and topic, after this call
+   * has begun.
+   *
+   * The response must be true iff there has been a message on the specified
+   * topic, between (epoch, seqno) and the subscription's current position.
+   *
+   * Implementations should provide either TryHandleHasMessageSince or
+   * HandleHasMessageSince, but not both. If both are provided, this version is
+   * preferred.
+   *
+   * @param flow Flow control handle for exerting back-pressure.
+   * @param inbound_id ID of the subscription to test against.
+   * @param namespace_id The namespace of the topic to test.
+   * @param topic The topic name of the topic to test.
+   * @param epoch The epoch of the starting point of the test.
+   * @param seqno The sequence number of the starting point of the test.
+   */
+  virtual void HandleHasMessageSince(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno);
+
+  /**
+   * Notifies about a new HasMessageSince request.
+   * The implementation must successfully invoke HasMessageSinceResponse at
+   * least once on the same inbound_id, namespace, and topic, after this call
+   * has begun.
+   *
+   * The response must be true iff there has been a message on the specified
+   * topic, between (epoch, seqno) and the subscription's current position.
+   *
+   * Implementations should provide either TryHandleHasMessageSince or
+   * HandleHasMessageSince, but not both. If both are provided, this version is
+   * ignored.
+   *
+   * @param inbound_id ID of the subscription to test against.
+   * @param namespace_id The namespace of the topic to test.
+   * @param topic The topic name of the topic to test.
+   * @param epoch The epoch of the starting point of the test.
+   * @param seqno The sequence number of the starting point of the test.
+   * @return Back pressure status. Use BackPressure::None() if message was
+   *         processed successfully, otherwise specify type of back pressure.
+   */
+  virtual BackPressure TryHandleHasMessageSince(
+      InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
+      SequenceNumber seqno);
+
+  /**
    * Sends a message on given subscription.
    * This method needs to be called on the thread this instance runs on.
    *
@@ -211,6 +260,23 @@ class Rocketeer {
   virtual void Terminate(Flow* flow,
                          InboundID inbound_id,
                          UnsubscribeReason reason);
+
+  /**
+   * Response to TryHandleHasMessageSince. Must be called at least once after
+   * each TryHandleHasMessageSince invocation. The inbound_id, namespace_id,
+   * epoch, and seqno must be the same as that in the request.
+   *
+   * @param flow Handle for flow control.
+   * @param inbound_id ID of the subscription that was tested.
+   * @param namespace_id The namespace of the topic tested.
+   * @param topic The topic name of the topic tested.
+   * @param epoch The epoch of the starting point of the test.
+   * @param seqno The sequence number of the starting point of the test.
+   * @param response The result of the query. See HasMessageSinceResult.
+   */
+  virtual void HasMessageSinceResponse(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response);
 
   /**
    * Returns a pointer to the Rocketeer below this one in the stack, which

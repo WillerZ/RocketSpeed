@@ -79,6 +79,15 @@ class CommunicationRocketeer : public Rocketeer {
                  InboundID inbound_id,
                  UnsubscribeReason reason) final override;
 
+
+  void HasMessageSinceResponse(Flow* flow,
+                               InboundID inbound_id,
+                               NamespaceID namespace_id,
+                               Topic topic,
+                               Epoch epoch,
+                               SequenceNumber seqno,
+                               HasMessageSinceResult response) final override;
+
   size_t GetID() const;
 
  private:
@@ -281,6 +290,18 @@ void CommunicationRocketeer::Terminate(Flow* flow,
             "Likely a race with termination on this subscription.",
             origin,
             sub_id.ForLogging());
+}
+
+void CommunicationRocketeer::HasMessageSinceResponse(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
+  (void)flow;
+  (void)inbound_id;
+  (void)namespace_id;
+  (void)topic;
+  (void)epoch;
+  (void)seqno;
+  (void)response;
 }
 
 size_t CommunicationRocketeer::GetID() const {
@@ -529,6 +550,23 @@ bool RocketeerServer::Terminate(InboundID inbound_id,
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id, reason](Flow* flow) mutable {
     rocketeers_[worker_id]->Terminate(flow, inbound_id, reason);
+  };
+  return msg_loop_
+      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
+      .ok();
+}
+
+bool RocketeerServer::HasMessageSinceResponse(
+    InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
+    SequenceNumber seqno, HasMessageSinceResult response) {
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command = [this, worker_id, inbound_id,
+                  namespace_id = std::move(namespace_id),
+                  topic = std::move(topic), epoch = std::move(epoch), seqno,
+                  response](Flow* flow) mutable {
+    rocketeers_[worker_id]->HasMessageSinceResponse(flow, inbound_id,
+        std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
+        response);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)

@@ -112,11 +112,21 @@ class RocketeerServer {
    */
   bool Advance(InboundID inbound_id, SequenceNumber seqno);
 
-  /** A thread-safe version of Rocketeer::.
+  /**
+   * A thread-safe version of Rocketeer::Terminate.
    *
    * @return true iff operation was successfully scheduled.
    */
   bool Terminate(InboundID inbound_id, Rocketeer::UnsubscribeReason reason);
+
+  /**
+   * A thread-safe version of Rocketeer::HasMessageSinceResponse.
+   *
+   * @return true iff operation was successfully scheduled.
+   */
+  bool HasMessageSinceResponse(
+      InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
+      SequenceNumber seqno, HasMessageSinceResult response);
 
   /** Returns server-wide statistics. */
   // DEPRECATED

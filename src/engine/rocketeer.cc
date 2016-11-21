@@ -117,6 +117,28 @@ void Rocketeer::HandleTermination(
   flow->Write(metadata_sink_.get(), msg);
 }
 
+BackPressure Rocketeer::TryHandleHasMessageSince(
+      InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
+      SequenceNumber seqno) {
+  (void)inbound_id;
+  (void)namespace_id;
+  (void)topic;
+  (void)epoch;
+  (void)seqno;
+  return BackPressure::None();
+}
+
+void Rocketeer::HandleHasMessageSince(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno) {
+  (void)flow;
+  (void)inbound_id;
+  (void)namespace_id;
+  (void)topic;
+  (void)epoch;
+  (void)seqno;
+}
+
 void Rocketeer::Deliver(Flow* flow,
                         InboundID inbound_id,
                         SequenceNumber seqno,
@@ -142,6 +164,14 @@ void Rocketeer::Terminate(Flow* flow,
                           InboundID inbound_id,
                           UnsubscribeReason reason) {
   GetBelowRocketeer()->Terminate(flow, inbound_id, reason);
+}
+
+void Rocketeer::HasMessageSinceResponse(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
+  GetBelowRocketeer()->HasMessageSinceResponse(flow, inbound_id,
+      std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
+      response);
 }
 
 }  // namespace rocketspeed
