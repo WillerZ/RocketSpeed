@@ -104,12 +104,13 @@ class ClientImpl : public Client {
 
   Status Acknowledge(const MessageReceived& message) override;
 
-  Status HasMessageSince(SubscriptionHandle sub_handle,
-                         NamespaceID namespace_id,
-                         Topic topic,
-                         Epoch epoch,
-                         SequenceNumber seqno,
-                         std::function<void(bool)> callback) override;
+  Status HasMessageSince(
+      SubscriptionHandle sub_handle,
+      NamespaceID namespace_id,
+      Topic topic,
+      Epoch epoch,
+      SequenceNumber seqno,
+      std::function<void(HasMessageSinceResult)> callback) override;
 
   void SaveSubscriptions(SaveSubscriptionsCallback save_callback) override;
 

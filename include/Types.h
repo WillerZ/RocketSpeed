@@ -507,6 +507,24 @@ class DataLossInfo {
   virtual ~DataLossInfo() {}
 };
 
+/**
+ * Response for HasMessageSince query.
+ */
+enum class HasMessageSinceResult : uint8_t {
+  /// The request failed to complete.
+  kInvalid = 0,
+
+  /// There are no messages in the requested range.
+  kNo = 1,
+
+  /// There definitely was a message in the requested range.
+  kYes = 2,
+
+  /// There maybe was a message in the requested range. This may be sent if
+  /// the server has missing or approximate information.
+  kMaybe = 3,
+};
+
 /** Visitor for RocketSpeed statistics. */
 class StatisticsVisitor {
  public:

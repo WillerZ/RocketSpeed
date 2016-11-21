@@ -162,12 +162,13 @@ Status ShadowedClient::Acknowledge(const MessageReceived& message) {
   return client_->Acknowledge(message);
 }
 
-Status ShadowedClient::HasMessageSince(SubscriptionHandle sub_handle,
-                                       NamespaceID namespace_id,
-                                       Topic topic,
-                                       Epoch epoch,
-                                       SequenceNumber seqno,
-                                       std::function<void(bool)> callback) {
+Status ShadowedClient::HasMessageSince(
+    SubscriptionHandle sub_handle,
+    NamespaceID namespace_id,
+    Topic topic,
+    Epoch epoch,
+    SequenceNumber seqno,
+    std::function<void(HasMessageSinceResult)> callback) {
   // TODO(pja) - send shadow traffic for HasMessageSince with dummy callback.
   return client_->HasMessageSince(sub_handle, std::move(namespace_id),
       std::move(topic), std::move(epoch), seqno, std::move(callback));

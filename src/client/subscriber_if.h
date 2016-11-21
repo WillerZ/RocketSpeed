@@ -8,14 +8,13 @@
 #include <memory>
 
 #include "include/SubscriptionStorage.h"
+#include "include/Types.h"
 #include "subscriptions_map.h"
 
 namespace rocketspeed {
 
 class Observer;
-using SequenceNumber = uint64_t;
 class SubscriptionID;
-class SubscriptionParameters;
 
 /**
  * Parameters for HasMessageSince call.
@@ -27,7 +26,7 @@ class HasMessageSinceParams {
   Topic topic;
   Epoch epoch;
   SequenceNumber seqno;
-  std::function<void(bool)> callback;
+  std::function<void(HasMessageSinceResult)> callback;
 };
 
 /**

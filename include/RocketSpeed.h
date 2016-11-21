@@ -422,19 +422,18 @@ class Client {
    * @param seqno The sequence number of the lower bound on the query.
    * @param callback The callback to invoke when the query completes. This is
    *                 guaranteed to be called, unless the client is destroyed.
-   *                 Will be invoked with true if there has been a message
-   *                 at or after (epoch, seqno), up to (but not including) the
-   *                 current position of the subscription.
+   *                 The argument gives the result (see HasMessageSinceResult).
    * @return Status::OK() if the message was sent.
    *         Status::NoBuffer() if the message could not be queued. In this
    *         case the application should try again later.
    */
-  virtual Status HasMessageSince(SubscriptionHandle sub_handle,
-                                 NamespaceID namespace_id,
-                                 Topic topic,
-                                 Epoch epoch,
-                                 SequenceNumber seqno,
-                                 std::function<void(bool)> callback) = 0;
+  virtual Status HasMessageSince(
+      SubscriptionHandle sub_handle,
+      NamespaceID namespace_id,
+      Topic topic,
+      Epoch epoch,
+      SequenceNumber seqno,
+      std::function<void(HasMessageSinceResult)> callback) = 0;
 
   /**
    * Saves state of subscriptions according to strategy selected when opening

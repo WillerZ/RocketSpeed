@@ -351,12 +351,13 @@ Status ClientImpl::Acknowledge(const MessageReceived& message) {
   return subscriber_->Acknowledge(message) ? Status::OK() : Status::NoBuffer();
 }
 
-Status ClientImpl::HasMessageSince(SubscriptionHandle sub_handle,
-                                   NamespaceID namespace_id,
-                                   Topic topic,
-                                   Epoch epoch,
-                                   SequenceNumber seqno,
-                                   std::function<void(bool)> callback) {
+Status ClientImpl::HasMessageSince(
+    SubscriptionHandle sub_handle,
+    NamespaceID namespace_id,
+    Topic topic,
+    Epoch epoch,
+    SequenceNumber seqno,
+    std::function<void(HasMessageSinceResult)> callback) {
   RS_ASSERT_DBG(callback);
   if (!callback) {
     return Status::InvalidArgument("No callback provided");

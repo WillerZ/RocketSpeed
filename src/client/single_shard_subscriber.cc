@@ -155,7 +155,7 @@ void Subscriber::Acknowledge(SubscriptionID sub_id,
 
 void Subscriber::HasMessageSince(HasMessageSinceParams params) {
   // TODO(pja)
-  params.callback(false);
+  params.callback(HasMessageSinceResult::kMaybe);
 }
 
 void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
