@@ -315,7 +315,12 @@ class EventLoop {
     unwritable_sockets_timeout_.Erase(socket);
   }
   void MarkUnwritable(SocketEvent* socket) {
-    unwritable_sockets_timeout_.Add(socket);
+    // Don't push the unwriteable socket to the back of the timeout list if
+    // it was already there, otherwise an unwriteable socket could never be
+    // closed if there are periodic enqueues.
+    if (!unwritable_sockets_timeout_.Contains(socket)) {
+      unwritable_sockets_timeout_.Add(socket);
+    }
   }
 
   // TODO(t8971722)
