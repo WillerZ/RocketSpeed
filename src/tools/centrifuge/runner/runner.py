@@ -158,19 +158,6 @@ def summarize_test(states):
     log.orchestrate('Summary: %s clients failed %s' % failed)
     log.orchestrate('Summary: %s clients with invariant failures %s' % invariant_failed)
 
-def log_stopped_clients(stopped_clients, states):
-    if stopped_clients is None:
-        ret = {}
-        for host, _ in states:
-            ret[host] = ret.get(host, 0) + 1
-        return ret
-
-    for host, _ in states_in_state(states, Svc.ProcessStatus.STOPPED):
-        new_count = stopped_clients.get(host, 1) - 1
-        stopped_clients[host] = new_count
-        if new_count < 1:
-            log.info("%s finished successfully" % host)
-
 def log_failed_servers(states):
     msgs = ['[%s - %s]' % (host, state.message) for host, state in states]
     log.orchestrate('Server(s) failed invariant checks: %s' % ' '.join(msgs))
@@ -186,7 +173,6 @@ def orchestrate_test(clients, servers):
         log.info("All clients started")
 
         states = check_proc_everywhere(clients)
-        stopped_clients = log_stopped_clients(None, states)
         while nothing_failed(states):
             if all_clients_finished_successfully(states):
                 log.orchestrate('TEST SUCCEEDED -- all clients finished gracefully')
@@ -195,7 +181,6 @@ def orchestrate_test(clients, servers):
             time.sleep(1)
 
             states = check_proc_everywhere(clients)
-            log_stopped_clients(stopped_clients, states)
 
             failed_server_states = states_in_state(check_proc_everywhere(servers),
                                                    Svc.ProcessStatus.INVARIANT_FAILED)
