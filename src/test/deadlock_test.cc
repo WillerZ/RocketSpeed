@@ -131,6 +131,11 @@ TEST_F(DeadLockTest, DeadLock) {
   options.port = 0;
   options.info_log = info_log_;
   options.socket_timeout = std::chrono::seconds(4);
+
+  // Set heartbeats to be more frequent than timeout to check that heartbeats
+  // do not accidentally keep a socket alive.
+  options.heartbeat_period = std::chrono::seconds(1);
+
   std::vector<std::unique_ptr<DeadLockRocketeer>> rocketeers;
   RocketeerServer server(options);
   rocketeers.emplace_back(new DeadLockRocketeer(&server));
