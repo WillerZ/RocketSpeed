@@ -182,8 +182,6 @@ int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options);
  */
 struct SlowConsumerOptions : public SubscribeRapidOptions {
   SlowConsumerOptions();
-  Client* client;
-  std::unique_ptr<SubscriptionGenerator> generator;
   std::chrono::milliseconds receive_sleep_time;
 };
 int SlowConsumer(SlowConsumerOptions options);
