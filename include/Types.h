@@ -523,6 +523,9 @@ enum class HasMessageSinceResult : uint8_t {
   /// There maybe was a message in the requested range. This may be sent if
   /// the server has missing or approximate information.
   kMaybe = 3,
+
+  kMin = kInvalid,
+  kMax = kMaybe,
 };
 
 /** Visitor for RocketSpeed statistics. */

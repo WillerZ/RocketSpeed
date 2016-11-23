@@ -299,6 +299,48 @@ TEST_F(Messaging, MessageDeliverBatch) {
   }
 }
 
+TEST_F(Messaging, MessageBacklogQuery) {
+  MessageBacklogQuery msg1(
+      Tenant::GuestTenant, SubscriptionID::Unsafe(42), "ns", "topic", "epoch",
+      1000100010001000ULL);
+
+  std::string str;
+  msg1.Serialize(&str);
+  Slice original(str);
+  MessageBacklogQuery msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+  ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+  ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
+  ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
+  ASSERT_EQ(msg1.GetEpoch(), msg2.GetEpoch());
+  ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
+}
+
+TEST_F(Messaging, MessageBacklogFill) {
+  MessageBacklogFill msg1(
+      Tenant::GuestTenant, "ns", "topic", "epoch",
+      1000100010001000ULL, 2000200020002002ULL,
+      HasMessageSinceResult::kMaybe);
+
+  std::string str;
+  msg1.Serialize(&str);
+  Slice original(str);
+  MessageBacklogFill msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+  ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
+  ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
+  ASSERT_EQ(msg1.GetEpoch(), msg2.GetEpoch());
+  ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
+  ASSERT_EQ(msg1.GetNextSequenceNumber(), msg2.GetNextSequenceNumber());
+  ASSERT_EQ(msg1.GetResult(), msg2.GetResult());
+}
+
 TEST_F(Messaging, InvalidEnum) {
   // create a message
   MessageGoodbye goodbye1(

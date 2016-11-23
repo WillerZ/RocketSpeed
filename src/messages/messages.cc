@@ -41,6 +41,8 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
   "deliver_batch",
   "heartbeat",
   "heartbeat_delta",
+  "backlog_query",
+  "backlog_fill",
 };
 
 MessageType Message::ReadMessageType(Slice slice) {
@@ -186,6 +188,24 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mHeartbeatDelta: {
       std::unique_ptr<MessageHeartbeatDelta> msg(new MessageHeartbeatDelta());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mBacklogQuery: {
+      std::unique_ptr<MessageBacklogQuery> msg(new MessageBacklogQuery());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mBacklogFill: {
+      std::unique_ptr<MessageBacklogFill> msg(new MessageBacklogFill());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -866,6 +886,77 @@ Status MessageHeartbeatDelta::DeSerialize(Slice* in) {
     removed_healthy_.push_back(shard);
   }
 
+  return Status::OK();
+}
+
+Status MessageBacklogQuery::Serialize(std::string* out) const {
+  using namespace std::chrono;
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
+  EncodeSubscriptionID(out, sub_id_);
+  PutTopicID(out, namespace_id_, topic_);
+  PutLengthPrefixedSlice(out, epoch_);
+  PutVarint64(out, seqno_);
+  return Status::OK();
+}
+
+Status MessageBacklogQuery::DeSerialize(Slice* in) {
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
+  }
+  if (!DecodeSubscriptionID(in, &sub_id_)) {
+    return Status::InvalidArgument("Bad sub ID");
+  }
+  if (!GetTopicID(in, &namespace_id_, &topic_)) {
+    return Status::InvalidArgument("Bad namespace and/or topic");
+  }
+  if (!GetLengthPrefixedSlice(in, &epoch_)) {
+    return Status::InvalidArgument("Bad epoch");
+  }
+  if (!GetVarint64(in, &seqno_)) {
+    return Status::InvalidArgument("Bad seqno");
+  }
+
+  return Status::OK();
+}
+
+Status MessageBacklogFill::Serialize(std::string* out) const {
+  using namespace std::chrono;
+  PutFixedEnum8(out, type_);
+  PutFixed16(out, tenantid_);
+  PutTopicID(out, namespace_id_, topic_);
+  PutLengthPrefixedSlice(out, epoch_);
+  PutVarint64(out, prev_seqno_);
+  PutVarint64(out, next_seqno_);
+  PutFixedEnum8(out, result_);
+  return Status::OK();
+}
+
+Status MessageBacklogFill::DeSerialize(Slice* in) {
+  if (!GetFixedEnum8(in, &type_)) {
+    return Status::InvalidArgument("Bad type");
+  }
+  if (!GetFixed16(in, &tenantid_)) {
+    return Status::InvalidArgument("Bad tenant ID");
+  }
+  if (!GetTopicID(in, &namespace_id_, &topic_)) {
+    return Status::InvalidArgument("Bad namespace and/or topic");
+  }
+  if (!GetLengthPrefixedSlice(in, &epoch_)) {
+    return Status::InvalidArgument("Bad epoch");
+  }
+  if (!GetVarint64(in, &prev_seqno_)) {
+    return Status::InvalidArgument("Bad prev seqno");
+  }
+  if (!GetVarint64(in, &next_seqno_)) {
+    return Status::InvalidArgument("Bad next seqno");
+  }
+  if (!GetFixedEnum8(in, &result_)) {
+    return Status::InvalidArgument("Bad result");
+  }
   return Status::OK();
 }
 

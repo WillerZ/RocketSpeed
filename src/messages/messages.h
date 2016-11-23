@@ -51,9 +51,11 @@ enum class MessageType : uint8_t {
   mDeliverBatch = 0x0E,   // MessageDeliverBatch
   mHeartbeat = 0x0F,      // MessageHeartbeat
   mHeartbeatDelta = 0x10, // MessageHeartbeatDelta
+  mBacklogQuery = 0x11,   // MessageBacklogQuery
+  mBacklogFill = 0x12,    // MessageBacklogFill
 
   min = mPing,
-  max = mHeartbeatDelta,
+  max = mBacklogFill,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -81,6 +83,10 @@ inline bool ValidateEnum(MetadataType e) {
 
 inline bool ValidateEnum(GapType e) {
   return e >= kBenign && e <= kRetention;
+}
+
+inline bool ValidateEnum(HasMessageSinceResult e) {
+  return e >= HasMessageSinceResult::kMin && e <= HasMessageSinceResult::kMax;
 }
 
 /*
@@ -931,6 +937,85 @@ class MessageHeartbeatDelta : public Message {
   Clock::time_point timestamp_;
   StreamSet added_healthy_;
   StreamSet removed_healthy_;
+};
+
+/**
+ * Message that requests a backlog fill from the server.
+ * See HasMessageSince in Client API.
+ */
+class MessageBacklogQuery : public Message {
+ public:
+  MessageBacklogQuery() {}
+  explicit MessageBacklogQuery(TenantID tenantid,
+                               SubscriptionID sub_id,
+                               NamespaceID namespace_id,
+                               Topic topic,
+                               Epoch epoch,
+                               SequenceNumber seqno)
+  : Message(MessageType::mBacklogQuery, tenantid)
+  , sub_id_(sub_id)
+  , namespace_id_(std::move(namespace_id))
+  , topic_(std::move(topic))
+  , epoch_(std::move(epoch))
+  , seqno_(seqno) {}
+
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
+
+  SubscriptionID GetSubID() const { return sub_id_; }
+  const NamespaceID& GetNamespace() const { return namespace_id_; }
+  const Topic& GetTopicName() const { return topic_; }
+  const Epoch& GetEpoch() const { return epoch_; }
+  SequenceNumber GetSequenceNumber() const { return seqno_; }
+
+ private:
+  SubscriptionID sub_id_;
+  NamespaceID namespace_id_;
+  Topic topic_;
+  Epoch epoch_;
+  SequenceNumber seqno_;
+};
+
+/**
+ * Message that informs on the status of messages on a topic between two
+ * sequence numbers. Usually sent as a response to a backlog query, but
+ * information can be used for efficient caching, or advancing subscriptions.
+ */
+class MessageBacklogFill : public Message {
+ public:
+  MessageBacklogFill() {}
+  explicit MessageBacklogFill(TenantID tenantid,
+                              NamespaceID namespace_id,
+                              Topic topic,
+                              Epoch epoch,
+                              SequenceNumber prev_seqno,
+                              SequenceNumber next_seqno,
+                              HasMessageSinceResult result)
+  : Message(MessageType::mBacklogQuery, tenantid)
+  , namespace_id_(std::move(namespace_id))
+  , topic_(std::move(topic))
+  , epoch_(std::move(epoch))
+  , prev_seqno_(prev_seqno)
+  , next_seqno_(next_seqno)
+  , result_(result) {}
+
+  Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
+
+  const NamespaceID& GetNamespace() const { return namespace_id_; }
+  const Topic& GetTopicName() const { return topic_; }
+  const Epoch& GetEpoch() const { return epoch_; }
+  SequenceNumber GetPrevSequenceNumber() const { return prev_seqno_; }
+  SequenceNumber GetNextSequenceNumber() const { return next_seqno_; }
+  HasMessageSinceResult GetResult() const { return result_; }
+
+ private:
+  NamespaceID namespace_id_;
+  Topic topic_;
+  Epoch epoch_;
+  SequenceNumber prev_seqno_;
+  SequenceNumber next_seqno_;
+  HasMessageSinceResult result_;
 };
 
 /** @} */
