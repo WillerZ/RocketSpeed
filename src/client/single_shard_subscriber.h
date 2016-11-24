@@ -60,7 +60,7 @@ class SubscriptionStatusImpl : public SubscriptionStatus {
 };
 
 /// A subscriber that manages subscription on a single shard.
-class Subscriber : public SubscriberIf {
+class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
  public:
   Subscriber(const ClientOptions& options,
              EventLoop* event_loop,
@@ -129,15 +129,15 @@ class Subscriber : public SubscriberIf {
   /// Checkt if destination host has been updated.
   void CheckRouterVersion();
 
-  void ReceiveDeliver(Flow* flow,
-                      SubscriptionID sub_id,
-                      std::unique_ptr<MessageDeliver> deliver);
-
-  void ReceiveTerminate(Flow* flow,
-                        SubscriptionID sub_id,
-                        std::unique_ptr<MessageUnsubscribe> unsubscribe);
-
   void ReceiveConnectionStatus(bool isHealthy);
+
+  void ProcessUnsubscribe(SubscriptionID sub_id, Info& info, Status status);
+
+  void ConnectionDropped() final override;
+  void ConnectionCreated(
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) final override;
+  void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
+  void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
 
   /// Max active subscriptions across the thread.
   const size_t max_active_subscriptions_;

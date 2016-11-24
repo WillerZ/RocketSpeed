@@ -96,7 +96,7 @@ class UpstreamSubscription {
 ///
 /// Multiplexer's memory requirements may be linear in the total number of
 /// active subscriptions it learns about.
-class Multiplexer {
+class Multiplexer : public ConnectionAwareReceiver {
  public:
   explicit Multiplexer(PerShard* per_shard);
 
@@ -152,15 +152,13 @@ class Multiplexer {
 
   void RemoveFromIndex(NamespaceID namespace_id, Topic topic_name);
 
-  void ReceiveDeliver(Flow* flow,
-                      SubscriptionID upstream_sub,
-                      std::unique_ptr<MessageDeliver> deliver);
-
-  void ReceiveTerminate(Flow* flow,
-                        SubscriptionID upstream_sub,
-                        std::unique_ptr<MessageUnsubscribe> unsubscribe);
-
   void ReceiveConnectionStatus(bool isHealthy);
+
+  void ConnectionDropped() final override;
+  void ConnectionCreated(
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) final override;
+  void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
+  void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
 };
 
 }  // namespace rocketspeed

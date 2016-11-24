@@ -123,12 +123,8 @@ void UserDataCleanup(void* user_data) {
 
 Multiplexer::Multiplexer(PerShard* per_shard)
 : per_shard_(per_shard)
-, subscriptions_map_(
-    GetLoop(),
-    std::bind(&Multiplexer::ReceiveDeliver, this, _1, _2, _3),
-    std::bind(&Multiplexer::ReceiveTerminate, this, _1, _2, _3),
-    &UserDataCleanup)
-, stream_supervisor_(GetLoop(), &subscriptions_map_,
+, subscriptions_map_(GetLoop(), &UserDataCleanup)
+, stream_supervisor_(GetLoop(), this,
                      std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
                      GetOptions().backoff_strategy,
                      GetOptions().max_silent_reconnects) {
@@ -291,82 +287,112 @@ void Multiplexer::RemoveFromIndex(NamespaceID namespace_id, Topic topic_name) {
   }
 }
 
-void Multiplexer::ReceiveDeliver(Flow* flow,
-                                 SubscriptionID upstream_sub,
-                                 std::unique_ptr<MessageDeliver> deliver) {
-  const auto type = deliver->GetMessageType();
-  LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::ReceiveDeliver(%llu, %s)",
-            per_shard_->GetShardID(),
-            upstream_sub.ForLogging(),
-            MessageTypeName(type));
-
-  RS_ASSERT(type == MessageType::mDeliverGap ||
-            type == MessageType::mDeliverData);
-
-  // Update state in the accumulator
-  UpstreamSubscription* sub = GetUpstreamSubscription(upstream_sub);
-  if (type == MessageType::mDeliverData) {
-    auto data = static_cast<MessageDeliverData*>(deliver.get());
-    // Update the accumulator.
-    auto action = sub->GetAccumulator()->ConsumeUpdate(
-        data->GetPayload(),
-        data->GetPrevSequenceNumber(),
-        data->GetSequenceNumber());
-    // Adjust the subscription based on an action.
-    if (action == UpdatesAccumulator::Action::kResubscribeUpstream) {
-      LOG_DEBUG(GetOptions().info_log,
-                "Multiplexer(%zu)::ReceiveDeliver(%llu, %" PRIu64 ", %" PRIu64
-                ") : resubscribing",
-                per_shard_->GetShardID(),
-                upstream_sub.ForLogging(),
-                data->GetPrevSequenceNumber(),
-                data->GetSequenceNumber());
-
-      RS_ASSERT(per_shard_->GetShardID() <=
-                std::numeric_limits<ShardID>::max());
-      auto new_upstream_id = SubscriptionID::ForShard(
-          static_cast<ShardID>(per_shard_->GetShardID()),
-          upstream_allocator_.Next());
-      // This could fire if shard and hierarchical ID cannot be encoded in 8
-      // bytes.
-      RS_ASSERT(new_upstream_id);
-      // Rewind a subscription to zero.
-      subscriptions_map_.Rewind(
-          upstream_sub, new_upstream_id, 0 /* new_seqno */);
-      // Update subscription.
-      sub->SetSubID(new_upstream_id);
-    }
-  }
-
-  // Broadcast delivery.
-  sub->ReceiveDeliver(per_shard_, flow, std::move(deliver));
+void Multiplexer::ReceiveConnectionStatus(bool isHealthy) {
+  // TODO(gds): what should happen here?
 }
 
-void Multiplexer::ReceiveTerminate(
-    Flow* flow,
-    SubscriptionID upstream_sub,
-    std::unique_ptr<MessageUnsubscribe> unsubscribe) {
+void Multiplexer::ConnectionCreated(
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
+  std::shared_ptr<Sink<std::unique_ptr<Message>>> shared_sink(std::move(sink));
+  subscriptions_map_.StartSync(shared_sink);
+}
+
+void Multiplexer::ConnectionDropped() {
+  subscriptions_map_.StopSync();
+}
+
+void Multiplexer::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
+  auto upstream_sub = arg.message->GetSubID();
+
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::ReceiveTerminate(%llu)",
-            per_shard_->GetShardID(),
-            upstream_sub.ForLogging());
+            "ReceiveUnsubscribe(%llu, %llu, %d)",
+            arg.stream_id,
+            upstream_sub.ForLogging(),
+            static_cast<int>(arg.message->GetMessageType()));
 
   using Info = decltype(subscriptions_map_)::Info;
   Info info;
   Info::Flags flags = Info::kTopic | Info::kNamespace;
-  bool success = subscriptions_map_.Select(upstream_sub, flags, &info);
-  RS_ASSERT(success);
+  if (!subscriptions_map_.ProcessUnsubscribe(
+      arg.flow, *arg.message, flags, &info)) {
+    // Message didn't match a subscription.
+    return;
+  }
+
+  LOG_DEBUG(GetOptions().info_log,
+            "Multiplexer(%zu)::ReceiveTerminate(%llu)",
+            per_shard_->GetShardID(),
+            upstream_sub.ForLogging());
 
   // The subscription has been removed from the map, so update an index.
   RemoveFromIndex(info.GetNamespace(), info.GetTopic());
 
   // Broadcast termination.
   GetUpstreamSubscription(upstream_sub)->ReceiveTerminate(
-      per_shard_, flow, std::move(unsubscribe));
+      per_shard_, arg.flow, std::move(arg.message));
 }
 
-void Multiplexer::ReceiveConnectionStatus(bool isHealthy) {
-  // TODO(gds): what should happen here?
+void Multiplexer::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
+  auto flow = arg.flow;
+  auto& deliver = arg.message;
+  auto upstream_sub = deliver->GetSubID();
+  const auto type = deliver->GetMessageType();
+
+  LOG_DEBUG(GetOptions().info_log,
+            "ReceiveDeliver(%llu, %llu, %s)",
+            arg.stream_id,
+            upstream_sub.ForLogging(),
+            MessageTypeName(type));
+
+  if (subscriptions_map_.ProcessDeliver(arg.flow, *deliver)) {
+    // Message was processed by a subscription.
+    LOG_DEBUG(GetOptions().info_log,
+              "Multiplexer(%zu)::ReceiveDeliver(%llu, %s)",
+              per_shard_->GetShardID(),
+              upstream_sub.ForLogging(),
+              MessageTypeName(type));
+
+    RS_ASSERT(type == MessageType::mDeliverGap ||
+              type == MessageType::mDeliverData);
+
+    // Update state in the accumulator
+    UpstreamSubscription* sub = GetUpstreamSubscription(upstream_sub);
+    if (type == MessageType::mDeliverData) {
+      auto data = static_cast<MessageDeliverData*>(deliver.get());
+      // Update the accumulator.
+      auto action = sub->GetAccumulator()->ConsumeUpdate(
+          data->GetPayload(),
+          data->GetPrevSequenceNumber(),
+          data->GetSequenceNumber());
+      // Adjust the subscription based on an action.
+      if (action == UpdatesAccumulator::Action::kResubscribeUpstream) {
+        LOG_DEBUG(GetOptions().info_log,
+                  "Multiplexer(%zu)::ReceiveDeliver(%llu, %" PRIu64 ", %" PRIu64
+                  ") : resubscribing",
+                  per_shard_->GetShardID(),
+                  upstream_sub.ForLogging(),
+                  data->GetPrevSequenceNumber(),
+                  data->GetSequenceNumber());
+
+        RS_ASSERT(per_shard_->GetShardID() <=
+                  std::numeric_limits<ShardID>::max());
+        auto new_upstream_id = SubscriptionID::ForShard(
+            static_cast<ShardID>(per_shard_->GetShardID()),
+            upstream_allocator_.Next());
+        // This could fire if shard and hierarchical ID cannot be encoded in 8
+        // bytes.
+        RS_ASSERT(new_upstream_id);
+        // Rewind a subscription to zero.
+        subscriptions_map_.Rewind(
+            upstream_sub, new_upstream_id, 0 /* new_seqno */);
+        // Update subscription.
+        sub->SetSubID(new_upstream_id);
+      }
+    }
+
+    // Broadcast delivery.
+    sub->ReceiveDeliver(per_shard_, flow, std::move(deliver));
+  }
 }
+
 }  // namespace rocketspeed

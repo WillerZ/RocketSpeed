@@ -70,12 +70,8 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
 ////////////////////////////////////////////////////////////////////////////////
 SubscriptionsMap::SubscriptionsMap(
     EventLoop* event_loop,
-    DeliverCb deliver_cb,
-    TerminateCb terminate_cb,
     UserDataCleanupCb user_data_cleanup_cb)
 : event_loop_(event_loop)
-, deliver_cb_(std::move(deliver_cb))
-, terminate_cb_(std::move(terminate_cb))
 , user_data_cleanup_cb_(std::move(user_data_cleanup_cb))
 , pending_subscriptions_(event_loop, "pending_subs")
 , pending_unsubscribes_(event_loop, "pending_unsubs") {
@@ -324,8 +320,17 @@ void SubscriptionsMap::HandlePendingUnsubscription(
   flow->Write(sink_.get(), unsubscribe);
 }
 
-void SubscriptionsMap::ConnectionCreated(
-    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
+void SubscriptionsMap::CleanupSubscription(
+    SubscriptionBase* sub) {
+  if (user_data_cleanup_cb_) {
+    user_data_cleanup_cb_(sub->GetUserData());
+  }
+  sub->SetUserData(nullptr);
+  delete sub;
+}
+
+void SubscriptionsMap::StartSync(
+    std::shared_ptr<Sink<std::unique_ptr<Message>>> sink) {
 
   sink_ = std::move(sink);
 
@@ -355,7 +360,7 @@ void SubscriptionsMap::ConnectionCreated(
   pending_unsubscribes_.SetReadEnabled(event_loop_, true);
 }
 
-void SubscriptionsMap::ConnectionDropped() {
+void SubscriptionsMap::StopSync() {
   if (sink_) {
     auto flow_control = event_loop_->GetFlowControl();
     // Unwire and close the stream sink.
@@ -368,15 +373,13 @@ void SubscriptionsMap::ConnectionDropped() {
   pending_unsubscribes_.SetReadEnabled(event_loop_, false);
 }
 
-void SubscriptionsMap::ReceiveUnsubscribe(
-    StreamReceiveArg<MessageUnsubscribe> arg) {
-  auto sub_id = arg.message->GetSubID();
-  auto reason = arg.message->GetReason();
-  LOG_DEBUG(GetLogger(),
-            "ReceiveUnsubscribe(%llu, %llu, %d)",
-            arg.stream_id,
-            sub_id.ForLogging(),
-            static_cast<int>(arg.message->GetMessageType()));
+bool SubscriptionsMap::ProcessUnsubscribe(
+    Flow* flow,
+    const MessageUnsubscribe& message,
+    Info::Flags flags,
+    Info* info) {
+  auto sub_id = message.GetSubID();
+  auto reason = message.GetReason();
 
   switch (reason) {
     case MessageUnsubscribe::Reason::kInvalid:
@@ -390,9 +393,9 @@ void SubscriptionsMap::ReceiveUnsubscribe(
       if (it != synced_subscriptions_.End()) {
         // No need to send unsubscribe request, as we've just received one.
         // Notify via callback.
-        terminate_cb_(arg.flow, sub_id, std::move(arg.message));
-        // Remove after callback so callback has chance to query final state.
+        Select(sub_id, flags, info);
         synced_subscriptions_.erase(it);
+        return true;
       } else {
         // A natural race between the server and the client terminating a
         // subscription.
@@ -401,16 +404,12 @@ void SubscriptionsMap::ReceiveUnsubscribe(
       }
     } break;
   }
+  return false;
 }
 
-void SubscriptionsMap::ReceiveDeliver(
-    StreamReceiveArg<MessageDeliver> arg) {
-  auto sub_id = arg.message->GetSubID();
-  LOG_DEBUG(GetLogger(),
-            "ReceiveDeliver(%llu, %llu, %s)",
-            arg.stream_id,
-            sub_id.ForLogging(),
-            MessageTypeName(arg.message->GetMessageType()));
+bool SubscriptionsMap::ProcessDeliver(
+    Flow* flow, const MessageDeliver& message) {
+  auto sub_id = message.GetSubID();
 
   // Sanity check that the message did not refer to a subscription that has
   // not been synced to the server.
@@ -424,26 +423,17 @@ void SubscriptionsMap::ReceiveDeliver(
   } else {
     // A natural race between the server delivering a message and the client
     // terminating a subscription.
-    return;
+    return false;
   }
   // Update the state.
   if (!state->ProcessUpdate(event_loop_->GetLog().get(),
-                            arg.message->GetPrevSequenceNumber(),
-                            arg.message->GetSequenceNumber())) {
+                            message.GetPrevSequenceNumber(),
+                            message.GetSequenceNumber())) {
     // Drop the update.
-    return;
+    return false;
   }
   // Deliver.
-  deliver_cb_(arg.flow, sub_id, std::move(arg.message));
-}
-
-void SubscriptionsMap::CleanupSubscription(
-    SubscriptionBase* sub) {
-  if (user_data_cleanup_cb_) {
-    user_data_cleanup_cb_(sub->GetUserData());
-  }
-  sub->SetUserData(nullptr);
-  delete sub;
+  return true;
 }
 
 }  // namespace rocketspeed

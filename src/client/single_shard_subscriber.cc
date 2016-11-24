@@ -51,12 +51,8 @@ Subscriber::Subscriber(const ClientOptions& options,
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
-, subscriptions_map_(event_loop_,
-                     std::bind(&Subscriber::ReceiveDeliver, this, _1, _2, _3),
-                     std::bind(&Subscriber::ReceiveTerminate,
-                               this, _1, _2, _3),
-                     &UserDataCleanup)
-, stream_supervisor_(event_loop_, &subscriptions_map_,
+, subscriptions_map_(event_loop_, &UserDataCleanup)
+, stream_supervisor_(event_loop_, this,
                      std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
                      options.backoff_strategy,
                      options_.max_silent_reconnects)
@@ -162,15 +158,9 @@ void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
   thread_check_.Check();
 
   Info info;
-  if (Select(sub_id, Info::kTenant, &info)) {
+  if (Select(sub_id, Info::kAll, &info)) {
     // Notify the user.
-    SourcelessFlow no_flow(event_loop_->GetFlowControl());
-    ReceiveTerminate(&no_flow,
-                     sub_id,
-                     std::make_unique<MessageUnsubscribe>(
-                         info.GetTenant(),
-                         sub_id,
-                         MessageUnsubscribe::Reason::kRequested));
+    ProcessUnsubscribe(sub_id, info, Status::OK());
 
     // Terminate the subscription, which will invalidate the pointer.
     subscriptions_map_.Unsubscribe(sub_id);
@@ -323,11 +313,81 @@ class DataLossInfoImpl : public DataLossInfo {
 };
 }
 
-void Subscriber::ReceiveDeliver(Flow* flow,
-                                SubscriptionID sub_id,
-                                std::unique_ptr<MessageDeliver> deliver) {
-  thread_check_.Check();
+void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
+  NotifyHealthy(isHealthy);
+}
 
+void Subscriber::ConnectionCreated(
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
+  std::shared_ptr<Sink<std::unique_ptr<Message>>> shared_sink(std::move(sink));
+  subscriptions_map_.StartSync(shared_sink);
+}
+
+void Subscriber::ConnectionDropped() {
+  subscriptions_map_.StopSync();
+}
+
+void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
+  auto sub_id = arg.message->GetSubID();
+
+  LOG_DEBUG(options_.info_log,
+            "ReceiveUnsubscribe(%llu, %llu, %d)",
+            arg.stream_id,
+            sub_id.ForLogging(),
+            static_cast<int>(arg.message->GetMessageType()));
+
+  Info info;
+  if (!subscriptions_map_.ProcessUnsubscribe(
+      arg.flow, *arg.message, Info::kAll, &info)) {
+    // Didn't match a subscription.
+    return;
+  }
+
+  Status status;
+  switch (arg.message->GetReason()) {
+    case MessageUnsubscribe::Reason::kRequested:
+      break;
+    case MessageUnsubscribe::Reason::kInvalid:
+      status = Status::InvalidArgument("Invalid subscription");
+      break;
+      // No default, we will be warned about unhandled code.
+  }
+  ProcessUnsubscribe(sub_id, info, status);
+}
+
+void Subscriber::ProcessUnsubscribe(
+    SubscriptionID sub_id, Info& info, Status status) {
+  SubscriptionStatusImpl sub_status(sub_id, info.GetTenant(),
+      info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
+  sub_status.status_ = status;
+
+  RS_ASSERT(info.GetObserver());
+  hooks_[sub_id].OnSubscriptionStatusChange(sub_status);
+  info.GetObserver()->OnSubscriptionStatusChange(sub_status);
+  hooks_[sub_id].OnReceiveTerminate();
+  last_acks_map_.erase(sub_id);
+
+  // Decrement number of active subscriptions
+  (*num_active_subscriptions_)--;
+  stats_->active_subscriptions->Set(*num_active_subscriptions_);
+}
+
+void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
+  thread_check_.Check();
+  auto flow = arg.flow;
+  auto& deliver = arg.message;
+  auto sub_id = deliver->GetSubID();
+
+  LOG_DEBUG(options_.info_log,
+            "ReceiveDeliver(%llu, %llu, %s)",
+            arg.stream_id,
+            sub_id.ForLogging(),
+            MessageTypeName(deliver->GetMessageType()));
+
+  if (!subscriptions_map_.ProcessDeliver(flow, *deliver)) {
+    // Message didn't match a subscription.
+    return;
+  }
   Info info;
   bool success = Select(sub_id, Info::kObserver, &info);
   RS_ASSERT(success);
@@ -359,40 +419,4 @@ void Subscriber::ReceiveDeliver(Flow* flow,
   }
 }
 
-void Subscriber::ReceiveTerminate(
-    Flow* flow,
-    SubscriptionID sub_id,
-    std::unique_ptr<MessageUnsubscribe> unsubscribe) {
-  Info info;
-  bool success = Select(sub_id, Info::kAll, &info);
-  RS_ASSERT(success);
-
-  // The callback would only be called if the state is not null
-  // at this point, that is the Client must have Unsubscribed before we receive
-  // a Terminate from the server.
-  SubscriptionStatusImpl sub_status(sub_id, info.GetTenant(),
-      info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
-  switch (unsubscribe->GetReason()) {
-    case MessageUnsubscribe::Reason::kRequested:
-      break;
-    case MessageUnsubscribe::Reason::kInvalid:
-      sub_status.status_ = Status::InvalidArgument("Invalid subscription");
-      break;
-      // No default, we will be warned about unhandled code.
-  }
-  RS_ASSERT(info.GetObserver());
-  hooks_[sub_id].OnSubscriptionStatusChange(sub_status);
-  info.GetObserver()->OnSubscriptionStatusChange(sub_status);
-
-  hooks_[sub_id].OnReceiveTerminate();
-  last_acks_map_.erase(sub_id);
-
-  // Decrement number of active subscriptions
-  (*num_active_subscriptions_)--;
-  stats_->active_subscriptions->Set(*num_active_subscriptions_);
-}
-
-void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
-  NotifyHealthy(isHealthy);
-}
 }  // namespace rocketspeed

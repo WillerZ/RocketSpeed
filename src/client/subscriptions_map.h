@@ -22,6 +22,7 @@ namespace rocketspeed {
 class EventLoop;
 class Flow;
 class MessageDeliver;
+class MyReceiver;
 class Logger;
 class Slice;
 template <typename>
@@ -157,17 +158,11 @@ class SubscriptionData {
 /// The class is optimised for memory usage per subscription and is not
 /// thread-safe.
 // TODO(stupaq): generalise the sink and reshard by host in the proxy
-class SubscriptionsMap : public ConnectionAwareReceiver {
+class SubscriptionsMap {
  public:
-  using DeliverCb = std::function<void(
-      Flow* flow, SubscriptionID, std::unique_ptr<MessageDeliver>)>;
-  using TerminateCb = std::function<void(
-      Flow* flow, SubscriptionID, std::unique_ptr<MessageUnsubscribe>)>;
   using UserDataCleanupCb = std::function<void(void*)>;
 
   SubscriptionsMap(EventLoop* event_loop,
-                   DeliverCb deliver_cb,
-                   TerminateCb terminate_cb,
                    UserDataCleanupCb user_data_cleanup_cb);
   ~SubscriptionsMap();
 
@@ -289,10 +284,19 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   /// Sets the user data for a subscription.
   void SetUserData(SubscriptionID sub_id, void* user_data);
 
+  void StartSync(std::shared_ptr<Sink<std::unique_ptr<Message>>> sink);
+  void StopSync();
+
+  /// Returns true iif the unsubscribe matched a subscription, and fills the
+  /// info with the removed subscription.
+  bool ProcessUnsubscribe(Flow* flow, const MessageUnsubscribe& message,
+      Info::Flags flags, Info* info);
+
+  /// Returns true iff a subscription was advanced by the deliver message.
+  bool ProcessDeliver(Flow* flow, const MessageDeliver& message);
+
  private:
   EventLoop* const event_loop_;
-  const DeliverCb deliver_cb_;
-  const TerminateCb terminate_cb_;
   const UserDataCleanupCb user_data_cleanup_cb_;
 
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
@@ -322,7 +326,7 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
   using Unsubscribes = google::sparse_hash_set<SubscriptionID>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
-  std::unique_ptr<Sink<std::unique_ptr<Message>>> sink_;
+  std::shared_ptr<Sink<std::unique_ptr<Message>>> sink_;
 
   /// Returns a non-owning pointer to the SubscriptionBase or null if doesn't
   /// exist.
@@ -335,12 +339,6 @@ class SubscriptionsMap : public ConnectionAwareReceiver {
         Flow* flow, std::unique_ptr<SubscriptionBase> upstream_sub);
 
   void HandlePendingUnsubscription(Flow* flow, SubscriptionID sub_id);
-
-  void ConnectionDropped() final override;
-  void ConnectionCreated(
-    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) final override;
-  void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
-  void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
 
   void CleanupSubscription(SubscriptionBase* sub);
 };
