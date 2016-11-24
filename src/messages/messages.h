@@ -991,7 +991,7 @@ class MessageBacklogFill : public Message {
                               SequenceNumber prev_seqno,
                               SequenceNumber next_seqno,
                               HasMessageSinceResult result)
-  : Message(MessageType::mBacklogQuery, tenantid)
+  : Message(MessageType::mBacklogFill, tenantid)
   , namespace_id_(std::move(namespace_id))
   , topic_(std::move(topic))
   , epoch_(std::move(epoch))
@@ -1005,8 +1005,17 @@ class MessageBacklogFill : public Message {
   const NamespaceID& GetNamespace() const { return namespace_id_; }
   const Topic& GetTopicName() const { return topic_; }
   const Epoch& GetEpoch() const { return epoch_; }
+
+  /**
+   * The prev/next sequence number describe the range of sequence numbers that
+   * the result applies to. The range is open-open. For example, if prev=2,
+   * and next=5, and the result is kNo, then neither messages at seqno 3 or 4
+   * are for the requested topic.
+   */
   SequenceNumber GetPrevSequenceNumber() const { return prev_seqno_; }
   SequenceNumber GetNextSequenceNumber() const { return next_seqno_; }
+
+  /** see HasMessageSinceResult. */
   HasMessageSinceResult GetResult() const { return result_; }
 
  private:

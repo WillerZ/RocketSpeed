@@ -260,6 +260,9 @@ class SubscriptionsMap {
   /// Checks if subscription exists.
   bool Exists(SubscriptionID sub_id) const;
 
+  /// Checks if a subscription has been synced to the server.
+  bool IsSynced(SubscriptionID sub_id) const;
+
   /// Rewinds provided subscription to a given sequence number.
   void Rewind(SubscriptionID old_sub_id,
               SubscriptionID new_sub_id,

@@ -204,9 +204,13 @@ bool SubscriptionsMap::Exists(SubscriptionID sub_id) const {
   return false;
 }
 
+bool SubscriptionsMap::IsSynced(SubscriptionID sub_id) const {
+  return synced_subscriptions_.Find(sub_id) != synced_subscriptions_.end();
+}
+
 void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
-                                                 SubscriptionID new_sub_id,
-                                                 SequenceNumber new_seqno) {
+                              SubscriptionID new_sub_id,
+                              SequenceNumber new_seqno) {
   auto ptr = Find(old_sub_id);
   RS_ASSERT(ptr);
 
@@ -217,7 +221,7 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
             new_seqno);
 
   RS_ASSERT(new_sub_id != old_sub_id);
-  // Generate an unsubscibe message for the old ID.
+  // Generate an unsubscribe message for the old ID.
   pending_unsubscribes_.Modify(
       [&](Unsubscribes& set) { set.insert(old_sub_id); });
   // Reinsert the subscription, as we may not change the

@@ -61,6 +61,13 @@ class CommunicationRocketeer : public Rocketeer {
                          InboundID inbound_id,
                          Rocketeer::TerminationSource source) final override;
 
+  void HandleHasMessageSince(Flow* flow,
+                             InboundID inbound_id,
+                             NamespaceID namespace_id,
+                             Topic topic,
+                             Epoch epoch,
+                             SequenceNumber seqno) final override;
+
   void Deliver(Flow* flow,
                InboundID inbound_id,
                SequenceNumber seqno,
@@ -141,6 +148,10 @@ class CommunicationRocketeer : public Rocketeer {
       StreamID origin);
 
   void Receive(
+      Flow* flow, std::unique_ptr<MessageBacklogQuery> query,
+      StreamID origin);
+
+  void Receive(
       Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin);
 };
 
@@ -158,6 +169,14 @@ void CommunicationRocketeer::HandleNewSubscription(
 void CommunicationRocketeer::HandleTermination(
     Flow* flow, InboundID inbound_id, TerminationSource source) {
   above_rocketeer_->HandleTermination(flow, inbound_id, source);
+}
+
+
+void CommunicationRocketeer::HandleHasMessageSince(
+    Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+    Epoch epoch, SequenceNumber seqno) {
+  above_rocketeer_->HandleHasMessageSince(flow, inbound_id,
+      std::move(namespace_id), std::move(topic), std::move(epoch), seqno);
 }
 
 void CommunicationRocketeer::Deliver(Flow* flow,
@@ -295,13 +314,15 @@ void CommunicationRocketeer::Terminate(Flow* flow,
 void CommunicationRocketeer::HasMessageSinceResponse(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
-  (void)flow;
-  (void)inbound_id;
-  (void)namespace_id;
-  (void)topic;
-  (void)epoch;
-  (void)seqno;
-  (void)response;
+  thread_check_.Check();
+
+  if (auto* sub = Find(inbound_id)) {
+    auto tenant_id = GetTenant(inbound_id.stream_id);
+    auto message = std::make_unique<MessageBacklogFill>(
+        tenant_id, std::move(namespace_id), std::move(topic), std::move(epoch),
+        seqno, sub->prev_seqno, response);
+    SendResponse(flow, inbound_id.stream_id, std::move(message));
+  }
 }
 
 size_t CommunicationRocketeer::GetID() const {
@@ -423,6 +444,15 @@ void CommunicationRocketeer::Receive(
 }
 
 void CommunicationRocketeer::Receive(
+      Flow* flow, std::unique_ptr<MessageBacklogQuery> query,
+      StreamID origin) {
+  thread_check_.Check();
+  SubscriptionID sub_id = query->GetSubID();
+  HandleHasMessageSince(flow, InboundID(origin, sub_id), query->GetNamespace(),
+      query->GetTopicName(), query->GetEpoch(), query->GetSequenceNumber());
+}
+
+void CommunicationRocketeer::Receive(
     Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin) {
   thread_check_.Check();
 
@@ -494,6 +524,7 @@ Status RocketeerServer::Start() {
   msg_loop_->RegisterCallbacks({
       {MessageType::mSubscribe, CreateCallback<MessageSubscribe>()},
       {MessageType::mUnsubscribe, CreateCallback<MessageUnsubscribe>()},
+      {MessageType::mBacklogQuery, CreateCallback<MessageBacklogQuery>()},
       {MessageType::mGoodbye, CreateCallback<MessageGoodbye>()},
   });
 

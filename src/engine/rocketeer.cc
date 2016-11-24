@@ -50,23 +50,39 @@ SubscriptionID RocketeerMessage::GetSubID() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+struct RocketeerHasMessageSinceMessage {
+  NamespaceID namespace_id;
+  Topic topic;
+  Epoch epoch;
+  SequenceNumber seqno;
+};
+
 struct RocketeerMetadataMessage {
   // Represents either a subscribe or termination.
-  enum { kSubscribe, kTerminate } type;
+  enum { kSubscribe, kTerminate, kHasMessageSince } type;
   InboundID inbound_id;
   SubscriptionParameters params;        // only valid for type == kSubscribe
   Rocketeer::TerminationSource source;  // only valid for type == kTerminate
+  RocketeerHasMessageSinceMessage has_msg_since;  // for kHasMessageSince
 };
 
 Rocketeer::Rocketeer()
 : below_rocketeer_(nullptr)
 , metadata_sink_(new RetryLaterSink<RocketeerMetadataMessage>(
     [this] (RocketeerMetadataMessage& msg) mutable {
-      if (msg.type == RocketeerMetadataMessage::kSubscribe) {
-        // Cannot move msg.params since it may need to be retried later.
-        return TryHandleNewSubscription(msg.inbound_id, msg.params);
-      } else {
-        return TryHandleTermination(msg.inbound_id, msg.source);
+      switch (msg.type) {
+        case RocketeerMetadataMessage::kSubscribe:
+          // Cannot move msg.params since it may need to be retried later.
+          return TryHandleNewSubscription(msg.inbound_id, msg.params);
+        case RocketeerMetadataMessage::kTerminate:
+          return TryHandleTermination(msg.inbound_id, msg.source);
+        case RocketeerMetadataMessage::kHasMessageSince:
+          return TryHandleHasMessageSince(
+              msg.inbound_id,
+              msg.has_msg_since.namespace_id,
+              msg.has_msg_since.topic,
+              msg.has_msg_since.epoch,
+              msg.has_msg_since.seqno);
       }
     })) {}
 
@@ -127,9 +143,21 @@ BackPressure Rocketeer::TryHandleHasMessageSince(
 void Rocketeer::HandleHasMessageSince(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       Epoch epoch, SequenceNumber seqno) {
-  // TODO(pja): proper implementation -- send message to the metadata_sink_.
-  HasMessageSinceResponse(flow, inbound_id, namespace_id, topic, epoch, seqno,
-      HasMessageSinceResult::kMaybe);
+  // This is the default implementation of HandleHasMessageSince.
+  // Most application Rocketeers will implement TryHandleHasMessageSince, but
+  // internally RocketSpeed calls HandleHasMessageSince.
+  //
+  // The default implementation forward the call to TryHandleHasMessageSince
+  // through a RetryLaterSink, which will retry the call later if the Try
+  // called requested a retry.
+  RocketeerMetadataMessage msg;
+  msg.type = RocketeerMetadataMessage::kHasMessageSince;
+  msg.inbound_id = inbound_id;
+  msg.has_msg_since.namespace_id = std::move(namespace_id);
+  msg.has_msg_since.topic = std::move(topic);
+  msg.has_msg_since.epoch = std::move(epoch);
+  msg.has_msg_since.seqno = seqno;
+  flow->Write(metadata_sink_.get(), msg);
 }
 
 void Rocketeer::Deliver(Flow* flow,

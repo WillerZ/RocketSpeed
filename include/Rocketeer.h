@@ -160,7 +160,8 @@ class Rocketeer {
    * has begun.
    *
    * The response must be true iff there has been a message on the specified
-   * topic, between (epoch, seqno) and the subscription's current position.
+   * topic, strictly after (epoch, seqno) and before the subscription's current
+   * position.
    *
    * Implementations should provide either TryHandleHasMessageSince or
    * HandleHasMessageSince, but not both. If both are provided, this version is
@@ -186,7 +187,8 @@ class Rocketeer {
    * has begun.
    *
    * The response must be true iff there has been a message on the specified
-   * topic, between (epoch, seqno) and the subscription's current position.
+   * topic, strictly after (epoch, seqno) and before the subscription's current
+   * position.
    *
    * Implementations should provide either TryHandleHasMessageSince or
    * HandleHasMessageSince, but not both. If both are provided, this version is

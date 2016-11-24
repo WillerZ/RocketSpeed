@@ -23,6 +23,7 @@
 
 namespace rocketspeed {
 
+class BacklogQueryStore;
 class Status;
 class SubscriberStats;
 
@@ -118,6 +119,8 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
              size_t max_active_subscriptions,
              std::shared_ptr<size_t> num_active_subscriptions);
 
+  ~Subscriber();
+
   void InstallHooks(const HooksParameters& parameters,
                     std::shared_ptr<SubscriberHooks> hooks) override;
   void UnInstallHooks(const HooksParameters& parameters) override;
@@ -168,6 +171,8 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
 
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
+  std::unique_ptr<BacklogQueryStore> backlog_query_store_;
+
   /// Shard for this subscriber.
   const size_t shard_id_;
 
@@ -185,6 +190,7 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   void ConnectionChanged() final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
+  void ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill>) final override;
 
   void SendMessage(Flow* flow, std::unique_ptr<Message> message);
 

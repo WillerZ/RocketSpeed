@@ -73,6 +73,14 @@ void StreamReceiver::operator()(StreamReceiveArg<Message> arg) {
       ReceiveDeliverBatch(
           PrepareArguments<MessageDeliverBatch>(flow, stream_id, message));
       return;
+    case MessageType::mBacklogQuery:
+      ReceiveBacklogQuery(
+          PrepareArguments<MessageBacklogQuery>(flow, stream_id, message));
+      return;
+    case MessageType::mBacklogFill:
+      ReceiveBacklogFill(
+          PrepareArguments<MessageBacklogFill>(flow, stream_id, message));
+      return;
     case MessageType::mHeartbeat:
       // sockets should swallow heartbeats, they shouldn't be exposed
       // to consumers

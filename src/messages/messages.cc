@@ -890,7 +890,6 @@ Status MessageHeartbeatDelta::DeSerialize(Slice* in) {
 }
 
 Status MessageBacklogQuery::Serialize(std::string* out) const {
-  using namespace std::chrono;
   PutFixedEnum8(out, type_);
   PutFixed16(out, tenantid_);
   EncodeSubscriptionID(out, sub_id_);
@@ -919,12 +918,10 @@ Status MessageBacklogQuery::DeSerialize(Slice* in) {
   if (!GetVarint64(in, &seqno_)) {
     return Status::InvalidArgument("Bad seqno");
   }
-
   return Status::OK();
 }
 
 Status MessageBacklogFill::Serialize(std::string* out) const {
-  using namespace std::chrono;
   PutFixedEnum8(out, type_);
   PutFixed16(out, tenantid_);
   PutTopicID(out, namespace_id_, topic_);

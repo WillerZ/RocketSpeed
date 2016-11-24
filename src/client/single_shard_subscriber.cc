@@ -13,6 +13,7 @@
 #include "include/Status.h"
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
+#include "src/client/backlog_query_store.h"
 #include "src/client/subscriber_stats.h"
 #include "src/client/subscriptions_map.h"
 #include "src/messages/event_callback.h"
@@ -58,6 +59,10 @@ Subscriber::Subscriber(const ClientOptions& options,
                      std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
                      options.backoff_strategy,
                      options_.max_silent_reconnects)
+, backlog_query_store_(
+      new BacklogQueryStore(options_.info_log,
+                            std::bind(&Subscriber::SendMessage, this, _1, _2),
+                            event_loop))
 , shard_id_(shard_id)
 , max_active_subscriptions_(max_active_subscriptions)
 , num_active_subscriptions_(std::move(num_active_subscriptions)) {
@@ -65,7 +70,15 @@ Subscriber::Subscriber(const ClientOptions& options,
   RefreshRouting();
 }
 
+Subscriber::~Subscriber() {}
+
 void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
+  if (message->GetMessageType() == MessageType::mSubscribe) {
+    // If we are sending a subscribe to the server, ensure that the any pending
+    // backlog query requests for this subscription are now sent.
+    auto subscribe = static_cast<MessageSubscribe*>(message.get());
+    backlog_query_store_->MarkSynced(subscribe->GetSubID());
+  }
   flow->Write(GetConnection(), message);
 }
 
@@ -159,8 +172,18 @@ void Subscriber::Acknowledge(SubscriptionID sub_id,
 }
 
 void Subscriber::HasMessageSince(HasMessageSinceParams params) {
-  // TODO(pja)
-  params.callback(HasMessageSinceResult::kMaybe);
+  // We need to wait for the subscription to exist on the server before we can
+  // send the BacklogQuery. If it is already synced, we put it in the pending
+  // list to be sent when the connection is ready, otherwise we put it into a
+  // waiting queue until the relevant subscription is synced.
+  auto mode = subscriptions_map_.IsSynced(params.sub_id) ?
+      BacklogQueryStore::Mode::kPendingSend :
+      BacklogQueryStore::Mode::kAwaitingSync;
+
+  backlog_query_store_->Insert(
+      mode, params.sub_id, std::move(params.namespace_id),
+      std::move(params.topic), std::move(params.epoch), params.seqno,
+      std::move(params.callback));
 }
 
 void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
@@ -330,8 +353,10 @@ void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
 void Subscriber::ConnectionChanged() {
   if (GetConnection()) {
     subscriptions_map_.StartSync();
+    backlog_query_store_->StartSync();
   } else {
     subscriptions_map_.StopSync();
+    backlog_query_store_->StopSync();
   }
 }
 
@@ -426,6 +451,11 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
     default:
       RS_ASSERT(false);
   }
+}
+
+void Subscriber::ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill> arg) {
+  thread_check_.Check();
+  backlog_query_store_->ProcessBacklogFill(*arg.message);
 }
 
 }  // namespace rocketspeed

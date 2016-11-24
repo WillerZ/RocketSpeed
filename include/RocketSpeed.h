@@ -415,6 +415,9 @@ class Client {
    * callbacks, and in the same order so that the result is correct for the
    * subscription's position as the application sees it.
    *
+   * The lower bound is non-inclusive. A message at (epoch, seqno) will not
+   * be considered in the result.
+   *
    * @param sub_handle The subscription to test against.
    * @param namespace_id The namespace of the subscription.
    * @param topic The topic of the subscription.
