@@ -469,6 +469,17 @@ class SubscriptionStatus {
   virtual ~SubscriptionStatus() {}
 };
 
+/**
+ * Extended version of SubscriptionStatus
+ * required by API hooks (see ApiHooks.h).
+ */
+class HookedSubscriptionStatus : public SubscriptionStatus {
+ public:
+  /** List of servers that handle or are about to handle the subscription. */
+  virtual const std::vector<HostId>& GetCurrentServers() const = 0;
+};
+
+
 /** Message received on a subscription. */
 class MessageReceived {
  public:

@@ -57,7 +57,7 @@ class SubscriberHooksAdapter : public SubscriberHooks {
     hooks_->OnMessageReceived(msg);
   }
   virtual void OnSubscriptionStatusChange(
-      const SubscriptionStatus& status) override {
+      const HookedSubscriptionStatus& status) override {
     hooks_->OnSubscriptionStatusChange(status);
   }
   virtual void OnDataLoss(const DataLossInfo& info) override {

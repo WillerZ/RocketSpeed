@@ -79,7 +79,8 @@ void Subscriber::InstallHooks(const HooksParameters& params,
       SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
           info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
       status.status_ = currently_healthy_ ? Status::OK() : Status::ShardUnhealthy();
-      hooks_[data.GetID()].SubscriptionExists(status);
+      StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
+      hooks_[data.GetID()].SubscriptionExists(sfh);
     }
     return keep_iterating;
   });
@@ -108,7 +109,8 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
         parameters.start_seqno);
     sub_status.status_ = Status::InvalidArgument(
         "Invalid subscription as maximum subscription limit reached.");
-    hooks_[sub_id].OnSubscriptionStatusChange(sub_status);
+    StatusForHooks sfh(&sub_status, &stream_supervisor_.GetCurrentHost());
+    hooks_[sub_id].OnSubscriptionStatusChange(sfh);
     observer->OnSubscriptionStatusChange(sub_status);
     return;
   }
@@ -119,7 +121,8 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                   parameters.topic_name,
                                   parameters.start_seqno);
     status.status_ = Status::ShardUnhealthy();
-    hooks_[sub_id].OnSubscriptionStatusChange(status);
+    StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
+    hooks_[sub_id].OnSubscriptionStatusChange(sfh);
     observer->OnSubscriptionStatusChange(status);
   }
 
@@ -240,7 +243,8 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
       SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
           info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
-      hooks_[data.GetID()].OnSubscriptionStatusChange(status);
+      StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
+      hooks_[data.GetID()].OnSubscriptionStatusChange(sfh);
       info.GetObserver()->OnSubscriptionStatusChange(status);
       return true;
     });
@@ -362,7 +366,8 @@ void Subscriber::ProcessUnsubscribe(
   sub_status.status_ = status;
 
   RS_ASSERT(info.GetObserver());
-  hooks_[sub_id].OnSubscriptionStatusChange(sub_status);
+  StatusForHooks sfh(&sub_status, &stream_supervisor_.GetCurrentHost());
+  hooks_[sub_id].OnSubscriptionStatusChange(sfh);
   info.GetObserver()->OnSubscriptionStatusChange(sub_status);
   hooks_[sub_id].OnReceiveTerminate();
   last_acks_map_.erase(sub_id);

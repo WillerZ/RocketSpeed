@@ -1816,7 +1816,8 @@ class TestHooks : public SubscriberHooks {
   virtual void OnMessageReceived(const MessageReceived*) override {
     called_ = true;
   }
-  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) override {
+  virtual void OnSubscriptionStatusChange(
+      const HookedSubscriptionStatus&) override {
     called_ = true;
   }
   virtual void OnDataLoss(const DataLossInfo&) override { called_ = true; }

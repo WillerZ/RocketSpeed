@@ -94,7 +94,8 @@ class SubscriberHooksContainer {
     virtual void OnTerminateSubscription() final {}
     virtual void OnReceiveTerminate() final{};
     virtual void OnMessageReceived(const MessageReceived*) final {}
-    virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) final {}
+    virtual void OnSubscriptionStatusChange(
+        const HookedSubscriptionStatus&) final {}
     virtual void OnDataLoss(const DataLossInfo&) final {}
   };
   /** Called when no hooks for subscription were installed */

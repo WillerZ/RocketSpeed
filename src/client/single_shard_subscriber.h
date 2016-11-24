@@ -59,6 +59,55 @@ class SubscriptionStatusImpl : public SubscriptionStatus {
   const Status& GetStatus() const override { return status_; }
 };
 
+class StatusForHooks : public HookedSubscriptionStatus {
+ public:
+  StatusForHooks(StatusForHooks&& ) = delete;
+  StatusForHooks& operator=(StatusForHooks&& ) = delete;
+  StatusForHooks(const StatusForHooks& ) = delete;
+  StatusForHooks& operator=(const StatusForHooks& ) = delete;
+
+  StatusForHooks(const SubscriptionStatusImpl* status, const HostId* server)
+    : status_(status), server_(server) {
+    RS_ASSERT_DBG(status);
+    RS_ASSERT_DBG(server);
+  }
+
+  SubscriptionHandle GetSubscriptionHandle() const final {
+    return status_->GetSubscriptionHandle();
+  }
+
+  TenantID GetTenant() const final {
+    return status_->GetTenant();
+  }
+
+  const NamespaceID& GetNamespace() const final {
+    return status_->GetNamespace();
+  }
+
+  const Topic& GetTopicName() const final {
+    return status_->GetTopicName();
+  }
+
+  SequenceNumber GetSequenceNumber() const final {
+    return status_->GetSequenceNumber();
+  }
+
+  const Status& GetStatus() const final { return status_->GetStatus(); }
+
+  const std::vector<HostId>& GetCurrentServers() const final {
+    // There's negligible probability that the hook
+    // is installed so allocate memory only when it's really needed.
+    if (servers_.empty()) {
+      servers_.emplace_back(*server_);
+    }
+    return servers_;
+  }
+ private:
+  const SubscriptionStatusImpl* status_;
+  const HostId* server_;
+  mutable std::vector<HostId> servers_;
+};
+
 /// A subscriber that manages subscription on a single shard.
 class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
  public:

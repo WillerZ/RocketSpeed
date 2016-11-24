@@ -56,6 +56,12 @@ class ResilientStreamReceiver final : public StreamReceiver {
   /// will force a reconnection.
   void ConnectTo(const HostId& host);
 
+  /// Returns host that we're connecting or connected to.
+  /// Returns HostId() before ConnectTo() is called.
+  const HostId& GetCurrentHost() const {
+    return current_host_;
+  }
+
  private:
   EventLoop* const event_loop_;
   ConnectionAwareReceiver* const receiver_;

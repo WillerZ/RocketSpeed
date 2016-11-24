@@ -44,7 +44,7 @@ class SubscriberHooks {
   virtual void OnTerminateSubscription() = 0;
   virtual void OnReceiveTerminate() = 0;
   virtual void OnMessageReceived(const MessageReceived* msg) = 0;
-  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) = 0;
+  virtual void OnSubscriptionStatusChange(const HookedSubscriptionStatus&) = 0;
   virtual void OnDataLoss(const DataLossInfo& info) = 0;
 };
 

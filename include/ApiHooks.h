@@ -46,7 +46,7 @@ class ClientHooks {
   /**
    * Called when OnSubscriptionStatusChange() was called on observer.
    */
-  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) = 0;
+  virtual void OnSubscriptionStatusChange(const HookedSubscriptionStatus&) = 0;
   /**
    * Called when OnDataLoss() was called on observer.
    */
