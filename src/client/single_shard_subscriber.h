@@ -97,7 +97,7 @@ class StatusForHooks : public HookedSubscriptionStatus {
   const std::vector<HostId>& GetCurrentServers() const final {
     // There's negligible probability that the hook
     // is installed so allocate memory only when it's really needed.
-    if (servers_.empty()) {
+    if (servers_.empty() && * server_ != HostId()) {
       servers_.emplace_back(*server_);
     }
     return servers_;
