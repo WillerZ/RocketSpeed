@@ -83,6 +83,6 @@ config = {
 }
 
 if __name__ == '__main__':
-    test_runner = runner.create_runner(SingleBoxEnv(), config)
-    for test in test_runner():
-        pass
+    test_gen = runner.create_gen(SingleBoxEnv(), config)
+    for i, test in enumerate(test_gen()):
+        test()

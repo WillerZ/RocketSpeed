@@ -163,14 +163,15 @@ def log_failed_servers(states):
     log.orchestrate('Server(s) failed invariant checks: %s' % ' '.join(msgs))
 
 def orchestrate_test(clients, servers):
+    start = time.localtime()
     try:
         run_everywhere(servers)
         log.info("All servers started")
 
-        start = time.localtime()
-
         run_everywhere(clients)
         log.info("All clients started")
+
+        start = time.localtime()
 
         states = check_proc_everywhere(clients)
         while nothing_failed(states):
@@ -201,13 +202,15 @@ def orchestrate_test(clients, servers):
     return (False, start)
 
 def summarize_tests(test_results):
-    count_succeeded = sum(1 for x in test_results if x['success'])
+    with_result = sum(1 for x in test_results if 'success' in x)
+    count_succeeded = sum(1 for x in test_results if x.get('success', False))
     log.orchestrate('-' * 50)
     log.orchestrate('')
-    log.orchestrate('Ran %s tests. %s succeeded. %s failed.' %
-                    (len(test_results),
+    log.orchestrate('Ran %s tests out of a possible %s. %s succeeded. %s failed.' %
+                    (with_result,
+                     len(test_results),
                      count_succeeded,
-                     len(test_results) - count_succeeded))
+                     with_result - count_succeeded))
 
 def partition(hosts, config):
     clients = config.get('client_host_count')
@@ -230,36 +233,39 @@ def orchestrate(clients, tests):
     log.info('All runners up and responding')
 
     for i, test in enumerate(tests):
-        name = test.get('test_name', '<name not provided>')
-        server = test['server']
-        client = test['client']
+        def f():
+            name = test.get('test_name', '<name not provided>')
+            server = test['server']
+            client = test['client']
 
-        log.orchestrate('-' * 50)
-        log.orchestrate('Starting test \'%s\' (%s of %s)' %
-                        (name, i+1, len(tests)))
+            log.orchestrate('-' * 50)
+            log.orchestrate('Starting test \'%s\' (%s of %s)' %
+                            (name, i+1, len(tests)))
 
-        start = time.time()
+            start = time.time()
 
-        client_runners, server_runners = partition(clients, test.get('hosts', {}))
-        clients_per_host = test.get('hosts', {}).get('clients_per_host', 1)
-        servers_per_host = test.get('hosts', {}).get('servers_per_host', 1)
-        clients_to_run = [(*runner, client['key'], i, 'client-%s' % i)
-                          for i in range(clients_per_host)
-                          for runner in client_runners]
-        servers_to_run = [(*runner, server['key'], i, 'server-%s' % i)
-                          for i in range(servers_per_host)
-                          for runner in server_runners]
+            client_runners, server_runners = partition(clients, test.get('hosts', {}))
+            clients_per_host = test.get('hosts', {}).get('clients_per_host', 1)
+            servers_per_host = test.get('hosts', {}).get('servers_per_host', 1)
+            clients_to_run = [(*runner, client['key'], i, 'client-%s' % i)
+                            for i in range(clients_per_host)
+                            for runner in client_runners]
+            servers_to_run = [(*runner, server['key'], i, 'server-%s' % i)
+                            for i in range(servers_per_host)
+                            for runner in server_runners]
 
-        log.info("Will attempt to start %s clients on %s hosts" %
-                 (len(clients_to_run), len(client_runners)))
-        log.info("Will attempt to start %s servers on %s hosts" %
-                 (len(servers_to_run), len(server_runners)))
+            log.info("Will attempt to start %s clients on %s hosts" %
+                    (len(clients_to_run), len(client_runners)))
+            log.info("Will attempt to start %s servers on %s hosts" %
+                    (len(servers_to_run), len(server_runners)))
 
-        test['success'], test['start_time'] = orchestrate_test(
-            clients_to_run, servers_to_run)
+            test['success'], test['start_time'] = orchestrate_test(
+                clients_to_run, servers_to_run)
 
-        test['test_duration'] = int(time.time() - start)
-        yield test
+            test['test_duration'] = int(time.time() - start)
+
+            return test
+        yield f
 
     summarize_tests(tests)
     close_all(clients)
@@ -279,7 +285,7 @@ def build_processes(tests):
 
     return acc
 
-def create_runner(env, config):
+def create_gen(env, config):
     runner_port = 8090
 
     tests = config.get('tests', [])
