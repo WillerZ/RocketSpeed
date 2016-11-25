@@ -120,23 +120,16 @@ void Rocketeer::HandleTermination(
 BackPressure Rocketeer::TryHandleHasMessageSince(
       InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
       SequenceNumber seqno) {
-  (void)inbound_id;
-  (void)namespace_id;
-  (void)topic;
-  (void)epoch;
-  (void)seqno;
+  RS_ASSERT(false) << "TryHandleHasMessageSince is not implemented.";
   return BackPressure::None();
 }
 
 void Rocketeer::HandleHasMessageSince(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       Epoch epoch, SequenceNumber seqno) {
-  (void)flow;
-  (void)inbound_id;
-  (void)namespace_id;
-  (void)topic;
-  (void)epoch;
-  (void)seqno;
+  // TODO(pja): proper implementation -- send message to the metadata_sink_.
+  HasMessageSinceResponse(flow, inbound_id, namespace_id, topic, epoch, seqno,
+      HasMessageSinceResult::kMaybe);
 }
 
 void Rocketeer::Deliver(Flow* flow,

@@ -166,6 +166,8 @@ class Rocketeer {
    * HandleHasMessageSince, but not both. If both are provided, this version is
    * preferred.
    *
+   * This method needs to be called on the thread this instance runs on.
+   *
    * @param flow Flow control handle for exerting back-pressure.
    * @param inbound_id ID of the subscription to test against.
    * @param namespace_id The namespace of the topic to test.
@@ -189,6 +191,8 @@ class Rocketeer {
    * Implementations should provide either TryHandleHasMessageSince or
    * HandleHasMessageSince, but not both. If both are provided, this version is
    * ignored.
+   *
+   * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to test against.
    * @param namespace_id The namespace of the topic to test.
