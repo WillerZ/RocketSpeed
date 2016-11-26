@@ -88,7 +88,7 @@ class SubscriberHooksContainer {
 
  private:
   class NoopHooks : public SubscriberHooks {
-    virtual void SubscriptionExists(const SubscriptionStatus& ) final {}
+    virtual void SubscriptionExists(const HookedSubscriptionStatus& ) final {}
     virtual void OnStartSubscription() final {}
     virtual void OnAcknowledge(SequenceNumber) final {}
     virtual void OnTerminateSubscription() final {}

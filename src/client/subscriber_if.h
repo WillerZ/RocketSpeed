@@ -38,7 +38,7 @@ class HasMessageSinceParams {
 class SubscriberHooks {
  public:
   virtual ~SubscriberHooks() = default;
-  virtual void SubscriptionExists(const SubscriptionStatus& ) = 0;
+  virtual void SubscriptionExists(const HookedSubscriptionStatus& ) = 0;
   virtual void OnStartSubscription() = 0;
   virtual void OnAcknowledge(SequenceNumber seqno) = 0;
   virtual void OnTerminateSubscription() = 0;
