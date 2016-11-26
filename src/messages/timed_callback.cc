@@ -40,12 +40,12 @@ void TimedCallback::AddEvent(event* event, bool enable) {
 void TimedCallback::Enable() {
   event_loop_->ThreadCheck();
 
-  timeval timer_seconds;
-  timer_seconds.tv_sec = duration_.count() / 1000000ULL;
-  timer_seconds.tv_usec = static_cast<decltype(timer_seconds.tv_usec)>(
-      duration_.count() % 1000000ULL);
-
   if (!enabled_) {
+    timeval timer_seconds;
+    timer_seconds.tv_sec = duration_.count() / 1000000ULL;
+    timer_seconds.tv_usec = static_cast<decltype(timer_seconds.tv_usec)>(
+        duration_.count() % 1000000ULL);
+
     if (event_add(event_, &timer_seconds)) {
       LOG_ERROR(info_log_, "Failed to add timer event");
       info_log_->Flush();

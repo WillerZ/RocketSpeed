@@ -22,10 +22,11 @@ bool RateLimiter::IsAllowed() {
   return available_ > 0;
 }
 
-void RateLimiter::TakeOne() {
+bool RateLimiter::TakeOne() {
   if (available_) {
     --available_;
   }
+  return available_ ? true : false;
 }
 
 } // namespace rocketspeed

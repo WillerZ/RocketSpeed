@@ -21,8 +21,11 @@ class RateLimiter {
   /** Returns true if the rate limiting allows another event. */
   bool IsAllowed();
 
-  /** Performs a rate limited event. */
-  void TakeOne();
+  /**
+   * Performs a rate limited event.
+   * Returns True iff more available else false
+   */
+  bool TakeOne();
 
  private:
   const size_t limit_;

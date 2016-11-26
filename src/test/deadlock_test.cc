@@ -159,16 +159,18 @@ TEST_F(DeadLockTest, DeadLock) {
   // Setup a subscription on the live client. This is our signal that the
   // server is not deadlocked.
   using Clock = std::chrono::steady_clock;
-  auto now = [] () {
+  auto now = []() {
     using namespace std::chrono;
     return static_cast<uint64_t>(
-      duration_cast<milliseconds>(Clock::now().time_since_epoch()).count());
+        duration_cast<milliseconds>(Clock::now().time_since_epoch()).count());
   };
   std::atomic<uint64_t> last_received{now()};
-  live_client->Subscribe(GuestTenant, GuestNamespace, "live", 0,
-      [&] (std::unique_ptr<MessageReceived>&) {
-        last_received = now();
-      });
+  live_client->Subscribe(
+      GuestTenant,
+      GuestNamespace,
+      "live",
+      0,
+      [&](std::unique_ptr<MessageReceived>&) { last_received = now(); });
 
   auto is_deadlocked = [&]() -> bool {
     // We say we are deadlocked if the live client hasn't received anything

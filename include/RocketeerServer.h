@@ -58,6 +58,14 @@ struct RocketeerOptions {
 
   /** If socket is unwriteable for this amount of time, it will be closed. */
   std::chrono::milliseconds socket_timeout{10000};
+
+  /** Throttle deliveries to the client at the rate specified by the policy **/
+  size_t rate_limit = 10000;
+  std::chrono::milliseconds rate_duration{1000};
+
+  /** Batch deliveries to the client specified by the policy **/
+  size_t batch_max_limit = 100;
+  std::chrono::milliseconds batch_max_duration{10};
 };
 
 class RocketeerServer {

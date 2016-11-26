@@ -105,7 +105,7 @@ RateLimiterSink<T>::CreateWriteCallback(
   // Create the second create_callback function which takes callback
   // as a parameter. This is a timed callback to flush after the rate limit
   // throttling has been relaxed. The factor of 10 is to make the retry checks
-  // more granular, which accounts for clock accounting skew between the
+  // more granular, which accounts for clock skew between the
   // rate_limiter_ clock, and the timer that controls the flush wake up.
   auto event_cb_2 = std::bind(&EventLoop::CreateTimedEventCallback,
     event_loop, std::placeholders::_1, duration_ / 10);

@@ -53,7 +53,7 @@ class Stream : public Sink<std::unique_ptr<Message>> {
   /** Closes the stream gracefully. */
   ~Stream();
 
-  /** Inherited from Sink<SharedTimestampedString>. */
+  /** Inherited from Sink<Message>. */
   bool Write(std::unique_ptr<Message>& value) final override;
 
   /** Inherited from Sink<Message>. */
@@ -112,7 +112,7 @@ class Stream : public Sink<std::unique_ptr<Message>> {
   const StreamID local_id_;
   /** An object to accept received messages. */
   StreamReceiver* receiver_;
-  /** Name of the remove host for debugging. */
+  /** Name of the remote host for debugging. */
   std::string host_name_;
 };
 

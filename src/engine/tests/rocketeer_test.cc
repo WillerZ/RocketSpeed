@@ -30,6 +30,10 @@ class RocketeerTest : public ::testing::Test {
     options.info_log = info_log_;
     options.env = env_;
     options.port = 0;
+    options.rate_limit = 10000;
+    options.rate_duration = std::chrono::milliseconds(1000);
+    options.batch_max_limit = 1;
+    options.batch_max_duration = std::chrono::milliseconds(10);
     server_.reset(new RocketeerServer(std::move(options)));
   }
 
