@@ -51,7 +51,9 @@ Subscriber::Subscriber(const ClientOptions& options,
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
-, subscriptions_map_(event_loop_, &UserDataCleanup)
+, subscriptions_map_(event_loop_,
+                     std::bind(&Subscriber::SendMessage, this, _1, _2),
+                     &UserDataCleanup)
 , stream_supervisor_(event_loop_, this,
                      std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
                      options.backoff_strategy,
@@ -61,6 +63,10 @@ Subscriber::Subscriber(const ClientOptions& options,
 , num_active_subscriptions_(std::move(num_active_subscriptions)) {
   thread_check_.Check();
   RefreshRouting();
+}
+
+void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
+  flow->Write(GetConnection(), message);
 }
 
 void Subscriber::InstallHooks(const HooksParameters& params,
@@ -317,14 +323,12 @@ void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
   NotifyHealthy(isHealthy);
 }
 
-void Subscriber::ConnectionCreated(
-    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
-  std::shared_ptr<Sink<std::unique_ptr<Message>>> shared_sink(std::move(sink));
-  subscriptions_map_.StartSync(shared_sink);
-}
-
-void Subscriber::ConnectionDropped() {
-  subscriptions_map_.StopSync();
+void Subscriber::ConnectionChanged() {
+  if (GetConnection()) {
+    subscriptions_map_.StartSync();
+  } else {
+    subscriptions_map_.StopSync();
+  }
 }
 
 void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {

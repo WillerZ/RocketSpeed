@@ -70,11 +70,13 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
 ////////////////////////////////////////////////////////////////////////////////
 SubscriptionsMap::SubscriptionsMap(
     EventLoop* event_loop,
+    std::function<void(Flow*, std::unique_ptr<Message>)> message_handler,
     UserDataCleanupCb user_data_cleanup_cb)
 : event_loop_(event_loop)
 , user_data_cleanup_cb_(std::move(user_data_cleanup_cb))
 , pending_subscriptions_(event_loop, "pending_subs")
-, pending_unsubscribes_(event_loop, "pending_unsubs") {
+, pending_unsubscribes_(event_loop, "pending_unsubs")
+, message_handler_(std::move(message_handler)) {
   auto flow_control = event_loop_->GetFlowControl();
   // Wire the source of pending subscriptions.
   flow_control->Register<typename Subscriptions::value_type>(
@@ -292,7 +294,6 @@ void SubscriptionsMap::HandlePendingSubscription(
             "HandlePendingSubscription(%llu)",
             state->GetIDWhichMayChange().ForLogging());
 
-  RS_ASSERT(sink_);
   // Send a message.
   std::unique_ptr<Message> subscribe(new MessageSubscribe(
       state->GetTenant(),
@@ -300,7 +301,7 @@ void SubscriptionsMap::HandlePendingSubscription(
       state->GetTopicName().ToString(),
       state->GetExpectedSeqno(),
       state->GetSubscriptionID()));
-  flow->Write(sink_.get(), subscribe);
+  message_handler_(flow, std::move(subscribe));
 
   // Mark the subscription as synced.
   // We own the state pointer now.
@@ -313,11 +314,10 @@ void SubscriptionsMap::HandlePendingUnsubscription(
   LOG_DEBUG(
       GetLogger(), "HandlePendingUnsubscription(%llu)", sub_id.ForLogging());
 
-  RS_ASSERT(sink_);
   // Send the message.
   std::unique_ptr<Message> unsubscribe(new MessageUnsubscribe(
       GuestTenant, sub_id, MessageUnsubscribe::Reason::kRequested));
-  flow->Write(sink_.get(), unsubscribe);
+  message_handler_(flow, std::move(unsubscribe));
 }
 
 void SubscriptionsMap::CleanupSubscription(
@@ -329,11 +329,7 @@ void SubscriptionsMap::CleanupSubscription(
   delete sub;
 }
 
-void SubscriptionsMap::StartSync(
-    std::shared_ptr<Sink<std::unique_ptr<Message>>> sink) {
-
-  sink_ = std::move(sink);
-
+void SubscriptionsMap::StartSync() {
   // Make all subscriptions pending.
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
 
@@ -361,13 +357,6 @@ void SubscriptionsMap::StartSync(
 }
 
 void SubscriptionsMap::StopSync() {
-  if (sink_) {
-    auto flow_control = event_loop_->GetFlowControl();
-    // Unwire and close the stream sink.
-    flow_control->UnregisterSink(sink_.get());
-    sink_.reset();
-  }
-
   // Disable sources that point to the destroyed sink.
   pending_subscriptions_.SetReadEnabled(event_loop_, false);
   pending_unsubscribes_.SetReadEnabled(event_loop_, false);

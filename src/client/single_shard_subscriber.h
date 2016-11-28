@@ -133,11 +133,11 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
 
   void ProcessUnsubscribe(SubscriptionID sub_id, Info& info, Status status);
 
-  void ConnectionDropped() final override;
-  void ConnectionCreated(
-    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) final override;
+  void ConnectionChanged() final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
+
+  void SendMessage(Flow* flow, std::unique_ptr<Message> message);
 
   /// Max active subscriptions across the thread.
   const size_t max_active_subscriptions_;
