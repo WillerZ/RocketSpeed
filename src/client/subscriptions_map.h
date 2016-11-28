@@ -25,8 +25,6 @@ class MessageDeliver;
 class MyReceiver;
 class Logger;
 class Slice;
-template <typename>
-class Sink;
 
 /// A flyweight-pattern-based storage for topics and namespaces.
 struct TenantAndNamespace {
@@ -162,8 +160,10 @@ class SubscriptionsMap {
  public:
   using UserDataCleanupCb = std::function<void(void*)>;
 
-  SubscriptionsMap(EventLoop* event_loop,
-                   UserDataCleanupCb user_data_cleanup_cb);
+  SubscriptionsMap(
+      EventLoop* event_loop,
+      std::function<void(Flow*, std::unique_ptr<Message>)> message_handler,
+      UserDataCleanupCb user_data_cleanup_cb);
   ~SubscriptionsMap();
 
   /// Returns a non-owning pointer to the SubscriptionBase.
@@ -284,7 +284,7 @@ class SubscriptionsMap {
   /// Sets the user data for a subscription.
   void SetUserData(SubscriptionID sub_id, void* user_data);
 
-  void StartSync(std::shared_ptr<Sink<std::unique_ptr<Message>>> sink);
+  void StartSync();
   void StopSync();
 
   /// Returns true iif the unsubscribe matched a subscription, and fills the
@@ -326,7 +326,7 @@ class SubscriptionsMap {
   using Unsubscribes = google::sparse_hash_set<SubscriptionID>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
-  std::shared_ptr<Sink<std::unique_ptr<Message>>> sink_;
+  std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
 
   /// Returns a non-owning pointer to the SubscriptionBase or null if doesn't
   /// exist.

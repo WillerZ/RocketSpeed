@@ -123,7 +123,9 @@ void UserDataCleanup(void* user_data) {
 
 Multiplexer::Multiplexer(PerShard* per_shard)
 : per_shard_(per_shard)
-, subscriptions_map_(GetLoop(), &UserDataCleanup)
+, subscriptions_map_(GetLoop(),
+                     std::bind(&Multiplexer::SendMessage, this, _1, _2),
+                     &UserDataCleanup)
 , stream_supervisor_(GetLoop(), this,
                      std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
                      GetOptions().backoff_strategy,
@@ -139,6 +141,10 @@ Multiplexer::Multiplexer(PerShard* per_shard)
   auto null_id = upstream_allocator_.Next();
   RS_ASSERT(null_id == 0);
   (void)null_id;
+}
+
+void Multiplexer::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
+  flow->Write(GetConnection(), message);
 }
 
 EventLoop* Multiplexer::GetLoop() const {
@@ -291,14 +297,12 @@ void Multiplexer::ReceiveConnectionStatus(bool isHealthy) {
   // TODO(gds): what should happen here?
 }
 
-void Multiplexer::ConnectionCreated(
-    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
-  std::shared_ptr<Sink<std::unique_ptr<Message>>> shared_sink(std::move(sink));
-  subscriptions_map_.StartSync(shared_sink);
-}
-
-void Multiplexer::ConnectionDropped() {
-  subscriptions_map_.StopSync();
+void Multiplexer::ConnectionChanged() {
+  if (GetConnection()) {
+    subscriptions_map_.StartSync();
+  } else {
+    subscriptions_map_.StopSync();
+  }
 }
 
 void Multiplexer::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {

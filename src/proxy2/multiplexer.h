@@ -154,11 +154,11 @@ class Multiplexer : public ConnectionAwareReceiver {
 
   void ReceiveConnectionStatus(bool isHealthy);
 
-  void ConnectionDropped() final override;
-  void ConnectionCreated(
-    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) final override;
+  void ConnectionChanged() final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
+
+  void SendMessage(Flow* flow, std::unique_ptr<Message> message);
 };
 
 }  // namespace rocketspeed

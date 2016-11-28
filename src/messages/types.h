@@ -71,9 +71,16 @@ class ConnectionObserver {
  public:
   virtual ~ConnectionObserver() = default;
 
-  virtual void ConnectionDropped() = 0;
-  virtual void ConnectionCreated(
-    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) = 0;
+  void ConnectionDropped();
+  void ConnectionCreated(std::unique_ptr<Sink<std::unique_ptr<Message>>> sink);
+
+ protected:
+  virtual void ConnectionChanged() = 0;
+
+  Sink<std::unique_ptr<Message>>* GetConnection() { return sink_.get(); }
+
+ private:
+  std::shared_ptr<Sink<std::unique_ptr<Message>>> sink_;
 };
 
 /** An object which receives messages from a Stream. */

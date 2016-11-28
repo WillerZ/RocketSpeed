@@ -8,6 +8,7 @@
 #include "include/Slice.h"
 #include "src/messages/messages.h"
 #include "src/util/common/coding.h"
+#include "src/util/common/flow.h"
 
 namespace rocketspeed {
 
@@ -102,6 +103,17 @@ StreamReceiveArg<T> StreamReceiver::PrepareArguments(
   arg.stream_id = stream_id;
   arg.message.reset(static_cast<T*>(message.release()));
   return arg;
+}
+
+void ConnectionObserver::ConnectionDropped() {
+  sink_.reset();
+  ConnectionChanged();
+}
+
+void ConnectionObserver::ConnectionCreated(
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
+  sink_ = std::move(sink);
+  ConnectionChanged();
 }
 
 }  // namespace rocketspeed
