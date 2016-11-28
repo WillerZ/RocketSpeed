@@ -190,6 +190,7 @@ class SocketEvent : public Source<MessageOnStream>,
 
   EventLoop* event_loop_;
 
+  bool writeable_;
   bool first_write_happened_;  // have we told the EventLoop we're
                                // connected and so writable?
 
