@@ -72,6 +72,10 @@ LIBOBJECTS += $(SOURCESC:.c=.o)
 
 LIBOBJECTS_NOVERSION = $(filter-out $(LIBBUILDVERSION),$(LIBOBJECTS))
 
+CENTRIFUGEOBJECTS = $(patsubst %.cc,%.o,$(wildcard src/tools/centrifuge/*.cc))
+CLIENTBENCHOBJECTS = $(patsubst %.cc,%.o,$(wildcard src/tools/client_bench/*.cc))
+ROCKETBENCHOBJECTS = $(patsubst %.cc,%.o,$(wildcard src/tools/rocketbench/*.cc))
+
 GTEST = $(GTEST_DIR)/gtest/gtest-all.o
 TESTUTIL = ./src/util/testutil.o
 TESTCLUSTER = ./src/test/test_cluster.o
@@ -191,8 +195,8 @@ rocketspeed: src/server/main.o src/server/server.o src/server/logdevice.o $(LIBO
 	$(CXX) src/server/main.o src/server/server.o src/server/logdevice.o $(LIBOBJECTS) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # compile only the rocketbench tool
-rocketbench: src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCLUSTER)
-	$(CXX) src/tools/rocketbench/main.o $(LIBOBJECTS) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+rocketbench: $(ROCKETBENCHOBJECTS) $(LIBOBJECTS) $(TESTCLUSTER)
+	$(CXX) $(ROCKETBENCHOBJECTS) $(LIBOBJECTS) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
 # run all unit tests
 check: $(TESTS)
@@ -267,11 +271,11 @@ $(LIBRARY): $(LIBOBJECTS)
 	rm -f $@
 	$(AR) -rs $@ $(LIBOBJECTS)
 
-client_bench: src/tools/client_bench/client_bench.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
-	$(CXX) src/tools/client_bench/client_bench.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
+client_bench: $(CLIENTBENCHOBJECTS) $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
+	$(CXX) $(CLIENTBENCHOBJECTS) $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
 
-centrifuge_client: src/tools/centrifuge/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
-	$(CXX) src/tools/centrifuge/main.o $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
+centrifuge_client: $(CENTRIFUGEOBJECTS) $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER)
+	$(CXX) $(CENTRIFUGEOBJECTS) $(LIBOBJECTS) $(TESTUTIL) $(TESTCLUSTER) $(EXEC_LDFLAGS) -o $@  $(LDFLAGS) $(COVERAGEFLAGS)
 
 # ---------------------------------------------------------------------------
 # 	Example rocketeers
