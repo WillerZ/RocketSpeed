@@ -75,7 +75,7 @@ DEFINE_uint64(num_topics, 100, "number of topics");
 DEFINE_int64(num_messages, 1000, "number of messages to send");
 DEFINE_int64(num_messages_to_receive, -1, "number of messages to receive");
 DEFINE_int64(num_messages_per_topic, 100, "number of messages per topic");
-DEFINE_string(namespaceid, rocketspeed::GuestNamespace, "namespace id");
+DEFINE_string(namespaceid, "guest", "namespace id");
 DEFINE_string(topics_distribution, "uniform",
 "uniform, normal, poisson, fixed");
 DEFINE_string(subscription_length_distribution, "weibull",
@@ -114,6 +114,7 @@ DEFINE_uint64(max_inflight, 10000, "maximum publishes in flight");
  * Miscellaneous parameters.
  */
 DEFINE_bool(logging, true, "enable/disable logging");
+DEFINE_string(logfile, "LOG.rocketbench", "file to store logs");
 DEFINE_bool(report, true, "report results to stdout");
 DEFINE_int32(wait_for_debugger, 0, "wait for debugger to attach to me");
 DEFINE_int32(idle_timeout, 5, "wait for X seconds until declaring timeout");
@@ -748,7 +749,7 @@ int main(int argc, char** argv) {
   if (FLAGS_logging) {
     if (!rocketspeed::CreateLoggerFromOptions(rocketspeed::Env::Default(),
                                               "",
-                                              "LOG.rocketbench",
+                                              FLAGS_logfile,
                                               0,
                                               0,
 #ifdef NDEBUG
@@ -1347,6 +1348,15 @@ int main(int argc, char** argv) {
         printf("Error (%d) in saving topic metadat into file %s\n",
                val, FLAGS_save_path.c_str());
         ret = val;
+      }
+    }
+
+    if (ret) {
+      if (FLAGS_logging) {
+        printf("Failed to complete successfully, check %s for details\n",
+               FLAGS_logfile.c_str());
+      } else {
+        printf("Failed to complete successfully, try running with --logging\n");
       }
     }
   }
