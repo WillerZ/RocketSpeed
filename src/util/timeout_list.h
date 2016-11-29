@@ -75,17 +75,6 @@ template <class T, class Hash = std::hash<T>> class TimeoutList {
   }
 
   /**
-   * Adds a new item with iff it didn't exist
-   * i.e, Don't update the time of existing item to now.
-   */
-  void AddIfNotExist(const T& t) {
-    if (!Contains(t)) {
-      // add this item
-      lmap_.emplace_back(t, std::chrono::steady_clock::now());
-    }
-  }
-
-  /**
   * Erases the entry if found
   */
   bool Erase(const T& t) {

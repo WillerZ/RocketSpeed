@@ -716,6 +716,14 @@ Stream* EventLoop::GetInboundStream(StreamID stream_id) {
   return it->second;
 }
 
+Sink<std::unique_ptr<Message>>* EventLoop::GetDeliverySink(StreamID stream_id) {
+  auto it = stream_id_to_sink_.find(stream_id);
+  if (it == stream_id_to_sink_.end()) {
+    return nullptr;
+  }
+  return it->second;
+}
+
 std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
                                               StreamID stream_id) {
   thread_check_.Check();
@@ -841,6 +849,20 @@ void EventLoop::AddInboundStream(access::EventLoop, Stream* stream) {
 
   {
     auto result = stream_id_to_stream_.emplace(stream->GetLocalID(), stream);
+    RS_ASSERT(result.second);
+    (void)result;
+  }
+}
+
+void EventLoop::AddStreamDeliverySink(access::EventLoop,
+                                      Stream* stream,
+                                      Sink<std::unique_ptr<Message>>* sink) {
+  RS_ASSERT(stream);
+  RS_ASSERT(sink);
+  thread_check_.Check();
+
+  {
+    auto result = stream_id_to_sink_.emplace(stream->GetLocalID(), sink);
     RS_ASSERT(result.second);
     (void)result;
   }

@@ -132,12 +132,17 @@ TEST_F(DeadLockTest, DeadLock) {
   options.info_log = info_log_;
   options.socket_timeout = std::chrono::seconds(4);
 
+  options.enable_throttling = true;
+  options.enable_batching = true;
+  options.batch_max_limit = 1;
+  options.rate_limit = 10000000;
+
   // Set heartbeats to be more frequent than timeout to check that heartbeats
   // do not accidentally keep a socket alive.
   options.heartbeat_period = std::chrono::seconds(1);
 
   std::vector<std::unique_ptr<DeadLockRocketeer>> rocketeers;
-  RocketeerServer server(options);
+  RocketeerServer server(std::move(options));
   rocketeers.emplace_back(new DeadLockRocketeer(&server));
   server.Register(rocketeers.back().get());
   ASSERT_OK(server.Start());
@@ -164,6 +169,7 @@ TEST_F(DeadLockTest, DeadLock) {
     return static_cast<uint64_t>(
         duration_cast<milliseconds>(Clock::now().time_since_epoch()).count());
   };
+
   std::atomic<uint64_t> last_received{now()};
   live_client->Subscribe(
       GuestTenant,

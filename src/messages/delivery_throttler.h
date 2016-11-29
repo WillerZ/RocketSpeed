@@ -31,11 +31,13 @@ class EventCallback;
 class DeliveryThrottler : public Sink<std::unique_ptr<Message>> {
  public:
   struct Policy {
+    Policy() = default;
+
     explicit Policy(size_t limit_, std::chrono::milliseconds duration_)
     : limit(limit_), duration(duration_) {}
 
-    size_t limit;
-    std::chrono::milliseconds duration;
+    size_t limit = 10000;
+    std::chrono::milliseconds duration = std::chrono::seconds(1);
   };
 
   /*

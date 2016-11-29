@@ -9,17 +9,18 @@
 #include <sys/uio.h>
 #include <memory>
 
+#include "include/HostId.h"
 #include "include/Logger.h"
-#include "src/port/port.h"
+#include "src/messages/event_loop.h"
+#include "src/messages/flow_control.h"
 #include "src/messages/queues.h"
+#include "src/messages/scheduled_executor.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream.h"
 #include "src/messages/types.h"
-#include "src/messages/event_loop.h"
+#include "src/port/port.h"
 #include "src/util/common/coding.h"
 #include "src/util/common/set_operations.h"
-#include "src/messages/flow_control.h"
-#include "include/HostId.h"
 #include "src/util/memory.h"
 
 namespace rocketspeed {
@@ -394,6 +395,12 @@ SocketEvent::SocketEvent(EventLoop* event_loop,
         timeout / 10);          // check every 1/10th of the timeout
     }
   }
+
+  // Start a scheduler which ticks every 5 ms
+  if (event_loop_->GetOptions().enable_batching) {
+    batching_scheduler_.reset(
+        new ScheduledExecutor(event_loop_, std::chrono::milliseconds(5)));
+  }
 }
 
 void SocketEvent::UnregisterStream(StreamID remote_id, bool force) {
@@ -406,6 +413,7 @@ void SocketEvent::UnregisterStream(StreamID remote_id, bool force) {
     }
     stream = it->second;
     remote_id_to_stream_.erase(it);
+    DestroyDeliverySinks(remote_id);
   }
 
   LOG_INFO(GetLogger(),
@@ -734,6 +742,7 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
           owned_streams_.emplace(owned_stream.get(), std::move(owned_stream));
       RS_ASSERT(result1.second);
       (void)result1;
+      CreateDeliverySinks(remote_id);
     } else {
       // Drop the message.
       LOG_WARN(GetLogger(),
@@ -863,4 +872,64 @@ void SocketEvent::FlushCapturedHeartbeats() {
   // cannot use public write interface as it captures the heartbeat
   EnqueueWrite(serialised);
 }
+
+void SocketEvent::CreateDeliverySinks(StreamID stream_id) {
+  // TODO: Take options from the stream introduction message
+  auto it = remote_id_to_stream_.find(stream_id);
+  RS_ASSERT(it != remote_id_to_stream_.end());
+  auto stream = it->second;
+
+  const auto& options = event_loop_->GetOptions();
+
+  // Create Throttler
+  DeliveryThrottler* throttlerPtr = nullptr;
+  if (options.enable_throttling) {
+    auto throttler =
+        std::make_unique<DeliveryThrottler>(stream, options.throttler_policy);
+    throttlerPtr = throttler.get();
+    stream_throttlers_.emplace(stream_id, std::move(throttler));
+  }
+
+  // Create Batcher
+  DeliveryBatcher* batcherPtr = nullptr;
+  if (options.enable_batching) {
+    std::unique_ptr<DeliveryBatcher> batcher = nullptr;
+    if (throttlerPtr != nullptr) {
+      // If throttling is also enabled set the underlying sink of the batcher
+      // to throttler
+      batcher.reset(new DeliveryBatcher(
+          throttlerPtr, batching_scheduler_, options.batcher_policy));
+    } else {
+      batcher.reset(new DeliveryBatcher(
+          stream, batching_scheduler_, options.batcher_policy));
+    }
+    batcherPtr = batcher.get();
+    stream_batchers_.emplace(stream_id, std::move(batcher));
+  }
+
+  Sink<std::unique_ptr<Message>>* sink = stream;
+  if (batcherPtr) {
+    sink = batcherPtr;
+  } else if (throttlerPtr) {
+    sink = throttlerPtr;
+  }
+  event_loop_->AddStreamDeliverySink(access::EventLoop(), stream, sink);
+}
+
+void SocketEvent::DestroyDeliverySinks(StreamID stream_id) {
+  // Unregister throttler sink
+  auto tit = stream_throttlers_.find(stream_id);
+  if (tit != stream_throttlers_.end()) {
+    event_loop_->GetFlowControl()->UnregisterSink(tit->second.get());
+    stream_throttlers_.erase(tit);
+  }
+
+  // Unregister batcher sink
+  auto bit = stream_batchers_.find(stream_id);
+  if (bit != stream_batchers_.end()) {
+    event_loop_->GetFlowControl()->UnregisterSink(bit->second.get());
+    stream_batchers_.erase(bit);
+  }
+}
+
 }  // namespace rocketspeed

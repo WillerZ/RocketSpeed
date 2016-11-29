@@ -14,6 +14,7 @@
 namespace rocketspeed {
 
 class EventLoop;
+class ScheduledExecutor;
 
 /**
  * Delivery Batcher
@@ -25,19 +26,23 @@ class DeliveryBatcher : public Sink<std::unique_ptr<Message>> {
   using Clock = std::chrono::steady_clock;
 
   struct Policy {
+    Policy() = default;
+
     explicit Policy(size_t limit_, std::chrono::milliseconds duration_)
     : limit(limit_), duration(duration_) {}
 
-    size_t limit;
-    std::chrono::milliseconds duration;
+    size_t limit = 100;
+    std::chrono::milliseconds duration = std::chrono::milliseconds(10);
   };
 
   /*
-   * @param Sink Underlying sink (DeliveryThrottler) to forward the batch
-   * @param tenant_id TenantID of the stream
-   * @param Policy batching policy to be used
+   * @param sink Underlying sink (DeliveryThrottler) to forward the batch
+   * @param scheduler ScheduledExecutor to schedule the timeout on batching
+   * @param policy batching policy to be used
    */
-  explicit DeliveryBatcher(Sink* sink, TenantID tenant_id, Policy policy);
+  explicit DeliveryBatcher(Sink* sink,
+                           std::shared_ptr<ScheduledExecutor> scheduler,
+                           Policy policy);
 
   ~DeliveryBatcher() = default;
 
@@ -55,13 +60,11 @@ class DeliveryBatcher : public Sink<std::unique_ptr<Message>> {
   /** Inherited from Sink<std::unique_ptr<Message>> */
   std::string GetSinkName() const override { return "delivery-batcher-sink"; }
 
-  /// Forward the batched messages for delivery
-  bool Dispatch();
-
  private:
   Sink* sink_;
-  const TenantID tenant_id_;
   const Policy policy_;
+
+  std::shared_ptr<ScheduledExecutor> scheduler_;
 
   MessageDeliverBatch::MessagesVector messages_batched_;
   Clock::time_point batch_start_time_;
@@ -72,6 +75,9 @@ class DeliveryBatcher : public Sink<std::unique_ptr<Message>> {
 
   /// Returns true if more messages can be added to the batch
   bool CanAddMore();
+
+  /// Forward the batched messages for delivery
+  bool Dispatch();
 };
 
 }  // namespace rocketspeed

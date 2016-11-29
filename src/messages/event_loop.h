@@ -32,6 +32,8 @@
 #include "include/BaseEnv.h"
 #include "include/Logger.h"
 #include "src/messages/commands.h"
+#include "src/messages/delivery_batcher.h"
+#include "src/messages/delivery_throttler.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/serializer.h"
 #include "src/messages/stream_allocator.h"
@@ -155,8 +157,17 @@ class EventLoop {
      * period).
      *
      * Default: 2 minutes.
-    */
+     */
     std::chrono::milliseconds heartbeat_timeout = std::chrono::minutes(2);
+
+    /**
+     * Delivery Options to enable/disable batching and throttling
+     * with the specified policies.
+     */
+    bool enable_throttling = false;
+    DeliveryThrottler::Policy throttler_policy;
+    bool enable_batching = false;
+    DeliveryBatcher::Policy batcher_policy;
   };
 
   /**
@@ -542,6 +553,19 @@ class EventLoop {
 
   FlowControl* GetFlowControl() { return flow_control_.get(); }
 
+  // TODO(t8971722)
+  void AddStreamDeliverySink(access::EventLoop,
+                             Stream* stream,
+                             Sink<std::unique_ptr<Message>>* sink);
+
+  /**
+   * Return the pointer to the sink the deliveries should be forwarded to.
+   * So, if batching is enabled this would return the batcher_sink
+   * similarly for throttling the throttler_sink
+   * If none is enabled if would return the stream.
+   */
+  Sink<std::unique_ptr<Message>>* GetDeliverySink(StreamID stream_id);
+
  private:
   Options options_;
 
@@ -652,6 +676,13 @@ class EventLoop {
    */
   // TODO(t8971722)
   std::unordered_map<StreamID, Stream*> stream_id_to_stream_;
+
+  /**
+   * A map of sink for a stream the delivery should be made to
+   */
+  // TODO(t8971722)
+  std::unordered_map<StreamID, Sink<std::unique_ptr<Message>>*>
+      stream_id_to_sink_;
 
   std::unique_ptr<EventCallback> hb_timer_;
 

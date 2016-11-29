@@ -23,6 +23,7 @@ namespace rocketspeed {
 
 class EventCallback;
 class EventLoop;
+class ScheduledExecutor;
 class Stream;
 
 /// Current version of protocol being emitted by this client/server.
@@ -307,6 +308,31 @@ class SocketEvent : public Source<MessageOnStream>,
    * to the socket.
    */
   void FlushCapturedHeartbeats();
+
+  /** A scheduler for batching events */
+  std::shared_ptr<ScheduledExecutor> batching_scheduler_;
+
+  /** Map of owned batchers mapped by StreamID */
+  std::unordered_map<StreamID, std::unique_ptr<DeliveryBatcher>>
+      stream_batchers_;
+
+  /** Map of owned throttlers mapped by StreamID */
+  std::unordered_map<StreamID, std::unique_ptr<DeliveryThrottler>>
+      stream_throttlers_;
+
+  /**
+   * Create the delivery sinks as requested
+   * Available sinks:
+   *    - Delivery Batcher
+   *    - Delivery Throttler
+   * Sinks are mapped using stream_id and the socket owns these sinks
+   */
+  void CreateDeliverySinks(StreamID stream_id);
+
+  /**
+   * Unregister the sinks if any and clean then up
+   */
+  void DestroyDeliverySinks(StreamID stream_id);
 };
 
 }  // namespace rocketspeed

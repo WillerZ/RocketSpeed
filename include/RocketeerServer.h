@@ -59,11 +59,24 @@ struct RocketeerOptions {
   /** If socket is unwriteable for this amount of time, it will be closed. */
   std::chrono::milliseconds socket_timeout{10000};
 
-  /** Throttle deliveries to the client at the rate specified by the policy **/
+  /**
+   * Throttle deliveries to the client at the rate specified by the policy
+   * The rate is defined as rate_limit / rate_duration.
+   * The rate limit is per stream. In the future these paramaters would be
+   * provided by the streams when they introduce themselves.
+   */
+  bool enable_throttling = false;
   size_t rate_limit = 10000;
   std::chrono::milliseconds rate_duration{1000};
 
-  /** Batch deliveries to the client specified by the policy **/
+  /**
+   * Batch deliveries to the client specified by the policy
+   * The server will batch as many messages together with maximum being the
+   * batch limit until the batching duration times out.
+   * The batching is done per stream. In the future these paramaters would be
+   * provided by the streams when they introduce themselves.
+   */
+  bool enable_batching = false;
   size_t batch_max_limit = 100;
   std::chrono::milliseconds batch_max_duration{10};
 };

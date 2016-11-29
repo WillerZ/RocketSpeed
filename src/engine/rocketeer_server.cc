@@ -18,7 +18,6 @@
 #include "include/Slice.h"
 #include "include/Status.h"
 #include "include/Types.h"
-#include "src/engine/delivery_manager.h"
 #include "src/messages/flow_control.h"
 #include "src/messages/msg_loop.h"
 #include "src/messages/stream.h"
@@ -128,10 +127,7 @@ class CommunicationRocketeer : public Rocketeer {
   std::unordered_map<StreamID, SubscriptionsOnStream> inbound_subscriptions_;
   std::unordered_map<StreamID, TenantID> stream_tenant_;
 
-  std::unique_ptr<DeliveryManager> delivery_manager_;
-
   void Initialize(RocketeerServer* server, size_t id);
-  void InitializeDeliveryManager(size_t id);
 
   const Statistics& GetStatisticsInternal();
 
@@ -199,7 +195,7 @@ void CommunicationRocketeer::Deliver(Flow* flow,
           tenant_id, inbound_id.GetSubID(), msg_id, payload);
       data->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
-      delivery_manager_->Deliver(flow, inbound_id.stream_id, std::move(data));
+      SendResponse(flow, inbound_id.stream_id, std::move(data));
     } else {
       stats_->dropped_reordered->Add(1);
       LOG_WARN(server_->options_.info_log,
@@ -244,7 +240,7 @@ void CommunicationRocketeer::DeliverBatch(
   if (!messages_vec.empty()) {
     auto batch = std::make_unique<MessageDeliverBatch>(
         tenant_id, std::move(messages_vec));
-    delivery_manager_->Deliver(flow, stream_id, std::move(batch));
+    SendResponse(flow, stream_id, std::move(batch));
   }
 }
 
@@ -346,20 +342,6 @@ void CommunicationRocketeer::Initialize(RocketeerServer* server, size_t id) {
   stats_.reset(new Stats(server->options_.stats_prefix));
 }
 
-void CommunicationRocketeer::InitializeDeliveryManager(size_t id) {
-  RS_ASSERT(!delivery_manager_);
-  RS_ASSERT(server_);
-
-  auto loop = server_->msg_loop_->GetEventLoop((int)id);
-  DeliveryThrottler::Policy throttler_policy(server_->options_.rate_limit,
-                                             server_->options_.rate_duration);
-  DeliveryBatcher::Policy batcher_policy(server_->options_.batch_max_limit,
-                                         server_->options_.batch_max_duration);
-
-  delivery_manager_.reset(new DeliveryManager(
-      loop, std::move(throttler_policy), std::move(batcher_policy)));
-}
-
 const Statistics& CommunicationRocketeer::GetStatisticsInternal() {
   RS_ASSERT(stats_);
   return stats_->all;
@@ -395,7 +377,7 @@ void CommunicationRocketeer::SendResponse(Flow* flow,
                                           StreamID stream_id,
                                           std::unique_ptr<Message> message) {
   auto loop = server_->msg_loop_->GetEventLoop((int)GetID());
-  if (auto stream = loop->GetInboundStream(stream_id)) {
+  if (auto stream = loop->GetDeliverySink(stream_id)) {
     if (flow) {
       flow->Write(stream, message);
     } else {
@@ -417,7 +399,6 @@ void CommunicationRocketeer::Receive(
   // In the future, we should require streams to introduce themselves first to
   // set the tenant, among other things.
   stream_tenant_.emplace(origin, subscribe->GetTenantID());
-  delivery_manager_->RegisterStream(origin, subscribe->GetTenantID());
 
   SubscriptionID sub_id = subscribe->GetSubID();
   SequenceNumber start_seqno = subscribe->GetStartSequenceNumber();
@@ -492,7 +473,6 @@ void CommunicationRocketeer::Receive(
   }
   inbound_subscriptions_.erase(it);
   stream_tenant_.erase(origin);
-  delivery_manager_->UnRegisterStream(origin);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -531,6 +511,14 @@ Status RocketeerServer::Start() {
   msg_loop_options.event_loop.socket_timeout = options_.socket_timeout;
   msg_loop_options.event_loop.use_heartbeat_deltas =
       options_.use_heartbeat_deltas;
+
+  msg_loop_options.event_loop.enable_throttling = options_.enable_throttling;
+  msg_loop_options.event_loop.enable_batching = options_.enable_batching;
+  msg_loop_options.event_loop.throttler_policy =
+      DeliveryThrottler::Policy(options_.rate_limit, options_.rate_duration);
+  msg_loop_options.event_loop.batcher_policy = DeliveryBatcher::Policy(
+      options_.batch_max_limit, options_.batch_max_duration);
+
   msg_loop_.reset(new MsgLoop(options_.env,
                               EnvOptions(),
                               options_.port,
@@ -550,15 +538,6 @@ Status RocketeerServer::Start() {
       {MessageType::mBacklogQuery, CreateCallback<MessageBacklogQuery>()},
       {MessageType::mGoodbye, CreateCallback<MessageGoodbye>()},
   });
-
-  // Initialize the DeliveryManager
-  // DeliveryManager requires event_loop as a parameter
-  // The event_loop is not created until the server starts because msg_loop
-  // needs to know how many rocketeers are there and this information
-  // is available only after all rocketeers register themselves.
-  for (size_t i = 0; i < rocketeers_.size(); i++) {
-    rocketeers_[i]->InitializeDeliveryManager(i);
-  }
 
   msg_loop_thread_.reset(
       new MsgLoopThread(options_.env, msg_loop_.get(), "rocketeer"));

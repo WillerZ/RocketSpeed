@@ -5,7 +5,7 @@
 //
 
 #define __STDC_FORMAT_MACROS
-#include "src/engine/delivery_throttler.h"
+#include "src/messages/delivery_throttler.h"
 
 #include "src/messages/combined_callback.h"
 #include "src/messages/messages.h"
@@ -13,6 +13,18 @@
 
 namespace rocketspeed {
 
+/**
+ *
+ * Note: DeliveryThrottler is tightly coupled with CombinedCallback using
+ * "event_state" (a shared_ptr of pair of bools).
+ * More about event_state in combined_callback.h.
+ *
+ * event_state_->first will be set to false if the underlying sink is blocking
+ * writes to it. (callback would be whatever the underlying sink callback is)
+ * event_state_->second will be set to false if the rate limit is reached for
+ * the current period. (will enable a TimedCallback in this case)
+ *
+ */
 DeliveryThrottler::DeliveryThrottler(Sink* sink, Policy policy)
 : sink_(sink)
 , policy_(policy)
@@ -20,10 +32,6 @@ DeliveryThrottler::DeliveryThrottler(Sink* sink, Policy policy)
 , event_state_(std::make_shared<std::pair<bool, bool>>(true, true)) {}
 
 bool DeliveryThrottler::Write(std::unique_ptr<Message>& value) {
-  const auto message_type = value->GetMessageType();
-  RS_ASSERT(message_type == MessageType::mDeliverData ||
-            message_type == MessageType::mDeliverBatch);
-
   if (FlushPending()) {
     WriteAndUpdateState(value);
     return event_state_->first && event_state_->second;

@@ -26,7 +26,7 @@ bool RateLimiter::TakeOne() {
   if (available_) {
     --available_;
   }
-  return available_ ? true : false;
+  return available_;
 }
 
 } // namespace rocketspeed

@@ -5,27 +5,28 @@
 //
 
 #define __STDC_FORMAT_MACROS
-#include "src/engine/delivery_batcher.h"
+#include "src/messages/delivery_batcher.h"
 
 #include "include/Assert.h"
 
 #include "src/messages/msg_loop.h"
+#include "src/messages/scheduled_executor.h"
 
 namespace rocketspeed {
 
-DeliveryBatcher::DeliveryBatcher(Sink* sink, TenantID tenant_id, Policy policy)
-: sink_(sink), tenant_id_(tenant_id), policy_(policy) {}
+DeliveryBatcher::DeliveryBatcher(Sink* sink,
+                                 std::shared_ptr<ScheduledExecutor> scheduler,
+                                 Policy policy)
+: sink_(sink), policy_(policy), scheduler_(scheduler) {}
 
 bool DeliveryBatcher::Write(std::unique_ptr<Message>& value) {
   const auto message_type = value->GetMessageType();
-  RS_ASSERT(message_type == MessageType::mDeliverData ||
-            message_type == MessageType::mDeliverBatch);
 
-  // The message is already batched
-  // Dispatch any batched messages by the batcher and then the batch message
-  // TODO Combine Instead
-  if (message_type == MessageType::mDeliverBatch) {
+  // TODO: Batch any message kind
+  if (message_type != MessageType::mDeliverData) {
+    // Dispatch any existing batch
     bool dispatch_batched = Dispatch();
+    // Then dispatch the message
     bool dispatch_message = sink_->Write(value);
     return dispatch_batched && dispatch_message;
   }
@@ -50,6 +51,16 @@ bool DeliveryBatcher::CanAddMore() {
   if (messages_batched_.empty()) {
     // The batch is empty at the moment, begin the batching.
     batch_start_time_ = Clock::now();
+    // Schedule a timeout after which we dispatch whatever we have batched
+    // until that point
+    scheduler_->Schedule([ this, start_time = batch_start_time_ ]() {
+      // Check if the batch start_time matches the current batch start time
+      // otherwise the message was already dispatched
+      if (start_time == batch_start_time_) {
+        Dispatch();
+      }
+    },
+                         policy_.duration);
     return true;
   }
   auto now = Clock::now();
@@ -78,8 +89,10 @@ bool DeliveryBatcher::Dispatch() {
   if (messages_batched_.size() == 1) {
     message = std::move(messages_batched_.front());
   } else {
+    auto msg = static_cast<Message*>(messages_batched_.front().get());
+    auto tenant_id = msg->GetTenantID();
     message = std::make_unique<MessageDeliverBatch>(
-        tenant_id_, std::move(messages_batched_));
+        tenant_id, std::move(messages_batched_));
   }
 
   messages_batched_.clear();

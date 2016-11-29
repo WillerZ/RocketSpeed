@@ -40,6 +40,8 @@ class RocketeerDeliveriesTest
     options.info_log = info_log_;
     options.env = env_;
     options.port = 0;
+    options.enable_throttling = true;
+    options.enable_batching = true;
     options.rate_limit = std::get<0>(params);
     options.rate_duration = std::get<1>(params);
     options.batch_max_limit = std::get<2>(params);
