@@ -6,16 +6,20 @@
 #define __STDC_FORMAT_MACROS
 
 #include <atomic>
+#include <iostream>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include "include/Logger.h"
 #include "include/Env.h"
+#include "include/Logger.h"
 #include "src/messages/event_loop.h"
+#include "src/messages/scheduled_executor.h"
 #include "src/messages/stream.h"
 #include "src/port/port.h"
+#include "src/util/random.h"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
@@ -302,6 +306,66 @@ TEST_F(EventLoopTest, ExceptionCircuitBreaker) {
   MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Response);
   (void)loop.SendResponse(ping, 1234);
   (void)loop.IsOutboundStream(1234);
+}
+
+TEST_F(EventLoopTest, ScheduledExecutorTest) {
+  // Test for Scheduled Executor which schedules some events and checks
+  //    - expected time taken based on max_timeout
+  //    - expected order of events based on timeout of each event
+  EventLoop loop(options, std::move(stream_allocator));
+  EventLoop::Runner runner(&loop);
+  ASSERT_EVENTUALLY_TRUE(loop.IsRunning());
+
+  const auto tick_time = std::chrono::milliseconds(5);
+  const size_t kNumEvents = 1000;
+  const size_t max_timeout = 900;  // Less than positive_timeout
+
+  // Initialize the scheduler
+  std::unique_ptr<ScheduledExecutor> scheduler;
+  Wait([&]() { scheduler.reset(new ScheduledExecutor(&loop, tick_time)); },
+       &loop);
+
+  Random random(static_cast<uint32_t>(time(nullptr)));
+  port::Semaphore all_done;
+  std::multimap<size_t, size_t> event_timeouts;
+  std::vector<size_t> execution_order;
+
+  // Schedule events
+  uint64_t start = env->NowMicros();
+  for (size_t i = 0; i < kNumEvents; i++) {
+    Run([&, event = i ]() {
+      auto cb = [&, event]() {
+        execution_order.emplace_back(event);
+        if (execution_order.size() == kNumEvents) {
+          all_done.Post();
+        }
+      };
+      // Schedule one event with maximum timeout to get more precise
+      // run time of the test
+      auto timeout =
+          (event < kNumEvents - 1) ? random.Uniform(max_timeout) : max_timeout;
+      event_timeouts.insert({timeout, event});
+      scheduler->Schedule(std::move(cb), std::chrono::milliseconds(timeout));
+    },
+        &loop);
+  }
+
+  // Calculate expected time
+  ASSERT_TRUE(all_done.TimedWait(positive_timeout));
+  uint64_t taken = env->NowMicros() - start;
+  ASSERT_GE(taken / 1000, max_timeout);
+
+  // Check expected order of events
+  ASSERT_EQ(kNumEvents, event_timeouts.size());
+  ASSERT_EQ(kNumEvents, execution_order.size());
+
+  auto event_timeout_it = event_timeouts.begin();
+  auto execution_order_it = execution_order.begin();
+  while (event_timeout_it != event_timeouts.end()) {
+    ASSERT_EQ(event_timeout_it->second, *execution_order_it);
+    ++event_timeout_it;
+    ++execution_order_it;
+  }
 }
 
 }  // namespace rocketspeed
