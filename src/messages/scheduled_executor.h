@@ -44,6 +44,8 @@ class ScheduledExecutor : public NonCopyable, public NonMovable {
                 std::chrono::milliseconds timeout);
 
  private:
+  EventLoop* event_loop_;
+
   std::map<Clock::time_point, std::function<void()>> timed_events_;
   std::unique_ptr<EventCallback> timer_callback_;
 
