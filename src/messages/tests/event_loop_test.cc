@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 
 #include <atomic>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -350,7 +349,7 @@ TEST_F(EventLoopTest, ScheduledExecutorTest) {
         &loop);
   }
 
-  // Calculate expected time
+  // Check expected time
   ASSERT_TRUE(all_done.TimedWait(positive_timeout));
   uint64_t taken = env->NowMicros() - start;
   ASSERT_GE(taken / 1000, max_timeout);
