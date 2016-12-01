@@ -16,6 +16,8 @@ void UpstreamSubscription::AddDownstream(PerStream* per_stream,
                                          SubscriptionID downstream_sub,
                                          SequenceNumber initial_seqno,
                                          TenantID tenant_id,
+                                         Slice namespace_id,
+                                         Slice topic_name,
                                          SequenceNumber expected_seqno_check) {
   // Bootstrap the downstream subscription to the same sequence number as the
   // upstream subscription, so we can simply forward any updates received on
@@ -25,7 +27,8 @@ void UpstreamSubscription::AddDownstream(PerStream* per_stream,
                       SequenceNumber current_seqno) -> bool {
     // Prepare a message.
     MessageDeliverData data(
-        tenant_id, downstream_sub, MsgId(), contents.ToString());
+        tenant_id, namespace_id.ToString(), topic_name.ToString(),
+        downstream_sub, MsgId(), contents.ToString());
     data.SetSequenceNumbers(prev_seqno, current_seqno);
     // Send the message on downstream subscription.
     SourcelessFlow no_flow(per_stream->GetLoop()->GetFlowControl());
@@ -214,7 +217,7 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
   auto expected_seqno_check = upstream_sub->GetExpectedSeqno();
   upstream_sub->AddDownstream(
       per_stream, downstream_sub, initial_seqno, tenant_id,
-      expected_seqno_check);
+      namespace_id, topic_name, expected_seqno_check);
   return upstream_sub;
 }
 

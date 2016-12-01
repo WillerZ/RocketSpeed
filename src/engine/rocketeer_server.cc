@@ -216,8 +216,12 @@ void CommunicationRocketeer::Deliver(Flow* flow,
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
       auto tenant_id = GetTenant(inbound_id.stream_id);
+      // TODO(pja) = Update API to provide topic.
+      NamespaceID namespace_id = "";
+      Topic topic = "";
       auto data = std::make_unique<MessageDeliverData>(
-          tenant_id, inbound_id.GetSubID(), msg_id, payload);
+          tenant_id, std::move(namespace_id), std::move(topic),
+          inbound_id.GetSubID(), msg_id, payload);
       data->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
       SendResponse(flow, inbound_id.stream_id, std::move(data));
@@ -245,8 +249,13 @@ void CommunicationRocketeer::DeliverBatch(
     }
     if (auto* sub = Find(InboundID(stream_id, msg.GetSubID()))) {
       if (sub->prev_seqno < msg.seqno) {
+        // TODO(pja) = Update API to provide topic.
+        NamespaceID namespace_id = "";
+        Topic topic = "";
         messages_vec.emplace_back(
             new MessageDeliverData(tenant_id,
+                                   std::move(namespace_id),
+                                   std::move(topic),
                                    msg.GetSubID(),
                                    msg.msg_id,
                                    std::move(msg.payload)));
@@ -278,8 +287,12 @@ void CommunicationRocketeer::SendGapMessage(Flow* flow,
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
       auto tenant_id = GetTenant(inbound_id.stream_id);
+      // TODO(pja) = Update API to provide topic.
+      NamespaceID namespace_id = "";
+      Topic topic = "";
       auto gap = std::make_unique<MessageDeliverGap>(
-          tenant_id, inbound_id.GetSubID(), gap_type);
+          tenant_id, std::move(namespace_id), std::move(topic),
+          inbound_id.GetSubID(), gap_type);
       gap->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
       SendResponse(flow, inbound_id.stream_id, std::move(gap));

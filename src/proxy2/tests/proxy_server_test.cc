@@ -602,6 +602,8 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
                           SequenceNumber current_seqno,
                           Slice payload) {
     MessageDeliverData data(Tenant::GuestTenant,
+                            MockSharding::GetNamespace(shard),
+                            "HotTopic",
                             SubscriptionID::Unsafe(upstream_sub),
                             MsgId(),
                             payload.ToString());
@@ -774,7 +776,8 @@ TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
     }
     // Send back a message on the subscription.
     MessageDeliverData data(
-        Tenant::GuestTenant, server_sub_ids[i], MsgId(), "Payload");
+        Tenant::GuestTenant, MockSharding::GetNamespace(shard), topic_name,
+        server_sub_ids[i], MsgId(), "Payload");
     data.SetSequenceNumbers(0, 1003);
     server->Send(server_streams[i], data);
     {

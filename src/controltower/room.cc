@@ -159,6 +159,8 @@ ControlRoom::ProcessDeliver(Flow* flow,
 
   // For each subscriber on this topic at prev_seqno, deliver the message and
   // advance the subscription to next_seqno.
+  NamespaceID namespace_id = request->GetNamespaceId().ToString();
+  Topic topic_name = request->GetTopicName().ToString();
   TopicUUID uuid(request->GetNamespaceId(), request->GetTopicName());
   for (CopilotSub recipient : recipients) {
     // Send to correct worker loop.
@@ -171,6 +173,8 @@ ControlRoom::ProcessDeliver(Flow* flow,
     }
 
     MessageDeliverData deliver(request->GetTenantID(),
+                               namespace_id,
+                               topic_name,
                                recipient.sub_id,
                                request->GetMessageId(),
                                request->GetPayload().ToString());
@@ -222,6 +226,8 @@ ControlRoom::ProcessGap(Flow* flow,
       continue;
     }
     MessageDeliverGap deliver(gap->GetTenantID(),
+                              gap->GetNamespaceId(),
+                              gap->GetTopicName(),
                               recipient.sub_id,
                               gap->GetType());
     deliver.SetSequenceNumbers(prev_seqno, next_seqno);

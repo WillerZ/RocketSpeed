@@ -70,6 +70,8 @@ class UpstreamSubscription {
                      SubscriptionID downstream_sub,
                      SequenceNumber initial_seqno,
                      TenantID tenant_id,
+                     Slice namespace_id,
+                     Slice topic_name,
                      SequenceNumber expected_seqno_check);
 
   size_t RemoveDownstream(PerStream* per_stream, SubscriptionID downstream_sub);

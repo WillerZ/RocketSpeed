@@ -749,11 +749,24 @@ inline bool ValidateEnum(MessageUnsubscribe::Reason e) {
  */
 class MessageDeliver : public Message {
  public:
-  MessageDeliver(MessageType type, TenantID tenant_id, SubscriptionID sub_id)
-      : Message(type, tenant_id), sub_id_(sub_id), seqno_prev_(0), seqno_(0) {}
+  MessageDeliver(MessageType type,
+                 TenantID tenant_id,
+                 NamespaceID namespace_id,
+                 Topic topic,
+                 SubscriptionID sub_id)
+      : Message(type, tenant_id),
+        namespace_id_(std::move(namespace_id)),
+        topic_(std::move(topic)),
+        sub_id_(sub_id),
+        seqno_prev_(0),
+        seqno_(0) {}
 
   explicit MessageDeliver(MessageType type) : Message(type) {}
   virtual ~MessageDeliver() = 0;
+
+  // No getters for namespace and topic.
+  // This proves that no code is relying on these until all servers are updated.
+  // TODO(pja)
 
   SubscriptionID GetSubID() const { return sub_id_; }
 
@@ -772,6 +785,10 @@ class MessageDeliver : public Message {
   virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
+ protected:
+  NamespaceID namespace_id_;
+  Topic topic_;
+
  private:
   /** ID of the subscription this response refers to. */
   SubscriptionID sub_id_;
@@ -787,9 +804,15 @@ inline MessageDeliver::~MessageDeliver() {}
 class MessageDeliverGap final : public MessageDeliver {
  public:
   MessageDeliverGap(TenantID tenant_id,
+                    NamespaceID namespace_id,
+                    Topic topic,
                     SubscriptionID sub_id,
                     GapType gap_type)
-      : MessageDeliver(MessageType::mDeliverGap, tenant_id, sub_id),
+      : MessageDeliver(MessageType::mDeliverGap,
+                       tenant_id,
+                       std::move(namespace_id),
+                       std::move(topic),
+                       sub_id),
         gap_type_(gap_type) {}
 
   MessageDeliverGap() : MessageDeliver(MessageType::mDeliverGap) {}
@@ -813,10 +836,16 @@ class MessageDeliverGap final : public MessageDeliver {
 class MessageDeliverData final : public MessageDeliver {
  public:
   MessageDeliverData(TenantID tenant_id,
+                     NamespaceID namespace_id,
+                     Topic topic,
                      SubscriptionID sub_id,
                      MsgId message_id,
                      std::string payload)
-      : MessageDeliver(MessageType::mDeliverData, tenant_id, sub_id)
+      : MessageDeliver(MessageType::mDeliverData,
+                       tenant_id,
+                       std::move(namespace_id),
+                       std::move(topic),
+                       sub_id)
       , message_id_(message_id)
       , payload_(std::move(payload)) {}
 

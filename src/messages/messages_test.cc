@@ -227,7 +227,8 @@ TEST_F(Messaging, MessageUnsubscribe) {
 
 TEST_F(Messaging, MessageDeliverGap) {
   MessageDeliverGap msg1(
-      Tenant::GuestTenant, SubscriptionID::Unsafe(42), GapType::kRetention);
+      Tenant::GuestTenant, "namespace", "topic", SubscriptionID::Unsafe(42),
+      GapType::kRetention);
   msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   std::string str;
@@ -242,10 +243,13 @@ TEST_F(Messaging, MessageDeliverGap) {
   ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
   ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
   ASSERT_EQ(msg1.GetGapType(), msg2.GetGapType());
+  // TODO(pja) - compare namespace topic
 }
 
 TEST_F(Messaging, MessageDeliverData) {
   MessageDeliverData msg1(Tenant::GuestTenant,
+                          "namespace",
+                          "topic",
                           SubscriptionID::Unsafe(42),
                           GUIDGenerator().Generate(),
                           "payload");
@@ -264,17 +268,22 @@ TEST_F(Messaging, MessageDeliverData) {
   ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
   ASSERT_TRUE(msg1.GetMessageID() == msg2.GetMessageID());
   ASSERT_EQ(msg1.GetPayload().ToString(), msg2.GetPayload().ToString());
+  // TODO(pja) - compare namespace topic
 }
 
 TEST_F(Messaging, MessageDeliverBatch) {
   MessageDeliverBatch::MessagesVector messages;
   messages.emplace_back(new MessageDeliverData(Tenant::GuestTenant,
+                                               "namespace",
+                                               "topic1",
                                                SubscriptionID::Unsafe(42),
                                                GUIDGenerator().Generate(),
                                                "message 1"));
   messages.back()->SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
 
   messages.emplace_back(new MessageDeliverData(Tenant::GuestTenant,
+                                               "namespace",
+                                               "topic2",
                                                SubscriptionID::Unsafe(43),
                                                GUIDGenerator().Generate(),
                                                "message 2"));
@@ -299,6 +308,7 @@ TEST_F(Messaging, MessageDeliverBatch) {
     ASSERT_EQ(m1[i]->GetSequenceNumber(), m2[i]->GetSequenceNumber());
     ASSERT_TRUE(m1[i]->GetMessageID() == m2[i]->GetMessageID());
     ASSERT_EQ(m1[i]->GetPayload().ToString(), m2[i]->GetPayload().ToString());
+    // TODO(pja) - compare namespace topic
   }
 }
 

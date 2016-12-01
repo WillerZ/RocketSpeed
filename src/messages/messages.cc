@@ -698,6 +698,7 @@ Status MessageDeliver::DeSerialize(Slice* in) {
 Status MessageDeliverGap::Serialize(std::string* out) const {
   MessageDeliver::Serialize(out);
   PutFixedEnum8(out, gap_type_);
+  PutTopicID(out, namespace_id_, topic_);
   return Status::OK();
 }
 
@@ -709,6 +710,8 @@ Status MessageDeliverGap::DeSerialize(Slice* in) {
   if (!GetFixedEnum8(in, &gap_type_)) {
     return Status::InvalidArgument("Bad GapType");
   }
+  // No deserialize code. This proves backwards compatibility.
+  // TODO(pja)
   return Status::OK();
 }
 
@@ -717,6 +720,7 @@ Status MessageDeliverData::Serialize(std::string* out) const {
   PutLengthPrefixedSlice(out,
                          Slice((const char*)&message_id_, sizeof(message_id_)));
   PutLengthPrefixedSlice(out, payload_);
+  PutTopicID(out, namespace_id_, topic_);
   return Status::OK();
 }
 
@@ -734,6 +738,8 @@ Status MessageDeliverData::DeSerialize(Slice* in) {
   if (!GetLengthPrefixedSlice(in, &payload_)) {
     return Status::InvalidArgument("Bad payload");
   }
+  // No deserialize code. This proves backwards compatibility.
+  // TODO(pja)
   return Status::OK();
 }
 

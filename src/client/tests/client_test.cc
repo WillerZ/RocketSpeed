@@ -1288,14 +1288,16 @@ class MockMessageReceivedImpl : public MessageReceived {
 
 
 static void SendMessageDeliver(int& sequence,
+                               NamespaceID namespace_id,
+                               Topic topic,
                                SubscriptionID sub_id,
                                SubscriberIf* subscriber) {
   // Doesn't really matter what data we initialize this test message with,
   // we just want to make sure the subscription id gets rewritten before
   // delivery
-  std::unique_ptr<MessageDeliverData> msg(new MessageDeliverData(
-                                            (TenantID)0,
-                                            sub_id, MsgId(), "data"));
+  std::unique_ptr<MessageDeliverData> msg(
+      new MessageDeliverData((TenantID)0, std::move(namespace_id),
+          std::move(topic), sub_id, MsgId(), "data"));
   msg->SetSequenceNumbers(sequence - 1, sequence);
   ++sequence;
   std::unique_ptr<MessageReceived> received(
@@ -1338,7 +1340,8 @@ static void RunDemultiplexTest(
     ASSERT_EQ(MockObserver::active_count_, i + 1);
     // Send a message as we add each observer, especially to test the very first
     // observer before multiplexing starts
-    SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+    SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
+        first_sub_id, base_subscriber);
   }
 
   // Reset all received counts to 0, they're out of sync due to above sends
@@ -1348,7 +1351,8 @@ static void RunDemultiplexTest(
 
   ASSERT_EQ(MockObserver::deleted_count_, 0);
 
-  SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+  SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
+      first_sub_id, base_subscriber);
   ASSERT_EQ(observers[0]->received_count_, 1);
   ASSERT_EQ(observers[1]->received_count_, 1);
 
@@ -1357,7 +1361,8 @@ static void RunDemultiplexTest(
 
   // Important test: There were 3 observers, now there are two.  They
   // both should receive the message.
-  SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+  SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
+      first_sub_id, base_subscriber);
   ASSERT_EQ(observers[1]->received_count_, 2);
   ASSERT_EQ(observers[2]->received_count_, 2);
 
@@ -1367,7 +1372,8 @@ static void RunDemultiplexTest(
 
   // Key test: verify that despite all but one observer having been
   // deleted, the remaining observer receives the message.
-  SendMessageDeliver(sequence, first_sub_id, base_subscriber);
+  SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
+      first_sub_id, base_subscriber);
   ASSERT_EQ(observers[2]->received_count_, 3);
   subscriber->TerminateSubscription(sub_ids[2]);
   ASSERT_EQ(MockObserver::deleted_count_, 3);

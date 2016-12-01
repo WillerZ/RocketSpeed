@@ -220,7 +220,12 @@ void CopilotWorker::ProcessData(std::unique_ptr<Message> message,
       delivered_at_least_once = true;
 
       // Send message to the client.
+      Slice namespace_id;
+      Slice topic_name;
+      uuid.GetTopicID(&namespace_id, &topic_name);
       MessageDeliverData data(sub->tenant_id,
+                              namespace_id.ToString(),
+                              topic_name.ToString(),
                               sub->sub_id,
                               msg->GetMessageID(),
                               msg->GetPayload().ToString());
@@ -325,8 +330,13 @@ void CopilotWorker::ProcessGap(std::unique_ptr<Message> message,
       delivered_at_least_once = true;
 
       // Send message to the client.
+      Slice namespace_id;
+      Slice topic_name;
+      uuid.GetTopicID(&namespace_id, &topic_name);
       MessageDeliverGap gap(
         sub->tenant_id,
+        namespace_id.ToString(),
+        topic_name.ToString(),
         sub->sub_id,
         msg->GetGapType());
       gap.SetSequenceNumbers(prev_seqno, next_seqno);
@@ -407,7 +417,12 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
       }
 
       // Send gap to the client.
+      Slice namespace_id;
+      Slice topic_name;
+      uuid.GetTopicID(&namespace_id, &topic_name);
       MessageDeliverGap gap(sub->tenant_id,
+                            namespace_id.ToString(),
+                            topic_name.ToString(),
                             sub->sub_id,
                             GapType::kBenign);
       gap.SetSequenceNumbers(0, next_seqno - 1);
@@ -487,7 +502,10 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
         start_seqno = tower.next_seqno;
 
         // Also need to send a gap to update client.
-        MessageDeliverGap gap(tenant_id, sub_id, GapType::kBenign);
+        MessageDeliverGap gap(tenant_id,
+                              namespace_id.ToString(),
+                              topic_name.ToString(),
+                              sub_id, GapType::kBenign);
         gap.SetSequenceNumbers(0, start_seqno - 1);
         auto command = MsgLoop::ResponseCommand(gap, subscriber);
         client_queues_[worker_id]->Write(command);
