@@ -635,6 +635,7 @@ Status MessageUnsubscribe::Serialize(std::string* out) const {
   Message::Serialize(out);
   EncodeSubscriptionID(out, sub_id_);
   PutFixedEnum8(out, reason_);
+  PutTopicID(out, namespace_id_, topic_name_);
   return Status::OK();
 }
 
@@ -649,6 +650,8 @@ Status MessageUnsubscribe::DeSerialize(Slice* in) {
   if (!GetFixedEnum8(in, &reason_)) {
     return Status::InvalidArgument("Bad Reason");
   }
+  // No deserializer yet for namespace and topic.
+  // This proves backwards compatibility.
   return Status::OK();
 }
 

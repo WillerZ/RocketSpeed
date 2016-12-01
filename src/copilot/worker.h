@@ -219,6 +219,7 @@ class CopilotWorker {
   /** Sends an unsubscription message to a control tower. */
   bool SendUnsubscribe(TenantID tenant_id,
                        StreamSocket* stream,
+                       const TopicUUID& uuid,
                        SubscriptionID sub_id,
                        int worker_id);
 

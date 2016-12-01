@@ -651,7 +651,12 @@ void CopilotWorker::HandleInvalidSubscription(StreamID origin,
                     MetadataType::mUnSubscribe,
                     topic.log_id, sub->worker_id, sub->stream_id);
 
+      Slice namespace_id;
+      Slice topic_name;
+      uuid.GetTopicID(&namespace_id, &topic_name);
       MessageUnsubscribe message(sub->tenant_id,
+                                 namespace_id.ToString(),
+                                 topic_name.ToString(),
                                  sub->sub_id,
                                  MessageUnsubscribe::Reason::kInvalid);
       auto cmd = MsgLoop::ResponseCommand(message, sub->stream_id);
@@ -686,6 +691,7 @@ void CopilotWorker::UnsubscribeControlTowers(
   for (auto& tower : topic.towers) {
     SendUnsubscribe(tenant_id,
                     tower.stream,
+                    topic_uuid,
                     tower.sub_id,
                     tower.worker_id);
   }
@@ -853,9 +859,15 @@ bool CopilotWorker::SendSubscribe(TenantID tenant_id,
 
 bool CopilotWorker::SendUnsubscribe(TenantID tenant_id,
                                     StreamSocket* stream,
+                                    const TopicUUID& uuid,
                                     SubscriptionID sub_id,
                                     int worker_id) {
+  Slice namespace_id;
+  Slice topic_name;
+  uuid.GetTopicID(&namespace_id, &topic_name);
   MessageUnsubscribe message(tenant_id,
+                             namespace_id.ToString(),
+                             topic_name.ToString(),
                              sub_id,
                              MessageUnsubscribe::Reason::kRequested);
 
@@ -993,6 +1005,7 @@ void CopilotWorker::UpdateTowerSubscriptions(
     for (TopicState::Tower& tower : topic.towers) {
       SendUnsubscribe(tenant_id,
                       tower.stream,
+                      uuid,
                       tower.sub_id,
                       tower.worker_id);
     }
@@ -1099,11 +1112,11 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
   // cannot reference local variables.
   std::function<void()> process_error;
   if (type == MetadataType::mSubscribe) {
-    process_error = [this, worker_id, origin, tenant_id, sub_id]() {
+    process_error = [this, worker_id, origin, tenant_id, sub_id, topic]() {
       // We can't do any proper error handling from this thread, as it belongs
       // to the client used by RollCall.
       std::unique_ptr<Command> command(MakeExecuteCommand(
-        [this, worker_id, origin, tenant_id, sub_id]() {
+        [this, worker_id, origin, tenant_id, sub_id, topic]() {
           // Start the automatic unsubscribe process. We rely on the assumption
           // that the unsubscribe request can fail only if the client is
           // un-communicable, in which case the client's subscriptions are
@@ -1112,7 +1125,11 @@ CopilotWorker::RollcallWrite(const SubscriptionID sub_id,
           ProcessUnsubscribe(tenant_id, sub_id, reason, worker_id, origin);
 
           // Send back message to the client, saying that it should resubscribe.
-          MessageUnsubscribe msg(tenant_id, sub_id, reason);
+          Slice namespace_id;
+          Slice topic_name;
+          topic.GetTopicID(&namespace_id, &topic_name);
+          MessageUnsubscribe msg(tenant_id, namespace_id.ToString(),
+              topic_name.ToString(), sub_id, reason);
           auto unsub_command = MsgLoop::ResponseCommand(msg, origin);
           client_queues_[worker_id]->Write(unsub_command);
 

@@ -232,6 +232,8 @@ void ControlTower::ProcessSubscribe(std::unique_ptr<Message> msg,
   if (subscribe->GetNamespace() == InvalidNamespace) {
     // Invalid namespace, so respond with forced unsubscription.
     MessageUnsubscribe message(subscribe->GetTenantID(),
+                               subscribe->GetNamespace().ToString(),
+                               subscribe->GetTopicName().ToString(),
                                sub_id,
                                MessageUnsubscribe::Reason::kInvalid);
     auto command = MsgLoop::ResponseCommand(message, origin);

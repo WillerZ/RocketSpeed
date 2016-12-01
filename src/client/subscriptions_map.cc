@@ -18,6 +18,7 @@
 #include "src/messages/messages.h"
 #include "src/messages/stream.h"
 #include "src/util/common/flow.h"
+#include "external/xxhash/xxhash.h"
 
 namespace rocketspeed {
 
@@ -88,15 +89,8 @@ SubscriptionsMap::SubscriptionsMap(
         HandlePendingSubscription(flow, std::unique_ptr<T>(ptr));
       });
 
-  // Required by sparse_hash_set to mark deleted elements.
-  // SubscriptionID() cannot be inserted from now on.
-  pending_unsubscribes_.Modify(
-    [this](Unsubscribes& set) {
-      set.set_deleted_key(SubscriptionID());
-  });
-
   // Wire the source of unsubscribe events.
-  flow_control->Register<SubscriptionID>(
+  flow_control->Register<Subscription>(
       &pending_unsubscribes_,
       std::bind(&SubscriptionsMap::HandlePendingUnsubscription, this, _1, _2));
 
@@ -221,10 +215,10 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
             new_seqno);
 
   RS_ASSERT(new_sub_id != old_sub_id);
-  // Generate an unsubscribe message for the old ID.
-  pending_unsubscribes_.Modify(
-      [&](Unsubscribes& set) { set.insert(old_sub_id); });
+
   // Reinsert the subscription, as we may not change the
+  NamespaceID namespace_id;
+  Topic topic;
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     SubscriptionBase* state = nullptr;
     {  // We have to remove the state before modifying it.
@@ -241,14 +235,18 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
     }
     // Rewind the state.
     state->Rewind(new_sub_id, new_seqno);
+    namespace_id = state->GetNamespace().ToString();
+    topic = state->GetTopicName().ToString();
+
     // Reinsert the subscription as pending one.
     auto inserted = pending_subscriptions.emplace(new_sub_id, state);
     RS_ASSERT(inserted);
   });
   // Terminate the subscription on old ID, the server sees rewound
   // subscription as a new one.
-  pending_unsubscribes_.Modify(
-      [&](Unsubscribes& set) { set.insert(old_sub_id); });
+  pending_unsubscribes_.Modify([&](Unsubscribes& set) {
+    set.emplace(old_sub_id, std::move(namespace_id), std::move(topic));
+  });
   // Pending subscribe and unsubscribe events will be synced opportunistically,
   // as adding an element renders the Sources readable.
 }
@@ -261,12 +259,15 @@ void SubscriptionsMap::Unsubscribe(SubscriptionID sub_id) {
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     auto sync_it = synced_subscriptions_.Find(sub_id);
     if (sync_it != synced_subscriptions_.End()) {
+      NamespaceID namespace_id = (*sync_it)->GetNamespace().ToString();
+      Topic topic = (*sync_it)->GetTopicName().ToString();
       CleanupSubscription(*sync_it);
       synced_subscriptions_.erase(sync_it);
       // Schedule an unsubscribe message to be sent only if a subscription has
       // been sent out.
-      pending_unsubscribes_.Modify(
-          [&](Unsubscribes& set) { set.insert(sub_id); });
+      pending_unsubscribes_.Modify([&](Unsubscribes& set) {
+        set.emplace(sub_id, std::move(namespace_id), std::move(topic));
+      });
     } else {
       auto pend_it = pending_subscriptions.Find(sub_id);
       RS_ASSERT(pend_it != pending_subscriptions.End());
@@ -314,13 +315,18 @@ void SubscriptionsMap::HandlePendingSubscription(
 }
 
 void SubscriptionsMap::HandlePendingUnsubscription(
-    Flow* flow, SubscriptionID sub_id) {
+    Flow* flow, Subscription sub) {
   LOG_DEBUG(
-      GetLogger(), "HandlePendingUnsubscription(%llu)", sub_id.ForLogging());
+      GetLogger(), "HandlePendingUnsubscription(%llu)",
+      sub.sub_id.ForLogging());
 
   // Send the message.
   std::unique_ptr<Message> unsubscribe(new MessageUnsubscribe(
-      GuestTenant, sub_id, MessageUnsubscribe::Reason::kRequested));
+      GuestTenant,
+      std::move(sub.namespace_id),
+      std::move(sub.topic),
+      sub.sub_id,
+      MessageUnsubscribe::Reason::kRequested));
   message_handler_(flow, std::move(unsubscribe));
 }
 
@@ -427,6 +433,17 @@ bool SubscriptionsMap::ProcessDeliver(
   }
   // Deliver.
   return true;
+}
+
+size_t SubscriptionsMap::Subscription::Hash::operator()(
+    const Subscription& sub) const {
+  const uint64_t seed = 0xf92601a646f1828fULL;
+  XXH64_state_t state;
+  XXH64_reset(&state, seed);
+  XXH64_update(&state, &sub.sub_id, sizeof(sub.sub_id));
+  XXH64_update(&state, sub.namespace_id.data(), sub.namespace_id.size());
+  XXH64_update(&state, sub.topic.data(), sub.topic.size());
+  return XXH64_digest(&state);
 }
 
 }  // namespace rocketspeed

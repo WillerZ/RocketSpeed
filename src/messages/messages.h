@@ -702,14 +702,22 @@ class MessageUnsubscribe final : public Message {
     kInvalid = 0x02,
   };
 
-  MessageUnsubscribe(TenantID tenant_id, SubscriptionID sub_id, Reason reason)
+  MessageUnsubscribe(TenantID tenant_id,
+                     NamespaceID namespace_id,
+                     Topic topic_name,
+                     SubscriptionID sub_id, Reason reason)
       : Message(MessageType::mUnsubscribe, tenant_id),
+        namespace_id_(std::move(namespace_id)),
+        topic_name_(std::move(topic_name)),
         sub_id_(sub_id),
         reason_(reason) {}
 
   MessageUnsubscribe() : Message(MessageType::mUnsubscribe) {}
 
   SubscriptionID GetSubID() const { return sub_id_; }
+
+  // No getters for namespace and topic. These should not be relied on yet.
+  // TODO(pja)
 
   void SetSubID(SubscriptionID sub_id) { sub_id_ = sub_id; }
 
@@ -719,6 +727,8 @@ class MessageUnsubscribe final : public Message {
   Status DeSerialize(Slice* in) override;
 
  private:
+  NamespaceID namespace_id_;
+  Topic topic_name_;
   /** ID of the subscription this response refers to. */
   SubscriptionID sub_id_;
   /** A feedback to the other party, why this subscription was terminated. */

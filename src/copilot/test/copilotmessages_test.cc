@@ -203,6 +203,8 @@ TEST_F(CopilotTest, Rollcall) {
   for (uint64_t i = 0; i < expected; ++i) {
     std::string topic = "copilot_test_" + std::to_string(i);
     MessageUnsubscribe msg(Tenant::GuestTenant,
+                           GuestNamespace,
+                           topic,
                            SubscriptionID::Unsafe(i),
                            MessageUnsubscribe::Reason::kRequested);
     ASSERT_OK(client.SendRequest(msg, &socket, 0));

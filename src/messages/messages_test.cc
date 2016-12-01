@@ -208,6 +208,8 @@ TEST_F(Messaging, MessageSubscribe) {
 
 TEST_F(Messaging, MessageUnsubscribe) {
   MessageUnsubscribe msg1(Tenant::GuestTenant,
+                          GuestNamespace,
+                          "MessageUnsubscribe",
                           SubscriptionID::Unsafe(42),
                           MessageUnsubscribe::Reason::kInvalid);
 
@@ -220,6 +222,7 @@ TEST_F(Messaging, MessageUnsubscribe) {
   ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+  // TODO(pja) - compare output
 }
 
 TEST_F(Messaging, MessageDeliverGap) {

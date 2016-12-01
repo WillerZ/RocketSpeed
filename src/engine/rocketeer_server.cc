@@ -298,8 +298,12 @@ void CommunicationRocketeer::Terminate(Flow* flow,
           msg_reason = MessageUnsubscribe::Reason::kInvalid;
           break;
       }
+      // TODO(pja): Update interface to provide namespace and topic.
+      NamespaceID namespace_id = "";
+      Topic topic_name = "";
       auto unsubscribe = std::make_unique<MessageUnsubscribe>(
-          tenant_id, inbound_id.GetSubID(), msg_reason);
+          tenant_id, std::move(namespace_id), std::move(topic_name),
+          inbound_id.GetSubID(), msg_reason);
       SendResponse(flow, inbound_id.stream_id, std::move(unsubscribe));
       return;
     }

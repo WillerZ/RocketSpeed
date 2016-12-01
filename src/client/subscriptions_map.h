@@ -8,6 +8,7 @@
 #include <functional>
 #include <google/sparse_hash_set>
 #include <memory>
+#include <unordered_set>
 
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
@@ -326,7 +327,30 @@ class SubscriptionsMap {
   ObservableContainer<Subscriptions> pending_subscriptions_;
   Subscriptions synced_subscriptions_;
 
-  using Unsubscribes = google::sparse_hash_set<SubscriptionID>;
+  struct Subscription {
+    Subscription(SubscriptionID _sub_id,
+                 NamespaceID _namespace_id,
+                 Topic _topic)
+    : sub_id(_sub_id)
+    , namespace_id(std::move(_namespace_id))
+    , topic(std::move(_topic)) {}
+
+    Subscription() : sub_id() {}
+
+    bool operator==(const Subscription& rhs) const {
+      return std::tie(sub_id, namespace_id, topic) ==
+          std::tie(rhs.sub_id, rhs.namespace_id, rhs.topic);
+    }
+
+    SubscriptionID sub_id;
+    NamespaceID namespace_id;
+    Topic topic;
+
+    struct Hash {
+      size_t operator()(const Subscription& unsub) const;
+    };
+  };
+  using Unsubscribes = std::unordered_set<Subscription, Subscription::Hash>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
   std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
@@ -341,7 +365,7 @@ class SubscriptionsMap {
   void HandlePendingSubscription(
         Flow* flow, std::unique_ptr<SubscriptionBase> upstream_sub);
 
-  void HandlePendingUnsubscription(Flow* flow, SubscriptionID sub_id);
+  void HandlePendingUnsubscription(Flow* flow, Subscription sub);
 
   void CleanupSubscription(SubscriptionBase* sub);
 };

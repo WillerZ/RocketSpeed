@@ -124,12 +124,14 @@ TEST_F(RocketeerTest, SubscribeUnsubscribe) {
 
   // Send some broken unsubscribe, that doesn't match anything.
   MessageUnsubscribe unsubscribe1(
-      GuestTenant, subid1, MessageUnsubscribe::Reason::kRequested);
+      GuestTenant, GuestNamespace, "NotSubscribeUnsubscribe", subid1,
+      MessageUnsubscribe::Reason::kRequested);
   ASSERT_OK(client.msg_loop->SendRequest(unsubscribe1, &socket, 0));
 
   // Send valid unsubscribe.
   MessageUnsubscribe unsubscribe(
-      GuestTenant, subid2, MessageUnsubscribe::Reason::kRequested);
+      GuestTenant, GuestNamespace, "SubscribeUnsubscribe", subid2,
+      MessageUnsubscribe::Reason::kRequested);
   ASSERT_OK(client.msg_loop->SendRequest(unsubscribe, &socket, 0));
 
   ASSERT_TRUE(rocketeer.terminate_sem_.TimedWait(positive_timeout));

@@ -307,6 +307,8 @@ TEST_F(ProxyServerTest, Forwarding) {
     clients[i]->Send(
         client_streams[i],
         MessageUnsubscribe(Tenant::GuestTenant,
+                           MockSharding::GetNamespace(i),
+                           "ColdTopic",
                            sub_id,
                            MessageUnsubscribe::Reason::kRequested));
 
@@ -362,6 +364,8 @@ TEST_F(ProxyServerTest, Forwarding) {
     clients[i]->Send(
         client_streams[i],
         MessageUnsubscribe(Tenant::GuestTenant,
+                           MockSharding::GetNamespace(i),
+                           "ColdTopic",
                            sub_id,
                            MessageUnsubscribe::Reason::kRequested));
 
@@ -566,6 +570,8 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
   auto issue_unsubscribe = [&](uint64_t downstream_id) {
     client->Send(client_stream,
                  MessageUnsubscribe(Tenant::GuestTenant,
+                                    MockSharding::GetNamespace(shard),
+                                    "HotTopic",
                                     SubscriptionID::Unsafe(downstream_id),
                                     MessageUnsubscribe::Reason::kRequested));
   };

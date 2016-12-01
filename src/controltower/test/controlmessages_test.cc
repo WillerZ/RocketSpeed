@@ -150,7 +150,8 @@ TEST_F(ControlTowerTest, MultipleSubscribers) {
 
   // Unsubscribe all the topics from the first client.
   MessageUnsubscribe meta3(
-      Tenant::GuestTenant, subid1, MessageUnsubscribe::Reason::kRequested);
+      Tenant::GuestTenant, "test", "topic", subid1,
+      MessageUnsubscribe::Reason::kRequested);
 
   // send message to control tower
   ASSERT_OK(loop1.SendRequest(meta3, &socket1, 0));
@@ -163,7 +164,8 @@ TEST_F(ControlTowerTest, MultipleSubscribers) {
 
   // Finally, unsubscribe from the second client too.
   MessageUnsubscribe meta4(
-      Tenant::GuestTenant, subid2, MessageUnsubscribe::Reason::kRequested);
+      Tenant::GuestTenant, "test", "topic", subid2,
+      MessageUnsubscribe::Reason::kRequested);
 
   // send message to control tower
   ASSERT_OK(loop2.SendRequest(meta4, &socket2, 0));

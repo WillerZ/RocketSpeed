@@ -1120,6 +1120,8 @@ TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
 
   // Send an unsubscribe back to the client for the first subscription and wait.
   MessageUnsubscribe unsubscribe_cmd(GuestTenant,
+                                     GuestNamespace,
+                                     "1",
                                      SubscriptionID::Unsafe(sub_handle_1),
                                      MessageUnsubscribe::Reason::kRequested);
   server_ptr->SendResponse(unsubscribe_cmd, stream_id, 0);
