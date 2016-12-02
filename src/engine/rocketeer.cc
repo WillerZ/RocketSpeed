@@ -84,6 +84,8 @@ Rocketeer::Rocketeer()
               msg.has_msg_since.epoch,
               msg.has_msg_since.seqno);
       }
+      RS_ASSERT(false);
+      return BackPressure::None();
     })) {}
 
 Rocketeer::~Rocketeer() = default;

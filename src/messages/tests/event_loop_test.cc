@@ -331,8 +331,9 @@ TEST_F(EventLoopTest, ScheduledExecutorTest) {
 
   // Schedule events
   uint64_t start = env->NowMicros();
-  for (size_t i = 0; i < kNumEvents; i++) {
-    Run([&, event = i ]() {
+  Run([&]() {
+    for (size_t i = 0; i < kNumEvents; i++) {
+      auto event = i;
       auto cb = [&, event]() {
         execution_order.emplace_back(event);
         if (execution_order.size() == kNumEvents) {
@@ -345,9 +346,9 @@ TEST_F(EventLoopTest, ScheduledExecutorTest) {
           (event < kNumEvents - 1) ? random.Uniform(max_timeout) : max_timeout;
       event_timeouts.insert({timeout, event});
       scheduler->Schedule(std::move(cb), std::chrono::milliseconds(timeout));
-    },
-        &loop);
-  }
+    }
+  },
+  &loop);
 
   // Check expected time
   ASSERT_TRUE(all_done.TimedWait(positive_timeout));
@@ -361,7 +362,11 @@ TEST_F(EventLoopTest, ScheduledExecutorTest) {
   auto event_timeout_it = event_timeouts.begin();
   auto execution_order_it = execution_order.begin();
   while (event_timeout_it != event_timeouts.end()) {
-    ASSERT_EQ(event_timeout_it->second, *execution_order_it);
+    if (event_timeouts.count(event_timeout_it->first) == 1) {
+      // Compare order for events for which timeout is not same
+      // as events with same timeout could be in any order in multimap
+      ASSERT_EQ(event_timeout_it->second, *execution_order_it);
+    }
     ++event_timeout_it;
     ++execution_order_it;
   }
