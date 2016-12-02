@@ -52,7 +52,7 @@ void BacklogQueryStore::Insert(
 void BacklogQueryStore::MarkSynced(SubscriptionID sub_id) {
   auto it = awaiting_sync_.find(sub_id);
   if (it != awaiting_sync_.end()) {
-    LOG_DEBUG(info_log_, "BacklogQueryStore::MarkSynced(%" PRIu64 ")",
+    LOG_DEBUG(info_log_, "BacklogQueryStore::MarkSynced(%llu)",
         sub_id.ForLogging());
     pending_send_.Modify([&](std::deque<Query>& pending) {
       for (auto& query : it->second) {
