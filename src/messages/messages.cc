@@ -728,10 +728,12 @@ Status MessageDeliverBatch::Serialize(std::string* out) const {
   Message::Serialize(out);
   PutVarint64(out, messages_.size());
   for (const auto& msg : messages_) {
-    Status st = msg->Serialize(out);
+    std::string one;
+    Status st = msg->Serialize(&one);
     if (!st.ok()) {
       return Status::InvalidArgument("Bad MessageDeliverData");
     }
+    PutLengthPrefixedSlice(out, one);
   }
   return Status::OK();
 }
@@ -749,7 +751,11 @@ Status MessageDeliverBatch::DeSerialize(Slice* in) {
   messages_.reserve(len);
   for (size_t i = 0; i < len; ++i) {
     messages_.emplace_back(new MessageDeliverData());
-    st = messages_.back()->DeSerialize(in);
+    Slice one;
+    if (!GetLengthPrefixedSlice(in, &one)) {
+      return Status::InvalidArgument("Bad sub-message");
+    }
+    st = messages_.back()->DeSerialize(&one);
     if (!st.ok()) {
       return st;
     }
