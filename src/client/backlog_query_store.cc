@@ -115,7 +115,8 @@ void BacklogQueryStore::StopSync() {
   // back to the awaiting sync state.
   for (auto& entry : sent_) {
     for (auto& value : entry.second) {
-      awaiting_sync_[value.sub_id].emplace_back(entry.first, std::move(value));
+      const auto sub_id = value.sub_id;
+      awaiting_sync_[sub_id].emplace_back(entry.first, std::move(value));
     }
   }
   sent_.clear();
