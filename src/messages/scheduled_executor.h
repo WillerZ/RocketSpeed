@@ -38,15 +38,30 @@ class ScheduledExecutor : public NonCopyable, public NonMovable {
 
   ~ScheduledExecutor() = default;
 
-  /// Schedule the callback to be run after timeout from now()
-  /// Callback will be invoked on the same event_loop
+  /*
+   * @param callback the callback to be executed
+   * @param timeout time after which to execute the callback from
+   *        current time
+   *
+   * Note: Callback will be invoked on the same event_loop
+   */
   void Schedule(std::function<void()> callback,
                 std::chrono::milliseconds timeout);
+
+  /*
+   * @param callback the callback to be executed
+   * @param time_point time at which the callback should be run at
+   *
+   * Note: Callback will be invoked on the same event_loop
+   * If the time_point is less than the current time, the callback would be
+   * invoked on next tick.
+   */
+  void ScheduleAt(std::function<void()> callback, Clock::time_point time_point);
 
  private:
   EventLoop* event_loop_;
 
-  std::map<Clock::time_point, std::function<void()>> timed_events_;
+  std::multimap<Clock::time_point, std::function<void()>> timed_events_;
   std::unique_ptr<EventCallback> timer_callback_;
 
   /// Invoke the callback on the timedout events

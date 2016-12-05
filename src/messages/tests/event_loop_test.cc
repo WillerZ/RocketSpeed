@@ -331,24 +331,27 @@ TEST_F(EventLoopTest, ScheduledExecutorTest) {
 
   // Schedule events
   uint64_t start = env->NowMicros();
-  Run([&]() {
-    for (size_t i = 0; i < kNumEvents; i++) {
-      auto event = i;
-      auto cb = [&, event]() {
-        execution_order.emplace_back(event);
-        if (execution_order.size() == kNumEvents) {
-          all_done.Post();
+  Run(
+      [&]() {
+        auto now = std::chrono::steady_clock::now();
+        for (size_t i = 0; i < kNumEvents; i++) {
+          auto event = i;
+          auto cb = [&, event]() {
+            execution_order.emplace_back(event);
+            if (execution_order.size() == kNumEvents) {
+              all_done.Post();
+            }
+          };
+          // Schedule one event with maximum timeout to get more precise
+          // run time of the test
+          auto timeout = (event < kNumEvents - 1) ? random.Uniform(max_timeout)
+                                                  : max_timeout;
+          event_timeouts.insert({timeout, event});
+          scheduler->ScheduleAt(std::move(cb),
+                                now + std::chrono::milliseconds(timeout));
         }
-      };
-      // Schedule one event with maximum timeout to get more precise
-      // run time of the test
-      auto timeout =
-          (event < kNumEvents - 1) ? random.Uniform(max_timeout) : max_timeout;
-      event_timeouts.insert({timeout, event});
-      scheduler->Schedule(std::move(cb), std::chrono::milliseconds(timeout));
-    }
-  },
-  &loop);
+      },
+      &loop);
 
   // Check expected time
   ASSERT_TRUE(all_done.TimedWait(positive_timeout));

@@ -31,6 +31,13 @@ void ScheduledExecutor::Schedule(std::function<void()> callback,
   timed_events_.insert({schedule_time, std::move(callback)});
 }
 
+void ScheduledExecutor::ScheduleAt(std::function<void()> callback,
+                                   Clock::time_point time_point) {
+  event_loop_->ThreadCheck();
+
+  timed_events_.insert({time_point, std::move(callback)});
+}
+
 void ScheduledExecutor::ProcessExpired() {
   auto now = Clock::now();
   auto it = timed_events_.begin();
