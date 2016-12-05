@@ -935,7 +935,7 @@ TEST_F(IntegrationTest, OneMessageWithoutRollCall) {
   ASSERT_EQ(tail1, 0);
   client->Unsubscribe(handle);
 
-  // Now subscribe at tail, and publish 1.
+  // Now subscribe at tail, and publish until we receive one.
   port::Semaphore msg_received2;
   handle =
       client->Subscribe(GuestTenant,
@@ -948,25 +948,25 @@ TEST_F(IntegrationTest, OneMessageWithoutRollCall) {
                         });
   ASSERT_TRUE(handle);
 
-  env_->SleepForMicroseconds(100000);
+  for (int retries = 100; retries >= 0; --retries) {
+    ASSERT_NE(retries, 0);
+    client->Publish(GuestTenant,
+                    topic,
+                    namespace_id,
+                    topic_options,
+                    Slice(data),
+                    nullptr,
+                    message_id);
+    if (msg_received2.TimedWait(std::chrono::milliseconds(100))) {
+      break;
+    }
+  }
 
-  client->Publish(GuestTenant,
-                  topic,
-                  namespace_id,
-                  topic_options,
-                  Slice(data),
-                  nullptr,
-                  message_id);
-  ASSERT_TRUE(msg_received2.TimedWait(timeout));
-
-  // Should have received no more backlog records, and just 1 tail record.
+  // Should have received at least 1 tail record.
   auto stats2 = cluster.GetControlTower()->GetStatisticsSync();
-  auto backlog2 =
-      stats2.GetCounterValue("tower.topic_tailer.backlog_records_received");
   auto tail2 =
       stats2.GetCounterValue("tower.topic_tailer.tail_records_received");
-  ASSERT_EQ(backlog2, backlog1);
-  ASSERT_EQ(tail2, 1);
+  ASSERT_GE(tail2, 1);
 }
 
 TEST_F(IntegrationTest, NewControlTower) {
