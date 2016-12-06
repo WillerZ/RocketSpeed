@@ -955,8 +955,7 @@ TEST_F(IntegrationTest, OneMessageWithoutRollCall) {
                     namespace_id,
                     topic_options,
                     Slice(data),
-                    nullptr,
-                    message_id);
+                    nullptr);
     if (msg_received2.TimedWait(std::chrono::milliseconds(100))) {
       break;
     }
