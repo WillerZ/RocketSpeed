@@ -883,6 +883,39 @@ TEST_F(Messaging, ConnectTimeout) {
 #endif  // OS_MACOSX
 }
 
+TEST_F(Messaging, GoodConnectionNoTimeout) {
+  // This tests that we do not timeout a socket that is writeable.
+  MsgLoop::Options opts;
+  opts.event_loop.socket_timeout = std::chrono::milliseconds(500);
+  MsgLoop loop1(env_, env_options_, -1, 1, info_log_, "loop1", opts);
+  MsgLoop loop2(env_, env_options_, 0, 1, info_log_, "loop1", opts);
+  ASSERT_OK(loop1.Initialize());
+  ASSERT_OK(loop2.Initialize());
+
+  // Register callback for a goodbye message.
+  port::Semaphore goodbye;
+  std::map<MessageType, MsgCallbackType> callbacks = {
+      {MessageType::mGoodbye,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+         goodbye.Post();
+       }},
+  };
+  loop1.RegisterCallbacks(callbacks);
+
+  // Start loops.
+  MsgLoopThread t1(env_, &loop1, "loop1");
+  MsgLoopThread t2(env_, &loop2, "loop2");
+  ASSERT_OK(loop1.WaitUntilRunning());
+  ASSERT_OK(loop2.WaitUntilRunning());
+
+  // Send a message to loop2.
+  StreamSocket socket(loop1.CreateOutboundStream(loop2.GetHostId(), 0));
+  MessagePing msg(Tenant::GuestTenant, MessagePing::PingType::Request, "ping");
+  ASSERT_OK(loop1.SendRequest(msg, &socket, 0));
+
+  ASSERT_TRUE(!goodbye.TimedWait(opts.event_loop.socket_timeout * 2));
+}
+
 TEST_F(Messaging, FlowControlOnDelivery) {
   MsgLoop::Options opts;
   MsgLoop loop(env_, env_options_, 0, 1, info_log_, "loop", opts);
