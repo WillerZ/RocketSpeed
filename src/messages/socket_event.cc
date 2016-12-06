@@ -333,7 +333,7 @@ SocketEvent::SocketEvent(EventLoop* event_loop,
 , fd_(fd)
 , write_ready_(event_loop->CreateEventTrigger())
 , event_loop_(event_loop)
-, writeable_(true)
+, writeable_(false)
 , first_write_happened_(false)
 , remote_(std::move(remote))
 , is_inbound_(is_inbound) {
