@@ -777,9 +777,6 @@ void SocketEvent::DeliverHeartbeats(
 
     auto it = remote_id_to_stream_.find(stream_id);
     if (it == remote_id_to_stream_.end()) {
-      LOG_WARN(GetLogger(),
-               "StreamID(%u) healthy but could not find stream.",
-               stream_id);
       continue;
     }
 
