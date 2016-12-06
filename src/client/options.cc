@@ -56,6 +56,7 @@ ClientOptions::ClientOptions()
 , collapse_subscriptions_to_tail(false)
 , queue_size(50000)
 , allocator_size(1024)
+, stats_prefix("rocketspeed")
 , should_notify_health(true)
 , max_silent_reconnects(3)
 , inactive_stream_linger(std::chrono::seconds(10)) {}

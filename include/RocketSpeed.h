@@ -156,6 +156,10 @@ class ClientOptions {
   // Default: nullptr
   std::shared_ptr<StatisticsVisitor> statistics_visitor;
 
+  // Prefix to use for statistics.
+  // Default: "rocketspeed"
+  std::string stats_prefix;
+
   // Should a new health notification propagate to observers? This
   // doesn't disable the heartbeat timeout mechanism. It will stop all
   // observers from being notified when a shard's health status

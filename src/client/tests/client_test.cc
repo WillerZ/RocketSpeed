@@ -1502,6 +1502,29 @@ TEST_F(ClientTest, ExportStatistics) {
   ASSERT_EQ(visitor.flushed, 1);
 }
 
+TEST_F(ClientTest, CustomStatsPrefix) {
+  // Checks that custom stats prefixes are applied correctly.
+  ClientOptions options;
+  options.stats_prefix = "test";
+  auto client = CreateClient(std::move(options));
+
+  // Export stats into maps.
+  class TestVisitor : public StatisticsVisitor {
+   public:
+    void VisitCounter(const std::string& name, int64_t value) override {
+      if (name == "test.commands_processed") {
+        found = true;
+      }
+    }
+
+    bool found = false;
+  };
+
+  TestVisitor visitor;
+  client->ExportStatistics(&visitor);
+  ASSERT_TRUE(visitor.found);
+}
+
 TEST_F(ClientTest, FailedSubscriptionObserver) {
   // Fail a Subscribe call and ensure observer is preserved.
   // Keep subscribing until at least one fails due to flow control.
