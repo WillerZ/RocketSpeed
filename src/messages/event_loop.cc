@@ -476,7 +476,8 @@ void EventLoop::Run() {
       auto drift = now - expected;
       drift_last_run = now;
       auto micros = duration_cast<microseconds>(drift).count();
-      stats_.timer_drift_micros->Record(std::abs(static_cast<int64_t>(micros)));
+      stats_.timer_drift_micros->Record(
+          std::max(int64_t(0), static_cast<int64_t>(micros)));
     },
     expected_diff);
 
