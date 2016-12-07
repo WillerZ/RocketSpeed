@@ -53,7 +53,8 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
 
   for (int i = 0; i < msg_loop_->GetNumWorkers(); ++i) {
     EventLoop* event_loop = msg_loop_->GetEventLoop(i);
-    statistics_.emplace_back(std::make_shared<SubscriberStats>("subscriber."));
+    statistics_.emplace_back(
+        std::make_shared<SubscriberStats>(options.stats_prefix + "."));
     subscribers_.emplace_back(new MultiShardSubscriber(
         options_,
         event_loop,
