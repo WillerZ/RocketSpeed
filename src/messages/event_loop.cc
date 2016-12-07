@@ -459,6 +459,27 @@ void EventLoop::Run() {
     }
   }
 
+  // The purpose of the drift timer is to measure how accurately our timers
+  // are able to fire while under load. If other events are taking a long time
+  // to process then the statistics will should high values for the high
+  // percentiles.
+  using Clock = std::chrono::steady_clock;
+  auto drift_last_run = Clock::now();
+  std::chrono::microseconds expected_diff = std::chrono::milliseconds(100);
+  std::unique_ptr<EventCallback> drift_timer = RegisterTimerCallback(
+    [this, &drift_last_run, expected_diff]() {
+      // Measure the difference between last run and this run, and check how
+      // much it has drifted from the expected run time.
+      using namespace std::chrono;
+      auto now = Clock::now();
+      auto expected = drift_last_run + expected_diff;
+      auto drift = now - expected;
+      drift_last_run = now;
+      auto micros = duration_cast<microseconds>(drift).count();
+      stats_.timer_drift_micros->Record(std::abs(static_cast<int64_t>(micros)));
+    },
+    expected_diff);
+
   // We should not crash the process unnecessarily. It is better for
   // the client/server to be in a bad state than for it to bring down the
   // process.
@@ -1134,6 +1155,7 @@ EventLoop::Stats::Stats(const std::string& prefix) {
   outbound_connections = all.AddCounter(prefix + ".outbound_connections");
   all_connections = all.AddCounter(prefix + ".all_connections");
   hbs_sent = all.AddCounter(prefix + ".hbs_sent");
+  timer_drift_micros = all.AddLatency(prefix + ".timer_drift_micros");
 }
 
 Statistics EventLoop::GetStatistics() const {

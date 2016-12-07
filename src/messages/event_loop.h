@@ -718,6 +718,7 @@ class EventLoop {
     Counter* outbound_connections;  // number of outbound connections
     Counter* all_connections;       // number of all connections
     Counter* hbs_sent;              // number of heartbeats sent
+    Histogram* timer_drift_micros; // diff b/w observed and expected run time
   } stats_;
 
   const std::shared_ptr<QueueStats> queue_stats_;
