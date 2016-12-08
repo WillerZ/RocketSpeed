@@ -38,7 +38,7 @@ namespace rocketspeed {
  */
 template <typename Key, typename ValuePtr, typename Mapping>
 using SparseKeylessMap = rocketspeed::KeylessHashMMap<
-    Key, ValuePtr, Mapping, google::sparse_hash_set, SmallIntArray<ValuePtr>>;
+    Key, ValuePtr, Mapping, google::sparse_hash_set, SingleIntArray<ValuePtr>>;
 
 template <typename ContainerT, typename ValueToKey>
 class STLAdapter {
