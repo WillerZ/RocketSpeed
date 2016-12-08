@@ -607,6 +607,8 @@ class KeylessHashMMap {
 
   bool Empty() const { return !Size(); }
 
+  void Rehash(size_t hint) { impl_.rehash(hint); }
+
   void Clear() {
     impl_.clear();
     size_ = 0;
