@@ -13,7 +13,6 @@
 #include <memory>
 
 #include "Assert.h"
-#include "TaggedPtr.h"
 
 namespace rocketspeed {
 template <typename T>
@@ -194,7 +193,7 @@ class SmallIntArray<T*> {
   /**
    * Tries to add element at the end of the array.
    * Fails iff max number of elements limit was reached.
-   * Allocation takes place on addition of every element besides first.
+   * Allocation takes place on addition of every element.
    *
    * @param ptr pointer to be added
    * @return true iff successully added
@@ -214,7 +213,7 @@ class SmallIntArray<T*> {
 
   /**
    * Tries to erase given element by linear search and compare.
-   * Allocation takes place on deletion of every element besides first.
+   * Allocation takes place on deletion of every element.
    * std::bad_alloc is populated and the array stays untouched in that case.
    *
    * @param ptr pointer to be erased.
