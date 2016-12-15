@@ -18,7 +18,7 @@
 
 #pragma once
 
-#include <google/sparse_hash_set>
+#include <sparsehash/sparse_hash_set>
 #include "include/Assert.h"
 #include "include/KeylessHashMMap.h"
 
@@ -38,7 +38,7 @@ namespace rocketspeed {
  */
 template <typename Key, typename ValuePtr, typename Mapping>
 using SparseKeylessMap = rocketspeed::KeylessHashMMap<
-    Key, ValuePtr, Mapping, google::sparse_hash_set, SingleIntArray<ValuePtr>>;
+    Key, ValuePtr, Mapping, gmaps::sparse_hash_set, SingleIntArray<ValuePtr>>;
 
 template <typename ContainerT, typename ValueToKey>
 class STLAdapter {

@@ -120,7 +120,7 @@ struct DeliveryRocketeer : public Rocketeer {
 TEST_P(RocketeerDeliveriesTest, DeliveryThrottlingTest) {
   const auto params = GetParam();
   // const size_t rate_limit = std::get<0>(params);
-  const std::chrono::milliseconds rate_duration = std::get<1>(params);
+  //const std::chrono::milliseconds rate_duration = std::get<1>(params);
   const size_t batch_max_limit = std::get<2>(params);
   // const std::chrono::milliseconds batch_max_duration = std::get<3>(params);
   const size_t kNumMessages = std::get<4>(params);

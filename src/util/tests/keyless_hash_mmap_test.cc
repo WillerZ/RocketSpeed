@@ -102,9 +102,9 @@ void RunMapSearchTest() {
   using Value = NonUniqueHashValue<Key, period>;
   RunMapSearchTestImpl<period, std::unordered_set, SingleIntArray<Value*> >();
   RunMapSearchTestImpl<period, std::unordered_set, SmallIntArray<Value*> >();
-  RunMapSearchTestImpl<period, google::sparse_hash_set,
+  RunMapSearchTestImpl<period, gmaps::sparse_hash_set,
                        SingleIntArray<Value*> >();
-  RunMapSearchTestImpl<period, google::sparse_hash_set,
+  RunMapSearchTestImpl<period, gmaps::sparse_hash_set,
                        SmallIntArray<Value*> >();
 }
 
@@ -144,9 +144,9 @@ void TestIteratorUsage() {
   using Value = NonUniqueHashValue<Key, period>;
   TestIteratorUsageImpl<period, std::unordered_set, SingleIntArray<Value*> >();
   TestIteratorUsageImpl<period, std::unordered_set, SmallIntArray<Value*> >();
-  TestIteratorUsageImpl<period, google::sparse_hash_set,
+  TestIteratorUsageImpl<period, gmaps::sparse_hash_set,
                         SingleIntArray<Value*> >();
-  TestIteratorUsageImpl<period, google::sparse_hash_set,
+  TestIteratorUsageImpl<period, gmaps::sparse_hash_set,
                         SmallIntArray<Value*> >();
 }
 
@@ -184,9 +184,9 @@ void RunInsertionDeletionChecks() {
                                  SingleIntArray<ValueT*> >();
   RunInsertionDeletionChecksImpl<KeyT, ValueT, std::unordered_set,
                                  SmallIntArray<ValueT*> >();
-  RunInsertionDeletionChecksImpl<KeyT, ValueT, google::sparse_hash_set,
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, gmaps::sparse_hash_set,
                                  SingleIntArray<ValueT*> >();
-  RunInsertionDeletionChecksImpl<KeyT, ValueT, google::sparse_hash_set,
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, gmaps::sparse_hash_set,
                                  SmallIntArray<ValueT*> >();
 }
 };
