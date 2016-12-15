@@ -112,10 +112,6 @@ namespace base {   // just to make google->opensource transition easier
 using GOOGLE_NAMESPACE::remove_const;
 }
 
-#ifndef SPARSEHASH_STAT_UPDATE
-#define SPARSEHASH_STAT_UPDATE(x) ((void) 0)
-#endif
-
 // The probing method
 // Linear probing
 // #define JUMP_(key, num_probes)    ( 1 )
@@ -346,6 +342,45 @@ class sparse_hashtable {
   typedef sparse_hashtable_destructive_iterator<Value, Key, HashFcn, ExtractKey,
                                                 SetKey, EqualKey, Alloc>
   destructive_iterator;
+
+  struct statistics {
+    size_type total_lookups;
+    size_type total_probes;
+    size_type probes_more2;
+    size_type probes_more8;
+    size_type probes_more64;
+    size_type total_shrinks;
+    size_type total_resizes;
+    size_type bucket_count;
+    size_type num_deleted;
+
+    void update_lookups(size_type num_lookups) {
+      total_lookups += num_lookups;
+    }
+    void update_probes(size_type num_probes) {
+      if (num_probes == 0) {
+        return;
+      }
+      total_probes += num_probes;
+
+      if (num_probes > 64) {
+        probes_more64++;
+      } else if (num_probes > 8) {
+        probes_more8++;
+      } else if (num_probes > 2) {
+        probes_more2++;
+      }
+    }
+
+    statistics() { reset(); }
+
+    void reset() {
+      total_lookups = total_probes = 0;
+      probes_more2 = probes_more8 = probes_more64 = 0;
+      total_shrinks = total_resizes = 0;
+      bucket_count = num_deleted = 0;
+    }
+  };
 
   // These come from tr1.  For us they're the same as regular iterators.
   typedef iterator local_iterator;
@@ -601,6 +636,7 @@ class sparse_hashtable {
       retval = true;
     }
     settings.set_consider_shrink(false);   // because we just considered it
+    stats.total_shrinks += retval;
     return retval;
   }
 
@@ -654,6 +690,7 @@ class sparse_hashtable {
 
     sparse_hashtable tmp(MoveDontCopy, *this, resize_to);
     swap(tmp);                             // now we are tmp
+    stats.total_resizes++;
     return true;
   }
 
@@ -828,6 +865,18 @@ class sparse_hashtable {
     num_deleted = 0;
   }
 
+  statistics get_statistics(bool reset) {
+    stats.num_deleted = num_deleted;
+    stats.bucket_count = bucket_count();
+    if (!reset) {
+      return stats;
+    } else {
+      const statistics st = stats;
+      stats.reset();
+      return st;
+    }
+  }
+
   // LOOKUP ROUTINES
  private:
   // Returns a pair of positions: 1st where the object is, 2nd where
@@ -840,10 +889,10 @@ class sparse_hashtable {
     const size_type bucket_count_minus_one = bucket_count() - 1;
     size_type bucknum = hash(key) & bucket_count_minus_one;
     size_type insert_pos = ILLEGAL_BUCKET; // where we would insert
-    SPARSEHASH_STAT_UPDATE(total_lookups += 1);
+    stats.update_lookups(1);
     while ( 1 ) {                          // probe until something happens
       if ( !table.test(bucknum) ) {        // bucket is empty
-        SPARSEHASH_STAT_UPDATE(total_probes += num_probes);
+        stats.update_probes(num_probes);
         if ( insert_pos == ILLEGAL_BUCKET )  // found no prior place to insert
           return std::pair<size_type,size_type>(ILLEGAL_BUCKET, bucknum);
         else
@@ -854,7 +903,7 @@ class sparse_hashtable {
           insert_pos = bucknum;
 
       } else if ( equals(key, get_key(table.unsafe_get(bucknum))) ) {
-        SPARSEHASH_STAT_UPDATE(total_probes += num_probes);
+        stats.update_probes(num_probes);
         return std::pair<size_type,size_type>(bucknum, ILLEGAL_BUCKET);
       }
       ++num_probes;                        // we're doing another probe
@@ -1214,6 +1263,7 @@ class sparse_hashtable {
   KeyInfo key_info;
   size_type num_deleted;   // how many occupied buckets are marked deleted
   Table table;     // holds num_buckets and num_elements too
+  mutable statistics stats;
 };
 
 

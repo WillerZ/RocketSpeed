@@ -149,6 +149,8 @@ class sparse_hash_map {
   typedef typename ht::local_iterator local_iterator;
   typedef typename ht::const_local_iterator const_local_iterator;
 
+  using statistics = typename ht::statistics;
+
   // Iterator functions
   iterator begin()                               { return rep.begin(); }
   iterator end()                                 { return rep.end(); }
@@ -349,6 +351,8 @@ class sparse_hash_map {
 
   template <typename INPUT>
   bool read_nopointer_data(INPUT *fp)   { return rep.read_nopointer_data(fp); }
+
+  statistics get_statistics(bool reset) { return rep.get_statistics(reset); }
 };
 
 // We need a global swap as well
