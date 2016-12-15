@@ -4,7 +4,7 @@
  */
 
 /* Namespace for Google classes */
-#define GOOGLE_NAMESPACE ::gmaps
+#define GOOGLE_NAMESPACE ::rocketspeed
 
 /* the location of the header defining hash functions */
 #define HASH_FUN_H <functional>
@@ -43,4 +43,4 @@
 #define _END_GOOGLE_NAMESPACE_ }
 
 /* Puts following code inside the Google namespace */
-#define _START_GOOGLE_NAMESPACE_ namespace gmaps {
+#define _START_GOOGLE_NAMESPACE_ namespace rocketspeed {

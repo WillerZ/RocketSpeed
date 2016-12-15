@@ -102,10 +102,8 @@ void RunMapSearchTest() {
   using Value = NonUniqueHashValue<Key, period>;
   RunMapSearchTestImpl<period, std::unordered_set, SingleIntArray<Value*> >();
   RunMapSearchTestImpl<period, std::unordered_set, SmallIntArray<Value*> >();
-  RunMapSearchTestImpl<period, gmaps::sparse_hash_set,
-                       SingleIntArray<Value*> >();
-  RunMapSearchTestImpl<period, gmaps::sparse_hash_set,
-                       SmallIntArray<Value*> >();
+  RunMapSearchTestImpl<period, sparse_hash_set, SingleIntArray<Value*> >();
+  RunMapSearchTestImpl<period, sparse_hash_set, SmallIntArray<Value*> >();
 }
 
 template <size_t period, template <typename...> class Impl, typename ArrayImpl>
@@ -144,10 +142,8 @@ void TestIteratorUsage() {
   using Value = NonUniqueHashValue<Key, period>;
   TestIteratorUsageImpl<period, std::unordered_set, SingleIntArray<Value*> >();
   TestIteratorUsageImpl<period, std::unordered_set, SmallIntArray<Value*> >();
-  TestIteratorUsageImpl<period, gmaps::sparse_hash_set,
-                        SingleIntArray<Value*> >();
-  TestIteratorUsageImpl<period, gmaps::sparse_hash_set,
-                        SmallIntArray<Value*> >();
+  TestIteratorUsageImpl<period, sparse_hash_set, SingleIntArray<Value*> >();
+  TestIteratorUsageImpl<period, sparse_hash_set, SmallIntArray<Value*> >();
 }
 
 template <typename KeyT, typename ValueT, template <typename...> class Impl,
@@ -184,9 +180,9 @@ void RunInsertionDeletionChecks() {
                                  SingleIntArray<ValueT*> >();
   RunInsertionDeletionChecksImpl<KeyT, ValueT, std::unordered_set,
                                  SmallIntArray<ValueT*> >();
-  RunInsertionDeletionChecksImpl<KeyT, ValueT, gmaps::sparse_hash_set,
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, sparse_hash_set,
                                  SingleIntArray<ValueT*> >();
-  RunInsertionDeletionChecksImpl<KeyT, ValueT, gmaps::sparse_hash_set,
+  RunInsertionDeletionChecksImpl<KeyT, ValueT, sparse_hash_set,
                                  SmallIntArray<ValueT*> >();
 }
 };
