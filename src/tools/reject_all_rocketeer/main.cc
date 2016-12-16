@@ -18,9 +18,11 @@ class RejectAllRocketeer : public Rocketeer {
   RejectAllRocketeer() {}
 
   void HandleNewSubscription(
-      Flow* flow, InboundID inbound_id, SubscriptionParameters) override {
+      Flow* flow, InboundID inbound_id, SubscriptionParameters params)
+      override {
     // Immediately terminate.
-    Terminate(flow, inbound_id, UnsubscribeReason::Invalid);
+    Unsubscribe(flow, inbound_id, std::move(params.namespace_id),
+        std::move(params.topic_name), UnsubscribeReason::Invalid);
   }
 
   void HandleTermination(

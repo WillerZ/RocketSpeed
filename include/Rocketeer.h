@@ -249,6 +249,8 @@ class Rocketeer {
   virtual void Advance(Flow* flow, InboundID inbound_id, SequenceNumber seqno);
 
   /**
+   * DEPRECATED
+   *
    * Terminates given subscription.
    * This method needs to be called on the thread this instance runs on.
    *
@@ -266,6 +268,22 @@ class Rocketeer {
   virtual void Terminate(Flow* flow,
                          InboundID inbound_id,
                          UnsubscribeReason reason);
+
+  /**
+   * Unsubscribes given subscription.
+   * This method needs to be called on the thread this instance runs on.
+   *
+   * @param inbound_id ID of the subscription to unsubscribe.
+   * @param namespace_id Namespace of the subscription to unsubscribe.
+   * @param topic Topic of the subscription to unsubscribe.
+   * @param reason A reason why this subscription was unsubscribed.
+   * @return true iff operation was successfully scheduled.
+   */
+  virtual void Unsubscribe(Flow* flow,
+                           InboundID inbound_id,
+                           NamespaceID namespace_id,
+                           Topic topic,
+                           UnsubscribeReason reason);
 
   /**
    * Response to TryHandleHasMessageSince. Must be called at least once after

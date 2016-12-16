@@ -86,6 +86,12 @@ class CommunicationRocketeer : public Rocketeer {
                  InboundID inbound_id,
                  UnsubscribeReason reason) final override;
 
+  void Unsubscribe(Flow* flow,
+                   InboundID inbound_id,
+                   NamespaceID namespace_id,
+                   Topic topic,
+                   UnsubscribeReason reason) final override;
+
 
   void HasMessageSinceResponse(Flow* flow,
                                InboundID inbound_id,
@@ -271,6 +277,17 @@ void CommunicationRocketeer::Advance(Flow* flow,
 void CommunicationRocketeer::Terminate(Flow* flow,
                                        InboundID inbound_id,
                                        UnsubscribeReason reason) {
+  // Using empty namespace and topic here.
+  // This method is deprecated and will be removed once users switch to
+  // version with topic.
+  Unsubscribe(flow, inbound_id, "", "", reason);
+}
+
+void CommunicationRocketeer::Unsubscribe(Flow* flow,
+                                         InboundID inbound_id,
+                                         NamespaceID namespace_id,
+                                         Topic topic,
+                                         UnsubscribeReason reason) {
   thread_check_.Check();
 
   StreamID origin = inbound_id.stream_id;
@@ -297,11 +314,8 @@ void CommunicationRocketeer::Terminate(Flow* flow,
           msg_reason = MessageUnsubscribe::Reason::kInvalid;
           break;
       }
-      // TODO(pja): Update interface to provide namespace and topic.
-      NamespaceID namespace_id = "";
-      Topic topic_name = "";
       auto unsubscribe = std::make_unique<MessageUnsubscribe>(
-          tenant_id, std::move(namespace_id), std::move(topic_name),
+          tenant_id, std::move(namespace_id), std::move(topic),
           inbound_id.GetSubID(), msg_reason);
       SendResponse(flow, inbound_id.stream_id, std::move(unsubscribe));
       return;
@@ -593,6 +607,22 @@ bool RocketeerServer::Terminate(InboundID inbound_id,
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id, reason](Flow* flow) mutable {
     rocketeers_[worker_id]->Terminate(flow, inbound_id, reason);
+  };
+  return msg_loop_
+      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
+      .ok();
+}
+
+bool RocketeerServer::Unsubscribe(InboundID inbound_id,
+                                  NamespaceID namespace_id,
+                                  Topic topic,
+                                  Rocketeer::UnsubscribeReason reason) {
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command =
+    [this, worker_id, inbound_id, namespace_id = std::move(namespace_id),
+     topic = std::move(topic), reason](Flow* flow) mutable {
+    rocketeers_[worker_id]->Unsubscribe(
+        flow, inbound_id, std::move(namespace_id), std::move(topic), reason);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)

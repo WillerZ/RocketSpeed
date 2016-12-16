@@ -149,7 +149,8 @@ struct SubscribeTerminate : public Rocketeer {
   void HandleNewSubscription(
       Flow*, InboundID inbound_id, SubscriptionParameters params) override {
     inbound_id_ = inbound_id;
-    Terminate(nullptr, inbound_id, Rocketeer::UnsubscribeReason::Invalid);
+    Unsubscribe(nullptr, inbound_id, std::move(params.namespace_id),
+        std::move(params.topic_name), Rocketeer::UnsubscribeReason::Invalid);
   }
 
   void HandleTermination(
@@ -231,7 +232,8 @@ struct TopOfStack : public Rocketeer {
     Deliver(nullptr, inbound_id, deliver_msg_seqno_, deliver_msg_);
     Advance(nullptr, inbound_id, advance_seqno_);
     DeliverBatch(nullptr, inbound_id.stream_id, messages_);
-    Terminate(nullptr, inbound_id, Rocketeer::UnsubscribeReason::Invalid);
+    Unsubscribe(nullptr, inbound_id, std::move(params.namespace_id),
+        std::move(params.topic_name), Rocketeer::UnsubscribeReason::Invalid);
   }
 
   void HandleTermination(

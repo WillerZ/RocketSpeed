@@ -189,6 +189,15 @@ void Rocketeer::Terminate(Flow* flow,
   GetBelowRocketeer()->Terminate(flow, inbound_id, reason);
 }
 
+void Rocketeer::Unsubscribe(Flow* flow,
+                            InboundID inbound_id,
+                            NamespaceID namespace_id,
+                            Topic topic,
+                            UnsubscribeReason reason) {
+  GetBelowRocketeer()->Unsubscribe(
+      flow, inbound_id, std::move(namespace_id), std::move(topic), reason);
+}
+
 void Rocketeer::HasMessageSinceResponse(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {

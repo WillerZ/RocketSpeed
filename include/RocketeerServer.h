@@ -134,11 +134,23 @@ class RocketeerServer {
   bool Advance(InboundID inbound_id, SequenceNumber seqno);
 
   /**
+   * DEPRECATED
+   *
    * A thread-safe version of Rocketeer::Terminate.
    *
    * @return true iff operation was successfully scheduled.
    */
   bool Terminate(InboundID inbound_id, Rocketeer::UnsubscribeReason reason);
+
+  /**
+   * A thread-safe version of Rocketeer::Unsubscribe.
+   *
+   * @return true iff operation was successfully scheduled.
+   */
+  bool Unsubscribe(InboundID inbound_id,
+                   NamespaceID namespace_id,
+                   Topic topic,
+                   Rocketeer::UnsubscribeReason reason);
 
   /**
    * A thread-safe version of Rocketeer::HasMessageSinceResponse.
