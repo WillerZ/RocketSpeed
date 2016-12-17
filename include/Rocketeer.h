@@ -209,6 +209,31 @@ class Rocketeer {
       SequenceNumber seqno);
 
   /**
+   * Notifies that a stream has disconnected.
+   *
+   * If the RocketeerServer is running with terminate_on_disconnect then
+   * the rocketeer will automatically receive HandleTermination calls for each
+   * subscription on the stream, before calling HandleDisconnect.
+   *
+   * If the RocketeerServer is not running with terminate_on_disconnect then
+   * it is the responsibility of the implementation to manually terminate
+   * any inbound subscription with the specified stream ID.
+   *
+   * Implementations should provide either TryHandleDisconnect or
+   * HandleDisconnect, but not both. If both are provided, this version is
+   * ignored.
+   *
+   * @param flow Flow control handle for exerting back-pressure.
+   * @param stream_id The ID of the stream that has been disconnected.
+   */
+  virtual void HandleDisconnect(Flow* flow, StreamID stream_id);
+
+  /**
+   * Same as HandleDisconnect, but using return value for flow control.
+   */
+  virtual BackPressure TryHandleDisconnect(StreamID stream_id);
+
+  /**
    * Sends a message on given subscription.
    * This method needs to be called on the thread this instance runs on.
    *

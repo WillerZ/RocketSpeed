@@ -59,7 +59,7 @@ struct RocketeerHasMessageSinceMessage {
 
 struct RocketeerMetadataMessage {
   // Represents either a subscribe or termination.
-  enum { kSubscribe, kTerminate, kHasMessageSince } type;
+  enum { kSubscribe, kTerminate, kHasMessageSince, kDisconnect } type;
   InboundID inbound_id;
   SubscriptionParameters params;        // only valid for type == kSubscribe
   Rocketeer::TerminationSource source;  // only valid for type == kTerminate
@@ -83,6 +83,8 @@ Rocketeer::Rocketeer()
               msg.has_msg_since.topic,
               msg.has_msg_since.epoch,
               msg.has_msg_since.seqno);
+        case RocketeerMetadataMessage::kDisconnect:
+          return TryHandleDisconnect(msg.inbound_id.stream_id);
       }
       RS_ASSERT(false);
       return BackPressure::None();
@@ -159,6 +161,25 @@ void Rocketeer::HandleHasMessageSince(
   msg.has_msg_since.topic = std::move(topic);
   msg.has_msg_since.epoch = std::move(epoch);
   msg.has_msg_since.seqno = seqno;
+  flow->Write(metadata_sink_.get(), msg);
+}
+
+BackPressure Rocketeer::TryHandleDisconnect(StreamID stream_id) {
+  (void)stream_id;
+  return BackPressure::None();
+}
+
+void Rocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
+  // This is the default implementation of HandleDisconnect.
+  // Most application Rocketeers will implement TryDisconnect, but
+  // internally RocketSpeed calls HandleDisconnect.
+  //
+  // The default implementation forward the call to TryHandleDisconnect
+  // through a RetryLaterSink, which will retry the call later if the Try
+  // called requested a retry.
+  RocketeerMetadataMessage msg;
+  msg.type = RocketeerMetadataMessage::kDisconnect;
+  msg.inbound_id.stream_id = stream_id;
   flow->Write(metadata_sink_.get(), msg);
 }
 

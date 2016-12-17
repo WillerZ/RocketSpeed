@@ -68,6 +68,8 @@ class CommunicationRocketeer : public Rocketeer {
                              Epoch epoch,
                              SequenceNumber seqno) final override;
 
+  void HandleDisconnect(Flow* flow, StreamID stream_id) final override;
+
   void Deliver(Flow* flow,
                InboundID inbound_id,
                SequenceNumber seqno,
@@ -128,10 +130,16 @@ class CommunicationRocketeer : public Rocketeer {
   size_t id_;
   std::unique_ptr<Stats> stats_;
 
-  using SubscriptionsOnStream =
-      std::unordered_map<SubscriptionID, InboundSubscription>;
-  std::unordered_map<StreamID, SubscriptionsOnStream> inbound_subscriptions_;
-  std::unordered_map<StreamID, TenantID> stream_tenant_;
+  struct StreamState {
+    explicit StreamState(TenantID _tenant_id)
+    : tenant_id(_tenant_id)
+    , num_subscriptions(0) {}
+
+    TenantID tenant_id;
+    size_t num_subscriptions;
+    std::unordered_map<SubscriptionID, InboundSubscription> inbound;
+  };
+  std::unordered_map<StreamID, StreamState> stream_state_;
 
   void Initialize(RocketeerServer* server, size_t id);
 
@@ -176,12 +184,15 @@ void CommunicationRocketeer::HandleTermination(
   above_rocketeer_->HandleTermination(flow, inbound_id, source);
 }
 
-
 void CommunicationRocketeer::HandleHasMessageSince(
     Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
     Epoch epoch, SequenceNumber seqno) {
   above_rocketeer_->HandleHasMessageSince(flow, inbound_id,
       std::move(namespace_id), std::move(topic), std::move(epoch), seqno);
+}
+
+void CommunicationRocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
+  above_rocketeer_->HandleDisconnect(flow, stream_id);
 }
 
 void CommunicationRocketeer::Deliver(Flow* flow,
@@ -292,14 +303,15 @@ void CommunicationRocketeer::Unsubscribe(Flow* flow,
 
   StreamID origin = inbound_id.stream_id;
   SubscriptionID sub_id = inbound_id.GetSubID();
-  auto it = inbound_subscriptions_.find(origin);
-  if (it != inbound_subscriptions_.end()) {
-    auto it1 = it->second.find(sub_id);
-    if (it1 != it->second.end()) {
-      auto tenant_id = GetTenant(origin);
-      it->second.erase(it1);
+  auto it = stream_state_.find(origin);
+  if (it != stream_state_.end()) {
+    StreamState& state = it->second;
+    auto it1 = state.inbound.find(sub_id);
+    if (it1 != state.inbound.end()) {
+      state.inbound.erase(it1);
       stats_->inbound_subscriptions->Add(-1);
       stats_->terminations->Add(1);
+      state.num_subscriptions--;
       HandleTermination(flow,
                         InboundID(origin, sub_id),
                         TerminationSource::Rocketeer);
@@ -315,7 +327,7 @@ void CommunicationRocketeer::Unsubscribe(Flow* flow,
           break;
       }
       auto unsubscribe = std::make_unique<MessageUnsubscribe>(
-          tenant_id, std::move(namespace_id), std::move(topic),
+          state.tenant_id, std::move(namespace_id), std::move(topic),
           inbound_id.GetSubID(), msg_reason);
       SendResponse(flow, inbound_id.stream_id, std::move(unsubscribe));
       return;
@@ -362,9 +374,9 @@ const Statistics& CommunicationRocketeer::GetStatisticsInternal() {
 }
 
 TenantID CommunicationRocketeer::GetTenant(StreamID stream_id) const {
-  auto it = stream_tenant_.find(stream_id);
-  if (it != stream_tenant_.end()) {
-    return stream_id;
+  auto it = stream_state_.find(stream_id);
+  if (it != stream_state_.end()) {
+    return it->second.tenant_id;
   }
   LOG_ERROR(server_->options_.info_log,
             "Stream(%llu) does not have a tenant ID yet.", stream_id);
@@ -372,10 +384,11 @@ TenantID CommunicationRocketeer::GetTenant(StreamID stream_id) const {
 }
 
 InboundSubscription* CommunicationRocketeer::Find(const InboundID& inbound_id) {
-  auto it = inbound_subscriptions_.find(inbound_id.stream_id);
-  if (it != inbound_subscriptions_.end()) {
-    auto it1 = it->second.find(inbound_id.GetSubID());
-    if (it1 != it->second.end()) {
+  auto it = stream_state_.find(inbound_id.stream_id);
+  if (it != stream_state_.end()) {
+    StreamState& state = it->second;
+    auto it1 = state.inbound.find(inbound_id.GetSubID());
+    if (it1 != state.inbound.end()) {
       return &it1->second;
     }
   }
@@ -412,11 +425,16 @@ void CommunicationRocketeer::Receive(
   // For now, we determine a stream's tenant by the first subscribe we see.
   // In the future, we should require streams to introduce themselves first to
   // set the tenant, among other things.
-  stream_tenant_.emplace(origin, subscribe->GetTenantID());
+  auto it = stream_state_.find(origin);
+  if (it == stream_state_.end()) {
+    it = stream_state_.emplace(
+        origin, StreamState(subscribe->GetTenantID())).first;
+  }
 
+  StreamState& state = it->second;
   SubscriptionID sub_id = subscribe->GetSubID();
   SequenceNumber start_seqno = subscribe->GetStartSequenceNumber();
-  auto result = inbound_subscriptions_[origin].emplace(
+  auto result = state.inbound.emplace(
       sub_id,
       InboundSubscription(start_seqno == 0 ? start_seqno : start_seqno - 1));
   if (!result.second) {
@@ -434,6 +452,7 @@ void CommunicationRocketeer::Receive(
   HandleNewSubscription(flow, InboundID(origin, sub_id), std::move(params));
   stats_->subscribes->Add(1);
   stats_->inbound_subscriptions->Add(1);
+  state.num_subscriptions++;
 }
 
 void CommunicationRocketeer::Receive(
@@ -442,22 +461,27 @@ void CommunicationRocketeer::Receive(
   thread_check_.Check();
 
   SubscriptionID sub_id = unsubscribe->GetSubID();
-  auto it = inbound_subscriptions_.find(origin);
-  if (it != inbound_subscriptions_.end()) {
-    auto removed = it->second.erase(sub_id);
+  auto it = stream_state_.find(origin);
+  if (it != stream_state_.end()) {
+    StreamState& state = it->second;
+    auto removed = state.inbound.erase(sub_id);
     if (removed > 0) {
       stats_->inbound_subscriptions->Add(-1);
       stats_->unsubscribes->Add(1);
+      state.num_subscriptions--;
       HandleTermination(flow,
                         InboundID(origin, sub_id),
                         TerminationSource::Subscriber);
-      return;
+    } else {
+      LOG_WARN(server_->options_.info_log,
+         "Missing subscription on stream: %llu, sub_id: %llu",
+         origin,
+         sub_id.ForLogging());
     }
+  } else {
+    LOG_WARN(server_->options_.info_log,
+        "Received Unsubscribe before a Subscribe on stream %llu", origin);
   }
-  LOG_WARN(server_->options_.info_log,
-           "Missing subscription on stream: %llu, sub_id: %llu",
-           origin,
-           sub_id.ForLogging());
 }
 
 void CommunicationRocketeer::Receive(
@@ -473,20 +497,25 @@ void CommunicationRocketeer::Receive(
     Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin) {
   thread_check_.Check();
 
-  auto it = inbound_subscriptions_.find(origin);
-  if (it == inbound_subscriptions_.end()) {
+  auto it = stream_state_.find(origin);
+  if (it == stream_state_.end()) {
     LOG_WARN(server_->options_.info_log, "Missing stream: %llu", origin);
     return;
   }
-  for (const auto& entry : it->second) {
-    stats_->inbound_subscriptions->Add(-1);
-    stats_->unsubscribes->Add(1);
-    HandleTermination(flow,
-                      InboundID(origin, entry.first),
-                      TerminationSource::Subscriber);
+  StreamState& state = it->second;
+  if (server_->options_.terminate_on_disconnect) {
+    for (const auto& entry : state.inbound) {
+      HandleTermination(flow,
+                        InboundID(origin, entry.first),
+                        TerminationSource::Subscriber);
+    }
   }
-  inbound_subscriptions_.erase(it);
-  stream_tenant_.erase(origin);
+  const int64_t subs = static_cast<int64_t>(state.num_subscriptions);
+  stats_->inbound_subscriptions->Add(-subs);
+  stats_->unsubscribes->Add(subs);
+
+  stream_state_.erase(it);
+  HandleDisconnect(flow, origin);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

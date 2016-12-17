@@ -23,7 +23,7 @@ namespace rocketspeed {
 
 class RocketeerTest : public ::testing::Test {
  public:
-  RocketeerTest()
+  RocketeerTest(bool terminate_on_disconnect = true)
   : positive_timeout(1000), negative_timeout(100), env_(Env::Default()) {
     EXPECT_OK(test::CreateLogger(env_, "RocketeerTest", &info_log_));
     RocketeerOptions options;
@@ -32,6 +32,7 @@ class RocketeerTest : public ::testing::Test {
     options.port = 0;
     options.enable_throttling = false;
     options.enable_batching = false;
+    options.terminate_on_disconnect = terminate_on_disconnect;
     server_.reset(new RocketeerServer(std::move(options)));
   }
 
@@ -84,6 +85,12 @@ class RocketeerTest : public ::testing::Test {
     return ClientMock(std::move(client), std::move(thread));
   }
 };
+
+class RocketeerDisconnectTest : public RocketeerTest {
+ public:
+  RocketeerDisconnectTest() : RocketeerTest(false) {}
+};
+
 
 struct SubscribeUnsubscribe : public Rocketeer {
   bool is_set_ = false;
@@ -411,6 +418,54 @@ TEST_F(RocketeerTest, MetadataFlowControl) {
   for (uint32_t shard = 1; shard < kNumShards; ++shard) {
     ASSERT_TRUE(rocketeer.terminate_sem_.TimedWait(negative_timeout));
   }
+
+  // Stop explicitly, as the Rocketeer is destroyed before the Server.
+  server_->Stop();
+}
+
+struct DisconnectHandler : public Rocketeer {
+  StreamID stream_id_{0};
+  port::Semaphore subscribe_sem_;
+  port::Semaphore disconnect_sem_;
+
+  void HandleNewSubscription(
+      Flow*, InboundID inbound_id, SubscriptionParameters) override {
+    stream_id_ = inbound_id.stream_id;
+    subscribe_sem_.Post();
+  }
+
+  void HandleTermination(
+      Flow*, InboundID inbound_id, TerminationSource source) override {
+    // Should never receive a termination.
+    ASSERT_TRUE(false);
+  }
+
+  void HandleDisconnect(Flow*, StreamID stream_id) override {
+    ASSERT_EQ(stream_id, stream_id_);
+    ASSERT_NE(stream_id_, 0);
+    disconnect_sem_.Post();
+  }
+};
+
+TEST_F(RocketeerDisconnectTest, DisconnectHandler) {
+  DisconnectHandler rocketeer;
+  server_->Register(&rocketeer);
+  ASSERT_OK(server_->Start());
+  auto server_addr = server_->GetHostId();
+
+  {
+    auto client = MockClient(std::map<MessageType, MsgCallbackType>());
+    auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
+    auto subid1 = SubscriptionID::Unsafe(1);
+
+    // Subscribe.
+    MessageSubscribe subscribe(
+        GuestTenant, GuestNamespace, "DisconnectHandler", 101, subid1);
+    ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
+    ASSERT_TRUE(rocketeer.subscribe_sem_.TimedWait(positive_timeout));
+  }
+  // Client stopped now, expect disconnect.
+  ASSERT_TRUE(rocketeer.disconnect_sem_.TimedWait(positive_timeout));
 
   // Stop explicitly, as the Rocketeer is destroyed before the Server.
   server_->Stop();

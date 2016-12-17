@@ -79,6 +79,20 @@ struct RocketeerOptions {
   bool enable_batching = false;
   size_t batch_max_limit = 100;
   std::chrono::milliseconds batch_max_duration{10};
+
+  /**
+   * If true, Rocketeers will automatically receive HandleTerminate calls for
+   * all affected subscriptions when a stream disconnects. This makes Rocketeer
+   * implementation easier, but requires that the RocketeerServer keep track
+   * of subscriptions, which consumes a lot of memory if a large number of
+   * subscriptions are expected.
+   *
+   * If the implementation is able to handle clean up themselves, then this
+   * flag can be set to false. It is then the responsibility of the
+   * implementation to terminate all subscriptions when HandleDisconnect is
+   * invoked.
+   */
+  bool terminate_on_disconnect = true;
 };
 
 class RocketeerServer {
