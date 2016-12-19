@@ -225,6 +225,7 @@ struct TopOfStack : public Rocketeer {
   const std::string deliver_msg_ = "RandomMessage";
   const SequenceNumber deliver_msg_seqno_ = 102;
   const SequenceNumber advance_seqno_ = 112;
+  const SequenceNumber dataloss_seqno_ = 120;
   const std::vector<RocketeerMessage> messages_ {
     RocketeerMessage(2, 113, "Message 1"),
     RocketeerMessage(2, 114, "Message 2"),
@@ -239,6 +240,7 @@ struct TopOfStack : public Rocketeer {
     Deliver(nullptr, inbound_id, deliver_msg_seqno_, deliver_msg_);
     Advance(nullptr, inbound_id, advance_seqno_);
     DeliverBatch(nullptr, inbound_id.stream_id, messages_);
+    NotifyDataLoss(nullptr, inbound_id, dataloss_seqno_);
     Unsubscribe(nullptr, inbound_id, std::move(params.namespace_id),
         std::move(params.topic_name), Rocketeer::UnsubscribeReason::Invalid);
   }
@@ -262,6 +264,7 @@ TEST_F(RocketeerTest, StackRocketeerTest) {
   port::Semaphore deliver_sem;
   port::Semaphore advance_sem;
   port::Semaphore batch_sem;
+  port::Semaphore dataloss_sem;
 
   // Ensure that HandleSubscription and HandleTermination calls go up the stack
   // and Deliver/Advance/Terminate go down the stack.
@@ -283,11 +286,21 @@ TEST_F(RocketeerTest, StackRocketeerTest) {
       {MessageType::mDeliverGap,
        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
          auto data = static_cast<MessageDeliverGap*>(msg.get());
-         ASSERT_TRUE(data->GetFirstSequenceNumber() ==
-                     topRocketeer.deliver_msg_seqno_);
-         ASSERT_TRUE(data->GetLastSequenceNumber() ==
-                     topRocketeer.advance_seqno_);
-         advance_sem.Post();
+         if (data->GetGapType() == GapType::kBenign) {
+           ASSERT_TRUE(data->GetFirstSequenceNumber() ==
+                       topRocketeer.deliver_msg_seqno_);
+           ASSERT_TRUE(data->GetLastSequenceNumber() ==
+                       topRocketeer.advance_seqno_);
+           advance_sem.Post();
+         } else if (data->GetGapType() == GapType::kDataLoss) {
+           ASSERT_TRUE(data->GetFirstSequenceNumber() ==
+                       topRocketeer.messages_.back().seqno);
+           ASSERT_TRUE(data->GetLastSequenceNumber() ==
+                       topRocketeer.dataloss_seqno_);
+           dataloss_sem.Post();
+         } else {
+           FAIL() << "Should not be called";
+         }
        }},
       {MessageType::mDeliverBatch,
        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
@@ -315,6 +328,7 @@ TEST_F(RocketeerTest, StackRocketeerTest) {
   ASSERT_TRUE(advance_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(batch_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(dataloss_sem.TimedWait(positive_timeout));
   ASSERT_TRUE(topRocketeer.terminate_sem_.TimedWait(positive_timeout));
 
   // Stop explicitly, as the Rocketeer is destroyed before the Server.

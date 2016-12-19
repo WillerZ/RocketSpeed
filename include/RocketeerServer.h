@@ -148,6 +148,13 @@ class RocketeerServer {
   bool Advance(InboundID inbound_id, SequenceNumber seqno);
 
   /**
+   * A thread-safe version of Rocketeer::NotifyDataLoss.
+   *
+   * @return true iff operation was successfully scheduled.
+   */
+  bool NotifyDataLoss(InboundID inbound_id, SequenceNumber seqno);
+
+  /**
    * DEPRECATED
    *
    * A thread-safe version of Rocketeer::Terminate.

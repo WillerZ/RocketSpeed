@@ -204,6 +204,12 @@ void Rocketeer::Advance(Flow* flow,
   GetBelowRocketeer()->Advance(flow, inbound_id, seqno);
 }
 
+void Rocketeer::NotifyDataLoss(Flow* flow,
+                               InboundID inbound_id,
+                               SequenceNumber seqno) {
+  GetBelowRocketeer()->NotifyDataLoss(flow, inbound_id, seqno);
+}
+
 void Rocketeer::Terminate(Flow* flow,
                           InboundID inbound_id,
                           UnsubscribeReason reason) {

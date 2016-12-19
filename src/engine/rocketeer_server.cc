@@ -84,6 +84,10 @@ class CommunicationRocketeer : public Rocketeer {
                InboundID inbound_id,
                SequenceNumber seqno) final override;
 
+  void NotifyDataLoss(Flow* flow,
+                      InboundID inbound_id,
+                      SequenceNumber seqno) final override;
+
   void Terminate(Flow* flow,
                  InboundID inbound_id,
                  UnsubscribeReason reason) final override;
@@ -166,6 +170,10 @@ class CommunicationRocketeer : public Rocketeer {
 
   void Receive(
       Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin);
+
+  void SendGapMessage(
+      Flow* flow, InboundID inbound_id, SequenceNumber seqno,
+      GapType gap_type);
 };
 
 CommunicationRocketeer::CommunicationRocketeer(Rocketeer* rocketeer)
@@ -261,16 +269,17 @@ void CommunicationRocketeer::DeliverBatch(
   }
 }
 
-void CommunicationRocketeer::Advance(Flow* flow,
-                                     InboundID inbound_id,
-                                     SequenceNumber seqno) {
+void CommunicationRocketeer::SendGapMessage(Flow* flow,
+                                            InboundID inbound_id,
+                                            SequenceNumber seqno,
+                                            GapType gap_type) {
   thread_check_.Check();
 
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
       auto tenant_id = GetTenant(inbound_id.stream_id);
       auto gap = std::make_unique<MessageDeliverGap>(
-          tenant_id, inbound_id.GetSubID(), GapType::kBenign);
+          tenant_id, inbound_id.GetSubID(), gap_type);
       gap->SetSequenceNumbers(sub->prev_seqno, seqno);
       sub->prev_seqno = seqno;
       SendResponse(flow, inbound_id.stream_id, std::move(gap));
@@ -283,6 +292,18 @@ void CommunicationRocketeer::Advance(Flow* flow,
                sub->prev_seqno);
     }
   }
+}
+
+void CommunicationRocketeer::Advance(Flow* flow,
+                                     InboundID inbound_id,
+                                     SequenceNumber seqno) {
+  SendGapMessage(flow, inbound_id, seqno, GapType::kBenign);
+}
+
+void CommunicationRocketeer::NotifyDataLoss(Flow* flow,
+                                            InboundID inbound_id,
+                                            SequenceNumber seqno) {
+  SendGapMessage(flow, inbound_id, seqno, GapType::kDataLoss);
 }
 
 void CommunicationRocketeer::Terminate(Flow* flow,
@@ -625,6 +646,16 @@ bool RocketeerServer::Advance(InboundID inbound_id, SequenceNumber seqno) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id, seqno](Flow* flow) mutable {
     rocketeers_[worker_id]->Advance(flow, inbound_id, seqno);
+  };
+  return msg_loop_
+      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
+      .ok();
+}
+
+bool RocketeerServer::NotifyDataLoss(InboundID inbound_id, SequenceNumber seqno) {
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command = [this, worker_id, inbound_id, seqno](Flow* flow) mutable {
+    rocketeers_[worker_id]->NotifyDataLoss(flow, inbound_id, seqno);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)

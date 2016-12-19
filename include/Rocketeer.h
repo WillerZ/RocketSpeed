@@ -264,7 +264,7 @@ class Rocketeer {
    * data on it. Client might be notified, so that the next time it
    * resubscribes, it will send advanced sequence number as a part of
    * subscription parameters.
-    * This method needs to be called on the thread this instance runs on.
+   * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to advance.
    * @param seqno The subscription will be advanced, so that it expects the
@@ -272,6 +272,15 @@ class Rocketeer {
    * @return true iff operation was successfully scheduled.
    */
   virtual void Advance(Flow* flow, InboundID inbound_id, SequenceNumber seqno);
+
+  /**
+   * Same as Advance but triggers DataLoss callback on the client's observer.
+   *
+   * This method needs to be called on the thread this instance runs on.
+   */
+  virtual void NotifyDataLoss(Flow* flow,
+                              InboundID inbound_id,
+                              SequenceNumber seqno);
 
   /**
    * DEPRECATED
