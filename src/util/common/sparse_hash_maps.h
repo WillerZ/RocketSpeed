@@ -18,9 +18,9 @@
 
 #pragma once
 
-#include <sparsehash/sparse_hash_set>
 #include "include/Assert.h"
 #include "include/KeylessHashMMap.h"
+#include "sparsehash/sparse_hash_set"
 
 namespace rocketspeed {
 

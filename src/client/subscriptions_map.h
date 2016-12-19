@@ -6,12 +6,12 @@
 
 #include <cstdint>
 #include <functional>
-#include <google/sparse_hash_set>
 #include <memory>
 #include <unordered_set>
 
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
+#include "sparsehash/sparse_hash_set"
 #include "src/util/common/subscription_id.h"
 #include "src/messages/types.h"
 #include "src/util/common/observable_container.h"

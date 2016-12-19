@@ -16,8 +16,8 @@ int main() {
 #include <memory>
 #include <unordered_set>
 
-#include "google/sparse_hash_set"
 #include "include/KeylessHashMMap.h"
+#include "sparsehash/sparse_hash_set"
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 
