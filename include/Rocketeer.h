@@ -238,10 +238,21 @@ class Rocketeer {
    * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to send message on.
+   * @param namespace_id Namespace to deliver on.
+   * @param topic Topic to deliver on.
    * @param seqno Sequence number of the message.
    * @param payload Payload of the message.
    * @param msg_id The ID of the message.
    */
+  virtual void Deliver(Flow* flow,
+                       InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       Topic topic,
+                       SequenceNumber seqno,
+                       std::string payload,
+                       MsgId msg_id = MsgId());
+
+  /** DEPRECATED */
   virtual void Deliver(Flow* flow,
                        InboundID inbound_id,
                        SequenceNumber seqno,

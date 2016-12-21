@@ -237,7 +237,8 @@ struct TopOfStack : public Rocketeer {
   void HandleNewSubscription(
       Flow*, InboundID inbound_id, SubscriptionParameters params) override {
     inbound_id_ = inbound_id;
-    Deliver(nullptr, inbound_id, deliver_msg_seqno_, deliver_msg_);
+    Deliver(nullptr, inbound_id, params.namespace_id, params.topic_name,
+        deliver_msg_seqno_, deliver_msg_);
     Advance(nullptr, inbound_id, advance_seqno_);
     DeliverBatch(nullptr, inbound_id.stream_id, messages_);
     NotifyDataLoss(nullptr, inbound_id, dataloss_seqno_);

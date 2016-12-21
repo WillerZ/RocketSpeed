@@ -61,7 +61,8 @@ class DeadLockRocketeer : public Rocketeer {
             // This will block new tasks coming in also.
             // Write in bursts of 100 to speed things up.
             for (int i = 0; i < 100; ++i) {
-              while (!server_->Deliver(entry.first, task.seqno, "hello")) {
+              while (!server_->Deliver(entry.first, task.namespace_id,
+                  task.topic, task.seqno, "hello")) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
               }
               task.seqno++;
@@ -82,6 +83,8 @@ class DeadLockRocketeer : public Rocketeer {
     // Add subscription to task list.
     std::pair<InboundID, Task> p;
     p.first = id;
+    p.second.namespace_id = params.namespace_id;
+    p.second.topic = params.topic_name;
     p.second.seqno = params.start_seqno + 1;
     if (new_tasks_.write(p)) {
       return BackPressure::None();
@@ -105,7 +108,8 @@ class DeadLockRocketeer : public Rocketeer {
 
  private:
   struct Task {
-    std::string payload;
+    NamespaceID namespace_id;
+    Topic topic;
     SequenceNumber seqno;  // set to 0 to remove element
   };
 

@@ -76,6 +76,14 @@ class CommunicationRocketeer : public Rocketeer {
                std::string payload,
                MsgId msg_id = MsgId()) final override;
 
+  void Deliver(Flow* flow,
+               InboundID inbound_id,
+               NamespaceID namespace_id,
+               Topic topic,
+               SequenceNumber seqno,
+               std::string payload,
+               MsgId msg_id = MsgId()) final override;
+
   void DeliverBatch(Flow* flow,
                     StreamID stream_id,
                     std::vector<RocketeerMessage> messages) final override;
@@ -208,6 +216,17 @@ void CommunicationRocketeer::Deliver(Flow* flow,
                                      SequenceNumber seqno,
                                      std::string payload,
                                      MsgId msg_id) {
+  // DEPRECATED
+  Deliver(flow, inbound_id, "", "", seqno, std::move(payload), msg_id);
+}
+
+void CommunicationRocketeer::Deliver(Flow* flow,
+                                     InboundID inbound_id,
+                                     NamespaceID namespace_id,
+                                     Topic topic,
+                                     SequenceNumber seqno,
+                                     std::string payload,
+                                     MsgId msg_id) {
   thread_check_.Check();
 
   if (msg_id.Empty()) {
@@ -216,9 +235,6 @@ void CommunicationRocketeer::Deliver(Flow* flow,
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
       auto tenant_id = GetTenant(inbound_id.stream_id);
-      // TODO(pja) = Update API to provide topic.
-      NamespaceID namespace_id = "";
-      Topic topic = "";
       auto data = std::make_unique<MessageDeliverData>(
           tenant_id, std::move(namespace_id), std::move(topic),
           inbound_id.GetSubID(), msg_id, payload);
@@ -630,6 +646,18 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
                               SequenceNumber seqno,
                               std::string payload,
                               MsgId msg_id) {
+  // DEPRECATED
+  return Deliver(inbound_id, "", "", seqno, std::move(payload), msg_id);
+}
+
+bool RocketeerServer::Deliver(InboundID inbound_id,
+                              NamespaceID namespace_id,
+                              Topic topic,
+                              SequenceNumber seqno,
+                              std::string payload,
+                              MsgId msg_id) {
+  (void)namespace_id;
+  (void)topic;
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id, seqno,
       payload = std::move(payload), msg_id](Flow* flow) mutable {

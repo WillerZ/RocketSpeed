@@ -184,9 +184,22 @@ void Rocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
 
 void Rocketeer::Deliver(Flow* flow,
                         InboundID inbound_id,
+                        NamespaceID namespace_id,
+                        Topic topic,
                         SequenceNumber seqno,
                         std::string payload,
                         MsgId msg_id) {
+  GetBelowRocketeer()->Deliver(
+      flow, inbound_id, std::move(namespace_id), std::move(topic), seqno,
+      std::move(payload), msg_id);
+}
+
+void Rocketeer::Deliver(Flow* flow,
+                        InboundID inbound_id,
+                        SequenceNumber seqno,
+                        std::string payload,
+                        MsgId msg_id) {
+  // DEPRECATED
   GetBelowRocketeer()->Deliver(
       flow, inbound_id, seqno, std::move(payload), msg_id);
 }

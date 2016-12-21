@@ -32,7 +32,8 @@ class EchoRocketeer : public Rocketeer {
           std::lock_guard<std::mutex> lock(task_lock_);
           for (auto& entry : tasks_) {
             Task& task = entry.second;
-            if (server_->Deliver(entry.first, task.seqno, task.payload)) {
+            if (server_->Deliver(entry.first, task.namespace_id, task.topic,
+                task.seqno, task.topic)) {
               task.seqno++;
             }
           }
@@ -49,7 +50,8 @@ class EchoRocketeer : public Rocketeer {
   void HandleNewSubscription(
       Flow* flow, InboundID id, SubscriptionParameters params) override {
     Task task;
-    task.payload = params.topic_name;
+    task.namespace_id = params.namespace_id;
+    task.topic = params.topic_name;
     task.seqno = params.start_seqno + 1;
     std::lock_guard<std::mutex> lock(task_lock_);
     tasks_.emplace(id, std::move(task));
@@ -63,7 +65,8 @@ class EchoRocketeer : public Rocketeer {
 
  private:
   struct Task {
-    std::string payload;
+    NamespaceID namespace_id;
+    Topic topic;
     SequenceNumber seqno;
   };
   std::mutex task_lock_;

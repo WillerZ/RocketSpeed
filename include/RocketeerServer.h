@@ -127,6 +127,14 @@ class RocketeerServer {
    * @return true iff operation was successfully scheduled.
    */
   bool Deliver(InboundID inbound_id,
+               NamespaceID namespace_id,
+               Topic topic,
+               SequenceNumber seqno,
+               std::string payload,
+               MsgId msg_id = MsgId());
+
+  /** DEPRECATED */
+  bool Deliver(InboundID inbound_id,
                SequenceNumber seqno,
                std::string payload,
                MsgId msg_id = MsgId());
