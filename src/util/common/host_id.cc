@@ -5,7 +5,6 @@
 //
 #include "include/HostId.h"
 
-#include <climits>
 #include <cstdint>
 #include <cstring>
 #include <string>

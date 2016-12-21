@@ -32,7 +32,6 @@
 #include "src/messages/unbounded_mpsc_queue.h"
 #include "src/port/port.h"
 #include "src/util/common/processor.h"
-#include "src/util/common/random.h"
 #include "src/util/common/rate_limiter_sink.h"
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"

@@ -6,7 +6,6 @@
 #include <limits>
 #include <random>
 #include "src/util/common/heterogeneous_queue.h"
-#include "src/util/random.h"
 #include "src/util/testharness.h"
 #include "include/Env.h"
 

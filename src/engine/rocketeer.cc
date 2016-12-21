@@ -15,7 +15,6 @@
 #include "include/Logger.h"
 #include "include/RocketSpeed.h"
 #include "include/Slice.h"
-#include "include/Status.h"
 #include "include/Types.h"
 #include "src/messages/flow_control.h"
 #include "src/util/common/flow.h"

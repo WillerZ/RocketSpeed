@@ -6,18 +6,13 @@
 #define __STDC_FORMAT_MACROS
 #include "src/util/testharness.h"
 
-#include <chrono>
 #include <string>
-#include <inttypes.h>
 #include <stdlib.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <gflags/gflags.h>
 
 #include "include/Env.h"
 #include "src/port/stack_trace.h"
 #include "src/util/auto_roll_logger.h"
-#include "src/util/scoped_file_lock.h"
 
 namespace rocketspeed {
 namespace test {

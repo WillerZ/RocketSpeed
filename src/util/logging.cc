@@ -8,8 +8,6 @@
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
-#include <errno.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "include/Slice.h"

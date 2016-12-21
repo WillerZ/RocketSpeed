@@ -7,7 +7,6 @@
 #include "tail_collapsing_subscriber.h"
 
 #include <chrono>
-#include <cmath>
 #include <functional>
 #include <memory>
 #include <mutex>

@@ -4,7 +4,6 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
 
-#include <unistd.h>
 #include <chrono>
 #include <string>
 #include <vector>

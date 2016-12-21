@@ -7,7 +7,6 @@
 #include "multi_shard_subscriber.h"
 
 #include <chrono>
-#include <cmath>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -31,7 +30,6 @@
 #include "src/messages/stream.h"
 #include "src/port/port.h"
 #include "src/util/common/processor.h"
-#include "src/util/common/random.h"
 #include "src/util/common/rate_limiter_sink.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/subscription_id.h"

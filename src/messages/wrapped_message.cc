@@ -5,8 +5,6 @@
 //
 #include "wrapped_message.h"
 
-#include <climits>
-
 #include "src/messages/commands.h"
 #include "src/messages/messages.h"
 #include "src/util/common/coding.h"

@@ -13,7 +13,6 @@
 #include "src/messages/event_loop.h"
 #include "src/messages/queues.h"
 #include "src/util/common/processor.h"
-#include "src/util/random.h"
 #include "src/util/testharness.h"
 
 namespace rocketspeed {

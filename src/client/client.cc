@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "src/client/client.h"
 
-#include <cmath>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -23,7 +22,6 @@
 #include "include/Status.h"
 #include "include/SubscriptionStorage.h"
 #include "include/Types.h"
-#include "include/WakeLock.h"
 #include "src/client/multi_threaded_subscriber.h"
 #include "src/client/smart_wake_lock.h"
 #include "src/client/subscriber_if.h"
@@ -33,7 +31,6 @@
 #include "src/util/common/fixed_configuration.h"
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
-#include "src/util/common/random.h"
 #include "src/util/common/statistics_exporter.h"
 #include "src/util/timeout_list.h"
 
