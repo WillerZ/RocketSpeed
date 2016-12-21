@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -34,28 +35,29 @@ namespace rocketspeed {
 
 /** The message types. */
 enum class MessageType : uint8_t {
-  NotInitialized = 0,     // not initialized yet
-  mPing = 0x01,           // ping data
-  mPublish = 0x02,        // data publish
-//mMetadata = 0x03,       // subscription information (DEPRECATED)
-  mDataAck = 0x04,        // ack for user data
-  mGap = 0x05,            // gap in the log
-  mDeliver = 0x06,        // data delivery
-  mGoodbye = 0x07,        // MessageGoodbye
-  mSubscribe = 0x08,      // MessageSubscribe
-  mUnsubscribe = 0x09,    // MessageUnsubscribe
-  mDeliverGap = 0x0A,     // MessageDeliverGap
-  mDeliverData = 0x0B,    // MessageDeliverData
-  mFindTailSeqno = 0x0C,  // MessageFindTailSeqno
-  mTailSeqno = 0x0D,      // MessageTailSeqno
-  mDeliverBatch = 0x0E,   // MessageDeliverBatch
-  mHeartbeat = 0x0F,      // MessageHeartbeat
-  mHeartbeatDelta = 0x10, // MessageHeartbeatDelta
-  mBacklogQuery = 0x11,   // MessageBacklogQuery
-  mBacklogFill = 0x12,    // MessageBacklogFill
+  NotInitialized = 0,  // not initialized yet
+  mPing = 0x01,        // ping data
+  mPublish = 0x02,     // data publish
+  // mMetadata = 0x03,       // subscription information (DEPRECATED)
+  mDataAck = 0x04,         // ack for user data
+  mGap = 0x05,             // gap in the log
+  mDeliver = 0x06,         // data delivery
+  mGoodbye = 0x07,         // MessageGoodbye
+  mSubscribe = 0x08,       // MessageSubscribe
+  mUnsubscribe = 0x09,     // MessageUnsubscribe
+  mDeliverGap = 0x0A,      // MessageDeliverGap
+  mDeliverData = 0x0B,     // MessageDeliverData
+  mFindTailSeqno = 0x0C,   // MessageFindTailSeqno
+  mTailSeqno = 0x0D,       // MessageTailSeqno
+  mDeliverBatch = 0x0E,    // MessageDeliverBatch
+  mHeartbeat = 0x0F,       // MessageHeartbeat
+  mHeartbeatDelta = 0x10,  // MessageHeartbeatDelta
+  mBacklogQuery = 0x11,    // MessageBacklogQuery
+  mBacklogFill = 0x12,     // MessageBacklogFill
+  mIntroduction = 0x13,    // MessageIntroduction
 
   min = mPing,
-  max = mBacklogFill,
+  max = mIntroduction,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -1035,6 +1037,32 @@ class MessageBacklogFill : public Message {
   SequenceNumber prev_seqno_;
   SequenceNumber next_seqno_;
   HasMessageSinceResult result_;
+};
+
+/**
+ * Message used by the clients to introduce themselves to the server providing
+ * certain key:value properties. Client can add any number of key value pairs
+ * Both Key and Value should be strings.
+ */
+class MessageIntroduction final : public Message {
+ public:
+  using Key = std::string;
+  using Value = std::string;
+  using Properties = std::unordered_map<Key, Value>;
+
+  MessageIntroduction(TenantID tenant_id, const Properties& properties)
+  : Message(MessageType::mIntroduction, tenant_id)
+  , properties_(std::move(properties)) {}
+
+  MessageIntroduction() : Message(MessageType::mIntroduction) {}
+
+  const Properties& GetProperties() const { return properties_; }
+
+  virtual Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  Properties properties_;
 };
 
 /** @} */

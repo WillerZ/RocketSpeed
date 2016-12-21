@@ -29,6 +29,7 @@ class MessageTailSeqno;
 class MessageDeliverBatch;
 class MessageBacklogQuery;
 class MessageBacklogFill;
+class MessageIntroduction;
 template<typename>
 class Sink;
 class Slice;
@@ -125,6 +126,7 @@ class StreamReceiver : public NonMovable, public NonCopyable {
   virtual void ReceiveDeliverBatch(StreamReceiveArg<MessageDeliverBatch>) {}
   virtual void ReceiveBacklogQuery(StreamReceiveArg<MessageBacklogQuery>) {}
   virtual void ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill>) {}
+  virtual void ReceiveIntroduction(StreamReceiveArg<MessageIntroduction>) {}
 
  private:
   template <typename T, typename M>

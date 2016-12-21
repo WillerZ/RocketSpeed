@@ -344,6 +344,34 @@ TEST_F(Messaging, MessageBacklogFill) {
   ASSERT_EQ(msg1.GetResult(), msg2.GetResult());
 }
 
+TEST_F(Messaging, MessageIntroduction) {
+  MessageIntroduction::Properties properties;
+  properties.emplace("hostname", "localhost");
+  properties.emplace("ip", "0.0.0.0");
+  properties.emplace("max_subs", "2000");
+
+  MessageIntroduction msg1(Tenant::GuestTenant, properties);
+  std::string str;
+  msg1.Serialize(&str);
+
+  Slice original(str);
+  MessageIntroduction msg2;
+  ASSERT_OK(msg2.DeSerialize(&original));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+
+  auto msg2_properties = msg2.GetProperties();
+  ASSERT_EQ(properties.size(), msg2_properties.size());
+
+  for (const auto& prop : properties) {
+    auto it = msg2_properties.find(prop.first);
+    ASSERT_NE(msg2_properties.end(), it);
+    ASSERT_EQ(prop.first, it->first);
+    ASSERT_EQ(prop.second, it->second);
+  }
+}
+
 TEST_F(Messaging, InvalidEnum) {
   // create a message
   MessageGoodbye goodbye1(

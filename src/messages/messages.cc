@@ -24,25 +24,26 @@
 namespace rocketspeed {
 
 const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
-  "invalid",
-  "ping",
-  "publish",
-  "metadata (DEPRECATED)",
-  "data_ack",
-  "gap",
-  "deliver",
-  "goodbye",
-  "subscribe",
-  "unsubscribe",
-  "deliver_gap",
-  "deliver_data",
-  "find_tail_seqno",
-  "tail_seqno",
-  "deliver_batch",
-  "heartbeat",
-  "heartbeat_delta",
-  "backlog_query",
-  "backlog_fill",
+    "invalid",
+    "ping",
+    "publish",
+    "metadata (DEPRECATED)",
+    "data_ack",
+    "gap",
+    "deliver",
+    "goodbye",
+    "subscribe",
+    "unsubscribe",
+    "deliver_gap",
+    "deliver_data",
+    "find_tail_seqno",
+    "tail_seqno",
+    "deliver_batch",
+    "heartbeat",
+    "heartbeat_delta",
+    "backlog_query",
+    "backlog_fill",
+    "introduction",
 };
 
 MessageType Message::ReadMessageType(Slice slice) {
@@ -206,6 +207,15 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mBacklogFill: {
       std::unique_ptr<MessageBacklogFill> msg(new MessageBacklogFill());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mIntroduction: {
+      std::unique_ptr<MessageIntroduction> msg(new MessageIntroduction());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -963,6 +973,43 @@ Status MessageBacklogFill::DeSerialize(Slice* in) {
   if (!GetFixedEnum8(in, &result_)) {
     return Status::InvalidArgument("Bad result");
   }
+  return Status::OK();
+}
+
+Status MessageIntroduction::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutVarint64(out, properties_.size());
+  for (const auto& info : properties_) {
+    PutLengthPrefixedSlice(out, info.first);
+    PutLengthPrefixedSlice(out, info.second);
+  }
+  return Status::OK();
+}
+
+Status MessageIntroduction::DeSerialize(Slice* in) {
+  Status st = Message::DeSerialize(in);
+  if (!st.ok()) {
+    return st;
+  }
+  uint64_t len;
+  if (!GetVarint64(in, &len)) {
+    return Status::InvalidArgument("Bad Properties count");
+  }
+
+  properties_.clear();
+  properties_.reserve(len);
+  for (size_t i = 0; i < len; i++) {
+    Slice key;
+    Slice value;
+    if (!GetLengthPrefixedSlice(in, &key)) {
+      return Status::InvalidArgument("Bad property key");
+    }
+    if (!GetLengthPrefixedSlice(in, &value)) {
+      return Status::InvalidArgument("Bad property value");
+    }
+    properties_.emplace(key.ToString(), value.ToString());
+  }
+
   return Status::OK();
 }
 
