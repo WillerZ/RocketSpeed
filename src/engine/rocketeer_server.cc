@@ -90,7 +90,19 @@ class CommunicationRocketeer : public Rocketeer {
 
   void Advance(Flow* flow,
                InboundID inbound_id,
+               NamespaceID namespace_id,
+               Topic topic,
                SequenceNumber seqno) final override;
+
+  void Advance(Flow* flow,
+               InboundID inbound_id,
+               SequenceNumber seqno) final override;
+
+  void NotifyDataLoss(Flow* flow,
+                      InboundID inbound_id,
+                      NamespaceID namespace_id,
+                      Topic topic,
+                      SequenceNumber seqno) final override;
 
   void NotifyDataLoss(Flow* flow,
                       InboundID inbound_id,
@@ -180,8 +192,8 @@ class CommunicationRocketeer : public Rocketeer {
       Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin);
 
   void SendGapMessage(
-      Flow* flow, InboundID inbound_id, SequenceNumber seqno,
-      GapType gap_type);
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      SequenceNumber seqno, GapType gap_type);
 };
 
 CommunicationRocketeer::CommunicationRocketeer(Rocketeer* rocketeer)
@@ -265,13 +277,10 @@ void CommunicationRocketeer::DeliverBatch(
     }
     if (auto* sub = Find(InboundID(stream_id, msg.GetSubID()))) {
       if (sub->prev_seqno < msg.seqno) {
-        // TODO(pja) = Update API to provide topic.
-        NamespaceID namespace_id = "";
-        Topic topic = "";
         messages_vec.emplace_back(
             new MessageDeliverData(tenant_id,
-                                   std::move(namespace_id),
-                                   std::move(topic),
+                                   std::move(msg.namespace_id),
+                                   std::move(msg.topic),
                                    msg.GetSubID(),
                                    msg.msg_id,
                                    std::move(msg.payload)));
@@ -296,6 +305,8 @@ void CommunicationRocketeer::DeliverBatch(
 
 void CommunicationRocketeer::SendGapMessage(Flow* flow,
                                             InboundID inbound_id,
+                                            NamespaceID namespace_id,
+                                            Topic topic,
                                             SequenceNumber seqno,
                                             GapType gap_type) {
   thread_check_.Check();
@@ -303,9 +314,6 @@ void CommunicationRocketeer::SendGapMessage(Flow* flow,
   if (auto* sub = Find(inbound_id)) {
     if (sub->prev_seqno < seqno) {
       auto tenant_id = GetTenant(inbound_id.stream_id);
-      // TODO(pja) = Update API to provide topic.
-      NamespaceID namespace_id = "";
-      Topic topic = "";
       auto gap = std::make_unique<MessageDeliverGap>(
           tenant_id, std::move(namespace_id), std::move(topic),
           inbound_id.GetSubID(), gap_type);
@@ -326,13 +334,33 @@ void CommunicationRocketeer::SendGapMessage(Flow* flow,
 void CommunicationRocketeer::Advance(Flow* flow,
                                      InboundID inbound_id,
                                      SequenceNumber seqno) {
-  SendGapMessage(flow, inbound_id, seqno, GapType::kBenign);
+  // DEPRECATED
+  Advance(flow, inbound_id, "", "", seqno);
+}
+
+void CommunicationRocketeer::Advance(Flow* flow,
+                                     InboundID inbound_id,
+                                     NamespaceID namespace_id,
+                                     Topic topic,
+                                     SequenceNumber seqno) {
+  SendGapMessage(flow, inbound_id, std::move(namespace_id), std::move(topic),
+      seqno, GapType::kBenign);
 }
 
 void CommunicationRocketeer::NotifyDataLoss(Flow* flow,
                                             InboundID inbound_id,
                                             SequenceNumber seqno) {
-  SendGapMessage(flow, inbound_id, seqno, GapType::kDataLoss);
+  // DEPRECATED
+  SendGapMessage(flow, inbound_id, "", "", seqno, GapType::kDataLoss);
+}
+
+void CommunicationRocketeer::NotifyDataLoss(Flow* flow,
+                                            InboundID inbound_id,
+                                            NamespaceID namespace_id,
+                                            Topic topic,
+                                            SequenceNumber seqno) {
+  SendGapMessage(flow, inbound_id, std::move(namespace_id), std::move(topic),
+      seqno, GapType::kDataLoss);
 }
 
 void CommunicationRocketeer::Terminate(Flow* flow,
@@ -683,10 +711,38 @@ bool RocketeerServer::DeliverBatch(StreamID stream_id,
       .ok();
 }
 
+bool RocketeerServer::Advance(InboundID inbound_id, NamespaceID namespace_id,
+    Topic topic, SequenceNumber seqno) {
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command = [this, worker_id, inbound_id,
+                  namespace_id = std::move(namespace_id),
+                  topic = std::move(topic), seqno](Flow* flow) mutable {
+    rocketeers_[worker_id]->Advance(flow, inbound_id, std::move(namespace_id),
+        std::move(topic), seqno);
+  };
+  return msg_loop_
+      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
+      .ok();
+}
+
 bool RocketeerServer::Advance(InboundID inbound_id, SequenceNumber seqno) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id, seqno](Flow* flow) mutable {
     rocketeers_[worker_id]->Advance(flow, inbound_id, seqno);
+  };
+  return msg_loop_
+      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
+      .ok();
+}
+
+bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
+    NamespaceID namespace_id, Topic topic, SequenceNumber seqno) {
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command = [this, worker_id, inbound_id,
+                  namespace_id = std::move(namespace_id),
+                  topic = std::move(topic), seqno](Flow* flow) mutable {
+    rocketeers_[worker_id]->NotifyDataLoss(flow, inbound_id,
+        std::move(namespace_id), std::move(topic), seqno);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)

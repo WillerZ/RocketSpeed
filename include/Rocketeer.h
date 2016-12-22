@@ -76,7 +76,22 @@ struct RocketeerMessage {
   , payload(std::move(_payload))
   , msg_id(_msg_id) {}
 
+  RocketeerMessage(uint64_t _sub_id,
+                   NamespaceID _namespace_id,
+                   Topic _topic,
+                   SequenceNumber _seqno,
+                   std::string _payload,
+                   MsgId _msg_id = MsgId())
+  : sub_id(std::move(_sub_id))
+  , namespace_id(std::move(_namespace_id))
+  , topic(std::move(_topic))
+  , seqno(_seqno)
+  , payload(std::move(_payload))
+  , msg_id(_msg_id) {}
+
   uint64_t sub_id;
+  NamespaceID namespace_id;
+  Topic topic;
   SequenceNumber seqno;
   std::string payload;
   MsgId msg_id;
@@ -278,10 +293,19 @@ class Rocketeer {
    * This method needs to be called on the thread this instance runs on.
    *
    * @param inbound_id ID of the subscription to advance.
+   * @param namespace_id Namespace of the subscription.
+   * @param topic Topic name of the subscription.
    * @param seqno The subscription will be advanced, so that it expects the
    *              next sequence number.
    * @return true iff operation was successfully scheduled.
    */
+  virtual void Advance(Flow* flow,
+                       InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       Topic topic,
+                       SequenceNumber seqno);
+
+  // DEPRECATED
   virtual void Advance(Flow* flow, InboundID inbound_id, SequenceNumber seqno);
 
   /**
@@ -289,6 +313,13 @@ class Rocketeer {
    *
    * This method needs to be called on the thread this instance runs on.
    */
+  virtual void NotifyDataLoss(Flow* flow,
+                              InboundID inbound_id,
+                              NamespaceID namespace_id,
+                              Topic topic,
+                              SequenceNumber seqno);
+
+  // DEPRECATED
   virtual void NotifyDataLoss(Flow* flow,
                               InboundID inbound_id,
                               SequenceNumber seqno);

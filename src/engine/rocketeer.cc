@@ -212,13 +212,33 @@ void Rocketeer::DeliverBatch(Flow* flow,
 
 void Rocketeer::Advance(Flow* flow,
                         InboundID inbound_id,
+                        NamespaceID namespace_id,
+                        Topic topic,
                         SequenceNumber seqno) {
+  GetBelowRocketeer()->Advance(flow, inbound_id, std::move(namespace_id),
+      std::move(topic), seqno);
+}
+
+void Rocketeer::Advance(Flow* flow,
+                        InboundID inbound_id,
+                        SequenceNumber seqno) {
+  // DEPRECATED
   GetBelowRocketeer()->Advance(flow, inbound_id, seqno);
 }
 
 void Rocketeer::NotifyDataLoss(Flow* flow,
                                InboundID inbound_id,
+                               NamespaceID namespace_id,
+                               Topic topic,
                                SequenceNumber seqno) {
+  GetBelowRocketeer()->NotifyDataLoss(flow, inbound_id, std::move(namespace_id),
+      std::move(topic), seqno);
+}
+
+void Rocketeer::NotifyDataLoss(Flow* flow,
+                               InboundID inbound_id,
+                               SequenceNumber seqno) {
+  // DEPRECATED
   GetBelowRocketeer()->NotifyDataLoss(flow, inbound_id, seqno);
 }
 

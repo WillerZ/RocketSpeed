@@ -227,9 +227,9 @@ struct TopOfStack : public Rocketeer {
   const SequenceNumber advance_seqno_ = 112;
   const SequenceNumber dataloss_seqno_ = 120;
   const std::vector<RocketeerMessage> messages_ {
-    RocketeerMessage(2, 113, "Message 1"),
-    RocketeerMessage(2, 114, "Message 2"),
-    RocketeerMessage(2, 115, "Message 3"),
+    RocketeerMessage(2, "ns", "t1", 113, "Message 1"),
+    RocketeerMessage(2, "ns", "t2", 114, "Message 2"),
+    RocketeerMessage(2, "ns", "t3", 115, "Message 3"),
   };
   port::Semaphore terminate_sem_;
   InboundID inbound_id_;
@@ -239,11 +239,13 @@ struct TopOfStack : public Rocketeer {
     inbound_id_ = inbound_id;
     Deliver(nullptr, inbound_id, params.namespace_id, params.topic_name,
         deliver_msg_seqno_, deliver_msg_);
-    Advance(nullptr, inbound_id, advance_seqno_);
+    Advance(nullptr, inbound_id, params.namespace_id, params.topic_name,
+        advance_seqno_);
     DeliverBatch(nullptr, inbound_id.stream_id, messages_);
-    NotifyDataLoss(nullptr, inbound_id, dataloss_seqno_);
-    Unsubscribe(nullptr, inbound_id, std::move(params.namespace_id),
-        std::move(params.topic_name), Rocketeer::UnsubscribeReason::Invalid);
+    NotifyDataLoss(nullptr, inbound_id, params.namespace_id, params.topic_name,
+        dataloss_seqno_);
+    Unsubscribe(nullptr, inbound_id, params.namespace_id, params.topic_name,
+      Rocketeer::UnsubscribeReason::Invalid);
   }
 
   void HandleTermination(

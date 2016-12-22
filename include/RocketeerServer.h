@@ -153,6 +153,12 @@ class RocketeerServer {
    *
    * @return true iff operation was successfully scheduled.
    */
+  bool Advance(InboundID inbound_id,
+               NamespaceID namespace_id,
+               Topic topic,
+               SequenceNumber seqno);
+
+  // DEPRECATED
   bool Advance(InboundID inbound_id, SequenceNumber seqno);
 
   /**
@@ -160,6 +166,12 @@ class RocketeerServer {
    *
    * @return true iff operation was successfully scheduled.
    */
+  bool NotifyDataLoss(InboundID inbound_id,
+                      NamespaceID namespace_id,
+                      Topic topic,
+                      SequenceNumber seqno);
+
+  // DEPRECATED
   bool NotifyDataLoss(InboundID inbound_id, SequenceNumber seqno);
 
   /**
