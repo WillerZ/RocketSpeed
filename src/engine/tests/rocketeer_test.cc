@@ -23,7 +23,7 @@ namespace rocketspeed {
 
 class RocketeerTest : public ::testing::Test {
  public:
-  RocketeerTest(bool terminate_on_disconnect = true)
+  explicit RocketeerTest(bool terminate_on_disconnect = true)
   : positive_timeout(1000), negative_timeout(100), env_(Env::Default()) {
     EXPECT_OK(test::CreateLogger(env_, "RocketeerTest", &info_log_));
     RocketeerOptions options;
