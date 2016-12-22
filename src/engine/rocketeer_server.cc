@@ -130,6 +130,10 @@ class CommunicationRocketeer final : public Rocketeer {
 
   void HandleDisconnect(Flow* flow, StreamID stream_id) final override;
 
+  void HandleConnect(Flow* flow,
+                     StreamID stream_id,
+                     StreamProperties properties) final override;
+
   void Deliver(Flow* flow,
                InboundID inbound_id,
                NamespaceID namespace_id,
@@ -234,6 +238,10 @@ class CommunicationRocketeer final : public Rocketeer {
   void Receive(
       Flow* flow, std::unique_ptr<MessageGoodbye> goodbye, StreamID origin);
 
+  void Receive(Flow* flow,
+               std::unique_ptr<MessageIntroduction> introduction,
+               StreamID origin);
+
   void SendGapMessage(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       SequenceNumber seqno, GapType gap_type);
@@ -264,6 +272,12 @@ void CommunicationRocketeer::HandleHasMessageSince(
 
 void CommunicationRocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
   above_rocketeer_->HandleDisconnect(flow, stream_id);
+}
+
+void CommunicationRocketeer::HandleConnect(Flow* flow,
+                                           StreamID stream_id,
+                                           StreamProperties properties) {
+  above_rocketeer_->HandleConnect(flow, stream_id, std::move(properties));
 }
 
 void CommunicationRocketeer::Deliver(Flow* flow,
@@ -513,14 +527,8 @@ void CommunicationRocketeer::Receive(
     Flow* flow, std::unique_ptr<MessageSubscribe> subscribe, StreamID origin) {
   thread_check_.Check();
 
-  // For now, we determine a stream's tenant by the first subscribe we see.
-  // In the future, we should require streams to introduce themselves first to
-  // set the tenant, among other things.
   auto it = stream_state_.find(origin);
-  if (it == stream_state_.end()) {
-    it = stream_state_.emplace(
-        origin, StreamState(subscribe->GetTenantID())).first;
-  }
+  RS_ASSERT_DBG(it != stream_state_.end());  // Should be set via introduction
 
   StreamState& state = it->second;
   SubscriptionID sub_id = subscribe->GetSubID();
@@ -609,6 +617,21 @@ void CommunicationRocketeer::Receive(
   HandleDisconnect(flow, origin);
 }
 
+void CommunicationRocketeer::Receive(
+    Flow* flow,
+    std::unique_ptr<MessageIntroduction> introduction,
+    StreamID origin) {
+  thread_check_.Check();
+
+  RS_ASSERT_DBG(stream_state_.find(origin) == stream_state_.end());
+  auto result =
+      stream_state_.emplace(origin, StreamState(introduction->GetTenantID()))
+          .second;
+  RS_ASSERT(result);
+
+  HandleConnect(flow, origin, introduction->GetProperties());
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 CommunicationRocketeer::Stats::Stats(const std::string& prefix) {
   subscribes = all.AddCounter(prefix + "subscribes");
@@ -671,6 +694,7 @@ Status RocketeerServerImpl::Start() {
       {MessageType::mUnsubscribe, CreateCallback<MessageUnsubscribe>()},
       {MessageType::mBacklogQuery, CreateCallback<MessageBacklogQuery>()},
       {MessageType::mGoodbye, CreateCallback<MessageGoodbye>()},
+      {MessageType::mIntroduction, CreateCallback<MessageIntroduction>()},
   });
 
   msg_loop_thread_.reset(

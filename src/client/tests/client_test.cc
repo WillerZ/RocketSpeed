@@ -290,7 +290,25 @@ class ClientTest : public ::testing::Test {
     std::unique_ptr<MsgLoop> server(new MsgLoop(
         env_, EnvOptions(), 0 /* auto */, 1,
         info_log_, "server", msg_loop_options_));
-    server->RegisterCallbacks(callbacks);
+
+    // Insert a dummy introduction message receiver if not set
+    auto cbs = callbacks;
+    if (cbs.find(MessageType::mIntroduction) == cbs.end()) {
+      cbs.emplace(
+          MessageType::mIntroduction,
+          [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+            auto introduction = static_cast<MessageIntroduction*>(msg.get());
+            auto props = introduction->GetProperties();
+            auto host = props.find("hostname");
+            auto ip = props.find("ip");
+            ASSERT_NE(host, props.end());
+            ASSERT_NE(ip, props.end());
+
+            ASSERT_EQ("dummy_host", host->second);
+            ASSERT_EQ("dummy_ip", ip->second);
+          });
+    }
+    server->RegisterCallbacks(cbs);
     EXPECT_OK(server->Initialize());
     std::thread thread([&]() { server->Run(); });
     EXPECT_OK(server->WaitUntilRunning());
@@ -324,6 +342,11 @@ class ClientTest : public ::testing::Test {
     }
     if (!options.sharding) {
       options.sharding = MakeShardingStrategyFromConfig(config);
+    }
+    if (options.stream_properties.empty()) {
+      // Dummy
+      options.stream_properties.emplace("hostname", "dummy_host");
+      options.stream_properties.emplace("ip", "dummy_ip");
     }
   }
 
@@ -908,7 +931,11 @@ TEST_F(ClientTest, NoPilot) {
 TEST_F(ClientTest, PublishTimeout) {
   port::Semaphore publish_sem;
   auto pilot = MockServer(
-      {{MessageType::mPublish,
+      {{MessageType::mIntroduction,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          // Do nothing.
+        }},
+       {MessageType::mPublish,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
           // Do nothing.
         }}});

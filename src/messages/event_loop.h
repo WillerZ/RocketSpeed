@@ -302,9 +302,14 @@ class EventLoop {
    * Opens a new stream to provided destination.
    *
    * @param destination A destination to connect to.
+   * @param tenant_id TenantID of the client
+   * @param properties introduction properties of the stream
    * @return A stream, null if failed.
    */
-  std::unique_ptr<Stream> OpenStream(const HostId& destination);
+  std::unique_ptr<Stream> OpenStream(
+      const HostId& destination,
+      const TenantID tenant_id = GuestTenant,
+      const StreamProperties& properties = StreamProperties());
 
   /**
    * Detaches provided socket from the loop and schedules its destruction if
@@ -702,8 +707,11 @@ class EventLoop {
       owned_connections_;
 
   /** Internal method to open stream with provided StreamID. */
-  std::unique_ptr<Stream> OpenStream(const HostId& destination,
-                                     StreamID stream_id);
+  std::unique_ptr<Stream> OpenStream(
+      const HostId& destination,
+      StreamID stream_id,
+      const TenantID tenant_id = GuestTenant,
+      const StreamProperties& properties = StreamProperties());
 
   /**
    * Creates a new SocketEvent to provided remote host.

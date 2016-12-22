@@ -59,6 +59,7 @@ ClientOptions::ClientOptions()
 , stats_prefix("rocketspeed")
 , should_notify_health(true)
 , max_silent_reconnects(3)
-, inactive_stream_linger(std::chrono::seconds(10)) {}
+, inactive_stream_linger(std::chrono::seconds(10))
+, tenant_id(GuestTenant) {}
 
 }  // namespace rocketspeed

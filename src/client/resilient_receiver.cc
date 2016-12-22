@@ -14,12 +14,16 @@ ResilientStreamReceiver::ResilientStreamReceiver(
     ConnectionAwareReceiver* receiver,
     HealthStatusCb health_status_cb,
     BackOffStrategy backoff_strategy,
-    size_t max_silent_reconnects)
+    size_t max_silent_reconnects,
+    const StreamProperties& properties,
+    const TenantID tenant_id)
 : event_loop_(event_loop)
 , receiver_(receiver)
 , health_status_cb_(std::move(health_status_cb))
 , backoff_strategy_(std::move(backoff_strategy))
-, max_silent_reconnects_(max_silent_reconnects) {}
+, max_silent_reconnects_(max_silent_reconnects)
+, stream_properties_(properties)
+, tenant_id_(tenant_id) {}
 
 void ResilientStreamReceiver::ConnectTo(const HostId& host) {
   if (current_host_ == host) {
@@ -84,7 +88,7 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
     RS_ASSERT(host);
 
     // Open the stream.
-    auto stream = event_loop_->OpenStream(host);
+    auto stream = event_loop_->OpenStream(host, tenant_id_, stream_properties_);
     if (!stream) {
       auto failures = UpdateConnectionState(false);
       Reconnect(failures, host);

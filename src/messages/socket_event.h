@@ -109,8 +109,13 @@ class SocketEvent : public Source<MessageOnStream>,
    * connection.
    *
    * @param stream_id A stream ID of the stream to be created.
+   * @param tenant_id TenantID of the client
+   * @param properties introduction properties of the stream
    */
-  std::unique_ptr<Stream> OpenStream(StreamID stream_id);
+  std::unique_ptr<Stream> OpenStream(
+      StreamID stream_id,
+      const TenantID tenant_id = GuestTenant,
+      const StreamProperties& properties = StreamProperties());
 
   /** Inherited from Source<MessageOnStream>. */
   void RegisterReadEvent(EventLoop* event_loop) final override;

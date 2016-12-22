@@ -20,6 +20,7 @@ namespace rocketspeed {
 class EventCallback;
 class Flow;
 class Message;
+class MessageIntroduction;
 class SocketEvent;
 class Stream;
 
@@ -39,7 +40,11 @@ class Stream {
 
 class Stream : public Sink<std::unique_ptr<Message>> {
  public:
-  Stream(SocketEvent* socket_event, StreamID remote_id, StreamID local_id_);
+  Stream(SocketEvent* socket_event,
+         StreamID remote_id,
+         StreamID local_id_,
+         const TenantID tenant_id = GuestTenant,
+         const StreamProperties& properties = StreamProperties());
 
   /**
    * Sets an object responsible for receiving messages on the stream.
@@ -114,6 +119,12 @@ class Stream : public Sink<std::unique_ptr<Message>> {
   StreamReceiver* receiver_;
   /** Name of the remote host for debugging. */
   std::string host_name_;
+
+  /**
+   * Introduction message to be sent before the first message on the stream
+   * The message gets destroyed once the server has sent the message.
+   */
+  std::unique_ptr<MessageIntroduction> introduction_message_ = nullptr;
 };
 
 }  // namespace rocketspeed

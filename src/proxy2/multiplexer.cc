@@ -129,7 +129,8 @@ Multiplexer::Multiplexer(PerShard* per_shard)
 , subscriptions_map_(GetLoop(),
                      std::bind(&Multiplexer::SendMessage, this, _1, _2),
                      &UserDataCleanup)
-, stream_supervisor_(GetLoop(), this,
+, stream_supervisor_(GetLoop(),
+                     this,
                      std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
                      GetOptions().backoff_strategy,
                      GetOptions().max_silent_reconnects) {

@@ -8,7 +8,6 @@
 #include <array>
 #include <chrono>
 #include <deque>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -226,7 +225,7 @@ class MessageBus : public StreamReceiver {
               arg.stream_id,
               MessageTypeName(type));
 
-    if (type == MessageType::mHeartbeat) {
+    if (type == MessageType::mHeartbeat || type == MessageType::mIntroduction) {
       // these make tests noisy
       return;
     }

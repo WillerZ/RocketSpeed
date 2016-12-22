@@ -206,6 +206,14 @@ void MsgLoop::Run() {
     };
   }
 
+  // Add introduction callback if it hasn't already been added.
+  if (msg_callbacks_.find(MessageType::mIntroduction) == msg_callbacks_.end()) {
+    msg_callbacks_[MessageType::mIntroduction] = [](
+        Flow*, std::unique_ptr<Message>, StreamID) {
+      // ignore introduction
+    };
+  }
+
   // Add goodbye callback if it hasn't already been added.
   if (msg_callbacks_.find(MessageType::mGoodbye) == msg_callbacks_.end()) {
     msg_callbacks_[MessageType::mGoodbye] = [this](

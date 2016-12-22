@@ -58,11 +58,12 @@ struct RocketeerHasMessageSinceMessage {
 
 struct RocketeerMetadataMessage {
   // Represents either a subscribe or termination.
-  enum { kSubscribe, kTerminate, kHasMessageSince, kDisconnect } type;
+  enum { kSubscribe, kTerminate, kHasMessageSince, kDisconnect, kConnect } type;
   InboundID inbound_id;
   SubscriptionParameters params;        // only valid for type == kSubscribe
   Rocketeer::TerminationSource source;  // only valid for type == kTerminate
   RocketeerHasMessageSinceMessage has_msg_since;  // for kHasMessageSince
+  StreamProperties properties;                    // for kConnect
 };
 
 Rocketeer::Rocketeer()
@@ -84,6 +85,8 @@ Rocketeer::Rocketeer()
               msg.has_msg_since.seqno);
         case RocketeerMetadataMessage::kDisconnect:
           return TryHandleDisconnect(msg.inbound_id.stream_id);
+        case RocketeerMetadataMessage::kConnect:
+          return TryHandleConnect(msg.inbound_id.stream_id, msg.properties);
       }
       RS_ASSERT(false);
       return BackPressure::None();
@@ -179,6 +182,30 @@ void Rocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
   RocketeerMetadataMessage msg;
   msg.type = RocketeerMetadataMessage::kDisconnect;
   msg.inbound_id.stream_id = stream_id;
+  flow->Write(metadata_sink_.get(), msg);
+}
+
+BackPressure Rocketeer::TryHandleConnect(StreamID stream_id,
+                                         StreamProperties properties) {
+  (void)stream_id;
+  (void)properties;
+  return BackPressure::None();
+}
+
+void Rocketeer::HandleConnect(Flow* flow,
+                              StreamID stream_id,
+                              StreamProperties properties) {
+  // This is the default implementation of HandleConnect.
+  // Most application Rocketeers will implement TryHandleConnect, but
+  // internally RocketSpeed calls HandleConnect.
+  //
+  // The default implementation forward the call to TryHandleConnect
+  // through a RetryLaterSink, which will retry the call later if the Try
+  // called requested a retry.
+  RocketeerMetadataMessage msg;
+  msg.type = RocketeerMetadataMessage::kConnect;
+  msg.inbound_id.stream_id = stream_id;
+  msg.properties = std::move(properties);
   flow->Write(metadata_sink_.get(), msg);
 }
 

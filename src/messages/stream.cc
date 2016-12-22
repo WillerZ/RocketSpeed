@@ -16,7 +16,11 @@
 
 namespace rocketspeed {
 
-Stream::Stream(SocketEvent* socket_event, StreamID remote_id, StreamID local_id)
+Stream::Stream(SocketEvent* socket_event,
+               StreamID remote_id,
+               StreamID local_id,
+               const TenantID tenant_id,
+               const StreamProperties& properties)
 : socket_event_(socket_event)
 , remote_id_(remote_id)
 , local_id_(local_id)
@@ -31,6 +35,11 @@ Stream::Stream(SocketEvent* socket_event, StreamID remote_id, StreamID local_id)
            remote_id_,
            socket_event_->IsInbound() ? "" : " to: ",
            host_name_.c_str());
+
+  // Create an introduction message for the server
+  if (!socket_event_->IsInbound()) {
+    introduction_message_.reset(new MessageIntroduction(tenant_id, properties));
+  }
 }
 
 Stream::~Stream() {
@@ -91,6 +100,18 @@ bool Stream::Write(std::unique_ptr<Message>& value) {
             "Writing message to Stream(%llu, %llu)",
             local_id_,
             remote_id_);
+
+  // Send an introduction message to the server.
+  // The stream is not created until we have sent a message on the stream
+  // other than "goodbye". So, if it's the first message and not a goodbye
+  // we send an introduction message.
+  if (introduction_message_ && type != MessageType::mGoodbye &&
+      !socket_event_->IsInbound()) {
+    MessageOnStream msg;
+    msg.stream = this;
+    msg.message = std::move(introduction_message_);
+    socket_event_->Write(msg);
+  }
 
   // Instead of associating a buffer with each stream, we use the one in the
   // socket.

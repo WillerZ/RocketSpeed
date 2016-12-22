@@ -55,10 +55,13 @@ Subscriber::Subscriber(const ClientOptions& options,
 , subscriptions_map_(event_loop_,
                      std::bind(&Subscriber::SendMessage, this, _1, _2),
                      &UserDataCleanup)
-, stream_supervisor_(event_loop_, this,
+, stream_supervisor_(event_loop_,
+                     this,
                      std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
                      options.backoff_strategy,
-                     options_.max_silent_reconnects)
+                     options_.max_silent_reconnects,
+                     options_.stream_properties,
+                     options_.tenant_id)
 , backlog_query_store_(
       new BacklogQueryStore(options_.info_log,
                             std::bind(&Subscriber::SendMessage, this, _1, _2),

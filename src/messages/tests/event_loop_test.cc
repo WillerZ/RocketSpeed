@@ -236,7 +236,7 @@ TEST_F(EventLoopTest, StreamsFlowControl) {
     ASSERT_TRUE(writable.TimedWait(positive_timeout));
     // The send queue can fit a single message only.
     std::unique_ptr<Message> p = Message::Copy(ping);
-    ASSERT_TRUE(stream->Write(p));
+    ASSERT_TRUE(!stream->Write(p));  // First message would be introduce
     p = Message::Copy(ping);
     ASSERT_TRUE(!stream->Write(p));
     p = Message::Copy(ping);

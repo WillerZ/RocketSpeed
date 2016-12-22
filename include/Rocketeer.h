@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "BackPressure.h"
@@ -36,6 +37,8 @@ class Flow;
 
 typedef unsigned long long int StreamID;
 static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
+
+using StreamProperties = std::unordered_map<std::string, std::string>;
 
 /** Uniquely identifies subscription within a service. */
 class InboundID {
@@ -247,6 +250,27 @@ class Rocketeer {
    * Same as HandleDisconnect, but using return value for flow control.
    */
   virtual BackPressure TryHandleDisconnect(StreamID stream_id);
+
+  /**
+   * Notifies that a stream has Connected.
+   *
+   * Implementations should provide either TryHandleConnect or
+   * HandleConnect, but not both. If both are provided, this version is
+   * ignored.
+   *
+   * @param flow Flow control handle for exerting back-pressure.
+   * @param stream_id The ID of the stream that has been disconnected.
+   * @param properties Map of key(string):value(string) properties
+   */
+  virtual void HandleConnect(Flow* flow,
+                             StreamID stream_id,
+                             StreamProperties properties);
+
+  /**
+   * Same as HandleConnect, but using return value for flow control.
+   */
+  virtual BackPressure TryHandleConnect(StreamID stream_id,
+                                        StreamProperties properties);
 
   /**
    * Sends a message on given subscription.

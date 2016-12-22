@@ -488,6 +488,56 @@ TEST_F(RocketeerDisconnectTest, DisconnectHandler) {
   server_->Stop();
 }
 
+struct ConnectHandler : public Rocketeer {
+  StreamID stream_id_;
+  port::Semaphore subscribe_sem_;
+  port::Semaphore connect_sem_;
+
+  void HandleNewSubscription(Flow*,
+                             InboundID inbound_id,
+                             SubscriptionParameters) override {
+    // stream_id_ should have been set by introduction message
+    ASSERT_EQ(stream_id_, inbound_id.stream_id);
+    subscribe_sem_.Post();
+  }
+
+  void HandleTermination(Flow*,
+                         InboundID inbound_id,
+                         TerminationSource source) override {
+    // Should never receive a termination.
+    ASSERT_TRUE(false);
+  }
+
+  void HandleConnect(Flow*,
+                     StreamID stream_id,
+                     StreamProperties properties) override {
+    stream_id_ = stream_id;
+    connect_sem_.Post();
+  }
+};
+
+TEST_F(RocketeerTest, ConnectHandler) {
+  ConnectHandler rocketeer;
+  server_->Register(&rocketeer);
+  ASSERT_OK(server_->Start());
+  auto server_addr = server_->GetHostId();
+
+  auto client = MockClient(std::map<MessageType, MsgCallbackType>());
+  auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
+  auto subid1 = SubscriptionID::Unsafe(1);
+
+  // Subscribe.
+  MessageSubscribe subscribe(
+      GuestTenant, GuestNamespace, "ConnectHandler", 101, subid1);
+  ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
+
+  ASSERT_TRUE(rocketeer.connect_sem_.TimedWait(positive_timeout));
+  ASSERT_TRUE(rocketeer.subscribe_sem_.TimedWait(positive_timeout));
+
+  // Stop explicitly, as the Rocketeer is destroyed before the Server.
+  server_->Stop();
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

@@ -43,13 +43,18 @@ class ResilientStreamReceiver final : public StreamReceiver {
    * detected as unhealthy or on each healthy message received.
    * @param backoff_strategy Determines the backoff period.
    * @param max_silent_reconnects Reconnect this many times before
+   * @param properties Introduction properties of the stream
+   * @param tenant_id TenantID of the stream
    * notifying the connection_status_cb.
    */
-  ResilientStreamReceiver(EventLoop* event_loop,
-                          ConnectionAwareReceiver* receiver,
-                          HealthStatusCb health_status_cb,
-                          BackOffStrategy backoff_strategy,
-                          size_t max_silent_reconnects);
+  ResilientStreamReceiver(
+      EventLoop* event_loop,
+      ConnectionAwareReceiver* receiver,
+      HealthStatusCb health_status_cb,
+      BackOffStrategy backoff_strategy,
+      size_t max_silent_reconnects,
+      const StreamProperties& properties = StreamProperties(),
+      const TenantID tenant_id = GuestTenant);
 
   /// Establish communication to the provided host. This must be
   /// called at least once. Calling this at any point is allowed and
@@ -68,6 +73,8 @@ class ResilientStreamReceiver final : public StreamReceiver {
   const HealthStatusCb health_status_cb_;
   const BackOffStrategy backoff_strategy_;
   const size_t max_silent_reconnects_;
+  const StreamProperties stream_properties_;
+  const TenantID tenant_id_;
 
   HostId current_host_;
   std::unique_ptr<EventCallback> backoff_timer_;
