@@ -356,6 +356,26 @@ Status ClientImpl::HasMessageSince(
     Epoch epoch,
     SequenceNumber seqno,
     std::function<void(HasMessageSinceResult)> callback) {
+  // DEPRECATED
+  return HasMessageSince(
+      sub_handle,
+      namespace_id,
+      topic,
+      epoch,
+      seqno,
+      [callback = std::move(callback)](HasMessageSinceResult result,
+                                       std::string) mutable {
+        callback(result);
+      });
+}
+
+Status ClientImpl::HasMessageSince(
+    SubscriptionHandle sub_handle,
+    NamespaceID namespace_id,
+    Topic topic,
+    Epoch epoch,
+    SequenceNumber seqno,
+    std::function<void(HasMessageSinceResult, std::string)> callback) {
   RS_ASSERT_DBG(callback);
   if (!callback) {
     return Status::InvalidArgument("No callback provided");

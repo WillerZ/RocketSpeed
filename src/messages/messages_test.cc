@@ -336,7 +336,8 @@ TEST_F(Messaging, MessageBacklogFill) {
   MessageBacklogFill msg1(
       Tenant::GuestTenant, "ns", "topic", "epoch",
       1000100010001000ULL, 2000200020002002ULL,
-      HasMessageSinceResult::kMaybe);
+      HasMessageSinceResult::kMaybe,
+      "hello");
 
   std::string str;
   msg1.Serialize(&str);
@@ -352,6 +353,7 @@ TEST_F(Messaging, MessageBacklogFill) {
   ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
   ASSERT_EQ(msg1.GetNextSequenceNumber(), msg2.GetNextSequenceNumber());
   ASSERT_EQ(msg1.GetResult(), msg2.GetResult());
+  ASSERT_EQ(msg1.GetInfo(), msg2.GetInfo());
 }
 
 TEST_F(Messaging, MessageIntroduction) {

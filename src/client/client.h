@@ -112,6 +112,15 @@ class ClientImpl : public Client {
       SequenceNumber seqno,
       std::function<void(HasMessageSinceResult)> callback) override;
 
+  Status HasMessageSince(
+      SubscriptionHandle sub_handle,
+      NamespaceID namespace_id,
+      Topic topic,
+      Epoch epoch,
+      SequenceNumber seqno,
+      std::function<void(HasMessageSinceResult, std::string)> callback)
+      override;
+
   void SaveSubscriptions(SaveSubscriptionsCallback save_callback) override;
 
   Status RestoreSubscriptions(

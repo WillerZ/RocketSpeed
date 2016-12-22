@@ -954,6 +954,7 @@ Status MessageBacklogFill::Serialize(std::string* out) const {
   PutVarint64(out, prev_seqno_);
   PutVarint64(out, next_seqno_);
   PutFixedEnum8(out, result_);
+  PutLengthPrefixedSlice(out, info_);
   return Status::OK();
 }
 
@@ -978,6 +979,10 @@ Status MessageBacklogFill::DeSerialize(Slice* in) {
   }
   if (!GetFixedEnum8(in, &result_)) {
     return Status::InvalidArgument("Bad result");
+  }
+  if (!GetLengthPrefixedSlice(in, &info_)) {
+    // Info may not be there for backwards compatibility.
+    info_.clear();
   }
   return Status::OK();
 }

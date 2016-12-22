@@ -373,7 +373,14 @@ class Rocketeer {
    * @param epoch The epoch of the starting point of the test.
    * @param seqno The sequence number of the starting point of the test.
    * @param response The result of the query. See HasMessageSinceResult.
+   * @param info Extra info to supply about the result. Ignored by RocketSpeed.
    */
+  virtual void HasMessageSinceResponse(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
+      std::string info);
+
+  // DEPRECATED
   virtual void HasMessageSinceResponse(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response);

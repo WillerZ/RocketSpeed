@@ -419,6 +419,10 @@ class Client {
    * callbacks, and in the same order so that the result is correct for the
    * subscription's position as the application sees it.
    *
+   * The second parameter to the callback is an opaque binary blob provided
+   * by the data source. RocketSpeed ignores this value so interpretation
+   * is up to the implementation.
+   *
    * The lower bound is non-inclusive. A message at (epoch, seqno) will not
    * be considered in the result.
    *
@@ -434,6 +438,15 @@ class Client {
    *         Status::NoBuffer() if the message could not be queued. In this
    *         case the application should try again later.
    */
+  virtual Status HasMessageSince(
+      SubscriptionHandle sub_handle,
+      NamespaceID namespace_id,
+      Topic topic,
+      Epoch epoch,
+      SequenceNumber seqno,
+      std::function<void(HasMessageSinceResult, std::string)> callback) = 0;
+
+  // DEPRECATED
   virtual Status HasMessageSince(
       SubscriptionHandle sub_handle,
       NamespaceID namespace_id,

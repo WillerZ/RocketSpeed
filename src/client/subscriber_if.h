@@ -26,7 +26,7 @@ class HasMessageSinceParams {
   Topic topic;
   Epoch epoch;
   SequenceNumber seqno;
-  std::function<void(HasMessageSinceResult)> callback;
+  std::function<void(HasMessageSinceResult, std::string)> callback;
 };
 
 /**

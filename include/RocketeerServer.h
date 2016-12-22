@@ -200,6 +200,11 @@ class RocketeerServer {
    */
   bool HasMessageSinceResponse(
       InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
+      SequenceNumber seqno, HasMessageSinceResult response, std::string info);
+
+  // DEPRECATED
+  bool HasMessageSinceResponse(
+      InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
       SequenceNumber seqno, HasMessageSinceResult response);
 
   /** Returns server-wide statistics. */

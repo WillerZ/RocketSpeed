@@ -41,7 +41,7 @@ class BacklogQueryStore {
               Topic topic,
               Epoch epoch,
               SequenceNumber seqno,
-              std::function<void(HasMessageSinceResult)> callback);
+              std::function<void(HasMessageSinceResult, std::string)> callback);
 
   /**
    * If any queries are in the kAwaitingSync mode for this subscription ID
@@ -83,7 +83,7 @@ class BacklogQueryStore {
   struct Value {
     SubscriptionID sub_id;
     SequenceNumber seqno;
-    std::function<void(HasMessageSinceResult)> callback;
+    std::function<void(HasMessageSinceResult, std::string)> callback;
   };
 
   void HandlePending(Flow* flow, Key key, Value value);

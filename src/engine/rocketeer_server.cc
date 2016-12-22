@@ -125,6 +125,15 @@ class CommunicationRocketeer : public Rocketeer {
                                Topic topic,
                                Epoch epoch,
                                SequenceNumber seqno,
+                               HasMessageSinceResult response,
+                               std::string info) final override;
+
+  void HasMessageSinceResponse(Flow* flow,
+                               InboundID inbound_id,
+                               NamespaceID namespace_id,
+                               Topic topic,
+                               Epoch epoch,
+                               SequenceNumber seqno,
                                HasMessageSinceResult response) final override;
 
   size_t GetID() const;
@@ -420,16 +429,25 @@ void CommunicationRocketeer::Unsubscribe(Flow* flow,
 
 void CommunicationRocketeer::HasMessageSinceResponse(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
+      std::string info) {
   thread_check_.Check();
 
   if (auto* sub = Find(inbound_id)) {
     auto tenant_id = GetTenant(inbound_id.stream_id);
     auto message = std::make_unique<MessageBacklogFill>(
         tenant_id, std::move(namespace_id), std::move(topic), std::move(epoch),
-        seqno, sub->prev_seqno, response);
+        seqno, sub->prev_seqno, response, std::move(info));
     SendResponse(flow, inbound_id.stream_id, std::move(message));
   }
+}
+
+void CommunicationRocketeer::HasMessageSinceResponse(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
+  // DEPRECATED
+  HasMessageSinceResponse(flow, inbound_id, std::move(namespace_id),
+      std::move(topic), std::move(epoch), seqno, response, "");
 }
 
 size_t CommunicationRocketeer::GetID() const {
@@ -788,19 +806,27 @@ bool RocketeerServer::Unsubscribe(InboundID inbound_id,
 
 bool RocketeerServer::HasMessageSinceResponse(
     InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
-    SequenceNumber seqno, HasMessageSinceResult response) {
+    SequenceNumber seqno, HasMessageSinceResult response, std::string info) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id,
                   namespace_id = std::move(namespace_id),
                   topic = std::move(topic), epoch = std::move(epoch), seqno,
-                  response](Flow* flow) mutable {
+                  response, info = std::move(info)](Flow* flow) mutable {
     rocketeers_[worker_id]->HasMessageSinceResponse(flow, inbound_id,
         std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
-        response);
+        response, std::move(info));
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
       .ok();
+}
+
+bool RocketeerServer::HasMessageSinceResponse(
+    InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
+    SequenceNumber seqno, HasMessageSinceResult response) {
+  // DEPRECATED
+  return HasMessageSinceResponse(inbound_id, std::move(namespace_id),
+      std::move(topic), std::move(epoch), seqno, response, "");
 }
 
 Statistics RocketeerServer::GetStatisticsSync() const {

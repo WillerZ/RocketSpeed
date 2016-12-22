@@ -1031,14 +1031,16 @@ class MessageBacklogFill : public Message {
                               Epoch epoch,
                               SequenceNumber prev_seqno,
                               SequenceNumber next_seqno,
-                              HasMessageSinceResult result)
+                              HasMessageSinceResult result,
+                              std::string info)
   : Message(MessageType::mBacklogFill, tenantid)
   , namespace_id_(std::move(namespace_id))
   , topic_(std::move(topic))
   , epoch_(std::move(epoch))
   , prev_seqno_(prev_seqno)
   , next_seqno_(next_seqno)
-  , result_(result) {}
+  , result_(result)
+  , info_(std::move(info)) {}
 
   Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
@@ -1059,6 +1061,8 @@ class MessageBacklogFill : public Message {
   /** see HasMessageSinceResult. */
   HasMessageSinceResult GetResult() const { return result_; }
 
+  const std::string& GetInfo() const { return info_; }
+
  private:
   NamespaceID namespace_id_;
   Topic topic_;
@@ -1066,6 +1070,7 @@ class MessageBacklogFill : public Message {
   SequenceNumber prev_seqno_;
   SequenceNumber next_seqno_;
   HasMessageSinceResult result_;
+  std::string info_;
 };
 
 /**

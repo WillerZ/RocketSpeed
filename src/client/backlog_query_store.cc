@@ -31,7 +31,7 @@ void BacklogQueryStore::Insert(
     Topic topic,
     Epoch epoch,
     SequenceNumber seqno,
-    std::function<void(HasMessageSinceResult)> callback) {
+    std::function<void(HasMessageSinceResult, std::string)> callback) {
   // Add a pending request.
   // This will be sent to the server later (see HandlePending).
   Key key { std::move(namespace_id), std::move(topic), std::move(epoch) };
@@ -75,7 +75,7 @@ void BacklogQueryStore::ProcessBacklogFill(const MessageBacklogFill& msg) {
       // kNo and the sequence number range covers a greater range than the query
       // then the fill can answer multiple queries at once.
       if (msg.GetPrevSequenceNumber() == seqno) {
-        it2->callback(msg.GetResult());
+        it2->callback(msg.GetResult(), msg.GetInfo());
         it2 = it->second.erase(it2);
       } else {
         ++it2;

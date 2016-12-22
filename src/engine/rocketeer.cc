@@ -259,7 +259,17 @@ void Rocketeer::Unsubscribe(Flow* flow,
 
 void Rocketeer::HasMessageSinceResponse(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
+      std::string info) {
+  GetBelowRocketeer()->HasMessageSinceResponse(flow, inbound_id,
+      std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
+      response, std::move(info));
+}
+
+void Rocketeer::HasMessageSinceResponse(
+      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
+  // DEPRECATED
   GetBelowRocketeer()->HasMessageSinceResponse(flow, inbound_id,
       std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
       response);
