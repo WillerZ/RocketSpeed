@@ -15,8 +15,10 @@ fi
 
 cat > "${OUTFILE}" <<EOF
 #include "build_version.h"
-const char* rocketspeed_build_git_sha = "rocketspeed_build_git_sha:${GIT_SHA}";
-const char* rocketspeed_build_git_datetime = "rocketspeed_build_git_datetime:$(date)";
+const char* rocketspeed_build_git_sha =
+    "rocketspeed_build_git_sha:${GIT_SHA}";
+const char* rocketspeed_build_git_datetime =
+    "rocketspeed_build_git_datetime:$(date)";
 const char* rocketspeed_build_compile_date = __DATE__;
 const char* rocketspeed_build_compile_time = __TIME__;
 EOF
