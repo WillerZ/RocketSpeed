@@ -567,8 +567,8 @@ void ClientTest::NotifyShardUnhealthyOnHBTimeout(bool use_deltas) {
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             client_stream = origin;
           }}},
-      std::chrono::milliseconds(0),
-      use_deltas); // disable heartbeats
+      std::chrono::milliseconds(0), // disable heartbeats
+      use_deltas);
   copilot_ptr = copilot.msg_loop.get();
 
   ClientOptions options;

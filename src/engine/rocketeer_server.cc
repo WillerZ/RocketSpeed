@@ -645,17 +645,17 @@ size_t RocketeerServer::Register(Rocketeer* rocketeer) {
 
 Status RocketeerServer::Start() {
   MsgLoop::Options msg_loop_options;
-  msg_loop_options.event_loop.heartbeat_period = options_.heartbeat_period;
-  msg_loop_options.event_loop.command_queue_size = options_.queue_size;
-  msg_loop_options.event_loop.socket_timeout = options_.socket_timeout;
-  msg_loop_options.event_loop.use_heartbeat_deltas =
-      options_.use_heartbeat_deltas;
-
-  msg_loop_options.event_loop.enable_throttling = options_.enable_throttling;
-  msg_loop_options.event_loop.enable_batching = options_.enable_batching;
-  msg_loop_options.event_loop.throttler_policy =
+  auto& eopts = msg_loop_options.event_loop;
+  eopts.heartbeat_period = options_.heartbeat_period;
+  eopts.heartbeat_timeout = std::chrono::milliseconds(0);  // not a client
+  eopts.command_queue_size = options_.queue_size;
+  eopts.socket_timeout = options_.socket_timeout;
+  eopts.use_heartbeat_deltas = options_.use_heartbeat_deltas;
+  eopts.enable_throttling = options_.enable_throttling;
+  eopts.enable_batching = options_.enable_batching;
+  eopts.throttler_policy =
       DeliveryThrottler::Policy(options_.rate_limit, options_.rate_duration);
-  msg_loop_options.event_loop.batcher_policy = DeliveryBatcher::Policy(
+  eopts.batcher_policy = DeliveryBatcher::Policy(
       options_.batch_max_limit, options_.batch_max_duration);
 
   msg_loop_.reset(new MsgLoop(options_.env,

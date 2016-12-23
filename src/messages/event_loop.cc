@@ -382,7 +382,8 @@ EventLoop::Initialize() {
     std::make_shared<UnboundedMPSCCommandQueue>(info_log_, queue_stats_);
   AddControlCommandQueue(control_command_queue_);
 
-  if (options_.heartbeat_period.count() > 0) {
+  const auto heartbeat_period = options_.heartbeat_period;
+  if (heartbeat_period.count() > 0) {
     auto send_heartbeats = [this]() {
       auto now = MessageHeartbeat::Clock::now();
       for (const auto& kv : stream_id_to_stream_) {
@@ -391,11 +392,44 @@ EventLoop::Initialize() {
       stats_.hbs_sent->Add(stream_id_to_stream_.size());
     };
 
+    auto flush_heartbeats = [this]() {
+      for (auto& entry : owned_connections_) {
+        if (entry.second->IsInbound()) {
+          entry.second->FlushCapturedHeartbeats();
+        }
+      }
+    };
+
     // divide by 2 to ensure we're within the period even
     // after some overhead drift
-    hb_timer_ = RegisterTimerCallback(send_heartbeats,
-                                      options_.heartbeat_period / 2);
-    RS_ASSERT(hb_timer_);
+    heartbeat_send_timer_ =
+        RegisterTimerCallback(send_heartbeats, heartbeat_period / 2);
+
+    // flush captured heartbeats
+    heartbeat_flush_timer_ =
+        RegisterTimerCallback(flush_heartbeats, heartbeat_period);
+
+    RS_ASSERT(heartbeat_send_timer_);
+    RS_ASSERT(heartbeat_flush_timer_);
+  }
+
+  const auto heartbeat_timeout = options_.heartbeat_timeout;
+  if (heartbeat_timeout.count() > 0) {
+    auto check_heartbeats = [this]() {
+      for (auto& entry : owned_connections_) {
+        if (!entry.second->IsInbound()) {
+          entry.second->CheckHeartbeats();
+        }
+      }
+    };
+
+    // Timer to check heartbeat timeouts.
+    // Checked every 1/10th of the timeout so that delay is at most 10% more
+    // than the period.
+    heartbeat_check_timer_ =
+        RegisterTimerCallback(check_heartbeats, heartbeat_timeout / 10);
+
+    RS_ASSERT(heartbeat_check_timer_);
   }
 
   return Status::OK();

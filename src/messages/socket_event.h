@@ -152,6 +152,17 @@ class SocketEvent : public Source<MessageOnStream>,
   void SendHeartbeat(StreamID stream_id,
                      MessageHeartbeat::Clock::time_point hb_time);
 
+  /**
+   * Construct an aggregate heartbeat from those seen and write this
+   * to the socket.
+   */
+  void FlushCapturedHeartbeats();
+
+  /**
+   * Check for streams that haven't received a heartbeat.
+   */
+  void CheckHeartbeats();
+
  private:
   ThreadCheck thread_check_;
 
@@ -183,8 +194,6 @@ class SocketEvent : public Source<MessageOnStream>,
   int fd_;
   std::unique_ptr<EventCallback> read_ev_;
   std::unique_ptr<EventCallback> write_ev_;
-
-  std::unique_ptr<EventCallback> hb_timer_;
 
   /** An EventTrigger to notify that the sink has some spare capacity. */
   EventTrigger write_ready_;
@@ -283,11 +292,6 @@ class SocketEvent : public Source<MessageOnStream>,
   bool EnqueueWrite(SerializedOnStream& value);
 
   /**
-   * Check for streams that haven't received a heartbeat.
-   */
-  void CheckHeartbeats();
-
-  /**
    * Delivers heartbeats for a set of streams.
    */
   void DeliverHeartbeats(const MessageHeartbeat::StreamSet& streams);
@@ -302,12 +306,6 @@ class SocketEvent : public Source<MessageOnStream>,
    * heartbeat.
    */
   void CaptureHeartbeat(const MessageHeartbeat& value);
-
-  /**
-   * Construct an aggregate heartbeat from those seen and write this
-   * to the socket.
-   */
-  void FlushCapturedHeartbeats();
 
   /** A scheduler for batching events */
   std::shared_ptr<ScheduledExecutor> batching_scheduler_;

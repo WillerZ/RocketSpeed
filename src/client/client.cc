@@ -122,6 +122,10 @@ Status ClientImpl::Create(ClientOptions options,
   MsgLoop::Options m_opts;
   m_opts.event_loop.connection_without_streams_keepalive =
     options.connection_without_streams_keepalive;
+
+  // Client never needs to send heartbeats.
+  m_opts.event_loop.heartbeat_period = std::chrono::milliseconds(0);
+
   m_opts.event_loop.heartbeat_timeout = options.heartbeat_timeout;
   std::unique_ptr<MsgLoop> msg_loop(new MsgLoop(options.env,
                                                 options.env_options,

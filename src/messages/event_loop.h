@@ -684,7 +684,9 @@ class EventLoop {
   std::unordered_map<StreamID, Sink<std::unique_ptr<Message>>*>
       stream_id_to_sink_;
 
-  std::unique_ptr<EventCallback> hb_timer_;
+  std::unique_ptr<EventCallback> heartbeat_send_timer_;
+  std::unique_ptr<EventCallback> heartbeat_flush_timer_;
+  std::unique_ptr<EventCallback> heartbeat_check_timer_;
 
   /**
    * A map of all streams owned by the loop.

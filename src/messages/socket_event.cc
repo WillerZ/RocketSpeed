@@ -202,7 +202,6 @@ SocketEvent::~SocketEvent() {
 
   read_ev_.reset();
   write_ev_.reset();
-  hb_timer_.reset();
   close(fd_);
 }
 
@@ -377,24 +376,6 @@ SocketEvent::SocketEvent(EventLoop* event_loop,
 
   // Socket's send_queue is empty, so the sink is writable.
   event_loop_->Notify(write_ready_);
-
-  if (IsInbound()) {
-    auto period = event_loop_->GetOptions().heartbeat_period;
-    if (period.count() > 0) {
-      // setup timer to send aggregated heartbeats
-      hb_timer_ = event_loop_->RegisterTimerCallback(
-        std::bind(&SocketEvent::FlushCapturedHeartbeats, this),
-        period);
-    }
-  } else {
-    // setup timer to check timeout list
-    auto timeout = event_loop_->GetOptions().heartbeat_timeout;
-    if (timeout.count() > 0) {
-      hb_timer_ = event_loop_->RegisterTimerCallback(
-        std::bind(&SocketEvent::CheckHeartbeats, this),
-        timeout / 10);          // check every 1/10th of the timeout
-    }
-  }
 
   // Start a scheduler which ticks every 5 ms
   if (event_loop_->GetOptions().enable_batching) {
