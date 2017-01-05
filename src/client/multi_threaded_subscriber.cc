@@ -7,8 +7,6 @@
 #include "multi_threaded_subscriber.h"
 
 #include <chrono>
-#include <cmath>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <random>

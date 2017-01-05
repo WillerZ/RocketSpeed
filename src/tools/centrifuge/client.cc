@@ -10,7 +10,6 @@
 #include "src/util/pacer.h"
 #include <gflags/gflags.h>
 #include <thread>
-#include <cstdlib>
 
 namespace rocketspeed {
 

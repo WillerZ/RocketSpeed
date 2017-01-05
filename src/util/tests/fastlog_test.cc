@@ -7,7 +7,6 @@
 #include <cmath>
 
 #include "src/util/testharness.h"
-#include "src/util/testutil.h"
 
 #include "external/fastlog/fastlog.h"
 

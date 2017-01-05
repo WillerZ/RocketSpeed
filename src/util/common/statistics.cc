@@ -8,7 +8,6 @@
 #include <cmath>
 
 #include <algorithm>
-#include <limits>
 #include <string>
 
 #include "include/Types.h"

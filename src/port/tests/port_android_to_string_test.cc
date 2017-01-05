@@ -7,7 +7,6 @@
 #include <string>
 
 #include "src/util/testharness.h"
-#include "src/port/port.h"
 
 namespace rocketspeed {
 

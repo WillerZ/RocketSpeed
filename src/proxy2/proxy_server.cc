@@ -4,7 +4,6 @@
 /// of patent rights can be found in the PATENTS file in the same directory.
 #include "src/proxy2/proxy_server.h"
 
-#include <cassert>
 #include <chrono>
 #include <memory>
 #include <utility>

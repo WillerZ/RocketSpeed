@@ -6,7 +6,6 @@
 #include "type_conversions.h"
 
 #include <cstdint>
-#include <memory>
 #include <limits>
 #include <string>
 #include <vector>
@@ -19,7 +18,6 @@
 #include "src-gen/djinni/cpp/LogLevel.hpp"
 #include "src-gen/djinni/cpp/Status.hpp"
 #include "src-gen/djinni/cpp/StatusCode.hpp"
-#include "src-gen/djinni/cpp/StorageType.hpp"
 
 namespace rocketspeed {
 namespace djinni {

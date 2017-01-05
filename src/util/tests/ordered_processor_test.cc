@@ -3,9 +3,6 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 
-#define __STDC_FORMAT_MACROS
-#include <atomic>
-
 #include "src/util/testharness.h"
 #include "src/util/testutil.h"
 #include "src/util/common/ordered_processor.h"

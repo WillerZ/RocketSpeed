@@ -6,7 +6,6 @@
 #define __STDC_FORMAT_MACROS
 #include "event_loop.h"
 
-#include <limits.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
@@ -118,8 +117,8 @@ void EventLoop::HandleSendCommand(Flow* flow,
                                                  new_stream.get());
       RS_ASSERT(result.second);
       it = result.first;
-      auto result1 =
-          owned_streams_.emplace(new_stream.get(), std::move(new_stream));
+      auto *p = new_stream.get();
+      auto result1 = owned_streams_.emplace(p, std::move(new_stream));
       (void)result1;
       RS_ASSERT(result1.second);
     }

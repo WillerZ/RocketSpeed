@@ -5,8 +5,6 @@
 //
 #include "src/messages/queues.h"
 
-#include <atomic>
-
 #include "include/Logger.h"
 #include "src/messages/commands.h"
 #include "src/messages/event_loop.h"

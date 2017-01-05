@@ -719,8 +719,8 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
       RS_ASSERT(result.second);
       it = result.first;
       // Make the SocketEvent own it.
-      auto result1 =
-          owned_streams_.emplace(owned_stream.get(), std::move(owned_stream));
+      auto *p = owned_stream.get();
+      auto result1 = owned_streams_.emplace(p, std::move(owned_stream));
       RS_ASSERT(result1.second);
       (void)result1;
       CreateDeliverySinks(remote_id);
