@@ -267,13 +267,6 @@ class Rocketeer {
                        std::string payload,
                        MsgId msg_id = MsgId());
 
-  /** DEPRECATED */
-  virtual void Deliver(Flow* flow,
-                       InboundID inbound_id,
-                       SequenceNumber seqno,
-                       std::string payload,
-                       MsgId msg_id = MsgId());
-
   /**
    * Sends a batch of messages on multiple subscriptions.
    * This method needs to be called on the thread this instance runs on.
@@ -305,9 +298,6 @@ class Rocketeer {
                        Topic topic,
                        SequenceNumber seqno);
 
-  // DEPRECATED
-  virtual void Advance(Flow* flow, InboundID inbound_id, SequenceNumber seqno);
-
   /**
    * Same as Advance but triggers DataLoss callback on the client's observer.
    *
@@ -319,32 +309,6 @@ class Rocketeer {
                               Topic topic,
                               SequenceNumber seqno);
 
-  // DEPRECATED
-  virtual void NotifyDataLoss(Flow* flow,
-                              InboundID inbound_id,
-                              SequenceNumber seqno);
-
-  /**
-   * DEPRECATED
-   *
-   * Terminates given subscription.
-   * This method needs to be called on the thread this instance runs on.
-   *
-   * @param inbound_id ID of the subscription to terminate.
-   * @param reason A reason why this subscription was terminated.
-   * @return true iff operation was successfully scheduled.
-   */
-  enum class UnsubscribeReason {
-    /** The unsubscribe was requested by the subscriber. */
-    Requested,
-
-    /** The subscription parameters are invalid and cannot be served. */
-    Invalid,
-  };
-  virtual void Terminate(Flow* flow,
-                         InboundID inbound_id,
-                         UnsubscribeReason reason);
-
   /**
    * Unsubscribes given subscription.
    * This method needs to be called on the thread this instance runs on.
@@ -355,6 +319,13 @@ class Rocketeer {
    * @param reason A reason why this subscription was unsubscribed.
    * @return true iff operation was successfully scheduled.
    */
+  enum class UnsubscribeReason {
+    /** The unsubscribe was requested by the subscriber. */
+    Requested,
+
+    /** The subscription parameters are invalid and cannot be served. */
+    Invalid,
+  };
   virtual void Unsubscribe(Flow* flow,
                            InboundID inbound_id,
                            NamespaceID namespace_id,
@@ -379,11 +350,6 @@ class Rocketeer {
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
       Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
       std::string info);
-
-  // DEPRECATED
-  virtual void HasMessageSinceResponse(
-      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response);
 
   /**
    * Returns a pointer to the Rocketeer below this one in the stack, which

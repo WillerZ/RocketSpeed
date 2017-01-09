@@ -133,12 +133,6 @@ class RocketeerServer {
                std::string payload,
                MsgId msg_id = MsgId());
 
-  /** DEPRECATED */
-  bool Deliver(InboundID inbound_id,
-               SequenceNumber seqno,
-               std::string payload,
-               MsgId msg_id = MsgId());
-
   /**
    * A thread-safe version of Rocketeer::DeliverBatch.
    *
@@ -158,11 +152,8 @@ class RocketeerServer {
                Topic topic,
                SequenceNumber seqno);
 
-  // DEPRECATED
-  bool Advance(InboundID inbound_id, SequenceNumber seqno);
-
   /**
-   * A thread-safe version of Rocketeer::NotifyDataLoss.
+  * A thread-safe version of Rocketeer::NotifyDataLoss.
    *
    * @return true iff operation was successfully scheduled.
    */
@@ -170,18 +161,6 @@ class RocketeerServer {
                       NamespaceID namespace_id,
                       Topic topic,
                       SequenceNumber seqno);
-
-  // DEPRECATED
-  bool NotifyDataLoss(InboundID inbound_id, SequenceNumber seqno);
-
-  /**
-   * DEPRECATED
-   *
-   * A thread-safe version of Rocketeer::Terminate.
-   *
-   * @return true iff operation was successfully scheduled.
-   */
-  bool Terminate(InboundID inbound_id, Rocketeer::UnsubscribeReason reason);
 
   /**
    * A thread-safe version of Rocketeer::Unsubscribe.
@@ -201,11 +180,6 @@ class RocketeerServer {
   bool HasMessageSinceResponse(
       InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
       SequenceNumber seqno, HasMessageSinceResult response, std::string info);
-
-  // DEPRECATED
-  bool HasMessageSinceResponse(
-      InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
-      SequenceNumber seqno, HasMessageSinceResult response);
 
   /** Returns server-wide statistics. */
   // DEPRECATED

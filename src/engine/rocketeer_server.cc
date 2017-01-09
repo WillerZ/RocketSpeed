@@ -72,12 +72,6 @@ class CommunicationRocketeer : public Rocketeer {
 
   void Deliver(Flow* flow,
                InboundID inbound_id,
-               SequenceNumber seqno,
-               std::string payload,
-               MsgId msg_id = MsgId()) final override;
-
-  void Deliver(Flow* flow,
-               InboundID inbound_id,
                NamespaceID namespace_id,
                Topic topic,
                SequenceNumber seqno,
@@ -94,23 +88,11 @@ class CommunicationRocketeer : public Rocketeer {
                Topic topic,
                SequenceNumber seqno) final override;
 
-  void Advance(Flow* flow,
-               InboundID inbound_id,
-               SequenceNumber seqno) final override;
-
   void NotifyDataLoss(Flow* flow,
                       InboundID inbound_id,
                       NamespaceID namespace_id,
                       Topic topic,
                       SequenceNumber seqno) final override;
-
-  void NotifyDataLoss(Flow* flow,
-                      InboundID inbound_id,
-                      SequenceNumber seqno) final override;
-
-  void Terminate(Flow* flow,
-                 InboundID inbound_id,
-                 UnsubscribeReason reason) final override;
 
   void Unsubscribe(Flow* flow,
                    InboundID inbound_id,
@@ -127,14 +109,6 @@ class CommunicationRocketeer : public Rocketeer {
                                SequenceNumber seqno,
                                HasMessageSinceResult response,
                                std::string info) final override;
-
-  void HasMessageSinceResponse(Flow* flow,
-                               InboundID inbound_id,
-                               NamespaceID namespace_id,
-                               Topic topic,
-                               Epoch epoch,
-                               SequenceNumber seqno,
-                               HasMessageSinceResult response) final override;
 
   size_t GetID() const;
 
@@ -230,15 +204,6 @@ void CommunicationRocketeer::HandleHasMessageSince(
 
 void CommunicationRocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
   above_rocketeer_->HandleDisconnect(flow, stream_id);
-}
-
-void CommunicationRocketeer::Deliver(Flow* flow,
-                                     InboundID inbound_id,
-                                     SequenceNumber seqno,
-                                     std::string payload,
-                                     MsgId msg_id) {
-  // DEPRECATED
-  Deliver(flow, inbound_id, "", "", seqno, std::move(payload), msg_id);
 }
 
 void CommunicationRocketeer::Deliver(Flow* flow,
@@ -342,13 +307,6 @@ void CommunicationRocketeer::SendGapMessage(Flow* flow,
 
 void CommunicationRocketeer::Advance(Flow* flow,
                                      InboundID inbound_id,
-                                     SequenceNumber seqno) {
-  // DEPRECATED
-  Advance(flow, inbound_id, "", "", seqno);
-}
-
-void CommunicationRocketeer::Advance(Flow* flow,
-                                     InboundID inbound_id,
                                      NamespaceID namespace_id,
                                      Topic topic,
                                      SequenceNumber seqno) {
@@ -358,27 +316,11 @@ void CommunicationRocketeer::Advance(Flow* flow,
 
 void CommunicationRocketeer::NotifyDataLoss(Flow* flow,
                                             InboundID inbound_id,
-                                            SequenceNumber seqno) {
-  // DEPRECATED
-  SendGapMessage(flow, inbound_id, "", "", seqno, GapType::kDataLoss);
-}
-
-void CommunicationRocketeer::NotifyDataLoss(Flow* flow,
-                                            InboundID inbound_id,
                                             NamespaceID namespace_id,
                                             Topic topic,
                                             SequenceNumber seqno) {
   SendGapMessage(flow, inbound_id, std::move(namespace_id), std::move(topic),
       seqno, GapType::kDataLoss);
-}
-
-void CommunicationRocketeer::Terminate(Flow* flow,
-                                       InboundID inbound_id,
-                                       UnsubscribeReason reason) {
-  // Using empty namespace and topic here.
-  // This method is deprecated and will be removed once users switch to
-  // version with topic.
-  Unsubscribe(flow, inbound_id, "", "", reason);
 }
 
 void CommunicationRocketeer::Unsubscribe(Flow* flow,
@@ -440,14 +382,6 @@ void CommunicationRocketeer::HasMessageSinceResponse(
         seqno, sub->prev_seqno, response, std::move(info));
     SendResponse(flow, inbound_id.stream_id, std::move(message));
   }
-}
-
-void CommunicationRocketeer::HasMessageSinceResponse(
-      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
-  // DEPRECATED
-  HasMessageSinceResponse(flow, inbound_id, std::move(namespace_id),
-      std::move(topic), std::move(epoch), seqno, response, "");
 }
 
 size_t CommunicationRocketeer::GetID() const {
@@ -689,26 +623,18 @@ void RocketeerServer::Stop() {
 }
 
 bool RocketeerServer::Deliver(InboundID inbound_id,
-                              SequenceNumber seqno,
-                              std::string payload,
-                              MsgId msg_id) {
-  // DEPRECATED
-  return Deliver(inbound_id, "", "", seqno, std::move(payload), msg_id);
-}
-
-bool RocketeerServer::Deliver(InboundID inbound_id,
                               NamespaceID namespace_id,
                               Topic topic,
                               SequenceNumber seqno,
                               std::string payload,
                               MsgId msg_id) {
-  (void)namespace_id;
-  (void)topic;
   auto worker_id = GetWorkerID(inbound_id);
-  auto command = [this, worker_id, inbound_id, seqno,
-      payload = std::move(payload), msg_id](Flow* flow) mutable {
+  auto command = [this, worker_id, inbound_id,
+                  namespace_id = std::move(namespace_id),
+                  topic = std::move(topic), seqno,
+                  payload = std::move(payload), msg_id](Flow* flow) mutable {
     rocketeers_[worker_id]->Deliver(
-        flow, inbound_id, seqno, std::move(payload), msg_id);
+        flow, inbound_id, namespace_id, topic, seqno, std::move(payload), msg_id);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
@@ -743,16 +669,6 @@ bool RocketeerServer::Advance(InboundID inbound_id, NamespaceID namespace_id,
       .ok();
 }
 
-bool RocketeerServer::Advance(InboundID inbound_id, SequenceNumber seqno) {
-  auto worker_id = GetWorkerID(inbound_id);
-  auto command = [this, worker_id, inbound_id, seqno](Flow* flow) mutable {
-    rocketeers_[worker_id]->Advance(flow, inbound_id, seqno);
-  };
-  return msg_loop_
-      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
-      .ok();
-}
-
 bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
     NamespaceID namespace_id, Topic topic, SequenceNumber seqno) {
   auto worker_id = GetWorkerID(inbound_id);
@@ -761,27 +677,6 @@ bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
                   topic = std::move(topic), seqno](Flow* flow) mutable {
     rocketeers_[worker_id]->NotifyDataLoss(flow, inbound_id,
         std::move(namespace_id), std::move(topic), seqno);
-  };
-  return msg_loop_
-      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
-      .ok();
-}
-
-bool RocketeerServer::NotifyDataLoss(InboundID inbound_id, SequenceNumber seqno) {
-  auto worker_id = GetWorkerID(inbound_id);
-  auto command = [this, worker_id, inbound_id, seqno](Flow* flow) mutable {
-    rocketeers_[worker_id]->NotifyDataLoss(flow, inbound_id, seqno);
-  };
-  return msg_loop_
-      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
-      .ok();
-}
-
-bool RocketeerServer::Terminate(InboundID inbound_id,
-                                Rocketeer::UnsubscribeReason reason) {
-  auto worker_id = GetWorkerID(inbound_id);
-  auto command = [this, worker_id, inbound_id, reason](Flow* flow) mutable {
-    rocketeers_[worker_id]->Terminate(flow, inbound_id, reason);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
@@ -819,14 +714,6 @@ bool RocketeerServer::HasMessageSinceResponse(
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
       .ok();
-}
-
-bool RocketeerServer::HasMessageSinceResponse(
-    InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
-    SequenceNumber seqno, HasMessageSinceResult response) {
-  // DEPRECATED
-  return HasMessageSinceResponse(inbound_id, std::move(namespace_id),
-      std::move(topic), std::move(epoch), seqno, response, "");
 }
 
 Statistics RocketeerServer::GetStatisticsSync() const {

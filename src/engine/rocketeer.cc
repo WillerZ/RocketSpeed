@@ -194,16 +194,6 @@ void Rocketeer::Deliver(Flow* flow,
       std::move(payload), msg_id);
 }
 
-void Rocketeer::Deliver(Flow* flow,
-                        InboundID inbound_id,
-                        SequenceNumber seqno,
-                        std::string payload,
-                        MsgId msg_id) {
-  // DEPRECATED
-  GetBelowRocketeer()->Deliver(
-      flow, inbound_id, seqno, std::move(payload), msg_id);
-}
-
 void Rocketeer::DeliverBatch(Flow* flow,
                              StreamID stream_id,
                              std::vector<RocketeerMessage> messages) {
@@ -219,13 +209,6 @@ void Rocketeer::Advance(Flow* flow,
       std::move(topic), seqno);
 }
 
-void Rocketeer::Advance(Flow* flow,
-                        InboundID inbound_id,
-                        SequenceNumber seqno) {
-  // DEPRECATED
-  GetBelowRocketeer()->Advance(flow, inbound_id, seqno);
-}
-
 void Rocketeer::NotifyDataLoss(Flow* flow,
                                InboundID inbound_id,
                                NamespaceID namespace_id,
@@ -233,19 +216,6 @@ void Rocketeer::NotifyDataLoss(Flow* flow,
                                SequenceNumber seqno) {
   GetBelowRocketeer()->NotifyDataLoss(flow, inbound_id, std::move(namespace_id),
       std::move(topic), seqno);
-}
-
-void Rocketeer::NotifyDataLoss(Flow* flow,
-                               InboundID inbound_id,
-                               SequenceNumber seqno) {
-  // DEPRECATED
-  GetBelowRocketeer()->NotifyDataLoss(flow, inbound_id, seqno);
-}
-
-void Rocketeer::Terminate(Flow* flow,
-                          InboundID inbound_id,
-                          UnsubscribeReason reason) {
-  GetBelowRocketeer()->Terminate(flow, inbound_id, reason);
 }
 
 void Rocketeer::Unsubscribe(Flow* flow,
@@ -264,15 +234,6 @@ void Rocketeer::HasMessageSinceResponse(
   GetBelowRocketeer()->HasMessageSinceResponse(flow, inbound_id,
       std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
       response, std::move(info));
-}
-
-void Rocketeer::HasMessageSinceResponse(
-      Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response) {
-  // DEPRECATED
-  GetBelowRocketeer()->HasMessageSinceResponse(flow, inbound_id,
-      std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
-      response);
 }
 
 }  // namespace rocketspeed
