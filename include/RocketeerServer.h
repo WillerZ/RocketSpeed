@@ -153,7 +153,7 @@ class RocketeerServer {
                SequenceNumber seqno);
 
   /**
-  * A thread-safe version of Rocketeer::NotifyDataLoss.
+   * A thread-safe version of Rocketeer::NotifyDataLoss.
    *
    * @return true iff operation was successfully scheduled.
    */

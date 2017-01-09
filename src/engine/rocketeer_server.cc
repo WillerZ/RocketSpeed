@@ -634,7 +634,8 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
                   topic = std::move(topic), seqno,
                   payload = std::move(payload), msg_id](Flow* flow) mutable {
     rocketeers_[worker_id]->Deliver(
-        flow, inbound_id, namespace_id, topic, seqno, std::move(payload), msg_id);
+        flow, inbound_id, std::move(namespace_id),
+        std::move(topic), seqno, std::move(payload), msg_id);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
