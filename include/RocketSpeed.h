@@ -9,7 +9,6 @@
 #include <functional>
 #include <memory>
 #include <random>
-#include <unordered_map>
 #include <vector>
 
 #include "EnvOptions.h"
@@ -50,9 +49,6 @@ using ClientRNG = std::mt19937_64;
 /// attempting to reconnect.
 using BackOffStrategy =
     std::function<std::chrono::milliseconds(ClientRNG*, size_t retry)>;
-
-/// Properties to send to the server while establishing a connection
-using StreamProperties = std::unordered_map<std::string, std::string>;
 
 /// Various strategies.
 namespace backoff {
@@ -191,8 +187,8 @@ class ClientOptions {
   // Default: 10 seconds
   std::chrono::milliseconds inactive_stream_linger;
 
-  // A map of properties (key:value) provided by the client to the server
-  // while establishing a connection
+  // A map of properties (key:value) provided by the client to introduce itself
+  // to the server.
   // The properties are known by both client and server defined by the
   // application.
   StreamProperties stream_properties;

@@ -42,6 +42,8 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
     const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
 : options_(options)
 , msg_loop_(std::move(msg_loop))
+, stream_descriptor_(std::make_shared<const StreamDescriptor>(
+      options_.stream_properties, options_.tenant_id))
 , allocator_(msg_loop_->GetNumWorkers(), options_.allocator_size) {
   size_t max_subscriptions_per_thread =
       options_.max_subscriptions / options_.num_workers;
@@ -57,7 +59,8 @@ MultiThreadedSubscriber::MultiThreadedSubscriber(
         event_loop,
         statistics_.back(),
         max_subscriptions_per_thread +
-            ((static_cast<size_t>(i) < remaining_subscriptions) ? 1 : 0)));
+            ((static_cast<size_t>(i) < remaining_subscriptions) ? 1 : 0),
+        stream_descriptor_));
     subscriber_queues_.emplace_back(
         new UnboundedMPSCQueue<std::unique_ptr<ExecuteCommand>>(
             options_.info_log,

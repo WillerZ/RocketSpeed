@@ -10,7 +10,6 @@
 #include <limits>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "BackPressure.h"
@@ -37,8 +36,6 @@ class Flow;
 
 typedef unsigned long long int StreamID;
 static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
-
-using StreamProperties = std::unordered_map<std::string, std::string>;
 
 /** Uniquely identifies subscription within a service. */
 class InboundID {
@@ -252,7 +249,10 @@ class Rocketeer {
   virtual BackPressure TryHandleDisconnect(StreamID stream_id);
 
   /**
-   * Notifies that a stream has Connected.
+   * Notifies that a stream has connected.
+   *
+   * HandleConnect for a stream is guaranteed to be called before
+   * any other callbacks for that stream.
    *
    * Implementations should provide either TryHandleConnect or
    * HandleConnect, but not both. If both are provided, this version is

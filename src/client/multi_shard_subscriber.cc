@@ -43,13 +43,15 @@ MultiShardSubscriber::MultiShardSubscriber(
     const ClientOptions& options,
     EventLoop* event_loop,
     std::shared_ptr<SubscriberStats> stats,
-    size_t max_active_subscriptions)
+    size_t max_active_subscriptions,
+    std::shared_ptr<const StreamDescriptor> stream_descriptor)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
 , last_router_version_(options_.sharding->GetVersion())
 , max_active_subscriptions_(max_active_subscriptions)
-, num_active_subscriptions_(std::make_shared<size_t>(0)) {
+, num_active_subscriptions_(std::make_shared<size_t>(0))
+, stream_descriptor_(stream_descriptor) {
   // Periodically check for new router versions.
   maintenance_timer_ = event_loop_->CreateTimedEventCallback(
     [this]() {
@@ -147,7 +149,8 @@ void MultiShardSubscriber::StartSubscription(
                        stats_,
                        shard_id,
                        max_active_subscriptions_,
-                       num_active_subscriptions_));
+                       num_active_subscriptions_,
+                       stream_descriptor_));
     if (options_.collapse_subscriptions_to_tail) {
       // TODO(t10132320)
       RS_ASSERT_DBG(parameters.start_seqno == 0);

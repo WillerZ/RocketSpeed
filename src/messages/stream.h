@@ -124,7 +124,7 @@ class Stream : public Sink<std::unique_ptr<Message>> {
    * Introduction message to be sent before the first message on the stream
    * The message gets destroyed once the server has sent the message.
    */
-  std::unique_ptr<MessageIntroduction> introduction_message_ = nullptr;
+  std::unique_ptr<MessageIntroduction> introduction_message_;
 };
 
 }  // namespace rocketspeed

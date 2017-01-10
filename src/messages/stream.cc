@@ -105,8 +105,9 @@ bool Stream::Write(std::unique_ptr<Message>& value) {
   // The stream is not created until we have sent a message on the stream
   // other than "goodbye". So, if it's the first message and not a goodbye
   // we send an introduction message.
-  if (introduction_message_ && type != MessageType::mGoodbye &&
-      !socket_event_->IsInbound()) {
+  if (introduction_message_ && type != MessageType::mGoodbye) {
+    RS_ASSERT_DBG(!socket_event_->IsInbound());
+
     MessageOnStream msg;
     msg.stream = this;
     msg.message = std::move(introduction_message_);

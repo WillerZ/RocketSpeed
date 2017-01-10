@@ -5,11 +5,12 @@
 //
 #pragma once
 
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "Assert.h"
@@ -89,6 +90,14 @@ typedef uint64_t SequenceNumber;
  * continuity in the data source, where monotonic sequencing is lost.
  */
 using Epoch = std::string;
+
+/**
+ * Map of Key:Value properties to send to the server while creating a stream
+ * to the server.
+ * The properties are defined by the application and are known to both client
+ * and server for parsing.
+ */
+using StreamProperties = std::unordered_map<std::string, std::string>;
 
 /**
  * A globally unique identifier.
@@ -564,6 +573,20 @@ class StatisticsVisitor {
   virtual void Flush() {}
 
   virtual ~StatisticsVisitor() {}
+};
+
+/// Stream Descriptor for information about the stream
+struct StreamDescriptor {
+  explicit StreamDescriptor(StreamProperties _properties, TenantID _tenant_id)
+  : properties(std::move(_properties)), tenant_id(_tenant_id) {}
+
+  StreamDescriptor() = default;
+
+  // Properties for the stream
+  StreamProperties properties;
+
+  // TenantID of the stream
+  TenantID tenant_id = GuestTenant;
 };
 
 }  // namespace rocketspeed

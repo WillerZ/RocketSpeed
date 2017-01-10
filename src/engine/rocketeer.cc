@@ -166,8 +166,7 @@ void Rocketeer::HandleHasMessageSince(
   flow->Write(metadata_sink_.get(), msg);
 }
 
-BackPressure Rocketeer::TryHandleDisconnect(StreamID stream_id) {
-  (void)stream_id;
+BackPressure Rocketeer::TryHandleDisconnect(StreamID) {
   return BackPressure::None();
 }
 
@@ -185,10 +184,7 @@ void Rocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
   flow->Write(metadata_sink_.get(), msg);
 }
 
-BackPressure Rocketeer::TryHandleConnect(StreamID stream_id,
-                                         StreamProperties properties) {
-  (void)stream_id;
-  (void)properties;
+BackPressure Rocketeer::TryHandleConnect(StreamID, StreamProperties) {
   return BackPressure::None();
 }
 

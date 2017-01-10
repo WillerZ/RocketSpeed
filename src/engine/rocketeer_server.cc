@@ -528,7 +528,13 @@ void CommunicationRocketeer::Receive(
   thread_check_.Check();
 
   auto it = stream_state_.find(origin);
-  RS_ASSERT_DBG(it != stream_state_.end());  // Should be set via introduction
+  // TODO(rishijhelumi) : Remove as it would be set via introduction
+  if (it == stream_state_.end()) {
+    // For backward compatibility, call HandleConnect with empty properties
+    HandleConnect(flow, origin, StreamProperties());
+    it = stream_state_.emplace(origin, StreamState(subscribe->GetTenantID()))
+             .first;
+  }
 
   StreamState& state = it->second;
   SubscriptionID sub_id = subscribe->GetSubID();
