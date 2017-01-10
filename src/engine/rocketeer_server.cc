@@ -27,17 +27,9 @@
 
 namespace rocketspeed {
 
-////////////////////////////////////////////////////////////////////////////////
-RocketeerOptions::RocketeerOptions()
-: env(Env::Default())
-, port(DEFAULT_PORT)
-, stats_prefix("rocketeer.") {
-  Status st = env->StdErrLogger(&info_log);
-  if (!st.ok()) {
-    fprintf(stderr, "Failed to create stderr logger, logging disabled!\n");
-    info_log = std::make_shared<NullLogger>();
-  }
-}
+namespace {
+
+class CommunicationRocketeer;
 
 ////////////////////////////////////////////////////////////////////////////////
 class InboundSubscription {
@@ -49,7 +41,7 @@ class InboundSubscription {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class RocketeerServerImpl : public RocketeerServer {
+class RocketeerServerImpl final : public RocketeerServer {
  public:
   explicit RocketeerServerImpl(RocketeerOptions options);
 
@@ -117,7 +109,7 @@ class RocketeerServerImpl : public RocketeerServer {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class CommunicationRocketeer : public Rocketeer {
+class CommunicationRocketeer final : public Rocketeer {
  public:
   explicit CommunicationRocketeer(Rocketeer* rocketeer);
 
@@ -459,7 +451,8 @@ size_t CommunicationRocketeer::GetID() const {
   return id_;
 }
 
-void CommunicationRocketeer::Initialize(RocketeerServerImpl* server, size_t id) {
+void CommunicationRocketeer::Initialize(
+    RocketeerServerImpl* server, size_t id) {
   RS_ASSERT(!server_);
   server_ = server;
   id_ = id;
@@ -820,6 +813,20 @@ const HostId& RocketeerServerImpl::GetHostId() const {
 
 MsgLoop* RocketeerServerImpl::GetMsgLoop() {
   return msg_loop_.get();
+}
+
+} // namespace anonymous
+
+////////////////////////////////////////////////////////////////////////////////
+RocketeerOptions::RocketeerOptions()
+: env(Env::Default())
+, port(DEFAULT_PORT)
+, stats_prefix("rocketeer.") {
+  Status st = env->StdErrLogger(&info_log);
+  if (!st.ok()) {
+    fprintf(stderr, "Failed to create stderr logger, logging disabled!\n");
+    info_log = std::make_shared<NullLogger>();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
