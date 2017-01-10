@@ -58,7 +58,7 @@ class RocketeerServerImpl final : public RocketeerServer {
                Topic topic,
                SequenceNumber seqno,
                std::string payload,
-               MsgId msg_id = MsgId()) override;
+               MsgId msg_id) override;
 
   bool DeliverBatch(StreamID stream_id,
                     int worker_id,
