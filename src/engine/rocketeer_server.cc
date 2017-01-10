@@ -49,6 +49,74 @@ class InboundSubscription {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+class RocketeerServerImpl : public RocketeerServer {
+ public:
+  explicit RocketeerServerImpl(RocketeerOptions options);
+
+  virtual ~RocketeerServerImpl();
+
+  size_t Register(Rocketeer* rocketeer) override;
+
+  Status Start() override;
+
+  void Stop() override;
+
+  bool Deliver(InboundID inbound_id,
+               NamespaceID namespace_id,
+               Topic topic,
+               SequenceNumber seqno,
+               std::string payload,
+               MsgId msg_id = MsgId()) override;
+
+  bool DeliverBatch(StreamID stream_id,
+                    int worker_id,
+                    std::vector<RocketeerMessage> messages) override;
+
+  bool Advance(InboundID inbound_id,
+               NamespaceID namespace_id,
+               Topic topic,
+               SequenceNumber seqno) override;
+
+  bool NotifyDataLoss(InboundID inbound_id,
+                      NamespaceID namespace_id,
+                      Topic topic,
+                      SequenceNumber seqno) override;
+
+  bool Unsubscribe(InboundID inbound_id,
+                   NamespaceID namespace_id,
+                   Topic topic,
+                   Rocketeer::UnsubscribeReason reason) override;
+
+  bool HasMessageSinceResponse(
+      InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
+      std::string info) override;
+
+  // DEPRECATED
+  Statistics GetStatisticsSync() const override;
+
+  void ExportStatistics(StatisticsVisitor* visitor) const override;
+
+  int GetWorkerID(const InboundID& inbound_id) const override;
+
+  MsgLoop* GetMsgLoop() override;
+
+  const HostId& GetHostId() const override;
+
+ private:
+  friend class CommunicationRocketeer;
+
+  RocketeerOptions options_;
+  std::unique_ptr<MsgLoop> msg_loop_;
+  std::unique_ptr<MsgLoopThread> msg_loop_thread_;
+  std::vector<std::unique_ptr<CommunicationRocketeer>> rocketeers_;
+
+  template <typename M>
+  std::function<void(Flow*, std::unique_ptr<Message>, StreamID)>
+  CreateCallback();
+};
+
+////////////////////////////////////////////////////////////////////////////////
 class CommunicationRocketeer : public Rocketeer {
  public:
   explicit CommunicationRocketeer(Rocketeer* rocketeer);
@@ -113,7 +181,7 @@ class CommunicationRocketeer : public Rocketeer {
   size_t GetID() const;
 
  private:
-  friend class RocketeerServer;
+  friend class RocketeerServerImpl;
 
   struct Stats {
     explicit Stats(const std::string& prefix);
@@ -128,7 +196,7 @@ class CommunicationRocketeer : public Rocketeer {
 
   ThreadCheck thread_check_;
   // RocketeerServer, which owns both the implementation and this object.
-  RocketeerServer* server_;
+  RocketeerServerImpl* server_;
 
   // The rocketeer that is being wrapped
   Rocketeer* above_rocketeer_;
@@ -148,7 +216,7 @@ class CommunicationRocketeer : public Rocketeer {
   };
   std::unordered_map<StreamID, StreamState> stream_state_;
 
-  void Initialize(RocketeerServer* server, size_t id);
+  void Initialize(RocketeerServerImpl* server, size_t id);
 
   const Statistics& GetStatisticsInternal();
 
@@ -391,7 +459,7 @@ size_t CommunicationRocketeer::GetID() const {
   return id_;
 }
 
-void CommunicationRocketeer::Initialize(RocketeerServer* server, size_t id) {
+void CommunicationRocketeer::Initialize(RocketeerServerImpl* server, size_t id) {
   RS_ASSERT(!server_);
   server_ = server;
   id_ = id;
@@ -558,15 +626,15 @@ CommunicationRocketeer::Stats::Stats(const std::string& prefix) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-RocketeerServer::RocketeerServer(RocketeerOptions options)
+RocketeerServerImpl::RocketeerServerImpl(RocketeerOptions options)
 : options_(std::move(options)) {}
 
-RocketeerServer::~RocketeerServer() {
+RocketeerServerImpl::~RocketeerServerImpl() {
   // Stop threads before any Rocketeer is destroyed.
   Stop();
 }
 
-size_t RocketeerServer::Register(Rocketeer* rocketeer) {
+size_t RocketeerServerImpl::Register(Rocketeer* rocketeer) {
   RS_ASSERT(!msg_loop_);
   RS_ASSERT(rocketeer);
   auto id = rocketeers_.size();
@@ -577,7 +645,7 @@ size_t RocketeerServer::Register(Rocketeer* rocketeer) {
   return id;
 }
 
-Status RocketeerServer::Start() {
+Status RocketeerServerImpl::Start() {
   MsgLoop::Options msg_loop_options;
   auto& eopts = msg_loop_options.event_loop;
   eopts.heartbeat_period = options_.heartbeat_period;
@@ -618,16 +686,16 @@ Status RocketeerServer::Start() {
   return Status::OK();
 }
 
-void RocketeerServer::Stop() {
+void RocketeerServerImpl::Stop() {
   msg_loop_thread_.reset();
 }
 
-bool RocketeerServer::Deliver(InboundID inbound_id,
-                              NamespaceID namespace_id,
-                              Topic topic,
-                              SequenceNumber seqno,
-                              std::string payload,
-                              MsgId msg_id) {
+bool RocketeerServerImpl::Deliver(InboundID inbound_id,
+                                  NamespaceID namespace_id,
+                                  Topic topic,
+                                  SequenceNumber seqno,
+                                  std::string payload,
+                                  MsgId msg_id) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id,
                   namespace_id = std::move(namespace_id),
@@ -642,9 +710,9 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
       .ok();
 }
 
-bool RocketeerServer::DeliverBatch(StreamID stream_id,
-                                   int worker_id,
-                                   std::vector<RocketeerMessage> messages) {
+bool RocketeerServerImpl::DeliverBatch(StreamID stream_id,
+                                       int worker_id,
+                                       std::vector<RocketeerMessage> messages) {
   auto command =
       [this, stream_id, worker_id, messages = std::move(messages)]
       (Flow* flow) mutable {
@@ -656,8 +724,10 @@ bool RocketeerServer::DeliverBatch(StreamID stream_id,
       .ok();
 }
 
-bool RocketeerServer::Advance(InboundID inbound_id, NamespaceID namespace_id,
-    Topic topic, SequenceNumber seqno) {
+bool RocketeerServerImpl::Advance(InboundID inbound_id,
+                                  NamespaceID namespace_id,
+                                  Topic topic,
+                                  SequenceNumber seqno) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id,
                   namespace_id = std::move(namespace_id),
@@ -670,8 +740,10 @@ bool RocketeerServer::Advance(InboundID inbound_id, NamespaceID namespace_id,
       .ok();
 }
 
-bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
-    NamespaceID namespace_id, Topic topic, SequenceNumber seqno) {
+bool RocketeerServerImpl::NotifyDataLoss(InboundID inbound_id,
+                                         NamespaceID namespace_id,
+                                         Topic topic,
+                                         SequenceNumber seqno) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id,
                   namespace_id = std::move(namespace_id),
@@ -684,10 +756,10 @@ bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
       .ok();
 }
 
-bool RocketeerServer::Unsubscribe(InboundID inbound_id,
-                                  NamespaceID namespace_id,
-                                  Topic topic,
-                                  Rocketeer::UnsubscribeReason reason) {
+bool RocketeerServerImpl::Unsubscribe(InboundID inbound_id,
+                                      NamespaceID namespace_id,
+                                      Topic topic,
+                                      Rocketeer::UnsubscribeReason reason) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command =
     [this, worker_id, inbound_id, namespace_id = std::move(namespace_id),
@@ -700,7 +772,7 @@ bool RocketeerServer::Unsubscribe(InboundID inbound_id,
       .ok();
 }
 
-bool RocketeerServer::HasMessageSinceResponse(
+bool RocketeerServerImpl::HasMessageSinceResponse(
     InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
     SequenceNumber seqno, HasMessageSinceResult response, std::string info) {
   auto worker_id = GetWorkerID(inbound_id);
@@ -717,24 +789,24 @@ bool RocketeerServer::HasMessageSinceResponse(
       .ok();
 }
 
-Statistics RocketeerServer::GetStatisticsSync() const {
+Statistics RocketeerServerImpl::GetStatisticsSync() const {
   auto stats = msg_loop_->AggregateStatsSync(
       [this](int i) { return rocketeers_[i]->GetStatisticsInternal(); });
   stats.Aggregate(msg_loop_->GetStatisticsSync());
   return stats;
 }
 
-void RocketeerServer::ExportStatistics(StatisticsVisitor* visitor) const {
+void RocketeerServerImpl::ExportStatistics(StatisticsVisitor* visitor) const {
   GetStatisticsSync().Export(visitor);
 }
 
-int RocketeerServer::GetWorkerID(const InboundID& inbound_id) const {
+int RocketeerServerImpl::GetWorkerID(const InboundID& inbound_id) const {
   auto worker_id = msg_loop_->GetStreamMapping()(inbound_id.stream_id);
   return static_cast<int>(worker_id);
 }
 
 template <typename Msg>
-MsgCallbackType RocketeerServer::CreateCallback() {
+MsgCallbackType RocketeerServerImpl::CreateCallback() {
   return [this](Flow* flow, std::unique_ptr<Message> message, StreamID origin) {
     std::unique_ptr<Msg> casted(static_cast<Msg*>(message.release()));
     auto worker_id = msg_loop_->GetThreadWorkerIndex();
@@ -742,8 +814,18 @@ MsgCallbackType RocketeerServer::CreateCallback() {
   };
 }
 
-const HostId& RocketeerServer::GetHostId() const {
+const HostId& RocketeerServerImpl::GetHostId() const {
   return msg_loop_->GetHostId();
+}
+
+MsgLoop* RocketeerServerImpl::GetMsgLoop() {
+  return msg_loop_.get();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+std::unique_ptr<RocketeerServer> RocketeerServer::Create(
+    RocketeerOptions options) {
+  return std::make_unique<RocketeerServerImpl>(std::move(options));
 }
 
 }  // namespace rocketspeed

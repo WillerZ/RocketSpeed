@@ -34,18 +34,18 @@ int main(int argc, char** argv) {
   options.port = static_cast<uint16_t>(FLAGS_port);
   options.stats_prefix = "acceptall";
 
-  RocketeerServer server(options);
+  auto server = RocketeerServer::Create(std::move(options));
   std::vector<AcceptAllRocketeer> rocketeers(FLAGS_threads);
   for (auto& rocketeer : rocketeers) {
-    server.Register(&rocketeer);
+    server->Register(&rocketeer);
   }
 
-  auto st = server.Start();
+  auto st = server->Start();
   if (!st.ok()) {
     fprintf(stderr, "Failed to start server: %s\n", st.ToString().c_str());
     return 1;
   }
   pause();
-  server.Stop();
+  server->Stop();
   return 0;
 }

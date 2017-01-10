@@ -86,13 +86,13 @@ int main(int argc, char** argv) {
   options.stats_prefix = "echo";
 
   std::vector<std::unique_ptr<EchoRocketeer>> rocketeers;
-  RocketeerServer server(options);
+  auto server = RocketeerServer::Create(std::move(options));
   for (uint64_t i = 0; i < FLAGS_threads; ++i) {
-    rocketeers.emplace_back(new EchoRocketeer(&server));
-    server.Register(rocketeers.back().get());
+    rocketeers.emplace_back(new EchoRocketeer(server.get()));
+    server->Register(rocketeers.back().get());
   }
 
-  auto st = server.Start();
+  auto st = server->Start();
   if (!st.ok()) {
     fprintf(stderr, "Failed to start server: %s\n", st.ToString().c_str());
     return 1;
@@ -101,6 +101,6 @@ int main(int argc, char** argv) {
   for (auto& r : rocketeers) {
     r->Stop();
   }
-  server.Stop();
+  server->Stop();
   return 0;
 }

@@ -146,14 +146,14 @@ TEST_F(DeadLockTest, DeadLock) {
   options.heartbeat_period = std::chrono::seconds(1);
 
   std::vector<std::unique_ptr<DeadLockRocketeer>> rocketeers;
-  RocketeerServer server(std::move(options));
-  rocketeers.emplace_back(new DeadLockRocketeer(&server));
-  server.Register(rocketeers.back().get());
-  ASSERT_OK(server.Start());
+  auto server = RocketeerServer::Create(std::move(options));
+  rocketeers.emplace_back(new DeadLockRocketeer(server.get()));
+  server->Register(rocketeers.back().get());
+  ASSERT_OK(server->Start());
 
   // Create two RocketSpeed clients.
   std::array<std::unique_ptr<Client>, 2> client;
-  HostId host_id = server.GetHostId();
+  HostId host_id = server->GetHostId();
   for (size_t i = 0; i < 2; ++i) {
     ClientOptions client_options;
     client_options.num_workers = 1;
@@ -215,7 +215,7 @@ TEST_F(DeadLockTest, DeadLock) {
   sleeper_client.reset();
   live_client.reset();
   rocketeers.back()->Stop();
-  server.Stop();
+  server->Stop();
 }
 
 }  // namespace rocketspeed

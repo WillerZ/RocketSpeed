@@ -322,11 +322,11 @@ TEST_F(BacklogQueryTest, Integration) {
   options.info_log = info_log_;
 
   std::vector<std::unique_ptr<BacklogQueryRocketeer>> rocketeers;
-  RocketeerServer server(options);
+  auto server = RocketeerServer::Create(std::move(options));
   rocketeers.emplace_back(new BacklogQueryRocketeer());
-  server.Register(rocketeers.back().get());
-  ASSERT_OK(server.Start());
-  HostId host_id = server.GetHostId();
+  server->Register(rocketeers.back().get());
+  ASSERT_OK(server->Start());
+  HostId host_id = server->GetHostId();
 
   // Create client.
   std::unique_ptr<Client> client;
@@ -350,7 +350,7 @@ TEST_F(BacklogQueryTest, Integration) {
       });
   ASSERT_TRUE(done.TimedWait(positive_timeout_));
 
-  server.Stop();
+  server->Stop();
 }
 
 }  // namespace rocketspeed

@@ -46,7 +46,7 @@ class RocketeerDeliveriesTest
     options.rate_duration = std::get<1>(params);
     options.batch_max_limit = std::get<2>(params);
     options.batch_max_duration = std::get<3>(params);
-    server_.reset(new RocketeerServer(std::move(options)));
+    server_ = RocketeerServer::Create(std::move(options));
   }
 
   virtual ~RocketeerDeliveriesTest() {

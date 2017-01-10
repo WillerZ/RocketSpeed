@@ -97,9 +97,9 @@ struct RocketeerOptions {
 
 class RocketeerServer {
  public:
-  explicit RocketeerServer(RocketeerOptions options);
+  virtual ~RocketeerServer() = default;
 
-  ~RocketeerServer();
+  static std::unique_ptr<RocketeerServer> Create(RocketeerOptions options);
 
   /**
    * Registers provided Rocketeer in the server and returns it's ID. Provided
@@ -109,107 +109,96 @@ class RocketeerServer {
    * @param rocketeer A Rocketeer implementation to be registered.
    * @return An ID assigned sequentially starting from 0.
    */
-  size_t Register(Rocketeer* rocketeer);
+  virtual size_t Register(Rocketeer* rocketeer) = 0;
 
   /**
    * Launches Rocketeer threads and starts the loop.
    *
    * @return Status::OK() iff successfully started.
    */
-  Status Start();
+  virtual Status Start() = 0;
 
   /** Stops the server, no thread is running after this method returns. */
-  void Stop();
+  virtual void Stop() = 0;
 
   /**
    * A thread-safe version of Rocketeer::Deliver.
    *
    * @return true iff operation was successfully scheduled.
    */
-  bool Deliver(InboundID inbound_id,
-               NamespaceID namespace_id,
-               Topic topic,
-               SequenceNumber seqno,
-               std::string payload,
-               MsgId msg_id = MsgId());
+  virtual bool Deliver(InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       Topic topic,
+                       SequenceNumber seqno,
+                       std::string payload,
+                       MsgId msg_id = MsgId()) = 0;
 
   /**
    * A thread-safe version of Rocketeer::DeliverBatch.
    *
    * @return true iff operation was successfully scheduled.
    */
-  bool DeliverBatch(StreamID stream_id,
-                    int worker_id,
-                    std::vector<RocketeerMessage> messages);
+  virtual bool DeliverBatch(StreamID stream_id,
+                            int worker_id,
+                            std::vector<RocketeerMessage> messages) = 0;
 
   /**
    * A thread-safe version of Rocketeer::Advance.
    *
    * @return true iff operation was successfully scheduled.
    */
-  bool Advance(InboundID inbound_id,
-               NamespaceID namespace_id,
-               Topic topic,
-               SequenceNumber seqno);
+  virtual bool Advance(InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       Topic topic,
+                       SequenceNumber seqno) = 0;
 
   /**
    * A thread-safe version of Rocketeer::NotifyDataLoss.
    *
    * @return true iff operation was successfully scheduled.
    */
-  bool NotifyDataLoss(InboundID inbound_id,
-                      NamespaceID namespace_id,
-                      Topic topic,
-                      SequenceNumber seqno);
+  virtual bool NotifyDataLoss(InboundID inbound_id,
+                              NamespaceID namespace_id,
+                              Topic topic,
+                              SequenceNumber seqno) = 0;
 
   /**
    * A thread-safe version of Rocketeer::Unsubscribe.
    *
    * @return true iff operation was successfully scheduled.
    */
-  bool Unsubscribe(InboundID inbound_id,
-                   NamespaceID namespace_id,
-                   Topic topic,
-                   Rocketeer::UnsubscribeReason reason);
+  virtual bool Unsubscribe(InboundID inbound_id,
+                           NamespaceID namespace_id,
+                           Topic topic,
+                           Rocketeer::UnsubscribeReason reason) = 0;
 
   /**
    * A thread-safe version of Rocketeer::HasMessageSinceResponse.
    *
    * @return true iff operation was successfully scheduled.
    */
-  bool HasMessageSinceResponse(
-      InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
-      SequenceNumber seqno, HasMessageSinceResult response, std::string info);
+  virtual bool HasMessageSinceResponse(
+      InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
+      std::string info) = 0;
 
   /** Returns server-wide statistics. */
   // DEPRECATED
-  Statistics GetStatisticsSync() const;
+  virtual Statistics GetStatisticsSync() const = 0;
 
   /**
    * Walks over all statistics using the provided StatisticsVisitor.
    *
    * @param visitor Used to visit all statistics maintained by the client.
    */
-  void ExportStatistics(StatisticsVisitor* visitor) const;
+  virtual void ExportStatistics(StatisticsVisitor* visitor) const = 0;
 
-  int GetWorkerID(const InboundID& inbound_id) const;
+  virtual int GetWorkerID(const InboundID& inbound_id) const = 0;
 
-  MsgLoop* GetMsgLoop() { return msg_loop_.get(); }
+  virtual MsgLoop* GetMsgLoop() = 0;
 
   /** Return host ID of this Rocketeer server */
-  const HostId& GetHostId() const;
-
- private:
-  friend class CommunicationRocketeer;
-
-  RocketeerOptions options_;
-  std::unique_ptr<MsgLoop> msg_loop_;
-  std::unique_ptr<MsgLoopThread> msg_loop_thread_;
-  std::vector<std::unique_ptr<CommunicationRocketeer>> rocketeers_;
-
-  template <typename M>
-  std::function<void(Flow*, std::unique_ptr<Message>, StreamID)>
-  CreateCallback();
+  virtual const HostId& GetHostId() const = 0;
 };
 
 }  // namespace rocketspeed

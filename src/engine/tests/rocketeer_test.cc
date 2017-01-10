@@ -33,7 +33,7 @@ class RocketeerTest : public ::testing::Test {
     options.enable_throttling = false;
     options.enable_batching = false;
     options.terminate_on_disconnect = terminate_on_disconnect;
-    server_.reset(new RocketeerServer(std::move(options)));
+    server_ = RocketeerServer::Create(std::move(options));
   }
 
   virtual ~RocketeerTest() {
