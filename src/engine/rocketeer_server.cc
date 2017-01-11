@@ -91,8 +91,6 @@ class RocketeerServerImpl final : public RocketeerServer {
 
   int GetWorkerID(const InboundID& inbound_id) const override;
 
-  MsgLoop* GetMsgLoop() override;
-
   const HostId& GetHostId() const override;
 
  private:
@@ -839,10 +837,6 @@ MsgCallbackType RocketeerServerImpl::CreateCallback() {
 
 const HostId& RocketeerServerImpl::GetHostId() const {
   return msg_loop_->GetHostId();
-}
-
-MsgLoop* RocketeerServerImpl::GetMsgLoop() {
-  return msg_loop_.get();
 }
 
 } // namespace anonymous

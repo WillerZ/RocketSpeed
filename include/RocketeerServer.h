@@ -195,8 +195,6 @@ class RocketeerServer {
 
   virtual int GetWorkerID(const InboundID& inbound_id) const = 0;
 
-  virtual MsgLoop* GetMsgLoop() = 0;
-
   /** Return host ID of this Rocketeer server */
   virtual const HostId& GetHostId() const = 0;
 };
