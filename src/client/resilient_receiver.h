@@ -54,8 +54,8 @@ class ResilientStreamReceiver final : public StreamReceiver {
       BackOffStrategy backoff_strategy,
       size_t max_silent_reconnects,
       size_t shard_id,
-      std::shared_ptr<const StreamDescriptor> stream_descriptor =
-          std::make_shared<const StreamDescriptor>());
+      std::shared_ptr<const IntroParameters> intro_parameters =
+          std::make_shared<const IntroParameters>());
 
   /// Establish communication to the provided host. This must be
   /// called at least once. Calling this at any point is allowed and
@@ -75,7 +75,7 @@ class ResilientStreamReceiver final : public StreamReceiver {
   const BackOffStrategy backoff_strategy_;
   const size_t max_silent_reconnects_;
   const size_t shard_id_;
-  std::shared_ptr<const StreamDescriptor> stream_descriptor_;
+  std::shared_ptr<const IntroParameters> intro_parameters_;
 
   HostId current_host_;
   std::unique_ptr<EventCallback> backoff_timer_;

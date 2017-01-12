@@ -39,12 +39,11 @@ typedef uint64_t SubscriptionHandle;
  */
 class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
  public:
-  MultiShardSubscriber(
-      const ClientOptions& options,
-      EventLoop* event_loop,
-      std::shared_ptr<SubscriberStats> stats,
-      size_t max_active_subscriptions,
-      std::shared_ptr<const StreamDescriptor> stream_descriptor);
+  MultiShardSubscriber(const ClientOptions& options,
+                       EventLoop* event_loop,
+                       std::shared_ptr<SubscriberStats> stats,
+                       size_t max_active_subscriptions,
+                       std::shared_ptr<const IntroParameters> intro_parameters);
 
   ~MultiShardSubscriber() override;
 
@@ -128,8 +127,8 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
    */
   TimeoutList<ShardID> inactive_shards_;
 
-  /** shared_ptr to StreamDescriptor */
-  std::shared_ptr<const StreamDescriptor> stream_descriptor_;
+  /** shared_ptr to introduction parameters */
+  std::shared_ptr<const IntroParameters> intro_parameters_;
 };
 
 }  // namespace rocketspeed

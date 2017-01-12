@@ -191,7 +191,17 @@ class ClientOptions {
   // to the server.
   // The properties are known by both client and server defined by the
   // application.
-  StreamProperties stream_properties;
+
+  // Properties specific to the stream
+  // A message sent on a stream with these properties will be received on a
+  // stream with the same properties, therefore it can be used to encode
+  // contractual protocol information.
+  // The same is not true for client properties, since there may be
+  // proxies in between.
+  IntroProperties stream_properties;
+
+  // Properties specific to the client
+  IntroProperties client_properties;
 
   // TenantID of the client
   TenantID tenant_id;

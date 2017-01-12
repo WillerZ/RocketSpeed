@@ -124,17 +124,23 @@ void UserDataCleanup(void* user_data) {
 }
 }
 
-Multiplexer::Multiplexer(PerShard* per_shard)
+Multiplexer::Multiplexer(PerShard* per_shard, IntroProperties stream_properties)
 : per_shard_(per_shard)
 , subscriptions_map_(GetLoop(),
                      std::bind(&Multiplexer::SendMessage, this, _1, _2),
                      &UserDataCleanup)
-, stream_supervisor_(GetLoop(),
-                     this,
-                     std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
-                     GetOptions().backoff_strategy,
-                     GetOptions().max_silent_reconnects,
-                     per_shard_->GetShardID()) {
+, stream_supervisor_(
+      GetLoop(),
+      this,
+      std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
+      GetOptions().backoff_strategy,
+      GetOptions().max_silent_reconnects,
+      per_shard_->GetShardID(),
+      std::make_shared<const IntroParameters>(
+          Tenant::SystemTenant /* Multiplexer streams use SystemTenant */,
+          stream_properties,
+          IntroProperties() /* No Client Properties */))
+, stream_properties_(std::move(stream_properties)) {
   // Create stats.
   auto prefix = per_shard->GetOptions().stats_prefix + "multiplexer.";
   auto stats = per_shard->GetStatistics();
@@ -272,7 +278,7 @@ UpstreamSubscription* Multiplexer::GetUpstreamSubscription(
 }
 
 UpstreamSubscription* Multiplexer::FindInIndex(NamespaceID namespace_id,
-                                        Topic topic_name) {
+                                               Topic topic_name) {
   auto key = std::make_pair(std::move(namespace_id), std::move(topic_name));
   auto it = topic_index_.find(key);
   return it == topic_index_.end() ? nullptr : it->second;

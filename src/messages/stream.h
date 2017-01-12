@@ -43,8 +43,7 @@ class Stream : public Sink<std::unique_ptr<Message>> {
   Stream(SocketEvent* socket_event,
          StreamID remote_id,
          StreamID local_id_,
-         const TenantID tenant_id = GuestTenant,
-         const StreamProperties& properties = StreamProperties());
+         IntroParameters params = IntroParameters());
 
   /**
    * Sets an object responsible for receiving messages on the stream.

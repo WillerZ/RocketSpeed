@@ -17,9 +17,9 @@
 namespace rocketspeed {
 
 // All internal Property Key begins with "__"
-const StreamPropertyKey PropertyShardID("__shard_id");
+const IntroPropertyKey PropertyShardID("__shard_id");
 
-bool IsPropertyReserved(const StreamPropertyKey& key) {
+bool IsPropertyReserved(const IntroPropertyKey& key) {
   const std::string start = "__";
   return start.size() < key.size() && key.compare(0, start.size(), start) == 0;
 }
@@ -27,8 +27,7 @@ bool IsPropertyReserved(const StreamPropertyKey& key) {
 Stream::Stream(SocketEvent* socket_event,
                StreamID remote_id,
                StreamID local_id,
-               const TenantID tenant_id,
-               const StreamProperties& properties)
+               IntroParameters params)
 : socket_event_(socket_event)
 , remote_id_(remote_id)
 , local_id_(local_id)
@@ -46,7 +45,10 @@ Stream::Stream(SocketEvent* socket_event,
 
   // Create an introduction message for the server
   if (!socket_event_->IsInbound()) {
-    introduction_message_.reset(new MessageIntroduction(tenant_id, properties));
+    introduction_message_.reset(
+        new MessageIntroduction(params.tenant_id,
+                                std::move(params.stream_properties),
+                                std::move(params.client_properties)));
   }
 }
 

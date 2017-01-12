@@ -118,7 +118,7 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
              size_t shard_id,
              size_t max_active_subscriptions,
              std::shared_ptr<size_t> num_active_subscriptions,
-             std::shared_ptr<const StreamDescriptor> stream_descriptor);
+             std::shared_ptr<const IntroParameters> intro_parameters);
 
   ~Subscriber();
 

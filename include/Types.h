@@ -567,10 +567,10 @@ class StatisticsVisitor {
   virtual ~StatisticsVisitor() {}
 };
 
-/// Type for stream property key
-using StreamPropertyKey = std::string;
-/// Type for value of a stream property
-using StreamPropertyValue = std::string;
+/// Type for introduction property key
+using IntroPropertyKey = std::string;
+/// Type for value of an introduction property
+using IntroPropertyValue = std::string;
 
 /**
  * Map of Key:Value properties to send to the server while creating a stream
@@ -578,33 +578,40 @@ using StreamPropertyValue = std::string;
  * The properties are defined by the application and are known to both client
  * and server for parsing.
  */
-using StreamProperties =
-    std::unordered_map<StreamPropertyKey, StreamPropertyValue>;
+using IntroProperties =
+    std::unordered_map<IntroPropertyKey, IntroPropertyValue>;
 
-/// Stream Descriptor for information about the stream
-struct StreamDescriptor {
-  explicit StreamDescriptor(StreamProperties _properties, TenantID _tenant_id)
-  : properties(std::move(_properties)), tenant_id(_tenant_id) {}
+/// Introduction parameters of a stream
+struct IntroParameters {
+  explicit IntroParameters(TenantID _tenant_id,
+                           IntroProperties _stream_properties,
+                           IntroProperties _client_properties)
+  : tenant_id(_tenant_id)
+  , stream_properties(std::move(_stream_properties))
+  , client_properties(std::move(_client_properties)) {}
 
-  StreamDescriptor() = default;
-
-  // Properties for the stream
-  StreamProperties properties;
+  IntroParameters() = default;
 
   // TenantID of the stream
   TenantID tenant_id = GuestTenant;
+
+  // Properties for the stream
+  IntroProperties stream_properties;
+
+  // Properties for the client
+  IntroProperties client_properties;
 };
 
 /**
- * Tests if a StreamPropertyKey is reserved.
+ * Tests if a IntroPropertyKey is reserved.
  *
  * @param key the name of the property key.
- * @return true iff the StreamPropertyKey is reserved
+ * @return true iff the IntroPropertyKey is reserved
  */
-bool IsPropertyReserved(const StreamPropertyKey& key);
+bool IsPropertyReserved(const IntroPropertyKey& key);
 
 /// Default key for shard_id of the stream
-extern const StreamPropertyKey PropertyShardID;
+extern const IntroPropertyKey PropertyShardID;
 
 }  // namespace rocketspeed
 

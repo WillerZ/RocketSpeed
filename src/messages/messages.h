@@ -1090,19 +1090,28 @@ class MessageBacklogFill : public Message {
  */
 class MessageIntroduction final : public Message {
  public:
-  MessageIntroduction(TenantID tenant_id, StreamProperties properties)
+  MessageIntroduction(TenantID tenant_id,
+                      IntroProperties stream_properties,
+                      IntroProperties client_properties)
   : Message(MessageType::mIntroduction, tenant_id)
-  , properties_(std::move(properties)) {}
+  , stream_properties_(std::move(stream_properties))
+  , client_properties_(std::move(client_properties)) {}
 
   MessageIntroduction() : Message(MessageType::mIntroduction) {}
 
-  const StreamProperties& GetProperties() const { return properties_; }
+  const IntroProperties& GetStreamProperties() const {
+    return stream_properties_;
+  }
+  const IntroProperties& GetClientProperties() const {
+    return client_properties_;
+  }
 
   virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
-  StreamProperties properties_;
+  IntroProperties stream_properties_;
+  IntroProperties client_properties_;
 };
 
 /** @} */

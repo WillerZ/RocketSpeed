@@ -205,15 +205,13 @@ SocketEvent::~SocketEvent() {
   close(fd_);
 }
 
-std::unique_ptr<Stream> SocketEvent::OpenStream(
-    StreamID stream_id,
-    const TenantID tenant_id,
-    const StreamProperties& properties) {
+std::unique_ptr<Stream> SocketEvent::OpenStream(StreamID stream_id,
+                                                IntroParameters params) {
   RS_ASSERT(!closing_);
   thread_check_.Check();
 
   std::unique_ptr<Stream> stream(
-      new Stream(this, stream_id, stream_id, tenant_id, properties));
+      new Stream(this, stream_id, stream_id, std::move(params)));
   auto result = remote_id_to_stream_.emplace(stream_id, stream.get());
   hb_timeout_list_.Add(stream_id);
   RS_ASSERT(result.second);

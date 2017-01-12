@@ -993,8 +993,17 @@ Status MessageBacklogFill::DeSerialize(Slice* in) {
 
 Status MessageIntroduction::Serialize(std::string* out) const {
   Message::Serialize(out);
-  PutVarint64(out, properties_.size());
-  for (const auto& info : properties_) {
+
+  // Stream Properties
+  PutVarint64(out, stream_properties_.size());
+  for (const auto& info : stream_properties_) {
+    PutLengthPrefixedSlice(out, info.first);
+    PutLengthPrefixedSlice(out, info.second);
+  }
+
+  // Client Properties
+  PutVarint64(out, client_properties_.size());
+  for (const auto& info : client_properties_) {
     PutLengthPrefixedSlice(out, info.first);
     PutLengthPrefixedSlice(out, info.second);
   }
@@ -1006,14 +1015,15 @@ Status MessageIntroduction::DeSerialize(Slice* in) {
   if (!st.ok()) {
     return st;
   }
-  uint64_t len;
-  if (!GetVarint64(in, &len)) {
+
+  // Stream Properties
+  uint64_t len_stream;
+  if (!GetVarint64(in, &len_stream)) {
     return Status::InvalidArgument("Bad Properties count");
   }
-
-  properties_.clear();
-  properties_.reserve(len);
-  for (size_t i = 0; i < len; i++) {
+  stream_properties_.clear();
+  stream_properties_.reserve(len_stream);
+  for (size_t i = 0; i < len_stream; i++) {
     Slice key;
     Slice value;
     if (!GetLengthPrefixedSlice(in, &key)) {
@@ -1022,7 +1032,26 @@ Status MessageIntroduction::DeSerialize(Slice* in) {
     if (!GetLengthPrefixedSlice(in, &value)) {
       return Status::InvalidArgument("Bad property value");
     }
-    properties_.emplace(key.ToString(), value.ToString());
+    stream_properties_.emplace(key.ToString(), value.ToString());
+  }
+
+  // Client Properties
+  uint64_t len_client;
+  if (!GetVarint64(in, &len_client)) {
+    return Status::InvalidArgument("Bad Properties count");
+  }
+  client_properties_.clear();
+  client_properties_.reserve(len_client);
+  for (size_t i = 0; i < len_client; i++) {
+    Slice key;
+    Slice value;
+    if (!GetLengthPrefixedSlice(in, &key)) {
+      return Status::InvalidArgument("Bad property key");
+    }
+    if (!GetLengthPrefixedSlice(in, &value)) {
+      return Status::InvalidArgument("Bad property value");
+    }
+    client_properties_.emplace(key.ToString(), value.ToString());
   }
 
   return Status::OK();

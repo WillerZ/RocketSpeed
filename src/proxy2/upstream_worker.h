@@ -26,12 +26,9 @@ class EventCallback;
 class EventLoop;
 class Message;
 class Multiplexer;
-class PerShard;
-class PerStream;
 class ProxyServerOptions;
 class Statistics;
 class Stream;
-class UpstreamWorker;
 
 /// The layer of UpstreamWorkers is sharded by the shard, to which the
 /// destination topic belongs. All important proxy-related logic happens here:
@@ -119,6 +116,9 @@ class PerStream {
   Statistics* GetStatistics() const { return worker_->GetStatistics(); }
   PerShard* GetShard() const { return per_shard_; }
   StreamID GetStream() const { return downstream_id_; }
+  IntroParameters* GetIntroParameters() const {
+    return intro_parameters_.get();
+  }
 
   void ReceiveFromWorker(Flow* flow, MessageAndStream message);
 
@@ -138,6 +138,9 @@ class PerStream {
   UpstreamWorker* const worker_;
   PerShard* const per_shard_;
   const StreamID downstream_id_;
+
+  // intro parameters of the stream
+  std::unique_ptr<IntroParameters> intro_parameters_;
 
   /// A sink for messages on subscriptions that were not picked for
   /// multiplexing.
@@ -164,7 +167,7 @@ class PerShard {
  public:
   explicit PerShard(UpstreamWorker* worker, size_t shard_id);
 
-  void AddPerStream(PerStream* per_stream);
+  void AddPerStream(PerStream* per_stream, IntroProperties props);
   void RemovePerStream(PerStream* per_stream);
 
   EventLoop* GetLoop() const { return worker_->GetLoop(); }
@@ -173,7 +176,9 @@ class PerShard {
   size_t GetShardID() const { return shard_id_; }
   const HostId& GetHost() const { return host_; }
   bool IsEmpty() const { return streams_on_shard_.empty(); }
-  Multiplexer* GetMultiplexer() { return &multiplexer_; }
+
+  /// Returns multiplexer used by the stream provided
+  Multiplexer* GetMultiplexer(PerStream* per_stream);
 
   ~PerShard();
 
@@ -186,11 +191,16 @@ class PerShard {
   size_t router_version_;
   HostId host_;
 
-  /// A set of streams on this shard.
-  std::unordered_set<PerStream*> streams_on_shard_;
+  /// Set of multiplexers for handling topic multiplexing.
+  /// Since the number of multiplexers would be fairly small, it is ok to have
+  /// an unordered_map.
+  /// Streams with same multiplexers will have the same stream properties
+  std::unordered_map<Multiplexer*, std::unique_ptr<Multiplexer>> multiplexers_;
+  std::unordered_map<Multiplexer*, size_t> multiplexers_ref_count_;
 
-  /// Handles topic multiplexing.
-  Multiplexer multiplexer_;
+  /// A map of streams on this shard. Maps to the multiplexer being used for
+  /// that stream.
+  std::unordered_map<PerStream*, Multiplexer*> streams_on_shard_;
 
   /// Checks if router version has changed and handles router changes.
   void CheckRoutes();

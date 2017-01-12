@@ -358,12 +358,16 @@ TEST_F(Messaging, MessageBacklogFill) {
 }
 
 TEST_F(Messaging, MessageIntroduction) {
-  StreamProperties properties;
-  properties.emplace("hostname", "localhost");
-  properties.emplace("ip", "0.0.0.0");
-  properties.emplace("max_subs", "2000");
+  IntroProperties stream_properties;
+  stream_properties.emplace("shard_id", "4991");
+  stream_properties.emplace("max_subs", "2000");
 
-  MessageIntroduction msg1(Tenant::GuestTenant, properties);
+  IntroProperties client_properties;
+  client_properties.emplace("hostname", "localhost");
+  client_properties.emplace("ip", "0.0.0.0");
+
+  MessageIntroduction msg1(
+      Tenant::GuestTenant, stream_properties, client_properties);
   std::string str;
   msg1.Serialize(&str);
 
@@ -374,12 +378,20 @@ TEST_F(Messaging, MessageIntroduction) {
   ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
 
-  auto msg2_properties = msg2.GetProperties();
-  ASSERT_EQ(properties.size(), msg2_properties.size());
+  auto msg2_stream_properties = msg2.GetStreamProperties();
+  ASSERT_EQ(stream_properties.size(), msg2_stream_properties.size());
+  for (const auto& prop : stream_properties) {
+    auto it = msg2_stream_properties.find(prop.first);
+    ASSERT_NE(msg2_stream_properties.end(), it);
+    ASSERT_EQ(prop.first, it->first);
+    ASSERT_EQ(prop.second, it->second);
+  }
 
-  for (const auto& prop : properties) {
-    auto it = msg2_properties.find(prop.first);
-    ASSERT_NE(msg2_properties.end(), it);
+  auto msg2_client_properties = msg2.GetClientProperties();
+  ASSERT_EQ(client_properties.size(), msg2_client_properties.size());
+  for (const auto& prop : client_properties) {
+    auto it = msg2_client_properties.find(prop.first);
+    ASSERT_NE(msg2_client_properties.end(), it);
     ASSERT_EQ(prop.first, it->first);
     ASSERT_EQ(prop.second, it->second);
   }

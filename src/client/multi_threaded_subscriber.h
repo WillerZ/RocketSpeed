@@ -94,8 +94,8 @@ class MultiThreadedSubscriber {
   /** A set of loops to use. */
   const std::shared_ptr<MsgLoop> msg_loop_;
 
-  /** shared_ptr to StreamDescriptor */
-  const std::shared_ptr<const StreamDescriptor> stream_descriptor_;
+  /** shared_ptr to introduction parameters */
+  const std::shared_ptr<const IntroParameters> intro_parameters_;
 
   /** One multi-shard subscriber per thread. */
   std::vector<std::unique_ptr<SubscriberIf>> subscribers_;

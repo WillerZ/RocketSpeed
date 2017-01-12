@@ -43,14 +43,13 @@ namespace rocketspeed {
 using namespace std::placeholders;
 
 ////////////////////////////////////////////////////////////////////////////////
-Subscriber::Subscriber(
-    const ClientOptions& options,
-    EventLoop* event_loop,
-    std::shared_ptr<SubscriberStats> stats,
-    size_t shard_id,
-    size_t max_active_subscriptions,
-    std::shared_ptr<size_t> num_active_subscriptions,
-    std::shared_ptr<const StreamDescriptor> stream_descriptor)
+Subscriber::Subscriber(const ClientOptions& options,
+                       EventLoop* event_loop,
+                       std::shared_ptr<SubscriberStats> stats,
+                       size_t shard_id,
+                       size_t max_active_subscriptions,
+                       std::shared_ptr<size_t> num_active_subscriptions,
+                       std::shared_ptr<const IntroParameters> intro_parameters)
 : options_(options)
 , event_loop_(event_loop)
 , stats_(std::move(stats))
@@ -63,7 +62,7 @@ Subscriber::Subscriber(
                      options.backoff_strategy,
                      options_.max_silent_reconnects,
                      shard_id,
-                     stream_descriptor)
+                     intro_parameters)
 , backlog_query_store_(
       new BacklogQueryStore(options_.info_log,
                             std::bind(&Subscriber::SendMessage, this, _1, _2),

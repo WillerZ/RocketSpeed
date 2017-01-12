@@ -63,7 +63,7 @@ struct RocketeerMetadataMessage {
   SubscriptionParameters params;        // only valid for type == kSubscribe
   Rocketeer::TerminationSource source;  // only valid for type == kTerminate
   RocketeerHasMessageSinceMessage has_msg_since;  // for kHasMessageSince
-  StreamProperties properties;                    // for kConnect
+  IntroParameters intro_params;                   // for kConnect
 };
 
 Rocketeer::Rocketeer()
@@ -90,7 +90,7 @@ Rocketeer::Rocketeer()
         case RocketeerMetadataMessage::kDisconnect:
           return TryHandleDisconnect(msg.inbound_id.stream_id);
         case RocketeerMetadataMessage::kConnect:
-          return TryHandleConnect(msg.inbound_id.stream_id, msg.properties);
+          return TryHandleConnect(msg.inbound_id.stream_id, msg.intro_params);
       }
       RS_ASSERT(false);
       return BackPressure::None();
@@ -209,13 +209,13 @@ void Rocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
   flow->Write(metadata_sink_.get(), msg);
 }
 
-BackPressure Rocketeer::TryHandleConnect(StreamID, StreamProperties) {
+BackPressure Rocketeer::TryHandleConnect(StreamID, IntroParameters) {
   return BackPressure::None();
 }
 
 void Rocketeer::HandleConnect(Flow* flow,
                               StreamID stream_id,
-                              StreamProperties properties) {
+                              IntroParameters params) {
   // This is the default implementation of HandleConnect.
   // Most application Rocketeers will implement TryHandleConnect, but
   // internally RocketSpeed calls HandleConnect.
@@ -226,7 +226,7 @@ void Rocketeer::HandleConnect(Flow* flow,
   RocketeerMetadataMessage msg;
   msg.type = RocketeerMetadataMessage::kConnect;
   msg.inbound_id.stream_id = stream_id;
-  msg.properties = std::move(properties);
+  msg.intro_params = std::move(params);
   flow->Write(metadata_sink_.get(), msg);
 }
 

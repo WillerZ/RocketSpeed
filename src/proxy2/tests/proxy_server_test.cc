@@ -31,6 +31,7 @@ namespace rocketspeed {
 
 static constexpr std::chrono::milliseconds kPositiveTimeout{1000};
 static constexpr std::chrono::milliseconds kNegativeTimeout{100};
+static constexpr size_t kShard{0};
 
 class MockSharding : public ShardingStrategy {
  public:
@@ -138,10 +139,14 @@ class MessageBus : public StreamReceiver {
     return !received_sem_.TimedWait(timeout);
   }
 
-  StreamID OpenStream(const HostId& host_id) {
+  StreamID OpenStream(const HostId& host_id, size_t shard_id = kShard) {
     StreamID stream_id;
     Wait([&]() {
-      auto new_stream = loop_->OpenStream(host_id);
+      IntroParameters params;
+      params.stream_properties.emplace(PropertyShardID,
+                                       std::to_string(shard_id));
+      auto new_stream = loop_->OpenStream(host_id, std::move(params));
+
       stream_id = new_stream->GetLocalID();
       auto result = streams_.emplace(stream_id, std::move(new_stream));
       RS_ASSERT(result.second);
@@ -225,7 +230,7 @@ class MessageBus : public StreamReceiver {
               arg.stream_id,
               MessageTypeName(type));
 
-    if (type == MessageType::mHeartbeat || type == MessageType::mIntroduction) {
+    if (type == MessageType::mHeartbeat) {
       // these make tests noisy
       return;
     }
@@ -285,7 +290,8 @@ TEST_F(ProxyServerTest, Forwarding) {
   // Send a pair of subscribe/unsubscribe messages on each stream.
   std::array<StreamID, 2> client_streams, server_streams;
   for (size_t i = 0; i < 2; ++i) {
-    client_streams[i] = clients[i]->OpenStream(proxy->GetListenerAddress());
+    client_streams[i] =
+        clients[i]->OpenStream(proxy->GetListenerAddress(), i /* shard_id */);
 
     auto sub_id = SubscriptionID::Unsafe(100 + i);
     clients[i]->Send(client_streams[i],
@@ -294,9 +300,22 @@ TEST_F(ProxyServerTest, Forwarding) {
                                       "ColdTopic",
                                       0,
                                       sub_id));
+    // First message received by the server would be introduction
     auto received = servers[i]->Receive();
     ASSERT_TRUE(received.message);
     server_streams[i] = received.stream_id;
+    ASSERT_EQ(MessageType::mIntroduction, received.message->GetMessageType());
+    auto introduction =
+        static_cast<MessageIntroduction*>(received.message.get());
+    auto props = introduction->GetStreamProperties();
+    auto shard = props.find(PropertyShardID);
+    ASSERT_TRUE(shard != props.end());
+    size_t shard_id = std::stoul(shard->second, nullptr, 0);
+    ASSERT_EQ(shard_id, i);
+
+    // Then subscribe
+    received = servers[i]->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(MessageType::mSubscribe, received.message->GetMessageType());
     auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
     ASSERT_EQ(sub_id, subscribe->GetSubID());
@@ -335,7 +354,8 @@ TEST_F(ProxyServerTest, Forwarding) {
   std::swap(servers[1], servers[2]);
 
   // Recreate stream from the clients[1], the old one should have been closed.
-  client_streams[1] = clients[1]->OpenStream(proxy->GetListenerAddress());
+  client_streams[1] =
+      clients[1]->OpenStream(proxy->GetListenerAddress(), 1 /* shard_id */);
 
   // Send another pair of messages.
   for (size_t i = 0; i < 2; ++i) {
@@ -347,13 +367,28 @@ TEST_F(ProxyServerTest, Forwarding) {
                                       "ColdTopic",
                                       0,
                                       sub_id));
+    // First message received by the server would be introduction for server 0
     auto received = servers[i]->Receive();
     ASSERT_TRUE(received.message);
+
     if (i == 1) {
+      ASSERT_EQ(MessageType::mIntroduction, received.message->GetMessageType());
       server_streams[i] = received.stream_id;
+      auto introduction =
+          static_cast<MessageIntroduction*>(received.message.get());
+      auto props = introduction->GetStreamProperties();
+      auto shard = props.find(PropertyShardID);
+      ASSERT_TRUE(shard != props.end());
+      size_t shard_id = std::stoul(shard->second, nullptr, 0);
+      ASSERT_EQ(shard_id, i);
+
+      // Now a subscribe
+      received = servers[i]->Receive();
     } else {
       ASSERT_EQ(server_streams[i], received.stream_id);
     }
+
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(MessageType::mSubscribe, received.message->GetMessageType());
     auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
     ASSERT_EQ(sub_id, subscribe->GetSubID());
@@ -523,7 +558,7 @@ TEST_F(ProxyServerTest, DefaultAccumulator) {
 }
 
 TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
-  const size_t shard = 1;
+  const size_t shard = kShard;
   // Create routing and hot topics detection strategies for the proxy.
   auto routing = std::make_shared<MockSharding>();
   auto hot_topics = std::make_shared<MockDetector>();
@@ -571,6 +606,20 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
                                     "HotTopic",
                                     SubscriptionID::Unsafe(downstream_id),
                                     MessageUnsubscribe::Reason::kRequested));
+  };
+  auto receive_introduction = [&]() {
+    auto received = server->Receive();
+    EXPECT_TRUE(received.message);
+    server_stream = received.stream_id;
+    auto message = received.message.get();
+    EXPECT_EQ(MessageType::mIntroduction, message->GetMessageType());
+    auto introduction =
+        static_cast<MessageIntroduction*>(received.message.get());
+    auto props = introduction->GetStreamProperties();
+    auto shardIt = props.find(PropertyShardID);
+    ASSERT_TRUE(shardIt != props.end());
+    size_t shard_id = std::stoul(shardIt->second, nullptr, 0);
+    ASSERT_EQ(shard_id, shard);
   };
   auto receive_subscribe = [&](uint64_t expected_sub_id = 0) {
     auto received = server->Receive();
@@ -653,6 +702,7 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
 
   // Establish the first subscription.
   issue_subscribe(1);
+  receive_introduction();
   SubscriptionID upstream_sub = receive_subscribe();
   check_counters(1, 1, 1);
   // Deliver a snapshot on an upstream subscription.
@@ -721,7 +771,7 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
 }
 
 TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
-  const size_t shard = 1;
+  const size_t shard = kShard;
   // Create routing and hot topics detection strategies for the proxy.
   auto routing = std::make_shared<MockSharding>();
   auto hot_topics = std::make_shared<MockDetector>();
@@ -764,8 +814,14 @@ TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
                                   client_sub_id));
     {
       auto received = server->Receive();
+
+      // Introduction message
       ASSERT_TRUE(received.message);
+      ASSERT_EQ(MessageType::mIntroduction, received.message->GetMessageType());
       server_streams[i] = received.stream_id;
+
+      received = server->Receive();
+      ASSERT_TRUE(received.message);
       ASSERT_EQ(MessageType::mSubscribe, received.message->GetMessageType());
       auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
       ASSERT_EQ(Slice(topic_name), subscribe->GetTopicName());
@@ -812,9 +868,14 @@ TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
                                   SubscriptionID::Unsafe(100)));
 
     auto received = server->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_TRUE(server_streams.end() == std::find(server_streams.begin(),
                                                   server_streams.end(),
                                                   received.stream_id));
+    ASSERT_EQ(MessageType::mIntroduction, received.message->GetMessageType());
+
+    received = server->Receive();
+    ASSERT_TRUE(received.message);
     ASSERT_EQ(MessageType::mSubscribe, received.message->GetMessageType());
     auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
     ASSERT_EQ("ColdTopic", subscribe->GetTopicName());

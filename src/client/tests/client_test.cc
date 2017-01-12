@@ -298,7 +298,7 @@ class ClientTest : public ::testing::Test {
           MessageType::mIntroduction,
           [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             auto introduction = static_cast<MessageIntroduction*>(msg.get());
-            auto props = introduction->GetProperties();
+            auto props = introduction->GetStreamProperties();
 
             auto host = props.find("hostname");
             ASSERT_NE(host, props.end());

@@ -100,11 +100,13 @@ class UpstreamSubscription {
 /// active subscriptions it learns about.
 class Multiplexer : public ConnectionAwareReceiver {
  public:
-  explicit Multiplexer(PerShard* per_shard);
+  explicit Multiplexer(PerShard* per_shard, IntroProperties stream_properties);
 
   EventLoop* GetLoop() const;
   const ProxyServerOptions& GetOptions() const;
   Statistics* GetStatistics() const;
+
+  const IntroProperties& GetProperties() const { return stream_properties_; }
 
   /// Handles a subscription that was chosen for multiplexing.
   ///
@@ -137,6 +139,8 @@ class Multiplexer : public ConnectionAwareReceiver {
   UpstreamAllocator upstream_allocator_;
   SubscriptionsMap subscriptions_map_;
   ResilientStreamReceiver stream_supervisor_;
+
+  const IntroProperties stream_properties_;
 
   // TODO(stupaq): intrusive
   std::unordered_map<std::pair<std::string, std::string>,

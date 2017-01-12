@@ -69,7 +69,7 @@ class MsgLoop {
 
   // Register the timer callback at the givne period. Must be called after Init.
   Status RegisterTimerCallback(TimerCallbackType callback,
-                             std::chrono::microseconds period);
+                               std::chrono::microseconds period);
 
   Status Initialize();
 

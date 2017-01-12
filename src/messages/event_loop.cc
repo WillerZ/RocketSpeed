@@ -737,12 +737,9 @@ void EventLoop::TriggerableCallbackClose(access::EventLoop access,
 }
 
 // TODO(t8971722)
-std::unique_ptr<Stream> EventLoop::OpenStream(
-    const HostId& destination,
-    const TenantID tenant_id,
-    const StreamProperties& properties) {
-  return OpenStream(
-      destination, outbound_allocator_.Next(), tenant_id, properties);
+std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
+                                              IntroParameters params) {
+  return OpenStream(destination, outbound_allocator_.Next(), std::move(params));
 }
 
 Stream* EventLoop::GetInboundStream(StreamID stream_id) {
@@ -761,11 +758,9 @@ Sink<std::unique_ptr<Message>>* EventLoop::GetDeliverySink(StreamID stream_id) {
   return it->second;
 }
 
-std::unique_ptr<Stream> EventLoop::OpenStream(
-    const HostId& destination,
-    StreamID stream_id,
-    const TenantID tenant_id,
-    const StreamProperties& properties) {
+std::unique_ptr<Stream> EventLoop::OpenStream(const HostId& destination,
+                                              StreamID stream_id,
+                                              IntroParameters params) {
   thread_check_.Check();
   if (!destination) {
     RS_ASSERT(false);
@@ -789,7 +784,7 @@ std::unique_ptr<Stream> EventLoop::OpenStream(
   }
 
   // Create a new stream.
-  auto stream = socket->OpenStream(stream_id, tenant_id, properties);
+  auto stream = socket->OpenStream(stream_id, std::move(params));
   RS_ASSERT(stream);
   // It will not be owned by this EventLoop.
   return stream;

@@ -275,17 +275,17 @@ class Rocketeer {
    *
    * @param flow Flow control handle for exerting back-pressure.
    * @param stream_id The ID of the stream that has been disconnected.
-   * @param properties Map of key(string):value(string) properties
+   * @param params Introduction parameters for the stream
    */
   virtual void HandleConnect(Flow* flow,
                              StreamID stream_id,
-                             StreamProperties properties);
+                             IntroParameters params);
 
   /**
    * Same as HandleConnect, but using return value for flow control.
    */
   virtual BackPressure TryHandleConnect(StreamID stream_id,
-                                        StreamProperties properties);
+                                        IntroParameters params);
 
   /**
    * Sends a message on given subscription.

@@ -104,6 +104,7 @@ Status ProxyServerImpl::Start() {
   }
 
   downstream_loop_->RegisterCallbacks({
+      {MessageType::mIntroduction, CreateDownstreamCallback()},
       {MessageType::mSubscribe, CreateDownstreamCallback()},
       {MessageType::mUnsubscribe, CreateDownstreamCallback()},
       {MessageType::mGoodbye, CreateDownstreamCallback()},

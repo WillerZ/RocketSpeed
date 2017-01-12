@@ -4,6 +4,7 @@
 /// of patent rights can be found in the PATENTS file in the same directory.
 #include "src/proxy2/upstream_worker.h"
 
+#include <algorithm>
 #include <chrono>
 #include <vector>
 
@@ -27,21 +28,68 @@ PerShard::PerShard(UpstreamWorker* worker, size_t shard_id)
                                              std::chrono::milliseconds(100)))
 , router_(worker_->GetOptions().routing)
 , router_version_(router_->GetVersion())
-, host_(router_->GetHost(shard_id))
-, multiplexer_(this) {
+, host_(router_->GetHost(shard_id)) {
   timer_->Enable();
 }
 
-void PerShard::AddPerStream(PerStream* per_stream) {
-  auto result = streams_on_shard_.emplace(per_stream);
-  (void)result;
+void PerShard::AddPerStream(PerStream* per_stream, IntroProperties props) {
+  // Check if multiplexer already exists
+  // Its ok to loop since the number of multiplexers is small
+  auto it = std::find_if(
+      multiplexers_.begin(), multiplexers_.end(), [&props](const auto& m) {
+        return m.first->GetProperties() == props;
+      });
+
+  if (it != multiplexers_.end()) {
+    auto ptr = it->first;
+    streams_on_shard_.emplace(per_stream, ptr);
+
+    auto mit = multiplexers_ref_count_.find(ptr);
+    RS_ASSERT(mit != multiplexers_ref_count_.end());
+    ++mit->second;
+    return;
+  }
+
+  auto multiplexer = std::make_unique<Multiplexer>(this, std::move(props));
+  auto ptr = multiplexer.get();
+
+  auto result = multiplexers_.emplace(ptr, std::move(multiplexer));
   RS_ASSERT(result.second);
+
+  if (multiplexers_.size() >= 10) {
+    // Number of multiplexers should be low, WARN if its not the case
+    LOG_WARN(GetOptions().info_log,
+             "Number of multiplexers created for shard %zu is too high : %zu",
+             shard_id_,
+             multiplexers_.size());
+  }
+
+  streams_on_shard_.emplace(per_stream, ptr);
+  multiplexers_ref_count_.emplace(ptr, 1);
 }
 
 void PerShard::RemovePerStream(PerStream* per_stream) {
-  auto result = streams_on_shard_.erase(per_stream);
-  RS_ASSERT(result > 0);
-  (void)result;
+  auto it = streams_on_shard_.find(per_stream);
+  RS_ASSERT(it != streams_on_shard_.end());
+
+  Multiplexer* multiplexer = it->second;
+
+  auto mit = multiplexers_ref_count_.find(multiplexer);
+  RS_ASSERT(mit != multiplexers_ref_count_.end());
+
+  if (--mit->second == 0) {
+    multiplexers_.erase(multiplexer);
+    multiplexers_ref_count_.erase(mit);
+  }
+
+  streams_on_shard_.erase(per_stream);
+}
+
+Multiplexer* PerShard::GetMultiplexer(PerStream* per_stream) {
+  auto it = streams_on_shard_.find(per_stream);
+  // We should have a multiplexer
+  RS_ASSERT(it != streams_on_shard_.end());
+  return it->second;
 }
 
 PerShard::~PerShard() = default;
@@ -66,17 +114,25 @@ void PerShard::CheckRoutes() {
            shard_id_,
            host_.ToString().c_str());
 
-  // Firstly notify the forwarder, so that any subscriptions can be terminated
-  // before the Multiplexer starts moving them to a new host.
-  std::vector<PerStream*> streams(streams_on_shard_.begin(),
-                                  streams_on_shard_.end());
-  for (auto per_stream : streams) {
-    if (streams_on_shard_.count(per_stream)) {
-      per_stream->ChangeRoute();
+  // Firstly notify the forwarder, so that any subscriptions can be
+  // terminated before the Multiplexer starts moving them to a new host.
+  // Copy stream ptr's as streams might get cleaned up and ptr rendered
+  // invalid.
+  std::vector<PerStream*> streams(streams_on_shard_.size());
+  std::transform(streams_on_shard_.begin(),
+                 streams_on_shard_.end(),
+                 streams.begin(),
+                 [](auto kv) { return kv.first; });
+  for (auto stream : streams) {
+    if (streams_on_shard_.count(stream)) {
+      stream->ChangeRoute();
     }
   }
-  // Afterwards, notify Multiplexer.
-  multiplexer_.ChangeRoute();
+
+  // Afterwards, notify Multiplexers.
+  for (auto& multiplexer : multiplexers_) {
+    multiplexer.first->ChangeRoute();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -113,40 +169,59 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
   auto it = streams_.find(stream_id);
   if (it == streams_.end()) {
     // Create new stream context.
-    // We determine the shard based on the first MessageSubscribe found in a
-    // stream, which is okay as the subscriber always starts a stream with
-    // MessageSubscribe.
-    if (type == MessageType::mSubscribe) {
-      auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
-      auto shard_id = options_.routing->GetShard(subscribe->GetNamespace(),
-                                                 subscribe->GetTopicName());
-
-      // Reuse or create PerShard for the shard.
-      auto it1 = shard_cache_.find(shard_id);
-      if (it1 == shard_cache_.end()) {
-        auto result = shard_cache_.emplace(
-            shard_id, std::make_unique<PerShard>(this, shard_id));
-        RS_ASSERT(result.second);
-        it1 = result.first;
-        stats_.num_shards->Add(1);
-      }
-
-      auto result = streams_.emplace(
+    // We determine the shard from the stream MessageIntroduction
+    // It is guaranteed that the first message on the stream would be an
+    // introduction message.
+    RS_ASSERT_DBG(type == MessageType::mIntroduction);
+    if (type != MessageType::mIntroduction) {
+      // TODO(rishijhelumi) : close stream instead
+      LOG_ERROR(
+          options_.info_log,
+          "First message on stream: %llu type: %s, cannot determine shard",
           stream_id,
-          std::make_unique<PerStream>(this, it1->second.get(), stream_id));
-      RS_ASSERT(result.second);
-      it = result.first;
-      stats_.num_streams->Add(1);
-    } else {
-      // This may happen if routes change or there is a race between server and
-      // client closing the stream.
-      LOG_WARN(GetOptions().info_log,
-               "First message on unknown stream: %llu type: %s, cannot "
-               "determine shard",
-               stream_id,
-               MessageTypeName(type));
+          MessageTypeName(type));
       return;
     }
+
+    auto introduction = static_cast<MessageIntroduction*>(message.second.get());
+    const auto& props = introduction->GetStreamProperties();
+
+    auto shard = props.find(PropertyShardID);
+    RS_ASSERT_DBG(shard != props.end());
+    if (shard == props.end()) {
+      LOG_ERROR(options_.info_log,
+                "Cannot get shard for stream: %llu from introduction message, "
+                "property not set, cannot route stream.",
+                stream_id);
+      return;
+    }
+
+    size_t shard_id = std::numeric_limits<size_t>::max();
+    try {
+      shard_id = std::stoul(shard->second, nullptr, 0);
+    } catch (const std::exception& ex) {
+      LOG_WARN(options_.info_log,
+               "Cannot decode shard : %s, error : %s",
+               shard->second.c_str(),
+               ex.what());
+    }
+
+    // Reuse or create PerShard for the shard.
+    auto it1 = shard_cache_.find(shard_id);
+    if (it1 == shard_cache_.end()) {
+      auto result = shard_cache_.emplace(
+          shard_id, std::make_unique<PerShard>(this, shard_id));
+      RS_ASSERT(result.second);
+      it1 = result.first;
+      stats_.num_shards->Add(1);
+    }
+
+    auto result = streams_.emplace(
+        stream_id,
+        std::make_unique<PerStream>(this, it1->second.get(), stream_id));
+    RS_ASSERT(result.second);
+    it = result.first;
+    stats_.num_streams->Add(1);
   }
 
   // Forward.
@@ -156,7 +231,6 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {
     CleanupState(per_stream);
-    per_stream = nullptr;
   }
 }
 
@@ -179,7 +253,6 @@ void UpstreamWorker::ReceiveFromStream(Flow* flow,
   // Clean up the state if this is the last message on the stream.
   if (type == MessageType::mGoodbye) {
     CleanupState(per_stream);
-    per_stream = nullptr;
   }
 }
 
@@ -209,7 +282,6 @@ PerStream::PerStream(UpstreamWorker* worker,
                      PerShard* per_shard,
                      StreamID downstream_id)
 : worker_(worker), per_shard_(per_shard), downstream_id_(downstream_id) {
-  per_shard_->AddPerStream(this);
   // Create stats.
   auto prefix = per_shard->GetOptions().stats_prefix + "per_stream.";
   auto stats = per_shard->GetStatistics();
@@ -264,6 +336,26 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
   // Determine whether the topic of the subscription is hot and perform
   // subscription-level proxying if it is.
   switch (type) {
+    case MessageType::mIntroduction: {
+      // The first message on the stream would be an introduction message
+      // Store the message for this stream, to be used for
+      // proxy stream introduction if multiplexer is not used
+      RS_ASSERT_DBG(intro_parameters_ == nullptr);
+      if (intro_parameters_ || upstream_) {
+        // We have already received an introduction
+        return;
+      }
+      auto intro = static_cast<MessageIntroduction*>(message.second.get());
+
+      // Set intro_properties for this stream
+      intro_parameters_.reset(
+          new IntroParameters(intro->GetTenantID(),
+                              intro->GetStreamProperties(),
+                              intro->GetClientProperties()));
+      // Add Stream to shard with these properties
+      per_shard_->AddPerStream(this, intro->GetStreamProperties());
+    }
+      return;
     case MessageType::mSubscribe: {
       auto subscribe = static_cast<MessageSubscribe*>(message.second.get());
       auto namespace_id = subscribe->GetNamespace();
@@ -271,7 +363,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
       if (GetOptions().hot_topics->IsHotTopic(namespace_id, topic_name)) {
         auto downstream_sub = subscribe->GetSubID();
         // Let Multiplexer handle the subscription and record handle.
-        auto ptr = per_shard_->GetMultiplexer()->Subscribe(
+        auto ptr = per_shard_->GetMultiplexer(this)->Subscribe(
             flow,
             subscribe->GetTenantID(),
             namespace_id,
@@ -294,7 +386,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
       // this even if so.
       auto it = downstream_to_upstream_.find(downstream_sub);
       if (it != downstream_to_upstream_.end()) {
-        per_shard_->GetMultiplexer()->Unsubscribe(
+        per_shard_->GetMultiplexer(this)->Unsubscribe(
             flow, it->second, this, it->first);
         downstream_to_upstream_.erase(it);
         stats_.num_downstream_subscriptions->Add(-1);
@@ -304,7 +396,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
     } break;
     default:
       // Other messages than metadata updates must be handled by the
-      // stream-level procy.
+      // stream-level proxy.
       break;
   }
 
@@ -324,7 +416,13 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
       return;
     }
 
-    upstream_ = GetLoop()->OpenStream(host);
+    // Open an upstream for the downstream with the params that was received
+    // from the inbound stream.
+    auto params = *intro_parameters_;
+    upstream_ = GetLoop()->OpenStream(host, std::move(params));
+    // Intro Parameters are not needed anymore
+    intro_parameters_ = nullptr;
+
     if (!upstream_) {
       LOG_ERROR(GetOptions().info_log,
                 "Failed to open connection to %s",
@@ -406,7 +504,7 @@ void PerStream::CleanupState() {
   auto subscriptions = std::move(downstream_to_upstream_);
   for (auto& entry : subscriptions) {
     stats_.num_downstream_subscriptions->Add(-1);
-    per_shard_->GetMultiplexer()->Unsubscribe(
+    per_shard_->GetMultiplexer(this)->Unsubscribe(
         &no_flow, entry.second, this, entry.first);
   }
 }

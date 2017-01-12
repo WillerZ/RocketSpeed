@@ -537,7 +537,7 @@ struct ConnectHandler : public Rocketeer {
 
   void HandleConnect(Flow*,
                      StreamID stream_id,
-                     StreamProperties properties) override {
+                     IntroParameters params) override {
     stream_id_ = stream_id;
     connect_sem_.Post();
   }

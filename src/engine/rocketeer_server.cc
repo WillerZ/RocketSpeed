@@ -132,7 +132,7 @@ class CommunicationRocketeer final : public Rocketeer {
 
   void HandleConnect(Flow* flow,
                      StreamID stream_id,
-                     StreamProperties properties) final override;
+                     IntroParameters params) final override;
 
   void Deliver(Flow* flow,
                InboundID inbound_id,
@@ -278,8 +278,8 @@ void CommunicationRocketeer::HandleDisconnect(Flow* flow, StreamID stream_id) {
 
 void CommunicationRocketeer::HandleConnect(Flow* flow,
                                            StreamID stream_id,
-                                           StreamProperties properties) {
-  above_rocketeer_->HandleConnect(flow, stream_id, std::move(properties));
+                                           IntroParameters params) {
+  above_rocketeer_->HandleConnect(flow, stream_id, std::move(params));
 }
 
 void CommunicationRocketeer::Deliver(Flow* flow,
@@ -535,7 +535,7 @@ void CommunicationRocketeer::Receive(
   // TODO(rishijhelumi) : Remove as it would be set via introduction
   if (it == stream_state_.end()) {
     // For backward compatibility, call HandleConnect with empty properties
-    HandleConnect(flow, origin, StreamProperties());
+    HandleConnect(flow, origin, IntroParameters());
     it = stream_state_.emplace(origin, StreamState(subscribe->GetTenantID()))
              .first;
   }
@@ -650,7 +650,11 @@ void CommunicationRocketeer::Receive(
           .second;
   RS_ASSERT(result);
 
-  HandleConnect(flow, origin, introduction->GetProperties());
+  IntroParameters intro_params(introduction->GetTenantID(),
+                               introduction->GetStreamProperties(),
+                               introduction->GetClientProperties());
+
+  HandleConnect(flow, origin, std::move(intro_params));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
