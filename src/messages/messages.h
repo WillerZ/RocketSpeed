@@ -33,6 +33,15 @@
 
 namespace rocketspeed {
 
+/// Current version of protocol being emitted by this client/server.
+/// Receiving a later versioned message will cause connection to close with
+/// an error.
+constexpr uint8_t kCurrentMsgVersion = 1;
+
+/// Minimum supported version of protocol of this client/server.
+/// Anything below will cause connection to close with error.
+constexpr uint8_t kMinAcceptedVersion = 1;
+
 /** The message types. */
 enum class MessageType : uint8_t {
   NotInitialized = 0,  // not initialized yet
@@ -1080,23 +1089,19 @@ class MessageBacklogFill : public Message {
  */
 class MessageIntroduction final : public Message {
  public:
-  using Key = std::string;
-  using Value = std::string;
-  using Properties = std::unordered_map<Key, Value>;
-
-  MessageIntroduction(TenantID tenant_id, const Properties& properties)
+  MessageIntroduction(TenantID tenant_id, StreamProperties properties)
   : Message(MessageType::mIntroduction, tenant_id)
   , properties_(std::move(properties)) {}
 
   MessageIntroduction() : Message(MessageType::mIntroduction) {}
 
-  const Properties& GetProperties() const { return properties_; }
+  const StreamProperties& GetProperties() const { return properties_; }
 
   virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
  private:
-  Properties properties_;
+  StreamProperties properties_;
 };
 
 /** @} */

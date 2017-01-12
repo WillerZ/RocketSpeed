@@ -114,6 +114,14 @@ Status ClientImpl::Create(ClientOptions options,
     return Status::InvalidArgument("Missing backoff strategy.");
   }
 
+  // Validate stream property keys
+  for (const auto& prop : options.stream_properties) {
+    if (IsPropertyReserved(prop.first)) {
+      return Status::InvalidArgument("StreamPropertyKey reserved : " +
+                                     prop.first);
+    }
+  }
+
   // Default to null logger.
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();

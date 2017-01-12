@@ -92,14 +92,6 @@ typedef uint64_t SequenceNumber;
 using Epoch = std::string;
 
 /**
- * Map of Key:Value properties to send to the server while creating a stream
- * to the server.
- * The properties are defined by the application and are known to both client
- * and server for parsing.
- */
-using StreamProperties = std::unordered_map<std::string, std::string>;
-
-/**
  * A globally unique identifier.
  */
 struct GUID {
@@ -575,6 +567,20 @@ class StatisticsVisitor {
   virtual ~StatisticsVisitor() {}
 };
 
+/// Type for stream property key
+using StreamPropertyKey = std::string;
+/// Type for value of a stream property
+using StreamPropertyValue = std::string;
+
+/**
+ * Map of Key:Value properties to send to the server while creating a stream
+ * to the server.
+ * The properties are defined by the application and are known to both client
+ * and server for parsing.
+ */
+using StreamProperties =
+    std::unordered_map<StreamPropertyKey, StreamPropertyValue>;
+
 /// Stream Descriptor for information about the stream
 struct StreamDescriptor {
   explicit StreamDescriptor(StreamProperties _properties, TenantID _tenant_id)
@@ -588,6 +594,17 @@ struct StreamDescriptor {
   // TenantID of the stream
   TenantID tenant_id = GuestTenant;
 };
+
+/**
+ * Tests if a StreamPropertyKey is reserved.
+ *
+ * @param key the name of the property key.
+ * @return true iff the StreamPropertyKey is reserved
+ */
+bool IsPropertyReserved(const StreamPropertyKey& key);
+
+/// Default key for shard_id of the stream
+extern const StreamPropertyKey PropertyShardID;
 
 }  // namespace rocketspeed
 

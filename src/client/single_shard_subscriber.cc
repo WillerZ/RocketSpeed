@@ -62,6 +62,7 @@ Subscriber::Subscriber(
                      std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
                      options.backoff_strategy,
                      options_.max_silent_reconnects,
+                     shard_id,
                      stream_descriptor)
 , backlog_query_store_(
       new BacklogQueryStore(options_.info_log,

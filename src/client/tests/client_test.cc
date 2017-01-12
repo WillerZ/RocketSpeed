@@ -299,13 +299,18 @@ class ClientTest : public ::testing::Test {
           [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             auto introduction = static_cast<MessageIntroduction*>(msg.get());
             auto props = introduction->GetProperties();
-            auto host = props.find("hostname");
-            auto ip = props.find("ip");
-            ASSERT_NE(host, props.end());
-            ASSERT_NE(ip, props.end());
 
+            auto host = props.find("hostname");
+            ASSERT_NE(host, props.end());
             ASSERT_EQ("dummy_host", host->second);
+
+            auto ip = props.find("ip");
+            ASSERT_NE(ip, props.end());
             ASSERT_EQ("dummy_ip", ip->second);
+
+            // Default properties check
+            auto shard_id = props.find(PropertyShardID);
+            ASSERT_NE(shard_id, props.end());
           });
     }
     server->RegisterCallbacks(cbs);

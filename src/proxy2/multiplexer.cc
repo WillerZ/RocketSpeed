@@ -133,7 +133,8 @@ Multiplexer::Multiplexer(PerShard* per_shard)
                      this,
                      std::bind(&Multiplexer::ReceiveConnectionStatus, this, _1),
                      GetOptions().backoff_strategy,
-                     GetOptions().max_silent_reconnects) {
+                     GetOptions().max_silent_reconnects,
+                     per_shard_->GetShardID()) {
   // Create stats.
   auto prefix = per_shard->GetOptions().stats_prefix + "multiplexer.";
   auto stats = per_shard->GetStatistics();

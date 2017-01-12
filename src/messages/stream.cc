@@ -16,6 +16,14 @@
 
 namespace rocketspeed {
 
+// All internal Property Key begins with "__"
+const StreamPropertyKey PropertyShardID("__shard_id");
+
+bool IsPropertyReserved(const StreamPropertyKey& key) {
+  const std::string start = "__";
+  return start.size() < key.size() && key.compare(0, start.size(), start) == 0;
+}
+
 Stream::Stream(SocketEvent* socket_event,
                StreamID remote_id,
                StreamID local_id,

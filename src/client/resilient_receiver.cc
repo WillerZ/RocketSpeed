@@ -15,12 +15,14 @@ ResilientStreamReceiver::ResilientStreamReceiver(
     HealthStatusCb health_status_cb,
     BackOffStrategy backoff_strategy,
     size_t max_silent_reconnects,
+    size_t shard_id,
     std::shared_ptr<const StreamDescriptor> stream_descriptor)
 : event_loop_(event_loop)
 , receiver_(receiver)
 , health_status_cb_(std::move(health_status_cb))
 , backoff_strategy_(std::move(backoff_strategy))
 , max_silent_reconnects_(max_silent_reconnects)
+, shard_id_(shard_id)
 , stream_descriptor_(stream_descriptor) {}
 
 void ResilientStreamReceiver::ConnectTo(const HostId& host) {
@@ -85,9 +87,12 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
   auto reconnect = [this, host, logger]() {
     RS_ASSERT(host);
 
-    // Open the stream.
+    // Open the stream. (Update properties to include the shard_id)
+    auto props = stream_descriptor_->properties;
+    props.emplace(PropertyShardID, std::to_string(shard_id_));
     auto stream = event_loop_->OpenStream(
-        host, stream_descriptor_->tenant_id, stream_descriptor_->properties);
+        host, stream_descriptor_->tenant_id, std::move(props));
+
     if (!stream) {
       auto failures = UpdateConnectionState(false);
       Reconnect(failures, host);

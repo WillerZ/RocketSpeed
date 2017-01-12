@@ -43,6 +43,7 @@ class ResilientStreamReceiver final : public StreamReceiver {
    * detected as unhealthy or on each healthy message received.
    * @param backoff_strategy Determines the backoff period.
    * @param max_silent_reconnects Reconnect this many times before
+   * @param shard_id shard id for the stream receiver
    * @param stream_descriptor Properties descriptor of the stream
    * notifying the connection_status_cb.
    */
@@ -52,6 +53,7 @@ class ResilientStreamReceiver final : public StreamReceiver {
       HealthStatusCb health_status_cb,
       BackOffStrategy backoff_strategy,
       size_t max_silent_reconnects,
+      size_t shard_id,
       std::shared_ptr<const StreamDescriptor> stream_descriptor =
           std::make_shared<const StreamDescriptor>());
 
@@ -72,6 +74,7 @@ class ResilientStreamReceiver final : public StreamReceiver {
   const HealthStatusCb health_status_cb_;
   const BackOffStrategy backoff_strategy_;
   const size_t max_silent_reconnects_;
+  const size_t shard_id_;
   std::shared_ptr<const StreamDescriptor> stream_descriptor_;
 
   HostId current_host_;

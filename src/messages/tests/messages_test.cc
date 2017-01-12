@@ -357,7 +357,7 @@ TEST_F(Messaging, MessageBacklogFill) {
 }
 
 TEST_F(Messaging, MessageIntroduction) {
-  MessageIntroduction::Properties properties;
+  StreamProperties properties;
   properties.emplace("hostname", "localhost");
   properties.emplace("ip", "0.0.0.0");
   properties.emplace("max_subs", "2000");

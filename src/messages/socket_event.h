@@ -26,15 +26,6 @@ class EventLoop;
 class ScheduledExecutor;
 class Stream;
 
-/// Current version of protocol being emitted by this client/server.
-/// Receiving a later versioned message will cause connection to close with
-/// an error.
-constexpr uint8_t kCurrentMsgVersion = 1;
-
-/// Minimum supported version of protocol of this client/server.
-/// Anything below will cause connection to close with error.
-constexpr uint8_t kMinAcceptedVersion = 1;
-
 struct MessageOnStream {
   Stream* stream;
   std::unique_ptr<Message> message;
