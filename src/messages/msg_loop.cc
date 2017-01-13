@@ -60,8 +60,6 @@ void MsgLoop::EventCallback(Flow* flow,
     LOG_WARN(info_log_,
         "No registered msg callback for msg type %d",
         static_cast<int>(type));
-    info_log_->Flush();
-    RS_ASSERT(0);
   }
 }
 
