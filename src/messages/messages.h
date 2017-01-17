@@ -774,17 +774,28 @@ class MessageDeliver : public Message {
   explicit MessageDeliver(MessageType type) : Message(type) {}
   virtual ~MessageDeliver() = 0;
 
-  // No getters for namespace and topic.
-  // This proves that no code is relying on these until all servers are updated.
-  // TODO(pja)
+  Slice GetNamespace() const { return namespace_id_; }
+
+  Slice GetTopicName() const { return topic_; }
 
   SubscriptionID GetSubID() const { return sub_id_; }
 
   void SetSubID(SubscriptionID sub_id) { sub_id_ = sub_id; }
 
+  Slice GetDataSource() const { return source_; }
+
   SequenceNumber GetPrevSequenceNumber() const { return seqno_prev_; }
 
   SequenceNumber GetSequenceNumber() const { return seqno_; }
+
+  void SetSequenceNumbers(DataSource source,
+                          SequenceNumber seqno_prev,
+                          SequenceNumber seqno) {
+    RS_ASSERT(seqno_prev <= seqno);
+    source_ = std::move(source);
+    seqno_prev_ = seqno_prev;
+    seqno_ = seqno;
+  }
 
   void SetSequenceNumbers(SequenceNumber seqno_prev, SequenceNumber seqno) {
     RS_ASSERT(seqno_prev <= seqno);
@@ -798,6 +809,7 @@ class MessageDeliver : public Message {
  protected:
   NamespaceID namespace_id_;
   Topic topic_;
+  DataSource source_;
 
  private:
   /** ID of the subscription this response refers to. */

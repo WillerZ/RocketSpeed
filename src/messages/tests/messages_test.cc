@@ -230,7 +230,7 @@ TEST_F(Messaging, MessageDeliverGap) {
   MessageDeliverGap msg1(
       Tenant::GuestTenant, "namespace", "topic", SubscriptionID::Unsafe(42),
       GapType::kRetention);
-  msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
+  msg1.SetSequenceNumbers("source", 1000100010001000ULL, 2000200020002000ULL);
 
   std::string str;
   msg1.Serialize(&str);
@@ -241,10 +241,12 @@ TEST_F(Messaging, MessageDeliverGap) {
   ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+  ASSERT_EQ(msg1.GetDataSource(), msg2.GetDataSource());
   ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
   ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
   ASSERT_EQ(msg1.GetGapType(), msg2.GetGapType());
-  // TODO(pja) - compare namespace topic
+  ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
+  ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
 }
 
 TEST_F(Messaging, MessageDeliverData) {
@@ -254,7 +256,7 @@ TEST_F(Messaging, MessageDeliverData) {
                           SubscriptionID::Unsafe(42),
                           GUIDGenerator().Generate(),
                           "payload");
-  msg1.SetSequenceNumbers(1000100010001000ULL, 2000200020002000ULL);
+  msg1.SetSequenceNumbers("source", 1000100010001000ULL, 2000200020002000ULL);
 
   std::string str;
   msg1.Serialize(&str);
@@ -265,11 +267,13 @@ TEST_F(Messaging, MessageDeliverData) {
   ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+  ASSERT_EQ(msg1.GetDataSource(), msg2.GetDataSource());
   ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
   ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
   ASSERT_TRUE(msg1.GetMessageID() == msg2.GetMessageID());
   ASSERT_EQ(msg1.GetPayload().ToString(), msg2.GetPayload().ToString());
-  // TODO(pja) - compare namespace topic
+  ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
+  ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
 }
 
 TEST_F(Messaging, MessageDeliverBatch) {
