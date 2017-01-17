@@ -1270,6 +1270,9 @@ TEST_F(ClientTest, TailCollapsingSubscriber) {
   });
 
   ClientOptions options;
+  // TODO(pja): health notifications use same status nsubscribe,
+  // so need to avoid. Needs proper fix.
+  options.should_notify_health = false;
   options.collapse_subscriptions_to_tail = true;
   auto client = CreateClient(std::move(options));
 
