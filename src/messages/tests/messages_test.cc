@@ -222,7 +222,8 @@ TEST_F(Messaging, MessageUnsubscribe) {
   ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
-  // TODO(pja) - compare output
+  ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
+  ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
 }
 
 TEST_F(Messaging, MessageDeliverGap) {

@@ -77,7 +77,6 @@ Copilot::Copilot(CopilotOptions options, std::unique_ptr<ClientImpl> client):
                                             this,
                                             client_));
   }
-  sub_id_map_.resize(num_workers);
 
   // Create queues.
   for (int i = 0; i < num_workers; ++i) {
@@ -271,7 +270,6 @@ void Copilot::ProcessSubscribe(std::unique_ptr<Message> msg, StreamID origin) {
   auto& worker = workers_[dest_worker_id];
 
   auto worker_id = options_.msg_loop->GetThreadWorkerIndex();
-  sub_id_map_[worker_id].Insert(origin, subscribe->GetSubID(), dest_worker_id);
 
   auto command =
     worker->WorkerCommand(logid, std::move(msg), worker_id, origin);
@@ -289,39 +287,23 @@ void Copilot::ProcessUnsubscribe(std::unique_ptr<Message> msg,
 
   const int this_worker = options_.msg_loop->GetThreadWorkerIndex();
   auto unsubscribe = static_cast<MessageUnsubscribe*>(msg.get());
-  const auto sub_id = unsubscribe->GetSubID();
 
-  int worker_id = -1;
-  switch (unsubscribe->GetReason()) {
-    case MessageUnsubscribe::Reason::kRequested:
-      // Inbound unsubscription from client.
-      LOG_DEBUG(options_.info_log,
-                "Received client unsubscribe for subscription (%llu) at stream "
-                "(%llu)",
-                sub_id.ForLogging(),
-                origin);
-
-      // Use client subscription ID map to find worker.
-      if (!sub_id_map_[this_worker].MoveOut(origin, sub_id, &worker_id)) {
-        return;
-      }
-      break;
-
-    case MessageUnsubscribe::Reason::kInvalid:
-      // Outbound unsubscription from control tower.
-      LOG_WARN(options_.info_log,
-               "Received server unsubscribe for subscription (%llu) at stream "
-               "(%llu)",
-               sub_id.ForLogging(),
-               origin);
-
-      // Map subscription ID back using CopilotWorker mapping.
-      worker_id = CopilotWorker::SubscriptionIDWorker(sub_id, workers_.size());
-      break;
+  // Calculate log ID for this topic.
+  LogID logid;
+  Status st = options_.log_router->GetLogID(unsubscribe->GetNamespace(),
+                                            unsubscribe->GetTopicName(),
+                                            &logid);
+  if (!st.ok()) {
+    LOG_WARN(options_.info_log,
+             "Unable to map Topic(%s, %s) to LogID: %s",
+             unsubscribe->GetNamespace().ToString().c_str(),
+             unsubscribe->GetTopicName().ToString().c_str(),
+             st.ToString().c_str());
+    return;
   }
 
-  RS_ASSERT(worker_id != -1);
-  auto command = workers_[worker_id]->WorkerCommand(LogID(0),
+  int worker_id = GetLogWorker(logid);
+  auto command = workers_[worker_id]->WorkerCommand(logid,
                                                     std::move(msg),
                                                     this_worker,
                                                     origin);
@@ -336,7 +318,6 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   switch (goodbye->GetOriginType()) {
     case MessageGoodbye::OriginType::Client: {
-      sub_id_map_[event_loop_worker].Remove(origin);
       LOG_DEBUG(options_.info_log, "Received goodbye for client %llu", origin);
       break;
     }

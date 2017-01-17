@@ -79,9 +79,6 @@ class Copilot {
   // Worker objects and threads, these have their own message loops.
   std::vector<std::unique_ptr<CopilotWorker>> workers_;
 
-  // For each thread, maps (StreamID, SubscriptionID) pairs to copilot workers.
-  std::vector<SubscriptionMap<int>> sub_id_map_;
-
   // Full-mesh network of queues for the messages from clients to workers.
   std::vector<std::vector<std::shared_ptr<CommandQueue>>>
     client_to_worker_queues_;

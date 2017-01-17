@@ -115,8 +115,10 @@ class CommunicationRocketeer final : public Rocketeer {
                              InboundID inbound_id,
                              SubscriptionParameters params) final override;
 
-  void HandleTermination(Flow* flow,
+  void HandleUnsubscribe(Flow* flow,
                          InboundID inbound_id,
+                         NamespaceID namespace_id,
+                         Topic topic,
                          Rocketeer::TerminationSource source) final override;
 
   void HandleHasMessageSince(Flow* flow,
@@ -256,9 +258,11 @@ void CommunicationRocketeer::HandleNewSubscription(
   above_rocketeer_->HandleNewSubscription(flow, inbound_id, std::move(params));
 }
 
-void CommunicationRocketeer::HandleTermination(
-    Flow* flow, InboundID inbound_id, TerminationSource source) {
-  above_rocketeer_->HandleTermination(flow, inbound_id, source);
+void CommunicationRocketeer::HandleUnsubscribe(
+    Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+    TerminationSource source) {
+  above_rocketeer_->HandleUnsubscribe(flow, inbound_id,
+      std::move(namespace_id), std::move(topic), source);
 }
 
 void CommunicationRocketeer::HandleHasMessageSince(
@@ -413,8 +417,10 @@ void CommunicationRocketeer::Unsubscribe(Flow* flow,
       stats_->inbound_subscriptions->Add(-1);
       stats_->terminations->Add(1);
       state.num_subscriptions--;
-      HandleTermination(flow,
+      HandleUnsubscribe(flow,
                         InboundID(origin, sub_id),
+                        namespace_id,
+                        topic,
                         TerminationSource::Rocketeer);
 
       MessageUnsubscribe::Reason msg_reason =
@@ -547,10 +553,13 @@ void CommunicationRocketeer::Receive(
              sub_id.ForLogging());
     return;
   }
+  Slice namespace_id = subscribe->GetNamespace();
+  Slice topic = subscribe->GetTopicName();
+
   // TODO(stupaq) store subscription parameters in a message and move them out
   SubscriptionParameters params(subscribe->GetTenantID(),
-                                subscribe->GetNamespace().ToString(),
-                                subscribe->GetTopicName().ToString(),
+                                namespace_id.ToString(),
+                                topic.ToString(),
                                 subscribe->GetStartSequenceNumber());
   HandleNewSubscription(flow, InboundID(origin, sub_id), std::move(params));
   stats_->subscribes->Add(1);
@@ -572,8 +581,10 @@ void CommunicationRocketeer::Receive(
       stats_->inbound_subscriptions->Add(-1);
       stats_->unsubscribes->Add(1);
       state.num_subscriptions--;
-      HandleTermination(flow,
+      HandleUnsubscribe(flow,
                         InboundID(origin, sub_id),
+                        unsubscribe->GetNamespace().ToString(),
+                        unsubscribe->GetTopicName().ToString(),
                         TerminationSource::Subscriber);
     } else {
       LOG_WARN(server_->options_.info_log,
@@ -608,8 +619,14 @@ void CommunicationRocketeer::Receive(
   StreamState& state = it->second;
   if (server_->options_.terminate_on_disconnect) {
     for (const auto& entry : state.inbound) {
-      HandleTermination(flow,
+      // TODO(pja): Really, for terminate_on_disconnect, we should keep track
+      // of subscribed topics, and pass them in here. I don't want to regress
+      // memory significantly now until we implement HandleDisconnect handlers,
+      // so just passing empty strings.
+      HandleUnsubscribe(flow,
                         InboundID(origin, entry.first),
+                        "",
+                        "",
                         TerminationSource::Subscriber);
     }
   }

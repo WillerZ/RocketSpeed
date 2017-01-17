@@ -104,11 +104,17 @@ struct SubscribeUnsubscribe : public Rocketeer {
     inbound_id_ = inbound_id;
   }
 
-  void HandleTermination(
-      Flow*, InboundID inbound_id, TerminationSource source) override {
+  void HandleUnsubscribe(
+      Flow*,
+      InboundID inbound_id,
+      NamespaceID namespace_id,
+      Topic topic,
+      TerminationSource source) override {
     ASSERT_TRUE(TerminationSource::Subscriber == source);
     ASSERT_TRUE(is_set_);
     ASSERT_TRUE(inbound_id_ == inbound_id);
+    ASSERT_EQ(namespace_id, GuestNamespace);
+    ASSERT_TRUE(!topic.empty());
     terminate_sem_.Post();
   }
 };
@@ -160,10 +166,16 @@ struct SubscribeTerminate : public Rocketeer {
         std::move(params.topic_name), Rocketeer::UnsubscribeReason::Invalid);
   }
 
-  void HandleTermination(
-      Flow*, InboundID inbound_id, TerminationSource source) override {
+  void HandleUnsubscribe(
+      Flow*,
+      InboundID inbound_id,
+      NamespaceID namespace_id,
+      Topic topic,
+      TerminationSource source) override {
     ASSERT_TRUE(TerminationSource::Rocketeer == source);
     ASSERT_TRUE(inbound_id_ == inbound_id);
+    ASSERT_EQ(namespace_id, GuestNamespace);
+    ASSERT_EQ(topic, "SubscribeTerminate");
     terminate_sem_.Post();
   }
 };
@@ -215,9 +227,14 @@ struct Noop : public Rocketeer {
     return rocketeer_->HandleNewSubscription(flow, inbound_id, params);
   }
 
-  void HandleTermination(
-      Flow* flow, InboundID inbound_id, TerminationSource source) override {
-    rocketeer_->HandleTermination(flow, inbound_id, source);
+  void HandleUnsubscribe(
+      Flow* flow,
+      InboundID inbound_id,
+      NamespaceID namespace_id,
+      Topic topic,
+      TerminationSource source) override {
+    rocketeer_->HandleUnsubscribe(
+        flow, inbound_id, std::move(namespace_id), std::move(topic), source);
   }
 };
 
@@ -248,10 +265,16 @@ struct TopOfStack : public Rocketeer {
       Rocketeer::UnsubscribeReason::Invalid);
   }
 
-  void HandleTermination(
-      Flow*, InboundID inbound_id, TerminationSource source) override {
+  void HandleUnsubscribe(
+      Flow*,
+      InboundID inbound_id,
+      NamespaceID namespace_id,
+      Topic topic,
+      TerminationSource source) override {
     ASSERT_TRUE(TerminationSource::Rocketeer == source);
     ASSERT_TRUE(inbound_id_ == inbound_id);
+    ASSERT_EQ(namespace_id, GuestNamespace);
+    ASSERT_EQ(topic, "stackable");
     terminate_sem_.Post();
   }
 };
@@ -391,8 +414,8 @@ struct MetadataFlowControl : public Rocketeer {
     }
   }
 
-  BackPressure TryHandleTermination(
-      InboundID inbound_id, TerminationSource source) override {
+  BackPressure TryHandleUnsubscribe(
+      InboundID, NamespaceID, Topic, TerminationSource) override {
     return BackPressure::None();
   }
 };
@@ -451,9 +474,13 @@ struct DisconnectHandler : public Rocketeer {
     subscribe_sem_.Post();
   }
 
-  void HandleTermination(
-      Flow*, InboundID inbound_id, TerminationSource source) override {
-    // Should never receive a termination.
+  void HandleUnsubscribe(
+      Flow*,
+      InboundID,
+      NamespaceID,
+      Topic,
+      TerminationSource) override {
+    // Should never receive an unsubscribe.
     ASSERT_TRUE(false);
   }
 

@@ -75,7 +75,11 @@ Rocketeer::Rocketeer()
           // Cannot move msg.params since it may need to be retried later.
           return TryHandleNewSubscription(msg.inbound_id, msg.params);
         case RocketeerMetadataMessage::kTerminate:
-          return TryHandleTermination(msg.inbound_id, msg.source);
+          return TryHandleUnsubscribe(
+              msg.inbound_id,
+              msg.params.namespace_id,
+              msg.params.topic_name,
+              msg.source);
         case RocketeerMetadataMessage::kHasMessageSince:
           return TryHandleHasMessageSince(
               msg.inbound_id,
@@ -117,26 +121,47 @@ void Rocketeer::HandleNewSubscription(Flow* flow,
   flow->Write(metadata_sink_.get(), msg);
 }
 
+BackPressure Rocketeer::TryHandleUnsubscribe(
+    InboundID inbound_id,
+    NamespaceID,
+    Topic,
+    TerminationSource source) {
+  // If not implemented, we forward without topic.
+  return TryHandleTermination(inbound_id, source);
+}
+
 BackPressure Rocketeer::TryHandleTermination(
     InboundID inbound_id, TerminationSource source) {
-  RS_ASSERT(false) << "TryHandleTermination is not implemented.";
+  // DEPRECATED
+  RS_ASSERT(false) << "TryHandleTermination/Unsubscribe are not implemented.";
   return BackPressure::None();
 }
 
-void Rocketeer::HandleTermination(
-    Flow* flow, InboundID inbound_id, TerminationSource source) {
-  // This is the default implementation of HandleTermination.
-  // Most application Rocketeers will implement TryHandleTermination, but
-  // internally RocketSpeed calls HandleTermination.
+void Rocketeer::HandleUnsubscribe(
+    Flow* flow,
+    InboundID inbound_id,
+    NamespaceID namespace_id,
+    Topic topic_name,
+    TerminationSource source) {
+  // This is the default implementation of HandleUnsubscribe.
+  // Most application Rocketeers will implement TryHandleUnsubscribe, but
+  // internally RocketSpeed calls HandleUnsubscribe.
   //
-  // The default implementation forward the call to TryHandleTermination
+  // The default implementation forward the call to TryHandleUnsubscribe
   // through a RetryLaterSink, which will retry the call later if the Try
   // called requested a retry.
   RocketeerMetadataMessage msg;
   msg.type = RocketeerMetadataMessage::kTerminate;
   msg.inbound_id = inbound_id;
+  msg.params.namespace_id = std::move(namespace_id);
+  msg.params.topic_name = std::move(topic_name);
   msg.source = source;
   flow->Write(metadata_sink_.get(), msg);
+}
+
+void Rocketeer::HandleTermination(
+    Flow* flow, InboundID inbound_id, TerminationSource source) {
+  RS_ASSERT(false) << "Default HandleTermination should never be called";
 }
 
 BackPressure Rocketeer::TryHandleHasMessageSince(

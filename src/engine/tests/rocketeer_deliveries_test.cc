@@ -113,8 +113,10 @@ struct DeliveryRocketeer : public Rocketeer {
     }
   }
 
-  void HandleTermination(Flow*,
+  void HandleUnsubscribe(Flow*,
                          InboundID inbound_id,
+                         NamespaceID namespace_id,
+                         Topic topic,
                          TerminationSource source) override {}
 };
 

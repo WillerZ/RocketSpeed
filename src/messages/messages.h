@@ -727,8 +727,9 @@ class MessageUnsubscribe final : public Message {
 
   SubscriptionID GetSubID() const { return sub_id_; }
 
-  // No getters for namespace and topic. These should not be relied on yet.
-  // TODO(pja)
+  Slice GetNamespace() const { return namespace_id_; }
+
+  Slice GetTopicName() const { return topic_name_; }
 
   void SetSubID(SubscriptionID sub_id) { sub_id_ = sub_id; }
 

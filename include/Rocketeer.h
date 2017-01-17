@@ -151,6 +151,13 @@ class Rocketeer {
     Subscriber,
     Rocketeer,
   };
+  virtual BackPressure TryHandleUnsubscribe(
+      InboundID inbound_id,
+      NamespaceID namespace_id,
+      Topic topic,
+      TerminationSource source);
+
+  // DEPRECATED
   virtual BackPressure TryHandleTermination(
       InboundID inbound_id, TerminationSource source);
 
@@ -165,6 +172,14 @@ class Rocketeer {
    * @param inbound_id ID of the subscription to be terminated.
    * @param source Who terminated the subscription.
    */
+  virtual void HandleUnsubscribe(
+      Flow* flow,
+      InboundID inbound_id,
+      NamespaceID namespace_id,
+      Topic topic,
+      TerminationSource source);
+
+  // DEPRECATED
   virtual void HandleTermination(
       Flow* flow, InboundID inbound_id, TerminationSource source);
 

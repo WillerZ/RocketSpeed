@@ -50,8 +50,8 @@ class BacklogQueryRocketeer : public Rocketeer {
     return BackPressure::None();
   }
 
-  BackPressure TryHandleTermination(
-      InboundID id, TerminationSource) override {
+  BackPressure TryHandleUnsubscribe(
+      InboundID, NamespaceID, Topic, TerminationSource) override {
     return BackPressure::None();
   }
 

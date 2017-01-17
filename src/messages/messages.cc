@@ -660,8 +660,12 @@ Status MessageUnsubscribe::DeSerialize(Slice* in) {
   if (!GetFixedEnum8(in, &reason_)) {
     return Status::InvalidArgument("Bad Reason");
   }
-  // No deserializer yet for namespace and topic.
-  // This proves backwards compatibility.
+  if (!GetTopicID(in, &namespace_id_, &topic_name_)) {
+    // We allow this for backwards compatibility.
+    // TODO(pja): Make this an error once required.
+    namespace_id_.clear();
+    topic_name_.clear();
+  }
   return Status::OK();
 }
 
