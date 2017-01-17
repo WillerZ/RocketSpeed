@@ -1270,7 +1270,7 @@ TEST_F(ClientTest, TailCollapsingSubscriber) {
   });
 
   ClientOptions options;
-  // TODO(pja): health notifications use same status nsubscribe,
+  // TODO(pja): health notifications use same status unsubscribe,
   // so need to avoid. Needs proper fix.
   options.should_notify_health = false;
   options.collapse_subscriptions_to_tail = true;
