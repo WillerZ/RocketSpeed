@@ -126,9 +126,18 @@ class RocketeerServer {
    *
    * @return true iff operation was successfully scheduled.
    */
+  // DEPRECATED
   virtual bool Deliver(InboundID inbound_id,
                        NamespaceID namespace_id,
                        Topic topic,
+                       SequenceNumber seqno,
+                       std::string payload,
+                       MsgId msg_id = MsgId());
+
+  virtual bool Deliver(InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       Topic topic,
+                       DataSource source,
                        SequenceNumber seqno,
                        std::string payload,
                        MsgId msg_id = MsgId()) = 0;
@@ -147,9 +156,16 @@ class RocketeerServer {
    *
    * @return true iff operation was successfully scheduled.
    */
+  // DEPRECATED
   virtual bool Advance(InboundID inbound_id,
                        NamespaceID namespace_id,
                        Topic topic,
+                       SequenceNumber seqno);
+
+  virtual bool Advance(InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       Topic topic,
+                       DataSource source,
                        SequenceNumber seqno) = 0;
 
   /**
@@ -157,9 +173,16 @@ class RocketeerServer {
    *
    * @return true iff operation was successfully scheduled.
    */
+  // DEPRECATED
   virtual bool NotifyDataLoss(InboundID inbound_id,
                               NamespaceID namespace_id,
                               Topic topic,
+                              SequenceNumber seqno);
+
+  virtual bool NotifyDataLoss(InboundID inbound_id,
+                              NamespaceID namespace_id,
+                              Topic topic,
+                              DataSource source,
                               SequenceNumber seqno) = 0;
 
   /**

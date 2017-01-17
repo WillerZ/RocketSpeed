@@ -237,9 +237,21 @@ void Rocketeer::Deliver(Flow* flow,
                         SequenceNumber seqno,
                         std::string payload,
                         MsgId msg_id) {
+  Deliver(flow, inbound_id, std::move(namespace_id), std::move(topic), "",
+      seqno, std::move(payload), msg_id);
+}
+
+void Rocketeer::Deliver(Flow* flow,
+                        InboundID inbound_id,
+                        NamespaceID namespace_id,
+                        Topic topic,
+                        DataSource source,
+                        SequenceNumber seqno,
+                        std::string payload,
+                        MsgId msg_id) {
   GetBelowRocketeer()->Deliver(
-      flow, inbound_id, std::move(namespace_id), std::move(topic), seqno,
-      std::move(payload), msg_id);
+      flow, inbound_id, std::move(namespace_id), std::move(topic),
+      std::move(source), seqno, std::move(payload), msg_id);
 }
 
 void Rocketeer::DeliverBatch(Flow* flow,
@@ -253,8 +265,18 @@ void Rocketeer::Advance(Flow* flow,
                         NamespaceID namespace_id,
                         Topic topic,
                         SequenceNumber seqno) {
+  Advance(flow, inbound_id, std::move(namespace_id), std::move(topic), "",
+      seqno);
+}
+
+void Rocketeer::Advance(Flow* flow,
+                        InboundID inbound_id,
+                        NamespaceID namespace_id,
+                        Topic topic,
+                        DataSource source,
+                        SequenceNumber seqno) {
   GetBelowRocketeer()->Advance(flow, inbound_id, std::move(namespace_id),
-      std::move(topic), seqno);
+      std::move(topic), std::move(source), seqno);
 }
 
 void Rocketeer::NotifyDataLoss(Flow* flow,
@@ -262,8 +284,18 @@ void Rocketeer::NotifyDataLoss(Flow* flow,
                                NamespaceID namespace_id,
                                Topic topic,
                                SequenceNumber seqno) {
+  NotifyDataLoss(flow, inbound_id, std::move(namespace_id), std::move(topic),
+      "", seqno);
+}
+
+void Rocketeer::NotifyDataLoss(Flow* flow,
+                               InboundID inbound_id,
+                               NamespaceID namespace_id,
+                               Topic topic,
+                               DataSource source,
+                               SequenceNumber seqno) {
   GetBelowRocketeer()->NotifyDataLoss(flow, inbound_id, std::move(namespace_id),
-      std::move(topic), seqno);
+      std::move(topic), std::move(source), seqno);
 }
 
 void Rocketeer::Unsubscribe(Flow* flow,

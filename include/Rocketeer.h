@@ -92,6 +92,7 @@ struct RocketeerMessage {
   uint64_t sub_id;
   NamespaceID namespace_id;
   Topic topic;
+  DataSource source;
   SequenceNumber seqno;
   std::string payload;
   MsgId msg_id;
@@ -298,10 +299,20 @@ class Rocketeer {
    * @param payload Payload of the message.
    * @param msg_id The ID of the message.
    */
+  // DEPRECATED
   virtual void Deliver(Flow* flow,
                        InboundID inbound_id,
                        NamespaceID namespace_id,
                        Topic topic,
+                       SequenceNumber seqno,
+                       std::string payload,
+                       MsgId msg_id = MsgId());
+
+  virtual void Deliver(Flow* flow,
+                       InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       Topic topic,
+                       DataSource source,
                        SequenceNumber seqno,
                        std::string payload,
                        MsgId msg_id = MsgId());
@@ -331,21 +342,36 @@ class Rocketeer {
    *              next sequence number.
    * @return true iff operation was successfully scheduled.
    */
+  // DEPRECATED
   virtual void Advance(Flow* flow,
                        InboundID inbound_id,
                        NamespaceID namespace_id,
                        Topic topic,
                        SequenceNumber seqno);
 
+  virtual void Advance(Flow* flow,
+                       InboundID inbound_id,
+                       NamespaceID namespace_id,
+                       DataSource source,
+                       Topic topic,
+                       SequenceNumber seqno);
   /**
    * Same as Advance but triggers DataLoss callback on the client's observer.
    *
    * This method needs to be called on the thread this instance runs on.
    */
+  // DEPRECATED
   virtual void NotifyDataLoss(Flow* flow,
                               InboundID inbound_id,
                               NamespaceID namespace_id,
                               Topic topic,
+                              SequenceNumber seqno);
+
+  virtual void NotifyDataLoss(Flow* flow,
+                              InboundID inbound_id,
+                              NamespaceID namespace_id,
+                              Topic topic,
+                              DataSource source,
                               SequenceNumber seqno);
 
   /**
