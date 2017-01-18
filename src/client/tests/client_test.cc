@@ -311,11 +311,14 @@ class ClientTest : public ::testing::Test {
 
             char myname[1024];
             Status st = env_->GetHostName(&myname[0], sizeof(myname));
-            ASSERT_OK(st);
+            std::string host(myname);
+            if (!st.ok()) {
+              host = "nameless";
+            }
 
             auto hostname = client_props.find(PropertyHostName);
             ASSERT_NE(hostname, client_props.end());
-            ASSERT_EQ(std::string(myname), hostname->second);
+            ASSERT_EQ(host, hostname->second);
           });
     }
     server->RegisterCallbacks(cbs);

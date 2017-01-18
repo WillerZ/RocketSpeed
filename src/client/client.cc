@@ -126,10 +126,11 @@ Status ClientImpl::Create(ClientOptions options,
   {
     char myname[1024];
     Status st = options.env->GetHostName(&myname[0], sizeof(myname));
+    std::string hostname(myname);
     if (!st.ok()) {
-      return st;
+      hostname = "nameless";
     }
-    options.client_properties.emplace(PropertyHostName, myname);
+    options.client_properties.emplace(PropertyHostName, std::move(hostname));
   }
 
   // Default to null logger.
