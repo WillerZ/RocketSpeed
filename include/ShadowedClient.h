@@ -87,6 +87,7 @@ class ShadowedClient : public Client {
       DataLossCallback data_loss_callback)
       override;
 
+  // DEPRECATED
   SubscriptionHandle Subscribe(
       TenantID tenant_id,
       NamespaceID namespace_id,
@@ -100,7 +101,7 @@ class ShadowedClient : public Client {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
                       std::move(topic_name),
-                      start_seqno},
+                      {{"", start_seqno}}},
                      std::move(deliver_callback),
                      std::move(subscription_callback),
                      std::move(data_loss_callback));

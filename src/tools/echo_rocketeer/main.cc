@@ -52,7 +52,9 @@ class EchoRocketeer : public Rocketeer {
     Task task;
     task.namespace_id = params.namespace_id;
     task.topic = params.topic_name;
-    task.seqno = params.start_seqno + 1;
+    RS_ASSERT(params.cursors.size() == 0);
+    RS_ASSERT(params.cursors[0].source == "");
+    task.seqno = params.cursors[0].seqno + 1;
     std::lock_guard<std::mutex> lock(task_lock_);
     tasks_.emplace(id, std::move(task));
   }

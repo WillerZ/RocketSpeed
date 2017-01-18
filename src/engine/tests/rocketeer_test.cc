@@ -565,6 +565,69 @@ TEST_F(RocketeerTest, ConnectHandler) {
   server_->Stop();
 }
 
+struct AlternatingDataSource : public Rocketeer {
+  port::Semaphore terminate_sem_;
+
+  void HandleNewSubscription(
+      Flow*, InboundID inbound_id, SubscriptionParameters params) override {
+    auto ns = params.namespace_id;
+    auto topic = params.topic_name;
+    auto seqno = params.cursors[0].seqno;
+    Deliver(nullptr, inbound_id, ns, topic, Cursor("A", seqno+0), "1");
+    Deliver(nullptr, inbound_id, ns, topic, Cursor("B", seqno+1), "2");
+    Deliver(nullptr, inbound_id, ns, topic, Cursor("A", seqno+2), "3");
+    Deliver(nullptr, inbound_id, ns, topic, Cursor("B", seqno+3), "4");
+  }
+
+  void HandleUnsubscribe(
+      Flow*,
+      InboundID inbound_id,
+      NamespaceID namespace_id,
+      Topic topic,
+      TerminationSource source) override {
+    terminate_sem_.Post();
+  }
+};
+
+TEST_F(RocketeerTest, AlternatingDataSource) {
+  // Tests a Rocketeer that sends messages on alternating data sources.
+  // Ensure that we receive all messages.
+  AlternatingDataSource topRocketeer;
+  server_->Register(&topRocketeer);
+  ASSERT_OK(server_->Start());
+  auto server_addr = server_->GetHostId();
+
+  port::Semaphore unsubscribe_sem;
+  port::Semaphore deliver_sem;
+  port::Semaphore advance_sem;
+  port::Semaphore batch_sem;
+  port::Semaphore dataloss_sem;
+
+  // Ensure that HandleSubscription and HandleTermination calls go up the stack
+  // and Deliver/Advance/Terminate go down the stack.
+
+  auto client = MockClient({
+      {MessageType::mDeliverData,
+       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
+         deliver_sem.Post();
+       }},
+  });
+  auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
+
+  // Subscribe.
+  MessageSubscribe subscribe(
+      GuestTenant, GuestNamespace, "T", {{"", 1}}, SubscriptionID::Unsafe(2));
+  ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
+
+  ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));
+  ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));
+
+  // Stop explicitly, as the Rocketeer is destroyed before the Server.
+  server_->Stop();
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

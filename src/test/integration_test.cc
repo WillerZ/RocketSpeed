@@ -1100,7 +1100,7 @@ TEST_F(IntegrationTest, SubscriptionStorage) {
   MessageReceivedMock message(handles[0], 125, Slice("payload"));
   ASSERT_OK(client->Acknowledge(message));
   // We now expect the higher seqno.
-  expected[0].start_seqno = message.GetSequenceNumber() + 1;
+  expected[0].cursors = {{"", message.GetSequenceNumber() + 1}};
 
   // No need to wait for any callbacks.
 

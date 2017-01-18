@@ -144,7 +144,7 @@ class MockSubscriber : public SubscriberIf
     subscription_state_ = std::make_unique<SubscriptionBase>(
       tenant_and_namespace,
       parameters.topic_name,
-      sub_id, parameters.start_seqno, user_data);
+      sub_id, parameters.cursors[0], user_data);
     sub_id_ = sub_id;
   }
 
@@ -189,8 +189,8 @@ class MockSubscriber : public SubscriberIf
       if (flags & Info::kTopic) {
         info->SetTopic(subscription_state_->GetTopicName().ToString());
       }
-      if (flags & Info::kSequenceNumber) {
-        info->SetSequenceNumber(subscription_state_->GetExpectedSeqno());
+      if (flags & Info::kCursor) {
+        info->SetCursor(subscription_state_->GetExpected());
       }
       if (flags & Info::kObserver) {
         info->SetObserver(
@@ -1329,7 +1329,7 @@ class MockMessageReceivedImpl : public MessageReceived {
 };
 
 
-static void SendMessageDeliver(int& sequence,
+static void SendMessageDeliver(SequenceNumber& sequence,
                                NamespaceID namespace_id,
                                Topic topic,
                                SubscriptionID sub_id,
@@ -1361,13 +1361,13 @@ static void RunDemultiplexTest(
   std::vector<MockObserver*> observers;
   std::vector<SubscriptionID> sub_ids;
 
-  int sequence = 2;
+  SequenceNumber sequence = 2;
   SubscriptionID first_sub_id;
   SubscriptionParameters params;
   params.tenant_id = 0;
   params.namespace_id = "demultiplex";
   params.topic_name = "demultiplex_test";
-  params.start_seqno = sequence;
+  params.cursors = {{"", sequence}};
 
   MockObserver::StaticReset();
 
@@ -1446,7 +1446,7 @@ TEST_F(ClientTest, TopicToSubscriptionMap) {
             factory.GetFlyweight({GuestTenant, GuestNamespace}),
             topic_name,
             sub_id,
-            0,
+            Cursor("", 0),
             nullptr));
   };
   auto remove = [&](SubscriptionID sub_id) { subscriptions.erase(sub_id); };

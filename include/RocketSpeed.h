@@ -386,6 +386,7 @@ class Client {
           data_loss_callback = nullptr) = 0;
 
   /** Convenience method, see the other overload for details. */
+  // DEPRECATED
   virtual SubscriptionHandle Subscribe(
       TenantID tenant_id,
       NamespaceID namespace_id,

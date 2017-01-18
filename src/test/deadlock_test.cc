@@ -85,7 +85,9 @@ class DeadLockRocketeer : public Rocketeer {
     p.first = id;
     p.second.namespace_id = params.namespace_id;
     p.second.topic = params.topic_name;
-    p.second.seqno = params.start_seqno + 1;
+    RS_ASSERT(params.cursors.size() == 1);
+    RS_ASSERT(params.cursors[0].source == "");
+    p.second.seqno = params.cursors[0].seqno + 1;
     if (new_tasks_.write(p)) {
       return BackPressure::None();
     } else {

@@ -153,8 +153,11 @@ void MultiShardSubscriber::StartSubscription(
                        intro_parameters_));
     if (options_.collapse_subscriptions_to_tail) {
       // TODO(t10132320)
-      RS_ASSERT_DBG(parameters.start_seqno == 0);
+      RS_ASSERT_DBG(parameters.cursors.size() == 1);
+      RS_ASSERT_DBG(parameters.cursors[0].source == "");
+      RS_ASSERT_DBG(parameters.cursors[0].seqno == 0);
       parameters.start_seqno = 0;
+      parameters.cursors = {{"", 0}};
       auto sub = static_cast<Subscriber*>(subscriber.release());
       subscriber.reset(
           new TailCollapsingSubscriber(std::unique_ptr<Subscriber>(sub)));

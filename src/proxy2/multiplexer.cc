@@ -211,7 +211,7 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
         topic_name,
         // TODO(stupaq): consider subscribing from initial_seqno instead of "0"
         // and rewinding to "0" if/when we receive a subscription at that seqno
-        /* initial_seqno */ 0,
+        {{"", 0}},
         static_cast<void*>(upstream_sub));
     // Assign updates accumulator (subscription bootstrapping).
 
@@ -399,7 +399,7 @@ void Multiplexer::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
         RS_ASSERT(new_upstream_id);
         // Rewind a subscription to zero.
         subscriptions_map_.Rewind(
-            upstream_sub, new_upstream_id, 0 /* new_seqno */);
+            upstream_sub, new_upstream_id, {"", 0} /* new_cursor */);
         // Update subscription.
         sub->SetSubID(new_upstream_id);
       }

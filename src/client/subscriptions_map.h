@@ -52,12 +52,12 @@ class SubscriptionBase {
   SubscriptionBase(TenantAndNamespaceFlyweight tenant_and_namespace,
                    const Slice& topic_name,
                    SubscriptionID sub_id,
-                   SequenceNumber initial_seqno,
+                   Cursor start,
                    void* user_data)
   : tenant_and_namespace_(std::move(tenant_and_namespace))
   , topic_name_(topic_name.ToString())
   , sub_id_(sub_id)
-  , expected_seqno_(initial_seqno)
+  , expected_(std::move(start))
   , user_data_(user_data) {}
 
   ~SubscriptionBase();
@@ -72,7 +72,7 @@ class SubscriptionBase {
 
   Slice GetTopicName() const { return topic_name_; }
 
-  SequenceNumber GetExpectedSeqno() const { return expected_seqno_; }
+  const Cursor& GetExpected() const { return expected_; }
 
   void* GetUserData() const { return user_data_; }
 
@@ -83,7 +83,7 @@ class SubscriptionBase {
   /// be applied due to mismatched sequence numbers.
   bool ProcessUpdate(Logger* info_log,
                      SequenceNumber previous,
-                     SequenceNumber current);
+                     Cursor current);
 
   /// Retrieves an ID that the subscription currently uses in communication with
   /// the server.
@@ -101,7 +101,7 @@ class SubscriptionBase {
   /// An ID of this subscription known to the remote end.
   SubscriptionID sub_id_;
   /// Next expected sequence number on this subscription.
-  SequenceNumber expected_seqno_;
+  Cursor expected_;
   /// Opaque user data.
   void* user_data_;
 
@@ -113,10 +113,10 @@ class SubscriptionBase {
   /// No intrusive map may contain the subscription when it happens.
   SubscriptionID GetSubscriptionID() const { return sub_id_; }
 
-  void Rewind(SubscriptionID sub_id, SequenceNumber expected_seqno) {
+  void Rewind(SubscriptionID sub_id, Cursor expected) {
     RS_ASSERT(sub_id_ != sub_id);
     sub_id_ = sub_id;
-    expected_seqno_ = expected_seqno;
+    expected_ = std::move(expected);
   }
   /// @}
 };
@@ -138,7 +138,7 @@ class SubscriptionData {
 
   /// Next sequence number expected on the subscription, e.g. if last received
   /// was N then the next expected seqno is N+1.
-  virtual SequenceNumber GetExpectedSeqno() const = 0;
+  virtual Cursor GetExpected() const = 0;
 
   /// Subscription's ID.
   virtual SubscriptionID GetID() const = 0;
@@ -174,7 +174,7 @@ class SubscriptionsMap {
                  TenantID tenant_id,
                  const Slice& namespace_id,
                  const Slice& topic_name,
-                 SequenceNumber initial_seqno,
+                 const CursorVector& start,
                  void* user);
 
   /// Contains information of the result of a selection.
@@ -188,7 +188,7 @@ class SubscriptionsMap {
       kTenant = 1 << 0,
       kNamespace = 1 << 1,
       kTopic = 1 << 2,
-      kSequenceNumber = 1 << 3,
+      kCursor = 1 << 3,
       kUserData = 1 << 4,
 
       kAll = ~0ULL,
@@ -209,9 +209,9 @@ class SubscriptionsMap {
       return topic_name_;
     }
 
-    SequenceNumber GetSequenceNumber() const {
-      RS_ASSERT(flags_ & kSequenceNumber);
-      return seqno_;
+    const Cursor& GetCursor() const {
+      RS_ASSERT(flags_ & kCursor);
+      return cursor_;
     }
 
     void* GetUserData() const {
@@ -234,9 +234,9 @@ class SubscriptionsMap {
       topic_name_ = std::move(topic_name);
     }
 
-    void SetSequenceNumber(SequenceNumber seqno) {
-      flags_ |= kSequenceNumber;
-      seqno_ = seqno;
+    void SetCursor(Cursor cursor) {
+      flags_ |= kCursor;
+      cursor_ = std::move(cursor);
     }
 
     void SetUserData(void* user_data) {
@@ -248,7 +248,7 @@ class SubscriptionsMap {
     TenantID tenant_id_;
     NamespaceID namespace_id_;
     Topic topic_name_;
-    SequenceNumber seqno_;
+    Cursor cursor_;
     void* user_data_;
     Flags flags_ = kNone;
   };
@@ -264,10 +264,10 @@ class SubscriptionsMap {
   /// Checks if a subscription has been synced to the server.
   bool IsSynced(SubscriptionID sub_id) const;
 
-  /// Rewinds provided subscription to a given sequence number.
+  /// Rewinds provided subscription to a given cursor.
   void Rewind(SubscriptionID old_sub_id,
               SubscriptionID new_sub_id,
-              SequenceNumber new_seqno);
+              Cursor new_cursor);
 
   /// Returns true if a subscription was terminated, false if it didn't exist.
   void Unsubscribe(SubscriptionID sub_id);
@@ -388,8 +388,8 @@ void SubscriptionsMap::Iterate(Iter&& iter) {
       return state_->GetTopicName();
     }
 
-    SequenceNumber GetExpectedSeqno() const override {
-      return state_->GetExpectedSeqno();
+    Cursor GetExpected() const override {
+      return state_->GetExpected();
     }
 
     SubscriptionID GetID() const override {

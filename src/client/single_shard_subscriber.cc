@@ -154,7 +154,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                parameters.tenant_id,
                                parameters.namespace_id,
                                parameters.topic_name,
-                               parameters.start_seqno,
+                               parameters.cursors,
                                user_data);
   (*num_active_subscriptions_)++;
   stats_->active_subscriptions->Set(*num_active_subscriptions_);

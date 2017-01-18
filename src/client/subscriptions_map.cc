@@ -34,14 +34,23 @@ SubscriptionBase::~SubscriptionBase() {
 
 bool SubscriptionBase::ProcessUpdate(Logger* info_log,
                                      const SequenceNumber previous,
-                                     const SequenceNumber current) {
-  RS_ASSERT(current >= previous);
+                                     Cursor current) {
+  RS_ASSERT_DBG(current.seqno >= previous);
+  if (current.seqno < previous) {
+    LOG_ERROR(info_log,
+              "Message has sequence numbers out of order "
+              "(%" PRIu64 ", %" PRIu64 ")",
+              previous,
+              current.seqno);
+    return false;
+  }
 
-  if ((current < previous) /* this should never happen */ ||
-      (expected_seqno_ == 0 &&
+  // TODO(pja): Do state checks per source.
+  if ((current.seqno < previous) /* this should never happen */ ||
+      (expected_.seqno == 0 &&
        previous != 0) /* must receive a snapshot if expected */ ||
-      (expected_seqno_ > current) /* must not go back in time */ ||
-      (expected_seqno_ < previous) /* must not skip an update */) {
+      (expected_.seqno > current.seqno) /* must not go back in time */ ||
+      (expected_.seqno < previous) /* must not skip an update */) {
     LOG_WARN(info_log,
              "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
              ", %" PRIu64 ") expected %" PRIu64 ", dropped",
@@ -49,8 +58,8 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
              tenant_and_namespace_.Get().namespace_id.c_str(),
              topic_name_.c_str(),
              previous,
-             current,
-             expected_seqno_);
+             current.seqno,
+             expected_.seqno);
     return false;
   } else {
     LOG_DEBUG(info_log,
@@ -60,10 +69,13 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
               tenant_and_namespace_.Get().namespace_id.c_str(),
               topic_name_.c_str(),
               previous,
-              current,
-              expected_seqno_);
+              current.seqno,
+              expected_.seqno);
     // We now expect the next sequence number.
-    expected_seqno_ = current + 1;
+    // TODO(pja): For now, the source is ignored, but we just keep the
+    // last received source. Comparisons should eventually be per source.
+    expected_ = std::move(current);
+    expected_.seqno++;
     return true;
   }
 }
@@ -121,22 +133,26 @@ void SubscriptionsMap::Subscribe(
     TenantID tenant_id,
     const Slice& namespace_id,
     const Slice& topic_name,
-    SequenceNumber initial_seqno,
+    const CursorVector& start,
     void* user_data) {
+  // TODO(pja) : Only supporting a single source at a time for now.
+  RS_ASSERT(start.size() == 1);
+
   LOG_DEBUG(GetLogger(),
-            "Subscribe(%llu, %u, %s, %s, %" PRIu64 ")",
+            "Subscribe(%llu, %u, %s, %s, %s, %" PRIu64 ")",
             sub_id.ForLogging(),
             tenant_id,
             namespace_id.ToString().c_str(),
             topic_name.ToString().c_str(),
-            initial_seqno);
+            start[0].source.c_str(),
+            start[0].seqno);
 
   auto tenant_and_namespace = tenant_and_namespace_factory_.GetFlyweight(
       {tenant_id, namespace_id.ToString()});
   // Record the subscription, we check that the ID is unique among all active
   // subscriptions.
   SubscriptionBase* state = new SubscriptionBase(
-            tenant_and_namespace, topic_name, sub_id, initial_seqno, user_data);
+            tenant_and_namespace, topic_name, sub_id, start[0], user_data);
   pending_subscriptions_.Modify([&](Subscriptions& map) {
     auto inserted = map.emplace(sub_id, state);
     RS_ASSERT(inserted);
@@ -172,8 +188,8 @@ bool SubscriptionsMap::Select(
     if (flags & Info::kTopic) {
       info->SetTopic(sub->GetTopicName().ToString());
     }
-    if (flags & Info::kSequenceNumber) {
-      info->SetSequenceNumber(sub->GetExpectedSeqno());
+    if (flags & Info::kCursor) {
+      info->SetCursor(sub->GetExpected());
     }
     if (flags & Info::kUserData) {
       info->SetUserData(sub->GetUserData());
@@ -204,15 +220,16 @@ bool SubscriptionsMap::IsSynced(SubscriptionID sub_id) const {
 
 void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
                               SubscriptionID new_sub_id,
-                              SequenceNumber new_seqno) {
+                              Cursor new_cursor) {
   auto ptr = Find(old_sub_id);
   RS_ASSERT(ptr);
 
   LOG_DEBUG(GetLogger(),
-            "Rewind(%llu, %llu, %" PRIu64 ")",
+            "Rewind(%llu, %llu, %s, %" PRIu64 ")",
             ptr->GetIDWhichMayChange().ForLogging(),
             new_sub_id.ForLogging(),
-            new_seqno);
+            new_cursor.source.c_str(),
+            new_cursor.seqno);
 
   RS_ASSERT(new_sub_id != old_sub_id);
 
@@ -234,7 +251,7 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
       }
     }
     // Rewind the state.
-    state->Rewind(new_sub_id, new_seqno);
+    state->Rewind(new_sub_id, std::move(new_cursor));
     namespace_id = state->GetNamespace().ToString();
     topic = state->GetTopicName().ToString();
 
@@ -304,7 +321,7 @@ void SubscriptionsMap::HandlePendingSubscription(
       state->GetTenant(),
       state->GetNamespace().ToString(),
       state->GetTopicName().ToString(),
-      state->GetExpectedSeqno(),
+      {state->GetExpected()},
       state->GetSubscriptionID()));
   message_handler_(flow, std::move(subscribe));
 
@@ -427,7 +444,8 @@ bool SubscriptionsMap::ProcessDeliver(
   // Update the state.
   if (!state->ProcessUpdate(event_loop_->GetLog().get(),
                             message.GetPrevSequenceNumber(),
-                            message.GetSequenceNumber())) {
+                            Cursor(message.GetDataSource().ToString(),
+                                   message.GetSequenceNumber()))) {
     // Drop the update.
     return false;
   }
