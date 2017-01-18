@@ -298,19 +298,24 @@ class ClientTest : public ::testing::Test {
           MessageType::mIntroduction,
           [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
             auto introduction = static_cast<MessageIntroduction*>(msg.get());
-            auto props = introduction->GetStreamProperties();
+            auto stream_props = introduction->GetStreamProperties();
+            auto client_props = introduction->GetClientProperties();
 
-            auto host = props.find("hostname");
-            ASSERT_NE(host, props.end());
-            ASSERT_EQ("dummy_host", host->second);
-
-            auto ip = props.find("ip");
-            ASSERT_NE(ip, props.end());
+            auto ip = stream_props.find("ip");
+            ASSERT_NE(ip, stream_props.end());
             ASSERT_EQ("dummy_ip", ip->second);
 
             // Default properties check
-            auto shard_id = props.find(PropertyShardID);
-            ASSERT_NE(shard_id, props.end());
+            auto shard_id = stream_props.find(PropertyShardID);
+            ASSERT_NE(shard_id, stream_props.end());
+
+            char myname[1024];
+            Status st = env_->GetHostName(&myname[0], sizeof(myname));
+            ASSERT_OK(st);
+
+            auto hostname = client_props.find(PropertyHostName);
+            ASSERT_NE(hostname, client_props.end());
+            ASSERT_EQ(std::string(myname), hostname->second);
           });
     }
     server->RegisterCallbacks(cbs);
@@ -350,7 +355,6 @@ class ClientTest : public ::testing::Test {
     }
     if (options.stream_properties.empty()) {
       // Dummy
-      options.stream_properties.emplace("hostname", "dummy_host");
       options.stream_properties.emplace("ip", "dummy_ip");
     }
   }

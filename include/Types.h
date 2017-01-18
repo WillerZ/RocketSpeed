@@ -615,6 +615,9 @@ bool IsPropertyReserved(const IntroPropertyKey& key);
 /// Default key for shard_id of the stream
 extern const IntroPropertyKey PropertyShardID;
 
+/// Default key for hostname of the client
+extern const IntroPropertyKey PropertyHostName;
+
 }  // namespace rocketspeed
 
 #if defined(__GNUC__) && !defined(__clang__)

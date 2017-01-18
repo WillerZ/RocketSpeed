@@ -122,6 +122,16 @@ Status ClientImpl::Create(ClientOptions options,
     }
   }
 
+  // Include hostname in the properties
+  {
+    char myname[1024];
+    Status st = options.env->GetHostName(&myname[0], sizeof(myname));
+    if (!st.ok()) {
+      return st;
+    }
+    options.client_properties.emplace(PropertyHostName, myname);
+  }
+
   // Default to null logger.
   if (!options.info_log) {
     options.info_log = std::make_shared<NullLogger>();

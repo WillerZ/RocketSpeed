@@ -18,6 +18,7 @@ namespace rocketspeed {
 
 // All internal Property Key begins with "__"
 const IntroPropertyKey PropertyShardID("__shard_id");
+const IntroPropertyKey PropertyHostName("__host_name");
 
 bool IsPropertyReserved(const IntroPropertyKey& key) {
   const std::string start = "__";
