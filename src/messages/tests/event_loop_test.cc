@@ -285,28 +285,6 @@ TEST_F(EventLoopTest, StreamsFlowControl) {
 #endif  // OS_MACOSX
 }
 
-TEST_F(EventLoopTest, ExceptionCircuitBreaker) {
-  // Tests that throwing an exception within the EventLoop thread does not
-  // crash the process. We should be able to still use the EventLoop, but it
-  // will be in a bad state and not respond or recover.
-  EventLoop loop(options, std::move(stream_allocator));
-  EventLoop::Runner runner(&loop);
-  ASSERT_EVENTUALLY_TRUE(loop.IsRunning());
-
-  // Throw an exception.
-  Run([]() { throw std::runtime_error("test"); }, &loop);
-
-  // Loop should stop.
-  ASSERT_EVENTUALLY_TRUE(!loop.IsRunning());
-
-  // Should be able to call functions on the loop.
-  // We test a few here. We don't expect them to return anything valid.
-  (void)loop.CreateEventTrigger();
-  MessagePing ping(Tenant::GuestTenant, MessagePing::PingType::Response);
-  (void)loop.SendResponse(ping, 1234);
-  (void)loop.IsOutboundStream(1234);
-}
-
 TEST_F(EventLoopTest, ScheduledExecutorTest) {
   // Test for Scheduled Executor which schedules some events and checks
   //    - expected time taken based on max_timeout

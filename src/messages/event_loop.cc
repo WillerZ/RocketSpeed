@@ -524,12 +524,16 @@ void EventLoop::Run() {
     while (!RunOnce()) {
       // Once more.
     }
-  } catch (...) {
+  } catch (const std::exception& ex) {
     // EventLoop will stop running, which for the client means that
     // queues will just back up and start failing at the client API
     // layer. We'll stop sending any notifications of any sort, so
-    // things will be in a bad state, but nothing should crash.
+    // things will be in a bad state i.e. we better crash.
+    LOG_FATAL(info_log_, "EventLoop thread threw an exception: %s", ex.what());
+    RS_ASSERT(false);
+  } catch (...) {
     LOG_FATAL(info_log_, "EventLoop thread threw an exception");
+    RS_ASSERT(false);
   }
 
   // Shutdown everything
