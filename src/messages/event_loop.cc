@@ -912,6 +912,7 @@ void EventLoop::CloseFromSocketEvent(access::EventLoop, Stream* stream) {
 
   // Remove stream from internal routing structures.
   stream_id_to_stream_.erase(stream->GetLocalID());
+  stream_id_to_sink_.erase(stream->GetLocalID());
   // The stream might not have been managed by the old API.
 
   // Defer destruction of the stream.
