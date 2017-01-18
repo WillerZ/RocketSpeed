@@ -161,7 +161,7 @@ class MockSubscriber : public SubscriberIf
     Info info;
     Select(sub_id, Info::kAll, &info);
     SubscriptionStatusImpl sub_status(sub_id, info.GetTenant(),
-        info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
+        info.GetNamespace(), info.GetTopic());
     info.GetObserver()->OnSubscriptionStatusChange(sub_status);
     delete info.GetObserver();
     subscription_state_->SetUserData(nullptr);

@@ -100,7 +100,7 @@ void Subscriber::InstallHooks(const HooksParameters& params,
       bool success = Select(data.GetID(), Info::kAll, &info);
       RS_ASSERT(success);
       SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
-          info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
+          info.GetNamespace(), info.GetTopic());
       status.status_ = currently_healthy_ ? Status::OK() : Status::ShardUnhealthy();
       StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
       hooks_[data.GetID()].SubscriptionExists(sfh);
@@ -128,8 +128,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
         sub_id,
         parameters.tenant_id,
         parameters.namespace_id,
-        parameters.topic_name,
-        parameters.start_seqno);
+        parameters.topic_name);
     sub_status.status_ = Status::InvalidArgument(
         "Invalid subscription as maximum subscription limit reached.");
     StatusForHooks sfh(&sub_status, &stream_supervisor_.GetCurrentHost());
@@ -141,8 +140,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
   if (!currently_healthy_) {
     SubscriptionStatusImpl status(sub_id, parameters.tenant_id,
                                   parameters.namespace_id,
-                                  parameters.topic_name,
-                                  parameters.start_seqno);
+                                  parameters.topic_name);
     status.status_ = Status::ShardUnhealthy();
     StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
     hooks_[sub_id].OnSubscriptionStatusChange(sfh);
@@ -274,7 +272,7 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
       bool success = Select(data.GetID(), Info::kAll, &info);
       RS_ASSERT(success);
       SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
-          info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
+          info.GetNamespace(), info.GetTopic());
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
       StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
       hooks_[data.GetID()].OnSubscriptionStatusChange(sfh);
@@ -395,7 +393,7 @@ void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
 void Subscriber::ProcessUnsubscribe(
     SubscriptionID sub_id, Info& info, Status status) {
   SubscriptionStatusImpl sub_status(sub_id, info.GetTenant(),
-      info.GetNamespace(), info.GetTopic(), info.GetSequenceNumber());
+      info.GetNamespace(), info.GetTopic());
   sub_status.status_ = status;
 
   RS_ASSERT(info.GetObserver());

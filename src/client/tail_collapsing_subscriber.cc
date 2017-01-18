@@ -98,10 +98,6 @@ class TailCollapsingObserver : public Observer {
         return status_.GetTopicName();
       }
 
-      SequenceNumber GetSequenceNumber() const override {
-        return status_.GetSequenceNumber();
-      }
-
       const Status& GetStatus() const override { return status_.GetStatus(); }
     } down_status(up_status);
 

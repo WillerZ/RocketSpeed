@@ -2134,7 +2134,6 @@ TEST_F(IntegrationTest, InvalidSubscription) {
       [&](const SubscriptionStatus& ss) {
         ASSERT_EQ(ss.GetNamespace(), InvalidNamespace);
         ASSERT_EQ(ss.GetTopicName(), "InvalidSubscription");
-        ASSERT_EQ(ss.GetSequenceNumber(), 1);
         ASSERT_TRUE(!ss.GetStatus().ok());
         sem.Post();
       }));

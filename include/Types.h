@@ -466,9 +466,6 @@ class SubscriptionStatus {
   /** The topic name this message arrived on. */
   virtual const Topic& GetTopicName() const = 0;
 
-  /** Current sequence number of the subscription. */
-  virtual SequenceNumber GetSequenceNumber() const = 0;
-
   /** The reason of this notification. */
   virtual const Status& GetStatus() const = 0;
 

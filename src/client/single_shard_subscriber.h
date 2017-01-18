@@ -34,18 +34,15 @@ class SubscriptionStatusImpl : public SubscriptionStatus {
   TenantID tenant_id_;
   NamespaceID namespace_id_;
   Topic topic_name_;
-  SequenceNumber seqno_;
 
   explicit SubscriptionStatusImpl(SubscriptionID sub_id,
                                   TenantID tenant_id,
                                   NamespaceID namespace_id,
-                                  Topic topic_name,
-                                  SequenceNumber seqno)
+                                  Topic topic_name)
   : sub_id_(sub_id)
   , tenant_id_(tenant_id)
   , namespace_id_(std::move(namespace_id))
-  , topic_name_(std::move(topic_name))
-  , seqno_(seqno) {}
+  , topic_name_(std::move(topic_name)) {}
 
   SubscriptionHandle GetSubscriptionHandle() const override { return sub_id_; }
 
@@ -54,8 +51,6 @@ class SubscriptionStatusImpl : public SubscriptionStatus {
   const NamespaceID& GetNamespace() const override { return namespace_id_; }
 
   const Topic& GetTopicName() const override { return topic_name_; }
-
-  SequenceNumber GetSequenceNumber() const override { return seqno_; }
 
   const Status& GetStatus() const override { return status_; }
 };
@@ -87,10 +82,6 @@ class StatusForHooks : public HookedSubscriptionStatus {
 
   const Topic& GetTopicName() const final {
     return status_->GetTopicName();
-  }
-
-  SequenceNumber GetSequenceNumber() const final {
-    return status_->GetSequenceNumber();
   }
 
   const Status& GetStatus() const final { return status_->GetStatus(); }
