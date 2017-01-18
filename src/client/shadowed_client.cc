@@ -166,25 +166,25 @@ Status ShadowedClient::HasMessageSince(
     SubscriptionHandle sub_handle,
     NamespaceID namespace_id,
     Topic topic,
-    Epoch epoch,
+    DataSource source,
     SequenceNumber seqno,
     std::function<void(HasMessageSinceResult, std::string)> callback) {
   // TODO(pja) - send shadow traffic for HasMessageSince with dummy callback.
   return client_->HasMessageSince(sub_handle, std::move(namespace_id),
-      std::move(topic), std::move(epoch), seqno, std::move(callback));
+      std::move(topic), std::move(source), seqno, std::move(callback));
 }
 
 Status ShadowedClient::HasMessageSince(
     SubscriptionHandle sub_handle,
     NamespaceID namespace_id,
     Topic topic,
-    Epoch epoch,
+    DataSource source,
     SequenceNumber seqno,
     std::function<void(HasMessageSinceResult)> callback) {
   // DEPRECATED
   // TODO(pja) - send shadow traffic for HasMessageSince with dummy callback.
   return client_->HasMessageSince(sub_handle, std::move(namespace_id),
-      std::move(topic), std::move(epoch), seqno, std::move(callback));
+      std::move(topic), std::move(source), seqno, std::move(callback));
 }
 
 void ShadowedClient::SaveSubscriptions(

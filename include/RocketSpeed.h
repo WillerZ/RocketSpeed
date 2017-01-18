@@ -433,7 +433,7 @@ class Client {
    * which may be at different sequence numbers.
    *
    * The callback will be called with 'true' if there has been a message on the
-   * topic between (epoch, seqno) and the current position of the subscription.
+   * topic between (source, seqno) and the current position of the subscription.
    * The callback will be invoked in the same thread as the subscription
    * callbacks, and in the same order so that the result is correct for the
    * subscription's position as the application sees it.
@@ -442,13 +442,13 @@ class Client {
    * by the data source. RocketSpeed ignores this value so interpretation
    * is up to the implementation.
    *
-   * The lower bound is non-inclusive. A message at (epoch, seqno) will not
+   * The lower bound is non-inclusive. A message at (source, seqno) will not
    * be considered in the result.
    *
    * @param sub_handle The subscription to test against.
    * @param namespace_id The namespace of the subscription.
    * @param topic The topic of the subscription.
-   * @param epoch The epoch of the lower bound on the query.
+   * @param source The source of the lower bound on the query.
    * @param seqno The sequence number of the lower bound on the query.
    * @param callback The callback to invoke when the query completes. This is
    *                 guaranteed to be called, unless the client is destroyed.
@@ -461,7 +461,7 @@ class Client {
       SubscriptionHandle sub_handle,
       NamespaceID namespace_id,
       Topic topic,
-      Epoch epoch,
+      DataSource source,
       SequenceNumber seqno,
       std::function<void(HasMessageSinceResult, std::string)> callback) = 0;
 
@@ -470,7 +470,7 @@ class Client {
       SubscriptionHandle sub_handle,
       NamespaceID namespace_id,
       Topic topic,
-      Epoch epoch,
+      DataSource source,
       SequenceNumber seqno,
       std::function<void(HasMessageSinceResult)> callback) = 0;
 

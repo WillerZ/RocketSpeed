@@ -39,7 +39,7 @@ class BacklogQueryStore {
               SubscriptionID sub_id,
               NamespaceID namespace_id,
               Topic topic,
-              Epoch epoch,
+              DataSource source,
               SequenceNumber seqno,
               std::function<void(HasMessageSinceResult, std::string)> callback);
 
@@ -69,11 +69,11 @@ class BacklogQueryStore {
   struct Key {
     NamespaceID namespace_id;
     Topic topic;
-    Epoch epoch;
+    DataSource source;
 
     bool operator==(const Key& rhs) const {
-      return std::tie(namespace_id, topic, epoch) ==
-          std::tie(rhs.namespace_id, rhs.topic, rhs.epoch);
+      return std::tie(namespace_id, topic, source) ==
+          std::tie(rhs.namespace_id, rhs.topic, rhs.source);
     }
     struct Hash {
       size_t operator()(const Key& key) const;

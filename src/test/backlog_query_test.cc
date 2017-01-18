@@ -57,8 +57,8 @@ class BacklogQueryRocketeer : public Rocketeer {
 
   void HandleHasMessageSince(
       Flow* flow, InboundID id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno) override {
-    HasMessageSinceResponse(flow, id, namespace_id, topic, epoch, seqno,
+      DataSource source, SequenceNumber seqno) override {
+    HasMessageSinceResponse(flow, id, namespace_id, topic, source, seqno,
         HasMessageSinceResult::kNo, "test");
   }
 
@@ -85,7 +85,7 @@ TEST_F(BacklogQueryTest, PendingAwaitingInteraction) {
                   SubscriptionID::Unsafe(1),
                   "namespace",
                   "topic",
-                  "epoch",
+                  "source",
                   123,
                   [](HasMessageSinceResult, std::string) {});
     store->StartSync();
@@ -115,7 +115,7 @@ TEST_F(BacklogQueryTest, PendingAwaitingInteraction) {
                   SubscriptionID::Unsafe(2),
                   "namespace",
                   "topic",
-                  "epoch",
+                  "source",
                   123,
                   [](HasMessageSinceResult, std::string) {});
   }, &loop);
@@ -152,7 +152,7 @@ TEST_F(BacklogQueryTest, ResendSentOnStopSync) {
                   SubscriptionID::Unsafe(1),
                   "namespace",
                   "topic",
-                  "epoch",
+                  "source",
                   123,
                   [](HasMessageSinceResult, std::string) {});
     store->StartSync();
@@ -205,7 +205,7 @@ TEST_F(BacklogQueryTest, ResetPendingOnStopSync) {
                   SubscriptionID::Unsafe(1),
                   "namespace",
                   "topic",
-                  "epoch",
+                  "source",
                   123,
                   [](HasMessageSinceResult, std::string) {});
     store->MarkSynced(SubscriptionID::Unsafe(1));
@@ -258,14 +258,14 @@ TEST_F(BacklogQueryTest, MultipleRequestsOnSameSub) {
                   SubscriptionID::Unsafe(1),
                   "namespace",
                   "topic",
-                  "epoch",
+                  "source",
                   123,
                   [&](HasMessageSinceResult, std::string) { result1.Post(); });
     store->Insert(BacklogQueryStore::Mode::kAwaitingSync,
                   SubscriptionID::Unsafe(1),
                   "namespace",
                   "topic",
-                  "epoch",
+                  "source",
                   456,
                   [&](HasMessageSinceResult, std::string) { result2.Post(); });
     store->StartSync();
@@ -282,7 +282,7 @@ TEST_F(BacklogQueryTest, MultipleRequestsOnSameSub) {
         GuestTenant,
         "namespace",
         "topic",
-        "epoch",
+        "source",
         123,
         124,
         HasMessageSinceResult::kNo,
@@ -293,7 +293,7 @@ TEST_F(BacklogQueryTest, MultipleRequestsOnSameSub) {
         GuestTenant,
         "namespace",
         "topic",
-        "epoch",
+        "source",
         456,
         457,
         HasMessageSinceResult::kNo,
@@ -343,7 +343,7 @@ TEST_F(BacklogQueryTest, Integration) {
 
   // HasMessageSince check.
   port::Semaphore done;
-  client->HasMessageSince(sub, "namespace", "topic", "epoch", 1,
+  client->HasMessageSince(sub, "namespace", "topic", "source", 1,
       [&] (HasMessageSinceResult result, std::string info) {
         EXPECT_EQ(info, "test");
         done.Post();

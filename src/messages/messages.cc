@@ -791,10 +791,10 @@ Status MessageHeartbeat::Serialize(std::string* out) const {
   PutFixedEnum8(out, type_);
   PutFixed16(out, tenantid_);
 
-  uint64_t epoch_ms = duration_cast<milliseconds>(
+  uint64_t source_ms = duration_cast<milliseconds>(
     timestamp_.time_since_epoch())
     .count();
-  PutFixed64(out, epoch_ms);
+  PutFixed64(out, source_ms);
 
   // Check that heartbeats are strictly sorted.
   RS_ASSERT_DBG(std::is_sorted(
@@ -822,12 +822,12 @@ Status MessageHeartbeat::DeSerialize(Slice* in) {
     return Status::OK();        // for backwards compatibility
   }
 
-  uint64_t epoch_ms;
-  if (!GetFixed64(in, &epoch_ms)) {
+  uint64_t source_ms;
+  if (!GetFixed64(in, &source_ms)) {
     return Status::InvalidArgument("Bad timestamp");
   }
-  Clock::duration since_epoch = std::chrono::milliseconds(epoch_ms);
-  timestamp_ = Clock::time_point(since_epoch);
+  Clock::duration since_source = std::chrono::milliseconds(source_ms);
+  timestamp_ = Clock::time_point(since_source);
 
   uint32_t shard;
   while (GetVarint32(in, &shard)) {
@@ -842,10 +842,10 @@ Status MessageHeartbeatDelta::Serialize(std::string* out) const {
   PutFixedEnum8(out, type_);
   PutFixed16(out, tenantid_);
 
-  uint64_t epoch_ms = duration_cast<milliseconds>(
+  uint64_t source_ms = duration_cast<milliseconds>(
     timestamp_.time_since_epoch())
     .count();
-  PutFixed64(out, epoch_ms);
+  PutFixed64(out, source_ms);
 
   // Check that heartbeats are strictly sorted.
   RS_ASSERT_DBG(std::is_sorted(
@@ -880,12 +880,12 @@ Status MessageHeartbeatDelta::DeSerialize(Slice* in) {
     return Status::InvalidArgument("Bad tenant ID");
   }
 
-  uint64_t epoch_ms;
-  if (!GetFixed64(in, &epoch_ms)) {
+  uint64_t source_ms;
+  if (!GetFixed64(in, &source_ms)) {
     return Status::InvalidArgument("Bad timestamp");
   }
-  Clock::duration since_epoch = std::chrono::milliseconds(epoch_ms);
-  timestamp_ = Clock::time_point(since_epoch);
+  Clock::duration since_source = std::chrono::milliseconds(source_ms);
+  timestamp_ = Clock::time_point(since_source);
 
   uint64_t num_added;
   if (!GetVarint64(in, &num_added)) {
@@ -923,7 +923,7 @@ Status MessageBacklogQuery::Serialize(std::string* out) const {
   PutFixed16(out, tenantid_);
   EncodeSubscriptionID(out, sub_id_);
   PutTopicID(out, namespace_id_, topic_);
-  PutLengthPrefixedSlice(out, epoch_);
+  PutLengthPrefixedSlice(out, source_);
   PutVarint64(out, seqno_);
   return Status::OK();
 }
@@ -941,8 +941,8 @@ Status MessageBacklogQuery::DeSerialize(Slice* in) {
   if (!GetTopicID(in, &namespace_id_, &topic_)) {
     return Status::InvalidArgument("Bad namespace and/or topic");
   }
-  if (!GetLengthPrefixedSlice(in, &epoch_)) {
-    return Status::InvalidArgument("Bad epoch");
+  if (!GetLengthPrefixedSlice(in, &source_)) {
+    return Status::InvalidArgument("Bad source");
   }
   if (!GetVarint64(in, &seqno_)) {
     return Status::InvalidArgument("Bad seqno");
@@ -954,7 +954,7 @@ Status MessageBacklogFill::Serialize(std::string* out) const {
   PutFixedEnum8(out, type_);
   PutFixed16(out, tenantid_);
   PutTopicID(out, namespace_id_, topic_);
-  PutLengthPrefixedSlice(out, epoch_);
+  PutLengthPrefixedSlice(out, source_);
   PutVarint64(out, prev_seqno_);
   PutVarint64(out, next_seqno_);
   PutFixedEnum8(out, result_);
@@ -972,8 +972,8 @@ Status MessageBacklogFill::DeSerialize(Slice* in) {
   if (!GetTopicID(in, &namespace_id_, &topic_)) {
     return Status::InvalidArgument("Bad namespace and/or topic");
   }
-  if (!GetLengthPrefixedSlice(in, &epoch_)) {
-    return Status::InvalidArgument("Bad epoch");
+  if (!GetLengthPrefixedSlice(in, &source_)) {
+    return Status::InvalidArgument("Bad source");
   }
   if (!GetVarint64(in, &prev_seqno_)) {
     return Status::InvalidArgument("Bad prev seqno");

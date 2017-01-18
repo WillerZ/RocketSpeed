@@ -186,7 +186,7 @@ void Subscriber::HasMessageSince(HasMessageSinceParams params) {
 
   backlog_query_store_->Insert(
       mode, params.sub_id, std::move(params.namespace_id),
-      std::move(params.topic), std::move(params.epoch), params.seqno,
+      std::move(params.topic), std::move(params.source), params.seqno,
       std::move(params.callback));
 }
 

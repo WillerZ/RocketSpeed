@@ -179,7 +179,7 @@ class RocketeerServer {
    */
   virtual bool HasMessageSinceResponse(
       InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
+      DataSource source, SequenceNumber seqno, HasMessageSinceResult response,
       std::string info) = 0;
 
   /** Returns server-wide statistics. */

@@ -29,12 +29,12 @@ void BacklogQueryStore::Insert(
     SubscriptionID sub_id,
     NamespaceID namespace_id,
     Topic topic,
-    Epoch epoch,
+    DataSource source,
     SequenceNumber seqno,
     std::function<void(HasMessageSinceResult, std::string)> callback) {
   // Add a pending request.
   // This will be sent to the server later (see HandlePending).
-  Key key { std::move(namespace_id), std::move(topic), std::move(epoch) };
+  Key key { std::move(namespace_id), std::move(topic), std::move(source) };
   Value value { sub_id, seqno, std::move(callback) };
 
   switch (mode) {
@@ -66,7 +66,7 @@ void BacklogQueryStore::MarkSynced(SubscriptionID sub_id) {
 void BacklogQueryStore::ProcessBacklogFill(const MessageBacklogFill& msg) {
   // Check if it matches any outstanding request.
   // If it does, invoke the callback and remove the request.
-  Key key { msg.GetNamespace(), msg.GetTopicName(), msg.GetEpoch() };
+  Key key { msg.GetNamespace(), msg.GetTopicName(), msg.GetDataSource() };
   auto it = sent_.find(key);
   if (it != sent_.end()) {
     for (auto it2 = it->second.begin(); it2 != it->second.end(); ) {
@@ -94,7 +94,7 @@ void BacklogQueryStore::HandlePending(Flow* flow, Key key, Value value) {
                               value.sub_id,
                               key.namespace_id,
                               key.topic,
-                              key.epoch,
+                              key.source,
                               value.seqno));
   sent_[std::move(key)].emplace_back(std::move(value));
 
@@ -135,7 +135,7 @@ size_t BacklogQueryStore::Key::Hash::operator()(const Key& key) const {
   XXH64_reset(&state, seed);
   XXH64_update(&state, key.namespace_id.data(), key.namespace_id.size());
   XXH64_update(&state, key.topic.data(), key.topic.size());
-  XXH64_update(&state, key.epoch.data(), key.epoch.size());
+  XXH64_update(&state, key.source.data(), key.source.size());
   return XXH64_digest(&state);
 }
 

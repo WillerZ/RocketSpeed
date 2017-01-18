@@ -52,7 +52,7 @@ SubscriptionID RocketeerMessage::GetSubID() const {
 struct RocketeerHasMessageSinceMessage {
   NamespaceID namespace_id;
   Topic topic;
-  Epoch epoch;
+  DataSource source;
   SequenceNumber seqno;
 };
 
@@ -85,7 +85,7 @@ Rocketeer::Rocketeer()
               msg.inbound_id,
               msg.has_msg_since.namespace_id,
               msg.has_msg_since.topic,
-              msg.has_msg_since.epoch,
+              msg.has_msg_since.source,
               msg.has_msg_since.seqno);
         case RocketeerMetadataMessage::kDisconnect:
           return TryHandleDisconnect(msg.inbound_id.stream_id);
@@ -165,15 +165,15 @@ void Rocketeer::HandleTermination(
 }
 
 BackPressure Rocketeer::TryHandleHasMessageSince(
-      InboundID inbound_id, NamespaceID namespace_id, Topic topic, Epoch epoch,
-      SequenceNumber seqno) {
+      InboundID inbound_id, NamespaceID namespace_id, Topic topic,
+      DataSource source, SequenceNumber seqno) {
   RS_ASSERT(false) << "TryHandleHasMessageSince is not implemented.";
   return BackPressure::None();
 }
 
 void Rocketeer::HandleHasMessageSince(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno) {
+      DataSource source, SequenceNumber seqno) {
   // This is the default implementation of HandleHasMessageSince.
   // Most application Rocketeers will implement TryHandleHasMessageSince, but
   // internally RocketSpeed calls HandleHasMessageSince.
@@ -186,7 +186,7 @@ void Rocketeer::HandleHasMessageSince(
   msg.inbound_id = inbound_id;
   msg.has_msg_since.namespace_id = std::move(namespace_id);
   msg.has_msg_since.topic = std::move(topic);
-  msg.has_msg_since.epoch = std::move(epoch);
+  msg.has_msg_since.source = std::move(source);
   msg.has_msg_since.seqno = seqno;
   flow->Write(metadata_sink_.get(), msg);
 }
@@ -277,10 +277,10 @@ void Rocketeer::Unsubscribe(Flow* flow,
 
 void Rocketeer::HasMessageSinceResponse(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      Epoch epoch, SequenceNumber seqno, HasMessageSinceResult response,
+      DataSource source, SequenceNumber seqno, HasMessageSinceResult response,
       std::string info) {
   GetBelowRocketeer()->HasMessageSinceResponse(flow, inbound_id,
-      std::move(namespace_id), std::move(topic), std::move(epoch), seqno,
+      std::move(namespace_id), std::move(topic), std::move(source), seqno,
       response, std::move(info));
 }
 

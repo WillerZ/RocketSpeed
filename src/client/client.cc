@@ -365,7 +365,7 @@ Status ClientImpl::HasMessageSince(
     SubscriptionHandle sub_handle,
     NamespaceID namespace_id,
     Topic topic,
-    Epoch epoch,
+    DataSource source,
     SequenceNumber seqno,
     std::function<void(HasMessageSinceResult)> callback) {
   // DEPRECATED
@@ -373,7 +373,7 @@ Status ClientImpl::HasMessageSince(
       sub_handle,
       namespace_id,
       topic,
-      epoch,
+      source,
       seqno,
       [callback = std::move(callback)](HasMessageSinceResult result,
                                        std::string) mutable {
@@ -385,7 +385,7 @@ Status ClientImpl::HasMessageSince(
     SubscriptionHandle sub_handle,
     NamespaceID namespace_id,
     Topic topic,
-    Epoch epoch,
+    DataSource source,
     SequenceNumber seqno,
     std::function<void(HasMessageSinceResult, std::string)> callback) {
   RS_ASSERT_DBG(callback);
@@ -400,7 +400,7 @@ Status ClientImpl::HasMessageSince(
   }
   params.namespace_id = std::move(namespace_id);
   params.topic = std::move(topic);
-  params.epoch = std::move(epoch);
+  params.source = std::move(source);
   params.seqno = seqno;
   params.callback = std::move(callback);
   return subscriber_->HasMessageSince(std::move(params));

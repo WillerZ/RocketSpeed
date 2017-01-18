@@ -24,7 +24,7 @@ class HasMessageSinceParams {
   SubscriptionID sub_id;
   NamespaceID namespace_id;
   Topic topic;
-  Epoch epoch;
+  DataSource source;
   SequenceNumber seqno;
   std::function<void(HasMessageSinceResult, std::string)> callback;
 };

@@ -108,7 +108,7 @@ class ClientImpl : public Client {
       SubscriptionHandle sub_handle,
       NamespaceID namespace_id,
       Topic topic,
-      Epoch epoch,
+      DataSource source,
       SequenceNumber seqno,
       std::function<void(HasMessageSinceResult)> callback) override;
 
@@ -116,7 +116,7 @@ class ClientImpl : public Client {
       SubscriptionHandle sub_handle,
       NamespaceID namespace_id,
       Topic topic,
-      Epoch epoch,
+      DataSource source,
       SequenceNumber seqno,
       std::function<void(HasMessageSinceResult, std::string)> callback)
       override;

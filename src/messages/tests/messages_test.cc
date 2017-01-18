@@ -315,7 +315,7 @@ TEST_F(Messaging, MessageDeliverBatch) {
 
 TEST_F(Messaging, MessageBacklogQuery) {
   MessageBacklogQuery msg1(
-      Tenant::GuestTenant, SubscriptionID::Unsafe(42), "ns", "topic", "epoch",
+      Tenant::GuestTenant, SubscriptionID::Unsafe(42), "ns", "topic", "source",
       1000100010001000ULL);
 
   std::string str;
@@ -329,13 +329,13 @@ TEST_F(Messaging, MessageBacklogQuery) {
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
   ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
   ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
-  ASSERT_EQ(msg1.GetEpoch(), msg2.GetEpoch());
+  ASSERT_EQ(msg1.GetDataSource(), msg2.GetDataSource());
   ASSERT_EQ(msg1.GetSequenceNumber(), msg2.GetSequenceNumber());
 }
 
 TEST_F(Messaging, MessageBacklogFill) {
   MessageBacklogFill msg1(
-      Tenant::GuestTenant, "ns", "topic", "epoch",
+      Tenant::GuestTenant, "ns", "topic", "source",
       1000100010001000ULL, 2000200020002002ULL,
       HasMessageSinceResult::kMaybe,
       "hello");
@@ -350,7 +350,7 @@ TEST_F(Messaging, MessageBacklogFill) {
   ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
   ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
   ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
-  ASSERT_EQ(msg1.GetEpoch(), msg2.GetEpoch());
+  ASSERT_EQ(msg1.GetDataSource(), msg2.GetDataSource());
   ASSERT_EQ(msg1.GetPrevSequenceNumber(), msg2.GetPrevSequenceNumber());
   ASSERT_EQ(msg1.GetNextSequenceNumber(), msg2.GetNextSequenceNumber());
   ASSERT_EQ(msg1.GetResult(), msg2.GetResult());

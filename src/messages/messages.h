@@ -1001,13 +1001,13 @@ class MessageBacklogQuery : public Message {
                                SubscriptionID sub_id,
                                NamespaceID namespace_id,
                                Topic topic,
-                               Epoch epoch,
+                               DataSource source,
                                SequenceNumber seqno)
   : Message(MessageType::mBacklogQuery, tenantid)
   , sub_id_(sub_id)
   , namespace_id_(std::move(namespace_id))
   , topic_(std::move(topic))
-  , epoch_(std::move(epoch))
+  , source_(std::move(source))
   , seqno_(seqno) {}
 
   Status Serialize(std::string* out) const override;
@@ -1016,14 +1016,14 @@ class MessageBacklogQuery : public Message {
   SubscriptionID GetSubID() const { return sub_id_; }
   const NamespaceID& GetNamespace() const { return namespace_id_; }
   const Topic& GetTopicName() const { return topic_; }
-  const Epoch& GetEpoch() const { return epoch_; }
+  const DataSource& GetDataSource() const { return source_; }
   SequenceNumber GetSequenceNumber() const { return seqno_; }
 
  private:
   SubscriptionID sub_id_;
   NamespaceID namespace_id_;
   Topic topic_;
-  Epoch epoch_;
+  DataSource source_;
   SequenceNumber seqno_;
 };
 
@@ -1038,7 +1038,7 @@ class MessageBacklogFill : public Message {
   explicit MessageBacklogFill(TenantID tenantid,
                               NamespaceID namespace_id,
                               Topic topic,
-                              Epoch epoch,
+                              DataSource source,
                               SequenceNumber prev_seqno,
                               SequenceNumber next_seqno,
                               HasMessageSinceResult result,
@@ -1046,7 +1046,7 @@ class MessageBacklogFill : public Message {
   : Message(MessageType::mBacklogFill, tenantid)
   , namespace_id_(std::move(namespace_id))
   , topic_(std::move(topic))
-  , epoch_(std::move(epoch))
+  , source_(std::move(source))
   , prev_seqno_(prev_seqno)
   , next_seqno_(next_seqno)
   , result_(result)
@@ -1057,7 +1057,7 @@ class MessageBacklogFill : public Message {
 
   const NamespaceID& GetNamespace() const { return namespace_id_; }
   const Topic& GetTopicName() const { return topic_; }
-  const Epoch& GetEpoch() const { return epoch_; }
+  const DataSource& GetDataSource() const { return source_; }
 
   /**
    * The prev/next sequence number describe the range of sequence numbers that
@@ -1076,7 +1076,7 @@ class MessageBacklogFill : public Message {
  private:
   NamespaceID namespace_id_;
   Topic topic_;
-  Epoch epoch_;
+  DataSource source_;
   SequenceNumber prev_seqno_;
   SequenceNumber next_seqno_;
   HasMessageSinceResult result_;

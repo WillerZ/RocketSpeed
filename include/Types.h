@@ -84,11 +84,16 @@ typedef std::string Topic;
 typedef uint64_t SequenceNumber;
 
 /**
- * Along with a sequence number, each message belongs to an epoch. An epoch
- * can be considered the high-order, but unordered part of the sequencing space.
- * Epochs generally change when there is some failover or other loss of
- * continuity in the data source, where monotonic sequencing is lost.
+ * Each message delivered to a client belongs to a single data source. Messages
+ * are uniquely identified by a (data source, sequence number) pair. Messages
+ * on a particular topic may arrive from more than one data source. In this
+ * case, the topic is partially ordered, though messages from a particular
+ * data source will be received in-order. Totally ordered topics will receive
+ * messages only from a single data source.
  */
+using DataSource = std::string;
+
+// DEPRECATED
 using Epoch = std::string;
 
 /**
