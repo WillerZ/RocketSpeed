@@ -90,7 +90,6 @@ static void* XXH_memcpy(void* dest, const void* src, size_t size)
 }
 
 
-namespace rocketspeed {
 //**************************************
 // Basic Types
 //**************************************
@@ -921,5 +920,3 @@ unsigned long long XXH64_digest (const XXH64_state_t* state_in)
     else
         return XXH64_digest_endian(state_in, XXH_bigEndian);
 }
-
-}  // namespace rocketspeed

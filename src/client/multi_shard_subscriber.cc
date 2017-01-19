@@ -34,7 +34,7 @@
 #include "src/util/common/statistics.h"
 #include "src/util/common/subscription_id.h"
 #include "src/util/timeout_list.h"
-#include "external/xxhash/xxhash.h"
+#include <xxhash/xxhash.h>
 
 namespace rocketspeed {
 

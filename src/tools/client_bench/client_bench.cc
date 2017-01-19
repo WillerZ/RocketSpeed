@@ -7,7 +7,7 @@
 #include "src/util/auto_roll_logger.h"
 #include "src/util/logging.h"
 #include "src/util/testutil.h"
-#include "external/xxhash/xxhash.h"
+#include <xxhash/xxhash.h>
 
 #include "stdlib.h"
 #include "stdio.h"
@@ -76,8 +76,7 @@ class SimpleShardingStrategy : public ShardingStrategy {
         FLAGS_shards;
     } else {
       // Normally, just hash the topic name.
-      return rocketspeed::XXH64(topic_name.data(), topic_name.size(), 0) %
-        FLAGS_shards;
+      return XXH64(topic_name.data(), topic_name.size(), 0) % FLAGS_shards;
     }
   }
 

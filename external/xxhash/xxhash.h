@@ -56,10 +56,6 @@ It depends on successfully passing SMHasher test set.
 *****************************/
 #include <stddef.h>   /* size_t */
 
-#if defined (__cplusplus)
-namespace rocketspeed {
-#endif
-
 /*****************************
    Type
 *****************************/
@@ -134,7 +130,3 @@ and therefore get some new hashes, by calling again XXHnn_digest().
 When you are done, don't forget to free XXH state space, using typically XXHnn_freeState().
 */
 
-
-#if defined (__cplusplus)
-}  // namespace rocketspeed
-#endif

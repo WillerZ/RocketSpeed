@@ -5,7 +5,7 @@
 //
 #include "src/util/topic_uuid.h"
 #include "src/util/common/coding.h"
-#include "external/xxhash/xxhash.h"
+#include <xxhash/xxhash.h>
 
 namespace rocketspeed {
 
