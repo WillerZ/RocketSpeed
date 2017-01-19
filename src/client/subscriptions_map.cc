@@ -438,12 +438,12 @@ bool SubscriptionsMap::ProcessDeliver(
 size_t SubscriptionsMap::Subscription::Hash::operator()(
     const Subscription& sub) const {
   const uint64_t seed = 0xf92601a646f1828fULL;
-  XXH64_state_t state;
-  XXH64_reset(&state, seed);
+  XXH64_stateSpace_t state;
+  XXH64_resetState(&state, seed);
   XXH64_update(&state, &sub.sub_id, sizeof(sub.sub_id));
   XXH64_update(&state, sub.namespace_id.data(), sub.namespace_id.size());
   XXH64_update(&state, sub.topic.data(), sub.topic.size());
-  return XXH64_digest(&state);
+  return XXH64_intermediateDigest(&state);
 }
 
 }  // namespace rocketspeed

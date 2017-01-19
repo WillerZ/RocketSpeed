@@ -131,12 +131,12 @@ void BacklogQueryStore::StopSync() {
 
 size_t BacklogQueryStore::Key::Hash::operator()(const Key& key) const {
   const uint64_t seed = 0xd6c5552724cda88bULL;
-  XXH64_state_t state;
-  XXH64_reset(&state, seed);
+  XXH64_stateSpace_t state;
+  XXH64_resetState(&state, seed);
   XXH64_update(&state, key.namespace_id.data(), key.namespace_id.size());
   XXH64_update(&state, key.topic.data(), key.topic.size());
   XXH64_update(&state, key.source.data(), key.source.size());
-  return XXH64_digest(&state);
+  return XXH64_intermediateDigest(&state);
 }
 
 } // namespace rocketspeed

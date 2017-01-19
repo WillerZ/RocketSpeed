@@ -154,11 +154,11 @@ size_t TopicToSubscriptionMap::FindOptimalPosition(Slice namespace_id,
                                                    Slice topic_name) const {
   RS_ASSERT(!vector_.empty());
   const uint64_t seed = 0x57933c4a28a735b0;
-  XXH64_state_t state;
-  XXH64_reset(&state, seed);
+  XXH64_stateSpace_t state;
+  XXH64_resetState(&state, seed);
   XXH64_update(&state, namespace_id.data(), namespace_id.size());
   XXH64_update(&state, topic_name.data(), topic_name.size());
-  size_t hash = XXH64_digest(&state);
+  size_t hash = XXH64_intermediateDigest(&state);
   return hash % vector_.size();
 }
 

@@ -68,11 +68,11 @@ Status RendezvousHashTowerRouter::GetControlTowers(
   for (const auto& entry : host_ids_) {
     // Compute hash of (log_id, host_id).
     const uint64_t seed = 0x388b9301c3cd063c;
-    XXH64_state_t state;
-    XXH64_reset(&state, seed);
+    XXH64_stateSpace_t state;
+    XXH64_resetState(&state, seed);
     XXH64_update(&state, &log_id, sizeof(log_id));
     XXH64_update(&state, &entry.first, sizeof(entry.first));
-    size_t hash = XXH64_digest(&state);
+    size_t hash = XXH64_intermediateDigest(&state);
     weights.emplace_back(hash, &entry.second);
   }
 

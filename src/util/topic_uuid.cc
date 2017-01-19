@@ -43,11 +43,11 @@ size_t TopicUUID::RoutingHash(Slice namespace_id, Slice topic_name) {
   // * WARNING: changing this hash will redistribute topics into logs. *
   // *******************************************************************
   const uint64_t seed = 0x9ee8fcef51dbffe8;
-  XXH64_state_t state;
-  XXH64_reset(&state, seed);
+  XXH64_stateSpace_t state;
+  XXH64_resetState(&state, seed);
   XXH64_update(&state, namespace_id.data(), namespace_id.size());
   XXH64_update(&state, topic_name.data(), topic_name.size());
-  return XXH64_digest(&state);
+  return XXH64_intermediateDigest(&state);
 }
 
 }  // namespace rocketspeed
