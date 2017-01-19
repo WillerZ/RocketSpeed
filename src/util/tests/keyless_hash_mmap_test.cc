@@ -289,6 +289,26 @@ TEST_F(KeylessHashMMapTest, Searching) {
   RunMapSearchTest<128>();
 }
 
+class SparseSetInstantiation : public ::testing::Test {};
+TEST_F(SparseSetInstantiation, AlternativeHashTypes) {
+  sparse_hash_set<bool> s1;
+  sparse_hash_set<char> s2;
+  sparse_hash_set<signed char> s3;
+  sparse_hash_set<unsigned char> s4;
+  sparse_hash_set<wchar_t> s5;
+  sparse_hash_set<char16_t> s6;
+  sparse_hash_set<char32_t> s7;
+  sparse_hash_set<short> s8;
+  sparse_hash_set<int> s9;
+  sparse_hash_set<long> s10;
+  sparse_hash_set<long long> s11;
+  sparse_hash_set<unsigned short> s12;
+  sparse_hash_set<unsigned int> s13;
+  sparse_hash_set<unsigned long> s14;
+  sparse_hash_set<unsigned long long> s15;
+  sparse_hash_set<float> s16;
+  sparse_hash_set<double> s17;
+}
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

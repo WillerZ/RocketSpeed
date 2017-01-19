@@ -5,7 +5,7 @@
 //
 
 #pragma once
-#include <xxhash/xxhash.h>
+#include <xxhash.h>
 
 namespace rocketspeed {
 
