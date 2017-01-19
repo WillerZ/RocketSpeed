@@ -93,9 +93,6 @@ typedef uint64_t SequenceNumber;
  */
 using DataSource = std::string;
 
-// DEPRECATED
-using Epoch = std::string;
-
 /**
  * Encapsulates a position on a particular source.
  */
