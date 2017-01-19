@@ -206,6 +206,27 @@ TEST_F(Messaging, MessageSubscribe) {
   ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
 }
 
+TEST_F(Messaging, MessageSubscribeWithCursorVector) {
+  MessageSubscribe msg1(Tenant::GuestTenant,
+                        GuestNamespace,
+                        "MessageSubscribe",
+                        {{"a", 1}, {"b", 2}},
+                        SubscriptionID::Unsafe(42));
+
+  std::string str;
+  msg1.Serialize(&str);
+  Slice slx(str);
+  MessageSubscribe msg2;
+  ASSERT_OK(msg2.DeSerialize(&slx));
+
+  ASSERT_EQ(msg1.GetMessageType(), msg2.GetMessageType());
+  ASSERT_EQ(msg1.GetTenantID(), msg2.GetTenantID());
+  ASSERT_EQ(msg1.GetNamespace(), msg2.GetNamespace());
+  ASSERT_EQ(msg1.GetTopicName(), msg2.GetTopicName());
+  ASSERT_EQ(msg1.GetStart(), msg2.GetStart());
+  ASSERT_EQ(msg1.GetSubID(), msg2.GetSubID());
+}
+
 TEST_F(Messaging, MessageUnsubscribe) {
   MessageUnsubscribe msg1(Tenant::GuestTenant,
                           GuestNamespace,

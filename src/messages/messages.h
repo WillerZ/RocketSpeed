@@ -664,16 +664,28 @@ class MessageTailSeqno final : public Message {
 /** A request to subscribe to provided topic with given parameters. */
 class MessageSubscribe final : public Message {
  public:
+  // DEPRECATED
   MessageSubscribe(TenantID tenant_id,
                    NamespaceID namespace_id,
                    Topic topic_name,
                    SequenceNumber start_seqno,
                    SubscriptionID sub_id)
-      : Message(MessageType::mSubscribe, tenant_id),
-        namespace_id_(std::move(namespace_id)),
-        topic_name_(std::move(topic_name)),
-        start_seqno_(start_seqno),
-        sub_id_(sub_id) {}
+  : MessageSubscribe(tenant_id,
+                     std::move(namespace_id),
+                     std::move(topic_name),
+                     {{"", start_seqno}}, // default to single, empty source
+                     sub_id) {}
+
+  MessageSubscribe(TenantID tenant_id,
+                   NamespaceID namespace_id,
+                   Topic topic_name,
+                   CursorVector start,
+                   SubscriptionID sub_id)
+  : Message(MessageType::mSubscribe, tenant_id),
+    namespace_id_(std::move(namespace_id)),
+    topic_name_(std::move(topic_name)),
+    start_(std::move(start)),
+    sub_id_(sub_id) {}
 
   MessageSubscribe() : Message(MessageType::mSubscribe) {}
 
@@ -681,7 +693,15 @@ class MessageSubscribe final : public Message {
 
   Slice GetTopicName() const { return Slice(topic_name_); }
 
-  SequenceNumber GetStartSequenceNumber() const { return start_seqno_; }
+  const CursorVector& GetStart() const { return start_; }
+
+  SequenceNumber GetStartSequenceNumber() const {
+    // For backwards compatibility with existing code, allow this call as
+    // long as there is a single cursor on the empty source.
+    RS_ASSERT(start_.size() == 1);
+    RS_ASSERT(start_[0].source.empty());
+    return start_[0].seqno;
+  }
 
   SubscriptionID GetSubID() const { return sub_id_; }
 
@@ -692,7 +712,7 @@ class MessageSubscribe final : public Message {
   /** Parameters of the subscription. */
   NamespaceID namespace_id_;
   Topic topic_name_;
-  SequenceNumber start_seqno_;
+  CursorVector start_;
   /** ID of the requested subscription assigned by the subscriber. */
   SubscriptionID sub_id_;
 };

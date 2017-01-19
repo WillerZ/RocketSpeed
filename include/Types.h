@@ -97,6 +97,35 @@ using DataSource = std::string;
 using Epoch = std::string;
 
 /**
+ * Encapsulates a position on a particular source.
+ */
+class Cursor {
+ public:
+  Cursor() {}
+
+  Cursor(DataSource _source, SequenceNumber _seqno)
+  : source(std::move(_source))
+  , seqno(_seqno) {}
+
+  bool operator==(const Cursor& rhs) const {
+    return seqno == rhs.seqno && source == rhs.source;
+  }
+
+  bool operator<(const Cursor& rhs) const {
+    return std::tie(source, seqno) < std::tie(rhs.source, rhs.seqno);
+  }
+
+  DataSource source;
+  SequenceNumber seqno;
+};
+
+/**
+ * Encapsulates a vector of cursors for the position on a topic with multiple
+ * sources.
+ */
+using CursorVector = std::vector<Cursor>;
+
+/**
  * A globally unique identifier.
  */
 struct GUID {

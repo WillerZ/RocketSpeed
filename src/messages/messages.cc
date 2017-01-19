@@ -619,8 +619,20 @@ Status MessageTailSeqno::DeSerialize(Slice* in) {
 Status MessageSubscribe::Serialize(std::string* out) const {
   Message::Serialize(out);
   PutTopicID(out, namespace_id_, topic_name_);
-  PutVarint64(out, start_seqno_);
+  if (start_.size() >= 1) {
+    PutVarint64(out, start_[0].seqno);
+  } else {
+    PutVarint64(out, 0);  // backwards compat, used to be seqno
+  }
   EncodeSubscriptionID(out, sub_id_);
+  size_t num_cursors = start_.size();
+  PutVarint64(out, num_cursors);
+  for (const auto& cursor : start_) {
+    PutLengthPrefixedSlice(out, cursor.source);
+  }
+  for (const auto& cursor : start_) {
+    PutVarint64(out, cursor.seqno);
+  }
   return Status::OK();
 }
 
@@ -632,11 +644,31 @@ Status MessageSubscribe::DeSerialize(Slice* in) {
   if (!GetTopicID(in, &namespace_id_, &topic_name_)) {
     return Status::InvalidArgument("Bad NamespaceID and/or TopicName");
   }
-  if (!GetVarint64(in, &start_seqno_)) {
+  SequenceNumber start_seqno;
+  if (!GetVarint64(in, &start_seqno)) {
     return Status::InvalidArgument("Bad SequenceNumber");
   }
   if (!DecodeSubscriptionID(in, &sub_id_)) {
     return Status::InvalidArgument("Bad SubscriptionID");
+  }
+  uint64_t num_cursors;
+  if (GetVarint64(in, &num_cursors)) {
+    start_.resize(num_cursors);
+    for (uint64_t i = 0; i < num_cursors; ++i) {
+      if (!GetLengthPrefixedSlice(in, &start_[i].source)) {
+        return Status::InvalidArgument("Bad cursor source");
+      }
+    }
+    for (uint64_t i = 0; i < num_cursors; ++i) {
+      if (!GetVarint64(in, &start_[i].seqno)) {
+        return Status::InvalidArgument("Bad cursor seqno");
+      }
+    }
+  } else {
+    // OK, for backwards compat.
+    // Old message format, so use start_seqno on empty topic.
+    // TODO(pja): Make this an error once required.
+    start_.emplace_back("", start_seqno);
   }
   return Status::OK();
 }
