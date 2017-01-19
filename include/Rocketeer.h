@@ -72,7 +72,7 @@ struct RocketeerMessage {
                    std::string _payload,
                    MsgId _msg_id = MsgId())
   : sub_id(std::move(_sub_id))
-  , seqno(_seqno)
+  , cursor("", _seqno)
   , payload(std::move(_payload))
   , msg_id(_msg_id) {}
 
@@ -85,15 +85,14 @@ struct RocketeerMessage {
   : sub_id(std::move(_sub_id))
   , namespace_id(std::move(_namespace_id))
   , topic(std::move(_topic))
-  , seqno(_seqno)
+  , cursor("", _seqno)
   , payload(std::move(_payload))
   , msg_id(_msg_id) {}
 
   uint64_t sub_id;
   NamespaceID namespace_id;
   Topic topic;
-  DataSource source;
-  SequenceNumber seqno;
+  Cursor cursor;
   std::string payload;
   MsgId msg_id;
 
@@ -312,8 +311,7 @@ class Rocketeer {
                        InboundID inbound_id,
                        NamespaceID namespace_id,
                        Topic topic,
-                       DataSource source,
-                       SequenceNumber seqno,
+                       Cursor cursor,
                        std::string payload,
                        MsgId msg_id = MsgId());
 
@@ -352,9 +350,8 @@ class Rocketeer {
   virtual void Advance(Flow* flow,
                        InboundID inbound_id,
                        NamespaceID namespace_id,
-                       DataSource source,
                        Topic topic,
-                       SequenceNumber seqno);
+                       Cursor cursor);
   /**
    * Same as Advance but triggers DataLoss callback on the client's observer.
    *
@@ -371,8 +368,7 @@ class Rocketeer {
                               InboundID inbound_id,
                               NamespaceID namespace_id,
                               Topic topic,
-                              DataSource source,
-                              SequenceNumber seqno);
+                              Cursor cursor);
 
   /**
    * Unsubscribes given subscription.

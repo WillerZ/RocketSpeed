@@ -137,8 +137,7 @@ class RocketeerServer {
   virtual bool Deliver(InboundID inbound_id,
                        NamespaceID namespace_id,
                        Topic topic,
-                       DataSource source,
-                       SequenceNumber seqno,
+                       Cursor cursor,
                        std::string payload,
                        MsgId msg_id = MsgId()) = 0;
 
@@ -165,8 +164,7 @@ class RocketeerServer {
   virtual bool Advance(InboundID inbound_id,
                        NamespaceID namespace_id,
                        Topic topic,
-                       DataSource source,
-                       SequenceNumber seqno) = 0;
+                       Cursor cursor) = 0;
 
   /**
    * A thread-safe version of Rocketeer::NotifyDataLoss.
@@ -182,8 +180,7 @@ class RocketeerServer {
   virtual bool NotifyDataLoss(InboundID inbound_id,
                               NamespaceID namespace_id,
                               Topic topic,
-                              DataSource source,
-                              SequenceNumber seqno) = 0;
+                              Cursor cursor) = 0;
 
   /**
    * A thread-safe version of Rocketeer::Unsubscribe.

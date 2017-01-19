@@ -33,8 +33,8 @@ bool RocketeerServer::Deliver(InboundID inbound_id,
                               SequenceNumber seqno,
                               std::string payload,
                               MsgId msg_id) {
-  return Deliver(inbound_id, std::move(namespace_id), std::move(topic), "",
-      seqno, std::move(payload), msg_id);
+  return Deliver(inbound_id, std::move(namespace_id), std::move(topic),
+      Cursor("", seqno), std::move(payload), msg_id);
 }
 
 bool RocketeerServer::Advance(InboundID inbound_id,
@@ -42,7 +42,7 @@ bool RocketeerServer::Advance(InboundID inbound_id,
                               Topic topic,
                               SequenceNumber seqno) {
   return Advance(inbound_id, std::move(namespace_id), std::move(topic),
-      "", seqno);
+      Cursor("", seqno));
 }
 
 bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
@@ -50,7 +50,7 @@ bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
                                      Topic topic,
                                      SequenceNumber seqno) {
   return NotifyDataLoss(inbound_id, std::move(namespace_id), std::move(topic),
-      "", seqno);
+      Cursor("", seqno));
 }
 
 namespace {
@@ -82,8 +82,7 @@ class RocketeerServerImpl final : public RocketeerServer {
   bool Deliver(InboundID inbound_id,
                NamespaceID namespace_id,
                Topic topic,
-               DataSource source,
-               SequenceNumber seqno,
+               Cursor cursor,
                std::string payload,
                MsgId msg_id) override;
 
@@ -94,14 +93,12 @@ class RocketeerServerImpl final : public RocketeerServer {
   bool Advance(InboundID inbound_id,
                NamespaceID namespace_id,
                Topic topic,
-               DataSource source,
-               SequenceNumber seqno) override;
+               Cursor cursor) override;
 
   bool NotifyDataLoss(InboundID inbound_id,
                       NamespaceID namespace_id,
                       Topic topic,
-                      DataSource source,
-                      SequenceNumber seqno) override;
+                      Cursor cursor) override;
 
   bool Unsubscribe(InboundID inbound_id,
                    NamespaceID namespace_id,
@@ -167,8 +164,7 @@ class CommunicationRocketeer final : public Rocketeer {
                InboundID inbound_id,
                NamespaceID namespace_id,
                Topic topic,
-               DataSource source,
-               SequenceNumber seqno,
+               Cursor cursor,
                std::string payload,
                MsgId msg_id = MsgId()) final override;
 
@@ -180,15 +176,13 @@ class CommunicationRocketeer final : public Rocketeer {
                InboundID inbound_id,
                NamespaceID namespace_id,
                Topic topic,
-               DataSource source,
-               SequenceNumber seqno) final override;
+               Cursor cursor) final override;
 
   void NotifyDataLoss(Flow* flow,
                       InboundID inbound_id,
                       NamespaceID namespace_id,
                       Topic topic,
-                      DataSource source,
-                      SequenceNumber seqno) final override;
+                      Cursor cursor) final override;
 
   void Unsubscribe(Flow* flow,
                    InboundID inbound_id,
@@ -276,7 +270,7 @@ class CommunicationRocketeer final : public Rocketeer {
 
   void SendGapMessage(
       Flow* flow, InboundID inbound_id, NamespaceID namespace_id, Topic topic,
-      DataSource source, SequenceNumber seqno, GapType gap_type);
+      Cursor cursor, GapType gap_type);
 };
 
 CommunicationRocketeer::CommunicationRocketeer(Rocketeer* rocketeer)
@@ -318,8 +312,7 @@ void CommunicationRocketeer::Deliver(Flow* flow,
                                      InboundID inbound_id,
                                      NamespaceID namespace_id,
                                      Topic topic,
-                                     DataSource source,
-                                     SequenceNumber seqno,
+                                     Cursor cursor,
                                      std::string payload,
                                      MsgId msg_id) {
   thread_check_.Check();
@@ -328,20 +321,21 @@ void CommunicationRocketeer::Deliver(Flow* flow,
     msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
   }
   if (auto* sub = Find(inbound_id)) {
-    if (sub->prev_seqno < seqno) {
+    if (sub->prev_seqno < cursor.seqno) {
       auto tenant_id = GetTenant(inbound_id.stream_id);
       auto data = std::make_unique<MessageDeliverData>(
           tenant_id, std::move(namespace_id), std::move(topic),
           inbound_id.GetSubID(), msg_id, payload);
-      data->SetSequenceNumbers(std::move(source), sub->prev_seqno, seqno);
-      sub->prev_seqno = seqno;
+      data->SetSequenceNumbers(std::move(cursor.source), sub->prev_seqno,
+          cursor.seqno);
+      sub->prev_seqno = cursor.seqno;
       SendResponse(flow, inbound_id.stream_id, std::move(data));
     } else {
       stats_->dropped_reordered->Add(1);
       LOG_WARN(server_->options_.info_log,
                "Attempted to deliver data at %" PRIu64
                ", but subscription has previous seqno %" PRIu64,
-               seqno,
+               cursor.seqno,
                sub->prev_seqno);
     }
   }
@@ -359,7 +353,7 @@ void CommunicationRocketeer::DeliverBatch(
       msg.msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
     }
     if (auto* sub = Find(InboundID(stream_id, msg.GetSubID()))) {
-      if (sub->prev_seqno < msg.seqno) {
+      if (sub->prev_seqno < msg.cursor.seqno) {
         messages_vec.emplace_back(
             new MessageDeliverData(tenant_id,
                                    std::move(msg.namespace_id),
@@ -367,15 +361,15 @@ void CommunicationRocketeer::DeliverBatch(
                                    msg.GetSubID(),
                                    msg.msg_id,
                                    std::move(msg.payload)));
-        messages_vec.back()->SetSequenceNumbers(msg.source, sub->prev_seqno,
-            msg.seqno);
-        sub->prev_seqno = msg.seqno;
+        messages_vec.back()->SetSequenceNumbers(msg.cursor.source,
+            sub->prev_seqno, msg.cursor.seqno);
+        sub->prev_seqno = msg.cursor.seqno;
       } else {
         stats_->dropped_reordered->Add(1);
         LOG_WARN(server_->options_.info_log,
                  "Attempted to deliver data at %" PRIu64
                  ", but subscription has previous seqno %" PRIu64,
-                 msg.seqno,
+                 msg.cursor.seqno,
                  sub->prev_seqno);
       }
     }
@@ -391,26 +385,26 @@ void CommunicationRocketeer::SendGapMessage(Flow* flow,
                                             InboundID inbound_id,
                                             NamespaceID namespace_id,
                                             Topic topic,
-                                            DataSource source,
-                                            SequenceNumber seqno,
+                                            Cursor cursor,
                                             GapType gap_type) {
   thread_check_.Check();
 
   if (auto* sub = Find(inbound_id)) {
-    if (sub->prev_seqno < seqno) {
+    if (sub->prev_seqno < cursor.seqno) {
       auto tenant_id = GetTenant(inbound_id.stream_id);
       auto gap = std::make_unique<MessageDeliverGap>(
           tenant_id, std::move(namespace_id), std::move(topic),
           inbound_id.GetSubID(), gap_type);
-      gap->SetSequenceNumbers(std::move(source), sub->prev_seqno, seqno);
-      sub->prev_seqno = seqno;
+      gap->SetSequenceNumbers(std::move(cursor.source), sub->prev_seqno,
+          cursor.seqno);
+      sub->prev_seqno = cursor.seqno;
       SendResponse(flow, inbound_id.stream_id, std::move(gap));
     } else {
       stats_->dropped_reordered->Add(1);
       LOG_WARN(server_->options_.info_log,
                "Attempted to deliver gap at %" PRIu64
                ", but subscription has previous seqno %" PRIu64,
-               seqno,
+               cursor.seqno,
                sub->prev_seqno);
     }
   }
@@ -420,20 +414,18 @@ void CommunicationRocketeer::Advance(Flow* flow,
                                      InboundID inbound_id,
                                      NamespaceID namespace_id,
                                      Topic topic,
-                                     DataSource source,
-                                     SequenceNumber seqno) {
+                                     Cursor cursor) {
   SendGapMessage(flow, inbound_id, std::move(namespace_id), std::move(topic),
-      std::move(source), seqno, GapType::kBenign);
+      std::move(cursor), GapType::kBenign);
 }
 
 void CommunicationRocketeer::NotifyDataLoss(Flow* flow,
                                             InboundID inbound_id,
                                             NamespaceID namespace_id,
                                             Topic topic,
-                                            DataSource source,
-                                            SequenceNumber seqno) {
+                                            Cursor cursor) {
   SendGapMessage(flow, inbound_id, std::move(namespace_id), std::move(topic),
-      std::move(source), seqno, GapType::kDataLoss);
+      std::move(cursor), GapType::kDataLoss);
 }
 
 void CommunicationRocketeer::Unsubscribe(Flow* flow,
@@ -773,18 +765,17 @@ void RocketeerServerImpl::Stop() {
 bool RocketeerServerImpl::Deliver(InboundID inbound_id,
                                   NamespaceID namespace_id,
                                   Topic topic,
-                                  DataSource source,
-                                  SequenceNumber seqno,
+                                  Cursor cursor,
                                   std::string payload,
                                   MsgId msg_id) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id,
                   namespace_id = std::move(namespace_id),
-                  topic = std::move(topic), source = std::move(source), seqno,
+                  topic = std::move(topic), cursor = std::move(cursor),
                   payload = std::move(payload), msg_id](Flow* flow) mutable {
     rocketeers_[worker_id]->Deliver(
         flow, inbound_id, std::move(namespace_id),
-        std::move(topic), std::move(source), seqno, std::move(payload), msg_id);
+        std::move(topic), std::move(cursor), std::move(payload), msg_id);
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
@@ -808,15 +799,14 @@ bool RocketeerServerImpl::DeliverBatch(StreamID stream_id,
 bool RocketeerServerImpl::Advance(InboundID inbound_id,
                                   NamespaceID namespace_id,
                                   Topic topic,
-                                  DataSource source,
-                                  SequenceNumber seqno) {
+                                  Cursor cursor) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id,
                   namespace_id = std::move(namespace_id),
-                  topic = std::move(topic), source = std::move(source),
-                  seqno](Flow* flow) mutable {
+                  topic = std::move(topic), cursor = std::move(cursor)]
+                  (Flow* flow) mutable {
     rocketeers_[worker_id]->Advance(flow, inbound_id, std::move(namespace_id),
-        std::move(topic), std::move(source), seqno);
+        std::move(topic), std::move(cursor));
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
@@ -826,15 +816,14 @@ bool RocketeerServerImpl::Advance(InboundID inbound_id,
 bool RocketeerServerImpl::NotifyDataLoss(InboundID inbound_id,
                                          NamespaceID namespace_id,
                                          Topic topic,
-                                         DataSource source,
-                                         SequenceNumber seqno) {
+                                         Cursor cursor) {
   auto worker_id = GetWorkerID(inbound_id);
   auto command = [this, worker_id, inbound_id,
                   namespace_id = std::move(namespace_id),
-                  topic = std::move(topic), source = std::move(source),
-                  seqno](Flow* flow) mutable {
+                  topic = std::move(topic), cursor = std::move(cursor)]
+                  (Flow* flow) mutable {
     rocketeers_[worker_id]->NotifyDataLoss(flow, inbound_id,
-        std::move(namespace_id), std::move(topic), std::move(source), seqno);
+        std::move(namespace_id), std::move(topic), std::move(cursor));
   };
   return msg_loop_
       ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)

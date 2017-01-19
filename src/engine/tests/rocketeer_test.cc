@@ -320,7 +320,7 @@ TEST_F(RocketeerTest, StackRocketeerTest) {
            advance_sem.Post();
          } else if (data->GetGapType() == GapType::kDataLoss) {
            ASSERT_TRUE(data->GetFirstSequenceNumber() ==
-                       topRocketeer.messages_.back().seqno);
+                       topRocketeer.messages_.back().cursor.seqno);
            ASSERT_TRUE(data->GetLastSequenceNumber() ==
                        topRocketeer.dataloss_seqno_);
            dataloss_sem.Post();
@@ -337,7 +337,7 @@ TEST_F(RocketeerTest, StackRocketeerTest) {
            ASSERT_TRUE(messages[i]->GetPayload() ==
                        topRocketeer.messages_[i].payload);
            ASSERT_TRUE(messages[i]->GetSequenceNumber() ==
-                       topRocketeer.messages_[i].seqno);
+                       topRocketeer.messages_[i].cursor.seqno);
          }
          batch_sem.Post();
        }},
