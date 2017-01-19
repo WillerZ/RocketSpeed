@@ -126,14 +126,7 @@ BackPressure Rocketeer::TryHandleUnsubscribe(
     NamespaceID,
     Topic,
     TerminationSource source) {
-  // If not implemented, we forward without topic.
-  return TryHandleTermination(inbound_id, source);
-}
-
-BackPressure Rocketeer::TryHandleTermination(
-    InboundID inbound_id, TerminationSource source) {
-  // DEPRECATED
-  RS_ASSERT(false) << "TryHandleTermination/Unsubscribe are not implemented.";
+  RS_ASSERT(false) << "TryHandleUnsubscribe is not implemented.";
   return BackPressure::None();
 }
 
@@ -157,11 +150,6 @@ void Rocketeer::HandleUnsubscribe(
   msg.params.topic_name = std::move(topic_name);
   msg.source = source;
   flow->Write(metadata_sink_.get(), msg);
-}
-
-void Rocketeer::HandleTermination(
-    Flow* flow, InboundID inbound_id, TerminationSource source) {
-  RS_ASSERT(false) << "Default HandleTermination should never be called";
 }
 
 BackPressure Rocketeer::TryHandleHasMessageSince(
@@ -234,17 +222,6 @@ void Rocketeer::Deliver(Flow* flow,
                         InboundID inbound_id,
                         NamespaceID namespace_id,
                         Topic topic,
-                        SequenceNumber seqno,
-                        std::string payload,
-                        MsgId msg_id) {
-  Deliver(flow, inbound_id, std::move(namespace_id), std::move(topic),
-      Cursor("", seqno), std::move(payload), msg_id);
-}
-
-void Rocketeer::Deliver(Flow* flow,
-                        InboundID inbound_id,
-                        NamespaceID namespace_id,
-                        Topic topic,
                         Cursor cursor,
                         std::string payload,
                         MsgId msg_id) {
@@ -263,27 +240,9 @@ void Rocketeer::Advance(Flow* flow,
                         InboundID inbound_id,
                         NamespaceID namespace_id,
                         Topic topic,
-                        SequenceNumber seqno) {
-  Advance(flow, inbound_id, std::move(namespace_id), std::move(topic),
-      Cursor("", seqno));
-}
-
-void Rocketeer::Advance(Flow* flow,
-                        InboundID inbound_id,
-                        NamespaceID namespace_id,
-                        Topic topic,
                         Cursor cursor) {
   GetBelowRocketeer()->Advance(flow, inbound_id, std::move(namespace_id),
       std::move(topic), std::move(cursor));
-}
-
-void Rocketeer::NotifyDataLoss(Flow* flow,
-                               InboundID inbound_id,
-                               NamespaceID namespace_id,
-                               Topic topic,
-                               SequenceNumber seqno) {
-  NotifyDataLoss(flow, inbound_id, std::move(namespace_id), std::move(topic),
-      Cursor("", seqno));
 }
 
 void Rocketeer::NotifyDataLoss(Flow* flow,

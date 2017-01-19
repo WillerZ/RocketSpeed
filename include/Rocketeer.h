@@ -138,8 +138,8 @@ class Rocketeer {
   /**
    * Notifies that given subscription was terminated by the user.
    * This method is guaranteed to always be called on the same thread.
-   * Implementations should provide either TryHandleTermination or
-   * HandleTermination, but not both. If both are provided, this version is
+   * Implementations should provide either TryHandleUnsubscribe or
+   * HandleUnsubscribe, but not both. If both are provided, this version is
    * ignored.
    *
    * @param inbound_id ID of the subscription to be terminated.
@@ -157,15 +157,11 @@ class Rocketeer {
       Topic topic,
       TerminationSource source);
 
-  // DEPRECATED
-  virtual BackPressure TryHandleTermination(
-      InboundID inbound_id, TerminationSource source);
-
   /**
    * Notifies that given subscription was terminated by the user.
    * This method is guaranteed to always be called on the same thread.
-   * Implementations should provide either TryHandleTermination or
-   * HandleTermination, but not both. If both are provided, this version is
+   * Implementations should provide either TryHandleUnsubscribe or
+   * HandleUnsubscribe, but not both. If both are provided, this version is
    * preferred.
    *
    * @param flow Flow control handle for exerting back-pressure.
@@ -178,10 +174,6 @@ class Rocketeer {
       NamespaceID namespace_id,
       Topic topic,
       TerminationSource source);
-
-  // DEPRECATED
-  virtual void HandleTermination(
-      Flow* flow, InboundID inbound_id, TerminationSource source);
 
   /**
    * Notifies about a new HasMessageSince request.
@@ -242,7 +234,7 @@ class Rocketeer {
    * Notifies that a stream has disconnected.
    *
    * If the RocketeerServer is running with terminate_on_disconnect then
-   * the rocketeer will automatically receive HandleTermination calls for each
+   * the rocketeer will automatically receive HandleUnsubscribe calls for each
    * subscription on the stream, before calling HandleDisconnect.
    *
    * If the RocketeerServer is not running with terminate_on_disconnect then
@@ -298,15 +290,6 @@ class Rocketeer {
    * @param payload Payload of the message.
    * @param msg_id The ID of the message.
    */
-  // DEPRECATED
-  virtual void Deliver(Flow* flow,
-                       InboundID inbound_id,
-                       NamespaceID namespace_id,
-                       Topic topic,
-                       SequenceNumber seqno,
-                       std::string payload,
-                       MsgId msg_id = MsgId());
-
   virtual void Deliver(Flow* flow,
                        InboundID inbound_id,
                        NamespaceID namespace_id,
@@ -340,13 +323,6 @@ class Rocketeer {
    *              next sequence number.
    * @return true iff operation was successfully scheduled.
    */
-  // DEPRECATED
-  virtual void Advance(Flow* flow,
-                       InboundID inbound_id,
-                       NamespaceID namespace_id,
-                       Topic topic,
-                       SequenceNumber seqno);
-
   virtual void Advance(Flow* flow,
                        InboundID inbound_id,
                        NamespaceID namespace_id,
@@ -357,13 +333,6 @@ class Rocketeer {
    *
    * This method needs to be called on the thread this instance runs on.
    */
-  // DEPRECATED
-  virtual void NotifyDataLoss(Flow* flow,
-                              InboundID inbound_id,
-                              NamespaceID namespace_id,
-                              Topic topic,
-                              SequenceNumber seqno);
-
   virtual void NotifyDataLoss(Flow* flow,
                               InboundID inbound_id,
                               NamespaceID namespace_id,

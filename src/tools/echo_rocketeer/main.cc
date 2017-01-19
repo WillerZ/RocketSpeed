@@ -33,7 +33,7 @@ class EchoRocketeer : public Rocketeer {
           for (auto& entry : tasks_) {
             Task& task = entry.second;
             if (server_->Deliver(entry.first, task.namespace_id, task.topic,
-                task.seqno, task.topic)) {
+                {"", task.seqno}, task.topic)) {
               task.seqno++;
             }
           }
@@ -59,8 +59,8 @@ class EchoRocketeer : public Rocketeer {
     tasks_.emplace(id, std::move(task));
   }
 
-  void HandleTermination(
-      Flow*, InboundID id, TerminationSource) override {
+  void HandleUnsubscribe(
+      Flow*, InboundID id, NamespaceID, Topic, TerminationSource) override {
     std::lock_guard<std::mutex> lock(task_lock_);
     tasks_.erase(id);
   }

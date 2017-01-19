@@ -62,7 +62,7 @@ class DeadLockRocketeer : public Rocketeer {
             // Write in bursts of 100 to speed things up.
             for (int i = 0; i < 100; ++i) {
               while (!server_->Deliver(entry.first, task.namespace_id,
-                  task.topic, task.seqno, "hello")) {
+                  task.topic, {"", task.seqno}, "hello")) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
               }
               task.seqno++;
@@ -95,8 +95,11 @@ class DeadLockRocketeer : public Rocketeer {
     }
   }
 
-  BackPressure TryHandleTermination(
-      InboundID id, TerminationSource) override {
+  BackPressure TryHandleUnsubscribe(
+      InboundID id,
+      NamespaceID,
+      Topic,
+      TerminationSource) override {
     // Remove subscription from task list.
     std::pair<InboundID, Task> p;
     p.first = id;

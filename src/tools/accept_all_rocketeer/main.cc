@@ -21,8 +21,8 @@ class AcceptAllRocketeer : public Rocketeer {
       Flow*, InboundID, SubscriptionParameters) override {
   }
 
-  void HandleTermination(
-      Flow*, InboundID, TerminationSource) override {}
+  void HandleUnsubscribe(
+      Flow*, InboundID, NamespaceID, Topic, TerminationSource) override {}
 };
 
 int main(int argc, char** argv) {

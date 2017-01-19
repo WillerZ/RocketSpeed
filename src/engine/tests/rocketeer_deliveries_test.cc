@@ -108,8 +108,8 @@ struct DeliveryRocketeer : public Rocketeer {
                              SubscriptionParameters params) override {
     for (size_t i = 0; i < deliveries_; i++) {
       SequenceNumber num = i + 1;
-      Deliver(flow, inbound_id, params.namespace_id, params.topic_name, num,
-          std::string(deliver_msg_));
+      Deliver(flow, inbound_id, params.namespace_id, params.topic_name,
+          {"", num}, std::string(deliver_msg_));
     }
   }
 

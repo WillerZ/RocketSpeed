@@ -25,8 +25,8 @@ class RejectAllRocketeer : public Rocketeer {
         std::move(params.topic_name), UnsubscribeReason::Invalid);
   }
 
-  void HandleTermination(
-      Flow*, InboundID, TerminationSource) override {}
+  void HandleUnsubscribe(
+      Flow*, InboundID, NamespaceID, Topic, TerminationSource) override {}
 };
 
 int main(int argc, char** argv) {

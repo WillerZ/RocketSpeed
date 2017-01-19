@@ -255,12 +255,12 @@ struct TopOfStack : public Rocketeer {
       Flow*, InboundID inbound_id, SubscriptionParameters params) override {
     inbound_id_ = inbound_id;
     Deliver(nullptr, inbound_id, params.namespace_id, params.topic_name,
-        deliver_msg_seqno_, deliver_msg_);
+        {"", deliver_msg_seqno_}, deliver_msg_);
     Advance(nullptr, inbound_id, params.namespace_id, params.topic_name,
-        advance_seqno_);
+        {"", advance_seqno_});
     DeliverBatch(nullptr, inbound_id.stream_id, messages_);
     NotifyDataLoss(nullptr, inbound_id, params.namespace_id, params.topic_name,
-        dataloss_seqno_);
+        {"", dataloss_seqno_});
     Unsubscribe(nullptr, inbound_id, params.namespace_id, params.topic_name,
       Rocketeer::UnsubscribeReason::Invalid);
   }
@@ -292,7 +292,7 @@ TEST_F(RocketeerTest, StackRocketeerTest) {
   port::Semaphore batch_sem;
   port::Semaphore dataloss_sem;
 
-  // Ensure that HandleSubscription and HandleTermination calls go up the stack
+  // Ensure that HandleSubscription and HandleUnsubscribe calls go up the stack
   // and Deliver/Advance/Terminate go down the stack.
 
   auto client = MockClient({
@@ -528,9 +528,11 @@ struct ConnectHandler : public Rocketeer {
     subscribe_sem_.Post();
   }
 
-  void HandleTermination(Flow*,
-                         InboundID inbound_id,
-                         TerminationSource source) override {
+  void HandleUnsubscribe(Flow*,
+                         InboundID,
+                         NamespaceID,
+                         Topic,
+                         TerminationSource) override {
     // Should never receive a termination.
     ASSERT_TRUE(false);
   }
@@ -605,7 +607,7 @@ TEST_F(RocketeerTest, AlternatingDataSource) {
   port::Semaphore batch_sem;
   port::Semaphore dataloss_sem;
 
-  // Ensure that HandleSubscription and HandleTermination calls go up the stack
+  // Ensure that HandleSubscription and HandleUnsubscribe calls go up the stack
   // and Deliver/Advance/Terminate go down the stack.
 
   auto client = MockClient({

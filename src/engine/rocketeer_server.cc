@@ -27,32 +27,6 @@
 
 namespace rocketspeed {
 
-bool RocketeerServer::Deliver(InboundID inbound_id,
-                              NamespaceID namespace_id,
-                              Topic topic,
-                              SequenceNumber seqno,
-                              std::string payload,
-                              MsgId msg_id) {
-  return Deliver(inbound_id, std::move(namespace_id), std::move(topic),
-      Cursor("", seqno), std::move(payload), msg_id);
-}
-
-bool RocketeerServer::Advance(InboundID inbound_id,
-                              NamespaceID namespace_id,
-                              Topic topic,
-                              SequenceNumber seqno) {
-  return Advance(inbound_id, std::move(namespace_id), std::move(topic),
-      Cursor("", seqno));
-}
-
-bool RocketeerServer::NotifyDataLoss(InboundID inbound_id,
-                                     NamespaceID namespace_id,
-                                     Topic topic,
-                                     SequenceNumber seqno) {
-  return NotifyDataLoss(inbound_id, std::move(namespace_id), std::move(topic),
-      Cursor("", seqno));
-}
-
 namespace {
 
 class CommunicationRocketeer;
