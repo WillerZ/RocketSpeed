@@ -19,7 +19,7 @@ struct SMHashBase {
 
 template <typename Tp>
 size_t hashImpl(Tp val) noexcept {
-  return rocketspeed::XXH64(&val, sizeof(val), 0xFACEBEAC);
+  return XXH64(&val, sizeof(val), 0xFACEBEAC);
 }
 
 } // namespace hdetails
