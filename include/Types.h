@@ -420,7 +420,6 @@ class SubscriptionParameters {
   TenantID tenant_id;
   NamespaceID namespace_id;
   Topic topic_name;
-  SequenceNumber start_seqno; // DEPRECATED
   CursorVector cursors;
 
   SubscriptionParameters() = default;
@@ -443,13 +442,6 @@ class SubscriptionParameters {
       , namespace_id(std::move(_namespace_id))
       , topic_name(std::move(_topic_name))
       , cursors(std::move(_cursors)) {
-    // For backwards compatibility, we need to set start_seqno.
-    // TODO(pja): Removes start_seqno once unused.
-    if (cursors.size() == 1 && cursors[0].source == "") {
-      start_seqno = cursors[0].seqno;
-    } else {
-      start_seqno = SequenceNumber(-1);
-    }
   }
 
   bool operator==(const SubscriptionParameters& other) const {

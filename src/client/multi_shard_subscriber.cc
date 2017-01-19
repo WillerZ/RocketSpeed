@@ -156,7 +156,6 @@ void MultiShardSubscriber::StartSubscription(
       RS_ASSERT_DBG(parameters.cursors.size() == 1);
       RS_ASSERT_DBG(parameters.cursors[0].source == "");
       RS_ASSERT_DBG(parameters.cursors[0].seqno == 0);
-      parameters.start_seqno = 0;
       parameters.cursors = {{"", 0}};
       auto sub = static_cast<Subscriber*>(subscriber.release());
       subscriber.reset(
