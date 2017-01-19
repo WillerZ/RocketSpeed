@@ -570,6 +570,8 @@ struct AlternatingDataSource : public Rocketeer {
 
   void HandleNewSubscription(
       Flow*, InboundID inbound_id, SubscriptionParameters params) override {
+    ASSERT_EQ(params.cursors.size(), 1);
+    ASSERT_EQ(params.cursors[0].source, "A");
     auto ns = params.namespace_id;
     auto topic = params.topic_name;
     auto seqno = params.cursors[0].seqno;
@@ -616,7 +618,7 @@ TEST_F(RocketeerTest, AlternatingDataSource) {
 
   // Subscribe.
   MessageSubscribe subscribe(
-      GuestTenant, GuestNamespace, "T", {{"", 1}}, SubscriptionID::Unsafe(2));
+      GuestTenant, GuestNamespace, "T", {{"A", 1}}, SubscriptionID::Unsafe(2));
   ASSERT_OK(client.msg_loop->SendRequest(subscribe, &socket, 0));
 
   ASSERT_TRUE(deliver_sem.TimedWait(positive_timeout));

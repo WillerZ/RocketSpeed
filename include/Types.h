@@ -115,6 +115,13 @@ class Cursor {
     return std::tie(source, seqno) < std::tie(rhs.source, rhs.seqno);
   }
 
+  std::string ToString() const {
+    char buf[128];
+    snprintf(buf, sizeof(buf), "Cursor(%s, %llu)", source.c_str(),
+        static_cast<unsigned long long>(seqno));
+    return std::string(buf);
+  }
+
   DataSource source;
   SequenceNumber seqno;
 };

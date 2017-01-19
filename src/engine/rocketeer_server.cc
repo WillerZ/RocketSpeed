@@ -571,7 +571,11 @@ void CommunicationRocketeer::Receive(
 
   StreamState& state = it->second;
   SubscriptionID sub_id = subscribe->GetSubID();
-  SequenceNumber start_seqno = subscribe->GetStartSequenceNumber();
+  CursorVector start = subscribe->GetStart();
+  SequenceNumber start_seqno = 0;
+  if (start.size() == 1) {
+    start_seqno = start[0].seqno;
+  }
   auto result = state.inbound.emplace(
       sub_id,
       InboundSubscription(start_seqno == 0 ? start_seqno : start_seqno - 1));
@@ -589,7 +593,7 @@ void CommunicationRocketeer::Receive(
   SubscriptionParameters params(subscribe->GetTenantID(),
                                 namespace_id.ToString(),
                                 topic.ToString(),
-                                subscribe->GetStartSequenceNumber());
+                                std::move(start));
   HandleNewSubscription(flow, InboundID(origin, sub_id), std::move(params));
   stats_->subscribes->Add(1);
   stats_->inbound_subscriptions->Add(1);

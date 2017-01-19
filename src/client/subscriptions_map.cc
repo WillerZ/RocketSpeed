@@ -39,9 +39,9 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
   if (current.seqno < previous) {
     LOG_ERROR(info_log,
               "Message has sequence numbers out of order "
-              "(%" PRIu64 ", %" PRIu64 ")",
+              "(%" PRIu64 ", %s)",
               previous,
-              current.seqno);
+              current.ToString().c_str());
     return false;
   }
 
@@ -53,24 +53,24 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
       (expected_.seqno < previous) /* must not skip an update */) {
     LOG_WARN(info_log,
              "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
-             ", %" PRIu64 ") expected %" PRIu64 ", dropped",
+             ", %s) expected %s, dropped",
              GetIDWhichMayChange().ForLogging(),
              tenant_and_namespace_.Get().namespace_id.c_str(),
              topic_name_.c_str(),
              previous,
-             current.seqno,
-             expected_.seqno);
+             current.ToString().c_str(),
+             expected_.ToString().c_str());
     return false;
   } else {
     LOG_DEBUG(info_log,
               "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
-              ", %" PRIu64 ") expected %" PRIu64 ", accepted",
+              ", %s) expected %s, accepted",
               GetIDWhichMayChange().ForLogging(),
               tenant_and_namespace_.Get().namespace_id.c_str(),
               topic_name_.c_str(),
               previous,
-              current.seqno,
-              expected_.seqno);
+              current.ToString().c_str(),
+              expected_.ToString().c_str());
     // We now expect the next sequence number.
     // TODO(pja): For now, the source is ignored, but we just keep the
     // last received source. Comparisons should eventually be per source.
@@ -139,13 +139,12 @@ void SubscriptionsMap::Subscribe(
   RS_ASSERT(start.size() == 1);
 
   LOG_DEBUG(GetLogger(),
-            "Subscribe(%llu, %u, %s, %s, %s, %" PRIu64 ")",
+            "Subscribe(%llu, %u, %s, %s, %s)",
             sub_id.ForLogging(),
             tenant_id,
             namespace_id.ToString().c_str(),
             topic_name.ToString().c_str(),
-            start[0].source.c_str(),
-            start[0].seqno);
+            start[0].ToString().c_str());
 
   auto tenant_and_namespace = tenant_and_namespace_factory_.GetFlyweight(
       {tenant_id, namespace_id.ToString()});
@@ -225,11 +224,10 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
   RS_ASSERT(ptr);
 
   LOG_DEBUG(GetLogger(),
-            "Rewind(%llu, %llu, %s, %" PRIu64 ")",
+            "Rewind(%llu, %llu, %s)",
             ptr->GetIDWhichMayChange().ForLogging(),
             new_sub_id.ForLogging(),
-            new_cursor.source.c_str(),
-            new_cursor.seqno);
+            new_cursor.ToString().c_str());
 
   RS_ASSERT(new_sub_id != old_sub_id);
 
