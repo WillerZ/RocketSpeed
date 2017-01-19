@@ -11,7 +11,7 @@
 #include "include/Types.h"
 #include "include/HostId.h"
 #include "src/util/common/parsing.h"
-#include <xxhash/xxhash.h>
+#include <xxhash.h>
 
 namespace rocketspeed {
 

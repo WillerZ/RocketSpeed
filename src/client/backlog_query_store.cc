@@ -2,7 +2,7 @@
 
 #include "include/Logger.h"
 #include "src/messages/flow_control.h"
-#include <xxhash/xxhash.h>
+#include <xxhash.h>
 
 namespace rocketspeed {
 

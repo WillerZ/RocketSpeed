@@ -7,7 +7,7 @@
 
 #include "src/util/common/autovector.h"
 #include "include/HostId.h"
-#include <xxhash/xxhash.h>
+#include <xxhash.h>
 
 namespace rocketspeed {
 

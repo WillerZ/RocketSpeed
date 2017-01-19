@@ -18,7 +18,7 @@
 #include "src/messages/messages.h"
 #include "src/messages/stream.h"
 #include "src/util/common/flow.h"
-#include <xxhash/xxhash.h>
+#include <xxhash.h>
 
 namespace rocketspeed {
 

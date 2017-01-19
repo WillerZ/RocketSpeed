@@ -5,7 +5,7 @@
 //
 #define __STDC_FORMAT_MACROS
 #include "src/controltower/data_cache.h"
-#include <xxhash/xxhash.h>
+#include <xxhash.h>
 
 #include <unordered_map>
 
