@@ -51,12 +51,6 @@ ShadowedClient::ShadowedClient(
 , shadowed_client_(std::move(shadowed_client))
 , shadow_predicate_(shadow_predicate) {}
 
-void ShadowedClient::SetDefaultCallbacks(
-    SubscribeCallback subscription_callback,
-    std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
-    DataLossCallback data_loss_callback) {
-}
-
 ShadowedClient::~ShadowedClient() {
 }
 
@@ -112,7 +106,7 @@ SubscriptionHandle ShadowedClient::Subscribe(SubscriptionParameters parameters,
 
 SubscriptionHandle ShadowedClient::Subscribe(
     SubscriptionParameters parameters,
-    std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+    DeliverCallback deliver_callback,
     SubscribeCallback subscription_callback,
     DataLossCallback data_loss_callback) {
 

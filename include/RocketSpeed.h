@@ -30,18 +30,22 @@ class WakeLock;
 class ClientHooks;
 
 /** Notifies about the status of a message published to the RocketSpeed. */
-typedef std::function<void(std::unique_ptr<ResultStatus>)> PublishCallback;
+using PublishCallback = std::function<void(std::unique_ptr<ResultStatus>)>;
 
 /**
  * Notifies the application about status of a subscription, see subscribe call
  * for details.
  */
-typedef std::function<void(const SubscriptionStatus&)> SubscribeCallback;
+using SubscribeCallback = std::function<void(const SubscriptionStatus&)>;
 
-typedef std::function<void(const DataLossInfo&)> DataLossCallback;
+/** Notifies about messages delivered on a topic. */
+using DeliverCallback = std::function<void(std::unique_ptr<MessageReceived>&)>;
+
+/** Notifies about data loss. */
+using DataLossCallback = std::function<void(const DataLossInfo&)>;
 
 /** Notifies about status of a finished subscription snapshot. */
-typedef std::function<void(Status)> SaveSubscriptionsCallback;
+using SaveSubscriptionsCallback = std::function<void(Status)>;
 
 using ClientRNG = std::mt19937_64;
 
@@ -63,6 +67,18 @@ BackOffStrategy RandomizedTruncatedExponential(
 /** Describes the Client object to be created. */
 class ClientOptions {
  public:
+  // Callback to invoke when subscription metadata changes.
+  // Will be called even if Observer is provided.
+  SubscribeCallback subscription_callback;
+
+  // Callback to invoke when a message is delivered on a topic.
+  // Will be called even if Observer is provided.
+  DeliverCallback deliver_callback;
+
+  // Callback to invoke when data loss occurs.
+  // Will be called even if Observer is provided.
+  DataLossCallback data_loss_callback;
+
   // Configuration of this service provider.
   std::shared_ptr<PublisherRouter> publisher;
 
@@ -253,33 +269,6 @@ class Client {
   virtual ~Client() = default;
 
   /**
-   * Sets default callback for announcing subscription status and message
-   * delivery.
-   *
-   * This method is NOT thread-safe, if ever called, it must be right after
-   * creating the client from the same thread. Caller must ensure that this call
-   * "happened-before" any call which creates a new subscription.
-   *
-   * Note: the default callbacks have effect only if Subscribe's overload
-   *       with separately specified callbacks is used. The default callbacks
-   *       are applied instead of not specified (nullptr) ones. The default
-   *       callbacks have no effect if Subscribe with an Observer is used.
-   *
-   * @param subscription_callback See docs for corresponding callback in
-   *                              subscribe method.
-   * @param deliver_callback See docs for corresponding callback in
-   *                         subscribe method.
-   * @param data_loss_callback See docs for corresponding callback in
-   *                           subscribe method.
-   */
-  virtual void SetDefaultCallbacks(
-      SubscribeCallback subscription_callback = nullptr,
-      std::function<void(std::unique_ptr<MessageReceived>&)>
-          deliver_callback = nullptr,
-      DataLossCallback
-          data_loss_callback = nullptr) = 0;
-
-  /**
    * Connect hooks instance to specified subscription.
    * Subscription may exists or not. Only one instance of hooks
    * is allowed to be installed at the same time.
@@ -355,6 +344,11 @@ class Client {
     return r;
   }
 
+  SubscriptionHandle Subscribe(SubscriptionParameters parameters) {
+    std::unique_ptr<Observer> tmp;
+    return Subscribe(std::move(parameters), tmp);
+  }
+
   /**
    * Convenience method, see the other overload for details.
    *
@@ -365,22 +359,20 @@ class Client {
    * @param deliver_callback Invoked with every message received on the
    *                         subscription. See Observer::OnMessageReceived
    *                         for extra information. If not specified (nullptr)
-   *                         the default one is used (see SetDefaultCallbacks).
+   *                         the default one is used.
    * @param subscription_callback Invoked to notify status change of the
    *                              subscription.
    *                              See Observer::OnSubscriptionStatusChange
    *                              for extra information. If not specified
-   *                              (nullptr) the default one is used
-   *                              (see SetDefaultCallbacks).
+   *                              (nullptr) the default one is used.
    * @param data_loss_callback Invoked to notify there's been data loss.
    *                           See Observer::OnDataLoss for extra information.
    *                           If not specified (nullptr) the default one
-   *                           is used (see SetDefaultCallbacks).
+   *                           is used.
    */
   virtual SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
-      std::function<void(std::unique_ptr<MessageReceived>&)>
-          deliver_callback = nullptr,
+      DeliverCallback deliver_callback,
       SubscribeCallback subscription_callback = nullptr,
       DataLossCallback
           data_loss_callback = nullptr) = 0;
@@ -392,11 +384,21 @@ class Client {
       NamespaceID namespace_id,
       Topic topic_name,
       SequenceNumber start_seqno,
-      std::function<void(std::unique_ptr<MessageReceived>&)>
-          deliver_callback = nullptr,
+      DeliverCallback deliver_callback,
       SubscribeCallback subscription_callback = nullptr,
       DataLossCallback
           data_loss_callback = nullptr) = 0;
+
+  SubscriptionHandle Subscribe(
+      TenantID tenant_id,
+      NamespaceID namespace_id,
+      Topic topic_name,
+      SequenceNumber start_seqno) {
+    return Subscribe({tenant_id,
+                      std::move(namespace_id),
+                      std::move(topic_name),
+                      start_seqno});
+  }
 
   /**
    * Unsubscribes from a topic identified by provided handle.

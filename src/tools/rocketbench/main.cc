@@ -1007,15 +1007,13 @@ int main(int argc, char** argv) {
     }
 
     std::unique_ptr<rocketspeed::ClientImpl> client;
-    // Create the client.
+    options.subscription_callback = subscribe_callback;
+    options.data_loss_callback = data_loss_callback;
     auto st = rocketspeed::ClientImpl::Create(std::move(options), &client);
     if (!st.ok()) {
       LOG_ERROR(info_log, "Failed to open client: %s.", st.ToString().c_str());
       return 1;
     }
-    client->SetDefaultCallbacks(subscribe_callback,
-                                nullptr,
-                                data_loss_callback);
     clients.emplace_back(client.release());
   }
   rocketspeed::NamespaceID nsid =

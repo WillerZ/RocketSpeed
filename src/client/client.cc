@@ -201,15 +201,6 @@ ClientImpl::ClientImpl(ClientOptions options,
   }
 }
 
-void ClientImpl::SetDefaultCallbacks(
-    SubscribeCallback subscription_callback,
-    std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
-    DataLossCallback data_loss_callback) {
-  subscription_cb_fallback_ = std::move(subscription_callback);
-  deliver_cb_fallback_ = std::move(deliver_callback);
-  data_loss_callback_ = std::move(data_loss_callback);
-}
-
 void ClientImpl::InstallHooks(const HooksParameters& params,
                               std::shared_ptr<ClientHooks> hooks) {
   auto sub_hooks = std::make_shared<SubscriberHooksAdapter>(hooks);
@@ -277,7 +268,7 @@ class StdFunctionObserver : public Observer,
                             public NonMovable {
  public:
   static std::unique_ptr<StdFunctionObserver> Create(
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      DeliverCallback deliver_callback,
       SubscribeCallback subscription_callback,
       DataLossCallback data_loss_callback) {
     return std::make_unique<StdFunctionObserver>(
@@ -287,7 +278,7 @@ class StdFunctionObserver : public Observer,
   }
 
   StdFunctionObserver(
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      DeliverCallback deliver_callback,
       SubscribeCallback subscription_callback,
       DataLossCallback data_loss_callback)
   : deliver_callback_(std::move(deliver_callback))
@@ -313,7 +304,7 @@ class StdFunctionObserver : public Observer,
   }
 
  private:
-  const std::function<void(std::unique_ptr<MessageReceived>&)>
+  const DeliverCallback
       deliver_callback_;
   const SubscribeCallback subscription_callback_;
   const DataLossCallback data_loss_callback_;
@@ -323,38 +314,23 @@ class StdFunctionObserver : public Observer,
 
 SubscriptionHandle ClientImpl::Subscribe(SubscriptionParameters parameters,
                                          std::unique_ptr<Observer>& observer) {
-  RS_ASSERT_DBG(!!observer);
-  if (!observer) {
-    // Client should never provide this, but in an edge case it could happen.
-    // There is no need to crash.
-    observer = std::make_unique<Observer>();
-  }
-
-  SubscriptionHandle subscription = subscriber_->Subscribe(
-      std::move(parameters), observer);
-
-  if (subscription != SubscriptionHandle(0)) {
-    RS_ASSERT(!observer);  // should be consumed
-  } else {
-    RS_ASSERT(!!observer);  // should not be consumed
-  }
-  return subscription;
+  return subscriber_->Subscribe(std::move(parameters), observer);
 }
 
 SubscriptionHandle ClientImpl::Subscribe(
     SubscriptionParameters parameters,
-    std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+    DeliverCallback deliver_callback,
     SubscribeCallback subscription_callback,
     DataLossCallback data_loss_callback) {
   // Select callbacks taking fallbacks into an account.
   if (!subscription_callback) {
-    subscription_callback = subscription_cb_fallback_;
+    subscription_callback = options_.subscription_callback;
   }
   if (!deliver_callback) {
-    deliver_callback = deliver_cb_fallback_;
+    deliver_callback = options_.deliver_callback;;
   }
   if (!data_loss_callback) {
-    data_loss_callback = data_loss_callback_;
+    data_loss_callback = options_.data_loss_callback;;
   }
 
   return Subscribe(std::move(parameters),

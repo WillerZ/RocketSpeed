@@ -39,7 +39,7 @@ namespace rocketspeed {
 
 ///////////////////////////////////////////////////////////////////////////////
 MultiThreadedSubscriber::MultiThreadedSubscriber(
-    const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
+    ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
 : options_(options)
 , msg_loop_(std::move(msg_loop))
 , intro_parameters_(
@@ -233,7 +233,6 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     // observer back to the caller, so they can retry later.
     RS_ASSERT(!!command);
     sub_command.reset(static_cast<SubscribeCommand*>(command.release()));
-    RS_ASSERT(!!sub_command->observer_);
     observer = std::move(sub_command->observer_);
     return SubscriptionHandle(0);
   }

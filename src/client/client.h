@@ -50,12 +50,6 @@ class ClientImpl : public Client {
 
   virtual ~ClientImpl();
 
-  void SetDefaultCallbacks(
-      SubscribeCallback subscription_callback,
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
-      DataLossCallback data_loss_callback)
-      override;
-
   virtual PublishStatus Publish(const TenantID tenant_id,
                                 const Topic& name,
                                 const NamespaceID& namespaceId,
@@ -76,7 +70,7 @@ class ClientImpl : public Client {
 
   SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      DeliverCallback deliver_callback,
       SubscribeCallback subscription_callback,
       DataLossCallback data_loss_callback)
       override;
@@ -87,11 +81,9 @@ class ClientImpl : public Client {
       NamespaceID namespace_id,
       Topic topic_name,
       SequenceNumber start_seqno,
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback =
-          nullptr,
+      DeliverCallback deliver_callback,
       SubscribeCallback subscription_callback = nullptr,
-      DataLossCallback data_loss_callback =
-          nullptr) override {
+      DataLossCallback data_loss_callback = nullptr) override {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
                       std::move(topic_name),
@@ -157,12 +149,6 @@ class ClientImpl : public Client {
   /** The underlying subscriber, which handles read path in the client. */
   std::unique_ptr<MultiThreadedSubscriber> subscriber_;
 
-  /** Default callback for announcing subscription status. */
-  SubscribeCallback subscription_cb_fallback_;
-  /** Default callbacks for delivering messages. */
-  std::function<void(std::unique_ptr<MessageReceived>&)> deliver_cb_fallback_;
-  /** Default callback for data loss */
-  DataLossCallback data_loss_callback_;
   /** Statistics exporter. May be null if no visitor was provided in options. */
   std::unique_ptr<StatisticsExporter> stats_exporter_;
 

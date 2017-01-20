@@ -39,7 +39,7 @@ typedef uint64_t SubscriptionHandle;
  */
 class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
  public:
-  MultiShardSubscriber(const ClientOptions& options,
+  MultiShardSubscriber(ClientOptions& options,
                        EventLoop* event_loop,
                        std::shared_ptr<SubscriberStats> stats,
                        size_t max_active_subscriptions,
@@ -84,7 +84,7 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   void GarbageCollectInactiveSubscribers();
 
   /** Options, whose lifetime must be managed by the owning client. */
-  const ClientOptions& options_;
+  ClientOptions& options_;
   /** An event loop object this subscriber runs on. */
   EventLoop* const event_loop_;
 

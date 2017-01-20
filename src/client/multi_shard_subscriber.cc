@@ -40,7 +40,7 @@ namespace rocketspeed {
 
 ///////////////////////////////////////////////////////////////////////////////
 MultiShardSubscriber::MultiShardSubscriber(
-    const ClientOptions& options,
+    ClientOptions& options,
     EventLoop* event_loop,
     std::shared_ptr<SubscriberStats> stats,
     size_t max_active_subscriptions,

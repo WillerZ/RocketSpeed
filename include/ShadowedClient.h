@@ -56,12 +56,6 @@ class ShadowedClient : public Client {
 
   virtual ~ShadowedClient();
 
-  void SetDefaultCallbacks(
-      SubscribeCallback subscription_callback,
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
-      DataLossCallback data_loss_callback)
-      override;
-
   void InstallHooks(const HooksParameters&,
                     std::shared_ptr<ClientHooks>) override;
   void UnInstallHooks(const HooksParameters&) override;
@@ -82,7 +76,7 @@ class ShadowedClient : public Client {
 
   SubscriptionHandle Subscribe(
       SubscriptionParameters parameters,
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback,
+      DeliverCallback deliver_callback,
       SubscribeCallback subscription_callback,
       DataLossCallback data_loss_callback)
       override;
@@ -93,11 +87,9 @@ class ShadowedClient : public Client {
       NamespaceID namespace_id,
       Topic topic_name,
       SequenceNumber start_seqno,
-      std::function<void(std::unique_ptr<MessageReceived>&)> deliver_callback =
-          nullptr,
+      DeliverCallback deliver_callback = nullptr,
       SubscribeCallback subscription_callback = nullptr,
-      DataLossCallback data_loss_callback =
-          nullptr) override {
+      DataLossCallback data_loss_callback = nullptr) override {
     return Subscribe({tenant_id,
                       std::move(namespace_id),
                       std::move(topic_name),

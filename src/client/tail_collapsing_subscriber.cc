@@ -68,7 +68,9 @@ class TailCollapsingObserver : public Observer {
       down_message->id_ = entry.first;
       down_message->message_ = shared_message;
       std::unique_ptr<MessageReceived> tmp(std::move(down_message));
-      entry.second->OnMessageReceived(flow, tmp);
+      if (entry.second) {
+        entry.second->OnMessageReceived(flow, tmp);
+      }
     }
   }
 
@@ -103,7 +105,9 @@ class TailCollapsingObserver : public Observer {
 
     for (const auto& entry : downstream_observers_) {
       down_status.sub_id_ = entry.first;
-      entry.second->OnSubscriptionStatusChange(down_status);
+      if (entry.second) {
+        entry.second->OnSubscriptionStatusChange(down_status);
+      }
     }
     // State of downstream subscriptions might have been removed, if we got this
     // notification as a confirmation that TerminateSubscription(...) finished.

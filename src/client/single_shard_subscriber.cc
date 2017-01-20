@@ -43,7 +43,7 @@ namespace rocketspeed {
 using namespace std::placeholders;
 
 ////////////////////////////////////////////////////////////////////////////////
-Subscriber::Subscriber(const ClientOptions& options,
+Subscriber::Subscriber(ClientOptions& options,
                        EventLoop* event_loop,
                        std::shared_ptr<SubscriberStats> stats,
                        size_t shard_id,
@@ -133,7 +133,12 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
         "Invalid subscription as maximum subscription limit reached.");
     StatusForHooks sfh(&sub_status, &stream_supervisor_.GetCurrentHost());
     hooks_[sub_id].OnSubscriptionStatusChange(sfh);
-    observer->OnSubscriptionStatusChange(sub_status);
+    if (observer) {
+      observer->OnSubscriptionStatusChange(sub_status);
+    }
+    if (options_.subscription_callback) {
+      options_.subscription_callback(sub_status);
+    }
     return;
   }
 
@@ -144,7 +149,12 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
     status.status_ = Status::ShardUnhealthy();
     StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
     hooks_[sub_id].OnSubscriptionStatusChange(sfh);
-    observer->OnSubscriptionStatusChange(status);
+    if (observer) {
+      observer->OnSubscriptionStatusChange(status);
+    }
+    if (options_.subscription_callback) {
+      options_.subscription_callback(status);
+    }
   }
 
   hooks_.SubscriptionStarted(HooksParameters(parameters), sub_id);
@@ -276,7 +286,12 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
       StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
       hooks_[data.GetID()].OnSubscriptionStatusChange(sfh);
-      info.GetObserver()->OnSubscriptionStatusChange(status);
+      if (info.GetObserver()) {
+        info.GetObserver()->OnSubscriptionStatusChange(status);
+      }
+      if (options_.subscription_callback) {
+        options_.subscription_callback(status);
+      }
       return true;
     });
 
@@ -396,10 +411,14 @@ void Subscriber::ProcessUnsubscribe(
       info.GetNamespace(), info.GetTopic());
   sub_status.status_ = status;
 
-  RS_ASSERT(info.GetObserver());
   StatusForHooks sfh(&sub_status, &stream_supervisor_.GetCurrentHost());
   hooks_[sub_id].OnSubscriptionStatusChange(sfh);
-  info.GetObserver()->OnSubscriptionStatusChange(sub_status);
+  if (info.GetObserver()) {
+    info.GetObserver()->OnSubscriptionStatusChange(sub_status);
+  }
+  if (options_.subscription_callback) {
+    options_.subscription_callback(sub_status);
+  }
   hooks_[sub_id].OnReceiveTerminate();
   last_acks_map_.erase(sub_id);
 
@@ -436,7 +455,12 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
       std::unique_ptr<MessageReceived> received(
           new MessageReceivedImpl(std::move(data)));
       hooks_[sub_id].OnMessageReceived(received.get());
-      info.GetObserver()->OnMessageReceived(flow, received);
+      if (info.GetObserver()) {
+        info.GetObserver()->OnMessageReceived(flow, received);
+      }
+      if (options_.deliver_callback && received) {
+        options_.deliver_callback(received);
+      }
       break;
     }
     case MessageType::mDeliverGap: {
@@ -446,7 +470,12 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
       if (gap->GetGapType() != GapType::kBenign) {
         DataLossInfoImpl data_loss_info(std::move(gap));
         hooks_[sub_id].OnDataLoss(data_loss_info);
-        info.GetObserver()->OnDataLoss(flow, data_loss_info);
+        if (info.GetObserver()) {
+          info.GetObserver()->OnDataLoss(flow, data_loss_info);
+        }
+        if (options_.data_loss_callback) {
+          options_.data_loss_callback(data_loss_info);
+        }
       }
       break;
     }

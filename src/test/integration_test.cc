@@ -821,9 +821,9 @@ TEST_F(IntegrationTest, LostConnection) {
   options.backoff_strategy = [](ClientRNG*, size_t) {
     return std::chrono::seconds(0);
   };
+  options.deliver_callback = receive_callback;
   std::unique_ptr<Client> client;
   ASSERT_OK(cluster->CreateClient(&client, std::move(options)));
-  client->SetDefaultCallbacks(nullptr, receive_callback);
 
   // Listen on a topic.
   ASSERT_TRUE(client->Subscribe(GuestTenant, namespace_id, topic, 0));
@@ -986,9 +986,10 @@ TEST_F(IntegrationTest, NewControlTower) {
       [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); };
 
   // Create RocketSpeed client.
+  ClientOptions options;
+  options.deliver_callback = receive_callback;
   std::unique_ptr<Client> client;
-  ASSERT_OK(cluster.CreateClient(&client));
-  client->SetDefaultCallbacks(nullptr, receive_callback);
+  ASSERT_OK(cluster.CreateClient(&client, std::move(options)));
 
   // Send a message.
   ASSERT_OK(client->Publish(GuestTenant,
@@ -1143,16 +1144,15 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
   std::unique_ptr<Client> client[kNumClients];
 
   for (int i = 0; i < kNumClients; ++i) {
-    ASSERT_OK(cluster.CreateClient(&client[i]));
-    client[i]->SetDefaultCallbacks(
-        nullptr,
-        [&, i](std::unique_ptr<MessageReceived>& mr) {
-          {
-            std::lock_guard<std::mutex> lock(inbox_lock[i]);
-            inbox[i].push_back(mr->GetContents().ToString());
-          }
-          checkpoint[i].Post();
-        });
+    ClientOptions options;
+    options.deliver_callback = [&, i](std::unique_ptr<MessageReceived>& mr) {
+      {
+        std::lock_guard<std::mutex> lock(inbox_lock[i]);
+        inbox[i].push_back(mr->GetContents().ToString());
+      }
+      checkpoint[i].Post();
+    };
+    ASSERT_OK(cluster.CreateClient(&client[i], std::move(options)));
   }
 
   // Publish a message and wait.
