@@ -537,8 +537,11 @@ void CommunicationRocketeer::Receive(
   auto it = stream_state_.find(origin);
   // TODO(rishijhelumi) : Remove as it would be set via introduction
   if (it == stream_state_.end()) {
-    // For backward compatibility, call HandleConnect with empty properties
-    HandleConnect(flow, origin, IntroParameters());
+    // For backward compatibility, call HandleConnect with shard_id
+    auto shard_id = subscribe->GetSubID().GetShardID();
+    auto params = IntroParameters();
+    params.stream_properties.emplace(PropertyShardID, std::to_string(shard_id));
+    HandleConnect(flow, origin, std::move(params));
     it = stream_state_.emplace(origin, StreamState(subscribe->GetTenantID()))
              .first;
   }
