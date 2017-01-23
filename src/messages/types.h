@@ -8,6 +8,8 @@
 #include <memory>
 #include <string>
 
+#include "include/Types.h"
+
 #include "src/util/common/noncopyable.h"
 #include "src/util/common/nonmovable.h"
 
@@ -33,19 +35,6 @@ class MessageIntroduction;
 template<typename>
 class Sink;
 class Slice;
-
-/**
- * Identifies a stream, which is a pair of unidirectional channels, one in each
- * direction. Messages flowing in one direction within given stream are linearly
- * ordered. Two messages flowing in opposite directions have no ordering
- * guarantees.
- * The ID uniquely identifies a stream within a single physical connection only,
- * that means if streams are multiplexed on the same connection and have the
- * same IDs, the IDs need to be remapped. The IDs do not need to be unique
- * system-wide.
- */
-typedef unsigned long long int StreamID;
-static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
 
 /**
  * Encodes stream ID onto wire.

@@ -159,7 +159,7 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
   StreamID stream_id = message.first;
   auto type = message.second->GetMessageType();
   LOG_DEBUG(GetOptions().info_log,
-            "UpstreamWorker(%p)::ReceiveFromQueue(%zu, %llu, %s)",
+            "UpstreamWorker(%p)::ReceiveFromQueue(%zu, %" PRIu64 ", %s)",
             this,
             inbound_id,
             stream_id,
@@ -177,7 +177,7 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
       // TODO(rishijhelumi) : close stream instead
       LOG_ERROR(
           options_.info_log,
-          "First message on stream: %llu type: %s, cannot determine shard",
+          "First message on stream: %" PRIu64 " type: %s, cannot determine shard",
           stream_id,
           MessageTypeName(type));
       return;
@@ -190,7 +190,7 @@ void UpstreamWorker::ReceiveFromQueue(Flow* flow,
     RS_ASSERT_DBG(shard != props.end());
     if (shard == props.end()) {
       LOG_ERROR(options_.info_log,
-                "Cannot get shard for stream: %llu from introduction message, "
+                "Cannot get shard for stream: %" PRIu64 " from introduction message, "
                 "property not set, cannot route stream.",
                 stream_id);
       return;
@@ -240,7 +240,7 @@ void UpstreamWorker::ReceiveFromStream(Flow* flow,
   StreamID stream_id = message.first;
   auto type = message.second->GetMessageType();
   LOG_DEBUG(GetOptions().info_log,
-            "UpstreamWorker(%p)::ReceiveFromStream(%p (%llu), %s)",
+            "UpstreamWorker(%p)::ReceiveFromStream(%p (%" PRIu64 "), %s)",
             this,
             per_stream,
             stream_id,
@@ -302,7 +302,7 @@ class TheReceiver : public StreamReceiver {
     StreamID downstream_id = per_stream_->GetStream();
     auto type = arg.message->GetMessageType();
     LOG_DEBUG(per_stream_->GetOptions().info_log,
-              "PerStream(%llu)::TheReceiver::operator()(%llu, %s)",
+              "PerStream(%" PRIu64 ")::TheReceiver::operator()(%" PRIu64 ", %s)",
               downstream_id,
               upstream_id,
               MessageTypeName(type));
@@ -329,7 +329,7 @@ void PerStream::ReceiveFromWorker(Flow* flow, MessageAndStream message) {
   RS_ASSERT(downstream_id_ == message.first);
   auto type = message.second->GetMessageType();
   LOG_DEBUG(GetOptions().info_log,
-            "PerStream(%llu)::ReceivedFromWorker(%s)",
+            "PerStream(%" PRIu64 ")::ReceivedFromWorker(%s)",
             downstream_id_,
             MessageTypeName(type));
 
@@ -450,7 +450,7 @@ void PerStream::ReceiveFromStream(Flow* flow, MessageAndStream message) {
   RS_ASSERT(downstream_id_ == message.first);
   auto type = message.second->GetMessageType();
   LOG_DEBUG(GetOptions().info_log,
-            "PerStream(%llu)::ReceivedFromStream(%s)",
+            "PerStream(%" PRIu64 ")::ReceivedFromStream(%s)",
             downstream_id_,
             MessageTypeName(type));
 
@@ -470,7 +470,7 @@ void PerStream::ReceiveFromMultiplexer(Flow* flow, MessageAndStream message) {
       type == MessageType::mDeliverGap || type == MessageType::mDeliverData ||
       type == MessageType::mDeliverBatch || type == MessageType::mUnsubscribe);
   LOG_DEBUG(GetOptions().info_log,
-            "PerStream(%llu)::ReceivedFromStream(%s)",
+            "PerStream(%" PRIu64 ")::ReceivedFromStream(%s)",
             downstream_id_,
             MessageTypeName(type));
 

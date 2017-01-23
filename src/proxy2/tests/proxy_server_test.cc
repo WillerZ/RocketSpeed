@@ -157,7 +157,7 @@ class MessageBus : public StreamReceiver {
 
   void Send(StreamID stream_id, const Message& message) {
     LOG_DEBUG(loop_->GetLog(),
-              "MessageBus::Send(%llu, %s)",
+              "MessageBus::Send(%" PRIu64 ", %s)",
               stream_id,
               MessageTypeName(message.GetMessageType()));
 
@@ -226,7 +226,7 @@ class MessageBus : public StreamReceiver {
     thread_check_.Check();
     auto type = arg.message->GetMessageType();
     LOG_DEBUG(loop_->GetLog(),
-              "MessageBus::operator()(%llu, %s)",
+              "MessageBus::operator()(%" PRIu64 ", %s)",
               arg.stream_id,
               MessageTypeName(type));
 

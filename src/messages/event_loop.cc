@@ -101,7 +101,7 @@ void EventLoop::HandleSendCommand(Flow* flow,
     if (it == stream_id_to_stream_.end()) {
       if (!spec.destination) {
         LOG_WARN(info_log_,
-                 "Failed to send on closed stream (%llu), no destination",
+                 "Failed to send on closed stream (%" PRIu64 "), no destination",
                  spec.stream);
         continue;
       }

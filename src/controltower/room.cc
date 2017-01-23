@@ -112,7 +112,7 @@ ControlRoom::ProcessGoodbye(std::unique_ptr<Message> msg,
   ControlTowerOptions& options = ct->GetOptions();
 
   LOG_INFO(options.info_log,
-    "Received goodbye for Stream(%llu)",
+    "Received goodbye for Stream(%" PRIu64 ")",
     origin);
 
   topic_tailer_->RemoveSubscriber(origin);
@@ -235,7 +235,7 @@ ControlRoom::ProcessGap(Flow* flow,
 
     flow->Write(room_to_client_queues_[worker_id].get(), command);
     LOG_DEBUG(options.info_log,
-      "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %llu",
+      "Sent gap %" PRIu64 "-%" PRIu64 " for Topic(%s,%s) to %" PRIu64,
       prev_seqno,
       next_seqno,
       gap->GetNamespaceId().c_str(),

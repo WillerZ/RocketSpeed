@@ -34,9 +34,6 @@ class SubscriptionID;
  */
 class Flow;
 
-typedef unsigned long long int StreamID;
-static_assert(sizeof(StreamID) == 8, "Invalid StreamID size.");
-
 /** Uniquely identifies subscription within a service. */
 class InboundID {
  public:

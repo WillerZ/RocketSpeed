@@ -101,7 +101,7 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
     }
     stream->SetReceiver(this);
     LOG_INFO(logger,
-             "Reconnect()::reconnect(%s, %lld)",
+             "Reconnect()::reconnect(%s, %" PRIu64 ")",
              host.ToString().c_str(),
              stream->GetLocalID());
 

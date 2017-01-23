@@ -219,7 +219,7 @@ void MsgLoop::Run() {
       // Ignore, just log it.
       MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
       LOG_INFO(info_log_,
-               "Goodbye %d received for client %llu",
+               "Goodbye %d received for client %" PRIu64,
                static_cast<int>(goodbye->GetCode()),
                origin);
     };
@@ -325,9 +325,9 @@ MsgLoop::ProcessPing(std::unique_ptr<Message> msg, StreamID origin) {
 
     if (!st.ok()) {
       LOG_WARN(
-          info_log_, "Unable to send ping response to stream (%llu)", origin);
+          info_log_, "Unable to send ping response to stream (%" PRIu64 ")", origin);
     } else {
-      LOG_INFO(info_log_, "Send ping response to stream (%llu)", origin);
+      LOG_INFO(info_log_, "Send ping response to stream (%" PRIu64 ")", origin);
     }
   }
 }

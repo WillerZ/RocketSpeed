@@ -366,7 +366,7 @@ void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
   auto sub_id = arg.message->GetSubID();
 
   LOG_DEBUG(options_.info_log,
-            "ReceiveUnsubscribe(%llu, %llu, %d)",
+            "ReceiveUnsubscribe(%" PRIu64 ", %llu, %d)",
             arg.stream_id,
             sub_id.ForLogging(),
             static_cast<int>(arg.message->GetMessageType()));
@@ -415,7 +415,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   auto sub_id = deliver->GetSubID();
 
   LOG_DEBUG(options_.info_log,
-            "ReceiveDeliver(%llu, %llu, %s)",
+            "ReceiveDeliver(%" PRIu64 ", %llu, %s)",
             arg.stream_id,
             sub_id.ForLogging(),
             MessageTypeName(deliver->GetMessageType()));

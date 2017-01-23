@@ -149,7 +149,7 @@ void PublisherWorkerData::Publish(std::unique_ptr<MessageData> message,
     pilot_stream_->SetReceiver(this);
 
     LOG_INFO(publisher_->info_log_,
-             "Reconnected to %s on stream %llu",
+             "Reconnected to %s on stream %" PRIu64,
              pilot.ToString().c_str(),
              pilot_stream_->GetLocalID());
   }
@@ -213,7 +213,7 @@ void PublisherWorkerData::ReceiveGoodbye(StreamReceiveArg<MessageGoodbye> arg) {
   thread_check_.Check();
 
   LOG_WARN(publisher_->info_log_,
-           "Received goodbye message on stream (%llu)",
+           "Received goodbye message on stream (%" PRIu64 ")",
            arg.stream_id);
 
   pilot_stream_.reset();

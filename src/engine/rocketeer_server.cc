@@ -444,7 +444,7 @@ void CommunicationRocketeer::Unsubscribe(Flow* flow,
     }
   }
   LOG_DEBUG(server_->options_.info_log,
-            "Missing subscription on stream: %llu, sub_id: %llu. "
+            "Missing subscription on stream: %" PRIu64 ", sub_id: %llu. "
             "Likely a race with termination on this subscription.",
             origin,
             sub_id.ForLogging());
@@ -491,7 +491,7 @@ TenantID CommunicationRocketeer::GetTenant(StreamID stream_id) const {
     return it->second.tenant_id;
   }
   LOG_ERROR(server_->options_.info_log,
-            "Stream(%llu) does not have a tenant ID yet.", stream_id);
+            "Stream(%" PRIu64 ") does not have a tenant ID yet.", stream_id);
   return Tenant::InvalidTenant;
 }
 
@@ -505,7 +505,7 @@ InboundSubscription* CommunicationRocketeer::Find(const InboundID& inbound_id) {
     }
   }
   LOG_DEBUG(server_->options_.info_log,
-            "Missing subscription on stream (%llu) with ID (%llu). "
+            "Missing subscription on stream (%" PRIu64 ") with ID (%llu). "
             "Likely a race with termination on this subscription.",
             inbound_id.stream_id,
             inbound_id.GetSubID().ForLogging());
@@ -525,7 +525,7 @@ void CommunicationRocketeer::SendResponse(Flow* flow,
     }
   } else {
     LOG_WARN(server_->options_.info_log,
-             "Stream: %llu not found, dropping message",
+             "Stream: %" PRIu64 " not found, dropping message",
              stream_id);
   }
 }
@@ -558,7 +558,7 @@ void CommunicationRocketeer::Receive(
       InboundSubscription(start_seqno == 0 ? start_seqno : start_seqno - 1));
   if (!result.second) {
     LOG_WARN(server_->options_.info_log,
-             "Duplicated subscription stream: %llu, sub_id: %llu",
+             "Duplicated subscription stream: %" PRIu64 ", sub_id: %llu",
              origin,
              sub_id.ForLogging());
     return;
@@ -598,13 +598,13 @@ void CommunicationRocketeer::Receive(
                         TerminationSource::Subscriber);
     } else {
       LOG_WARN(server_->options_.info_log,
-         "Missing subscription on stream: %llu, sub_id: %llu",
+         "Missing subscription on stream: %" PRIu64 ", sub_id: %llu",
          origin,
          sub_id.ForLogging());
     }
   } else {
     LOG_WARN(server_->options_.info_log,
-        "Received Unsubscribe before a Subscribe on stream %llu", origin);
+        "Received Unsubscribe before a Subscribe on stream %" PRIu64, origin);
   }
 }
 
@@ -624,7 +624,7 @@ void CommunicationRocketeer::Receive(
 
   auto it = stream_state_.find(origin);
   if (it == stream_state_.end()) {
-    LOG_WARN(server_->options_.info_log, "Missing stream: %llu", origin);
+    LOG_WARN(server_->options_.info_log, "Missing stream: %" PRIu64, origin);
     return;
   }
   StreamState& state = it->second;

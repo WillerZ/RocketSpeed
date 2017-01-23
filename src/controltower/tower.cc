@@ -332,14 +332,14 @@ void ControlTower::ProcessFindTailSeqno(std::unique_ptr<Message> msg,
         auto& queues = find_latest_seqno_response_queues_[worker_id];
         if (queues->GetThreadLocal()->Write(command)) {
           LOG_DEBUG(options_.info_log,
-            "Sent latest seqno %" PRIu64 " to %llu for Topic(%s,%s)",
+            "Sent latest seqno %" PRIu64 " to %" PRIu64 " for Topic(%s,%s)",
             seqno,
             origin,
             req.GetNamespace().c_str(),
             req.GetTopicName().c_str());
         } else {
           LOG_WARN(options_.info_log,
-            "Failed to send latest seqno to %llu for Topic(%s,%s)",
+            "Failed to send latest seqno to %" PRIu64 " for Topic(%s,%s)",
             origin,
             req.GetNamespace().c_str(),
             req.GetTopicName().c_str());

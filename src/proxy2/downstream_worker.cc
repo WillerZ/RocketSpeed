@@ -31,7 +31,7 @@ void DownstreamWorker::ReceiveFromQueue(Flow* flow,
 
   auto stream = event_loop_->GetInboundStream(stream_id);
   if (!stream) {
-    LOG_WARN(options_.info_log, "Unknown subscriber stream: %llu", stream_id);
+    LOG_WARN(options_.info_log, "Unknown subscriber stream: %" PRIu64, stream_id);
     return;
   }
 
@@ -62,7 +62,7 @@ void DownstreamWorker::operator()(StreamReceiveArg<Message> arg) {
     if (type != MessageType::mIntroduction) {
       // TODO(rishijhelumi) : close stream instead
       LOG_ERROR(options_.info_log,
-                "First message on stream: %llu type: %s, cannot route stream",
+                "First message on stream: %" PRIu64 " type: %s, cannot route stream",
                 stream_id,
                 MessageTypeName(type));
       return;
@@ -75,7 +75,7 @@ void DownstreamWorker::operator()(StreamReceiveArg<Message> arg) {
     RS_ASSERT_DBG(shard != props.end());
     if (shard == props.end()) {
       LOG_ERROR(options_.info_log,
-                "Cannot get shard for stream: %llu from introduction message, "
+                "Cannot get shard for stream: %" PRIu64 " from introduction message, "
                 "property not set, cannot route stream.",
                 stream_id);
       return;

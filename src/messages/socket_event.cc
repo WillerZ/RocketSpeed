@@ -400,7 +400,7 @@ void SocketEvent::UnregisterStream(StreamID remote_id, bool force) {
   }
 
   LOG_INFO(GetLogger(),
-           "Unregistering Stream(%llu, %llu)",
+           "Unregistering Stream(%" PRIu64 ", %" PRIu64 ")",
            stream->GetLocalID(),
            stream->GetRemoteID());
 
@@ -704,7 +704,7 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
         // and expected in some cases (unsubscribe immediately after subscribe),
         // but should be relatively uncommon, so logging here for monitoring.
         LOG_INFO(GetLogger(),
-                 "StreamID(%llu) received goodbye message only.",
+                 "StreamID(%" PRIu64 ") received goodbye message only.",
                  remote_id);
         return true;
       }
@@ -729,7 +729,7 @@ bool SocketEvent::Receive(StreamID remote_id, std::unique_ptr<Message> msg) {
     } else {
       // Drop the message.
       LOG_WARN(GetLogger(),
-               "Failed to remap StreamID(%llu), dropping message: %s",
+               "Failed to remap StreamID(%" PRIu64 "), dropping message: %s",
                remote_id,
                MessageTypeName(msg_type));
       return true;

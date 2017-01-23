@@ -1419,7 +1419,7 @@ Status TopicTailer::RemoveSubscriber(CopilotSub id) {
 
 Status TopicTailer::RemoveSubscriber(StreamID stream_id) {
   thread_check_.Check();
-  LOG_DEBUG(info_log_, "StreamID(%llu) unsubscribed for all topics", stream_id);
+  LOG_DEBUG(info_log_, "StreamID(%" PRIu64 ") unsubscribed for all topics", stream_id);
   RemoveSubscriberInternal(stream_id);
   return Status::OK();
 }

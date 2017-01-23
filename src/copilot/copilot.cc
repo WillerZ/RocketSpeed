@@ -318,12 +318,12 @@ void Copilot::ProcessGoodbye(std::unique_ptr<Message> msg, StreamID origin) {
   MessageGoodbye* goodbye = static_cast<MessageGoodbye*>(msg.get());
   switch (goodbye->GetOriginType()) {
     case MessageGoodbye::OriginType::Client: {
-      LOG_DEBUG(options_.info_log, "Received goodbye for client %llu", origin);
+      LOG_DEBUG(options_.info_log, "Received goodbye for client %" PRIu64, origin);
       break;
     }
 
     case MessageGoodbye::OriginType::Server: {
-      LOG_DEBUG(options_.info_log, "Received goodbye for server %llu", origin);
+      LOG_DEBUG(options_.info_log, "Received goodbye for server %" PRIu64, origin);
       break;
     }
   }

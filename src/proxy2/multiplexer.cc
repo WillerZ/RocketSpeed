@@ -82,7 +82,7 @@ void UpstreamSubscription::ReceiveDeliver(
     SubscriptionID downstream_sub = entry.second;
     LOG_DEBUG(per_shard->GetOptions().info_log,
               "Multiplexer(%zu)::ReceiveDeliver(%llu) -> "
-              "ReceiveFromMultiplexer(%llu, %llu)",
+              "ReceiveFromMultiplexer(%" PRIu64 ", %llu)",
               per_shard->GetShardID(),
               sub_id.ForLogging(),
               downstream_id,
@@ -105,7 +105,7 @@ void UpstreamSubscription::ReceiveTerminate(
     SubscriptionID downstream_sub = entry.second;
     LOG_DEBUG(per_shard->GetOptions().info_log,
               "Multiplexer(%zu)::ReceiveTerminate(%llu) -> "
-              "ReceiveFromMultiplexer(%llu, %llu)",
+              "ReceiveFromMultiplexer(%" PRIu64 ", %llu)",
               per_shard->GetShardID(),
               sub_id.ForLogging(),
               downstream_id,
@@ -178,7 +178,7 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
                                              PerStream* per_stream,
                                              SubscriptionID downstream_sub) {
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::Subscribe(%.*s, %.*s, %" PRIu64 ", %llu, %llu)",
+            "Multiplexer(%zu)::Subscribe(%.*s, %.*s, %" PRIu64 ", %" PRIu64 ", %llu)",
             per_shard_->GetShardID(),
             static_cast<int>(namespace_id.size()),
             namespace_id.data(),
@@ -235,7 +235,7 @@ void Multiplexer::Unsubscribe(Flow* flow,
                               SubscriptionID downstream_sub) {
   const auto sub_id = upstream_sub->GetSubID();
   LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::Unsubscribe(%llu, %llu, %llu)",
+            "Multiplexer(%zu)::Unsubscribe(%llu, %" PRIu64 ", %llu)",
             per_shard_->GetShardID(),
             sub_id.ForLogging(),
             per_stream->GetStream(),
@@ -320,7 +320,7 @@ void Multiplexer::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
   auto upstream_sub = arg.message->GetSubID();
 
   LOG_DEBUG(GetOptions().info_log,
-            "ReceiveUnsubscribe(%llu, %llu, %d)",
+            "ReceiveUnsubscribe(%" PRIu64 ", %llu, %d)",
             arg.stream_id,
             upstream_sub.ForLogging(),
             static_cast<int>(arg.message->GetMessageType()));
@@ -354,7 +354,7 @@ void Multiplexer::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   const auto type = deliver->GetMessageType();
 
   LOG_DEBUG(GetOptions().info_log,
-            "ReceiveDeliver(%llu, %llu, %s)",
+            "ReceiveDeliver(%" PRIu64 ", %llu, %s)",
             arg.stream_id,
             upstream_sub.ForLogging(),
             MessageTypeName(type));

@@ -77,6 +77,18 @@ extern const NamespaceID SytemNamespacePermanent;
 typedef std::string Topic;
 
 /**
+ * Identifies a stream, which is a pair of unidirectional channels, one in each
+ * direction. Messages flowing in one direction within given stream are linearly
+ * ordered. Two messages flowing in opposite directions have no ordering
+ * guarantees.
+ * The ID uniquely identifies a stream within a single physical connection only,
+ * that means if streams are multiplexed on the same connection and have the
+ * same IDs, the IDs need to be remapped. The IDs do not need to be unique
+ * system-wide.
+ */
+typedef uint64_t StreamID;
+
+/**
  * Each message has a sequence number associated with it.
  * A newly produced message has a higher sequence number than
  * a message produced earlier for the same topic.

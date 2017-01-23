@@ -38,7 +38,7 @@ Stream::Stream(SocketEvent* socket_event,
 
   host_name_ = socket_event_->GetDestination().ToString();
   LOG_INFO(socket_event_->GetLogger(),
-           "Created Stream(%llu, %llu)%s%s",
+           "Created Stream(%" PRIu64 ", %" PRIu64 ")%s%s",
            local_id_,
            remote_id_,
            socket_event_->IsInbound() ? "" : " to: ",
@@ -78,7 +78,7 @@ Stream::~Stream() {
 
 void Stream::CloseFromSocketEvent(access::Stream) {
   LOG_INFO(socket_event_->GetLogger(),
-           "Closing Stream(%llu, %llu)",
+           "Closing Stream(%" PRIu64 ", %" PRIu64 ")",
            local_id_,
            remote_id_);
   Close();
@@ -97,7 +97,7 @@ bool Stream::Write(std::unique_ptr<Message>& value) {
     // The stream is closed, just blackhole the value.
     // This could happen, as the stream might be closed spontaneously.
     LOG_INFO(socket_event_->GetLogger(),
-             "Dropped message on closed Stream(%llu, %llu)",
+             "Dropped message on closed Stream(%" PRIu64 ", %" PRIu64 ")",
              local_id_,
              remote_id_);
     return true;
@@ -108,7 +108,7 @@ bool Stream::Write(std::unique_ptr<Message>& value) {
   RS_ASSERT(type != MessageType::NotInitialized);
 
   LOG_DEBUG(socket_event_->GetLogger(),
-            "Writing message to Stream(%llu, %llu)",
+            "Writing message to Stream(%" PRIu64 ", %" PRIu64 ")",
             local_id_,
             remote_id_);
 
@@ -135,7 +135,7 @@ bool Stream::Write(std::unique_ptr<Message>& value) {
   if (type == MessageType::mGoodbye) {
     // After sending a goodbye we must close the stream.
     LOG_INFO(socket_event_->GetLogger(),
-             "Closing Stream(%llu, %llu) on owner's request",
+             "Closing Stream(%" PRIu64 ", %" PRIu64 ") on owner's request",
              local_id_,
              remote_id_);
     Close();
@@ -197,7 +197,7 @@ void Stream::Receive(access::Stream,
     (*receiver_)(std::move(arg));
   } else {
     LOG_DEBUG(info_log,
-              "Receiver not set for Stream(%llu, %llu), dropping message: %s",
+              "Receiver not set for Stream(%" PRIu64 ", %" PRIu64 "), dropping message: %s",
               local_id_,
               remote_id_,
               MessageTypeName(message->GetMessageType()));
@@ -206,7 +206,7 @@ void Stream::Receive(access::Stream,
 
 std::string Stream::GetSinkName() const {
   char buffer[256];
-  std::snprintf(buffer, sizeof(buffer), "socket_stream-[%s]-r%llu-l%llu",
+  std::snprintf(buffer, sizeof(buffer), "socket_stream-[%s]-r%" PRIu64 "-l%" PRIu64,
     host_name_.c_str(), remote_id_, local_id_);
   return std::string(buffer);
 }
