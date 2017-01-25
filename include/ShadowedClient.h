@@ -120,15 +120,6 @@ class ShadowedClient : public Client {
       std::function<void(HasMessageSinceResult, std::string)> callback)
       override;
 
-  // DEPRECATED
-  Status HasMessageSince(
-      SubscriptionHandle sub_handle,
-      NamespaceID namespace_id,
-      Topic topic,
-      DataSource source,
-      SequenceNumber seqno,
-      std::function<void(HasMessageSinceResult)> callback) override;
-
   void SaveSubscriptions(SaveSubscriptionsCallback save_callback) override;
 
   Status RestoreSubscriptions(

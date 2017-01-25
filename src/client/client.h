@@ -111,14 +111,6 @@ class ClientImpl : public Client {
       Topic topic,
       DataSource source,
       SequenceNumber seqno,
-      std::function<void(HasMessageSinceResult)> callback) override;
-
-  Status HasMessageSince(
-      SubscriptionHandle sub_handle,
-      NamespaceID namespace_id,
-      Topic topic,
-      DataSource source,
-      SequenceNumber seqno,
       std::function<void(HasMessageSinceResult, std::string)> callback)
       override;
 

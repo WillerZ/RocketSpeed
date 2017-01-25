@@ -174,19 +174,6 @@ Status ShadowedClient::HasMessageSince(
       std::move(topic), std::move(source), seqno, std::move(callback));
 }
 
-Status ShadowedClient::HasMessageSince(
-    SubscriptionHandle sub_handle,
-    NamespaceID namespace_id,
-    Topic topic,
-    DataSource source,
-    SequenceNumber seqno,
-    std::function<void(HasMessageSinceResult)> callback) {
-  // DEPRECATED
-  // TODO(pja) - send shadow traffic for HasMessageSince with dummy callback.
-  return client_->HasMessageSince(sub_handle, std::move(namespace_id),
-      std::move(topic), std::move(source), seqno, std::move(callback));
-}
-
 void ShadowedClient::SaveSubscriptions(
   SaveSubscriptionsCallback save_callback) {
   client_->SaveSubscriptions(std::move(save_callback));

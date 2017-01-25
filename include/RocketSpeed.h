@@ -466,15 +466,6 @@ class Client {
       SequenceNumber seqno,
       std::function<void(HasMessageSinceResult, std::string)> callback) = 0;
 
-  // DEPRECATED
-  virtual Status HasMessageSince(
-      SubscriptionHandle sub_handle,
-      NamespaceID namespace_id,
-      Topic topic,
-      DataSource source,
-      SequenceNumber seqno,
-      std::function<void(HasMessageSinceResult)> callback) = 0;
-
   /**
    * Saves state of subscriptions according to strategy selected when opening
    * the client.
