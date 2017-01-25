@@ -368,6 +368,14 @@ Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
   return Status::OK();
 }
 
+Status ClientImpl::Unsubscribe(NamespaceID,
+                               Topic,
+                               SubscriptionHandle sub_handle) {
+  // TODO(pja): Ignoring namespace/topic for now, just want new API to be
+  // hooked up.
+  return Unsubscribe(sub_handle);
+}
+
 Status ClientImpl::Acknowledge(const MessageReceived& message) {
   return subscriber_->Acknowledge(message) ? Status::OK() : Status::NoBuffer();
 }

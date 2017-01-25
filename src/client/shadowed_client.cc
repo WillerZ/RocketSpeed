@@ -158,6 +158,14 @@ Status ShadowedClient::Unsubscribe(SubscriptionHandle sub_handle) {
   return st;
 }
 
+Status ShadowedClient::Unsubscribe(NamespaceID,
+                                   Topic,
+                                   SubscriptionHandle sub_handle) {
+  // TODO(pja): Ignoring namespace/topic for now, just want new API to be
+  // hooked up.
+  return Unsubscribe(sub_handle);
+}
+
 Status ShadowedClient::Acknowledge(const MessageReceived& message) {
   return client_->Acknowledge(message);
 }

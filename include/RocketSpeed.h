@@ -411,9 +411,16 @@ class Client {
    * than the max_subscription limit specified in ClientOptions.
    * Risk of std::abort() if the number of subscriptions go below 0.
    *
+   * @param namespace_id Namespace of subscription to unsubscribe.
+   * @param topic Topic to unsubscribe.
    * @param A handle that identifies the subscription.
    * @return Status::OK() iff unsubscription request was successfully enqueued.
    */
+  virtual Status Unsubscribe(NamespaceID namespace_id,
+                             Topic topic,
+                             SubscriptionHandle sub_handle = 0) = 0;
+
+  // DEPRECATED
   virtual Status Unsubscribe(SubscriptionHandle sub_handle) = 0;
 
   /**

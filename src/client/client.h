@@ -103,6 +103,10 @@ class ClientImpl : public Client {
 
   Status Unsubscribe(SubscriptionHandle sub_handle) override;
 
+  Status Unsubscribe(NamespaceID namespace_id,
+                     Topic topic,
+                     SubscriptionHandle sub_handle) override;
+
   Status Acknowledge(const MessageReceived& message) override;
 
   Status HasMessageSince(
