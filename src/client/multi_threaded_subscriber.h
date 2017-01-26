@@ -36,7 +36,7 @@ class SubscriberHooks;
 /** A multi-threaded subscriber. */
 class MultiThreadedSubscriber {
  public:
-  MultiThreadedSubscriber(ClientOptions& options,
+  MultiThreadedSubscriber(const ClientOptions& options,
                           std::shared_ptr<MsgLoop> msg_loop);
 
   void InstallHooks(const HooksParameters& params,
@@ -90,7 +90,7 @@ class MultiThreadedSubscriber {
   friend class SubscribeCommand;
 
   /** Options provided when creating the Client. */
-  ClientOptions& options_;
+  const ClientOptions& options_;
   /** A set of loops to use. */
   const std::shared_ptr<MsgLoop> msg_loop_;
 

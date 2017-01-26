@@ -103,7 +103,7 @@ class StatusForHooks : public HookedSubscriptionStatus {
 /// A subscriber that manages subscription on a single shard.
 class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
  public:
-  Subscriber(ClientOptions& options,
+  Subscriber(const ClientOptions& options,
              EventLoop* event_loop,
              std::shared_ptr<SubscriberStats> stats,
              size_t shard_id,
@@ -151,7 +151,7 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   ThreadCheck thread_check_;
 
   /// Options, whose lifetime must be managed by the owning client.
-  ClientOptions& options_;
+  const ClientOptions& options_;
   /// An event loop object this subscriber runs on.
   EventLoop* const event_loop_;
   /// A shared statistics.

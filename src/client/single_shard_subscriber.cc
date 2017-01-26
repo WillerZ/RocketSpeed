@@ -43,7 +43,7 @@ namespace rocketspeed {
 using namespace std::placeholders;
 
 ////////////////////////////////////////////////////////////////////////////////
-Subscriber::Subscriber(ClientOptions& options,
+Subscriber::Subscriber(const ClientOptions& options,
                        EventLoop* event_loop,
                        std::shared_ptr<SubscriberStats> stats,
                        size_t shard_id,

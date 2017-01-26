@@ -39,7 +39,7 @@ namespace rocketspeed {
 
 ///////////////////////////////////////////////////////////////////////////////
 MultiThreadedSubscriber::MultiThreadedSubscriber(
-    ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
+    const ClientOptions& options, std::shared_ptr<MsgLoop> msg_loop)
 : options_(options)
 , msg_loop_(std::move(msg_loop))
 , intro_parameters_(
