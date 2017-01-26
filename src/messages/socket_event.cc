@@ -482,6 +482,12 @@ Status SocketEvent::WriteCallback() {
   RS_ASSERT(stats_->write_size_iovec->GetNumSamples() ==
          stats_->write_succeed_iovec->GetNumSamples());
 
+  // cancel any timeouts -- aggressively do this so that we don't kill
+  // sockets when there is some progress. we may be overwhelmed and
+  // unable to get through half the backlog before a timeout, which is
+  // no fault of the client
+  event_loop_->MarkWritable(this);
+
   while (send_queue_.size() > 0) {
     // if there is any pending data from the previously sent
     // partial-message, then send it.
