@@ -168,7 +168,7 @@ struct SubscriptionChurnArgs {
   rocketspeed::NamespaceID nsid;
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>>* subscribers;
   rocketspeed::port::Semaphore* producer_thread_over;
-  std::function<void(std::unique_ptr<MessageReceived>&)> receive_callback;
+  DeliverCallback receive_callback;
 };
 
 struct TopicInfo {
@@ -353,7 +353,7 @@ static void DoProduce(void* params) {
 void DoSubscribe(
     std::vector<std::unique_ptr<ClientImpl>>& consumers,
     NamespaceID nsid,
-    std::function<void(std::unique_ptr<MessageReceived>&)> receive_callback,
+    DeliverCallback receive_callback,
     std::function<Histogram*()> get_catch_up_latency,
     std::unordered_map<std::string, TopicInfo>& topic_info,
     std::atomic<int64_t>* messages_expected,
@@ -423,6 +423,7 @@ void DoSubscribe(
             get_catch_up_latency()->Record(catch_up_time);
           }
           receive_callback(mr);
+          return BackPressure::None();
         };
 
       consumers[c]->Subscribe(GuestTenant, nsid, topic_name, seqno, callback);
@@ -969,6 +970,7 @@ int main(int argc, char** argv) {
     if (++messages_received == messages_expected.load()) {
       all_messages_received.Post();
     }
+    return BackPressure::None();
   };
 
   // Subscribe callback.
@@ -980,6 +982,7 @@ int main(int argc, char** argv) {
   // Data loss callback.
   auto data_loss_callback = [&](const DataLossInfo& msg) {
     LOG_ERROR(info_log, "Data loss has been detected.");
+    return BackPressure::None();
   };
 
   std::vector<std::unique_ptr<rocketspeed::ClientImpl>> clients;

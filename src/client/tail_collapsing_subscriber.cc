@@ -69,7 +69,8 @@ class TailCollapsingObserver : public Observer {
       down_message->message_ = shared_message;
       std::unique_ptr<MessageReceived> tmp(std::move(down_message));
       if (entry.second) {
-        entry.second->OnMessageReceived(flow, tmp);
+        auto bp = entry.second->OnData(tmp);
+        RS_ASSERT(!bp) << "Tail collapse doesn't support backpressure";
       }
     }
   }
@@ -152,7 +153,8 @@ class TailCollapsingObserver : public Observer {
       down_info.type_ = up_info.GetLossType();
       down_info.first_ = up_info.GetFirstSequenceNumber();
       down_info.last_ = up_info.GetLastSequenceNumber();
-      entry.second->OnDataLoss(flow, down_info);
+      auto bp = entry.second->OnLoss(down_info);
+      RS_ASSERT(!bp) << "Tail collapse doesn't support backpressure";
     }
   }
 };

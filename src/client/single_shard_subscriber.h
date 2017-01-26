@@ -26,6 +26,8 @@ namespace rocketspeed {
 class BacklogQueryStore;
 class Status;
 class SubscriberStats;
+class ApplicationMessage;
+template <typename> class RetryLaterSink;
 
 class SubscriptionStatusImpl : public SubscriptionStatus {
  public:
@@ -193,6 +195,9 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   std::shared_ptr<size_t> num_active_subscriptions_;
 
   SubscriberHooksContainer hooks_;
+
+  /// This sink is used for invoking all application callbacks.
+  std::unique_ptr<RetryLaterSink<ApplicationMessage>> app_sink_;
 };
 
 }  // namespace rocketspeed

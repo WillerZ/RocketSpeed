@@ -19,6 +19,7 @@
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/flow_control.h"
+#include "src/util/common/retry_later_sink.h"
 #include "src/util/common/statistics.h"
 #include "src/util/timeout_list.h"
 
@@ -36,9 +37,75 @@ bool DataMatchParams(const SubscriptionData& data,
          params.topic_name == data.GetTopicName();
 }
 
+class MessageReceivedImpl : public MessageReceived {
+ public:
+  explicit MessageReceivedImpl(std::unique_ptr<MessageDeliverData> data)
+  : data_(std::move(data)) {}
+
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    return data_->GetSubID();
+  }
+
+  SequenceNumber GetSequenceNumber() const override {
+    return data_->GetSequenceNumber();
+  }
+
+  Slice GetContents() const override { return data_->GetPayload(); }
+
+ private:
+  std::unique_ptr<MessageDeliverData> data_;
+};
+
+class DataLossInfoImpl : public DataLossInfo {
+ public:
+  DataLossInfoImpl() = default;
+
+  explicit DataLossInfoImpl(std::unique_ptr<MessageDeliverGap> gap_data)
+  : gap_data_(std::move(gap_data)) {}
+
+  SubscriptionHandle GetSubscriptionHandle() const override {
+    return gap_data_->GetSubID();
+  }
+
+  DataLossType GetLossType() const override {
+    switch (gap_data_->GetGapType()) {
+      case GapType::kDataLoss:
+        return DataLossType::kDataLoss;
+      case GapType::kRetention:
+        return DataLossType::kRetention;
+      case GapType::kBenign:
+        RS_ASSERT(false);
+        return DataLossType::kRetention;
+        // No default, we will be warned about unhandled code.
+    }
+    RS_ASSERT(false);
+    return DataLossType::kRetention;
+  }
+
+  SequenceNumber GetFirstSequenceNumber() const override {
+    return gap_data_->GetFirstSequenceNumber();
+  }
+
+  SequenceNumber GetLastSequenceNumber() const override {
+    return gap_data_->GetLastSequenceNumber();
+  }
+
+ private:
+  std::unique_ptr<MessageDeliverGap> gap_data_;
+};
+
 }  // anonymous namespace
 
 namespace rocketspeed {
+
+class ApplicationMessage {
+ public:
+  enum { kData, kLoss } type;
+  Observer* observer;
+  SubscriptionID sub_id;
+  std::unique_ptr<MessageReceived> data;
+  DataLossInfoImpl data_loss;
+};
 
 using namespace std::placeholders;
 
@@ -69,7 +136,42 @@ Subscriber::Subscriber(const ClientOptions& options,
                             event_loop))
 , shard_id_(shard_id)
 , max_active_subscriptions_(max_active_subscriptions)
-, num_active_subscriptions_(std::move(num_active_subscriptions)) {
+, num_active_subscriptions_(std::move(num_active_subscriptions))
+, app_sink_(new RetryLaterSink<ApplicationMessage>(
+    [this] (ApplicationMessage& msg) mutable {
+      Info info;
+      if (!Select(msg.sub_id, Info::kObserver, &info)) {
+        // Subscription has been unsubscribed while backpressure being applied.
+        // No need to deliver anything now.
+        return BackPressure::None();
+      }
+      switch (msg.type) {
+        case ApplicationMessage::kData: {
+          BackPressure bp = BackPressure::None();
+          if (info.GetObserver()) {
+            bp = info.GetObserver()->OnData(msg.data);
+            RS_ASSERT(!bp || msg.data) << "Cannot consume data and retry";
+          }
+          if (!bp && options_.deliver_callback && msg.data) {
+            bp = options_.deliver_callback(msg.data);
+            RS_ASSERT(!bp || msg.data) << "Cannot consume data and retry";
+          }
+          return bp;
+        }
+        case ApplicationMessage::kLoss: {
+          BackPressure bp = BackPressure::None();
+          if (info.GetObserver()) {
+            bp = info.GetObserver()->OnLoss(msg.data_loss);
+          }
+          if (!bp && options_.data_loss_callback) {
+            bp = options_.data_loss_callback(msg.data_loss);
+          }
+          return bp;
+        }
+      }
+      RS_ASSERT(false);
+      return BackPressure::None();
+    })) {
   thread_check_.Check();
   RefreshRouting();
 }
@@ -305,64 +407,6 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
   }
 }
 
-namespace {
-
-class MessageReceivedImpl : public MessageReceived {
- public:
-  explicit MessageReceivedImpl(std::unique_ptr<MessageDeliverData> data)
-  : data_(std::move(data)) {}
-
-  SubscriptionHandle GetSubscriptionHandle() const override {
-    return data_->GetSubID();
-  }
-
-  SequenceNumber GetSequenceNumber() const override {
-    return data_->GetSequenceNumber();
-  }
-
-  Slice GetContents() const override { return data_->GetPayload(); }
-
- private:
-  std::unique_ptr<MessageDeliverData> data_;
-};
-
-class DataLossInfoImpl : public DataLossInfo {
- public:
-  explicit DataLossInfoImpl(std::unique_ptr<MessageDeliverGap> gap_data)
-  : gap_data_(std::move(gap_data)) {}
-
-  SubscriptionHandle GetSubscriptionHandle() const override {
-    return gap_data_->GetSubID();
-  }
-
-  DataLossType GetLossType() const override {
-    switch (gap_data_->GetGapType()) {
-      case GapType::kDataLoss:
-        return DataLossType::kDataLoss;
-      case GapType::kRetention:
-        return DataLossType::kRetention;
-      case GapType::kBenign:
-        RS_ASSERT(false);
-        return DataLossType::kRetention;
-        // No default, we will be warned about unhandled code.
-    }
-    RS_ASSERT(false);
-    return DataLossType::kRetention;
-  }
-
-  SequenceNumber GetFirstSequenceNumber() const override {
-    return gap_data_->GetFirstSequenceNumber();
-  }
-
-  SequenceNumber GetLastSequenceNumber() const override {
-    return gap_data_->GetLastSequenceNumber();
-  }
-
- private:
-  std::unique_ptr<MessageDeliverGap> gap_data_;
-};
-}
-
 void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
   NotifyHealthy(isHealthy);
 }
@@ -443,9 +487,6 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
     // Message didn't match a subscription.
     return;
   }
-  Info info;
-  bool success = Select(sub_id, Info::kObserver, &info);
-  RS_ASSERT(success);
 
   switch (deliver->GetMessageType()) {
     case MessageType::mDeliverData: {
@@ -455,12 +496,11 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
       std::unique_ptr<MessageReceived> received(
           new MessageReceivedImpl(std::move(data)));
       hooks_[sub_id].OnMessageReceived(received.get());
-      if (info.GetObserver()) {
-        info.GetObserver()->OnMessageReceived(flow, received);
-      }
-      if (options_.deliver_callback && received) {
-        options_.deliver_callback(received);
-      }
+      ApplicationMessage msg;
+      msg.type = ApplicationMessage::kData;
+      msg.sub_id = sub_id;
+      msg.data = std::move(received);
+      flow->Write(app_sink_.get(), msg);
       break;
     }
     case MessageType::mDeliverGap: {
@@ -468,14 +508,12 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
           static_cast<MessageDeliverGap*>(deliver.release()));
 
       if (gap->GetGapType() != GapType::kBenign) {
-        DataLossInfoImpl data_loss_info(std::move(gap));
-        hooks_[sub_id].OnDataLoss(data_loss_info);
-        if (info.GetObserver()) {
-          info.GetObserver()->OnDataLoss(flow, data_loss_info);
-        }
-        if (options_.data_loss_callback) {
-          options_.data_loss_callback(data_loss_info);
-        }
+        ApplicationMessage msg;
+        msg.type = ApplicationMessage::kLoss;
+        msg.sub_id = sub_id;
+        msg.data_loss = DataLossInfoImpl(std::move(gap));
+        hooks_[sub_id].OnDataLoss(msg.data_loss);
+        flow->Write(app_sink_.get(), msg);
       }
       break;
     }

@@ -126,6 +126,7 @@ TEST_F(SupervisorTest, TowerLog) {
                                 seqno,
                                 [&] (std::unique_ptr<MessageReceived>& msg) {
                                   received.Post();
+                                  return BackPressure::None();
                                 }));
   ASSERT_TRUE(received.TimedWait(std::chrono::seconds(1)));
 

@@ -11,6 +11,7 @@
 #include <random>
 #include <vector>
 
+#include "BackPressure.h"
 #include "EnvOptions.h"
 #include "Slice.h"
 #include "Status.h"
@@ -39,10 +40,12 @@ using PublishCallback = std::function<void(std::unique_ptr<ResultStatus>)>;
 using SubscribeCallback = std::function<void(const SubscriptionStatus&)>;
 
 /** Notifies about messages delivered on a topic. */
-using DeliverCallback = std::function<void(std::unique_ptr<MessageReceived>&)>;
+using DeliverCallback =
+    std::function<BackPressure(std::unique_ptr<MessageReceived>&)>;
 
 /** Notifies about data loss. */
-using DataLossCallback = std::function<void(const DataLossInfo&)>;
+using DataLossCallback =
+    std::function<BackPressure(const DataLossInfo&)>;
 
 /** Notifies about status of a finished subscription snapshot. */
 using SaveSubscriptionsCallback = std::function<void(Status)>;
@@ -230,6 +233,28 @@ class ClientOptions {
 class Observer {
  public:
   /**
+   * Notifies about change of the status of the subscription.
+   */
+  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) {}
+
+  /**
+   * New API for applying backpressure. These are temporary until we use
+   * global callbacks everywhere.
+   */
+  virtual BackPressure OnData(std::unique_ptr<MessageReceived>& msg) {
+    OnMessageReceived(nullptr, msg);
+    return BackPressure::None();
+  }
+
+  virtual BackPressure OnLoss(const DataLossInfo& dl) {
+    OnDataLoss(nullptr, dl);
+    return BackPressure::None();
+  }
+
+  virtual ~Observer() = default;
+
+ private:
+  /**
    * Notifies about message received on a subscription.
    *
    * The application can steal message from the reference argument, but if it
@@ -238,19 +263,14 @@ class Observer {
    * If the application does not need message payload buffer outside of the
    * callback, it is advised not to steal the message object.
    */
+  // DEPRECATED
   virtual void OnMessageReceived(Flow*, std::unique_ptr<MessageReceived>&) {}
-
-  /**
-   * Notifies about change of the status of the subscription.
-   */
-  virtual void OnSubscriptionStatusChange(const SubscriptionStatus&) {}
 
   /**
    * Notifies about data loss.
    */
+  // DEPRECATED
   virtual void OnDataLoss(Flow*, const DataLossInfo&) {}
-
-  virtual ~Observer() = default;
 };
 
 /** The Client is used to produce and consume messages on arbitrary topics. */

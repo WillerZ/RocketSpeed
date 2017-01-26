@@ -76,6 +76,7 @@ Status RollcallImpl::Subscribe(const NamespaceID& namespace_id,
         }
       }
     }
+    return BackPressure::None();
   };
 
   auto handle = client_->Subscribe(tenant_id_,

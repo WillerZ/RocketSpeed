@@ -185,7 +185,10 @@ TEST_F(DeadLockTest, DeadLock) {
       GuestNamespace,
       "live",
       0,
-      [&](std::unique_ptr<MessageReceived>&) { last_received = now(); });
+      [&](std::unique_ptr<MessageReceived>&) {
+        last_received = now();
+        return BackPressure::None();
+      });
 
   auto is_deadlocked = [&]() -> bool {
     // We say we are deadlocked if the live client hasn't received anything
@@ -202,9 +205,10 @@ TEST_F(DeadLockTest, DeadLock) {
       [&] (std::unique_ptr<MessageReceived>&) {
         if (still_sleep.load()) {
           // On receive, block the thread
-          ASSERT_TRUE(stop_sleeping.TimedWait(std::chrono::seconds(30)));
+          EXPECT_TRUE(stop_sleeping.TimedWait(std::chrono::seconds(30)));
           still_sleep.store(false);
         }
+        return BackPressure::None();
       });
 
   ASSERT_EVENTUALLY_TRUE(is_deadlocked());

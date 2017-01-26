@@ -68,8 +68,9 @@ TEST_F(IntegrationTest, OneMessage) {
   };
 
   auto receive_callback = [&](std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    EXPECT_TRUE(mr->GetContents().ToString() == data);
     msg_received.Post();
+    return BackPressure::None();
   };
 
   // Create RocketSpeed client.
@@ -291,14 +292,16 @@ TEST_F(IntegrationTest, TestDataLossCallback) {
         ctx.kTotalMessagesToSend - ctx.kTotalMessagesToTrim) {
       receive_sem.Post();
     }
+    return BackPressure::None();
   };
 
   auto data_loss_callback = [&](const DataLossInfo& msg) {
-    ASSERT_EQ(DataLossType::kRetention, msg.GetLossType());
-    ASSERT_EQ(ctx.first_seqno, msg.GetFirstSequenceNumber());
-    ASSERT_EQ(ctx.first_seqno + ctx.kTotalMessagesToTrim - 1,
+    EXPECT_EQ(DataLossType::kRetention, msg.GetLossType());
+    EXPECT_EQ(ctx.first_seqno, msg.GetFirstSequenceNumber());
+    EXPECT_EQ(ctx.first_seqno + ctx.kTotalMessagesToTrim - 1,
               msg.GetLastSequenceNumber());
     data_loss_sem.Post();
+    return BackPressure::None();
   };
 
   SubscriptionParameters sub_params = SubscriptionParameters(
@@ -558,7 +561,10 @@ TEST_F(IntegrationTest, TrimGapHandling) {
 
   auto test_receipt = [&](int topic, SequenceNumber seqno, int expected) {
     auto receive_callback = [&recv_sem, topic](
-        std::unique_ptr<MessageReceived>&) { recv_sem[topic].Post(); };
+        std::unique_ptr<MessageReceived>&) {
+          recv_sem[topic].Post();
+          return BackPressure::None();
+        };
     // Tests that subscribing to topic@seqno results in 'expected' messages.
     auto handle = client->Subscribe(
         GuestTenant, ns, topics[topic], seqno, receive_callback);
@@ -609,6 +615,7 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
     thread_check.Check();
     received.push_back(mr->GetContents().ToString());
     message_sem.Post();
+    return BackPressure::None();
   };
 
   // Create RocketSpeed client.
@@ -620,6 +627,7 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
   client->Subscribe(GuestTenant, ns, topic, 1,
     [&](std::unique_ptr<MessageReceived>& mr) {
       witness.Post();
+      return BackPressure::None();
     });
 
   // Send some messages and wait for the acks.
@@ -810,8 +818,9 @@ TEST_F(IntegrationTest, LostConnection) {
   };
 
   auto receive_callback = [&](std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    EXPECT_TRUE(mr->GetContents().ToString() == data);
     msg_received.Post();
+    return BackPressure::None();
   };
 
   // Create RocketSpeed client.
@@ -917,8 +926,9 @@ TEST_F(IntegrationTest, OneMessageWithoutRollCall) {
                         topic,
                         1,
                         [&](std::unique_ptr<MessageReceived>& mr) {
-                          ASSERT_TRUE(mr->GetContents().ToString() == data);
+                          EXPECT_TRUE(mr->GetContents().ToString() == data);
                           msg_received1.Post();
+                          return BackPressure::None();
                         });
   ASSERT_TRUE(handle);
 
@@ -943,8 +953,9 @@ TEST_F(IntegrationTest, OneMessageWithoutRollCall) {
                         topic,
                         0,
                         [&](std::unique_ptr<MessageReceived>& mr) {
-                          ASSERT_TRUE(mr->GetContents().ToString() == data);
+                          EXPECT_TRUE(mr->GetContents().ToString() == data);
                           msg_received2.Post();
+                          return BackPressure::None();
                         });
   ASSERT_TRUE(handle);
 
@@ -983,7 +994,10 @@ TEST_F(IntegrationTest, NewControlTower) {
   // RocketSpeed callbacks
   port::Semaphore msg_received;
   auto receive_callback =
-      [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); };
+      [&](std::unique_ptr<MessageReceived>& mr) {
+          msg_received.Post();
+          return BackPressure::None();
+      };
 
   // Create RocketSpeed client.
   ClientOptions options;
@@ -1151,6 +1165,7 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
         inbox[i].push_back(mr->GetContents().ToString());
       }
       checkpoint[i].Post();
+      return BackPressure::None();
     };
     ASSERT_OK(cluster.CreateClient(&client[i], std::move(options)));
   }
@@ -1422,7 +1437,10 @@ TEST_F(IntegrationTest, LogAvailability) {
         GuestNamespace,
         "LogAvailability" + std::to_string(i),
         1,
-        [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); });
+        [&](std::unique_ptr<MessageReceived>& mr) {
+          msg_received.Post();
+          return BackPressure::None();
+        });
     subscriptions.push_back(handle);
   }
 
@@ -1460,7 +1478,10 @@ TEST_F(IntegrationTest, LogAvailability) {
         GuestNamespace,
         "LogAvailability" + std::to_string(i),
         0,
-        [&](std::unique_ptr<MessageReceived>& mr) { msg_received2.Post(); });
+        [&](std::unique_ptr<MessageReceived>& mr) {
+          msg_received2.Post();
+          return BackPressure::None();
+        });
     subscriptions.push_back(handle);
   }
   env_->SleepForMicroseconds(200000);
@@ -1513,7 +1534,10 @@ TEST_F(IntegrationTest, TowerDeathReconnect) {
   // RocketSpeed callbacks
   port::Semaphore msg_received;
   auto receive_callback =
-      [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); };
+      [&](std::unique_ptr<MessageReceived>& mr) {
+        msg_received.Post();
+        return BackPressure::None();
+      };
 
   // Create RocketSpeed client.
   std::unique_ptr<Client> client;
@@ -1630,7 +1654,10 @@ TEST_F(IntegrationTest, CopilotDeath) {
         GuestNamespace,
         "CopilotDeath" + std::to_string(t),
         1,
-        [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); }));
+        [&](std::unique_ptr<MessageReceived>& mr) {
+          msg_received.Post();
+          return BackPressure::None();
+        }));
   }
 
   // Send a more messages.
@@ -1711,28 +1738,33 @@ TEST_F(IntegrationTest, ControlTowerCache) {
   };
 
   auto receive_callback = [&](std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    EXPECT_TRUE(mr->GetContents().ToString() == data);
     msg_received.Post();
+    return BackPressure::None();
   };
 
   auto receive_callback2 = [&](std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    EXPECT_TRUE(mr->GetContents().ToString() == data);
     msg_received2.Post();
+    return BackPressure::None();
   };
 
   auto receive_callback3 = [&](std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    EXPECT_TRUE(mr->GetContents().ToString() == data);
     msg_received3.Post();
+    return BackPressure::None();
   };
 
   auto receive_callback4 = [&](std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    EXPECT_TRUE(mr->GetContents().ToString() == data);
     msg_received4.Post();
+    return BackPressure::None();
   };
 
   auto receive_callback5 = [&](std::unique_ptr<MessageReceived>& mr) {
-    ASSERT_TRUE(mr->GetContents().ToString() == data);
+    EXPECT_TRUE(mr->GetContents().ToString() == data);
     msg_received5.Post();
+    return BackPressure::None();
   };
 
   // Create RocketSpeed client.
@@ -1953,10 +1985,11 @@ TEST_F(IntegrationTest, ReadingFromCache) {
                           topic,
                           msg_seqno,
                           [&](std::unique_ptr<MessageReceived>& mr) {
-                            ASSERT_TRUE(mr->GetContents().ToString() == data1);
+                            EXPECT_TRUE(mr->GetContents().ToString() == data1);
                             lastReceived = mr->GetSequenceNumber();
-                            ASSERT_EQ(lastReceived, msg_seqno);
+                            EXPECT_EQ(lastReceived, msg_seqno);
                             msg_received1.Post();
+                            return BackPressure::None();
                           });
     ASSERT_TRUE(handle);
 
@@ -1981,10 +2014,11 @@ TEST_F(IntegrationTest, ReadingFromCache) {
         topic,
         0,
         [&](std::unique_ptr<MessageReceived>& mr) {
-          ASSERT_TRUE((mr->GetContents().ToString() == data2));
-          ASSERT_EQ(lastReceived + 1, mr->GetSequenceNumber());
+          EXPECT_TRUE((mr->GetContents().ToString() == data2));
+          EXPECT_EQ(lastReceived + 1, mr->GetSequenceNumber());
           lastReceived = mr->GetSequenceNumber();
           msg_received2.Post();
+          return BackPressure::None();
         });
     ASSERT_TRUE(handle);
 
@@ -2020,7 +2054,10 @@ TEST_F(IntegrationTest, ReadingFromCache) {
         namespace_id,
         topic,
         msg_seqno,
-        [&](std::unique_ptr<MessageReceived>& mr) { msg_received3.Post(); });
+        [&](std::unique_ptr<MessageReceived>& mr) {
+          msg_received3.Post();
+          return BackPressure::None();
+        });
     ASSERT_TRUE(handle);
     for (int i = 0; i < numRecords; i++) {
       ASSERT_TRUE(msg_received3.TimedWait(timeout));
@@ -2086,7 +2123,9 @@ TEST_F(IntegrationTest, TowerRebalance) {
                       GuestNamespace,
                       "TowerRebalance" + std::to_string(i),
                       0,
-                      [](std::unique_ptr<MessageReceived>&) {});
+                      [](std::unique_ptr<MessageReceived>&) {
+                        return BackPressure::None();
+                      });
   }
 
   // The copilot should be subscribed to all topics the first control tower.
@@ -2130,7 +2169,10 @@ TEST_F(IntegrationTest, InvalidSubscription) {
       InvalidNamespace,
       "InvalidSubscription",
       1,
-      [&](std::unique_ptr<MessageReceived>& mr) { ASSERT_TRUE(false); },
+      [&](std::unique_ptr<MessageReceived>& mr) {
+        EXPECT_TRUE(false);
+        return BackPressure::None();
+      },
       [&](const SubscriptionStatus& ss) {
         ASSERT_EQ(ss.GetNamespace(), InvalidNamespace);
         ASSERT_EQ(ss.GetTopicName(), "InvalidSubscription");
@@ -2169,7 +2211,10 @@ TEST_F(IntegrationTest, ReaderRestarts) {
         GuestNamespace,
         "ReaderRestarts" + std::to_string(t),
         1,
-        [&](std::unique_ptr<MessageReceived>& mr) { msg_received.Post(); }));
+        [&](std::unique_ptr<MessageReceived>& mr) {
+          msg_received.Post();
+          return BackPressure::None();
+        }));
   }
 
   // Send messages.
@@ -2243,7 +2288,10 @@ TEST_F(IntegrationTest, VirtualReaderMerge) {
         GuestNamespace,
         "VirtualReaderMerge" + std::to_string(i),
         seqno + (2 - i) * 100,
-        [&, i](std::unique_ptr<MessageReceived>& mr) { recv[i].Post(); });
+        [&, i](std::unique_ptr<MessageReceived>& mr) {
+          recv[i].Post();
+          return BackPressure::None();
+        });
     env_->SleepForMicroseconds(100000);
   }
 
@@ -2310,7 +2358,10 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
                     GuestNamespace,
                     "SmallRoomQueues",
                     seqno_phase1,
-                    [&](std::unique_ptr<MessageReceived>& mr) { sem1.Post(); });
+                    [&](std::unique_ptr<MessageReceived>& mr) {
+                      sem1.Post();
+                      return BackPressure::None();
+                    });
   for (size_t i = 0; i < kPhase1Messages; ++i) {
     ASSERT_TRUE(sem1.TimedWait(timeout));
   }
@@ -2334,7 +2385,10 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
                     GuestNamespace,
                     "SmallRoomQueues",
                     seqno_phase1,
-                    [&](std::unique_ptr<MessageReceived>& mr) { sem2.Post(); });
+                    [&](std::unique_ptr<MessageReceived>& mr) {
+                      sem2.Post();
+                      return BackPressure::None();
+                    });
   for (size_t i = 0; i < kPhase1Messages; ++i) {
     ASSERT_TRUE(sem2.TimedWait(timeout));
   }
@@ -2364,7 +2418,10 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
                     GuestNamespace,
                     "SmallRoomQueues",
                     seqnos[0],
-                    [&](std::unique_ptr<MessageReceived>& mr) { sem3.Post(); });
+                    [&](std::unique_ptr<MessageReceived>& mr) {
+                      sem3.Post();
+                      return BackPressure::None();
+                    });
   for (size_t i = 0; i < kNumMessages; ++i) {
     ASSERT_TRUE(sem3.TimedWait(timeout));
   }
@@ -2448,7 +2505,10 @@ TEST_F(IntegrationTest, CacheReentrance) {
       GuestNamespace,
       "CacheReentrance1",
       msg_seqnos[kNumMessages - kNumInCache],
-      [&](std::unique_ptr<MessageReceived>& mr) { sub_sem.Post(); });
+      [&](std::unique_ptr<MessageReceived>& mr) {
+        sub_sem.Post();
+        return BackPressure::None();
+      });
   for (size_t i = 0; i < kNumInCache; ++i) {
     ASSERT_TRUE(sub_sem.TimedWait(timeout));
   }
@@ -2474,7 +2534,10 @@ TEST_F(IntegrationTest, CacheReentrance) {
       GuestNamespace,
       "CacheReentrance1",
       msg_seqnos[1],
-      [&](std::unique_ptr<MessageReceived>& mr) { sub_sem.Post(); });
+      [&](std::unique_ptr<MessageReceived>& mr) {
+        sub_sem.Post();
+        return BackPressure::None();
+      });
   for (size_t i = 0; i < kNumMessages - 1; ++i) {
     ASSERT_TRUE(sub_sem.TimedWait(timeout));
   }
@@ -2498,7 +2561,10 @@ TEST_F(IntegrationTest, CacheReentrance) {
       GuestNamespace,
       "CacheReentrance2",
       msg_seqnos[0],
-      [&](std::unique_ptr<MessageReceived>& mr) { sub_sem.Post(); });
+      [&](std::unique_ptr<MessageReceived>& mr) {
+        sub_sem.Post();
+        return BackPressure::None();
+      });
   env_->SleepForMicroseconds(100000);
 
   auto stats3 = get_topic_tailer_stats();
@@ -2556,7 +2622,10 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   port::Semaphore sem;
   client->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 1,
-      [&](std::unique_ptr<MessageReceived>&) { sem.Post(); });
+      [&](std::unique_ptr<MessageReceived>&) {
+        sem.Post();
+        return BackPressure::None();
+      });
   ASSERT_EVENTUALLY_TRUE(total_subs() == 3);
   ASSERT_EQ(fast_subs(), 1);
   client->Publish(GuestTenant, "CopilotTailSubscribeFast2", GuestNamespace,
@@ -2581,6 +2650,81 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 0, nullptr);
   ASSERT_EVENTUALLY_TRUE(total_subs() == 5);
   ASSERT_EQ(fast_subs(), 2);
+}
+
+TEST_F(IntegrationTest, ObserverFlowControl) {
+  SubscriptionCallbacksTestContext ctx(this);
+
+  // Semaphores for callbacks to fire.
+  port::Semaphore msg_received, substat_received, dataloss_received;
+
+  class TestObserver : public Observer {
+   public:
+    BackPressure OnData(std::unique_ptr<MessageReceived>& mr) override {
+      EXPECT_TRUE(mr);
+      EXPECT_TRUE(mr->GetContents().ToString() == ctx_.data);
+      backoff_ = !backoff_;
+      if (backoff_) {
+        return BackPressure::RetryAfter(std::chrono::milliseconds(1));
+      }
+      msg_received_.Post();
+      return BackPressure::None();
+    }
+
+    void OnSubscriptionStatusChange(const SubscriptionStatus& ss) override {
+      EXPECT_TRUE(ss.GetTopicName() == ctx_.topic);
+      EXPECT_TRUE(ss.GetNamespace() == ctx_.namespace_id);
+      substat_received_.Post();
+    }
+
+    BackPressure OnLoss(const DataLossInfo& msg) override {
+      EXPECT_EQ(DataLossType::kRetention, msg.GetLossType());
+      EXPECT_EQ(ctx_.first_seqno, msg.GetFirstSequenceNumber());
+      EXPECT_EQ(ctx_.first_seqno + ctx_.kTotalMessagesToTrim - 1,
+                msg.GetLastSequenceNumber());
+      backoff_ = !backoff_;
+      if (backoff_) {
+        return BackPressure::RetryAfter(std::chrono::milliseconds(1));
+      }
+      dataloss_received_.Post();
+      return BackPressure::None();
+    }
+
+    TestObserver(SubscriptionCallbacksTestContext& _ctx,
+                 port::Semaphore& _msg_received,
+                 port::Semaphore& _substat_received,
+                 port::Semaphore& _dataloss_received)
+    : ctx_(_ctx)
+    , msg_received_(_msg_received)
+    , substat_received_(_substat_received)
+    , dataloss_received_(_dataloss_received) {}
+
+   private:
+    SubscriptionCallbacksTestContext& ctx_;
+    port::Semaphore& msg_received_;
+    port::Semaphore& substat_received_;
+    port::Semaphore& dataloss_received_;
+    std::atomic<bool> backoff_{false};
+  };
+
+  SubscriptionParameters sub_params = SubscriptionParameters(
+      GuestTenant, ctx.namespace_id, ctx.topic, ctx.first_seqno);
+
+  // Listen for the message.
+  auto sub_handle = ctx.receiver->Subscribe(
+      sub_params,
+      std::make_unique<TestObserver>(
+          ctx, msg_received, substat_received, dataloss_received));
+  ASSERT_TRUE(sub_handle != 0);
+
+  ASSERT_TRUE(msg_received.TimedWait(timeout));
+  ASSERT_TRUE(dataloss_received.TimedWait(timeout));
+  ASSERT_TRUE(!substat_received.TimedWait(std::chrono::seconds(0)));
+
+  // Unsubscribe
+  ASSERT_OK(ctx.receiver->Unsubscribe(sub_handle));
+
+  ASSERT_TRUE(substat_received.TimedWait(timeout));
 }
 
 }  // namespace rocketspeed

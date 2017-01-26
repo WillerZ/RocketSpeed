@@ -1347,7 +1347,7 @@ static void SendMessageDeliver(SequenceNumber& sequence,
   using Info = MockSubscriber::Info;
   Info info;
   subscriber->Select(sub_id, Info::kObserver, &info);
-  info.GetObserver()->OnMessageReceived(nullptr, received);
+  (void)info.GetObserver()->OnData(received);
 }
 
 static void RunDemultiplexTest(

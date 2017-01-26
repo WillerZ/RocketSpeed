@@ -70,8 +70,8 @@ class BackPressure {
   explicit BackPressure(Type type, std::chrono::milliseconds delay)
   : type_(type), delay_(delay) {}
 
-  const Type type_;
-  const std::chrono::milliseconds delay_{10};
+  Type type_;
+  std::chrono::milliseconds delay_{10};
 };
 
 }  // namespace rocketspeed
