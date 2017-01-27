@@ -138,45 +138,53 @@ Subscriber::Subscriber(const ClientOptions& options,
 , max_active_subscriptions_(max_active_subscriptions)
 , num_active_subscriptions_(std::move(num_active_subscriptions))
 , app_sink_(new RetryLaterSink<ApplicationMessage>(
-    [this] (ApplicationMessage& msg) mutable {
-      Info info;
-      if (!Select(msg.sub_id, Info::kObserver, &info)) {
-        // Subscription has been unsubscribed while backpressure being applied.
-        // No need to deliver anything now.
-        return BackPressure::None();
-      }
-      switch (msg.type) {
-        case ApplicationMessage::kData: {
-          BackPressure bp = BackPressure::None();
-          if (info.GetObserver()) {
-            bp = info.GetObserver()->OnData(msg.data);
-            RS_ASSERT(!bp || msg.data) << "Cannot consume data and retry";
-          }
-          if (!bp && options_.deliver_callback && msg.data) {
-            bp = options_.deliver_callback(msg.data);
-            RS_ASSERT(!bp || msg.data) << "Cannot consume data and retry";
-          }
-          return bp;
-        }
-        case ApplicationMessage::kLoss: {
-          BackPressure bp = BackPressure::None();
-          if (info.GetObserver()) {
-            bp = info.GetObserver()->OnLoss(msg.data_loss);
-          }
-          if (!bp && options_.data_loss_callback) {
-            bp = options_.data_loss_callback(msg.data_loss);
-          }
-          return bp;
-        }
-      }
-      RS_ASSERT(false);
-      return BackPressure::None();
-    })) {
+      std::bind(&Subscriber::InvokeApplication, this, _1))) {
   thread_check_.Check();
   RefreshRouting();
 }
 
 Subscriber::~Subscriber() {}
+
+BackPressure Subscriber::InvokeApplication(ApplicationMessage& msg) {
+  // This is called when calling into application callbacks, e.g. delivering
+  // a message, or a gap. It returns BackPressure::None() when the message was
+  // processed, otherwise requests the message to be delivered again.
+  //
+  // Important: msg must not be moved from if backpressure is applied since we
+  // need to retry with the same message later.
+  Info info;
+  if (!Select(msg.sub_id, Info::kObserver, &info)) {
+    // Subscription has been unsubscribed while backpressure being applied.
+    // No need to deliver anything now.
+    return BackPressure::None();
+  }
+  switch (msg.type) {
+    case ApplicationMessage::kData: {
+      BackPressure bp = BackPressure::None();
+      if (info.GetObserver()) {
+        bp = info.GetObserver()->OnData(msg.data);
+        RS_ASSERT(!bp || msg.data) << "Cannot consume data and retry";
+      }
+      if (!bp && options_.deliver_callback && msg.data) {
+        bp = options_.deliver_callback(msg.data);
+        RS_ASSERT(!bp || msg.data) << "Cannot consume data and retry";
+      }
+      return bp;
+    }
+    case ApplicationMessage::kLoss: {
+      BackPressure bp = BackPressure::None();
+      if (info.GetObserver()) {
+        bp = info.GetObserver()->OnLoss(msg.data_loss);
+      }
+      if (!bp && options_.data_loss_callback) {
+        bp = options_.data_loss_callback(msg.data_loss);
+      }
+      return bp;
+    }
+  }
+  RS_ASSERT(false);
+  return BackPressure::None();
+}
 
 void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
   if (message->GetMessageType() == MessageType::mSubscribe) {

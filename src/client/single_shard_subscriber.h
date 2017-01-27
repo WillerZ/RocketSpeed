@@ -186,6 +186,7 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
   void ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill>) final override;
 
+  BackPressure InvokeApplication(ApplicationMessage& msg);
   void SendMessage(Flow* flow, std::unique_ptr<Message> message);
 
   /// Max active subscriptions across the thread.
