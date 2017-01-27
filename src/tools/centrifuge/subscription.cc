@@ -26,9 +26,10 @@ std::unique_ptr<Observer> ExpectInvalidObserver() {
    public:
     ExpectInvalid() {}
 
-    void OnMessageReceived(Flow*, std::unique_ptr<MessageReceived>&) override {
+    BackPressure OnData(std::unique_ptr<MessageReceived>&) override {
       CentrifugeError(
         Status::InvalidArgument("Received message on invalid subscription"));
+      return BackPressure::None();
     }
 
     void OnSubscriptionStatusChange(const SubscriptionStatus& st) override {
@@ -40,11 +41,12 @@ std::unique_ptr<Observer> ExpectInvalidObserver() {
       }
     }
 
-    void OnDataLoss(Flow* flow, const DataLossInfo& info) override {
+    BackPressure OnLoss(const DataLossInfo& info) override {
       // Shouldn't receive data loss since the subscription should be
       // terminated immediately.
       CentrifugeError(
         Status::InvalidArgument("Received data loss on invalid subscription"));
+      return BackPressure::None();
     }
   };
   return std::unique_ptr<Observer>(new ExpectInvalid());
@@ -88,14 +90,15 @@ class SlowObserver : public Observer {
   : wrapped_(std::move(wrapped))
   , sleep_time_(sleep_time) {}
 
-  void OnMessageReceived(
-      Flow* flow, std::unique_ptr<MessageReceived>& msg) override {
+  BackPressure OnData(std::unique_ptr<MessageReceived>& msg) override {
+    BackPressure bp = BackPressure::None();
     if (wrapped_) {
-      wrapped_->OnMessageReceived(flow, msg);
+      bp = wrapped_->OnData(msg);
     }
     // Sleep to slow down processing -- should cause backpressure.
     /* sleep override */
     std::this_thread::sleep_for(sleep_time_);
+    return bp;
   }
 
   void OnSubscriptionStatusChange(const SubscriptionStatus& st) override {
@@ -104,10 +107,11 @@ class SlowObserver : public Observer {
     }
   }
 
-  void OnDataLoss(Flow* flow, const DataLossInfo& info) override {
+  BackPressure OnLoss(const DataLossInfo& info) override {
     if (wrapped_) {
-      wrapped_->OnDataLoss(flow, info);
+      return wrapped_->OnLoss(info);
     }
+    return BackPressure::None();
   }
 
  private:
