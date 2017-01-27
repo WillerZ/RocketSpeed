@@ -23,7 +23,6 @@
 #include "include/Types.h"
 #include "src/client/single_shard_subscriber.h"
 #include "src/client/subscriber_stats.h"
-#include "src/client/tail_collapsing_subscriber.h"
 #include "src/messages/event_callback.h"
 #include "src/messages/event_loop.h"
 #include "src/messages/msg_loop.h"
@@ -151,17 +150,6 @@ void MultiShardSubscriber::StartSubscription(
                        max_active_subscriptions_,
                        num_active_subscriptions_,
                        intro_parameters_));
-    if (options_.collapse_subscriptions_to_tail) {
-      // TODO(t10132320)
-      RS_ASSERT_DBG(parameters.cursors.size() == 1);
-      RS_ASSERT_DBG(parameters.cursors[0].source == "");
-      RS_ASSERT_DBG(parameters.cursors[0].seqno == 0);
-      parameters.cursors = {{"", 0}};
-      auto sub = static_cast<Subscriber*>(subscriber.release());
-      subscriber.reset(
-          new TailCollapsingSubscriber(std::unique_ptr<Subscriber>(sub)));
-    }
-
     auto hooks = pending_hooks_.find(shard_id);
     if (hooks != pending_hooks_.end()) {
       for (auto& p : hooks->second) {

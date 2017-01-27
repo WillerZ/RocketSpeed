@@ -151,11 +151,6 @@ class ClientOptions {
   // Default: 1,000,000,000 (effectively unlimited)
   size_t subscription_rate_limit;
 
-  // If true all subscriptions are silently forwarded to the tail and all
-  // subscriptions on a single topic are merged into one upstream subscription.
-  // Default: false
-  bool collapse_subscriptions_to_tail;
-
   // Size of per-thread queues.
   // Queues are pre-allocated, so larger queues consume more memory, but
   // can be used to smooth out larger spikes in subscriptions.

@@ -17,7 +17,6 @@
 #include "include/ShadowedClient.h"
 #include "src/client/single_shard_subscriber.h"
 #include "src/client/topic_subscription_map.h"
-#include "src/client/tail_collapsing_subscriber.h"
 #include "src/messages/messages.h"
 #include "src/messages/msg_loop.h"
 #include "src/util/common/client_env.h"
@@ -1257,56 +1256,6 @@ TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
   ASSERT_EQ(server_connections, 0);
 }
 
-TEST_F(ClientTest, TailCollapsingSubscriber) {
-  std::string topic0("TailCollapsingSubscriber0"),
-      topic1("TailCollapsingSubscriber1");
-  port::Semaphore subscribe_sem, unsubscribe_sem;
-  auto copilot = MockServer({
-      {MessageType::mSubscribe,
-       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-         subscribe_sem.Post();
-       }},
-      {MessageType::mUnsubscribe,
-       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-         unsubscribe_sem.Post();
-       }},
-      {MessageType::mGoodbye,
-       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
-         unsubscribe_sem.Post();
-       }},
-  });
-
-  ClientOptions options;
-  // TODO(pja): health notifications use same status unsubscribe,
-  // so need to avoid. Needs proper fix.
-  options.should_notify_health = false;
-  options.collapse_subscriptions_to_tail = true;
-  auto client = CreateClient(std::move(options));
-
-  auto s0 = client->Subscribe(GuestTenant, GuestNamespace, topic0, 0);
-  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
-  auto s1 = client->Subscribe(GuestTenant, GuestNamespace, topic0, 0);
-  ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
-  auto s2 = client->Subscribe(GuestTenant, GuestNamespace, topic1, 0);
-  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
-  auto s3 = client->Subscribe(GuestTenant, GuestNamespace, topic1, 0);
-  ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
-
-  client->Unsubscribe(s0);
-  ASSERT_TRUE(!unsubscribe_sem.TimedWait(negative_timeout));
-  client->Unsubscribe(s3);
-  ASSERT_TRUE(!unsubscribe_sem.TimedWait(negative_timeout));
-  client->Unsubscribe(s2);
-  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
-  client->Unsubscribe(s1);
-  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
-
-  auto s4 = client->Subscribe(GuestTenant, GuestNamespace, topic0, 0);
-  ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
-  client->Unsubscribe(s4);
-  ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
-}
-
 // This is exactly the same as single_shard_subscriber's
 // MessageReceivedImpl at the time of writing
 class MockMessageReceivedImpl : public MessageReceived {
@@ -1327,113 +1276,6 @@ class MockMessageReceivedImpl : public MessageReceived {
  private:
   std::unique_ptr<MessageDeliverData> data_;
 };
-
-
-static void SendMessageDeliver(SequenceNumber& sequence,
-                               NamespaceID namespace_id,
-                               Topic topic,
-                               SubscriptionID sub_id,
-                               SubscriberIf* subscriber) {
-  // Doesn't really matter what data we initialize this test message with,
-  // we just want to make sure the subscription id gets rewritten before
-  // delivery
-  std::unique_ptr<MessageDeliverData> msg(
-      new MessageDeliverData((TenantID)0, std::move(namespace_id),
-          std::move(topic), sub_id, MsgId(), "data"));
-  msg->SetSequenceNumbers(sequence - 1, sequence);
-  ++sequence;
-  std::unique_ptr<MessageReceived> received(
-    new MockMessageReceivedImpl(std::move(msg)));
-  using Info = MockSubscriber::Info;
-  Info info;
-  subscriber->Select(sub_id, Info::kObserver, &info);
-  (void)info.GetObserver()->OnData(received);
-}
-
-static void RunDemultiplexTest(
-    std::unique_ptr<TailCollapsingSubscriber>& subscriber,
-    SubscriberIf* base_subscriber) {
-  // Be careful with these observer pointers, they're actually
-  // unique_ptrs that are handed off to internals of the subscriber
-  // system.  IE don't copy this pattern outside of unit tests, it's
-  // bad.
-  static const int observer_count = 3;
-  std::vector<MockObserver*> observers;
-  std::vector<SubscriptionID> sub_ids;
-
-  SequenceNumber sequence = 2;
-  SubscriptionID first_sub_id;
-  SubscriptionParameters params;
-  params.tenant_id = 0;
-  params.namespace_id = "demultiplex";
-  params.topic_name = "demultiplex_test";
-  params.cursors = {{"", sequence}};
-
-  MockObserver::StaticReset();
-
-  for (int i = 0; i < observer_count; ++i) {
-    sub_ids.push_back(SubscriptionID::Unsafe(i + 2));
-    if (i == 0) {
-      first_sub_id = sub_ids[0];
-    }
-    observers.push_back(new MockObserver(sub_ids[i]));
-    subscriber->StartSubscription(
-      sub_ids[i], params, std::unique_ptr<MockObserver>(observers[i]));
-    ASSERT_EQ(MockObserver::active_count_, i + 1);
-    // Send a message as we add each observer, especially to test the very first
-    // observer before multiplexing starts
-    SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
-        first_sub_id, base_subscriber);
-  }
-
-  // Reset all received counts to 0, they're out of sync due to above sends
-  for(int i = 0; i < observer_count; ++i) {
-    observers[i]->received_count_ = 0;
-  }
-
-  ASSERT_EQ(MockObserver::deleted_count_, 0);
-
-  SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
-      first_sub_id, base_subscriber);
-  ASSERT_EQ(observers[0]->received_count_, 1);
-  ASSERT_EQ(observers[1]->received_count_, 1);
-
-  subscriber->TerminateSubscription(sub_ids[0]);
-  ASSERT_EQ(MockObserver::deleted_count_, 1);
-
-  // Important test: There were 3 observers, now there are two.  They
-  // both should receive the message.
-  SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
-      first_sub_id, base_subscriber);
-  ASSERT_EQ(observers[1]->received_count_, 2);
-  ASSERT_EQ(observers[2]->received_count_, 2);
-
-  subscriber->TerminateSubscription(sub_ids[1]);
-  ASSERT_EQ(MockObserver::deleted_count_, 2);
-  ASSERT_EQ(MockObserver::active_count_, 1);
-
-  // Key test: verify that despite all but one observer having been
-  // deleted, the remaining observer receives the message.
-  SendMessageDeliver(sequence, params.namespace_id, params.topic_name,
-      first_sub_id, base_subscriber);
-  ASSERT_EQ(observers[2]->received_count_, 3);
-  subscriber->TerminateSubscription(sub_ids[2]);
-  ASSERT_EQ(MockObserver::deleted_count_, 3);
-  ASSERT_EQ(MockObserver::active_count_, 0);
-}
-
-TEST_F(ClientTest, TailCollapsingSubscriberDemultiplex) {
-  // Set up a basic subscriber for the TailCollapsingSubscriber to wrap
-  MockSubscriber *base_subscriber = new MockSubscriber;
-  std::unique_ptr<TailCollapsingSubscriber> subscriber(
-      new TailCollapsingSubscriber(
-          std::unique_ptr<SubscriberIf>(base_subscriber)));
-
-  // Run all the tests twice to verify that removing all subscribers
-  // and then resubscribing to the same topic works
-  RunDemultiplexTest(subscriber, base_subscriber);
-  RunDemultiplexTest(subscriber, base_subscriber);
-}
 
 TEST_F(ClientTest, TopicToSubscriptionMap) {
   std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionBase>>
