@@ -160,15 +160,14 @@ void SubscriptionsMap::Subscribe(
   // element renders the Source readable.
 }
 
-SubscriptionBase* SubscriptionsMap::Find(
-    SubscriptionID sub_id) const {
-  LOG_DEBUG(GetLogger(), "Find(%llu)", sub_id.ForLogging());
+SubscriptionBase* SubscriptionsMap::Find(const SubscriptionKey& key) const {
+  LOG_DEBUG(GetLogger(), "Find(%llu)", key.ForLogging());
 
-  auto sync_it = synced_subscriptions_.Find(sub_id);
+  auto sync_it = synced_subscriptions_.Find(key);
   if (sync_it != synced_subscriptions_.End()) {
     return *sync_it;
   }
-  auto pend_it = pending_subscriptions_->Find(sub_id);
+  auto pend_it = pending_subscriptions_->Find(key);
   if (pend_it != pending_subscriptions_->End()) {
     return *pend_it;
   }
@@ -176,8 +175,8 @@ SubscriptionBase* SubscriptionsMap::Find(
 }
 
 bool SubscriptionsMap::Select(
-    SubscriptionID sub_id, typename Info::Flags flags, Info* info) const {
-  if (auto sub = Find(sub_id)) {
+    const SubscriptionKey& key, typename Info::Flags flags, Info* info) const {
+  if (auto sub = Find(key)) {
     if (flags & Info::kTenant) {
       info->SetTenant(sub->GetTenant());
     }
@@ -199,28 +198,28 @@ bool SubscriptionsMap::Select(
 }
 
 
-bool SubscriptionsMap::Exists(SubscriptionID sub_id) const {
-  LOG_DEBUG(GetLogger(), "Exists(%llu)", sub_id.ForLogging());
+bool SubscriptionsMap::Exists(const SubscriptionKey& key) const {
+  LOG_DEBUG(GetLogger(), "Exists(%llu)", key.ForLogging());
 
-  auto sync_it = synced_subscriptions_.Find(sub_id);
+  auto sync_it = synced_subscriptions_.Find(key);
   if (sync_it != synced_subscriptions_.End()) {
     return true;
   }
-  auto pend_it = pending_subscriptions_->Find(sub_id);
+  auto pend_it = pending_subscriptions_->Find(key);
   if (pend_it != pending_subscriptions_->End()) {
     return true;
   }
   return false;
 }
 
-bool SubscriptionsMap::IsSynced(SubscriptionID sub_id) const {
-  return synced_subscriptions_.Find(sub_id) != synced_subscriptions_.end();
+bool SubscriptionsMap::IsSynced(const SubscriptionKey& key) const {
+  return synced_subscriptions_.Find(key) != synced_subscriptions_.end();
 }
 
-void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
+void SubscriptionsMap::Rewind(const SubscriptionKey& key,
                               SubscriptionID new_sub_id,
                               Cursor new_cursor) {
-  auto ptr = Find(old_sub_id);
+  auto ptr = Find(key);
   RS_ASSERT(ptr);
 
   LOG_DEBUG(GetLogger(),
@@ -229,7 +228,7 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
             new_sub_id.ForLogging(),
             new_cursor.ToString().c_str());
 
-  RS_ASSERT(new_sub_id != old_sub_id);
+  RS_ASSERT(new_sub_id != key);
 
   // Reinsert the subscription, as we may not change the
   NamespaceID namespace_id;
@@ -237,12 +236,12 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     SubscriptionBase* state = nullptr;
     {  // We have to remove the state before modifying it.
-      auto sync_it = synced_subscriptions_.Find(old_sub_id);
+      auto sync_it = synced_subscriptions_.Find(key);
       if (sync_it != synced_subscriptions_.End()) {
         state = *sync_it; // don't delete, it will be inserted to map
         synced_subscriptions_.erase(sync_it);
       } else {
-        auto pend_it = pending_subscriptions.Find(old_sub_id);
+        auto pend_it = pending_subscriptions.Find(key);
         RS_ASSERT(pend_it != pending_subscriptions.End());
         state = *pend_it;
         pending_subscriptions.erase(pend_it);
@@ -260,19 +259,19 @@ void SubscriptionsMap::Rewind(SubscriptionID old_sub_id,
   // Terminate the subscription on old ID, the server sees rewound
   // subscription as a new one.
   pending_unsubscribes_.Modify([&](Unsubscribes& set) {
-    set.emplace(old_sub_id, std::move(namespace_id), std::move(topic));
+    set.emplace(key, std::move(namespace_id), std::move(topic));
   });
   // Pending subscribe and unsubscribe events will be synced opportunistically,
   // as adding an element renders the Sources readable.
 }
 
-void SubscriptionsMap::Unsubscribe(SubscriptionID sub_id) {
+void SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
   LOG_DEBUG(GetLogger(),
             "Unsubscribe(%llu)",
-            sub_id.ForLogging());
+            key.ForLogging());
 
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
-    auto sync_it = synced_subscriptions_.Find(sub_id);
+    auto sync_it = synced_subscriptions_.Find(key);
     if (sync_it != synced_subscriptions_.End()) {
       NamespaceID namespace_id = (*sync_it)->GetNamespace().ToString();
       Topic topic = (*sync_it)->GetTopicName().ToString();
@@ -281,10 +280,10 @@ void SubscriptionsMap::Unsubscribe(SubscriptionID sub_id) {
       // Schedule an unsubscribe message to be sent only if a subscription has
       // been sent out.
       pending_unsubscribes_.Modify([&](Unsubscribes& set) {
-        set.emplace(sub_id, std::move(namespace_id), std::move(topic));
+        set.emplace(key, std::move(namespace_id), std::move(topic));
       });
     } else {
-      auto pend_it = pending_subscriptions.Find(sub_id);
+      auto pend_it = pending_subscriptions.Find(key);
       RS_ASSERT(pend_it != pending_subscriptions.End());
       CleanupSubscription(*pend_it);
       pending_subscriptions.erase(pend_it);
@@ -298,8 +297,9 @@ bool SubscriptionsMap::Empty() const {
   return synced_subscriptions_.Empty() && pending_subscriptions_->Empty();
 }
 
-void SubscriptionsMap::SetUserData(SubscriptionID sub_id, void* user_data) {
-  auto sub = Find(sub_id);
+void SubscriptionsMap::SetUserData(
+    const SubscriptionKey& key, void* user_data) {
+  auto sub = Find(key);
   RS_ASSERT(sub);
   sub->SetUserData(user_data);
 }
@@ -392,7 +392,7 @@ bool SubscriptionsMap::ProcessUnsubscribe(
     const MessageUnsubscribe& message,
     Info::Flags flags,
     Info* info) {
-  auto sub_id = message.GetSubID();
+  auto key = message.GetSubID();
   auto reason = message.GetReason();
 
   switch (reason) {
@@ -400,14 +400,14 @@ bool SubscriptionsMap::ProcessUnsubscribe(
     case MessageUnsubscribe::Reason::kRequested: {
       // Sanity check that the message did not refer to a subscription that has
       // not been synced to the server.
-      RS_ASSERT(pending_subscriptions_->Find(sub_id)
+      RS_ASSERT(pending_subscriptions_->Find(key)
         == pending_subscriptions_->End());
       // Terminate the subscription.
-      auto it = synced_subscriptions_.Find(sub_id);
+      auto it = synced_subscriptions_.Find(key);
       if (it != synced_subscriptions_.End()) {
         // No need to send unsubscribe request, as we've just received one.
         // Notify via callback.
-        Select(sub_id, flags, info);
+        Select(key, flags, info);
         synced_subscriptions_.erase(it);
         return true;
       } else {

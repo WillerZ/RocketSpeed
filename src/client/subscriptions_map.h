@@ -27,6 +27,8 @@ class MyReceiver;
 class Logger;
 class Slice;
 
+using SubscriptionKey = SubscriptionID;
+
 /// A flyweight-pattern-based storage for topics and namespaces.
 struct TenantAndNamespace {
   TenantID tenant_id;
@@ -61,6 +63,10 @@ class SubscriptionBase {
   , user_data_(user_data) {}
 
   ~SubscriptionBase();
+
+  const SubscriptionKey& GetKey() const {
+    return sub_id_;
+  }
 
   TenantID GetTenant() const {
     return tenant_and_namespace_.Get().tenant_id;
@@ -254,23 +260,23 @@ class SubscriptionsMap {
   };
 
   /// Extracts information about a subscription.
-  bool Select(SubscriptionID sub_id,
+  bool Select(const SubscriptionKey& key,
               Info::Flags flags,
               Info* info) const;
 
   /// Checks if subscription exists.
-  bool Exists(SubscriptionID sub_id) const;
+  bool Exists(const SubscriptionKey& key) const;
 
   /// Checks if a subscription has been synced to the server.
-  bool IsSynced(SubscriptionID sub_id) const;
+  bool IsSynced(const SubscriptionKey& key) const;
 
   /// Rewinds provided subscription to a given cursor.
-  void Rewind(SubscriptionID old_sub_id,
+  void Rewind(const SubscriptionKey& old_sub_id,
               SubscriptionID new_sub_id,
               Cursor new_cursor);
 
   /// Returns true if a subscription was terminated, false if it didn't exist.
-  void Unsubscribe(SubscriptionID sub_id);
+  void Unsubscribe(const SubscriptionKey& key);
 
   bool Empty() const;
 
@@ -286,7 +292,7 @@ class SubscriptionsMap {
   void Iterate(Iter&& iter);
 
   /// Sets the user data for a subscription.
-  void SetUserData(SubscriptionID sub_id, void* user_data);
+  void SetUserData(const SubscriptionKey& key, void* user_data);
 
   void StartSync();
   void StopSync();
@@ -306,13 +312,13 @@ class SubscriptionsMap {
   TenantAndNamespaceFactory tenant_and_namespace_factory_;
 
   struct SubscriptionsMapping {
-    SubscriptionID ExtractKey(const SubscriptionBase* sub) const {
-      return sub->GetSubscriptionID();
+    const SubscriptionKey& ExtractKey(const SubscriptionBase* sub) const {
+      return sub->GetKey();
     }
-    size_t Hash(const SubscriptionID& id) const {
-      return std::hash<SubscriptionID>()(id);
+    size_t Hash(const SubscriptionKey& id) const {
+      return std::hash<SubscriptionKey>()(id);
     }
-    bool Equals(const SubscriptionID& id1, const SubscriptionID& id2) const {
+    bool Equals(const SubscriptionKey& id1, const SubscriptionKey& id2) const {
       return id1 == id2;
     }
   };
@@ -322,7 +328,7 @@ class SubscriptionsMap {
   // to take care of the memory.
   using Subscriptions =
     STLAdapter<SparseKeylessMap<
-                  SubscriptionID, SubscriptionBase*, SubscriptionsMapping>,
+                  SubscriptionKey, SubscriptionBase*, SubscriptionsMapping>,
                 SubscriptionsMapping>;
   ObservableContainer<Subscriptions> pending_subscriptions_;
   Subscriptions synced_subscriptions_;
@@ -357,7 +363,7 @@ class SubscriptionsMap {
 
   /// Returns a non-owning pointer to the SubscriptionBase or null if doesn't
   /// exist.
-  SubscriptionBase* Find(SubscriptionID sub_id) const;
+  SubscriptionBase* Find(const SubscriptionKey& key) const;
 
   Logger* GetLogger() const;
 
