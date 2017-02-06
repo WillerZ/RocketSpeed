@@ -198,8 +198,8 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
     SubscriptionParameters parameters,
     std::unique_ptr<Observer>& observer) {
   // Find a shard this subscripttion belongs to.
-  const auto shard_id = options_.sharding->GetShard(parameters.namespace_id,
-                                                    parameters.topic_name);
+  const auto shard_id = options_.sharding->GetShardWithParams(
+      parameters.namespace_id, parameters.topic_name, *intro_parameters_);
   // Choose worker for this subscription and find appropriate queue.
   const auto worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
                                                   parameters.namespace_id,

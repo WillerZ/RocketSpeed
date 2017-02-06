@@ -37,7 +37,9 @@ class FixedShardingStrategy : public ShardingStrategy {
   : copilot_(copilot)
   , shards_(shards) {}
 
-  size_t GetShard(Slice namespace_id, Slice topic_name) const override;
+  size_t GetShardWithParams(
+      Slice namespace_id, Slice topic_name,
+      const IntroParameters&) const override;
   size_t GetVersion() override { return 0; }
   HostId GetHost(size_t) override { return copilot_; }
   void MarkHostDown(const HostId&) override {}

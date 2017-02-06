@@ -25,6 +25,7 @@ namespace rocketspeed {
 
 class HostId;
 class Logger;
+class IntroParameters;
 
 /**
  * A unique ID for this RocketSpeed namespace. Each namespace can have its own
@@ -331,7 +332,18 @@ class ShardingStrategy {
    * The total number of shards can grow over time, and the Client should make
    * no assumptions about it.
    */
-  virtual size_t GetShard(Slice namespace_id, Slice topic_name) const = 0;
+  virtual size_t GetShard(Slice namespace_id, Slice topic_name) const {
+    // DEPRECATED
+    RS_ASSERT(false);
+    return 0;
+  }
+
+  virtual size_t GetShardWithParams(
+      Slice namespace_id,
+      Slice topic_name,
+      const IntroParameters& /* params */) const {
+    return GetShard(namespace_id, topic_name);
+  }
 
   /**
    * Returns a version of the strategy, which can spontaneously increase.

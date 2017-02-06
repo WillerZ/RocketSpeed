@@ -68,7 +68,8 @@ Status FixedPublisherRouter::GetPilot(HostId* host_out) const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-size_t FixedShardingStrategy::GetShard(Slice, Slice topic) const {
+size_t FixedShardingStrategy::GetShardWithParams(
+    Slice, Slice topic, const IntroParameters&) const {
   return XXH64(topic.data(), topic.size(), 0xFA3A228DC86EA1B6ULL) % shards_;
 }
 

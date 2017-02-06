@@ -43,6 +43,7 @@ DEFINE_string(host_id, "", "hostname:port of server");
 
 using rocketspeed::HostId;
 using rocketspeed::ShardingStrategy;
+using rocketspeed::IntroParameters;
 using rocketspeed::Slice;
 using rocketspeed::Status;
 
@@ -69,7 +70,9 @@ class SimpleShardingStrategy : public ShardingStrategy {
     }
   }
 
-  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
+  size_t GetShardWithParams(
+      Slice namespace_id, Slice topic_name,
+      const IntroParameters&) const override {
     if (FLAGS_round_robin_shard) {
       // Topic name's first 4 bytes will be set to shard number.
       return *reinterpret_cast<const uint32_t*>(topic_name.data()) %
@@ -96,7 +99,8 @@ Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   auto sharding = client_options.sharding;
   client_options.thread_selector =
     [sharding](size_t num_threads, Slice namespace_id, Slice topic_name) {
-      return sharding->GetShard(namespace_id, topic_name) % num_threads;
+      return sharding->GetShardWithParams(
+          namespace_id, topic_name, IntroParameters{}) % num_threads;
     };
   if (FLAGS_logging) {
     std::shared_ptr<rocketspeed::Logger> info_log;

@@ -39,7 +39,9 @@ class MockSharding : public ShardingStrategy {
     return std::to_string(shard);
   }
 
-  size_t GetShard(Slice namespace_id, Slice topic_name) const override {
+  size_t GetShardWithParams(
+      Slice namespace_id, Slice topic_name,
+      const IntroParameters&) const override {
     std::istringstream iss(namespace_id.ToString());
     size_t shard;
     iss >> shard;
