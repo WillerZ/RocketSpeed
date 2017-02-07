@@ -73,7 +73,7 @@ class MockShardingStrategy : public ShardingStrategy {
   : config_(config) {
   }
 
-  size_t GetShardWithParams(
+  size_t GetShard(
       Slice, Slice, const IntroParameters&) const override {
     return 0;
   }
@@ -978,7 +978,7 @@ class TestSharding2 : public ShardingStrategy {
   explicit TestSharding2(HostId host0, HostId host1)
   : host0_(host0), host1_(host1) {}
 
-  size_t GetShardWithParams(
+  size_t GetShard(
       Slice namespace_id, Slice topic_name,
       const IntroParameters&) const override {
     if (topic_name == "topic0") {

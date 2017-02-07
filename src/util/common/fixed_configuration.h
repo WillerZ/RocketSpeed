@@ -37,7 +37,7 @@ class FixedShardingStrategy : public ShardingStrategy {
   : copilot_(copilot)
   , shards_(shards) {}
 
-  size_t GetShardWithParams(
+  size_t GetShard(
       Slice namespace_id, Slice topic_name,
       const IntroParameters&) const override;
   size_t GetVersion() override { return 0; }

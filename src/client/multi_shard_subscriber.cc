@@ -69,7 +69,7 @@ MultiShardSubscriber::~MultiShardSubscriber() {
 
 void MultiShardSubscriber::InstallHooks(
     const HooksParameters& params, std::shared_ptr<SubscriberHooks> hooks) {
-  size_t shard_id = options_.sharding->GetShardWithParams(
+  size_t shard_id = options_.sharding->GetShard(
       params.namespace_id, params.topic_name, *intro_parameters_);
   auto it = subscribers_.find(shard_id);
   if (it != subscribers_.end()) {
@@ -80,7 +80,7 @@ void MultiShardSubscriber::InstallHooks(
 }
 
 void MultiShardSubscriber::UnInstallHooks(const HooksParameters& params) {
-  size_t shard_id = options_.sharding->GetShardWithParams(
+  size_t shard_id = options_.sharding->GetShard(
       params.namespace_id, params.topic_name, *intro_parameters_);
   auto it = subscribers_.find(shard_id);
   if (it == subscribers_.end()) {
@@ -136,7 +136,7 @@ void MultiShardSubscriber::StartSubscription(
     std::unique_ptr<Observer> observer) {
   // Determine the shard ID.
   size_t shard_id = sub_id.GetShardID();
-  RS_ASSERT(shard_id == options_.sharding->GetShardWithParams(
+  RS_ASSERT(shard_id == options_.sharding->GetShard(
         parameters.namespace_id, parameters.topic_name, *intro_parameters_));
 
   // Find or create a subscriber for this shard.

@@ -91,7 +91,7 @@ class NullPublisher : public PublisherRouter {
 
 class NullSharding : public ShardingStrategy {
  public:
-  size_t GetShardWithParams(Slice, Slice, const IntroParameters&) const override { return 0; }
+  size_t GetShard(Slice, Slice, const IntroParameters&) const override { return 0; }
   size_t GetVersion() override { return 0; }
   HostId GetHost(size_t) override { return HostId(); }
   void MarkHostDown(const HostId&) override {}

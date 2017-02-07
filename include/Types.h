@@ -338,7 +338,7 @@ class ShardingStrategy {
     return 0;
   }
 
-  virtual size_t GetShardWithParams(
+  virtual size_t GetShard(
       Slice namespace_id,
       Slice topic_name,
       const IntroParameters& /* params */) const {

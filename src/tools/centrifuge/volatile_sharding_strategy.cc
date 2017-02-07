@@ -29,10 +29,10 @@ class VolatileShardingStrategyImpl : public ShardingStrategy {
 
   ~VolatileShardingStrategyImpl() {}
 
-  size_t GetShardWithParams(
+  size_t GetShard(
       Slice namespace_id, Slice topic_name,
       const IntroParameters& params) const override {
-    return strategy_->GetShardWithParams(namespace_id, topic_name, params);
+    return strategy_->GetShard(namespace_id, topic_name, params);
   }
 
   size_t GetVersion() override {

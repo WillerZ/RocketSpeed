@@ -70,7 +70,7 @@ class SimpleShardingStrategy : public ShardingStrategy {
     }
   }
 
-  size_t GetShardWithParams(
+  size_t GetShard(
       Slice namespace_id, Slice topic_name,
       const IntroParameters&) const override {
     if (FLAGS_round_robin_shard) {
@@ -99,7 +99,7 @@ Status CreateClient(std::unique_ptr<rocketspeed::Client>& client) {
   auto sharding = client_options.sharding;
   client_options.thread_selector =
     [sharding](size_t num_threads, Slice namespace_id, Slice topic_name) {
-      return sharding->GetShardWithParams(
+      return sharding->GetShard(
           namespace_id, topic_name, IntroParameters{}) % num_threads;
     };
   if (FLAGS_logging) {
