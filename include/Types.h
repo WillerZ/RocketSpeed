@@ -327,23 +327,10 @@ class ShardingStrategy {
 
   virtual ~ShardingStrategy() = default;
 
-  /**
-   * Returns a shard ID for given namespace and topic.
-   * The total number of shards can grow over time, and the Client should make
-   * no assumptions about it.
-   */
-  virtual size_t GetShard(Slice namespace_id, Slice topic_name) const {
-    // DEPRECATED
-    RS_ASSERT(false);
-    return 0;
-  }
-
   virtual size_t GetShard(
       Slice namespace_id,
       Slice topic_name,
-      const IntroParameters& /* params */) const {
-    return GetShard(namespace_id, topic_name);
-  }
+      const IntroParameters& params) const = 0;
 
   /**
    * Returns a version of the strategy, which can spontaneously increase.

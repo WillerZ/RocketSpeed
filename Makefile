@@ -59,8 +59,7 @@ PLATFORM_CXXFLAGS += -isystem $(GTEST_DIR)
 # where we cannot address any warnings that arise.
 CFLAGS += -I. $(PLATFORM_CCFLAGS) $(OPT)
 
-WARNING_FLAGS = -Wall -Werror -Wshadow -Wno-conversion -Wno-sign-conversion -Wno-sign-compare -Wnon-virtual-dtor
-# TODO: -Woverloaded-virtual
+WARNING_FLAGS = -Wall -Werror -Wshadow -Wno-conversion -Wno-sign-conversion -Wno-sign-compare -Wnon-virtual-dtor -Woverloaded-virtual
 CXXFLAGS += $(WARNING_FLAGS) -I. $(PLATFORM_CXXFLAGS) $(OPT) -DOUTPUT_TEST_TIMES
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
