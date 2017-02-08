@@ -116,10 +116,10 @@ class ClientImpl : public Client {
       std::vector<SubscriptionParameters>* subscriptions) override;
 
   void ExportStatistics(StatisticsVisitor* visitor) const override;
+  Statistics GetStatisticsSync() const override;
+
   bool CallInSubscriptionThread(SubscriptionParameters params,
                                 std::function<void()> job) override;
-
-  Statistics GetStatisticsSync() const;
 
   /**
    * Stop the event loop processing, and wait for thread join.

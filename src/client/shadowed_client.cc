@@ -190,4 +190,8 @@ void ShadowedClient::ExportStatistics(StatisticsVisitor* visitor) const {
   client_->ExportStatistics(visitor);
 }
 
+Statistics ShadowedClient::GetStatisticsSync() const {
+  return client_->GetStatisticsSync();
+}
+
 }  // namespace rocketspeed

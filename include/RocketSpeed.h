@@ -24,11 +24,12 @@
 namespace rocketspeed {
 
 class BaseEnv;
+class ClientHooks;
 class DataLossInfo;
 class Flow;
 class Logger;
+class Statistics;
 class WakeLock;
-class ClientHooks;
 
 /** Notifies about the status of a message published to the RocketSpeed. */
 using PublishCallback = std::function<void(std::unique_ptr<ResultStatus>)>;
@@ -519,6 +520,9 @@ class Client {
    * @param visitor Used to visit all statistics maintained by the client.
    */
   virtual void ExportStatistics(StatisticsVisitor* visitor) const = 0;
+
+  /** Returns client statistics. */
+  virtual Statistics GetStatisticsSync() const = 0;
 
   /**
    * Calls the function on the thread dedicated for the subscription.
