@@ -25,7 +25,7 @@ namespace rocketspeed {
 
 class HostId;
 class Logger;
-struct IntroParameters;
+class IntroParameters;
 
 /**
  * A unique ID for this RocketSpeed namespace. Each namespace can have its own
