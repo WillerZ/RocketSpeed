@@ -33,7 +33,13 @@ using testing_hash_type = auto_shrinkable_hash<
     std::unordered_map<uint64_t, std::string>,
     hash_default_shrink_policy<Threshold>>;
 
-auto defaultHashRemover = [](auto&& c) { c.erase(begin(c)); };
+auto defaultHashRemover = [](auto&& c) {
+  if (c.empty()) {
+    return 0;
+  }
+  c.erase(begin(c));
+  return 1;
+};
 
 template <class Container, class Remover, class Checker>
 void testHashImpl(Container&& c, Remover remover, Checker checker) {
@@ -54,10 +60,11 @@ void testHashImpl(Container&& c, Remover remover, Checker checker) {
   float minLoadFactor = c.load_factor();
   float maxLoadFactor = c.load_factor();
   while (!c.empty() && c.size() > kRemain) {
-    auto oldSize = c.size();
-    remover(std::forward<decltype(c)>(c));
-    if (oldSize == c.size()) {
-      FAIL() << "no item was removed";
+    size_t oldSize = c.size();
+    size_t removed = remover(std::forward<decltype(c)>(c));
+    if (c.size() != (oldSize - removed)) {
+      FAIL() << "Mismatch: rm:" << removed << ", oldSz:"
+        << oldSize << ", newSz:" << c.size();
       break;
     }
     minLoadFactor = std::min(minLoadFactor, c.load_factor());
@@ -120,7 +127,14 @@ using testing_vector_type = auto_shrinkable_vector<
     std::vector<uint64_t>,
     vector_default_shrink_policy<Threshold>>;
 
-auto defaultVectorRemover = [](auto&& c) { c.pop_back(); };
+// Return the number of elements removed
+auto defaultVectorRemover = [](auto&& c) {
+  if (c.empty()) {
+    return 0;
+  }
+  c.pop_back();
+  return 1;
+};
 
 template <class Container, class Remover, class Checker>
 void testVectorImpl(Container&& c, Remover remover, Checker checker) {
@@ -133,10 +147,11 @@ void testVectorImpl(Container&& c, Remover remover, Checker checker) {
   const auto maxCapacity = c.capacity();
 
   while (!c.empty() && c.size() > kRemain) {
-    auto oldSize = c.size();
-    remover(std::forward<decltype(c)>(c));
-    if (oldSize == c.size()) {
-      FAIL() << "no item was removed";
+    size_t oldSize = c.size();
+    size_t removed = remover(std::forward<decltype(c)>(c));
+    if (c.size() != (oldSize - removed)) {
+      FAIL() << "Mismatch: rm:" << removed << ", oldSz:"
+        << oldSize << ", newSz:" << c.size();
       break;
     }
   }
@@ -190,24 +205,46 @@ TEST(AutoShrinkableTest, InvalidHashThreshold) {
 
 TEST(AutoShrinkableTest, ShouldWorkAutoShrinkableHashRemove) {
   // Removing one item; assume that container is not empty.
-  testHashShrinkRemove([](auto&& cc) { cc.erase(begin(cc)); });
-  testHashShrinkRemove([](auto&& cc) { cc.erase(begin(cc), ++begin(cc)); });
-  testHashShrinkRemove(
-      [](auto&& cc) { cc.erase(cc.find(begin(cc)->first)->first); });
+  testHashShrinkRemove([](auto&& cc) {
+    if (cc.empty()) {
+      return 0;
+    }
+    cc.erase(begin(cc));
+    return 1;
+  });
+  testHashShrinkRemove([](auto&& cc) {
+    if (cc.empty()) {
+      return 0;
+    }
+    cc.erase(begin(cc), ++begin(cc));
+    return 1;
+  });
+  testHashShrinkRemove([](auto&& cc) {
+    if (cc.empty()) {
+      return 0;
+    }
+    cc.erase(cc.find(begin(cc)->first)->first);
+    return 1;
+  });
 
   // Removing at most 4 items at a time.
   testHashShrinkRemove([](auto&& cc) {
     auto endIt = begin(cc);
-    const size_t distance = std::min((size_t)4, cc.size());
+    const size_t distance = std::min(size_t(4), cc.size());
     std::advance(endIt, distance);
     const size_t oldCount = cc.size();
     cc.erase(begin(cc), endIt);
-    ASSERT_EQ(oldCount, cc.size() + distance);
+    EXPECT_EQ(oldCount, cc.size() + distance);
+    return distance;
   });
 }
 
 TEST(AutoShrinkableTest, ShouldWorkAutoShrinkableHashClear) {
-  testHashShrinkRemove([](auto&& cc) { cc.clear(); });
+  testHashShrinkRemove([](auto&& cc) {
+    size_t removed = cc.size();
+    cc.clear();
+    return removed;
+  });
 }
 
 TEST(AutoShrinkableTest, NonDefaultThresholdAutoShrinkableHash) {
@@ -235,18 +272,40 @@ TEST(AutoShrinkableTest, ShouldWorkAutoShrinkableVectorPopBack) {
 }
 
 TEST(AutoShrinkableTest, ShouldWorkAutoShrinkableVectorErase) {
-  testVectorShrinkRemove([](auto&& cc) { cc.erase(end(cc) - 1); });
-  testVectorShrinkRemove([](auto&& cc) { cc.erase(end(cc) - 1, end(cc)); });
+  testVectorShrinkRemove([](auto&& cc) {
+    if (cc.empty()) {
+      return 0;
+    }
+    cc.erase(end(cc) - 1);
+    return 1;
+  });
+  testVectorShrinkRemove([](auto&& cc) {
+    if (cc.empty()) {
+      return 0;
+    }
+    cc.erase(end(cc) - 1, end(cc));
+    return 1;
+  });
 
   // Removing at most 4 items at a time.
   testVectorShrinkRemove([](auto&& cc) {
-    cc.erase(end(cc) - std::min((size_t)4, cc.size()), end(cc));
+    size_t removed = std::min(size_t(4), cc.size());
+    cc.erase(end(cc) - std::min(size_t(4), cc.size()), end(cc));
+    return removed;
   });
 }
 
 TEST(AutoShrinkableTest, ShouldWorkAutoShrinkableVectorResizeClear) {
-  testVectorShrinkRemove([](auto&& cc) { cc.resize(cc.size() / 4); });
-  testVectorShrinkRemove([](auto&& cc) { cc.clear(); });
+  testVectorShrinkRemove([](auto&& cc) {
+    size_t removed = cc.size() - cc.size() / 4;
+    cc.resize(cc.size() / 4);
+    return removed;
+  });
+  testVectorShrinkRemove([](auto&& cc) {
+    size_t removed = cc.size();
+    cc.clear();
+    return removed;
+  });
 }
 
 TEST(AutoShrinkableTest, NonDefaultThresholdAutoShrinkableVector) {

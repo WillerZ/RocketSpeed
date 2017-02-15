@@ -71,7 +71,8 @@ struct vector_default_shrink_policy {
     } 
     Container tmp;  
     tmp.reserve(container.size() * 2);  
-    tmp.swap(container);  
+    tmp.insert(tmp.begin(), container.begin(), container.end());
+    container.swap(tmp);  
   } 
 };  
   
