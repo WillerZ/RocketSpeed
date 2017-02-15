@@ -639,7 +639,8 @@ using IntroProperties =
     std::unordered_map<IntroPropertyKey, IntroPropertyValue>;
 
 /// Introduction parameters of a stream
-struct IntroParameters {
+class IntroParameters {
+ public:
   explicit IntroParameters(TenantID _tenant_id,
                            IntroProperties _stream_properties,
                            IntroProperties _client_properties)
