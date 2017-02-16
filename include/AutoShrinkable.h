@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <glog/logging.h>
 #include <ratio>
 
 #if defined(__GNUC__) && !defined(__clang__)
