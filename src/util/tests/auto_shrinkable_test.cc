@@ -1,4 +1,4 @@
-//  Copyright (c) 2017, Facebook, Inc.  All rights reserved.
+//  Copyright (c) 2018, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
@@ -81,13 +81,13 @@ void testHashNoShrink(Container&& container) {
   testHashImpl(
       std::forward<Container>(container),
       defaultHashRemover,
-      [](auto&& c,
+      [](auto&& cc,
          const auto& maxNBuckets,
          const auto& minLF,
          const auto& maxLF) {
         // No shrink
-        ASSERT_EQ(maxNBuckets, c.bucket_count());
-        ASSERT_EQ(float(kRemain) / float(c.bucket_count()), c.load_factor());
+        ASSERT_EQ(maxNBuckets, cc.bucket_count());
+        ASSERT_EQ(float(kRemain) / float(cc.bucket_count()), cc.load_factor());
         ASSERT_EQ(float(kRemain) / maxNBuckets, minLF);
         ASSERT_EQ(float(kInsert) / maxNBuckets, maxLF);
       });
@@ -100,24 +100,24 @@ void testHashShrinkRemove(Remover remover = defaultHashRemover) {
   testHashImpl(
       testing_hash_type<Threshold>{},
       remover,
-      [](auto&& c,
+      [](auto&& cnt,
          const auto& maxNBuckets,
          const auto& minLF,
          const auto& maxLF) {
         // Shrink must have been occurred.
-        ASSERT_GT(maxNBuckets, c.bucket_count());
+        ASSERT_GT(maxNBuckets, cnt.bucket_count());
         // Cleared or erased all items. No more check needed.
-        if (c.size() == 0) {
+        if (cnt.size() == 0) {
           return;
         }
         // A loose load factor check: the final load factor (after removals)
         // with shrinks must be greater than the load factor without shrink.
-        ASSERT_LE(float(kRemain) / maxNBuckets, c.load_factor());
+        ASSERT_LE(float(kRemain) / maxNBuckets, cnt.load_factor());
         // Tighter lower bound check with 10% tolerance
-        const auto lowerBound = c.max_load_factor() * c.threshold();
+        const auto lowerBound = cnt.max_load_factor() * cnt.threshold();
         ASSERT_NEAR(lowerBound, minLF, lowerBound * 0.1f);
         // Load factor should not exceed the maximum.
-        ASSERT_GE(c.max_load_factor(), maxLF);
+        ASSERT_GE(cnt.max_load_factor(), maxLF);
       });
 }
 
@@ -137,27 +137,27 @@ auto defaultVectorRemover = [](auto&& c) {
 };
 
 template <class Container, class Remover, class Checker>
-void testVectorImpl(Container&& c, Remover remover, Checker checker) {
+void testVectorImpl(Container&& cont, Remover remover, Checker checker) {
   std::default_random_engine randEngine{std::random_device{}()};
   std::uniform_int_distribution<uint64_t> dist;
   for (auto i = 0; i < kInsert; ++i) {
-    c.push_back(dist(randEngine));
+    cont.push_back(dist(randEngine));
   }
-  EXPECT_EQ(kInsert, c.size());
-  const auto maxCapacity = c.capacity();
+  EXPECT_EQ(kInsert, cont.size());
+  const auto maxCapacity = cont.capacity();
 
-  while (!c.empty() && c.size() > kRemain) {
-    size_t oldSize = c.size();
-    size_t removed = remover(std::forward<decltype(c)>(c));
-    if (c.size() != (oldSize - removed)) {
-      FAIL() << "Mismatch: rm:" << removed << ", oldSz:"
-        << oldSize << ", newSz:" << c.size();
+  while (!cont.empty() && cont.size() > kRemain) {
+    size_t oldSize = cont.size();
+    size_t rmed = remover(std::forward<decltype(cont)>(cont));
+    if (cont.size() != (oldSize - rmed)) {
+      FAIL() << "Mismatch: rm:" << rmed << ", oldSz:"
+        << oldSize << ", newSz:" << cont.size();
       break;
     }
   }
-  EXPECT_GE(kRemain, c.size());
+  EXPECT_GE(kRemain, cont.size());
 
-  checker(c, maxCapacity);
+  checker(cont, maxCapacity);
 }
 
 template <class Container>
@@ -241,9 +241,9 @@ TEST(AutoShrinkableTest, ShouldWorkAutoShrinkableHashRemove) {
 
 TEST(AutoShrinkableTest, ShouldWorkAutoShrinkableHashClear) {
   testHashShrinkRemove([](auto&& cc) {
-    size_t removed = cc.size();
+    size_t rmed = cc.size();
     cc.clear();
-    return removed;
+    return rmed;
   });
 }
 
