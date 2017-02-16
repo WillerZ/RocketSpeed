@@ -44,7 +44,7 @@
 // to call every public method on the class: not just to make sure
 // they work, but to make sure they even compile.
 
-#include <sparsehash/internal/sparseconfig.h>
+#include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <config.h>
 #include <math.h>
 #include <stddef.h>   // for size_t
@@ -58,8 +58,8 @@
 #include <sstream>
 #include <typeinfo>   // for class typeinfo (returned by typeid)
 #include <vector>
-#include <sparsehash/type_traits.h>
-#include <sparsehash/sparsetable>
+#include "external/sparsehash/sparsehash/type_traits.h"
+#include "external/sparsehash/sparsehash/sparsetable"
 #include "hash_test_interface.h"
 #include "testutil.h"
 namespace testing = GOOGLE_NAMESPACE::testing;

@@ -34,15 +34,15 @@
 // #include <config.h>; it's meant to emulate what a 'regular
 // install' of sparsehash would be able to see.
 
-#include <sparsehash/internal/sparseconfig.h>
+#include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <config.h>
 #include <stdio.h>
-#include <sparsehash/sparse_hash_set>
-#include <sparsehash/sparse_hash_map>
-#include <sparsehash/dense_hash_set>
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/template_util.h>
-#include <sparsehash/type_traits.h>
+#include "external/sparsehash/sparsehash/sparse_hash_set"
+#include "external/sparsehash/sparsehash/sparse_hash_map"
+#include "external/sparsehash/sparsehash/dense_hash_set"
+#include "external/sparsehash/sparsehash/dense_hash_map"
+#include "external/sparsehash/sparsehash/template_util.h"
+#include "external/sparsehash/sparsehash/type_traits.h"
 
 #define CHECK_IFF(cond, when) do {                                      \
   if (when) {                                                           \

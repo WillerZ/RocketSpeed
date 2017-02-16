@@ -29,9 +29,9 @@
 
 // ----
 
-#include <sparsehash/internal/sparseconfig.h>
+#include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <config.h>
-#include <sparsehash/type_traits.h>
+#include "external/sparsehash/sparsehash/type_traits.h"
 
 #include <stdlib.h>   // for exit()
 #include <stdio.h>

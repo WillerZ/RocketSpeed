@@ -54,7 +54,7 @@
 //
 // See PERFORMANCE for the output of one example run.
 
-#include <sparsehash/internal/sparseconfig.h>
+#include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <config.h>
 #ifdef HAVE_INTTYPES_H
 # include <inttypes.h>
@@ -82,9 +82,9 @@ extern "C" {
 #include HASH_MAP_H
 #include <algorithm>
 #include <vector>
-#include <sparsehash/type_traits.h>
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/sparse_hash_map>
+#include "external/sparsehash/sparsehash/type_traits.h"
+#include "external/sparsehash/sparsehash/dense_hash_map"
+#include "external/sparsehash/sparsehash/sparse_hash_map"
 
 using std::map;
 using std::swap;

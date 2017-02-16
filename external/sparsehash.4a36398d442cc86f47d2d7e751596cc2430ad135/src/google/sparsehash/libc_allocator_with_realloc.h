@@ -29,6 +29,6 @@
 
 // Header files have moved from the google directory to the sparsehash
 // directory.  This forwarding file is provided only for backwards
-// compatibility.  Use <sparsehash/*> in all new code.
+// compatibility.  Use <external/sparsehash/sparsehash/*> in all new code.
 
-#include <sparsehash/internal/libc_allocator_with_realloc.h>
+#include "external/sparsehash/sparsehash/internal/libc_allocator_with_realloc.h"
