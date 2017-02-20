@@ -14,7 +14,7 @@ namespace rocketspeed {
  */
 struct TopicUUID {
  public:
-  TopicUUID() : routing_hash_(0) {}
+  TopicUUID() {}
 
   /**
    * Construct a TopicUUID from a namespace and topic.
@@ -47,6 +47,8 @@ struct TopicUUID {
    */
   void GetTopicID(Slice* namespace_id, Slice* topic_name) const;
 
+  void GetTopicID(std::string* namespace_id, std::string* topic_name) const;
+
   /**
    * Converts to string for logging.
    */
@@ -76,7 +78,6 @@ struct TopicUUID {
 
  private:
   std::string uuid_;
-  size_t routing_hash_;
 };
 
 }  // namespace rocketspeed

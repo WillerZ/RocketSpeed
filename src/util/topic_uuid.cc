@@ -11,18 +11,30 @@ namespace rocketspeed {
 
 TopicUUID::TopicUUID(Slice namespace_id, Slice topic) {
   PutTopicID(&uuid_, namespace_id, topic);
-  routing_hash_ = RoutingHash(namespace_id, topic);
 }
 
 size_t TopicUUID::Hash() const {
-  return routing_hash_;
+  return RoutingHash();
 }
 
 size_t TopicUUID::RoutingHash() const {
-  return routing_hash_;
+  Slice namespace_id;
+  Slice topic_name;
+  GetTopicID(&namespace_id, &topic_name);
+  return RoutingHash(namespace_id, topic_name);
 }
 
 void TopicUUID::GetTopicID(Slice* namespace_id, Slice* topic_name) const {
+  RS_ASSERT(namespace_id);
+  RS_ASSERT(topic_name);
+  Slice in(uuid_);
+  if (!rocketspeed::GetTopicID(&in, namespace_id, topic_name)) {
+    RS_ASSERT(false);
+  }
+}
+
+void TopicUUID::GetTopicID(std::string* namespace_id,
+                           std::string* topic_name) const {
   RS_ASSERT(namespace_id);
   RS_ASSERT(topic_name);
   Slice in(uuid_);
