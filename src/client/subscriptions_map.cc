@@ -425,10 +425,6 @@ bool SubscriptionsMap::ProcessDeliver(
     Flow* flow, const MessageDeliver& message) {
   auto sub_id = message.GetSubID();
 
-  // Sanity check that the message did not refer to a subscription that has
-  // not been synced to the server.
-  RS_ASSERT(pending_subscriptions_->Find(sub_id)
-    == pending_subscriptions_->End());
   // Find the subscription.
   SubscriptionBase* state = nullptr;
   auto it = synced_subscriptions_.Find(sub_id);

@@ -1276,6 +1276,8 @@ class MockMessageReceivedImpl : public MessageReceived {
 
   Slice GetContents() const override { return data_->GetPayload(); }
 
+  Slice GetDataSource() const override { return data_->GetDataSource(); }
+
  private:
   std::unique_ptr<MessageDeliverData> data_;
 };

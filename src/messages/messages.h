@@ -64,9 +64,10 @@ enum class MessageType : uint8_t {
   mBacklogQuery = 0x11,    // MessageBacklogQuery
   mBacklogFill = 0x12,     // MessageBacklogFill
   mIntroduction = 0x13,    // MessageIntroduction
+  mSubAck = 0x14,          // MessageSubAck
 
   min = mPing,
-  max = mIntroduction,
+  max = mSubAck,
 };
 
 inline bool ValidateEnum(MessageType e) {
@@ -905,6 +906,32 @@ class MessageDeliverData final : public MessageDeliver {
   MsgId message_id_;
   /** Payload delivered with the message. */
   std::string payload_;
+};
+
+/** A message delivered on particular subscription. */
+class MessageSubAck : public Message {
+ public:
+  MessageSubAck(TenantID tenant_id,
+                NamespaceID namespace_id,
+                Topic topic,
+                CursorVector cursors,
+                SubscriptionID sub_id)
+    : Message(MessageType::mSubAck, tenant_id),
+      namespace_id_(std::move(namespace_id)),
+      topic_(std::move(topic)),
+      cursors_(std::move(cursors)),
+      sub_id_(sub_id) {}
+
+  MessageSubAck() {}
+
+  virtual Status Serialize(std::string* out) const override;
+  Status DeSerialize(Slice* in) override;
+
+ private:
+  NamespaceID namespace_id_;
+  Topic topic_;
+  CursorVector cursors_;
+  SubscriptionID sub_id_;
 };
 
 /**

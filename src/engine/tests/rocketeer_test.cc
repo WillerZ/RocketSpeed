@@ -98,10 +98,11 @@ struct SubscribeUnsubscribe : public Rocketeer {
   port::Semaphore terminate_sem_;
 
   void HandleNewSubscription(
-      Flow*, InboundID inbound_id, SubscriptionParameters params) override {
+      Flow* flow, InboundID inbound_id, SubscriptionParameters params) override {
     ASSERT_TRUE(!is_set_);
     is_set_ = true;
     inbound_id_ = inbound_id;
+    AckSubscribe(flow, inbound_id, params);
   }
 
   void HandleUnsubscribe(
@@ -252,8 +253,9 @@ struct TopOfStack : public Rocketeer {
   InboundID inbound_id_;
 
   void HandleNewSubscription(
-      Flow*, InboundID inbound_id, SubscriptionParameters params) override {
+      Flow* flow, InboundID inbound_id, SubscriptionParameters params) override {
     inbound_id_ = inbound_id;
+    AckSubscribe(flow, inbound_id, params);
     Deliver(nullptr, inbound_id, params.namespace_id, params.topic_name,
         {"", deliver_msg_seqno_}, deliver_msg_);
     Advance(nullptr, inbound_id, params.namespace_id, params.topic_name,
@@ -469,9 +471,10 @@ struct DisconnectHandler : public Rocketeer {
   port::Semaphore disconnect_sem_;
 
   void HandleNewSubscription(
-      Flow*, InboundID inbound_id, SubscriptionParameters) override {
+      Flow* flow, InboundID inbound_id, SubscriptionParameters params) override {
     stream_id_ = inbound_id.stream_id;
     subscribe_sem_.Post();
+    AckSubscribe(flow, inbound_id, params);
   }
 
   void HandleUnsubscribe(
@@ -520,12 +523,13 @@ struct ConnectHandler : public Rocketeer {
   port::Semaphore subscribe_sem_;
   port::Semaphore connect_sem_;
 
-  void HandleNewSubscription(Flow*,
+  void HandleNewSubscription(Flow* flow,
                              InboundID inbound_id,
-                             SubscriptionParameters) override {
+                             SubscriptionParameters params) override {
     // stream_id_ should have been set by introduction message
     ASSERT_EQ(stream_id_, inbound_id.stream_id);
     subscribe_sem_.Post();
+    AckSubscribe(flow, inbound_id, params);
   }
 
   void HandleUnsubscribe(Flow*,
@@ -571,12 +575,13 @@ struct AlternatingDataSource : public Rocketeer {
   port::Semaphore terminate_sem_;
 
   void HandleNewSubscription(
-      Flow*, InboundID inbound_id, SubscriptionParameters params) override {
+      Flow* flow, InboundID inbound_id, SubscriptionParameters params) override {
     ASSERT_EQ(params.cursors.size(), 1);
     ASSERT_EQ(params.cursors[0].source, "A");
     auto ns = params.namespace_id;
     auto topic = params.topic_name;
     auto seqno = params.cursors[0].seqno;
+    AckSubscribe(nullptr, inbound_id, params);
     Deliver(nullptr, inbound_id, ns, topic, Cursor("A", seqno+0), "1");
     Deliver(nullptr, inbound_id, ns, topic, Cursor("B", seqno+1), "2");
     Deliver(nullptr, inbound_id, ns, topic, Cursor("A", seqno+2), "3");
@@ -612,10 +617,10 @@ TEST_F(RocketeerTest, AlternatingDataSource) {
 
   auto client = MockClient({
       {MessageType::mDeliverData,
-       [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
-         deliver_sem.Post();
-       }},
-  });
+          [&](Flow* flow, std::unique_ptr<Message> msg, StreamID stream_id) {
+          deliver_sem.Post();
+        }}
+    });
   auto socket = client.msg_loop->CreateOutboundStream(server_addr, 0);
 
   // Subscribe.

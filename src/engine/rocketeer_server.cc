@@ -60,6 +60,9 @@ class RocketeerServerImpl final : public RocketeerServer {
                std::string payload,
                MsgId msg_id) override;
 
+  bool AckSubscribe(InboundID inbound_id,
+                    SubscriptionParameters params) override;
+
   bool DeliverBatch(StreamID stream_id,
                     int worker_id,
                     std::vector<RocketeerMessage> messages) override;
@@ -107,7 +110,7 @@ class RocketeerServerImpl final : public RocketeerServer {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-class CommunicationRocketeer final : public Rocketeer {
+class CommunicationRocketeer : public Rocketeer {
  public:
   explicit CommunicationRocketeer(Rocketeer* rocketeer);
 
@@ -133,6 +136,10 @@ class CommunicationRocketeer final : public Rocketeer {
   void HandleConnect(Flow* flow,
                      StreamID stream_id,
                      IntroParameters params) final override;
+
+  void AckSubscribe(Flow* flow,
+                    InboundID inbound_id,
+                    SubscriptionParameters params) final override;
 
   void Deliver(Flow* flow,
                InboundID inbound_id,
@@ -280,6 +287,23 @@ void CommunicationRocketeer::HandleConnect(Flow* flow,
                                            StreamID stream_id,
                                            IntroParameters params) {
   above_rocketeer_->HandleConnect(flow, stream_id, std::move(params));
+}
+
+void CommunicationRocketeer::AckSubscribe(Flow* flow,
+                                          InboundID inbound_id,
+                                          SubscriptionParameters params) {
+  thread_check_.Check();
+
+  auto* sub = Find(inbound_id);
+  if (!sub) {
+    return;
+  }
+  auto tenant_id = GetTenant(inbound_id.stream_id);
+  auto ack = std::make_unique<MessageSubAck>(
+    tenant_id, std::move(params.namespace_id),
+    std::move(params.topic_name),
+    std::move(params.cursors), inbound_id.GetSubID());
+  SendResponse(flow, inbound_id.stream_id, std::move(ack));
 }
 
 void CommunicationRocketeer::Deliver(Flow* flow,
@@ -741,6 +765,19 @@ Status RocketeerServerImpl::Start() {
 
 void RocketeerServerImpl::Stop() {
   msg_loop_thread_.reset();
+}
+
+bool RocketeerServerImpl::AckSubscribe(InboundID inbound_id,
+                                       SubscriptionParameters params) {
+  auto worker_id = GetWorkerID(inbound_id);
+  auto command = [this, worker_id, inbound_id,
+                  params = std::move(params)] (Flow* flow) mutable {
+    rocketeers_[worker_id]->AckSubscribe(flow, std::move(inbound_id),
+                                         std::move(params));
+  };
+  return msg_loop_
+      ->SendCommand(MakeExecuteWithFlowCommand(std::move(command)), worker_id)
+      .ok();
 }
 
 bool RocketeerServerImpl::Deliver(InboundID inbound_id,

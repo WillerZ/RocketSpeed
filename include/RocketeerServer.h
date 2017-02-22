@@ -122,6 +122,14 @@ class RocketeerServer {
   virtual void Stop() = 0;
 
   /**
+   * A thread-safe version of Rocketeer::AckSubscribe.
+   *
+   * @return true iff operation was successfully scheduled.
+   */
+  virtual bool AckSubscribe(InboundID inbound_id,
+                            SubscriptionParameters params) = 0;
+
+  /**
    * A thread-safe version of Rocketeer::Deliver.
    *
    * @return true iff operation was successfully scheduled.

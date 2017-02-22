@@ -61,6 +61,10 @@ void StreamReceiver::operator()(StreamReceiveArg<Message> arg) {
       ReceiveDeliverGap(
           PrepareArguments<MessageDeliverGap>(flow, stream_id, message));
       return;
+    case MessageType::mSubAck:
+      ReceiveSubAck(
+          PrepareArguments<MessageSubAck>(flow, stream_id, message));
+      return;
     case MessageType::mFindTailSeqno:
       ReceiveFindTailSeqno(
           PrepareArguments<MessageFindTailSeqno>(flow, stream_id, message));

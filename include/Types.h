@@ -547,6 +547,9 @@ class MessageReceived {
   /** The sequence number of this message. */
   virtual SequenceNumber GetSequenceNumber() const = 0;
 
+  /** The data source of this message. */
+  virtual Slice GetDataSource() const = 0;
+
   /** The contents of the message. */
   virtual Slice GetContents() const = 0;
 

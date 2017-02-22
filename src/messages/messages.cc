@@ -44,6 +44,7 @@ const char* const kMessageTypeNames[size_t(MessageType::max) + 1] = {
     "backlog_query",
     "backlog_fill",
     "introduction",
+    "deliver_sub_ack",
 };
 
 MessageType Message::ReadMessageType(Slice slice) {
@@ -216,6 +217,15 @@ Message::CreateNewInstance(Slice* in) {
 
     case MessageType::mIntroduction: {
       std::unique_ptr<MessageIntroduction> msg(new MessageIntroduction());
+      st = msg->DeSerialize(in);
+      if (st.ok()) {
+        return std::unique_ptr<Message>(msg.release());
+      }
+      break;
+    }
+
+    case MessageType::mSubAck: {
+      std::unique_ptr<MessageSubAck> msg(new MessageSubAck());
       st = msg->DeSerialize(in);
       if (st.ok()) {
         return std::unique_ptr<Message>(msg.release());
@@ -756,6 +766,49 @@ Status MessageDeliverGap::DeSerialize(Slice* in) {
   if (!GetLengthPrefixedSlice(in, &source_)) {
     // OK, for backwards compat.
     // TODO(pja): Make this an error once required.
+  }
+  return Status::OK();
+}
+
+Status MessageSubAck::Serialize(std::string* out) const {
+  Message::Serialize(out);
+  PutTopicID(out, namespace_id_, topic_);
+  EncodeSubscriptionID(out, sub_id_);
+  size_t num_cursors = cursors_.size();
+  PutVarint64(out, num_cursors);
+  for (const auto& cursor : cursors_) {
+    PutLengthPrefixedSlice(out, cursor.source);
+  }
+  for (const auto& cursor : cursors_) {
+    PutVarint64(out, cursor.seqno);
+  }
+  return Status::OK();
+}
+
+Status MessageSubAck::DeSerialize(Slice* in) {
+  Status st = Message::DeSerialize(in);
+  if (!st.ok()) {
+    return st;
+  }
+  if (!GetTopicID(in, &namespace_id_, &topic_)) {
+    return Status::InvalidArgument("Bad NamespaceID and/or TopicName");
+  }
+  if (!DecodeSubscriptionID(in, &sub_id_)) {
+    return Status::InvalidArgument("Bad SubscriptionID");
+  }
+  uint64_t num_cursors;
+  if (GetVarint64(in, &num_cursors)) {
+    cursors_.resize(num_cursors);
+    for (uint64_t i = 0; i < num_cursors; ++i) {
+      if (!GetLengthPrefixedSlice(in, &cursors_[i].source)) {
+        return Status::InvalidArgument("Bad cursor source");
+      }
+    }
+    for (uint64_t i = 0; i < num_cursors; ++i) {
+      if (!GetVarint64(in, &cursors_[i].seqno)) {
+        return Status::InvalidArgument("Bad cursor seqno");
+      }
+    }
   }
   return Status::OK();
 }

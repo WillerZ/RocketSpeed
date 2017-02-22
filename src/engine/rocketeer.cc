@@ -218,6 +218,13 @@ void Rocketeer::HandleConnect(Flow* flow,
   flow->Write(metadata_sink_.get(), msg);
 }
 
+void Rocketeer::AckSubscribe(Flow* flow,
+                             InboundID inbound_id,
+                             SubscriptionParameters params) {
+  GetBelowRocketeer()->AckSubscribe(flow, inbound_id,
+                                    std::move(params));
+}
+
 void Rocketeer::Deliver(Flow* flow,
                         InboundID inbound_id,
                         NamespaceID namespace_id,

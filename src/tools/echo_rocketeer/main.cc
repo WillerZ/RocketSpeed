@@ -57,6 +57,7 @@ class EchoRocketeer : public Rocketeer {
     task.seqno = params.cursors[0].seqno + 1;
     std::lock_guard<std::mutex> lock(task_lock_);
     tasks_.emplace(id, std::move(task));
+    server_->AckSubscribe(id, params);
   }
 
   void HandleUnsubscribe(

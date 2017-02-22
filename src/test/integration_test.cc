@@ -1078,6 +1078,10 @@ class MessageReceivedMock : public MessageReceived {
 
   Slice GetContents() const override { return payload_; }
 
+  Slice GetDataSource() const override {
+    return Slice("source");
+  }
+
  private:
   SubscriptionHandle sub_id_;
   SequenceNumber seqno_;

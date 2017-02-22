@@ -107,7 +107,7 @@ class Rocketeer {
    * This method is guaranteed to always be called on the same thread.
    * Implementations should provide either TryHandleNewSubscription or
    * HandleNewSubscription, but not both. If both are provided, this version
-   * is ignored.
+   * is ignored. Implementations should call AckSubscribe.
    *
    * @param inbound_id Globally unique ID of this subscription.
    * @param params Parameters of the subscription provided by the subscriber.
@@ -122,7 +122,7 @@ class Rocketeer {
    * This method is guaranteed to always be called on the same thread.
    * Implementations should provide either TryHandleNewSubscription or
    * HandleNewSubscription, but not both. If both are provided, this version
-   * is preferred.
+   * is preferred. Implementations should call AckSubscribe.
    *
    * @param flow Flow control handle for exerting back-pressure.
    * @param inbound_id Globally unique ID of this subscription.
@@ -275,6 +275,16 @@ class Rocketeer {
    */
   virtual BackPressure TryHandleConnect(StreamID stream_id,
                                         IntroParameters params);
+
+  /**
+   * Send a message acknowledging a subscription. This must be called
+   * after handling a new subscription. Without this call, clients
+   * cannot reliably move sequence numbers forward. On disconnect,
+   * clients would resubscribe from their initial seq no.
+   */
+  virtual void AckSubscribe(Flow* flow,
+                            InboundID inbound_id,
+                            SubscriptionParameters params);
 
   /**
    * Sends a message on given subscription.

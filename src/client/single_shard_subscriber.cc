@@ -50,6 +50,10 @@ class MessageReceivedImpl : public MessageReceived {
     return data_->GetSequenceNumber();
   }
 
+  Slice GetDataSource() const override {
+    return data_->GetDataSource();
+  }
+
   Slice GetContents() const override { return data_->GetPayload(); }
 
  private:
@@ -118,12 +122,11 @@ Subscriber::Subscriber(const ClientOptions& options,
                        std::shared_ptr<size_t> num_active_subscriptions,
                        std::shared_ptr<const IntroParameters> intro_parameters)
 : options_(options)
-, event_loop_(event_loop)
 , stats_(std::move(stats))
-, subscriptions_map_(event_loop_,
+, subscriptions_map_(event_loop,
                      std::bind(&Subscriber::SendMessage, this, _1, _2),
                      &UserDataCleanup)
-, stream_supervisor_(event_loop_,
+, stream_supervisor_(event_loop,
                      this,
                      std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
                      options.backoff_strategy,

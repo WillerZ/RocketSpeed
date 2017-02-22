@@ -25,6 +25,7 @@ class MessageSubscribe;
 class MessageUnsubscribe;
 class MessageDeliver;
 class MessageDeliverGap;
+class MessageSubAck;
 class MessageDeliverData;
 class MessageFindTailSeqno;
 class MessageTailSeqno;
@@ -116,6 +117,7 @@ class StreamReceiver : public NonMovable, public NonCopyable {
   virtual void ReceiveBacklogQuery(StreamReceiveArg<MessageBacklogQuery>) {}
   virtual void ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill>) {}
   virtual void ReceiveIntroduction(StreamReceiveArg<MessageIntroduction>) {}
+  virtual void ReceiveSubAck(StreamReceiveArg<MessageSubAck>) {}
 
  private:
   template <typename T, typename M>

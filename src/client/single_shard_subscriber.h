@@ -154,8 +154,6 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
 
   /// Options, whose lifetime must be managed by the owning client.
   const ClientOptions& options_;
-  /// An event loop object this subscriber runs on.
-  EventLoop* const event_loop_;
   /// A shared statistics.
   std::shared_ptr<SubscriberStats> stats_;
 
