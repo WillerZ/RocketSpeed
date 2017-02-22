@@ -59,7 +59,9 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
 
   void HasMessageSince(HasMessageSinceParams params) override;
 
-  void TerminateSubscription(SubscriptionID sub_id) override;
+  void TerminateSubscription(NamespaceID namespace_id,
+                             Topic topic,
+                             SubscriptionID sub_id) override;
 
   bool Empty() const override { return subscribers_.empty(); }
 
@@ -105,10 +107,10 @@ class alignas(CACHE_LINE_SIZE) MultiShardSubscriber : public SubscriberIf {
   std::unique_ptr<EventCallback> maintenance_timer_;
 
   /**
-   * Returns a subscriber for provided subscription ID or null if cannot
+   * Returns a subscriber for provided shard ID or null if cannot
    * recognise the ID.
    */
-  SubscriberIf* GetSubscriberForSubscription(SubscriptionID sub_id);
+  SubscriberIf* GetSubscriberForShard(ShardID shard_id);
 
   /** Maximum number of active subscription across the shards in this thread. */
   const size_t max_active_subscriptions_;

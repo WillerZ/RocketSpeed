@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include "include/Types.h"
 #include "src/util/common/observable_container.h"
+#include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
 
@@ -44,10 +45,10 @@ class BacklogQueryStore {
               std::function<void(HasMessageSinceResult, std::string)> callback);
 
   /**
-   * If any queries are in the kAwaitingSync mode for this subscription ID
+   * If any queries are in the kAwaitingSync mode for this topic
    * then they will be queued up ready to be sent to the server.
    */
-  void MarkSynced(SubscriptionID sub_id);
+  void MarkSynced(const TopicUUID& uuid);
 
   /**
    * Processes a backlog fill message from the server, potentially invoking
@@ -93,9 +94,9 @@ class BacklogQueryStore {
 
   std::shared_ptr<Logger> info_log_;
   EventLoop* event_loop_;
-  std::unordered_map<SubscriptionID, std::vector<Query>> awaiting_sync_;
+  std::unordered_map<TopicUUID, std::vector<Query>> awaiting_sync_;
   ObservableContainer<std::deque<Query>> pending_send_;
-  std::unordered_map<Key, std::vector<Value>, Key::Hash> sent_;
+  std::unordered_map<Key, std::deque<Value>, Key::Hash> sent_;
   std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
 };
 

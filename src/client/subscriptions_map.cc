@@ -55,8 +55,8 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
              "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
              ", %s) expected %s, dropped",
              GetIDWhichMayChange().ForLogging(),
-             tenant_and_namespace_.Get().namespace_id.c_str(),
-             topic_name_.c_str(),
+             GetNamespace().ToString().c_str(),
+             GetTopicName().ToString().c_str(),
              previous,
              current.ToString().c_str(),
              expected_.ToString().c_str());
@@ -66,8 +66,8 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
               "SubscriptionBase(%llu, %s, %s)::ProcessUpdate(%" PRIu64
               ", %s) expected %s, accepted",
               GetIDWhichMayChange().ForLogging(),
-              tenant_and_namespace_.Get().namespace_id.c_str(),
-              topic_name_.c_str(),
+              GetNamespace().ToString().c_str(),
+              GetTopicName().ToString().c_str(),
               previous,
               current.ToString().c_str(),
               expected_.ToString().c_str());
@@ -102,7 +102,7 @@ SubscriptionsMap::SubscriptionsMap(
       });
 
   // Wire the source of unsubscribe events.
-  flow_control->Register<Subscription>(
+  flow_control->Register<Unsubscribes::value_type>(
       &pending_unsubscribes_,
       std::bind(&SubscriptionsMap::HandlePendingUnsubscription, this, _1, _2));
 
@@ -146,22 +146,29 @@ void SubscriptionsMap::Subscribe(
             topic_name.ToString().c_str(),
             start[0].ToString().c_str());
 
-  auto tenant_and_namespace = tenant_and_namespace_factory_.GetFlyweight(
-      {tenant_id, namespace_id.ToString()});
-  // Record the subscription, we check that the ID is unique among all active
-  // subscriptions.
+  // Record the subscription.
+  // If we have pending sub on same topic, we should override it (new sub_id).
+  // If we have pending unsubs on same topic, we should leave it (diff sub_id).
+  // If we have synced sub on same topic, we should unsubscribe it.
+
+  TopicUUID key(namespace_id, topic_name);
+
+  // Unsubscribe any already synced sub ID.
+  Unsubscribe(key);
+
+  // Add new subscription.
   SubscriptionBase* state = new SubscriptionBase(
-            tenant_and_namespace, topic_name, sub_id, start[0], user_data);
+            tenant_id, namespace_id, topic_name, sub_id, start[0], user_data);
   pending_subscriptions_.Modify([&](Subscriptions& map) {
-    auto inserted = map.emplace(sub_id, state);
-    RS_ASSERT(inserted);
+    map.emplace(std::move(key), state);
   });
+
   // Pending subscriptions will be synced opportunistically, as adding an
   // element renders the Source readable.
 }
 
 SubscriptionBase* SubscriptionsMap::Find(const SubscriptionKey& key) const {
-  LOG_DEBUG(GetLogger(), "Find(%llu)", key.ForLogging());
+  LOG_DEBUG(GetLogger(), "Find(%s)", key.ToString().c_str());
 
   auto sync_it = synced_subscriptions_.Find(key);
   if (sync_it != synced_subscriptions_.End()) {
@@ -192,6 +199,9 @@ bool SubscriptionsMap::Select(
     if (flags & Info::kUserData) {
       info->SetUserData(sub->GetUserData());
     }
+    if (flags & Info::kSubID) {
+      info->SetSubID(sub->GetSubscriptionID());
+    }
     return true;
   }
   return false;
@@ -199,7 +209,7 @@ bool SubscriptionsMap::Select(
 
 
 bool SubscriptionsMap::Exists(const SubscriptionKey& key) const {
-  LOG_DEBUG(GetLogger(), "Exists(%llu)", key.ForLogging());
+  LOG_DEBUG(GetLogger(), "Exists(%s)", key.ToString().c_str());
 
   auto sync_it = synced_subscriptions_.Find(key);
   if (sync_it != synced_subscriptions_.End()) {
@@ -221,18 +231,20 @@ void SubscriptionsMap::Rewind(const SubscriptionKey& key,
                               Cursor new_cursor) {
   auto ptr = Find(key);
   RS_ASSERT(ptr);
+  auto old_sub_id = ptr->GetIDWhichMayChange();
 
   LOG_DEBUG(GetLogger(),
-            "Rewind(%llu, %llu, %s)",
-            ptr->GetIDWhichMayChange().ForLogging(),
+            "Rewind(%s, %llu, %s)",
+            key.ToString().c_str(),
             new_sub_id.ForLogging(),
             new_cursor.ToString().c_str());
 
-  RS_ASSERT(new_sub_id != key);
+  RS_ASSERT(new_sub_id != old_sub_id);
 
   // Reinsert the subscription, as we may not change the
   NamespaceID namespace_id;
   Topic topic;
+  key.GetTopicID(&namespace_id, &topic);
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     SubscriptionBase* state = nullptr;
     {  // We have to remove the state before modifying it.
@@ -249,17 +261,15 @@ void SubscriptionsMap::Rewind(const SubscriptionKey& key,
     }
     // Rewind the state.
     state->Rewind(new_sub_id, std::move(new_cursor));
-    namespace_id = state->GetNamespace().ToString();
-    topic = state->GetTopicName().ToString();
 
     // Reinsert the subscription as pending one.
-    auto inserted = pending_subscriptions.emplace(new_sub_id, state);
+    auto inserted = pending_subscriptions.emplace(key, state);
     RS_ASSERT(inserted);
   });
   // Terminate the subscription on old ID, the server sees rewound
   // subscription as a new one.
   pending_unsubscribes_.Modify([&](Unsubscribes& set) {
-    set.emplace(key, std::move(namespace_id), std::move(topic));
+    set[key].push_back(old_sub_id);
   });
   // Pending subscribe and unsubscribe events will be synced opportunistically,
   // as adding an element renders the Sources readable.
@@ -267,26 +277,26 @@ void SubscriptionsMap::Rewind(const SubscriptionKey& key,
 
 void SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
   LOG_DEBUG(GetLogger(),
-            "Unsubscribe(%llu)",
-            key.ForLogging());
+            "Unsubscribe(%s)",
+            key.ToString().c_str());
 
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
     auto sync_it = synced_subscriptions_.Find(key);
     if (sync_it != synced_subscriptions_.End()) {
-      NamespaceID namespace_id = (*sync_it)->GetNamespace().ToString();
-      Topic topic = (*sync_it)->GetTopicName().ToString();
+      auto sub_id = (*sync_it)->GetSubscriptionID();
       CleanupSubscription(*sync_it);
       synced_subscriptions_.erase(sync_it);
       // Schedule an unsubscribe message to be sent only if a subscription has
       // been sent out.
       pending_unsubscribes_.Modify([&](Unsubscribes& set) {
-        set.emplace(key, std::move(namespace_id), std::move(topic));
+        set[key].push_back(sub_id);
       });
     } else {
       auto pend_it = pending_subscriptions.Find(key);
-      RS_ASSERT(pend_it != pending_subscriptions.End());
-      CleanupSubscription(*pend_it);
-      pending_subscriptions.erase(pend_it);
+      if (pend_it != pending_subscriptions.End()) {
+        CleanupSubscription(*pend_it);
+        pending_subscriptions.erase(pend_it);
+      }
     }
   });
   // Pending unsubscribe events will be synced opportunistically, as adding an
@@ -314,6 +324,18 @@ void SubscriptionsMap::HandlePendingSubscription(
             "HandlePendingSubscription(%llu)",
             state->GetIDWhichMayChange().ForLogging());
 
+  // If we have any pending unsubscribes then we need to send those first
+  // so that the server doesn't see two subscriptions on the same topic for
+  // this stream.
+  TopicUUID key(state->GetNamespace(), state->GetTopicName());
+  auto it = pending_unsubscribes_->find(key);
+  if (it != pending_unsubscribes_->end()) {
+    HandlePendingUnsubscription(flow, *it);
+    pending_unsubscribes_.Modify([&] (Unsubscribes& map) {
+      map.erase(it);
+    });
+  }
+
   // Send a message.
   std::unique_ptr<Message> subscribe(new MessageSubscribe(
       state->GetTenant(),
@@ -330,19 +352,26 @@ void SubscriptionsMap::HandlePendingSubscription(
 }
 
 void SubscriptionsMap::HandlePendingUnsubscription(
-    Flow* flow, Subscription sub) {
-  LOG_DEBUG(
-      GetLogger(), "HandlePendingUnsubscription(%llu)",
-      sub.sub_id.ForLogging());
-
+    Flow* flow, Unsubscribes::value_type subs) {
   // Send the message.
-  std::unique_ptr<Message> unsubscribe(new MessageUnsubscribe(
-      GuestTenant,
-      std::move(sub.namespace_id),
-      std::move(sub.topic),
-      sub.sub_id,
-      MessageUnsubscribe::Reason::kRequested));
-  message_handler_(flow, std::move(unsubscribe));
+  NamespaceID namespace_id;
+  Topic topic;
+  subs.first.GetTopicID(&namespace_id, &topic);
+  for (SubscriptionID sub_id : subs.second) {
+    LOG_DEBUG(
+      GetLogger(), "HandlePendingUnsubscription(%llu, %s, %s)",
+      sub_id.ForLogging(),
+      namespace_id.c_str(),
+      topic.c_str());
+
+    std::unique_ptr<Message> unsubscribe(new MessageUnsubscribe(
+        GuestTenant,
+        namespace_id,
+        topic,
+        sub_id,
+        MessageUnsubscribe::Reason::kRequested));
+    message_handler_(flow, std::move(unsubscribe));
+  }
 }
 
 void SubscriptionsMap::CleanupSubscription(
@@ -367,7 +396,7 @@ void SubscriptionsMap::StartSync() {
       }
 
       for (auto sub: synced_subscriptions_) {
-        pending_subscriptions.emplace(sub->GetSubscriptionID(), sub);
+        pending_subscriptions.emplace(sub->GetKey(), sub);
       }
       synced_subscriptions_.Clear();
     });
@@ -392,8 +421,9 @@ bool SubscriptionsMap::ProcessUnsubscribe(
     const MessageUnsubscribe& message,
     Info::Flags flags,
     Info* info) {
-  auto key = message.GetSubID();
+  const TopicUUID key(message.GetNamespace(), message.GetTopicName());
   auto reason = message.GetReason();
+
 
   switch (reason) {
     case MessageUnsubscribe::Reason::kInvalid:
@@ -423,11 +453,11 @@ bool SubscriptionsMap::ProcessUnsubscribe(
 
 bool SubscriptionsMap::ProcessDeliver(
     Flow* flow, const MessageDeliver& message) {
-  auto sub_id = message.GetSubID();
+  const TopicUUID key(message.GetNamespace(), message.GetTopicName());
 
   // Find the subscription.
   SubscriptionBase* state = nullptr;
-  auto it = synced_subscriptions_.Find(sub_id);
+  auto it = synced_subscriptions_.Find(key);
   if (it != synced_subscriptions_.End()) {
     state = *it; // don't delete since it stays in the map
   } else {
@@ -445,17 +475,6 @@ bool SubscriptionsMap::ProcessDeliver(
   }
   // Deliver.
   return true;
-}
-
-size_t SubscriptionsMap::Subscription::Hash::operator()(
-    const Subscription& sub) const {
-  const uint64_t seed = 0xf92601a646f1828fULL;
-  XXH64_stateSpace_t state;
-  XXH64_resetState(&state, seed);
-  XXH64_update(&state, &sub.sub_id, sizeof(sub.sub_id));
-  XXH64_update(&state, sub.namespace_id.data(), sub.namespace_id.size());
-  XXH64_update(&state, sub.topic.data(), sub.topic.size());
-  return XXH64_intermediateDigest(&state);
 }
 
 }  // namespace rocketspeed

@@ -30,13 +30,6 @@ void UserDataCleanup(void* user_data) {
   delete static_cast<Observer*>(user_data);
 }
 
-bool DataMatchParams(const SubscriptionData& data,
-                     const HooksParameters& params) {
-  return params.tenant_id == data.GetTenant() &&
-         params.namespace_id == data.GetNamespace() &&
-         params.topic_name == data.GetTopicName();
-}
-
 class MessageReceivedImpl : public MessageReceived {
  public:
   explicit MessageReceivedImpl(std::unique_ptr<MessageDeliverData> data)
@@ -106,7 +99,7 @@ class ApplicationMessage {
  public:
   enum { kData, kLoss } type;
   Observer* observer;
-  SubscriptionID sub_id;
+  TopicUUID uuid;
   std::unique_ptr<MessageReceived> data;
   DataLossInfoImpl data_loss;
 };
@@ -156,7 +149,7 @@ BackPressure Subscriber::InvokeApplication(ApplicationMessage& msg) {
   // Important: msg must not be moved from if backpressure is applied since we
   // need to retry with the same message later.
   Info info;
-  if (!Select(msg.sub_id, Info::kObserver, &info)) {
+  if (!Select(msg.uuid, Info::kObserver, &info)) {
     // Subscription has been unsubscribed while backpressure being applied.
     // No need to deliver anything now.
     return BackPressure::None();
@@ -194,7 +187,8 @@ void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
     // If we are sending a subscribe to the server, ensure that the any pending
     // backlog query requests for this subscription are now sent.
     auto subscribe = static_cast<MessageSubscribe*>(message.get());
-    backlog_query_store_->MarkSynced(subscribe->GetSubID());
+    TopicUUID uuid(subscribe->GetNamespace(), subscribe->GetTopicName());
+    backlog_query_store_->MarkSynced(uuid);
   }
   flow->Write(GetConnection(), message);
 }
@@ -202,24 +196,16 @@ void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
 void Subscriber::InstallHooks(const HooksParameters& params,
                               std::shared_ptr<SubscriberHooks> hooks) {
   hooks_.Install(params, hooks);
-  // TODO: this linear search to be removed when we change the data structure to
-  // be topic-oriented
-  subscriptions_map_.Iterate([&](const SubscriptionData& data) mutable {
-    bool keep_iterating = true;
-    if (DataMatchParams(data, params)) {
-      keep_iterating = false;
-      hooks_.SubscriptionStarted(params, data.GetID());
-      Info info;
-      bool success = Select(data.GetID(), Info::kAll, &info);
-      RS_ASSERT(success);
-      SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
-          info.GetNamespace(), info.GetTopic());
-      status.status_ = currently_healthy_ ? Status::OK() : Status::ShardUnhealthy();
-      StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
-      hooks_[data.GetID()].SubscriptionExists(sfh);
-    }
-    return keep_iterating;
-  });
+  TopicUUID uuid(params.namespace_id, params.topic_name);
+  Info info;
+  if (Select(uuid, Info::kAll, &info)) {
+    hooks_.SubscriptionStarted(params, info.GetSubID());
+    SubscriptionStatusImpl status(info.GetSubID(), info.GetTenant(),
+        info.GetNamespace(), info.GetTopic());
+    status.status_ = currently_healthy_ ? Status::OK() : Status::ShardUnhealthy();
+    StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
+    hooks_[info.GetSubID()].SubscriptionExists(sfh);
+  }
 }
 
 void Subscriber::UnInstallHooks(const HooksParameters& params) {
@@ -230,6 +216,11 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                    SubscriptionParameters parameters,
                                    std::unique_ptr<Observer> observer) {
   thread_check_.Check();
+
+  if (options_.compatibility_allow_sub_handles) {
+    TopicUUID topic(parameters.namespace_id, parameters.topic_name);
+    id_to_topic_.emplace(sub_id, std::move(topic));
+  }
 
   if (*num_active_subscriptions_ >= max_active_subscriptions_) {
     LOG_WARN(options_.info_log,
@@ -285,10 +276,26 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
 
 void Subscriber::Acknowledge(SubscriptionID sub_id,
                              SequenceNumber acked_seqno) {
-  if (!subscriptions_map_.Exists(sub_id)) {
+  TopicUUID uuid;
+  if (options_.compatibility_allow_sub_handles) {
+    auto it = id_to_topic_.find(sub_id);
+    if (it != id_to_topic_.end()) {
+      uuid = it->second;
+    } else {
+      LOG_WARN(options_.info_log,
+               "Acknowledge called with unknown ID (%llu)",
+               sub_id.ForLogging());
+      return;
+    }
+  } else {
+    // TODO(pja) : Allow acknowledging with topic.
+    RS_ASSERT(false) << "Not implemented";
+  }
+
+  if (!subscriptions_map_.Exists(uuid)) {
     LOG_WARN(options_.info_log,
-             "Cannot acknowledge missing subscription ID (%lld)",
-             sub_id.ForLogging());
+             "Cannot acknowledge missing subscription ID (%s)",
+             uuid.ToString().c_str());
     return;
   }
 
@@ -301,9 +308,19 @@ void Subscriber::HasMessageSince(HasMessageSinceParams params) {
   // send the BacklogQuery. If it is already synced, we put it in the pending
   // list to be sent when the connection is ready, otherwise we put it into a
   // waiting queue until the relevant subscription is synced.
-  auto mode = subscriptions_map_.IsSynced(params.sub_id) ?
+  TopicUUID uuid(params.namespace_id, params.topic);
+  auto mode = subscriptions_map_.IsSynced(uuid) ?
       BacklogQueryStore::Mode::kPendingSend :
       BacklogQueryStore::Mode::kAwaitingSync;
+
+  if (!params.sub_id) {
+    // If sub ID wasn't provided in API, we can recover one from the map.
+    // Servers still rely on there being a sub ID.
+    Info info;
+    if (Select(uuid, Info::kSubID, &info)) {
+      params.sub_id = info.GetSubID();
+    }
+  }
 
   backlog_query_store_->Insert(
       mode, params.sub_id, std::move(params.namespace_id),
@@ -311,16 +328,34 @@ void Subscriber::HasMessageSince(HasMessageSinceParams params) {
       std::move(params.callback));
 }
 
-void Subscriber::TerminateSubscription(SubscriptionID sub_id) {
+void Subscriber::TerminateSubscription(NamespaceID namespace_id,
+                                       Topic topic,
+                                       SubscriptionID sub_id) {
   thread_check_.Check();
 
-  Info info;
-  if (Select(sub_id, Info::kAll, &info)) {
-    // Notify the user.
-    ProcessUnsubscribe(sub_id, info, Status::OK());
+  if (topic.empty() && options_.compatibility_allow_sub_handles) {
+    auto it = id_to_topic_.find(sub_id);
+    if (it != id_to_topic_.end()) {
+      it->second.GetTopicID(&namespace_id, &topic);
+      RS_ASSERT_DBG(!topic.empty());
+      id_to_topic_.erase(it);
+    } else {
+      LOG_WARN(options_.info_log,
+               "TerminateSubscription called with unsubscribed topic (%s)",
+               topic.c_str());
+    }
+  }
 
-    // Terminate the subscription, which will invalidate the pointer.
-    subscriptions_map_.Unsubscribe(sub_id);
+  if (!topic.empty()) {
+    TopicUUID uuid(namespace_id, topic);
+    Info info;
+    if (Select(uuid, Info::kAll, &info)) {
+      // Notify the user.
+      ProcessUnsubscribe(sub_id, info, Status::OK());
+
+      // Terminate the subscription, which will invalidate the pointer.
+      subscriptions_map_.Unsubscribe(uuid);
+    }
   }
 
   hooks_[sub_id].OnTerminateSubscription();
@@ -359,12 +394,8 @@ SequenceNumber Subscriber::GetLastAcknowledged(SubscriptionID sub_id) const {
 }
 
 bool Subscriber::Select(
-    SubscriptionID sub_id, Info::Flags flags, Info* info) const {
-  return subscriptions_map_.Select(sub_id, flags, info);
-}
-
-void Subscriber::SetUserData(SubscriptionID sub_id, void* user_data) {
-  subscriptions_map_.SetUserData(sub_id, user_data);
+    const TopicUUID& uuid, Info::Flags flags, Info* info) const {
+  return subscriptions_map_.Select(uuid, flags, info);
 }
 
 void Subscriber::RefreshRouting() {
@@ -391,16 +422,14 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
   auto start = std::chrono::steady_clock::now();
 
   subscriptions_map_.Iterate([this, isHealthy](const SubscriptionData& data) {
-      Info info;
-      bool success = Select(data.GetID(), Info::kAll, &info);
-      RS_ASSERT(success);
-      SubscriptionStatusImpl status(data.GetID(), info.GetTenant(),
-          info.GetNamespace(), info.GetTopic());
+      SubscriptionStatusImpl status(data.GetID(), data.GetTenant(),
+          data.GetNamespace().ToString(), data.GetTopicName().ToString());
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
       StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
       hooks_[data.GetID()].OnSubscriptionStatusChange(sfh);
-      if (info.GetObserver()) {
-        info.GetObserver()->OnSubscriptionStatusChange(status);
+      auto observer = static_cast<Observer*>(data.GetUserData());
+      if (observer) {
+        observer->OnSubscriptionStatusChange(status);
       }
       if (options_.subscription_callback) {
         options_.subscription_callback(status);
@@ -487,6 +516,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   auto flow = arg.flow;
   auto& deliver = arg.message;
   auto sub_id = deliver->GetSubID();
+  const TopicUUID uuid(deliver->GetNamespace(), deliver->GetTopicName());
 
   LOG_DEBUG(options_.info_log,
             "ReceiveDeliver(%" PRIu64 ", %llu, %s)",
@@ -509,7 +539,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
       hooks_[sub_id].OnMessageReceived(received.get());
       ApplicationMessage msg;
       msg.type = ApplicationMessage::kData;
-      msg.sub_id = sub_id;
+      msg.uuid = std::move(uuid);
       msg.data = std::move(received);
       flow->Write(app_sink_.get(), msg);
       break;
@@ -521,7 +551,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
       if (gap->GetGapType() != GapType::kBenign) {
         ApplicationMessage msg;
         msg.type = ApplicationMessage::kLoss;
-        msg.sub_id = sub_id;
+        msg.uuid = std::move(uuid);
         msg.data_loss = DataLossInfoImpl(std::move(gap));
         hooks_[sub_id].OnDataLoss(msg.data_loss);
         flow->Write(app_sink_.get(), msg);

@@ -135,9 +135,8 @@ void MultiShardSubscriber::StartSubscription(
     SubscriptionParameters parameters,
     std::unique_ptr<Observer> observer) {
   // Determine the shard ID.
-  size_t shard_id = sub_id.GetShardID();
-  RS_ASSERT(shard_id == options_.sharding->GetShard(
-        parameters.namespace_id, parameters.topic_name, *intro_parameters_));
+  ShardID shard_id = options_.sharding->GetShard(
+        parameters.namespace_id, parameters.topic_name, *intro_parameters_);
 
   // Find or create a subscriber for this shard.
   auto it = subscribers_.find(shard_id);
@@ -171,24 +170,37 @@ void MultiShardSubscriber::StartSubscription(
 
 void MultiShardSubscriber::Acknowledge(SubscriptionID sub_id,
                                        SequenceNumber seqno) {
-  if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
+  if (auto subscriber = GetSubscriberForShard(sub_id.GetShardID())) {
     subscriber->Acknowledge(sub_id, seqno);
   }
 }
 
 void MultiShardSubscriber::HasMessageSince(HasMessageSinceParams params) {
-  if (auto subscriber = GetSubscriberForSubscription(params.sub_id)) {
+  ShardID shard_id = options_.sharding->GetShard(
+      params.namespace_id, params.topic, *intro_parameters_);
+  if (auto subscriber = GetSubscriberForShard(shard_id)) {
     subscriber->HasMessageSince(std::move(params));
   }
 }
 
-void MultiShardSubscriber::TerminateSubscription(SubscriptionID sub_id) {
-  if (auto subscriber = GetSubscriberForSubscription(sub_id)) {
-    subscriber->TerminateSubscription(sub_id);
+void MultiShardSubscriber::TerminateSubscription(NamespaceID namespace_id,
+                                                 Topic topic,
+                                                 SubscriptionID sub_id) {
+  ShardID shard_id;
+  if (sub_id) {
+    shard_id = sub_id.GetShardID();
+  } else {
+    shard_id = options_.sharding->GetShard(
+        namespace_id, topic, *intro_parameters_);
+  }
+  if (auto subscriber = GetSubscriberForShard(shard_id)) {
+    subscriber->TerminateSubscription(std::move(namespace_id),
+                                      std::move(topic),
+                                      sub_id);
     if (subscriber->Empty()) {
       // Subscriber no longer serves any subscriptions, destroy it if this is
       // still true after some time.
-      inactive_shards_.Add(sub_id.GetShardID());
+      inactive_shards_.Add(shard_id);
 
       if (options_.inactive_stream_linger.count() == 0) {
         // Fast, deterministic path when linger is 0.
@@ -209,13 +221,12 @@ Status MultiShardSubscriber::SaveState(SubscriptionStorage::Snapshot* snapshot,
   return Status::OK();
 }
 
-SubscriberIf* MultiShardSubscriber::GetSubscriberForSubscription(
-    SubscriptionID sub_id) {
-  auto it1 = subscribers_.find(sub_id.GetShardID());
+SubscriberIf* MultiShardSubscriber::GetSubscriberForShard(ShardID shard_id) {
+  auto it1 = subscribers_.find(shard_id);
   if (it1 == subscribers_.end()) {
     LOG_WARN(options_.info_log,
              "Cannot find subscriber for ShardID(%u)",
-             sub_id.GetShardID());
+             shard_id);
     return nullptr;
   }
   return it1->second.get();

@@ -59,6 +59,7 @@ ClientOptions::ClientOptions()
 , should_notify_health(true)
 , max_silent_reconnects(3)
 , inactive_stream_linger(std::chrono::seconds(10))
-, tenant_id(GuestTenant) {}
+, tenant_id(GuestTenant)
+, compatibility_allow_sub_handles(true) {}
 
 }  // namespace rocketspeed

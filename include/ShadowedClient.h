@@ -103,7 +103,7 @@ class ShadowedClient : public Client {
 
   Status Unsubscribe(NamespaceID namespace_id,
                      Topic topic,
-                     SubscriptionHandle sub_handle = 0) override;
+                     SubscriptionHandle sub_handle) override;
 
   Status Acknowledge(const MessageReceived& message) override;
 

@@ -137,15 +137,13 @@ class MockSubscriber : public SubscriberIf
     // MockSubscriber supports only one subscription id
     ASSERT_TRUE(!subscription_state_);
 
-    TenantAndNamespaceFactory factory;
-    auto tenant_and_namespace = factory.GetFlyweight(
-      {parameters.tenant_id, parameters.namespace_id});
     void* user_data = static_cast<void*>(observer.release());
     subscription_state_ = std::make_unique<SubscriptionBase>(
-      tenant_and_namespace,
+      parameters.tenant_id,
+      parameters.namespace_id,
       parameters.topic_name,
       sub_id, parameters.cursors[0], user_data);
-    sub_id_ = sub_id;
+    uuid_ = TopicUUID(parameters.namespace_id, parameters.topic_name);
   }
 
   virtual void Acknowledge(SubscriptionID sub_id,
@@ -155,11 +153,14 @@ class MockSubscriber : public SubscriberIf
   void HasMessageSince(HasMessageSinceParams) override {
   }
 
-  virtual void TerminateSubscription(SubscriptionID sub_id) override {
-    ASSERT_TRUE(subscription_state_ && sub_id_ == sub_id);
+  virtual void TerminateSubscription(NamespaceID namespace_id,
+                                     Topic topic,
+                                     SubscriptionID sub_id) override {
+    ASSERT_TRUE(subscription_state_);
     using Info = MockSubscriber::Info;
     Info info;
-    Select(sub_id, Info::kAll, &info);
+    Select(uuid_, Info::kAll, &info);
+    RS_ASSERT(uuid_ == TopicUUID(info.GetNamespace(), info.GetTopic()));
     SubscriptionStatusImpl sub_status(sub_id, info.GetTenant(),
         info.GetNamespace(), info.GetTopic());
     info.GetObserver()->OnSubscriptionStatusChange(sub_status);
@@ -178,8 +179,8 @@ class MockSubscriber : public SubscriberIf
   }
 
   virtual bool Select(
-      SubscriptionID sub_id, Info::Flags flags, Info* info) const override {
-    if (sub_id == sub_id_ && subscription_state_) {
+      const TopicUUID& uuid, Info::Flags flags, Info* info) const override {
+    if (uuid == uuid_ && subscription_state_) {
       if (flags & Info::kTenant) {
         info->SetTenant(subscription_state_->GetTenant());
       }
@@ -202,12 +203,6 @@ class MockSubscriber : public SubscriberIf
     }
   }
 
-  virtual void SetUserData(SubscriptionID sub_id, void* user_data) override {
-    RS_ASSERT(sub_id == sub_id_);
-    RS_ASSERT(subscription_state_);
-    subscription_state_->SetUserData(user_data);
-  }
-
   virtual void RefreshRouting() override {}
 
   virtual void NotifyHealthy(bool) override {}
@@ -220,7 +215,7 @@ class MockSubscriber : public SubscriberIf
 
  private:
   std::unique_ptr<SubscriptionBase> subscription_state_;
-  SubscriptionID sub_id_;
+  TopicUUID uuid_;
 };
 
 static std::unique_ptr<ShardingStrategy> MakeShardingStrategyFromConfig(
@@ -1285,12 +1280,12 @@ class MockMessageReceivedImpl : public MessageReceived {
 TEST_F(ClientTest, TopicToSubscriptionMap) {
   std::unordered_map<SubscriptionID, std::unique_ptr<SubscriptionBase>>
       subscriptions;
-  TenantAndNamespaceFactory factory;
   auto add = [&](SubscriptionID sub_id, const Topic& topic_name) {
     subscriptions.emplace(
         sub_id,
         std::make_unique<SubscriptionBase>(
-            factory.GetFlyweight({GuestTenant, GuestNamespace}),
+            GuestTenant,
+            GuestNamespace,
             topic_name,
             sub_id,
             Cursor("", 0),
@@ -1794,6 +1789,46 @@ TEST_F(SubscriberHooksTest, HooksContainerTest) {
     container.UnInstall(params[i]);
     container[sub_ids[i]].OnTerminateSubscription();
     ASSERT_FALSE(hooks[i]->called());
+  }
+}
+
+TEST_F(ClientTest, SingleTopicFuzz) {
+  // Temporary test -- continually subscribes and unsubscribes on a single
+  // topic to check that server never receives two subs on the same topic from
+  // the same client.
+  port::Semaphore subscribe_sem;
+  SubscriptionID subscribed;
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          ASSERT_TRUE(!subscribed);
+          subscribed = static_cast<MessageSubscribe*>(msg.get())->GetSubID();
+          subscribe_sem.Post();
+        }},
+       {MessageType::mUnsubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          auto sub_id = static_cast<MessageUnsubscribe*>(msg.get())->GetSubID();
+          ASSERT_EQ(subscribed, sub_id);
+          subscribed = SubscriptionID();
+        }}});
+
+  ClientOptions options;
+  auto client = CreateClient(std::move(options));
+
+  SubscriptionParameters params(GuestTenant, GuestNamespace, "Fuzz", 0);
+
+  // Subscribe/unsubscribe rapidly in a loop for a few seconds to test that
+  //
+  using Clock = std::chrono::steady_clock;
+  int counter = 0;
+  for (auto start = Clock::now();
+       Clock::now() - start < std::chrono::seconds(5);) {
+    auto handle = client->Subscribe(params, std::make_unique<Observer>());
+    if (counter++ % 10 == 0) {
+      // Every few subs/unsubs, wait to ensure server receives our sub.
+      ASSERT_TRUE(subscribe_sem.TimedWait(std::chrono::seconds(10)));
+    }
+    client->Unsubscribe(params.namespace_id, params.topic_name, handle);
   }
 }
 

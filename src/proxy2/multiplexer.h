@@ -46,8 +46,8 @@ class UpstreamAllocator : public IDAllocator<uint64_t, UpstreamAllocator> {
 
 class UpstreamSubscription {
  public:
-  explicit UpstreamSubscription(SubscriptionID sub_id)
-  : sub_id_(sub_id) {}
+  explicit UpstreamSubscription(TopicUUID uuid, SubscriptionID sub_id)
+  : uuid_(std::move(uuid)), sub_id_(sub_id) {}
 
   UpstreamSubscription() = delete;
 
@@ -56,6 +56,8 @@ class UpstreamSubscription {
                          MurmurHash2<std::pair<PerStream*, SubscriptionID>>>;
 
   SubscriptionID GetSubID() const { return sub_id_; }
+
+  const TopicUUID& GetTopicUUID() const { return uuid_; }
 
   void SetSubID(SubscriptionID sub_id) { sub_id_ = sub_id; }
 
@@ -87,6 +89,7 @@ class UpstreamSubscription {
   SequenceNumber GetExpectedSeqno() const { return expected_seqno_; }
 
  private:
+  TopicUUID uuid_;
   SubscriptionID sub_id_;
   std::unique_ptr<UpdatesAccumulator> accumulator_;
   SequenceNumber expected_seqno_{0};
@@ -148,7 +151,7 @@ class Multiplexer : public ConnectionAwareReceiver {
                      MurmurHash2<std::pair<std::string, std::string>>>
       topic_index_;
 
-  UpstreamSubscription* GetUpstreamSubscription(SubscriptionID sub_id);
+  UpstreamSubscription* GetUpstreamSubscription(const TopicUUID& uuid);
 
   UpstreamSubscription* FindInIndex(NamespaceID namespace_id, Topic topic_name);
 

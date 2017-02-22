@@ -340,16 +340,17 @@ SubscriptionHandle ClientImpl::Subscribe(
 }
 
 Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
-  subscriber_->Unsubscribe(sub_handle);
-  return Status::OK();
+  return Unsubscribe("", "", sub_handle);
 }
 
-Status ClientImpl::Unsubscribe(NamespaceID,
-                               Topic,
+Status ClientImpl::Unsubscribe(NamespaceID namespace_id,
+                               Topic topic,
                                SubscriptionHandle sub_handle) {
-  // TODO(pja): Ignoring namespace/topic for now, just want new API to be
-  // hooked up.
-  return Unsubscribe(sub_handle);
+  subscriber_->Unsubscribe(
+      std::move(namespace_id),
+      std::move(topic),
+      sub_handle);
+  return Status::OK();
 }
 
 Status ClientImpl::Acknowledge(const MessageReceived& message) {
@@ -369,10 +370,6 @@ Status ClientImpl::HasMessageSince(
   }
   HasMessageSinceParams params;
   params.sub_id = SubscriptionID::Unsafe(sub_handle);
-  if (!params.sub_id) {
-    LOG_ERROR(options_.info_log, "Invalid subscription handle");
-    return Status::InvalidArgument("Invalid subscription handle");
-  }
   params.namespace_id = std::move(namespace_id);
   params.topic = std::move(topic);
   params.source = std::move(source);

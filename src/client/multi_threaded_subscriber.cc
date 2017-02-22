@@ -109,7 +109,9 @@ void MultiThreadedSubscriber::Stop() {
 
               void HasMessageSince(HasMessageSinceParams) override{};
 
-              void TerminateSubscription(SubscriptionID sub_id) override{};
+              void TerminateSubscription(NamespaceID namespace_id,
+                                         Topic topic,
+                                         SubscriptionID sub_id) override{};
 
               bool Empty() const override { return true; };
 
@@ -239,15 +241,20 @@ SubscriptionHandle MultiThreadedSubscriber::Subscribe(
   return sub_id;
 }
 
-void MultiThreadedSubscriber::Unsubscribe(SubscriptionHandle sub_handle) {
+void MultiThreadedSubscriber::Unsubscribe(NamespaceID namespace_id,
+                                          Topic topic,
+                                          SubscriptionHandle sub_handle) {
   const auto sub_id = SubscriptionID::Unsafe(sub_handle);
-  if (!sub_id) {
-    LOG_ERROR(options_.info_log, "Invalid SubscriptionID");
-    return;
-  }
 
   // Determine corresponding worker, its queue, and subscription ID.
-  const auto worker_id = GetWorkerID(sub_id);
+  int worker_id = 0;
+  if (sub_id) {
+    worker_id = GetWorkerID(sub_id);
+  } else {
+    worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
+                                         namespace_id,
+                                         topic);
+  }
   if (worker_id < 0) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return;
@@ -257,9 +264,14 @@ void MultiThreadedSubscriber::Unsubscribe(SubscriptionHandle sub_handle) {
 
   // Send command to responsible worker.
   std::unique_ptr<ExecuteCommand> command(
-      MakeExecuteCommand([this, sub_id, worker_id]() mutable {
-        subscribers_[worker_id]->TerminateSubscription(sub_id);
-      }));
+      MakeExecuteCommand(
+        [this, sub_id, worker_id, namespace_id = std::move(namespace_id),
+          topic = std::move(topic)]() mutable {
+          subscribers_[worker_id]->TerminateSubscription(
+              std::move(namespace_id),
+              std::move(topic),
+              sub_id);
+        }));
 
   // Unsubscribe uses Write instead of TryWrite so that the write always
   // succeeds. Flow control is not needed as number of unsubscribes in flight
@@ -300,7 +312,14 @@ bool MultiThreadedSubscriber::Acknowledge(const MessageReceived& message) {
 
 Status MultiThreadedSubscriber::HasMessageSince(HasMessageSinceParams params) {
   // Determine corresponding worker, its queue, and subscription ID.
-  const auto worker_id = GetWorkerID(params.sub_id);
+  int worker_id = 0;
+  if (params.sub_id) {
+    worker_id = GetWorkerID(params.sub_id);
+  } else {
+    worker_id = options_.thread_selector(msg_loop_->GetNumWorkers(),
+                                         params.namespace_id,
+                                         params.topic);
+  }
   if (worker_id < 0) {
     LOG_ERROR(options_.info_log, "Invalid worker encoded in the handle");
     return Status::InvalidArgument("Corrupted subscription handle");;

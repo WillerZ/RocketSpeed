@@ -82,7 +82,9 @@ class SubscriberIf {
   virtual void HasMessageSince(HasMessageSinceParams params) = 0;
 
   /// Terminates previously established subscription.
-  virtual void TerminateSubscription(SubscriptionID sub_id) = 0;
+  virtual void TerminateSubscription(NamespaceID namespace_id,
+                                     Topic topic,
+                                     SubscriptionID sub_id) = 0;
 
   /// True iff subscriber has no active subscriptions.
   virtual bool Empty() const = 0;
@@ -112,15 +114,9 @@ class SubscriberIf {
   /// and call will return true.
   /// If subscription doesn't exist, will return false.
   virtual bool Select(
-      SubscriptionID sub_id, Info::Flags flags, Info* info) const {
+      const TopicUUID& uuid, Info::Flags flags, Info* info) const {
     RS_ASSERT(false);
     return false;
-  }
-
-  /// Overrides the user data of the subscription.
-  /// Does NOT cleanup the existing user data.
-  virtual void SetUserData(SubscriptionID sub_id, void* user_data) {
-    RS_ASSERT(false);
   }
 
   /// Check if routing has changed and reroute subscriptions if necessary.

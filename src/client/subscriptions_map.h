@@ -12,11 +12,11 @@
 #include "include/RocketSpeed.h"
 #include "include/Types.h"
 #include "sparsehash/sparse_hash_set"
-#include "src/util/common/subscription_id.h"
 #include "src/messages/types.h"
 #include "src/util/common/observable_container.h"
-#include "src/util/common/ref_count_flyweight.h"
 #include "src/util/common/sparse_hash_maps.h"
+#include "src/util/common/subscription_id.h"
+#include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
 
@@ -27,23 +27,7 @@ class MyReceiver;
 class Logger;
 class Slice;
 
-using SubscriptionKey = SubscriptionID;
-
-/// A flyweight-pattern-based storage for topics and namespaces.
-struct TenantAndNamespace {
-  TenantID tenant_id;
-  NamespaceID namespace_id;
-
-  friend bool operator<(const TenantAndNamespace& lhs,
-                        const TenantAndNamespace& rhs) {
-    if (lhs.tenant_id == rhs.tenant_id) {
-      return lhs.namespace_id < rhs.namespace_id;
-    }
-    return lhs.tenant_id < rhs.tenant_id;
-  }
-};
-using TenantAndNamespaceFactory = RefCountFlyweightFactory<TenantAndNamespace>;
-using TenantAndNamespaceFlyweight = RefCountFlyweight<TenantAndNamespace>;
+using SubscriptionKey = TopicUUID;
 
 /// A base information required by the SubscriptionsMap.
 ///
@@ -51,32 +35,41 @@ using TenantAndNamespaceFlyweight = RefCountFlyweight<TenantAndNamespace>;
 /// performance of metadata updates.
 class SubscriptionBase {
  public:
-  SubscriptionBase(TenantAndNamespaceFlyweight tenant_and_namespace,
-                   const Slice& topic_name,
+  SubscriptionBase(TenantID tenant_id,
+                   Slice namespace_id,
+                   Slice topic_name,
                    SubscriptionID sub_id,
                    Cursor start,
                    void* user_data)
-  : tenant_and_namespace_(std::move(tenant_and_namespace))
-  , topic_name_(topic_name.ToString())
+  : topic_uuid_(namespace_id, topic_name)
   , sub_id_(sub_id)
   , expected_(std::move(start))
-  , user_data_(user_data) {}
+  , user_data_(user_data)
+  , tenant_id_(tenant_id) {}
 
   ~SubscriptionBase();
 
   const SubscriptionKey& GetKey() const {
-    return sub_id_;
+    return topic_uuid_;
   }
 
   TenantID GetTenant() const {
-    return tenant_and_namespace_.Get().tenant_id;
+    return tenant_id_;
   }
 
   Slice GetNamespace() const {
-    return tenant_and_namespace_.Get().namespace_id;
+    Slice namespace_id;
+    Slice topic;
+    topic_uuid_.GetTopicID(&namespace_id, &topic);
+    return namespace_id;
   }
 
-  Slice GetTopicName() const { return topic_name_; }
+  Slice GetTopicName() const {
+    Slice namespace_id;
+    Slice topic;
+    topic_uuid_.GetTopicID(&namespace_id, &topic);
+    return topic;
+  }
 
   const Cursor& GetExpected() const { return expected_; }
 
@@ -101,15 +94,15 @@ class SubscriptionBase {
  private:
   friend class SubscriptionsMap;
 
-  const TenantAndNamespaceFlyweight tenant_and_namespace_;
-  // TODO(stupaq): NTS
-  const std::string topic_name_;
+  const TopicUUID topic_uuid_;
   /// An ID of this subscription known to the remote end.
   SubscriptionID sub_id_;
   /// Next expected sequence number on this subscription.
   Cursor expected_;
   /// Opaque user data.
   void* user_data_;
+
+  TenantID tenant_id_;
 
   /// @{
   /// These methods shall not be accessed anyone but the SubscriptionMap that
@@ -148,6 +141,9 @@ class SubscriptionData {
 
   /// Subscription's ID.
   virtual SubscriptionID GetID() const = 0;
+
+  /// User data.
+  virtual void* GetUserData() const = 0;
 
  protected:
   virtual ~SubscriptionData() {}
@@ -196,6 +192,7 @@ class SubscriptionsMap {
       kTopic = 1 << 2,
       kCursor = 1 << 3,
       kUserData = 1 << 4,
+      kSubID = 1 << 5,
 
       kAll = ~0ULL,
     };
@@ -225,6 +222,11 @@ class SubscriptionsMap {
       return user_data_;
     }
 
+    SubscriptionID GetSubID() const {
+      RS_ASSERT(flags_ & kSubID);
+      return sub_id_;
+    }
+
     void SetTenant(TenantID tenant_id) {
       flags_ |= kTenant;
       tenant_id_ = tenant_id;
@@ -250,12 +252,18 @@ class SubscriptionsMap {
       user_data_ = user_data;
     }
 
+    void SetSubID(SubscriptionID sub_id) {
+      flags_ |= kSubID;
+      sub_id_ = sub_id;
+    }
+
    private:
     TenantID tenant_id_;
     NamespaceID namespace_id_;
     Topic topic_name_;
     Cursor cursor_;
     void* user_data_;
+    SubscriptionID sub_id_;
     Flags flags_ = kNone;
   };
 
@@ -271,7 +279,7 @@ class SubscriptionsMap {
   bool IsSynced(const SubscriptionKey& key) const;
 
   /// Rewinds provided subscription to a given cursor.
-  void Rewind(const SubscriptionKey& old_sub_id,
+  void Rewind(const SubscriptionKey& key,
               SubscriptionID new_sub_id,
               Cursor new_cursor);
 
@@ -309,14 +317,12 @@ class SubscriptionsMap {
   EventLoop* const event_loop_;
   const UserDataCleanupCb user_data_cleanup_cb_;
 
-  TenantAndNamespaceFactory tenant_and_namespace_factory_;
-
   struct SubscriptionsMapping {
     const SubscriptionKey& ExtractKey(const SubscriptionBase* sub) const {
       return sub->GetKey();
     }
     size_t Hash(const SubscriptionKey& id) const {
-      return std::hash<SubscriptionKey>()(id);
+      return id.Hash();
     }
     bool Equals(const SubscriptionKey& id1, const SubscriptionKey& id2) const {
       return id1 == id2;
@@ -333,30 +339,8 @@ class SubscriptionsMap {
   ObservableContainer<Subscriptions> pending_subscriptions_;
   Subscriptions synced_subscriptions_;
 
-  struct Subscription {
-    Subscription(SubscriptionID _sub_id,
-                 NamespaceID _namespace_id,
-                 Topic _topic)
-    : sub_id(_sub_id)
-    , namespace_id(std::move(_namespace_id))
-    , topic(std::move(_topic)) {}
-
-    Subscription() : sub_id() {}
-
-    bool operator==(const Subscription& rhs) const {
-      return std::tie(sub_id, namespace_id, topic) ==
-          std::tie(rhs.sub_id, rhs.namespace_id, rhs.topic);
-    }
-
-    SubscriptionID sub_id;
-    NamespaceID namespace_id;
-    Topic topic;
-
-    struct Hash {
-      size_t operator()(const Subscription& unsub) const;
-    };
-  };
-  using Unsubscribes = std::unordered_set<Subscription, Subscription::Hash>;
+  using Unsubscribes =
+      std::unordered_map<TopicUUID, std::vector<SubscriptionID>>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
   std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
@@ -371,7 +355,7 @@ class SubscriptionsMap {
   void HandlePendingSubscription(
         Flow* flow, std::unique_ptr<SubscriptionBase> upstream_sub);
 
-  void HandlePendingUnsubscription(Flow* flow, Subscription sub);
+  void HandlePendingUnsubscription(Flow* flow, Unsubscribes::value_type sub);
 
   void CleanupSubscription(SubscriptionBase* sub);
 };
@@ -400,6 +384,10 @@ void SubscriptionsMap::Iterate(Iter&& iter) {
 
     SubscriptionID GetID() const override {
       return state_->GetIDWhichMayChange();
+    }
+
+    void* GetUserData() const override {
+      return state_->GetUserData();
     }
 
    private:

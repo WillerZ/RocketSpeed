@@ -620,11 +620,13 @@ TEST_F(IntegrationTest, SequenceNumberZero) {
 
   // Create RocketSpeed client.
   std::unique_ptr<Client> client;
+  std::unique_ptr<Client> witness_client;
   ASSERT_OK(cluster.CreateClient(&client));
+  ASSERT_OK(cluster.CreateClient(&witness_client));
 
   // Witness for publishes to ensure all are released.
   port::Semaphore witness;
-  client->Subscribe(GuestTenant, ns, topic, 1,
+  witness_client->Subscribe(GuestTenant, ns, topic, 1,
     [&](std::unique_ptr<MessageReceived>& mr) {
       witness.Post();
       return BackPressure::None();
@@ -1171,6 +1173,7 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
       checkpoint[i].Post();
       return BackPressure::None();
     };
+    options.compatibility_allow_sub_handles = false;
     ASSERT_OK(cluster.CreateClient(&client[i], std::move(options)));
   }
 
@@ -1195,7 +1198,7 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
   // Subscribe to a topic.
   auto sub = [&](int c,
                  Topic topic,
-                 SequenceNumber seqno) -> SubscriptionHandle {
+                 SequenceNumber seqno) {
     if (seqno == 0) {
       env_->SleepForMicroseconds(100000);  // allow latest seqno to propagate.
     }
@@ -1203,15 +1206,16 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
     // client.
     auto handle =
         client[c]->Subscribe(GuestTenant, GuestNamespace, topic, seqno);
+    EXPECT_TRUE(handle);
     if (seqno == 0) {
       env_->SleepForMicroseconds(100000);  // allow latest seqno to propagate.
     }
-    return std::move(handle);
   };
 
   // Unsubscribe from a topic.
-  auto unsub = [&](int c, SubscriptionHandle handle) {
-    ASSERT_OK(client[c]->Unsubscribe(std::move(handle)));
+  auto unsub = [&](int c, Topic topic) {
+    SubscriptionHandle handle = 0;
+    ASSERT_OK(client[c]->Unsubscribe(GuestNamespace, topic, handle));
   };
 
   // Receive messages.
@@ -1244,14 +1248,14 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
 
   // Subscribe client 0 to start, publish 3, receive 3.
   SequenceNumber a0 = pub(0, "a", "a0");
-  auto h_0a = sub(0, "a", a0);
+  sub(0, "a", a0);
   SequenceNumber a1 = pub(0, "a", "a1");
   pub(0, "a", "a2");
   recv(0, {"a0", "a1", "a2"});
   check_cp_stats(1, 1);
 
   // Subscribe client 1 at message 2/3, receive messages 2 + 3
-  auto h_1a = sub(1, "a", a1);
+  sub(1, "a", a1);
   recv(0, {});
   recv(1, {"a1", "a2"});
   check_cp_stats(2, 1);
@@ -1262,14 +1266,14 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
   recv(1, {"a3"});
 
   // Unsubscribe client 0, publish, only client 1 should receive.
-  unsub(0, h_0a);
+  unsub(0, "a");
   pub(0, "a", "a4");
   recv(0, {});
   recv(1, {"a4"});
   check_cp_stats(1, 1);
 
   // Unsubscribe client 1, publish, neither should receive.
-  unsub(1, h_1a);
+  unsub(1, "a");
   pub(0, "a", "a5");
   recv(0, {});
   recv(1, {});
@@ -1277,14 +1281,14 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
 
   // Subscribe both at tail, publish, both should receive.
   sub(0, "a", 0);
-  h_1a = sub(1, "a", 0);
+  sub(1, "a", 0);
   pub(0, "a", "a6");
   recv(0, {"a6"});
   recv(1, {"a6"});
 
   // Unsubscribe client 1, publish, resubscribe at tail, publish again.
   // Client 0 should receive both, while client 1 only last one.
-  unsub(1, h_1a);
+  unsub(1, "a");
   pub(0, "a", "a7");
   sub(1, "a", 0);
   pub(0, "a", "a8");
@@ -1294,22 +1298,22 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
   // Test topic tailer handling of intertwined topic subscriptions.
   // Subscribe both to b and publish b0.
   sub(0, "b", a0);
-  auto h_1b = sub(1, "b", a0);
+  sub(1, "b", a0);
   pub(0, "b", "b0");
   recv(0, {"b0"});
   recv(1, {"b0"});
 
   // Unsubscribe b then advance the log with topic c.
-  unsub(1, h_1b);
+  unsub(1, "b");
   pub(0, "c", "c0");
   SequenceNumber c1 = pub(0, "c", "c1");
   pub(0, "c", "c2");
 
   // Subsribe client1 to c1.
   // This must cause log tailer to rewind.
-  auto h_1c = sub(1, "c", c1);
+  sub(1, "c", c1);
   recv(1, {"c1", "c2"});
-  unsub(1, h_1c);
+  unsub(1, "c");
 
   // Check that client 0 can still read b's (gapless topics mean that we still
   // need to keep track of last b).
@@ -1354,23 +1358,6 @@ TEST_F(IntegrationTest, SubscriptionManagement) {
   pub(0, "g", "g0");
   recv(0, {"g0"});
   recv(1, {"g0"});
-
-  // Multiple subscriptions.
-  sub(0, "h", 0);
-  auto h0 = pub(1, "h", "h0");
-  auto h1 = pub(1, "h", "h1");
-  auto h2 = pub(1, "h", "h2");
-  recv(0, {"h0", "h1", "h2"});
-  sub(0, "h", h2);
-  recv(0, {"h2"});
-  sub(0, "h", h1);
-  recv(0, {"h1", "h2"});
-  sub(0, "h", h0);
-  recv(0, {"h0", "h1", "h2"});
-  // Since we have 4 subscriptions at the tail, whatever we publish now arrives
-  // in as many copies, one per subscription.
-  pub(1, "h", "h3");
-  recv(0, {"h3", "h3", "h3", "h3"});
 
   SequenceNumber i0 = pub(0, "i", "i0");
   pub(0, "j", "j0");
@@ -1474,22 +1461,6 @@ TEST_F(IntegrationTest, LogAvailability) {
   ASSERT_OK(cluster.GetCopilot()->UpdateTowerRouter(std::move(new_router)));
   env_->SleepForMicroseconds(200000);
 
-  // Resend subscriptions.
-  port::Semaphore msg_received2;
-  for (int i = 0; i < kNumTopics; ++i) {
-    auto handle = client->Subscribe(
-        GuestTenant,
-        GuestNamespace,
-        "LogAvailability" + std::to_string(i),
-        0,
-        [&](std::unique_ptr<MessageReceived>& mr) {
-          msg_received2.Post();
-          return BackPressure::None();
-        });
-    subscriptions.push_back(handle);
-  }
-  env_->SleepForMicroseconds(200000);
-
   // Publish to all topics.
   for (int i = 0; i < kNumTopics; ++i) {
     ASSERT_OK(client->Publish(GuestTenant,
@@ -1502,7 +1473,7 @@ TEST_F(IntegrationTest, LogAvailability) {
   // This should resubscribe using the third tower.
   // Check that all messages come through.
   for (int i = 0; i < kNumTopics; ++i) {
-    ASSERT_TRUE(msg_received2.TimedWait(timeout));
+    ASSERT_TRUE(msg_received.TimedWait(timeout));
   }
 
   // Check that unsubscribes work.
@@ -1772,17 +1743,19 @@ TEST_F(IntegrationTest, ControlTowerCache) {
   };
 
   // Create RocketSpeed client.
-  std::unique_ptr<Client> client;
-  ASSERT_OK(cluster.CreateClient(&client));
+  std::unique_ptr<Client> client[6];
+  for (size_t i = 0; i < 6; ++i) {
+    ASSERT_OK(cluster.CreateClient(&client[i]));
+  }
 
   // Send a message.
-  auto ps = client->Publish(GuestTenant,
-                            topic,
-                            namespace_id,
-                            topic_options,
-                            Slice(data),
-                            publish_callback,
-                            message_id);
+  auto ps = client[0]->Publish(GuestTenant,
+                               topic,
+                               namespace_id,
+                               topic_options,
+                               Slice(data),
+                               publish_callback,
+                               message_id);
   ASSERT_TRUE(ps.status.ok());
   ASSERT_TRUE(ps.msgid == message_id);
   // Wait for the message to be written
@@ -1790,12 +1763,12 @@ TEST_F(IntegrationTest, ControlTowerCache) {
   ASSERT_TRUE(result);
 
   // Listen for the message.
-  ASSERT_TRUE(client->Subscribe(GuestTenant,
-                                namespace_id,
-                                topic,
-                                msg_seqno,
-                                receive_callback,
-                                subscription_callback));
+  ASSERT_TRUE(client[0]->Subscribe(GuestTenant,
+                                   namespace_id,
+                                   topic,
+                                   msg_seqno,
+                                   receive_callback,
+                                   subscription_callback));
   // Wait for the message to arrive
   result = msg_received.TimedWait(timeout);
   ASSERT_TRUE(result);
@@ -1809,12 +1782,12 @@ TEST_F(IntegrationTest, ControlTowerCache) {
   ASSERT_EQ(cache_misses, 2);
 
   // Resubscribe to the same topic
-  ASSERT_TRUE(client->Subscribe(GuestTenant,
-                                namespace_id,
-                                topic,
-                                msg_seqno,
-                                receive_callback2,
-                                subscription_callback));
+  ASSERT_TRUE(client[1]->Subscribe(GuestTenant,
+                                   namespace_id,
+                                   topic,
+                                   msg_seqno,
+                                   receive_callback2,
+                                   subscription_callback));
   // Wait for the message to arrive
   result = msg_received2.TimedWait(timeout);
   ASSERT_TRUE(result);
@@ -1845,12 +1818,12 @@ TEST_F(IntegrationTest, ControlTowerCache) {
   ASSERT_EQ(new_capacity, capacity);
 
   // resubscribe and re-read. The cache should get repopulated.
-  ASSERT_TRUE(client->Subscribe(GuestTenant,
-                                namespace_id,
-                                topic,
-                                msg_seqno,
-                                receive_callback3,
-                                subscription_callback));
+  ASSERT_TRUE(client[2]->Subscribe(GuestTenant,
+                                   namespace_id,
+                                   topic,
+                                   msg_seqno,
+                                   receive_callback3,
+                                   subscription_callback));
   // Wait for the message to arrive
   result = msg_received3.TimedWait(timeout);
   ASSERT_TRUE(result);
@@ -1878,12 +1851,12 @@ TEST_F(IntegrationTest, ControlTowerCache) {
 
   // Since the cache is now disabled, resubscribing and re-reading data
   // should not populate it
-  ASSERT_TRUE(client->Subscribe(GuestTenant,
-                                namespace_id,
-                                topic,
-                                msg_seqno,
-                                receive_callback4,
-                                subscription_callback));
+  ASSERT_TRUE(client[3]->Subscribe(GuestTenant,
+                                   namespace_id,
+                                   topic,
+                                   msg_seqno,
+                                   receive_callback4,
+                                   subscription_callback));
   // Wait for the message to arrive
   result = msg_received4.TimedWait(timeout);
   ASSERT_TRUE(result);
@@ -1908,12 +1881,12 @@ TEST_F(IntegrationTest, ControlTowerCache) {
   ASSERT_EQ(usage, set_capacity);
 
   // re-read data into cache
-  ASSERT_TRUE(client->Subscribe(GuestTenant,
-                                namespace_id,
-                                topic,
-                                msg_seqno,
-                                receive_callback5,
-                                subscription_callback));
+  ASSERT_TRUE(client[4]->Subscribe(GuestTenant,
+                                   namespace_id,
+                                   topic,
+                                   msg_seqno,
+                                   receive_callback5,
+                                   subscription_callback));
   // Wait for the message to arrive
   result = msg_received5.TimedWait(timeout);
   ASSERT_TRUE(result);
@@ -2336,36 +2309,38 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
   ASSERT_OK(cluster.GetStatus());
 
   // Create RocketSpeed sender client.
-  std::unique_ptr<Client> client;
-  cluster.CreateClient(&client);
+  std::unique_ptr<Client> client[3];
+  for (size_t i = 0; i < 3; ++i) {
+    cluster.CreateClient(&client[i]);
+  }
 
   // Publish a message to find the current seqno for the topic.
   port::Semaphore pub_sem;
   SequenceNumber seqnos[kNumMessages];
   for (size_t i = 0; i < kNumMessages; ++i) {
-    ASSERT_OK(client->Publish(GuestTenant,
-                              "SmallRoomQueues",
-                              GuestNamespace,
-                              TopicOptions(),
-                              "#" + std::to_string(i),
-                              [&, i](std::unique_ptr<ResultStatus> rs) {
-                                ASSERT_OK(rs->GetStatus());
-                                pub_sem.Post();
-                                seqnos[i] = rs->GetSequenceNumber();
-                              }).status);
+    ASSERT_OK(client[0]->Publish(GuestTenant,
+                                 "SmallRoomQueues",
+                                 GuestNamespace,
+                                 TopicOptions(),
+                                 "#" + std::to_string(i),
+                                 [&, i](std::unique_ptr<ResultStatus> rs) {
+                                   ASSERT_OK(rs->GetStatus());
+                                   pub_sem.Post();
+                                   seqnos[i] = rs->GetSequenceNumber();
+                                 }).status);
     pub_sem.TimedWait(timeout);
   }
   const size_t kPhase1Messages = kNumMessages - 1;
   const SequenceNumber seqno_phase1 = seqnos[kNumMessages - kPhase1Messages];
   port::Semaphore sem1;
-  client->Subscribe(GuestTenant,
-                    GuestNamespace,
-                    "SmallRoomQueues",
-                    seqno_phase1,
-                    [&](std::unique_ptr<MessageReceived>& mr) {
-                      sem1.Post();
-                      return BackPressure::None();
-                    });
+  client[0]->Subscribe(GuestTenant,
+                       GuestNamespace,
+                       "SmallRoomQueues",
+                       seqno_phase1,
+                       [&](std::unique_ptr<MessageReceived>& mr) {
+                         sem1.Post();
+                         return BackPressure::None();
+                       });
   for (size_t i = 0; i < kPhase1Messages; ++i) {
     ASSERT_TRUE(sem1.TimedWait(timeout));
   }
@@ -2385,14 +2360,14 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
 
   // Now cache is filled, so try again to test cache flow.
   port::Semaphore sem2;
-  client->Subscribe(GuestTenant,
-                    GuestNamespace,
-                    "SmallRoomQueues",
-                    seqno_phase1,
-                    [&](std::unique_ptr<MessageReceived>& mr) {
-                      sem2.Post();
-                      return BackPressure::None();
-                    });
+  client[1]->Subscribe(GuestTenant,
+                       GuestNamespace,
+                       "SmallRoomQueues",
+                       seqno_phase1,
+                       [&](std::unique_ptr<MessageReceived>& mr) {
+                         sem2.Post();
+                         return BackPressure::None();
+                       });
   for (size_t i = 0; i < kPhase1Messages; ++i) {
     ASSERT_TRUE(sem2.TimedWait(timeout));
   }
@@ -2418,14 +2393,14 @@ TEST_F(IntegrationTest, SmallRoomQueues) {
 
   // This time, read from before the cache, to test cache re-entry flow control.
   port::Semaphore sem3;
-  client->Subscribe(GuestTenant,
-                    GuestNamespace,
-                    "SmallRoomQueues",
-                    seqnos[0],
-                    [&](std::unique_ptr<MessageReceived>& mr) {
-                      sem3.Post();
-                      return BackPressure::None();
-                    });
+  client[2]->Subscribe(GuestTenant,
+                       GuestNamespace,
+                       "SmallRoomQueues",
+                       seqnos[0],
+                       [&](std::unique_ptr<MessageReceived>& mr) {
+                         sem3.Post();
+                         return BackPressure::None();
+                       });
   for (size_t i = 0; i < kNumMessages; ++i) {
     ASSERT_TRUE(sem3.TimedWait(timeout));
   }
@@ -2587,8 +2562,10 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   ASSERT_OK(cluster.GetStatus());
 
   // Create RocketSpeed sender client.
-  std::unique_ptr<Client> client;
-  cluster.CreateClient(&client);
+  std::unique_ptr<Client> client[3];
+  for (size_t i = 0; i < 3; ++i) {
+    cluster.CreateClient(&client[i]);
+  }
 
   auto fast_subs = [&]() {
     auto stats = cluster.GetCopilot()->GetStatisticsSync();
@@ -2606,7 +2583,7 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   };
 
   // First subscribe should not be a fast subscription.
-  client->Subscribe(
+  client[0]->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast1", 0, nullptr);
   ASSERT_EVENTUALLY_TRUE(total_subs() == 1);
   ASSERT_EQ(fast_subs(), 0);
@@ -2615,7 +2592,7 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   ASSERT_EVENTUALLY_TRUE(delivered_gaps() == 1);
 
   // Second subscribe should be a fast subscription.
-  client->Subscribe(
+  client[1]->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast1", 0, nullptr);
   ASSERT_EVENTUALLY_TRUE(total_subs() == 2);
   ASSERT_EQ(fast_subs(), 1);
@@ -2624,7 +2601,7 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   // Different topic now.
   // First subscribe should not be a fast subscription.
   port::Semaphore sem;
-  client->Subscribe(
+  client[0]->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 1,
       [&](std::unique_ptr<MessageReceived>&) {
         sem.Post();
@@ -2632,7 +2609,7 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
       });
   ASSERT_EVENTUALLY_TRUE(total_subs() == 3);
   ASSERT_EQ(fast_subs(), 1);
-  client->Publish(GuestTenant, "CopilotTailSubscribeFast2", GuestNamespace,
+  client[0]->Publish(GuestTenant, "CopilotTailSubscribeFast2", GuestNamespace,
       TopicOptions(), "data");
   ASSERT_TRUE(sem.TimedWait(timeout));
   auto gaps_now = delivered_gaps();
@@ -2640,7 +2617,7 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
   // Second subscribe should not be a fast subscription since we don't have
   // tail subscription.
   // Note: this could change with better tail subscription logic.
-  client->Subscribe(
+  client[1]->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 0, nullptr);
   ASSERT_EVENTUALLY_TRUE(total_subs() == 4);
   ASSERT_EQ(fast_subs(), 1);
@@ -2650,7 +2627,7 @@ TEST_F(IntegrationTest, CopilotTailSubscribeFast) {
 
   // Third subscribe should be a fast subscription.
   // Note: this could change with better tail subscription logic.
-  client->Subscribe(
+  client[2]->Subscribe(
       GuestTenant, GuestNamespace, "CopilotTailSubscribeFast2", 0, nullptr);
   ASSERT_EVENTUALLY_TRUE(total_subs() == 5);
   ASSERT_EQ(fast_subs(), 2);

@@ -64,7 +64,9 @@ class MultiThreadedSubscriber {
   /**
    * Unsubscribes from a subscription. Never fails.
    */
-  void Unsubscribe(SubscriptionHandle sub_handle);
+  void Unsubscribe(NamespaceID namespace_id,
+                   Topic topic,
+                   SubscriptionHandle sub_handle);
 
   /**
    * Returns false if and only if call attempt should be retried due to queue

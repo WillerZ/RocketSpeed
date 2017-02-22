@@ -97,7 +97,7 @@ TEST_F(BacklogQueryTest, PendingAwaitingInteraction) {
   Run([&]() {
     // Still shouldn't be sent if we mark it synced if we stop the sync.
     store->StopSync();
-    store->MarkSynced(SubscriptionID::Unsafe(1));
+    store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
   ASSERT_TRUE(!sent.TimedWait(negative_timeout_));
@@ -156,7 +156,7 @@ TEST_F(BacklogQueryTest, ResendSentOnStopSync) {
                   123,
                   [](HasMessageSinceResult, std::string) {});
     store->StartSync();
-    store->MarkSynced(SubscriptionID::Unsafe(1));
+    store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
   // Should have sent now.
@@ -170,7 +170,7 @@ TEST_F(BacklogQueryTest, ResendSentOnStopSync) {
   ASSERT_TRUE(!sent.TimedWait(negative_timeout_));
 
   Run([&]() {
-    store->MarkSynced(SubscriptionID::Unsafe(1));
+    store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
   // Should be sent again.
@@ -208,7 +208,7 @@ TEST_F(BacklogQueryTest, ResetPendingOnStopSync) {
                   "source",
                   123,
                   [](HasMessageSinceResult, std::string) {});
-    store->MarkSynced(SubscriptionID::Unsafe(1));
+    store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
   // Should not have sent yet.
@@ -222,7 +222,7 @@ TEST_F(BacklogQueryTest, ResetPendingOnStopSync) {
   ASSERT_TRUE(!sent.TimedWait(negative_timeout_));
 
   Run([&]() {
-    store->MarkSynced(SubscriptionID::Unsafe(1));
+    store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
   // Should be sent again.
@@ -269,7 +269,7 @@ TEST_F(BacklogQueryTest, MultipleRequestsOnSameSub) {
                   456,
                   [&](HasMessageSinceResult, std::string) { result2.Post(); });
     store->StartSync();
-    store->MarkSynced(SubscriptionID::Unsafe(1));
+    store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
   // Should have sent both now.

@@ -20,6 +20,7 @@
 #include "src/messages/types.h"
 #include "src/util/common/statistics.h"
 #include "src/util/common/subscription_id.h"
+#include "src/util/topic_uuid.h"
 
 namespace rocketspeed {
 
@@ -127,7 +128,9 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
 
   void HasMessageSince(HasMessageSinceParams params) override;
 
-  void TerminateSubscription(SubscriptionID sub_id) override;
+  void TerminateSubscription(NamespaceID namespace_id,
+                             Topic topic,
+                             SubscriptionID sub_id) override;
 
   bool Empty() const override { return subscriptions_map_.Empty(); }
 
@@ -135,9 +138,7 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
                    size_t worker_id) override;
 
   bool Select(
-      SubscriptionID sub_id, Info::Flags flags, Info* info) const override;
-
-  void SetUserData(SubscriptionID sub_id, void* user_data) override;
+      const TopicUUID& uuid, Info::Flags flags, Info* info) const override;
 
   void RefreshRouting() override;
 
@@ -164,6 +165,11 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
   std::unique_ptr<BacklogQueryStore> backlog_query_store_;
+
+  /// For API compatibility, we may store an ID->topic map to allow old
+  /// applications to use Unsubscribe without topic. This map is only
+  /// populated if the compatibility_allow_sub_handles option is set.
+  std::unordered_map<SubscriptionID, TopicUUID> id_to_topic_;
 
   /// Shard for this subscriber.
   const size_t shard_id_;

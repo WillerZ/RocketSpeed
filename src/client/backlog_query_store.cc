@@ -34,6 +34,11 @@ void BacklogQueryStore::Insert(
     std::function<void(HasMessageSinceResult, std::string)> callback) {
   // Add a pending request.
   // This will be sent to the server later (see HandlePending).
+  TopicUUID uuid(namespace_id, topic);
+  LOG_DEBUG(info_log_,
+      "BacklogQueryStore::Insert(%s, %s)",
+      uuid.ToString().c_str(),
+      mode == Mode::kPendingSend ? "pending_send" : "awaiting_sync");
   Key key { std::move(namespace_id), std::move(topic), std::move(source) };
   Value value { sub_id, seqno, std::move(callback) };
 
@@ -44,16 +49,17 @@ void BacklogQueryStore::Insert(
       });
       break;
     case Mode::kAwaitingSync:
-      awaiting_sync_[sub_id].emplace_back(std::move(key), std::move(value));
+      awaiting_sync_[uuid].emplace_back(std::move(key), std::move(value));
       break;
   }
 }
 
-void BacklogQueryStore::MarkSynced(SubscriptionID sub_id) {
-  auto it = awaiting_sync_.find(sub_id);
+void BacklogQueryStore::MarkSynced(const TopicUUID& uuid) {
+  auto it = awaiting_sync_.find(uuid);
   if (it != awaiting_sync_.end()) {
-    LOG_DEBUG(
-        info_log_, "BacklogQueryStore::MarkSynced(%llu)", sub_id.ForLogging());
+    LOG_DEBUG(info_log_,
+              "BacklogQueryStore::MarkSynced(%s)",
+              uuid.ToString().c_str());
     pending_send_.Modify([&](std::deque<Query>& pending) {
       for (auto& query : it->second) {
         pending.emplace_back(std::move(query));
@@ -66,24 +72,27 @@ void BacklogQueryStore::MarkSynced(SubscriptionID sub_id) {
 void BacklogQueryStore::ProcessBacklogFill(const MessageBacklogFill& msg) {
   // Check if it matches any outstanding request.
   // If it does, invoke the callback and remove the request.
+  TopicUUID uuid(msg.GetNamespace(), msg.GetTopicName());
   Key key { msg.GetNamespace(), msg.GetTopicName(), msg.GetDataSource() };
+  bool processed = false;
   auto it = sent_.find(key);
   if (it != sent_.end()) {
-    for (auto it2 = it->second.begin(); it2 != it->second.end(); ) {
-      auto seqno = it2->seqno;
-      // TODO(pja): can be smarter about matching here, e.g. if the answer is
-      // kNo and the sequence number range covers a greater range than the query
-      // then the fill can answer multiple queries at once.
-      if (msg.GetPrevSequenceNumber() == seqno) {
-        it2->callback(msg.GetResult(), msg.GetInfo());
-        it2 = it->second.erase(it2);
-      } else {
-        ++it2;
+    if (!it->second.empty()) {
+      it->second.front().callback(msg.GetResult(), msg.GetInfo());
+      it->second.pop_front();
+      if (it->second.empty()) {
+        sent_.erase(it);
+        processed = true;
+        LOG_DEBUG(info_log_,
+            "BacklogQueryStore::ProcessBacklogFill(%s) processed",
+            uuid.ToString().c_str());
       }
     }
-    if (it->second.empty()) {
-      sent_.erase(it);
-    }
+  }
+  if (!processed) {
+    LOG_WARN(info_log_,
+        "BacklogQueryStore::ProcessBacklogFill(%s) didn't match a request",
+        uuid.ToString().c_str());
   }
 }
 
@@ -114,15 +123,16 @@ void BacklogQueryStore::StopSync() {
   // Disconnected, so stop sending requests and move all unresponded queries
   // back to the awaiting sync state.
   for (auto& entry : sent_) {
+    TopicUUID uuid(entry.first.namespace_id, entry.first.topic);
     for (auto& value : entry.second) {
-      const auto sub_id = value.sub_id;
-      awaiting_sync_[sub_id].emplace_back(entry.first, std::move(value));
+      awaiting_sync_[uuid].emplace_back(entry.first, std::move(value));
     }
   }
   sent_.clear();
   pending_send_.Modify([&](std::deque<Query>& pending) {
     for (auto& entry : pending) {
-      awaiting_sync_[entry.second.sub_id].push_back(entry);
+      TopicUUID uuid(entry.first.namespace_id, entry.first.topic);
+      awaiting_sync_[uuid].push_back(entry);
     }
     pending.clear();
   });
