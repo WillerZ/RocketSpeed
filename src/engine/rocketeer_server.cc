@@ -215,6 +215,8 @@ class CommunicationRocketeer : public Rocketeer {
 
     TenantID tenant_id;
     size_t num_subscriptions;
+
+    // Only here if options.track_prev_seqno is true.
     std::unordered_map<SubscriptionID, InboundSubscription> inbound;
   };
   std::unordered_map<StreamID, StreamState> stream_state_;
@@ -294,9 +296,11 @@ void CommunicationRocketeer::AckSubscribe(Flow* flow,
                                           SubscriptionParameters params) {
   thread_check_.Check();
 
-  auto* sub = Find(inbound_id);
-  if (!sub) {
-    return;
+  if (server_->options_.track_prev_seqno) {
+    auto* sub = Find(inbound_id);
+    if (!sub) {
+      return;
+    }
   }
   auto tenant_id = GetTenant(inbound_id.stream_id);
   auto ack = std::make_unique<MessageSubAck>(
@@ -318,25 +322,32 @@ void CommunicationRocketeer::Deliver(Flow* flow,
   if (msg_id.Empty()) {
     msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
   }
-  if (auto* sub = Find(inbound_id)) {
-    if (sub->prev_seqno < cursor.seqno) {
-      auto tenant_id = GetTenant(inbound_id.stream_id);
-      auto data = std::make_unique<MessageDeliverData>(
-          tenant_id, std::move(namespace_id), std::move(topic),
-          inbound_id.GetSubID(), msg_id, payload);
-      data->SetSequenceNumbers(std::move(cursor.source), sub->prev_seqno,
-          cursor.seqno);
+
+  SequenceNumber prev_seqno = 0;
+  if (server_->options_.track_prev_seqno) {
+    if (auto* sub = Find(inbound_id)) {
+      prev_seqno = sub->prev_seqno;
+      if (sub->prev_seqno >= cursor.seqno) {
+        stats_->dropped_reordered->Add(1);
+        LOG_WARN(server_->options_.info_log,
+                 "Attempted to deliver data at %" PRIu64
+                 ", but subscription has previous seqno %" PRIu64,
+                 cursor.seqno,
+                 sub->prev_seqno);
+        return;
+      }
       sub->prev_seqno = cursor.seqno;
-      SendResponse(flow, inbound_id.stream_id, std::move(data));
     } else {
-      stats_->dropped_reordered->Add(1);
-      LOG_WARN(server_->options_.info_log,
-               "Attempted to deliver data at %" PRIu64
-               ", but subscription has previous seqno %" PRIu64,
-               cursor.seqno,
-               sub->prev_seqno);
+      return;
     }
   }
+
+  auto tenant_id = GetTenant(inbound_id.stream_id);
+  auto data = std::make_unique<MessageDeliverData>(
+      tenant_id, std::move(namespace_id), std::move(topic),
+      inbound_id.GetSubID(), msg_id, payload);
+  data->SetSequenceNumbers(std::move(cursor.source), prev_seqno, cursor.seqno);
+  SendResponse(flow, inbound_id.stream_id, std::move(data));
 }
 
 void CommunicationRocketeer::DeliverBatch(
@@ -350,27 +361,35 @@ void CommunicationRocketeer::DeliverBatch(
     if (msg.msg_id.Empty()) {
       msg.msg_id = GUIDGenerator::ThreadLocalGUIDGenerator()->Generate();
     }
-    if (auto* sub = Find(InboundID(stream_id, msg.GetSubID()))) {
-      if (sub->prev_seqno < msg.cursor.seqno) {
-        messages_vec.emplace_back(
-            new MessageDeliverData(tenant_id,
-                                   std::move(msg.namespace_id),
-                                   std::move(msg.topic),
-                                   msg.GetSubID(),
-                                   msg.msg_id,
-                                   std::move(msg.payload)));
-        messages_vec.back()->SetSequenceNumbers(msg.cursor.source,
-            sub->prev_seqno, msg.cursor.seqno);
+
+    SequenceNumber prev_seqno = 0;
+    if (server_->options_.track_prev_seqno) {
+      if (auto* sub = Find(InboundID(stream_id, msg.GetSubID()))) {
+        prev_seqno = sub->prev_seqno;
+        if (prev_seqno >= msg.cursor.seqno) {
+          stats_->dropped_reordered->Add(1);
+          LOG_WARN(server_->options_.info_log,
+                   "Attempted to deliver data at %" PRIu64
+                   ", but subscription has previous seqno %" PRIu64,
+                   msg.cursor.seqno,
+                   prev_seqno);
+          continue;
+        }
         sub->prev_seqno = msg.cursor.seqno;
       } else {
-        stats_->dropped_reordered->Add(1);
-        LOG_WARN(server_->options_.info_log,
-                 "Attempted to deliver data at %" PRIu64
-                 ", but subscription has previous seqno %" PRIu64,
-                 msg.cursor.seqno,
-                 sub->prev_seqno);
+        continue;
       }
     }
+
+    messages_vec.emplace_back(
+        new MessageDeliverData(tenant_id,
+                               std::move(msg.namespace_id),
+                               std::move(msg.topic),
+                               msg.GetSubID(),
+                               msg.msg_id,
+                               std::move(msg.payload)));
+    messages_vec.back()->SetSequenceNumbers(msg.cursor.source,
+        prev_seqno, msg.cursor.seqno);
   }
   if (!messages_vec.empty()) {
     auto batch = std::make_unique<MessageDeliverBatch>(
@@ -387,25 +406,31 @@ void CommunicationRocketeer::SendGapMessage(Flow* flow,
                                             GapType gap_type) {
   thread_check_.Check();
 
-  if (auto* sub = Find(inbound_id)) {
-    if (sub->prev_seqno < cursor.seqno) {
-      auto tenant_id = GetTenant(inbound_id.stream_id);
-      auto gap = std::make_unique<MessageDeliverGap>(
-          tenant_id, std::move(namespace_id), std::move(topic),
-          inbound_id.GetSubID(), gap_type);
-      gap->SetSequenceNumbers(std::move(cursor.source), sub->prev_seqno,
-          cursor.seqno);
+  SequenceNumber prev_seqno = 0;
+  if (server_->options_.track_prev_seqno) {
+    if (auto* sub = Find(inbound_id)) {
+      prev_seqno = sub->prev_seqno;
+      if (sub->prev_seqno >= cursor.seqno) {
+        stats_->dropped_reordered->Add(1);
+        LOG_WARN(server_->options_.info_log,
+                 "Attempted to deliver gap at %" PRIu64
+                 ", but subscription has previous seqno %" PRIu64,
+                 cursor.seqno,
+                 sub->prev_seqno);
+        return;
+      }
       sub->prev_seqno = cursor.seqno;
-      SendResponse(flow, inbound_id.stream_id, std::move(gap));
     } else {
-      stats_->dropped_reordered->Add(1);
-      LOG_WARN(server_->options_.info_log,
-               "Attempted to deliver gap at %" PRIu64
-               ", but subscription has previous seqno %" PRIu64,
-               cursor.seqno,
-               sub->prev_seqno);
+      return;
     }
   }
+
+  auto tenant_id = GetTenant(inbound_id.stream_id);
+  auto gap = std::make_unique<MessageDeliverGap>(
+      tenant_id, std::move(namespace_id), std::move(topic),
+      inbound_id.GetSubID(), gap_type);
+  gap->SetSequenceNumbers(std::move(cursor.source), prev_seqno, cursor.seqno);
+  SendResponse(flow, inbound_id.stream_id, std::move(gap));
 }
 
 void CommunicationRocketeer::Advance(Flow* flow,
@@ -439,8 +464,10 @@ void CommunicationRocketeer::Unsubscribe(Flow* flow,
   if (it != stream_state_.end()) {
     StreamState& state = it->second;
     auto it1 = state.inbound.find(sub_id);
-    if (it1 != state.inbound.end()) {
-      state.inbound.erase(it1);
+    if (!server_->options_.track_prev_seqno || it1 != state.inbound.end()) {
+      if (server_->options_.track_prev_seqno) {
+        state.inbound.erase(it1);
+      }
       stats_->inbound_subscriptions->Add(-1);
       stats_->terminations->Add(1);
       state.num_subscriptions--;
@@ -480,13 +507,19 @@ void CommunicationRocketeer::HasMessageSinceResponse(
       std::string info) {
   thread_check_.Check();
 
-  if (auto* sub = Find(inbound_id)) {
-    auto tenant_id = GetTenant(inbound_id.stream_id);
-    auto message = std::make_unique<MessageBacklogFill>(
-        tenant_id, std::move(namespace_id), std::move(topic), std::move(source),
-        seqno, sub->prev_seqno, response, std::move(info));
-    SendResponse(flow, inbound_id.stream_id, std::move(message));
+  SequenceNumber prev_seqno = 0;
+  if (server_->options_.track_prev_seqno) {
+    if (auto* sub = Find(inbound_id)) {
+      prev_seqno = sub->prev_seqno;
+    } else {
+      return;
+    }
   }
+  auto tenant_id = GetTenant(inbound_id.stream_id);
+  auto message = std::make_unique<MessageBacklogFill>(
+      tenant_id, std::move(namespace_id), std::move(topic), std::move(source),
+      seqno, prev_seqno, response, std::move(info));
+  SendResponse(flow, inbound_id.stream_id, std::move(message));
 }
 
 size_t CommunicationRocketeer::GetID() const {
@@ -577,15 +610,17 @@ void CommunicationRocketeer::Receive(
   if (start.size() == 1) {
     start_seqno = start[0].seqno;
   }
-  auto result = state.inbound.emplace(
-      sub_id,
-      InboundSubscription(start_seqno == 0 ? start_seqno : start_seqno - 1));
-  if (!result.second) {
-    LOG_WARN(server_->options_.info_log,
-             "Duplicated subscription stream: %" PRIu64 ", sub_id: %llu",
-             origin,
-             sub_id.ForLogging());
-    return;
+  if (server_->options_.track_prev_seqno) {
+    auto result = state.inbound.emplace(
+        sub_id,
+        InboundSubscription(start_seqno == 0 ? start_seqno : start_seqno - 1));
+    if (!result.second) {
+      LOG_WARN(server_->options_.info_log,
+               "Duplicated subscription stream: %" PRIu64 ", sub_id: %llu",
+               origin,
+               sub_id.ForLogging());
+      return;
+    }
   }
   Slice namespace_id = subscribe->GetNamespace();
   Slice topic = subscribe->GetTopicName();
@@ -610,7 +645,8 @@ void CommunicationRocketeer::Receive(
   auto it = stream_state_.find(origin);
   if (it != stream_state_.end()) {
     StreamState& state = it->second;
-    auto removed = state.inbound.erase(sub_id);
+    auto removed =
+      server_->options_.track_prev_seqno ? state.inbound.erase(sub_id) : 1;
     if (removed > 0) {
       stats_->inbound_subscriptions->Add(-1);
       stats_->unsubscribes->Add(1);
@@ -652,7 +688,8 @@ void CommunicationRocketeer::Receive(
     return;
   }
   StreamState& state = it->second;
-  if (server_->options_.terminate_on_disconnect) {
+  if (server_->options_.terminate_on_disconnect &&
+      server_->options_.track_prev_seqno) {
     for (const auto& entry : state.inbound) {
       // TODO(pja): Really, for terminate_on_disconnect, we should keep track
       // of subscribed topics, and pass them in here. I don't want to regress

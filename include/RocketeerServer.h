@@ -93,6 +93,13 @@ struct RocketeerOptions {
    * invoked.
    */
   bool terminate_on_disconnect = true;
+
+  /**
+   * If true, tracks previous seqno in the CommunicationRocketeer.
+   * This can only be disabled if the server is sending sub-acks, and the
+   * client supports sub-acks.
+   */
+  bool track_prev_seqno = true;
 };
 
 class RocketeerServer {
