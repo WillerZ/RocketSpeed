@@ -67,6 +67,13 @@ struct SMHash<double> : public hdetails::SMHashBase<double> {
   }
 };
 
+template <typename T>
+struct SMHash<T*> : public hdetails::SMHashBase<uintptr_t> {
+  size_t operator()(T* ptr) const noexcept {
+    return hdetails::hashImpl(reinterpret_cast<uintptr_t>(ptr));
+  }
+};
+
 #undef xxhash_default_impl
 
 } // namespace rocketspeed
