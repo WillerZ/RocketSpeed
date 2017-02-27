@@ -284,9 +284,9 @@ class sparse_hash_map {
   key_type deleted_key() const                { return rep.deleted_key(); }
 
   // These are standard
-  size_type erase(const key_type& key)               { return rep.erase(key); }
-  void erase(iterator it)                            { rep.erase(it); }
-  void erase(iterator f, iterator l)                 { rep.erase(f, l); }
+  size_type erase(const key_type& key)         { return rep.erase(key); }
+  iterator erase(iterator it)                  { rep.erase(it); return ++it; }
+  iterator erase(iterator f, iterator l)       { rep.erase(f, l); return ++l; }
 
 
   // Comparison
