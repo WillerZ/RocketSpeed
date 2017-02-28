@@ -186,17 +186,17 @@ namespace rocketspeed {
 
 struct SubscriptionChurnTimeout {
   bool is_subscribe;
-  SubscriptionHandle sh;
+  uint64_t topic_number;
   std::chrono::time_point<std::chrono::steady_clock> event_time;
   uint64_t client_number;
 
   SubscriptionChurnTimeout(
     bool is_sub,
-    SubscriptionHandle handle,
+    uint64_t tn,
     std::chrono::time_point<std::chrono::steady_clock> ev,
     uint64_t c_no
   ): is_subscribe{is_sub},
-     sh{handle},
+     topic_number{tn},
      event_time{ev},
      client_number{c_no}
     {}
@@ -585,7 +585,11 @@ void DoSubscriptionChurn(void* params) {
                               sub_handle);
     } else {
       //if its unsubscribe : just unsubscribe, no other action needed
-      (*subscribers)[w.client_number]->Unsubscribe((w.sh));
+      char topic_name[64];
+      snprintf(topic_name, sizeof(topic_name),
+              "benchmark.%llu",
+              static_cast<long long unsigned int>(w.topic_number));
+      (*subscribers)[w.client_number]->Unsubscribe(nsid, topic_name);
     }
     pq.pop();
     RS_ASSERT(!pq.empty());

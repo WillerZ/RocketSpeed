@@ -217,11 +217,6 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                    std::unique_ptr<Observer> observer) {
   thread_check_.Check();
 
-  if (options_.compatibility_allow_sub_handles) {
-    TopicUUID topic(parameters.namespace_id, parameters.topic_name);
-    id_to_topic_.emplace(sub_id, std::move(topic));
-  }
-
   if (*num_active_subscriptions_ >= max_active_subscriptions_) {
     LOG_WARN(options_.info_log,
              "Subscription limit of %zu reached.",
@@ -277,20 +272,8 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
 void Subscriber::Acknowledge(SubscriptionID sub_id,
                              SequenceNumber acked_seqno) {
   TopicUUID uuid;
-  if (options_.compatibility_allow_sub_handles) {
-    auto it = id_to_topic_.find(sub_id);
-    if (it != id_to_topic_.end()) {
-      uuid = it->second;
-    } else {
-      LOG_WARN(options_.info_log,
-               "Acknowledge called with unknown ID (%llu)",
-               sub_id.ForLogging());
-      return;
-    }
-  } else {
-    // TODO(pja) : Allow acknowledging with topic.
-    RS_ASSERT(false) << "Not implemented";
-  }
+  // TODO(pja) : Allow acknowledging with topic.
+  RS_ASSERT(false) << "Not implemented";
 
   if (!subscriptions_map_.Exists(uuid)) {
     LOG_WARN(options_.info_log,
@@ -333,29 +316,14 @@ void Subscriber::TerminateSubscription(NamespaceID namespace_id,
                                        SubscriptionID sub_id) {
   thread_check_.Check();
 
-  if (topic.empty() && options_.compatibility_allow_sub_handles) {
-    auto it = id_to_topic_.find(sub_id);
-    if (it != id_to_topic_.end()) {
-      it->second.GetTopicID(&namespace_id, &topic);
-      RS_ASSERT_DBG(!topic.empty());
-      id_to_topic_.erase(it);
-    } else {
-      LOG_WARN(options_.info_log,
-               "TerminateSubscription called with unsubscribed topic (%s)",
-               topic.c_str());
-    }
-  }
+  TopicUUID uuid(namespace_id, topic);
+  Info info;
+  if (Select(uuid, Info::kAll, &info)) {
+    // Notify the user.
+    ProcessUnsubscribe(sub_id, info, Status::OK());
 
-  if (!topic.empty()) {
-    TopicUUID uuid(namespace_id, topic);
-    Info info;
-    if (Select(uuid, Info::kAll, &info)) {
-      // Notify the user.
-      ProcessUnsubscribe(sub_id, info, Status::OK());
-
-      // Terminate the subscription, which will invalidate the pointer.
-      subscriptions_map_.Unsubscribe(uuid);
-    }
+    // Terminate the subscription, which will invalidate the pointer.
+    subscriptions_map_.Unsubscribe(uuid);
   }
 
   hooks_[sub_id].OnTerminateSubscription();

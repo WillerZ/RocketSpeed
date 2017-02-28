@@ -97,7 +97,7 @@ SubscriptionHandle ShadowedClient::Subscribe(SubscriptionParameters parameters,
 
     if (shadowed_subscription != SubscriptionHandle(0)) {
       std::lock_guard<std::mutex> lock(subs_mutex_);
-      client_to_shadowed_subs_[subscription] = shadowed_subscription;
+      shadowed_subs_[parameters.namespace_id].emplace(parameters.topic_name);
     }
   }
 
@@ -129,35 +129,29 @@ SubscriptionHandle ShadowedClient::Subscribe(
 
     if (shadowed_subscription != SubscriptionHandle(0)) {
       std::lock_guard<std::mutex> lock(subs_mutex_);
-      client_to_shadowed_subs_[subscription] = shadowed_subscription;
+      shadowed_subs_[parameters.namespace_id].emplace(parameters.topic_name);
     }
   }
 
   return subscription;
 }
 
-Status ShadowedClient::Unsubscribe(SubscriptionHandle sub_handle) {
-  auto st = client_->Unsubscribe(sub_handle);
-
-  if (st.ok()) {
-    std::lock_guard<std::mutex> lock(subs_mutex_);
-    auto it = client_to_shadowed_subs_.find(sub_handle);
-
-    if (it != client_to_shadowed_subs_.end()) {
-      shadowed_client_->Unsubscribe(it->second);
-      client_to_shadowed_subs_.erase(it);
-    }
-  }
-
-  return st;
+Status ShadowedClient::Unsubscribe(NamespaceID namespace_id,
+                                   Topic topic,
+                                   SubscriptionHandle) {
+  return Unsubscribe(std::move(namespace_id), std::move(topic), 0);
 }
 
-Status ShadowedClient::Unsubscribe(NamespaceID,
-                                   Topic,
-                                   SubscriptionHandle sub_handle) {
-  // TODO(pja): Ignoring namespace/topic for now, just want new API to be
-  // hooked up.
-  return Unsubscribe(sub_handle);
+Status ShadowedClient::Unsubscribe(NamespaceID namespace_id, Topic topic) {
+  bool shadowed;
+  {
+    std::lock_guard<std::mutex> lock(subs_mutex_);
+    shadowed = (shadowed_subs_[namespace_id].erase(topic) != 0);
+  }
+  if (shadowed) {
+    shadowed_client_->Unsubscribe(namespace_id, topic);
+  }
+  return client_->Unsubscribe(namespace_id, topic);
 }
 
 Status ShadowedClient::Acknowledge(const MessageReceived& message) {

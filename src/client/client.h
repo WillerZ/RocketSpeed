@@ -93,11 +93,11 @@ class ClientImpl : public Client {
                      std::move(data_loss_callback));
   }
 
-  Status Unsubscribe(SubscriptionHandle sub_handle) override;
-
   Status Unsubscribe(NamespaceID namespace_id,
                      Topic topic,
                      SubscriptionHandle sub_handle) override;
+
+  Status Unsubscribe(NamespaceID namespace_id, Topic topic) override;
 
   Status Acknowledge(const MessageReceived& message) override;
 

@@ -166,11 +166,6 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
 
   std::unique_ptr<BacklogQueryStore> backlog_query_store_;
 
-  /// For API compatibility, we may store an ID->topic map to allow old
-  /// applications to use Unsubscribe without topic. This map is only
-  /// populated if the compatibility_allow_sub_handles option is set.
-  std::unordered_map<SubscriptionID, TopicUUID> id_to_topic_;
-
   /// Shard for this subscriber.
   const size_t shard_id_;
 

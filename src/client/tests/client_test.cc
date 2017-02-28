@@ -798,13 +798,12 @@ TEST_F(ClientTest, GetCopilotFailure) {
   config_->SetCopilot(HostId());
 
   // Subscribe, no call should make it to the Copilot.
-  auto sub_handle =
-      client->Subscribe(GuestTenant, GuestNamespace, "GetCopilotFailure", 0);
+  client->Subscribe(GuestTenant, GuestNamespace, "GetCopilotFailure", 0);
   ASSERT_TRUE(!subscribe_sem.TimedWait(negative_timeout));
 
   // While disconnected, unsubscribe and subscribe again, this shouldn't affect
   // the scenario.
-  client->Unsubscribe(sub_handle);
+  client->Unsubscribe(GuestNamespace, "GetCopilotFailure");
   client->Subscribe(GuestTenant, GuestNamespace, "GetCopilotFailure", 0);
 
   // Copilot shouldn't receive anything.
@@ -863,7 +862,7 @@ TEST_F(ClientTest, OfflineOperations) {
   auto unsub = [&](Topic topic_name) {
     auto it = subscriptions.find(topic_name);
     ASSERT_TRUE(it != subscriptions.end());
-    ASSERT_OK(client->Unsubscribe(it->second.second));
+    ASSERT_OK(client->Unsubscribe(GuestNamespace, topic_name));
     ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
     subscriptions.erase(it);
   };
@@ -1069,30 +1068,27 @@ TEST_F(ClientTest, ClientSubscriptionLimit) {
                              });
   };
 
-  auto unsubscribe = [&](SubscriptionHandle handle) {
-    ASSERT_OK(client->Unsubscribe(handle));
+  auto unsubscribe = [&](Topic topic) {
+    ASSERT_OK(client->Unsubscribe(GuestNamespace, topic));
     ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
   };
 
   // First Subscription (can subscribe)
   Topic topic_name = "1";
-  auto sub_handle_1 = subscribe(topic_name);
-  ASSERT_TRUE(sub_handle_1);
+  ASSERT_TRUE(subscribe(topic_name));
 
   // Second Subscription (cannot subscribe)
   topic_name = "2";
-  auto sub_handle_2 = subscribe(topic_name);
-  ASSERT_TRUE(sub_handle_2);
+  ASSERT_TRUE(subscribe(topic_name));
   ASSERT_TRUE(invalid_subscription_sem.TimedWait(positive_timeout));
 
-  unsubscribe(sub_handle_1);
+  unsubscribe("1");
 
   // can subscribe now
   topic_name = "2";
-  sub_handle_2 = subscribe(topic_name);
-  ASSERT_TRUE(sub_handle_2);
+  ASSERT_TRUE(subscribe(topic_name));
 
-  unsubscribe(sub_handle_2);
+  unsubscribe("2");
 }
 
 TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
@@ -1135,8 +1131,8 @@ TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
                              });
   };
 
-  auto unsubscribe = [&](SubscriptionHandle handle, bool wait = true) {
-    ASSERT_OK(client->Unsubscribe(handle));
+  auto unsubscribe = [&](Topic topic, bool wait = true) {
+    ASSERT_OK(client->Unsubscribe(GuestNamespace, topic));
     if (wait) {
       ASSERT_TRUE(client_unsubscribe_sem.TimedWait(positive_timeout));
     }
@@ -1150,8 +1146,7 @@ TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
 
   // Second Subscription (cannot subscribe)
   topic_name = "2";
-  auto sub_handle_2 = subscribe(topic_name);
-  ASSERT_TRUE(sub_handle_2);
+  ASSERT_TRUE(subscribe(topic_name));
   ASSERT_TRUE(invalid_subscription_sem.TimedWait(positive_timeout));
 
   // Send an unsubscribe back to the client for the first subscription and wait.
@@ -1164,15 +1159,14 @@ TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
   ASSERT_TRUE(client_unsubscribe_sem.TimedWait(positive_timeout));
 
   // Now the subscription should pass
-  sub_handle_2 = subscribe(topic_name);
-  ASSERT_TRUE(sub_handle_2);
+  ASSERT_TRUE(subscribe(topic_name));
   ASSERT_TRUE(server_subscribe_sem.TimedWait(positive_timeout));
 
   // This would have no effect on the counter as this handle has already been
   // unsubscribed.
-  unsubscribe(sub_handle_1, false);
+  unsubscribe("1", false);
 
-  unsubscribe(sub_handle_2);
+  unsubscribe("2");
 }
 
 TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
@@ -1200,7 +1194,7 @@ TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
     options.inactive_stream_linger = std::chrono::seconds(0);
     auto client = CreateClient(std::move(options));
     for (int ix = 0; ix < kTopics; ++ix) {
-      auto handle = client->Subscribe(
+      client->Subscribe(
           GuestTenant,
           GuestNamespace,
           "ConnCache",
@@ -1208,7 +1202,7 @@ TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
           nullptr,
           [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
       ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
-      ASSERT_OK(client->Unsubscribe(handle));
+      ASSERT_OK(client->Unsubscribe(GuestNamespace, "ConnCache"));
       ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
     }
     auto key = copilot1.msg_loop->GetStatsPrefix() + ".accepts";
@@ -1228,7 +1222,7 @@ TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
   options.connection_without_streams_keepalive = std::chrono::milliseconds(1);
   options.inactive_stream_linger = std::chrono::seconds(0);
   auto client = CreateClient(std::move(options));
-  auto handle = client->Subscribe(
+  client->Subscribe(
       GuestTenant,
       GuestNamespace,
       "ConnCache",
@@ -1236,7 +1230,7 @@ TEST_F(ClientTest, CachedConnectionsWithoutStreams) {
       nullptr,
       [&](const SubscriptionStatus&) { unsubscribe_sem.Post(); });
   ASSERT_TRUE(subscribe_sem.TimedWait(positive_timeout));
-  ASSERT_OK(client->Unsubscribe(handle));
+  ASSERT_OK(client->Unsubscribe(GuestNamespace, "ConnCache"));
   ASSERT_TRUE(unsubscribe_sem.TimedWait(positive_timeout));
 
   auto server_connections_key =
@@ -1517,7 +1511,7 @@ TEST_F(ClientTest, ShadowedClientSubscribe) {
   ASSERT_FALSE(shadow_sub_semaphore.TimedWait(negative_timeout));
 
   // Simulate one unsubscription
-  ASSERT_OK(client->Unsubscribe(sub_handle));
+  ASSERT_OK(client->Unsubscribe(GuestNamespace, "Sample topic name"));
 
   // Check Unsubscribe - Semaphore and shadow semaphore should have value of 1
   ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
@@ -1533,7 +1527,7 @@ TEST_F(ClientTest, ShadowClientComparison) {
     semaphores, shadow_semaphores;
 
   std::mutex semaphores_mutex, shadow_semaphores_mutex;
-  std::set<SubscriptionHandle> handles;
+  std::set<Topic> topics;
   port::Semaphore unsub_semaphore, shadow_unsub_semaphore;
 
   // Topics: "a", "aa", "aaa", "aaaa"...
@@ -1588,15 +1582,16 @@ TEST_F(ClientTest, ShadowClientComparison) {
 
   // Simulate subscriptions
   for (int i = 1; i <= N; i++) {
+    auto topic = std::string(i, 'a');
     auto sub_handle = client->Subscribe(
       GuestTenant, /* tenantID */
       GuestNamespace, /* namespaceID */
-      std::string(i, 'a'), /* topic name */
+      topic, /* topic name */
       i, /* start sequence number */
       nullptr, /* deliver callback */
       [&](const SubscriptionStatus&) {}); /* subscription callback */
     ASSERT_TRUE(sub_handle);
-    handles.insert(sub_handle);
+    topics.insert(topic);
   }
 
   // Check subcribe method results
@@ -1610,11 +1605,11 @@ TEST_F(ClientTest, ShadowClientComparison) {
   }
 
   // Number of topic should be equal number of handles
-  ASSERT_EQ(N, handles.size());
+  ASSERT_EQ(N, topics.size());
 
   // Simulate unsubscriptions and check results
-  for (auto handle : handles) {
-    ASSERT_OK(client->Unsubscribe(handle));
+  for (auto topic : topics) {
+    ASSERT_OK(client->Unsubscribe(GuestNamespace, topic));
     ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
     ASSERT_TRUE(shadow_unsub_semaphore.TimedWait(positive_timeout));
   }
@@ -1684,7 +1679,7 @@ TEST_F(ClientTest, ShadowedClientPredicate) {
   ASSERT_FALSE(shadow_sub_semaphore.TimedWait(negative_timeout));
 
   // Simulate one unsubscription
-  ASSERT_OK(client->Unsubscribe(sub_handle));
+  ASSERT_OK(client->Unsubscribe(GuestNamespace, "Correct topic"));
 
   // Check Unsubscribe - Semaphore and shadow semaphore should have value of 1
   ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
@@ -1709,7 +1704,7 @@ TEST_F(ClientTest, ShadowedClientPredicate) {
   ASSERT_FALSE(shadow_sub_semaphore.TimedWait(negative_timeout));
 
   // Simulate one unsubscription
-  ASSERT_OK(client->Unsubscribe(sub_handle));
+  ASSERT_OK(client->Unsubscribe(GuestNamespace, "Incorrect topic"));
 
   // Check Unsubscribe - Semaphore value of 1, shadow semaphore value of 0
   ASSERT_TRUE(unsub_semaphore.TimedWait(positive_timeout));
@@ -1823,12 +1818,12 @@ TEST_F(ClientTest, SingleTopicFuzz) {
   int counter = 0;
   for (auto start = Clock::now();
        Clock::now() - start < std::chrono::seconds(5);) {
-    auto handle = client->Subscribe(params, std::make_unique<Observer>());
+    client->Subscribe(params, std::make_unique<Observer>());
     if (counter++ % 10 == 0) {
       // Every few subs/unsubs, wait to ensure server receives our sub.
       ASSERT_TRUE(subscribe_sem.TimedWait(std::chrono::seconds(10)));
     }
-    client->Unsubscribe(params.namespace_id, params.topic_name, handle);
+    client->Unsubscribe(params.namespace_id, params.topic_name);
   }
 }
 

@@ -339,10 +339,6 @@ SubscriptionHandle ClientImpl::Subscribe(
                                                std::move(data_loss_callback)));
 }
 
-Status ClientImpl::Unsubscribe(SubscriptionHandle sub_handle) {
-  return Unsubscribe("", "", sub_handle);
-}
-
 Status ClientImpl::Unsubscribe(NamespaceID namespace_id,
                                Topic topic,
                                SubscriptionHandle sub_handle) {
@@ -350,6 +346,11 @@ Status ClientImpl::Unsubscribe(NamespaceID namespace_id,
       std::move(namespace_id),
       std::move(topic),
       sub_handle);
+  return Status::OK();
+}
+
+Status ClientImpl::Unsubscribe(NamespaceID namespace_id, Topic topic) {
+  subscriber_->Unsubscribe(std::move(namespace_id), std::move(topic), 0);
   return Status::OK();
 }
 

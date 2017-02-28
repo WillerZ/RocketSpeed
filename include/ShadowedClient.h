@@ -6,6 +6,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 
 #include "RocketSpeed.h"
@@ -99,7 +100,7 @@ class ShadowedClient : public Client {
                      std::move(data_loss_callback));
   }
 
-  Status Unsubscribe(SubscriptionHandle sub_handle) override;
+  Status Unsubscribe(NamespaceID namespace_id, Topic topic) override;
 
   Status Unsubscribe(NamespaceID namespace_id,
                      Topic topic,
@@ -135,10 +136,8 @@ class ShadowedClient : public Client {
   std::unique_ptr<Client> client_;
   std::unique_ptr<Client> shadowed_client_;
 
-  // A map from subscriptionHandle for client_
-  // to subscriptionHandle for shadowed_client_
-  std::unordered_map<SubscriptionHandle, SubscriptionHandle>
-      client_to_shadowed_subs_;
+  // A set of topics that are being shadowed.
+  std::unordered_map<NamespaceID, std::unordered_set<Topic>> shadowed_subs_;
 
   // A mutex to protect client_to_shadowed_subs_ map
   std::mutex subs_mutex_;

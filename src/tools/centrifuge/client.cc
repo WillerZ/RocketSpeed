@@ -8,6 +8,7 @@
 #include "src/tools/centrifuge/centrifuge.h"
 #include "src/util/timeout_list.h"
 #include "src/util/pacer.h"
+#include "src/util/topic_uuid.h"
 #include <gflags/gflags.h>
 #include <thread>
 
@@ -196,19 +197,21 @@ SubscribeUnsubscribeRapidOptions::SubscribeUnsubscribeRapidOptions()
 int SubscribeUnsubscribeRapid(SubscribeUnsubscribeRapidOptions options) {
   auto num_subscriptions = options.num_subscriptions;
   auto subscription_ttl = options.subscription_ttl;
-  TimeoutList<SubscriptionHandle> handles;
+  TimeoutList<TopicUUID> topics;
   std::unique_ptr<CentrifugeSubscription> sub;
   Pacer pacer(options.subscribe_rate, 1);
   while (num_subscriptions-- && (sub = options.generator->Next())) {
     pacer.Wait();
     pacer.EndRequest();
-    SubscriptionHandle handle =
-      SubscribeWithRetries(options.client, sub->params, sub->observer);
-    handles.Add(handle);
-    handles.ProcessExpired(
+    SubscribeWithRetries(options.client, sub->params, sub->observer);
+    topics.Add(TopicUUID(sub->params.namespace_id, sub->params.topic_name));
+    topics.ProcessExpired(
       subscription_ttl,
-      [&] (SubscriptionHandle to_unsubscribe) {
-        options.client->Unsubscribe(to_unsubscribe);
+      [&] (TopicUUID uuid) {
+        NamespaceID namespace_id;
+        Topic topic;
+        uuid.GetTopicID(&namespace_id, &topic);
+        options.client->Unsubscribe(namespace_id, topic);
       },
       -1 /* no limit to number unsubscribed at once */);
   }

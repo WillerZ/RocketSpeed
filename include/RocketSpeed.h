@@ -221,13 +221,6 @@ class ClientOptions {
   // TenantID of the client
   TenantID tenant_id;
 
-  // Allow the use of SubscriptionHandle in Unsubscribe API for backwards
-  // compatibility. This increases memory. Clients should provide the namespace
-  // and topic in Unsubscribe and set this to false.
-  // Default: true
-  // TODO(pja): Remove once all clients migrated.
-  bool compatibility_allow_sub_handles;
-
   /** Creates options with default values. */
   ClientOptions();
 };
@@ -441,12 +434,12 @@ class Client {
    * @param A handle that identifies the subscription.
    * @return Status::OK() iff unsubscription request was successfully enqueued.
    */
+  virtual Status Unsubscribe(NamespaceID namespace_id, Topic topic) = 0;
+
+  // DEPRECATED
   virtual Status Unsubscribe(NamespaceID namespace_id,
                              Topic topic,
                              SubscriptionHandle sub_handle) = 0;
-
-  // DEPRECATED
-  virtual Status Unsubscribe(SubscriptionHandle sub_handle) = 0;
 
   /**
    * Acknowledges that this message was processed by the application.
