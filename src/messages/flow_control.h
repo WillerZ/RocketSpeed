@@ -110,7 +110,10 @@ class FlowControl {
   /** Drop sink and remove backpressure if it is blocking anything */
   void UnregisterSink(AbstractSink* sink);
 
-  const Statistics& GetStatistics() const {
+  const Statistics& GetStatistics() {
+    stats_.backpressure_current->Set(
+        stats_.backpressure_applied->Get() -
+        stats_.backpressure_lifted->Get());
     return stats_.all;
   }
 
@@ -278,11 +281,14 @@ class FlowControl {
         all.AddCounter(prefix + "backpressure_applied");
       backpressure_lifted =
         all.AddCounter(prefix + "backpressure_lifted");
+      backpressure_current =
+        all.AddCounter(prefix + "backpressure_current");
     }
 
     Statistics all;
     Counter* backpressure_applied;
     Counter* backpressure_lifted;
+    Counter* backpressure_current;
   } stats_;
 };
 
