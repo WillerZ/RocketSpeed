@@ -139,7 +139,7 @@ SubscriptionHandle ShadowedClient::Subscribe(
 Status ShadowedClient::Unsubscribe(NamespaceID namespace_id,
                                    Topic topic,
                                    SubscriptionHandle) {
-  return Unsubscribe(std::move(namespace_id), std::move(topic), 0);
+  return Unsubscribe(std::move(namespace_id), std::move(topic));
 }
 
 Status ShadowedClient::Unsubscribe(NamespaceID namespace_id, Topic topic) {
