@@ -118,11 +118,12 @@ class Rocketeer {
       InboundID inbound_id, SubscriptionParameters params);
 
   /**
-   * Notifies about new inbound subscription.
-   * This method is guaranteed to always be called on the same thread.
+   * Notifies about new inbound subscription. This method is
+   * guaranteed to always be called on the same thread.
    * Implementations should provide either TryHandleNewSubscription or
-   * HandleNewSubscription, but not both. If both are provided, this version
-   * is preferred. Implementations should call AckSubscribe.
+   * HandleNewSubscription, but not both. If both are provided, this
+   * version is preferred. Implementations should call AckSubscribe
+   * before they attempt to deliver or terminate the subscription.
    *
    * @param flow Flow control handle for exerting back-pressure.
    * @param inbound_id Globally unique ID of this subscription.
@@ -280,7 +281,11 @@ class Rocketeer {
    * Send a message acknowledging a subscription. This must be called
    * after handling a new subscription. Without this call, clients
    * cannot reliably move sequence numbers forward. On disconnect,
-   * clients would resubscribe from their initial seq no.
+   * clients would resubscribe from their initial seq no. Messages
+   * will not be delivered by clients until the sub is acknowledged.
+   * Terminations sent from the server will be ignored by the client
+   * if not first acknowledged. In short, this should happen before
+   * any data or unsubscribe is sent.
    */
   virtual void AckSubscribe(Flow* flow,
                             InboundID inbound_id,

@@ -174,7 +174,7 @@ class CopilotWorker {
   void ProcessSubscribe(const TenantID tenant_id,
                         const Slice namespace_id,
                         const Slice topic_name,
-                        SequenceNumber start_seqno,
+                        const CursorVector& cursors,
                         const SubscriptionID sub_id,
                         const LogID logid,
                         const int worker_id,

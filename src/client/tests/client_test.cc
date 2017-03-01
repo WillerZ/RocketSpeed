@@ -1105,6 +1105,12 @@ TEST_F(ClientTest, ClientSubscriptionLimitWithTerminateReceivedFromServer) {
        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
          stream_id = origin;
          server_subscribe_sem.Post();
+         auto msg_sub = static_cast<MessageSubscribe*>(msg.get());
+         MessageSubAck ack(msg_sub->GetTenantID(),
+                           msg_sub->GetNamespace().ToString(),
+                           msg_sub->GetTopicName().ToString(),
+                           msg_sub->GetStart());
+         server_ptr->SendResponse(ack, origin, 0);
        }},
       {MessageType::mUnsubscribe,
         [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {}}

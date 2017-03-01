@@ -409,4 +409,18 @@ void Multiplexer::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   }
 }
 
+void Multiplexer::ReceiveSubAck(StreamReceiveArg<MessageSubAck> arg) {
+  auto& ack = arg.message;
+
+  LOG_DEBUG(GetOptions().info_log,
+            "ReceiveSubAck(%" PRIu64 ", %s)",
+            arg.stream_id,
+            MessageTypeName(ack->GetMessageType()));
+
+  subscriptions_map_.ProcessAckSubscribe(ack->GetNamespace(),
+                                         ack->GetTopic(),
+                                         ack->GetCursors());
+}
+
+
 }  // namespace rocketspeed

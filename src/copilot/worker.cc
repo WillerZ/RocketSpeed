@@ -88,7 +88,7 @@ CopilotWorker::WorkerCommand(LogID logid,
           ProcessSubscribe(subscribe->GetTenantID(),
                            subscribe->GetNamespace(),
                            subscribe->GetTopicName(),
-                           subscribe->GetStartSequenceNumber(),
+                           subscribe->GetStart(),
                            subscribe->GetSubID(),
                            logid,
                            worker_id,
@@ -455,12 +455,15 @@ void CopilotWorker::ProcessTailSeqno(std::unique_ptr<Message> message,
 void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
                                      const Slice namespace_id,
                                      const Slice topic_name,
-                                     SequenceNumber start_seqno,
+                                     const CursorVector& cursors,
                                      const SubscriptionID sub_id,
                                      const LogID logid,
                                      const int worker_id,
                                      const StreamID subscriber) {
   TopicUUID uuid(namespace_id, topic_name);
+  RS_ASSERT(cursors.size() == 1);
+  auto start_seqno = cursors[0].seqno;
+
   LOG_INFO(options_.info_log,
            "Received subscribe request ID(%llu) for %s@%" PRIu64 " for %" PRIu64,
            sub_id.ForLogging(),
@@ -558,6 +561,21 @@ void CopilotWorker::ProcessSubscribe(const TenantID tenant_id,
                 logid,
                 worker_id,
                 subscriber);
+
+  MessageSubAck ack(tenant_id,
+                    namespace_id.ToString(),
+                    topic_name.ToString(),
+                    std::move(cursors));
+  auto command = MsgLoop::ResponseCommand(ack, subscriber);
+  if (client_queues_[worker_id]->Write(command)) {
+    LOG_DEBUG(options_.info_log,
+              "Sent sub ack for StreamID(%" PRIu64 ")",
+              subscriber);
+  } else {
+    LOG_WARN(options_.info_log,
+             "Failed to send sub ack for StreamID(%" PRIu64 ")",
+             subscriber);
+  }
 }
 
 void CopilotWorker::ProcessUnsubscribe(TenantID tenant_id,

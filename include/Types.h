@@ -117,6 +117,10 @@ class Cursor {
   : source(std::move(_source))
   , seqno(_seqno) {}
 
+  bool operator!=(const Cursor& rhs) const {
+    return !(*this == rhs);
+  }
+
   bool operator==(const Cursor& rhs) const {
     return seqno == rhs.seqno && source == rhs.source;
   }

@@ -89,6 +89,7 @@ class DeadLockRocketeer : public Rocketeer {
     RS_ASSERT(params.cursors[0].source == "");
     p.second.seqno = params.cursors[0].seqno + 1;
     if (new_tasks_.write(p)) {
+      server_->AckSubscribe(id, params);
       return BackPressure::None();
     } else {
       return BackPressure::RetryAfter(std::chrono::milliseconds(10));

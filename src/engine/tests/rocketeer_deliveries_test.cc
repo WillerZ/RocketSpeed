@@ -111,6 +111,7 @@ struct DeliveryRocketeer : public Rocketeer {
       Deliver(flow, inbound_id, params.namespace_id, params.topic_name,
           {"", num}, std::string(deliver_msg_));
     }
+    AckSubscribe(flow, inbound_id, params);
   }
 
   void HandleUnsubscribe(Flow*,

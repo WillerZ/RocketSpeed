@@ -292,7 +292,7 @@ void Subscriber::HasMessageSince(HasMessageSinceParams params) {
   // list to be sent when the connection is ready, otherwise we put it into a
   // waiting queue until the relevant subscription is synced.
   TopicUUID uuid(params.namespace_id, params.topic);
-  auto mode = subscriptions_map_.IsSynced(uuid) ?
+  auto mode = subscriptions_map_.IsSent(uuid) ?
       BacklogQueryStore::Mode::kPendingSend :
       BacklogQueryStore::Mode::kAwaitingSync;
 
@@ -479,6 +479,20 @@ void Subscriber::ProcessUnsubscribe(
   stats_->active_subscriptions->Set(*num_active_subscriptions_);
 }
 
+void Subscriber::ReceiveSubAck(StreamReceiveArg<MessageSubAck> arg) {
+  thread_check_.Check();
+  auto& ack = arg.message;
+
+  LOG_DEBUG(options_.info_log,
+            "ReceiveSubAck(%" PRIu64 ", %s)",
+            arg.stream_id,
+            MessageTypeName(ack->GetMessageType()));
+
+  subscriptions_map_.ProcessAckSubscribe(ack->GetNamespace(),
+                                         ack->GetTopic(),
+                                         ack->GetCursors());
+}
+
 void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   thread_check_.Check();
   auto flow = arg.flow;
@@ -494,6 +508,8 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
 
   if (!subscriptions_map_.ProcessDeliver(flow, *deliver)) {
     // Message didn't match a subscription.
+    LOG_DEBUG(options_.info_log,
+              "Could not find a subscription");
     return;
   }
 

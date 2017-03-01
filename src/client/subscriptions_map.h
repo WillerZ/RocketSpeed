@@ -77,12 +77,11 @@ class SubscriptionBase {
 
   void SetUserData(void* user_data) { user_data_ = user_data; }
 
+  // TODO:
   /// Returns true if the state transition carried by the update has been
   /// recorded and the update shall be delivered, false if the update could not
   /// be applied due to mismatched sequence numbers.
-  bool ProcessUpdate(Logger* info_log,
-                     SequenceNumber previous,
-                     Cursor current);
+  bool ProcessUpdate(Logger* info_log, Cursor current);
 
   /// Retrieves an ID that the subscription currently uses in communication with
   /// the server.
@@ -117,6 +116,8 @@ class SubscriptionBase {
     sub_id_ = sub_id;
     expected_ = std::move(expected);
   }
+
+  void SetCursor(Cursor cursor) { expected_ = std::move(cursor); }
   /// @}
 };
 
@@ -276,7 +277,7 @@ class SubscriptionsMap {
   bool Exists(const SubscriptionKey& key) const;
 
   /// Checks if a subscription has been synced to the server.
-  bool IsSynced(const SubscriptionKey& key) const;
+  bool IsSent(const SubscriptionKey& key) const;
 
   /// Rewinds provided subscription to a given cursor.
   void Rewind(const SubscriptionKey& key,
@@ -304,6 +305,10 @@ class SubscriptionsMap {
 
   void StartSync();
   void StopSync();
+
+  void ProcessAckSubscribe(Slice namespace_id,
+                           Slice topic_name,
+                           const CursorVector& start);
 
   /// Returns true iif the unsubscribe matched a subscription, and fills the
   /// info with the removed subscription.
@@ -338,6 +343,7 @@ class SubscriptionsMap {
                 SubscriptionsMapping>;
   ObservableContainer<Subscriptions> pending_subscriptions_;
   Subscriptions synced_subscriptions_;
+  Subscriptions pending_ack_subscriptions_;
 
   using Unsubscribes =
       std::unordered_map<TopicUUID, std::vector<SubscriptionID>>;
@@ -395,6 +401,13 @@ void SubscriptionsMap::Iterate(Iter&& iter) {
   };
 
   for (auto ptr : pending_subscriptions_.Read()) {
+    const SubscriptionStateData data(ptr);
+    bool keep_iterating = iter(data);
+    if (!keep_iterating) {
+      return;
+    }
+  }
+  for (auto ptr : pending_ack_subscriptions_) {
     const SubscriptionStateData data(ptr);
     bool keep_iterating = iter(data);
     if (!keep_iterating) {

@@ -166,6 +166,7 @@ class Multiplexer : public ConnectionAwareReceiver {
   void ConnectionChanged() final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
+  void ReceiveSubAck(StreamReceiveArg<MessageSubAck>) final override;
 
   void SendMessage(Flow* flow, std::unique_ptr<Message> message);
 };

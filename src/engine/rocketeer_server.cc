@@ -306,7 +306,7 @@ void CommunicationRocketeer::AckSubscribe(Flow* flow,
   auto ack = std::make_unique<MessageSubAck>(
     tenant_id, std::move(params.namespace_id),
     std::move(params.topic_name),
-    std::move(params.cursors), inbound_id.GetSubID());
+    std::move(params.cursors));
   SendResponse(flow, inbound_id.stream_id, std::move(ack));
 }
 

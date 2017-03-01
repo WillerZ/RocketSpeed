@@ -182,6 +182,7 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
 
   void ConnectionChanged() final override;
   void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
+  void ReceiveSubAck(StreamReceiveArg<MessageSubAck>) final override;
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
   void ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill>) final override;
 

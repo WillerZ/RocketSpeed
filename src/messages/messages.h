@@ -914,24 +914,28 @@ class MessageSubAck : public Message {
   MessageSubAck(TenantID tenant_id,
                 NamespaceID namespace_id,
                 Topic topic,
-                CursorVector cursors,
-                SubscriptionID sub_id)
+                CursorVector cursors)
     : Message(MessageType::mSubAck, tenant_id),
       namespace_id_(std::move(namespace_id)),
       topic_(std::move(topic)),
-      cursors_(std::move(cursors)),
-      sub_id_(sub_id) {}
+      cursors_(std::move(cursors)) {}
 
   MessageSubAck() {}
 
   virtual Status Serialize(std::string* out) const override;
   Status DeSerialize(Slice* in) override;
 
+  Slice GetNamespace() const { return namespace_id_; }
+
+  Slice GetTopic() const { return topic_; }
+
+  const CursorVector& GetCursors() { return cursors_; }
+
  private:
   NamespaceID namespace_id_;
   Topic topic_;
   CursorVector cursors_;
-  SubscriptionID sub_id_;
+  SubscriptionID sub_id_ = SubscriptionID::Unsafe(0);
 };
 
 /**

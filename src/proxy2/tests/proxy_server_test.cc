@@ -237,6 +237,10 @@ class MessageBus : public StreamReceiver {
       return;
     }
 
+    if (type == MessageType::mSubAck) {
+      return;
+    }
+
     if (type == MessageType::mGoodbye) {
       streams_.erase(arg.stream_id);
     }
@@ -629,11 +633,17 @@ TEST_F(ProxyServerTest, Multiplexing_DefaultAccumulator) {
     server_stream = received.stream_id;
     auto message = received.message.get();
     EXPECT_EQ(MessageType::mSubscribe, message->GetMessageType());
-    SubscriptionID sub_id = static_cast<MessageSubscribe*>(message)->GetSubID();
+    auto msub = static_cast<MessageSubscribe*>(message);
+    SubscriptionID sub_id = msub->GetSubID();
     EXPECT_TRUE(sub_id);
     if (expected_sub_id) {
       EXPECT_EQ(expected_sub_id, sub_id);
     }
+    MessageSubAck ack(msub->GetTenantID(),
+                      msub->GetNamespace().ToString(),
+                      msub->GetTopicName().ToString(),
+                      msub->GetStart());
+    server->Send(server_stream, ack);
     return sub_id;
   };
   auto receive_unsubscribe = [&](uint64_t expected_sub_id) {
@@ -828,6 +838,11 @@ TEST_F(ProxyServerTest, ForwardingAndMultiplexing) {
       auto subscribe = static_cast<MessageSubscribe*>(received.message.get());
       ASSERT_EQ(Slice(topic_name), subscribe->GetTopicName());
       server_sub_ids[i] = subscribe->GetSubID();
+      MessageSubAck ack(subscribe->GetTenantID(),
+                        subscribe->GetNamespace().ToString(),
+                        subscribe->GetTopicName().ToString(),
+                        subscribe->GetStart());
+      server->Send(server_streams[i], ack);
     }
     // Send back a message on the subscription.
     MessageDeliverData data(
