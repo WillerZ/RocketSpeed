@@ -81,8 +81,7 @@
 // See /usr/(local/)?doc/sparsehash-*/sparse_hash_map.html
 // for information about how to use this class.
 
-#ifndef _SPARSE_HASH_MAP_H_
-#define _SPARSE_HASH_MAP_H_
+#pragma once
 
 #include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <algorithm>                        // needed by stl_alloc
@@ -91,11 +90,11 @@
 #include <utility>                          // for pair<>
 #include "external/sparsehash/sparsehash/internal/libc_allocator_with_realloc.h"
 #include "external/sparsehash/sparsehash/internal/sparsehashtable.h"       // IWYU pragma: export
-#include HASH_FUN_H                 // for hash<>
-_START_GOOGLE_NAMESPACE_
+#include ROCKETSPEED_HASH_FUN_H                 // for hash<>
+_START_ROCKETSPEED_NAMESPACE_
 
 template <class Key, class T,
-          class HashFcn = SPARSEHASH_HASH<Key>,   // defined in sparseconfig.h
+          class HashFcn = ROCKETSPEED_SPARSEHASH_HASH<Key>,   // defined in sparseconfig.h
           class EqualKey = std::equal_to<Key>,
           class Alloc = libc_allocator_with_realloc<std::pair<const Key, T> > >
 class sparse_hash_map {
@@ -362,6 +361,4 @@ inline void swap(sparse_hash_map<Key, T, HashFcn, EqualKey, Alloc>& hm1,
   hm1.swap(hm2);
 }
 
-_END_GOOGLE_NAMESPACE_
-
-#endif /* _SPARSE_HASH_MAP_H_ */
+_END_ROCKETSPEED_NAMESPACE_

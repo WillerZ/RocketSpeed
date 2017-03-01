@@ -221,8 +221,7 @@
 // Note: this uses STL style for naming, rather than Google naming.
 // That's because this is an STL-y container
 
-#ifndef UTIL_GTL_SPARSETABLE_H_
-#define UTIL_GTL_SPARSETABLE_H_
+#pragma once
 
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic push
@@ -231,13 +230,13 @@
 #include <stdlib.h>             // for malloc/free
 #include <stdio.h>              // to read/write tables
 #include <string.h>             // for memcpy
-#ifdef HAVE_STDINT_H
+#ifdef ROCKETSPEED_HAVE_STDINT_H
 #include <stdint.h>         // the normal place uint16_t is defined
 #endif
-#ifdef HAVE_SYS_TYPES_H
+#ifdef ROCKETSPEED_HAVE_SYS_TYPES_H
 #include <sys/types.h>      // the normal place u_int16_t is defined
 #endif
-#ifdef HAVE_INTTYPES_H
+#ifdef ROCKETSPEED_HAVE_INTTYPES_H
 #include <inttypes.h>       // a third place for uint16_t or u_int16_t
 #endif
 #include <assert.h>             // for bounds checking
@@ -250,10 +249,10 @@
 #include "external/sparsehash/sparsehash/internal/libc_allocator_with_realloc.h"
 
 // A lot of work to get a type that's guaranteed to be 16 bits...
-#ifndef HAVE_U_INT16_T
-# if defined HAVE_UINT16_T
+#ifndef ROCKETSPEED_HAVE_U_INT16_T
+# if defined ROCKETSPEED_HAVE_UINT16_T
     typedef uint16_t u_int16_t;    // true on solaris, possibly other C99 libc's
-# elif defined HAVE___UINT16
+# elif defined ROCKETSPEED_HAVE___UINT16
     typedef __int16 int16_t;       // true on vc++7
     typedef unsigned __int16 u_int16_t;
 # else
@@ -263,15 +262,15 @@
 # endif
 #endif
 
-_START_GOOGLE_NAMESPACE_
+_START_ROCKETSPEED_NAMESPACE_
 
 namespace base {   // just to make google->opensource transition easier
-using GOOGLE_NAMESPACE::true_type;
-using GOOGLE_NAMESPACE::false_type;
-using GOOGLE_NAMESPACE::integral_constant;
-using GOOGLE_NAMESPACE::has_trivial_copy;
-using GOOGLE_NAMESPACE::has_trivial_destructor;
-using GOOGLE_NAMESPACE::is_same;
+using ROCKETSPEED_NAMESPACE::true_type;
+using ROCKETSPEED_NAMESPACE::false_type;
+using ROCKETSPEED_NAMESPACE::integral_constant;
+using ROCKETSPEED_NAMESPACE::has_trivial_copy;
+using ROCKETSPEED_NAMESPACE::has_trivial_destructor;
+using ROCKETSPEED_NAMESPACE::is_same;
 }
 
 
@@ -1818,8 +1817,6 @@ inline void swap(sparsetable<T,GROUP_SIZE,Alloc> &x,
   x.swap(y);
 }
 
-_END_GOOGLE_NAMESPACE_
+_END_ROCKETSPEED_NAMESPACE_
 
 #pragma GCC diagnostic pop // ignored "-Wconversion"
-
-#endif  // UTIL_GTL_SPARSETABLE_H_

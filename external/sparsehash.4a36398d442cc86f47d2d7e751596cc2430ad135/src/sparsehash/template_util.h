@@ -46,11 +46,11 @@
 // Both of these outcomes means that we may be able to directly replace
 // some of these with boost equivalents.
 //
-#ifndef BASE_TEMPLATE_UTIL_H_
-#define BASE_TEMPLATE_UTIL_H_
+
+#pragma once
 
 #include "external/sparsehash/sparsehash/internal/sparseconfig.h"
-_START_GOOGLE_NAMESPACE_
+_START_ROCKETSPEED_NAMESPACE_
 
 // Types small_ and big_ are guaranteed such that sizeof(small_) <
 // sizeof(big_)
@@ -129,6 +129,4 @@ struct or_ : public integral_constant<bool, (A::value || B::value)> {
 };
 
 
-_END_GOOGLE_NAMESPACE_
-
-#endif  // BASE_TEMPLATE_UTIL_H_
+_END_ROCKETSPEED_NAMESPACE_

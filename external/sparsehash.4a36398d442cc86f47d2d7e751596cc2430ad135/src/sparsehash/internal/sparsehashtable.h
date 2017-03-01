@@ -92,8 +92,7 @@
 // The value type is required to be copy constructible and default
 // constructible, but it need not be (and commonly isn't) assignable.
 
-#ifndef _SPARSEHASHTABLE_H_
-#define _SPARSEHASHTABLE_H_
+#pragma once
 
 #include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <assert.h>
@@ -106,10 +105,10 @@
 #include "external/sparsehash/sparsehash/sparsetable"    // IWYU pragma: export
 #include <stdexcept>                 // For length_error
 
-_START_GOOGLE_NAMESPACE_
+_START_ROCKETSPEED_NAMESPACE_
 
 namespace base {   // just to make google->opensource transition easier
-using GOOGLE_NAMESPACE::remove_const;
+using ROCKETSPEED_NAMESPACE::remove_const;
 }
 
 // The probing method
@@ -1292,6 +1291,4 @@ const int sparse_hashtable<V,K,HF,ExK,SetK,EqK,A>::HT_EMPTY_PCT
   = static_cast<int>(0.4 *
                      sparse_hashtable<V,K,HF,ExK,SetK,EqK,A>::HT_OCCUPANCY_PCT);
 
-_END_GOOGLE_NAMESPACE_
-
-#endif /* _SPARSEHASHTABLE_H_ */
+_END_ROCKETSPEED_NAMESPACE_

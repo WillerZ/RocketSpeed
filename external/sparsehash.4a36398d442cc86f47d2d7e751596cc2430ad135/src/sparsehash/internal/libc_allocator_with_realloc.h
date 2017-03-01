@@ -29,15 +29,14 @@
 
 // ---
 
-#ifndef UTIL_GTL_LIBC_ALLOCATOR_WITH_REALLOC_H_
-#define UTIL_GTL_LIBC_ALLOCATOR_WITH_REALLOC_H_
+#pragma once
 
 #include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <stdlib.h>           // for malloc/realloc/free
 #include <stddef.h>           // for ptrdiff_t
 #include <new>                // for placement new
 
-_START_GOOGLE_NAMESPACE_
+_START_ROCKETSPEED_NAMESPACE_
 
 template<class T>
 class libc_allocator_with_realloc {
@@ -114,6 +113,4 @@ inline bool operator!=(const libc_allocator_with_realloc<T>&,
   return false;
 }
 
-_END_GOOGLE_NAMESPACE_
-
-#endif  // UTIL_GTL_LIBC_ALLOCATOR_WITH_REALLOC_H_
+_END_ROCKETSPEED_NAMESPACE_

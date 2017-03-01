@@ -86,8 +86,7 @@
 //    probes/successful lookup    1.06  1.5   1.75  2.5   3.0   5.5   50.5
 //    probes/unsuccessful lookup  1.12  2.5   3.6   8.5   13.0  50.0  5000.0
 
-#ifndef _DENSEHASHTABLE_H_
-#define _DENSEHASHTABLE_H_
+#pragma once
 
 #include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <assert.h>
@@ -102,14 +101,14 @@
 #include "external/sparsehash/sparsehash/type_traits.h"
 #include <stdexcept>                 // For length_error
 
-_START_GOOGLE_NAMESPACE_
+_START_ROCKETSPEED_NAMESPACE_
 
 namespace base {   // just to make google->opensource transition easier
-using GOOGLE_NAMESPACE::true_type;
-using GOOGLE_NAMESPACE::false_type;
-using GOOGLE_NAMESPACE::integral_constant;
-using GOOGLE_NAMESPACE::is_same;
-using GOOGLE_NAMESPACE::remove_const;
+using ROCKETSPEED_NAMESPACE::true_type;
+using ROCKETSPEED_NAMESPACE::false_type;
+using ROCKETSPEED_NAMESPACE::integral_constant;
+using ROCKETSPEED_NAMESPACE::is_same;
+using ROCKETSPEED_NAMESPACE::remove_const;
 }
 
 // The probing method
@@ -1320,6 +1319,4 @@ const int dense_hashtable<V,K,HF,ExK,SetK,EqK,A>::HT_EMPTY_PCT
   = static_cast<int>(0.4 *
                      dense_hashtable<V,K,HF,ExK,SetK,EqK,A>::HT_OCCUPANCY_PCT);
 
-_END_GOOGLE_NAMESPACE_
-
-#endif /* _DENSEHASHTABLE_H_ */
+_END_ROCKETSPEED_NAMESPACE_

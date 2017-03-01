@@ -37,8 +37,7 @@
 // Other functions and classes provide common code for serializing
 // and deserializing hashtables to a stream (such as a FILE*).
 
-#ifndef UTIL_GTL_HASHTABLE_COMMON_H_
-#define UTIL_GTL_HASHTABLE_COMMON_H_
+#pragma once
 
 #include "external/sparsehash/sparsehash/internal/sparseconfig.h"
 #include <assert.h>
@@ -47,7 +46,7 @@
 #include <iosfwd>
 #include <stdexcept>                 // For length_error
 
-_START_GOOGLE_NAMESPACE_
+_START_ROCKETSPEED_NAMESPACE_
 
 template <bool> struct SparsehashCompileAssert { };
 #define SPARSEHASH_COMPILE_ASSERT(expr, msg) \
@@ -376,6 +375,4 @@ class sh_hashtable_settings : public HashFunc {
 }  // namespace sparsehash_internal
 
 #undef SPARSEHASH_COMPILE_ASSERT
-_END_GOOGLE_NAMESPACE_
-
-#endif  // UTIL_GTL_HASHTABLE_COMMON_H_
+_END_ROCKETSPEED_NAMESPACE_
