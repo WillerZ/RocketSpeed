@@ -25,12 +25,7 @@ namespace rocketspeed {
 using namespace std::placeholders;
 
 ////////////////////////////////////////////////////////////////////////////////
-SubscriptionBase::~SubscriptionBase() {
-  // We set user_data_ to null on deletion. This is a sanity check to ensure
-  // that we are always calling the user data cleanup callback, and not leaking
-  // user data.
-  RS_ASSERT(user_data_ == nullptr);
-}
+SubscriptionBase::~SubscriptionBase() {}
 
 bool SubscriptionBase::ProcessUpdate(Logger* info_log,
                                      Cursor current) {
@@ -146,10 +141,11 @@ void SubscriptionsMap::Subscribe(
 
   // Add new subscription.
   SubscriptionBase* state = new SubscriptionBase(
-            tenant_id, namespace_id, topic_name, sub_id, start[0], user_data);
+            tenant_id, namespace_id, topic_name, sub_id, start[0]);
   pending_subscriptions_.Modify([&](Subscriptions& map) {
     map.emplace(std::move(key), state);
   });
+  user_data_.emplace(key, user_data);
 
   // Pending subscriptions will be synced opportunistically, as adding an
   // element renders the Source readable.
@@ -189,7 +185,8 @@ bool SubscriptionsMap::Select(
       info->SetCursor(sub->GetExpected());
     }
     if (flags & Info::kUserData) {
-      info->SetUserData(sub->GetUserData());
+      auto it = user_data_.find(key);
+      info->SetUserData(it == user_data_.end() ? nullptr : it->second);
     }
     if (flags & Info::kSubID) {
       info->SetSubID(sub->GetSubscriptionID());
@@ -324,9 +321,7 @@ bool SubscriptionsMap::Empty() const {
 
 void SubscriptionsMap::SetUserData(
     const SubscriptionKey& key, void* user_data) {
-  auto sub = Find(key);
-  RS_ASSERT(sub);
-  sub->SetUserData(user_data);
+  user_data_[key] = user_data;
 }
 
 Logger* SubscriptionsMap::GetLogger() const {
@@ -393,12 +388,14 @@ void SubscriptionsMap::HandlePendingUnsubscription(
   }
 }
 
-void SubscriptionsMap::CleanupSubscription(
-    SubscriptionBase* sub) {
+void SubscriptionsMap::CleanupSubscription(SubscriptionBase* sub) {
   if (user_data_cleanup_cb_) {
-    user_data_cleanup_cb_(sub->GetUserData());
+    auto it = user_data_.find(sub->GetKey());
+    if (it != user_data_.end()) {
+      user_data_cleanup_cb_(it->second);
+      user_data_.erase(it);
+    }
   }
-  sub->SetUserData(nullptr);
   delete sub;
 }
 

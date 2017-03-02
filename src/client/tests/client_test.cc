@@ -137,12 +137,12 @@ class MockSubscriber : public SubscriberIf
     // MockSubscriber supports only one subscription id
     ASSERT_TRUE(!subscription_state_);
 
-    void* user_data = static_cast<void*>(observer.release());
+    user_data_ = static_cast<void*>(observer.release());
     subscription_state_ = std::make_unique<SubscriptionBase>(
       parameters.tenant_id,
       parameters.namespace_id,
       parameters.topic_name,
-      sub_id, parameters.cursors[0], user_data);
+      sub_id, parameters.cursors[0]);
     uuid_ = TopicUUID(parameters.namespace_id, parameters.topic_name);
   }
 
@@ -165,7 +165,7 @@ class MockSubscriber : public SubscriberIf
         info.GetNamespace(), info.GetTopic());
     info.GetObserver()->OnSubscriptionStatusChange(sub_status);
     delete info.GetObserver();
-    subscription_state_->SetUserData(nullptr);
+    user_data_ = nullptr;
     subscription_state_ = nullptr;
   }
 
@@ -195,7 +195,7 @@ class MockSubscriber : public SubscriberIf
       }
       if (flags & Info::kObserver) {
         info->SetObserver(
-            static_cast<Observer*>(subscription_state_->GetUserData()));
+            static_cast<Observer*>(user_data_));
       }
       return true;
     } else {
@@ -215,6 +215,7 @@ class MockSubscriber : public SubscriberIf
 
  private:
   std::unique_ptr<SubscriptionBase> subscription_state_;
+  void* user_data_ = nullptr;
   TopicUUID uuid_;
 };
 
@@ -1288,8 +1289,7 @@ TEST_F(ClientTest, TopicToSubscriptionMap) {
             GuestNamespace,
             topic_name,
             sub_id,
-            Cursor("", 0),
-            nullptr));
+            Cursor("", 0)));
   };
   auto remove = [&](SubscriptionID sub_id) { subscriptions.erase(sub_id); };
   TopicToSubscriptionMap map(

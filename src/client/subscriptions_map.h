@@ -39,12 +39,10 @@ class SubscriptionBase {
                    Slice namespace_id,
                    Slice topic_name,
                    SubscriptionID sub_id,
-                   Cursor start,
-                   void* user_data)
+                   Cursor start)
   : topic_uuid_(namespace_id, topic_name)
   , sub_id_(sub_id)
   , expected_(std::move(start))
-  , user_data_(user_data)
   , tenant_id_(tenant_id) {}
 
   ~SubscriptionBase();
@@ -73,10 +71,6 @@ class SubscriptionBase {
 
   const Cursor& GetExpected() const { return expected_; }
 
-  void* GetUserData() const { return user_data_; }
-
-  void SetUserData(void* user_data) { user_data_ = user_data; }
-
   // TODO:
   /// Returns true if the state transition carried by the update has been
   /// recorded and the update shall be delivered, false if the update could not
@@ -98,8 +92,6 @@ class SubscriptionBase {
   SubscriptionID sub_id_;
   /// Next expected sequence number on this subscription.
   Cursor expected_;
-  /// Opaque user data.
-  void* user_data_;
 
   TenantID tenant_id_;
 
@@ -349,6 +341,10 @@ class SubscriptionsMap {
       std::unordered_map<TopicUUID, std::vector<SubscriptionID>>;
   ObservableContainer<Unsubscribes> pending_unsubscribes_;
 
+  // Stores per-topic user data.
+  using UserDataMap = std::unordered_map<TopicUUID, void*>;
+  UserDataMap user_data_;
+
   std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
 
   /// Returns a non-owning pointer to the SubscriptionBase or null if doesn't
@@ -370,7 +366,9 @@ template <typename Iter>
 void SubscriptionsMap::Iterate(Iter&& iter) {
   class SubscriptionStateData : public SubscriptionData {
    public:
-    explicit SubscriptionStateData(SubscriptionBase* state) : state_(state) {}
+    explicit SubscriptionStateData(SubscriptionBase* state,
+                                   UserDataMap* user_data_map)
+    : state_(state), user_data_map_(user_data_map) {}
 
     TenantID GetTenant() const override {
       return state_->GetTenant();
@@ -393,29 +391,32 @@ void SubscriptionsMap::Iterate(Iter&& iter) {
     }
 
     void* GetUserData() const override {
-      return state_->GetUserData();
+      TopicUUID uuid(GetNamespace(), GetTopicName());
+      auto it = user_data_map_->find(uuid);
+      return it == user_data_map_->end() ? nullptr : it->second;
     }
 
    private:
     SubscriptionBase* state_;
+    UserDataMap* user_data_map_;
   };
 
   for (auto ptr : pending_subscriptions_.Read()) {
-    const SubscriptionStateData data(ptr);
+    const SubscriptionStateData data(ptr, &user_data_);
     bool keep_iterating = iter(data);
     if (!keep_iterating) {
       return;
     }
   }
   for (auto ptr : pending_ack_subscriptions_) {
-    const SubscriptionStateData data(ptr);
+    const SubscriptionStateData data(ptr, &user_data_);
     bool keep_iterating = iter(data);
     if (!keep_iterating) {
       return;
     }
   }
   for (auto ptr : synced_subscriptions_) {
-    const SubscriptionStateData data(ptr);
+    const SubscriptionStateData data(ptr, &user_data_);
     bool keep_iterating = iter(data);
     if (!keep_iterating) {
       return;
