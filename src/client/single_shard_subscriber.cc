@@ -439,22 +439,18 @@ void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
             static_cast<int>(arg.message->GetMessageType()));
 
   Info info;
-  if (!subscriptions_map_.ProcessUnsubscribe(
-      arg.flow, *arg.message, Info::kAll, &info)) {
-    // Didn't match a subscription.
-    return;
+  if (subscriptions_map_.ProcessUnsubscribe(*arg.message, Info::kAll, &info)) {
+    Status status;
+    switch (arg.message->GetReason()) {
+      case MessageUnsubscribe::Reason::kRequested:
+        break;
+      case MessageUnsubscribe::Reason::kInvalid:
+        status = Status::InvalidArgument("Invalid subscription");
+        break;
+        // No default, we will be warned about unhandled code.
+    }
+    ProcessUnsubscribe(sub_id, info, status);
   }
-
-  Status status;
-  switch (arg.message->GetReason()) {
-    case MessageUnsubscribe::Reason::kRequested:
-      break;
-    case MessageUnsubscribe::Reason::kInvalid:
-      status = Status::InvalidArgument("Invalid subscription");
-      break;
-      // No default, we will be warned about unhandled code.
-  }
-  ProcessUnsubscribe(sub_id, info, status);
 }
 
 void Subscriber::ProcessUnsubscribe(
@@ -506,7 +502,7 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
             sub_id.ForLogging(),
             MessageTypeName(deliver->GetMessageType()));
 
-  if (!subscriptions_map_.ProcessDeliver(flow, *deliver)) {
+  if (!subscriptions_map_.ProcessDeliver(*deliver)) {
     // Message didn't match a subscription.
     LOG_DEBUG(options_.info_log,
               "Could not find a subscription");

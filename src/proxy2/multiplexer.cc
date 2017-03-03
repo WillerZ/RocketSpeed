@@ -326,24 +326,20 @@ void Multiplexer::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
 
   using Info = decltype(subscriptions_map_)::Info;
   Info info;
-  Info::Flags flags = Info::kTopic | Info::kNamespace;
-  if (!subscriptions_map_.ProcessUnsubscribe(
-      arg.flow, *arg.message, flags, &info)) {
-    // Message didn't match a subscription.
-    return;
+  if (subscriptions_map_.ProcessUnsubscribe(*arg.message, Info::kNone, &info)) {
+    LOG_DEBUG(GetOptions().info_log,
+              "Multiplexer(%zu)::ReceiveTerminate(%s)",
+              per_shard_->GetShardID(),
+              uuid.ToString().c_str());
+
+    // The subscription has been removed from the map, so update an index.
+    RemoveFromIndex(arg.message->GetNamespace().ToString(),
+                    arg.message->GetTopicName().ToString());
+
+    // Broadcast termination.
+    GetUpstreamSubscription(uuid)->ReceiveTerminate(
+        per_shard_, arg.flow, std::move(arg.message));
   }
-
-  LOG_DEBUG(GetOptions().info_log,
-            "Multiplexer(%zu)::ReceiveTerminate(%s)",
-            per_shard_->GetShardID(),
-            uuid.ToString().c_str());
-
-  // The subscription has been removed from the map, so update an index.
-  RemoveFromIndex(info.GetNamespace(), info.GetTopic());
-
-  // Broadcast termination.
-  GetUpstreamSubscription(uuid)->ReceiveTerminate(
-      per_shard_, arg.flow, std::move(arg.message));
 }
 
 void Multiplexer::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
@@ -358,7 +354,7 @@ void Multiplexer::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
             uuid.ToString().c_str(),
             MessageTypeName(type));
 
-  if (subscriptions_map_.ProcessDeliver(arg.flow, *deliver)) {
+  if (subscriptions_map_.ProcessDeliver(*deliver)) {
     // Message was processed by a subscription.
     LOG_DEBUG(GetOptions().info_log,
               "Multiplexer(%zu)::ReceiveDeliver(%s, %s)",

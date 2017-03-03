@@ -304,11 +304,13 @@ class SubscriptionsMap {
 
   /// Returns true iif the unsubscribe matched a subscription, and fills the
   /// info with the removed subscription.
-  bool ProcessUnsubscribe(Flow* flow, const MessageUnsubscribe& message,
-      Info::Flags flags, Info* info);
+  bool ProcessUnsubscribe(
+      const MessageUnsubscribe& message,
+      Info::Flags flags,
+      Info* info);
 
   /// Returns true iff a subscription was advanced by the deliver message.
-  bool ProcessDeliver(Flow* flow, const MessageDeliver& message);
+  bool ProcessDeliver(const MessageDeliver& message);
 
  private:
   EventLoop* const event_loop_;
@@ -360,6 +362,9 @@ class SubscriptionsMap {
   void HandlePendingUnsubscription(Flow* flow, Unsubscribes::value_type sub);
 
   void CleanupSubscription(SubscriptionBase* sub);
+
+  // Checks some invariants about subscription state for a key.
+  void CheckInvariants(const SubscriptionKey& key);
 };
 
 template <typename Iter>

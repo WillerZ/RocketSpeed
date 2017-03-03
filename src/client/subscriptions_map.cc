@@ -91,19 +91,17 @@ SubscriptionsMap::SubscriptionsMap(
 
 SubscriptionsMap::~SubscriptionsMap() {
   pending_subscriptions_.Modify([&](Subscriptions& map) {
-    for (auto it = map.Begin(); it != map.End(); ++it) {
-      CleanupSubscription(*it);
+    for (auto* sub : map) {
+      CleanupSubscription(sub);
     }
   });
 
-  for (auto it = synced_subscriptions_.Begin();
-      it != synced_subscriptions_.End(); ++it) {
-    CleanupSubscription(*it);
+  for (auto* sub : synced_subscriptions_) {
+    CleanupSubscription(sub);
   }
 
-  for (auto it = pending_ack_subscriptions_.Begin();
-      it != pending_ack_subscriptions_.End(); ++it) {
-    CleanupSubscription(*it);
+  for (auto* sub : pending_ack_subscriptions_) {
+    CleanupSubscription(sub);
   }
 
   auto flow_control = event_loop_->GetFlowControl();
@@ -129,14 +127,9 @@ void SubscriptionsMap::Subscribe(
             topic_name.ToString().c_str(),
             start[0].ToString().c_str());
 
-  // Record the subscription.
-  // If we have pending sub on same topic, we should override it (new sub_id).
-  // If we have pending unsubs on same topic, we should leave it (diff sub_id).
-  // If we have synced sub on same topic, we should unsubscribe it.
-
   TopicUUID key(namespace_id, topic_name);
 
-  // Unsubscribe any already synced sub ID.
+  // Unsubscribe any existing sub, whatever state.
   Unsubscribe(key);
 
   // Add new subscription.
@@ -149,6 +142,7 @@ void SubscriptionsMap::Subscribe(
 
   // Pending subscriptions will be synced opportunistically, as adding an
   // element renders the Source readable.
+  CheckInvariants(key);
 }
 
 SubscriptionBase* SubscriptionsMap::Find(const SubscriptionKey& key) const {
@@ -261,6 +255,7 @@ void SubscriptionsMap::Rewind(const SubscriptionKey& key,
   });
   // Pending subscribe and unsubscribe events will be synced opportunistically,
   // as adding an element renders the Sources readable.
+  CheckInvariants(key);
 }
 
 void SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
@@ -311,6 +306,8 @@ void SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
         }
       }
   });
+
+  CheckInvariants(key);
 }
 
 bool SubscriptionsMap::Empty() const {
@@ -363,6 +360,8 @@ void SubscriptionsMap::HandlePendingSubscription(
   // We own the state pointer now.
   auto inserted = pending_ack_subscriptions_.Insert(state.release());
   RS_ASSERT(inserted);
+
+  CheckInvariants(key);
 }
 
 void SubscriptionsMap::HandlePendingUnsubscription(
@@ -386,6 +385,8 @@ void SubscriptionsMap::HandlePendingUnsubscription(
         MessageUnsubscribe::Reason::kRequested));
     message_handler_(flow, std::move(unsubscribe));
   }
+
+  CheckInvariants(subs.first);
 }
 
 void SubscriptionsMap::CleanupSubscription(SubscriptionBase* sub) {
@@ -454,30 +455,26 @@ void SubscriptionsMap::ProcessAckSubscribe(Slice namespace_id,
 
   synced_subscriptions_.Insert(*pend_it);
   pending_ack_subscriptions_.erase(pend_it);
+
+  CheckInvariants(key);
 }
 
 bool SubscriptionsMap::ProcessUnsubscribe(
-    Flow* flow,
     const MessageUnsubscribe& message,
     Info::Flags flags,
     Info* info) {
   const TopicUUID key(message.GetNamespace(), message.GetTopicName());
-  auto reason = message.GetReason();
-
-
-  switch (reason) {
+  bool result = false;
+  switch (message.GetReason()) {
     case MessageUnsubscribe::Reason::kInvalid:
     case MessageUnsubscribe::Reason::kRequested: {
       // Terminate the subscription only if it is already ack'd.
-      {
-        auto it = synced_subscriptions_.Find(key);
-        if (it != synced_subscriptions_.End()) {
-          // No need to send unsubscribe request, as we've just received one.
-          // Notify via callback.
-          Select(key, flags, info);
-          synced_subscriptions_.erase(it);
-          return true;
-        }
+      auto it = synced_subscriptions_.Find(key);
+      if (it != synced_subscriptions_.End()) {
+        Select(key, flags, info);
+        CleanupSubscription(*it);
+        synced_subscriptions_.erase(it);
+        result = true;
       }
       // A natural race between the server and the client terminating a
       // subscription.
@@ -485,34 +482,54 @@ bool SubscriptionsMap::ProcessUnsubscribe(
       // as the client has already Unsubscribed.
     } break;
   }
-  return false;
+  CheckInvariants(key);
+  return result;
 }
 
-bool SubscriptionsMap::ProcessDeliver(
-    Flow* flow, const MessageDeliver& message) {
+bool SubscriptionsMap::ProcessDeliver(const MessageDeliver& message) {
   const TopicUUID key(message.GetNamespace(), message.GetTopicName());
 
-  // Find the subscription.
-  SubscriptionBase* state = nullptr;
+  // Only process the delivery if the subscription is sync. If not synced, then
+  // the delivery must have been for a previous subscription.
+  bool result = false;
   auto it = synced_subscriptions_.Find(key);
   if (it != synced_subscriptions_.End()) {
-    state = *it; // don't delete since it stays in the map
+    Cursor cursor(message.GetDataSource().ToString(),
+                  message.GetSequenceNumber());
+    result =
+        (*it)->ProcessUpdate(event_loop_->GetLog().get(), std::move(cursor));
   } else {
     // A natural race between the server delivering a message and the client
     // terminating a subscription.
-    LOG_DEBUG(event_loop_->GetLog().get(),
-              "Could not find sub");
-    return false;
+    LOG_DEBUG(event_loop_->GetLog().get(), "Could not find sub");
   }
-  // Update the state.
-  if (!state->ProcessUpdate(event_loop_->GetLog().get(),
-                            Cursor(message.GetDataSource().ToString(),
-                                   message.GetSequenceNumber()))) {
-    // Drop the update.
-    return false;
+  CheckInvariants(key);
+  return result;
+}
+
+void SubscriptionsMap::CheckInvariants(const SubscriptionKey& key) {
+#ifndef NO_RS_ASSERT_DBG
+  const bool pending_sub =
+      pending_subscriptions_->find(key) != pending_subscriptions_->end();
+  const bool pending_ack =
+      pending_ack_subscriptions_.find(key) != pending_ack_subscriptions_.end();
+  const bool synced =
+      synced_subscriptions_.find(key) != synced_subscriptions_.end();
+  const bool pending_unsub =
+      pending_unsubscribes_->find(key) != pending_unsubscribes_->end();
+
+  // Subscription can be in one of pending_sub, pending_ack, synced.
+  RS_ASSERT_DBG(pending_sub + pending_ack + synced <= 1);
+
+  // If it is in pending_unsub, it can be in pending_sub, but not pending_ack
+  // or synced.
+  RS_ASSERT_DBG(!(pending_unsub && (pending_ack || synced)));
+
+  // If there's not sub, there should be no user data.
+  if (!pending_sub && !pending_ack && !synced && !pending_unsub) {
+    RS_ASSERT_DBG(!user_data_.count(key));
   }
-  // Deliver.
-  return true;
+#endif
 }
 
 }  // namespace rocketspeed
