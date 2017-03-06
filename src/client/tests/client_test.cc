@@ -1833,6 +1833,46 @@ TEST_F(ClientTest, SingleTopicFuzz) {
   }
 }
 
+TEST_F(ClientTest, RepeatedSubscribes) {
+  // Temporary test -- continually subscribes and unsubscribes on a single
+  // topic to check that server never receives two subs on the same topic from
+  // the same client.
+  port::Semaphore subscribe_sem;
+  bool subscribed = false;
+  auto copilot = MockServer(
+      {{MessageType::mSubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          ASSERT_TRUE(!subscribed);
+          subscribed = true;
+          subscribe_sem.Post();
+        }},
+       {MessageType::mUnsubscribe,
+        [&](Flow* flow, std::unique_ptr<Message> msg, StreamID origin) {
+          ASSERT_TRUE(subscribed);
+          subscribed = false;
+        }}});
+
+  const size_t kMaxSubscriptions = 10;
+
+  ClientOptions options;
+  options.num_workers = 1;
+  options.max_subscriptions = kMaxSubscriptions;
+  options.subscription_callback = [](const SubscriptionStatus& st) {
+    // All subscriptions should succeed.
+    ASSERT_OK(st.GetStatus());
+  };
+  auto client = CreateClient(std::move(options));
+
+  SubscriptionParameters params(GuestTenant, GuestNamespace, "Fuzz", 0);
+
+  // Subscribe twice the max number of subscriptions.
+  // Each should cancel out the last, so subscribing should never fail.
+  for (int i = 0; i < kMaxSubscriptions * 2; ++i) {
+    client->Subscribe(params, std::make_unique<Observer>());
+    ASSERT_TRUE(subscribe_sem.TimedWait(std::chrono::seconds(10)));
+  }
+}
+
 }  // namespace rocketspeed
 
 int main(int argc, char** argv) {

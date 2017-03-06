@@ -109,7 +109,7 @@ SubscriptionsMap::~SubscriptionsMap() {
   flow_control->UnregisterSource(&pending_subscriptions_);
 }
 
-void SubscriptionsMap::Subscribe(
+bool SubscriptionsMap::Subscribe(
     SubscriptionID sub_id,
     TenantID tenant_id,
     const Slice& namespace_id,
@@ -130,7 +130,7 @@ void SubscriptionsMap::Subscribe(
   TopicUUID key(namespace_id, topic_name);
 
   // Unsubscribe any existing sub, whatever state.
-  Unsubscribe(key);
+  bool existing_sub = Unsubscribe(key);
 
   // Add new subscription.
   SubscriptionBase* state = new SubscriptionBase(
@@ -143,6 +143,8 @@ void SubscriptionsMap::Subscribe(
   // Pending subscriptions will be synced opportunistically, as adding an
   // element renders the Source readable.
   CheckInvariants(key);
+
+  return !existing_sub;
 }
 
 SubscriptionBase* SubscriptionsMap::Find(const SubscriptionKey& key) const {
@@ -258,11 +260,12 @@ void SubscriptionsMap::Rewind(const SubscriptionKey& key,
   CheckInvariants(key);
 }
 
-void SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
+bool SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
   LOG_DEBUG(GetLogger(),
             "Unsubscribe(%s)",
             key.ToString().c_str());
 
+  bool removed = false;
   {
     auto sync_it = synced_subscriptions_.Find(key);
     if (sync_it != synced_subscriptions_.End()) {
@@ -275,11 +278,11 @@ void SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
           set[key].push_back(sub_id);
         });
 
-      return;
+      removed = true;
     }
   }
 
-  {
+  if (!removed) {
     auto pend_it = pending_ack_subscriptions_.Find(key);
     if (pend_it != pending_ack_subscriptions_.End()) {
       auto sub_id = (*pend_it)->GetSubscriptionID();
@@ -291,23 +294,27 @@ void SubscriptionsMap::Unsubscribe(const SubscriptionKey& key) {
           set[key].push_back(sub_id);
         });
 
-      return;
+      removed = true;
     }
   }
 
   // Pending unsubscribe events will be synced opportunistically, as adding an
   // element renders the Source readable.
-  pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
+  if (!removed) {
+    pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
       {
         auto pend_it = pending_subscriptions.Find(key);
         if (pend_it != pending_subscriptions.End()) {
           CleanupSubscription(*pend_it);
           pending_subscriptions.erase(pend_it);
+          removed = true;
         }
       }
-  });
+    });
+  }
 
   CheckInvariants(key);
+  return removed;
 }
 
 bool SubscriptionsMap::Empty() const {

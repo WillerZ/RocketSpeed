@@ -162,10 +162,9 @@ class SubscriptionsMap {
       UserDataCleanupCb user_data_cleanup_cb);
   ~SubscriptionsMap();
 
-  /// Returns a non-owning pointer to the SubscriptionBase.
-  ///
-  /// The pointer is valid until matching ::Unsubscribe call.
-  void Subscribe(SubscriptionID sub_id,
+  /// Returns true if a new subscription was added, and false if an existing
+  /// subscription was overridden.
+  bool Subscribe(SubscriptionID sub_id,
                  TenantID tenant_id,
                  const Slice& namespace_id,
                  const Slice& topic_name,
@@ -277,7 +276,7 @@ class SubscriptionsMap {
               Cursor new_cursor);
 
   /// Returns true if a subscription was terminated, false if it didn't exist.
-  void Unsubscribe(const SubscriptionKey& key);
+  bool Unsubscribe(const SubscriptionKey& key);
 
   bool Empty() const;
 
