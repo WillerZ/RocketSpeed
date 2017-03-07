@@ -795,9 +795,9 @@ class MessageDeliver : public Message {
   explicit MessageDeliver(MessageType type) : Message(type) {}
   virtual ~MessageDeliver() = 0;
 
-  Slice GetNamespace() const { return namespace_id_; }
+  const NamespaceID& GetNamespace() const { return namespace_id_; }
 
-  Slice GetTopicName() const { return topic_; }
+  const Topic& GetTopicName() const { return topic_; }
 
   SubscriptionID GetSubID() const { return sub_id_; }
 

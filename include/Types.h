@@ -580,6 +580,12 @@ class DataLossInfo {
   /** Gets the last sequence number (inclusive) of the data loss. */
   virtual SequenceNumber GetLastSequenceNumber() const = 0;
 
+  /** Gets the namespace of the subscription */
+  virtual const NamespaceID& GetNamespace() const = 0;
+
+  /** Gets the topic of the subscription */
+  virtual const Topic& GetTopicName() const = 0;
+
   virtual ~DataLossInfo() {}
 };
 

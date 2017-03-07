@@ -87,6 +87,14 @@ class DataLossInfoImpl : public DataLossInfo {
     return gap_data_->GetLastSequenceNumber();
   }
 
+  const NamespaceID& GetNamespace() const override {
+    return gap_data_->GetNamespace();
+  }
+
+  const Topic& GetTopicName() const override {
+    return gap_data_->GetTopicName();
+  }
+
  private:
   std::unique_ptr<MessageDeliverGap> gap_data_;
 };
