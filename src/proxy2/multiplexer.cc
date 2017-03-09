@@ -127,7 +127,7 @@ void UserDataCleanup(void* user_data) {
 Multiplexer::Multiplexer(PerShard* per_shard, IntroProperties stream_properties)
 : per_shard_(per_shard)
 , subscriptions_map_(GetLoop(),
-                     std::bind(&Multiplexer::SendMessage, this, _1, _2),
+                     std::bind(&Multiplexer::SendMessage, this, _1, _2, _3),
                      &UserDataCleanup,
                      GuestTenant)
 , stream_supervisor_(
@@ -155,7 +155,9 @@ Multiplexer::Multiplexer(PerShard* per_shard, IntroProperties stream_properties)
   (void)null_id;
 }
 
-void Multiplexer::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
+void Multiplexer::SendMessage(
+    Flow* flow, size_t replica, std::unique_ptr<Message> message) {
+  RS_ASSERT(replica == 0) << "Only one replica supported for multiplexer";
   flow->Write(GetConnection(), message);
 }
 
@@ -308,9 +310,9 @@ void Multiplexer::ReceiveConnectionStatus(bool isHealthy) {
 
 void Multiplexer::ConnectionChanged() {
   if (GetConnection()) {
-    subscriptions_map_.StartSync();
+    subscriptions_map_.StartSync(0 /* replica */);
   } else {
-    subscriptions_map_.StopSync();
+    subscriptions_map_.StopSync(0 /* replica */);
   }
 }
 
@@ -326,7 +328,8 @@ void Multiplexer::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
 
   using Info = decltype(subscriptions_map_)::Info;
   Info info;
-  if (subscriptions_map_.ProcessUnsubscribe(*arg.message, Info::kNone, &info)) {
+  if (subscriptions_map_.ProcessUnsubscribe(
+      0 /* replica */, *arg.message, Info::kNone, &info)) {
     LOG_DEBUG(GetOptions().info_log,
               "Multiplexer(%zu)::ReceiveTerminate(%s)",
               per_shard_->GetShardID(),
@@ -354,7 +357,7 @@ void Multiplexer::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
             uuid.ToString().c_str(),
             MessageTypeName(type));
 
-  if (subscriptions_map_.ProcessDeliver(*deliver)) {
+  if (subscriptions_map_.ProcessDeliver(0 /* replica */, *deliver)) {
     // Message was processed by a subscription.
     LOG_DEBUG(GetOptions().info_log,
               "Multiplexer(%zu)::ReceiveDeliver(%s, %s)",
@@ -413,7 +416,8 @@ void Multiplexer::ReceiveSubAck(StreamReceiveArg<MessageSubAck> arg) {
             arg.stream_id,
             MessageTypeName(ack->GetMessageType()));
 
-  subscriptions_map_.ProcessAckSubscribe(ack->GetNamespace(),
+  subscriptions_map_.ProcessAckSubscribe(0 /* replica */,
+                                         ack->GetNamespace(),
                                          ack->GetTopic(),
                                          ack->GetCursors());
 }

@@ -133,13 +133,14 @@ Subscriber::Subscriber(const ClientOptions& options,
 : options_(options)
 , stats_(std::move(stats))
 , subscriptions_map_(event_loop,
-                     std::bind(&Subscriber::SendMessage, this, _1, _2),
+                     std::bind(&Subscriber::SendMessage, this, _1, _2, _3),
                      &UserDataCleanup,
                      options.tenant_id)
 , backlog_query_store_(
-      new BacklogQueryStore(options_.info_log,
-                            std::bind(&Subscriber::SendMessage, this, _1, _2),
-                            event_loop))
+      new BacklogQueryStore(
+          options_.info_log,
+          std::bind(&Subscriber::SendMessage, this, _1, _2, _3),
+          event_loop))
 , shard_id_(shard_id)
 , max_active_subscriptions_(max_active_subscriptions)
 , num_active_subscriptions_(std::move(num_active_subscriptions))
@@ -211,7 +212,9 @@ BackPressure Subscriber::InvokeApplication(ApplicationMessage& msg) {
   return BackPressure::None();
 }
 
-void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
+void Subscriber::SendMessage(
+    Flow* flow, ReplicaIndex replica, std::unique_ptr<Message> message) {
+  RS_ASSERT(replica < replicas_.size());
   if (message->GetMessageType() == MessageType::mSubscribe) {
     // If we are sending a subscribe to the server, ensure that the any pending
     // backlog query requests for this subscription are now sent.
@@ -219,8 +222,7 @@ void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
     TopicUUID uuid(subscribe->GetNamespace(), subscribe->GetTopicName());
     backlog_query_store_->MarkSynced(uuid);
   }
-  RS_ASSERT(replicas_.size() == 1) << "Only one replica currently supported";
-  flow->Write(replicas_[0].connection->GetSink(), message);
+  flow->Write(replicas_[replica].connection->GetSink(), message);
 }
 
 void Subscriber::InstallHooks(const HooksParameters& params,
@@ -401,11 +403,11 @@ void Subscriber::RefreshRouting() {
   thread_check_.Check();
 
   current_hosts_.clear();
-  for (size_t i = 0; i < replicas_.size(); ++i) {
+  for (ReplicaIndex i = 0; i < replicas_.size(); ++i) {
     current_hosts_.emplace_back(options_.sharding->GetReplica(shard_id_, i));
   }
 
-  for (size_t i = 0; i < replicas_.size(); ++i) {
+  for (ReplicaIndex i = 0; i < replicas_.size(); ++i) {
     replicas_[i].stream_supervisor->ConnectTo(current_hosts_[i]);
   }
 }
@@ -445,7 +447,8 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
   }
 }
 
-void Subscriber::ReceiveConnectionStatus(size_t replica, bool is_healthy) {
+void Subscriber::ReceiveConnectionStatus(
+    ReplicaIndex replica, bool is_healthy) {
   RS_ASSERT(replica < replicas_.size());
 
   if (replicas_[replica].currently_healthy == is_healthy) {
@@ -466,18 +469,18 @@ void Subscriber::ReceiveConnectionStatus(size_t replica, bool is_healthy) {
   }
 }
 
-void Subscriber::ConnectionChanged(size_t /* replica */, bool is_connected) {
+void Subscriber::ConnectionChanged(ReplicaIndex replica, bool is_connected) {
   if (is_connected) {
-    subscriptions_map_.StartSync();
-    backlog_query_store_->StartSync();
+    subscriptions_map_.StartSync(replica);
+    backlog_query_store_->StartSync(replica);
   } else {
-    subscriptions_map_.StopSync();
-    backlog_query_store_->StopSync();
+    subscriptions_map_.StopSync(replica);
+    backlog_query_store_->StopSync(replica);
   }
 }
 
 void Subscriber::ReceiveUnsubscribe(
-    size_t /* replica */, StreamReceiveArg<MessageUnsubscribe> arg) {
+    ReplicaIndex replica, StreamReceiveArg<MessageUnsubscribe> arg) {
   auto sub_id = arg.message->GetSubID();
 
   LOG_DEBUG(options_.info_log,
@@ -487,7 +490,8 @@ void Subscriber::ReceiveUnsubscribe(
             static_cast<int>(arg.message->GetMessageType()));
 
   Info info;
-  if (subscriptions_map_.ProcessUnsubscribe(*arg.message, Info::kAll, &info)) {
+  if (subscriptions_map_.ProcessUnsubscribe(
+      replica, *arg.message, Info::kAll, &info)) {
     Status status;
     switch (arg.message->GetReason()) {
       case MessageUnsubscribe::Reason::kRequested:
@@ -524,7 +528,7 @@ void Subscriber::ProcessUnsubscribe(
 }
 
 void Subscriber::ReceiveSubAck(
-    size_t /* replica */, StreamReceiveArg<MessageSubAck> arg) {
+    ReplicaIndex replica, StreamReceiveArg<MessageSubAck> arg) {
   thread_check_.Check();
   auto& ack = arg.message;
 
@@ -533,13 +537,14 @@ void Subscriber::ReceiveSubAck(
             arg.stream_id,
             MessageTypeName(ack->GetMessageType()));
 
-  subscriptions_map_.ProcessAckSubscribe(ack->GetNamespace(),
+  subscriptions_map_.ProcessAckSubscribe(replica,
+                                         ack->GetNamespace(),
                                          ack->GetTopic(),
                                          ack->GetCursors());
 }
 
 void Subscriber::ReceiveDeliver(
-    size_t /* replica */, StreamReceiveArg<MessageDeliver> arg) {
+    ReplicaIndex replica, StreamReceiveArg<MessageDeliver> arg) {
   thread_check_.Check();
   auto flow = arg.flow;
   auto& deliver = arg.message;
@@ -552,7 +557,7 @@ void Subscriber::ReceiveDeliver(
             sub_id.ForLogging(),
             MessageTypeName(deliver->GetMessageType()));
 
-  if (!subscriptions_map_.ProcessDeliver(*deliver)) {
+  if (!subscriptions_map_.ProcessDeliver(replica, *deliver)) {
     // Message didn't match a subscription.
     LOG_DEBUG(options_.info_log,
               "Could not find a subscription");
@@ -594,7 +599,7 @@ void Subscriber::ReceiveDeliver(
 }
 
 void Subscriber::ReceiveBacklogFill(
-    size_t /* replica */, StreamReceiveArg<MessageBacklogFill> arg) {
+    ReplicaIndex, StreamReceiveArg<MessageBacklogFill> arg) {
   thread_check_.Check();
   backlog_query_store_->ProcessBacklogFill(*arg.message);
 }
@@ -609,13 +614,13 @@ bool Subscriber::IsHealthy() const {
   return false;
 }
 
-void Subscriber::ConnectionDropped(size_t replica) {
+void Subscriber::ConnectionDropped(ReplicaIndex replica) {
   RS_ASSERT(replica < replicas_.size());
   replicas_[replica].connection->ConnectionDropped();
 }
 
 void Subscriber::ConnectionCreated(
-    size_t replica,
+    ReplicaIndex replica,
     std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
   RS_ASSERT(replica < replicas_.size());
   replicas_[replica].connection->ConnectionCreated(std::move(sink));

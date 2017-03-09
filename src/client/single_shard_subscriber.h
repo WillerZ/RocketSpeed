@@ -106,6 +106,8 @@ class StatusForHooks : public HookedSubscriptionStatus {
 /// A subscriber that manages subscription on a single shard.
 class Subscriber : public SubscriberIf {
  public:
+  using ReplicaIndex = size_t;
+
   Subscriber(const ClientOptions& options,
              EventLoop* event_loop,
              std::shared_ptr<SubscriberStats> stats,
@@ -150,13 +152,15 @@ class Subscriber : public SubscriberIf {
     return true;
   }
 
-  void ConnectionChanged(size_t replica, bool is_connected);
-  void ReceiveUnsubscribe(size_t replica, StreamReceiveArg<MessageUnsubscribe>);
-  void ReceiveSubAck(size_t replica, StreamReceiveArg<MessageSubAck>);
-  void ReceiveDeliver(size_t replica, StreamReceiveArg<MessageDeliver>);
-  void ReceiveBacklogFill(size_t replica, StreamReceiveArg<MessageBacklogFill>);
-  void ConnectionDropped(size_t replica);
-  void ConnectionCreated(size_t replica,
+  void ConnectionChanged(ReplicaIndex replica, bool is_connected);
+  void ReceiveUnsubscribe(
+      ReplicaIndex replica, StreamReceiveArg<MessageUnsubscribe>);
+  void ReceiveSubAck(ReplicaIndex replica, StreamReceiveArg<MessageSubAck>);
+  void ReceiveDeliver(ReplicaIndex replica, StreamReceiveArg<MessageDeliver>);
+  void ReceiveBacklogFill(
+      ReplicaIndex replica, StreamReceiveArg<MessageBacklogFill>);
+  void ConnectionDropped(ReplicaIndex replica);
+  void ConnectionCreated(ReplicaIndex replica,
       std::unique_ptr<Sink<std::unique_ptr<Message>>> sink);
 
  private:
@@ -171,7 +175,7 @@ class Subscriber : public SubscriberIf {
 
   class ReplicaConnection : public ConnectionAwareReceiver {
    public:
-    ReplicaConnection(Subscriber* _subscriber, size_t _replica)
+    ReplicaConnection(Subscriber* _subscriber, ReplicaIndex _replica)
     : subscriber(_subscriber), replica(_replica) {}
 
     Sink<std::unique_ptr<Message>>* GetSink() {
@@ -204,7 +208,7 @@ class Subscriber : public SubscriberIf {
     }
 
     Subscriber* subscriber;
-    size_t replica;
+    ReplicaIndex replica;
   };
 
   class Replica {
@@ -230,12 +234,13 @@ class Subscriber : public SubscriberIf {
   /// Checkt if destination host has been updated.
   void CheckRouterVersion();
 
-  void ReceiveConnectionStatus(size_t replica, bool is_healthy);
+  void ReceiveConnectionStatus(ReplicaIndex replica, bool is_healthy);
 
   void ProcessUnsubscribe(SubscriptionID sub_id, Info& info, Status status);
 
   BackPressure InvokeApplication(ApplicationMessage& msg);
-  void SendMessage(Flow* flow, std::unique_ptr<Message> message);
+  void SendMessage(
+      Flow* flow, ReplicaIndex replica, std::unique_ptr<Message> message);
 
   // Checks if any replica is healthy.
   bool IsHealthy() const;

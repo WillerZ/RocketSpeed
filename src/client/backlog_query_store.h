@@ -17,9 +17,12 @@ class Logger;
  */
 class BacklogQueryStore {
  public:
+  using ReplicaIndex = size_t;
+
   explicit BacklogQueryStore(
       std::shared_ptr<Logger> info_log,
-      std::function<void(Flow*, std::unique_ptr<Message>)> message_handler,
+      std::function<void(Flow*, ReplicaIndex, std::unique_ptr<Message>)>
+          message_handler,
       EventLoop* event_loop);
 
   enum class Mode {
@@ -59,12 +62,12 @@ class BacklogQueryStore {
   /**
    * Starts syncing any pending requests to the server.
    */
-  void StartSync();
+  void StartSync(ReplicaIndex replica);
 
   /**
    * Stops sending requests to the server.
    */
-  void StopSync();
+  void StopSync(ReplicaIndex replica);
 
  private:
   struct Key {
@@ -97,7 +100,8 @@ class BacklogQueryStore {
   std::unordered_map<TopicUUID, std::vector<Query>> awaiting_sync_;
   ObservableContainer<std::deque<Query>> pending_send_;
   std::unordered_map<Key, std::deque<Value>, Key::Hash> sent_;
-  std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
+  std::function<void(Flow*, ReplicaIndex, std::unique_ptr<Message>)>
+      message_handler_;
 };
 
 }

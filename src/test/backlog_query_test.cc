@@ -70,9 +70,10 @@ TEST_F(BacklogQueryTest, PendingAwaitingInteraction) {
   EventLoop::Runner runner(&loop);
 
   port::Semaphore sent;
-  auto message_handler = [&] (Flow*, std::unique_ptr<Message>) {
-    sent.Post();
-  };
+  auto message_handler =
+    [&] (Flow*, BacklogQueryStore::ReplicaIndex, std::unique_ptr<Message>) {
+      sent.Post();
+    };
 
   std::unique_ptr<BacklogQueryStore> store;
 
@@ -88,7 +89,7 @@ TEST_F(BacklogQueryTest, PendingAwaitingInteraction) {
                   "source",
                   123,
                   [](HasMessageSinceResult, std::string) {});
-    store->StartSync();
+    store->StartSync(0);
   }, &loop);
 
   // Shouldn't be sent.
@@ -96,7 +97,7 @@ TEST_F(BacklogQueryTest, PendingAwaitingInteraction) {
 
   Run([&]() {
     // Still shouldn't be sent if we mark it synced if we stop the sync.
-    store->StopSync();
+    store->StopSync(0);
     store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
@@ -104,7 +105,7 @@ TEST_F(BacklogQueryTest, PendingAwaitingInteraction) {
 
   Run([&]() {
     // Should be sent now if we start syncing.
-    store->StartSync();
+    store->StartSync(0);
   }, &loop);
 
   ASSERT_TRUE(sent.TimedWait(positive_timeout_));
@@ -137,9 +138,10 @@ TEST_F(BacklogQueryTest, ResendSentOnStopSync) {
   EventLoop::Runner runner(&loop);
 
   port::Semaphore sent;
-  auto message_handler = [&] (Flow*, std::unique_ptr<Message>) {
-    sent.Post();
-  };
+  auto message_handler =
+    [&] (Flow*, BacklogQueryStore::ReplicaIndex, std::unique_ptr<Message>) {
+      sent.Post();
+    };
 
   std::unique_ptr<BacklogQueryStore> store;
 
@@ -155,7 +157,7 @@ TEST_F(BacklogQueryTest, ResendSentOnStopSync) {
                   "source",
                   123,
                   [](HasMessageSinceResult, std::string) {});
-    store->StartSync();
+    store->StartSync(0);
     store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 
@@ -163,8 +165,8 @@ TEST_F(BacklogQueryTest, ResendSentOnStopSync) {
   ASSERT_TRUE(sent.TimedWait(positive_timeout_));
 
   Run([&]() {
-    store->StopSync();
-    store->StartSync();
+    store->StopSync(0);
+    store->StartSync(0);
   }, &loop);
 
   ASSERT_TRUE(!sent.TimedWait(negative_timeout_));
@@ -190,9 +192,10 @@ TEST_F(BacklogQueryTest, ResetPendingOnStopSync) {
   EventLoop::Runner runner(&loop);
 
   port::Semaphore sent;
-  auto message_handler = [&] (Flow*, std::unique_ptr<Message>) {
-    sent.Post();
-  };
+  auto message_handler =
+    [&] (Flow*, BacklogQueryStore::ReplicaIndex, std::unique_ptr<Message>) {
+      sent.Post();
+    };
 
   std::unique_ptr<BacklogQueryStore> store;
 
@@ -215,8 +218,8 @@ TEST_F(BacklogQueryTest, ResetPendingOnStopSync) {
   ASSERT_TRUE(!sent.TimedWait(negative_timeout_));
 
   Run([&]() {
-    store->StopSync();
-    store->StartSync();
+    store->StopSync(0);
+    store->StartSync(0);
   }, &loop);
 
   ASSERT_TRUE(!sent.TimedWait(negative_timeout_));
@@ -243,9 +246,10 @@ TEST_F(BacklogQueryTest, MultipleRequestsOnSameSub) {
   std::unique_ptr<BacklogQueryStore> store;
 
   port::Semaphore sent;
-  auto message_handler = [&] (Flow*, std::unique_ptr<Message> msg) {
-    sent.Post();
-  };
+  auto message_handler =
+    [&] (Flow*, BacklogQueryStore::ReplicaIndex, std::unique_ptr<Message> msg) {
+      sent.Post();
+    };
 
   port::Semaphore result1;
   port::Semaphore result2;
@@ -268,7 +272,7 @@ TEST_F(BacklogQueryTest, MultipleRequestsOnSameSub) {
                   "source",
                   456,
                   [&](HasMessageSinceResult, std::string) { result2.Post(); });
-    store->StartSync();
+    store->StartSync(0);
     store->MarkSynced(TopicUUID("namespace", "topic"));
   }, &loop);
 

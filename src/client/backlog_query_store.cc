@@ -8,7 +8,8 @@ namespace rocketspeed {
 
 BacklogQueryStore::BacklogQueryStore(
     std::shared_ptr<Logger> info_log,
-    std::function<void(Flow*, std::unique_ptr<Message>)> message_handler,
+    std::function<void(Flow*, ReplicaIndex, std::unique_ptr<Message>)>
+        message_handler,
     EventLoop* event_loop)
 : info_log_(std::move(info_log))
 , event_loop_(event_loop)
@@ -111,15 +112,16 @@ void BacklogQueryStore::HandlePending(Flow* flow, Key key, Value value) {
   // ensure all state (i.e. sent_) is reflects the update before calling.
   // This wouldn't happen in a real client-server interaction, but makes
   // testing easier.
-  message_handler_(flow, std::move(message));
+  ReplicaIndex replica = 0; // TODO(pja)
+  message_handler_(flow, replica, std::move(message));
 }
 
-void BacklogQueryStore::StartSync() {
+void BacklogQueryStore::StartSync(ReplicaIndex replica) {
   // Start sending and pending requests now that we have a sink.
   pending_send_.SetReadEnabled(event_loop_, true);
 }
 
-void BacklogQueryStore::StopSync() {
+void BacklogQueryStore::StopSync(ReplicaIndex replica) {
   // Disconnected, so stop sending requests and move all unresponded queries
   // back to the awaiting sync state.
   for (auto& entry : sent_) {

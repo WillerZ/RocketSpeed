@@ -27,7 +27,8 @@ using namespace std::placeholders;
 ////////////////////////////////////////////////////////////////////////////////
 SubscriptionBase::~SubscriptionBase() {}
 
-bool SubscriptionBase::ProcessUpdate(Logger* info_log,
+bool SubscriptionBase::ProcessUpdate(ReplicaIndex replica,
+                                     Logger* info_log,
                                      Cursor current) {
   // TODO(pja): Do state checks per source.
   if (expected_.source == current.source &&
@@ -61,7 +62,8 @@ bool SubscriptionBase::ProcessUpdate(Logger* info_log,
 ////////////////////////////////////////////////////////////////////////////////
 SubscriptionsMap::SubscriptionsMap(
     EventLoop* event_loop,
-    std::function<void(Flow*, std::unique_ptr<Message>)> message_handler,
+    std::function<void(Flow*, ReplicaIndex, std::unique_ptr<Message>)>
+        message_handler,
     UserDataCleanupCb user_data_cleanup_cb,
     TenantID tenant_id)
 : event_loop_(event_loop)
@@ -78,13 +80,17 @@ SubscriptionsMap::SubscriptionsMap(
         using T
           = typename std::remove_pointer<decltype(ptr)>::type;
         // we own the pointer now
-        HandlePendingSubscription(flow, std::unique_ptr<T>(ptr));
+        ReplicaIndex replica = 0;
+        HandlePendingSubscription(flow, replica, std::unique_ptr<T>(ptr));
       });
 
   // Wire the source of unsubscribe events.
   flow_control->Register<Unsubscribes::value_type>(
       &pending_unsubscribes_,
-      std::bind(&SubscriptionsMap::HandlePendingUnsubscription, this, _1, _2));
+      [this](Flow* flow, typename Unsubscribes::value_type value) {
+        ReplicaIndex replica = 0;
+        HandlePendingUnsubscription(flow, replica, std::move(value));
+      });
 
   // Disable sources that point to non-existent sink.
   pending_subscriptions_.SetReadEnabled(event_loop_, false);
@@ -337,7 +343,7 @@ Logger* SubscriptionsMap::GetLogger() const {
 }
 
 void SubscriptionsMap::HandlePendingSubscription(
-    Flow* flow, std::unique_ptr<SubscriptionBase> state) {
+    Flow* flow, ReplicaIndex replica, std::unique_ptr<SubscriptionBase> state) {
   LOG_DEBUG(GetLogger(),
             "HandlePendingSubscription(%llu)",
             state->GetIDWhichMayChange().ForLogging());
@@ -349,7 +355,7 @@ void SubscriptionsMap::HandlePendingSubscription(
   {
     auto it = pending_unsubscribes_->find(key);
     if (it != pending_unsubscribes_->end()) {
-      HandlePendingUnsubscription(flow, *it);
+      HandlePendingUnsubscription(flow, replica, *it);
       pending_unsubscribes_.Modify([&] (Unsubscribes& map) {
           map.erase(it);
         });
@@ -365,7 +371,7 @@ void SubscriptionsMap::HandlePendingSubscription(
       state->GetTopicName().ToString(),
       std::move(start),
       state->GetSubscriptionID()));
-  message_handler_(flow, std::move(subscribe));
+  message_handler_(flow, replica, std::move(subscribe));
 
   // Mark the subscription as synced.
   // We own the state pointer now.
@@ -376,7 +382,7 @@ void SubscriptionsMap::HandlePendingSubscription(
 }
 
 void SubscriptionsMap::HandlePendingUnsubscription(
-    Flow* flow, Unsubscribes::value_type subs) {
+    Flow* flow, ReplicaIndex replica, Unsubscribes::value_type subs) {
   // Send the message.
   NamespaceID namespace_id;
   Topic topic;
@@ -394,7 +400,7 @@ void SubscriptionsMap::HandlePendingUnsubscription(
         topic,
         sub_id,
         MessageUnsubscribe::Reason::kRequested));
-    message_handler_(flow, std::move(unsubscribe));
+    message_handler_(flow, replica, std::move(unsubscribe));
   }
 
   CheckInvariants(subs.first);
@@ -411,7 +417,7 @@ void SubscriptionsMap::CleanupSubscription(SubscriptionBase* sub) {
   delete sub;
 }
 
-void SubscriptionsMap::StartSync() {
+void SubscriptionsMap::StartSync(ReplicaIndex replica) {
   // Make all subscriptions pending.
   pending_subscriptions_.Modify([&](Subscriptions& pending_subscriptions) {
 
@@ -442,13 +448,14 @@ void SubscriptionsMap::StartSync() {
   pending_unsubscribes_.SetReadEnabled(event_loop_, true);
 }
 
-void SubscriptionsMap::StopSync() {
+void SubscriptionsMap::StopSync(ReplicaIndex replica) {
   // Disable sources that point to the destroyed sink.
   pending_subscriptions_.SetReadEnabled(event_loop_, false);
   pending_unsubscribes_.SetReadEnabled(event_loop_, false);
 }
 
-void SubscriptionsMap::ProcessAckSubscribe(Slice namespace_id,
+void SubscriptionsMap::ProcessAckSubscribe(ReplicaIndex replica,
+                                           Slice namespace_id,
                                            Slice topic,
                                            const CursorVector& cursors) {
   TopicUUID key(namespace_id, topic);
@@ -471,6 +478,7 @@ void SubscriptionsMap::ProcessAckSubscribe(Slice namespace_id,
 }
 
 bool SubscriptionsMap::ProcessUnsubscribe(
+    ReplicaIndex replica,
     const MessageUnsubscribe& message,
     Info::Flags flags,
     Info* info) {
@@ -497,7 +505,9 @@ bool SubscriptionsMap::ProcessUnsubscribe(
   return result;
 }
 
-bool SubscriptionsMap::ProcessDeliver(const MessageDeliver& message) {
+bool SubscriptionsMap::ProcessDeliver(
+    ReplicaIndex replica,
+    const MessageDeliver& message) {
   const TopicUUID key(message.GetNamespace(), message.GetTopicName());
 
   // Only process the delivery if the subscription is sync. If not synced, then
@@ -507,8 +517,8 @@ bool SubscriptionsMap::ProcessDeliver(const MessageDeliver& message) {
   if (it != synced_subscriptions_.End()) {
     Cursor cursor(message.GetDataSource().ToString(),
                   message.GetSequenceNumber());
-    result =
-        (*it)->ProcessUpdate(event_loop_->GetLog().get(), std::move(cursor));
+    result = (*it)->ProcessUpdate(
+        replica, event_loop_->GetLog().get(), std::move(cursor));
   } else {
     // A natural race between the server delivering a message and the client
     // terminating a subscription.

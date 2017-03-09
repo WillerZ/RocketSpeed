@@ -35,6 +35,8 @@ using SubscriptionKey = TopicUUID;
 /// performance of metadata updates.
 class SubscriptionBase {
  public:
+  using ReplicaIndex = size_t;
+
   SubscriptionBase(Slice namespace_id,
                    Slice topic_name,
                    SubscriptionID sub_id,
@@ -69,7 +71,7 @@ class SubscriptionBase {
   /// Returns true if the state transition carried by the update has been
   /// recorded and the update shall be delivered, false if the update could not
   /// be applied due to mismatched sequence numbers.
-  bool ProcessUpdate(Logger* info_log, Cursor current);
+  bool ProcessUpdate(ReplicaIndex replica, Logger* info_log, Cursor current);
 
   /// Retrieves an ID that the subscription currently uses in communication with
   /// the server.
@@ -147,10 +149,12 @@ class SubscriptionData {
 class SubscriptionsMap {
  public:
   using UserDataCleanupCb = std::function<void(void*)>;
+  using ReplicaIndex = size_t;
 
   SubscriptionsMap(
       EventLoop* event_loop,
-      std::function<void(Flow*, std::unique_ptr<Message>)> message_handler,
+      std::function<void(Flow*, ReplicaIndex, std::unique_ptr<Message>)>
+          message_handler,
       UserDataCleanupCb user_data_cleanup_cb,
       TenantID tenant_id);
   ~SubscriptionsMap();
@@ -286,22 +290,24 @@ class SubscriptionsMap {
   /// Sets the user data for a subscription.
   void SetUserData(const SubscriptionKey& key, void* user_data);
 
-  void StartSync();
-  void StopSync();
+  void StartSync(ReplicaIndex replica);
+  void StopSync(ReplicaIndex replica);
 
-  void ProcessAckSubscribe(Slice namespace_id,
+  void ProcessAckSubscribe(ReplicaIndex replica,
+                           Slice namespace_id,
                            Slice topic_name,
                            const CursorVector& start);
 
-  /// Returns true iif the unsubscribe matched a subscription, and fills the
+  /// Returns true iff the unsubscribe matched a subscription, and fills the
   /// info with the removed subscription.
   bool ProcessUnsubscribe(
+      ReplicaIndex replica,
       const MessageUnsubscribe& message,
       Info::Flags flags,
       Info* info);
 
   /// Returns true iff a subscription was advanced by the deliver message.
-  bool ProcessDeliver(const MessageDeliver& message);
+  bool ProcessDeliver(ReplicaIndex replica, const MessageDeliver& message);
 
  private:
   EventLoop* const event_loop_;
@@ -339,7 +345,8 @@ class SubscriptionsMap {
   UserDataMap user_data_;
   const TenantID tenant_id_;
 
-  std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
+  std::function<void(Flow*, ReplicaIndex, std::unique_ptr<Message>)>
+      message_handler_;
 
   /// Returns a non-owning pointer to the SubscriptionBase or null if doesn't
   /// exist.
@@ -349,9 +356,14 @@ class SubscriptionsMap {
 
   // Function takes upstream_sub ownership
   void HandlePendingSubscription(
-        Flow* flow, std::unique_ptr<SubscriptionBase> upstream_sub);
+      Flow* flow,
+      ReplicaIndex replica,
+      std::unique_ptr<SubscriptionBase> upstream_sub);
 
-  void HandlePendingUnsubscription(Flow* flow, Unsubscribes::value_type sub);
+  void HandlePendingUnsubscription(
+      Flow* flow,
+      ReplicaIndex replica,
+      Unsubscribes::value_type sub);
 
   void CleanupSubscription(SubscriptionBase* sub);
 

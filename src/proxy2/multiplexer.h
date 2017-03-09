@@ -168,7 +168,10 @@ class Multiplexer : public ConnectionAwareReceiver {
   void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
   void ReceiveSubAck(StreamReceiveArg<MessageSubAck>) final override;
 
-  void SendMessage(Flow* flow, std::unique_ptr<Message> message);
+  void SendMessage(
+      Flow* flow,
+      SubscriptionsMap::ReplicaIndex replica,
+      std::unique_ptr<Message> message);
 };
 
 }  // namespace rocketspeed
