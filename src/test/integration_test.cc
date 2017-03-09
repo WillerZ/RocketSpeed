@@ -1084,10 +1084,20 @@ class MessageReceivedMock : public MessageReceived {
     return Slice("source");
   }
 
+  const NamespaceID& GetNamespace() const override {
+    return namespace_id_;
+  }
+
+  const Topic& GetTopicName() const override {
+    return topic_;
+  }
+
  private:
   SubscriptionHandle sub_id_;
   SequenceNumber seqno_;
   Slice payload_;
+  NamespaceID namespace_id_ = "test-namespace";
+  Topic topic_ = "test-topic";
 };
 
 // TODO(pja): Disabled as subscription storage and acks are still in terms

@@ -43,6 +43,14 @@ class MessageReceivedImpl : public MessageReceived {
     return data_->GetSequenceNumber();
   }
 
+  const NamespaceID& GetNamespace() const override {
+    return data_->GetNamespace();
+  }
+
+  const Topic& GetTopicName() const override {
+    return data_->GetTopicName();
+  }
+
   Slice GetDataSource() const override {
     return data_->GetDataSource();
   }

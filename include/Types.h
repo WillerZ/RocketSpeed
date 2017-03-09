@@ -551,6 +551,12 @@ class MessageReceived {
   /** The sequence number of this message. */
   virtual SequenceNumber GetSequenceNumber() const = 0;
 
+  /** The namespace of the topic. */
+  virtual const NamespaceID& GetNamespace() const = 0;
+
+  /** The topic name this message arrived on. */
+  virtual const Topic& GetTopicName() const = 0;
+
   /** The data source of this message. */
   virtual Slice GetDataSource() const = 0;
 
