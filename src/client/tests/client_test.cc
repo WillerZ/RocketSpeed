@@ -80,7 +80,7 @@ class MockShardingStrategy : public ShardingStrategy {
 
   size_t GetVersion() override { return config_->version_.load(); }
 
-  HostId GetHost(size_t) override { return config_->GetCopilot(); }
+  HostId GetReplica(size_t, size_t) override { return config_->GetCopilot(); }
 
   void MarkHostDown(const HostId& host_id) override {}
 
@@ -988,7 +988,7 @@ class TestSharding2 : public ShardingStrategy {
 
   size_t GetVersion() override { return 0; }
 
-  HostId GetHost(size_t shard) override {
+  HostId GetReplica(size_t shard, size_t) override {
     EXPECT_LT(shard, 2);
     return shard == 0 ? host0_ : host1_;
   }

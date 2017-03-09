@@ -345,12 +345,22 @@ class ShardingStrategy {
    */
   virtual size_t GetVersion() = 0;
 
+  // DEPRECATED
+  virtual HostId GetHost(size_t shard);
+
   /**
-   * Returns the currently selected host for a particular shard.
+   * Returns the currently selected host for a particular shard and replica.
    * This method can acquire a mutex or perform other heavy synchronisation, but
    * no IO.
    */
-  virtual HostId GetHost(size_t shard) = 0;
+  // TODO(pja) : Make pure virtual once GetHost has been removed.
+  virtual HostId GetReplica(size_t shard, size_t replica);
+
+  /**
+   * Returns the number of replicas for this routing setup.
+   * Must be constant. Implementation must not change this value over time.
+   */
+  virtual size_t GetNumReplicas() const { return 1; }
 
   /**
    * Tell the strategy that we could not connect to provided host.

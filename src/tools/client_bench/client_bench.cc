@@ -84,7 +84,7 @@ class SimpleShardingStrategy : public ShardingStrategy {
   }
 
   size_t GetVersion() override { return 0; }
-  HostId GetHost(size_t) override { return host_id_; }
+  HostId GetReplica(size_t, size_t) override { return host_id_; }
   void MarkHostDown(const HostId&) override {}
 
  private:

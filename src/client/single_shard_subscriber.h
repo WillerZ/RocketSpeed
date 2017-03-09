@@ -65,10 +65,10 @@ class StatusForHooks : public HookedSubscriptionStatus {
   StatusForHooks(const StatusForHooks& ) = delete;
   StatusForHooks& operator=(const StatusForHooks& ) = delete;
 
-  StatusForHooks(const SubscriptionStatusImpl* status, const HostId* server)
-    : status_(status), server_(server) {
+  StatusForHooks(const SubscriptionStatusImpl* status,
+                 const std::vector<HostId>& servers)
+    : status_(status), servers_ptr_(&servers) {
     RS_ASSERT_DBG(status);
-    RS_ASSERT_DBG(server);
   }
 
   SubscriptionHandle GetSubscriptionHandle() const final {
@@ -92,19 +92,19 @@ class StatusForHooks : public HookedSubscriptionStatus {
   const std::vector<HostId>& GetCurrentServers() const final {
     // There's negligible probability that the hook
     // is installed so allocate memory only when it's really needed.
-    if (servers_.empty() && *server_ != HostId()) {
-      servers_.emplace_back(*server_);
+    if (servers_.empty()) {
+      servers_ = *servers_ptr_;
     }
     return servers_;
   }
  private:
   const SubscriptionStatusImpl* status_;
-  const HostId* server_;
+  const std::vector<HostId>* servers_ptr_;
   mutable std::vector<HostId> servers_;
 };
 
 /// A subscriber that manages subscription on a single shard.
-class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
+class Subscriber : public SubscriberIf {
  public:
   Subscriber(const ClientOptions& options,
              EventLoop* event_loop,
@@ -150,6 +150,15 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
     return true;
   }
 
+  void ConnectionChanged(size_t replica, bool is_connected);
+  void ReceiveUnsubscribe(size_t replica, StreamReceiveArg<MessageUnsubscribe>);
+  void ReceiveSubAck(size_t replica, StreamReceiveArg<MessageSubAck>);
+  void ReceiveDeliver(size_t replica, StreamReceiveArg<MessageDeliver>);
+  void ReceiveBacklogFill(size_t replica, StreamReceiveArg<MessageBacklogFill>);
+  void ConnectionDropped(size_t replica);
+  void ConnectionCreated(size_t replica,
+      std::unique_ptr<Sink<std::unique_ptr<Message>>> sink);
+
  private:
   ThreadCheck thread_check_;
 
@@ -159,8 +168,53 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   std::shared_ptr<SubscriberStats> stats_;
 
   SubscriptionsMap subscriptions_map_;
-  ResilientStreamReceiver stream_supervisor_;
-  bool currently_healthy_{true};
+
+  class ReplicaConnection : public ConnectionAwareReceiver {
+   public:
+    ReplicaConnection(Subscriber* _subscriber, size_t _replica)
+    : subscriber(_subscriber), replica(_replica) {}
+
+    Sink<std::unique_ptr<Message>>* GetSink() {
+      return GetConnection();
+    }
+
+   private:
+    void ConnectionChanged() final override {
+      subscriber->ConnectionChanged(replica, GetConnection() != nullptr);
+    }
+
+    void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg)
+        final override {
+      subscriber->ReceiveUnsubscribe(replica, std::move(arg));
+    }
+
+    void ReceiveSubAck(StreamReceiveArg<MessageSubAck> arg)
+        final override {
+      subscriber->ReceiveSubAck(replica, std::move(arg));
+    }
+
+    void ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg)
+        final override {
+      subscriber->ReceiveDeliver(replica, std::move(arg));
+    }
+
+    void ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill> arg)
+        final override {
+      subscriber->ReceiveBacklogFill(replica, std::move(arg));
+    }
+
+    Subscriber* subscriber;
+    size_t replica;
+  };
+
+  class Replica {
+   public:
+    std::unique_ptr<ResilientStreamReceiver> stream_supervisor;
+    bool currently_healthy = true;
+    std::unique_ptr<ReplicaConnection> connection;
+  };
+
+  std::vector<Replica> replicas_;
 
   std::unordered_map<SubscriptionID, SequenceNumber> last_acks_map_;
 
@@ -176,18 +230,15 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   /// Checkt if destination host has been updated.
   void CheckRouterVersion();
 
-  void ReceiveConnectionStatus(bool isHealthy);
+  void ReceiveConnectionStatus(size_t replica, bool is_healthy);
 
   void ProcessUnsubscribe(SubscriptionID sub_id, Info& info, Status status);
 
-  void ConnectionChanged() final override;
-  void ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe>) final override;
-  void ReceiveSubAck(StreamReceiveArg<MessageSubAck>) final override;
-  void ReceiveDeliver(StreamReceiveArg<MessageDeliver>) final override;
-  void ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill>) final override;
-
   BackPressure InvokeApplication(ApplicationMessage& msg);
   void SendMessage(Flow* flow, std::unique_ptr<Message> message);
+
+  // Checks if any replica is healthy.
+  bool IsHealthy() const;
 
   /// Max active subscriptions across the thread.
   const size_t max_active_subscriptions_;
@@ -196,6 +247,7 @@ class Subscriber : public SubscriberIf, public ConnectionAwareReceiver {
   std::shared_ptr<size_t> num_active_subscriptions_;
 
   SubscriberHooksContainer hooks_;
+  std::vector<HostId> current_hosts_; // cached set of current hosts.
 
   /// This sink is used for invoking all application callbacks.
   std::unique_ptr<RetryLaterSink<ApplicationMessage>> app_sink_;

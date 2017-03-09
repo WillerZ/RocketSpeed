@@ -93,7 +93,7 @@ class NullSharding : public ShardingStrategy {
  public:
   size_t GetShard(Slice, Slice, const IntroParameters&) const override { return 0; }
   size_t GetVersion() override { return 0; }
-  HostId GetHost(size_t) override { return HostId(); }
+  HostId GetReplica(size_t, size_t) override { return HostId(); }
   void MarkHostDown(const HostId&) override {}
 };
 }

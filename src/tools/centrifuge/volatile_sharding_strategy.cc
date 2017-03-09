@@ -44,16 +44,17 @@ class VolatileShardingStrategyImpl : public ShardingStrategy {
     return strategy_->GetVersion() + volatile_version_;
   }
 
-  HostId GetHost(size_t shard) override {
+  HostId GetReplica(size_t shard, size_t replica) override {
     std::lock_guard<std::mutex> lock(state_change_mutex_);
     // With probability pct_fail_, a host may be switched with an empty host.
     uint64_t seed = volatile_version_;
-    double hash = static_cast<double>(XXH64(&shard, sizeof(shard), seed));
+    size_t input = shard | (replica << 32);
+    double hash = static_cast<double>(XXH64(&input, sizeof(input), seed));
     double hashmax = static_cast<double>(std::numeric_limits<size_t>::max());
     if (hash / hashmax < pct_fail_) {
       return HostId();
     } else {
-      return strategy_->GetHost(shard);
+      return strategy_->GetReplica(shard, replica);
     }
   }
 

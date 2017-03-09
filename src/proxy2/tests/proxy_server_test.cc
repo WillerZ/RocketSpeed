@@ -50,7 +50,7 @@ class MockSharding : public ShardingStrategy {
 
   size_t GetVersion() override { return version_.load(); }
 
-  HostId GetHost(size_t shard) override {
+  HostId GetReplica(size_t shard, size_t) override {
     std::lock_guard<std::mutex> lock(mutex_);
     return hosts_[shard];
   }

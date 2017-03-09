@@ -20,7 +20,7 @@ class MockShardingStrategy : public ShardingStrategy {
 
   size_t GetVersion() override { return 0; }
 
-  HostId GetHost(size_t) override { return HostId(); }
+  HostId GetReplica(size_t, size_t) override { return HostId(); }
 
   void MarkHostDown(const HostId& host_id) override {}
 };
@@ -106,12 +106,12 @@ TEST(Subscriber, IgnoresDeliveriesThatAreNotSubcribed) {
                                SubscriptionID::ForShard(4992, 1),
                                GUID(),
                                "payload");
-    StreamReceiveArg<Message> arg;
+    StreamReceiveArg<MessageDeliver> arg;
     SourcelessFlow flow(loop.GetFlowControl());
     arg.flow = &flow;
     arg.stream_id = 11111;
-    arg.message = std::unique_ptr<Message>(msg);
-    subscriber(std::move(arg));
+    arg.message = std::unique_ptr<MessageDeliver>(msg);
+    subscriber.ReceiveDeliver(0, std::move(arg));
     EXPECT_FALSE(hooks->Called());
   }
   loop.Stop();  // idiom for gracefully terminating
@@ -152,7 +152,7 @@ TEST(Subscriber, DeliverToAckdSubscriptions) {
     auto hooks = std::make_shared<TestHooks>();
     subscriber.InstallHooks(hook_params, hooks);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -166,12 +166,12 @@ TEST(Subscriber, DeliverToAckdSubscriptions) {
                                              "namespace",
                                              "topic",
                                              {Cursor("foo", 0)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     {
@@ -182,12 +182,12 @@ TEST(Subscriber, DeliverToAckdSubscriptions) {
                                  SubscriptionID::ForShard(4992, 1),
                                  GUID(),
                                  "payload");
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
     EXPECT_TRUE(hooks->Called());  // could have used the observer
@@ -264,7 +264,7 @@ TEST(Subscriber, ReconnectAfterDeliverNoAck) {
     auto hooks = std::make_shared<TestHooks>();
     subscriber.InstallHooks(hook_params, hooks);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -282,18 +282,18 @@ TEST(Subscriber, ReconnectAfterDeliverNoAck) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 3);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
     EXPECT_FALSE(hooks->Called());
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();  // transfer pending to synced
   }
 
@@ -368,7 +368,7 @@ TEST(Subscriber, ReconnectAfterDeliverAck) {
     auto hooks = std::make_shared<TestHooks>();
     subscriber.InstallHooks(hook_params, hooks);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -386,12 +386,12 @@ TEST(Subscriber, ReconnectAfterDeliverAck) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 3);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
     {
@@ -399,18 +399,18 @@ TEST(Subscriber, ReconnectAfterDeliverAck) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     EXPECT_FALSE(hooks->Called());
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();  // transfer pending to synced
   }
 
@@ -487,7 +487,7 @@ TEST(Subscriber, ReconnectAfterDeliverAckDeliver) {
     auto hooks = std::make_shared<TestHooks>();
     subscriber.InstallHooks(hook_params, hooks);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -505,12 +505,12 @@ TEST(Subscriber, ReconnectAfterDeliverAckDeliver) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 7);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
     {
@@ -518,12 +518,12 @@ TEST(Subscriber, ReconnectAfterDeliverAckDeliver) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     {
@@ -535,18 +535,18 @@ TEST(Subscriber, ReconnectAfterDeliverAckDeliver) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 4);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
     EXPECT_TRUE(hooks->Called());
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();  // transfer pending to synced
   }
 
@@ -599,7 +599,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubSub) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -621,8 +621,8 @@ TEST(Subscriber, ReconnectAfterSubUnsubSub) {
 
     loop.RunOnce();
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();  // transfer pending to synced
   }
 
@@ -669,7 +669,7 @@ TEST(Subscriber, ReconnectAfterSubAckUnsub) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -683,12 +683,12 @@ TEST(Subscriber, ReconnectAfterSubAckUnsub) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     subscriber.TerminateSubscription(
@@ -697,8 +697,8 @@ TEST(Subscriber, ReconnectAfterSubAckUnsub) {
 
     loop.RunOnce();
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -745,7 +745,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubAck) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -765,16 +765,16 @@ TEST(Subscriber, ReconnectAfterSubUnsubAck) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<NoResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<NoResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -827,7 +827,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubAckDeliverAck) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -854,12 +854,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubAckDeliverAck) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
     {
       MessageDeliverData* msg =
@@ -870,28 +870,28 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubAckDeliverAck) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 5);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
     {
       MessageSubAck* msg = new MessageSubAck(7,
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -944,7 +944,7 @@ TEST(Subscriber, ReconnectAfterSubAckUnsubSubDeliver) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -958,12 +958,12 @@ TEST(Subscriber, ReconnectAfterSubAckUnsubSubDeliver) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     subscriber.TerminateSubscription(
@@ -988,16 +988,16 @@ TEST(Subscriber, ReconnectAfterSubAckUnsubSubDeliver) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 5);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -1050,7 +1050,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubAckSubDeliver) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -1070,12 +1070,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubAckSubDeliver) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     subscriber.StartSubscription(
@@ -1094,16 +1094,16 @@ TEST(Subscriber, ReconnectAfterSubUnsubAckSubDeliver) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 5);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -1156,7 +1156,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubAckSubDeliverAck) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -1176,12 +1176,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubAckSubDeliverAck) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     subscriber.StartSubscription(
@@ -1200,12 +1200,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubAckSubDeliverAck) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 5);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
     {
@@ -1213,16 +1213,16 @@ TEST(Subscriber, ReconnectAfterSubUnsubAckSubDeliverAck) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -1275,7 +1275,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubAckDeliver) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -1302,12 +1302,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubAckDeliver) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     {
@@ -1319,16 +1319,16 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubAckDeliver) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 5);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -1381,7 +1381,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckold) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -1408,16 +1408,16 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckold) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -1470,7 +1470,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckoldDeliver) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -1497,12 +1497,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckoldDeliver) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     {
@@ -1514,17 +1514,17 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckoldDeliver) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 5);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 
@@ -1577,7 +1577,7 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckoldDeliverAcknew) {
   {
     Subscriber subscriber(opts, &loop, stats, 4992, 30, num_subs, intro_params);
     loop.Initialize();
-    subscriber.ConnectionCreated(std::make_unique<BlackholeSink>());
+    subscriber.ConnectionCreated(0, std::make_unique<BlackholeSink>());
 
     subscriber.StartSubscription(
         SubscriptionID::ForShard(4992, 1),
@@ -1604,12 +1604,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckoldDeliverAcknew) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 2)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
     {
@@ -1621,12 +1621,12 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckoldDeliverAcknew) {
                                  GUID(),
                                  "payload");
       msg->SetSequenceNumbers("a", 1, 5);
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageDeliver> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // should deliver the message
+      arg.message = std::unique_ptr<MessageDeliver>(msg);
+      subscriber.ReceiveDeliver(0, std::move(arg));  // should deliver
     }
 
     {
@@ -1634,17 +1634,17 @@ TEST(Subscriber, ReconnectAfterSubUnsubSubdiffAckoldDeliverAcknew) {
                                              "namespace",
                                              "topic",
                                              {Cursor("a", 7)});
-      StreamReceiveArg<Message> arg;
+      StreamReceiveArg<MessageSubAck> arg;
       SourcelessFlow flow(loop.GetFlowControl());
       arg.flow = &flow;
       arg.stream_id = 11111;
-      arg.message = std::unique_ptr<Message>(msg);
-      subscriber(std::move(arg));  // sub now ack'd
+      arg.message = std::unique_ptr<MessageSubAck>(msg);
+      subscriber.ReceiveSubAck(0, std::move(arg));  // sub now ack'd
     }
 
 
-    subscriber.ConnectionDropped();
-    subscriber.ConnectionCreated(std::make_unique<ResubCheckSink>());
+    subscriber.ConnectionDropped(0);
+    subscriber.ConnectionCreated(0, std::make_unique<ResubCheckSink>());
     loop.RunOnce();
   }
 

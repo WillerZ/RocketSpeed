@@ -135,13 +135,6 @@ Subscriber::Subscriber(const ClientOptions& options,
 , subscriptions_map_(event_loop,
                      std::bind(&Subscriber::SendMessage, this, _1, _2),
                      &UserDataCleanup)
-, stream_supervisor_(event_loop,
-                     this,
-                     std::bind(&Subscriber::ReceiveConnectionStatus, this, _1),
-                     options.backoff_strategy,
-                     options_.max_silent_reconnects,
-                     shard_id,
-                     intro_parameters)
 , backlog_query_store_(
       new BacklogQueryStore(options_.info_log,
                             std::bind(&Subscriber::SendMessage, this, _1, _2),
@@ -152,6 +145,25 @@ Subscriber::Subscriber(const ClientOptions& options,
 , app_sink_(new RetryLaterSink<ApplicationMessage>(
       std::bind(&Subscriber::InvokeApplication, this, _1))) {
   thread_check_.Check();
+
+  const size_t num_replicas = options_.sharding->GetNumReplicas();
+  RS_ASSERT(num_replicas == 1) << "Only one replica currently supported.";
+  replicas_.resize(num_replicas);
+  for (int i = 0; i < num_replicas; ++i) {
+    replicas_[i].connection.reset(new ReplicaConnection(this, i));
+    replicas_[i].stream_supervisor.reset(
+        new ResilientStreamReceiver(
+            event_loop,
+            replicas_[i].connection.get(),
+            [replica = i, this](bool is_healthy) {
+              ReceiveConnectionStatus(replica, is_healthy);
+            },
+            options_.backoff_strategy,
+            options_.max_silent_reconnects,
+            shard_id,
+            intro_parameters));
+  }
+
   RefreshRouting();
 }
 
@@ -206,7 +218,8 @@ void Subscriber::SendMessage(Flow* flow, std::unique_ptr<Message> message) {
     TopicUUID uuid(subscribe->GetNamespace(), subscribe->GetTopicName());
     backlog_query_store_->MarkSynced(uuid);
   }
-  flow->Write(GetConnection(), message);
+  RS_ASSERT(replicas_.size() == 1) << "Only one replica currently supported";
+  flow->Write(replicas_[0].connection->GetSink(), message);
 }
 
 void Subscriber::InstallHooks(const HooksParameters& params,
@@ -218,8 +231,8 @@ void Subscriber::InstallHooks(const HooksParameters& params,
     hooks_.SubscriptionStarted(params, info.GetSubID());
     SubscriptionStatusImpl status(info.GetSubID(), info.GetTenant(),
         info.GetNamespace(), info.GetTopic());
-    status.status_ = currently_healthy_ ? Status::OK() : Status::ShardUnhealthy();
-    StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
+    status.status_ = IsHealthy() ? Status::OK() : Status::ShardUnhealthy();
+    StatusForHooks sfh(&status, current_hosts_);
     hooks_[info.GetSubID()].SubscriptionExists(sfh);
   }
 }
@@ -246,7 +259,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
         parameters.topic_name);
     sub_status.status_ = Status::InvalidArgument(
         "Invalid subscription as maximum subscription limit reached.");
-    StatusForHooks sfh(&sub_status, &stream_supervisor_.GetCurrentHost());
+    StatusForHooks sfh(&sub_status, current_hosts_);
     hooks_[sub_id].OnSubscriptionStatusChange(sfh);
     if (observer) {
       observer->OnSubscriptionStatusChange(sub_status);
@@ -257,12 +270,12 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
     return;
   }
 
-  if (!currently_healthy_) {
+  if (!IsHealthy()) {
     SubscriptionStatusImpl status(sub_id, parameters.tenant_id,
                                   parameters.namespace_id,
                                   parameters.topic_name);
     status.status_ = Status::ShardUnhealthy();
-    StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
+    StatusForHooks sfh(&status, current_hosts_);
     hooks_[sub_id].OnSubscriptionStatusChange(sfh);
     if (observer) {
       observer->OnSubscriptionStatusChange(status);
@@ -386,20 +399,19 @@ bool Subscriber::Select(
 
 void Subscriber::RefreshRouting() {
   thread_check_.Check();
-  stream_supervisor_.ConnectTo(options_.sharding->GetHost(shard_id_));
+
+  current_hosts_.clear();
+  for (size_t i = 0; i < replicas_.size(); ++i) {
+    current_hosts_.emplace_back(options_.sharding->GetReplica(shard_id_, i));
+  }
+
+  for (size_t i = 0; i < replicas_.size(); ++i) {
+    replicas_[i].stream_supervisor->ConnectTo(current_hosts_[i]);
+  }
 }
 
 void Subscriber::NotifyHealthy(bool isHealthy) {
   thread_check_.Check();
-
-  if (currently_healthy_ == isHealthy) {
-    return;
-  }
-  currently_healthy_ = isHealthy;
-
-  LOG_WARN(options_.info_log,
-           "Notified that subscriptions for shard %zu are now %s.",
-           shard_id_, (isHealthy ? "healthy" : "unhealthy"));
 
   if (!options_.should_notify_health) {
     return;
@@ -411,7 +423,7 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
       SubscriptionStatusImpl status(data.GetID(), data.GetTenant(),
           data.GetNamespace().ToString(), data.GetTopicName().ToString());
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
-      StatusForHooks sfh(&status, &stream_supervisor_.GetCurrentHost());
+      StatusForHooks sfh(&status, current_hosts_);
       hooks_[data.GetID()].OnSubscriptionStatusChange(sfh);
       auto observer = static_cast<Observer*>(data.GetUserData());
       if (observer) {
@@ -433,12 +445,29 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
   }
 }
 
-void Subscriber::ReceiveConnectionStatus(bool isHealthy) {
-  NotifyHealthy(isHealthy);
+void Subscriber::ReceiveConnectionStatus(size_t replica, bool is_healthy) {
+  RS_ASSERT(replica < replicas_.size());
+
+  if (replicas_[replica].currently_healthy == is_healthy) {
+    // Nothing changed, exit early.
+    return;
+  }
+  const bool was_healthy = IsHealthy();
+  replicas_[replica].currently_healthy = is_healthy;
+
+  LOG_WARN(options_.info_log,
+           "Replica %zu notified that subscriptions for shard %zu are now %s.",
+           replica, shard_id_, (is_healthy ? "healthy" : "unhealthy"));
+
+  // Check if overall healthiness has changed, and exit if not.
+  const bool now_healthy = IsHealthy();
+  if (was_healthy != now_healthy) {
+    NotifyHealthy(now_healthy);
+  }
 }
 
-void Subscriber::ConnectionChanged() {
-  if (GetConnection()) {
+void Subscriber::ConnectionChanged(size_t /* replica */, bool is_connected) {
+  if (is_connected) {
     subscriptions_map_.StartSync();
     backlog_query_store_->StartSync();
   } else {
@@ -447,7 +476,8 @@ void Subscriber::ConnectionChanged() {
   }
 }
 
-void Subscriber::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
+void Subscriber::ReceiveUnsubscribe(
+    size_t /* replica */, StreamReceiveArg<MessageUnsubscribe> arg) {
   auto sub_id = arg.message->GetSubID();
 
   LOG_DEBUG(options_.info_log,
@@ -477,7 +507,7 @@ void Subscriber::ProcessUnsubscribe(
       info.GetNamespace(), info.GetTopic());
   sub_status.status_ = status;
 
-  StatusForHooks sfh(&sub_status, &stream_supervisor_.GetCurrentHost());
+  StatusForHooks sfh(&sub_status, current_hosts_);
   hooks_[sub_id].OnSubscriptionStatusChange(sfh);
   if (info.GetObserver()) {
     info.GetObserver()->OnSubscriptionStatusChange(sub_status);
@@ -493,7 +523,8 @@ void Subscriber::ProcessUnsubscribe(
   stats_->active_subscriptions->Set(*num_active_subscriptions_);
 }
 
-void Subscriber::ReceiveSubAck(StreamReceiveArg<MessageSubAck> arg) {
+void Subscriber::ReceiveSubAck(
+    size_t /* replica */, StreamReceiveArg<MessageSubAck> arg) {
   thread_check_.Check();
   auto& ack = arg.message;
 
@@ -507,7 +538,8 @@ void Subscriber::ReceiveSubAck(StreamReceiveArg<MessageSubAck> arg) {
                                          ack->GetCursors());
 }
 
-void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
+void Subscriber::ReceiveDeliver(
+    size_t /* replica */, StreamReceiveArg<MessageDeliver> arg) {
   thread_check_.Check();
   auto flow = arg.flow;
   auto& deliver = arg.message;
@@ -561,9 +593,32 @@ void Subscriber::ReceiveDeliver(StreamReceiveArg<MessageDeliver> arg) {
   }
 }
 
-void Subscriber::ReceiveBacklogFill(StreamReceiveArg<MessageBacklogFill> arg) {
+void Subscriber::ReceiveBacklogFill(
+    size_t /* replica */, StreamReceiveArg<MessageBacklogFill> arg) {
   thread_check_.Check();
   backlog_query_store_->ProcessBacklogFill(*arg.message);
+}
+
+bool Subscriber::IsHealthy() const {
+  // Return true if any replica is healthy.
+  for (const auto& replica : replicas_) {
+    if (replica.currently_healthy) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void Subscriber::ConnectionDropped(size_t replica) {
+  RS_ASSERT(replica < replicas_.size());
+  replicas_[replica].connection->ConnectionDropped();
+}
+
+void Subscriber::ConnectionCreated(
+    size_t replica,
+    std::unique_ptr<Sink<std::unique_ptr<Message>>> sink) {
+  RS_ASSERT(replica < replicas_.size());
+  replicas_[replica].connection->ConnectionCreated(std::move(sink));
 }
 
 }  // namespace rocketspeed
