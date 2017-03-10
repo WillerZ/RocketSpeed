@@ -232,7 +232,7 @@ void Subscriber::InstallHooks(const HooksParameters& params,
     SubscriptionStatusImpl status(info.GetSubID(), info.GetTenant(),
         info.GetNamespace(), info.GetTopic());
     status.status_ = IsHealthy() ? Status::OK() : Status::ShardUnhealthy();
-    StatusForHooks sfh(&status, current_hosts_);
+    StatusForHooks sfh(&status, &current_hosts_);
     hooks_[info.GetSubID()].SubscriptionExists(sfh);
   }
 }
@@ -259,7 +259,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
         parameters.topic_name);
     sub_status.status_ = Status::InvalidArgument(
         "Invalid subscription as maximum subscription limit reached.");
-    StatusForHooks sfh(&sub_status, current_hosts_);
+    StatusForHooks sfh(&sub_status, &current_hosts_);
     hooks_[sub_id].OnSubscriptionStatusChange(sfh);
     if (observer) {
       observer->OnSubscriptionStatusChange(sub_status);
@@ -275,7 +275,7 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
                                   parameters.namespace_id,
                                   parameters.topic_name);
     status.status_ = Status::ShardUnhealthy();
-    StatusForHooks sfh(&status, current_hosts_);
+    StatusForHooks sfh(&status, &current_hosts_);
     hooks_[sub_id].OnSubscriptionStatusChange(sfh);
     if (observer) {
       observer->OnSubscriptionStatusChange(status);
@@ -423,7 +423,7 @@ void Subscriber::NotifyHealthy(bool isHealthy) {
       SubscriptionStatusImpl status(data.GetID(), data.GetTenant(),
           data.GetNamespace().ToString(), data.GetTopicName().ToString());
       status.status_ = isHealthy ? Status::OK() : Status::ShardUnhealthy();
-      StatusForHooks sfh(&status, current_hosts_);
+      StatusForHooks sfh(&status, &current_hosts_);
       hooks_[data.GetID()].OnSubscriptionStatusChange(sfh);
       auto observer = static_cast<Observer*>(data.GetUserData());
       if (observer) {
@@ -507,7 +507,7 @@ void Subscriber::ProcessUnsubscribe(
       info.GetNamespace(), info.GetTopic());
   sub_status.status_ = status;
 
-  StatusForHooks sfh(&sub_status, current_hosts_);
+  StatusForHooks sfh(&sub_status, &current_hosts_);
   hooks_[sub_id].OnSubscriptionStatusChange(sfh);
   if (info.GetObserver()) {
     info.GetObserver()->OnSubscriptionStatusChange(sub_status);

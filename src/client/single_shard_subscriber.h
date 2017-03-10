@@ -66,8 +66,8 @@ class StatusForHooks : public HookedSubscriptionStatus {
   StatusForHooks& operator=(const StatusForHooks& ) = delete;
 
   StatusForHooks(const SubscriptionStatusImpl* status,
-                 const std::vector<HostId>& servers)
-    : status_(status), servers_ptr_(&servers) {
+                 const std::vector<HostId>* servers)
+    : status_(status), servers_ptr_(servers) {
     RS_ASSERT_DBG(status);
   }
 
