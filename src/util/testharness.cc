@@ -55,7 +55,7 @@ int RandomSeed() {
 
 int RunAllTests(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
   Env::Default()->InstallSignalHandlers();
   return RUN_ALL_TESTS();
 }
