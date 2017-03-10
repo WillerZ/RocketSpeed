@@ -335,6 +335,12 @@ class EventLoop {
       unwritable_sockets_timeout_.Add(socket);
     }
   }
+  // Mark that a write happened on the socket, but still not fully writable.
+  void ResetUnwritable(SocketEvent* socket) {
+    if (unwritable_sockets_timeout_.Contains(socket)) {
+      unwritable_sockets_timeout_.Add(socket);
+    }
+  }
 
   // TODO(t8971722)
   void AddInboundStream(access::EventLoop, Stream* stream);
@@ -755,6 +761,7 @@ class EventLoop {
     Counter* outbound_connections;  // number of outbound connections
     Counter* all_connections;       // number of all connections
     Counter* hbs_sent;              // number of heartbeats sent
+    Counter* socket_write_timeout;  // sockets timed out due to write delays
     Histogram* timer_drift_micros; // diff b/w observed and expected run time
   } stats_;
 

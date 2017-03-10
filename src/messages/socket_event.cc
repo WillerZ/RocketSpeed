@@ -448,7 +448,14 @@ void SocketEvent::SignalSocketUnwritable() {
            "Signaling that %s is unwritable. Starting a close timeout.",
            GetSinkName().c_str());
   event_loop_->Unnotify(write_ready_);
-  event_loop_->MarkUnwritable(this);
+  if (is_inbound_) {
+    // We only mark inbound connections as unwritable because it is not the job
+    // of the client to determine if a server is healthy or not (the sharding
+    // strategy/router should route away from unhealthy hosts). If a server
+    // is slow while processing incoming subscriptions then that is not a
+    // problem and reconnecting will exacerbate things.
+    event_loop_->MarkUnwritable(this);
+  }
   writeable_ = false;
 }
 
@@ -482,11 +489,13 @@ Status SocketEvent::WriteCallback() {
   RS_ASSERT(stats_->write_size_iovec->GetNumSamples() ==
          stats_->write_succeed_iovec->GetNumSamples());
 
-  // cancel any timeouts -- aggressively do this so that we don't kill
-  // sockets when there is some progress. we may be overwhelmed and
-  // unable to get through half the backlog before a timeout, which is
-  // no fault of the client
-  event_loop_->MarkWritable(this);
+  if (is_inbound_) {
+    // reset any timeouts -- aggressively do this so that we don't kill
+    // sockets when there is some progress. we may be overwhelmed and
+    // unable to get through half the backlog before a timeout, which is
+    // no fault of the client
+    event_loop_->ResetUnwritable(this);
+  }
 
   while (send_queue_.size() > 0) {
     // if there is any pending data from the previously sent

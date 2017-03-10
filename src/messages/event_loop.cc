@@ -459,6 +459,7 @@ void EventLoop::Run() {
         LOG_WARN(info_log_, "Writes to fd(%d) timed out, closing socket",
             socket->GetFd());
         socket->Close(SocketEvent::ClosureReason::Error);
+        stats_.socket_write_timeout->Add(1);
       }
     }, check_period);
 
@@ -1216,6 +1217,7 @@ EventLoop::Stats::Stats(const std::string& prefix) {
   outbound_connections = all.AddCounter(prefix + ".outbound_connections");
   all_connections = all.AddCounter(prefix + ".all_connections");
   hbs_sent = all.AddCounter(prefix + ".hbs_sent");
+  socket_write_timeout = all.AddCounter(prefix + ".socket_write_timeout");
   timer_drift_micros = all.AddLatency(prefix + ".timer_drift_micros");
 }
 
