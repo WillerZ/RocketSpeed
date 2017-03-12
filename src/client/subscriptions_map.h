@@ -35,24 +35,18 @@ using SubscriptionKey = TopicUUID;
 /// performance of metadata updates.
 class SubscriptionBase {
  public:
-  SubscriptionBase(TenantID tenant_id,
-                   Slice namespace_id,
+  SubscriptionBase(Slice namespace_id,
                    Slice topic_name,
                    SubscriptionID sub_id,
                    Cursor start)
   : topic_uuid_(namespace_id, topic_name)
   , sub_id_(sub_id)
-  , expected_(std::move(start))
-  , tenant_id_(tenant_id) {}
+  , expected_(std::move(start)) {}
 
   ~SubscriptionBase();
 
   const SubscriptionKey& GetKey() const {
     return topic_uuid_;
-  }
-
-  TenantID GetTenant() const {
-    return tenant_id_;
   }
 
   Slice GetNamespace() const {
@@ -92,8 +86,6 @@ class SubscriptionBase {
   SubscriptionID sub_id_;
   /// Next expected sequence number on this subscription.
   Cursor expected_;
-
-  TenantID tenant_id_;
 
   /// @{
   /// These methods shall not be accessed anyone but the SubscriptionMap that
@@ -159,13 +151,13 @@ class SubscriptionsMap {
   SubscriptionsMap(
       EventLoop* event_loop,
       std::function<void(Flow*, std::unique_ptr<Message>)> message_handler,
-      UserDataCleanupCb user_data_cleanup_cb);
+      UserDataCleanupCb user_data_cleanup_cb,
+      TenantID tenant_id);
   ~SubscriptionsMap();
 
   /// Returns true if a new subscription was added, and false if an existing
   /// subscription was overridden.
   bool Subscribe(SubscriptionID sub_id,
-                 TenantID tenant_id,
                  const Slice& namespace_id,
                  const Slice& topic_name,
                  const CursorVector& start,
@@ -345,6 +337,7 @@ class SubscriptionsMap {
   // Stores per-topic user data.
   using UserDataMap = std::unordered_map<TopicUUID, void*>;
   UserDataMap user_data_;
+  const TenantID tenant_id_;
 
   std::function<void(Flow*, std::unique_ptr<Message>)> message_handler_;
 
@@ -371,11 +364,11 @@ void SubscriptionsMap::Iterate(Iter&& iter) {
   class SubscriptionStateData : public SubscriptionData {
    public:
     explicit SubscriptionStateData(SubscriptionBase* state,
-                                   UserDataMap* user_data_map)
-    : state_(state), user_data_map_(user_data_map) {}
+                                   SubscriptionsMap* sub_map)
+    : state_(state), sub_map_(sub_map) {}
 
     TenantID GetTenant() const override {
-      return state_->GetTenant();
+      return sub_map_->tenant_id_;
     }
 
     Slice GetNamespace() const override {
@@ -396,31 +389,31 @@ void SubscriptionsMap::Iterate(Iter&& iter) {
 
     void* GetUserData() const override {
       TopicUUID uuid(GetNamespace(), GetTopicName());
-      auto it = user_data_map_->find(uuid);
-      return it == user_data_map_->end() ? nullptr : it->second;
+      auto it = sub_map_->user_data_.find(uuid);
+      return it == sub_map_->user_data_.end() ? nullptr : it->second;
     }
 
    private:
     SubscriptionBase* state_;
-    UserDataMap* user_data_map_;
+    SubscriptionsMap* sub_map_;
   };
 
   for (auto ptr : pending_subscriptions_.Read()) {
-    const SubscriptionStateData data(ptr, &user_data_);
+    const SubscriptionStateData data(ptr, this);
     bool keep_iterating = iter(data);
     if (!keep_iterating) {
       return;
     }
   }
   for (auto ptr : pending_ack_subscriptions_) {
-    const SubscriptionStateData data(ptr, &user_data_);
+    const SubscriptionStateData data(ptr, this);
     bool keep_iterating = iter(data);
     if (!keep_iterating) {
       return;
     }
   }
   for (auto ptr : synced_subscriptions_) {
-    const SubscriptionStateData data(ptr, &user_data_);
+    const SubscriptionStateData data(ptr, this);
     bool keep_iterating = iter(data);
     if (!keep_iterating) {
       return;

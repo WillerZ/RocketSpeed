@@ -139,7 +139,6 @@ class MockSubscriber : public SubscriberIf
 
     user_data_ = static_cast<void*>(observer.release());
     subscription_state_ = std::make_unique<SubscriptionBase>(
-      parameters.tenant_id,
       parameters.namespace_id,
       parameters.topic_name,
       sub_id, parameters.cursors[0]);
@@ -182,7 +181,7 @@ class MockSubscriber : public SubscriberIf
       const TopicUUID& uuid, Info::Flags flags, Info* info) const override {
     if (uuid == uuid_ && subscription_state_) {
       if (flags & Info::kTenant) {
-        info->SetTenant(subscription_state_->GetTenant());
+        info->SetTenant(GuestTenant);
       }
       if (flags & Info::kNamespace) {
         info->SetNamespace(subscription_state_->GetNamespace().ToString());
@@ -1285,7 +1284,6 @@ TEST_F(ClientTest, TopicToSubscriptionMap) {
     subscriptions.emplace(
         sub_id,
         std::make_unique<SubscriptionBase>(
-            GuestTenant,
             GuestNamespace,
             topic_name,
             sub_id,

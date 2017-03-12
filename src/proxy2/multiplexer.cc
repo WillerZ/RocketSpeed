@@ -128,7 +128,8 @@ Multiplexer::Multiplexer(PerShard* per_shard, IntroProperties stream_properties)
 : per_shard_(per_shard)
 , subscriptions_map_(GetLoop(),
                      std::bind(&Multiplexer::SendMessage, this, _1, _2),
-                     &UserDataCleanup)
+                     &UserDataCleanup,
+                     GuestTenant)
 , stream_supervisor_(
       GetLoop(),
       this,
@@ -207,7 +208,6 @@ UpstreamSubscription* Multiplexer::Subscribe(Flow* flow,
     // Create an upstream subscription if one doesn't exist.
     subscriptions_map_.Subscribe(
         upstream_id,
-        tenant_id,
         namespace_id,
         topic_name,
         // TODO(stupaq): consider subscribing from initial_seqno instead of "0"

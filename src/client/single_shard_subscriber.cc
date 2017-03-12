@@ -134,7 +134,8 @@ Subscriber::Subscriber(const ClientOptions& options,
 , stats_(std::move(stats))
 , subscriptions_map_(event_loop,
                      std::bind(&Subscriber::SendMessage, this, _1, _2),
-                     &UserDataCleanup)
+                     &UserDataCleanup,
+                     options.tenant_id)
 , backlog_query_store_(
       new BacklogQueryStore(options_.info_log,
                             std::bind(&Subscriber::SendMessage, this, _1, _2),
@@ -289,7 +290,6 @@ void Subscriber::StartSubscription(SubscriptionID sub_id,
   hooks_[sub_id].OnStartSubscription();
   auto user_data = static_cast<void*>(observer.release());
   if (subscriptions_map_.Subscribe(sub_id,
-                                   parameters.tenant_id,
                                    parameters.namespace_id,
                                    parameters.topic_name,
                                    parameters.cursors,
