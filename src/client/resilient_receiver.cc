@@ -65,6 +65,33 @@ size_t ResilientStreamReceiver::UpdateConnectionState(bool isNowHealthy) {
   return sequential_conn_failures_;
 }
 
+void ResilientStreamReceiver::CreateConnection(const HostId& host) {
+  RS_ASSERT(host);
+
+  // Open the stream.
+  // Update properties to include the shard_id.
+  IntroParameters params = *intro_parameters_;
+  params.stream_properties.emplace(PropertyShardID,
+                                   std::to_string(shard_id_));
+  auto stream = event_loop_->OpenStream(host, std::move(params));
+
+  if (!stream) {
+    auto failures = UpdateConnectionState(false);
+    Reconnect(failures, host);
+    return;
+  }
+  stream->SetReceiver(this);
+  LOG_INFO(event_loop_->GetLog().get(),
+           "Reconnect()::reconnect(%s, %" PRIu64 ")",
+           host.ToString().c_str(),
+           stream->GetLocalID());
+
+  // Kill the backoff timer, if set.
+  backoff_timer_.reset();
+
+  receiver_->ConnectionCreated(std::move(stream));
+}
+
 void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
   // Think about this method as something that can be called in almost arbitrary
   // state and should leave the receiver in a perfectly valid state.
@@ -85,30 +112,7 @@ void ResilientStreamReceiver::Reconnect(size_t conn_failures, HostId host) {
   }
 
   auto reconnect = [this, host, logger]() {
-    RS_ASSERT(host);
-
-    // Open the stream.
-    // Update properties to include the shard_id.
-    IntroParameters params = *intro_parameters_;
-    params.stream_properties.emplace(PropertyShardID,
-                                     std::to_string(shard_id_));
-    auto stream = event_loop_->OpenStream(host, std::move(params));
-
-    if (!stream) {
-      auto failures = UpdateConnectionState(false);
-      Reconnect(failures, host);
-      return;
-    }
-    stream->SetReceiver(this);
-    LOG_INFO(logger,
-             "Reconnect()::reconnect(%s, %" PRIu64 ")",
-             host.ToString().c_str(),
-             stream->GetLocalID());
-
-    // Kill the backoff timer, if set.
-    backoff_timer_.reset();
-
-    receiver_->ConnectionCreated(std::move(stream));
+    CreateConnection(host);
   };
 
   // We do not apply backoff if there have been no recorded connection failure

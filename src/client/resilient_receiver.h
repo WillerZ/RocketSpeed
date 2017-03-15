@@ -87,6 +87,7 @@ class ResilientStreamReceiver final : public StreamReceiver {
     NotifyConnectionHealthy(isHealthy);
   }
 
+  void CreateConnection(const HostId& host);
   void Reconnect(size_t conn_failures, HostId host);
   size_t UpdateConnectionState(bool isNowHealthy);
 
