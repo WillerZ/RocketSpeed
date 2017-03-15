@@ -41,6 +41,7 @@ class DeadLockRocketeer : public Rocketeer {
       [this] () {
         // Loop until done is signalled.
         std::unordered_map<InboundID, Task> tasks;
+        const std::string large_message(1 << 10, 'x');
         while (!done_) {
           /* sleep override */
           std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -62,7 +63,7 @@ class DeadLockRocketeer : public Rocketeer {
             // Write in bursts of 100 to speed things up.
             for (int i = 0; i < 100; ++i) {
               while (!server_->Deliver(entry.first, task.namespace_id,
-                  task.topic, {"", task.seqno}, "hello")) {
+                  task.topic, {"", task.seqno}, large_message)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
               }
               task.seqno++;
@@ -194,7 +195,7 @@ TEST_F(DeadLockTest, DeadLock) {
   auto is_deadlocked = [&]() -> bool {
     // We say we are deadlocked if the live client hasn't received anything
     // in a few seconds.
-    const uint64_t kTimeoutMs{2000};
+    const uint64_t kTimeoutMs{1000};
     return now() - last_received.load() > kTimeoutMs;
   };
 

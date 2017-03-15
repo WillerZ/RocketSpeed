@@ -14,7 +14,7 @@ namespace rocketspeed {
 
 TEST(SelectRandom, Fairness) {
   std::unordered_set<size_t> set;
-  const size_t num_coupons = 100000;
+  const size_t num_coupons = 1000;
   size_t coupon_collection_attempts = 0;
   for (size_t i = 1; i <= num_coupons; ++i) {
     coupon_collection_attempts += (num_coupons + i - 1) / i;

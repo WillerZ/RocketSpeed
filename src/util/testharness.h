@@ -81,7 +81,7 @@ extern int RunAllTests(int argc, char** argv);
 template <typename P>
 bool WaitUntil(
     P&& p,
-    std::chrono::milliseconds timeout = std::chrono::milliseconds(10000)) {
+    std::chrono::milliseconds timeout = std::chrono::milliseconds(20000)) {
   using clock = std::chrono::steady_clock;
   auto start = clock::now();
   std::chrono::milliseconds wait(1);
