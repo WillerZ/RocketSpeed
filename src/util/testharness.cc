@@ -54,6 +54,7 @@ int RandomSeed() {
 }
 
 int RunAllTests(int argc, char** argv) {
+  global_enable_log_rate_limiting = false;
   ::testing::InitGoogleTest(&argc, argv);
   GFLAGS::ParseCommandLineFlags(&argc, &argv, true);
   Env::Default()->InstallSignalHandlers();

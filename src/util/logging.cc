@@ -15,6 +15,9 @@
 
 namespace rocketspeed {
 
+namespace test {
+bool global_enable_log_rate_limiting = true;
+}
 
 // for sizes >=10TB, print "XXTB"
 // for sizes >=10GB, print "XXGB"

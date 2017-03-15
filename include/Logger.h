@@ -15,6 +15,14 @@
 #include "Assert.h"
 #include "RateLimiter.h"
 
+namespace rocketspeed {
+namespace test {
+// Tests set this flag to disable log rate limiting as this makes test
+// debugging much harder.
+extern bool global_enable_log_rate_limiting;
+}
+}
+
 #define RS_LOG(log_level_expr, info_log_expr, ...) \
   do { \
     ::rocketspeed::InfoLogLevel _log_level = (log_level_expr); \
@@ -41,7 +49,8 @@
       break; \
     } \
     static size_t skipped; \
-    if (rs_log_limiter.IsAllowed()) { \
+    if (rs_log_limiter.IsAllowed() || \
+        !::rocketspeed::test::global_enable_log_rate_limiting) { \
       rs_log_limiter.TakeOne(); \
       if (skipped > 0) { \
         RS_LOG(log_level_expr, info_log_expr, \
