@@ -236,7 +236,8 @@ void Multiplexer::Unsubscribe(Flow* flow,
                               UpstreamSubscription* upstream_sub,
                               PerStream* per_stream,
                               SubscriptionID downstream_sub) {
-  const TopicUUID& uuid = upstream_sub->GetTopicUUID();
+  // UUID copied here as it is removed later in the function.
+  const TopicUUID uuid = upstream_sub->GetTopicUUID();
   LOG_DEBUG(GetOptions().info_log,
             "Multiplexer(%zu)::Unsubscribe(%s, %" PRIu64 ", %llu)",
             per_shard_->GetShardID(),
@@ -326,10 +327,7 @@ void Multiplexer::ReceiveUnsubscribe(StreamReceiveArg<MessageUnsubscribe> arg) {
             uuid.ToString().c_str(),
             static_cast<int>(arg.message->GetMessageType()));
 
-  using Info = decltype(subscriptions_map_)::Info;
-  Info info;
-  if (subscriptions_map_.ProcessUnsubscribe(
-      0 /* replica */, *arg.message, Info::kNone, &info)) {
+  if (subscriptions_map_.ProcessUnsubscribe(0 /* replica */, *arg.message)) {
     LOG_DEBUG(GetOptions().info_log,
               "Multiplexer(%zu)::ReceiveTerminate(%s)",
               per_shard_->GetShardID(),

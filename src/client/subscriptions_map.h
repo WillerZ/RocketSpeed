@@ -260,6 +260,13 @@ class SubscriptionsMap {
               Info::Flags flags,
               Info* info) const;
 
+  /// Extracts information about a synchronized subscription.
+  /// Returns false if the subscription is not synchronized.
+  bool SelectIfSynced(Slice namespace_id,
+                      Slice topic,
+                      Info::Flags flags,
+                      Info* info) const;
+
   /// Checks if subscription exists.
   bool Exists(const SubscriptionKey& key) const;
 
@@ -300,11 +307,8 @@ class SubscriptionsMap {
 
   /// Returns true iff the unsubscribe matched a subscription, and fills the
   /// info with the removed subscription.
-  bool ProcessUnsubscribe(
-      ReplicaIndex replica,
-      const MessageUnsubscribe& message,
-      Info::Flags flags,
-      Info* info);
+  bool ProcessUnsubscribe(ReplicaIndex replica,
+                          const MessageUnsubscribe& message);
 
   /// Returns true iff a subscription was advanced by the deliver message.
   bool ProcessDeliver(ReplicaIndex replica, const MessageDeliver& message);

@@ -477,11 +477,22 @@ void SubscriptionsMap::ProcessAckSubscribe(ReplicaIndex replica,
   CheckInvariants(key);
 }
 
+bool SubscriptionsMap::SelectIfSynced(
+    Slice namespace_id,
+    Slice topic,
+    Info::Flags flags,
+    Info* info) const {
+  const TopicUUID key(namespace_id, topic);
+  auto it = synced_subscriptions_.Find(key);
+  if (it != synced_subscriptions_.End()) {
+    return Select(key, flags, info);
+  }
+  return false;
+}
+
 bool SubscriptionsMap::ProcessUnsubscribe(
     ReplicaIndex replica,
-    const MessageUnsubscribe& message,
-    Info::Flags flags,
-    Info* info) {
+    const MessageUnsubscribe& message) {
   const TopicUUID key(message.GetNamespace(), message.GetTopicName());
   bool result = false;
   switch (message.GetReason()) {
@@ -490,7 +501,6 @@ bool SubscriptionsMap::ProcessUnsubscribe(
       // Terminate the subscription only if it is already ack'd.
       auto it = synced_subscriptions_.Find(key);
       if (it != synced_subscriptions_.End()) {
-        Select(key, flags, info);
         CleanupSubscription(*it);
         synced_subscriptions_.erase(it);
         result = true;

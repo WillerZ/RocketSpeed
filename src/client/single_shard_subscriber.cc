@@ -490,8 +490,11 @@ void Subscriber::ReceiveUnsubscribe(
             static_cast<int>(arg.message->GetMessageType()));
 
   Info info;
-  if (subscriptions_map_.ProcessUnsubscribe(
-      replica, *arg.message, Info::kAll, &info)) {
+  if (subscriptions_map_.SelectIfSynced(
+      arg.message->GetNamespace(),
+      arg.message->GetTopicName(),
+      Info::kAll,
+      &info)) {
     Status status;
     switch (arg.message->GetReason()) {
       case MessageUnsubscribe::Reason::kRequested:
@@ -501,7 +504,12 @@ void Subscriber::ReceiveUnsubscribe(
         break;
         // No default, we will be warned about unhandled code.
     }
+    // Invoke callbacks.
     ProcessUnsubscribe(sub_id, info, status);
+
+    // Cleanup state.
+    // Must be done after calling callbacks as this destroys observer.
+    subscriptions_map_.ProcessUnsubscribe(replica, *arg.message);
   }
 }
 
