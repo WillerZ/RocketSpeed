@@ -15,6 +15,9 @@ void PrintStack(int first_frames_to_skip) {}
 
 #else
 
+} // namespace port
+} // namespace rocketspeed
+
 #include <execinfo.h>
 #include <signal.h>
 #include <stdio.h>
@@ -22,6 +25,8 @@ void PrintStack(int first_frames_to_skip) {}
 #include <string.h>
 #include <unistd.h>
 
+namespace rocketspeed {
+namespace port {
 namespace {
 
 #ifdef OS_LINUX
